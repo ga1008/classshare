@@ -162,6 +162,20 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertIn("队列第", render_list_block)
         self.assertIn("queuePieces.join(' · ')", render_list_block)
 
+    def test_agent_attachment_validator_rejects_unsupported_types_before_submit(self):
+        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
+        validator_block = workspace_js[
+            workspace_js.index("const AGENT_ATTACHMENT_ALLOWED_EXTENSIONS"):
+            workspace_js.index("function agentAttachmentPreviews")
+        ]
+
+        self.assertIn("AGENT_ATTACHMENT_ALLOWED_EXTENSIONS", validator_block)
+        self.assertIn("agentAttachmentExtension(file.name)", validator_block)
+        self.assertIn("类型暂不支持", validator_block)
+        self.assertIn(".docx", validator_block)
+        self.assertIn(".xlsx", validator_block)
+        self.assertIn(".png", validator_block)
+
     def test_record_agent_auto_retry_enforces_hourly_budget(self):
         conn = self._open_agent_task_conn()
         try:

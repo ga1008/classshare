@@ -5,6 +5,13 @@ const COMPOSER_HEARTBEAT_MS = 10000;
 const AGENT_ATTACHMENT_MAX_FILES = 5;
 const AGENT_ATTACHMENT_MAX_FILE_BYTES = 10 * 1024 * 1024;
 const AGENT_ATTACHMENT_MAX_TOTAL_BYTES = 20 * 1024 * 1024;
+const AGENT_ATTACHMENT_ALLOWED_EXTENSIONS = new Set([
+    '.txt', '.md', '.markdown', '.csv', '.json', '.xml', '.yaml', '.yml',
+    '.py', '.js', '.ts', '.html', '.htm', '.css', '.sql', '.log',
+    '.docx', '.doc', '.pdf', '.pptx', '.ppt', '.xlsx', '.xls',
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp',
+]);
+const AGENT_ATTACHMENT_ALLOWED_TYPES_LABEL = 'txt/md/csv/json/docx/pdf/xlsx/pptx/图片';
 
 let chatComponent = null;
 let taskBootstrapLoaded = false;
@@ -1775,6 +1782,12 @@ function formatAgentFileSize(bytes) {
     return `${value}B`;
 }
 
+function agentAttachmentExtension(fileName) {
+    const text = String(fileName || '').trim().toLowerCase();
+    const dotIndex = text.lastIndexOf('.');
+    return dotIndex > -1 ? text.slice(dotIndex) : '';
+}
+
 function validateAgentAttachments(files = []) {
     const normalized = Array.from(files || []);
     if (normalized.length > AGENT_ATTACHMENT_MAX_FILES) {
@@ -1782,6 +1795,10 @@ function validateAgentAttachments(files = []) {
     }
     let total = 0;
     for (const file of normalized) {
+        const extension = agentAttachmentExtension(file.name);
+        if (!AGENT_ATTACHMENT_ALLOWED_EXTENSIONS.has(extension)) {
+            return `附件 ${file.name || '未命名文件'} 类型暂不支持。支持：${AGENT_ATTACHMENT_ALLOWED_TYPES_LABEL}。`;
+        }
         const size = Number(file.size || 0);
         total += size;
         if (size > AGENT_ATTACHMENT_MAX_FILE_BYTES) {
