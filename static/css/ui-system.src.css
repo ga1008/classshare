@@ -7098,6 +7098,19 @@ body.ai-chat-fullscreen-active {
     overflow-wrap: anywhere;
 }
 
+.ai-task-event__supplement {
+    padding: 6px 8px;
+    border: 1px solid rgba(37, 99, 235, 0.14);
+    border-radius: 7px;
+    background: #eff6ff;
+    color: #1e3a8a;
+}
+
+.ai-task-event__followup {
+    width: fit-content;
+    margin-top: 3px;
+}
+
 body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     opacity: 0.35;
     pointer-events: none;

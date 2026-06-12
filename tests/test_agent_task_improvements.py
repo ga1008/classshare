@@ -1377,10 +1377,48 @@ class AgentTaskImprovementTests(unittest.TestCase):
             ).fetchone()
             self.assertEqual("pending_supplement", event["event_type"])
             self.assertIn("一并读取", event["message"])
+            event_detail = json.loads(event["detail_json"])
+            self.assertEqual("prompt", event_detail["runtime_injection"])
+            self.assertFalse(event_detail["follow_up_available"])
 
             row = dict(conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (task_id,)).fetchone())
             prompt = agent_task_service.build_runtime_prompt(row, "/workspace/tasks/1")
             self.assertIn("请补充输出学生分层建议", prompt)
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
+    def test_running_task_supplement_surfaces_follow_up_fallback(self):
+        conn = self._open_agent_task_conn()
+        try:
+            task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_RUNNING)
+
+            result = agent_task_service.add_task_supplement(
+                conn,
+                {"id": 7, "name": "Teacher"},
+                task_id,
+                "请把课堂活动再压缩成 15 分钟版本",
+            )
+
+            self.assertEqual(task_id, result["id"])
+            event = conn.execute(
+                "SELECT event_type, message, detail_json FROM agent_task_events WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            self.assertEqual("pending_supplement", event["event_type"])
+            self.assertIn("一键作为追问", event["message"])
+            detail = json.loads(event["detail_json"])
+            self.assertEqual("visible_event", detail["runtime_injection"])
+            self.assertTrue(detail["follow_up_available"])
+            self.assertEqual("请把课堂活动再压缩成 15 分钟版本", detail["supplement"])
+
+            workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
+            self.assertIn("data-agent-supplement-followup", workspace_js)
+            self.assertIn("function prefillSupplementFollowUp", workspace_js)
+            self.assertIn("补充说明：", workspace_js)
+            ui_css = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
+            self.assertIn("ai-task-event__supplement", ui_css)
+            self.assertIn("ai-task-event__followup", ui_css)
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False

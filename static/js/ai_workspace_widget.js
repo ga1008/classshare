@@ -846,6 +846,15 @@ function renderEventDetail(event) {
     if (detail.generation_task_id) {
         return `<small>生成任务 #${escapeHtml(detail.generation_task_id)}</small>`;
     }
+    if (detail.supplement) {
+        const encoded = encodeURIComponent(String(detail.supplement || ''));
+        return `
+            <small class="ai-task-event__supplement">补充说明：${escapeHtml(detail.supplement)}</small>
+            ${detail.follow_up_available ? `
+                <button type="button" class="btn btn-outline btn-sm ai-task-event__followup" data-agent-supplement-followup="${escapeHtml(encoded)}">作为追问继续</button>
+            ` : ''}
+        `;
+    }
     return '';
 }
 
@@ -1546,6 +1555,24 @@ async function continueAgentTask(button) {
     }
 }
 
+function prefillSupplementFollowUp(button) {
+    const encoded = button.dataset.agentSupplementFollowup || '';
+    const text = decodeURIComponent(encoded || '').trim();
+    if (!text) {
+        return;
+    }
+    const card = button.closest('.ai-agent-task-card') || document;
+    const input = card.querySelector('[data-agent-followup-input]');
+    if (!input) {
+        notify('任务完成后可在追问框继续补充。', 'info');
+        return;
+    }
+    input.value = text;
+    resetTextareaHeight(input);
+    input.focus();
+    notify('已把补充说明填入追问框。', 'success');
+}
+
 async function retryAgentTask(button, { edit = false } = {}) {
     const taskId = Number((edit ? button.dataset.agentRetryEdit : button.dataset.agentRetry) || 0);
     let instruction = '';
@@ -2038,6 +2065,15 @@ function bindTaskCenter() {
                 await executeAgentAction(actionConfirmButton);
             } catch (error) {
                 notify(error.message || '动作执行失败', 'error');
+            }
+            return;
+        }
+        const supplementFollowUpButton = event.target.closest('[data-agent-supplement-followup]');
+        if (supplementFollowUpButton) {
+            try {
+                prefillSupplementFollowUp(supplementFollowUpButton);
+            } catch {
+                notify('补充说明回填失败，请手动复制。', 'warning');
             }
             return;
         }

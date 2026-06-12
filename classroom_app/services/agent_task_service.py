@@ -1776,9 +1776,11 @@ def add_task_supplement(conn, user: dict[str, Any], task_id: int, instruction: s
     if status == TASK_STATUS_QUEUED:
         message = "已补充说明；任务尚未开始，Agent 领取时会一并读取。"
         runtime_injection = "prompt"
+        follow_up_available = False
     else:
-        message = "已补充说明；当前运行时若无法实时吸收，任务完成后可继续追问。"
+        message = "已补充说明；当前运行时若无法实时吸收，任务完成后可一键作为追问继续。"
         runtime_injection = "visible_event"
+        follow_up_available = True
     append_task_event(
         conn,
         int(task_id),
@@ -1788,6 +1790,7 @@ def add_task_supplement(conn, user: dict[str, Any], task_id: int, instruction: s
             "supplement": normalized,
             "runtime_injection": runtime_injection,
             "status_at_submit": status,
+            "follow_up_available": follow_up_available,
         },
         commit=False,
     )
