@@ -729,6 +729,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 CREATE TABLE IF NOT EXISTS teachers (
                     id INTEGER PRIMARY KEY,
                     name TEXT,
+                    email TEXT DEFAULT '',
                     nickname TEXT,
                     is_active INTEGER DEFAULT 1
                 )
@@ -749,7 +750,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 )
                 """
             )
-            conn.execute("INSERT INTO teachers (id, name, nickname, is_active) VALUES (7, 'Teacher', '', 1)")
+            conn.execute("INSERT INTO teachers (id, name, email, nickname, is_active) VALUES (7, 'Teacher', '', '', 1)")
             conn.commit()
             payload = {"teacher_id": 7, "template_key": "exam_briefing", "hour": 7}
             task_row = {
@@ -765,7 +766,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 dict(row)
                 for row in conn.execute(
                     """
-                    SELECT title, body_preview, link_url, ref_id, metadata_json
+                    SELECT category, title, body_preview, link_url, ref_type, ref_id, metadata_json
                     FROM message_center_notifications
                     WHERE recipient_role = 'teacher' AND recipient_user_pk = 7
                     ORDER BY id
@@ -774,9 +775,11 @@ class AgentTaskImprovementTests(unittest.TestCase):
             ]
 
             self.assertEqual(1, len(rows))
+            self.assertEqual("agent_task", rows[0]["category"])
             self.assertIn("Agent 订阅提醒：考前提醒包", rows[0]["title"])
             self.assertIn("连续两次没有新产出", rows[0]["body_preview"])
             self.assertEqual("/?agent_subscriptions=1", rows[0]["link_url"])
+            self.assertEqual("agent_task", rows[0]["ref_type"])
             self.assertEqual(
                 "agent-subscription-skip:7:exam_briefing:skipped: no upcoming exams",
                 rows[0]["ref_id"],
@@ -789,10 +792,36 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 },
                 json.loads(rows[0]["metadata_json"]),
             )
+            with patch.object(schema_scheduler, "get_configured_db_engine", return_value="sqlite"):
+                set_agent_subscription(
+                    conn,
+                    {"id": 7, "name": "Teacher"},
+                    template_key="exam_briefing",
+                    enabled=True,
+                    hour=7,
+                )
+            conn.execute(
+                """
+                UPDATE scheduled_tasks
+                SET last_result = ?, finished_at = ?
+                WHERE dedupe_key = ?
+                """,
+                ("skipped: no upcoming exams", "2026-06-13T07:00:00", "agent-sub:exam_briefing:7"),
+            )
+            conn.commit()
+            subscription_result = list_agent_subscriptions(conn, teacher_id=7)
+            exam = next(item for item in subscription_result["subscriptions"] if item["key"] == "exam_briefing")
+            self.assertEqual("suggest_pause", exam["attention_level"])
+            self.assertIn("暂停", exam["attention_message"])
+            self.assertEqual(rows[0]["ref_id"], exam["attention_ref_id"])
+
             workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
             self.assertIn("function handleAgentSubscriptionDeepLink", workspace_js)
             self.assertIn("agent_subscriptions", workspace_js)
             self.assertIn("ai-agent-subscriptions-panel", workspace_js)
+            self.assertIn("attention_message", workspace_js)
+            ui_css = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
+            self.assertIn("ai-agent-subscription-row__attention", ui_css)
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False

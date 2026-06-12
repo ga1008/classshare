@@ -1003,14 +1003,18 @@ function renderAgentSubscriptions(payload = agentSubscriptionPayload) {
         const last = item.enabled && item.last_run_message ? ` · 上次：${item.last_run_message}` : '';
         return `${next}${last}`;
     };
+    const subscriptionAttentionHtml = (item) => item.attention_message
+        ? `<small class="ai-agent-subscription-row__attention">${escapeHtml(item.attention_message)}</small>`
+        : '';
     list.innerHTML = `
         <div class="ai-agent-subscription-rows">
             ${subscriptions.map((item) => `
-                <label class="ai-agent-subscription-row ${item.enabled ? 'is-enabled' : ''}">
+                <label class="ai-agent-subscription-row ${item.enabled ? 'is-enabled' : ''} ${item.attention_message ? 'has-attention' : ''}">
                     <input type="checkbox" data-agent-sub-toggle="${escapeHtml(item.key)}" ${item.enabled ? 'checked' : ''}>
                     <span class="ai-agent-subscription-row__copy">
                         <strong>${escapeHtml(item.label || item.key)}</strong>
                         <small>${escapeHtml(subscriptionStatusLine(item))}</small>
+                        ${subscriptionAttentionHtml(item)}
                     </span>
                     <select data-agent-sub-hour="${escapeHtml(item.key)}" aria-label="${escapeHtml(item.label || item.key)}时间">
                         ${hourOptions}

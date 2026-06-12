@@ -7615,6 +7615,11 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     background: rgba(240, 253, 250, 0.72);
 }
 
+.ai-agent-subscription-row.has-attention {
+    border-color: rgba(217, 119, 6, 0.3);
+    background: rgba(255, 251, 235, 0.78);
+}
+
 .ai-agent-subscription-row input[type="checkbox"] {
     width: 16px;
     height: 16px;
@@ -7644,6 +7649,18 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 .ai-agent-subscription-row__copy small {
     color: var(--text-muted);
     font-size: 0.7rem;
+}
+
+.ai-agent-subscription-row__copy .ai-agent-subscription-row__attention {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.13);
+    color: #92400e;
+    font-weight: 760;
+    white-space: normal;
 }
 
 .ai-agent-subscription-row select {

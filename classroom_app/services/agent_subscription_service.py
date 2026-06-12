@@ -91,6 +91,47 @@ def _subscription_last_run_message(last_result: Any, last_error: Any = "") -> st
     return result[:120]
 
 
+def _subscription_skip_ref_id(teacher_id: int, template_key: str, result: str) -> str:
+    return f"agent-subscription-skip:{int(teacher_id)}:{template_key}:{result}"
+
+
+def _subscription_attention_state(
+    conn,
+    *,
+    teacher_id: int,
+    template_key: str,
+    result: Any,
+) -> dict[str, str]:
+    result_text = str(result or "").strip()
+    if result_text not in SKIP_NOTIFY_RESULTS:
+        return {}
+    ref_id = _subscription_skip_ref_id(int(teacher_id), template_key, result_text)
+    try:
+        row = conn.execute(
+            """
+            SELECT id
+            FROM message_center_notifications
+            WHERE recipient_role = 'teacher'
+              AND recipient_user_pk = ?
+              AND ref_type IN ('agent_task', 'todo')
+              AND ref_id = ?
+            LIMIT 1
+            """,
+            (int(teacher_id), ref_id),
+        ).fetchone()
+    except Exception as exc:
+        if "message_center_notifications" not in str(exc):
+            raise
+        row = None
+    if not row:
+        return {}
+    return {
+        "attention_level": "suggest_pause",
+        "attention_message": "连续两次没有新产出，建议暂停订阅或调整执行时间。",
+        "attention_ref_id": ref_id,
+    }
+
+
 def _maybe_notify_subscription_skip(
     conn,
     *,
@@ -109,17 +150,17 @@ def _maybe_notify_subscription_skip(
     if not message:
         return
     try:
-        from .message_center_service import create_todo_notification
+        from .message_center_service import create_agent_task_notification
 
         label = str(template.get("label") or template_key or "Agent 订阅")
-        create_todo_notification(
+        create_agent_task_notification(
             conn,
             recipient_role="teacher",
             recipient_user_pk=int(teacher_id),
             title=f"Agent 订阅提醒：{label}",
             body_preview=f"{message}。最近连续两次没有新产出，可打开定时任务查看或调整订阅。",
             link_url="/?agent_subscriptions=1",
-            ref_id=f"agent-subscription-skip:{int(teacher_id)}:{template_key}:{result_text}",
+            ref_id=_subscription_skip_ref_id(int(teacher_id), template_key, result_text),
             actor_display_name="LanShare Agent",
             metadata={
                 "agent_subscription": template_key,
@@ -172,6 +213,14 @@ def list_agent_subscriptions(conn, *, teacher_id: int) -> dict[str, Any]:
                     row["last_error"] if row else "",
                 ),
                 "last_finished_at": (row["finished_at"] if row else "") or "",
+                **(
+                    _subscription_attention_state(
+                        conn,
+                        teacher_id=teacher_id,
+                        template_key=key,
+                        result=row["last_result"] if row else "",
+                    )
+                ),
             }
         )
     try:
