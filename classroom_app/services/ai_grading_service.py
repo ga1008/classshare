@@ -12,6 +12,7 @@ import httpx
 from ..core import ai_client
 from ..database import get_db_connection
 from ..db.connection import get_configured_db_engine
+from .ai_gateway_service import ai_gateway_post
 from .ai_grading_attachments import ensure_ai_grading_attachments_supported
 from .exam_json_service import build_exam_rubric_md
 from .psych_profile_service import load_latest_hidden_profile
@@ -712,9 +713,21 @@ async def submit_submission_for_ai_grading(
         "submitted_at": submission.get("submitted_at"),
         "submission_fingerprint": attempt_token,
     }
+    usage_class_offering_id = submission.get("class_offering_id")
+    usage_teacher_id = teacher_id or submission.get("offering_teacher_id") or submission.get("created_by_teacher_id")
 
     try:
-        response = await ai_client.post("/api/ai/submit-grading-job", json=job_data)
+        response = await ai_gateway_post(
+            ai_client,
+            "/api/ai/submit-grading-job",
+            json_payload=job_data,
+            task_type="stage_exam_grading" if submission.get("exam_paper_id") else "assignment_grading",
+            priority="P0",
+            class_offering_id=usage_class_offering_id,
+            student_id=submission.get("student_pk_id"),
+            teacher_id=usage_teacher_id,
+            source_ref=f"submission:{submission_id}",
+        )
         response.raise_for_status()
         return response.json()
     except httpx.ConnectError as exc:

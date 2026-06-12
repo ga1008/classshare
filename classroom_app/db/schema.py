@@ -4,10 +4,11 @@ import sys
 from .. import config
 from .connection import get_db_connection
 from .postgres_indexes import ensure_postgres_performance_indexes
-from .postgres_schema import ensure_postgres_runtime_constraints, validate_postgres_schema
+from .postgres_schema import ensure_postgres_runtime_columns, ensure_postgres_runtime_constraints, validate_postgres_schema
 from .schema_agent_ext import ensure_agent_task_extension_schema
 from .schema_assignments import ensure_assignment_schema
 from .schema_classroom_activity import ensure_classroom_activity_schema
+from .schema_cultivation_progress import ensure_cultivation_progress_schema
 from .schema_foundation import ensure_foundation_schema
 from .schema_learning_blog import ensure_learning_blog_signature_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
@@ -24,11 +25,17 @@ def init_database():
         print("[DB] Verifying PostgreSQL schema...")
         conn = get_db_connection()
         try:
+            ensure_cultivation_progress_schema(conn, engine="postgres")
+            runtime_column_report = ensure_postgres_runtime_columns(conn)
             runtime_constraint_report = ensure_postgres_runtime_constraints(conn)
             conn.commit()
             report = validate_postgres_schema(conn)
+            report["runtime_columns"] = runtime_column_report
             report["runtime_constraints"] = runtime_constraint_report
-            report["schema_writes_executed"] = bool(runtime_constraint_report["schema_writes_executed"])
+            report["schema_writes_executed"] = bool(
+                runtime_column_report["schema_writes_executed"]
+                or runtime_constraint_report["schema_writes_executed"]
+            )
         except Exception:
             conn.rollback()
             raise

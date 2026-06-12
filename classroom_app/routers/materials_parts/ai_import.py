@@ -5,6 +5,7 @@ from .final_material_helpers import *
 from .rewrite_helpers import *
 
 from ...db.connection import execute_insert_returning_id, get_configured_db_engine
+from ...services.material_mastery_check_service import build_material_mastery_check_payload
 
 
 router = APIRouter()
@@ -602,6 +603,14 @@ async def ai_parse_material(material_id: int, user: dict = Depends(get_current_t
         )
         response_text = await _call_ai_chat(system_prompt, user_prompt, capability="thinking")
         parsed_result = _parse_ai_json(response_text)
+        now = datetime.now().isoformat()
+        check_payload = build_material_mastery_check_payload(
+            parsed_result,
+            material_name=str(material["name"] or ""),
+            generated_at=now,
+        )
+        check_status = "ready" if check_payload.get("status") == "ready" else "fallback"
+        check_error = "" if check_status == "ready" else str(check_payload.get("reason") or "")
 
         with get_db_connection() as conn:
             conn.execute(
@@ -609,10 +618,22 @@ async def ai_parse_material(material_id: int, user: dict = Depends(get_current_t
                 UPDATE course_materials
                 SET ai_parse_status = 'completed',
                     ai_parse_result_json = ?,
+                    check_questions_json = ?,
+                    check_questions_status = ?,
+                    check_questions_error = ?,
+                    check_questions_generated_at = ?,
                     updated_at = ?
                 WHERE id = ?
                 """,
-                (json.dumps(parsed_result, ensure_ascii=False), datetime.now().isoformat(), material_id),
+                (
+                    json.dumps(parsed_result, ensure_ascii=False),
+                    json.dumps(check_payload, ensure_ascii=False),
+                    check_status,
+                    check_error,
+                    now,
+                    now,
+                    material_id,
+                ),
             )
             conn.commit()
 

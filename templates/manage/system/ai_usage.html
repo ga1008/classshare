@@ -1,0 +1,499 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}AI 用量{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('Agent Key', '运行密钥', 'shield', href='/manage/system/agent-keys', variant='outline', tone='slate') }}
+{{ topbar_action('压测诊断', '运行健康', 'gauge', href='/manage/system/diagnostics', variant='outline', tone='slate') }}
+{% endblock %}
+
+{% set dashboard = ai_usage_dashboard or {} %}
+{% set summary = dashboard.summary or {} %}
+{% set task_items = dashboard.task_items or [] %}
+{% set week_items = dashboard.week_items or [] %}
+{% set offering_items = dashboard.offering_items or [] %}
+{% set anomalies = dashboard.anomalies or [] %}
+{% set max_week_count = dashboard.max_week_count or 1 %}
+
+{% block extra_head %}
+<style>
+    .ai-usage-shell {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .ai-usage-overview {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.72rem;
+    }
+
+    .ai-usage-panel,
+    .ai-usage-metric {
+        min-width: 0;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .ai-usage-metric {
+        padding: 0.9rem;
+    }
+
+    .ai-usage-metric span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    .ai-usage-metric strong {
+        display: block;
+        margin-top: 0.26rem;
+        color: var(--text-primary);
+        font-size: 1.28rem;
+        line-height: 1.15;
+        overflow-wrap: anywhere;
+    }
+
+    .ai-usage-panel {
+        padding: 1rem;
+    }
+
+    .ai-usage-panel h2,
+    .ai-usage-panel h3 {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1rem;
+        font-weight: 850;
+        letter-spacing: 0;
+    }
+
+    .ai-usage-panel-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.85rem;
+        margin-bottom: 0.78rem;
+    }
+
+    .ai-usage-note {
+        margin: 0.35rem 0 0;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        line-height: 1.65;
+    }
+
+    .ai-usage-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(310px, 0.95fr);
+        gap: 1rem;
+        align-items: start;
+    }
+
+    .ai-usage-table-wrap {
+        overflow-x: auto;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 8px;
+    }
+
+    .ai-usage-table {
+        width: 100%;
+        min-width: 720px;
+        border-collapse: collapse;
+        font-size: 0.84rem;
+    }
+
+    .ai-usage-table th,
+    .ai-usage-table td {
+        padding: 0.72rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+        text-align: left;
+        vertical-align: middle;
+    }
+
+    .ai-usage-table th {
+        color: var(--text-muted);
+        background: rgba(248, 250, 252, 0.9);
+        font-size: 0.74rem;
+        font-weight: 850;
+        white-space: nowrap;
+    }
+
+    .ai-usage-table td {
+        color: var(--text-secondary);
+    }
+
+    .ai-usage-table tbody tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .ai-usage-primary {
+        display: block;
+        color: var(--text-primary);
+        font-weight: 850;
+        overflow-wrap: anywhere;
+    }
+
+    .ai-usage-subtle {
+        display: block;
+        margin-top: 0.16rem;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        overflow-wrap: anywhere;
+    }
+
+    .ai-usage-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 4.4rem;
+        padding: 0.3rem 0.5rem;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.1);
+        color: #0f766e;
+        font-size: 0.76rem;
+        font-weight: 850;
+        white-space: nowrap;
+    }
+
+    .ai-usage-badge.is-warn {
+        background: rgba(245, 158, 11, 0.14);
+        color: #92400e;
+    }
+
+    .ai-usage-badge.is-danger {
+        background: rgba(239, 68, 68, 0.11);
+        color: #b91c1c;
+    }
+
+    .ai-usage-bars {
+        display: grid;
+        gap: 0.62rem;
+    }
+
+    .ai-usage-week {
+        display: grid;
+        grid-template-columns: 6.6rem minmax(0, 1fr) 3.4rem;
+        gap: 0.62rem;
+        align-items: center;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+    }
+
+    .ai-usage-week-track {
+        height: 10px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.16);
+    }
+
+    .ai-usage-week-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #0f766e, #2563eb);
+    }
+
+    .ai-usage-anomalies {
+        display: grid;
+        gap: 0.55rem;
+    }
+
+    .ai-usage-anomaly,
+    .ai-usage-empty {
+        padding: 0.72rem;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(248, 250, 252, 0.78);
+        color: var(--text-secondary);
+        font-size: 0.84rem;
+        line-height: 1.6;
+    }
+
+    .ai-usage-anomaly {
+        border-color: rgba(245, 158, 11, 0.32);
+        background: rgba(255, 251, 235, 0.72);
+    }
+
+    .ai-usage-budget {
+        display: grid;
+        grid-template-columns: minmax(5.4rem, 7rem) auto;
+        gap: 0.45rem;
+        align-items: center;
+    }
+
+    .ai-usage-budget input {
+        width: 100%;
+        min-width: 0;
+        height: 2.1rem;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        border-radius: 7px;
+        padding: 0 0.52rem;
+        color: var(--text-primary);
+        font-weight: 750;
+    }
+
+    .ai-usage-budget button {
+        height: 2.1rem;
+        padding: 0 0.62rem;
+        border-radius: 7px;
+        white-space: nowrap;
+    }
+
+    .ai-usage-progress {
+        min-width: 8.4rem;
+    }
+
+    .ai-usage-progress strong {
+        color: var(--text-primary);
+        font-weight: 850;
+    }
+
+    .ai-usage-progress-track {
+        height: 8px;
+        margin-top: 0.3rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.16);
+    }
+
+    .ai-usage-progress-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: #0f766e;
+    }
+
+    .ai-usage-progress.is-warn .ai-usage-progress-fill {
+        background: #d97706;
+    }
+
+    .ai-usage-progress.is-danger .ai-usage-progress-fill {
+        background: #dc2626;
+    }
+
+    @media (max-width: 1120px) {
+        .ai-usage-overview {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .ai-usage-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .ai-usage-overview {
+            grid-template-columns: 1fr;
+        }
+
+        .ai-usage-panel-head {
+            display: grid;
+        }
+
+        .ai-usage-week {
+            grid-template-columns: 5.4rem minmax(0, 1fr) 2.8rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ai-usage-shell" data-ai-usage-dashboard>
+    <section class="ai-usage-overview" aria-label="AI 用量总览">
+        <div class="ai-usage-metric">
+            <span>近 8 周调用</span>
+            <strong>{{ summary.count or 0 }}</strong>
+        </div>
+        <div class="ai-usage-metric">
+            <span>成功率</span>
+            <strong>{{ summary.success_rate or 0 }}%</strong>
+        </div>
+        <div class="ai-usage-metric">
+            <span>估算 Token</span>
+            <strong>{{ summary.total_tokens or 0 }}</strong>
+        </div>
+        <div class="ai-usage-metric">
+            <span>平均耗时</span>
+            <strong>{{ summary.avg_duration_ms or 0 }} ms</strong>
+        </div>
+    </section>
+
+    <section class="ai-usage-grid">
+        <article class="ai-usage-panel">
+            <div class="ai-usage-panel-head">
+                <div>
+                    <h2>任务类型</h2>
+                    <p class="ai-usage-note">P0 任务超预算仍放行；低优先级任务会按课程预算延期。</p>
+                </div>
+                <span class="ai-usage-badge">24h 试炼 ≤ {{ dashboard.stage_exam_daily_limit or 3 }}</span>
+            </div>
+            {% if task_items %}
+            <div class="ai-usage-table-wrap">
+                <table class="ai-usage-table">
+                    <thead>
+                        <tr>
+                            <th>任务</th>
+                            <th>调用</th>
+                            <th>成功率</th>
+                            <th>Token</th>
+                            <th>平均耗时</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in task_items %}
+                        <tr>
+                            <td><span class="ai-usage-primary">{{ item.key }}</span></td>
+                            <td>{{ item.count }}</td>
+                            <td>{{ item.success_rate }}%</td>
+                            <td>{{ item.total_tokens }}</td>
+                            <td>{{ item.avg_duration_ms }} ms</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="ai-usage-empty">暂无 AI 调用记录。</div>
+            {% endif %}
+        </article>
+
+        <div class="ai-usage-shell">
+            <article class="ai-usage-panel">
+                <div class="ai-usage-panel-head">
+                    <div>
+                        <h3>周趋势</h3>
+                        <p class="ai-usage-note">按周聚合最近 8 周调用。</p>
+                    </div>
+                </div>
+                <div class="ai-usage-bars">
+                    {% for item in week_items %}
+                    {% set width = ((item.count or 0) / max_week_count * 100) | round(1) %}
+                    <div class="ai-usage-week">
+                        <span>{{ item.key }}</span>
+                        <div class="ai-usage-week-track"><div class="ai-usage-week-fill" style="width: {{ width }}%;"></div></div>
+                        <strong>{{ item.count }}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+
+            <article class="ai-usage-panel">
+                <div class="ai-usage-panel-head">
+                    <div>
+                        <h3>异常</h3>
+                        <p class="ai-usage-note">环比达到 3 倍且本周不少于 3 次会出现在这里。</p>
+                    </div>
+                </div>
+                <div class="ai-usage-anomalies">
+                    {% if anomalies %}
+                        {% for item in anomalies %}
+                        <div class="ai-usage-anomaly">
+                            <span class="ai-usage-primary">{{ item.task_type }}</span>
+                            <span class="ai-usage-subtle">本周 {{ item.current_week_count }} 次，上周 {{ item.previous_week_count }} 次{% if item.ratio %}，环比 {{ item.ratio }} 倍{% endif %}</span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    <div class="ai-usage-empty">当前没有异常高峰。</div>
+                    {% endif %}
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <article class="ai-usage-panel">
+        <div class="ai-usage-panel-head">
+            <div>
+                <h2>课程预算</h2>
+                <p class="ai-usage-note">默认破境出卷 50 次/周。超预算后 P0 出卷继续放行并提醒管理员，低优先级任务延期。</p>
+            </div>
+        </div>
+        {% if offering_items %}
+        <div class="ai-usage-table-wrap">
+            <table class="ai-usage-table">
+                <thead>
+                    <tr>
+                        <th>课堂</th>
+                        <th>授课教师</th>
+                        <th>本周出卷</th>
+                        <th>出卷周预算</th>
+                        <th>总调用</th>
+                        <th>预算源</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in offering_items %}
+                    {% set percent = item.budget_percent or 0 %}
+                    {% set progress_class = 'is-danger' if percent > 100 else ('is-warn' if percent >= 80 else '') %}
+                    <tr data-offering-budget-row data-offering-id="{{ item.class_offering_id }}" data-weekly-budget='{{ item.weekly_budget | tojson }}'>
+                        <td>
+                            <span class="ai-usage-primary">{{ item.course_name }}</span>
+                            <span class="ai-usage-subtle">{{ item.class_name }}</span>
+                        </td>
+                        <td>{{ item.teacher_name or '-' }}</td>
+                        <td>
+                            <div class="ai-usage-progress {{ progress_class }}">
+                                <strong>{{ item.stage_exam_generation_this_week }}/{{ item.stage_exam_generation_budget }}</strong>
+                                <div class="ai-usage-progress-track">
+                                    <div class="ai-usage-progress-fill" style="width: {{ [percent, 100] | min }}%;"></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="ai-usage-budget">
+                                <input type="number" min="0" max="100000" step="1" value="{{ item.stage_exam_generation_budget }}" data-stage-budget-input aria-label="出卷周预算">
+                                <button type="button" class="btn btn-outline btn-sm" data-save-stage-budget>保存</button>
+                            </div>
+                        </td>
+                        <td>{{ item.count }}</td>
+                        <td>
+                            <span class="ai-usage-badge {{ 'is-warn' if item.budget_source == 'custom' else '' }}">{{ '自定义' if item.budget_source == 'custom' else '默认' }}</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="ai-usage-empty">暂无可配置课堂。</div>
+        {% endif %}
+    </article>
+</div>
+
+<script>
+    document.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-save-stage-budget]');
+        if (!button) {
+            return;
+        }
+        const row = button.closest('[data-offering-budget-row]');
+        const input = row?.querySelector('[data-stage-budget-input]');
+        const offeringId = Number(row?.dataset.offeringId || 0);
+        const nextValue = Number(input?.value || 0);
+        if (!row || !input || !Number.isFinite(nextValue) || nextValue < 0 || !offeringId) {
+            window.showMessage?.('预算数值不正确', 'error');
+            return;
+        }
+        let weeklyBudget = {};
+        try {
+            weeklyBudget = JSON.parse(row.dataset.weeklyBudget || '{}');
+        } catch (error) {
+            weeklyBudget = {};
+        }
+        weeklyBudget.stage_exam_generation = Math.round(nextValue);
+        button.disabled = true;
+        try {
+            const data = await window.apiFetch(`/api/manage/system/ai-budgets/${offeringId}`, {
+                method: 'POST',
+                body: { weekly_budget: weeklyBudget },
+            });
+            window.showMessage?.(data.message || '课程 AI 周预算已更新。', 'success');
+            window.setTimeout(() => window.location.reload(), 550);
+        } catch (error) {
+            window.showMessage?.(error.message || '预算保存失败', 'error');
+            button.disabled = false;
+        }
+    });
+</script>
+{% endblock %}

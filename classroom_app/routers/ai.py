@@ -50,12 +50,14 @@ from ..services.ai_grading_service import (
     submit_submission_for_ai_grading,
     stop_submission_ai_grading,
 )
+from ..services.ai_gateway_service import ai_gateway_post
 from ..services.grading_feedback_service import normalize_grading_result, sanitize_student_feedback_text
 from ..services.late_submission_policy import append_late_policy_feedback, apply_late_policy_to_score
 from ..services.learning_progress_service import (
     build_student_global_cultivation_profile,
     handle_assignment_stage_grading_complete,
     handle_stage_exam_grading_complete,
+    refresh_student_learning_state,
 )
 from ..services.student_support_service import build_student_support_signal_prompt
 from ..services.platform_knowledge_service import (
@@ -358,6 +360,7 @@ async def handle_ai_grading_callback(request: Request):
             status = str(data.get("status") or "").strip().lower()
             score = data.get("score")
             feedback_md = data.get("feedback_md")
+            assignment_for_progress = None
             late_adjustment = {
                 "applied": False,
                 "original_score": None,
@@ -380,10 +383,11 @@ async def handle_ai_grading_callback(request: Request):
                         "SELECT * FROM assignments WHERE id = ?",
                         (submission["assignment_id"],),
                     ).fetchone()
+                    assignment_for_progress = dict(assignment) if assignment else None
                     late_adjustment = apply_late_policy_to_score(
                         score,
                         submission=dict(submission),
-                        assignment=dict(assignment) if assignment else {},
+                        assignment=assignment_for_progress or {},
                     )
                     score = late_adjustment.get("final_score")
                     feedback_md = append_late_policy_feedback(feedback_md, late_adjustment)
@@ -445,6 +449,16 @@ async def handle_ai_grading_callback(request: Request):
                     handle_assignment_stage_grading_complete(conn, submission_id)
                 except Exception as exc:
                     print(f"[LEARNING_PROGRESS] AI grading teacher-stage handling failed: {exc}")
+                if assignment_for_progress and assignment_for_progress.get("class_offering_id"):
+                    try:
+                        refresh_student_learning_state(
+                            conn,
+                            int(assignment_for_progress["class_offering_id"]),
+                            int(submission["student_pk_id"]),
+                            event_source_ref=f"grading:{submission_id}",
+                        )
+                    except Exception as exc:
+                        print(f"[LEARNING_PROGRESS] AI grading snapshot refresh failed: {exc}")
             elif status == "grading_failed":
                 try:
                     create_teacher_grading_issue_notification(
@@ -1718,9 +1732,10 @@ System Prompt:
 {transcript}
 """
 
-        response = await ai_client.post(
+        response = await ai_gateway_post(
+            ai_client,
             "/api/ai/chat",
-            json={
+            json_payload={
                 "system_prompt": (
                     "你是一名资深学习支持分析师，负责在课堂场景中为主AI生成隐藏的支持策略。"
                     "你的输出只允许是合法 JSON。"
@@ -1733,6 +1748,12 @@ System Prompt:
                 "web_search_enabled": False,
             },
             timeout=180.0,
+            task_type="learning_support_profile",
+            priority="P1",
+            class_offering_id=class_offering_id,
+            student_id=user_pk if user_role == "student" else None,
+            teacher_id=user_pk if user_role == "teacher" else None,
+            source_ref=f"learning-support-profile:{user_role}:{user_pk}:{session_id}",
         )
         response.raise_for_status()
         ai_response_data = response.json()

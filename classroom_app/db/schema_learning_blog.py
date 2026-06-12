@@ -1,9 +1,11 @@
 import sqlite3
 
 from .migrations import _ensure_resource_scope_schema, _sync_organization_catalog_from_existing
+from .schema_cultivation_progress import ensure_cultivation_progress_schema
 
 
 def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
+    ensure_cultivation_progress_schema(conn, engine="sqlite")
     conn.execute('''
         CREATE TABLE IF NOT EXISTS learning_material_progress (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,6 +18,12 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
             active_seconds INTEGER NOT NULL DEFAULT 0,
             max_scroll_ratio REAL NOT NULL DEFAULT 0,
             completed INTEGER NOT NULL DEFAULT 0,
+            mastered INTEGER NOT NULL DEFAULT 0,
+            mastered_at TEXT,
+            mastery_source TEXT NOT NULL DEFAULT '',
+            mastery_attempts INTEGER NOT NULL DEFAULT 0,
+            mastery_last_attempt_json TEXT DEFAULT '{}',
+            progress_rule_version TEXT NOT NULL DEFAULT 'material_mastery_v2',
             first_viewed_at TEXT,
             last_viewed_at TEXT,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -83,6 +91,7 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
             title TEXT NOT NULL,
             certificate_code TEXT NOT NULL UNIQUE,
             issued_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            revealed_at TEXT,
             metadata_json TEXT DEFAULT '{}',
             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
@@ -168,9 +177,43 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
         )
     ''')
+    try:
+        conn.execute("ALTER TABLE learning_certificates ADD COLUMN revealed_at TEXT")
+    except sqlite3.OperationalError:
+        pass
+    for column_name, column_def in (
+        ("mastered", "INTEGER NOT NULL DEFAULT 0"),
+        ("mastered_at", "TEXT"),
+        ("mastery_source", "TEXT NOT NULL DEFAULT ''"),
+        ("mastery_attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("mastery_last_attempt_json", "TEXT DEFAULT '{}'"),
+        ("progress_rule_version", "TEXT NOT NULL DEFAULT 'material_mastery_v2'"),
+    ):
+        try:
+            conn.execute(f"ALTER TABLE learning_material_progress ADD COLUMN {column_name} {column_def}")
+        except sqlite3.OperationalError:
+            pass
+    conn.execute(
+        """
+        UPDATE learning_material_progress
+        SET mastered = 1,
+            mastered_at = COALESCE(mastered_at, last_viewed_at, updated_at, CURRENT_TIMESTAMP),
+            mastery_source = CASE
+                WHEN COALESCE(TRIM(mastery_source), '') = '' THEN 'legacy_completed'
+                ELSE mastery_source
+            END,
+            progress_rule_version = 'legacy_completed_full_credit'
+        WHERE completed = 1
+          AND COALESCE(mastered, 0) = 0
+        """
+    )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_learning_material_progress_student "
         "ON learning_material_progress (class_offering_id, student_id, completed, updated_at DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_learning_material_progress_mastery "
+        "ON learning_material_progress (class_offering_id, student_id, mastered, updated_at DESC)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_learning_stage_status_student "

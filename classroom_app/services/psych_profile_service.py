@@ -116,7 +116,8 @@ def load_latest_hidden_profile(
         SELECT id, round_index, profile_summary, mental_state_summary, support_strategy,
                hidden_premise_prompt, personality_traits, preference_summary,
                language_habit_summary, preferred_ai_style, interest_hypothesis,
-               evidence_summary, trigger_mode, confidence, raw_payload, created_at
+               evidence_summary, interaction_quality, interaction_quality_label,
+               interaction_quality_reason, trigger_mode, confidence, raw_payload, created_at
         FROM classroom_behavior_profiles
         WHERE class_offering_id = ?
           AND user_pk = ?
@@ -137,6 +138,9 @@ def load_latest_hidden_profile(
                '' AS preferred_ai_style,
                '' AS interest_hypothesis,
                '' AS evidence_summary,
+               NULL AS interaction_quality,
+               '' AS interaction_quality_label,
+               '' AS interaction_quality_reason,
                'legacy' AS trigger_mode,
                confidence, raw_payload, created_at
         FROM ai_psychology_profiles
@@ -336,7 +340,7 @@ def compose_classroom_chat_system_prompt(
     return "\n".join(sections).strip()
 
 
-def normalize_psych_profile_payload(payload: dict[str, Any]) -> dict[str, str]:
+def normalize_psych_profile_payload(payload: dict[str, Any]) -> dict[str, Any]:
     def _clean(value: Any) -> str:
         if value is None:
             return ""
@@ -392,6 +396,38 @@ def normalize_psych_profile_payload(payload: dict[str, Any]) -> dict[str, str]:
         or payload.get("observation_evidence")
         or payload.get("evidence")
     )
+    raw_interaction_quality = (
+        payload.get("interaction_quality")
+        or payload.get("interaction_quality_score")
+        or payload.get("quality_score")
+    )
+    interaction_quality: float | None = None
+    try:
+        if raw_interaction_quality not in (None, ""):
+            interaction_quality = float(raw_interaction_quality)
+            if interaction_quality > 1 and interaction_quality <= 100:
+                interaction_quality = interaction_quality / 100
+            interaction_quality = max(0.0, min(1.0, interaction_quality))
+    except (TypeError, ValueError):
+        interaction_quality = None
+    interaction_quality_label = _clean(
+        payload.get("interaction_quality_label")
+        or payload.get("quality_label")
+    ).lower()
+    if interaction_quality_label not in {"low", "medium", "high"}:
+        if interaction_quality is None:
+            interaction_quality_label = ""
+        elif interaction_quality >= 0.78:
+            interaction_quality_label = "high"
+        elif interaction_quality >= 0.52:
+            interaction_quality_label = "medium"
+        else:
+            interaction_quality_label = "low"
+    interaction_quality_reason = _clean(
+        payload.get("interaction_quality_reason")
+        or payload.get("interaction_quality_evidence")
+        or payload.get("quality_reason")
+    )
     confidence = _clean(payload.get("confidence") or "medium").lower()
 
     if not hidden_premise_prompt:
@@ -412,6 +448,9 @@ def normalize_psych_profile_payload(payload: dict[str, Any]) -> dict[str, str]:
         "preferred_ai_style": preferred_ai_style,
         "interest_hypothesis": interest_hypothesis,
         "evidence_summary": evidence_summary,
+        "interaction_quality": interaction_quality,
+        "interaction_quality_label": interaction_quality_label,
+        "interaction_quality_reason": interaction_quality_reason,
         "confidence": confidence,
     }
 

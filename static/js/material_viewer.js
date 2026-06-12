@@ -27,6 +27,7 @@ const editorCancelBtn = document.getElementById('viewer-editor-cancel-btn');
 
 const LIGHTBOX_ZOOM_FACTOR = 1.2;
 const LIGHTBOX_EPSILON = 0.01;
+const MASTERY_SKIP_STORAGE_PREFIX = 'material-mastery-check-skipped';
 
 const lightboxState = {
     scale: 1,
@@ -52,11 +53,274 @@ const lightboxState = {
     suppressClick: false,
 };
 
+const masteryCheckState = {
+    check: normalizeMasteryCheck(material.mastery_check),
+    answers: {},
+    grading: null,
+    modalEl: null,
+    inlineEl: null,
+    submitting: false,
+    returnFocusEl: null,
+};
+
 let lightboxSyncFrame = null;
 let stageResizeObserver = null;
 let editorLoadingPromise = null;
 let editorLoaded = false;
 let editorEncoding = material.content_encoding || 'utf-8';
+
+function masterySkipStorageKey() {
+    return `${MASTERY_SKIP_STORAGE_PREFIX}:${viewerContext.classOfferingId || '0'}:${viewerContext.materialId || material.id || '0'}`;
+}
+
+function normalizeMasteryCheck(rawCheck) {
+    const check = rawCheck && typeof rawCheck === 'object' ? rawCheck : {};
+    const questions = Array.isArray(check.questions) ? check.questions : [];
+    return {
+        ...check,
+        available: Boolean(check.available),
+        completed: Boolean(check.completed),
+        mastered: Boolean(check.mastered),
+        pass_count: Number(check.pass_count || 2),
+        question_count: Number(check.question_count || questions.length || 0),
+        attempts: Number(check.attempts || 0),
+        questions,
+    };
+}
+
+function hasActionableMasteryCheck() {
+    const check = masteryCheckState.check;
+    return viewerContext.userRole === 'student'
+        && Boolean(viewerContext.classOfferingId)
+        && Boolean(viewerContext.materialId)
+        && check.available
+        && check.completed
+        && !check.mastered
+        && Array.isArray(check.questions)
+        && check.questions.length > 0;
+}
+
+function updateMasteryCheck(rawCheck, options = {}) {
+    if (!rawCheck || typeof rawCheck !== 'object') return;
+    masteryCheckState.check = normalizeMasteryCheck(rawCheck);
+    renderMasteryInline();
+    if (options.autoOpen && hasActionableMasteryCheck()) {
+        const skipped = sessionStorage.getItem(masterySkipStorageKey()) === '1';
+        if (!skipped || window.location.hash === '#mastery-check') {
+            window.setTimeout(() => openMasteryModal(), 250);
+        }
+    }
+}
+
+function handleLearningProgressResult(result) {
+    if (!result || typeof result !== 'object') return;
+    if (result.mastery_check) {
+        updateMasteryCheck(result.mastery_check, { autoOpen: Boolean(result.completed) });
+    }
+}
+
+function buildMasteryInlineHtml() {
+    const check = masteryCheckState.check;
+    if (!check.available || !check.completed) {
+        return '';
+    }
+    if (check.mastered) {
+        return `
+            <div class="material-mastery-check is-mastered" id="mastery-check">
+                <div class="material-mastery-check__copy">
+                    <span class="material-mastery-check__kicker">心法检验</span>
+                    <h2>已掌握这份材料</h2>
+                    <p>你已通过轻量检验，本材料修为按满分计入。</p>
+                </div>
+                <span class="material-mastery-check__badge">已掌握</span>
+            </div>
+        `;
+    }
+    return `
+        <div class="material-mastery-check" id="mastery-check">
+            <div class="material-mastery-check__copy">
+                <span class="material-mastery-check__kicker">心法检验</span>
+                <h2>读完后再确认一次掌握度</h2>
+                <p>已研读先获得本材料 70% 修为；答对 ${escapeHtml(check.pass_count)} 题后计入 100%。检验可跳过、可重试，不扣分。</p>
+            </div>
+            <button type="button" class="btn btn-primary" data-open-mastery-check>开始检验</button>
+        </div>
+    `;
+}
+
+function renderMasteryInline() {
+    if (!contentEl) return;
+    const html = buildMasteryInlineHtml();
+    if (!html) {
+        masteryCheckState.inlineEl?.remove();
+        masteryCheckState.inlineEl = null;
+        return;
+    }
+    let wrapper = masteryCheckState.inlineEl || document.getElementById('mastery-check');
+    if (!wrapper) {
+        wrapper = document.createElement('div');
+        contentEl.insertAdjacentElement('afterend', wrapper);
+    }
+    wrapper.outerHTML = html;
+    masteryCheckState.inlineEl = document.getElementById('mastery-check');
+    masteryCheckState.inlineEl?.querySelector('[data-open-mastery-check]')?.addEventListener('click', () => {
+        openMasteryModal();
+    });
+}
+
+function ensureMasteryModal() {
+    if (masteryCheckState.modalEl) {
+        return masteryCheckState.modalEl;
+    }
+    const modal = document.createElement('div');
+    modal.className = 'material-mastery-modal';
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+        <div class="material-mastery-dialog" role="dialog" aria-modal="true" aria-labelledby="material-mastery-title" tabindex="-1">
+            <div class="material-mastery-dialog__header">
+                <div>
+                    <span class="material-mastery-check__kicker">心法检验</span>
+                    <h2 id="material-mastery-title">确认你已经掌握</h2>
+                    <p id="material-mastery-hint">答对 ${escapeHtml(masteryCheckState.check.pass_count)} 题即可，本检验不计成绩、不扣分。</p>
+                </div>
+                <button type="button" class="material-mastery-dialog__close" data-close-mastery-check aria-label="关闭心法检验">×</button>
+            </div>
+            <form class="material-mastery-form" data-mastery-form></form>
+            <div class="material-mastery-dialog__actions">
+                <button type="button" class="btn btn-ghost" data-skip-mastery-check>稍后再做</button>
+                <button type="submit" class="btn btn-primary" form="material-mastery-form" data-submit-mastery-check>提交检验</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('[data-mastery-form]')?.setAttribute('id', 'material-mastery-form');
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) closeMasteryModal({ skipped: true });
+    });
+    modal.querySelector('[data-close-mastery-check]')?.addEventListener('click', () => closeMasteryModal({ skipped: true }));
+    modal.querySelector('[data-skip-mastery-check]')?.addEventListener('click', () => closeMasteryModal({ skipped: true }));
+    modal.querySelector('[data-mastery-form]')?.addEventListener('change', (event) => {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement)) return;
+        masteryCheckState.answers[input.name] = input.value;
+    });
+    modal.querySelector('[data-mastery-form]')?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submitMasteryCheck().catch((error) => {
+            showToast(error.message || '提交心法检验失败', 'error');
+        });
+    });
+    document.addEventListener('keydown', (event) => {
+        if (!modal.hidden && event.key === 'Escape') {
+            event.preventDefault();
+            closeMasteryModal({ skipped: true });
+        }
+    });
+    masteryCheckState.modalEl = modal;
+    return modal;
+}
+
+function renderMasteryModalQuestions() {
+    const modal = ensureMasteryModal();
+    const form = modal.querySelector('[data-mastery-form]');
+    const submitBtn = modal.querySelector('[data-submit-mastery-check]');
+    if (!form) return;
+    const gradingById = new Map((masteryCheckState.grading?.results || []).map((item) => [item.id, item]));
+    form.innerHTML = (masteryCheckState.check.questions || []).map((question, index) => {
+        const result = gradingById.get(question.id);
+        const explanation = result
+            ? `<div class="material-mastery-question__explanation${result.correct ? ' is-correct' : ' is-wrong'}">${escapeHtml(result.correct ? '答对了。' : `正确答案：${result.correct_answer || ''}`)} ${escapeHtml(result.explanation || '')}</div>`
+            : '';
+        const options = (question.options || []).map((option) => {
+            const inputId = `mastery-${escapeHtml(question.id)}-${escapeHtml(option.id)}`;
+            const checked = masteryCheckState.answers[question.id] === option.id ? ' checked' : '';
+            const optionResultClass = result && option.id === result.correct_answer
+                ? ' is-correct'
+                : (result && option.id === result.selected && !result.correct ? ' is-wrong' : '');
+            return `
+                <label class="material-mastery-option${optionResultClass}">
+                    <input type="radio" name="${escapeHtml(question.id)}" id="${inputId}" value="${escapeHtml(option.id)}"${checked}>
+                    <span class="material-mastery-option__key">${escapeHtml(option.id)}</span>
+                    <span>${escapeHtml(option.text)}</span>
+                </label>
+            `;
+        }).join('');
+        return `
+            <fieldset class="material-mastery-question">
+                <legend>${index + 1}. ${escapeHtml(question.prompt)}</legend>
+                <div class="material-mastery-options">${options}</div>
+                ${explanation}
+            </fieldset>
+        `;
+    }).join('');
+    if (submitBtn) {
+        submitBtn.textContent = masteryCheckState.submitting ? '提交中...' : (masteryCheckState.grading?.passed ? '已掌握' : '提交检验');
+        submitBtn.disabled = masteryCheckState.submitting || Boolean(masteryCheckState.grading?.passed);
+    }
+}
+
+function openMasteryModal() {
+    if (!hasActionableMasteryCheck()) return;
+    const modal = ensureMasteryModal();
+    masteryCheckState.returnFocusEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    renderMasteryModalQuestions();
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('has-material-mastery-modal');
+    window.setTimeout(() => {
+        const firstInput = modal.querySelector('input[type="radio"]');
+        const dialog = modal.querySelector('.material-mastery-dialog');
+        (firstInput || dialog)?.focus();
+    }, 0);
+}
+
+function closeMasteryModal(options = {}) {
+    const modal = masteryCheckState.modalEl;
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('has-material-mastery-modal');
+    if (options.skipped) {
+        sessionStorage.setItem(masterySkipStorageKey(), '1');
+    }
+    masteryCheckState.returnFocusEl?.focus?.();
+}
+
+async function submitMasteryCheck() {
+    if (!hasActionableMasteryCheck() || masteryCheckState.submitting) return;
+    const questions = masteryCheckState.check.questions || [];
+    const missing = questions.find((question) => !masteryCheckState.answers[question.id]);
+    if (missing) {
+        showToast('请先选完所有题目，也可以稍后再做。', 'info');
+        return;
+    }
+    masteryCheckState.submitting = true;
+    renderMasteryModalQuestions();
+    try {
+        const result = await apiFetch(`/api/classrooms/${viewerContext.classOfferingId}/learning/materials/${viewerContext.materialId}/mastery-check`, {
+            method: 'POST',
+            body: { answers: masteryCheckState.answers },
+        });
+        masteryCheckState.grading = result.grading || null;
+        updateMasteryCheck(result.mastery_check || {
+            ...masteryCheckState.check,
+            mastered: Boolean(result.mastered),
+            attempts: Number(result.attempts || masteryCheckState.check.attempts || 0),
+        });
+        renderMasteryModalQuestions();
+        if (result.passed) {
+            sessionStorage.removeItem(masterySkipStorageKey());
+            showToast('心法检验通过，本材料已掌握。', 'success');
+            window.setTimeout(() => closeMasteryModal(), 900);
+        } else {
+            showToast(`答对 ${result.grading?.correct_count || 0}/${result.grading?.total_count || questions.length}，看解析后可立即重试。`, 'info');
+        }
+    } finally {
+        masteryCheckState.submitting = false;
+        renderMasteryModalQuestions();
+    }
+}
 
 function initLearningMaterialProgressTracker() {
     if (viewerContext.userRole !== 'student' || !viewerContext.classOfferingId || !viewerContext.materialId) {
@@ -109,13 +373,17 @@ function initLearningMaterialProgressTracker() {
         } else {
             pending = true;
             try {
-                await fetch(endpoint, {
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: { 'Content-Type': 'application/json' },
                     body,
                     keepalive: Boolean(options.final),
                 });
+                if (response.ok) {
+                    const result = await response.json().catch(() => null);
+                    handleLearningProgressResult(result);
+                }
             } catch (error) {
                 console.debug('learning progress heartbeat failed', error);
             } finally {
@@ -1253,6 +1521,10 @@ async function init() {
         },
         buildFallbackActionHtml: () => buildMaterialDownloadAction('下载原文件'),
     });
+    renderMasteryInline();
+    if (window.location.hash === '#mastery-check' && hasActionableMasteryCheck()) {
+        openMasteryModal();
+    }
     bindBlockedDownloadTips();
     loadTeacherWhiteboardWhenIdle();
 }

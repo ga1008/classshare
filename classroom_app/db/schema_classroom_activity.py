@@ -1073,6 +1073,12 @@ def ensure_classroom_activity_schema(conn: sqlite3.Connection) -> None:
                          TEXT,
                      evidence_summary
                          TEXT,
+                     interaction_quality
+                         REAL,
+                     interaction_quality_label
+                         TEXT,
+                     interaction_quality_reason
+                         TEXT,
                      trigger_mode
                          TEXT
                          NOT
@@ -1127,6 +1133,18 @@ def ensure_classroom_activity_schema(conn: sqlite3.Connection) -> None:
         pass
     try:
         conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN evidence_summary TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN interaction_quality REAL")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN interaction_quality_label TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE classroom_behavior_profiles ADD COLUMN interaction_quality_reason TEXT")
     except sqlite3.OperationalError:
         pass
     try:

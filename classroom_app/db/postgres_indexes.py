@@ -33,6 +33,7 @@ def _build_in_memory_sqlite_schema() -> sqlite3.Connection:
     # builders unless we actually harvest.
     from .schema_assignments import ensure_assignment_schema
     from .schema_classroom_activity import ensure_classroom_activity_schema
+    from .schema_cultivation_progress import ensure_cultivation_progress_schema
     from .schema_foundation import ensure_foundation_schema
     from .schema_learning_blog import ensure_learning_blog_signature_schema
     from .schema_materials_integrations import ensure_materials_integrations_schema
@@ -47,6 +48,7 @@ def _build_in_memory_sqlite_schema() -> sqlite3.Connection:
         ensure_learning_blog_signature_schema,
     ):
         builder(conn)
+    ensure_cultivation_progress_schema(conn, engine="sqlite")
     return conn
 
 

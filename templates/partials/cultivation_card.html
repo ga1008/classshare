@@ -1,0 +1,46 @@
+{% set card = cultivation_card or {} %}
+{% set level = card.level or {} %}
+{% set variant = card.variant or 'compact' %}
+{% set progress = card.progress_percent if card.progress_percent is defined and card.progress_percent is not none else 0 %}
+{% set score = card.score if card.score is defined and card.score is not none else 0 %}
+{% set raw_next_label = card.next_label %}
+{% if raw_next_label is mapping %}
+{% set next_label = raw_next_label.message or raw_next_label.description or raw_next_label.title or raw_next_label.label or '' %}
+{% else %}
+{% set next_label = raw_next_label %}
+{% endif %}
+{% set raw_next_hint = card.next_hint %}
+{% if raw_next_hint is mapping %}
+{% set next_hint = raw_next_hint.message or raw_next_hint.description or raw_next_hint.title or raw_next_hint.label or '' %}
+{% else %}
+{% set next_hint = raw_next_hint %}
+{% endif %}
+<div class="cultivation-card cultivation-card--{{ variant }}" data-theme="{{ card.theme or level.theme or level.level_key or level.key or 'mortal' }}">
+    <div class="cultivation-card__mark" aria-hidden="true">
+        <span>{{ card.level_short or level.short_name or '未入道' }}</span>
+    </div>
+    <div class="cultivation-card__body">
+        <div class="cultivation-card__topline">
+            <span>{{ card.eyebrow or 'Cultivation' }}</span>
+            {% if card.badge %}<em>{{ card.badge }}</em>{% endif %}
+        </div>
+        <strong class="cultivation-card__title">{{ card.title or level.level_name or '修为进度' }}</strong>
+        {% if card.subtitle %}
+        <p class="cultivation-card__subtitle">{{ card.subtitle }}</p>
+        {% endif %}
+        <div class="cultivation-card__meter" aria-label="修为进度 {{ progress }}%">
+            <span style="--cultivation-card-progress: {{ progress }}%;"></span>
+        </div>
+        <div class="cultivation-card__footer">
+            <span><b>{{ score }}</b> 修为</span>
+            {% if next_label %}
+            <small>{{ next_label }}</small>
+            {% elif card.level_name or level.level_name %}
+            <small>{{ card.level_name or level.level_name }}</small>
+            {% endif %}
+        </div>
+        {% if next_hint %}
+        <p class="cultivation-card__hint">{{ next_hint }}</p>
+        {% endif %}
+    </div>
+</div>

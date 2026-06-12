@@ -148,6 +148,21 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
         ("class_offering_id", "student_id", "stage_key"),
     ),
     (
+        "idx_learning_progress_snapshots_unique_student",
+        "learning_progress_snapshots",
+        ("class_offering_id", "student_id"),
+    ),
+    (
+        "idx_cultivation_weekly_snapshots_unique_student_week",
+        "cultivation_weekly_snapshots",
+        ("class_offering_id", "student_id", "week_start"),
+    ),
+    (
+        "idx_cultivation_score_event_archives_unique_bucket",
+        "cultivation_score_event_archives",
+        ("class_offering_id", "student_id", "archive_month", "event_type", "component"),
+    ),
+    (
         "idx_learning_certificates_unique_stage",
         "learning_certificates",
         ("class_offering_id", "student_id", "stage_key"),
@@ -208,6 +223,39 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
         ("class_offering_id", "user_id", "user_role", "emoji_type", "emoji_key"),
     ),
 )
+
+POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
+    "class_offerings": {
+        "cultivation_weights_json": "TEXT NOT NULL DEFAULT ''",
+        "cultivation_weights_version": "TEXT NOT NULL DEFAULT 'default-v1'",
+        "cultivation_weights_updated_at": "TEXT",
+        "cultivation_weights_updated_by_teacher_id": "INTEGER",
+        "ai_weekly_budget_json": "TEXT NOT NULL DEFAULT ''",
+        "ai_weekly_budget_updated_at": "TEXT",
+    },
+    "course_materials": {
+        "check_questions_json": "TEXT DEFAULT ''",
+        "check_questions_status": "TEXT NOT NULL DEFAULT 'idle'",
+        "check_questions_error": "TEXT DEFAULT ''",
+        "check_questions_generated_at": "TEXT",
+    },
+    "classroom_behavior_profiles": {
+        "interaction_quality": "DOUBLE PRECISION",
+        "interaction_quality_label": "TEXT",
+        "interaction_quality_reason": "TEXT",
+    },
+    "learning_material_progress": {
+        "mastered": "INTEGER NOT NULL DEFAULT 0",
+        "mastered_at": "TEXT",
+        "mastery_source": "TEXT NOT NULL DEFAULT ''",
+        "mastery_attempts": "INTEGER NOT NULL DEFAULT 0",
+        "mastery_last_attempt_json": "TEXT DEFAULT '{}'",
+        "progress_rule_version": "TEXT NOT NULL DEFAULT 'material_mastery_v2'",
+    },
+    "learning_certificates": {
+        "revealed_at": "TEXT",
+    },
+}
 
 
 REQUIRED_POSTGRES_TABLES = (
@@ -328,6 +376,12 @@ REQUIRED_POSTGRES_TABLES = (
     "custom_emojis",
     "emoji_usage_stats",
     "learning_material_progress",
+    "learning_progress_snapshots",
+    "cultivation_score_events",
+    "cultivation_score_event_archives",
+    "cultivation_weekly_snapshots",
+    "cultivation_alerts",
+    "ai_usage_log",
     "learning_stage_status",
     "learning_stage_exam_attempts",
     "learning_certificates",
@@ -477,6 +531,12 @@ REQUIRED_POSTGRES_COLUMNS = {
         "academic_schedule_sync_at",
         "academic_schedule_sync_message",
         "home_learning_material_id",
+        "cultivation_weights_json",
+        "cultivation_weights_version",
+        "cultivation_weights_updated_at",
+        "cultivation_weights_updated_by_teacher_id",
+        "ai_weekly_budget_json",
+        "ai_weekly_budget_updated_at",
     ),
     "assignments": (
         "id",
@@ -922,6 +982,10 @@ REQUIRED_POSTGRES_COLUMNS = {
         "file_size",
         "ai_parse_status",
         "ai_parse_result_json",
+        "check_questions_json",
+        "check_questions_status",
+        "check_questions_error",
+        "check_questions_generated_at",
         "ai_optimize_status",
         "owner_role",
         "owner_user_pk",
@@ -1750,6 +1814,9 @@ REQUIRED_POSTGRES_COLUMNS = {
         "preferred_ai_style",
         "interest_hypothesis",
         "evidence_summary",
+        "interaction_quality",
+        "interaction_quality_label",
+        "interaction_quality_reason",
         "trigger_mode",
         "confidence",
         "raw_payload",
@@ -2179,10 +2246,106 @@ REQUIRED_POSTGRES_COLUMNS = {
         "active_seconds",
         "max_scroll_ratio",
         "completed",
+        "mastered",
+        "mastered_at",
+        "mastery_source",
+        "mastery_attempts",
+        "mastery_last_attempt_json",
+        "progress_rule_version",
         "first_viewed_at",
         "last_viewed_at",
         "updated_at",
         "metadata_json",
+    ),
+    "learning_progress_snapshots": (
+        "id",
+        "class_offering_id",
+        "student_id",
+        "score",
+        "progress_percent",
+        "components_json",
+        "metrics_json",
+        "level_key",
+        "next_stage_key",
+        "calculated_at",
+        "dirty",
+        "dirty_at",
+        "metadata_json",
+    ),
+    "cultivation_score_events": (
+        "id",
+        "class_offering_id",
+        "student_id",
+        "event_type",
+        "delta",
+        "component",
+        "source_ref",
+        "created_at",
+        "metadata_json",
+    ),
+    "cultivation_score_event_archives": (
+        "id",
+        "class_offering_id",
+        "student_id",
+        "archive_month",
+        "event_type",
+        "component",
+        "event_count",
+        "total_delta",
+        "first_event_at",
+        "last_event_at",
+        "archived_at",
+        "metadata_json",
+    ),
+    "cultivation_weekly_snapshots": (
+        "id",
+        "class_offering_id",
+        "student_id",
+        "week_start",
+        "week_end",
+        "score",
+        "progress_percent",
+        "components_json",
+        "level_key",
+        "snapshot_source",
+        "created_at",
+        "metadata_json",
+    ),
+    "cultivation_alerts": (
+        "id",
+        "class_offering_id",
+        "student_id",
+        "rule_key",
+        "severity",
+        "status",
+        "title",
+        "body",
+        "evidence_json",
+        "first_seen_at",
+        "last_seen_at",
+        "handled_at",
+        "handled_by_teacher_id",
+        "snoozed_until",
+        "action_note",
+        "metadata_json",
+    ),
+    "ai_usage_log": (
+        "id",
+        "task_type",
+        "priority",
+        "endpoint",
+        "status",
+        "status_code",
+        "duration_ms",
+        "prompt_tokens_estimate",
+        "completion_tokens_estimate",
+        "class_offering_id",
+        "student_id",
+        "teacher_id",
+        "source_ref",
+        "error_message",
+        "metadata_json",
+        "created_at",
     ),
     "learning_stage_status": (
         "id",
@@ -2226,6 +2389,7 @@ REQUIRED_POSTGRES_COLUMNS = {
         "title",
         "certificate_code",
         "issued_at",
+        "revealed_at",
         "metadata_json",
     ),
     "student_learning_path_item_states": (
@@ -2396,6 +2560,54 @@ def ensure_postgres_runtime_constraints(conn: Any) -> dict[str, Any]:
         "created_indexes": created_indexes,
         "skipped_indexes": skipped_indexes,
         "schema_writes_executed": bool(created_indexes),
+    }
+
+
+def ensure_postgres_runtime_columns(conn: Any) -> dict[str, Any]:
+    table_names = _public_tables(conn)
+    columns_by_table = _public_columns(conn)
+    added_columns: dict[str, list[str]] = {}
+    skipped_tables: list[str] = []
+    for table, definitions in POSTGRES_RUNTIME_COLUMN_DEFINITIONS.items():
+        if table not in table_names:
+            skipped_tables.append(table)
+            continue
+        actual_columns = columns_by_table.get(table, set())
+        for column_name, column_def in definitions.items():
+            if column_name in actual_columns:
+                continue
+            conn.execute(
+                f"ALTER TABLE {quote_identifier(table)} "
+                f"ADD COLUMN IF NOT EXISTS {quote_identifier(column_name)} {column_def}"
+            )
+            added_columns.setdefault(table, []).append(column_name)
+
+    legacy_material_mastery_repaired = False
+    if "learning_material_progress" in table_names:
+        final_columns = set(columns_by_table.get("learning_material_progress", set()))
+        final_columns.update(added_columns.get("learning_material_progress", ()))
+        if {"completed", "mastered", "mastered_at", "mastery_source", "progress_rule_version"}.issubset(final_columns):
+            conn.execute(
+                """
+                UPDATE learning_material_progress
+                SET mastered = 1,
+                    mastered_at = COALESCE(mastered_at, last_viewed_at::text, updated_at::text, CURRENT_TIMESTAMP::text),
+                    mastery_source = CASE
+                        WHEN COALESCE(TRIM(mastery_source), '') = '' THEN 'legacy_completed'
+                        ELSE mastery_source
+                    END,
+                    progress_rule_version = 'legacy_completed_full_credit'
+                WHERE completed = 1
+                  AND COALESCE(mastered, 0) = 0
+                """
+            )
+            legacy_material_mastery_repaired = True
+
+    return {
+        "added_columns": added_columns,
+        "skipped_tables": skipped_tables,
+        "legacy_material_mastery_repaired": legacy_material_mastery_repaired,
+        "schema_writes_executed": bool(added_columns),
     }
 
 

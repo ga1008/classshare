@@ -3,6 +3,7 @@ from .generation_helpers import *
 from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
+from ...services.learning_progress_service import get_material_mastery_check_context
 
 
 router = APIRouter()
@@ -89,6 +90,15 @@ async def material_viewer_page(
         preview_variant = "optimized" if variant == "optimized" and material["ai_optimized_markdown"] else "original"
         can_edit_source = user["role"] == "teacher" and is_editable_material(material)
 
+        mastery_check = None
+        if user["role"] == "student" and class_offering_id:
+            mastery_check = get_material_mastery_check_context(
+                conn,
+                class_offering_id=int(class_offering_id),
+                student_id=int(user["id"]),
+                material_id=int(material_id),
+            )
+
         preview_payload = serialize_material_row(
             material,
             {
@@ -106,6 +116,7 @@ async def material_viewer_page(
                 "can_edit_source": can_edit_source,
                 "optimized_available": bool(material["ai_optimized_markdown"]),
                 "ai_parse_result": json.loads(material["ai_parse_result_json"]) if material["ai_parse_result_json"] else None,
+                "mastery_check": mastery_check,
             },
         )
         preview_payload = _decorate_material_download_policy(preview_payload)

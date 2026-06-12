@@ -182,6 +182,7 @@ def _build_discussion_quote_payload(message_payload: dict | None) -> Optional[di
 
     quote_payload = {
         "id": message_payload.get("id"),
+        "user_id": message_payload.get("user_id"),
         "sender": message_payload.get("sender") or "课堂成员",
         "role": message_payload.get("role") or "student",
         "message": message_payload.get("message") or "",

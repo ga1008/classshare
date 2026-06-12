@@ -48,7 +48,7 @@ class StudentPostgresSqlCompatTests(unittest.TestCase):
                 scroll_ratio=0.4,
             )
 
-        sql = conn.executed[0][0]
+        sql = next(item[0] for item in conn.executed if "INSERT INTO learning_material_progress" in item[0])
         self.assertIn("INTERVAL '1800 seconds'", sql)
         self.assertNotIn("julianday(", sql)
 

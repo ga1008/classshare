@@ -852,11 +852,19 @@
                     <p class="workspace-kicker">Cultivation Path</p>
                     <h2>进度及等级</h2>
                 </div>
-                <div class="learning-progress-score" data-theme="{{ lp.current_level.level_key }}">
-                    <span>修为</span>
-                    <strong>{{ lp.score }}</strong>
-                    <small>{{ lp.current_level.level_name }}</small>
-                </div>
+                {% set cultivation_card = {
+                    'variant': 'full',
+                    'eyebrow': 'Current Realm',
+                    'title': lp.current_level.level_name,
+                    'subtitle': classroom.course_name ~ ' · ' ~ (lp.sect_name or '本课修为'),
+                    'score': lp.score,
+                    'progress_percent': lp.progress_percent,
+                    'level_short': lp.current_level.short_name,
+                    'level_name': lp.current_level.level_name,
+                    'theme': lp.current_level.level_key,
+                    'next_label': ('可破境' if lp.eligible_stage else ('试炼生成中' if lp.next_stage and lp.next_stage.status == 'generating' else ('试炼已就绪' if lp.next_stage and lp.next_stage.status == 'in_exam' else ('下一境界' if lp.next_stage else '全部点亮'))))
+                } %}
+                {% include "partials/cultivation_card.html" %}
                 <div class="learning-stage-status-card{% if lp.eligible_stage %} is-ready{% elif lp.next_stage and lp.next_stage.status == 'generating' %} is-busy{% elif lp.next_stage and lp.next_stage.status == 'in_exam' %} is-active{% elif lp.next_stage %} is-locked{% else %} is-complete{% endif %}">
                     <span>下一步</span>
                     {% if lp.eligible_stage %}
@@ -914,15 +922,83 @@
                     <div class="learning-progress-body">
                         <div class="learning-progress-bars">
                             {% for weight in lp.rules.score_weights %}
-                            {% set component_key = 'material' if weight.label == '学习材料' else ('task' if weight.label == '作业考试' else ('interaction' if weight.label == '互动求助' else 'consistency')) %}
-                            {% set component_value = lp.metrics.components[component_key] %}
+                            {% set component_key = weight.key if weight.key is defined else ('material' if weight.label == '学习材料' else ('task' if weight.label == '作业考试' else ('interaction' if weight.label == '互动求助' else 'consistency'))) %}
+                            {% set component_value = lp.metrics.components[component_key] | default(0, true) %}
+                            {% set component_max = weight.weight | default(0, true) %}
+                            {% set component_percent = (component_value / component_max * 100) if component_max else 0 %}
                             <div class="learning-score-row">
                                 <span>{{ weight.label }}</span>
-                                <div class="learning-score-bar"><span style="width: {{ (component_value / weight.weight * 100) | round(0) }}%"></span></div>
-                                <strong>{{ component_value }}/{{ weight.weight }}</strong>
+                                <div class="learning-score-bar"><span style="width: {{ component_percent | round(0) }}%"></span></div>
+                                <strong>{{ component_value }}/{{ component_max }}</strong>
                             </div>
                             {% endfor %}
                         </div>
+                        {% if lp.rules.interaction_quality_note or lp.rules.fairness_note %}
+                        <div class="learning-rule-note">
+                            {% if lp.rules.fairness_note %}<span>{{ lp.rules.fairness_note }}</span>{% endif %}
+                            {% if lp.rules.interaction_quality_note %}<span>{{ lp.rules.interaction_quality_note }}</span>{% endif %}
+                        </div>
+                        {% endif %}
+                        {% set growth_trend = lp.growth_trend if lp.growth_trend is defined else none %}
+                        {% if growth_trend %}
+                        <div class="learning-growth-trend{% if not growth_trend.has_enough_data %} is-empty{% endif %}" aria-label="近 8 周修为成长曲线">
+                            <div class="learning-growth-trend__head">
+                                <div>
+                                    <span>成长曲线</span>
+                                    <strong>{% if growth_trend.has_enough_data %}近 {{ growth_trend.weeks }} 周 {{ growth_trend.total_delta_label }}{% else %}积累中{% endif %}</strong>
+                                </div>
+                                <small>本周 {{ growth_trend.weekly_delta_label }}</small>
+                            </div>
+                            {% if growth_trend.sparkline and growth_trend.sparkline.points %}
+                            <svg class="learning-growth-trend__chart" viewBox="{{ growth_trend.sparkline.view_box }}" role="img" aria-label="修为成长折线">
+                                {% if growth_trend.sparkline.area_points %}
+                                <polygon class="learning-growth-trend__area" points="{{ growth_trend.sparkline.area_points }}" fill="rgba(20, 184, 166, 0.12)"></polygon>
+                                {% endif %}
+                                <polyline class="learning-growth-trend__line" points="{{ growth_trend.sparkline.points }}" fill="none" stroke="#0f766e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                            </svg>
+                            <div class="learning-growth-trend__range">
+                                <span>{{ growth_trend.points[0].week_start if growth_trend.points else '' }}</span>
+                                <span>{{ growth_trend.points[-1].week_start if growth_trend.points else '' }}</span>
+                            </div>
+                            {% else %}
+                            <p class="learning-growth-trend__empty">完成本周学习后，这里会沉淀你的修为走势。</p>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        {% if lp.score_opportunities %}
+                        <div class="learning-opportunity-panel" aria-label="最快提升路径">
+                            <div class="learning-opportunity-panel__head">
+                                <span>最快路径</span>
+                                <strong>距 {{ lp.next_stage.short_name if lp.next_stage else '下一境界' }} 还差 {{ (lp.next_stage.unlock_score - lp.score) | round(1) if lp.next_stage else 0 }} 分</strong>
+                            </div>
+                            <div class="learning-opportunity-list">
+                                {% for opportunity in lp.score_opportunities %}
+                                <a class="learning-opportunity-item" href="{{ opportunity.action_url or '#' }}" data-opportunity-type="{{ opportunity.type }}">
+                                    <span class="learning-opportunity-item__gain">约 {{ opportunity.estimated_delta }} 分</span>
+                                    <strong>{{ opportunity.title }}</strong>
+                                    <small>{{ opportunity.summary }}</small>
+                                </a>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% if lp.recent_score_events %}
+                        <details class="learning-score-ledger">
+                            <summary>
+                                <span>修为日志</span>
+                                <strong>最近 {{ lp.recent_score_events | length }} 条</strong>
+                            </summary>
+                            <div class="learning-score-ledger__list">
+                                {% for event in lp.recent_score_events %}
+                                <div class="learning-score-ledger__item">
+                                    <span>{{ event.component_label }}</span>
+                                    <strong class="{% if event.delta >= 0 %}is-positive{% else %}is-negative{% endif %}">{{ event.delta_label }}</strong>
+                                    <small>{{ event.created_at[:16].replace('T', ' ') if event.created_at else '' }}</small>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </details>
+                        {% endif %}
                     </div>
                 </div>
                 {% if lp.class_position %}
@@ -998,6 +1074,100 @@
                 </div>
                 {% endif %}
             </div>
+            {% set ws = lo.weight_settings if lo.weight_settings is defined else none %}
+            {% if ws %}
+            <div class="learning-weight-panel" data-cultivation-weight-settings data-class-offering-id="{{ classroom.id }}" data-can-update="{{ '1' if ws.can_update else '0' }}" aria-label="修为权重设置">
+                <div class="learning-weight-panel__head">
+                    <div>
+                        <span>Score Weights</span>
+                        <strong>修为权重</strong>
+                        <small>{{ ws.version }}{% if ws.source == 'default' %} · 默认{% elif ws.updated_at %} · {{ ws.updated_at }}{% endif %}</small>
+                    </div>
+                    <div class="learning-weight-total" data-weight-total-state="ok">
+                        <span data-weight-total>{{ ws.weights.material + ws.weights.task + ws.weights.interaction + ws.weights.consistency }}</span>
+                        <small>合计</small>
+                    </div>
+                </div>
+                <div class="learning-weight-presets" aria-label="修为权重预设">
+                    {% for preset in ws.presets %}
+                    <button type="button" class="btn btn-ghost btn-sm" data-weight-preset data-weight-material="{{ preset.weights.material }}" data-weight-task="{{ preset.weights.task }}" data-weight-interaction="{{ preset.weights.interaction }}" data-weight-consistency="{{ preset.weights.consistency }}">{{ preset.label }}</button>
+                    {% endfor %}
+                </div>
+                <div class="learning-weight-controls">
+                    {% for weight in ws.rules %}
+                    <label class="learning-weight-control" data-weight-key="{{ weight.key }}">
+                        <span>{{ weight.label }}</span>
+                        <input type="range" min="0" max="100" step="1" name="{{ weight.key }}" value="{{ weight.weight }}" data-weight-slider>
+                        <input type="number" min="0" max="100" step="1" name="{{ weight.key }}_number" value="{{ weight.weight }}" data-weight-number aria-label="{{ weight.label }}权重">
+                    </label>
+                    {% endfor %}
+                </div>
+                <div class="learning-weight-preview" data-weight-preview hidden></div>
+                <div class="learning-weight-actions">
+                    {% if not ws.can_update %}
+                    <span class="learning-weight-cooldown">冷却中{% if ws.cooldown_remaining_days %} · {{ ws.cooldown_remaining_days }} 天{% endif %}</span>
+                    {% endif %}
+                    <button type="button" class="btn btn-outline btn-sm" data-weight-preview-button>预览变化</button>
+                    <button type="button" class="btn btn-primary btn-sm" data-weight-save {% if not ws.can_update %}disabled{% endif %}>保存权重</button>
+                </div>
+            </div>
+            {% endif %}
+            {% if lo.peer_help_leaders %}
+            <div class="learning-peer-help-board" aria-label="传功榜">
+                <div class="learning-peer-help-board__head">
+                    <span>Peer Help</span>
+                    <strong>传功榜</strong>
+                    <small>被同学或教师标记有用的回答</small>
+                </div>
+                <div class="learning-peer-help-board__list">
+                    {% for item in lo.peer_help_leaders %}
+                    <a href="/manage/students/{{ item.id }}" data-student-insight-open data-student-insight-url="/manage/students/{{ item.id }}?embed=1" data-student-name="{{ item.name }}">
+                        <span>{{ loop.index }}</span>
+                        <strong>{{ item.name }}</strong>
+                        <small>{{ item.peer_help_count }} 次 · {{ item.current_level.level_name if item.current_level else '修为积累中' }}</small>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% set alerts = lo.alert_summary if lo.alert_summary is defined else none %}
+            {% if alerts %}
+            <div class="learning-alert-inbox" data-cultivation-alert-inbox data-class-offering-id="{{ classroom.id }}" aria-label="班级修为预警收件箱">
+                <div class="learning-alert-inbox__head">
+                    <div>
+                        <span>Alerts</span>
+                        <strong>修为预警</strong>
+                        <p>{{ alerts.student_count }} 名学生有待处理信号，规则由后台任务生成。</p>
+                    </div>
+                    <div class="learning-alert-counts" aria-label="预警等级统计">
+                        <span class="is-l3">L3 {{ alerts.counts.L3 or 0 }}</span>
+                        <span class="is-l2">L2 {{ alerts.counts.L2 or 0 }}</span>
+                        <span class="is-l1">L1 {{ alerts.counts.L1 or 0 }}</span>
+                    </div>
+                </div>
+                {% if alerts['items'] %}
+                <div class="learning-alert-list" data-cultivation-alert-list>
+                    {% for alert in alerts['items'] %}
+                    <article class="learning-alert-item is-{{ (alert.severity or 'L1') | lower }}" data-cultivation-alert-item data-alert-id="{{ alert.id }}">
+                        <div class="learning-alert-item__main">
+                            <span>{{ alert.severity_label }} · {{ alert.student_name or ('学生 ' ~ alert.student_id) }}</span>
+                            <strong>{{ alert.title }}</strong>
+                            <p>{{ alert.body }}</p>
+                        </div>
+                        <div class="learning-alert-item__actions">
+                            <button type="button" class="btn btn-ghost btn-sm" data-cultivation-alert-action="private_message">私信学生</button>
+                            <button type="button" class="btn btn-ghost btn-sm" data-cultivation-alert-action="support_note">记备注</button>
+                            <button type="button" class="btn btn-ghost btn-sm" data-cultivation-alert-action="snoozed">本周静音</button>
+                            <button type="button" class="btn btn-primary btn-sm" data-cultivation-alert-action="handled">已处理</button>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="learning-alert-empty" data-cultivation-alert-empty>当前没有未处理修为预警。</p>
+                {% endif %}
+            </div>
+            {% endif %}
             <div class="learning-roster-strip" aria-label="班级成员速览">
                 <span class="learning-roster-strip__label">成员速览</span>
                 <div class="learning-roster-strip__items">
@@ -1064,6 +1234,54 @@
                     </form>
                 </div>
             </div>
+            {% set trend = lo.trend_summary if lo.trend_summary is defined else none %}
+            {% if trend %}
+            <div class="learning-trend-panel" aria-label="班级修为趋势">
+                <div class="learning-trend-panel__main">
+                    <div class="learning-trend-panel__head">
+                        <div>
+                            <span>趋势</span>
+                            <strong>{% if trend.has_enough_data %}平均修为 {{ trend.average_delta_label }}{% else %}趋势积累中{% endif %}</strong>
+                        </div>
+                        <small>{{ trend.weeks }} 周数据</small>
+                    </div>
+                    {% if trend.sparkline and trend.sparkline.points %}
+                    <svg class="learning-trend-panel__chart" viewBox="{{ trend.sparkline.view_box }}" role="img" aria-label="班级平均修为 8 周折线">
+                        {% if trend.sparkline.area_points %}
+                        <polygon class="learning-trend-panel__area" points="{{ trend.sparkline.area_points }}" fill="rgba(20, 184, 166, 0.12)"></polygon>
+                        {% endif %}
+                        <polyline class="learning-trend-panel__line" points="{{ trend.sparkline.points }}" fill="none" stroke="#0f766e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                    </svg>
+                    {% else %}
+                    <p class="learning-trend-panel__empty">周快照正在积累，满 2 周后显示环比趋势。</p>
+                    {% endif %}
+                </div>
+                <div class="learning-trend-components" aria-label="四分量环比">
+                    {% for component in trend.component_deltas %}
+                    <div class="learning-trend-component is-{{ component.direction }}">
+                        <span>{{ component.label }}</span>
+                        <strong>{{ component.value }}</strong>
+                        <small>{{ component.delta_label }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="learning-trend-stalled" aria-label="掉速学生">
+                    <div class="learning-trend-stalled__head">
+                        <span>掉速信号</span>
+                        <strong>{{ trend.stalled_students | length }}</strong>
+                    </div>
+                    {% if trend.stalled_students %}
+                    <div class="learning-trend-stalled__list">
+                        {% for item in trend.stalled_students[:4] %}
+                        <span>{{ item.name }} <small>{{ item.current_score }} / {{ item.current_delta }}</small></span>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p>暂无连续掉速的强信号。</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
             {% set roster_students = lo.roster_students if lo.roster_students is defined and lo.roster_students else lo.students %}
             <div class="learning-roster-board" aria-label="班级成员与本课进度">
                 <div class="learning-roster-board__head">
@@ -1099,8 +1317,10 @@
                         </span>
                         <span class="learning-roster-student__metrics" aria-label="本课简要进度">
                             <b>材 {{ item.material_percent }}%</b>
+                            <b>掌 {{ item.material_mastery_percent }}%</b>
                             <b>任 {{ item.task_completion_percent }}%</b>
                             <b>互 {{ item.interaction_percent }}%</b>
+                            {% if item.peer_help_count %}<b>助 {{ item.peer_help_count }}</b>{% endif %}
                             <b>活 {{ item.activity_count }}</b>
                             {% if item.pending_task_count %}<b>待 {{ item.pending_task_count }}</b>{% endif %}
                             {% if item.has_teacher_note %}<b>备注</b>{% endif %}
@@ -1792,6 +2012,7 @@
                 </div>
                 <div class="chat-message-menu" id="chat-message-menu" hidden>
                     <button type="button" class="chat-message-menu-item" data-message-action="quote">引用</button>
+                    <button type="button" class="chat-message-menu-item" data-message-action="mark-useful" hidden>有用</button>
                     <button type="button" class="chat-message-menu-item" data-message-action="copy">复制</button>
                 </div>
             </div>
@@ -2373,21 +2594,9 @@
     </div>
 </div>
 
-{% if user_info.role == 'student' and classroom_page.learning_progress and classroom_page.learning_progress.latest_certificate %}
-{% set cert = classroom_page.learning_progress.latest_certificate %}
-<div class="learning-certificate-backdrop" id="learning-certificate-backdrop" hidden aria-hidden="true">
-    <div class="learning-certificate-shell" role="dialog" aria-modal="true" aria-labelledby="learning-certificate-title">
-        <div class="learning-certificate-rays" aria-hidden="true"></div>
-        <div class="learning-certificate-card" data-theme="{{ cert.level_key }}">
-            <span class="learning-certificate-kicker">Cultivation Seal</span>
-            <h3 id="learning-certificate-title">{{ cert.title }}</h3>
-            <strong>{{ cert.level_name }}</strong>
-            <p>{{ classroom.course_name }} · {{ user_info.name }}</p>
-            <code>{{ cert.certificate_code }}</code>
-            <button type="button" class="btn btn-primary" id="learning-certificate-close">收下道印</button>
-        </div>
-    </div>
-</div>
+{% if user_info.role == 'student' and classroom_page.learning_progress %}
+{% set learning_certificate = classroom_page.learning_progress.latest_unrevealed_certificate %}
+{% include "partials/learning_certificate_reveal.html" %}
 {% endif %}
 
 {% include "partials/ai_workspace_widget.html" %}

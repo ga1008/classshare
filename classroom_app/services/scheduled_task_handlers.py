@@ -157,6 +157,134 @@ def handle_exam_email_reminder(task: dict[str, Any]) -> str:
 register_task_handler(TASK_KIND_EXAM_EMAIL_REMINDER, handle_exam_email_reminder)
 
 
+from .cultivation_alert_service import (  # noqa: E402
+    CULTIVATION_ALERT_TASK_KIND,
+    generate_cultivation_alerts,
+)
+
+
+def handle_cultivation_alert_scan(task: dict[str, Any]) -> str:
+    payload = task.get("payload") or {}
+    class_offering_id = payload.get("class_offering_id")
+    with get_db_connection() as conn:
+        result = generate_cultivation_alerts(
+            conn,
+            class_offering_id=int(class_offering_id) if class_offering_id else None,
+            now=payload.get("now"),
+        )
+        conn.commit()
+    return (
+        f"generated {result.get('created_or_updated', 0)} cultivation alert(s), "
+        f"{result.get('suppressed', 0)} suppressed, {result.get('resolved', 0)} resolved"
+    )
+
+
+register_task_handler(CULTIVATION_ALERT_TASK_KIND, handle_cultivation_alert_scan)
+
+
+from .learning_progress_service import (  # noqa: E402
+    CULTIVATION_SCORE_EVENT_ARCHIVE_TASK_KIND,
+    CULTIVATION_SNAPSHOT_REFRESH_TASK_KIND,
+    CULTIVATION_WEEKLY_REPORT_TASK_KIND,
+    CULTIVATION_WEEKLY_SNAPSHOT_TASK_KIND,
+    STAGE_EXAM_GENERATION_TASK_KIND,
+    archive_cultivation_score_events,
+    capture_cultivation_weekly_snapshots,
+    create_cultivation_weekly_reports,
+    generate_personal_stage_exam_from_attempt,
+    recalculate_dirty_learning_progress_snapshots,
+)
+
+
+def handle_cultivation_snapshot_refresh(task: dict[str, Any]) -> str:
+    payload = task.get("payload") or {}
+    limit = max(1, min(int(payload.get("limit") or 100), 500))
+    with get_db_connection() as conn:
+        result = recalculate_dirty_learning_progress_snapshots(conn, limit=limit)
+        conn.commit()
+    return f"refreshed {result.get('refreshed', 0)} of {result.get('checked', 0)} dirty snapshot(s)"
+
+
+register_task_handler(CULTIVATION_SNAPSHOT_REFRESH_TASK_KIND, handle_cultivation_snapshot_refresh)
+
+
+def handle_cultivation_weekly_snapshot(task: dict[str, Any]) -> str:
+    payload = task.get("payload") or {}
+    class_offering_id = payload.get("class_offering_id")
+    with get_db_connection() as conn:
+        result = capture_cultivation_weekly_snapshots(
+            conn,
+            class_offering_id=int(class_offering_id) if class_offering_id else None,
+            week_start=payload.get("week_start"),
+            refresh_current=bool(payload.get("refresh_current", True)),
+        )
+        conn.commit()
+    return (
+        f"captured {result.get('captured', 0)} of {result.get('checked', 0)} "
+        f"weekly snapshot(s) for {result.get('week_start')}"
+    )
+
+
+register_task_handler(CULTIVATION_WEEKLY_SNAPSHOT_TASK_KIND, handle_cultivation_weekly_snapshot)
+
+
+def handle_cultivation_weekly_report(task: dict[str, Any]) -> str:
+    payload = task.get("payload") or {}
+    class_offering_id = payload.get("class_offering_id")
+    with get_db_connection() as conn:
+        result = create_cultivation_weekly_reports(
+            conn,
+            class_offering_id=int(class_offering_id) if class_offering_id else None,
+            week_start=payload.get("week_start"),
+        )
+        conn.commit()
+    return (
+        f"created {result.get('created', 0)} weekly report(s), "
+        f"{result.get('duplicates', 0)} duplicate(s), {result.get('skipped', 0)} skipped"
+    )
+
+
+register_task_handler(CULTIVATION_WEEKLY_REPORT_TASK_KIND, handle_cultivation_weekly_report)
+
+
+def handle_cultivation_score_event_archive(task: dict[str, Any]) -> str:
+    payload = task.get("payload") or {}
+    with get_db_connection() as conn:
+        result = archive_cultivation_score_events(
+            conn,
+            retention_days=int(payload.get("retention_days") or 90),
+            as_of=payload.get("as_of"),
+            batch_limit=int(payload.get("batch_limit") or 500),
+        )
+        conn.commit()
+    return (
+        f"archived {result.get('archived_events', 0)} score event(s) "
+        f"into {result.get('archive_rows', 0)} bucket(s); "
+        f"deleted {result.get('deleted_events', 0)} raw row(s)"
+    )
+
+
+register_task_handler(CULTIVATION_SCORE_EVENT_ARCHIVE_TASK_KIND, handle_cultivation_score_event_archive)
+
+
+async def handle_stage_exam_generation(task: dict[str, Any]) -> str:
+    payload = task.get("payload") or {}
+    attempt_id = int(payload.get("attempt_id") or 0)
+    if not attempt_id:
+        return "skipped: missing attempt_id"
+    result = await generate_personal_stage_exam_from_attempt(
+        attempt_id,
+        task_attempt_count=int(task.get("attempt_count") or 0),
+        max_attempts=int(task.get("max_attempts") or 3),
+    )
+    if result.get("status") == "success":
+        return f"generated stage exam assignment {result.get('assignment_id')}"
+    return f"{result.get('status')}: {result.get('message') or 'no-op'}"
+
+
+register_task_handler(STAGE_EXAM_GENERATION_TASK_KIND, handle_stage_exam_generation)
+
+
 # 校园公文通 recurring incremental sync (keeps the local copy fresh for stats /
 # reminders). The handler is async; the dispatcher awaits coroutine results.
 from .gongwen_document_sync_service import (  # noqa: E402

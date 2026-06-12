@@ -21,6 +21,7 @@ from ..services.classroom_interaction_service import (
     set_help_signal,
     submit_question,
 )
+from ..services.peer_help_service import mark_chat_message_useful
 from ..services.runtime_metrics_service import record_websocket_sent
 
 
@@ -94,6 +95,24 @@ async def interaction_snapshot(class_offering_id: int, user: dict = Depends(get_
     with get_db_connection() as conn:
         snapshot = load_interaction_snapshot(conn, class_offering_id, user)
     return {"status": "ok", "snapshot": snapshot}
+
+
+@router.post("/classrooms/{class_offering_id}/messages/{message_id}/useful", response_class=JSONResponse)
+async def mark_discussion_message_useful(
+    class_offering_id: int,
+    message_id: int,
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        result = mark_chat_message_useful(conn, class_offering_id, message_id, user)
+        conn.commit()
+    if result.get("counted"):
+        await _broadcast_changed(class_offering_id, reason="peer_help_marked")
+    return {
+        "status": "ok",
+        "message": "已记录这次同伴帮助" if result.get("counted") else "这次标记已记录过",
+        "result": result,
+    }
 
 
 @router.post("/classrooms/{class_offering_id}/activities", response_class=JSONResponse)

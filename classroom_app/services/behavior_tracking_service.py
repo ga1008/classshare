@@ -24,6 +24,7 @@ from ..config import (
 from ..core import ai_client
 from ..database import get_db_connection
 from ..db.connection import begin_immediate_transaction, execute_insert_returning_id
+from .ai_gateway_service import ai_gateway_post
 from .psych_profile_service import (
     build_explicit_user_profile_prompt,
     format_classroom_summary,
@@ -743,6 +744,18 @@ def _record_behavior_batch_in_connection(
         user_pk=user_pk,
         user_role=user_role,
     )
+    if user_role == "student" and logged_event_ids:
+        try:
+            from .learning_progress_service import mark_student_learning_progress_dirty
+
+            mark_student_learning_progress_dirty(
+                conn,
+                int(class_offering_id),
+                int(user_pk),
+                source_ref="behavior:event",
+            )
+        except Exception as exc:
+            print(f"[LEARNING_PROGRESS] behavior dirty mark failed: {exc}")
     snapshot["logged_event_ids"] = logged_event_ids
     snapshot["accepted_event_count"] = len(logged_event_ids)
     return snapshot
@@ -1094,6 +1107,9 @@ def _build_behavior_profile_prompt(
         '  "preferred_ai_style": "60字以内，推测更适合该用户的AI回应方式",',
         '  "interest_hypothesis": "80字以内，推测兴趣点或关注主题",',
         '  "evidence_summary": "120字以内，总结支撑以上判断的关键行为证据",',
+        '  "interaction_quality": 0.7,',
+        '  "interaction_quality_label": "low|medium|high",',
+        '  "interaction_quality_reason": "80字以内，说明互动的具体性、课程相关性与讨论贡献度",',
         '  "confidence": "low|medium|high"',
         "}",
     ]
@@ -1311,9 +1327,10 @@ async def generate_behavior_profile_for_user(
             student_support_signal=student_support_signal,
         )
 
-        response = await ai_client.post(
+        response = await ai_gateway_post(
+            ai_client,
             "/api/ai/chat",
-            json={
+            json_payload={
                 "system_prompt": "你是一名资深学习支持分析师，只允许输出合法 JSON。",
                 "messages": [],
                 "new_message": profile_prompt,
@@ -1325,6 +1342,12 @@ async def generate_behavior_profile_for_user(
                 "web_search_enabled": False,
             },
             timeout=180.0,
+            task_type="behavior_profile",
+            priority="P1",
+            class_offering_id=class_offering_id,
+            student_id=user_pk if user_role == "student" else None,
+            teacher_id=user_pk if user_role == "teacher" else None,
+            source_ref=f"behavior-profile:{user_role}:{user_pk}",
         )
         response.raise_for_status()
         response_data = response.json()
@@ -1371,10 +1394,11 @@ async def generate_behavior_profile_for_user(
                     activity_count_snapshot, profile_summary, mental_state_summary,
                     support_strategy, hidden_premise_prompt, personality_traits,
                     preference_summary, language_habit_summary, preferred_ai_style,
-                    interest_hypothesis, evidence_summary, trigger_mode, confidence,
-                    raw_payload, created_at
+                    interest_hypothesis, evidence_summary, interaction_quality,
+                    interaction_quality_label, interaction_quality_reason,
+                    trigger_mode, confidence, raw_payload, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     class_offering_id,
@@ -1393,6 +1417,9 @@ async def generate_behavior_profile_for_user(
                     normalized["preferred_ai_style"],
                     normalized["interest_hypothesis"],
                     normalized["evidence_summary"],
+                    normalized["interaction_quality"],
+                    normalized["interaction_quality_label"],
+                    normalized["interaction_quality_reason"],
                     trigger_mode,
                     normalized["confidence"],
                     _dump_payload(payload),

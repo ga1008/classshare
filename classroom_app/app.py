@@ -55,6 +55,13 @@ from .services.submission_file_alignment import repair_stale_stored_paths
 from .services.assignment_lifecycle_service import close_overdue_assignments
 from .services.ai_grading_service import expire_stale_ai_grading_submissions
 from .services.exam_generation_recovery_service import expire_stale_exam_generation_tasks
+from .services.cultivation_alert_service import ensure_cultivation_alert_task
+from .services.learning_progress_service import (
+    ensure_cultivation_score_event_archive_task,
+    ensure_cultivation_snapshot_refresh_task,
+    ensure_cultivation_weekly_report_task,
+    ensure_cultivation_weekly_snapshot_task,
+)
 from .services.wrong_question_summary_service import expire_interrupted_wrong_summary_jobs
 from .time_utils import app_timezone_name, local_iso
 from .database import get_db_connection
@@ -159,6 +166,11 @@ async def startup_event():
                 align_conn,
                 stale_minutes=AI_GRADING_STALE_MINUTES,
             )
+            cultivation_refresh_task_id = ensure_cultivation_snapshot_refresh_task(align_conn)
+            cultivation_weekly_task_id = ensure_cultivation_weekly_snapshot_task(align_conn)
+            cultivation_report_task_id = ensure_cultivation_weekly_report_task(align_conn)
+            cultivation_archive_task_id = ensure_cultivation_score_event_archive_task(align_conn)
+            cultivation_alert_task_id = ensure_cultivation_alert_task(align_conn)
             align_conn.commit()
         interrupted_wrong_summary_jobs = expire_interrupted_wrong_summary_jobs()
         if repair_report.paths_repaired > 0 or repair_report.paths_still_missing > 0:
@@ -174,6 +186,16 @@ async def startup_event():
             print(f"[AI_GEN] reclaimed {stale_exam_gen_count} stale exam generation task(s)")
         if stale_grading_count > 0:
             print(f"[AI_GRADING] reclaimed {stale_grading_count} stale grading submission(s)")
+        if cultivation_refresh_task_id:
+            print(f"[LEARNING_PROGRESS] cultivation snapshot refresh task ready: {cultivation_refresh_task_id}")
+        if cultivation_weekly_task_id:
+            print(f"[LEARNING_PROGRESS] cultivation weekly snapshot task ready: {cultivation_weekly_task_id}")
+        if cultivation_report_task_id:
+            print(f"[LEARNING_PROGRESS] cultivation weekly report task ready: {cultivation_report_task_id}")
+        if cultivation_archive_task_id:
+            print(f"[LEARNING_PROGRESS] cultivation score-event archive task ready: {cultivation_archive_task_id}")
+        if cultivation_alert_task_id:
+            print(f"[LEARNING_PROGRESS] cultivation alert scan task ready: {cultivation_alert_task_id}")
         if interrupted_wrong_summary_jobs > 0:
             print(f"[WRONG_SUMMARY] reclaimed {interrupted_wrong_summary_jobs} interrupted AI summary job(s)")
     except Exception as exc:

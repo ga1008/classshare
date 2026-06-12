@@ -89,6 +89,10 @@ if (root) {
     const emptySearch = root.querySelector('[data-empty-search]');
     const resetButton = root.querySelector('[data-reset-search]');
     const semesterCalendarRoot = root.querySelector('[data-semester-calendar-root]');
+    const emptySearchChips = root.querySelector('[data-empty-search-chips]');
+    const emptySearchSuggestions = root.querySelector('[data-empty-search-suggestions]');
+    const dashboardRole = root.dataset.dashboardRole || 'teacher';
+    const storagePrefix = `dashboard:${dashboardRole}`;
 
     const cardState = new Map();
     const collator = new Intl.Collator('zh-Hans-CN', { numeric: true, sensitivity: 'base' });
@@ -108,7 +112,7 @@ if (root) {
     );
     const allowedFilters = new Set(filterButtons.map((button) => button.dataset.filterValue || 'all'));
     const initialFilter = root.dataset.initialFilter || 'all';
-    const savedGroupMode = readStorageValue('dashboard:teacher-group-mode');
+    const savedGroupMode = readStorageValue(`${storagePrefix}:group-mode`);
     const initialGroupMode = root.dataset.initialGroupMode || 'flat';
     let activeFilter = allowedFilters.has(initialFilter)
         ? initialFilter
@@ -125,7 +129,7 @@ if (root) {
     let isComposing = false;
     let searchTimerId = 0;
 
-    const collapsedGroups = new Set(readJsonStorage('dashboard:teacher-collapsed-groups', []));
+    const collapsedGroups = new Set(readJsonStorage(`${storagePrefix}:collapsed-groups`, []));
 
     cards.forEach((card) => {
         const searchText = String(card.dataset.searchText || '');
@@ -167,6 +171,37 @@ if (root) {
         };
         window.requestAnimationFrame(showTargets);
     };
+
+    function setupCockpitPulseCollapse() {
+        const pulse = root.querySelector('[data-cockpit-pulse]');
+        const toggle = root.querySelector('[data-cockpit-pulse-toggle]');
+        const body = root.querySelector('[data-cockpit-pulse-body]');
+        if (!pulse || !toggle || !body) {
+            return;
+        }
+        const storageKey = 'lanshare:cockpit-pulse-collapsed';
+        const narrowQuery = window.matchMedia('(max-width: 720px)');
+        const applyCollapsed = (collapsed) => {
+            const effectiveCollapsed = narrowQuery.matches && collapsed;
+            pulse.classList.toggle('is-collapsed', effectiveCollapsed);
+            body.hidden = effectiveCollapsed;
+            toggle.setAttribute('aria-expanded', String(!effectiveCollapsed));
+            toggle.textContent = effectiveCollapsed
+                ? `展开 ${body.querySelectorAll('.student-cockpit-pulse').length} 门课程`
+                : '收起';
+        };
+        let collapsed = readStorageValue(storageKey);
+        let isCollapsed = collapsed === null || collapsed === '' ? true : collapsed !== 'false';
+        applyCollapsed(isCollapsed);
+        toggle.addEventListener('click', () => {
+            isCollapsed = !isCollapsed;
+            writeStorageValue(storageKey, String(isCollapsed));
+            applyCollapsed(isCollapsed);
+        });
+        if (typeof narrowQuery.addEventListener === 'function') {
+            narrowQuery.addEventListener('change', () => applyCollapsed(isCollapsed));
+        }
+    }
 
     const updateFilterUi = () => {
         filterButtons.forEach((button) => {
@@ -223,6 +258,94 @@ if (root) {
         }
     };
 
+    const clearSearchCriterion = (kind) => {
+        if (kind === 'filter') {
+            activeFilter = 'all';
+        }
+        if (kind === 'keyword' && searchInput) {
+            searchInput.value = '';
+        }
+        applyFilters();
+    };
+
+    const getSuggestionScore = (state, keyword) => {
+        const compactKeyword = compactText(keyword);
+        if (!compactKeyword) {
+            return 0;
+        }
+        const pairs = [];
+        for (let index = 0; index < compactKeyword.length - 1; index += 1) {
+            pairs.push(compactKeyword.slice(index, index + 2));
+        }
+        const tokens = pairs.length ? pairs : Array.from(new Set(compactKeyword.split('')));
+        return tokens.reduce((score, token) => score + (state.searchCompact.includes(token) ? token.length : 0), 0);
+    };
+
+    const renderEmptySearchHelp = (keyword) => {
+        if (!emptySearch) {
+            return;
+        }
+        if (emptySearchChips) {
+            emptySearchChips.replaceChildren();
+            const chips = [];
+            if (activeFilter !== 'all') {
+                chips.push({
+                    kind: 'filter',
+                    label: `筛选：${filterLabels.get(activeFilter) || activeFilter}`,
+                });
+            }
+            if (keyword) {
+                chips.push({
+                    kind: 'keyword',
+                    label: `关键词：${keyword}`,
+                });
+            }
+            chips.forEach((chip) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'dashboard-empty-search__chip';
+                button.dataset.emptySearchChip = chip.kind;
+                button.textContent = `${chip.label} ×`;
+                emptySearchChips.appendChild(button);
+            });
+        }
+
+        if (!emptySearchSuggestions) {
+            return;
+        }
+        emptySearchSuggestions.replaceChildren();
+        const suggestions = cards
+            .map((card) => ({ card, state: cardState.get(card) }))
+            .filter((item) => item.state)
+            .map((item) => ({
+                ...item,
+                score: getSuggestionScore(item.state, keyword),
+            }))
+            .filter((item) => item.score > 0)
+            .sort((a, b) => b.score - a.score || compareCardsByActivity(a.card, b.card))
+            .slice(0, 3);
+        if (!suggestions.length) {
+            return;
+        }
+        const title = document.createElement('strong');
+        title.textContent = '你可能想找';
+        const list = document.createElement('div');
+        list.className = 'dashboard-empty-search__suggestion-list';
+        suggestions.forEach(({ card, state }) => {
+            const href = card.querySelector('.dashboard-offering-card__enter')?.getAttribute('href') || '#';
+            const link = document.createElement('a');
+            link.href = href;
+            link.className = 'dashboard-empty-search__suggestion';
+            const name = document.createElement('span');
+            name.textContent = state.courseName || card.dataset.courseName || '课堂';
+            const meta = document.createElement('small');
+            meta.textContent = [state.className, card.dataset.teacherName].filter(Boolean).join(' · ') || '进入课堂查看';
+            link.append(name, meta);
+            list.appendChild(link);
+        });
+        emptySearchSuggestions.append(title, list);
+    };
+
     const matchesFilter = (card) => {
         if (activeFilter === 'attention') {
             return card.dataset.attention === 'true';
@@ -276,6 +399,9 @@ if (root) {
         }
         if (emptySearch) {
             emptySearch.hidden = count !== 0;
+            if (count === 0) {
+                renderEmptySearchHelp(keyword);
+            }
         }
         if (resetButton) {
             resetButton.hidden = !(keyword || activeFilter !== 'all');
@@ -312,7 +438,7 @@ if (root) {
             }
             activeGroupMode = nextMode;
             activeTimelineKey = '';
-            writeStorageValue('dashboard:teacher-group-mode', activeGroupMode);
+            writeStorageValue(`${storagePrefix}:group-mode`, activeGroupMode);
             applyFilters();
         });
     });
@@ -346,8 +472,34 @@ if (root) {
         if (event.key === 'Escape') {
             searchInput.value = '';
             applyFilters();
+            searchInput.blur();
         }
     });
+
+    document.addEventListener('keydown', (event) => {
+        if (!searchInput || event.defaultPrevented || event.key !== '/') {
+            return;
+        }
+        if (window.matchMedia('(max-width: 720px), (pointer: coarse)').matches) {
+            return;
+        }
+        if (isNativeInteractiveElement(event.target)) {
+            return;
+        }
+        event.preventDefault();
+        searchInput.focus({ preventScroll: true });
+        searchInput.select();
+    });
+
+    emptySearch?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-empty-search-chip]');
+        if (!button) {
+            return;
+        }
+        clearSearchCriterion(button.dataset.emptySearchChip || '');
+    });
+
+    setupCockpitPulseCollapse();
 
     resetButton?.addEventListener('click', () => {
         activeFilter = 'all';
@@ -782,7 +934,7 @@ if (root) {
             } else {
                 collapsedGroups.delete(key);
             }
-            writeJsonStorage('dashboard:teacher-collapsed-groups', Array.from(collapsedGroups));
+            writeJsonStorage(`${storagePrefix}:collapsed-groups`, Array.from(collapsedGroups));
         };
 
         const toggleCollapsed = () => {

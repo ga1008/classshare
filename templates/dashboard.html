@@ -23,7 +23,8 @@
     </span>
 </a>
 {% elif user_info.role == 'student' %}
-<a href="#dashboard-class-list" class="app-topbar-action app-topbar-action--primary" title="进入课堂列表" aria-label="进入课堂列表">
+{% set continue_action = dashboard_continue_action|default({'href': '#dashboard-class-list', 'title': '查看课堂列表', 'label': '查看课堂', 'subtitle': '课堂列表'}) %}
+<a href="{{ continue_action.href }}" class="app-topbar-action app-topbar-action--primary dashboard-continue-action" title="{{ continue_action.title }}" aria-label="{{ continue_action.title }}">
     <span class="app-topbar-action__icon" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
@@ -31,8 +32,8 @@
         </svg>
     </span>
     <span class="app-topbar-action__text">
-        <strong>进入课堂</strong>
-        <small>继续学习</small>
+        <strong>{{ continue_action.label }}</strong>
+        <small title="{{ continue_action.course_name|default(continue_action.subtitle) }}">{{ continue_action.subtitle }}</small>
     </span>
 </a>
 {% endif %}
@@ -51,7 +52,7 @@
     <script type="application/json" data-dashboard-agenda-events>{{ dashboard_agenda_events|default([])|tojson }}</script>
     {% set student_cockpit = dashboard_student_cockpit|default(None) %}
     {% if user_info.role == 'student' and student_cockpit %}
-    <section class="student-cockpit dashboard-reveal" aria-labelledby="student-cockpit-title">
+    <section class="student-cockpit dashboard-reveal{% if not student_cockpit.show_course_pulse %} student-cockpit--no-pulse{% endif %}" aria-labelledby="student-cockpit-title">
         <div class="student-cockpit__head">
             <div>
                 <span class="student-cockpit__eyebrow">Daily cockpit</span>
@@ -73,7 +74,7 @@
                 {% for stat in student_cockpit.stats %}
                 <div class="student-cockpit-stat student-cockpit-stat--{{ stat.tone }}">
                     <span>{{ stat.label }}</span>
-                    <strong>{{ stat.value }}</strong>
+                    <strong data-count-up>{{ stat.value }}</strong>
                     <small>{{ stat.hint }}</small>
                 </div>
                 {% endfor %}
@@ -105,33 +106,36 @@
                 {% endif %}
             </div>
 
-            <div class="student-cockpit__pulse">
+            {% if student_cockpit.show_course_pulse %}
+            <div class="student-cockpit__pulse" data-cockpit-pulse>
                 <div class="student-cockpit__section-title">
                     <span>课程脉搏</span>
                     <strong>看看哪里该加速</strong>
+                    <button type="button" class="student-cockpit__pulse-toggle" data-cockpit-pulse-toggle aria-expanded="true">
+                        收起
+                    </button>
                 </div>
-                {% if student_cockpit.course_pulse %}
-                <div class="student-cockpit-pulse-list">
+                <div class="student-cockpit-pulse-list" data-cockpit-pulse-body>
                     {% for course in student_cockpit.course_pulse %}
-                    <a href="{{ course.href }}" class="student-cockpit-pulse student-cockpit-pulse--{{ course.tone }}">
-                        <div class="student-cockpit-pulse__copy">
-                            <strong>{{ course.course_name }}</strong>
-                            <span>{{ course.class_name }} · {{ course.level_name }}</span>
-                        </div>
-                        <div class="student-cockpit-pulse__meter" aria-label="修为进度 {{ course.progress_percent }}%">
-                            <span style="--cockpit-progress: {{ course.progress_percent }}%;"></span>
-                        </div>
-                        <small>{{ course.note }}</small>
+                    <a href="{{ course.href }}" class="student-cockpit-pulse student-cockpit-pulse--{{ course.tone }}" data-course-tone="{{ course.course_tone }}">
+                        {% set cultivation_card = {
+                            'variant': 'compact',
+                            'eyebrow': 'Course Pulse',
+                            'title': course.course_name,
+                            'subtitle': course.class_name,
+                            'score': course.score,
+                            'progress_percent': course.progress_percent,
+                            'level_short': course.level_name,
+                            'level_name': course.level_name,
+                            'theme': course.level_theme,
+                            'next_label': course.note
+                        } %}
+                        {% include "partials/cultivation_card.html" %}
                     </a>
                     {% endfor %}
                 </div>
-                {% else %}
-                <a href="{{ student_cockpit.empty.href }}" class="student-cockpit-empty">
-                    <strong>{{ student_cockpit.empty.title }}</strong>
-                    <small>{{ student_cockpit.empty.description }}</small>
-                </a>
-                {% endif %}
             </div>
+            {% endif %}
         </div>
     </section>
     {% endif %}
@@ -275,6 +279,9 @@
                         data-class-id="{{ offering.class_id }}"
                         data-course-name="{{ offering.course_name }}"
                         data-course-id="{{ offering.course_id }}"
+                        data-teacher-name="{{ offering.teacher_name|default('') }}"
+                        data-course-tone="{{ offering.course_tone|default('indigo') }}"
+                        data-course-pattern="{{ offering.course_pattern|default('grid') }}"
                         data-activity-score="{{ offering.activity_score|default(0) }}"
                         data-recent-user-count="{{ offering.recent_active_student_count|default(0) }}"
                         data-recent-login-count="{{ offering.recent_login_count|default(0) }}"
@@ -338,6 +345,8 @@
                 <div class="dashboard-empty-search" data-empty-search{% if dashboard_initial_visible_count > 0 %} hidden{% endif %}>
                     <h3>没有匹配的课堂</h3>
                     <p>可以清空搜索词，或切换筛选查看其他课堂。</p>
+                    <div class="dashboard-empty-search__chips" data-empty-search-chips aria-label="当前生效条件"></div>
+                    <div class="dashboard-empty-search__suggestions" data-empty-search-suggestions></div>
                 </div>
                 {% else %}
                 <div class="dashboard-empty-state dashboard-empty-state--embedded">
@@ -346,6 +355,22 @@
                     </div>
                     <h3>{{ dashboard_empty_state.title }}</h3>
                     <p>{{ dashboard_empty_state.description }}</p>
+                    {% if dashboard_empty_state.steps %}
+                    <ol class="dashboard-empty-state__steps">
+                        {% for step in dashboard_empty_state.steps %}
+                        <li>
+                            <span class="dashboard-empty-state__step-index">{{ loop.index }}</span>
+                            <div>
+                                <strong>{{ step.title }}</strong>
+                                <p>{{ step.description }}</p>
+                                {% if step.href and step.label %}
+                                <a href="{{ step.href }}">{{ step.label }}</a>
+                                {% endif %}
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ol>
+                    {% endif %}
                     <a href="{{ dashboard_empty_state.action_href }}" class="btn btn-primary">{{ dashboard_empty_state.action_label }}</a>
                 </div>
                 {% endif %}
@@ -375,7 +400,7 @@
                 <script type="application/json" data-dashboard-quick-actions-payload>
                     {{ {"section": dashboard_sections.quick_actions, "actions": dashboard_quick_actions} | tojson }}
                 </script>
-                <div class="dashboard-panel__header">
+                <div class="dashboard-panel__header" title="{{ dashboard_sections.quick_actions.subtitle }}">
                     <h2>{{ dashboard_sections.quick_actions.title }}</h2>
                     <p>{{ dashboard_sections.quick_actions.subtitle }}</p>
                 </div>
@@ -407,7 +432,7 @@
             </section>
 
             <section class="dashboard-panel dashboard-reveal">
-                <div class="dashboard-panel__header">
+                <div class="dashboard-panel__header" title="{{ dashboard_focus.subtitle }}">
                     <h2>{{ dashboard_focus.title }}</h2>
                     <p>{{ dashboard_focus.subtitle }}</p>
                 </div>
@@ -425,7 +450,7 @@
             </section>
 
             <section class="dashboard-panel dashboard-reveal">
-                <div class="dashboard-panel__header">
+                <div class="dashboard-panel__header" title="{{ dashboard_activity.subtitle }}">
                     <h2>{{ dashboard_activity.title }}</h2>
                     <p>{{ dashboard_activity.subtitle }}</p>
                 </div>
@@ -452,11 +477,23 @@
 
             {% if student_security_summary %}
             <section class="dashboard-panel dashboard-reveal">
-                <div class="dashboard-panel__header">
+                <div class="dashboard-panel__header" title="帮助你确认最近一次登录设备与时间。">
                     <h2>登录安全</h2>
                     <p>帮助你确认最近一次登录设备与时间。</p>
                 </div>
-                <div class="dashboard-security-card">
+                <details class="dashboard-security-card">
+                    <summary class="dashboard-security-card__summary">
+                        <span>最近登录</span>
+                        {% if student_security_summary.last_login %}
+                        <strong>
+                            <span data-datetime="{{ student_security_summary.last_login.logged_at }}">{{ student_security_summary.last_login.logged_at }}</span>
+                            · {{ student_security_summary.last_login.device_label or '未记录设备' }}
+                            · {{ '密码登录' if student_security_summary.last_login.login_method == 'password' else '身份验证' }}
+                        </strong>
+                        {% else %}
+                        <strong>暂无登录记录</strong>
+                        {% endif %}
+                    </summary>
                     <div class="dashboard-security-card__row">
                         <span>累计登录</span>
                         <strong>{{ student_security_summary.total_logins }} 次</strong>
@@ -479,12 +516,16 @@
                         <strong>{{ student_security_summary.last_login.ip_address or '未记录' }}</strong>
                     </div>
                     {% endif %}
-                </div>
+                </details>
             </section>
             {% endif %}
         </aside>
     </section>
 </section>
+{% if user_info.role == 'student' and cultivation_profile and cultivation_profile.latest_unrevealed_certificate %}
+{% set learning_certificate = cultivation_profile.latest_unrevealed_certificate %}
+{% include "partials/learning_certificate_reveal.html" %}
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -492,7 +533,21 @@
 <script>
     window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
 </script>
+{% if user_info.role == 'student' and cultivation_profile %}
+<script>
+    window.DASHBOARD_CULTIVATION_REVEAL = {
+        userInfo: {{ user_info | tojson }},
+        cultivationProfile: {{ cultivation_profile | tojson }},
+        learningCertificate: {{ cultivation_profile.latest_unrevealed_certificate | default(none) | tojson }}
+    };
+</script>
+<script type="module">
+    import { initLearningCertificateReveal } from '/static/js/learning_certificate_reveal.js?v=cultivation-certificate-20260612';
+    initLearningCertificateReveal(window.DASHBOARD_CULTIVATION_REVEAL || {});
+</script>
+{% endif %}
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
-<script type="module" src="/static/js/dashboard.js?v=dashboard-card-nav-20260606"></script>
+<script type="module" src="/static/js/dashboard.js?v=student-dashboard-polish-20260612"></script>
+<script type="module" src="/static/js/dashboard_count_up.js?v=student-dashboard-polish-20260612"></script>
 <script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260607-reminder2"></script>
 {% endblock %}

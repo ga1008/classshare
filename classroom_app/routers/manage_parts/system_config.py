@@ -1,5 +1,10 @@
 from .common import *
 from ...services.background_task_ledger_service import build_background_task_ledger_snapshot
+from ...services.ai_usage_budget_service import (
+    AIUsageBudgetError,
+    build_ai_usage_dashboard,
+    save_offering_ai_budget_config,
+)
 
 
 router = APIRouter()
@@ -12,6 +17,28 @@ async def api_get_background_tasks(user: dict = Depends(get_current_teacher)):
         _require_current_super_admin(conn, user)
         snapshot = build_background_task_ledger_snapshot(conn)
     return {"status": "success", **snapshot}
+
+
+@router.get("/system/ai-usage", response_class=JSONResponse)
+async def api_get_ai_usage_dashboard(user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        dashboard = build_ai_usage_dashboard(conn)
+    return {"status": "success", "dashboard": dashboard}
+
+
+@router.post("/system/ai-budgets/{class_offering_id:int}", response_class=JSONResponse)
+async def api_update_ai_budget(class_offering_id: int, request: Request, user: dict = Depends(get_current_teacher)):
+    payload = await _parse_json_request(request)
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            config = save_offering_ai_budget_config(conn, class_offering_id, payload)
+        except AIUsageBudgetError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+        dashboard = build_ai_usage_dashboard(conn)
+    return {"status": "success", "message": "课程 AI 周预算已更新。", "config": config, "dashboard": dashboard}
 
 
 @router.get("/system/password-resets/{request_id}", response_class=JSONResponse)

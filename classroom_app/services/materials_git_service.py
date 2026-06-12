@@ -925,6 +925,8 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
                     SET parent_id = ?, material_path = ?, name = ?, mime_type = ?, preview_type = ?,
                         ai_capability = ?, file_ext = ?, file_hash = ?, file_size = ?,
                         ai_parse_status = 'idle', ai_parse_result_json = NULL,
+                        check_questions_json = '', check_questions_status = 'idle',
+                        check_questions_error = '', check_questions_generated_at = NULL,
                         ai_optimize_status = 'idle', ai_optimized_markdown = NULL,
                         updated_at = ?
                     WHERE id = ?

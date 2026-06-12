@@ -1,4 +1,5 @@
 import { apiFetch } from '/static/js/api.js';
+import { initLearningCertificateReveal } from '/static/js/learning_certificate_reveal.js?v=cultivation-certificate-20260612';
 import { showToast } from '/static/js/ui.js';
 
 function initLearningProgressModal() {
@@ -118,6 +119,149 @@ function initTeacherLearningRoster() {
 
     searchInput.addEventListener('input', applyFilter);
     applyFilter();
+}
+
+function initCultivationWeightSettings(config = window.APP_CONFIG || {}) {
+    const panel = document.querySelector('[data-cultivation-weight-settings]');
+    if (!panel) return;
+
+    const classOfferingId = Number(panel.dataset.classOfferingId || config.classOfferingId);
+    if (!classOfferingId) return;
+
+    const controls = Array.from(panel.querySelectorAll('[data-weight-key]'));
+    const totalEl = panel.querySelector('[data-weight-total]');
+    const totalState = totalEl?.closest('[data-weight-total-state]');
+    const previewEl = panel.querySelector('[data-weight-preview]');
+    const previewButton = panel.querySelector('[data-weight-preview-button]');
+    const saveButton = panel.querySelector('[data-weight-save]');
+    const canUpdate = panel.dataset.canUpdate === '1';
+    const keys = ['material', 'task', 'interaction', 'consistency'];
+
+    const getControl = (key) => controls.find((control) => control.dataset.weightKey === key);
+
+    const readWeights = () => keys.reduce((weights, key) => {
+        const control = getControl(key);
+        const number = control?.querySelector('[data-weight-number]');
+        weights[key] = Math.max(0, Math.min(100, Number.parseInt(number?.value || '0', 10) || 0));
+        return weights;
+    }, {});
+
+    const totalWeights = (weights = readWeights()) => keys.reduce((sum, key) => sum + Number(weights[key] || 0), 0);
+
+    const setBusy = (button, busy, text = '') => {
+        if (!button) return;
+        if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+        button.disabled = busy || (button === saveButton && !canUpdate);
+        button.classList.toggle('is-busy', busy);
+        button.textContent = busy ? text : button.dataset.originalText;
+    };
+
+    const updateTotalState = () => {
+        const total = totalWeights();
+        if (totalEl) totalEl.textContent = String(total);
+        totalState?.setAttribute('data-weight-total-state', total === 100 ? 'ok' : 'invalid');
+        if (previewButton) previewButton.disabled = total !== 100;
+        if (saveButton) saveButton.disabled = total !== 100 || !canUpdate;
+        if (previewEl && total !== 100) {
+            previewEl.hidden = false;
+            previewEl.innerHTML = `<span class="learning-weight-preview__warning">合计需为 100，当前为 ${total}。</span>`;
+        }
+        return total;
+    };
+
+    const setControlValue = (key, value) => {
+        const normalized = Math.max(0, Math.min(100, Number.parseInt(value, 10) || 0));
+        const control = getControl(key);
+        const slider = control?.querySelector('[data-weight-slider]');
+        const number = control?.querySelector('[data-weight-number]');
+        if (slider) slider.value = String(normalized);
+        if (number) number.value = String(normalized);
+    };
+
+    const renderPreview = (data = {}) => {
+        if (!previewEl) return;
+        const students = Array.isArray(data.students_preview) ? data.students_preview : [];
+        previewEl.hidden = false;
+        previewEl.innerHTML = `
+            <div class="learning-weight-preview__summary">
+                <span>均分 ${escapeHtml(data.old_average ?? 0)} → ${escapeHtml(data.new_average ?? 0)}</span>
+                <strong>${escapeHtml(data.average_delta_label || '+0.0')}</strong>
+                <small>${Number(data.affected_count || 0)} / ${Number(data.student_count || 0)} 人变化</small>
+            </div>
+            ${students.length ? `
+                <div class="learning-weight-preview__students">
+                    ${students.map((student) => `
+                        <span>
+                            <b>${escapeHtml(student.name || '')}</b>
+                            <small>${escapeHtml(student.old_score ?? 0)} → ${escapeHtml(student.new_score ?? 0)} · ${escapeHtml(student.delta_label || '+0.0')}</small>
+                        </span>
+                    `).join('')}
+                </div>
+            ` : '<p class="learning-weight-preview__empty">暂无可预览的学生数据。</p>'}
+        `;
+    };
+
+    controls.forEach((control) => {
+        const key = control.dataset.weightKey;
+        const slider = control.querySelector('[data-weight-slider]');
+        const number = control.querySelector('[data-weight-number]');
+        const sync = (source) => {
+            setControlValue(key, source.value);
+            updateTotalState();
+        };
+        slider?.addEventListener('input', () => sync(slider));
+        number?.addEventListener('input', () => sync(number));
+    });
+
+    panel.querySelectorAll('[data-weight-preset]').forEach((button) => {
+        button.addEventListener('click', () => {
+            keys.forEach((key) => {
+                const datasetKey = `weight${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+                setControlValue(key, button.dataset[datasetKey]);
+            });
+            updateTotalState();
+            if (previewEl) previewEl.hidden = true;
+        });
+    });
+
+    previewButton?.addEventListener('click', async () => {
+        if (updateTotalState() !== 100) return;
+        setBusy(previewButton, true, '预览中...');
+        try {
+            const data = await apiFetch(`/api/classrooms/${classOfferingId}/learning/weights/preview`, {
+                method: 'POST',
+                body: { weights: readWeights() },
+                silent: true,
+            });
+            renderPreview(data);
+        } catch (error) {
+            showToast(error.message || '权重预览失败。', 'error');
+        } finally {
+            setBusy(previewButton, false);
+        }
+    });
+
+    saveButton?.addEventListener('click', async () => {
+        if (updateTotalState() !== 100 || !canUpdate) return;
+        setBusy(saveButton, true, '保存中...');
+        try {
+            const data = await apiFetch(`/api/classrooms/${classOfferingId}/learning/weights`, {
+                method: 'POST',
+                body: { weights: readWeights() },
+                silent: true,
+            });
+            showToast(data.message || '修为权重已保存。', data.updated === false ? 'info' : 'success');
+            if (data.updated !== false) {
+                window.setTimeout(() => window.location.reload(), 600);
+            }
+        } catch (error) {
+            showToast(error.message || '修为权重保存失败。', 'error');
+        } finally {
+            setBusy(saveButton, false);
+        }
+    });
+
+    updateTotalState();
 }
 
 function escapeHtml(value) {
@@ -663,39 +807,6 @@ function initStageExamButton(config) {
     });
 }
 
-function initCertificateReveal(config) {
-    const backdrop = document.getElementById('learning-certificate-backdrop');
-    const closeBtn = document.getElementById('learning-certificate-close');
-    const certificate = config?.learningProgress?.latest_certificate;
-    if (!backdrop || !certificate?.id) return;
-    const storageKey = `learning-cert-seen:${certificate.id}`;
-    if (window.localStorage.getItem(storageKey) === '1') {
-        return;
-    }
-    const close = () => {
-        backdrop.classList.remove('is-open');
-        backdrop.setAttribute('aria-hidden', 'true');
-        window.setTimeout(() => {
-            backdrop.hidden = true;
-            document.body.classList.remove('has-learning-certificate');
-        }, 260);
-        window.localStorage.setItem(storageKey, '1');
-    };
-    window.setTimeout(() => {
-        backdrop.hidden = false;
-        backdrop.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('has-learning-certificate');
-        window.requestAnimationFrame(() => backdrop.classList.add('is-open'));
-    }, 650);
-    closeBtn?.addEventListener('click', close);
-    backdrop.addEventListener('click', (event) => {
-        if (event.target === backdrop) close();
-    });
-    document.addEventListener('keydown', (event) => {
-        if (!backdrop.hidden && event.key === 'Escape') close();
-    });
-}
-
 function initLearningMountain(config) {
     const container = document.querySelector('[data-learning-mountain-chart]');
     const hint = document.querySelector('[data-learning-mountain-hint]');
@@ -765,6 +876,17 @@ function initLearningMountain(config) {
         class: 'learning-mountain__ridge',
         d: `M ${leftBaseX} ${baseY} C 82 112, 116 60, ${peakX} ${peakY} C 238 58, 284 106, ${rightBaseX} ${baseY}`,
     }));
+    svg.appendChild(create('line', {
+        class: 'learning-mountain__peak-flag-pole',
+        x1: peakX + 9,
+        x2: peakX + 9,
+        y1: peakY + 4,
+        y2: peakY - 15,
+    }));
+    svg.appendChild(create('path', {
+        class: 'learning-mountain__peak-flag',
+        d: `M ${peakX + 9} ${peakY - 15} L ${peakX + 38} ${peakY - 9} L ${peakX + 9} ${peakY - 2} Z`,
+    }));
     svg.appendChild(create('circle', {
         class: 'learning-mountain__peak-dot',
         cx: peakX,
@@ -774,7 +896,7 @@ function initLearningMountain(config) {
     const peakText = create('text', {
         class: 'learning-mountain__peak-label',
         x: peakX,
-        y: 12,
+        y: peakY + 24,
         'text-anchor': 'middle',
     });
     peakText.textContent = peakLabel;
@@ -786,6 +908,12 @@ function initLearningMountain(config) {
         x2: labelX - 7,
         y1: selfY,
         y2: selfY,
+    }));
+    svg.appendChild(create('circle', {
+        class: 'learning-mountain__self-halo',
+        cx: labelX - 8,
+        cy: selfY,
+        r: 8.5,
     }));
     svg.appendChild(create('circle', {
         class: 'learning-mountain__self-dot',
@@ -822,12 +950,100 @@ function initLearningMountain(config) {
     setHint();
 }
 
+function initCultivationAlertInbox() {
+    const inbox = document.querySelector('[data-cultivation-alert-inbox]');
+    if (!inbox) return;
+    const classOfferingId = inbox.dataset.classOfferingId;
+    const list = inbox.querySelector('[data-cultivation-alert-list]');
+    if (!classOfferingId || !list) return;
+
+    const showEmptyIfNeeded = () => {
+        if (list.querySelector('[data-cultivation-alert-item]')) return;
+        const empty = document.createElement('p');
+        empty.className = 'learning-alert-empty';
+        empty.textContent = '当前没有未处理修为预警。';
+        list.replaceWith(empty);
+    };
+
+    const findAlertById = (alertId) => {
+        const normalizedId = String(alertId || '');
+        if (!normalizedId) return null;
+        return Array.from(list.querySelectorAll('[data-cultivation-alert-item]'))
+            .find((candidate) => String(candidate.dataset.alertId || '') === normalizedId);
+    };
+
+    const removeAlertById = (alertId) => {
+        const item = findAlertById(alertId);
+        if (!item) return false;
+        item.remove();
+        showEmptyIfNeeded();
+        return true;
+    };
+
+    const markAlertSideEffect = (item, action, button) => {
+        if (!item) return;
+        const normalizedAction = String(action || '').replace(/_/g, '-');
+        item.classList.remove('is-updating');
+        item.classList.add(`has-${normalizedAction}`);
+        const targetButton = button || item.querySelector(`[data-cultivation-alert-action="${action}"]`);
+        if (targetButton) {
+            targetButton.classList.add('is-done');
+            targetButton.disabled = true;
+            targetButton.textContent = action === 'private_message' ? '已私信' : '已备注';
+        }
+    };
+
+    list.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-cultivation-alert-action]');
+        if (!button) return;
+        const item = button.closest('[data-cultivation-alert-item]');
+        const alertId = item?.dataset.alertId;
+        const action = button.dataset.cultivationAlertAction;
+        if (!item || !alertId || !action) return;
+        item.classList.add('is-updating');
+        try {
+            await apiFetch(`/api/classrooms/${classOfferingId}/learning/alerts/${alertId}/actions`, {
+                method: 'POST',
+                body: {
+                    action,
+                    snooze_days: action === 'snoozed' ? 7 : undefined,
+                },
+            });
+            if (action === 'private_message' || action === 'support_note') {
+                markAlertSideEffect(item, action, button);
+                showToast(action === 'private_message' ? '已发送关怀私信。' : '已记入共享备注。', 'success');
+                return;
+            }
+            removeAlertById(alertId);
+            showToast(action === 'snoozed' ? '已静音本周预警。' : '预警已标记处理。', 'success');
+        } catch (error) {
+            item.classList.remove('is-updating');
+            showToast(error.message || '预警状态更新失败。', 'error');
+        }
+    });
+
+    window.addEventListener('message', (event) => {
+        if (event.origin !== window.location.origin) return;
+        const data = event.data || {};
+        if (data.type === 'cultivation-alert-updated') {
+            removeAlertById(data.alertId);
+            return;
+        }
+        if (data.type === 'cultivation-alert-side-effect') {
+            const item = findAlertById(data.alertId);
+            markAlertSideEffect(item, data.action);
+        }
+    });
+}
+
 export function initLearningProgress(config = window.APP_CONFIG || {}) {
     initLearningProgressModal();
     initTeacherLearningRoster();
+    initCultivationWeightSettings(config);
     initTeacherExamRoster(config);
+    initCultivationAlertInbox();
     initStudentInsightModal();
     initStageExamButton(config);
     initLearningMountain(config);
-    initCertificateReveal(config);
+    initLearningCertificateReveal(config);
 }

@@ -9,6 +9,8 @@
 {% set teacher_note = insight.teacher_note %}
 {% set related_teacher_names = insight.related_teacher_names %}
 {% set portfolio = insight.portfolio %}
+{% set current_alerts = insight.current_alerts %}
+{% set timeline = insight.cultivation_timeline %}
 
 {% block extra_head %}
 {% endblock %}
@@ -60,6 +62,73 @@
             <p>{{ item.note }}</p>
         </article>
         {% endfor %}
+    </section>
+
+    {% if current_alerts %}
+    <section class="student-insight-band student-current-alerts" data-student-cultivation-alert-inbox>
+        <div class="student-insight-band__head">
+            <div>
+                <h3>当前预警</h3>
+                <p>与班级修为预警收件箱同步，处理后会从两处同时移除。</p>
+            </div>
+            <span class="student-sect-badge" data-student-cultivation-alert-count>{{ current_alerts | length }} 条待处理</span>
+        </div>
+        <div class="student-current-alert-list" data-student-cultivation-alert-list>
+            {% for alert in current_alerts %}
+            <article class="student-current-alert is-{{ (alert.severity or 'L1') | lower }}" data-student-cultivation-alert-item data-alert-id="{{ alert.id }}" data-class-offering-id="{{ alert.class_offering_id }}">
+                <div class="student-current-alert__main">
+                    <span>{{ alert.severity_label }} · {{ alert.sect_name or alert.course_name }}</span>
+                    <strong>{{ alert.title }}</strong>
+                    <p>{{ alert.body }}</p>
+                    {% if alert.evidence_items %}
+                    <div class="student-current-alert__evidence">
+                        {% for evidence in alert.evidence_items %}
+                        <span>{{ evidence.label }} {{ evidence.value }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="student-current-alert__actions">
+                    <button type="button" class="btn btn-ghost btn-sm" data-student-cultivation-alert-action="private_message">私信学生</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-student-cultivation-alert-action="support_note">记备注</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-student-cultivation-alert-action="snoozed">本周静音</button>
+                    <button type="button" class="btn btn-primary btn-sm" data-student-cultivation-alert-action="handled">已处理</button>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="student-insight-band student-cultivation-timeline">
+        <div class="student-insight-band__head">
+            <div>
+                <h3>修为时间线</h3>
+                <p>合并修为流水、破境试炼、预警事件与教师共享说明，按时间倒序保留最近 20 条。</p>
+            </div>
+        </div>
+        {% if timeline %}
+        <ol class="student-timeline-list">
+            {% for item in timeline %}
+            <li class="student-timeline-item is-{{ item.tone or 'neutral' }}">
+                <span class="student-timeline-dot" aria-hidden="true"></span>
+                <div>
+                    <div class="student-timeline-row">
+                        <strong>{{ item.title }}</strong>
+                        {% if item.occurred_at %}<time>{{ item.occurred_at | datetime_format }}</time>{% endif %}
+                    </div>
+                    {% if item.body %}<p>{{ item.body }}</p>{% endif %}
+                    {% if item.meta %}<small>{{ item.meta }}</small>{% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <div class="academic-empty">
+            <strong>暂无可归档的修为轨迹</strong>
+            当该学生产生修为增减、破境试炼、预警或教师共享说明后，这里会自动形成证据链。
+        </div>
+        {% endif %}
     </section>
 
     <section class="student-support-grid">
@@ -221,6 +290,11 @@
                     <line x1="84" y1="18" x2="84" y2="150" stroke="rgba(148,163,184,.24)"></line>
                     <line x1="26.8" y1="51" x2="141.2" y2="117" stroke="rgba(148,163,184,.24)"></line>
                     <line x1="141.2" y1="51" x2="26.8" y2="117" stroke="rgba(148,163,184,.24)"></line>
+                    {% if insight.radar.has_class_average %}
+                    <polygon class="student-radar-average" points="{{ insight.radar.class_average_points }}">
+                        <title>班级均值</title>
+                    </polygon>
+                    {% endif %}
                     <polygon class="student-radar-fill" points="{{ insight.radar.points }}"></polygon>
                     {% for axis in insight.radar.axes %}
                     <text class="student-radar-label" x="{{ axis.label_x }}" y="{{ axis.label_y }}" text-anchor="middle" dominant-baseline="central">
@@ -228,10 +302,20 @@
                     </text>
                     {% endfor %}
                 </svg>
+                {% if insight.radar.has_class_average %}
+                <div class="student-radar-legend" aria-label="雷达图图例">
+                    <span class="is-self">该生</span>
+                    <span class="is-average">班级均值</span>
+                </div>
+                {% endif %}
                 <div class="student-radar-axis-list">
                     {% for axis in insight.radar.axes %}
                     <div class="student-radar-axis">
-                        <div><span>{{ axis.label }}</span><strong>{{ axis.score }}%</strong></div>
+                        <div>
+                            <span>{{ axis.label }}</span>
+                            <strong>{{ axis.score }}%</strong>
+                            {% if axis.class_average_score is not none %}<small>班均 {{ axis.class_average_score }}%</small>{% endif %}
+                        </div>
                         <div class="student-mini-bar"><span style="--value: {{ axis.score }}%;"></span></div>
                     </div>
                     {% endfor %}
@@ -350,6 +434,93 @@
                 submitButton.disabled = false;
                 submitButton.textContent = originalText;
             }
+        }
+    });
+
+    const alertList = document.querySelector('[data-student-cultivation-alert-list]');
+    const alertCount = document.querySelector('[data-student-cultivation-alert-count]');
+    const updateAlertCount = () => {
+        if (!alertList || !alertCount) return;
+        const count = alertList.querySelectorAll('[data-student-cultivation-alert-item]').length;
+        alertCount.textContent = `${count} 条待处理`;
+    };
+    const removeAlertItem = (item, alertId, action) => {
+        item?.remove();
+        updateAlertCount();
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+                type: 'cultivation-alert-updated',
+                alertId: String(alertId || ''),
+                action: action || '',
+            }, window.location.origin);
+        }
+        if (alertList && !alertList.querySelector('[data-student-cultivation-alert-item]')) {
+            const section = alertList.closest('[data-student-cultivation-alert-inbox]');
+            section?.remove();
+        }
+    };
+
+    const markAlertSideEffect = (item, action, button) => {
+        if (!item) return;
+        const normalizedAction = String(action || '').replace(/_/g, '-');
+        item.classList.remove('is-updating');
+        item.classList.add(`has-${normalizedAction}`);
+        const targetButton = button || item.querySelector(`[data-student-cultivation-alert-action="${action}"]`);
+        if (targetButton) {
+            targetButton.classList.add('is-done');
+            targetButton.disabled = true;
+            targetButton.textContent = action === 'private_message' ? '已私信' : '已备注';
+        }
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+                type: 'cultivation-alert-side-effect',
+                alertId: String(item.dataset.alertId || ''),
+                action,
+            }, window.location.origin);
+        }
+    };
+
+    const syncSupportNoteFromAction = (result) => {
+        const note = result?.side_effect?.note;
+        if (!note || !textarea) return;
+        textarea.value = note.note_text || '';
+        updateCount();
+        if (statusNode) {
+            statusNode.textContent = note.has_note
+                ? `上次由 ${note.updated_by_name || '教师'} 更新`
+                : '暂无共享说明';
+        }
+    };
+
+    alertList?.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-student-cultivation-alert-action]');
+        if (!button) return;
+        const item = button.closest('[data-student-cultivation-alert-item]');
+        const alertId = item?.dataset.alertId;
+        const classOfferingId = item?.dataset.classOfferingId;
+        const action = button.dataset.studentCultivationAlertAction;
+        if (!item || !alertId || !classOfferingId || !action) return;
+        item.classList.add('is-updating');
+        try {
+            const result = await window.apiFetch(`/api/classrooms/${classOfferingId}/learning/alerts/${alertId}/actions`, {
+                method: 'POST',
+                body: {
+                    action,
+                    snooze_days: action === 'snoozed' ? 7 : undefined,
+                },
+                silent: true,
+            });
+            if (action === 'private_message' || action === 'support_note') {
+                if (action === 'support_note') syncSupportNoteFromAction(result);
+                markAlertSideEffect(item, action, button);
+                window.showMessage?.(action === 'private_message' ? '已发送关怀私信。' : '已记入共享备注。', 'success');
+                return;
+            }
+            removeAlertItem(item, alertId, action);
+            window.showMessage?.(action === 'snoozed' ? '已静音本周预警。' : '预警已标记处理。', 'success');
+        } catch (error) {
+            item.classList.remove('is-updating');
+            window.showMessage?.(error.message || '预警状态更新失败。', 'error');
         }
     });
 

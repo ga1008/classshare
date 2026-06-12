@@ -49,6 +49,14 @@ async def _run_ai_material_rewrite(
             original_name=f"{parse_result.metadata.get('title') or fallback_title}.md",
         )
         parse_payload_json = json.dumps(_build_material_ai_parse_payload(parse_result), ensure_ascii=False)
+        now = datetime.now().isoformat()
+        check_payload = build_material_mastery_check_payload(
+            parse_payload_json,
+            material_name=fallback_title,
+            generated_at=now,
+        )
+        check_status = "ready" if check_payload.get("status") == "ready" else "fallback"
+        check_error = "" if check_status == "ready" else str(check_payload.get("reason") or "")
 
         if (
             normalized_mode == "optimize"
@@ -63,10 +71,23 @@ async def _run_ai_material_rewrite(
                         ai_optimized_markdown = ?,
                         ai_parse_status = 'completed',
                         ai_parse_result_json = ?,
+                        check_questions_json = ?,
+                        check_questions_status = ?,
+                        check_questions_error = ?,
+                        check_questions_generated_at = ?,
                         updated_at = ?
                     WHERE id = ?
                     """,
-                    (markdown_content, parse_payload_json, datetime.now().isoformat(), material_id),
+                    (
+                        markdown_content,
+                        parse_payload_json,
+                        json.dumps(check_payload, ensure_ascii=False),
+                        check_status,
+                        check_error,
+                        now,
+                        now,
+                        material_id,
+                    ),
                 )
                 conn.commit()
                 item = _fetch_material_response_item(conn, material_id, user)

@@ -6,11 +6,13 @@ from unittest.mock import patch
 from classroom_app import config, database
 from classroom_app.db.errors import DatabaseProgrammingError
 from classroom_app.db.postgres_schema import (
+    POSTGRES_RUNTIME_COLUMN_DEFINITIONS,
     POSTGRES_RUNTIME_UNIQUE_INDEXES,
     REQUIRED_POSTGRES_COLUMNS,
     REQUIRED_POSTGRES_TABLES,
     build_postgres_schema_report,
     ensure_postgres_runtime_constraints,
+    ensure_postgres_runtime_columns,
     validate_postgres_schema,
 )
 
@@ -61,6 +63,16 @@ class FakePostgresConnection:
         if "HAVING COUNT(*) > 1" in normalized:
             return FakeCursor([])
         if normalized.startswith("CREATE UNIQUE INDEX IF NOT EXISTS"):
+            return FakeCursor([])
+        if normalized.startswith("ALTER TABLE"):
+            match = re.search(r'ALTER TABLE "([^"]+)" ADD COLUMN IF NOT EXISTS "([^"]+)"', normalized)
+            if match:
+                table, column = match.groups()
+                missing = set(self.missing_columns.get(table, ()))
+                missing.discard(column)
+                self.missing_columns[table] = missing
+            return FakeCursor([])
+        if normalized.startswith("UPDATE learning_material_progress"):
             return FakeCursor([])
         raise AssertionError(f"unexpected sql: {sql}")
 
@@ -127,6 +139,25 @@ class PostgresSchemaValidationTests(unittest.TestCase):
 
         with self.assertRaises(DatabaseProgrammingError):
             ensure_postgres_runtime_constraints(conn)
+
+    def test_ensure_runtime_columns_repairs_cultivation_feature_columns(self):
+        missing_columns = {
+            table: tuple(definitions.keys())
+            for table, definitions in POSTGRES_RUNTIME_COLUMN_DEFINITIONS.items()
+        }
+        conn = FakePostgresConnection(missing_columns=missing_columns)
+
+        report = ensure_postgres_runtime_columns(conn)
+
+        self.assertTrue(report["schema_writes_executed"])
+        self.assertEqual(
+            set(POSTGRES_RUNTIME_COLUMN_DEFINITIONS["class_offerings"].keys()),
+            set(report["added_columns"]["class_offerings"]),
+        )
+        executed_sql = "\n".join(str(sql) for sql, _ in conn.executed_sql)
+        self.assertIn('ALTER TABLE "class_offerings" ADD COLUMN IF NOT EXISTS "cultivation_weights_json"', executed_sql)
+        self.assertIn('ALTER TABLE "learning_certificates" ADD COLUMN IF NOT EXISTS "revealed_at"', executed_sql)
+        self.assertIn("UPDATE learning_material_progress", executed_sql)
 
     def test_runtime_constraints_cover_integration_upsert_targets(self):
         runtime_index_names = {index_name for index_name, _table, _columns in POSTGRES_RUNTIME_UNIQUE_INDEXES}
@@ -239,6 +270,9 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "activity_count_snapshot",
             "support_strategy",
             "hidden_premise_prompt",
+            "interaction_quality",
+            "interaction_quality_label",
+            "interaction_quality_reason",
             "trigger_mode",
             "raw_payload",
         ):
@@ -467,6 +501,12 @@ class PostgresSchemaValidationTests(unittest.TestCase):
     def test_required_schema_covers_learning_portfolio_and_signature_tables(self):
         for table_name in (
             "learning_material_progress",
+            "learning_progress_snapshots",
+            "cultivation_score_events",
+            "cultivation_score_event_archives",
+            "cultivation_weekly_snapshots",
+            "cultivation_alerts",
+            "ai_usage_log",
             "learning_stage_status",
             "student_learning_path_item_states",
             "student_portfolio_items",
@@ -478,8 +518,20 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         ):
             self.assertIn(table_name, REQUIRED_POSTGRES_TABLES)
             self.assertIn(table_name, REQUIRED_POSTGRES_COLUMNS)
-        for column in ("material_id", "active_seconds", "max_scroll_ratio"):
+        for column in ("material_id", "active_seconds", "max_scroll_ratio", "mastered", "mastery_attempts"):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["learning_material_progress"])
+        for column in ("score", "components_json", "dirty"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["learning_progress_snapshots"])
+        for column in ("event_type", "delta", "source_ref"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["cultivation_score_events"])
+        for column in ("archive_month", "event_count", "total_delta", "last_event_at"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["cultivation_score_event_archives"])
+        for column in ("week_start", "week_end", "snapshot_source"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["cultivation_weekly_snapshots"])
+        for column in ("rule_key", "severity", "status", "evidence_json", "snoozed_until"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["cultivation_alerts"])
+        for column in ("task_type", "priority", "duration_ms", "prompt_tokens_estimate"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["ai_usage_log"])
         for column in ("stage_key", "readiness_score", "certificate_id"):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["learning_stage_status"])
         for column in ("item_key", "snoozed_until", "metadata_json"):
@@ -521,13 +573,16 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         try:
             with patch("classroom_app.db.schema.get_db_connection", return_value=conn), patch(
                 "classroom_app.db.schema.ensure_foundation_schema"
-            ) as sqlite_initializer:
+            ) as sqlite_initializer, patch(
+                "classroom_app.db.schema.ensure_cultivation_progress_schema"
+            ) as cultivation_schema:
                 report = database.init_database()
         finally:
             config.DB_ENGINE = original_engine
 
         self.assertEqual("ok", report["status"])
         self.assertTrue(conn.closed)
+        cultivation_schema.assert_called_once_with(conn, engine="postgres")
         sqlite_initializer.assert_not_called()
 
 

@@ -679,6 +679,13 @@ async def _persist_final_material_record_update(record_id: int, record, parse_re
     warnings_json = json.dumps(parse_result.warnings, ensure_ascii=False)
     content_quality_json = json.dumps(parse_result.content_quality, ensure_ascii=False)
     now = datetime.now().isoformat()
+    check_payload = build_material_mastery_check_payload(
+        parse_payload_json,
+        material_name=str(parse_result.metadata.get("title") or record["source_file_name"] or ""),
+        generated_at=now,
+    )
+    check_status = "ready" if check_payload.get("status") == "ready" else "fallback"
+    check_error = "" if check_status == "ready" else str(check_payload.get("reason") or "")
     parsed_id = int(record["parsed_material_id"] or 0) or None
     package_id = int(record["package_material_id"] or 0) or None
 
@@ -698,12 +705,26 @@ async def _persist_final_material_record_update(record_id: int, record, parse_re
                     file_size = ?,
                     ai_parse_status = 'completed',
                     ai_parse_result_json = ?,
+                    check_questions_json = ?,
+                    check_questions_status = ?,
+                    check_questions_error = ?,
+                    check_questions_generated_at = ?,
                     ai_optimize_status = 'completed',
                     ai_optimized_markdown = NULL,
                     updated_at = ?
                 WHERE id = ?
                 """,
-                (readme_hash, len(readme_bytes), parse_payload_json, now, parsed_id),
+                (
+                    readme_hash,
+                    len(readme_bytes),
+                    parse_payload_json,
+                    json.dumps(check_payload, ensure_ascii=False),
+                    check_status,
+                    check_error,
+                    now,
+                    now,
+                    parsed_id,
+                ),
             )
             refresh_root_git_metadata(conn, int(material["root_id"]))
         elif package_id:

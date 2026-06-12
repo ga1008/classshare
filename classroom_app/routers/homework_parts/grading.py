@@ -63,6 +63,7 @@ async def zero_unsubmitted_scores(assignment_id: str, user: dict = Depends(get_c
         created_count = 0
         updated_count = 0
         skipped_count = 0
+        affected_student_ids: set[int] = set()
 
         for student in students:
             student_pk_id = int(student["id"])
@@ -102,6 +103,7 @@ async def zero_unsubmitted_scores(assignment_id: str, user: dict = Depends(get_c
                     ),
                 )
                 updated_count += 1
+                affected_student_ids.add(student_pk_id)
                 continue
 
             conn.execute(
@@ -127,7 +129,19 @@ async def zero_unsubmitted_scores(assignment_id: str, user: dict = Depends(get_c
                 ),
             )
             created_count += 1
+            affected_student_ids.add(student_pk_id)
 
+        if assignment.get("class_offering_id"):
+            for student_pk_id in affected_student_ids:
+                try:
+                    refresh_student_learning_state(
+                        conn,
+                        int(assignment["class_offering_id"]),
+                        int(student_pk_id),
+                        event_source_ref=f"grading:{assignment_id}:zero",
+                    )
+                except Exception as exc:
+                    print(f"[LEARNING_PROGRESS] zero-unsubmitted snapshot refresh failed: {exc}")
         conn.commit()
 
     if assignment.get("class_offering_id") and created_count + updated_count > 0:
@@ -235,6 +249,16 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
             handle_assignment_stage_grading_complete(conn, submission_id)
         except Exception as exc:
             print(f"[LEARNING_PROGRESS] manual grading teacher-stage handling failed: {exc}")
+        if submission.get("class_offering_id") and submission.get("student_pk_id"):
+            try:
+                refresh_student_learning_state(
+                    conn,
+                    int(submission["class_offering_id"]),
+                    int(submission["student_pk_id"]),
+                    event_source_ref=f"grading:{submission_id}",
+                )
+            except Exception as exc:
+                print(f"[LEARNING_PROGRESS] manual grading snapshot refresh failed: {exc}")
         conn.commit()
     return {"status": "success", "graded_submission_id": submission_id}
 

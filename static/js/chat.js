@@ -47,6 +47,11 @@ const DISCUSSION_UI_TEXT = Object.freeze({
     copyActionTitle: '\u590d\u5236\u8fd9\u6761\u6d88\u606f',
     copySuccess: '\u6d88\u606f\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f',
     copyFailed: '\u590d\u5236\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u6d4f\u89c8\u5668\u6743\u9650',
+    usefulActionLabel: '\u6709\u7528',
+    usefulActionTitle: '\u5c06\u8fd9\u6761\u540c\u5b66\u56de\u590d\u8bb0\u4e3a\u6709\u7528',
+    usefulSuccess: '\u5df2\u8bb0\u5f55\u8fd9\u6b21\u540c\u4f34\u5e2e\u52a9',
+    usefulDuplicate: '\u8fd9\u6b21\u6807\u8bb0\u5df2\u8bb0\u5f55\u8fc7',
+    usefulFailed: '\u6682\u65f6\u6ca1\u80fd\u8bb0\u5f55\u6709\u7528\u6807\u8bb0',
     aiStreamConnecting: '\u52a9\u6559\u6b63\u5728\u8fde\u63a5...',
     aiStreamWaiting: '\u52a9\u6559\u6b63\u5728\u7b49\u5f85\u6a21\u578b...',
     aiStreamThinking: '\u52a9\u6559\u6b63\u5728\u601d\u8003...',
@@ -1536,6 +1541,11 @@ export class ClassroomChat {
 
         if (action === 'copy') {
             await this.copyMessageToClipboard(message);
+            return;
+        }
+
+        if (action === 'mark-useful') {
+            await this.markMessageUseful(message);
         }
     }
 
@@ -2493,6 +2503,7 @@ export class ClassroomChat {
 
         return {
             id: Number(quote?.id || fallbackId || 0) || null,
+            user_id: quote?.user_id ?? null,
             sender: String(quote?.sender || DISCUSSION_UI_TEXT.defaultSender),
             role: String(quote?.role || 'student'),
             message: String(quote?.message || ''),
@@ -2530,6 +2541,49 @@ export class ClassroomChat {
         return this.messageRecords.get(normalizedId) || null;
     }
 
+    canMarkMessageUseful(message) {
+        if (!message || String(message.role || '') !== 'student') {
+            return false;
+        }
+        if (this.isCurrentUserMessage(message)) {
+            return false;
+        }
+        const currentRole = String(this.currentUser?.role || '');
+        if (currentRole === 'teacher') {
+            return true;
+        }
+        if (currentRole !== 'student') {
+            return false;
+        }
+        const quote = message.quote || null;
+        return Boolean(
+            quote
+            && String(quote.role || '') === 'student'
+            && quote.user_id != null
+            && this.currentUser?.id != null
+            && String(quote.user_id) === String(this.currentUser.id)
+        );
+    }
+
+    async markMessageUseful(message) {
+        if (!this.canMarkMessageUseful(message)) {
+            return;
+        }
+        try {
+            const data = await apiFetch(
+                `/api/classroom-interactions/classrooms/${this.classOfferingId}/messages/${Number(message.id)}/useful`,
+                { method: 'POST', body: {}, silent: true },
+            );
+            const counted = Boolean(data?.result?.counted);
+            this.showToast(
+                counted ? DISCUSSION_UI_TEXT.usefulSuccess : DISCUSSION_UI_TEXT.usefulDuplicate,
+                counted ? 'success' : 'info',
+            );
+        } catch (error) {
+            this.showToast(error?.message || DISCUSSION_UI_TEXT.usefulFailed, 'warning');
+        }
+    }
+
     createQuotePayload(message) {
         if (!message) {
             return null;
@@ -2537,6 +2591,7 @@ export class ClassroomChat {
 
         return {
             id: Number(message.id || 0) || null,
+            user_id: message.user_id ?? null,
             sender: String(message.sender || DISCUSSION_UI_TEXT.defaultSender),
             role: String(message.role || 'student'),
             message: String(message.message || ''),
@@ -2632,6 +2687,18 @@ export class ClassroomChat {
         quoteButton.title = DISCUSSION_UI_TEXT.quoteActionTitle;
         bar.appendChild(quoteButton);
 
+        const message = this.getMessageRecord(normalizedId);
+        if (this.canMarkMessageUseful(message)) {
+            const usefulButton = document.createElement('button');
+            usefulButton.type = 'button';
+            usefulButton.className = 'chat-message-action-btn';
+            usefulButton.dataset.messageAction = 'mark-useful';
+            usefulButton.dataset.messageId = String(normalizedId);
+            usefulButton.textContent = DISCUSSION_UI_TEXT.usefulActionLabel;
+            usefulButton.title = DISCUSSION_UI_TEXT.usefulActionTitle;
+            bar.appendChild(usefulButton);
+        }
+
         const copyButton = document.createElement('button');
         copyButton.type = 'button';
         copyButton.className = 'chat-message-action-btn';
@@ -2657,6 +2724,12 @@ export class ClassroomChat {
         this.activeMessageMenuId = messageId;
         this.pendingMessageMenuId = messageId;
         this.pendingMessageMenuAnchor = anchor;
+        const message = this.getMessageRecord(messageId);
+        this.messageMenu
+            .querySelectorAll('[data-message-action="mark-useful"]')
+            .forEach((button) => {
+                button.hidden = !this.canMarkMessageUseful(message);
+            });
         this.messageMenu.hidden = false;
 
         const anchorNode = anchor instanceof Element

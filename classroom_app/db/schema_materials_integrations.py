@@ -109,6 +109,10 @@ def ensure_materials_integrations_schema(conn: sqlite3.Connection) -> None:
                     file_size INTEGER NOT NULL DEFAULT 0,
                     ai_parse_status TEXT NOT NULL DEFAULT 'idle',
                     ai_parse_result_json TEXT,
+                    check_questions_json TEXT DEFAULT '',
+                    check_questions_status TEXT NOT NULL DEFAULT 'idle',
+                    check_questions_error TEXT DEFAULT '',
+                    check_questions_generated_at TEXT,
                     ai_optimize_status TEXT NOT NULL DEFAULT 'idle',
                     ai_optimized_markdown TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -457,6 +461,16 @@ def ensure_materials_integrations_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE course_materials ADD COLUMN git_detected_at TEXT")
     except sqlite3.OperationalError:
         pass
+    for column_name, column_def in (
+        ("check_questions_json", "TEXT DEFAULT ''"),
+        ("check_questions_status", "TEXT NOT NULL DEFAULT 'idle'"),
+        ("check_questions_error", "TEXT DEFAULT ''"),
+        ("check_questions_generated_at", "TEXT"),
+    ):
+        try:
+            conn.execute(f"ALTER TABLE course_materials ADD COLUMN {column_name} {column_def}")
+        except sqlite3.OperationalError:
+            pass
 
     for column_name, column_def in (
         ("parent_material_id", "INTEGER REFERENCES course_materials (id) ON DELETE SET NULL"),

@@ -31,6 +31,8 @@ from .feedback_review_service import build_feedback_review_summary
 RECENT_ACTIVITY_DAYS = 14
 DEFAULT_TIMELINE_HOUR = "08:00"
 DASHBOARD_WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+DASHBOARD_COURSE_TONES = ("indigo", "teal", "sky", "amber", "rose", "violet", "emerald", "slate")
+DASHBOARD_COURSE_PATTERNS = ("grid", "dots", "diagonal", "rings")
 
 ACTIVITY_TONE_BY_CATEGORY = {
     "private_message": "neutral",
@@ -54,6 +56,25 @@ def _dashboard_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _stable_dashboard_bucket(value: Any, *, modulo: int) -> int:
+    text = str(value or "").strip()
+    if not text:
+        return 0
+    total = 0
+    for char in text:
+        total = (total * 131 + ord(char)) % 1000003
+    return total % modulo if modulo > 0 else 0
+
+
+def _dashboard_course_visual(course_id: Any) -> dict[str, str]:
+    tone_index = _stable_dashboard_bucket(course_id, modulo=len(DASHBOARD_COURSE_TONES))
+    pattern_index = _stable_dashboard_bucket(f"{course_id}:pattern", modulo=len(DASHBOARD_COURSE_PATTERNS))
+    return {
+        "tone": DASHBOARD_COURSE_TONES[tone_index],
+        "pattern": DASHBOARD_COURSE_PATTERNS[pattern_index],
+    }
 
 
 def _dashboard_todo_sort_key(item: dict[str, Any]) -> tuple[int, str, str, int]:
@@ -682,6 +703,23 @@ def _truncate_dashboard_text(value: Any, max_length: int = 88) -> str:
     if len(text) <= max_length:
         return text
     return text[: max_length - 1].rstrip() + "…"
+
+
+def _dashboard_notice_text(value: Any, *, fallback: str = "") -> str:
+    if isinstance(value, dict):
+        for key in ("message", "description", "title", "label"):
+            text = re.sub(r"\s+", " ", str(value.get(key) or "").strip())
+            if text:
+                return text
+        return fallback
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            text = _dashboard_notice_text(item)
+            if text:
+                return text
+        return fallback
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    return text or fallback
 
 
 def _build_teacher_timeline_item(
@@ -1845,8 +1883,9 @@ def _build_student_today_plan(
     continue_material: dict[str, Any] | None,
     review_summary: dict[str, Any] | None,
     unread_total: int,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
-    now = china_now().replace(tzinfo=None)
+    now = now or china_now().replace(tzinfo=None)
     plan_items = [
         item
         for item in (
@@ -1914,6 +1953,94 @@ def _build_student_today_plan(
     }
 
 
+def _student_cockpit_greeting(now: datetime, student_name: str) -> str:
+    hour = now.hour
+    if 5 <= hour < 11:
+        prefix = "早上好"
+    elif 11 <= hour < 14:
+        prefix = "中午好"
+    elif 14 <= hour < 18:
+        prefix = "下午好"
+    else:
+        prefix = "晚上好"
+    name = str(student_name or "").strip()
+    return f"{prefix}，{name}" if name else f"{prefix}，今天从这里开始"
+
+
+def _student_cockpit_day_shape(todo_items: list[dict[str, Any]], *, now: datetime, open_count: int) -> str:
+    today = now.date()
+    class_count = 0
+    due_count = 0
+    for item in todo_items:
+        if item.get("is_completed"):
+            continue
+        kind = _student_cockpit_step_kind(item)
+        starts_at = _dashboard_parse_datetime(item.get("start_at") or item.get("effective_start_at"))
+        due_at = _dashboard_parse_datetime(item.get("due_at") or item.get("effective_end_at"))
+        if kind == "lesson" and (
+            (starts_at and starts_at.date() == today)
+            or (due_at and due_at.date() == today)
+        ):
+            class_count += 1
+        elif due_at and due_at.date() == today:
+            due_count += 1
+    fragments = [f"今天还有 {class_count} 节课", f"{due_count} 项截止"]
+    summary = " · ".join(fragments)
+    if now.hour >= 22 and open_count > 0:
+        summary += " · 夜深了，剩余事项已为你保留到明天清单"
+    return summary
+
+
+def _build_student_continue_action(offerings: list[dict[str, Any]]) -> dict[str, str]:
+    recent_candidates = [
+        item
+        for item in offerings
+        if _dashboard_int(item.get("last_activity_sort")) > 0
+    ]
+    selected: dict[str, Any] | None = None
+    if recent_candidates:
+        selected = max(
+            recent_candidates,
+            key=lambda item: (
+                _dashboard_int(item.get("last_activity_sort")),
+                _dashboard_int(item.get("id")),
+            ),
+        )
+    else:
+        pending_candidates = [
+            item
+            for item in offerings
+            if _dashboard_int(item.get("pending_count")) > 0
+        ]
+        if pending_candidates:
+            selected = sorted(
+                pending_candidates,
+                key=lambda item: (
+                    -_dashboard_int(item.get("pending_count")),
+                    _dashboard_sort_text(item.get("course_name")),
+                    -_dashboard_int(item.get("id")),
+                ),
+            )[0]
+
+    if not selected:
+        return {
+            "href": "#dashboard-class-list",
+            "title": "查看课堂列表",
+            "label": "查看课堂",
+            "subtitle": "课堂列表",
+            "course_name": "",
+        }
+
+    course_name = str(selected.get("course_name") or "课堂").strip() or "课堂"
+    return {
+        "href": f"/classroom/{_dashboard_int(selected.get('id'))}",
+        "title": f"继续学习：{course_name}",
+        "label": "继续学习",
+        "subtitle": f"继续 · {course_name}",
+        "course_name": course_name,
+    }
+
+
 def _build_student_cockpit(
     *,
     offerings: list[dict[str, Any]],
@@ -1925,7 +2052,10 @@ def _build_student_cockpit(
     pending_total: int,
     submitted_total: int,
     unread_total: int,
+    student_name: str = "",
+    now: datetime | None = None,
 ) -> dict[str, Any]:
+    now = now or china_now().replace(tzinfo=None)
     best_course = cultivation_profile.get("best_course") or {}
     highest_level = cultivation_profile.get("highest_level") or {}
     today_plan = _build_student_today_plan(
@@ -1933,6 +2063,7 @@ def _build_student_cockpit(
         continue_material=continue_material,
         review_summary=review_summary,
         unread_total=unread_total,
+        now=now,
     )
     primary_source = (
         today_plan["actionable_items"][0]
@@ -1951,7 +2082,7 @@ def _build_student_cockpit(
         "title": str((primary_source or {}).get("title") or "回到课堂继续学习"),
         "description": str(
             (primary_source or {}).get("description")
-            or (best_course.get("rank_notice") or "从最近的课堂进入，补齐资料、作业与讨论。")
+            or _dashboard_notice_text(best_course.get("rank_notice"), fallback="从最近的课堂进入，补齐资料、作业与讨论。")
         ),
         "href": str((primary_source or {}).get("href") or (primary_source or {}).get("link_url") or fallback_href),
         "label": _student_cockpit_action_label(primary_kind, primary_tone),
@@ -2017,7 +2148,10 @@ def _build_student_cockpit(
                 "kind": "learning",
                 "label": "修为推进",
                 "title": str(best_course.get("course_name") or "继续学习"),
-                "description": str(best_course.get("rank_notice") or "进入当前进度最高的课堂，保持学习连续性。"),
+                "description": _dashboard_notice_text(
+                    best_course.get("rank_notice"),
+                    fallback="进入当前进度最高的课堂，保持学习连续性。",
+                ),
                 "href": best_href,
                 "tone": "success",
                 "due_label": str(best_course.get("next_stage_name") or "学习进度"),
@@ -2056,10 +2190,13 @@ def _build_student_cockpit(
             "course_name": str(item.get("course_name") or "课堂"),
             "class_name": str(item.get("class_name") or ""),
             "href": f"/classroom/{item['id']}",
+            "score": round(float(cultivation.get("score") or 0), 1),
             "progress_percent": progress_percent,
             "level_name": str(cultivation.get("short_name") or cultivation.get("level_name") or "未入道"),
+            "level_theme": str(cultivation.get("theme") or cultivation.get("level_key") or "mortal"),
             "note": note,
             "tone": tone,
+            "course_tone": str(item.get("course_tone") or "indigo"),
         })
 
     empty_state = {
@@ -2070,8 +2207,8 @@ def _build_student_cockpit(
     }
 
     return {
-        "title": "今日学习驾驶舱",
-        "subtitle": "把截止任务、继续阅读、提醒和课堂进度压缩成一张今日行动图。",
+        "title": _student_cockpit_greeting(now, student_name),
+        "subtitle": _student_cockpit_day_shape(todo_items, now=now, open_count=today_plan["open_count"]),
         "path": {
             "href": "/learning-path",
             "label": "查看学习路径",
@@ -2081,6 +2218,7 @@ def _build_student_cockpit(
         "stats": stats,
         "next_steps": next_steps,
         "course_pulse": course_pulse,
+        "show_course_pulse": bool(course_pulse),
         "continue_learning": continue_material,
         "empty": empty_state,
     }
@@ -2143,6 +2281,7 @@ def _build_student_dashboard_context(
     for offering in offerings:
         offering_id = int(offering["id"])
         course_id = int(offering["course_id"])
+        course_visual = _dashboard_course_visual(course_id)
         assignment_item = assignment_stats.get(offering_id, {})
         resource_item = resource_stats.get(course_id, {})
         material_item = material_stats.get(offering_id, {})
@@ -2221,6 +2360,9 @@ def _build_student_dashboard_context(
         offering["resource_count"] = resource_count
         offering["material_count"] = material_count
         offering["last_activity_at"] = last_activity_at or ""
+        offering["last_activity_sort"] = _dashboard_datetime_sort_value(last_activity_at)
+        offering["course_tone"] = course_visual["tone"]
+        offering["course_pattern"] = course_visual["pattern"]
         offering["needs_attention"] = pending_count > 0
         offering["has_recent_activity"] = _is_recent(last_activity_at)
         offering["has_progress"] = (
@@ -2296,6 +2438,7 @@ def _build_student_dashboard_context(
         offering_ids=offering_ids,
     )
     feedback_review_summary = build_feedback_review_summary(conn, student_id)
+    student_display_name = cultivation_profile.get("address_name") or polite_address(user.get("name") or "", "student")
     student_cockpit = _build_student_cockpit(
         offerings=enriched_offerings,
         priority_items=priority_items,
@@ -2306,7 +2449,9 @@ def _build_student_dashboard_context(
         pending_total=pending_total,
         submitted_total=submitted_total,
         unread_total=unread_total,
+        student_name=student_display_name,
     )
+    continue_action = _build_student_continue_action(enriched_offerings)
 
     first_pending_href = str(
         (student_cockpit.get("primary") or {}).get("href")
@@ -2449,7 +2594,28 @@ def _build_student_dashboard_context(
             "description": ui_copy["empty_description"],
             "action_label": ui_copy["empty_action_label"],
             "action_href": "/message-center",
+            "steps": [
+                {
+                    "title": ui_copy["empty_step_profile_title"],
+                    "description": ui_copy["empty_step_profile_description"],
+                    "href": "/profile",
+                    "label": ui_copy["empty_step_profile_label"],
+                },
+                {
+                    "title": ui_copy["empty_step_classroom_title"],
+                    "description": ui_copy["empty_step_classroom_description"],
+                    "href": "",
+                    "label": "",
+                },
+                {
+                    "title": ui_copy["empty_step_message_title"],
+                    "description": ui_copy["empty_step_message_description"],
+                    "href": "/message-center",
+                    "label": ui_copy["empty_step_message_label"],
+                },
+            ],
         },
+        "dashboard_continue_action": continue_action,
         "class_offerings": enriched_offerings,
         "dashboard_semester_calendar": semester_calendar,
         "dashboard_agenda_events": _build_agenda_events_from_todos(

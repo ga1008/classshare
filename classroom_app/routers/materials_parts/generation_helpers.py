@@ -1,5 +1,6 @@
 from .common import *
 from ...db.connection import execute_insert_returning_id, get_configured_db_engine
+from ...services.material_mastery_check_service import build_material_mastery_check_payload
 
 
 def _normalize_uploaded_filename(filename: str | None, fallback: str = "material") -> str:
@@ -71,13 +72,28 @@ def _insert_material_file_row(
     ai_parse_result_json: str | None = None,
 ) -> int:
     db_engine = get_configured_db_engine()
+    check_questions_json = ""
+    check_questions_status = "idle"
+    check_questions_error = ""
+    check_questions_generated_at = None
+    if str(ai_parse_status or "").lower() == "completed" and ai_parse_result_json:
+        check_payload = build_material_mastery_check_payload(
+            ai_parse_result_json,
+            material_name=name,
+            generated_at=now,
+        )
+        check_questions_json = json.dumps(check_payload, ensure_ascii=False)
+        check_questions_status = "ready" if check_payload.get("status") == "ready" else "fallback"
+        check_questions_error = "" if check_questions_status == "ready" else str(check_payload.get("reason") or "")
+        check_questions_generated_at = now
     insert_sql = """
         INSERT INTO course_materials
         (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type,
          preview_type, ai_capability, file_ext, file_hash, file_size,
-         ai_parse_status, ai_parse_result_json, ai_optimize_status, owner_role, owner_user_pk, scope_level,
+         ai_parse_status, ai_parse_result_json, check_questions_json, check_questions_status,
+         check_questions_error, check_questions_generated_at, ai_optimize_status, owner_role, owner_user_pk, scope_level,
          school_code, school_name, college, department, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, 'idle',
+        VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle',
                 'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
     """
     file_id = execute_insert_returning_id(
@@ -97,6 +113,10 @@ def _insert_material_file_row(
             file_size,
             ai_parse_status,
             ai_parse_result_json,
+            check_questions_json,
+            check_questions_status,
+            check_questions_error,
+            check_questions_generated_at,
             user["id"],
             owner_scope["school_code"],
             owner_scope["school_name"],

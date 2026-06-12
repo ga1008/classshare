@@ -55,10 +55,22 @@
         </div>
         <aside class="profile-hero__signal">
             {% if profile.role == 'student' and cultivation %}
-            <span>修炼概览</span>
-            <div class="profile-hero__signal-value"><strong>{{ cultivation.score }}</strong><small>修为</small></div>
-            <p>{{ cultivation.highest_level.level_name }} · {{ cultivation.course_count }} 门课堂</p>
-            <div class="profile-progress"><span style="width: {{ cultivation.progress_percent }}%"></span></div>
+            {% set cultivation_status_label = '可破境 · ' ~ cultivation.next_stage_name if cultivation.breakthrough_ready and cultivation.next_stage_name else ('试炼生成中' if cultivation.generating_stage_exam else (('下一境界 · ' ~ cultivation.next_stage_name) if cultivation.next_stage_name else '全部点亮')) %}
+            {% set cultivation_card = {
+                'variant': 'full',
+                'eyebrow': 'Cultivation',
+                'title': cultivation.highest_level.level_name,
+                'subtitle': cultivation.sect_level_label ~ ' · ' ~ cultivation.course_count ~ ' 门课堂',
+                'score': cultivation.score,
+                'progress_percent': cultivation.progress_percent,
+                'level_short': cultivation.highest_level.short_name,
+                'level_name': cultivation.highest_level.level_name,
+                'level': cultivation.highest_level,
+                'theme': cultivation.highest_level.theme,
+                'next_label': cultivation_status_label,
+                'next_hint': cultivation.rank_notice
+            } %}
+            {% include "partials/cultivation_card.html" %}
             <div class="profile-signal-grid">
                 <div><span>可破境课堂</span><strong>{{ cultivation.breakthrough_course_count }}</strong></div>
                 <div><span>已获道印</span><strong>{{ cultivation.certificate_count }}</strong></div>
@@ -171,18 +183,23 @@
                 <div class="profile-cultivation-grid">
                     {% for course in cultivation.courses %}
                     <a class="profile-cultivation-card" href="/classroom/{{ course.class_offering_id }}" data-theme="{{ course.current_level.theme }}">
-                        <div class="profile-cultivation-card__top">
-                            <div>
-                                <strong>{{ course.course_name }}</strong>
-                                <span>{{ course.class_name }} · {{ course.teacher_name }}</span>
-                            </div>
-                            <b>{{ course.sect_level_label or course.current_level.short_name }}</b>
-                        </div>
-                        <div class="profile-cultivation-score">
-                            <span>修为 {{ course.score }}</span>
-                            <span>{{ course.progress_percent }}%</span>
-                        </div>
-                        <div class="profile-cultivation-bar"><span style="width: {{ course.progress_percent }}%"></span></div>
+                        {% set course_status_label = '可破境 · ' ~ course.eligible_stage.name if course.eligible_stage else (('下一境界 · ' ~ course.next_stage.name) if course.next_stage else '全部境界已点亮') %}
+                        {% set course_subtitle = course.class_name ~ (' · ' ~ course.teacher_name if course.teacher_name else '') %}
+                        {% set cultivation_card = {
+                            'variant': 'compact',
+                            'eyebrow': course.sect_name or 'Course',
+                            'title': course.course_name,
+                            'subtitle': course_subtitle,
+                            'score': course.score,
+                            'progress_percent': course.progress_percent,
+                            'level_short': course.current_level.short_name,
+                            'level_name': course.current_level.level_name,
+                            'level': course.current_level,
+                            'theme': course.current_level.theme,
+                            'badge': course.current_level.short_name,
+                            'next_label': course_status_label
+                        } %}
+                        {% include "partials/cultivation_card.html" %}
                         <div class="profile-cultivation-stages" aria-label="{{ course.course_name }} 修炼阶段">
                             {% for stage in course.stages %}
                             <span class="is-{{ stage.status }}" title="{{ stage.short_name }} · {{ stage.progress_percent }}%">{{ stage.short_name }}</span>

@@ -10,7 +10,7 @@ const LEGACY_MODULES = {
   materials: '/static/js/classroom_materials.js?v=p12-classroom-page-20260604',
   exams: '/static/js/app_exams.js',
   classroomPage: '/static/js/classroom_page.js?v=p12-classroom-page-20260607-campus',
-  learningProgress: '/static/js/learning_progress.js?v=p12-classroom-page-20260604',
+  learningProgress: '/static/js/learning_progress.js?v=cultivation-certificate-20260612',
   interactions: '/static/js/classroom_interactions.js?v=activity-dock-declutter-20260606',
   collaboration: '/static/js/collaboration.js?v=p12-classroom-page-20260604',
 } as const;

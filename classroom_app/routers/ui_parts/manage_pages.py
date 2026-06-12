@@ -1,5 +1,6 @@
 from .common import *
 from ...db.connection import get_configured_db_engine
+from ...services.ai_usage_budget_service import build_ai_usage_dashboard
 
 
 router = APIRouter()
@@ -758,6 +759,28 @@ async def get_manage_system_diagnostics_page(request: Request, user: dict = Depe
             user,
             page_title="压测与诊断",
             active_page="system_diagnostics",
+        ),
+    )
+
+
+@router.get("/manage/system/ai-usage", response_class=HTMLResponse)
+async def get_manage_system_ai_usage_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """AI usage and budget dashboard for super-admins."""
+    with get_db_connection() as conn:
+        _ensure_manage_super_admin(conn, user)
+        dashboard = build_ai_usage_dashboard(conn)
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/ai_usage.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="AI 用量",
+            active_page="system_ai_usage",
+            extra={
+                "ai_usage_dashboard": dashboard,
+            },
         ),
     )
 

@@ -50,6 +50,25 @@
             <p>{{ path_context.subtitle }}</p>
         </div>
         <aside class="path-focus-card" aria-label="当前优先路径">
+            {% if focus %}
+            {% set focus_status_label = '可破境 · ' ~ focus.eligible_stage.name if focus.eligible_stage else (('下一境界 · ' ~ focus.next_stage.name) if focus.next_stage else '全部境界已点亮') %}
+            {% set cultivation_card = {
+                'variant': 'full',
+                'eyebrow': 'Focus Course',
+                'title': focus.course_name,
+                'subtitle': focus.class_name,
+                'score': focus.score,
+                'progress_percent': focus.progress_percent,
+                'level_short': focus.current_level.short_name,
+                'level_name': focus.current_level.level_name,
+                'level': focus.current_level,
+                'theme': focus.current_level.theme,
+                'badge': focus.active_step_count ~ ' 项待推进',
+                'next_label': focus_status_label,
+                'next_hint': focus.bottleneck.label ~ ' · ' ~ focus.bottleneck.hint
+            } %}
+            {% include "partials/cultivation_card.html" %}
+            {% endif %}
             <span>{{ '优先动作' if primary else '当前状态' }}</span>
             <strong>{{ primary.title if primary else ('暂时没有待推进项' if not focus else focus.course_name) }}</strong>
             <p>{{ primary.description if primary else ('可以回到课堂继续材料、讨论或预习下一节。' if not focus else focus.bottleneck.hint) }}</p>
@@ -100,14 +119,22 @@
         <div class="path-course-grid">
             {% for course in path_context.courses %}
             <a href="{{ course.href }}" class="path-course-card" data-course-id="{{ course.course_id }}">
-                <div class="path-course-card__top">
-                    <span>{{ course.class_name }}</span>
-                    <strong>{{ course.current_level.short_name }}</strong>
-                </div>
-                <h3>{{ course.course_name }}</h3>
-                <div class="path-course-meter" aria-label="{{ course.course_name }} 修为 {{ course.progress_percent }}%">
-                    <span style="--path-progress: {{ course.progress_percent }}%;"></span>
-                </div>
+                {% set course_status_label = '可破境 · ' ~ course.eligible_stage.name if course.eligible_stage else (('下一境界 · ' ~ course.next_stage.name) if course.next_stage else '全部境界已点亮') %}
+                {% set cultivation_card = {
+                    'variant': 'compact',
+                    'eyebrow': 'Course Status',
+                    'title': course.course_name,
+                    'subtitle': course.class_name,
+                    'score': course.score,
+                    'progress_percent': course.progress_percent,
+                    'level_short': course.current_level.short_name,
+                    'level_name': course.current_level.level_name,
+                    'level': course.current_level,
+                    'theme': course.current_level.theme,
+                    'badge': course.current_level.short_name,
+                    'next_label': course_status_label
+                } %}
+                {% include "partials/cultivation_card.html" %}
                 <p>{{ course.bottleneck.label }} · {{ course.bottleneck.hint }}</p>
                 <small>{{ course.active_step_count }} 项待推进 / 修为 {{ course.score }}</small>
             </a>

@@ -10,6 +10,7 @@ from .feedback_review_service import build_feedback_review_context
 from .learning_progress_service import (
     LEARNING_LEVELS,
     PASSING_STAGE_SCORE,
+    STAGE_EXAM_RETREAT_PLAN_KEY,
     public_level_payload,
     safe_float,
     safe_int,
@@ -270,6 +271,111 @@ def _stage_summary() -> list[dict[str, Any]]:
     return summary
 
 
+def _latest_stage_retreat_plan(
+    conn: sqlite3.Connection,
+    *,
+    class_offering_id: int,
+    student_id: int,
+) -> dict[str, Any] | None:
+    rows = conn.execute(
+        """
+        SELECT lsea.id, lsea.stage_key, lsea.score, lsea.graded_at, lsea.metadata_json
+        FROM learning_stage_exam_attempts lsea
+        WHERE lsea.class_offering_id = ?
+          AND lsea.student_id = ?
+          AND lsea.status = 'failed'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM learning_stage_exam_attempts passed
+              WHERE passed.class_offering_id = lsea.class_offering_id
+                AND passed.student_id = lsea.student_id
+                AND passed.stage_key = lsea.stage_key
+                AND passed.status = 'passed'
+          )
+        ORDER BY COALESCE(lsea.graded_at, lsea.generated_at) DESC, lsea.id DESC
+        LIMIT 4
+        """,
+        (int(class_offering_id), int(student_id)),
+    ).fetchall()
+    for row in rows:
+        attempt = dict(row)
+        try:
+            metadata = json.loads(attempt.get("metadata_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            continue
+        plan = metadata.get(STAGE_EXAM_RETREAT_PLAN_KEY) if isinstance(metadata, dict) else None
+        if not isinstance(plan, dict):
+            continue
+        items = [item for item in (plan.get("items") or []) if isinstance(item, dict)]
+        if not items:
+            continue
+        return {
+            "attempt": attempt,
+            "plan": {**plan, "items": items},
+        }
+    return None
+
+
+def _load_stage_retreat_path_steps(
+    conn: sqlite3.Connection,
+    *,
+    offering: dict[str, Any],
+    states: dict[str, dict[str, Any]],
+    student_id: int,
+) -> list[dict[str, Any]]:
+    offering_id = int(offering["id"])
+    course_id = int(offering["course_id"])
+    course_name = str(offering.get("course_name") or "未命名课程")
+    class_name = str(offering.get("class_name") or "")
+    payload = _latest_stage_retreat_plan(conn, class_offering_id=offering_id, student_id=student_id)
+    if not payload:
+        return []
+    attempt = payload["attempt"]
+    plan = payload["plan"]
+    steps: list[dict[str, Any]] = []
+    for index, item in enumerate(plan.get("items") or [], start=1):
+        key = str(item.get("key") or f"stage-retreat:{attempt.get('id')}:{index}").strip()
+        if not key:
+            continue
+        weak_point = str(item.get("weak_point") or item.get("description") or "").strip()
+        reflection_prompt = str(item.get("reflection_prompt") or "").strip()
+        description_parts = [
+            str(item.get("description") or weak_point or "复盘本次破境试炼中的薄弱点。").strip(),
+            reflection_prompt,
+        ]
+        description = " ".join(part for part in description_parts if part)
+        href = str(item.get("href") or f"/classroom/{offering_id}").strip()
+        base = _base_step(
+            key=key,
+            kind="stage_retreat",
+            title=str(item.get("title") or f"闭关复盘 {index}"),
+            description=truncate_text(description, 220),
+            href=href,
+            class_offering_id=offering_id,
+            course_id=course_id,
+            course_name=course_name,
+            class_name=class_name,
+            priority=1,
+            tone="danger",
+            tag="闭关",
+            action_label=str(item.get("action_label") or "去复盘"),
+            target_type=str(item.get("target_type") or "stage_retreat"),
+            target_id=str(item.get("target_id") or attempt.get("id") or ""),
+            estimated_minutes=max(5, safe_int(item.get("estimated_minutes"), 12)),
+            metadata={
+                "attempt_id": safe_int(attempt.get("id")),
+                "stage_key": str(attempt.get("stage_key") or plan.get("stage_key") or ""),
+                "score": safe_float(plan.get("score", attempt.get("score"))),
+                "weak_point": weak_point,
+                "reflection_prompt": reflection_prompt,
+                "material_id": safe_int(item.get("material_id")),
+                "session_id": safe_int(item.get("session_id")),
+            },
+        )
+        steps.append(_apply_step_state(base, states.get(base["key"])))
+    return steps
+
+
 def _build_course_steps(
     conn: sqlite3.Connection,
     *,
@@ -351,6 +457,15 @@ def _build_course_steps(
             estimated_minutes=5,
         )
         steps.append(_apply_step_state(base, states.get(base["key"])))
+
+    steps.extend(
+        _load_stage_retreat_path_steps(
+            conn,
+            offering=offering,
+            states=states,
+            student_id=student_id,
+        )
+    )
 
     for assignment in _load_pending_assignments(conn, class_offering_id=offering_id, student_id=student_id, limit=3):
         assignment_id = int(assignment["id"])

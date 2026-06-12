@@ -107,6 +107,7 @@ from ...services.learning_progress_service import (
     mark_stage_submission_saved,
     normalize_assignment_stage_key,
     personal_stage_assignment_filter_sql,
+    refresh_student_learning_state,
     student_can_access_assignment,
     submit_stage_exam_for_ai_grading,
 )
@@ -1514,6 +1515,16 @@ async def _save_submission_payload(
                 "DELETE FROM submission_drafts WHERE assignment_id = ? AND student_pk_id = ?",
                 (assignment["id"], student_pk_id),
             )
+        if assignment.get("class_offering_id"):
+            try:
+                refresh_student_learning_state(
+                    conn,
+                    int(assignment["class_offering_id"]),
+                    int(student_pk_id),
+                    event_source_ref=f"submission:{submission_id}",
+                )
+            except Exception as exc:
+                print(f"[LEARNING_PROGRESS] submission snapshot refresh failed: {exc}")
         conn.commit()
         if backup_dir:
             delete_storage_tree(backup_dir)
