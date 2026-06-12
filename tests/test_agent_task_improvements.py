@@ -429,6 +429,42 @@ class AgentTaskImprovementTests(unittest.TestCase):
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
 
+    def test_follow_up_runtime_payload_uses_parent_thread_id(self):
+        from agent_task_worker import _build_runtime_task_payload
+
+        task = {
+            "id": 42,
+            "context_snapshot_json": json.dumps(
+                {
+                    "agent_options": {"deep_thinking": False},
+                    "follow_up": {"parent_thread_id": "thread-parent-123"},
+                },
+                ensure_ascii=False,
+            ),
+        }
+
+        payload = _build_runtime_task_payload(task, "/workspace/tasks/42", "prompt")
+
+        self.assertEqual("thread-parent-123", payload["thread_id"])
+        self.assertEqual("prompt", payload["prompt"])
+        self.assertEqual("/workspace/tasks/42", payload["workspace"])
+        self.assertEqual("agent", payload["mode"])
+
+    def test_runtime_payload_omits_blank_follow_up_thread_id(self):
+        from agent_task_worker import _build_runtime_task_payload
+
+        task = {
+            "id": 43,
+            "context_snapshot_json": json.dumps(
+                {"follow_up": {"parent_thread_id": "   "}},
+                ensure_ascii=False,
+            ),
+        }
+
+        payload = _build_runtime_task_payload(task, "/workspace/tasks/43", "prompt")
+
+        self.assertNotIn("thread_id", payload)
+
     def test_retry_task_inherits_no_history_option(self):
         conn = self._open_agent_task_conn()
         try:

@@ -76,16 +76,30 @@ def _enqueue_runtime_task(
     *,
     prompt_suffix: str = "",
 ) -> dict[str, Any]:
-    from classroom_app.config import (
-        AGENT_TASK_ALLOW_RUNTIME_SHELL,
-        AGENT_TASK_DEEPSEEK_AUTO_APPROVE,
-        AGENT_TASK_RUNTIME_MODEL,
-    )
     from classroom_app.services.agent_task_service import build_runtime_prompt
 
     prompt = build_runtime_prompt(task, runtime_workspace)
     if prompt_suffix:
         prompt = f"{prompt}\n\n{prompt_suffix}"
+    payload = _build_runtime_task_payload(task, runtime_workspace, prompt)
+    response = client.post("/v1/tasks", json=payload)
+    response.raise_for_status()
+    data = response.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("DeepSeek-TUI returned an invalid task payload.")
+    runtime_id = str(data.get("id") or "").strip()
+    if not runtime_id:
+        raise RuntimeError("DeepSeek-TUI did not return a task id.")
+    return data
+
+
+def _build_runtime_task_payload(task: dict[str, Any], runtime_workspace: str, prompt: str) -> dict[str, Any]:
+    from classroom_app.config import (
+        AGENT_TASK_ALLOW_RUNTIME_SHELL,
+        AGENT_TASK_DEEPSEEK_AUTO_APPROVE,
+        AGENT_TASK_RUNTIME_MODEL,
+    )
+
     payload: dict[str, Any] = {
         "prompt": prompt,
         "workspace": runtime_workspace,
@@ -110,15 +124,7 @@ def _enqueue_runtime_task(
         payload["model"] = "auto"
     elif AGENT_TASK_RUNTIME_MODEL:
         payload["model"] = AGENT_TASK_RUNTIME_MODEL
-    response = client.post("/v1/tasks", json=payload)
-    response.raise_for_status()
-    data = response.json()
-    if not isinstance(data, dict):
-        raise RuntimeError("DeepSeek-TUI returned an invalid task payload.")
-    runtime_id = str(data.get("id") or "").strip()
-    if not runtime_id:
-        raise RuntimeError("DeepSeek-TUI did not return a task id.")
-    return data
+    return payload
 
 
 def _append_snapshot_diff_events(task_id: int, prev: dict[str, Any] | None, curr: dict[str, Any]) -> None:
