@@ -131,6 +131,36 @@ class AgentTaskImprovementTests(unittest.TestCase):
     def test_finished_agent_task_notification_links_back_to_task_card(self):
         conn = self._open_agent_task_conn()
         try:
+            from classroom_app.db.schema_foundation import ensure_foundation_schema
+            from classroom_app.services.email_notification_service import create_teacher_email_config
+
+            ensure_foundation_schema(conn)
+            conn.execute(
+                """
+                INSERT INTO teachers (id, name, email, hashed_password, is_active)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (7, "Teacher", "teacher@example.test", "hashed", 1),
+            )
+            create_teacher_email_config(
+                conn,
+                7,
+                {
+                    "provider": "custom",
+                    "label": "Agent Mail",
+                    "smtp_host": "smtp.example.test",
+                    "smtp_port": 465,
+                    "smtp_security": "ssl",
+                    "smtp_username": "teacher@example.test",
+                    "smtp_password": "secret",
+                    "from_email": "teacher@example.test",
+                    "from_name": "Teacher",
+                    "enabled": True,
+                    "is_default": True,
+                    "per_minute_limit": 20,
+                    "daily_limit": 200,
+                },
+            )
             task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_RUNNING)
 
             agent_task_service.finish_agent_task(
@@ -150,7 +180,8 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 dict(row)
                 for row in conn.execute(
                     """
-                    SELECT category, title, body_preview, link_url, ref_type, ref_id, metadata_json
+                    SELECT id, category, severity, title, body_preview, link_url, ref_type, ref_id,
+                           metadata_json, email_status, email_job_id
                     FROM message_center_notifications
                     WHERE recipient_role = 'teacher' AND recipient_user_pk = ?
                     ORDER BY id
@@ -160,14 +191,39 @@ class AgentTaskImprovementTests(unittest.TestCase):
             ]
 
             self.assertEqual(1, len(rows))
-            self.assertEqual("todo", rows[0]["category"])
+            self.assertEqual("agent_task", rows[0]["category"])
+            self.assertEqual("important", rows[0]["severity"])
             self.assertIn("Agent 任务完成", rows[0]["title"])
             self.assertEqual(f"/?agent_task={task_id}", rows[0]["link_url"])
-            self.assertEqual("todo", rows[0]["ref_type"])
+            self.assertEqual("agent_task", rows[0]["ref_type"])
             self.assertEqual(f"agent-task:{task_id}:completed", rows[0]["ref_id"])
+            self.assertEqual("queued", rows[0]["email_status"])
+            self.assertIsNotNone(rows[0]["email_job_id"])
             self.assertEqual(
                 {"agent_task_id": task_id, "status": agent_task_service.TASK_STATUS_COMPLETED},
                 json.loads(rows[0]["metadata_json"]),
+            )
+            email_rows = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT notification_id, category, severity, recipient_email, status
+                    FROM email_outbox
+                    ORDER BY id
+                    """
+                ).fetchall()
+            ]
+            self.assertEqual(
+                [
+                    {
+                        "notification_id": rows[0]["id"],
+                        "category": "agent_task",
+                        "severity": "important",
+                        "recipient_email": "teacher@example.test",
+                        "status": "queued",
+                    }
+                ],
+                email_rows,
             )
         finally:
             conn.close()

@@ -53,6 +53,7 @@ IMPORTANT_NOTIFICATION_CATEGORIES = {
     "attendance_alert",
     "academic_exam",
     "gongwen_follow",
+    "agent_task",
 }
 
 SYSTEM_NOTIFICATION_CATEGORIES = {
@@ -69,6 +70,7 @@ EMAIL_ELIGIBLE_CATEGORIES = {
     "learning_progress",
     "academic_exam",
     "gongwen_follow",
+    "agent_task",
     "ai_feedback",
     "app_feedback",
     "password_reset_request",
@@ -215,6 +217,7 @@ EMAIL_CATEGORY_ACTION_LABELS = {
     "ai_feedback": "查看并处理",
     "app_feedback": "查看反馈",
     "password_reset_request": "处理申请",
+    "agent_task": "查看 Agent 任务",
 }
 
 EMAIL_CATEGORY_COPY = {
@@ -226,6 +229,7 @@ EMAIL_CATEGORY_COPY = {
     "ai_feedback": "批改流程遇到需要教师处理的情况，请点开详情页查看提交内容并决定下一步处理方式。",
     "app_feedback": "有新的平台反馈需要处理，点开即可进入后台查看。",
     "password_reset_request": "有学生提交了找回密码申请，请及时核对并处理。",
+    "agent_task": "Agent 任务已有新的终态结果，可以回到任务卡片查看产出、错误信息或后续操作。",
 }
 
 

@@ -2289,9 +2289,9 @@ def _notify_task_finished(conn, task_id: int, status: str, result_summary: str, 
         body = _summarize_text(error_message or result_summary, limit=130) or "可在任务卡片上一键重试。"
     else:
         return
-    from .message_center_service import create_todo_notification
+    from .message_center_service import create_agent_task_notification
 
-    create_todo_notification(
+    create_agent_task_notification(
         conn,
         recipient_role="teacher",
         recipient_user_pk=int(row["teacher_id"]),
