@@ -28,6 +28,7 @@ from classroom_app.services.agent_subscription_service import (
 from classroom_app.services.agent_task_progress_service import (
     ERROR_CLASS_CONTENT,
     ERROR_CLASS_TRANSIENT,
+    MAX_NEW_EVENTS_PER_DIFF,
     classify_runtime_error,
     diff_runtime_snapshot,
 )
@@ -84,6 +85,41 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertEqual(["runtime_step", "runtime_tool_call"], [event["event_type"] for event in events])
         self.assertIn("正在整理课堂材料", events[0]["message"])
         self.assertIn("正在查询平台数据库", events[1]["message"])
+
+    def test_runtime_snapshot_diff_surfaces_output_deltas(self):
+        new_output_events = diff_runtime_snapshot(
+            {"status": "running", "text_outputs": []},
+            {
+                "status": "running",
+                "text_outputs": [{"path": "outputs/plan.md", "text": "已生成第一版课堂讨论安排。"}],
+            },
+        )
+
+        self.assertEqual(["runtime_output_delta"], [event["event_type"] for event in new_output_events])
+        self.assertIn("已生成一段结果草稿", new_output_events[0]["message"])
+        self.assertEqual("outputs/plan.md", new_output_events[0]["detail"]["source"])
+
+        growing_output_events = diff_runtime_snapshot(
+            {"status": "running", "output": "第一段：课堂导入。"},
+            {"status": "running", "output": "第一段：课堂导入。\n第二段：分组讨论任务。"},
+        )
+
+        self.assertEqual(["runtime_output_delta"], [event["event_type"] for event in growing_output_events])
+        self.assertIn("已继续生成结果草稿", growing_output_events[0]["message"])
+        self.assertIn("分组讨论任务", growing_output_events[0]["message"])
+
+    def test_runtime_snapshot_diff_event_cap_includes_summary_within_limit(self):
+        events = diff_runtime_snapshot(
+            {"status": "running", "timeline": [], "tool_calls": []},
+            {
+                "status": "running",
+                "timeline": [f"步骤 {index}" for index in range(20)],
+                "tool_calls": [{"name": "query"} for _ in range(4)],
+            },
+        )
+
+        self.assertLessEqual(len(events), MAX_NEW_EVENTS_PER_DIFF)
+        self.assertIn("另外", events[-1]["message"])
 
     def test_runtime_error_classifier_keeps_retry_budget_conservative(self):
         self.assertEqual(ERROR_CLASS_TRANSIENT, classify_runtime_error("503 service unavailable"))

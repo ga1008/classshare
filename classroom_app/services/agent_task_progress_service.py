@@ -145,6 +145,61 @@ def _timeline_entry_message(entry: Any) -> str:
     return ""
 
 
+def _runtime_output_entries(snapshot: dict[str, Any]) -> list[dict[str, str]]:
+    """Extract teacher-visible text outputs from a runtime snapshot."""
+    outputs: list[dict[str, str]] = []
+    text_outputs = snapshot.get("text_outputs") if isinstance(snapshot.get("text_outputs"), list) else []
+    for index, item in enumerate(text_outputs):
+        if isinstance(item, dict):
+            text = _clean(item.get("text") or item.get("content") or item.get("summary"), limit=800)
+            source = _clean(item.get("path") or item.get("source") or f"text_outputs[{index}]", limit=80)
+        else:
+            text = _clean(item, limit=800)
+            source = f"text_outputs[{index}]"
+        if text:
+            outputs.append({"source": source, "text": text})
+
+    for key in ("result", "output", "final_answer", "response_text"):
+        text = _clean(snapshot.get(key), limit=800)
+        if text:
+            outputs.append({"source": key, "text": text})
+    return outputs
+
+
+def _runtime_output_delta_events(prev: dict[str, Any], curr: dict[str, Any]) -> list[dict[str, Any]]:
+    prev_outputs = _runtime_output_entries(prev)
+    curr_outputs = _runtime_output_entries(curr)
+    events: list[dict[str, Any]] = []
+    prev_signatures = {(item["source"], item["text"]) for item in prev_outputs}
+    for index, item in enumerate(curr_outputs, start=1):
+        source = item["source"]
+        text = item["text"]
+        if (source, text) in prev_signatures:
+            continue
+        previous_text = ""
+        if index <= len(prev_outputs) and prev_outputs[index - 1]["source"] == source:
+            previous_text = prev_outputs[index - 1]["text"]
+        if previous_text and text.startswith(previous_text):
+            delta_text = text[len(previous_text):].strip()
+            if len(delta_text) < 6:
+                continue
+            message = f"已继续生成结果草稿：{_clean(delta_text, limit=160)}"
+        else:
+            message = f"已生成一段结果草稿：{_clean(text, limit=160)}"
+        events.append(
+            {
+                "event_type": "runtime_output_delta",
+                "message": message,
+                "detail": {
+                    "output_index": index,
+                    "source": source,
+                    "text_chars": len(text),
+                },
+            }
+        )
+    return events
+
+
 def diff_runtime_snapshot(
     prev: dict[str, Any] | None,
     curr: dict[str, Any],
@@ -200,9 +255,11 @@ def diff_runtime_snapshot(
                 }
             )
 
+    events.extend(_runtime_output_delta_events(prev, curr))
+
     if len(events) > MAX_NEW_EVENTS_PER_DIFF:
-        dropped = len(events) - MAX_NEW_EVENTS_PER_DIFF
-        events = events[:MAX_NEW_EVENTS_PER_DIFF]
+        dropped = len(events) - MAX_NEW_EVENTS_PER_DIFF + 1
+        events = events[:MAX_NEW_EVENTS_PER_DIFF - 1]
         events.append(
             {
                 "event_type": "runtime_step",
