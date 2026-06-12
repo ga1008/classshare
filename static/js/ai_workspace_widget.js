@@ -947,7 +947,14 @@ function renderTaskList(tasks = []) {
     list.innerHTML = tasks.map((task, index) => {
         const ownerLabel = task.is_owner ? '我的任务' : `${escapeHtml(task.teacher_name || '某位老师')}`;
         const runningText = task.status === 'running' ? ` · 已运行 ${formatElapsed(task.elapsed_seconds)}` : '';
-        const queueText = task.status === 'queued' && task.queue_position ? ` · 队列第 ${task.queue_position}` : '';
+        const queuePieces = [];
+        if (task.status === 'queued' && task.queue_position) {
+            queuePieces.push(`队列第 ${task.queue_position}`);
+        }
+        if (task.status === 'queued' && task.estimated_wait_label) {
+            queuePieces.push(task.estimated_wait_label);
+        }
+        const queueText = queuePieces.length ? ` · ${queuePieces.join(' · ')}` : '';
         const isSelected = Number(task.id) === Number(selectedTaskId);
         const deleteButton = task.is_owner && task.is_terminal
             ? `<button type="button" class="ai-task-item__delete" data-agent-delete="${escapeHtml(task.id)}" title="删除这条历史" aria-label="删除这条历史"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M5 6l1 15h12l1-15"></path></svg></button>`

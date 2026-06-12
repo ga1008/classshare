@@ -150,6 +150,18 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertIn("message-center:refresh-requested", bell_js)
         self.assertIn("refreshBell({ allowPopup", bell_js)
 
+    def test_agent_queue_list_surfaces_wait_estimate(self):
+        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
+        render_list_block = workspace_js[
+            workspace_js.index("function renderTaskList"):
+            workspace_js.index("function formatAgentSubscriptionHour")
+        ]
+
+        self.assertIn("queuePieces", render_list_block)
+        self.assertIn("estimated_wait_label", render_list_block)
+        self.assertIn("队列第", render_list_block)
+        self.assertIn("queuePieces.join(' · ')", render_list_block)
+
     def test_record_agent_auto_retry_enforces_hourly_budget(self):
         conn = self._open_agent_task_conn()
         try:
