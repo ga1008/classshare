@@ -9,13 +9,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+from classroom_app.db.schema_assignments import ensure_assignment_schema
 from classroom_app.db import schema_agent_ext
 from classroom_app.db.schema_classroom_activity import ensure_classroom_activity_schema
+from classroom_app.db.schema_foundation import ensure_foundation_schema
+from classroom_app.db.schema_learning_blog import ensure_learning_blog_signature_schema
+from classroom_app.db.schema_materials_integrations import ensure_materials_integrations_schema
 from classroom_app.db import schema_scheduler
 from classroom_app.services import agent_task_service
 from fastapi import HTTPException
 
 from classroom_app.services.agent_action_registry import (
+    execute_proposed_action,
     extract_proposed_actions,
     issue_action_confirmation_token,
     validate_action_params,
@@ -44,6 +49,30 @@ class AgentTaskImprovementTests(unittest.TestCase):
         ensure_classroom_activity_schema(conn)
         with patch.object(schema_agent_ext, "get_configured_db_engine", return_value="sqlite"):
             schema_agent_ext.ensure_agent_task_extension_schema(conn, force=True)
+        return conn
+
+    def _open_agent_action_conn(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        ensure_foundation_schema(conn)
+        ensure_classroom_activity_schema(conn)
+        ensure_assignment_schema(conn)
+        ensure_materials_integrations_schema(conn)
+        ensure_learning_blog_signature_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO teachers (id, name, nickname, email, hashed_password, is_active)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (7, "Teacher", "T", "teacher@example.test", "hashed", 1),
+        )
+        conn.execute("INSERT INTO classes (id, name, created_by_teacher_id) VALUES (?, ?, ?)", (1, "三班", 7))
+        conn.execute("INSERT INTO courses (id, name, created_by_teacher_id) VALUES (?, ?, ?)", (1, "综合英语", 7))
+        conn.execute(
+            "INSERT INTO class_offerings (id, class_id, course_id, teacher_id) VALUES (?, ?, ?, ?)",
+            (3, 1, 1, 7),
+        )
+        conn.commit()
         return conn
 
     def _insert_agent_task_row(self, conn, *, teacher_id=7, status=None, parent_task_id=None):
@@ -661,6 +690,181 @@ class AgentTaskImprovementTests(unittest.TestCase):
                     "dangerous": "not allowed",
                 },
             )
+
+    def test_registered_agent_actions_execute_safe_drafts_and_manual_notification_link(self):
+        conn = self._open_agent_action_conn()
+        try:
+            assignment = execute_proposed_action(
+                conn,
+                teacher_id=7,
+                action="create_assignment_draft",
+                params={
+                    "class_offering_id": 3,
+                    "title": "Unit 1 reflection",
+                    "requirements_md": "Write a short reflection.",
+                    "rubric_md": "| 维度 | 分值 |",
+                },
+            )
+            self.assertEqual("/assignment/1", assignment["url"])
+            assignment_row = conn.execute(
+                "SELECT status, title FROM assignments WHERE id = ?",
+                (assignment["ref_id"],),
+            ).fetchone()
+            self.assertEqual("new", assignment_row["status"])
+            self.assertEqual("Unit 1 reflection", assignment_row["title"])
+
+            material = execute_proposed_action(
+                conn,
+                teacher_id=7,
+                action="save_material_draft",
+                params={
+                    "title": "课堂导学",
+                    "content_md": "# 导学\n请完成课前预习。",
+                },
+            )
+            self.assertEqual("/materials/view/2", material["url"])
+            material_row = conn.execute(
+                "SELECT name, material_path, file_hash FROM course_materials WHERE id = ?",
+                (material["ref_id"],),
+            ).fetchone()
+            self.assertEqual("课堂导学.md", material_row["name"])
+            self.assertIn("Agent 草稿", material_row["material_path"])
+            self.assertTrue(material_row["file_hash"])
+
+            blog = execute_proposed_action(
+                conn,
+                teacher_id=7,
+                action="create_blog_draft",
+                params={
+                    "title": "课堂复盘",
+                    "content_md": "今天的课堂讨论很充分。",
+                    "tags": ["Agent", "教学"],
+                },
+            )
+            self.assertEqual("/blog?tab=mine", blog["url"])
+            blog_row = conn.execute(
+                "SELECT status, title, tags_json FROM blog_posts WHERE id = ?",
+                (blog["ref_id"],),
+            ).fetchone()
+            self.assertEqual("draft", blog_row["status"])
+            self.assertEqual("课堂复盘", blog_row["title"])
+            self.assertEqual(["Agent", "教学"], json.loads(blog_row["tags_json"]))
+
+            manual = execute_proposed_action(
+                conn,
+                teacher_id=7,
+                action="send_student_notification",
+                params={
+                    "title": "提醒",
+                    "content_md": "请及时查看本周任务。",
+                    "student_names": ["Alice"],
+                },
+            )
+            self.assertTrue(manual["manual"])
+            self.assertEqual("/messages", manual["url"])
+            self.assertIn("本周任务", manual["copy_text"])
+        finally:
+            conn.close()
+
+    def test_assignment_action_rejects_other_teacher_classroom(self):
+        conn = self._open_agent_action_conn()
+        try:
+            with self.assertRaises(HTTPException) as ctx:
+                execute_proposed_action(
+                    conn,
+                    teacher_id=8,
+                    action="create_assignment_draft",
+                    params={
+                        "class_offering_id": 3,
+                        "title": "Not mine",
+                        "requirements_md": "Should be rejected.",
+                    },
+                )
+            self.assertEqual(403, ctx.exception.status_code)
+        finally:
+            conn.close()
+
+    def test_manual_agent_action_uses_server_confirmation_and_audit_path(self):
+        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
+        manual_block_start = workspace_js.index("async function openManualAgentAction")
+        manual_block_end = workspace_js.index("async function executeAgentAction")
+        manual_block = workspace_js[manual_block_start:manual_block_end]
+
+        self.assertIn("/preview", manual_block)
+        self.assertIn("/execute", manual_block)
+        self.assertIn("confirmation_token", manual_block)
+        self.assertIn("renderTaskDetail", manual_block)
+
+    def test_manual_notification_action_execute_route_audits_without_sending(self):
+        conn = self._open_agent_task_conn()
+        try:
+            from classroom_app.routers.agent_tasks import (
+                api_execute_agent_task_action,
+                api_preview_agent_task_action,
+            )
+
+            class _Request:
+                def __init__(self, payload):
+                    self.payload = payload
+
+                async def json(self):
+                    return self.payload
+
+            task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+            detail = {
+                "proposed_actions": [
+                    {
+                        "action": "send_student_notification",
+                        "label": "去消息中心发送通知",
+                        "summary": "提醒学生查看任务",
+                        "execution_mode": "manual_link",
+                        "risk": "medium",
+                        "params": {
+                            "title": "提醒",
+                            "content_md": "请查看本周任务。",
+                            "student_names": ["Alice"],
+                        },
+                        "executed": None,
+                    }
+                ]
+            }
+            conn.execute(
+                "UPDATE agent_tasks SET result_detail_json = ? WHERE id = ?",
+                (json.dumps(detail, ensure_ascii=False), task_id),
+            )
+            conn.commit()
+
+            with patch("classroom_app.routers.agent_tasks.get_db_connection", return_value=conn):
+                preview = asyncio.run(api_preview_agent_task_action(task_id, 0, _Request({}), {"id": 7}))
+                executed = asyncio.run(
+                    api_execute_agent_task_action(
+                        task_id,
+                        0,
+                        _Request({"confirmation_token": preview["confirmation_token"]}),
+                        {"id": 7},
+                    )
+                )
+
+            self.assertTrue(executed["result"]["manual"])
+            self.assertEqual("/messages", executed["result"]["url"])
+            self.assertIn("本周任务", executed["result"]["copy_text"])
+            event = conn.execute(
+                "SELECT event_type, message, detail_json FROM agent_task_events WHERE task_id = ? ORDER BY id DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            self.assertEqual("action_executed", event["event_type"])
+            self.assertIn("去消息中心发送通知", event["message"])
+            event_detail = json.loads(event["detail_json"])
+            self.assertEqual("send_student_notification", event_detail["action"])
+            updated_detail = json.loads(
+                conn.execute("SELECT result_detail_json FROM agent_tasks WHERE id = ?", (task_id,)).fetchone()[
+                    "result_detail_json"
+                ]
+            )
+            self.assertEqual("/messages", updated_detail["proposed_actions"][0]["executed"]["url"])
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
 
     def test_set_agent_subscription_persists_scheduler_row(self):
         schema_scheduler._SCHEMA_READY = False

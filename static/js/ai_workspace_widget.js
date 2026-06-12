@@ -1463,13 +1463,25 @@ async function openManualAgentAction(button) {
     if (!taskId) {
         return;
     }
-    const data = await apiJson(`/api/agent-tasks/${taskId}`);
-    const proposal = (((data.task || {}).result_detail || {}).proposed_actions || [])[actionIndex] || {};
-    const params = proposal.params || {};
-    const copyText = params.content_md || params.body_md || params.requirements_md || proposal.summary || '';
+    const preview = await apiJson(`/api/agent-tasks/${taskId}/actions/${actionIndex}/preview`, {
+        method: 'POST',
+        body: JSON.stringify({ params: {} }),
+    });
+    const data = await apiJson(`/api/agent-tasks/${taskId}/actions/${actionIndex}/execute`, {
+        method: 'POST',
+        body: JSON.stringify({
+            params: {},
+            confirmation_token: preview.confirmation_token,
+        }),
+    });
+    const copyText = data.result?.copy_text || data.result?.summary || '';
     const copied = await copyTextToClipboard(copyText).catch(() => false);
     notify(copied ? '已复制草稿内容，正在打开消息中心。' : '正在打开消息中心，请手动复制草稿内容。', copied ? 'success' : 'warning');
-    window.open('/messages', '_blank', 'noopener');
+    if (data.task) {
+        renderTaskDetail(data.task, { autoScroll: true });
+        await refreshTasks({ silent: true });
+    }
+    window.open(safeLocalHref(data.result?.url) || '/messages', '_blank', 'noopener');
 }
 
 async function executeAgentAction(button) {
