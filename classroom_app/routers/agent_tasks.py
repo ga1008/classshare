@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,24 @@ _AGENT_ATTACHMENT_DOC_EXTENSIONS = {".docx", ".doc", ".pdf", ".pptx", ".ppt", ".
 _AGENT_ATTACHMENT_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 
 
+def _describe_agent_image_attachment(filename: str, contents: bytes) -> str:
+    """Validate an image upload and return a deterministic text fallback for the runtime prompt."""
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(contents)) as image:
+            width, height = image.size
+            image_format = (image.format or Path(filename).suffix.lstrip(".") or "image").upper()
+            image.verify()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"图片附件 {filename} 无法读取，请确认文件未损坏。") from exc
+    return (
+        f"图片附件：{filename}。平台已验证图片可读取，格式 {image_format}，尺寸 {width}x{height} 像素。"
+        "原图位于任务 workspace 的 attachments/ 子目录；如果运行时支持视觉，请直接读取原图。"
+        "如果运行时不支持视觉，请明确告知教师需要补充截图中的文字或关键信息。"
+    )
+
+
 async def _process_agent_attachment(file) -> dict[str, Any]:
     """Agent 附件处理：保留原始字节 + 尽力抽取文本（供 runtime 直接读取）。"""
     contents = await file.read()
@@ -93,6 +112,7 @@ async def _process_agent_attachment(file) -> dict[str, Any]:
     kind = "file"
     if ext in _AGENT_ATTACHMENT_IMAGE_EXTENSIONS:
         kind = "image"
+        text = _describe_agent_image_attachment(filename, contents)
     elif ext in _AGENT_ATTACHMENT_TEXT_EXTENSIONS:
         kind = "text"
         try:

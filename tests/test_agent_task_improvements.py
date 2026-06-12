@@ -1,3 +1,5 @@
+import asyncio
+import io
 import json
 import sqlite3
 import tempfile
@@ -749,6 +751,54 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertTrue(stored.exists())
             self.assertTrue(extracted.exists())
             self.assertIn("Alice", extracted.read_text(encoding="utf-8"))
+
+    def test_image_agent_attachment_gets_text_fallback_and_workspace_note(self):
+        from PIL import Image
+
+        from classroom_app.routers.agent_tasks import _process_agent_attachment
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (3, 2), color="white").save(buffer, format="PNG")
+
+        class _Upload:
+            filename = "classroom-screenshot.png"
+
+            async def read(self):
+                return buffer.getvalue()
+
+        item = asyncio.run(_process_agent_attachment(_Upload()))
+
+        self.assertEqual("image", item["kind"])
+        self.assertIn("3x2", item["text"])
+        self.assertIn("原图位于任务 workspace", item["text"])
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            agent_task_service,
+            "AGENT_TASK_WORKSPACE_ROOT",
+            Path(tmpdir),
+        ):
+            metadata = agent_task_service.save_task_attachments(88, [item])
+            stored = Path(tmpdir) / "tasks" / "88" / "attachments" / metadata[0]["stored_name"]
+            extracted = stored.with_name(stored.name + ".extracted.txt")
+
+            self.assertTrue(stored.exists())
+            self.assertTrue(extracted.exists())
+            self.assertIn("3x2", extracted.read_text(encoding="utf-8"))
+            self.assertIn("3x2", metadata[0]["summary"])
+
+    def test_broken_image_agent_attachment_is_rejected(self):
+        from classroom_app.routers.agent_tasks import _process_agent_attachment
+
+        class _Upload:
+            filename = "broken.png"
+
+            async def read(self):
+                return b"not a real image"
+
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(_process_agent_attachment(_Upload()))
+        self.assertEqual(400, ctx.exception.status_code)
+        self.assertIn("无法读取", ctx.exception.detail)
 
     def test_failed_runtime_detail_recovers_safe_workspace_artifacts(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.object(
