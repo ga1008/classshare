@@ -21,6 +21,7 @@ from classroom_app.services.agent_action_registry import (
 )
 from classroom_app.services.agent_subscription_service import (
     DISPATCH_TASK_KIND,
+    list_agent_subscriptions,
     set_agent_subscription,
 )
 from classroom_app.services.agent_task_progress_service import (
@@ -512,6 +513,40 @@ class AgentTaskImprovementTests(unittest.TestCase):
             payload = json.loads(row["payload_json"])
             self.assertEqual({"teacher_id": 7, "template_key": "weekly_report", "hour": 8}, payload)
             self.assertTrue(result["subscriptions"][0]["enabled"])
+        finally:
+            conn.close()
+            schema_scheduler._SCHEMA_READY = False
+
+    def test_agent_subscription_list_explains_last_scheduler_run(self):
+        schema_scheduler._SCHEMA_READY = False
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            with patch.object(schema_scheduler, "get_configured_db_engine", return_value="sqlite"):
+                set_agent_subscription(
+                    conn,
+                    {"id": 7, "name": "Teacher"},
+                    template_key="exam_briefing",
+                    enabled=True,
+                    hour=7,
+                )
+            conn.execute(
+                """
+                UPDATE scheduled_tasks
+                SET last_result = ?, finished_at = ?
+                WHERE dedupe_key = ?
+                """,
+                ("skipped: no upcoming exams", "2026-06-13T07:00:00", "agent-sub:exam_briefing:7"),
+            )
+            conn.commit()
+
+            result = list_agent_subscriptions(conn, teacher_id=7)
+            exam = next(item for item in result["subscriptions"] if item["key"] == "exam_briefing")
+
+            self.assertTrue(exam["enabled"])
+            self.assertIn("未来 3 天暂无考试/监考安排", exam["last_run_message"])
+            self.assertEqual("2026-06-13T07:00:00", exam["last_finished_at"])
+            self.assertIn("last_run_message", Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8"))
         finally:
             conn.close()
             schema_scheduler._SCHEMA_READY = False

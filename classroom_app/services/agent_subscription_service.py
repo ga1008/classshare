@@ -62,6 +62,31 @@ def _recurrence_seconds(template: dict[str, Any]) -> int:
     return WEEK_SECONDS if template["cadence"] == "weekly" else DAY_SECONDS
 
 
+def _subscription_last_run_message(last_result: Any, last_error: Any = "") -> str:
+    result = str(last_result or "").strip()
+    error = str(last_error or "").strip()
+    if error:
+        return f"上次运行失败：{error[:120]}"
+    if not result:
+        return ""
+    if result.startswith("queued agent task"):
+        task_id = result.rsplit(" ", 1)[-1]
+        return f"已生成 Agent 任务 {task_id}" if task_id.isdigit() else "已生成 Agent 任务"
+    if result == "skipped: no upcoming exams":
+        return "未来 3 天暂无考试/监考安排，已跳过本次提醒"
+    if result == "skipped: subscription backlog":
+        return "已有订阅任务仍在排队，已跳过本次运行"
+    if result == "skipped: teacher not found":
+        return "教师账号不可用，已跳过本次运行"
+    if result == "skipped: invalid payload":
+        return "订阅配置异常，已跳过本次运行"
+    if result == "skipped: unknown template":
+        return "订阅模板已不存在，已跳过本次运行"
+    if result.startswith("skipped:"):
+        return f"已跳过本次运行：{result[8:].strip() or '无可处理内容'}"
+    return result[:120]
+
+
 def list_agent_subscriptions(conn, *, teacher_id: int) -> dict[str, Any]:
     from .scheduled_task_service import ensure_scheduler_schema
 
@@ -70,7 +95,7 @@ def list_agent_subscriptions(conn, *, teacher_id: int) -> dict[str, Any]:
     for key, template in AGENT_SUBSCRIPTION_TEMPLATES.items():
         row = conn.execute(
             """
-            SELECT id, status, run_at, payload_json
+            SELECT id, status, run_at, payload_json, last_result, last_error, finished_at, updated_at
             FROM scheduled_tasks
             WHERE dedupe_key = ?
             LIMIT 1
@@ -96,6 +121,12 @@ def list_agent_subscriptions(conn, *, teacher_id: int) -> dict[str, Any]:
                 "enabled": enabled,
                 "hour": hour,
                 "next_run_at": (row["run_at"] if enabled and row else "") or "",
+                "scheduler_status": str(row["status"] or "") if row else "",
+                "last_run_message": _subscription_last_run_message(
+                    row["last_result"] if row else "",
+                    row["last_error"] if row else "",
+                ),
+                "last_finished_at": (row["finished_at"] if row else "") or "",
             }
         )
     try:

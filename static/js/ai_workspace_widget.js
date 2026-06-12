@@ -933,6 +933,11 @@ function renderAgentSubscriptions(payload = agentSubscriptionPayload) {
     }
     const hourOptions = Array.from({ length: 24 }, (_, hour) => `<option value="${hour}">${formatAgentSubscriptionHour(hour)}</option>`).join('');
     const recentTasks = Array.isArray(payload.recent_tasks) ? payload.recent_tasks.slice(0, 3) : [];
+    const subscriptionStatusLine = (item) => {
+        const next = item.enabled ? `下次 ${item.next_run_at || formatAgentSubscriptionHour(item.hour)}` : (item.description || '');
+        const last = item.enabled && item.last_run_message ? ` · 上次：${item.last_run_message}` : '';
+        return `${next}${last}`;
+    };
     list.innerHTML = `
         <div class="ai-agent-subscription-rows">
             ${subscriptions.map((item) => `
@@ -940,7 +945,7 @@ function renderAgentSubscriptions(payload = agentSubscriptionPayload) {
                     <input type="checkbox" data-agent-sub-toggle="${escapeHtml(item.key)}" ${item.enabled ? 'checked' : ''}>
                     <span class="ai-agent-subscription-row__copy">
                         <strong>${escapeHtml(item.label || item.key)}</strong>
-                        <small>${escapeHtml(item.enabled ? `下次 ${item.next_run_at || formatAgentSubscriptionHour(item.hour)}` : item.description || '')}</small>
+                        <small>${escapeHtml(subscriptionStatusLine(item))}</small>
                     </span>
                     <select data-agent-sub-hour="${escapeHtml(item.key)}" aria-label="${escapeHtml(item.label || item.key)}时间">
                         ${hourOptions}
