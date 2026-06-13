@@ -28,6 +28,7 @@ let agentSubmitting = false;
 let lastTaskPayload = { tasks: [], counts: {}, queue_state: {} };
 let workflowCatalog = [];
 let taskTypesCatalog = [];
+let selectedAgentWorkflowKey = '';
 let taskEventPollTimer = null;
 let taskEventPollBusy = false;
 const agentTaskMessages = new Map();
@@ -231,6 +232,17 @@ function collectPageContext() {
         manageContext: collectManageContext(),
         dashboardContext: collectDashboardContext(),
     };
+    if (selectedAgentWorkflowKey) {
+        const selectedWorkflow = workflowCatalog.find((item) => item.key === selectedAgentWorkflowKey);
+        context.agentWorkflowKey = selectedAgentWorkflowKey;
+        if (selectedWorkflow) {
+            context.agentWorkflow = {
+                key: selectedWorkflow.key,
+                name: selectedWorkflow.name,
+                taskType: selectedWorkflow.task_type || '',
+            };
+        }
+    }
 
     Object.keys(context).forEach((key) => {
         const value = context[key];
@@ -309,6 +321,101 @@ function refreshContextPreview() {
     if (subtitle) {
         subtitle.textContent = agentMode ? `Agent 任务 · 全平台队列 · ${label}` : `普通对话 · ${label}`;
     }
+}
+
+function workflowByKey(key) {
+    return workflowCatalog.find((item) => item.key === key) || null;
+}
+
+function recommendedWorkflowKeys(context = collectPageContext()) {
+    if (context.assignmentId || context.assignmentContext?.title) {
+        return ['assignment_exam_workflow', 'submission_grading_feedback', 'student_support', 'classroom_preparation'];
+    }
+    if (context.materialId || context.materialContext?.materialName) {
+        return ['lesson_document_generation', 'material_operations', 'classroom_preparation', 'blog_and_reflection'];
+    }
+    if (context.classOfferingId || context.classroomContext?.courseName) {
+        return ['classroom_preparation', 'lesson_document_generation', 'assignment_exam_workflow', 'discussion_collaboration'];
+    }
+    if (context.manageContext?.pageTitle) {
+        return ['course_roster_setup', 'operations_admin', 'gongwen_lookup', 'material_operations'];
+    }
+    return ['classroom_preparation', 'assignment_exam_workflow', 'gongwen_lookup', 'blog_and_reflection'];
+}
+
+function recommendedAgentStarters(context = collectPageContext()) {
+    const seen = new Set();
+    const preferred = recommendedWorkflowKeys(context)
+        .map((key) => workflowByKey(key))
+        .filter(Boolean);
+    const fallback = workflowCatalog.filter(Boolean);
+    return [...preferred, ...fallback]
+        .filter((item) => {
+            if (!item?.key || seen.has(item.key)) {
+                return false;
+            }
+            seen.add(item.key);
+            return true;
+        })
+        .slice(0, 4);
+}
+
+function workflowStarterCopy(item = {}) {
+    const steps = Array.isArray(item.steps) ? item.steps : [];
+    return steps[0] || item.agent_capability || '生成清单、草案和确认项。';
+}
+
+function renderAgentStarters() {
+    const panel = $('#ai-agent-starters');
+    if (!panel) {
+        return;
+    }
+    const surface = currentChatSurface();
+    const hasInput = Boolean(surface.textarea?.value.trim());
+    const starters = recommendedAgentStarters();
+    if (!agentMode || hasInput || !starters.length) {
+        panel.hidden = true;
+        panel.innerHTML = '';
+        return;
+    }
+    panel.hidden = false;
+    const contextLabel = $('#ai-agent-context-title')?.textContent || '当前页面';
+    panel.innerHTML = `
+        <div class="ai-agent-starters__head">
+            <strong>当前页面推荐</strong>
+            <small>${escapeHtml(contextLabel)}</small>
+        </div>
+        <div class="ai-agent-starters__grid">
+            ${starters.map((item) => `
+                <button type="button" class="ai-agent-starter ${item.key === selectedAgentWorkflowKey ? 'is-selected' : ''}" data-agent-starter="${escapeHtml(item.key)}">
+                    <strong>${escapeHtml(item.name || '教学事务')}</strong>
+                    <small>${escapeHtml(workflowStarterCopy(item))}</small>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function applyAgentStarter(button) {
+    const key = button.dataset.agentStarter || '';
+    const workflow = workflowByKey(key);
+    if (!workflow) {
+        notify('这个 Agent 工作流暂不可用。', 'warning');
+        return;
+    }
+    selectedAgentWorkflowKey = workflow.key || '';
+    const surface = currentChatSurface();
+    if (surface.textarea) {
+        surface.textarea.value = workflow.starter_prompt || workflowStarterCopy(workflow);
+        resetTextareaHeight(surface.textarea);
+        surface.textarea.focus();
+    }
+    if (surface.sendBtn) {
+        surface.sendBtn.disabled = false;
+    }
+    refreshContextPreview();
+    renderAgentStarters();
+    notify('已载入 Agent 任务骨架。', 'success');
 }
 
 function openWorkspaceModal() {
@@ -1641,6 +1748,7 @@ async function loadBootstrap() {
         taskTypesCatalog = Array.isArray(data.task_types) ? data.task_types : [];
         setQueueState(data.queue_state || {}, data.counts || {});
         renderTaskList(data.tasks || []);
+        renderAgentStarters();
         loadAgentSubscriptions({ silent: true });
         if (!data.runtime_configured && !runtimeWarningShown) {
             runtimeWarningShown = true;
@@ -1686,6 +1794,9 @@ function setAgentMode(enabled, { persist = true } = {}) {
         return;
     }
     agentMode = Boolean(enabled);
+    if (!agentMode) {
+        selectedAgentWorkflowKey = '';
+    }
     const surface = currentChatSurface();
     const container = $('.ai-workspace-container');
     const toggle = $('#ai-agent-mode-toggle');
@@ -1730,6 +1841,7 @@ function setAgentMode(enabled, { persist = true } = {}) {
         surface.sendBtn.setAttribute('aria-label', agentMode ? '加入 Agent 队列' : '发送');
     }
     refreshContextPreview();
+    renderAgentStarters();
     setQueueState(lastTaskPayload.queue_state || {}, lastTaskPayload.counts || {});
     if (persist) {
         try {
@@ -1884,7 +1996,8 @@ async function submitAgentTaskFromChat() {
         surface.sendBtn.disabled = true;
     }
     const context = collectPageContext();
-    const taskType = inferAgentTaskType(instruction, context);
+    const selectedWorkflow = selectedAgentWorkflowKey ? workflowByKey(selectedAgentWorkflowKey) : null;
+    const taskType = selectedWorkflow?.task_type || inferAgentTaskType(instruction, context);
     surface.renderMessage('user', instruction, agentAttachmentPreviews(pendingFiles));
     if (textarea) {
         textarea.value = '';
@@ -1912,6 +2025,7 @@ async function submitAgentTaskFromChat() {
             body: requestBody,
         });
         chatComponent?.clearPendingFiles?.();
+        selectedAgentWorkflowKey = '';
         selectedTaskId = data.task?.id || null;
         if (data.task) {
             renderAgentTaskMessage(data.task, { autoScroll: true });
@@ -1930,6 +2044,7 @@ async function submitAgentTaskFromChat() {
         if (surface.sendBtn) {
             surface.sendBtn.disabled = false;
         }
+        renderAgentStarters();
         textarea?.focus();
     }
 }
@@ -1939,6 +2054,7 @@ function bindTaskCenter() {
         return;
     }
     window.addEventListener('lanshare:agent-handoff', (event) => {
+        selectedAgentWorkflowKey = '';
         prefillAgentTaskFromChat(event.detail?.instruction || '');
     });
     $('#ai-agent-mode-toggle')?.addEventListener('click', () => setAgentMode(!agentMode));
@@ -2015,6 +2131,12 @@ function bindTaskCenter() {
             await loadTaskDetail(selectedTaskId, { autoScroll: true });
         } catch (error) {
             notify(error.message || '任务详情加载失败', 'error');
+        }
+    });
+    $('#ai-agent-starters')?.addEventListener('click', (event) => {
+        const starter = event.target.closest('[data-agent-starter]');
+        if (starter) {
+            applyAgentStarter(starter);
         }
     });
     $('#ai-chat-messages-box')?.addEventListener('click', async (event) => {
@@ -2157,6 +2279,10 @@ function bindTaskCenter() {
         updateComposerPresence(false).catch(() => {});
     });
     textarea?.addEventListener('input', () => {
+        if (agentMode && !textarea.value.trim()) {
+            selectedAgentWorkflowKey = '';
+        }
+        renderAgentStarters();
         if (agentMode) {
             touchComposerPresence();
         }

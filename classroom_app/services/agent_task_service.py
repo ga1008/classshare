@@ -247,6 +247,23 @@ AGENT_TEACHER_WORKFLOWS: tuple[dict[str, Any], ...] = (
     },
 )
 
+WORKFLOW_TASK_TYPE_HINTS: dict[str, str] = {
+    "classroom_preparation": "lesson_document",
+    "material_operations": "course_material_digest",
+    "lesson_document_generation": "lesson_document",
+    "assignment_exam_workflow": "assignment_blueprint",
+    "submission_grading_feedback": "student_notification",
+    "student_support": "student_notification",
+    "learning_progress": "student_notification",
+    "discussion_collaboration": "general_teaching_task",
+    "blog_and_reflection": "blog_draft",
+    "gongwen_lookup": "gongwen_lookup",
+}
+
+AGENT_TEACHER_WORKFLOW_BY_KEY: dict[str, dict[str, Any]] = {
+    str(item["key"]): dict(item) for item in AGENT_TEACHER_WORKFLOWS
+}
+
 _CORE_CODE_DENY_PATTERNS = (
     r"\bgit\s+(commit|push|pull|reset|checkout|merge|rebase|clean|rm)\b",
     r"\bdocker\s+(compose|run|exec|build|rm|rmi|stop|restart)\b",
@@ -516,7 +533,33 @@ def task_type_options() -> list[dict[str, str]]:
 
 
 def agent_workflow_catalog() -> list[dict[str, Any]]:
-    return [dict(item) for item in AGENT_TEACHER_WORKFLOWS]
+    return [_workflow_catalog_item(item) for item in AGENT_TEACHER_WORKFLOWS]
+
+
+def _workflow_catalog_item(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    normalized["task_type"] = WORKFLOW_TASK_TYPE_HINTS.get(str(item.get("key") or ""), "general_teaching_task")
+    normalized["starter_prompt"] = _workflow_starter_prompt(item)
+    return normalized
+
+
+def _workflow_starter_prompt(item: dict[str, Any]) -> str:
+    name = _clean_text(item.get("name"), max_chars=80) or "教学事务"
+    steps = [
+        _clean_text(step, max_chars=120)
+        for step in (item.get("steps") if isinstance(item.get("steps"), list) else [])
+        if _clean_text(step, max_chars=120)
+    ][:4]
+    step_lines = "\n".join(f"{index + 1}. {step}" for index, step in enumerate(steps))
+    capability = _clean_text(item.get("agent_capability"), max_chars=180)
+    guardrail = _clean_text(item.get("guardrail"), max_chars=180)
+    return (
+        f"请按「{name}」流程帮我处理当前页面相关事务。\n"
+        f"{step_lines}\n"
+        "请先核对平台数据，再输出可执行清单、草案内容和需要我确认的动作。"
+        f"\n能力边界：{capability}"
+        f"\n安全边界：{guardrail}"
+    ).strip()
 
 
 def _teacher_display_name(user: dict[str, Any]) -> str:
@@ -747,6 +790,24 @@ def build_teacher_page_context(
                 server_context["selected_session"] = selected_session
             if lesson_document_target:
                 server_context["lesson_document_target"] = lesson_document_target
+
+    workflow_hint = context.get("agentWorkflow") if isinstance(context.get("agentWorkflow"), dict) else {}
+    workflow_key = _clean_text(
+        context.get("agentWorkflowKey")
+        or context.get("agent_workflow_key")
+        or workflow_hint.get("key"),
+        max_chars=80,
+    )
+    selected_workflow = AGENT_TEACHER_WORKFLOW_BY_KEY.get(workflow_key)
+    if selected_workflow:
+        server_context["selected_agent_workflow"] = {
+            "key": str(selected_workflow.get("key") or ""),
+            "name": str(selected_workflow.get("name") or ""),
+            "steps": list(selected_workflow.get("steps") or [])[:6],
+            "agent_capability": str(selected_workflow.get("agent_capability") or ""),
+            "guardrail": str(selected_workflow.get("guardrail") or ""),
+            "task_type": WORKFLOW_TASK_TYPE_HINTS.get(workflow_key, "general_teaching_task"),
+        }
 
     context["server_context"] = server_context
     return context
@@ -2476,6 +2537,26 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
         f"- {item['name']}：{item['agent_capability']} 安全边界：{item['guardrail']}"
         for item in AGENT_TEACHER_WORKFLOWS
     )
+    selected_workflow = (
+        (context.get("server_context") or {}).get("selected_agent_workflow")
+        if isinstance(context.get("server_context"), dict)
+        else None
+    )
+    selected_workflow_block = ""
+    if isinstance(selected_workflow, dict) and selected_workflow.get("name"):
+        selected_steps = selected_workflow.get("steps") if isinstance(selected_workflow.get("steps"), list) else []
+        selected_step_lines = "\n".join(
+            f"- {_clean_text(step, max_chars=180)}"
+            for step in selected_steps[:6]
+            if _clean_text(step, max_chars=180)
+        )
+        selected_workflow_block = (
+            "教师提交任务前选择了以下 Agent 工作流，请优先按这个业务流程组织执行与输出：\n"
+            f"工作流：{_clean_text(selected_workflow.get('name'), max_chars=100)}\n"
+            f"建议步骤：\n{selected_step_lines}\n"
+            f"能力边界：{_clean_text(selected_workflow.get('agent_capability'), max_chars=220)}\n"
+            f"安全边界：{_clean_text(selected_workflow.get('guardrail'), max_chars=220)}"
+        )
 
     platform_block = ""
     user_block = ""
@@ -2571,6 +2652,8 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
 {supplement_block}
 
 {attachments_block}
+
+{selected_workflow_block}
 
 你的工具（平台即工具，全部只读）：
 1. 你所在 workspace 是隔离任务目录：{runtime_workspace}，其中 TASK.md 是任务说明，context.json 是页面上下文，BRIDGE.md 是平台桥接接口完整文档（含访问令牌）。

@@ -484,6 +484,69 @@ class AgentTaskImprovementTests(unittest.TestCase):
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
 
+    def test_agent_workflow_starters_enter_verified_context_and_prompt(self):
+        catalog = agent_task_service.agent_workflow_catalog()
+        lesson = next(item for item in catalog if item["key"] == "lesson_document_generation")
+        self.assertEqual("lesson_document", lesson["task_type"])
+        self.assertIn("学习文档生成与绑定", lesson["starter_prompt"])
+        self.assertIn("需要我确认的动作", lesson["starter_prompt"])
+
+        conn = self._open_agent_task_conn()
+        try:
+            context = agent_task_service.build_teacher_page_context(
+                conn,
+                7,
+                {
+                    "agentWorkflowKey": "lesson_document_generation",
+                    "agentWorkflow": {"key": "unknown", "name": "前端不可直接指定"},
+                },
+                task_type="lesson_document",
+                instruction="按当前课时生成下一份学习文档。",
+            )
+            selected = context["server_context"]["selected_agent_workflow"]
+            self.assertEqual("lesson_document_generation", selected["key"])
+            self.assertEqual("学习文档生成与绑定", selected["name"])
+
+            ignored = agent_task_service.build_teacher_page_context(
+                conn,
+                7,
+                {"agentWorkflowKey": "not_registered"},
+                task_type="lesson_document",
+                instruction="按当前课时生成下一份学习文档。",
+            )
+            self.assertNotIn("selected_agent_workflow", ignored["server_context"])
+
+            prompt = agent_task_service.build_runtime_prompt(
+                {
+                    "id": 99,
+                    "teacher_id": 7,
+                    "task_type": "lesson_document",
+                    "private_instruction": "按当前课时生成下一份学习文档。",
+                    "context_snapshot_json": json.dumps(context, ensure_ascii=False),
+                },
+                "/workspace/tasks/99",
+            )
+            self.assertIn("教师提交任务前选择了以下 Agent 工作流", prompt)
+            self.assertIn("学习文档生成与绑定", prompt)
+            self.assertIn("只写当前教师材料库", prompt)
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
+    def test_agent_starter_panel_is_wired_in_frontend(self):
+        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
+        self.assertIn("function renderAgentStarters", workspace_js)
+        self.assertIn("data-agent-starter", workspace_js)
+        self.assertIn("selectedAgentWorkflowKey", workspace_js)
+        self.assertIn("agentWorkflowKey", workspace_js)
+
+        template = Path("templates/partials/ai_workspace_widget.html").read_text(encoding="utf-8")
+        self.assertIn('id="ai-agent-starters"', template)
+
+        ui_css = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
+        self.assertIn(".ai-agent-starters", ui_css)
+        self.assertIn(".ai-agent-starter", ui_css)
+
     def test_follow_up_task_inherits_no_history_option(self):
         conn = self._open_agent_task_conn()
         try:
