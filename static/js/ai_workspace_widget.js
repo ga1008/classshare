@@ -360,6 +360,19 @@ function recommendedAgentStarters(context = collectPageContext()) {
         .slice(0, 4);
 }
 
+function currentActiveOwnAgentTask() {
+    const tasks = Array.isArray(lastTaskPayload.tasks) ? lastTaskPayload.tasks : [];
+    const activeTasks = tasks.filter((task) => task?.is_owner && task?.is_active);
+    if (!activeTasks.length) {
+        return null;
+    }
+    return activeTasks.find((task) => Number(task.id) === Number(selectedTaskId)) || activeTasks[0];
+}
+
+function hasCurrentUserActiveAgentTask() {
+    return Boolean(currentActiveOwnAgentTask());
+}
+
 function workflowStarterCopy(item = {}) {
     const steps = Array.isArray(item.steps) ? item.steps : [];
     return steps[0] || item.agent_capability || '生成清单、草案和确认项。';
@@ -372,8 +385,9 @@ function renderAgentStarters() {
     }
     const surface = currentChatSurface();
     const hasInput = Boolean(surface.textarea?.value.trim());
+    const hasActiveTask = hasCurrentUserActiveAgentTask();
     const starters = recommendedAgentStarters();
-    if (!agentMode || hasInput || !starters.length) {
+    if (!agentMode || hasActiveTask || hasInput || !starters.length) {
         panel.hidden = true;
         panel.innerHTML = '';
         return;
@@ -1006,6 +1020,7 @@ function renderProposedActions(task) {
             `;
         }
         const titleValue = params.title || '';
+        const confirmationNote = proposal.confirmation_note || '确认后将以你的身份执行该动作。';
         return `
             <div class="ai-task-action" data-agent-action-block="${escapeHtml(task.id)}:${index}">
                 <div class="ai-task-action__head">
@@ -1017,7 +1032,7 @@ function renderProposedActions(task) {
                     ${titleValue !== '' ? `
                         <label>标题<input type="text" data-agent-action-title value="${escapeHtml(titleValue)}" maxlength="120"></label>
                     ` : ''}
-                    <p class="ai-task-action__note">确认后将以你的身份创建草稿（不会直接面向学生）。</p>
+                    <p class="ai-task-action__note">${escapeHtml(confirmationNote)}</p>
                     <div class="ai-task-action__buttons">
                         <button type="button" class="btn btn-primary btn-sm" data-agent-action-confirm="${escapeHtml(task.id)}" data-action-index="${index}">确认执行</button>
                         <button type="button" class="btn btn-outline btn-sm" data-agent-action-cancel>取消</button>
@@ -1035,14 +1050,11 @@ function renderProposedActions(task) {
 }
 
 function renderFollowUpBox(task) {
-    if (!task.is_owner || (!task.is_terminal && !task.is_active)) {
+    if (!task.is_owner || !task.is_terminal) {
         return '';
     }
-    const isActive = Boolean(task.is_active && !task.is_terminal);
-    const placeholder = isActive
-        ? '补充说明会记录到当前任务；若运行时无法实时吸收，完成后可继续追问...'
-        : '对这个结果继续提要求，Agent 会带着上文优先处理...';
-    const buttonLabel = isActive ? '补充说明' : '追问';
+    const placeholder = '对这个结果继续提要求，Agent 会带着上文优先处理...';
+    const buttonLabel = '追问';
     const retryButtons = (task.status === 'failed' || task.status === 'canceled') ? `
         <div class="ai-task-retry-row">
             <button type="button" class="btn btn-outline btn-sm" data-agent-retry="${escapeHtml(task.id)}">原样重试</button>
@@ -1534,6 +1546,8 @@ async function deleteAgentTask(taskId) {
     lastTaskPayload = data;
     setQueueState(data.queue_state || {}, data.counts || {});
     renderTaskList(data.tasks || []);
+    refreshAgentComposerChrome();
+    renderAgentStarters();
     notify('任务历史已删除。', 'success');
 }
 
@@ -1549,6 +1563,8 @@ async function clearAgentTaskHistory() {
     lastTaskPayload = data;
     setQueueState(data.queue_state || {}, data.counts || {});
     renderTaskList(data.tasks || []);
+    refreshAgentComposerChrome();
+    renderAgentStarters();
     notify(data.deleted_count ? `已删除 ${data.deleted_count} 条任务历史。` : '没有可删除的已结束任务。', 'success');
 }
 
@@ -1714,6 +1730,8 @@ async function refreshTasks({ silent = false } = {}) {
         lastTaskPayload = data;
         setQueueState(data.queue_state || {}, data.counts || {});
         renderTaskList(data.tasks || []);
+        refreshAgentComposerChrome();
+        renderAgentStarters();
         if (selectedTaskId) {
             const selected = (data.tasks || []).find((task) => Number(task.id) === Number(selectedTaskId));
             if (selected?.is_owner) {
@@ -1726,6 +1744,8 @@ async function refreshTasks({ silent = false } = {}) {
         if (!selectedTaskId && activeOwnTask) {
             selectedTaskId = activeOwnTask.id;
             await loadTaskDetail(activeOwnTask.id, { autoScroll: true });
+            refreshAgentComposerChrome();
+            renderAgentStarters();
         }
     } catch (error) {
         if (!silent) {
@@ -1748,6 +1768,7 @@ async function loadBootstrap() {
         taskTypesCatalog = Array.isArray(data.task_types) ? data.task_types : [];
         setQueueState(data.queue_state || {}, data.counts || {});
         renderTaskList(data.tasks || []);
+        refreshAgentComposerChrome();
         renderAgentStarters();
         loadAgentSubscriptions({ silent: true });
         if (!data.runtime_configured && !runtimeWarningShown) {
@@ -1789,6 +1810,42 @@ function setAgentHistoryOpen(open) {
     }
 }
 
+function refreshAgentComposerChrome() {
+    const surface = currentChatSurface();
+    const activeTask = agentMode ? currentActiveOwnAgentTask() : null;
+    if (surface.textarea) {
+        surface.textarea.placeholder = agentMode
+            ? (activeTask ? '给正在执行的 Agent 补充说明...' : '描述要让 Agent 执行的教学业务任务...')
+            : '把当前页面作为上下文提问...';
+    }
+    if (surface.attachBtn) {
+        const attachmentDisabled = Boolean(agentMode && activeTask);
+        surface.attachBtn.disabled = attachmentDisabled;
+        surface.attachBtn.title = attachmentDisabled
+            ? '任务运行中，补充说明暂不支持附件'
+            : (agentMode ? '上传附件给 Agent 任务' : '上传附件');
+        surface.attachBtn.setAttribute('aria-label', surface.attachBtn.title);
+    }
+    if (surface.deepThinkBtn) {
+        surface.deepThinkBtn.disabled = Boolean(agentMode && activeTask);
+    }
+    if (surface.sendBtn) {
+        if (agentMode) {
+            surface.sendBtn.disabled = Boolean(agentSubmitting);
+            surface.sendBtn.title = activeTask ? '补充到当前 Agent 任务' : '加入 Agent 队列';
+            surface.sendBtn.setAttribute('aria-label', activeTask ? '补充到当前 Agent 任务' : '加入 Agent 队列');
+        } else if (chatComponent?.updateSendButtonState) {
+            chatComponent.updateSendButtonState();
+            surface.sendBtn.title = '发送';
+            surface.sendBtn.setAttribute('aria-label', '发送');
+        } else {
+            surface.sendBtn.disabled = !surface.textarea?.value.trim();
+            surface.sendBtn.title = '发送';
+            surface.sendBtn.setAttribute('aria-label', '发送');
+        }
+    }
+}
+
 function setAgentMode(enabled, { persist = true } = {}) {
     if (!CONFIG.taskCenterEnabled) {
         return;
@@ -1797,7 +1854,6 @@ function setAgentMode(enabled, { persist = true } = {}) {
     if (!agentMode) {
         selectedAgentWorkflowKey = '';
     }
-    const surface = currentChatSurface();
     const container = $('.ai-workspace-container');
     const toggle = $('#ai-agent-mode-toggle');
     const memoryToggle = $('#ai-agent-memory-toggle');
@@ -1816,30 +1872,7 @@ function setAgentMode(enabled, { persist = true } = {}) {
     if (toggle) {
         toggle.title = agentMode ? '切换为普通 AI 对话' : '切换为 Agent 任务';
     }
-    if (surface.textarea) {
-        surface.textarea.placeholder = agentMode
-            ? '描述要让 Agent 执行的教学业务任务...'
-            : '把当前页面作为上下文提问...';
-    }
-    if (surface.attachBtn) {
-        surface.attachBtn.disabled = false;
-        surface.attachBtn.title = agentMode ? '上传附件给 Agent 任务' : '上传附件';
-        surface.attachBtn.setAttribute('aria-label', surface.attachBtn.title);
-    }
-    if (surface.deepThinkBtn) {
-        surface.deepThinkBtn.disabled = false;
-    }
-    if (surface.sendBtn) {
-        if (agentMode) {
-            surface.sendBtn.disabled = Boolean(agentSubmitting);
-        } else if (chatComponent?.updateSendButtonState) {
-            chatComponent.updateSendButtonState();
-        } else {
-            surface.sendBtn.disabled = !surface.textarea?.value.trim();
-        }
-        surface.sendBtn.title = agentMode ? '加入 Agent 队列' : '发送';
-        surface.sendBtn.setAttribute('aria-label', agentMode ? '加入 Agent 队列' : '发送');
-    }
+    refreshAgentComposerChrome();
     refreshContextPreview();
     renderAgentStarters();
     setQueueState(lastTaskPayload.queue_state || {}, lastTaskPayload.counts || {});
@@ -1974,6 +2007,47 @@ function agentAttachmentPreviews(files = []) {
     }));
 }
 
+async function submitActiveAgentSupplementFromComposer(activeTask, instruction, pendingFiles = []) {
+    const taskId = Number(activeTask?.id || 0);
+    if (!taskId) {
+        return false;
+    }
+    const surface = currentChatSurface();
+    const textarea = surface.textarea;
+    if (instruction.length < 2) {
+        notify('请补充要追加给当前任务的说明。', 'warning');
+        return true;
+    }
+    if (pendingFiles.length) {
+        notify('当前任务运行中，补充说明暂不支持附件；附件可在任务完成后作为追问提交。', 'warning');
+        return true;
+    }
+    agentSubmitting = true;
+    refreshAgentComposerChrome();
+    try {
+        const data = await apiJson(`/api/agent-tasks/${taskId}/follow-up`, {
+            method: 'POST',
+            body: JSON.stringify({ instruction }),
+        });
+        if (textarea) {
+            textarea.value = '';
+            resetTextareaHeight(textarea);
+        }
+        selectedTaskId = data.task?.id || taskId;
+        renderTaskDetail(data.task, { autoScroll: true });
+        await refreshTasks({ silent: true });
+        notify(data.supplemented ? '补充说明已记录到当前任务。' : '追问任务已加入队列。', 'success');
+    } catch (error) {
+        notify(error.message || '补充说明提交失败', 'error');
+    } finally {
+        agentSubmitting = false;
+        refreshAgentComposerChrome();
+        renderAgentStarters();
+        textarea?.focus();
+    }
+    return true;
+}
+
 async function submitAgentTaskFromChat() {
     if (!CONFIG.taskCenterEnabled || agentSubmitting) {
         return;
@@ -1982,6 +2056,11 @@ async function submitAgentTaskFromChat() {
     const textarea = surface.textarea;
     const instruction = textarea?.value.trim() || '';
     const pendingFiles = Array.from(chatComponent?.pendingFiles || []);
+    const activeTask = currentActiveOwnAgentTask();
+    if (activeTask) {
+        await submitActiveAgentSupplementFromComposer(activeTask, instruction, pendingFiles);
+        return;
+    }
     if (instruction.length < 6) {
         notify('请补充更明确的任务内容。', 'warning');
         return;

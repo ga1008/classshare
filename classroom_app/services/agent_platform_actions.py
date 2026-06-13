@@ -314,7 +314,7 @@ def _plain_summary(markdown: str, *, max_chars: int = 180) -> str:
     return text[:max_chars].rstrip() + "..."
 
 
-def _create_teacher_blog_draft(conn, *, teacher_id: int, title: str, content_md: str, tags: list[str]) -> dict[str, Any]:
+def _load_teacher_blog_profile(conn, teacher_id: int) -> dict[str, Any]:
     teacher = conn.execute(
         """
         SELECT id, name, nickname, avatar_file_hash, avatar_mime_type
@@ -325,17 +325,86 @@ def _create_teacher_blog_draft(conn, *, teacher_id: int, title: str, content_md:
         (int(teacher_id),),
     ).fetchone()
     if not teacher:
-        raise HTTPException(404, "教师账户不存在，无法创建博客草稿。")
+        raise HTTPException(404, "教师账户不存在，无法创建博客内容。")
+    return dict(teacher)
+
+
+def _normalize_agent_blog_tags(tags: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in tags or []:
+        text = _safe_text(item, max_chars=24)
+        lowered = text.casefold()
+        if not text or lowered in seen:
+            continue
+        normalized.append(text)
+        seen.add(lowered)
+        if len(normalized) >= 8:
+            break
+    return normalized
+
+
+def _normalize_agent_blog_visibility(
+    conn,
+    *,
+    teacher_id: int,
+    visibility: Any = "public",
+    visible_class_id: Any = None,
+) -> tuple[str, int | None]:
+    normalized = _safe_text(visibility, max_chars=32).lower() or "public"
+    if normalized not in {"public", "class_visible"}:
+        normalized = "public"
+    if normalized != "class_visible":
+        return "public", None
+    try:
+        class_id = int(visible_class_id or 0)
+    except (TypeError, ValueError):
+        class_id = 0
+    if class_id <= 0:
+        raise HTTPException(status_code=400, detail="班级可见的博客需要提供 visible_class_id。")
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM classes
+        WHERE id = ? AND created_by_teacher_id = ?
+        LIMIT 1
+        """,
+        (class_id, int(teacher_id)),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=403, detail="只能发布到当前教师管理的班级可见范围。")
+    return "class_visible", class_id
+
+
+def _create_teacher_blog_post(
+    conn,
+    *,
+    teacher_id: int,
+    title: str,
+    content_md: str,
+    tags: list[str],
+    status: str = "draft",
+    visibility: Any = "public",
+    visible_class_id: Any = None,
+) -> dict[str, Any]:
+    teacher = _load_teacher_blog_profile(conn, teacher_id)
     display_name = _safe_text(teacher["name"] or teacher["nickname"], max_chars=80) or f"教师{teacher_id}"
     now = utcnow_iso()
+    normalized_status = "published" if str(status or "").lower() == "published" else "draft"
+    normalized_visibility, normalized_class_id = _normalize_agent_blog_visibility(
+        conn,
+        teacher_id=int(teacher_id),
+        visibility=visibility,
+        visible_class_id=visible_class_id,
+    )
     post_id = execute_insert_returning_id(
         conn,
         """
         INSERT INTO blog_posts (
             author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
-            author_avatar_hash, author_avatar_mime, title, content_md, summary, status, visibility,
+            author_avatar_hash, author_avatar_mime, title, content_md, summary, cover_image_hash, status, visibility,
             visible_user_identities_json, allow_comments, system_tags_json, tags_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             f"teacher:{int(teacher_id)}",
@@ -348,17 +417,111 @@ def _create_teacher_blog_draft(conn, *, teacher_id: int, title: str, content_md:
             _safe_text(title, max_chars=120),
             _safe_text(content_md, max_chars=60000),
             _plain_summary(content_md),
-            "draft",
-            "public",
+            "",
+            normalized_status,
+            normalized_visibility,
             "[]",
             1,
             json.dumps([], ensure_ascii=False),
-            json.dumps([_safe_text(item, max_chars=24) for item in tags if _safe_text(item, max_chars=24)][:8], ensure_ascii=False),
+            json.dumps(_normalize_agent_blog_tags(tags), ensure_ascii=False),
             now,
             now,
         ),
     )
-    return {"id": post_id, "status": "draft", "created_at": now}
+    if normalized_class_id:
+        conn.execute("UPDATE blog_posts SET visible_class_id = ? WHERE id = ?", (normalized_class_id, int(post_id)))
+    return {"id": post_id, "status": normalized_status, "created_at": now}
+
+
+def _create_teacher_blog_draft(conn, *, teacher_id: int, title: str, content_md: str, tags: list[str]) -> dict[str, Any]:
+    return _create_teacher_blog_post(
+        conn,
+        teacher_id=int(teacher_id),
+        title=title,
+        content_md=content_md,
+        tags=tags,
+        status="draft",
+        visibility="public",
+    )
+
+
+def _create_teacher_blog_comment(
+    conn,
+    *,
+    teacher_id: int,
+    post_id: int,
+    content_md: str,
+    parent_comment_id: Any = None,
+) -> dict[str, Any]:
+    teacher = _load_teacher_blog_profile(conn, teacher_id)
+    post = conn.execute(
+        """
+        SELECT id, author_identity, status, allow_comments
+        FROM blog_posts
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(post_id),),
+    ).fetchone()
+    if not post:
+        raise HTTPException(status_code=404, detail="目标博客不存在，无法发表评论。")
+    post = dict(post)
+    teacher_identity = f"teacher:{int(teacher_id)}"
+    if str(post.get("status") or "") != "published" and str(post.get("author_identity") or "") != teacher_identity:
+        raise HTTPException(status_code=403, detail="只能评论已发布博客或当前教师自己的博客。")
+    if not bool(post.get("allow_comments")):
+        raise HTTPException(status_code=403, detail="目标博客已关闭评论。")
+    normalized_content = _safe_text(content_md, max_chars=5000)
+    if not normalized_content:
+        raise HTTPException(status_code=400, detail="评论内容不能为空。")
+    parent_id: int | None = None
+    if parent_comment_id not in (None, "", 0):
+        try:
+            parent_id = int(parent_comment_id)
+        except (TypeError, ValueError):
+            parent_id = 0
+        parent = conn.execute(
+            """
+            SELECT id
+            FROM blog_comments
+            WHERE id = ? AND post_id = ? AND status = 'active'
+            LIMIT 1
+            """,
+            (parent_id, int(post_id)),
+        ).fetchone()
+        if not parent:
+            raise HTTPException(status_code=400, detail="回复的评论不存在。")
+    display_name = _safe_text(teacher["name"] or teacher["nickname"], max_chars=80) or f"教师{teacher_id}"
+    now = utcnow_iso()
+    comment_id = execute_insert_returning_id(
+        conn,
+        """
+        INSERT INTO blog_comments (
+            post_id, parent_comment_id,
+            author_identity, author_role, author_user_pk, author_display_name,
+            content_md, emoji_payload_json, attachments_json,
+            status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+        """,
+        (
+            int(post_id),
+            parent_id,
+            teacher_identity,
+            "teacher",
+            int(teacher_id),
+            display_name,
+            normalized_content,
+            "",
+            "[]",
+            now,
+            now,
+        ),
+    )
+    conn.execute(
+        "UPDATE blog_posts SET comment_count = comment_count + 1, updated_at = ? WHERE id = ?",
+        (now, int(post_id)),
+    )
+    return {"id": comment_id, "post_id": int(post_id), "created_at": now}
 
 
 def _instruction_is_exam_like(text: str) -> bool:

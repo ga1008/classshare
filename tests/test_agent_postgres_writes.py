@@ -42,6 +42,17 @@ class FakeConnection:
                     }
                 )
             )
+        if normalized.startswith("SELECT id, author_identity, status, allow_comments"):
+            return FakeCursor(
+                FakeRow(
+                    {
+                        "id": 55,
+                        "author_identity": "teacher:3",
+                        "status": "published",
+                        "allow_comments": 1,
+                    }
+                )
+            )
         if normalized.startswith("SELECT * FROM agent_runtime_api_keys"):
             return FakeCursor(FakeRow({"id": 44, "key_label": "DeepSeek"}))
         return FakeCursor()
@@ -141,6 +152,49 @@ class AgentPostgresWriteTests(unittest.TestCase):
         self.assertEqual("draft", result["status"])
         self.assertEqual(1, insert_helper.call_count)
         self.assertIn("INSERT INTO blog_posts", insert_helper.call_args.args[1])
+
+    def test_teacher_blog_post_publish_uses_insert_returning_helper(self):
+        conn = FakeConnection()
+
+        with patch.object(
+            agent_platform_actions,
+            "execute_insert_returning_id",
+            return_value=56,
+        ) as insert_helper:
+            result = agent_platform_actions._create_teacher_blog_post(
+                conn,
+                teacher_id=3,
+                title="Published",
+                content_md="Fresh content",
+                tags=["agent"],
+                status="published",
+            )
+
+        self.assertEqual(56, result["id"])
+        self.assertEqual("published", result["status"])
+        self.assertEqual(1, insert_helper.call_count)
+        self.assertIn("INSERT INTO blog_posts", insert_helper.call_args.args[1])
+
+    def test_teacher_blog_comment_uses_insert_returning_helper(self):
+        conn = FakeConnection()
+
+        with patch.object(
+            agent_platform_actions,
+            "execute_insert_returning_id",
+            return_value=57,
+        ) as insert_helper:
+            result = agent_platform_actions._create_teacher_blog_comment(
+                conn,
+                teacher_id=3,
+                post_id=55,
+                content_md="Nice reflection",
+            )
+
+        self.assertEqual(57, result["id"])
+        self.assertEqual(55, result["post_id"])
+        self.assertEqual(1, insert_helper.call_count)
+        self.assertIn("INSERT INTO blog_comments", insert_helper.call_args.args[1])
+        self.assertTrue(any("UPDATE blog_posts SET comment_count" in sql for sql, _ in conn.execute_calls))
 
     def test_assignment_draft_uses_insert_returning_helper(self):
         conn = FakeConnection()

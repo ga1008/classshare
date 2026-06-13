@@ -86,7 +86,7 @@ TASK_TYPE_DEFINITIONS: dict[str, dict[str, str]] = {
     "blog_draft": {
         "label": "撰写课堂博客",
         "verb": "撰写",
-        "placeholder": "围绕本课堂主题写一篇可发布的博客草稿。",
+        "placeholder": "围绕本课堂主题写一篇博客草稿；需要公开发布时可让 Agent 先联网补充资料并生成发布提案。",
     },
     "student_notification": {
         "label": "拟定学生通知",
@@ -217,10 +217,11 @@ AGENT_TEACHER_WORKFLOWS: tuple[dict[str, Any], ...] = (
         "steps": [
             "读取当前课堂、材料、课时和教师输入主题",
             "生成课堂博客草稿、摘要、标签和发布建议",
-            "可创建教师私有草稿，等待教师审阅后发布",
+            "如需引用近期信息，先联网检索并保留来源链接",
+            "可创建草稿；教师确认后也可发布博客或发表评论",
         ],
-        "agent_capability": "可安全创建博客草稿；不会自动公开发布。",
-        "guardrail": "只以当前教师身份创建草稿，不代学生发言，不公开敏感学生信息。",
+        "agent_capability": "可安全创建博客草稿；教师在任务卡片确认后可发布博客或发表评论。",
+        "guardrail": "只以当前教师身份执行确认后的博客动作，不代学生发言，不公开敏感学生信息。",
     },
     {
         "key": "gongwen_lookup",

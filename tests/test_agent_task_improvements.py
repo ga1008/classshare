@@ -677,6 +677,24 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 "extra": "should be dropped"
               }
             },
+            {
+              "action": "publish_blog_post",
+              "summary": "发布博客",
+              "params": {
+                "title": "课堂观察",
+                "content_md": "结合最新资料后的正文",
+                "tags": ["教学"],
+                "visibility": "public"
+              }
+            },
+            {
+              "action": "create_blog_comment",
+              "summary": "发表评论",
+              "params": {
+                "post_id": 9,
+                "content_md": "这篇总结很有启发。"
+              }
+            },
             {"action": "delete_everything", "params": {"title": "bad"}}
           ]
         }
@@ -685,10 +703,15 @@ class AgentTaskImprovementTests(unittest.TestCase):
 
         proposals = extract_proposed_actions(text)
 
-        self.assertEqual(1, len(proposals))
+        self.assertEqual(3, len(proposals))
         self.assertEqual("create_blog_draft", proposals[0]["action"])
         self.assertNotIn("extra", proposals[0]["params"])
         self.assertEqual(["AI", "教学"], proposals[0]["params"]["tags"])
+        self.assertEqual("publish_blog_post", proposals[1]["action"])
+        self.assertEqual("public", proposals[1]["params"]["visibility"])
+        self.assertIn("发布博客", proposals[1]["confirmation_note"])
+        self.assertEqual("create_blog_comment", proposals[2]["action"])
+        self.assertEqual(9, proposals[2]["params"]["post_id"])
 
     def test_action_param_validation_requires_registered_schema(self):
         clean, errors = validate_action_params("create_assignment_draft", {"title": "Only title"})
@@ -813,6 +836,49 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertEqual("课堂复盘", blog_row["title"])
             self.assertEqual(["Agent", "教学"], json.loads(blog_row["tags_json"]))
 
+            published = execute_proposed_action(
+                conn,
+                teacher_id=7,
+                action="publish_blog_post",
+                params={
+                    "title": "课堂观察",
+                    "content_md": "今天结合最新资料更新了课堂观察。",
+                    "tags": ["Agent", "观察"],
+                    "visibility": "public",
+                },
+            )
+            self.assertEqual(f"/blog?post={published['ref_id']}", published["url"])
+            published_row = conn.execute(
+                "SELECT status, title, tags_json FROM blog_posts WHERE id = ?",
+                (published["ref_id"],),
+            ).fetchone()
+            self.assertEqual("published", published_row["status"])
+            self.assertEqual("课堂观察", published_row["title"])
+            self.assertEqual(["Agent", "观察"], json.loads(published_row["tags_json"]))
+
+            comment = execute_proposed_action(
+                conn,
+                teacher_id=7,
+                action="create_blog_comment",
+                params={
+                    "post_id": published["ref_id"],
+                    "content_md": "这篇课堂观察可以继续沉淀为复盘素材。",
+                },
+            )
+            self.assertEqual(f"/blog?post={published['ref_id']}", comment["url"])
+            comment_row = conn.execute(
+                "SELECT post_id, author_identity, content_md FROM blog_comments WHERE id = ?",
+                (comment["ref_id"],),
+            ).fetchone()
+            self.assertEqual(published["ref_id"], comment_row["post_id"])
+            self.assertEqual("teacher:7", comment_row["author_identity"])
+            self.assertIn("课堂观察", comment_row["content_md"])
+            comment_count = conn.execute(
+                "SELECT comment_count FROM blog_posts WHERE id = ?",
+                (published["ref_id"],),
+            ).fetchone()["comment_count"]
+            self.assertEqual(1, comment_count)
+
             manual = execute_proposed_action(
                 conn,
                 teacher_id=7,
@@ -857,6 +923,30 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertIn("/execute", manual_block)
         self.assertIn("confirmation_token", manual_block)
         self.assertIn("renderTaskDetail", manual_block)
+
+    def test_active_agent_task_uses_bottom_composer_and_hides_recommendations(self):
+        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
+        starters_block = workspace_js[
+            workspace_js.index("function renderAgentStarters"):
+            workspace_js.index("function applyAgentStarter")
+        ]
+        followup_block = workspace_js[
+            workspace_js.index("function renderFollowUpBox"):
+            workspace_js.index("function renderTaskList")
+        ]
+        submit_block = workspace_js[
+            workspace_js.index("async function submitActiveAgentSupplementFromComposer"):
+            workspace_js.index("function bindTaskCenter")
+        ]
+
+        self.assertIn("function currentActiveOwnAgentTask", workspace_js)
+        self.assertIn("const hasActiveTask = hasCurrentUserActiveAgentTask()", starters_block)
+        self.assertIn("if (!agentMode || hasActiveTask || hasInput || !starters.length)", starters_block)
+        self.assertIn("!task.is_terminal", followup_block)
+        self.assertNotIn("task.is_active", followup_block)
+        self.assertIn("/follow-up", submit_block)
+        self.assertIn("补充到当前 Agent 任务", workspace_js)
+        self.assertIn("补充说明暂不支持附件", workspace_js)
 
     def test_manual_notification_action_execute_route_audits_without_sending(self):
         conn = self._open_agent_task_conn()
