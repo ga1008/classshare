@@ -93,7 +93,7 @@ def _insert_material_file_row(
          ai_parse_status, ai_parse_result_json, check_questions_json, check_questions_status,
          check_questions_error, check_questions_generated_at, ai_optimize_status, owner_role, owner_user_pk, scope_level,
          school_code, school_name, college, department, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle',
+        VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle',
                 'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
     """
     file_id = execute_insert_returning_id(

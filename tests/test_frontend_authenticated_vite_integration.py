@@ -294,7 +294,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
     def test_manage_workflow_page_renders_for_authenticated_teacher(self):
         with _authenticated_client(self.teacher) as client:
-            response = client.get("/manage", follow_redirects=False)
+            response = client.get("/manage/teaching", follow_redirects=False)
 
         self.assertEqual(200, response.status_code)
         html = response.text
@@ -481,9 +481,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         with _authenticated_client(self.teacher) as client:
             response = client.get("/manage/teaching/materials", follow_redirects=False)
 
-        if response.status_code != 200:
-            self.skipTest(f"Authenticated teacher cannot access /manage/teaching/materials in this fixture: {response.status_code}")
-
+        self.assertEqual(200, response.status_code)
         html = response.text
         self.assertIn('data-lanshare-island="materials-manage-page"', html)
         self.assertIn("materials-manage-page", html)
@@ -492,6 +490,15 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         self.assertIn('data-testid="p03-materials-list"', html)
         self.assertIn('data-testid="p03-materials-refresh"', html)
         self.assertIn('data-testid="p03-materials-file-input"', html)
+
+    def test_manage_materials_renders_when_teacher_email_is_missing(self):
+        teacher = dict(self.teacher)
+        teacher.pop("email", None)
+        with _authenticated_client(teacher) as client:
+            response = client.get("/manage/teaching/materials", follow_redirects=False)
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn('data-lanshare-island="materials-manage-page"', response.text)
 
     def test_profile_message_center_injects_page_and_workspace_islands_without_direct_legacy_script(self):
         with _authenticated_client(self.teacher) as client:

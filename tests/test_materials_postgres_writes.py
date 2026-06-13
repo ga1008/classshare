@@ -24,6 +24,7 @@ class _FakeMaterialConnection:
         normalized = " ".join(str(sql).split())
         self.calls.append((normalized, tuple(params)))
         if normalized.startswith("INSERT INTO course_materials"):
+            self.assert_sql_placeholders_match_params(normalized, params)
             name = str(params[4])
             return _FakeCursor({"id": 17 if name == "Folder" else 18}, rowcount=1)
         if normalized.startswith("UPDATE course_materials SET root_id"):
@@ -31,6 +32,12 @@ class _FakeMaterialConnection:
         if normalized.startswith("INSERT INTO material_ai_import_records"):
             return _FakeCursor({"id": 19}, rowcount=1)
         raise AssertionError(f"Unexpected SQL: {normalized}")
+
+    @staticmethod
+    def assert_sql_placeholders_match_params(sql, params):
+        placeholder_count = str(sql).count("?")
+        if placeholder_count != len(tuple(params)):
+            raise AssertionError(f"SQL placeholder count {placeholder_count} did not match params {len(tuple(params))}")
 
 
 class MaterialsPostgresWriteTests(unittest.TestCase):

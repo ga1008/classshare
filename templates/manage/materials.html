@@ -574,7 +574,7 @@
     window.MATERIALS_MANAGE_CONFIG = {
         offerings: {{ offerings | tojson }},
         canAssign: {{ 'true' if offerings else 'false' }},
-        userIdentityHints: {{ [user_info.name, user_info.email] | tojson }},
+        userIdentityHints: {{ [(user_info.name | default('', true)), (user_info.email | default('', true))] | tojson }},
         materialAiImportRegistry: {{ material_ai_import_registry | tojson }}
     };
 </script>

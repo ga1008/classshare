@@ -3,6 +3,7 @@ from .generation_helpers import *
 from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
+from ..ui_parts.common import _build_manage_template_context
 from ...db.connection import get_configured_db_engine
 from ...services.base_resource_modes_service import (
     build_material_delete_blockers,
