@@ -7072,6 +7072,53 @@ body.ai-chat-fullscreen-active {
     margin-top: 12px;
 }
 
+.ai-task-events-panel {
+    margin-top: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 10px;
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.ai-task-events-panel summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    color: #334155;
+    font-size: 0.8rem;
+    font-weight: 820;
+    cursor: pointer;
+    list-style: none;
+}
+
+.ai-task-events-panel summary::-webkit-details-marker {
+    display: none;
+}
+
+.ai-task-events-panel summary::after {
+    content: "v";
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    transition: transform var(--transition-fast);
+}
+
+.ai-task-events-panel[open] summary::after {
+    transform: rotate(180deg);
+}
+
+.ai-task-events-panel summary small {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 720;
+}
+
+.ai-task-events-panel .ai-task-events {
+    margin-top: 0;
+    padding: 0 10px 10px;
+}
+
 .ai-task-event {
     display: grid;
     gap: 3px;

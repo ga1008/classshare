@@ -369,8 +369,24 @@ function currentActiveOwnAgentTask() {
     return activeTasks.find((task) => Number(task.id) === Number(selectedTaskId)) || activeTasks[0];
 }
 
-function hasCurrentUserActiveAgentTask() {
-    return Boolean(currentActiveOwnAgentTask());
+function currentSelectedOwnAgentTask({ terminalOnly = false } = {}) {
+    const tasks = Array.isArray(lastTaskPayload.tasks) ? lastTaskPayload.tasks : [];
+    const task = tasks.find((item) => item?.is_owner && Number(item.id) === Number(selectedTaskId));
+    if (!task) {
+        return null;
+    }
+    if (terminalOnly && !task.is_terminal) {
+        return null;
+    }
+    return task;
+}
+
+function currentAgentComposerTargetTask() {
+    return currentActiveOwnAgentTask() || currentSelectedOwnAgentTask({ terminalOnly: true });
+}
+
+function hasCurrentAgentTaskContext() {
+    return Boolean(currentActiveOwnAgentTask() || currentSelectedOwnAgentTask() || visibleAgentTaskIds().length);
 }
 
 function workflowStarterCopy(item = {}) {
@@ -385,9 +401,9 @@ function renderAgentStarters() {
     }
     const surface = currentChatSurface();
     const hasInput = Boolean(surface.textarea?.value.trim());
-    const hasActiveTask = hasCurrentUserActiveAgentTask();
+    const hasTaskContext = hasCurrentAgentTaskContext();
     const starters = recommendedAgentStarters();
-    if (!agentMode || hasActiveTask || hasInput || !starters.length) {
+    if (!agentMode || hasTaskContext || hasInput || !starters.length) {
         panel.hidden = true;
         panel.innerHTML = '';
         return;
@@ -803,7 +819,12 @@ function terminalTitle(status) {
 
 function resultSummaryText(task) {
     if (task.result_summary) return task.result_summary;
-    if (task.error_message) return task.error_message;
+    if (task.error_message) {
+        if (/exceeded\s+\d+\s+seconds/i.test(task.error_message)) {
+            return '任务运行超时，未能在平台时间上限内完整完成。可先查看已保留的部分结果；如果没有可用产物，请缩小任务范围后重试。';
+        }
+        return task.error_message;
+    }
     if (task.status === 'completed') return '任务已结束，但运行时没有返回明确的业务结论。建议查看下方执行记录，确认是否产生了可用内容。';
     if (task.status === 'failed') return '任务失败，但未返回具体错误。建议稍后重试，或把任务要求描述得更具体。';
     return task.status_label || task.status || '处理中';
@@ -917,12 +938,13 @@ function renderRuntimeDetail(detail = {}) {
     const artifacts = Array.isArray(detail.artifacts) ? detail.artifacts.slice(0, 6) : [];
     const regularArtifacts = artifacts.filter((item) => !(item && item.recovered && item.download_url));
     const toolCalls = Array.isArray(detail.tool_calls) ? detail.tool_calls.slice(-6) : [];
-    if (!textOutputs.length && !recoveredArtifacts.length && !regularArtifacts.length && !toolCalls.length) {
+    const nextActions = Array.isArray(detail.next_actions) ? detail.next_actions.slice(0, 6) : [];
+    if (!textOutputs.length && !recoveredArtifacts.length && !regularArtifacts.length && !toolCalls.length && !nextActions.length) {
         return '';
     }
     return `
         <div class="ai-task-detail__block is-runtime-detail">
-            <h4>运行时细节</h4>
+            <h4>${detail.partial_result_available ? '已保留的部分结果' : '执行信息'}</h4>
             ${textOutputs.length ? `
                 <div class="ai-task-runtime-section">
                     <strong>关键输出</strong>
@@ -952,8 +974,50 @@ function renderRuntimeDetail(detail = {}) {
                     <ul>${toolCalls.map((item) => `<li>${escapeHtml(item.name || item.tool || item.type || JSON.stringify(item).slice(0, 160))}</li>`).join('')}</ul>
                 </div>
             ` : ''}
+            ${nextActions.length ? `
+                <div class="ai-task-runtime-section">
+                    <strong>建议下一步</strong>
+                    <ul>${nextActions.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+                </div>
+            ` : ''}
         </div>
     `;
+}
+
+function protocolArtifactLabel(text) {
+    const match = String(text || '').match(/(?:path|file|filename)["']?\s*[:=]\s*["'\\]*([^"'\\,\s]+)/i);
+    if (!match) {
+        return '任务产物';
+    }
+    const value = match[1].replace(/\\\//g, '/').replace(/\\/g, '/');
+    return value.split('/').filter(Boolean).pop() || value || '任务产物';
+}
+
+function userFacingTaskEvent(event) {
+    const message = String(event?.message || event?.event_type || '').trim();
+    const lower = message.toLowerCase();
+    const protocol = /^\s*#?\d+\s+(item\.(delta|started|completed)|response\.[\w.-]+|turn\.[\w.-]+)\s*:/i.test(message);
+    if (!protocol) {
+        return { ...event, message };
+    }
+    if (lower.includes('item.delta') || lower.includes('agent_reasoning')) {
+        return null;
+    }
+    if (lower.includes('file_change')) {
+        const label = protocolArtifactLabel(message);
+        return {
+            ...event,
+            message: lower.includes('item.completed') ? `已写入任务产物：${label}` : `正在写入任务产物：${label}`,
+            detail: {},
+        };
+    }
+    if (message.includes('/api/agent-bridge/web')) {
+        return { ...event, message: '正在联网检索资料', detail: {} };
+    }
+    if (message.includes('/api/agent-bridge/query')) {
+        return { ...event, message: '正在查询平台数据库', detail: {} };
+    }
+    return null;
 }
 
 function renderEventDetail(event) {
@@ -980,11 +1044,15 @@ function renderEventDetail(event) {
 }
 
 function renderTaskEventHtml(event) {
+    const displayEvent = userFacingTaskEvent(event);
+    if (!displayEvent) {
+        return '';
+    }
     return `
-        <div class="ai-task-event" data-agent-event-id="${escapeHtml(event.id || 0)}">
-            <span>${escapeHtml(formatDateTime(event.created_at))}</span>
-            <strong>${escapeHtml(event.message || event.event_type || '')}</strong>
-            ${renderEventDetail(event)}
+        <div class="ai-task-event" data-agent-event-id="${escapeHtml(displayEvent.id || 0)}">
+            <span>${escapeHtml(formatDateTime(displayEvent.created_at))}</span>
+            <strong>${escapeHtml(displayEvent.message || displayEvent.event_type || '')}</strong>
+            ${renderEventDetail(displayEvent)}
         </div>
     `;
 }
@@ -1053,21 +1121,13 @@ function renderFollowUpBox(task) {
     if (!task.is_owner || !task.is_terminal) {
         return '';
     }
-    const placeholder = '对这个结果继续提要求，Agent 会带着上文优先处理...';
-    const buttonLabel = '追问';
     const retryButtons = (task.status === 'failed' || task.status === 'canceled') ? `
         <div class="ai-task-retry-row">
             <button type="button" class="btn btn-outline btn-sm" data-agent-retry="${escapeHtml(task.id)}">原样重试</button>
             <button type="button" class="btn btn-outline btn-sm" data-agent-retry-edit="${escapeHtml(task.id)}">修改后重试</button>
         </div>
     ` : '';
-    return `
-        ${retryButtons}
-        <div class="ai-task-followup">
-            <textarea data-agent-followup-input="${escapeHtml(task.id)}" rows="1" maxlength="4000" placeholder="${escapeHtml(placeholder)}"></textarea>
-            <button type="button" class="btn btn-primary btn-sm" data-agent-followup="${escapeHtml(task.id)}">${buttonLabel}</button>
-        </div>
-    `;
+    return retryButtons;
 }
 
 function renderTaskList(tasks = []) {
@@ -1213,6 +1273,24 @@ async function setAgentSubscription(templateKey, { enabled, hour }) {
     }
 }
 
+function renderTaskEventsPanel(task) {
+    const events = Array.isArray(task.events) ? task.events : [];
+    const visibleHtml = events.map(renderTaskEventHtml).join('');
+    const countText = events.length ? ` · ${events.length} 条` : '';
+    const openAttr = task.is_active ? ' open' : '';
+    return `
+        <details class="ai-task-events-panel"${openAttr}>
+            <summary>
+                <span>执行记录${escapeHtml(countText)}</span>
+                <small>${task.is_active ? '实时更新' : '点击查看过程细节'}</small>
+            </summary>
+            <div class="ai-task-events" data-agent-events="${escapeHtml(task.id)}">
+                ${visibleHtml || '<div class="ai-task-detail__empty">暂无可展示的执行记录。</div>'}
+            </div>
+        </details>
+    `;
+}
+
 function buildAgentTaskDetailHtml(task) {
     if (!task) {
         return '<div class="ai-task-detail__empty">选择一个任务查看状态。自己的任务会显示详情和执行记录。</div>';
@@ -1253,9 +1331,7 @@ function buildAgentTaskDetailHtml(task) {
         </div>` : ''}
         ${renderProposedActions(task)}
         ${renderRuntimeDetail(detailPayload)}
-        <div class="ai-task-events" data-agent-events="${escapeHtml(task.id)}">
-            ${(task.events || []).map(renderTaskEventHtml).join('') || '<div class="ai-task-detail__empty">暂无执行记录。</div>'}
-        </div>
+        ${renderTaskEventsPanel(task)}
         ${task.is_active ? '<div class="ai-task-live-indicator">执行过程实时更新中…</div>' : ''}
         ${renderFollowUpBox(task)}
     ` : `
@@ -1333,6 +1409,8 @@ function renderAgentTaskMessage(task, { autoScroll = false } = {}) {
     if (lastEventId > 0) {
         taskLastEventIds.set(Number(task.id), lastEventId);
     }
+    refreshAgentComposerChrome();
+    renderAgentStarters();
     // 轮询刷新只做粘性跟随（force=false），不打断用户向上浏览输出内容。
     currentChatSurface().scrollToBottom(autoScroll || isNew);
 }
@@ -1343,10 +1421,6 @@ function appendTaskEventsToCard(taskId, events = []) {
     if (!id || !container || !Array.isArray(events) || !events.length) {
         return;
     }
-    const empty = container.querySelector('.ai-task-detail__empty');
-    if (empty) {
-        empty.remove();
-    }
     const knownIds = new Set(
         Array.from(container.querySelectorAll('[data-agent-event-id]'))
             .map((node) => Number(node.dataset.agentEventId || 0))
@@ -1356,9 +1430,17 @@ function appendTaskEventsToCard(taskId, events = []) {
     if (!freshEvents.length) {
         return;
     }
-    container.insertAdjacentHTML('beforeend', freshEvents.map(renderTaskEventHtml).join(''));
     const lastId = freshEvents.reduce((maxId, event) => Math.max(maxId, Number(event.id || 0)), taskLastEventIds.get(id) || 0);
     taskLastEventIds.set(id, lastId);
+    const freshHtml = freshEvents.map(renderTaskEventHtml).filter(Boolean).join('');
+    if (!freshHtml) {
+        return;
+    }
+    const empty = container.querySelector('.ai-task-detail__empty');
+    if (empty) {
+        empty.remove();
+    }
+    container.insertAdjacentHTML('beforeend', freshHtml);
 }
 
 async function refreshTerminalTaskCard(taskId) {
@@ -1646,54 +1728,24 @@ async function executeAgentAction(button) {
     }
 }
 
-async function continueAgentTask(button) {
-    const taskId = Number(button.dataset.agentFollowup || 0);
-    const card = button.closest('.ai-agent-task-card') || document;
-    const input = card.querySelector(`[data-agent-followup-input="${taskId}"]`);
-    const instruction = input?.value.trim() || '';
-    if (instruction.length < 2) {
-        notify('请补充要继续提的要求。', 'warning');
-        return;
-    }
-    button.disabled = true;
-    try {
-        const data = await apiJson(`/api/agent-tasks/${taskId}/follow-up`, {
-            method: 'POST',
-            body: JSON.stringify({ instruction }),
-        });
-        if (input) {
-            input.value = '';
-        }
-        if (data.supplemented) {
-            renderTaskDetail(data.task, { autoScroll: true });
-            notify('补充说明已记录。', 'success');
-        } else {
-            selectedTaskId = data.task?.id || selectedTaskId;
-            renderTaskDetail(data.task, { autoScroll: true });
-            notify('追问任务已加入队列。', 'success');
-        }
-        await refreshTasks({ silent: true });
-    } finally {
-        button.disabled = false;
-    }
-}
-
 function prefillSupplementFollowUp(button) {
     const encoded = button.dataset.agentSupplementFollowup || '';
     const text = decodeURIComponent(encoded || '').trim();
     if (!text) {
         return;
     }
-    const card = button.closest('.ai-agent-task-card') || document;
-    const input = card.querySelector('[data-agent-followup-input]');
+    setAgentMode(true);
+    const input = currentChatSurface().textarea;
     if (!input) {
-        notify('任务完成后可在追问框继续补充。', 'info');
+        notify('可在底部输入框继续补充。', 'info');
         return;
     }
     input.value = text;
     resetTextareaHeight(input);
+    refreshAgentComposerChrome();
+    renderAgentStarters();
     input.focus();
-    notify('已把补充说明填入追问框。', 'success');
+    notify('已把补充说明填到底部输入框。', 'success');
 }
 
 async function retryAgentTask(button, { edit = false } = {}) {
@@ -1812,28 +1864,32 @@ function setAgentHistoryOpen(open) {
 
 function refreshAgentComposerChrome() {
     const surface = currentChatSurface();
-    const activeTask = agentMode ? currentActiveOwnAgentTask() : null;
+    const targetTask = agentMode ? currentAgentComposerTargetTask() : null;
+    const isActiveTarget = Boolean(targetTask?.is_active && !targetTask?.is_terminal);
     if (surface.textarea) {
         surface.textarea.placeholder = agentMode
-            ? (activeTask ? '给正在执行的 Agent 补充说明...' : '描述要让 Agent 执行的教学业务任务...')
+            ? (isActiveTarget
+                ? '给正在执行的 Agent 补充说明...'
+                : (targetTask ? '对这个 Agent 结果继续提要求...' : '描述要让 Agent 执行的教学业务任务...'))
             : '把当前页面作为上下文提问...';
     }
     if (surface.attachBtn) {
-        const attachmentDisabled = Boolean(agentMode && activeTask);
+        const attachmentDisabled = Boolean(agentMode && targetTask);
         surface.attachBtn.disabled = attachmentDisabled;
         surface.attachBtn.title = attachmentDisabled
-            ? '任务运行中，补充说明暂不支持附件'
+            ? (isActiveTarget ? '任务运行中，补充说明暂不支持附件' : '追问当前结果暂不支持附件')
             : (agentMode ? '上传附件给 Agent 任务' : '上传附件');
         surface.attachBtn.setAttribute('aria-label', surface.attachBtn.title);
     }
     if (surface.deepThinkBtn) {
-        surface.deepThinkBtn.disabled = Boolean(agentMode && activeTask);
+        surface.deepThinkBtn.disabled = Boolean(agentMode && targetTask);
     }
     if (surface.sendBtn) {
         if (agentMode) {
             surface.sendBtn.disabled = Boolean(agentSubmitting);
-            surface.sendBtn.title = activeTask ? '补充到当前 Agent 任务' : '加入 Agent 队列';
-            surface.sendBtn.setAttribute('aria-label', activeTask ? '补充到当前 Agent 任务' : '加入 Agent 队列');
+            const sendLabel = isActiveTarget ? '补充到当前 Agent 任务' : (targetTask ? '追问当前 Agent 结果' : '加入 Agent 队列');
+            surface.sendBtn.title = sendLabel;
+            surface.sendBtn.setAttribute('aria-label', sendLabel);
         } else if (chatComponent?.updateSendButtonState) {
             chatComponent.updateSendButtonState();
             surface.sendBtn.title = '发送';
@@ -2007,19 +2063,20 @@ function agentAttachmentPreviews(files = []) {
     }));
 }
 
-async function submitActiveAgentSupplementFromComposer(activeTask, instruction, pendingFiles = []) {
-    const taskId = Number(activeTask?.id || 0);
+async function submitActiveAgentSupplementFromComposer(targetTask, instruction, pendingFiles = []) {
+    const taskId = Number(targetTask?.id || 0);
+    const isActiveTarget = Boolean(targetTask?.is_active && !targetTask?.is_terminal);
     if (!taskId) {
         return false;
     }
     const surface = currentChatSurface();
     const textarea = surface.textarea;
     if (instruction.length < 2) {
-        notify('请补充要追加给当前任务的说明。', 'warning');
+        notify(isActiveTarget ? '请补充要追加给当前任务的说明。' : '请补充要继续追问的要求。', 'warning');
         return true;
     }
     if (pendingFiles.length) {
-        notify('当前任务运行中，补充说明暂不支持附件；附件可在任务完成后作为追问提交。', 'warning');
+        notify(isActiveTarget ? '当前任务运行中，补充说明暂不支持附件；附件可在任务完成后作为追问提交。' : '追问当前结果暂不支持附件；需要附件时请新建 Agent 任务。', 'warning');
         return true;
     }
     agentSubmitting = true;
@@ -2056,9 +2113,9 @@ async function submitAgentTaskFromChat() {
     const textarea = surface.textarea;
     const instruction = textarea?.value.trim() || '';
     const pendingFiles = Array.from(chatComponent?.pendingFiles || []);
-    const activeTask = currentActiveOwnAgentTask();
-    if (activeTask) {
-        await submitActiveAgentSupplementFromComposer(activeTask, instruction, pendingFiles);
+    const targetTask = currentAgentComposerTargetTask();
+    if (targetTask) {
+        await submitActiveAgentSupplementFromComposer(targetTask, instruction, pendingFiles);
         return;
     }
     if (instruction.length < 6) {
@@ -2278,15 +2335,6 @@ function bindTaskCenter() {
             }
             return;
         }
-        const followUpButton = event.target.closest('[data-agent-followup]');
-        if (followUpButton) {
-            try {
-                await continueAgentTask(followUpButton);
-            } catch (error) {
-                notify(error.message || '提交失败', 'error');
-            }
-            return;
-        }
         const retryEditButton = event.target.closest('[data-agent-retry-edit]');
         if (retryEditButton) {
             try {
@@ -2319,15 +2367,6 @@ function bindTaskCenter() {
                 cancelButton.disabled = false;
             }
         }
-    });
-    $('#ai-chat-messages-box')?.addEventListener('keydown', (event) => {
-        const input = event.target.closest('[data-agent-followup-input]');
-        if (!input || event.key !== 'Enter' || event.shiftKey) {
-            return;
-        }
-        event.preventDefault();
-        const button = input.closest('.ai-task-followup')?.querySelector('[data-agent-followup]');
-        button?.click();
     });
     const sendButton = $('#ai-chat-btn-send');
     const textarea = $('#ai-chat-textarea');

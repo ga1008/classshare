@@ -117,6 +117,23 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertIn("正在整理课堂材料", events[0]["message"])
         self.assertIn("正在查询平台数据库", events[1]["message"])
 
+    def test_runtime_snapshot_diff_suppresses_raw_protocol_noise(self):
+        events = diff_runtime_snapshot(
+            {"status": "running", "timeline": []},
+            {
+                "status": "running",
+                "timeline": [
+                    '#13261 item.delta: {"delta":"什么是","kind":"agent_reasoning"}',
+                    '#13357 item.started: {"item":{"kind":"file_change","summary":"write_file {\\\"path\\\":\\\"/workspace/tasks/9/blog_draft.md\\\"}"}}',
+                    '#13358 item.completed: {"item":{"kind":"agent_message","summary":"I have material combined with domain knowledge."}}',
+                ],
+            },
+        )
+
+        messages = [event["message"] for event in events]
+        self.assertEqual(["正在写入任务产物：blog_draft.md"], messages)
+        self.assertFalse(any("item.delta" in message or "agent_reasoning" in message for message in messages))
+
     def test_runtime_snapshot_diff_surfaces_output_deltas(self):
         new_output_events = diff_runtime_snapshot(
             {"status": "running", "text_outputs": []},
@@ -156,6 +173,18 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertEqual(ERROR_CLASS_TRANSIENT, classify_runtime_error("503 service unavailable"))
         self.assertEqual(ERROR_CLASS_CONTENT, classify_runtime_error("JSON parse failed"))
         self.assertEqual("fatal", classify_runtime_error("invalid api key"))
+
+    def test_runtime_result_summary_ignores_protocol_noise(self):
+        summary = agent_task_service.runtime_result_summary(
+            {
+                "status": "completed",
+                "message": '#13261 item.delta: {"delta":"什么是","kind":"agent_reasoning"}',
+                "timeline": ['#13262 item.delta: {"delta":" Agent","kind":"agent_reasoning"}'],
+            }
+        )
+
+        self.assertIn("没有返回明确的业务结论", summary)
+        self.assertNotIn("item.delta", summary)
 
     def test_finished_agent_task_notification_links_back_to_task_card(self):
         conn = self._open_agent_task_conn()
@@ -924,7 +953,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertIn("confirmation_token", manual_block)
         self.assertIn("renderTaskDetail", manual_block)
 
-    def test_active_agent_task_uses_bottom_composer_and_hides_recommendations(self):
+    def test_agent_task_context_uses_bottom_composer_and_hides_recommendations(self):
         workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
         starters_block = workspace_js[
             workspace_js.index("function renderAgentStarters"):
@@ -940,13 +969,19 @@ class AgentTaskImprovementTests(unittest.TestCase):
         ]
 
         self.assertIn("function currentActiveOwnAgentTask", workspace_js)
-        self.assertIn("const hasActiveTask = hasCurrentUserActiveAgentTask()", starters_block)
-        self.assertIn("if (!agentMode || hasActiveTask || hasInput || !starters.length)", starters_block)
+        self.assertIn("function currentAgentComposerTargetTask", workspace_js)
+        self.assertIn("const hasTaskContext = hasCurrentAgentTaskContext()", starters_block)
+        self.assertIn("if (!agentMode || hasTaskContext || hasInput || !starters.length)", starters_block)
         self.assertIn("!task.is_terminal", followup_block)
         self.assertNotIn("task.is_active", followup_block)
+        self.assertNotIn("data-agent-followup-input", workspace_js)
+        self.assertNotIn("data-agent-followup", workspace_js)
         self.assertIn("/follow-up", submit_block)
         self.assertIn("补充到当前 Agent 任务", workspace_js)
+        self.assertIn("追问当前 Agent 结果", workspace_js)
         self.assertIn("补充说明暂不支持附件", workspace_js)
+        self.assertIn("function renderTaskEventsPanel", workspace_js)
+        self.assertIn("function userFacingTaskEvent", workspace_js)
 
     def test_manual_notification_action_execute_route_audits_without_sending(self):
         conn = self._open_agent_task_conn()
@@ -1288,6 +1323,8 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertNotIn("context.json", recovered_paths)
             self.assertNotIn("attachments/source.txt", recovered_paths)
             self.assertTrue(detail["partial_result_available"])
+            self.assertIn("next_actions", detail)
+            self.assertTrue(any("底部输入框" in item for item in detail["next_actions"]))
             self.assertIn("部分完成总结", summary)
             self.assertIn("已完成课堂数据整理", summary)
 
@@ -1299,6 +1336,38 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 agent_task_service.resolve_task_workspace_artifact(42, "attachments/source.txt")
             with self.assertRaises(ValueError):
                 agent_task_service.resolve_task_workspace_artifact(42, "../context.json")
+
+    def test_failed_task_detail_recovers_existing_workspace_artifacts_on_read(self):
+        conn = self._open_agent_task_conn()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+                agent_task_service,
+                "AGENT_TASK_WORKSPACE_ROOT",
+                Path(tmpdir),
+            ):
+                task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_FAILED)
+                conn.execute(
+                    """
+                    UPDATE agent_tasks
+                    SET result_summary = ?, error_message = ?
+                    WHERE id = ?
+                    """,
+                    ("Agent task exceeded 1800 seconds.", "Agent task exceeded 1800 seconds.", task_id),
+                )
+                workspace = Path(tmpdir) / "tasks" / str(task_id)
+                workspace.mkdir(parents=True)
+                (workspace / "blog_draft.md").write_text("# 可用草稿\n\n已经完成的部分。", encoding="utf-8")
+
+                task = agent_task_service.get_agent_task(conn, task_id, teacher_id=7)
+
+                self.assertIn("部分完成总结", task["result_summary"])
+                self.assertIn("blog_draft.md", task["result_summary"])
+                recovered_paths = [item["path"] for item in task["result_detail"]["recovered_artifacts"]]
+                self.assertEqual(["blog_draft.md"], recovered_paths)
+                self.assertTrue(any("底部输入框" in item for item in task["result_detail"]["next_actions"]))
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
 
     def test_delete_agent_task_removes_isolated_workspace(self):
         conn = self._open_agent_task_conn()

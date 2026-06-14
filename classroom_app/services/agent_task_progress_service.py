@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -84,12 +85,75 @@ _FATAL_ERROR_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_RUNTIME_PROTOCOL_PREFIX = re.compile(
+    r"^\s*#?\d+\s+(?:item\.(?:delta|started|completed)|response\.[\w.-]+|turn\.[\w.-]+)\s*:",
+    re.IGNORECASE,
+)
+
+_FILE_CHANGE_PATH_PATTERN = re.compile(
+    r"(?:path|file|filename)[\"']?\s*[:=]\s*[\"'\\]*([^\"'\\,\s]+)",
+    re.IGNORECASE,
+)
+
 
 def _clean(value: Any, *, limit: int = MAX_EVENT_MESSAGE_CHARS) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     if len(text) > limit:
         return text[:limit].rstrip() + "..."
     return text
+
+
+def _protocol_payload(raw_text: str) -> dict[str, Any] | None:
+    if not _RUNTIME_PROTOCOL_PREFIX.search(raw_text):
+        return None
+    _, _, payload_text = raw_text.partition(":")
+    payload_text = payload_text.strip()
+    if not payload_text:
+        return {}
+    try:
+        parsed = json.loads(payload_text)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _artifact_label_from_text(text: str) -> str:
+    match = _FILE_CHANGE_PATH_PATTERN.search(text)
+    if not match:
+        return "任务产物"
+    raw_path = match.group(1).replace("\\/", "/").replace("\\", "/").strip()
+    return raw_path.rsplit("/", 1)[-1] or raw_path or "任务产物"
+
+
+def _protocol_timeline_message(raw_text: str) -> str | None:
+    """Return a teacher-facing message, or None when the runtime protocol row is noise."""
+    payload = _protocol_payload(raw_text)
+    if payload is None:
+        return ""
+
+    item = payload.get("item") if isinstance(payload.get("item"), dict) else payload
+    kind = str(item.get("kind") or payload.get("kind") or "").strip().lower()
+    lowered = raw_text.lower()
+
+    if "item.delta" in lowered:
+        return None
+    if kind == "agent_reasoning" or "agent_reasoning" in lowered:
+        return None
+    if kind == "file_change" or "file_change" in lowered:
+        summary = _clean(item.get("summary") or payload.get("summary") or raw_text, limit=220)
+        label = _artifact_label_from_text(summary or raw_text)
+        if "item.completed" in lowered:
+            return f"已写入任务产物：{label}"
+        return f"正在写入任务产物：{label}"
+    if "/api/agent-bridge/query" in raw_text:
+        return "正在查询平台数据库"
+    if "/api/agent-bridge/search" in raw_text:
+        return "正在检索平台内容"
+    if "/api/agent-bridge/file" in raw_text:
+        return "正在读取平台文件"
+    if "/api/agent-bridge/web" in raw_text:
+        return "正在联网检索资料"
+    return None
 
 
 def humanize_tool_call(tool_call: Any) -> str:
@@ -133,13 +197,23 @@ def humanize_tool_call(tool_call: Any) -> str:
     return label
 
 
-def _timeline_entry_message(entry: Any) -> str:
+def _timeline_entry_message(entry: Any) -> str | None:
     if isinstance(entry, str):
+        protocol_message = _protocol_timeline_message(entry)
+        if protocol_message is None:
+            return None
+        if protocol_message:
+            return protocol_message
         return _clean(entry)
     if isinstance(entry, dict):
         for key in ("message", "title", "summary", "text", "description", "step", "status"):
             value = _clean(entry.get(key))
             if value:
+                protocol_message = _protocol_timeline_message(value)
+                if protocol_message is None:
+                    return None
+                if protocol_message:
+                    return protocol_message
                 return value
         return _clean(str({k: entry[k] for k in list(entry)[:3]}), limit=120)
     return ""
@@ -231,6 +305,8 @@ def diff_runtime_snapshot(
             curr_timeline[len(prev_timeline):], start=len(prev_timeline) + 1
         ):
             message = _timeline_entry_message(entry)
+            if message is None:
+                continue
             if not message:
                 message = f"正在执行第 {index} 步"
             events.append(

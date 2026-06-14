@@ -66,6 +66,10 @@ AGENT_TASK_RECOVERED_ARTIFACT_LIMIT = 12
 AGENT_TASK_RECOVERED_ARTIFACT_MAX_BYTES = 20 * 1024 * 1024
 AGENT_TASK_INTERNAL_WORKSPACE_FILES = {"TASK.md", "BRIDGE.md", "context.json"}
 AGENT_TASK_INTERNAL_WORKSPACE_DIRS = {"attachments", "__pycache__"}
+AGENT_RUNTIME_PROTOCOL_TEXT_PATTERN = re.compile(
+    r"^\s*#?\d+\s+(?:item\.(?:delta|started|completed)|response\.[\w.-]+|turn\.[\w.-]+)\s*:",
+    re.IGNORECASE,
+)
 
 TASK_TYPE_DEFINITIONS: dict[str, dict[str, str]] = {
     "course_material_digest": {
@@ -1252,6 +1256,54 @@ def _serialize_event(row) -> dict[str, Any]:
     }
 
 
+def _failed_recovery_next_actions() -> list[str]:
+    return [
+        "先打开已挽救的中间产物，确认哪些内容已经可用。",
+        "如果内容方向正确，可直接在底部输入框补充要求，让 Agent 带着当前结果继续。",
+        "如果只是运行超时，可点击“原样重试”；如果目标不够清楚，点击“修改后重试”。",
+    ]
+
+
+def _augment_failed_task_recovery_detail(task_id: int, detail: dict[str, Any]) -> dict[str, Any]:
+    if detail.get("partial_result_available"):
+        return detail
+    recovered = collect_task_workspace_artifacts(int(task_id))
+    if not recovered:
+        return detail
+    augmented = dict(detail)
+    augmented["recovered_artifacts"] = recovered
+    augmented["partial_result_available"] = True
+    augmented["next_actions"] = _failed_recovery_next_actions()
+    existing_artifacts = augmented.get("artifacts") if isinstance(augmented.get("artifacts"), list) else []
+    existing_paths = {
+        str(item.get("path") or item.get("name") or "")
+        for item in existing_artifacts
+        if isinstance(item, dict)
+    }
+    augmented["artifacts"] = [
+        *existing_artifacts,
+        *[
+            {**item, "recovered": True}
+            for item in recovered
+            if str(item.get("path") or item.get("name") or "") not in existing_paths
+        ],
+    ]
+    return augmented
+
+
+def _failed_recovery_summary(status: str, summary: str, detail: dict[str, Any]) -> str:
+    if status != TASK_STATUS_FAILED or not detail.get("partial_result_available"):
+        return summary
+    if summary and not re.search(r"exceeded\s+\d+\s+seconds", summary, flags=re.IGNORECASE):
+        return summary
+    recovered = detail.get("recovered_artifacts") if isinstance(detail.get("recovered_artifacts"), list) else []
+    names = "、".join(str(item.get("path") or item.get("name") or "产物") for item in recovered[:4] if isinstance(item, dict))
+    return (
+        f"部分完成总结：任务未正常结束，但已保留 {len(recovered)} 个中间产物"
+        f"{f'（{names}）' if names else ''}。请先打开产物查看已完成内容，或在底部输入框继续补充要求。"
+    )
+
+
 def serialize_agent_task(row, *, viewer_teacher_id: int, events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     item = dict(row)
     task_id = int(item.get("id") or 0)
@@ -1285,6 +1337,10 @@ def serialize_agent_task(row, *, viewer_teacher_id: int, events: list[dict[str, 
         "updated_at": item.get("updated_at") or "",
     }
     if is_owner:
+        result_detail = _load_json(item.get("result_detail_json"), {})
+        if status == TASK_STATUS_FAILED:
+            result_detail = _augment_failed_task_recovery_detail(task_id, result_detail)
+        result_summary = _failed_recovery_summary(status, item.get("result_summary") or "", result_detail)
         payload.update(
             {
                 "private_instruction": item.get("private_instruction") or "",
@@ -1292,8 +1348,8 @@ def serialize_agent_task(row, *, viewer_teacher_id: int, events: list[dict[str, 
                 "runtime_task_id": item.get("runtime_task_id") or "",
                 "runtime_thread_id": item.get("runtime_thread_id") or "",
                 "runtime_turn_id": item.get("runtime_turn_id") or "",
-                "result_summary": item.get("result_summary") or "",
-                "result_detail": _load_json(item.get("result_detail_json"), {}),
+                "result_summary": result_summary,
+                "result_detail": result_detail,
                 "error_message": item.get("error_message") or "",
                 "attachments": _load_json(item.get("attachments_json"), []),
                 "retry_count": int(item.get("retry_count") or 0),
@@ -2220,9 +2276,24 @@ def _extract_runtime_text_outputs(runtime_task: dict[str, Any]) -> list[dict[str
         "error",
     }
 
+    def looks_like_protocol_noise(text: str) -> bool:
+        normalized = str(text or "").strip()
+        if not normalized:
+            return True
+        lowered = normalized.lower()
+        if AGENT_RUNTIME_PROTOCOL_TEXT_PATTERN.search(normalized):
+            return True
+        if '"kind"' in lowered and (
+            "agent_reasoning" in lowered
+            or "item.delta" in lowered
+            or ("schema_version" in lowered and "turn_id" in lowered)
+        ):
+            return True
+        return False
+
     def add(path: str, value: Any) -> None:
         text = _clean_text(value, max_chars=6000)
-        if not text or text in seen:
+        if not text or text in seen or looks_like_protocol_noise(text):
             return
         seen.add(text)
         outputs.append({"path": path, "text": text})
@@ -2729,6 +2800,7 @@ def build_failed_runtime_detail(
     if recovered:
         detail["recovered_artifacts"] = recovered
         detail["partial_result_available"] = True
+        detail["next_actions"] = _failed_recovery_next_actions()
         existing_artifacts = detail.get("artifacts") if isinstance(detail.get("artifacts"), list) else []
         existing_paths = {
             str(item.get("path") or item.get("name") or "")
@@ -2749,7 +2821,7 @@ def build_failed_runtime_detail(
         if partial_text and not str(summary).startswith("DeepSeek-TUI 已标记任务失败"):
             summary = f"{prefix}运行时最后输出：{partial_text}"
         else:
-            summary = prefix
+            summary = f"{prefix}请打开产物查看已完成内容，或在底部输入框继续补充要求。"
     if error_class:
         detail["error_class"] = _clean_text(error_class, max_chars=40)
     if error_message:
