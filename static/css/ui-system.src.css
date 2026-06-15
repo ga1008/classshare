@@ -6926,6 +6926,38 @@ body.ai-chat-fullscreen-active {
     background: rgba(254, 242, 242, 0.84);
 }
 
+.ai-task-detail__block.is-deliverable {
+    border-color: rgba(15, 118, 110, 0.24);
+    background: #ffffff;
+}
+
+.ai-task-deliverable.md-content {
+    max-height: 460px;
+    overflow-y: auto;
+    font-size: 0.9rem;
+    line-height: 1.65;
+}
+
+.ai-task-runtime-process {
+    margin-top: 10px;
+    border: 1px dashed rgba(148, 163, 184, 0.32);
+    border-radius: 8px;
+    padding: 6px 10px;
+    background: rgba(248, 250, 252, 0.6);
+}
+
+.ai-task-runtime-process > summary {
+    cursor: pointer;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-weight: 600;
+    list-style: revert;
+}
+
+.ai-task-runtime-process[open] > summary {
+    margin-bottom: 8px;
+}
+
 .ai-task-detail__block.is-warning {
     border-color: rgba(245, 158, 11, 0.22);
     background: rgba(255, 251, 235, 0.9);

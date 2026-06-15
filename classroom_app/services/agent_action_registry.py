@@ -27,6 +27,19 @@ MAX_PROPOSED_ACTIONS = 4
 ACTION_CONFIRMATION_TOKEN_TTL_SECONDS = 10 * 60
 ACTION_CONFIRMATION_TOKEN_PREFIX = "agt-act-v1."
 
+# 注入 runtime prompt 的示例提案。模型常把整段提示词回显进输出，导致平台把这个
+# 示例误抽成「可一键落地的动作」。把它抽成常量，既给 prompt 用，也作为抽取时的黑名单。
+PROPOSED_ACTIONS_PROMPT_EXAMPLE: dict[str, Any] = {
+    "action": "create_assignment_draft",
+    "summary": "为《XX课程》创建作业草稿《第3章练习》",
+    "params": {
+        "class_offering_id": 12,
+        "title": "第3章练习",
+        "requirements_md": "# 作业要求\n……",
+        "rubric_md": "| 维度 | 分值 |\n| --- | --- |",
+    },
+}
+
 # 字段 schema：type ∈ {int, str, text, str_list}；text 为长文本。
 AGENT_ACTION_DEFINITIONS: dict[str, dict[str, Any]] = {
     "create_assignment_draft": {
@@ -333,6 +346,17 @@ def strip_proposed_actions_block(text: Any) -> str:
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
+def _is_prompt_example_action(action: str, params: dict[str, Any]) -> bool:
+    """判断是否为提示词里那条示例提案（回显进输出时必须丢弃）。"""
+    if action != PROPOSED_ACTIONS_PROMPT_EXAMPLE["action"]:
+        return False
+    example_clean, _errors = validate_action_params(
+        PROPOSED_ACTIONS_PROMPT_EXAMPLE["action"],
+        PROPOSED_ACTIONS_PROMPT_EXAMPLE["params"],
+    )
+    return params == example_clean
+
+
 def extract_proposed_actions(text: Any) -> list[dict[str, Any]]:
     """从模型输出文本中抽取 proposed_actions 提案（容忍残缺，无效条目丢弃）。"""
     source = str(text or "")
@@ -354,6 +378,9 @@ def extract_proposed_actions(text: Any) -> list[dict[str, Any]]:
                 continue
             params, errors = validate_action_params(action, entry.get("params") or {})
             if errors:
+                continue
+            if _is_prompt_example_action(action, params):
+                # 模型回显了提示词里的示例提案，丢弃——它不是真实可落地的动作。
                 continue
             proposals.append(
                 {
@@ -385,24 +412,12 @@ def proposed_actions_prompt_block() -> str:
         "你自己永远不要声称已经写入平台）：",
         "```json",
         json.dumps(
-            {
-                "proposed_actions": [
-                    {
-                        "action": "create_assignment_draft",
-                        "summary": "为《XX课程》创建作业草稿《第3章练习》",
-                        "params": {
-                            "class_offering_id": 12,
-                            "title": "第3章练习",
-                            "requirements_md": "# 作业要求\n……",
-                            "rubric_md": "| 维度 | 分值 |\n| --- | --- |",
-                        },
-                    }
-                ]
-            },
+            {"proposed_actions": [PROPOSED_ACTIONS_PROMPT_EXAMPLE]},
             ensure_ascii=False,
             indent=2,
         ),
         "```",
+        "（上面只是格式示例，必须换成本次任务的真实动作和参数，不要原样照抄示例文字。）",
         "可用动作与参数：",
     ]
     for action, definition in AGENT_ACTION_DEFINITIONS.items():

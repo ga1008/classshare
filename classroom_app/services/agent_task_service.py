@@ -1522,6 +1522,34 @@ def collect_task_workspace_artifacts(
     return artifacts
 
 
+AGENT_TASK_RESULT_DELIVERABLE_NAMES = ("RESULT.md", "result.md")
+AGENT_TASK_RESULT_DELIVERABLE_MAX_BYTES = 400 * 1024
+
+
+def read_task_result_deliverable(task_id: int) -> str:
+    """读取 Agent 写进 workspace 的最终交付物 RESULT.md（教师可读的成品全文）。
+
+    运行时只回传一个截断的过程摘要，真正的成品（博客正文/报告 + proposed_actions 提案）
+    由 Agent 按提示写入 workspace 的 RESULT.md。平台优先用它作为展示与提案的权威来源。
+    """
+    root = _task_workspace_host_path_for_id(int(task_id))
+    for name in AGENT_TASK_RESULT_DELIVERABLE_NAMES:
+        candidate = root / name
+        try:
+            if not candidate.is_file():
+                continue
+            size = candidate.stat().st_size
+            if not (0 < size <= AGENT_TASK_RESULT_DELIVERABLE_MAX_BYTES):
+                continue
+            return _clean_text(
+                candidate.read_text(encoding="utf-8", errors="replace"),
+                max_chars=MAX_RESULT_DETAIL_CHARS,
+            )
+        except OSError:
+            continue
+    return ""
+
+
 def resolve_task_workspace_artifact(task_id: int, raw_path: str) -> dict[str, Any]:
     """Resolve a recovered artifact path after re-checking it is safe to serve."""
     relative_text = str(raw_path or "").replace("\\", "/").strip().lstrip("/")
@@ -2275,6 +2303,20 @@ def _extract_runtime_text_outputs(runtime_task: dict[str, Any]) -> list[dict[str
         "message",
         "error",
     }
+    # 这些字段是「输入/过程/路径」噪声，不是 Agent 给教师的输出：
+    # prompt 是回显的注入提示词（曾导致把提示词示例误抽成 proposed_action），
+    # tool_calls 是 curl/搜索入参，result_detail_path 是产物路径，timeline 另行展示。
+    excluded_keys = {
+        "prompt",
+        "tool_calls",
+        "result_detail_path",
+        "timeline",
+        "workspace",
+        "gates",
+        "checklist",
+        "github_events",
+        "raw_keys",
+    }
 
     def looks_like_protocol_noise(text: str) -> bool:
         normalized = str(text or "").strip()
@@ -2312,6 +2354,8 @@ def _extract_runtime_text_outputs(runtime_task: dict[str, Any]) -> list[dict[str
                 key=lambda item: 0 if str(item[0]).lower() in preferred_keys else 1,
             )
             for key, child in ordered_items:
+                if str(key).lower() in excluded_keys:
+                    continue
                 safe_key = _clean_text(key, max_chars=48) or "item"
                 visit(child, f"{path}.{safe_key}" if path else safe_key, depth + 1)
                 if len(outputs) >= MAX_RUNTIME_TEXT_OUTPUTS:
@@ -2739,14 +2783,22 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
 3. 如果运行时允许 shell，你也可以直接联网（如 curl 外部网站）获取即时信息。
 4. 公文检索：学校/学院红头文件在表 gongwen_documents（页面 /manage/academic/gongwen），可直接用 /query 按标题、文号、正文关键词检索。
 
+最终交付（最重要，决定教师能否看到结果）：
+- 完成任务后，你必须把面向教师的「最终成品」完整写入 workspace 根目录的 `RESULT.md`（就是 {runtime_workspace}/RESULT.md）。运行时只会把你的过程摘要回传给平台，平台真正展示给教师的是这个 RESULT.md，所以成品一定要写进去。
+- RESULT.md 只放教师要的成品本身（如博客正文全文、报告、名单），不要把思考过程、工具调用日志、提示词原文写进去。
+- 如果有可在平台落地的动作（发布博客、创建草稿等），把 proposed_actions 的 ```json 代码块放在 RESULT.md 的最末尾。
+- 没写 RESULT.md 视为任务未完成。
+
+效率要求：时间宝贵，目标是 10 分钟内交付。联网检索累计控制在 2-3 次以内，拿到足够素材就立即动笔，不要反复搜索、不要做与任务无关的工具调用；先满足核心要求，细节打磨适度即可。
+
 必须遵守的边界：
-1. 平台数据与代码只读：严禁任何写入、修改、删除——不改数据库、不改平台文件、不改部署配置。产物只写在你的任务目录里。
+1. 平台数据与代码只读：严禁任何写入、修改、删除——不改数据库、不改平台文件、不改部署配置。产物只写在你的任务目录里（含上面的 RESULT.md）。
 2. 涉及发布博客、发送通知、创建作业/考试等平台状态变更时，先输出结构化草案和执行建议，不要假装已经修改平台数据。
 3. 查询到的师生个人信息仅用于完成本任务，输出时做隐私最小化。
 4. 用数据说话：能查库就查库验证，不要编造不存在的数据；上下文不足时明确说明缺什么。
-5. 输出必须面向教师，使用规范 Markdown，清楚列出：任务理解、已使用的数据/来源、执行结果、需要教师确认的动作、风险提醒。给站内跳转用相对路径链接（如 /manage/academic/gongwen）。
+5. RESULT.md 面向教师，使用规范 Markdown；站内跳转用相对路径链接（如 /manage/academic/gongwen）。
 6. {thinking_line}
-7. 若任务接近时间上限或外部工具反复失败，请先把已完成内容写入 workspace 中的 PARTIAL_RESULT.md（或其他清晰命名文件），再继续尝试；即使最终失败，平台也会把这些中间产物交还给教师。
+7. 若任务接近时间上限或外部工具反复失败，请先把已完成内容写入 RESULT.md（或 PARTIAL_RESULT.md），再继续尝试；即使最终失败，平台也会把这些中间产物交还给教师。
 
 你能安全接管的教师业务流程边界：
 {workflow_lines}

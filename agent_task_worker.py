@@ -154,6 +154,18 @@ def _append_snapshot_diff_events(task_id: int, prev: dict[str, Any] | None, curr
         conn.commit()
 
 
+def _deliverable_headline(markdown: str) -> str:
+    """从交付物 Markdown 里取一行简短标题，用于通知/列表摘要。"""
+    for raw_line in str(markdown or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        line = line.lstrip("#").strip(" *_`>-").strip()
+        if line:
+            return line[:120]
+    return ""
+
+
 def _finish_completed_runtime_task(task_id: int, runtime_task: dict[str, Any]) -> None:
     from classroom_app.database import get_db_connection
     from classroom_app.services.agent_action_registry import (
@@ -162,22 +174,39 @@ def _finish_completed_runtime_task(task_id: int, runtime_task: dict[str, Any]) -
     )
     from classroom_app.services.agent_task_service import (
         TASK_STATUS_COMPLETED,
+        collect_task_workspace_artifacts,
         compact_runtime_detail,
         finish_agent_task,
+        read_task_result_deliverable,
     )
 
     detail = compact_runtime_detail(runtime_task)
     result_summary = _runtime_result_summary(runtime_task)
+
+    # 权威成品来自 Agent 写入 workspace 的 RESULT.md；运行时只回传过程摘要。
+    deliverable = read_task_result_deliverable(task_id)
+    proposed: list = []
     try:
-        # G3：先从原始输出抽取结构化动作提案，渲染为确认按钮（必须在剥离协议块之前）。
-        sources = [item.get("text") or "" for item in (detail.get("text_outputs") or [])]
-        sources.append(str(runtime_task.get("result") or ""))
-        proposed = extract_proposed_actions("\n\n".join(sources))
+        # 先从 RESULT.md（真实成品）抽提案；没有再退回运行时文本（已排除回显的 prompt 噪声）。
+        if deliverable:
+            proposed = extract_proposed_actions(deliverable)
+        if not proposed:
+            sources = [item.get("text") or "" for item in (detail.get("text_outputs") or [])]
+            sources.append(str(runtime_task.get("result") or ""))
+            proposed = extract_proposed_actions("\n\n".join(sources))
         if proposed:
             detail["proposed_actions"] = proposed
     except Exception as exc:
         print(f"[AGENT_TASK] proposed action parse failed for task {task_id}: {exc}", file=sys.stderr)
-    # 抽取完成后，把面向教师展示的文本里的 proposed_actions 协议 JSON 块剥掉（按钮已单独渲染）。
+
+    if deliverable:
+        # 成品全文（剥掉 proposed_actions 协议块）作为教师看到的主体结果。
+        detail["deliverable_markdown"] = strip_proposed_actions_block(deliverable)
+        headline = _deliverable_headline(detail["deliverable_markdown"])
+        if headline:
+            result_summary = headline
+
+    # 过程文本里的 proposed_actions 协议块剥掉（按钮已单独渲染），过程仅作折叠展示。
     for item in detail.get("text_outputs") or []:
         if isinstance(item, dict):
             item["text"] = strip_proposed_actions_block(item.get("text") or "")
@@ -186,9 +215,28 @@ def _finish_completed_runtime_task(task_id: int, runtime_task: dict[str, Any]) -
         for item in (detail.get("text_outputs") or [])
         if not isinstance(item, dict) or (item.get("text") or "").strip()
     ]
-    stripped_summary = strip_proposed_actions_block(result_summary)
-    if stripped_summary:
-        result_summary = stripped_summary
+    if not deliverable:
+        stripped_summary = strip_proposed_actions_block(result_summary)
+        if stripped_summary:
+            result_summary = stripped_summary
+
+    # 把 workspace 里的成品文件挂成可下载产物（RESULT.md 等）。
+    try:
+        workspace_artifacts = collect_task_workspace_artifacts(task_id)
+        if workspace_artifacts:
+            existing = detail.get("artifacts") if isinstance(detail.get("artifacts"), list) else []
+            existing_paths = {
+                str(item.get("path") or item.get("name") or "")
+                for item in existing
+                if isinstance(item, dict)
+            }
+            detail["artifacts"] = [
+                *existing,
+                *[a for a in workspace_artifacts if str(a.get("path") or a.get("name") or "") not in existing_paths],
+            ]
+    except Exception as exc:
+        print(f"[AGENT_TASK] workspace artifact collection failed for task {task_id}: {exc}", file=sys.stderr)
+
     with get_db_connection() as conn:
         finish_agent_task(
             conn,

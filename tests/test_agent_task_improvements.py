@@ -742,6 +742,65 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertEqual("create_blog_comment", proposals[2]["action"])
         self.assertEqual(9, proposals[2]["params"]["post_id"])
 
+    def test_prompt_example_action_is_not_extracted_as_real_action(self):
+        # 回归：运行时会回显整段提示词，里面的示例提案绝不能被当成真实可落地动作。
+        from classroom_app.services.agent_action_registry import (
+            PROPOSED_ACTIONS_PROMPT_EXAMPLE,
+            extract_proposed_actions,
+            proposed_actions_prompt_block,
+        )
+
+        echoed_prompt = proposed_actions_prompt_block()
+        self.assertEqual([], extract_proposed_actions(echoed_prompt))
+
+        example_block = (
+            "```json\n"
+            + json.dumps({"proposed_actions": [PROPOSED_ACTIONS_PROMPT_EXAMPLE]}, ensure_ascii=False)
+            + "\n```"
+        )
+        self.assertEqual([], extract_proposed_actions(example_block))
+
+        # 真实的 publish_blog_post 仍能被正常抽取。
+        real = (
+            '```json\n{"proposed_actions": [{"action": "publish_blog_post", '
+            '"params": {"title": "链表入门", "content_md": "正文"}}]}\n```'
+        )
+        proposals = extract_proposed_actions(real)
+        self.assertEqual(1, len(proposals))
+        self.assertEqual("publish_blog_post", proposals[0]["action"])
+
+    def test_runtime_text_outputs_exclude_prompt_and_tool_call_noise(self):
+        # 回归：回显的 prompt、tool_calls 入参、产物路径都不是给教师的输出，必须排除。
+        runtime_task = {
+            "result_summary": "这是 Agent 给教师的真实结论，足够长以便被采集进关键输出。",
+            "prompt": "你是 LanShare 平台的常驻 Agent —— 整个平台随时待命的灵魂。" * 8,
+            "tool_calls": [{"input_summary": '{"command":"curl -s -X POST ..."}' * 4}],
+            "result_detail_path": "artifacts/task_x/20260615_result.txt and some more text here",
+        }
+        outputs = agent_task_service._extract_runtime_text_outputs(runtime_task)
+        paths = [item["path"] for item in outputs]
+        self.assertIn("result_summary", paths)
+        self.assertNotIn("prompt", paths)
+        self.assertFalse(any("tool_calls" in path for path in paths))
+        self.assertNotIn("result_detail_path", paths)
+
+    def test_read_task_result_deliverable_reads_workspace_result_md(self):
+        import tempfile
+        from pathlib import Path
+
+        original_root = agent_task_service.AGENT_TASK_WORKSPACE_ROOT
+        try:
+            root = Path(tempfile.mkdtemp())
+            agent_task_service.AGENT_TASK_WORKSPACE_ROOT = root
+            task_dir = root / "tasks" / "4242"
+            task_dir.mkdir(parents=True)
+            (task_dir / "RESULT.md").write_text("# 成品标题\n\n正文。", encoding="utf-8")
+            text = agent_task_service.read_task_result_deliverable(4242)
+            self.assertIn("成品标题", text)
+            self.assertEqual("", agent_task_service.read_task_result_deliverable(999999))
+        finally:
+            agent_task_service.AGENT_TASK_WORKSPACE_ROOT = original_root
+
     def test_strip_proposed_actions_block_removes_fenced_protocol_json(self):
         from classroom_app.services.agent_action_registry import strip_proposed_actions_block
 

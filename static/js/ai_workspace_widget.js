@@ -929,10 +929,24 @@ function renderBusinessResult(detail = {}) {
     `;
 }
 
+function renderDeliverable(detail = {}) {
+    const markdown = typeof detail.deliverable_markdown === 'string' ? detail.deliverable_markdown.trim() : '';
+    if (!markdown) {
+        return '';
+    }
+    return `
+        <div class="ai-task-detail__block is-deliverable">
+            <h4>最终结果</h4>
+            <div class="ai-task-deliverable md-content">${renderWorkspaceMarkdown(markdown)}</div>
+        </div>
+    `;
+}
+
 function renderRuntimeDetail(detail = {}) {
     if (detail.platform_action) {
         return renderPlatformResult(detail);
     }
+    const hasDeliverable = typeof detail.deliverable_markdown === 'string' && detail.deliverable_markdown.trim() !== '';
     const textOutputs = Array.isArray(detail.text_outputs) ? detail.text_outputs.slice(0, 4) : [];
     const recoveredArtifacts = Array.isArray(detail.recovered_artifacts) ? detail.recovered_artifacts.slice(0, 8) : [];
     const artifacts = Array.isArray(detail.artifacts) ? detail.artifacts.slice(0, 6) : [];
@@ -945,12 +959,17 @@ function renderRuntimeDetail(detail = {}) {
     return `
         <div class="ai-task-detail__block is-runtime-detail">
             <h4>${detail.partial_result_available ? '已保留的部分结果' : '执行信息'}</h4>
-            ${textOutputs.length ? `
+            ${textOutputs.length ? (hasDeliverable ? `
+                <details class="ai-task-runtime-process">
+                    <summary>执行过程（点击展开）</summary>
+                    ${textOutputs.map((item) => `<div class="ai-task-runtime-output md-content">${renderWorkspaceMarkdown(item.text || item)}</div>`).join('')}
+                </details>
+            ` : `
                 <div class="ai-task-runtime-section">
                     <strong>关键输出</strong>
                     ${textOutputs.map((item) => `<div class="ai-task-runtime-output md-content">${renderWorkspaceMarkdown(item.text || item)}</div>`).join('')}
                 </div>
-            ` : ''}
+            `) : ''}
             ${recoveredArtifacts.length ? `
                 <div class="ai-task-runtime-section is-recovered">
                     <strong>已挽救的中间产物</strong>
@@ -1324,6 +1343,7 @@ function buildAgentTaskDetailHtml(task) {
             <h4>${terminalTitle(task.status)}</h4>
             <p>${escapeHtml(resultSummaryText(task))}</p>
         </div>` : ''}
+        ${task.is_terminal ? renderDeliverable(detailPayload) : ''}
         ${task.error_message ? `
         <div class="ai-task-detail__block is-error">
             <h4>异常信息</h4>
