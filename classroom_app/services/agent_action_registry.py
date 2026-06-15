@@ -303,6 +303,36 @@ def _candidate_json_payloads(text: str) -> list[Any]:
     return parsed_items
 
 
+_PROPOSED_ACTIONS_FENCE_RE = re.compile(
+    r"`{3,}[ \t]*[\w-]*[ \t]*\n?(?:(?!`{3,})[\s\S])*?proposed_actions(?:(?!`{3,})[\s\S])*?`{3,}",
+    re.IGNORECASE,
+)
+
+
+def strip_proposed_actions_block(text: Any) -> str:
+    """移除模型为「结构化动作提案」附在结论末尾的 proposed_actions JSON 块。
+
+    平台已经把提案解析成确认按钮，原始协议 JSON 不应再展示给教师。优先删除围栏代码块；
+    若提案以裸 JSON 对象出现，则按花括号配对删除该对象。删不掉的残留保持原样，绝不破坏正文。
+    """
+    source = str(text or "")
+    if "proposed_actions" not in source:
+        return source
+    cleaned = _PROPOSED_ACTIONS_FENCE_RE.sub("", source)
+    if "proposed_actions" in cleaned:
+        index = cleaned.find("proposed_actions")
+        start = cleaned.rfind("{", 0, index)
+        if start >= 0:
+            try:
+                _obj, end = json.JSONDecoder().raw_decode(cleaned[start:])
+                cleaned = cleaned[:start] + cleaned[start + end :]
+            except json.JSONDecodeError:
+                pass
+    # 收尾常见的悬空引导语（如「结构化动作提案：」）和多余空行。
+    cleaned = re.sub(r"(?:结构化动作提案|可执行动作提案|proposed[\s_]*actions)\s*[:：]?\s*$", "", cleaned, flags=re.IGNORECASE)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
 def extract_proposed_actions(text: Any) -> list[dict[str, Any]]:
     """从模型输出文本中抽取 proposed_actions 提案（容忍残缺，无效条目丢弃）。"""
     source = str(text or "")
@@ -536,7 +566,7 @@ def _execute_create_blog_comment(conn, teacher_id: int, params: dict[str, Any]) 
 def _execute_send_student_notification(conn, teacher_id: int, params: dict[str, Any]) -> dict[str, Any]:
     # 降级为预填跳转：不直接群发，教师在消息中心确认收件人后手动发送。
     return {
-        "url": "/messages",
+        "url": "/message-center",
         "label": "打开消息中心",
         "manual": True,
         "copy_text": params.get("content_md") or "",

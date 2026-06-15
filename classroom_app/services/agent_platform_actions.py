@@ -703,7 +703,9 @@ def _execute_assignment_blueprint_task(task: dict[str, Any]) -> None:
 | 完成质量 | 25 | 结构完整，过程可追踪，结论明确 |
 | 表达与规范 | 15 | 格式规范，命名清楚，按时提交 |
 """.strip()
-    exam_like = _instruction_is_exam_like(f"{title}\n{instruction}")
+    # 仅依据教师指令判断是否考试：自动生成的任务标题里带类型标签「生成作业/考试草案」，
+    # 含「考试」二字会让每个作业任务都被误判为考试，导致作业草稿分支永不触发。
+    exam_like = _instruction_is_exam_like(instruction)
     created_assignment: dict[str, Any] | None = None
     if not exam_like:
         with get_db_connection() as conn:
@@ -832,10 +834,10 @@ def _execute_blog_draft_task(task: dict[str, Any]) -> None:
         "created_post": {
             "id": post_id,
             "status": post.get("status") or "draft",
-            "url": f"/blog?post_id={post_id}" if post_id else "",
+            "url": f"/blog?post={post_id}" if post_id else "",
         },
         "links": [
-            {"label": "打开博客草稿", "url": f"/blog?post_id={post_id}"} if post_id else {},
+            {"label": "打开博客草稿", "url": f"/blog?post={post_id}"} if post_id else {},
         ],
         "next_actions": [
             "打开博客草稿，补充真实课堂细节后再发布。",

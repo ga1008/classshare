@@ -252,7 +252,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertEqual("agent_task", rows[0]["category"])
             self.assertEqual("important", rows[0]["severity"])
             self.assertIn("Agent 任务完成", rows[0]["title"])
-            self.assertEqual(f"/?agent_task={task_id}", rows[0]["link_url"])
+            self.assertEqual(f"/dashboard?agent_task={task_id}", rows[0]["link_url"])
             self.assertEqual("agent_task", rows[0]["ref_type"])
             self.assertEqual(f"agent-task:{task_id}:completed", rows[0]["ref_id"])
             self.assertEqual("queued", rows[0]["email_status"])
@@ -742,6 +742,79 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertEqual("create_blog_comment", proposals[2]["action"])
         self.assertEqual(9, proposals[2]["params"]["post_id"])
 
+    def test_strip_proposed_actions_block_removes_fenced_protocol_json(self):
+        from classroom_app.services.agent_action_registry import strip_proposed_actions_block
+
+        text = (
+            "# 课堂博客草稿\n\n这是面向学生的正文，讲清楚为什么要学链表。\n\n"
+            "```json\n"
+            '{"proposed_actions": [{"action": "publish_blog_post", '
+            '"params": {"title": "链表入门", "content_md": "正文"}}]}\n'
+            "```\n"
+        )
+
+        cleaned = strip_proposed_actions_block(text)
+
+        self.assertIn("面向学生的正文", cleaned)
+        self.assertNotIn("proposed_actions", cleaned)
+        self.assertNotIn("```", cleaned)
+
+    def test_strip_proposed_actions_block_removes_bare_json_object(self):
+        from classroom_app.services.agent_action_registry import strip_proposed_actions_block
+
+        text = (
+            "结论已经写好，详见上文。\n"
+            '{"proposed_actions": [{"action": "create_blog_draft", '
+            '"params": {"title": "T", "content_md": "C"}}]}'
+        )
+
+        cleaned = strip_proposed_actions_block(text)
+
+        self.assertIn("结论已经写好", cleaned)
+        self.assertNotIn("proposed_actions", cleaned)
+
+    def test_strip_proposed_actions_block_keeps_clean_text_untouched(self):
+        from classroom_app.services.agent_action_registry import strip_proposed_actions_block
+
+        text = "# 标题\n\n正文没有任何提案 JSON。"
+        self.assertEqual(text, strip_proposed_actions_block(text))
+
+    def test_extract_then_strip_preserves_actions_and_cleans_display_text(self):
+        from classroom_app.services.agent_action_registry import strip_proposed_actions_block
+
+        text = (
+            "课堂博客正文。\n\n"
+            "```json\n"
+            '{"proposed_actions": [{"action": "publish_blog_post", '
+            '"params": {"title": "链表", "content_md": "正文"}}]}\n'
+            "```\n"
+        )
+
+        # 抽取必须发生在剥离之前，与 worker 的顺序一致。
+        proposals = extract_proposed_actions(text)
+        display_text = strip_proposed_actions_block(text)
+
+        self.assertEqual(1, len(proposals))
+        self.assertEqual("publish_blog_post", proposals[0]["action"])
+        self.assertNotIn("proposed_actions", display_text)
+        self.assertIn("课堂博客正文", display_text)
+
+    def test_assignment_blueprint_exam_detection_keys_off_instruction_not_title(self):
+        # 回归：自动生成的任务标题带类型标签「生成作业/考试草案」，含「考试」二字。
+        # 若用标题判断是否考试，每个作业任务都会被误判为考试，作业草稿分支永不触发。
+        from classroom_app.services.agent_platform_actions import _instruction_is_exam_like
+        from classroom_app.services.agent_task_service import _fallback_agent_task_title
+
+        instruction = "结合第1次课材料，生成一份课堂作业草案。"
+        generated_title = _fallback_agent_task_title(instruction, "assignment_blueprint", [])
+
+        # 标题确实被类型标签污染，含「考试」；
+        self.assertIn("考试", generated_title)
+        # 但作业类指令本身不是考试，必须判为 False（修复前用 title 会判成 True）。
+        self.assertFalse(_instruction_is_exam_like(instruction))
+        # 显式的考试/测验指令仍应判为 True。
+        self.assertTrue(_instruction_is_exam_like("出一份关于链表的随堂测验试卷。"))
+
     def test_action_param_validation_requires_registered_schema(self):
         clean, errors = validate_action_params("create_assignment_draft", {"title": "Only title"})
 
@@ -919,7 +992,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 },
             )
             self.assertTrue(manual["manual"])
-            self.assertEqual("/messages", manual["url"])
+            self.assertEqual("/message-center", manual["url"])
             self.assertIn("本周任务", manual["copy_text"])
         finally:
             conn.close()
@@ -1034,7 +1107,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 )
 
             self.assertTrue(executed["result"]["manual"])
-            self.assertEqual("/messages", executed["result"]["url"])
+            self.assertEqual("/message-center", executed["result"]["url"])
             self.assertIn("本周任务", executed["result"]["copy_text"])
             event = conn.execute(
                 "SELECT event_type, message, detail_json FROM agent_task_events WHERE task_id = ? ORDER BY id DESC LIMIT 1",
@@ -1049,7 +1122,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
                     "result_detail_json"
                 ]
             )
-            self.assertEqual("/messages", updated_detail["proposed_actions"][0]["executed"]["url"])
+            self.assertEqual("/message-center", updated_detail["proposed_actions"][0]["executed"]["url"])
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False

@@ -156,7 +156,10 @@ def _append_snapshot_diff_events(task_id: int, prev: dict[str, Any] | None, curr
 
 def _finish_completed_runtime_task(task_id: int, runtime_task: dict[str, Any]) -> None:
     from classroom_app.database import get_db_connection
-    from classroom_app.services.agent_action_registry import extract_proposed_actions
+    from classroom_app.services.agent_action_registry import (
+        extract_proposed_actions,
+        strip_proposed_actions_block,
+    )
     from classroom_app.services.agent_task_service import (
         TASK_STATUS_COMPLETED,
         compact_runtime_detail,
@@ -164,8 +167,9 @@ def _finish_completed_runtime_task(task_id: int, runtime_task: dict[str, Any]) -
     )
 
     detail = compact_runtime_detail(runtime_task)
+    result_summary = _runtime_result_summary(runtime_task)
     try:
-        # G3：从最终输出抽取结构化动作提案，渲染为确认按钮。
+        # G3：先从原始输出抽取结构化动作提案，渲染为确认按钮（必须在剥离协议块之前）。
         sources = [item.get("text") or "" for item in (detail.get("text_outputs") or [])]
         sources.append(str(runtime_task.get("result") or ""))
         proposed = extract_proposed_actions("\n\n".join(sources))
@@ -173,12 +177,24 @@ def _finish_completed_runtime_task(task_id: int, runtime_task: dict[str, Any]) -
             detail["proposed_actions"] = proposed
     except Exception as exc:
         print(f"[AGENT_TASK] proposed action parse failed for task {task_id}: {exc}", file=sys.stderr)
+    # 抽取完成后，把面向教师展示的文本里的 proposed_actions 协议 JSON 块剥掉（按钮已单独渲染）。
+    for item in detail.get("text_outputs") or []:
+        if isinstance(item, dict):
+            item["text"] = strip_proposed_actions_block(item.get("text") or "")
+    detail["text_outputs"] = [
+        item
+        for item in (detail.get("text_outputs") or [])
+        if not isinstance(item, dict) or (item.get("text") or "").strip()
+    ]
+    stripped_summary = strip_proposed_actions_block(result_summary)
+    if stripped_summary:
+        result_summary = stripped_summary
     with get_db_connection() as conn:
         finish_agent_task(
             conn,
             task_id,
             status=TASK_STATUS_COMPLETED,
-            result_summary=_runtime_result_summary(runtime_task),
+            result_summary=result_summary,
             result_detail=detail,
         )
 

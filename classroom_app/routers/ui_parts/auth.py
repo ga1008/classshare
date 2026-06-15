@@ -6,9 +6,15 @@ router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse)
 async def root(request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
-    """根目录，根据登录状态重定向到仪表盘或学生登录页"""
+    """根目录，根据登录状态重定向到仪表盘或学生登录页。
+
+    保留原始查询串，否则像 ``/?agent_task=123`` 这类深链会在跳转到 /dashboard 时
+    丢掉参数，导致通知里的「查看详情」只跳到首页、打不开对应任务面板。
+    """
+    query = request.url.query
     if user:
-        return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+        target = f"/dashboard?{query}" if query else "/dashboard"
+        return RedirectResponse(url=target, status_code=status.HTTP_303_SEE_OTHER)
     return RedirectResponse(url="/student/login", status_code=status.HTTP_303_SEE_OTHER)
 
 

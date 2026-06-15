@@ -720,6 +720,22 @@ if (app) {
         `;
     }
 
+    function notificationHasJumpTarget(item) {
+        // open_url 始终是 /message-center/notifications/{id}/open（仅负责标记已读并跳转），
+        // 真正的落点是 link_url。link_url 为空、或指回消息中心自身时都属于无意义跳转。
+        const link = String(item.link_url || '').trim();
+        if (!link) {
+            return false;
+        }
+        if (link.startsWith('/message-center')) {
+            return false;
+        }
+        if (link.includes('section=notifications') || link.includes('profile-message-center')) {
+            return false;
+        }
+        return true;
+    }
+
     function formatNotificationAction(item) {
         const actionMap = {
             assignment: '查看作业',
@@ -764,13 +780,15 @@ if (app) {
                     <button type="button" class="btn btn-ghost btn-sm" data-mark-notification="${Number(item.id)}">
                         标记已读
                     </button>
+                    ${notificationHasJumpTarget(item) ? `
                     <a
-                        href="${escapeHtml(item.open_url || item.link_url || '/message-center')}"
+                        href="${escapeHtml(item.open_url || item.link_url)}"
                         class="btn btn-primary btn-sm"
                         data-open-notification="${Number(item.id)}"
                     >
                         ${escapeHtml(formatNotificationAction(item))}
                     </a>
+                    ` : ''}
                 </div>
             </article>
         `).join('');
