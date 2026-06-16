@@ -3719,7 +3719,9 @@ function initClassroomActivitySidebar() {
 
     const countEls = Array.from(shell.querySelectorAll('[data-classroom-activity-count]'));
     countEls.forEach((element) => {
-        counts.set(element.dataset.classroomActivityCount, toCount(element.textContent));
+        const initialCount = toCount(element.textContent);
+        counts.set(element.dataset.classroomActivityCount, initialCount);
+        element.toggleAttribute('data-empty', initialCount === 0);
     });
 
     const setTotal = () => {
@@ -3755,7 +3757,7 @@ function initClassroomActivitySidebar() {
     };
 
     const openActivity = (key, options = {}) => {
-        const normalizedKey = panels.has(key) ? key : 'interaction';
+        const normalizedKey = panels.has(key) ? key : (panels.has('discussion') ? 'discussion' : 'interaction');
         activeActivityKey = normalizedKey;
         tabs.forEach((tab) => {
             const isActive = tab.dataset.classroomActivityTab === normalizedKey;
@@ -3860,10 +3862,11 @@ function initClassroomActivitySidebar() {
     window.addEventListener(activityWorkspaceCommandEventName, handleActivityWorkspaceCommand);
 
     const initialKey = resolveKeyFromHash(window.location.hash);
+    const defaultKey = panels.has('discussion') ? 'discussion' : 'interaction';
     if (initialKey) {
         openActivity(initialKey, { updateHash: false, scroll: false });
     } else {
-        openActivity('interaction', { updateHash: false, scroll: false });
+        openActivity(defaultKey, { updateHash: false, scroll: false });
     }
     setTotal();
     publishActivitySnapshot();

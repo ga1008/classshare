@@ -39050,12 +39050,12 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
 
 /* Classroom activity sidebar refresh */
 .classroom-page {
-    --classroom-activity-width: clamp(360px, 28vw, 430px);
+    --classroom-activity-width: clamp(420px, 33vw, 520px);
     --classroom-activity-top: 84px;
 }
 
 .classroom-page .workspace-columns {
-    grid-template-columns: minmax(0, 1fr) minmax(340px, var(--classroom-activity-width));
+    grid-template-columns: minmax(0, 1fr) minmax(400px, var(--classroom-activity-width));
 }
 
 .classroom-page .workspace-flow--library {
@@ -44371,5 +44371,107 @@ body.has-teaching-session-modal {
 
     .manage-domain-hero {
         padding: 18px;
+    }
+}
+
+/* ============================================================
+   课堂活动 极简图标导航 (Phase 1 declutter)
+   Icon-only activity tabs with hover tooltips — fewer words,
+   fewer visible buttons; the label appears only on hover.
+   ============================================================ */
+.classroom-page .classroom-activity-tabs--icon {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.classroom-page .classroom-activity-tabs--icon .classroom-activity-tab {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    align-content: center;
+    gap: 0.2rem;
+    min-height: 3.1rem;
+    padding: 0.5rem 0.4rem;
+    text-align: center;
+}
+
+/* Show the icon (it is display:none by default) and hide the text copy,
+   keeping it in the DOM for screen readers + JS label lookup. */
+.classroom-page .classroom-activity-tabs--icon .classroom-activity-tab__icon {
+    display: flex;
+    width: 1.85rem;
+    height: 1.85rem;
+}
+
+.classroom-page .classroom-activity-tabs--icon .classroom-activity-tab__icon svg {
+    width: 1.05rem;
+    height: 1.05rem;
+}
+
+.classroom-page .classroom-activity-tabs--icon .classroom-activity-tab__copy {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Count badge floats to the top-right corner. */
+.classroom-page .classroom-activity-tabs--icon .classroom-activity-tab > em[data-classroom-activity-count] {
+    position: absolute;
+    top: 0.28rem;
+    right: 0.34rem;
+    min-width: 1.05rem;
+    height: 1.05rem;
+    padding: 0 0.28rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.66rem;
+    font-weight: 800;
+    line-height: 1;
+    color: #fff;
+    background: rgb(var(--classroom-activity-tab-rgb));
+    border-radius: 999px;
+    box-shadow: 0 4px 10px -6px rgba(var(--classroom-activity-tab-rgb), 0.9);
+}
+
+.classroom-page .classroom-activity-tabs--icon .classroom-activity-tab > em[data-classroom-activity-count][data-empty] {
+    display: none;
+}
+
+/* Hover/focus tooltip driven by data-tip — appears only on hover. */
+.classroom-page .classroom-activity-tabs--icon .classroom-activity-tab[data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    padding: 0.28rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+    background: rgba(15, 23, 42, 0.94);
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 20;
+    transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.classroom-page .classroom-activity-tabs--icon .classroom-activity-tab[data-tip]:hover::after,
+.classroom-page .classroom-activity-tabs--icon .classroom-activity-tab[data-tip]:focus-visible::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .classroom-page .classroom-activity-tabs--icon .classroom-activity-tab[data-tip]::after {
+        transition: none;
     }
 }

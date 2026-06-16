@@ -222,6 +222,22 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
         "emoji_usage_stats",
         ("class_offering_id", "user_id", "user_role", "emoji_type", "emoji_key"),
     ),
+    # Classroom live activity responses rely on UPSERT (ON CONFLICT) keyed by
+    # (activity_id, student_id). The SQLite table-level UNIQUE constraint is
+    # dropped during the SQLite->PostgreSQL export, so the runtime must recreate
+    # it; without it every student poll/quiz vote raises a 500 on PostgreSQL.
+    (
+        "idx_classroom_live_responses_unique_vote",
+        "classroom_live_responses",
+        ("activity_id", "student_id"),
+    ),
+    # Discussion mood snapshots upsert by class_offering_id (column-level UNIQUE,
+    # also lost in the export). Recreate so ON CONFLICT(class_offering_id) works.
+    (
+        "idx_discussion_mood_snapshots_unique_offering",
+        "discussion_mood_snapshots",
+        ("class_offering_id",),
+    ),
 )
 
 POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {

@@ -1828,29 +1828,29 @@
                     data-island-id="classroom-activity-workspace-sync-{{ classroom.id }}"
                 ></div>
 
-                <div class="classroom-activity-tabs" role="tablist" aria-label="课堂活动入口">
-                <button type="button" class="classroom-activity-tab is-active" id="classroom-activity-tab-interaction" data-classroom-activity-tab="interaction" data-classroom-activity-target="interaction-panel" role="tab" aria-selected="true" aria-controls="classroom-activity-panel-interaction">
-                    <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('gauge') }}</span>
-                    <span class="classroom-activity-tab__copy">
-                        <strong>互动</strong>
-                    </span>
-                    <em data-classroom-activity-count="interaction">{{ activity_counts.interaction }}</em>
-                </button>
-                <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-discussion" data-classroom-activity-tab="discussion" data-classroom-activity-target="discussion-room" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-discussion">
+                <div class="classroom-activity-tabs classroom-activity-tabs--icon" role="tablist" aria-label="课堂活动入口">
+                <button type="button" class="classroom-activity-tab is-active" id="classroom-activity-tab-discussion" data-classroom-activity-tab="discussion" data-classroom-activity-target="discussion-room" role="tab" aria-selected="true" aria-controls="classroom-activity-panel-discussion" aria-label="研讨室" data-tip="研讨室">
                     <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
                     <span class="classroom-activity-tab__copy">
                         <strong>研讨</strong>
                     </span>
                     <em data-classroom-activity-count="discussion">{{ activity_counts.discussion }}</em>
                 </button>
-                <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-collaboration" data-classroom-activity-tab="collaboration" data-classroom-activity-target="collaboration-panel" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-collaboration">
+                <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-interaction" data-classroom-activity-tab="interaction" data-classroom-activity-target="interaction-panel" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-interaction" aria-label="课堂互动" data-tip="课堂互动">
+                    <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('gauge') }}</span>
+                    <span class="classroom-activity-tab__copy">
+                        <strong>互动</strong>
+                    </span>
+                    <em data-classroom-activity-count="interaction">{{ activity_counts.interaction }}</em>
+                </button>
+                <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-collaboration" data-classroom-activity-tab="collaboration" data-classroom-activity-target="collaboration-panel" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-collaboration" aria-label="小组协作" data-tip="小组协作">
                     <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('users') }}</span>
                     <span class="classroom-activity-tab__copy">
                         <strong>协作</strong>
                     </span>
                     <em data-classroom-activity-count="collaboration">{{ activity_counts.collaboration }}</em>
                 </button>
-                <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-resources" data-classroom-activity-tab="resources" data-classroom-activity-target="resources-panel" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-resources">
+                <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-resources" data-classroom-activity-tab="resources" data-classroom-activity-target="resources-panel" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-resources" aria-label="课堂资源" data-tip="课堂资源">
                     <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('folder-up') }}</span>
                     <span class="classroom-activity-tab__copy">
                         <strong>资源</strong>
@@ -1861,7 +1861,7 @@
             </header>
 
             <div class="classroom-activity-panels">
-                <div class="classroom-activity-panel is-active" id="classroom-activity-panel-interaction" data-classroom-activity-panel="interaction" role="tabpanel" aria-labelledby="classroom-activity-tab-interaction">
+                <div class="classroom-activity-panel" id="classroom-activity-panel-interaction" data-classroom-activity-panel="interaction" role="tabpanel" aria-labelledby="classroom-activity-tab-interaction" hidden>
                     <section class="workspace-panel interaction-panel" id="interaction-panel" data-workspace-section data-interaction-root data-class-offering-id="{{ classroom.id }}" aria-live="polite">
                         <div class="section-header interaction-panel__header">
                             <div class="section-heading">
@@ -1887,7 +1887,7 @@
                     </section>
                 </div>
 
-                <div class="classroom-activity-panel" id="classroom-activity-panel-discussion" data-classroom-activity-panel="discussion" role="tabpanel" aria-labelledby="classroom-activity-tab-discussion" hidden>
+                <div class="classroom-activity-panel is-active" id="classroom-activity-panel-discussion" data-classroom-activity-panel="discussion" role="tabpanel" aria-labelledby="classroom-activity-tab-discussion">
         <section class="discussion-room is-broadcast-mode" id="discussion-room" data-workspace-section>
             <div class="discussion-room-header">
                 <div class="discussion-room-summary-card">
