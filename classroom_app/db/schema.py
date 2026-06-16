@@ -14,6 +14,7 @@ from .schema_learning_blog import ensure_learning_blog_signature_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
 from .schema_scheduler import ensure_scheduler_schema
 from .schema_gongwen import ensure_gongwen_schema
+from .schema_study_group_scheme import ensure_study_group_scheme_schema
 from .seeds import init_default_exam_paper
 
 
@@ -85,6 +86,18 @@ def init_database():
             print("[DB] PostgreSQL gongwen tables ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL gongwen schema step skipped: {exc}")
+        # The random study-group scheme tables/columns follow the same
+        # runtime-managed, engine-aware pattern.
+        try:
+            scheme_conn = get_db_connection()
+            try:
+                ensure_study_group_scheme_schema(scheme_conn)
+                scheme_conn.commit()
+            finally:
+                scheme_conn.close()
+            print("[DB] PostgreSQL study-group scheme tables ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL study-group scheme schema step skipped: {exc}")
         # Agent task extension columns follow the same runtime-managed pattern.
         try:
             agent_ext_conn = get_db_connection()
@@ -109,6 +122,7 @@ def init_database():
             ensure_foundation_schema(conn)
             ensure_assignment_schema(conn)
             ensure_classroom_activity_schema(conn)
+            ensure_study_group_scheme_schema(conn)
             ensure_materials_integrations_schema(conn)
             ensure_learning_blog_signature_schema(conn)
             ensure_scheduler_schema(conn)

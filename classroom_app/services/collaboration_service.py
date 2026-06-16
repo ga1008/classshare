@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import math
 import mimetypes
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
+from urllib.parse import quote
 
 from fastapi import HTTPException
 
@@ -22,6 +25,15 @@ GROUP_JOIN_TEACHER_ASSIGNED = "teacher_assigned"
 GROUP_JOIN_POLICIES = {GROUP_JOIN_OPEN, GROUP_JOIN_LOCKED, GROUP_JOIN_TEACHER_ASSIGNED}
 MAX_GROUP_MEMBERS_LIMIT = 12
 DEFAULT_GROUP_MAX_MEMBERS = 6
+
+# --- Random study-group scheme constants -------------------------------------
+SCHEME_STATUS_ACTIVE = "active"
+SCHEME_STATUS_CLOSED = "closed"
+SCHEME_JOIN_POLICY = "scheme_random"  # study_groups.join_policy for scheme groups
+MAX_SCHEME_GROUP_COUNT = 60
+MIN_SCHEME_MEMBERS = 1
+GROUP_PROGRESS_MIN = 0
+GROUP_PROGRESS_MAX = 100
 
 
 def _now_iso() -> str:
@@ -1452,6 +1464,478 @@ def _pending_review_count_for_student(
     return count
 
 
+# ============================================================================
+# Random study-group scheme system (随机分组方案)
+# ============================================================================
+
+def _parse_iso(value: Any) -> Optional[datetime]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    candidate = text.replace("/", "-")
+    try:
+        return datetime.fromisoformat(candidate)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(candidate, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _normalize_expires_at(value: Any) -> Optional[str]:
+    if value is None or str(value).strip() == "":
+        return None
+    parsed = _parse_iso(value)
+    if parsed is None:
+        raise HTTPException(400, "时效日期格式不正确")
+    if parsed <= datetime.now():
+        raise HTTPException(400, "时效日期需要晚于当前时间")
+    return parsed.replace(microsecond=0).isoformat()
+
+
+def _scheme_is_expired(expires_at: Any) -> bool:
+    parsed = _parse_iso(expires_at)
+    if parsed is None:
+        return False
+    return datetime.now() > parsed
+
+
+def _normalize_member_bound(value: Any, *, field_name: str, default: int) -> int:
+    parsed = _safe_int(value)
+    if parsed is None:
+        parsed = default
+    if parsed < MIN_SCHEME_MEMBERS:
+        raise HTTPException(400, f"{field_name}至少为 {MIN_SCHEME_MEMBERS}")
+    return min(MAX_GROUP_MEMBERS_LIMIT, parsed)
+
+
+def _resolve_group_count(
+    class_size: int,
+    min_members: int,
+    max_members: int,
+    requested: Optional[int],
+) -> int:
+    class_size = max(0, int(class_size))
+    if class_size <= 0:
+        raise HTTPException(400, "当前班级还没有可分组的学生")
+    if min_members > max_members:
+        raise HTTPException(400, "每组最小人数不能大于最大人数")
+    # Feasible group-count window: enough groups so no group exceeds max, but
+    # few enough that each could still reach the min floor.
+    min_groups = math.ceil(class_size / max_members)
+    max_groups = max(1, class_size // min_members)
+    if min_groups > max_groups:
+        raise HTTPException(
+            400,
+            f"按每组 {min_members}-{max_members} 人，{class_size} 名学生无法被合理分组，请调整人数范围",
+        )
+    if requested is None:
+        target = max(1, round(class_size / max(1, (min_members + max_members) / 2)))
+        return min(max_groups, max(min_groups, target))
+    if requested < min_groups or requested > max_groups:
+        raise HTTPException(
+            400,
+            f"组数需在 {min_groups}-{max_groups} 之间（{class_size} 名学生，每组 {min_members}-{max_members} 人）",
+        )
+    return requested
+
+
+def _avatar_url(role: str, user_pk: Any, avatar_hash: Any = "") -> str:
+    normalized_pk = _safe_int(user_pk)
+    if normalized_pk is None:
+        return "/api/profile/avatar"
+    revision = quote(str(avatar_hash or "default"), safe="")
+    return f"/api/profile/avatar?role={quote(str(role or 'student'), safe='')}&user_id={normalized_pk}&v={revision}"
+
+
+def _load_member_public_map(conn, class_offering_id: int, student_ids: Iterable[int]) -> dict[int, dict[str, Any]]:
+    """Public profile info (avatar + classroom cultivation score) per student."""
+    ids = sorted({int(item) for item in student_ids if _safe_int(item) is not None})
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        f"""
+        SELECT s.id,
+               s.avatar_file_hash,
+               lps.score AS cultivation_score
+        FROM students s
+        LEFT JOIN learning_progress_snapshots lps
+               ON lps.class_offering_id = ?
+              AND lps.student_id = s.id
+        WHERE s.id IN ({placeholders})
+        """,
+        (int(class_offering_id), *ids),
+    ).fetchall()
+    result: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        item = dict(row)
+        score_value = item.get("cultivation_score")
+        result[int(item["id"])] = {
+            "avatar_url": _avatar_url("student", item["id"], item.get("avatar_file_hash")),
+            "cultivation_score": round(float(score_value), 1) if score_value is not None else None,
+        }
+    return result
+
+
+def _load_scheme(conn, scheme_id: int) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT gs.*, o.teacher_id, o.class_id
+        FROM group_schemes gs
+        JOIN class_offerings o ON o.id = gs.class_offering_id
+        WHERE gs.id = ?
+        LIMIT 1
+        """,
+        (int(scheme_id),),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "分组方案不存在")
+    return dict(row)
+
+
+def _ensure_scheme_access(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    scheme = _load_scheme(conn, scheme_id)
+    ensure_classroom_access(conn, int(scheme["class_offering_id"]), user)
+    return scheme
+
+
+def _scheme_group_rows(conn, scheme_id: int) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM study_groups
+        WHERE scheme_id = ?
+        ORDER BY group_index ASC, id ASC
+        """,
+        (int(scheme_id),),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _student_scheme_group(conn, scheme_id: int, student_id: int) -> Optional[dict[str, Any]]:
+    row = conn.execute(
+        """
+        SELECT g.id, g.name
+        FROM study_group_members m
+        JOIN study_groups g ON g.id = m.group_id
+        WHERE g.scheme_id = ?
+          AND m.student_id = ?
+          AND m.status = 'active'
+        LIMIT 1
+        """,
+        (int(scheme_id), int(student_id)),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def create_group_scheme(conn, class_offering_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    offering = ensure_classroom_access(conn, class_offering_id, user)
+    if not _is_teacher(user):
+        raise HTTPException(403, "只有教师可以创建分组方案")
+    name = _normalize_text(payload.get("name"), limit=60, field_name="方案名称") or "随机分组"
+    description = _normalize_text(payload.get("description"), limit=600, field_name="方案说明")
+    min_members = _normalize_member_bound(payload.get("min_members"), field_name="每组最小人数", default=2)
+    max_members = _normalize_member_bound(payload.get("max_members"), field_name="每组最大人数", default=DEFAULT_GROUP_MAX_MEMBERS)
+    requested_count = _safe_int(payload.get("group_count"))
+    if requested_count is not None and (requested_count < 1 or requested_count > MAX_SCHEME_GROUP_COUNT):
+        raise HTTPException(400, f"组数需在 1-{MAX_SCHEME_GROUP_COUNT} 之间")
+    expires_at = _normalize_expires_at(payload.get("expires_at"))
+
+    students = _load_classroom_students(conn, class_offering_id)
+    group_count = _resolve_group_count(len(students), min_members, max_members, requested_count)
+    now = _now_iso()
+
+    scheme_id = execute_insert_returning_id(
+        conn,
+        """
+        INSERT INTO group_schemes (
+            class_offering_id, name, description, min_members, max_members,
+            group_count, status, expires_at, created_by_teacher_id, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(class_offering_id), name, description, min_members, max_members,
+            group_count, SCHEME_STATUS_ACTIVE, expires_at, _user_pk(user), now, now,
+        ),
+    )
+    for index in range(1, group_count + 1):
+        execute_insert_returning_id(
+            conn,
+            """
+            INSERT INTO study_groups (
+                class_offering_id, assignment_id, name, description, status, join_policy,
+                max_members, leader_student_id, scheme_id, group_index, goal_text, progress_percent,
+                created_by_role, created_by_user_pk, created_at, updated_at
+            )
+            VALUES (?, NULL, ?, '', 'active', ?, ?, NULL, ?, ?, '', 0, ?, ?, ?, ?)
+            """,
+            (
+                int(class_offering_id), f"第 {index} 组", SCHEME_JOIN_POLICY, max_members,
+                scheme_id, index, str(user.get("role") or ""), _user_pk(user), now, now,
+            ),
+        )
+    return _serialize_scheme(conn, _load_scheme(conn, scheme_id), user)
+
+
+def random_join_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    scheme = _ensure_scheme_access(conn, scheme_id, user)
+    if not _is_student(user):
+        raise HTTPException(403, "只有学生可以参与随机分组")
+    if str(scheme.get("status")) != SCHEME_STATUS_ACTIVE:
+        raise HTTPException(400, "分组方案已结束")
+    if _scheme_is_expired(scheme.get("expires_at")):
+        raise HTTPException(400, "分组方案已过期，无法再加入")
+    student_id = _user_pk(user)
+    _ensure_students_in_class(conn, int(scheme["class_offering_id"]), [student_id])
+    existing = _student_scheme_group(conn, scheme_id, student_id)
+    if existing:
+        raise HTTPException(400, f"你已在本方案的「{existing['name']}」中")
+
+    groups = _scheme_group_rows(conn, scheme_id)
+    open_groups = []
+    for group in groups:
+        if str(group.get("status")) != GROUP_STATUS_ACTIVE:
+            continue
+        count = conn.execute(
+            "SELECT COUNT(*) AS c FROM study_group_members WHERE group_id = ? AND status = 'active'",
+            (int(group["id"]),),
+        ).fetchone()["c"]
+        if int(count or 0) < int(group.get("max_members") or DEFAULT_GROUP_MAX_MEMBERS):
+            open_groups.append(group)
+    if not open_groups:
+        raise HTTPException(400, "所有小组都已满员，请联系老师调整方案")
+
+    chosen = random.choice(open_groups)
+    _upsert_member(
+        conn,
+        group_id=int(chosen["id"]),
+        student_id=student_id,
+        member_role="member",
+        added_by_role="student",
+        added_by_user_pk=student_id,
+    )
+    conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (_now_iso(), int(chosen["id"])))
+    return {
+        "scheme": _serialize_scheme(conn, scheme, user),
+        "group_id": int(chosen["id"]),
+        "group_name": str(chosen["name"]),
+    }
+
+
+def teacher_assign_to_scheme_group(conn, group_id: int, user: dict[str, Any], student_id: int) -> dict[str, Any]:
+    """Manually place a student into a scheme group (teacher big-screen drag-drop)."""
+    group = _ensure_group_access(conn, group_id, user)
+    if not _is_teacher(user):
+        raise HTTPException(403, "只有教师可以手动分配小组")
+    scheme_id = _safe_int(group.get("scheme_id"))
+    if scheme_id is None:
+        raise HTTPException(400, "该小组不属于随机分组方案")
+    scheme = _load_scheme(conn, scheme_id)
+    if _scheme_is_expired(scheme.get("expires_at")):
+        raise HTTPException(400, "分组方案已过期，不能再调整")
+    student_ids = _ensure_students_in_class(conn, int(group["class_offering_id"]), [int(student_id)])
+    if not student_ids:
+        raise HTTPException(400, "学生不存在")
+    target_student_id = int(student_id)
+    existing = _student_scheme_group(conn, scheme_id, target_student_id)
+    if existing and int(existing["id"]) != int(group_id):
+        raise HTTPException(400, f"该学生已在本方案的「{existing['name']}」中，请先移出")
+    member_count = conn.execute(
+        "SELECT COUNT(*) AS c FROM study_group_members WHERE group_id = ? AND status = 'active'",
+        (int(group_id),),
+    ).fetchone()["c"]
+    if int(member_count or 0) >= int(group.get("max_members") or DEFAULT_GROUP_MAX_MEMBERS) and not (existing and int(existing["id"]) == int(group_id)):
+        raise HTTPException(400, "该小组已满员")
+    _upsert_member(
+        conn,
+        group_id=int(group_id),
+        student_id=target_student_id,
+        member_role="member",
+        added_by_role="teacher",
+        added_by_user_pk=_user_pk(user),
+    )
+    conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (_now_iso(), int(group_id)))
+    return _serialize_scheme(conn, _load_scheme(conn, scheme_id), user)
+
+
+def set_group_goal_progress(conn, group_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    group = _ensure_group_access(conn, group_id, user)
+    if not _can_manage_group(conn, group, user):
+        raise HTTPException(403, "只有组长或教师可以设置小组目标与进度")
+    scheme_id = _safe_int(group.get("scheme_id"))
+    if scheme_id is not None:
+        scheme = _load_scheme(conn, scheme_id)
+        if _scheme_is_expired(scheme.get("expires_at")):
+            raise HTTPException(400, "分组方案已过期，不能再修改")
+    goal_text = group.get("goal_text") or ""
+    if "goal_text" in payload:
+        goal_text = _normalize_text(payload.get("goal_text"), limit=600, field_name="小组目标")
+    progress = _safe_int(group.get("progress_percent")) or 0
+    if "progress_percent" in payload:
+        progress = _safe_int(payload.get("progress_percent"))
+        if progress is None or progress < GROUP_PROGRESS_MIN or progress > GROUP_PROGRESS_MAX:
+            raise HTTPException(400, "进度需在 0-100 之间")
+    conn.execute(
+        "UPDATE study_groups SET goal_text = ?, progress_percent = ?, updated_at = ? WHERE id = ?",
+        (goal_text, int(progress), _now_iso(), int(group_id)),
+    )
+    if scheme_id is not None:
+        return _serialize_scheme(conn, _load_scheme(conn, scheme_id), user)
+    return _load_group(conn, group_id)
+
+
+def nominate_group_leader(conn, group_id: int, user: dict[str, Any], candidate_student_id: int) -> dict[str, Any]:
+    group = _ensure_group_access(conn, group_id, user)
+    if not _is_student(user):
+        raise HTTPException(403, "只有组员可以举荐组长")
+    nominator_id = _user_pk(user)
+    if not _is_active_member(conn, group_id, nominator_id):
+        raise HTTPException(403, "只有本组成员可以举荐组长")
+    scheme_id = _safe_int(group.get("scheme_id"))
+    if scheme_id is not None:
+        scheme = _load_scheme(conn, scheme_id)
+        if _scheme_is_expired(scheme.get("expires_at")):
+            raise HTTPException(400, "分组方案已过期，不能再举荐")
+    if _safe_int(group.get("leader_student_id")):
+        raise HTTPException(400, "小组已有组长")
+    candidate_id = _safe_int(candidate_student_id)
+    if candidate_id is None or not _is_active_member(conn, group_id, candidate_id):
+        raise HTTPException(400, "被举荐人不在本组")
+    conn.execute(
+        "UPDATE study_groups SET leader_student_id = ?, updated_at = ? WHERE id = ?",
+        (candidate_id, _now_iso(), int(group_id)),
+    )
+    _sync_leader_role(conn, group_id, candidate_id)
+    if scheme_id is not None:
+        return _serialize_scheme(conn, _load_scheme(conn, scheme_id), user)
+    return _load_group(conn, group_id)
+
+
+def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
+    scheme_id = int(scheme["id"])
+    class_offering_id = int(scheme["class_offering_id"])
+    group_rows = _scheme_group_rows(conn, scheme_id)
+    group_ids = [int(row["id"]) for row in group_rows]
+    member_map = _load_group_maps(conn, group_ids)["members"] if group_ids else {}
+    all_member_ids: list[int] = []
+    for members in member_map.values():
+        all_member_ids.extend(int(m["student_id"]) for m in members)
+    public_map = _load_member_public_map(conn, class_offering_id, all_member_ids)
+
+    is_expired = _scheme_is_expired(scheme.get("expires_at"))
+    is_teacher = _is_teacher(user)
+    current_student_id = _user_pk(user) if _is_student(user) else None
+    expired_or_closed = is_expired or str(scheme.get("status")) != SCHEME_STATUS_ACTIVE
+
+    grouped_student_ids: set[int] = set()
+    serialized_groups = []
+    for row in group_rows:
+        group_id = int(row["id"])
+        members = member_map.get(group_id, [])
+        leader_id = _safe_int(row.get("leader_student_id"))
+        member_ids = {int(m["student_id"]) for m in members}
+        grouped_student_ids |= member_ids
+        is_member = current_student_id in member_ids if current_student_id is not None else False
+        max_members = int(row.get("max_members") or DEFAULT_GROUP_MAX_MEMBERS)
+        can_view_members = is_teacher or is_member
+        serialized_members = [
+            {
+                "student_id": int(m["student_id"]),
+                "name": str(m["name"]),
+                "student_id_number": str(m.get("student_id_number") or ""),
+                "member_role": str(m.get("member_role") or "member"),
+                "is_leader": leader_id is not None and int(m["student_id"]) == leader_id,
+                "avatar_url": public_map.get(int(m["student_id"]), {}).get("avatar_url", "/api/profile/avatar"),
+                "cultivation_score": public_map.get(int(m["student_id"]), {}).get("cultivation_score"),
+            }
+            for m in members
+        ]
+        serialized_groups.append({
+            "id": group_id,
+            "name": str(row["name"]),
+            "group_index": int(row.get("group_index") or 0),
+            "max_members": max_members,
+            "member_count": len(members),
+            "is_full": len(members) >= max_members,
+            "leader_student_id": leader_id,
+            "has_leader": leader_id is not None,
+            "goal_text": str(row.get("goal_text") or ""),
+            "progress_percent": int(row.get("progress_percent") or 0),
+            "my_membership": is_member,
+            # Members are public within the scheme so everyone can see the
+            # roster, but only the teacher or own-group members get the richer
+            # interactive card (handled on the client).
+            "members": serialized_members,
+            "can_set_goal": bool(is_member and leader_id == current_student_id and not expired_or_closed) or bool(is_teacher and not expired_or_closed),
+            "can_nominate": bool(is_member and leader_id is None and not expired_or_closed),
+        })
+
+    students = _load_classroom_students(conn, class_offering_id)
+    ungrouped = [s for s in students if int(s["id"]) not in grouped_student_ids]
+    my_group_id = None
+    if current_student_id is not None:
+        existing = _student_scheme_group(conn, scheme_id, current_student_id)
+        my_group_id = int(existing["id"]) if existing else None
+    has_open_group = any(not g["is_full"] for g in serialized_groups)
+
+    return {
+        "id": scheme_id,
+        "class_offering_id": class_offering_id,
+        "name": str(scheme.get("name") or "随机分组"),
+        "description": str(scheme.get("description") or ""),
+        "min_members": int(scheme.get("min_members") or 0),
+        "max_members": int(scheme.get("max_members") or 0),
+        "group_count": int(scheme.get("group_count") or len(serialized_groups)),
+        "status": str(scheme.get("status") or SCHEME_STATUS_ACTIVE),
+        "expires_at": str(scheme.get("expires_at") or ""),
+        "is_expired": is_expired,
+        "is_active": not expired_or_closed,
+        "created_at": str(scheme.get("created_at") or ""),
+        "groups": serialized_groups,
+        "grouped_count": len(grouped_student_ids),
+        "ungrouped_count": len(ungrouped),
+        "total_students": len(students),
+        "ungrouped_students": [
+            {
+                "student_id": int(s["id"]),
+                "name": str(s["name"]),
+                "student_id_number": str(s.get("student_id_number") or ""),
+            }
+            for s in ungrouped
+        ] if is_teacher else [],
+        "my_group_id": my_group_id,
+        "can_random_join": bool(
+            current_student_id is not None
+            and my_group_id is None
+            and not expired_or_closed
+            and has_open_group
+        ),
+        "can_manage": is_teacher,
+    }
+
+
+def _load_schemes_for_snapshot(conn, class_offering_id: int, user: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT * FROM group_schemes
+        WHERE class_offering_id = ?
+        ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, created_at DESC, id DESC
+        """,
+        (int(class_offering_id),),
+    ).fetchall()
+    schemes = []
+    for row in rows:
+        scheme = dict(row)
+        scheme["teacher_id"] = None
+        schemes.append(_serialize_scheme(conn, scheme, user))
+    return schemes
+
+
 def load_collaboration_snapshot(conn, class_offering_id: int, user: dict[str, Any]) -> dict[str, Any]:
     offering = ensure_classroom_access(conn, class_offering_id, user)
     rows = conn.execute(
@@ -1461,6 +1945,7 @@ def load_collaboration_snapshot(conn, class_offering_id: int, user: dict[str, An
         JOIN class_offerings o ON o.id = g.class_offering_id
         LEFT JOIN assignments a ON a.id = g.assignment_id
         WHERE g.class_offering_id = ?
+          AND g.scheme_id IS NULL
         ORDER BY
             CASE g.status WHEN 'active' THEN 0 ELSE 1 END,
             g.updated_at DESC,
@@ -1577,6 +2062,7 @@ def load_collaboration_snapshot(conn, class_offering_id: int, user: dict[str, An
             "pending_peer_review_count": pending_review_count,
         },
         "groups": groups,
+        "schemes": _load_schemes_for_snapshot(conn, class_offering_id, user),
         "assignments": _load_assignment_options(conn, class_offering_id),
         "students": _load_classroom_students(conn, class_offering_id) if _is_teacher(user) else [],
         "limits": {

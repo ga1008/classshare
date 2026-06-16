@@ -13,13 +13,18 @@ from ..services.collaboration_service import (
     add_group_file,
     add_group_member,
     create_group,
+    create_group_scheme,
     create_group_submission_blog_draft,
     join_group,
     leave_group,
     load_collaboration_snapshot,
+    nominate_group_leader,
+    random_join_scheme,
     remove_group_member,
     resolve_group_file_download,
+    set_group_goal_progress,
     submit_peer_review,
+    teacher_assign_to_scheme_group,
     update_group,
     upsert_group_submission,
 )
@@ -62,6 +67,80 @@ async def collaboration_snapshot(class_offering_id: int, user: dict = Depends(ge
     with get_db_connection() as conn:
         snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
     return {"status": "ok", "snapshot": snapshot}
+
+
+def _scheme_class_offering_id(conn, scheme_id: int) -> int:
+    row = conn.execute(
+        "SELECT class_offering_id FROM group_schemes WHERE id = ? LIMIT 1",
+        (int(scheme_id),),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "分组方案不存在")
+    return int(row["class_offering_id"])
+
+
+@router.post("/classrooms/{class_offering_id}/schemes", response_class=JSONResponse)
+async def create_random_group_scheme(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_payload(request)
+    with get_db_connection() as conn:
+        scheme = create_group_scheme(conn, class_offering_id, user, payload)
+        snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
+        conn.commit()
+    return {"status": "ok", "message": "分组方案已创建", "scheme": scheme, "snapshot": snapshot}
+
+
+@router.post("/schemes/{scheme_id}/random-join", response_class=JSONResponse)
+async def random_join_group_scheme(scheme_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        result = random_join_scheme(conn, scheme_id, user)
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
+        conn.commit()
+    return {
+        "status": "ok",
+        "message": f"已加入「{result['group_name']}」",
+        "result": result,
+        "snapshot": snapshot,
+    }
+
+
+@router.put("/groups/{group_id}/goal", response_class=JSONResponse)
+async def set_study_group_goal(group_id: int, request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_payload(request)
+    with get_db_connection() as conn:
+        set_group_goal_progress(conn, group_id, user, payload)
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
+        conn.commit()
+    return {"status": "ok", "message": "小组目标与进度已更新", "snapshot": snapshot}
+
+
+@router.post("/groups/{group_id}/scheme-assign", response_class=JSONResponse)
+async def assign_scheme_group_member(group_id: int, request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_payload(request)
+    student = payload.get("student_id")
+    try:
+        student_id = int(student)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "请选择要分配的学生") from exc
+    with get_db_connection() as conn:
+        teacher_assign_to_scheme_group(conn, group_id, user, student_id)
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
+        conn.commit()
+    return {"status": "ok", "message": "已分配到小组", "snapshot": snapshot}
+
+
+@router.post("/groups/{group_id}/nominate-leader", response_class=JSONResponse)
+async def nominate_study_group_leader(group_id: int, request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_payload(request)
+    candidate = payload.get("candidate_student_id")
+    try:
+        candidate_id = int(candidate)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "请选择要举荐的组员") from exc
+    with get_db_connection() as conn:
+        nominate_group_leader(conn, group_id, user, candidate_id)
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
+        conn.commit()
+    return {"status": "ok", "message": "已举荐组长", "snapshot": snapshot}
 
 
 @router.post("/classrooms/{class_offering_id}/groups", response_class=JSONResponse)
