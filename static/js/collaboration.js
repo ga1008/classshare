@@ -754,11 +754,11 @@ function groupDetailHtml(group, scheme) {
             <section class="collab-group-detail__chat" data-group-chat-drop>
                 <h4>组内对话 <small>只有本组成员可见</small></h4>
                 <div class="group-chat-messages" data-group-chat-messages></div>
-                <div class="group-chat-dropmask" data-group-chat-dropmask hidden>拖入文件 / 图片 / GIF（最多 10 个）</div>
+                <div class="group-chat-dropmask" data-group-chat-dropmask aria-hidden="true">松开以添加附件</div>
                 <div class="group-chat-pending" data-group-chat-pending hidden></div>
                 <form class="group-chat-form" data-group-chat-form="${group.id}">
                     <button type="button" class="group-chat-tool" data-group-chat-emoji title="表情" aria-label="表情">😊</button>
-                    <button type="button" class="group-chat-tool" data-group-chat-file title="图片 / 文件" aria-label="图片或文件">
+                    <button type="button" class="group-chat-tool" data-group-chat-file title="点击或拖入文件 / 图片 / GIF（最多 10 个）" aria-label="点击或拖入文件、图片、GIF，最多 10 个">
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                     </button>
                     <input type="file" multiple hidden data-group-chat-file-input>
@@ -834,7 +834,6 @@ function initGroupChat(overlay, groupId) {
     const fileInput = form?.querySelector('[data-group-chat-file-input]');
     const pendingBox = overlay.querySelector('[data-group-chat-pending]');
     const dropZone = overlay.querySelector('[data-group-chat-drop]');
-    const dropMask = overlay.querySelector('[data-group-chat-dropmask]');
     let pending = [];
     let lastId = 0;
     let stopped = false;
@@ -953,23 +952,23 @@ function initGroupChat(overlay, groupId) {
             await uploadFiles(files);
         });
     }
-    // drag-drop zone (files / images / gifs)
+    // Drag-drop is a quiet add-on: the dashed hint only appears while a file is
+    // actually being dragged over the conversation, never in the resting state.
     if (dropZone) {
+        const isFileDrag = (event) => Array.from(event.dataTransfer?.types || []).includes('Files');
         dropZone.addEventListener('dragover', (event) => {
-            if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
-                event.preventDefault();
-                if (dropMask) dropMask.hidden = false;
-            }
+            if (!isFileDrag(event)) return;
+            event.preventDefault();
+            dropZone.classList.add('is-dragover');
         });
         dropZone.addEventListener('dragleave', (event) => {
-            if (!dropZone.contains(event.relatedTarget) && dropMask) dropMask.hidden = true;
+            if (!dropZone.contains(event.relatedTarget)) dropZone.classList.remove('is-dragover');
         });
         dropZone.addEventListener('drop', async (event) => {
-            const files = Array.from(event.dataTransfer?.files || []);
-            if (!files.length) return;
+            if (!isFileDrag(event)) return;
             event.preventDefault();
-            if (dropMask) dropMask.hidden = true;
-            await uploadFiles(files);
+            dropZone.classList.remove('is-dragover');
+            await uploadFiles(Array.from(event.dataTransfer?.files || []));
         });
     }
     if (pendingBox) {

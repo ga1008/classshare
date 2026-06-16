@@ -44794,15 +44794,17 @@ body.has-teaching-session-modal {
 .group-chat-emoji-overlay__head strong { font-size: 0.95rem; }
 .group-chat-emoji-body { max-height: 50vh; overflow-y: auto; }
 
-/* drag-drop drop zone over the chat */
+/* drag-drop drop zone over the chat — the dashed hint shows ONLY while a file
+   is being dragged over the conversation (.is-dragover), never at rest. */
 .collab-group-detail__chat { position: relative; }
 .group-chat-dropmask {
     position: absolute; inset: 1.8rem 0 3rem; z-index: 3;
-    display: flex; align-items: center; justify-content: center;
+    display: none; align-items: center; justify-content: center;
     border: 2px dashed rgba(79, 70, 229, 0.6); border-radius: 12px;
     background: rgba(238, 242, 255, 0.92); color: #4338ca; font-weight: 700; font-size: 0.9rem;
     pointer-events: none;
 }
+.collab-group-detail__chat.is-dragover .group-chat-dropmask { display: flex; }
 
 /* recall affordance + recalled placeholder */
 .group-chat-msg { position: relative; }
