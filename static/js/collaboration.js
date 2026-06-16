@@ -531,7 +531,7 @@ function renderSchemeCard(scheme, snapshot) {
         ? `<button type="button" class="btn btn-primary btn-sm" data-collab-scheme-random-join="${scheme.id}">随机分组</button>`
         : (!isTeacher && scheme.my_group_id ? '<span class="collab-scheme-chip is-active">已分组</span>' : '');
     const teacherAction = isTeacher
-        ? `<button type="button" class="btn btn-outline btn-sm" data-collab-scheme-board="${scheme.id}">分组大屏</button>`
+        ? `<button type="button" class="btn btn-outline btn-sm" data-collab-scheme-board="${scheme.id}">分组大屏</button>${scheme.can_close ? `<button type="button" class="btn btn-ghost btn-sm" data-collab-scheme-close="${scheme.id}">结束方案</button>` : ''}`
         : '';
     return `
         <section class="collab-scheme-card" data-collab-scheme="${scheme.id}">
@@ -592,11 +592,24 @@ function renderSchemeBuilder(snapshot, open) {
 
 function renderSchemes(snapshot, state) {
     const schemes = snapshot.schemes || [];
-    if (snapshot.role !== 'teacher' && !schemes.length) return '';
+    const isTeacher = snapshot.role === 'teacher';
+    if (!isTeacher) {
+        const active = schemes.filter((scheme) => !scheme.is_history);
+        if (!active.length) return '';
+        return `<div class="collab-scheme-section">${active.map((scheme) => renderSchemeCard(scheme, snapshot)).join('')}</div>`;
+    }
+    const current = schemes.filter((scheme) => !scheme.is_history);
+    const history = schemes.filter((scheme) => scheme.is_history);
+    const tab = state.schemeTab === 'history' ? 'history' : 'current';
+    const list = tab === 'history' ? history : current;
     return `
         <div class="collab-scheme-section">
             ${renderSchemeBuilder(snapshot, state.schemeCreateOpen)}
-            ${schemes.map((scheme) => renderSchemeCard(scheme, snapshot)).join('')}
+            <div class="collab-scheme-tabs" role="tablist" aria-label="分组方案切换">
+                <button type="button" class="collab-scheme-tab${tab === 'current' ? ' is-active' : ''}" data-collab-scheme-tab="current" role="tab" aria-selected="${tab === 'current'}">现分组 (${current.length})</button>
+                <button type="button" class="collab-scheme-tab${tab === 'history' ? ' is-active' : ''}" data-collab-scheme-tab="history" role="tab" aria-selected="${tab === 'history'}">历史组 (${history.length})</button>
+            </div>
+            ${list.length ? list.map((scheme) => renderSchemeCard(scheme, snapshot)).join('') : `<div class="collaboration-empty"><strong>${tab === 'history' ? '还没有历史方案' : '还没有进行中的方案'}</strong><p>${tab === 'history' ? '结束的方案会归档到这里。' : '点击上方“创建分组方案”开始随机分组。'}</p></div>`}
         </div>
     `;
 }
@@ -721,8 +734,15 @@ function groupDetailHtml(group, scheme) {
             <section class="collab-group-detail__chat">
                 <h4>组内对话 <small>只有本组成员可见</small></h4>
                 <div class="group-chat-messages" data-group-chat-messages></div>
+                <div class="group-chat-emoji-panel" data-group-chat-emoji-panel hidden></div>
+                <div class="group-chat-pending" data-group-chat-pending hidden></div>
                 <form class="group-chat-form" data-group-chat-form="${group.id}">
-                    <input type="text" maxlength="800" placeholder="给组员发条消息…" autocomplete="off">
+                    <button type="button" class="group-chat-tool" data-group-chat-emoji title="表情" aria-label="表情">😊</button>
+                    <button type="button" class="group-chat-tool" data-group-chat-file title="图片 / 文件" aria-label="图片或文件">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    </button>
+                    <input type="file" multiple hidden data-group-chat-file-input>
+                    <input type="text" class="group-chat-text" maxlength="800" placeholder="给组员发条消息…" autocomplete="off">
                     <button type="submit" class="btn btn-primary btn-sm">发送</button>
                 </form>
             </section>
@@ -731,24 +751,68 @@ function groupDetailHtml(group, scheme) {
     `;
 }
 
+const UNICODE_EMOJIS = ['😀', '😄', '😁', '😊', '🙂', '😉', '😍', '😘', '🤔', '😅', '😂', '🤣', '😎', '😴', '🥳', '😢', '😭', '😡', '👍', '👎', '👏', '🙏', '💪', '🤝', '👌', '✌️', '🔥', '⭐', '🎉', '💡', '✅', '❌', '❤️', '💯', '🚀', '📌', '📝', '⏰', '🤯', '🥹'];
+
+function renderChatAttachments(attachments) {
+    if (!attachments || !attachments.length) return '';
+    const items = attachments.map((att) => {
+        const url = escapeHtml(att.url || '');
+        if (att.kind === 'sticker') {
+            return `<span class="group-chat-sticker"><img src="${url}" alt="${escapeHtml(att.name || '表情')}" loading="lazy"></span>`;
+        }
+        if (att.kind === 'image') {
+            return `<a class="group-chat-img" href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${escapeHtml(att.name || '')}" loading="lazy"></a>`;
+        }
+        return `<a class="group-chat-file-chip" href="${url}?download=1" target="_blank" rel="noopener">
+            <span class="group-chat-file-chip__icon" aria-hidden="true">📄</span>
+            <span class="group-chat-file-chip__meta"><strong>${escapeHtml(att.name || '文件')}</strong><small>${formatSize(att.file_size || 0)}</small></span>
+        </a>`;
+    }).join('');
+    return `<div class="group-chat-atts">${items}</div>`;
+}
+
 function initGroupChat(overlay, groupId) {
     const list = overlay.querySelector('[data-group-chat-messages]');
     const form = overlay.querySelector('[data-group-chat-form]');
     if (!list) return;
+    const root = document.querySelector('[data-collaboration-root]');
+    const classOfferingId = root?.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
+    const textInput = form?.querySelector('.group-chat-text');
+    const fileInput = form?.querySelector('[data-group-chat-file-input]');
+    const pendingBox = overlay.querySelector('[data-group-chat-pending]');
+    const emojiPanel = overlay.querySelector('[data-group-chat-emoji-panel]');
+    let pending = [];
     let lastId = 0;
     let stopped = false;
+    let emojiLoaded = false;
+
     const append = (messages) => {
         if (!messages || !messages.length) return;
-        const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+        const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
         messages.forEach((message) => {
             lastId = Math.max(lastId, Number(message.id) || 0);
             const row = document.createElement('div');
             row.className = `group-chat-msg${message.is_mine ? ' is-mine' : ''}`;
-            row.innerHTML = `<span class="group-chat-msg__name">${escapeHtml(message.sender_name || '成员')}${message.sender_role === 'teacher' ? ' · 老师' : ''}</span><span class="group-chat-msg__body">${escapeHtml(message.content || '')}</span>`;
+            const body = message.content ? `<span class="group-chat-msg__body">${escapeHtml(message.content)}</span>` : '';
+            row.innerHTML = `<span class="group-chat-msg__name">${escapeHtml(message.sender_name || '成员')}${message.sender_role === 'teacher' ? ' · 老师' : ''}</span>${body}${renderChatAttachments(message.attachments)}`;
             list.appendChild(row);
         });
         if (atBottom) list.scrollTop = list.scrollHeight;
     };
+
+    const renderPending = () => {
+        if (!pendingBox) return;
+        if (!pending.length) { pendingBox.hidden = true; pendingBox.innerHTML = ''; return; }
+        pendingBox.hidden = false;
+        pendingBox.innerHTML = pending.map((att, index) => `
+            <span class="group-chat-pending-chip">
+                ${att.kind === 'image' ? `<img src="${escapeHtml(att.url)}" alt="">` : '<span class="group-chat-pending-chip__icon">📄</span>'}
+                <span>${escapeHtml(att.name || '附件')}</span>
+                <button type="button" data-group-chat-pending-remove="${index}" aria-label="移除">×</button>
+            </span>
+        `).join('');
+    };
+
     const poll = async () => {
         if (stopped) return;
         try {
@@ -766,17 +830,93 @@ function initGroupChat(overlay, groupId) {
         }
     });
     observer.observe(document.body, { childList: true });
+
+    const sendSticker = async (emojiId) => {
+        try {
+            const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat`, { method: 'POST', body: { sticker_emoji_id: Number(emojiId) } });
+            append([data.message]);
+        } catch (error) { showToast(error.message || '发送失败', 'error'); }
+    };
+
+    const loadEmojiPanel = async () => {
+        if (emojiLoaded || !emojiPanel) return;
+        emojiLoaded = true;
+        let custom = [];
+        try {
+            const data = await apiFetch(`/api/classrooms/${classOfferingId}/emoji-panel`, { silent: true });
+            custom = data?.custom_emojis || [];
+        } catch (error) { /* custom emojis optional */ }
+        const unicodeGrid = UNICODE_EMOJIS.map((emoji) => `<button type="button" class="group-chat-emoji-item" data-emoji-char="${emoji}">${emoji}</button>`).join('');
+        const customGrid = custom.length
+            ? `<div class="group-chat-emoji-divider">我的表情包</div><div class="group-chat-emoji-grid">${custom.map((item) => `<button type="button" class="group-chat-emoji-item is-custom" data-emoji-id="${item.id}" title="${escapeHtml(item.name || '')}"><img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.name || '')}"></button>`).join('')}</div>`
+            : '';
+        emojiPanel.innerHTML = `<div class="group-chat-emoji-grid">${unicodeGrid}</div>${customGrid}`;
+    };
+
+    if (emojiPanel) {
+        emojiPanel.addEventListener('click', (event) => {
+            const charBtn = event.target.closest('[data-emoji-char]');
+            if (charBtn && textInput) {
+                textInput.value += charBtn.dataset.emojiChar;
+                textInput.focus();
+                return;
+            }
+            const customBtn = event.target.closest('[data-emoji-id]');
+            if (customBtn) {
+                emojiPanel.hidden = true;
+                sendSticker(customBtn.dataset.emojiId);
+            }
+        });
+    }
+    overlay.querySelector('[data-group-chat-emoji]')?.addEventListener('click', async () => {
+        if (!emojiPanel) return;
+        await loadEmojiPanel();
+        emojiPanel.hidden = !emojiPanel.hidden;
+    });
+    overlay.querySelector('[data-group-chat-file]')?.addEventListener('click', () => fileInput?.click());
+    if (pendingBox) {
+        pendingBox.addEventListener('click', (event) => {
+            const removeBtn = event.target.closest('[data-group-chat-pending-remove]');
+            if (!removeBtn) return;
+            pending.splice(Number(removeBtn.dataset.groupChatPendingRemove), 1);
+            renderPending();
+        });
+    }
+    if (fileInput) {
+        fileInput.addEventListener('change', async () => {
+            const files = Array.from(fileInput.files || []);
+            fileInput.value = '';
+            if (!files.length) return;
+            if (pending.length + files.length > 6) { showToast('单条消息最多 6 个附件', 'warning'); return; }
+            const fd = new FormData();
+            files.forEach((file) => fd.append('files', file));
+            try {
+                const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat/attachments`, { method: 'POST', body: fd });
+                pending = pending.concat(data.attachments || []);
+                renderPending();
+            } catch (error) { showToast(error.message || '上传失败', 'error'); }
+        });
+    }
     if (form) {
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
-            const input = form.querySelector('input');
-            const text = String(input?.value || '').trim();
-            if (!text) return;
-            input.value = '';
+            const text = String(textInput?.value || '').trim();
+            if (!text && !pending.length) return;
+            const attachmentIds = pending.map((att) => att.id).filter(Boolean);
+            if (textInput) textInput.value = '';
+            const sending = pending.slice();
+            pending = [];
+            renderPending();
+            if (emojiPanel) emojiPanel.hidden = true;
             try {
-                const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat`, { method: 'POST', body: { content: text } });
+                const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat`, {
+                    method: 'POST',
+                    body: { content: text, attachment_ids: attachmentIds },
+                });
                 append([data.message]);
             } catch (error) {
+                pending = sending;
+                renderPending();
                 showToast(error.message || '发送失败', 'error');
             }
         });
@@ -814,6 +954,7 @@ function showGroupDetail(snapshot, groupId) {
 function renderBoardGroupCard(group) {
     const progress = Math.max(0, Math.min(100, Number(group.progress_percent) || 0));
     const leaderName = (group.members.find((m) => m.is_leader) || {}).name || '待举荐';
+    const canAssign = Boolean(group.can_assign_leader);
     return `
         <article class="collab-board-group${group.is_full ? ' is-full' : ' is-open'}"
             data-collab-board-group="${group.id}" data-group-max="${group.max_members}" data-group-count="${group.member_count}">
@@ -824,7 +965,11 @@ function renderBoardGroupCard(group) {
             <div class="collab-scheme-group__progress"><span style="width:${progress}%"></span></div>
             <small>组长 ${escapeHtml(leaderName)} · 进度 ${progress}%</small>
             <ul class="collab-board-group__members">
-                ${group.members.map((m) => `<li>${escapeHtml(m.name)}${m.is_leader ? ' <em>组长</em>' : ''} <span>${escapeHtml(m.student_id_number || '')}</span></li>`).join('') || '<li class="collaboration-muted">空</li>'}
+                ${group.members.map((m) => `<li>
+                    <span class="collab-board-group__member-name">${escapeHtml(m.name)}${m.is_leader ? ' <em>组长</em>' : ''}</span>
+                    <span class="collab-board-group__member-no">${escapeHtml(m.student_id_number || '')}</span>
+                    ${canAssign && !m.is_leader ? `<button type="button" class="collab-board-set-leader" data-collab-assign-leader="${group.id}" data-candidate="${m.student_id}">设为组长</button>` : ''}
+                </li>`).join('') || '<li class="collaboration-muted">空</li>'}
             </ul>
         </article>
     `;
@@ -835,13 +980,16 @@ function showSchemeBoard(snapshot, schemeId) {
     if (!scheme) return null;
     const ungrouped = scheme.ungrouped_students || [];
     const html = `
-        <div class="collab-board">
+        <div class="collab-board" data-scheme-id="${scheme.id}">
             <header class="collab-board__head">
                 <div>
                     <strong>${escapeHtml(scheme.name)} · 分组大屏</strong>
                     <span>每组 ${scheme.min_members}-${scheme.max_members} 人 · ${scheme.group_count} 组</span>
                 </div>
-                <button type="button" class="collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button>
+                <div class="collab-board__head-actions">
+                    ${scheme.is_active && scheme.leaderless_group_count > 0 ? `<button type="button" class="btn btn-primary btn-sm" data-collab-auto-leaders="${scheme.id}">一键配置组长 (${scheme.leaderless_group_count})</button>` : ''}
+                    <button type="button" class="collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button>
+                </div>
             </header>
             <div class="collab-board__stats">
                 <div><strong>${scheme.grouped_count}</strong><span>已分组</span></div>
@@ -1127,6 +1275,38 @@ function bindOverlayEvents(root, state) {
             } catch (error) {
                 showToast(error.message || '举荐失败', 'error');
             }
+            return;
+        }
+        const autoBtn = event.target.closest('[data-collab-auto-leaders]');
+        if (autoBtn) {
+            const schemeId = autoBtn.dataset.collabAutoLeaders;
+            try {
+                const response = await apiFetch(`/api/collaboration/schemes/${schemeId}/auto-leaders`, { method: 'POST' });
+                applyAndRender(root, state, response);
+                showToast(response.message || '已配置组长', 'success');
+                closeOverlays();
+                showSchemeBoard(state.snapshot, schemeId);
+            } catch (error) {
+                showToast(error.message || '配置失败', 'error');
+            }
+            return;
+        }
+        const assignBtn = event.target.closest('[data-collab-assign-leader]');
+        if (assignBtn) {
+            const groupId = assignBtn.dataset.collabAssignLeader;
+            try {
+                const response = await apiFetch(`/api/collaboration/groups/${groupId}/assign-leader`, {
+                    method: 'POST',
+                    body: { candidate_student_id: Number(assignBtn.dataset.candidate) },
+                });
+                applyAndRender(root, state, response);
+                showToast(response.message || '已指定组长', 'success');
+                const found = findSchemeGroup(state.snapshot, groupId);
+                closeOverlays();
+                if (found) showSchemeBoard(state.snapshot, found.scheme.id);
+            } catch (error) {
+                showToast(error.message || '指定失败', 'error');
+            }
         }
     });
     document.addEventListener('input', (event) => {
@@ -1190,6 +1370,14 @@ function bindEvents(root, state) {
                 await handleRandomJoin(root, state, target.dataset.collabSchemeRandomJoin);
             } else if (target.dataset.collabSchemeBoard) {
                 showSchemeBoard(state.snapshot, target.dataset.collabSchemeBoard);
+            } else if (target.dataset.collabSchemeTab) {
+                state.schemeTab = target.dataset.collabSchemeTab;
+                render(root, state);
+            } else if (target.dataset.collabSchemeClose) {
+                if (!window.confirm('确定结束该分组方案吗？结束后学生将无法再加入或修改，方案会归档到“历史组”。')) return;
+                const response = await apiFetch(`/api/collaboration/schemes/${target.dataset.collabSchemeClose}/close`, { method: 'POST' });
+                applyAndRender(root, state, response);
+                showToast(response.message || '已结束方案', 'success');
             } else if (target.matches('[data-collab-refresh]')) {
                 await refresh(root, state);
                 showToast('协作区已刷新', 'success');
@@ -1265,6 +1453,7 @@ export function initCollaborationPanel() {
         detailTab: 'members',
         createOpen: false,
         schemeCreateOpen: false,
+        schemeTab: 'current',
     };
     bindEvents(root, state);
     bindOverlayEvents(root, state);

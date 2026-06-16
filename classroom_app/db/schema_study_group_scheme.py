@@ -95,14 +95,42 @@ def ensure_study_group_scheme_schema(conn: Any) -> None:
             sender_role TEXT NOT NULL DEFAULT 'student',
             sender_user_pk INTEGER NOT NULL,
             sender_name TEXT NOT NULL DEFAULT '',
-            content TEXT NOT NULL,
+            content TEXT NOT NULL DEFAULT '',
+            message_type TEXT NOT NULL DEFAULT 'text',
+            attachments_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    # Backfill columns on databases created before chat attachments existed.
+    _add_column(conn, "group_chat_messages", "message_type", "TEXT NOT NULL DEFAULT 'text'", engine=engine)
+    _add_column(conn, "group_chat_messages", "attachments_json", "TEXT NOT NULL DEFAULT '[]'", engine=engine)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_group_chat_messages_group "
+        "ON group_chat_messages (group_id, id)"
+    )
+
+    # Attachments (images + files + custom-emoji stickers) for in-group chat.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS group_chat_attachments (
+            {id_column},
+            group_id INTEGER NOT NULL,
+            uploaded_by_role TEXT NOT NULL DEFAULT 'student',
+            uploaded_by_user_pk INTEGER NOT NULL,
+            uploaded_by_name TEXT NOT NULL DEFAULT '',
+            file_hash TEXT NOT NULL,
+            original_filename TEXT NOT NULL DEFAULT '',
+            mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+            file_size INTEGER NOT NULL DEFAULT 0,
+            kind TEXT NOT NULL DEFAULT 'file',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_group_chat_messages_group "
-        "ON group_chat_messages (group_id, id)"
+        "CREATE INDEX IF NOT EXISTS idx_group_chat_attachments_group "
+        "ON group_chat_attachments (group_id, id)"
     )
 
     _SCHEMA_READY = True

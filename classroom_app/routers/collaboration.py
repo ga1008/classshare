@@ -10,8 +10,14 @@ from ..config import MAX_UPLOAD_SIZE_BYTES
 from ..database import get_db_connection
 from ..dependencies import get_current_user
 from ..services.collaboration_service import (
+    GROUP_CHAT_ATTACHMENT_MAX_BYTES,
+    MAX_GROUP_CHAT_ATTACHMENTS,
+    add_group_chat_attachment,
     add_group_file,
     add_group_member,
+    assign_scheme_leader,
+    auto_assign_scheme_leaders,
+    close_group_scheme,
     create_group,
     create_group_scheme,
     create_group_submission_blog_draft,
@@ -23,6 +29,7 @@ from ..services.collaboration_service import (
     post_group_chat,
     random_join_scheme,
     remove_group_member,
+    resolve_group_chat_attachment_download,
     resolve_group_file_download,
     set_group_goal_progress,
     submit_peer_review,
@@ -45,6 +52,13 @@ async def _json_payload(request: Request) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise HTTPException(400, "请求体必须是 JSON 对象")
     return payload
+
+
+def _safe_int_or_none(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _measure_upload(file: UploadFile) -> int:
@@ -115,10 +129,119 @@ async def get_group_chat(group_id: int, after_id: int = 0, user: dict = Depends(
 @router.post("/groups/{group_id}/chat", response_class=JSONResponse)
 async def send_group_chat(group_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
+    raw_ids = payload.get("attachment_ids") or []
+    attachment_ids: list[int] = []
+    if isinstance(raw_ids, list):
+        for value in raw_ids[:MAX_GROUP_CHAT_ATTACHMENTS]:
+            parsed = _safe_int_or_none(value)
+            if parsed is not None:
+                attachment_ids.append(parsed)
     with get_db_connection() as conn:
-        message = post_group_chat(conn, group_id, user, payload.get("content"))
+        message = post_group_chat(
+            conn,
+            group_id,
+            user,
+            payload.get("content"),
+            attachment_ids=attachment_ids,
+            message_type=str(payload.get("message_type") or "text"),
+            sticker_emoji_id=_safe_int_or_none(payload.get("sticker_emoji_id")),
+        )
         conn.commit()
     return {"status": "ok", "message": message}
+
+
+@router.post("/groups/{group_id}/chat/attachments", response_class=JSONResponse)
+async def upload_group_chat_attachments(
+    group_id: int,
+    files: list[UploadFile] = File(...),
+    user: dict = Depends(get_current_user),
+):
+    if not files:
+        raise HTTPException(400, "请选择要上传的文件")
+    if len(files) > MAX_GROUP_CHAT_ATTACHMENTS:
+        raise HTTPException(400, f"单条消息最多上传 {MAX_GROUP_CHAT_ATTACHMENTS} 个附件")
+    payloads = []
+    for file in files:
+        if not file.filename:
+            continue
+        size = _measure_upload(file)
+        if size <= 0:
+            raise HTTPException(400, "不能上传空文件")
+        if size > GROUP_CHAT_ATTACHMENT_MAX_BYTES:
+            raise HTTPException(400, "单个附件不能超过 50MB")
+        storage = await save_file_globally(file)
+        if not storage:
+            raise HTTPException(500, "文件保存失败")
+        with get_db_connection() as conn:
+            payload = add_group_chat_attachment(
+                conn,
+                group_id,
+                user,
+                file_hash=str(storage["hash"]),
+                original_filename=str(file.filename),
+                mime_type=str(file.content_type or ""),
+                file_size=int(storage.get("size") or size),
+            )
+            conn.commit()
+        payloads.append(payload)
+    return {"status": "ok", "attachments": payloads}
+
+
+@router.get("/groups/{group_id}/chat/attachments/{attachment_id}")
+async def download_group_chat_attachment(
+    group_id: int,
+    attachment_id: int,
+    download: bool = False,
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        payload = resolve_group_chat_attachment_download(conn, attachment_id, user)
+    disposition = "attachment" if (download or payload["kind"] != "image") else "inline"
+    return FileResponse(
+        payload["path"],
+        media_type=payload["mime_type"],
+        filename=payload["filename"],
+        headers={
+            "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(payload['filename'])}"
+        },
+    )
+
+
+@router.post("/schemes/{scheme_id}/close", response_class=JSONResponse)
+async def close_random_group_scheme(scheme_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        close_group_scheme(conn, scheme_id, user)
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
+        conn.commit()
+    return {"status": "ok", "message": "分组方案已结束并归档", "snapshot": snapshot}
+
+
+@router.post("/schemes/{scheme_id}/auto-leaders", response_class=JSONResponse)
+async def auto_assign_random_scheme_leaders(scheme_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        result = auto_assign_scheme_leaders(conn, scheme_id, user)
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
+        conn.commit()
+    return {
+        "status": "ok",
+        "message": f"已为 {result['assigned']} 个小组自动配置组长",
+        "snapshot": snapshot,
+    }
+
+
+@router.post("/groups/{group_id}/assign-leader", response_class=JSONResponse)
+async def teacher_assign_group_leader(group_id: int, request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_payload(request)
+    candidate = payload.get("candidate_student_id")
+    try:
+        candidate_id = int(candidate)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "请选择要指定的组员") from exc
+    with get_db_connection() as conn:
+        assign_scheme_leader(conn, group_id, user, candidate_id)
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
+        conn.commit()
+    return {"status": "ok", "message": "已指定组长", "snapshot": snapshot}
 
 
 @router.put("/groups/{group_id}/goal", response_class=JSONResponse)

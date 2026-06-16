@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import mimetypes
 import random
@@ -1720,8 +1721,9 @@ def random_join_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, 
         added_by_user_pk=student_id,
     )
     conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (_now_iso(), int(chosen["id"])))
+    _cleanup_empty_scheme_groups(conn, scheme_id)
     return {
-        "scheme": _serialize_scheme(conn, scheme, user),
+        "scheme": _serialize_scheme(conn, _load_scheme(conn, scheme_id), user),
         "group_id": int(chosen["id"]),
         "group_name": str(chosen["name"]),
     }
@@ -1760,6 +1762,7 @@ def teacher_assign_to_scheme_group(conn, group_id: int, user: dict[str, Any], st
         added_by_user_pk=_user_pk(user),
     )
     conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (_now_iso(), int(group_id)))
+    _cleanup_empty_scheme_groups(conn, scheme_id)
     return _serialize_scheme(conn, _load_scheme(conn, scheme_id), user)
 
 
@@ -1818,6 +1821,131 @@ def nominate_group_leader(conn, group_id: int, user: dict[str, Any], candidate_s
 
 MAX_GROUP_CHAT_FETCH = 80
 MAX_GROUP_CHAT_LENGTH = 800
+MAX_GROUP_CHAT_ATTACHMENTS = 6
+GROUP_CHAT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024
+_IMAGE_MIME_PREFIX = "image/"
+
+
+def _chat_attachment_kind(mime_type: str) -> str:
+    return "image" if str(mime_type or "").lower().startswith(_IMAGE_MIME_PREFIX) else "file"
+
+
+def _chat_attachment_url(group_id: int, attachment_id: int) -> str:
+    return f"/api/collaboration/groups/{int(group_id)}/chat/attachments/{int(attachment_id)}"
+
+
+def _can_use_group_chat(conn, group: dict[str, Any], user: dict[str, Any]) -> bool:
+    if _is_teacher(user):
+        return int(group["teacher_id"]) == _user_pk(user)
+    return _is_student(user) and _is_active_member(conn, int(group["id"]), _user_pk(user))
+
+
+def _load_chat_attachments(conn, group_id: int, attachment_ids: list[int]) -> list[dict[str, Any]]:
+    ids = [int(a) for a in attachment_ids if _safe_int(a) is not None]
+    if not ids:
+        return []
+    placeholders = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        f"SELECT * FROM group_chat_attachments WHERE group_id = ? AND id IN ({placeholders})",
+        (int(group_id), *ids),
+    ).fetchall()
+    by_id = {int(row["id"]): dict(row) for row in rows}
+    ordered = []
+    for attachment_id in ids:
+        row = by_id.get(int(attachment_id))
+        if row:
+            ordered.append(_serialize_chat_attachment(row))
+    return ordered
+
+
+def _serialize_chat_attachment(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "name": str(row.get("original_filename") or "附件"),
+        "mime_type": str(row.get("mime_type") or "application/octet-stream"),
+        "file_size": int(row.get("file_size") or 0),
+        "kind": str(row.get("kind") or "file"),
+        "url": _chat_attachment_url(int(row["group_id"]), int(row["id"])),
+    }
+
+
+def add_group_chat_attachment(
+    conn,
+    group_id: int,
+    user: dict[str, Any],
+    *,
+    file_hash: str,
+    original_filename: str,
+    mime_type: str,
+    file_size: int,
+) -> dict[str, Any]:
+    group = _ensure_group_access(conn, group_id, user)
+    if not _can_use_group_chat(conn, group, user):
+        raise HTTPException(403, "只有本组成员或教师可以上传组内附件")
+    from pathlib import Path as _Path
+    filename = _Path(str(original_filename or "附件")).name or "附件"
+    resolved_mime = str(mime_type or mimetypes.guess_type(filename)[0] or "application/octet-stream")
+    attachment_id = execute_insert_returning_id(
+        conn,
+        """
+        INSERT INTO group_chat_attachments (
+            group_id, uploaded_by_role, uploaded_by_user_pk, uploaded_by_name,
+            file_hash, original_filename, mime_type, file_size, kind, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(group_id), str(user.get("role") or "student"), _user_pk(user), _actor_name(user),
+            str(file_hash), filename, resolved_mime, int(file_size or 0),
+            _chat_attachment_kind(resolved_mime), _now_iso(),
+        ),
+    )
+    row = conn.execute(
+        "SELECT * FROM group_chat_attachments WHERE id = ? LIMIT 1", (int(attachment_id),)
+    ).fetchone()
+    return _serialize_chat_attachment(dict(row))
+
+
+def resolve_group_chat_attachment_download(conn, attachment_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    row = conn.execute(
+        "SELECT * FROM group_chat_attachments WHERE id = ? LIMIT 1", (int(attachment_id),)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "附件不存在")
+    row = dict(row)
+    group = _ensure_group_access(conn, int(row["group_id"]), user)
+    if not _can_use_group_chat(conn, group, user):
+        raise HTTPException(403, "无权下载该组内附件")
+    from .file_service import resolve_global_file_path
+    path = resolve_global_file_path(str(row["file_hash"]))
+    if path is None:
+        raise HTTPException(404, "附件已丢失")
+    return {
+        "path": path,
+        "mime_type": str(row.get("mime_type") or "application/octet-stream"),
+        "filename": str(row.get("original_filename") or "附件"),
+        "kind": str(row.get("kind") or "file"),
+    }
+
+
+def _serialize_chat_message(row: dict[str, Any], *, current_pk: Optional[int], current_role: str) -> dict[str, Any]:
+    attachments = []
+    raw = row.get("attachments_json")
+    if raw:
+        try:
+            attachments = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            attachments = []
+    return {
+        "id": int(row["id"]),
+        "sender_name": str(row["sender_name"] or "成员"),
+        "sender_role": str(row["sender_role"] or "student"),
+        "content": str(row["content"] or ""),
+        "message_type": str(row.get("message_type") or "text"),
+        "attachments": attachments if isinstance(attachments, list) else [],
+        "created_at": str(row["created_at"] or ""),
+        "is_mine": int(row["sender_user_pk"]) == current_pk and str(row["sender_role"] or "") == current_role,
+    }
 
 
 def list_group_chat(conn, group_id: int, user: dict[str, Any], after_id: int = 0) -> dict[str, Any]:
@@ -1836,44 +1964,197 @@ def list_group_chat(conn, group_id: int, user: dict[str, Any], after_id: int = 0
     ).fetchall()
     current_pk = _safe_int(user.get("id"))
     current_role = str(user.get("role") or "").lower()
-    messages = [
-        {
-            "id": int(row["id"]),
-            "sender_name": str(row["sender_name"] or "成员"),
-            "sender_role": str(row["sender_role"] or "student"),
-            "content": str(row["content"] or ""),
-            "created_at": str(row["created_at"] or ""),
-            "is_mine": int(row["sender_user_pk"]) == current_pk and str(row["sender_role"] or "") == current_role,
-        }
-        for row in rows
-    ]
+    messages = [_serialize_chat_message(dict(row), current_pk=current_pk, current_role=current_role) for row in rows]
     return {"messages": messages, "group_id": int(group_id)}
 
 
-def post_group_chat(conn, group_id: int, user: dict[str, Any], content: Any) -> dict[str, Any]:
+def post_group_chat(
+    conn,
+    group_id: int,
+    user: dict[str, Any],
+    content: Any,
+    *,
+    attachment_ids: Optional[list[int]] = None,
+    message_type: str = "text",
+    sticker_emoji_id: Optional[int] = None,
+) -> dict[str, Any]:
     group = _ensure_group_access(conn, group_id, user)
-    if not (_is_teacher(user) and int(group["teacher_id"]) == _user_pk(user)) and not (
-        _is_student(user) and _is_active_member(conn, int(group_id), _user_pk(user))
-    ):
+    if not _can_use_group_chat(conn, group, user):
         raise HTTPException(403, "只有本组成员或教师可以在组内发言")
-    text = _normalize_text(content, limit=MAX_GROUP_CHAT_LENGTH, field_name="消息", required=True)
+    attachments = _load_chat_attachments(conn, int(group_id), attachment_ids or [])
+    if sticker_emoji_id is not None:
+        from .emoji_service import resolve_custom_emoji_payloads
+        payloads = resolve_custom_emoji_payloads(conn, int(group["class_offering_id"]), [int(sticker_emoji_id)], user)
+        if not payloads:
+            raise HTTPException(400, "表情不存在或不属于你")
+        emoji = payloads[0]
+        attachments.append({
+            "id": 0,
+            "kind": "sticker",
+            "name": str(emoji.get("name") or "表情"),
+            "url": str(emoji.get("image_url") or ""),
+            "mime_type": str(emoji.get("mime_type") or "image/png"),
+            "file_size": int(emoji.get("file_size") or 0),
+        })
+        message_type = "sticker"
+    text = str(content or "").replace("\r\n", "\n").strip()
+    if len(text) > MAX_GROUP_CHAT_LENGTH:
+        raise HTTPException(400, f"消息不能超过 {MAX_GROUP_CHAT_LENGTH} 个字符")
+    kind = str(message_type or "text").strip().lower()
+    if kind not in {"text", "sticker"}:
+        kind = "text"
+    if not text and not attachments:
+        raise HTTPException(400, "消息不能为空")
     now = _now_iso()
     message_id = execute_insert_returning_id(
         conn,
         """
-        INSERT INTO group_chat_messages (group_id, sender_role, sender_user_pk, sender_name, content, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO group_chat_messages (
+            group_id, sender_role, sender_user_pk, sender_name, content, message_type, attachments_json, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (int(group_id), str(user.get("role") or "student"), _user_pk(user), _actor_name(user), text, now),
+        (
+            int(group_id), str(user.get("role") or "student"), _user_pk(user), _actor_name(user),
+            text, kind, json.dumps(attachments, ensure_ascii=False), now,
+        ),
     )
     return {
         "id": message_id,
         "sender_name": _actor_name(user),
         "sender_role": str(user.get("role") or "student"),
         "content": text,
+        "message_type": kind,
+        "attachments": attachments,
         "created_at": now,
         "is_mine": True,
     }
+
+
+def _cleanup_empty_scheme_groups(conn, scheme_id: int) -> int:
+    """Once every student in the class is grouped, drop the leftover empty
+    groups so the board reflects reality. Returns the number removed."""
+    scheme = _load_scheme(conn, scheme_id)
+    students = _load_classroom_students(conn, int(scheme["class_offering_id"]))
+    total = len(students)
+    groups = _scheme_group_rows(conn, scheme_id)
+    grouped_ids: set[int] = set()
+    counts: dict[int, int] = {}
+    for group in groups:
+        rows = conn.execute(
+            "SELECT student_id FROM study_group_members WHERE group_id = ? AND status = 'active'",
+            (int(group["id"]),),
+        ).fetchall()
+        counts[int(group["id"])] = len(rows)
+        grouped_ids.update(int(row["student_id"]) for row in rows)
+    if total - len(grouped_ids) > 0:
+        return 0  # keep empty slots while students still need a group
+    empty_ids = [group_id for group_id, count in counts.items() if count == 0]
+    if not empty_ids or len(empty_ids) >= len(groups):
+        return 0  # never delete every group (keep at least one)
+    placeholders = ",".join("?" for _ in empty_ids)
+    conn.execute(f"DELETE FROM study_groups WHERE id IN ({placeholders})", tuple(empty_ids))
+    remaining = len(groups) - len(empty_ids)
+    conn.execute(
+        "UPDATE group_schemes SET group_count = ?, updated_at = ? WHERE id = ?",
+        (remaining, _now_iso(), int(scheme_id)),
+    )
+    return len(empty_ids)
+
+
+def close_group_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    scheme = _ensure_scheme_access(conn, scheme_id, user)
+    if not _is_teacher(user):
+        raise HTTPException(403, "只有教师可以结束分组方案")
+    now = _now_iso()
+    conn.execute(
+        "UPDATE group_schemes SET status = ?, archived_at = ?, updated_at = ? WHERE id = ?",
+        (SCHEME_STATUS_CLOSED, now, now, int(scheme_id)),
+    )
+    return _serialize_scheme(conn, _load_scheme(conn, scheme_id), user)
+
+
+def assign_scheme_leader(conn, group_id: int, user: dict[str, Any], candidate_student_id: int) -> dict[str, Any]:
+    """Teacher directly designates a leader for a leaderless scheme group."""
+    group = _ensure_group_access(conn, group_id, user)
+    if not _is_teacher(user):
+        raise HTTPException(403, "只有教师可以指定组长")
+    scheme_id = _safe_int(group.get("scheme_id"))
+    if scheme_id is None:
+        raise HTTPException(400, "该小组不属于随机分组方案")
+    scheme = _load_scheme(conn, scheme_id)
+    if _scheme_is_expired(scheme.get("expires_at")):
+        raise HTTPException(400, "分组方案已过期，不能再调整")
+    if _safe_int(group.get("leader_student_id")):
+        raise HTTPException(400, "小组已有组长")
+    candidate_id = _safe_int(candidate_student_id)
+    if candidate_id is None or not _is_active_member(conn, group_id, candidate_id):
+        raise HTTPException(400, "被指定人不在本组")
+    conn.execute(
+        "UPDATE study_groups SET leader_student_id = ?, updated_at = ? WHERE id = ?",
+        (candidate_id, _now_iso(), int(group_id)),
+    )
+    _sync_leader_role(conn, group_id, candidate_id)
+    return _serialize_scheme(conn, _load_scheme(conn, scheme_id), user)
+
+
+def _pick_auto_leader(conn, class_offering_id: int, member_ids: list[int]) -> Optional[int]:
+    """Rank candidates by 修为分数 > 综合评分(各维之和) > 互动维度 > 随机."""
+    if not member_ids:
+        return None
+    try:
+        from .learning_progress_service import get_student_learning_state
+    except Exception:
+        get_student_learning_state = None  # type: ignore
+    ranked: list[tuple[float, float, float, float, int]] = []
+    for student_id in member_ids:
+        score = 0.0
+        total = 0.0
+        interaction = 0.0
+        if get_student_learning_state is not None:
+            try:
+                state = get_student_learning_state(conn, int(class_offering_id), int(student_id))
+                score = float(state.get("score") or 0)
+                components = state.get("components") or {}
+                if isinstance(components, dict):
+                    total = sum(float(value or 0) for value in components.values())
+                    interaction = float(components.get("interaction") or 0)
+            except Exception:
+                pass
+        ranked.append((score, total, interaction, random.random(), int(student_id)))
+    ranked.sort(reverse=True)
+    return ranked[0][4]
+
+
+def auto_assign_scheme_leaders(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    scheme = _ensure_scheme_access(conn, scheme_id, user)
+    if not _is_teacher(user):
+        raise HTTPException(403, "只有教师可以一键配置组长")
+    if _scheme_is_expired(scheme.get("expires_at")):
+        raise HTTPException(400, "分组方案已过期，不能再调整")
+    class_offering_id = int(scheme["class_offering_id"])
+    groups = _scheme_group_rows(conn, scheme_id)
+    assigned = 0
+    for group in groups:
+        if _safe_int(group.get("leader_student_id")):
+            continue
+        rows = conn.execute(
+            "SELECT student_id FROM study_group_members WHERE group_id = ? AND status = 'active'",
+            (int(group["id"]),),
+        ).fetchall()
+        member_ids = [int(row["student_id"]) for row in rows]
+        if not member_ids:
+            continue
+        leader_id = _pick_auto_leader(conn, class_offering_id, member_ids)
+        if leader_id is None:
+            continue
+        conn.execute(
+            "UPDATE study_groups SET leader_student_id = ?, updated_at = ? WHERE id = ?",
+            (leader_id, _now_iso(), int(group["id"])),
+        )
+        _sync_leader_role(conn, int(group["id"]), leader_id)
+        assigned += 1
+    return {"assigned": assigned, "scheme": _serialize_scheme(conn, _load_scheme(conn, scheme_id), user)}
 
 
 def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
@@ -1933,6 +2214,7 @@ def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dic
             "members": serialized_members,
             "can_set_goal": bool(is_member and leader_id == current_student_id and not expired_or_closed) or bool(is_teacher and not expired_or_closed),
             "can_nominate": bool(is_member and leader_id is None and not expired_or_closed),
+            "can_assign_leader": bool(is_teacher and leader_id is None and len(members) > 0 and not expired_or_closed),
         })
 
     students = _load_classroom_students(conn, class_offering_id)
@@ -1955,6 +2237,9 @@ def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dic
         "expires_at": str(scheme.get("expires_at") or ""),
         "is_expired": is_expired,
         "is_active": not expired_or_closed,
+        "is_history": expired_or_closed,
+        "can_close": bool(is_teacher and not expired_or_closed),
+        "leaderless_group_count": sum(1 for g in serialized_groups if not g["has_leader"] and g["member_count"] > 0),
         "created_at": str(scheme.get("created_at") or ""),
         "groups": serialized_groups,
         "grouped_count": len(grouped_student_ids),
