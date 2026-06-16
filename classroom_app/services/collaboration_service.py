@@ -23,7 +23,7 @@ GROUP_STATUS_ARCHIVED = "archived"
 GROUP_JOIN_OPEN = "open"
 GROUP_JOIN_LOCKED = "locked"
 GROUP_JOIN_TEACHER_ASSIGNED = "teacher_assigned"
-GROUP_JOIN_POLICIES = {GROUP_JOIN_OPEN, GROUP_JOIN_LOCKED, GROUP_JOIN_TEACHER_ASSIGNED}
+GROUP_JOIN_POLICIES = {GROUP_JOIN_OPEN, GROUP_JOIN_LOCKED, GROUP_JOIN_TEACHER_ASSIGNED, "invite"}
 MAX_GROUP_MEMBERS_LIMIT = 12
 DEFAULT_GROUP_MAX_MEMBERS = 6
 
@@ -35,6 +35,17 @@ MAX_SCHEME_GROUP_COUNT = 60
 MIN_SCHEME_MEMBERS = 1
 GROUP_PROGRESS_MIN = 0
 GROUP_PROGRESS_MAX = 100
+
+# --- Student-initiated invite groups (学生自由发起分组) ----------------------
+STUDENT_GROUP_JOIN_POLICY = "invite"
+STUDENT_MAX_ACTIVE_GROUPS = 5
+INVITE_MAX_PER_HOUR = 10
+INVITE_MIN_INTERVAL_SECONDS = 30
+INVITE_DECLINE_BLOCK_THRESHOLD = 3
+INVITE_STATUS_PENDING = "pending"
+INVITE_STATUS_ACCEPTED = "accepted"
+INVITE_STATUS_DECLINED = "declined"
+INVITE_STATUS_CANCELLED = "cancelled"
 
 
 def _now_iso() -> str:
@@ -2249,6 +2260,51 @@ def recall_group_chat_message(conn, group_id: int, message_id: int, user: dict[s
     return {"id": int(message_id), "recalled": True}
 
 
+def _serialize_group_entry(
+    row: dict[str, Any],
+    members: list[dict[str, Any]],
+    *,
+    current_student_id: Optional[int],
+    is_teacher: bool,
+    editable: bool,
+) -> dict[str, Any]:
+    """Shared card shape for scheme groups AND student-initiated groups, so the
+    same front-end group-detail popover + chat work for both."""
+    group_id = int(row["id"])
+    leader_id = _safe_int(row.get("leader_student_id"))
+    member_ids = {int(m["student_id"]) for m in members}
+    is_member = current_student_id in member_ids if current_student_id is not None else False
+    max_members = int(row.get("max_members") or DEFAULT_GROUP_MAX_MEMBERS)
+    serialized_members = [
+        {
+            "student_id": int(m["student_id"]),
+            "name": str(m["name"]),
+            "student_id_number": str(m.get("student_id_number") or ""),
+            "member_role": str(m.get("member_role") or "member"),
+            "is_leader": leader_id is not None and int(m["student_id"]) == leader_id,
+            "avatar_url": _avatar_url("student", m["student_id"], m.get("avatar_file_hash")),
+        }
+        for m in members
+    ]
+    return {
+        "id": group_id,
+        "name": str(row["name"]),
+        "group_index": int(row.get("group_index") or 0),
+        "max_members": max_members,
+        "member_count": len(members),
+        "is_full": len(members) >= max_members,
+        "leader_student_id": leader_id,
+        "has_leader": leader_id is not None,
+        "goal_text": str(row.get("goal_text") or ""),
+        "progress_percent": int(row.get("progress_percent") or 0),
+        "my_membership": is_member,
+        "members": serialized_members,
+        "can_set_goal": bool((is_member and leader_id == current_student_id and editable) or (is_teacher and editable)),
+        "can_nominate": bool(is_member and leader_id is None and editable),
+        "can_assign_leader": bool(is_teacher and leader_id is None and len(members) > 0 and editable),
+    }
+
+
 def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
     scheme_id = int(scheme["id"])
     class_offering_id = int(scheme["class_offering_id"])
@@ -2264,47 +2320,14 @@ def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dic
     grouped_student_ids: set[int] = set()
     serialized_groups = []
     for row in group_rows:
-        group_id = int(row["id"])
-        members = member_map.get(group_id, [])
-        leader_id = _safe_int(row.get("leader_student_id"))
-        member_ids = {int(m["student_id"]) for m in members}
-        grouped_student_ids |= member_ids
-        is_member = current_student_id in member_ids if current_student_id is not None else False
-        max_members = int(row.get("max_members") or DEFAULT_GROUP_MAX_MEMBERS)
-        can_view_members = is_teacher or is_member
-        serialized_members = [
-            {
-                "student_id": int(m["student_id"]),
-                "name": str(m["name"]),
-                "student_id_number": str(m.get("student_id_number") or ""),
-                "member_role": str(m.get("member_role") or "member"),
-                "is_leader": leader_id is not None and int(m["student_id"]) == leader_id,
-                "avatar_url": _avatar_url("student", m["student_id"], m.get("avatar_file_hash")),
-                # cultivation is loaded on demand (member-card endpoint) to keep
-                # the snapshot light for ~200 concurrent users.
-            }
-            for m in members
-        ]
-        serialized_groups.append({
-            "id": group_id,
-            "name": str(row["name"]),
-            "group_index": int(row.get("group_index") or 0),
-            "max_members": max_members,
-            "member_count": len(members),
-            "is_full": len(members) >= max_members,
-            "leader_student_id": leader_id,
-            "has_leader": leader_id is not None,
-            "goal_text": str(row.get("goal_text") or ""),
-            "progress_percent": int(row.get("progress_percent") or 0),
-            "my_membership": is_member,
-            # Members are public within the scheme so everyone can see the
-            # roster, but only the teacher or own-group members get the richer
-            # interactive card (handled on the client).
-            "members": serialized_members,
-            "can_set_goal": bool(is_member and leader_id == current_student_id and not expired_or_closed) or bool(is_teacher and not expired_or_closed),
-            "can_nominate": bool(is_member and leader_id is None and not expired_or_closed),
-            "can_assign_leader": bool(is_teacher and leader_id is None and len(members) > 0 and not expired_or_closed),
-        })
+        members = member_map.get(int(row["id"]), [])
+        grouped_student_ids |= {int(m["student_id"]) for m in members}
+        serialized_groups.append(_serialize_group_entry(
+            row, members,
+            current_student_id=current_student_id,
+            is_teacher=is_teacher,
+            editable=not expired_or_closed,
+        ))
 
     students = _load_classroom_students(conn, class_offering_id)
     ungrouped = [s for s in students if int(s["id"]) not in grouped_student_ids]
@@ -2376,6 +2399,293 @@ def _load_schemes_for_snapshot(conn, class_offering_id: int, user: dict[str, Any
     return schemes
 
 
+# ============================================================================
+# Student-initiated invite groups
+# ============================================================================
+
+def _student_active_invite_group_count(conn, class_offering_id: int, student_id: int) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS c FROM study_groups
+        WHERE class_offering_id = ? AND created_by_role = 'student' AND created_by_user_pk = ?
+          AND join_policy = ? AND status = ?
+        """,
+        (int(class_offering_id), int(student_id), STUDENT_GROUP_JOIN_POLICY, GROUP_STATUS_ACTIVE),
+    ).fetchone()
+    return int(row["c"] if row else 0)
+
+
+def _invite_decline_count(conn, inviter_id: int, invitee_id: int) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS c FROM group_invitations
+        WHERE inviter_student_id = ? AND invitee_student_id = ? AND status = ?
+        """,
+        (int(inviter_id), int(invitee_id), INVITE_STATUS_DECLINED),
+    ).fetchone()
+    return int(row["c"] if row else 0)
+
+
+def _assert_invite_rate(conn, inviter_id: int, *, count: int = 1) -> None:
+    """Anti-harassment throttle: >=30s between sends and <=10 invites/hour."""
+    now = datetime.now()
+    last = conn.execute(
+        "SELECT created_at FROM group_invitations WHERE inviter_student_id = ? ORDER BY id DESC LIMIT 1",
+        (int(inviter_id),),
+    ).fetchone()
+    if last is not None:
+        last_dt = _parse_iso(last["created_at"])
+        if last_dt is not None and (now - last_dt).total_seconds() < INVITE_MIN_INTERVAL_SECONDS:
+            wait = INVITE_MIN_INTERVAL_SECONDS - int((now - last_dt).total_seconds())
+            raise HTTPException(400, f"操作过于频繁，请 {max(1, wait)} 秒后再发起邀请")
+    cutoff = (now - timedelta(hours=1)).replace(microsecond=0).isoformat()
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM group_invitations WHERE inviter_student_id = ? AND created_at >= ?",
+        (int(inviter_id), cutoff),
+    ).fetchone()
+    if int(row["c"] if row else 0) + count > INVITE_MAX_PER_HOUR:
+        raise HTTPException(400, f"每小时最多发起 {INVITE_MAX_PER_HOUR} 次邀请，请稍后再试")
+
+
+def _load_student_group(conn, group_id: int) -> dict[str, Any]:
+    group = _load_group(conn, group_id)
+    if str(group.get("join_policy")) != STUDENT_GROUP_JOIN_POLICY or _safe_int(group.get("scheme_id")) is not None:
+        raise HTTPException(400, "该小组不是学生发起的分组")
+    return group
+
+
+def create_student_group(conn, class_offering_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_classroom_access(conn, class_offering_id, user)
+    if not _is_student(user):
+        raise HTTPException(403, "只有学生可以自由发起分组")
+    student_id = _user_pk(user)
+    if _student_active_invite_group_count(conn, class_offering_id, student_id) >= STUDENT_MAX_ACTIVE_GROUPS:
+        raise HTTPException(400, f"最多只能同时发起 {STUDENT_MAX_ACTIVE_GROUPS} 个分组")
+    name = _normalize_text(payload.get("name"), limit=60, field_name="小组名称", required=True)
+    max_members = _normalize_max_members(payload.get("max_members"))
+    raw_invitees = payload.get("invitee_student_ids") or []
+    if not isinstance(raw_invitees, list):
+        raise HTTPException(400, "邀请名单格式不正确")
+    now = _now_iso()
+    group_id = execute_insert_returning_id(
+        conn,
+        """
+        INSERT INTO study_groups (
+            class_offering_id, assignment_id, name, description, status, join_policy,
+            max_members, leader_student_id, scheme_id, group_index, goal_text, progress_percent,
+            created_by_role, created_by_user_pk, created_at, updated_at
+        )
+        VALUES (?, NULL, ?, '', 'active', ?, ?, ?, NULL, 0, '', 0, 'student', ?, ?, ?)
+        """,
+        (int(class_offering_id), name, STUDENT_GROUP_JOIN_POLICY, max_members, student_id, student_id, now, now),
+    )
+    _upsert_member(conn, group_id=group_id, student_id=student_id, member_role="leader", added_by_role="student", added_by_user_pk=student_id)
+    if raw_invitees:
+        invite_to_group(conn, group_id, user, raw_invitees)
+    return _serialize_student_group(conn, _load_group(conn, group_id), user)
+
+
+def invite_to_group(conn, group_id: int, user: dict[str, Any], invitee_ids: Any) -> dict[str, Any]:
+    group = _load_student_group(conn, group_id)
+    ensure_classroom_access(conn, int(group["class_offering_id"]), user)
+    if not _is_student(user) or int(group.get("leader_student_id") or 0) != _user_pk(user):
+        raise HTTPException(403, "只有发起人可以邀请成员")
+    inviter_id = _user_pk(user)
+    class_offering_id = int(group["class_offering_id"])
+    normalized = _ensure_students_in_class(conn, class_offering_id, invitee_ids if isinstance(invitee_ids, list) else [invitee_ids])
+    targets = [sid for sid in normalized if sid != inviter_id]
+    if not targets:
+        raise HTTPException(400, "请选择要邀请的同学")
+    # filter out existing members and already-pending invites
+    member_ids = {int(m["student_id"]) for m in _load_scheme_members(conn, [group_id]).get(group_id, [])}
+    pending_rows = conn.execute(
+        f"SELECT invitee_student_id FROM group_invitations WHERE group_id = ? AND status = ?",
+        (int(group_id), INVITE_STATUS_PENDING),
+    ).fetchall()
+    pending_ids = {int(r["invitee_student_id"]) for r in pending_rows}
+    blocked = [sid for sid in targets if _invite_decline_count(conn, inviter_id, sid) >= INVITE_DECLINE_BLOCK_THRESHOLD]
+    sendable = [sid for sid in targets if sid not in member_ids and sid not in pending_ids and sid not in blocked]
+    if not sendable:
+        if blocked:
+            raise HTTPException(400, "对方已多次拒绝，无法再发送邀请")
+        raise HTTPException(400, "所选同学已在组内或已被邀请")
+    _assert_invite_rate(conn, inviter_id, count=len(sendable))
+    now = _now_iso()
+    for invitee_id in sendable:
+        execute_insert_returning_id(
+            conn,
+            """
+            INSERT INTO group_invitations (group_id, class_offering_id, inviter_student_id, invitee_student_id, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (int(group_id), class_offering_id, inviter_id, int(invitee_id), INVITE_STATUS_PENDING, now),
+        )
+        _notify(
+            conn,
+            recipient_role="student",
+            recipient_user_pk=int(invitee_id),
+            title=f"{_actor_name(user)} 邀请你加入小组",
+            body=f"「{group['name']}」邀请你加入，可在协作区接受或拒绝。",
+            group=group,
+            actor=user,
+            ref_id=f"group-invite:{group_id}:{invitee_id}:{now}",
+            allow_duplicates=True,
+        )
+    return _serialize_student_group(conn, _load_group(conn, group_id), user)
+
+
+def respond_invitation(conn, invitation_id: int, user: dict[str, Any], *, accept: bool) -> dict[str, Any]:
+    row = conn.execute("SELECT * FROM group_invitations WHERE id = ? LIMIT 1", (int(invitation_id),)).fetchone()
+    if row is None:
+        raise HTTPException(404, "邀请不存在")
+    inv = dict(row)
+    ensure_classroom_access(conn, int(inv["class_offering_id"]), user)
+    if not _is_student(user) or int(inv["invitee_student_id"]) != _user_pk(user):
+        raise HTTPException(403, "只能处理发给自己的邀请")
+    if str(inv["status"]) != INVITE_STATUS_PENDING:
+        raise HTTPException(400, "该邀请已处理")
+    group = _load_group(conn, int(inv["group_id"]))
+    now = _now_iso()
+    inviter_id = int(inv["inviter_student_id"])
+    invitee_id = int(inv["invitee_student_id"])
+    if accept:
+        if str(group.get("status")) != GROUP_STATUS_ACTIVE:
+            conn.execute("UPDATE group_invitations SET status = ?, responded_at = ? WHERE id = ?", (INVITE_STATUS_CANCELLED, now, int(invitation_id)))
+            raise HTTPException(400, "该小组已解散")
+        member_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM study_group_members WHERE group_id = ? AND status = 'active'",
+            (int(inv["group_id"]),),
+        ).fetchone()["c"]
+        if int(member_count or 0) >= int(group.get("max_members") or DEFAULT_GROUP_MAX_MEMBERS):
+            raise HTTPException(400, "小组人数已满")
+        _upsert_member(conn, group_id=int(inv["group_id"]), student_id=invitee_id, member_role="member", added_by_role="student", added_by_user_pk=inviter_id)
+        conn.execute("UPDATE group_invitations SET status = ?, responded_at = ? WHERE id = ?", (INVITE_STATUS_ACCEPTED, now, int(invitation_id)))
+        conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (now, int(inv["group_id"])))
+        _notify(
+            conn, recipient_role="student", recipient_user_pk=inviter_id,
+            title=f"{_actor_name(user)} 接受了你的邀请",
+            body=f"{_actor_name(user)} 已加入「{group['name']}」。",
+            group=group, actor=user, ref_id=f"group-invite-accept:{invitation_id}:{now}", allow_duplicates=True,
+        )
+    else:
+        conn.execute("UPDATE group_invitations SET status = ?, responded_at = ? WHERE id = ?", (INVITE_STATUS_DECLINED, now, int(invitation_id)))
+        decline_count = _invite_decline_count(conn, inviter_id, invitee_id)
+        extra = ""
+        if decline_count >= INVITE_DECLINE_BLOCK_THRESHOLD:
+            # permanent invite block is derived from decline_count; also drop the
+            # inviter into the invitee's PM blacklist to stop the harassment.
+            try:
+                from .message_center_service import add_private_message_block
+                add_private_message_block(conn, user, contact_identity=f"student:{inviter_id}", class_offering_id=int(inv["class_offering_id"]))
+                extra = "，已自动屏蔽对方的邀请与私信"
+            except Exception:
+                extra = ""
+        _notify(
+            conn, recipient_role="student", recipient_user_pk=inviter_id,
+            title=f"{_actor_name(user)} 拒绝了你的邀请",
+            body=f"{_actor_name(user)} 暂时不方便加入「{group['name']}」。" + (f"（对方已多次拒绝，邀请通道关闭）" if decline_count >= INVITE_DECLINE_BLOCK_THRESHOLD else ""),
+            group=group, actor=user, ref_id=f"group-invite-decline:{invitation_id}:{now}", allow_duplicates=True,
+        )
+        return {"snapshot": load_collaboration_snapshot(conn, int(inv["class_offering_id"]), user), "message": "已拒绝邀请" + extra}
+    return {"snapshot": load_collaboration_snapshot(conn, int(inv["class_offering_id"]), user), "message": "已加入小组"}
+
+
+def load_invite_candidates(conn, class_offering_id: int, user: dict[str, Any], group_id: Optional[int] = None) -> list[dict[str, Any]]:
+    ensure_classroom_access(conn, class_offering_id, user)
+    if not _is_student(user):
+        return []
+    inviter_id = _user_pk(user)
+    students = _load_classroom_students(conn, class_offering_id)
+    exclude = {inviter_id}
+    if group_id is not None:
+        exclude |= {int(m["student_id"]) for m in _load_scheme_members(conn, [int(group_id)]).get(int(group_id), [])}
+        pending = conn.execute(
+            "SELECT invitee_student_id FROM group_invitations WHERE group_id = ? AND status = ?",
+            (int(group_id), INVITE_STATUS_PENDING),
+        ).fetchall()
+        exclude |= {int(r["invitee_student_id"]) for r in pending}
+    candidates = []
+    for s in students:
+        sid = int(s["id"])
+        if sid in exclude:
+            continue
+        blocked = _invite_decline_count(conn, inviter_id, sid) >= INVITE_DECLINE_BLOCK_THRESHOLD
+        candidates.append({
+            "student_id": sid,
+            "name": str(s["name"]),
+            "student_id_number": str(s.get("student_id_number") or ""),
+            "blocked": blocked,
+        })
+    return candidates
+
+
+def _serialize_student_group(conn, group_row: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
+    current_student_id = _user_pk(user) if _is_student(user) else None
+    members = _load_scheme_members(conn, [int(group_row["id"])]).get(int(group_row["id"]), [])
+    entry = _serialize_group_entry(group_row, members, current_student_id=current_student_id, is_teacher=_is_teacher(user), editable=True)
+    leader_id = _safe_int(group_row.get("leader_student_id"))
+    entry["origin"] = "student"
+    entry["status"] = str(group_row.get("status") or GROUP_STATUS_ACTIVE)
+    entry["is_history"] = str(group_row.get("status")) != GROUP_STATUS_ACTIVE
+    entry["is_owner"] = bool(current_student_id is not None and leader_id == current_student_id)
+    entry["can_invite"] = bool(entry["is_owner"] and not entry["is_history"] and not entry["is_full"])
+    return entry
+
+
+def _load_student_groups_for_snapshot(conn, class_offering_id: int, user: dict[str, Any]) -> list[dict[str, Any]]:
+    if not _is_student(user):
+        return []
+    student_id = _user_pk(user)
+    rows = conn.execute(
+        """
+        SELECT g.* FROM study_groups g
+        JOIN study_group_members m ON m.group_id = g.id AND m.student_id = ? AND m.status = 'active'
+        WHERE g.class_offering_id = ? AND g.join_policy = ? AND g.scheme_id IS NULL
+        ORDER BY CASE g.status WHEN 'active' THEN 0 ELSE 1 END, g.updated_at DESC, g.id DESC
+        """,
+        (int(student_id), int(class_offering_id), STUDENT_GROUP_JOIN_POLICY),
+    ).fetchall()
+    return [_serialize_student_group(conn, dict(row), user) for row in rows]
+
+
+def _load_my_invitations(conn, class_offering_id: int, user: dict[str, Any]) -> list[dict[str, Any]]:
+    if not _is_student(user):
+        return []
+    rows = conn.execute(
+        """
+        SELECT inv.id, inv.group_id, inv.inviter_student_id, inv.created_at,
+               g.name AS group_name, g.status AS group_status, g.max_members,
+               inviter.name AS inviter_name, inviter.avatar_file_hash AS inviter_avatar
+        FROM group_invitations inv
+        JOIN study_groups g ON g.id = inv.group_id
+        JOIN students inviter ON inviter.id = inv.inviter_student_id
+        WHERE inv.class_offering_id = ? AND inv.invitee_student_id = ? AND inv.status = ?
+        ORDER BY inv.id DESC
+        """,
+        (int(class_offering_id), _user_pk(user), INVITE_STATUS_PENDING),
+    ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        if str(item.get("group_status")) != GROUP_STATUS_ACTIVE:
+            continue
+        member_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM study_group_members WHERE group_id = ? AND status = 'active'",
+            (int(item["group_id"]),),
+        ).fetchone()["c"]
+        result.append({
+            "id": int(item["id"]),
+            "group_id": int(item["group_id"]),
+            "group_name": str(item["group_name"] or "学习小组"),
+            "inviter_name": str(item["inviter_name"] or "同学"),
+            "inviter_avatar_url": _avatar_url("student", item["inviter_student_id"], item.get("inviter_avatar")),
+            "member_count": int(member_count or 0),
+            "max_members": int(item.get("max_members") or DEFAULT_GROUP_MAX_MEMBERS),
+            "created_at": str(item.get("created_at") or ""),
+        })
+    return result
+
+
 def load_collaboration_snapshot(conn, class_offering_id: int, user: dict[str, Any]) -> dict[str, Any]:
     offering = ensure_classroom_access(conn, class_offering_id, user)
     rows = conn.execute(
@@ -2386,6 +2696,7 @@ def load_collaboration_snapshot(conn, class_offering_id: int, user: dict[str, An
         LEFT JOIN assignments a ON a.id = g.assignment_id
         WHERE g.class_offering_id = ?
           AND g.scheme_id IS NULL
+          AND g.join_policy != 'invite'
         ORDER BY
             CASE g.status WHEN 'active' THEN 0 ELSE 1 END,
             g.updated_at DESC,
@@ -2503,6 +2814,14 @@ def load_collaboration_snapshot(conn, class_offering_id: int, user: dict[str, An
         },
         "groups": groups,
         "schemes": _load_schemes_for_snapshot(conn, class_offering_id, user),
+        "my_groups": _load_student_groups_for_snapshot(conn, class_offering_id, user),
+        "my_invitations": _load_my_invitations(conn, class_offering_id, user),
+        "invite_limits": {
+            "max_active_groups": STUDENT_MAX_ACTIVE_GROUPS,
+            "active_group_count": _student_active_invite_group_count(conn, class_offering_id, _user_pk(user)) if _is_student(user) else 0,
+            "max_per_hour": INVITE_MAX_PER_HOUR,
+            "min_interval_seconds": INVITE_MIN_INTERVAL_SECONDS,
+        },
         "assignments": _load_assignment_options(conn, class_offering_id),
         "students": _load_classroom_students(conn, class_offering_id) if _is_teacher(user) else [],
         "limits": {

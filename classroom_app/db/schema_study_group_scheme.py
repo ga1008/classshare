@@ -134,4 +134,34 @@ def ensure_study_group_scheme_schema(conn: Any) -> None:
         "ON group_chat_attachments (group_id, id)"
     )
 
+    # Student-initiated group invitations (邀请进组). An invitee accepts (joins)
+    # or declines; repeated declines from the same inviter trigger a permanent
+    # invite block + PM blacklist (enforced in the service layer).
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS group_invitations (
+            {id_column},
+            group_id INTEGER NOT NULL,
+            class_offering_id INTEGER NOT NULL,
+            inviter_student_id INTEGER NOT NULL,
+            invitee_student_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            responded_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_group_invitations_invitee "
+        "ON group_invitations (invitee_student_id, status, created_at DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_group_invitations_inviter "
+        "ON group_invitations (inviter_student_id, created_at DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_group_invitations_group "
+        "ON group_invitations (group_id, status)"
+    )
+
     _SCHEMA_READY = True

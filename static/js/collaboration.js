@@ -590,26 +590,128 @@ function renderSchemeBuilder(snapshot, open) {
     `;
 }
 
+function renderStudentLaunch(snapshot, state) {
+    const limits = snapshot.invite_limits || {};
+    if (state.studentCreateOpen) {
+        const candidates = state.inviteCandidates || [];
+        return `
+            <section class="collab-scheme-builder">
+                <div class="collab-scheme-builder__head">
+                    <strong>发起分组 · 邀请同学</strong>
+                    <button type="button" class="collaboration-close-btn" data-collab-student-create-close aria-label="关闭">×</button>
+                </div>
+                <form class="collab-scheme-form" data-collab-student-form>
+                    <input name="name" type="text" maxlength="60" placeholder="小组名称，例如：算法学习小队" required>
+                    <label class="collab-scheme-form__full"><span>人数上限</span><input name="max_members" type="number" min="2" max="12" value="6"></label>
+                    <div class="collab-invite-pick">
+                        <span class="collab-invite-pick__label">邀请同学（可多选）</span>
+                        <div class="collab-invite-pick__list" data-collab-invite-list>
+                            ${candidates.length ? candidates.map((c) => `
+                                <label class="collab-invite-chip${c.blocked ? ' is-blocked' : ''}">
+                                    <input type="checkbox" value="${c.student_id}"${c.blocked ? ' disabled' : ''}>
+                                    <span>${escapeHtml(c.name)}${c.blocked ? ' · 已屏蔽' : ''}</span>
+                                </label>
+                            `).join('') : '<span class="collaboration-muted">正在加载同学名单…</span>'}
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">发起并邀请</button>
+                </form>
+            </section>
+        `;
+    }
+    const count = Number(limits.active_group_count || 0);
+    const max = Number(limits.max_active_groups || 5);
+    return `
+        <div class="collab-scheme-launch">
+            <div>
+                <strong>发起我的分组</strong>
+                <span>邀请同班同学组队（已发起 ${count}/${max}，每小时上限 ${limits.max_per_hour || 10} 次）。</span>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" data-collab-student-create-open${count >= max ? ' disabled title="已达发起上限"' : ''}>发起分组</button>
+        </div>
+    `;
+}
+
+function renderInvitationCard(invitation) {
+    return `
+        <article class="collab-invitation" data-collab-invitation="${invitation.id}">
+            <span class="collab-invitation__avatar"><img src="${escapeHtml(invitation.inviter_avatar_url || '/api/profile/avatar')}" alt=""></span>
+            <div class="collab-invitation__body">
+                <strong>${escapeHtml(invitation.inviter_name)} 邀请你加入</strong>
+                <span>${escapeHtml(invitation.group_name)} · ${invitation.member_count}/${invitation.max_members} 人</span>
+            </div>
+            <div class="collab-invitation__actions">
+                <button type="button" class="btn btn-primary btn-sm" data-collab-invite-accept="${invitation.id}">接受</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-collab-invite-decline="${invitation.id}">拒绝</button>
+            </div>
+        </article>
+    `;
+}
+
+function renderStudentGroupCard(group) {
+    const progress = Math.max(0, Math.min(100, Number(group.progress_percent) || 0));
+    const leaderName = (group.members.find((m) => m.is_leader) || {}).name || '组长';
+    return `
+        <article class="collab-scheme-group is-mine is-open" data-collab-scheme-group-open="${group.id}" role="button" tabindex="0">
+            <div class="collab-scheme-group__top">
+                <strong>${escapeHtml(group.name)}</strong>
+                <span class="collab-scheme-group__count">${group.member_count}/${group.max_members}</span>
+            </div>
+            <div class="collab-scheme-group__progress"><span style="width:${progress}%"></span></div>
+            <div class="collab-scheme-group__progress-label">进度 ${progress}% · 组长 ${escapeHtml(leaderName)}${group.is_owner ? ' · 我发起' : ''}</div>
+            <div class="collab-scheme-group__members">
+                ${group.members.map(renderSchemeMemberAvatar).join('')}
+            </div>
+            <span class="collab-scheme-group__badge">${group.is_owner ? '我发起的' : '我加入的'}</span>
+        </article>
+    `;
+}
+
 function renderSchemes(snapshot, state) {
     const schemes = snapshot.schemes || [];
+    const myGroups = snapshot.my_groups || [];
+    const invitations = snapshot.my_invitations || [];
     const isTeacher = snapshot.role === 'teacher';
-    if (!isTeacher) {
-        const active = schemes.filter((scheme) => !scheme.is_history);
-        if (!active.length) return '';
-        return `<div class="collab-scheme-section">${active.map((scheme) => renderSchemeCard(scheme, snapshot)).join('')}</div>`;
-    }
-    const current = schemes.filter((scheme) => !scheme.is_history);
-    const history = schemes.filter((scheme) => scheme.is_history);
     const tab = state.schemeTab === 'history' ? 'history' : 'current';
-    const list = tab === 'history' ? history : current;
+    const currentSchemes = schemes.filter((scheme) => !scheme.is_history);
+    const historySchemes = schemes.filter((scheme) => scheme.is_history);
+
+    if (isTeacher) {
+        const list = tab === 'history' ? historySchemes : currentSchemes;
+        return `
+            <div class="collab-scheme-section">
+                ${renderSchemeBuilder(snapshot, state.schemeCreateOpen)}
+                <div class="collab-scheme-tabs" role="tablist" aria-label="分组方案切换">
+                    <button type="button" class="collab-scheme-tab${tab === 'current' ? ' is-active' : ''}" data-collab-scheme-tab="current" role="tab" aria-selected="${tab === 'current'}">现分组 (${currentSchemes.length})</button>
+                    <button type="button" class="collab-scheme-tab${tab === 'history' ? ' is-active' : ''}" data-collab-scheme-tab="history" role="tab" aria-selected="${tab === 'history'}">历史组 (${historySchemes.length})</button>
+                </div>
+                ${list.length ? list.map((scheme) => renderSchemeCard(scheme, snapshot)).join('') : `<div class="collaboration-empty"><strong>${tab === 'history' ? '还没有历史方案' : '还没有进行中的方案'}</strong><p>${tab === 'history' ? '结束的方案会归档到这里。' : '点击上方“创建分组方案”开始随机分组。'}</p></div>`}
+            </div>
+        `;
+    }
+
+    // student view
+    const currentMine = myGroups.filter((group) => !group.is_history);
+    const historyMine = myGroups.filter((group) => group.is_history);
+    const currentEmpty = !invitations.length && !currentMine.length && !currentSchemes.length;
+    const historyEmpty = !historyMine.length && !historySchemes.length;
     return `
         <div class="collab-scheme-section">
-            ${renderSchemeBuilder(snapshot, state.schemeCreateOpen)}
-            <div class="collab-scheme-tabs" role="tablist" aria-label="分组方案切换">
-                <button type="button" class="collab-scheme-tab${tab === 'current' ? ' is-active' : ''}" data-collab-scheme-tab="current" role="tab" aria-selected="${tab === 'current'}">现分组 (${current.length})</button>
-                <button type="button" class="collab-scheme-tab${tab === 'history' ? ' is-active' : ''}" data-collab-scheme-tab="history" role="tab" aria-selected="${tab === 'history'}">历史组 (${history.length})</button>
+            ${renderStudentLaunch(snapshot, state)}
+            <div class="collab-scheme-tabs" role="tablist" aria-label="分组切换">
+                <button type="button" class="collab-scheme-tab${tab === 'current' ? ' is-active' : ''}" data-collab-scheme-tab="current" role="tab" aria-selected="${tab === 'current'}">现分组 (${currentMine.length + currentSchemes.length})</button>
+                <button type="button" class="collab-scheme-tab${tab === 'history' ? ' is-active' : ''}" data-collab-scheme-tab="history" role="tab" aria-selected="${tab === 'history'}">历史组 (${historyMine.length + historySchemes.length})</button>
             </div>
-            ${list.length ? list.map((scheme) => renderSchemeCard(scheme, snapshot)).join('') : `<div class="collaboration-empty"><strong>${tab === 'history' ? '还没有历史方案' : '还没有进行中的方案'}</strong><p>${tab === 'history' ? '结束的方案会归档到这里。' : '点击上方“创建分组方案”开始随机分组。'}</p></div>`}
+            ${tab === 'current' ? `
+                ${invitations.length ? `<div class="collab-invitation-list">${invitations.map(renderInvitationCard).join('')}</div>` : ''}
+                ${currentMine.length ? `<section class="collab-mine-section"><h4>我的分组</h4><div class="collab-scheme-grid">${currentMine.map(renderStudentGroupCard).join('')}</div></section>` : ''}
+                ${currentSchemes.map((scheme) => renderSchemeCard(scheme, snapshot)).join('')}
+                ${currentEmpty ? '<div class="collaboration-empty"><strong>还没有进行中的分组</strong><p>等待老师发起分组，或点击“发起分组”邀请同学组队。</p></div>' : ''}
+            ` : `
+                ${historyMine.length ? `<section class="collab-mine-section"><h4>历史分组</h4><div class="collab-scheme-grid">${historyMine.map(renderStudentGroupCard).join('')}</div></section>` : ''}
+                ${historySchemes.map((scheme) => renderSchemeCard(scheme, snapshot)).join('')}
+                ${historyEmpty ? '<div class="collaboration-empty"><strong>还没有历史分组</strong><p>结束的分组会归档到这里。</p></div>' : ''}
+            `}
         </div>
     `;
 }
@@ -618,6 +720,9 @@ function findSchemeGroup(snapshot, groupId) {
     for (const scheme of (snapshot.schemes || [])) {
         const group = (scheme.groups || []).find((g) => String(g.id) === String(groupId));
         if (group) return { scheme, group };
+    }
+    for (const group of (snapshot.my_groups || [])) {
+        if (String(group.id) === String(groupId)) return { scheme: { is_active: !group.is_history }, group };
     }
     return null;
 }
@@ -749,6 +854,7 @@ function groupDetailHtml(group, scheme) {
                 <h4>组员（点击查看修为值）</h4>
                 ${group.has_leader ? '' : '<p class="collaboration-muted">本组还没有组长，可以举荐一位组员担任。</p>'}
                 <div class="collab-group-member-list">${members}</div>
+                ${group.can_invite ? `<button type="button" class="btn btn-outline btn-sm collab-invite-more-btn" data-collab-invite-more="${group.id}">邀请同学加入</button>` : ''}
             </section>
             ${group.my_membership ? `
             <section class="collab-group-detail__chat" data-group-chat-drop>
@@ -1313,6 +1419,44 @@ async function handleSchemeCreate(root, state, form) {
     showToast(response.message || '分组方案已创建', 'success');
 }
 
+async function handleStudentCreate(root, state, form) {
+    const classOfferingId = root.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
+    const name = String(form.querySelector('input[name="name"]')?.value || '').trim();
+    const maxMembers = Number(form.querySelector('input[name="max_members"]')?.value || 6);
+    const invitees = Array.from(form.querySelectorAll('[data-collab-invite-list] input:checked')).map((input) => Number(input.value));
+    const response = await apiFetch(`/api/collaboration/classrooms/${classOfferingId}/student-groups`, {
+        method: 'POST',
+        body: { name, max_members: maxMembers, invitee_student_ids: invitees },
+    });
+    state.studentCreateOpen = false;
+    state.inviteCandidates = [];
+    applyAndRender(root, state, response);
+    showToast(response.message || '已发起分组', 'success');
+}
+
+function showInviteOverlay(root, state, groupId, candidates) {
+    showOverlay(`
+        <div class="collab-invite-overlay">
+            <div class="collab-invite-overlay__head"><strong>邀请同学加入</strong><button type="button" class="collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button></div>
+            ${candidates.length ? `<div class="collab-invite-pick__list">${candidates.map((c) => `<label class="collab-invite-chip${c.blocked ? ' is-blocked' : ''}"><input type="checkbox" value="${c.student_id}"${c.blocked ? ' disabled' : ''}><span>${escapeHtml(c.name)}${c.blocked ? ' · 已屏蔽' : ''}</span></label>`).join('')}</div>` : '<p class="collaboration-muted">暂无可邀请的同学。</p>'}
+            ${candidates.length ? `<button type="button" class="btn btn-primary btn-sm" data-collab-invite-submit="${groupId}">发送邀请</button>` : ''}
+        </div>
+    `, {
+        onMount(node, close) {
+            node.querySelector('[data-collab-invite-submit]')?.addEventListener('click', async () => {
+                const ids = Array.from(node.querySelectorAll('input:checked')).map((input) => Number(input.value));
+                if (!ids.length) { showToast('请选择要邀请的同学', 'warning'); return; }
+                try {
+                    const response = await apiFetch(`/api/collaboration/groups/${groupId}/invite`, { method: 'POST', body: { invitee_student_ids: ids } });
+                    applyAndRender(root, state, response);
+                    showToast(response.message || '邀请已发送', 'success');
+                    close();
+                } catch (error) { showToast(error.message || '邀请失败', 'error'); }
+            });
+        },
+    });
+}
+
 async function handleRandomJoin(root, state, schemeId) {
     const scheme = (state.snapshot?.schemes || []).find((item) => String(item.id) === String(schemeId));
     if (!scheme) return;
@@ -1359,6 +1503,18 @@ function bindOverlayEvents(root, state) {
         const memberBtn = event.target.closest('[data-collab-member-info]');
         if (memberBtn) {
             showMemberInfo(memberBtn);
+            return;
+        }
+        const inviteMoreBtn = event.target.closest('[data-collab-invite-more]');
+        if (inviteMoreBtn) {
+            const groupId = inviteMoreBtn.dataset.collabInviteMore;
+            const cid = root.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
+            let candidates = [];
+            try {
+                const data = await apiFetch(`/api/collaboration/classrooms/${cid}/invite-candidates?group_id=${groupId}`, { silent: true });
+                candidates = data.candidates || [];
+            } catch (error) { candidates = []; }
+            showInviteOverlay(root, state, groupId, candidates);
             return;
         }
         const pmBtn = event.target.closest('[data-collab-pm]');
@@ -1481,6 +1637,27 @@ function bindEvents(root, state) {
                 const response = await apiFetch(`/api/collaboration/schemes/${target.dataset.collabSchemeClose}/close`, { method: 'POST' });
                 applyAndRender(root, state, response);
                 showToast(response.message || '已结束方案', 'success');
+            } else if (target.matches('[data-collab-student-create-open]')) {
+                const cid = root.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
+                try {
+                    const data = await apiFetch(`/api/collaboration/classrooms/${cid}/invite-candidates`, { silent: true });
+                    state.inviteCandidates = data.candidates || [];
+                } catch (error) { state.inviteCandidates = []; }
+                state.studentCreateOpen = true;
+                render(root, state);
+            } else if (target.matches('[data-collab-student-create-close]')) {
+                state.studentCreateOpen = false;
+                render(root, state);
+            } else if (target.dataset.collabInviteAccept) {
+                const response = await apiFetch(`/api/collaboration/invitations/${target.dataset.collabInviteAccept}/accept`, { method: 'POST' });
+                applyAndRender(root, state, response);
+                showToast(response.message || '已加入小组', 'success');
+            } else if (target.dataset.collabInviteDecline) {
+                const card = target.closest('[data-collab-invitation]');
+                if (card) card.classList.add('is-leaving');
+                const response = await apiFetch(`/api/collaboration/invitations/${target.dataset.collabInviteDecline}/decline`, { method: 'POST' });
+                applyAndRender(root, state, response);
+                showToast(response.message || '已拒绝邀请', 'success');
             } else if (target.matches('[data-collab-refresh]')) {
                 await refresh(root, state);
                 showToast('协作区已刷新', 'success');
@@ -1525,6 +1702,9 @@ function bindEvents(root, state) {
             if (form.matches('[data-collab-scheme-form]')) {
                 event.preventDefault();
                 await handleSchemeCreate(root, state, form);
+            } else if (form.matches('[data-collab-student-form]')) {
+                event.preventDefault();
+                await handleStudentCreate(root, state, form);
             } else if (form.matches('[data-collab-create-form]')) {
                 event.preventDefault();
                 await handleCreate(root, state, form);
@@ -1557,6 +1737,8 @@ export function initCollaborationPanel() {
         createOpen: false,
         schemeCreateOpen: false,
         schemeTab: 'current',
+        studentCreateOpen: false,
+        inviteCandidates: [],
     };
     bindEvents(root, state);
     bindOverlayEvents(root, state);

@@ -21,12 +21,16 @@ from ..services.collaboration_service import (
     create_group,
     create_group_scheme,
     create_group_submission_blog_draft,
+    create_student_group,
+    invite_to_group,
     join_group,
     leave_group,
     list_group_chat,
     load_collaboration_snapshot,
+    load_invite_candidates,
     load_member_public_card,
     nominate_group_leader,
+    respond_invitation,
     post_group_chat,
     random_join_scheme,
     recall_group_chat_message,
@@ -299,6 +303,49 @@ async def nominate_study_group_leader(group_id: int, request: Request, user: dic
         snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
         conn.commit()
     return {"status": "ok", "message": "已举荐组长", "snapshot": snapshot}
+
+
+@router.post("/classrooms/{class_offering_id}/student-groups", response_class=JSONResponse)
+async def create_student_invite_group(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_payload(request)
+    with get_db_connection() as conn:
+        group = create_student_group(conn, class_offering_id, user, payload)
+        snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
+        conn.commit()
+    return {"status": "ok", "message": "分组已发起，邀请已发送", "group": group, "snapshot": snapshot}
+
+
+@router.get("/classrooms/{class_offering_id}/invite-candidates", response_class=JSONResponse)
+async def get_invite_candidates(class_offering_id: int, group_id: int | None = None, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        candidates = load_invite_candidates(conn, class_offering_id, user, group_id)
+    return {"status": "ok", "candidates": candidates}
+
+
+@router.post("/groups/{group_id}/invite", response_class=JSONResponse)
+async def invite_group_members(group_id: int, request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_payload(request)
+    with get_db_connection() as conn:
+        group = invite_to_group(conn, group_id, user, payload.get("invitee_student_ids") or [])
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
+        conn.commit()
+    return {"status": "ok", "message": "邀请已发送", "group": group, "snapshot": snapshot}
+
+
+@router.post("/invitations/{invitation_id}/accept", response_class=JSONResponse)
+async def accept_group_invitation(invitation_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        result = respond_invitation(conn, invitation_id, user, accept=True)
+        conn.commit()
+    return {"status": "ok", "message": result["message"], "snapshot": result["snapshot"]}
+
+
+@router.post("/invitations/{invitation_id}/decline", response_class=JSONResponse)
+async def decline_group_invitation(invitation_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        result = respond_invitation(conn, invitation_id, user, accept=False)
+        conn.commit()
+    return {"status": "ok", "message": result["message"], "snapshot": result["snapshot"]}
 
 
 @router.post("/classrooms/{class_offering_id}/groups", response_class=JSONResponse)
