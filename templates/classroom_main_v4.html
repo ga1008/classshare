@@ -487,7 +487,7 @@
                     </span>
                     {% endfor %}
                 </div>
-                <h1>{{ classroom.course_name }}</h1>
+                <h1>{{ classroom.course_name }}{% if user_info.role == 'student' %}<span class="my-group-badge" data-my-group-badge hidden></span>{% endif %}</h1>
                 <p class="workspace-hero-lead">{{ hero.lead }}</p>
             </div>
 

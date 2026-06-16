@@ -717,14 +717,98 @@ function groupDetailHtml(group, scheme) {
                 ${group.has_leader ? '' : '<p class="collaboration-muted">本组还没有组长，可以举荐一位组员担任。</p>'}
                 <div class="collab-group-member-list">${members}</div>
             </section>
+            ${group.my_membership ? `
+            <section class="collab-group-detail__chat">
+                <h4>组内对话 <small>只有本组成员可见</small></h4>
+                <div class="group-chat-messages" data-group-chat-messages></div>
+                <form class="group-chat-form" data-group-chat-form="${group.id}">
+                    <input type="text" maxlength="800" placeholder="给组员发条消息…" autocomplete="off">
+                    <button type="submit" class="btn btn-primary btn-sm">发送</button>
+                </form>
+            </section>
+            ` : ''}
         </div>
     `;
+}
+
+function initGroupChat(overlay, groupId) {
+    const list = overlay.querySelector('[data-group-chat-messages]');
+    const form = overlay.querySelector('[data-group-chat-form]');
+    if (!list) return;
+    let lastId = 0;
+    let stopped = false;
+    const append = (messages) => {
+        if (!messages || !messages.length) return;
+        const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+        messages.forEach((message) => {
+            lastId = Math.max(lastId, Number(message.id) || 0);
+            const row = document.createElement('div');
+            row.className = `group-chat-msg${message.is_mine ? ' is-mine' : ''}`;
+            row.innerHTML = `<span class="group-chat-msg__name">${escapeHtml(message.sender_name || '成员')}${message.sender_role === 'teacher' ? ' · 老师' : ''}</span><span class="group-chat-msg__body">${escapeHtml(message.content || '')}</span>`;
+            list.appendChild(row);
+        });
+        if (atBottom) list.scrollTop = list.scrollHeight;
+    };
+    const poll = async () => {
+        if (stopped) return;
+        try {
+            const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat?after_id=${lastId}`, { silent: true });
+            append(data.messages || []);
+        } catch (error) { /* polling: ignore transient errors */ }
+    };
+    poll();
+    const timer = window.setInterval(poll, 4000);
+    const observer = new MutationObserver(() => {
+        if (!document.body.contains(overlay)) {
+            stopped = true;
+            window.clearInterval(timer);
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.body, { childList: true });
+    if (form) {
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const input = form.querySelector('input');
+            const text = String(input?.value || '').trim();
+            if (!text) return;
+            input.value = '';
+            try {
+                const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat`, { method: 'POST', body: { content: text } });
+                append([data.message]);
+            } catch (error) {
+                showToast(error.message || '发送失败', 'error');
+            }
+        });
+    }
+}
+
+function updateMyGroupBadge(snapshot) {
+    const badge = document.querySelector('[data-my-group-badge]');
+    if (!badge) return;
+    let myGroup = null;
+    for (const scheme of (snapshot.schemes || [])) {
+        if (scheme.my_group_id) {
+            const found = (scheme.groups || []).find((group) => String(group.id) === String(scheme.my_group_id));
+            if (found) { myGroup = found; break; }
+        }
+    }
+    if (myGroup) {
+        badge.textContent = `我的小组 · ${myGroup.name}`;
+        badge.hidden = false;
+    } else {
+        badge.hidden = true;
+    }
 }
 
 function showGroupDetail(snapshot, groupId) {
     const found = findSchemeGroup(snapshot, groupId);
     if (!found) return null;
-    return showOverlay(groupDetailHtml(found.group, found.scheme), { onMount() {} });
+    return showOverlay(groupDetailHtml(found.group, found.scheme), {
+        onMount(overlay) {
+            if (found.group.my_membership) initGroupChat(overlay, groupId);
+        },
+    });
 }
 
 function renderBoardGroupCard(group) {
@@ -816,6 +900,7 @@ function render(root, state) {
     state.selectedGroupId = selectedGroup ? String(selectedGroup.id) : '';
     content.hidden = false;
     dispatchActivitySidebarCounts(state.snapshot);
+    updateMyGroupBadge(state.snapshot);
     const hasLegacy = (state.snapshot.groups || []).length > 0 || state.snapshot.role === 'teacher';
     content.innerHTML = `
         ${renderSchemes(state.snapshot, state)}

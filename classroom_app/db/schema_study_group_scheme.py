@@ -84,4 +84,25 @@ def ensure_study_group_scheme_schema(conn: Any) -> None:
         "ON study_groups (scheme_id, group_index, id)"
     )
 
+    # In-group chat (组内对话). A lightweight REST + polling channel scoped to a
+    # single study group — deliberately separate from the WebSocket classroom
+    # discussion room so group chat needs no socket-room changes.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS group_chat_messages (
+            {id_column},
+            group_id INTEGER NOT NULL,
+            sender_role TEXT NOT NULL DEFAULT 'student',
+            sender_user_pk INTEGER NOT NULL,
+            sender_name TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_group_chat_messages_group "
+        "ON group_chat_messages (group_id, id)"
+    )
+
     _SCHEMA_READY = True

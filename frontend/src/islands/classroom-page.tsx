@@ -12,7 +12,7 @@ const LEGACY_MODULES = {
   classroomPage: '/static/js/classroom_page.js?v=activity-discussion-first-20260616',
   learningProgress: '/static/js/learning_progress.js?v=cultivation-certificate-20260612',
   interactions: '/static/js/classroom_interactions.js?v=activity-dock-declutter-20260606',
-  collaboration: '/static/js/collaboration.js?v=scheme-grouping-20260616',
+  collaboration: '/static/js/collaboration.js?v=scheme-grouping-chat-20260616',
 } as const;
 
 type LegacyModule = Record<string, unknown>;

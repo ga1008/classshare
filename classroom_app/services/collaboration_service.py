@@ -1816,6 +1816,66 @@ def nominate_group_leader(conn, group_id: int, user: dict[str, Any], candidate_s
     return _load_group(conn, group_id)
 
 
+MAX_GROUP_CHAT_FETCH = 80
+MAX_GROUP_CHAT_LENGTH = 800
+
+
+def list_group_chat(conn, group_id: int, user: dict[str, Any], after_id: int = 0) -> dict[str, Any]:
+    group = _ensure_group_access(conn, group_id, user)
+    if not _can_access_group_work(conn, group, user):
+        raise HTTPException(403, "只有本组成员或教师可以查看组内对话")
+    after = _safe_int(after_id) or 0
+    rows = conn.execute(
+        """
+        SELECT * FROM group_chat_messages
+        WHERE group_id = ? AND id > ?
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (int(group_id), int(after), MAX_GROUP_CHAT_FETCH),
+    ).fetchall()
+    current_pk = _safe_int(user.get("id"))
+    current_role = str(user.get("role") or "").lower()
+    messages = [
+        {
+            "id": int(row["id"]),
+            "sender_name": str(row["sender_name"] or "成员"),
+            "sender_role": str(row["sender_role"] or "student"),
+            "content": str(row["content"] or ""),
+            "created_at": str(row["created_at"] or ""),
+            "is_mine": int(row["sender_user_pk"]) == current_pk and str(row["sender_role"] or "") == current_role,
+        }
+        for row in rows
+    ]
+    return {"messages": messages, "group_id": int(group_id)}
+
+
+def post_group_chat(conn, group_id: int, user: dict[str, Any], content: Any) -> dict[str, Any]:
+    group = _ensure_group_access(conn, group_id, user)
+    if not (_is_teacher(user) and int(group["teacher_id"]) == _user_pk(user)) and not (
+        _is_student(user) and _is_active_member(conn, int(group_id), _user_pk(user))
+    ):
+        raise HTTPException(403, "只有本组成员或教师可以在组内发言")
+    text = _normalize_text(content, limit=MAX_GROUP_CHAT_LENGTH, field_name="消息", required=True)
+    now = _now_iso()
+    message_id = execute_insert_returning_id(
+        conn,
+        """
+        INSERT INTO group_chat_messages (group_id, sender_role, sender_user_pk, sender_name, content, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (int(group_id), str(user.get("role") or "student"), _user_pk(user), _actor_name(user), text, now),
+    )
+    return {
+        "id": message_id,
+        "sender_name": _actor_name(user),
+        "sender_role": str(user.get("role") or "student"),
+        "content": text,
+        "created_at": now,
+        "is_mine": True,
+    }
+
+
 def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
     scheme_id = int(scheme["id"])
     class_offering_id = int(scheme["class_offering_id"])

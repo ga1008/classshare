@@ -17,8 +17,10 @@ from ..services.collaboration_service import (
     create_group_submission_blog_draft,
     join_group,
     leave_group,
+    list_group_chat,
     load_collaboration_snapshot,
     nominate_group_leader,
+    post_group_chat,
     random_join_scheme,
     remove_group_member,
     resolve_group_file_download,
@@ -101,6 +103,22 @@ async def random_join_group_scheme(scheme_id: int, user: dict = Depends(get_curr
         "result": result,
         "snapshot": snapshot,
     }
+
+
+@router.get("/groups/{group_id}/chat", response_class=JSONResponse)
+async def get_group_chat(group_id: int, after_id: int = 0, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        payload = list_group_chat(conn, group_id, user, after_id)
+    return {"status": "ok", **payload}
+
+
+@router.post("/groups/{group_id}/chat", response_class=JSONResponse)
+async def send_group_chat(group_id: int, request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_payload(request)
+    with get_db_connection() as conn:
+        message = post_group_chat(conn, group_id, user, payload.get("content"))
+        conn.commit()
+    return {"status": "ok", "message": message}
 
 
 @router.put("/groups/{group_id}/goal", response_class=JSONResponse)
