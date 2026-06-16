@@ -25,9 +25,11 @@ from ..services.collaboration_service import (
     leave_group,
     list_group_chat,
     load_collaboration_snapshot,
+    load_member_public_card,
     nominate_group_leader,
     post_group_chat,
     random_join_scheme,
+    recall_group_chat_message,
     remove_group_member,
     resolve_group_chat_attachment_download,
     resolve_group_file_download,
@@ -185,6 +187,21 @@ async def upload_group_chat_attachments(
             conn.commit()
         payloads.append(payload)
     return {"status": "ok", "attachments": payloads}
+
+
+@router.post("/groups/{group_id}/chat/{message_id}/recall", response_class=JSONResponse)
+async def recall_group_chat(group_id: int, message_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        result = recall_group_chat_message(conn, group_id, message_id, user)
+        conn.commit()
+    return {"status": "ok", "result": result}
+
+
+@router.get("/classrooms/{class_offering_id}/member-card/{student_id}", response_class=JSONResponse)
+async def get_member_public_card(class_offering_id: int, student_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        card = load_member_public_card(conn, class_offering_id, student_id, user)
+    return {"status": "ok", "card": card}
 
 
 @router.get("/groups/{group_id}/chat/attachments/{attachment_id}")

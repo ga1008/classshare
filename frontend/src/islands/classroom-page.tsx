@@ -5,14 +5,14 @@ import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
 const LEGACY_MODULES = {
   ui: '/static/js/ui.js',
   chat: '/static/js/chat.js?v=p12-classroom-page-20260604',
-  privateMessages: '/static/js/classroom_private_messages.js?v=p12-classroom-page-20260604',
+  privateMessages: '/static/js/classroom_private_messages.js?v=group-pm-deeplink-20260616',
   files: '/static/js/app_files.js',
   materials: '/static/js/classroom_materials.js?v=p12-classroom-page-20260604',
   exams: '/static/js/app_exams.js',
   classroomPage: '/static/js/classroom_page.js?v=activity-discussion-first-20260616',
   learningProgress: '/static/js/learning_progress.js?v=cultivation-certificate-20260612',
   interactions: '/static/js/classroom_interactions.js?v=activity-dock-declutter-20260606',
-  collaboration: '/static/js/collaboration.js?v=scheme-chat-attach-tabs-20260616',
+  collaboration: '/static/js/collaboration.js?v=scheme-pm-emoji-recall-20260616',
 } as const;
 
 type LegacyModule = Record<string, unknown>;

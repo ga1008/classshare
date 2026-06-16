@@ -4,7 +4,7 @@ import json
 import math
 import mimetypes
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Optional
 from urllib.parse import quote
@@ -1821,7 +1821,7 @@ def nominate_group_leader(conn, group_id: int, user: dict[str, Any], candidate_s
 
 MAX_GROUP_CHAT_FETCH = 80
 MAX_GROUP_CHAT_LENGTH = 800
-MAX_GROUP_CHAT_ATTACHMENTS = 6
+MAX_GROUP_CHAT_ATTACHMENTS = 10
 GROUP_CHAT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024
 _IMAGE_MIME_PREFIX = "image/"
 
@@ -1942,6 +1942,7 @@ def _serialize_chat_message(row: dict[str, Any], *, current_pk: Optional[int], c
         "sender_role": str(row["sender_role"] or "student"),
         "content": str(row["content"] or ""),
         "message_type": str(row.get("message_type") or "text"),
+        "recalled": str(row.get("message_type") or "") == "recalled",
         "attachments": attachments if isinstance(attachments, list) else [],
         "created_at": str(row["created_at"] or ""),
         "is_mine": int(row["sender_user_pk"]) == current_pk and str(row["sender_role"] or "") == current_role,
@@ -1965,7 +1966,16 @@ def list_group_chat(conn, group_id: int, user: dict[str, Any], after_id: int = 0
     current_pk = _safe_int(user.get("id"))
     current_role = str(user.get("role") or "").lower()
     messages = [_serialize_chat_message(dict(row), current_pk=current_pk, current_role=current_role) for row in rows]
-    return {"messages": messages, "group_id": int(group_id)}
+    # Recalls of older messages (id <= after_id) won't surface via the
+    # incremental fetch, so return ids recalled within the propagation window
+    # for the client to reconcile. Cheap, indexed, and only group members poll.
+    cutoff = (datetime.now() - timedelta(seconds=_RECALL_PROPAGATION_SECONDS)).replace(microsecond=0).isoformat()
+    recall_rows = conn.execute(
+        "SELECT id FROM group_chat_messages WHERE group_id = ? AND message_type = 'recalled' AND recalled_at IS NOT NULL AND recalled_at >= ?",
+        (int(group_id), cutoff),
+    ).fetchall()
+    recalls = [int(row["id"]) for row in recall_rows]
+    return {"messages": messages, "recalls": recalls, "group_id": int(group_id)}
 
 
 def post_group_chat(
@@ -2157,16 +2167,94 @@ def auto_assign_scheme_leaders(conn, scheme_id: int, user: dict[str, Any]) -> di
     return {"assigned": assigned, "scheme": _serialize_scheme(conn, _load_scheme(conn, scheme_id), user)}
 
 
+RECALL_WINDOW_SECONDS = 60
+_RECALL_PROPAGATION_SECONDS = 120
+
+
+def _load_scheme_members(conn, group_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
+    """One batched query for scheme group rosters (name + number + avatar hash).
+
+    Perf: avoids ``_load_group_maps`` which also loads files/submissions/reviews
+    that scheme groups never use, and skips the cultivation join (deferred to the
+    on-demand member card). Keeps the snapshot light under ~200 concurrent users.
+    """
+    if not group_ids:
+        return {}
+    placeholders = ",".join("?" for _ in group_ids)
+    rows = conn.execute(
+        f"""
+        SELECT m.group_id, m.student_id, m.member_role,
+               s.name AS student_name, s.student_id_number, s.avatar_file_hash
+        FROM study_group_members m
+        JOIN students s ON s.id = m.student_id
+        WHERE m.group_id IN ({placeholders})
+          AND m.status = 'active'
+        ORDER BY m.group_id, CASE m.member_role WHEN 'leader' THEN 0 ELSE 1 END, s.student_id_number, s.id
+        """,
+        tuple(group_ids),
+    ).fetchall()
+    out: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        out.setdefault(int(row["group_id"]), []).append({
+            "student_id": int(row["student_id"]),
+            "name": str(row["student_name"] or "同学"),
+            "student_id_number": str(row["student_id_number"] or ""),
+            "member_role": str(row["member_role"] or "member"),
+            "avatar_file_hash": row["avatar_file_hash"],
+        })
+    return out
+
+
+def load_member_public_card(conn, class_offering_id: int, student_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    """On-demand public profile (avatar + classroom 修为值) for the member popover."""
+    ensure_classroom_access(conn, class_offering_id, user)
+    row = conn.execute(
+        "SELECT name, student_id_number FROM students WHERE id = ? LIMIT 1",
+        (int(student_id),),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "学生不存在")
+    info = _load_member_public_map(conn, int(class_offering_id), [int(student_id)]).get(int(student_id), {})
+    return {
+        "student_id": int(student_id),
+        "name": str(row["name"] or "同学"),
+        "student_id_number": str(row["student_id_number"] or ""),
+        "avatar_url": info.get("avatar_url", "/api/profile/avatar"),
+        "cultivation_score": info.get("cultivation_score"),
+    }
+
+
+def recall_group_chat_message(conn, group_id: int, message_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    group = _ensure_group_access(conn, group_id, user)
+    if not _can_use_group_chat(conn, group, user):
+        raise HTTPException(403, "无权操作该组对话")
+    row = conn.execute(
+        "SELECT * FROM group_chat_messages WHERE id = ? AND group_id = ? LIMIT 1",
+        (int(message_id), int(group_id)),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "消息不存在")
+    row = dict(row)
+    if int(row["sender_user_pk"]) != _user_pk(user) or str(row["sender_role"] or "") != str(user.get("role") or "").lower():
+        raise HTTPException(403, "只能撤回自己发送的消息")
+    if str(row.get("message_type")) == "recalled":
+        return {"id": int(message_id), "recalled": True}
+    created = _parse_iso(row.get("created_at"))
+    if created is None or (datetime.now() - created).total_seconds() > RECALL_WINDOW_SECONDS:
+        raise HTTPException(400, "超过 1 分钟，无法撤回")
+    conn.execute(
+        "UPDATE group_chat_messages SET message_type = 'recalled', content = '', attachments_json = '[]', recalled_at = ? WHERE id = ?",
+        (_now_iso(), int(message_id)),
+    )
+    return {"id": int(message_id), "recalled": True}
+
+
 def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
     scheme_id = int(scheme["id"])
     class_offering_id = int(scheme["class_offering_id"])
     group_rows = _scheme_group_rows(conn, scheme_id)
     group_ids = [int(row["id"]) for row in group_rows]
-    member_map = _load_group_maps(conn, group_ids)["members"] if group_ids else {}
-    all_member_ids: list[int] = []
-    for members in member_map.values():
-        all_member_ids.extend(int(m["student_id"]) for m in members)
-    public_map = _load_member_public_map(conn, class_offering_id, all_member_ids)
+    member_map = _load_scheme_members(conn, group_ids)
 
     is_expired = _scheme_is_expired(scheme.get("expires_at"))
     is_teacher = _is_teacher(user)
@@ -2191,8 +2279,9 @@ def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dic
                 "student_id_number": str(m.get("student_id_number") or ""),
                 "member_role": str(m.get("member_role") or "member"),
                 "is_leader": leader_id is not None and int(m["student_id"]) == leader_id,
-                "avatar_url": public_map.get(int(m["student_id"]), {}).get("avatar_url", "/api/profile/avatar"),
-                "cultivation_score": public_map.get(int(m["student_id"]), {}).get("cultivation_score"),
+                "avatar_url": _avatar_url("student", m["student_id"], m.get("avatar_file_hash")),
+                # cultivation is loaded on demand (member-card endpoint) to keep
+                # the snapshot light for ~200 concurrent users.
             }
             for m in members
         ]
@@ -2274,10 +2363,16 @@ def _load_schemes_for_snapshot(conn, class_offering_id: int, user: dict[str, Any
         (int(class_offering_id),),
     ).fetchall()
     schemes = []
+    history_count = 0
     for row in rows:
         scheme = dict(row)
         scheme["teacher_id"] = None
-        schemes.append(_serialize_scheme(conn, scheme, user))
+        serialized = _serialize_scheme(conn, scheme, user)
+        if serialized.get("is_history"):
+            history_count += 1
+            if history_count > 12:  # cap archived schemes in the hot snapshot path
+                continue
+        schemes.append(serialized)
     return schemes
 
 

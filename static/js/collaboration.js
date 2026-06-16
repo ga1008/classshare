@@ -667,23 +667,43 @@ function confirmRandomJoin(scheme) {
     });
 }
 
-function showMemberInfo(dataset) {
-    const score = dataset.score && dataset.score !== 'null' && dataset.score !== '' ? dataset.score : '—';
-    showOverlay(`
+function showMemberInfo(button) {
+    const dataset = button.dataset || {};
+    const studentId = dataset.collabMemberInfo;
+    const name = dataset.name || '同学';
+    const isLeader = dataset.leader === '1';
+    const root = document.querySelector('[data-collaboration-root]');
+    const classOfferingId = root?.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
+    const currentUserId = String(window.APP_CONFIG?.userInfo?.id || '');
+    const isSelf = String(studentId) === currentUserId;
+    const { overlay } = showOverlay(`
         <div class="collab-member-info">
-            <span class="collab-member-info__avatar${dataset.leader === '1' ? ' is-leader' : ''}">
+            <span class="collab-member-info__avatar${isLeader ? ' is-leader' : ''}">
                 <img src="${escapeHtml(dataset.avatar || '/api/profile/avatar')}" alt="">
-                ${dataset.leader === '1' ? '<span class="collab-member-info__crown" aria-hidden="true">★</span>' : ''}
+                ${isLeader ? '<span class="collab-member-info__crown" aria-hidden="true">★</span>' : ''}
             </span>
-            <strong>${escapeHtml(dataset.name || '同学')}${dataset.leader === '1' ? ' · 组长' : ''}</strong>
+            <strong>${escapeHtml(name)}${isLeader ? ' · 组长' : ''}</strong>
             ${dataset.number ? `<small>学号 ${escapeHtml(dataset.number)}</small>` : ''}
             <div class="collab-member-info__score">
                 <span>本课堂修为值</span>
-                <strong>${escapeHtml(String(score))}</strong>
+                <strong data-member-score>…</strong>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm" data-collab-overlay-close>关闭</button>
+            <div class="collab-member-info__actions">
+                ${!isSelf ? `<button type="button" class="btn btn-primary btn-sm" data-collab-pm data-identity="student:${escapeHtml(String(studentId))}" data-name="${escapeHtml(name)}">私信</button>` : ''}
+                <button type="button" class="btn btn-ghost btn-sm" data-collab-overlay-close>关闭</button>
+            </div>
         </div>
     `);
+    apiFetch(`/api/collaboration/classrooms/${classOfferingId}/member-card/${studentId}`, { silent: true })
+        .then((data) => {
+            const scoreEl = overlay.querySelector('[data-member-score]');
+            const score = data?.card?.cultivation_score;
+            if (scoreEl) scoreEl.textContent = (score === null || score === undefined) ? '—' : String(score);
+        })
+        .catch(() => {
+            const scoreEl = overlay.querySelector('[data-member-score]');
+            if (scoreEl) scoreEl.textContent = '—';
+        });
 }
 
 function groupDetailHtml(group, scheme) {
@@ -731,10 +751,10 @@ function groupDetailHtml(group, scheme) {
                 <div class="collab-group-member-list">${members}</div>
             </section>
             ${group.my_membership ? `
-            <section class="collab-group-detail__chat">
+            <section class="collab-group-detail__chat" data-group-chat-drop>
                 <h4>组内对话 <small>只有本组成员可见</small></h4>
                 <div class="group-chat-messages" data-group-chat-messages></div>
-                <div class="group-chat-emoji-panel" data-group-chat-emoji-panel hidden></div>
+                <div class="group-chat-dropmask" data-group-chat-dropmask hidden>拖入文件 / 图片 / GIF（最多 10 个）</div>
                 <div class="group-chat-pending" data-group-chat-pending hidden></div>
                 <form class="group-chat-form" data-group-chat-form="${group.id}">
                     <button type="button" class="group-chat-tool" data-group-chat-emoji title="表情" aria-label="表情">😊</button>
@@ -771,6 +791,39 @@ function renderChatAttachments(attachments) {
     return `<div class="group-chat-atts">${items}</div>`;
 }
 
+const CHAT_ATTACHMENT_LIMIT = 10;
+const CHAT_RECALL_WINDOW_MS = 60 * 1000;
+
+function openEmojiOverlay({ classOfferingId, onChar, onSticker }) {
+    const { overlay, close } = showOverlay(`
+        <div class="group-chat-emoji-overlay">
+            <div class="group-chat-emoji-overlay__head"><strong>选择表情</strong><button type="button" class="collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button></div>
+            <div class="group-chat-emoji-body" data-emoji-body>
+                <div class="group-chat-emoji-grid">${UNICODE_EMOJIS.map((emoji) => `<button type="button" class="group-chat-emoji-item" data-emoji-char="${emoji}">${emoji}</button>`).join('')}</div>
+                <div data-emoji-custom></div>
+            </div>
+        </div>
+    `, {
+        onMount(node) {
+            node.querySelector('[data-emoji-body]')?.addEventListener('click', (event) => {
+                const charBtn = event.target.closest('[data-emoji-char]');
+                if (charBtn) { onChar(charBtn.dataset.emojiChar); return; }
+                const customBtn = event.target.closest('[data-emoji-id]');
+                if (customBtn) { close(); onSticker(customBtn.dataset.emojiId); }
+            });
+        },
+    });
+    apiFetch(`/api/classrooms/${classOfferingId}/emoji-panel`, { silent: true })
+        .then((data) => {
+            const custom = data?.custom_emojis || [];
+            const box = overlay.querySelector('[data-emoji-custom]');
+            if (box && custom.length) {
+                box.innerHTML = `<div class="group-chat-emoji-divider">我的表情包</div><div class="group-chat-emoji-grid">${custom.map((item) => `<button type="button" class="group-chat-emoji-item is-custom" data-emoji-id="${item.id}" title="${escapeHtml(item.name || '')}"><img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.name || '')}"></button>`).join('')}</div>`;
+            }
+        })
+        .catch(() => { /* custom emojis optional */ });
+}
+
 function initGroupChat(overlay, groupId) {
     const list = overlay.querySelector('[data-group-chat-messages]');
     const form = overlay.querySelector('[data-group-chat-form]');
@@ -780,24 +833,56 @@ function initGroupChat(overlay, groupId) {
     const textInput = form?.querySelector('.group-chat-text');
     const fileInput = form?.querySelector('[data-group-chat-file-input]');
     const pendingBox = overlay.querySelector('[data-group-chat-pending]');
-    const emojiPanel = overlay.querySelector('[data-group-chat-emoji-panel]');
+    const dropZone = overlay.querySelector('[data-group-chat-drop]');
+    const dropMask = overlay.querySelector('[data-group-chat-dropmask]');
     let pending = [];
     let lastId = 0;
     let stopped = false;
-    let emojiLoaded = false;
+    const nodes = new Map();
 
+    const buildNode = (message) => {
+        const row = document.createElement('div');
+        row.className = `group-chat-msg${message.is_mine ? ' is-mine' : ''}`;
+        row.dataset.msgId = String(message.id);
+        if (message.is_mine) row.dataset.createdMs = String(Date.parse((message.created_at || '').replace(' ', 'T')) || Date.now());
+        renderNode(row, message);
+        return row;
+    };
+    const renderNode = (row, message) => {
+        if (message.recalled) {
+            row.classList.add('is-recalled');
+            row.innerHTML = `<span class="group-chat-recalled">${message.is_mine ? '你撤回了一条消息' : '对方撤回了一条消息'}</span>`;
+            return;
+        }
+        const body = message.content ? `<span class="group-chat-msg__body">${escapeHtml(message.content)}</span>` : '';
+        const recall = message.is_mine ? '<button type="button" class="group-chat-recall" data-group-chat-recall title="撤回">撤回</button>' : '';
+        row.innerHTML = `<span class="group-chat-msg__name">${escapeHtml(message.sender_name || '成员')}${message.sender_role === 'teacher' ? ' · 老师' : ''}</span>${body}${renderChatAttachments(message.attachments)}${recall}`;
+    };
     const append = (messages) => {
         if (!messages || !messages.length) return;
         const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
         messages.forEach((message) => {
             lastId = Math.max(lastId, Number(message.id) || 0);
-            const row = document.createElement('div');
-            row.className = `group-chat-msg${message.is_mine ? ' is-mine' : ''}`;
-            const body = message.content ? `<span class="group-chat-msg__body">${escapeHtml(message.content)}</span>` : '';
-            row.innerHTML = `<span class="group-chat-msg__name">${escapeHtml(message.sender_name || '成员')}${message.sender_role === 'teacher' ? ' · 老师' : ''}</span>${body}${renderChatAttachments(message.attachments)}`;
-            list.appendChild(row);
+            const node = buildNode(message);
+            nodes.set(String(message.id), node);
+            list.appendChild(node);
         });
         if (atBottom) list.scrollTop = list.scrollHeight;
+    };
+    const markRecalled = (ids) => {
+        (ids || []).forEach((id) => {
+            const node = nodes.get(String(id));
+            if (node && !node.classList.contains('is-recalled')) {
+                renderNode(node, { recalled: true, is_mine: node.classList.contains('is-mine') });
+            }
+        });
+    };
+    const sweepRecallButtons = () => {
+        const now = Date.now();
+        nodes.forEach((node) => {
+            const btn = node.querySelector('[data-group-chat-recall]');
+            if (btn && now - Number(node.dataset.createdMs || 0) > CHAT_RECALL_WINDOW_MS) btn.remove();
+        });
     };
 
     const renderPending = () => {
@@ -814,10 +899,12 @@ function initGroupChat(overlay, groupId) {
     };
 
     const poll = async () => {
-        if (stopped) return;
+        if (stopped || document.hidden) return; // pause polling when tab is hidden (perf)
         try {
             const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat?after_id=${lastId}`, { silent: true });
             append(data.messages || []);
+            markRecalled(data.recalls);
+            sweepRecallButtons();
         } catch (error) { /* polling: ignore transient errors */ }
     };
     poll();
@@ -838,42 +925,53 @@ function initGroupChat(overlay, groupId) {
         } catch (error) { showToast(error.message || '发送失败', 'error'); }
     };
 
-    const loadEmojiPanel = async () => {
-        if (emojiLoaded || !emojiPanel) return;
-        emojiLoaded = true;
-        let custom = [];
+    const uploadFiles = async (files) => {
+        const list2 = Array.from(files || []);
+        if (!list2.length) return;
+        if (pending.length + list2.length > CHAT_ATTACHMENT_LIMIT) { showToast(`一次最多 ${CHAT_ATTACHMENT_LIMIT} 个附件`, 'warning'); return; }
+        const fd = new FormData();
+        list2.forEach((file) => fd.append('files', file));
         try {
-            const data = await apiFetch(`/api/classrooms/${classOfferingId}/emoji-panel`, { silent: true });
-            custom = data?.custom_emojis || [];
-        } catch (error) { /* custom emojis optional */ }
-        const unicodeGrid = UNICODE_EMOJIS.map((emoji) => `<button type="button" class="group-chat-emoji-item" data-emoji-char="${emoji}">${emoji}</button>`).join('');
-        const customGrid = custom.length
-            ? `<div class="group-chat-emoji-divider">我的表情包</div><div class="group-chat-emoji-grid">${custom.map((item) => `<button type="button" class="group-chat-emoji-item is-custom" data-emoji-id="${item.id}" title="${escapeHtml(item.name || '')}"><img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.name || '')}"></button>`).join('')}</div>`
-            : '';
-        emojiPanel.innerHTML = `<div class="group-chat-emoji-grid">${unicodeGrid}</div>${customGrid}`;
+            const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat/attachments`, { method: 'POST', body: fd });
+            pending = pending.concat(data.attachments || []);
+            renderPending();
+        } catch (error) { showToast(error.message || '上传失败', 'error'); }
     };
 
-    if (emojiPanel) {
-        emojiPanel.addEventListener('click', (event) => {
-            const charBtn = event.target.closest('[data-emoji-char]');
-            if (charBtn && textInput) {
-                textInput.value += charBtn.dataset.emojiChar;
-                textInput.focus();
-                return;
-            }
-            const customBtn = event.target.closest('[data-emoji-id]');
-            if (customBtn) {
-                emojiPanel.hidden = true;
-                sendSticker(customBtn.dataset.emojiId);
-            }
+    overlay.querySelector('[data-group-chat-emoji]')?.addEventListener('click', () => {
+        openEmojiOverlay({
+            classOfferingId,
+            onChar: (ch) => { if (textInput) { textInput.value += ch; textInput.focus(); } },
+            onSticker: (id) => sendSticker(id),
         });
-    }
-    overlay.querySelector('[data-group-chat-emoji]')?.addEventListener('click', async () => {
-        if (!emojiPanel) return;
-        await loadEmojiPanel();
-        emojiPanel.hidden = !emojiPanel.hidden;
     });
     overlay.querySelector('[data-group-chat-file]')?.addEventListener('click', () => fileInput?.click());
+    if (fileInput) {
+        fileInput.addEventListener('change', async () => {
+            const files = Array.from(fileInput.files || []);
+            fileInput.value = '';
+            await uploadFiles(files);
+        });
+    }
+    // drag-drop zone (files / images / gifs)
+    if (dropZone) {
+        dropZone.addEventListener('dragover', (event) => {
+            if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
+                event.preventDefault();
+                if (dropMask) dropMask.hidden = false;
+            }
+        });
+        dropZone.addEventListener('dragleave', (event) => {
+            if (!dropZone.contains(event.relatedTarget) && dropMask) dropMask.hidden = true;
+        });
+        dropZone.addEventListener('drop', async (event) => {
+            const files = Array.from(event.dataTransfer?.files || []);
+            if (!files.length) return;
+            event.preventDefault();
+            if (dropMask) dropMask.hidden = true;
+            await uploadFiles(files);
+        });
+    }
     if (pendingBox) {
         pendingBox.addEventListener('click', (event) => {
             const removeBtn = event.target.closest('[data-group-chat-pending-remove]');
@@ -882,21 +980,18 @@ function initGroupChat(overlay, groupId) {
             renderPending();
         });
     }
-    if (fileInput) {
-        fileInput.addEventListener('change', async () => {
-            const files = Array.from(fileInput.files || []);
-            fileInput.value = '';
-            if (!files.length) return;
-            if (pending.length + files.length > 6) { showToast('单条消息最多 6 个附件', 'warning'); return; }
-            const fd = new FormData();
-            files.forEach((file) => fd.append('files', file));
-            try {
-                const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat/attachments`, { method: 'POST', body: fd });
-                pending = pending.concat(data.attachments || []);
-                renderPending();
-            } catch (error) { showToast(error.message || '上传失败', 'error'); }
-        });
-    }
+    // recall (delegated)
+    list.addEventListener('click', async (event) => {
+        const recallBtn = event.target.closest('[data-group-chat-recall]');
+        if (!recallBtn) return;
+        const row = recallBtn.closest('[data-msg-id]');
+        const messageId = row?.dataset.msgId;
+        if (!messageId) return;
+        try {
+            await apiFetch(`/api/collaboration/groups/${groupId}/chat/${messageId}/recall`, { method: 'POST' });
+            renderNode(row, { recalled: true, is_mine: true });
+        } catch (error) { showToast(error.message || '撤回失败', 'error'); }
+    });
     if (form) {
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
@@ -907,7 +1002,6 @@ function initGroupChat(overlay, groupId) {
             const sending = pending.slice();
             pending = [];
             renderPending();
-            if (emojiPanel) emojiPanel.hidden = true;
             try {
                 const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat`, {
                     method: 'POST',
@@ -1265,7 +1359,17 @@ function bindOverlayEvents(root, state) {
     document.addEventListener('click', async (event) => {
         const memberBtn = event.target.closest('[data-collab-member-info]');
         if (memberBtn) {
-            showMemberInfo(memberBtn.dataset);
+            showMemberInfo(memberBtn);
+            return;
+        }
+        const pmBtn = event.target.closest('[data-collab-pm]');
+        if (pmBtn) {
+            const identity = pmBtn.dataset.identity;
+            const displayName = pmBtn.dataset.name || '';
+            closeOverlays();
+            // jump to the existing one-to-one private message feature
+            window.dispatchEvent(new CustomEvent('lanshare:classroom-activity-workspace-command', { detail: { type: 'open-activity', key: 'discussion', scroll: true } }));
+            window.dispatchEvent(new CustomEvent('classroom:open-private-message', { detail: { identity, displayName } }));
             return;
         }
         const nominateBtn = event.target.closest('[data-collab-nominate]');

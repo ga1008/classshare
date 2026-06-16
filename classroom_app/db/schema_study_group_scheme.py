@@ -105,6 +105,7 @@ def ensure_study_group_scheme_schema(conn: Any) -> None:
     # Backfill columns on databases created before chat attachments existed.
     _add_column(conn, "group_chat_messages", "message_type", "TEXT NOT NULL DEFAULT 'text'", engine=engine)
     _add_column(conn, "group_chat_messages", "attachments_json", "TEXT NOT NULL DEFAULT '[]'", engine=engine)
+    _add_column(conn, "group_chat_messages", "recalled_at", "TEXT", engine=engine)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_group_chat_messages_group "
         "ON group_chat_messages (group_id, id)"

@@ -225,8 +225,24 @@ export class ClassroomPrivateMessages {
             }
         });
         window.addEventListener('beforeunload', () => this.clearPendingAttachments());
+        window.addEventListener('classroom:open-private-message', (event) => {
+            const detail = event.detail || {};
+            if (!detail.identity) {
+                return;
+            }
+            this.openConversationWith(detail.identity, detail.displayName || '');
+        });
         this.applyModeState('broadcast');
         this.updateControls();
+    }
+
+    openConversationWith(identity, displayName) {
+        this.applyModeState('private');
+        this.onModeChange();
+        window.setTimeout(this.onModeChange, 230);
+        this.startRefresh();
+        this.selectContact({ identity, display_name: displayName, class_offering_id: this.classOfferingId });
+        this.loadContacts({ silent: true, keepConversation: true });
     }
 
     setMode(mode) {
