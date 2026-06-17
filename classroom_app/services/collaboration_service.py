@@ -38,6 +38,7 @@ GROUP_PROGRESS_MAX = 100
 
 # --- Student-initiated invite groups (学生自由发起分组) ----------------------
 STUDENT_GROUP_JOIN_POLICY = "invite"
+STUDENT_GROUP_DEFAULT_MAX = 50  # student groups are not member-capped in the UI
 STUDENT_MAX_ACTIVE_GROUPS = 5
 INVITE_MAX_PER_HOUR = 10
 INVITE_MIN_INTERVAL_SECONDS = 30
@@ -2461,8 +2462,8 @@ def create_student_group(conn, class_offering_id: int, user: dict[str, Any], pay
     student_id = _user_pk(user)
     if _student_active_invite_group_count(conn, class_offering_id, student_id) >= STUDENT_MAX_ACTIVE_GROUPS:
         raise HTTPException(400, f"最多只能同时发起 {STUDENT_MAX_ACTIVE_GROUPS} 个分组")
-    name = _normalize_text(payload.get("name"), limit=60, field_name="小组名称", required=True)
-    max_members = _normalize_max_members(payload.get("max_members"))
+    name = _normalize_text(payload.get("name"), limit=60, field_name="分组名称", required=True)
+    max_members = STUDENT_GROUP_DEFAULT_MAX  # no member cap in the UI; keep a generous internal default
     raw_invitees = payload.get("invitee_student_ids") or []
     if not isinstance(raw_invitees, list):
         raise HTTPException(400, "邀请名单格式不正确")
@@ -2595,7 +2596,17 @@ def load_invite_candidates(conn, class_offering_id: int, user: dict[str, Any], g
     if not _is_student(user):
         return []
     inviter_id = _user_pk(user)
-    students = _load_classroom_students(conn, class_offering_id)
+    rows = conn.execute(
+        """
+        SELECT s.id, s.name, s.student_id_number, s.avatar_file_hash
+        FROM class_offerings o
+        JOIN students s ON s.class_id = o.class_id
+        WHERE o.id = ?
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
+        ORDER BY s.student_id_number, s.id
+        """,
+        (int(class_offering_id),),
+    ).fetchall()
     exclude = {inviter_id}
     if group_id is not None:
         exclude |= {int(m["student_id"]) for m in _load_scheme_members(conn, [int(group_id)]).get(int(group_id), [])}
@@ -2605,7 +2616,7 @@ def load_invite_candidates(conn, class_offering_id: int, user: dict[str, Any], g
         ).fetchall()
         exclude |= {int(r["invitee_student_id"]) for r in pending}
     candidates = []
-    for s in students:
+    for s in rows:
         sid = int(s["id"])
         if sid in exclude:
             continue
@@ -2613,7 +2624,8 @@ def load_invite_candidates(conn, class_offering_id: int, user: dict[str, Any], g
         candidates.append({
             "student_id": sid,
             "name": str(s["name"]),
-            "student_id_number": str(s.get("student_id_number") or ""),
+            "student_id_number": str(s["student_id_number"] or ""),
+            "avatar_url": _avatar_url("student", sid, s["avatar_file_hash"]),
             "blocked": blocked,
         })
     return candidates
@@ -2625,10 +2637,11 @@ def _serialize_student_group(conn, group_row: dict[str, Any], user: dict[str, An
     entry = _serialize_group_entry(group_row, members, current_student_id=current_student_id, is_teacher=_is_teacher(user), editable=True)
     leader_id = _safe_int(group_row.get("leader_student_id"))
     entry["origin"] = "student"
+    entry["uncapped"] = True  # student groups have no UI member cap
     entry["status"] = str(group_row.get("status") or GROUP_STATUS_ACTIVE)
     entry["is_history"] = str(group_row.get("status")) != GROUP_STATUS_ACTIVE
     entry["is_owner"] = bool(current_student_id is not None and leader_id == current_student_id)
-    entry["can_invite"] = bool(entry["is_owner"] and not entry["is_history"] and not entry["is_full"])
+    entry["can_invite"] = bool(entry["is_owner"] and not entry["is_history"])
     return entry
 
 

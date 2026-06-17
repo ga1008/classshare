@@ -44827,20 +44827,57 @@ body.has-teaching-session-modal {
 .collab-invitation__body span { font-size: 0.72rem; color: var(--text-muted); }
 .collab-invitation__actions { display: flex; gap: 0.35rem; }
 
-.collab-invite-pick { display: grid; gap: 0.3rem; }
+.collab-invite-pick { display: grid; gap: 0.4rem; }
 .collab-invite-pick__label { font-size: 0.72rem; color: var(--text-muted); }
-.collab-invite-pick__list {
-    display: flex; flex-wrap: wrap; gap: 0.4rem;
-    max-height: 180px; overflow-y: auto; padding: 0.2rem;
-    border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 10px;
+
+/* Avatar-based invite picker: click a face to select (green ring + check). */
+.collab-invite-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    gap: 0.6rem 0.5rem;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 0.4rem;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 12px;
+    background: rgba(248, 250, 252, 0.6);
 }
-.collab-invite-chip {
-    display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer;
-    padding: 0.25rem 0.5rem; border-radius: 999px; font-size: 0.78rem;
-    background: rgba(241, 245, 249, 0.9); border: 1px solid rgba(148, 163, 184, 0.3);
+.collab-invite-card {
+    display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+    cursor: pointer; text-align: center; user-select: none;
 }
-.collab-invite-chip:has(input:checked) { background: rgba(79, 70, 229, 0.14); border-color: rgba(79, 70, 229, 0.45); color: #4338ca; }
-.collab-invite-chip.is-blocked { opacity: 0.5; cursor: not-allowed; }
+.collab-invite-card input { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; }
+.collab-invite-card__avatar {
+    position: relative; width: 52px; height: 52px; border-radius: 50%;
+    transition: transform 140ms ease;
+}
+.collab-invite-card__avatar img {
+    width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: #e2e8f0;
+    border: 2.5px solid transparent; transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.collab-invite-card:hover .collab-invite-card__avatar { transform: translateY(-1px); }
+.collab-invite-card:hover .collab-invite-card__avatar img { border-color: rgba(148, 163, 184, 0.5); }
+.collab-invite-card__check {
+    position: absolute; right: -2px; bottom: -2px;
+    width: 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: #16a34a; color: #fff; border: 2px solid #fff;
+    transform: scale(0); transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.collab-invite-card__name {
+    font-size: 0.72rem; color: var(--text-secondary); max-width: 70px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.collab-invite-card:has(input:checked) .collab-invite-card__avatar img {
+    border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+}
+.collab-invite-card:has(input:checked) .collab-invite-card__check { transform: scale(1); }
+.collab-invite-card:has(input:checked) .collab-invite-card__name { color: #15803d; font-weight: 700; }
+.collab-invite-card.is-blocked { opacity: 0.45; cursor: not-allowed; }
+.collab-invite-card.is-blocked .collab-invite-card__name::after { content: ' · 已屏蔽'; }
+@media (prefers-reduced-motion: reduce) {
+    .collab-invite-card__check, .collab-invite-card__avatar { transition: none; }
+}
 .collab-invite-more-btn { margin-top: 0.5rem; }
 
 .collab-invite-overlay { width: min(420px, 92vw); display: grid; gap: 0.7rem; }
