@@ -140,6 +140,18 @@
     </section>
     {% endif %}
 
+    {% if user_info.role == 'student' %}
+    <a href="/career-path" class="career-future-card dashboard-reveal" aria-label="打开你的职业发展网络">
+        <div class="career-future-card__stars" aria-hidden="true"></div>
+        <div class="career-future-card__body">
+            <span class="career-future-card__eyebrow">你的未来 · Career Galaxy</span>
+            <h2 class="career-future-card__title">点亮专属于你的职业生涯网络</h2>
+            <p class="career-future-card__desc">先做几道简单的小测试，让 AI 读懂你的性格与节奏，为你重新设计推荐路线、必备知识与从现在到毕业的准备清单。</p>
+        </div>
+        <span class="career-future-card__cta">进入<span aria-hidden="true">→</span></span>
+    </a>
+    {% endif %}
+
     {% if not (user_info.role == 'student' and student_cockpit) %}
     <section class="dashboard-hero dashboard-reveal" aria-label="首页总览">
         <div class="dashboard-hero__content">

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}你的未来 · 职业发展网络{% endblock %}
+{% block body_class %}career-page-body{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/career_path.css?v=20260618a">
+{% endblock %}
+
+{% block body %}
+<div id="career-root" class="career-root" data-state-url="/api/career-path/state"
+     data-questions-url="/api/career-path/questions"
+     data-answers-url="/api/career-path/answers">
+
+  <!-- 顶部细条：返回 + 专业/毕业摘要 -->
+  <header class="career-topbar" id="career-topbar" hidden>
+    <a class="career-topbar__back" href="/dashboard">← 返回首页</a>
+    <div class="career-topbar__meta" id="career-topbar-meta"></div>
+    <button type="button" class="career-topbar__redo" id="career-redo" hidden>重新测试</button>
+  </header>
+
+  <!-- 主舞台：3D 节点网络 canvas + 时间轴 + 详情/知识卡片 -->
+  <main class="career-stage" id="career-stage" hidden>
+    <canvas id="career-canvas" class="career-canvas"></canvas>
+
+    <!-- 顶部专属欢迎/定位条 -->
+    <div class="career-banner" id="career-banner" hidden></div>
+
+    <!-- 图例 + 缩放提示 -->
+    <div class="career-legend" id="career-legend"></div>
+
+    <!-- 节点详情卡片（点击节点后出现，点空白处关闭） -->
+    <aside class="career-detail" id="career-detail" hidden></aside>
+
+    <!-- 未毕业阶段：必备知识卡片面板（点击未毕业节点后出现） -->
+    <section class="career-prep" id="career-prep" hidden></section>
+  </main>
+
+  <!-- 欢迎 + 测试 浮窗（首次） -->
+  <div class="career-intro" id="career-intro" hidden>
+    <div class="career-intro__inner">
+      <div class="career-typewriter" id="career-typewriter" aria-live="polite"></div>
+      <div class="career-quiz" id="career-quiz" hidden></div>
+    </div>
+  </div>
+
+  <!-- 等待 AI 思考 浮窗 -->
+  <div class="career-waiting" id="career-waiting" hidden>
+    <div class="career-waiting__inner">
+      <div class="career-waiting__orbit" aria-hidden="true"><span></span><span></span><span></span></div>
+      <h2 class="career-waiting__title" id="career-waiting-title">正在为你设计专属职业网络…</h2>
+      <p class="career-waiting__desc" id="career-waiting-desc">深度思考型 AI 正在结合你的性格、专业与毕业时间，重新设计推荐与必备知识。这通常需要 1–3 分钟。</p>
+      <p class="career-waiting__hint">你可以关闭这个页面稍后回来，思考完成后会自动呈现；也可以就停在这里静静等待。</p>
+    </div>
+  </div>
+
+  <!-- 初始加载 -->
+  <div class="career-boot" id="career-boot">
+    <div class="career-boot__spark" aria-hidden="true"></div>
+    <p>正在连接你的职业星图…</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/career_path_network.js?v=20260618a"></script>
+<script src="/static/js/career_path_app.js?v=20260618a"></script>
+{% endblock %}

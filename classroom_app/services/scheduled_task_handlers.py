@@ -323,3 +323,7 @@ from .agent_subscription_service import (  # noqa: E402
 )
 
 register_task_handler(AGENT_TASK_DISPATCH_KIND, handle_agent_task_dispatch)
+
+# 职业发展网络 — 按专业生成网络 + 按学生定制推荐/必备知识（深度思考型 AI，异步）。
+# 导入即注册两个 handler（career_major_network_generate / career_personalize_generate）。
+from . import career_path_service  # noqa: E402,F401

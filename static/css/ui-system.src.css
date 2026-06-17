@@ -45094,3 +45094,88 @@ body.has-teaching-session-modal {
     justify-content: flex-end;
     gap: 0.6rem;
 }
+
+/* ── 首页「你的未来 · 职业网络」入口卡片（学生端） ───────────────────── */
+.career-future-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    margin: 0 0 1.25rem;
+    padding: 1.15rem 1.4rem;
+    border-radius: 20px;
+    text-decoration: none;
+    color: #eaf2ff;
+    overflow: hidden;
+    border: 1px solid rgba(125, 211, 252, 0.28);
+    background:
+        radial-gradient(900px 240px at 8% -40%, rgba(110, 231, 255, 0.22), transparent 60%),
+        radial-gradient(700px 240px at 100% 140%, rgba(167, 139, 250, 0.26), transparent 60%),
+        linear-gradient(135deg, #101a32, #0d1326 60%, #161f3a);
+    box-shadow: 0 18px 44px -24px rgba(56, 110, 220, 0.7);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.career-future-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(125, 211, 252, 0.6);
+    box-shadow: 0 26px 60px -26px rgba(56, 110, 220, 0.85);
+}
+.career-future-card__stars {
+    position: absolute;
+    inset: 0;
+    background-image:
+        radial-gradient(1.4px 1.4px at 20% 30%, rgba(255, 255, 255, 0.9), transparent),
+        radial-gradient(1.2px 1.2px at 70% 60%, rgba(255, 255, 255, 0.7), transparent),
+        radial-gradient(1.6px 1.6px at 45% 80%, rgba(174, 222, 255, 0.9), transparent),
+        radial-gradient(1.1px 1.1px at 85% 25%, rgba(255, 255, 255, 0.6), transparent),
+        radial-gradient(1.3px 1.3px at 33% 55%, rgba(255, 255, 255, 0.55), transparent);
+    opacity: 0.85;
+    pointer-events: none;
+    animation: careerFutureTwinkle 4.5s ease-in-out infinite;
+}
+@keyframes careerFutureTwinkle { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
+.career-future-card__body { position: relative; z-index: 1; flex: 1; }
+.career-future-card__eyebrow {
+    display: inline-block;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #7dd3fc;
+    margin-bottom: 0.35rem;
+}
+.career-future-card__title {
+    margin: 0 0 0.3rem;
+    font-size: 1.22rem;
+    font-weight: 800;
+    line-height: 1.35;
+    background: linear-gradient(100deg, #ffffff, #9bdcff 55%, #c4b5fd);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.career-future-card__desc {
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.6;
+    color: rgba(196, 213, 240, 0.92);
+    max-width: 46rem;
+}
+.career-future-card__cta {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.6rem 1.1rem;
+    border-radius: 999px;
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: #06121a;
+    background: linear-gradient(100deg, #6ee7ff, #a78bfa);
+    white-space: nowrap;
+}
+@media (max-width: 640px) {
+    .career-future-card { flex-direction: column; align-items: flex-start; gap: 0.8rem; }
+}

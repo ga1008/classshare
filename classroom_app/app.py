@@ -72,6 +72,7 @@ from .routers import manage_redirects
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
 from .routers import blog, feedback
+from .routers import career_path
 
 
 class CacheControlStaticFiles(StaticFiles):
@@ -522,6 +523,7 @@ app.include_router(learning.router)
 app.include_router(review.router)
 app.include_router(learning_path.router)
 app.include_router(collaboration.router)
+app.include_router(career_path.router)
 app.include_router(classroom_interactions.router)
 app.include_router(smart_classroom.router)
 app.include_router(signatures.router)
