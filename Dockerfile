@@ -2,15 +2,21 @@ FROM node:22-bookworm-slim AS frontend-builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json postcss.config.js tailwind.config.js tsconfig.json vite.config.ts ./
+# Install node deps in their own layer so `npm ci` (the slow part, minutes) is
+# cached across code-only deploys and only re-runs when the lockfile changes.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy sources after the install layer so editing app code only re-runs the
+# (much faster) `npm run build`, not the dependency install.
+COPY postcss.config.js tailwind.config.js tsconfig.json vite.config.ts ./
 COPY frontend ./frontend
 COPY classroom_app ./classroom_app
 COPY static/css/ui-system.src.css ./static/css/ui-system.src.css
 COPY static/js ./static/js
 COPY templates ./templates
 
-RUN npm ci \
-    && npm run build
+RUN npm run build
 
 FROM lanshare_base
 

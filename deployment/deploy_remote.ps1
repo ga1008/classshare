@@ -341,6 +341,12 @@ configure_compose_cmd() {
 
 configure_compose_cmd
 
+db_engine=""
+if [ -f "$remote_path/docker.env" ]; then
+  db_engine="$(awk -F= '$1 == "DB_ENGINE" {print $2; exit}' "$remote_path/docker.env" | tr -d ' "\r')"
+fi
+echo "DB_ENGINE=${db_engine:-sqlite}"
+
 echo "Backing up remote code to $backup_dir"
 code_backup="$backup_dir/code-$ts.tgz"
 tar --ignore-failed-read \
@@ -367,23 +373,37 @@ tar --ignore-failed-read \
 echo "CODE_BACKUP=$code_backup"
 
 if [ "$skip_database_backup" != "True" ]; then
-  db_path=""
-  if command -v docker >/dev/null 2>&1; then
-    container_db="$("${compose_cmd[@]}" exec -T app python -c 'from classroom_app.config import DB_PATH; print(DB_PATH)' 2>/dev/null | tr -d '\r' || true)"
-    case "$container_db" in
-      /app/data/*) db_path="$remote_path/data/${container_db#/app/data/}" ;;
-    esac
-  fi
-  if [ -z "$db_path" ]; then
+  if [ "$db_engine" = "postgres" ]; then
+    # Production runs PostgreSQL: take a real logical backup (pg_dump) of the
+    # live database instead of the old SQLite file copy, which silently produced
+    # an empty/no-op backup on postgres hosts. The dump streams out of the
+    # running postgres container and is gzipped on the host.
+    if "${compose_cmd[@]}" ps postgres --format '{{.State}}' 2>/dev/null | grep -q running; then
+      db_user="$(awk -F= '$1 == "POSTGRES_USER" {print $2; exit}' "$remote_path/docker.env" 2>/dev/null | tr -d ' "\r')"
+      db_name="$(awk -F= '$1 == "POSTGRES_DB" {print $2; exit}' "$remote_path/docker.env" 2>/dev/null | tr -d ' "\r')"
+      db_user="${db_user:-lanshare}"
+      db_name="${db_name:-lanshare}"
+      db_backup="$backup_dir/db-$ts.sql.gz"
+      if "${compose_cmd[@]}" exec -T postgres pg_dump -U "$db_user" -d "$db_name" --no-owner --no-privileges 2>/dev/null | gzip -c > "$db_backup"; then
+        echo "DB_BACKUP=$db_backup"
+        echo "DB_BACKUP_SIZE=$(du -h "$db_backup" | cut -f1)"
+      else
+        rm -f "$db_backup"
+        echo "WARNING: pg_dump failed; PostgreSQL backup skipped." >&2
+      fi
+    else
+      echo "WARNING: postgres service is not running; database backup skipped." >&2
+    fi
+  else
+    # Legacy SQLite engine: keep the online sqlite backup path.
+    db_path=""
     if [ -f "$remote_path/data/classroom.db" ]; then
       db_path="$remote_path/data/classroom.db"
     elif [ -f "$remote_path/data/db/classroom.db" ]; then
       db_path="$remote_path/data/db/classroom.db"
     fi
-  fi
-  if [ -n "$db_path" ] && [ -f "$db_path" ]; then
-    db_backup="$backup_dir/db-$ts.db"
-    if command -v python3 >/dev/null 2>&1; then
+    if [ -n "$db_path" ] && [ -f "$db_path" ] && command -v python3 >/dev/null 2>&1; then
+      db_backup="$backup_dir/db-$ts.db"
       python3 - "$db_path" "$db_backup" <<'PY'
 import sqlite3
 import sys
@@ -399,10 +419,8 @@ finally:
 PY
       echo "DB_BACKUP=$db_backup"
     else
-      echo "WARNING: python3 not found; SQLite online backup skipped." >&2
+      echo "WARNING: SQLite database not found or python3 missing; database backup skipped." >&2
     fi
-  else
-    echo "WARNING: SQLite database was not found; database backup skipped." >&2
   fi
 else
   echo "Database backup skipped by flag."
@@ -410,7 +428,8 @@ fi
 
 echo "Pruning old backups; keeping latest $keep_backups of each type."
 ls -1t "$backup_dir"/code-*.tgz 2>/dev/null | tail -n +"$((keep_backups + 1))" | xargs -r rm -f
-ls -1t "$backup_dir"/db-*.db 2>/dev/null | tail -n +"$((keep_backups + 1))" | xargs -r rm -f
+# db-* covers both legacy sqlite (db-*.db) and postgres (db-*.sql.gz) dumps.
+ls -1t "$backup_dir"/db-* 2>/dev/null | tail -n +"$((keep_backups + 1))" | xargs -r rm -f
 
 echo "Extracting code archive into $remote_path"
 tar -xzf "$archive" -C "$remote_path"
@@ -498,8 +517,15 @@ fi
 echo "Checking Docker Compose configuration"
 "${compose_cmd[@]}" config --quiet
 
-echo "Rebuilding and starting Docker Compose in the background"
-"${compose_cmd[@]}" up -d --build
+# All app-side services (app, ai, mailer, blog-crawler, scheduler, agent-worker)
+# share ONE image (lanshare-app:latest). Build it a single time, then bring the
+# stack up without --build so compose reuses that freshly-built image for every
+# service instead of rebuilding the same image six times. This is the main
+# deploy-time and peak-memory win on the small host.
+echo "Building application image once (shared by all app services)"
+"${compose_cmd[@]}" build app
+echo "Starting Docker Compose in the background"
+"${compose_cmd[@]}" up -d
 echo "Restarting nginx to refresh upstream service addresses"
 "${compose_cmd[@]}" restart nginx
 "${compose_cmd[@]}" ps
