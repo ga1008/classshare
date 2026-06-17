@@ -594,9 +594,9 @@
                                     {% if user_info.role == 'teacher' %}
                                     <div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions" {% if selected_session.is_academic_exam %}hidden{% endif %}>
                                         <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectHomeMaterialBtn">
-                                            {% if teaching_plan.has_home_material %}更换首页{% else %}设置首页{% endif %}
+                                            添加首页材料
                                         </button>
-                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectMaterialBtn">选择课堂材料</button>
+                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectMaterialBtn">添加课堂材料</button>
                                         <button
                                             type="button"
                                             class="btn btn-outline btn-sm btn-ai-assistant{% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %} is-busy{% endif %}"

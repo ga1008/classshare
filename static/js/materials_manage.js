@@ -5,9 +5,12 @@ import {
     getMaterialPreviewUrl,
     getMaterialPrimaryAction,
     getMaterialTypeLabel,
+    getRenderLabel,
+    getRenderUrl,
     getRepositoryVisualMeta,
     hasLearningDocument,
     isGitRepository,
+    isRenderable,
 } from './materials_common.js';
 
 const SORT_FIELD_LABELS = {
@@ -454,6 +457,9 @@ function renderList() {
         const documentAction = hasLearningDocument(item)
             ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">文档</button>'
             : '';
+        const renderAction = isRenderable(item)
+            ? `<button type="button" class="btn btn-outline btn-sm materials-render-btn" data-action="render">${escapeHtml(getRenderLabel(item))}</button>`
+            : '';
         const repositoryAction = isGitRepository(item) && item.can_manage !== false
             ? '<button type="button" class="btn btn-outline btn-sm" data-action="repository">仓库</button>'
             : '';
@@ -492,6 +498,7 @@ function renderList() {
                 <div class="materials-row-actions">
                     <button type="button" class="btn btn-ghost btn-sm" data-resource-attributes data-resource-type="material" data-resource-id="${item.id}">属性</button>
                     <button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">${primaryAction.label}</button>
+                    ${renderAction}
                     ${documentAction}
                     ${repositoryAction}
                     ${item.node_type === 'file' ? '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>' : ''}
@@ -639,6 +646,7 @@ function renderDetail(detail) {
                     <div class="materials-detail-actions">
                         <button type="button" class="btn btn-outline" data-resource-attributes data-resource-type="material" data-resource-id="${detail.id}">属性</button>
                         ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
+                        ${isRenderable(detail) ? `<a href="${getRenderUrl(detail)}" class="btn btn-primary" target="_blank" rel="noopener">${escapeHtml(getRenderLabel(detail))}</a>` : ''}
                         ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
                         ${exportUrl ? `<a href="${exportUrl}" class="btn btn-outline">导出Word</a>` : ''}
                         ${exportPdfUrl ? `<a href="${exportPdfUrl}" class="btn btn-outline">导出PDF</a>` : ''}
@@ -815,6 +823,16 @@ function openFolder(materialId, trackHistory = true) {
 
 function previewMaterial(materialId) {
     window.open(`/materials/view/${materialId}`, '_blank', 'noopener');
+}
+
+function renderMaterial(materialId) {
+    const item = getCurrentItem(materialId);
+    const renderUrl = getRenderUrl(item);
+    if (!renderUrl) {
+        showToast('当前材料不支持直接渲染', 'warning');
+        return;
+    }
+    window.open(renderUrl, '_blank', 'noopener');
 }
 
 function viewLearningDocument(materialId) {
@@ -2554,6 +2572,10 @@ function bindEvents() {
         }
         if (action === 'preview') {
             previewMaterial(materialId);
+            return;
+        }
+        if (action === 'render') {
+            renderMaterial(materialId);
             return;
         }
         if (action === 'view-doc') {

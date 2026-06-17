@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
 
-const LEGACY_MATERIALS_MANAGE_CONTROLLER_URL = '/static/js/materials_manage.js?v=p12-page-controller-20260604';
+const LEGACY_MATERIALS_MANAGE_CONTROLLER_URL = '/static/js/materials_manage.js?v=html-render-20260617';
 
 function MaterialsManagePageController() {
   useEffect(() => {

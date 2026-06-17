@@ -1,4 +1,5 @@
 from .common import *
+from ...services.session_learning_materials_service import attach_learning_material_counts
 
 
 router = APIRouter()
@@ -227,11 +228,18 @@ def classroom_main(
             session_items,
             teacher_id=int(offering_data["teacher_id"]),
         )
+        attach_learning_material_counts(conn, class_offering_id, session_items, offering_data)
         teaching_plan = decorate_offering_sessions(
             session_items,
             home_material=offering_data.get("home_learning_material"),
             include_home_placeholder=user["role"] == "teacher",
         )
+        _home_material_count = int(offering_data.get("home_learning_material_count") or 0)
+        if teaching_plan.get("home_entry"):
+            teaching_plan["home_entry"]["learning_material_count"] = _home_material_count
+        for _entry in teaching_plan.get("timeline_entries", []):
+            if _entry.get("is_home_entry"):
+                _entry["learning_material_count"] = _home_material_count
         academic_course_exams = load_classroom_course_exam_status_for_user(
             conn,
             class_offering_id=class_offering_id,

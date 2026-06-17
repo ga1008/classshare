@@ -268,6 +268,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
         )
         detail = _decorate_material_ownership(conn, detail, user)
         detail = attach_git_repository_metadata(conn, [detail])[0]
+        detail = attach_render_metadata(conn, [detail])[0]
         if material["node_type"] == "folder":
             detail = attach_learning_document_metadata(conn, [detail])[0]
             detail = _decorate_learning_document_item(detail)

@@ -4,9 +4,12 @@ import {
     getLearningDocumentUrl,
     getMaterialPrimaryAction,
     getMaterialTypeLabel,
+    getRenderLabel,
+    getRenderUrl,
     getRepositoryVisualMeta,
     hasLearningDocument,
     isGitRepository,
+    isRenderable,
 } from './materials_common.js';
 
 let config = null;
@@ -177,6 +180,9 @@ function renderList() {
         const documentAction = hasLearningDocument(item)
             ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">文档</button>'
             : '';
+        const renderAction = isRenderable(item)
+            ? `<button type="button" class="btn btn-outline btn-sm materials-render-btn" data-action="render">${escapeHtml(getRenderLabel(item))}</button>`
+            : '';
         const repositoryBadge = isGitRepository(item)
             ? `<span class="materials-repo-badge" style="--repo-color:${visualMeta.color};">${escapeHtml(visualMeta.badge)}</span>`
             : '';
@@ -210,6 +216,7 @@ function renderList() {
                     <button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">
                         ${primaryAction.label}
                     </button>
+                    ${renderAction}
                     ${documentAction}
                     ${getDownloadAction(item)}
                 </div>
@@ -741,6 +748,13 @@ export function init(appConfig) {
             });
         } else if (action === 'preview') {
             window.open(withClassroomLearningContext(`/materials/view/${materialId}`), '_blank', 'noopener');
+        } else if (action === 'render') {
+            const renderUrl = getRenderUrl(item);
+            if (!renderUrl) {
+                showToast('当前材料不支持直接渲染', 'warning');
+                return;
+            }
+            window.open(renderUrl, '_blank', 'noopener');
         } else if (action === 'view-doc') {
             const viewerUrl = getLearningDocumentUrl(item);
             if (!viewerUrl) {

@@ -78,6 +78,7 @@ from ...services.materials_git_service import (
     refresh_root_git_metadata,
     save_material_repository_credential,
 )
+from ...services.material_render_service import attach_render_metadata
 from ...services.message_center_service import is_super_admin_teacher
 from ...services.organization_scope_service import load_teacher_org_memberships, load_teacher_org_scope
 from ...services.session_material_generation_service import (
@@ -297,6 +298,7 @@ def _serialize_material_items(conn, rows, user: dict | None = None) -> list[dict
     items = [serialize_material_row(row) for row in rows]
     items = attach_learning_document_metadata(conn, items)
     items = attach_git_repository_metadata(conn, items)
+    items = attach_render_metadata(conn, items)
     return [
         _decorate_material_download_policy(_decorate_material_ownership(conn, item, user))
         for item in items
@@ -995,13 +997,19 @@ def _normalize_positive_id_list(values: list[int] | tuple[int, ...] | None) -> l
     return result
 
 
+HTML_INDEX_CANDIDATE_NAMES = {"index.html", "index.htm"}
+
+
 def _is_readme_material_row(row: dict) -> bool:
-    return (
-        str(row.get("node_type") or "") == "file"
-        and str(row.get("preview_type") or "") == "markdown"
-        and str(row.get("name") or "").strip().lower() == "readme.md"
-        and not is_git_internal_material_path(row.get("material_path"))
-    )
+    if is_git_internal_material_path(row.get("material_path")):
+        return False
+    if str(row.get("node_type") or "") != "file":
+        return False
+    name_lower = str(row.get("name") or "").strip().lower()
+    # README.md（Markdown）或 HTML 入口（index.html / index.htm）均可自动绑定课次。
+    if name_lower == "readme.md" and str(row.get("preview_type") or "") == "markdown":
+        return True
+    return name_lower in HTML_INDEX_CANDIDATE_NAMES
 
 
 def _relative_material_path(root_path: str | None, material_path: str | None) -> str:
@@ -1179,7 +1187,7 @@ async def _run_ai_material_session_assignment(
         else:
             file_rows = [row for row in subtree_rows if _is_readme_material_row(row)]
         if not file_rows:
-            raise HTTPException(400, "没有可自动绑定的 README.md 文档。")
+            raise HTTPException(400, "没有可自动绑定的入口文档（README.md / index.html）。")
 
         readme_rows = [row for row in subtree_rows if _is_readme_material_row(row)]
         fallback_home_row = _infer_home_material_row(file_rows, material["material_path"])
@@ -1232,14 +1240,15 @@ async def _run_ai_material_session_assignment(
         raise HTTPException(400, "所选课堂暂无课次安排，请先配置课堂的课次拆分。")
 
     system_prompt = (
-        "你是教学材料自动绑定助手。你的任务是根据完整目录结构、README.md 前 10 行内容、课堂课次顺序与标题，"
-        "判断每个候选 README.md 是课程首页还是第几次课的学习文档，并返回严格 JSON。\n\n"
+        "你是教学材料自动绑定助手。你的任务是根据完整目录结构、入口文档（README.md / index.html）前 10 行内容、"
+        "课堂课次顺序与标题，判断每个候选入口文档是课程首页还是第几次课的学习文档，并返回严格 JSON。\n\n"
+        "说明：候选入口文档可能是 Markdown 的 README.md，也可能是可直接渲染的前端项目入口 index.html，二者绑定规则一致。\n"
         "绑定规则：\n"
-        "1. 根目录或课程总目录下的 README.md 通常是首页，首页用于课程目录、简介、导航，不绑定到第 1 次课。\n"
-        "2. lesson01、L01、01、第一课、第1次课等目录内的 README.md 才属于对应课次。\n"
+        "1. 根目录或课程总目录下的入口文档通常是首页，首页用于课程目录、简介、导航，不绑定到第 1 次课。\n"
+        "2. lesson01、L01、01、第一课、第1次课等目录内的入口文档才属于对应课次。\n"
         "3. 若候选 README 属于第 N 次课，请绑定到每个目标课堂的第 N 次课；如果某个课堂没有第 N 次课则跳过。\n"
         "4. 一个课堂最多一个首页文档；一个课次最多一个学习文档。\n"
-        "5. 只为【候选 README】中的 material_id 输出绑定，不要绑定非候选文档。\n\n"
+        "5. 只为【候选入口文档】中的 material_id 输出绑定，不要绑定非候选文档。\n\n"
         "输出 JSON 对象：\n"
         "{\n"
         "  \"assignments\": [\n"
@@ -1253,10 +1262,10 @@ async def _run_ai_material_session_assignment(
     )
 
     user_message = (
-        "请识别并绑定这次 Git 更新发现的 README.md。\n\n"
-        f"【候选 README】\n{file_list_text}\n\n"
+        "请识别并绑定这次 Git 更新发现的入口文档（README.md / index.html）。\n\n"
+        f"【候选入口文档】\n{file_list_text}\n\n"
         f"【完整目录结构】\n{directory_tree_text}\n\n"
-        f"【README 前 10 行内容】\n{readme_snippets_text}\n\n"
+        f"【入口文档前 10 行内容】\n{readme_snippets_text}\n\n"
         f"【目标课堂与课次】\n{sessions_context_text}\n\n"
         "请返回绑定结果 JSON。"
     )

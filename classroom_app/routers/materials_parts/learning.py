@@ -3,9 +3,164 @@ from .generation_helpers import *
 from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
+from ...services.material_render_service import attach_render_metadata
+from ...services.session_learning_materials_service import (
+    AI_BLURB_GENERATE_LIMIT,
+    add_material as add_session_learning_material,
+    build_material_entries,
+    generate_material_blurb,
+    remove_material as remove_session_learning_material,
+    set_blurb as set_session_learning_material_blurb,
+)
 
 
 router = APIRouter()
+
+
+class ClassroomLearningMaterialBindRequest(BaseModel):
+    session_id: int = 0
+    material_id: int
+
+
+def _material_entry_type_label(entry: dict) -> str:
+    if entry.get("is_renderable") and entry.get("render_kind") == "html":
+        return "网页(HTML)"
+    if entry.get("preview_type") == "markdown":
+        return "Markdown"
+    if entry.get("node_type") == "folder":
+        return "文件夹"
+    return str(entry.get("preview_type") or "文档")
+
+
+def _build_session_material_patch(conn, class_offering_id: int, session_id: int, teacher_id: int) -> dict:
+    """构造与旧 PUT 接口一致的补丁，供前端 applySessionPatch / applyHomeMaterialPatch 复用。"""
+    normalized_session_id = int(session_id or 0)
+    if normalized_session_id > 0:
+        session_row = conn.execute(
+            """
+            SELECT id, class_offering_id, course_lesson_id, order_index, title, content,
+                   section_count, slot_section_count, session_date, weekday, week_index, learning_material_id
+            FROM class_offering_sessions
+            WHERE id = ? AND class_offering_id = ?
+            LIMIT 1
+            """,
+            (normalized_session_id, class_offering_id),
+        ).fetchone()
+        if not session_row:
+            raise HTTPException(404, "课次不存在")
+        session_item = attach_learning_material_briefs(
+            conn,
+            [dict(session_row)],
+            teacher_id=teacher_id,
+            markdown_only=True,
+        )[0]
+        return {"session": session_item}
+
+    home_payload = attach_home_learning_material_briefs(
+        conn,
+        [{
+            "home_learning_material_id": conn.execute(
+                "SELECT home_learning_material_id FROM class_offerings WHERE id = ?",
+                (class_offering_id,),
+            ).fetchone()["home_learning_material_id"]
+        }],
+        teacher_id=teacher_id,
+        markdown_only=True,
+    )[0]
+    home_material = home_payload.get("home_learning_material")
+    return {
+        "home_material": home_material,
+        "has_home_material": bool(home_material),
+        "home_entry": build_timeline_home_entry(home_material, include_placeholder=True),
+    }
+
+
+@router.get("/api/classrooms/{class_offering_id}/learning-materials", response_class=JSONResponse)
+async def list_classroom_learning_materials(
+    class_offering_id: int,
+    session_id: int = Query(default=0),
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        ensure_classroom_access(conn, class_offering_id, user)
+        offering = conn.execute(
+            "SELECT teacher_id FROM class_offerings WHERE id = ? LIMIT 1",
+            (class_offering_id,),
+        ).fetchone()
+        if not offering:
+            raise HTTPException(404, "课堂不存在")
+        teacher_id = int(offering["teacher_id"])
+        entries = build_material_entries(conn, class_offering_id, session_id, teacher_id=teacher_id)
+        can_manage = user["role"] == "teacher" and (
+            int(user["id"]) == teacher_id or is_super_admin_teacher(conn, int(user["id"]))
+        )
+        conn.commit()
+
+    # 懒生成尚未尝试过的一句话简介（快速版 AI，best-effort）。仅处理 status=='idle'，
+    # 失败标记为 'failed' 不再每次重试；前端对 failed 用材料路径降级展示。
+    pending = [
+        entry for entry in entries
+        if not entry.get("ai_blurb") and str(entry.get("ai_blurb_status") or "idle") == "idle"
+    ][:AI_BLURB_GENERATE_LIMIT]
+    if pending:
+        generated: list[tuple[dict, str]] = []
+        for entry in pending:
+            blurb = await generate_material_blurb(
+                name=entry["name"],
+                type_label=_material_entry_type_label(entry),
+                material_path=entry["material_path"],
+            )
+            generated.append((entry, blurb))
+        with get_db_connection() as conn:
+            for entry, blurb in generated:
+                status = "ready" if blurb else "failed"
+                set_session_learning_material_blurb(conn, entry["row_id"], blurb, status=status)
+                entry["ai_blurb"] = blurb
+                entry["ai_blurb_status"] = status
+            conn.commit()
+
+    for entry in entries:
+        entry["type_label"] = _material_entry_type_label(entry)
+
+    return {"status": "success", "materials": entries, "can_manage": can_manage}
+
+
+@router.post("/api/classrooms/{class_offering_id}/learning-materials", response_class=JSONResponse)
+async def add_classroom_learning_material(
+    class_offering_id: int,
+    payload: ClassroomLearningMaterialBindRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        add_session_learning_material(
+            conn,
+            class_offering_id=class_offering_id,
+            session_id=int(payload.session_id or 0),
+            material_id=int(payload.material_id),
+            teacher_id=int(user["id"]),
+        )
+        patch = _build_session_material_patch(conn, class_offering_id, int(payload.session_id or 0), int(user["id"]))
+        conn.commit()
+    return {"status": "success", "message": "材料已添加到列表", **patch}
+
+
+@router.delete("/api/classrooms/{class_offering_id}/learning-materials", response_class=JSONResponse)
+async def remove_classroom_learning_material(
+    class_offering_id: int,
+    payload: ClassroomLearningMaterialBindRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        remove_session_learning_material(
+            conn,
+            class_offering_id=class_offering_id,
+            session_id=int(payload.session_id or 0),
+            material_id=int(payload.material_id),
+            teacher_id=int(user["id"]),
+        )
+        patch = _build_session_material_patch(conn, class_offering_id, int(payload.session_id or 0), int(user["id"]))
+        conn.commit()
+    return {"status": "success", "message": "已解绑该材料", **patch}
 
 
 @router.post("/api/materials/{material_id}/ai-assign-sessions", response_class=JSONResponse)
@@ -531,6 +686,7 @@ async def get_classroom_materials(
                 row_dict["child_count"] = int(child_count)
                 items.append(_decorate_material_download_policy(serialize_material_row(row_dict)))
             items = attach_git_repository_metadata(conn, items)
+            items = attach_render_metadata(conn, items)
             items = [_decorate_learning_document_item(item) for item in attach_learning_document_metadata(conn, items)]
             return {
                 "status": "success",

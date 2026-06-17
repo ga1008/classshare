@@ -3,6 +3,7 @@ import { initLearningMaterialSelector } from '/static/js/learning_material_selec
 import { initSessionMaterialAiAssistant } from '/static/js/session_material_ai_assistant.js';
 import { initAssignmentClocks } from '/static/js/assignment_time.js';
 import { showToast } from '/static/js/ui.js';
+import { openMaterialListPopup } from '/static/js/classroom_material_list.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
 
@@ -2469,6 +2470,19 @@ function initTeachingTimeline() {
             }
         }
 
+        const materialCount = Number(session?.learning_material_count || 0);
+        if (!examEntry && hasMaterial && materialCount > 1) {
+            const primaryName = homeEntry
+                ? (session.home_learning_material_name || session.learning_material_name || '')
+                : (session.learning_material_name || '');
+            materialName.textContent = `${materialCount} 份学习材料`;
+            materialPath.textContent = primaryName ? `含「${primaryName}」等，点击查看全部` : '点击查看全部材料';
+            if (openMaterialLabel) openMaterialLabel.textContent = '材料列表';
+            if (openMaterialHint) openMaterialHint.textContent = `共 ${materialCount} 份，点击逐项进入`;
+        } else if (!examEntry && hasMaterial && openMaterialHint) {
+            openMaterialHint.textContent = '点击查看材料列表';
+        }
+
         if (openMaterialBtn) {
             openMaterialBtn.hidden = examEntry;
             openMaterialBtn.disabled = examEntry || !hasMaterial;
@@ -2490,7 +2504,7 @@ function initTeachingTimeline() {
         if (selectHomeMaterialBtn) {
             selectHomeMaterialBtn.hidden = examEntry;
             selectHomeMaterialBtn.disabled = examEntry;
-            selectHomeMaterialBtn.textContent = hasHomeMaterial() ? '更换首页' : '设置首页';
+            selectHomeMaterialBtn.textContent = '添加首页材料';
         }
         if (detailActions) {
             detailActions.hidden = examEntry;
@@ -2932,57 +2946,92 @@ function initTeachingTimeline() {
         updateSessionButtonMaterialState(session);
     });
 
+    const classOfferingIdValue = () => window.APP_CONFIG?.classOfferingId;
+
+    const addSessionMaterial = async (materialId) => {
+        const session = getSessionByOrder(selectedOrder);
+        if (!session?.id) return;
+        const result = await apiFetch(
+            `/api/classrooms/${classOfferingIdValue()}/learning-materials`,
+            { method: 'POST', body: { session_id: session.id, material_id: materialId }, silent: true },
+        );
+        applySessionPatch(result.session);
+        if (window.materialsApp && typeof window.materialsApp.refresh === 'function') {
+            window.materialsApp.refresh().catch(() => {});
+        }
+        showToast(result.message || '材料已添加到列表', 'success');
+    };
+
+    const addHomeMaterial = async (materialId) => {
+        const result = await apiFetch(
+            `/api/classrooms/${classOfferingIdValue()}/learning-materials`,
+            { method: 'POST', body: { session_id: 0, material_id: materialId }, silent: true },
+        );
+        applyHomeMaterialPatch(result);
+        if (window.materialsApp && typeof window.materialsApp.refresh === 'function') {
+            window.materialsApp.refresh().catch(() => {});
+        }
+        showToast(result.message || '材料已添加到首页', 'success');
+    };
+
+    const openSessionMaterialList = (session) => {
+        const home = isHomeEntry(session);
+        openMaterialListPopup({
+            classOfferingId: classOfferingIdValue(),
+            sessionId: home ? 0 : (session?.id || 0),
+            isHome: home,
+            isTeacher,
+            title: home ? '课程首页材料' : (session?.detail_title || session?.title || '本次课材料'),
+            subtitle: home ? '课程目录、简介与导航材料' : '点击任意卡片进入材料',
+            onChanged: (result) => {
+                if (home) {
+                    applyHomeMaterialPatch(result || {});
+                } else if (result?.session) {
+                    applySessionPatch(result.session);
+                }
+                if (window.materialsApp && typeof window.materialsApp.refresh === 'function') {
+                    window.materialsApp.refresh().catch(() => {});
+                }
+            },
+        }).catch((error) => showToast(error.message || '加载材料列表失败', 'error'));
+    };
+
     openMaterialBtn?.addEventListener('click', () => {
         const session = getSessionByOrder(selectedOrder);
-        const viewerUrl = getSessionViewerUrl(session);
-        if (!viewerUrl) {
+        if (!getSessionMaterialReady(session)) {
             if (isHomeEntry(session)) {
-                showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
+                showToast(isTeacher ? '课程首页尚未配置材料' : '教师尚未配置课程首页', 'warning');
             } else {
-                showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
+                showToast(isTeacher ? '当前次课还没有绑定材料' : '教师尚未配置学习材料', 'warning');
             }
             return;
         }
-        window.open(buildLearningViewerUrl(viewerUrl, session), '_blank', 'noopener');
+        openSessionMaterialList(session);
     });
 
     openHomeMaterialBtn?.addEventListener('click', () => {
-        const homeMaterial = getHomeMaterial();
-        const viewerUrl = String(homeMaterial?.viewer_url || '').trim();
-        if (!viewerUrl) {
-            showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
+        if (!hasHomeMaterial()) {
+            showToast(isTeacher ? '课程首页尚未配置材料' : '教师尚未配置课程首页', 'warning');
             return;
         }
-        window.open(buildLearningViewerUrl(viewerUrl, { is_home_entry: true }), '_blank', 'noopener');
+        openSessionMaterialList({ is_home_entry: true });
     });
 
     selectHomeMaterialBtn?.addEventListener('click', async () => {
         try {
-            const currentHomeMaterial = getHomeMaterial();
             const selectedMaterial = await learningMaterialSelector.open({
-                title: '选择课程首页',
-                subtitle: '首页用于课程目录、简介和后续学习文档导航，会显示在时间轴第一课之前。',
-                confirmLabel: currentHomeMaterial ? '更换首页' : '设置为首页',
-                allowClear: Boolean(currentHomeMaterial),
-                clearLabel: '移除课程首页',
-                footerNote: currentHomeMaterial
-                    ? '选择新的 Markdown 文档可替换首页，也可以移除当前首页入口。'
-                    : '仅支持绑定 Markdown 文档。建议选择根目录下的 README、index 或课程目录文档。',
-                initialMaterial: currentHomeMaterial,
+                title: '添加课程首页材料',
+                subtitle: '首页用于课程目录、简介与后续导航，显示在时间轴第一课之前；可添加多份材料。',
+                confirmLabel: '添加为首页材料',
+                footerNote: '可绑定 Markdown 文档或可渲染的 HTML（单体文件或前端项目目录）。单击文件选中，双击文件夹进入；可点“选择此文件夹”绑定整个网页目录。',
+                allowFolders: true,
             });
             if (!selectedMaterial) {
                 return;
             }
-            if (selectedMaterial.clear) {
-                await persistHomeMaterial(null);
-                return;
-            }
-            if (Number(selectedMaterial.id) === Number(currentHomeMaterial?.id || 0)) {
-                return;
-            }
-            await persistHomeMaterial(Number(selectedMaterial.id));
+            await addHomeMaterial(Number(selectedMaterial.id));
         } catch (error) {
-            showToast(error.message || '更新课程首页失败', 'error');
+            showToast(error.message || '添加课程首页材料失败', 'error');
         }
     });
 
@@ -2991,29 +3040,18 @@ function initTeachingTimeline() {
         if (!session || isHomeEntry(session)) return;
         try {
             const selectedMaterial = await learningMaterialSelector.open({
-                title: '选择课堂材料',
-                subtitle: '为当前时间轴节点绑定一个 Markdown 文档，课堂内“学习文档”按钮会直接跳转到该页面。',
-                confirmLabel: '绑定到本次课',
-                allowClear: Boolean(session.learning_material_id),
-                clearLabel: '解绑当前文档',
-                footerNote: session.learning_material_id
-                    ? '单击文件选中，双击文件夹继续进入；如需解绑当前文档，可直接点“解绑当前文档”。'
-                    : '仅支持绑定 Markdown 文档。单击文件选中，双击文件夹继续进入。',
-                initialMaterial: session.learning_material,
+                title: '添加课堂材料',
+                subtitle: '为本次课添加学习材料，可同时绑定多份；课堂卡片的材料入口会列出全部材料。',
+                confirmLabel: '添加到本次课',
+                footerNote: '可绑定 Markdown 文档或可渲染的 HTML（单体文件或前端项目目录）。单击文件选中，双击文件夹进入；可点“选择此文件夹”绑定整个网页目录。',
+                allowFolders: true,
             });
             if (!selectedMaterial) {
                 return;
             }
-            if (selectedMaterial.clear) {
-                await persistSessionMaterial(null);
-                return;
-            }
-            if (Number(selectedMaterial.id) === Number(session.learning_material_id || 0)) {
-                return;
-            }
-            await persistSessionMaterial(Number(selectedMaterial.id));
+            await addSessionMaterial(Number(selectedMaterial.id));
         } catch (error) {
-            showToast(error.message || '更新课堂材料失败', 'error');
+            showToast(error.message || '添加课堂材料失败', 'error');
         }
     });
 
@@ -3029,22 +3067,19 @@ function initTeachingTimeline() {
         }
     });
     sessionModalOpenHomeBtn?.addEventListener('click', () => {
-        const homeMaterial = getHomeMaterial();
-        const viewerUrl = String(homeMaterial?.viewer_url || '').trim();
-        if (!viewerUrl) {
-            showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
+        if (!hasHomeMaterial()) {
+            showToast(isTeacher ? '课程首页尚未配置材料' : '教师尚未配置课程首页', 'warning');
             return;
         }
-        window.open(buildLearningViewerUrl(viewerUrl, { is_home_entry: true }), '_blank', 'noopener');
+        openSessionMaterialList({ is_home_entry: true });
     });
     sessionModalOpenMaterialBtn?.addEventListener('click', () => {
         const session = activeModalSession || getSessionByOrder(selectedOrder);
-        const viewerUrl = getSessionViewerUrl(session);
-        if (!viewerUrl) {
-            showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
+        if (!getSessionMaterialReady(session)) {
+            showToast(isTeacher ? '当前次课还没有绑定材料' : '教师尚未配置学习材料', 'warning');
             return;
         }
-        window.open(buildLearningViewerUrl(viewerUrl, session), '_blank', 'noopener');
+        openSessionMaterialList(session);
     });
     sessionModalCheckinBtn?.addEventListener('click', () => {
         if (sessionCheckinPanel) sessionCheckinPanel.hidden = false;

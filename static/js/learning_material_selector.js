@@ -47,15 +47,19 @@ function buildCacheKey(parentId, keyword) {
 
 function normalizeMaterial(material) {
     if (!material || !material.id) return null;
+    const isRenderable = Boolean(material.is_renderable && material.render_url);
     return {
         id: Number(material.id),
         parent_id: material.parent_id == null ? null : Number(material.parent_id),
         name: String(material.name || '').trim(),
         material_path: String(material.material_path || '').trim(),
         preview_type: String(material.preview_type || 'markdown').trim(),
-        node_type: 'file',
+        node_type: String(material.node_type || 'file').trim() || 'file',
+        is_renderable: isRenderable,
+        render_url: String(material.render_url || ''),
         viewer_url: String(
-            material.viewer_url
+            (isRenderable ? material.render_url : '')
+            || material.viewer_url
             || material.viewerUrl
             || material.learning_material_viewer_url
             || `/materials/view/${Number(material.id)}`,
@@ -65,7 +69,9 @@ function normalizeMaterial(material) {
 
 function normalizeItem(item) {
     if (!item || !item.id) return null;
+    const isRenderable = Boolean(item.is_renderable && item.render_url);
     if (item.node_type === 'folder') {
+        // 文件夹始终可进入；若是可渲染的前端项目目录（含 html），则也可整体绑定。
         return {
             id: Number(item.id),
             parent_id: item.parent_id == null ? null : Number(item.parent_id),
@@ -73,17 +79,22 @@ function normalizeItem(item) {
             material_path: String(item.material_path || '').trim(),
             node_type: 'folder',
             preview_type: String(item.preview_type || '').trim(),
+            is_renderable: isRenderable,
+            render_url: String(item.render_url || ''),
         };
     }
-    if (item.node_type === 'file' && item.preview_type === 'markdown') {
+    // 文件：Markdown 文档，或可渲染的 HTML 单体文件。
+    if (item.node_type === 'file' && (item.preview_type === 'markdown' || isRenderable)) {
         return {
             id: Number(item.id),
             parent_id: item.parent_id == null ? null : Number(item.parent_id),
             name: String(item.name || '').trim(),
             material_path: String(item.material_path || '').trim(),
             node_type: 'file',
-            preview_type: 'markdown',
-            viewer_url: `/materials/view/${Number(item.id)}`,
+            preview_type: String(item.preview_type || 'markdown').trim(),
+            is_renderable: isRenderable,
+            render_url: String(item.render_url || ''),
+            viewer_url: isRenderable ? String(item.render_url) : `/materials/view/${Number(item.id)}`,
         };
     }
     return null;
@@ -185,10 +196,15 @@ function renderList() {
     dom.list.innerHTML = items.map((item) => {
         const isSelected = Number(state.selectedMaterial?.id || 0) === Number(item.id);
         const iconMeta = item.node_type === 'folder' ? buildFolderIcon() : getFileIcon(item.name || 'md');
-        const typeLabel = item.node_type === 'folder' ? '文件夹' : 'Markdown';
-        const hintText = item.node_type === 'folder' ? '进入子目录继续查找' : '可绑定为课堂学习文档';
-        const action = item.node_type === 'folder'
-            ? '<button type="button" class="btn btn-ghost btn-sm" data-action="open">进入</button>'
+        const isFolder = item.node_type === 'folder';
+        const typeLabel = isFolder
+            ? (item.is_renderable ? '网页目录' : '文件夹')
+            : (item.preview_type === 'markdown' ? 'Markdown' : (item.is_renderable ? 'HTML' : '文档'));
+        const hintText = isFolder
+            ? (item.is_renderable ? '可整体绑定为可渲染网页，或进入查找' : '进入子目录继续查找')
+            : (item.is_renderable ? '可绑定并直接渲染的网页' : '可绑定为课堂学习文档');
+        const action = isFolder
+            ? `<button type="button" class="btn btn-ghost btn-sm" data-action="open">进入</button>${item.is_renderable ? '<button type="button" class="btn btn-primary btn-sm" data-action="select">选择此目录</button>' : ''}`
             : '<button type="button" class="btn btn-primary btn-sm" data-action="select">选择</button>';
 
         return `

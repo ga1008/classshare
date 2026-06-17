@@ -38,6 +38,18 @@ export function getLearningDocumentUrl(item) {
     return hasLearningDocument(item) ? `/materials/view/${item.document_readme_id}` : '';
 }
 
+export function isRenderable(item) {
+    return Boolean(item && item.is_renderable && item.render_url);
+}
+
+export function getRenderUrl(item) {
+    return isRenderable(item) ? String(item.render_url || '') : '';
+}
+
+export function getRenderLabel(item) {
+    return (item && item.render_label) ? String(item.render_label) : '渲染';
+}
+
 export function getMaterialPreviewUrl(item) {
     if (!item) return '';
     if (item.node_type === 'file' && item.preview_supported) {

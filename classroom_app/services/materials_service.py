@@ -280,18 +280,52 @@ def _normalize_positive_ids(values: Iterable[int | str | None]) -> list[int]:
     return normalized
 
 
-def build_learning_material_brief(row) -> dict:
+def build_learning_material_brief(row, render_target: dict | None = None) -> dict:
     item = dict(row)
+    material_id = int(item.get("id") or 0)
+    markdown_viewer_url = f"/materials/view/{material_id}" if material_id > 0 else ""
+    render_url = str((render_target or {}).get("render_url") or "")
+    # 课次/首页绑定材料的"打开"入口：HTML 直接渲染，其余沿用 Markdown 阅读器。
+    open_url = render_url or markdown_viewer_url
     return {
-        "id": int(item.get("id") or 0),
+        "id": material_id,
         "parent_id": int(item["parent_id"]) if item.get("parent_id") is not None else None,
         "root_id": int(item.get("root_id") or 0),
         "name": str(item.get("name") or "").strip(),
         "material_path": str(item.get("material_path") or "").strip(),
         "preview_type": str(item.get("preview_type") or "").strip(),
         "node_type": str(item.get("node_type") or "").strip(),
-        "viewer_url": f"/materials/view/{int(item.get('id') or 0)}" if int(item.get("id") or 0) > 0 else "",
+        "viewer_url": open_url,
+        "markdown_viewer_url": markdown_viewer_url,
+        "render_url": render_url,
+        "render_kind": str((render_target or {}).get("kind") or ""),
+        "is_renderable": bool(render_target),
     }
+
+
+def is_bindable_learning_material(conn, row) -> bool:
+    """判断一个材料节点能否作为课次/首页学习材料绑定。
+
+    支持：Markdown 文档（file），或可渲染的 HTML（单体文件 / 含 html 的文件夹）。
+    """
+    if is_git_internal_material_path(_row_value_compat(row, "material_path")):
+        return False
+    node_type = str(_row_value_compat(row, "node_type") or "")
+    preview_type = str(_row_value_compat(row, "preview_type") or "")
+    if node_type == "file" and preview_type == "markdown":
+        return True
+    from .material_render_service import resolve_render_target
+
+    return bool(resolve_render_target(conn, row))
+
+
+def _row_value_compat(row, key, default=None):
+    if isinstance(row, dict):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
 
 
 def get_learning_material_brief_map(
@@ -306,22 +340,17 @@ def get_learning_material_brief_map(
         return {}
 
     placeholders = ",".join("?" for _ in normalized_ids)
-    conditions = [f"id IN ({placeholders})"]
-    params: list[object] = list(normalized_ids)
-
-    if markdown_only:
-        conditions.append("node_type = 'file'")
-        conditions.append("preview_type = 'markdown'")
-
     rows = conn.execute(
         f"""
         SELECT *
         FROM course_materials
-        WHERE {' AND '.join(conditions)}
+        WHERE id IN ({placeholders})
         ORDER BY id
         """,
-        params,
+        list(normalized_ids),
     ).fetchall()
+
+    from .material_render_service import resolve_render_target
 
     result: dict[int, dict] = {}
     actor_user = {"role": "teacher", "id": int(teacher_id)} if teacher_id is not None else None
@@ -331,7 +360,13 @@ def get_learning_material_brief_map(
         if actor_user is not None and int(row["teacher_id"] or 0) != int(teacher_id):
             if not can_read_scoped_resource(conn, row, actor_user):
                 continue
-        brief = build_learning_material_brief(row)
+        render_target = resolve_render_target(conn, row)
+        # markdown_only 现已升级为"可绑定材料"语义：Markdown 文档或可渲染 HTML。
+        if markdown_only:
+            is_markdown_file = row["node_type"] == "file" and str(row["preview_type"] or "") == "markdown"
+            if not is_markdown_file and not render_target:
+                continue
+        brief = build_learning_material_brief(row, render_target=render_target)
         result[int(brief["id"])] = brief
     return result
 
@@ -372,6 +407,8 @@ def attach_learning_material_briefs(
         item["learning_material_path"] = material["material_path"]
         item["learning_material_parent_id"] = material["parent_id"]
         item["learning_material_viewer_url"] = material["viewer_url"]
+        item["learning_material_render_url"] = material.get("render_url") or ""
+        item["learning_material_is_renderable"] = bool(material.get("is_renderable"))
 
     return items
 
@@ -413,6 +450,8 @@ def attach_home_learning_material_briefs(
         item["home_learning_material_path"] = material["material_path"]
         item["home_learning_material_parent_id"] = material["parent_id"]
         item["home_learning_material_viewer_url"] = material["viewer_url"]
+        item["home_learning_material_render_url"] = material.get("render_url") or ""
+        item["home_learning_material_is_renderable"] = bool(material.get("is_renderable"))
         item["has_home_learning_material"] = True
 
     return items
@@ -508,8 +547,8 @@ def ensure_teacher_material_owner(conn, material_id: int, teacher_id: int):
 
 def ensure_teacher_learning_material_owner(conn, material_id: int, teacher_id: int):
     row = ensure_teacher_material_owner(conn, material_id, teacher_id)
-    if row["node_type"] != "file" or str(row["preview_type"] or "") != "markdown":
-        raise HTTPException(400, "只能选择已上传的 Markdown 文档")
+    if not is_bindable_learning_material(conn, row):
+        raise HTTPException(400, "只能选择已上传的 Markdown 文档，或可渲染的 HTML 材料（单体文件或前端项目目录）")
     return row
 
 

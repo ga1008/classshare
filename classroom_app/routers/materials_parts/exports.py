@@ -1,9 +1,12 @@
+import mimetypes
+
 from .common import *
 from .generation_helpers import *
 from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
 from ...services.learning_progress_service import get_material_mastery_check_context
+from ...services.material_render_service import attach_render_metadata, resolve_render_file, resolve_render_target
 
 
 router = APIRouter()
@@ -120,6 +123,7 @@ async def material_viewer_page(
             },
         )
         preview_payload = _decorate_material_download_policy(preview_payload)
+        attach_render_metadata(conn, [preview_payload])
 
     if material["preview_type"] in {"markdown", "text"}:
         preview_payload["content"], preview_payload["content_encoding"] = await _load_material_text_content(
@@ -157,6 +161,38 @@ async def get_material_raw(material_id: int, user: dict = Depends(get_current_us
         raise HTTPException(400, "仅图片材料支持原始内容访问")
     file_path = _load_material_storage_path(material)
     return FileResponse(file_path, media_type=material["mime_type"] or "application/octet-stream")
+
+
+async def _serve_rendered_material(material_id: int, subpath: str, user: dict) -> FileResponse:
+    with get_db_connection() as conn:
+        node = ensure_user_material_access(conn, material_id, user)
+        if not resolve_render_target(conn, node):
+            raise HTTPException(400, "当前材料不支持直接渲染")
+        target_row = resolve_render_file(conn, node, subpath)
+        if not target_row:
+            raise HTTPException(404, "未找到要渲染的文件")
+        # 复用统一鉴权：确保子资源（css/js/图片等）同样在可访问范围内。
+        ensure_user_material_access(conn, int(target_row["id"]), user)
+        target = dict(target_row)
+
+    file_path = _load_material_storage_path(target)
+    media_type = str(target.get("mime_type") or "") or mimetypes.guess_type(target.get("name") or "")[0] or "application/octet-stream"
+    # 直接渲染（inline，无 filename），并禁用 MIME 嗅探。
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.get("/materials/render/{material_id}", response_class=FileResponse)
+async def render_material_entry(material_id: int, user: dict = Depends(get_current_user)):
+    return await _serve_rendered_material(material_id, "", user)
+
+
+@router.get("/materials/render/{material_id}/{subpath:path}", response_class=FileResponse)
+async def render_material_asset(material_id: int, subpath: str = "", user: dict = Depends(get_current_user)):
+    return await _serve_rendered_material(material_id, subpath, user)
 
 
 @router.get("/materials/download/{material_id}", response_class=FileResponse)

@@ -44897,3 +44897,200 @@ body.has-teaching-session-modal {
     display: inline-block; font-size: 0.72rem; color: var(--text-muted);
     font-style: italic; padding: 0.2rem 0.4rem;
 }
+
+/* ============================================================
+   课次/首页 学习材料列表浮窗（多材料绑定）
+   ============================================================ */
+.ls-mat-popup,
+.ls-mat-confirm {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(2px);
+}
+.ls-mat-confirm { z-index: 1210; }
+.ls-mat-popup[hidden],
+.ls-mat-confirm[hidden] { display: none; }
+
+.ls-mat-popup__dialog {
+    width: min(560px, 100%);
+    max-height: min(80vh, 720px);
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-color, #fff);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: var(--radius-lg, 16px);
+    box-shadow: var(--shadow-lg, 0 24px 60px rgba(15, 23, 42, 0.22));
+    overflow: hidden;
+}
+.ls-mat-popup__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.1rem 1.25rem 0.85rem;
+    border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+.ls-mat-popup__kicker {
+    display: inline-block;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    color: var(--primary-color, #6366f1);
+    font-weight: 600;
+}
+.ls-mat-popup__title {
+    margin: 0.15rem 0 0.1rem;
+    font-size: 1.05rem;
+    color: var(--text-primary, #0f172a);
+}
+.ls-mat-popup__subtitle {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-muted, #64748b);
+}
+.ls-mat-popup__close {
+    border: none;
+    background: transparent;
+    font-size: 1.4rem;
+    line-height: 1;
+    color: var(--text-muted, #64748b);
+    cursor: pointer;
+    padding: 0.2rem 0.4rem;
+    border-radius: var(--radius-sm, 8px);
+}
+.ls-mat-popup__close:hover { background: rgba(100, 116, 139, 0.12); }
+
+.ls-mat-popup__list {
+    padding: 0.85rem 1rem 1.1rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.ls-mat-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: var(--radius-md, 12px);
+    background: var(--bg-color, #f8fafc);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.ls-mat-card:hover {
+    border-color: var(--primary-color, #6366f1);
+    box-shadow: var(--shadow-sm, 0 6px 18px rgba(99, 102, 241, 0.14));
+    transform: translateY(-1px);
+}
+.ls-mat-card:focus-visible {
+    outline: 2px solid var(--primary-color, #6366f1);
+    outline-offset: 2px;
+}
+.ls-mat-card__body { flex: 1; min-width: 0; }
+.ls-mat-card__head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.ls-mat-card__title {
+    font-size: 0.98rem;
+    color: var(--text-primary, #0f172a);
+    word-break: break-word;
+}
+.ls-mat-card__blurb {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--text-muted, #64748b);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ls-mat-pill {
+    font-size: 0.68rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: var(--radius-full, 999px);
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--primary-color, #6366f1);
+    font-weight: 600;
+}
+.ls-mat-card__badge {
+    font-size: 0.68rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: var(--radius-full, 999px);
+    background: rgba(16, 185, 129, 0.14);
+    color: #047857;
+    font-weight: 600;
+}
+.ls-mat-card__go {
+    color: var(--text-muted, #94a3b8);
+    flex-shrink: 0;
+}
+.ls-mat-card:hover .ls-mat-card__go { color: var(--primary-color, #6366f1); }
+
+.ls-mat-card__del {
+    position: absolute;
+    top: -0.55rem;
+    right: -0.55rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    border: 2px solid var(--surface-color, #fff);
+    background: #ef4444;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(0.7);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    box-shadow: 0 4px 10px rgba(239, 68, 68, 0.4);
+}
+.ls-mat-card:hover .ls-mat-card__del,
+.ls-mat-card__del:focus-visible {
+    opacity: 1;
+    transform: scale(1);
+}
+.ls-mat-card__del:hover { background: #dc2626; }
+
+.ls-mat-empty {
+    padding: 1.6rem 1rem;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text-muted, #64748b);
+}
+
+.ls-mat-confirm__dialog {
+    width: min(380px, 100%);
+    background: var(--surface-color, #fff);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: var(--radius-lg, 16px);
+    box-shadow: var(--shadow-lg, 0 24px 60px rgba(15, 23, 42, 0.22));
+    padding: 1.25rem 1.25rem 1.1rem;
+}
+.ls-mat-confirm__title {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    color: var(--text-primary, #0f172a);
+}
+.ls-mat-confirm__body {
+    margin: 0 0 1.1rem;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: var(--text-secondary, #475569);
+}
+.ls-mat-confirm__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+}
