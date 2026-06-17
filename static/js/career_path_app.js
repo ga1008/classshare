@@ -7,6 +7,7 @@
   var STATE_URL = root.dataset.stateUrl;
   var QUESTIONS_URL = root.dataset.questionsUrl;
   var ANSWERS_URL = root.dataset.answersUrl;
+  var PROGRESS_URL = '/api/career-path/progress';
 
   var el = {
     boot: document.getElementById('career-boot'),
@@ -73,6 +74,12 @@
   function startIntro(s) {
     show(el.boot, false); show(el.stage, false); show(el.topbar, false);
     show(el.waiting, false); show(el.intro, true); show(el.quiz, false);
+    el.typewriter.style.display = '';
+
+    // 已有未完成的草稿 → 从断点继续，不再从头欢迎+重做。
+    var draft = (s && s.draft) || [];
+    if (draft.length) { resumeQuiz(draft); return; }
+
     var addr = (s.student && s.student.address) || '同学';
     var lines = [
       '欢迎 ' + addr + '，让我们来看看专属于你的职业生涯网络',
@@ -94,9 +101,12 @@
   var ANSWERS = [];
   var qIndex = 0;
 
+  function loadQuestions() {
+    return fetchJSON(QUESTIONS_URL).then(function (r) { QUESTIONS = r.questions || []; });
+  }
+
   function beginQuiz() {
-    fetchJSON(QUESTIONS_URL).then(function (r) {
-      QUESTIONS = r.questions || [];
+    loadQuestions().then(function () {
       ANSWERS = [];
       qIndex = 0;
       el.typewriter.style.display = 'none';
@@ -107,12 +117,44 @@
     });
   }
 
+  // 从服务器草稿断点续做：跳过欢迎语，定位到第一道未答的题。
+  function resumeQuiz(draft) {
+    loadQuestions().then(function () {
+      ANSWERS = (draft || []).slice();
+      var answered = {};
+      ANSWERS.forEach(function (a) { answered[a.question_id] = true; });
+      var firstUnanswered = -1;
+      for (var i = 0; i < QUESTIONS.length; i++) { if (!answered[QUESTIONS[i].id]) { firstUnanswered = i; break; } }
+      qIndex = firstUnanswered < 0 ? QUESTIONS.length : firstUnanswered;
+      el.typewriter.style.display = '';
+      typeLine('欢迎回来，我们接着上次继续 ✦', function () {
+        setTimeout(function () {
+          el.typewriter.style.display = 'none';
+          show(el.quiz, true);
+          if (qIndex >= QUESTIONS.length) { submitAnswers(); } else { renderQuestion(); }
+        }, 1100);
+      });
+    }).catch(function () {
+      el.typewriter.textContent = '题目加载失败，请刷新重试。';
+    });
+  }
+
   function setAnswer(qid, value) {
     var found = ANSWERS.find(function (a) { return a.question_id === qid; });
     if (found) found.value = value; else ANSWERS.push({ question_id: qid, value: value });
   }
 
+  // 每答一题就把进度存到服务器（fire-and-forget，失败不打断答题）。
+  function saveProgress() {
+    fetch(PROGRESS_URL, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: ANSWERS })
+    }).catch(function () {});
+  }
+
   function advance() {
+    saveProgress();
     qIndex++;
     if (qIndex >= QUESTIONS.length) { submitAnswers(); return; }
     renderQuestion();

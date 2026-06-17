@@ -26,6 +26,7 @@ from ..services.career_path_service import (
     resolve_student_context,
     reset_session,
     save_test_and_generate,
+    save_test_progress,
 )
 
 router = APIRouter()
@@ -80,6 +81,26 @@ async def career_path_answers(request: Request, user: dict = Depends(get_current
         if not ctx:
             raise HTTPException(404, "未找到你的学籍信息")
         result = save_test_and_generate(conn, ctx, answers)
+        conn.commit()
+    return {"ok": True, **result}
+
+
+@router.post("/api/career-path/progress", response_class=JSONResponse)
+async def career_path_progress(request: Request, user: dict = Depends(get_current_user)):
+    """Persist partial answers per-question so the test can resume after exit."""
+    student_id = _require_student(user)
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, "请求 JSON 格式不正确") from exc
+    answers = payload.get("answers") if isinstance(payload, dict) else None
+    if not isinstance(answers, list):
+        raise HTTPException(400, "缺少作答")
+    with get_db_connection() as conn:
+        ctx = resolve_student_context(conn, student_id)
+        if not ctx:
+            raise HTTPException(404, "未找到你的学籍信息")
+        result = save_test_progress(conn, ctx, answers)
         conn.commit()
     return {"ok": True, **result}
 

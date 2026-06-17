@@ -451,6 +451,29 @@ def ensure_session(conn, ctx: dict[str, Any]) -> dict[str, Any]:
     return _load_session_row(conn, student_id) or {}
 
 
+def save_test_progress(conn, ctx: dict[str, Any], answers: list[dict[str, Any]]) -> dict[str, Any]:
+    """Persist partial quiz answers so the student can resume after leaving.
+
+    Only writes while the test is unfinished (status intro/testing); once a
+    student has submitted/generated/ready we never clobber their result here.
+    """
+    ensure_session(conn, ctx)
+    student_id = ctx["student_id"]
+    row = _load_session_row(conn, student_id) or {}
+    status = str(row.get("status") or "intro")
+    if status not in ("intro", "testing"):
+        return {"status": status, "saved": False}
+    conn.execute(
+        """
+        UPDATE career_student_sessions
+        SET status = 'testing', test_answers_json = ?, updated_at = ?
+        WHERE student_id = ?
+        """,
+        (json.dumps(answers, ensure_ascii=False), _now_iso(), student_id),
+    )
+    return {"status": "testing", "saved": True, "answered": len(answers)}
+
+
 def save_test_and_generate(conn, ctx: dict[str, Any], answers: list[dict[str, Any]]) -> dict[str, Any]:
     """Persist answers, score them, flip to 'generating' and schedule the AI."""
     ensure_session(conn, ctx)
@@ -588,10 +611,14 @@ def build_state(conn, student_id: int) -> dict[str, Any]:
     tl = ctx["timeline"]
     address = polite_address(ctx["name"], "student")
 
+    # 未完成测试时回传已作答的草稿，前端据此从断点续做（而非从头开始）。
+    draft_answers = _json_loads(session.get("test_answers_json"), [])
+    draft = draft_answers if (status in ("intro", "testing") and isinstance(draft_answers, list)) else []
+
     # Combined lifecycle status the frontend switches on.
     if net_state.get("status") == "generating" and not network:
         page_phase = "network_generating"
-    elif status in ("intro",):
+    elif status in ("intro", "testing"):
         page_phase = "intro"
     elif status in ("generating", "submitted"):
         page_phase = "personalizing"
@@ -618,6 +645,7 @@ def build_state(conn, student_id: int) -> dict[str, Any]:
         "prep_cards": prep_cards,
         "personalized": _public_personalized(personalized) if status == "ready" else {},
         "test_result": {"holland_code": test_result.get("holland_code"), "top_dims": test_result.get("top_dims")},
+        "draft": draft,
         "error_message": sanitize_hidden_profile_leaks(session.get("error_message") or ""),
     }
 
