@@ -75,6 +75,25 @@
 .cn-axissub{font-size:12px; fill:var(--dim)}
 .cn-origin-t{font-size:12px; font-weight:800; fill:#fde68a}
 .cn-origin-s{font-size:11px; fill:var(--dim)}
+.cn-now-t{font-size:11.5px; font-weight:800; fill:#bdf0ff}
+.cn-studylab{font-size:10px; font-weight:600; fill:#fcd9a0; opacity:.85}
+.cn-axisgrad{font-size:12px; font-weight:700; fill:#fbbf24}
+.cn-now-h{animation:cn-pulseO 3s ease-in-out infinite}
+
+/* 被选中节点：金色细波纹三圈散开 + 金色高亮 */
+.cn-selmark{pointer-events:none}
+.cn-rip{fill:none; stroke:#ffd76a; stroke-width:2; opacity:0; transform-box:fill-box; transform-origin:center;
+  animation:cn-ripple 3.6s ease-out infinite}
+.cn-rip:nth-child(2){animation-delay:.45s}
+.cn-rip:nth-child(3){animation-delay:.9s}
+@keyframes cn-ripple{
+  0%{transform:scale(.5); opacity:.9}
+  18%{opacity:.6}
+  60%{transform:scale(3.6); opacity:0}
+  100%{transform:scale(3.6); opacity:0}
+}
+.cn-node.is-selected .cn-core{fill:#ffe08a; stroke:#fff; stroke-opacity:1}
+.cn-nlabel.is-selected{fill:#ffe08a !important; font-weight:800}
 
 .cn-halo{transition:opacity .3s}
 .cn-flick5{animation:cn-flick5 2.6s ease-in-out infinite}
@@ -129,8 +148,11 @@
   padding:14px 22px; border-radius:18px; backdrop-filter:blur(12px);
   background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
   border:1px solid var(--glass-bd); box-shadow:0 18px 50px rgba(0,0,0,.45);
-  animation:career-fade-down .7s cubic-bezier(.2,.8,.2,1) both;
+  animation:career-fade-down .7s cubic-bezier(.2,.8,.2,1);
+  transition:transform .42s cubic-bezier(.2,.85,.25,1), opacity .36s;
 }
+/* 进入节点详情时，顶部欢迎条上滑隐藏；退出时滑回 */
+.career-root.is-detail .career-banner{transform:translate(-50%,-176%); opacity:0; pointer-events:none}
 .career-banner h2{margin:0 0 4px; font-size:18px; font-weight:800;
   background:linear-gradient(100deg,#fff,var(--accent) 60%,var(--accent2));
   -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
@@ -236,12 +258,15 @@
 
 /* ---- 节点详情卡片 ---- */
 .career-detail{
-  position:absolute; top:0; right:0; height:100%; width:min(460px,92vw); z-index:40;
-  background:linear-gradient(170deg,#101728,#0a0f1d); border-left:1px solid var(--glass-bd);
-  box-shadow:-24px 0 60px rgba(0,0,0,.6); display:flex; flex-direction:column;
-  transform:translateX(106%); transition:transform .42s cubic-bezier(.2,.85,.25,1);
+  position:absolute; top:64px; right:18px; width:min(400px,92vw); max-height:calc(100% - 100px); z-index:40;
+  display:flex; flex-direction:column; overflow:hidden; border-radius:18px;
+  border:1px solid var(--glass-bd); backdrop-filter:blur(16px);
+  background:linear-gradient(170deg,rgba(22,31,51,.92),rgba(10,15,29,.9));
+  box-shadow:0 24px 60px rgba(0,0,0,.5);
+  transform:translateX(26px); opacity:0; pointer-events:none;
+  transition:transform .42s cubic-bezier(.2,.85,.25,1), opacity .36s;
 }
-.career-detail.show{transform:translateX(0)}
+.career-detail.show{transform:none; opacity:1; pointer-events:auto}
 .career-detail__head{padding:24px 24px 16px; border-bottom:1px solid var(--glass-bd); position:relative; flex:none; overflow:hidden}
 .career-detail__glow{position:absolute; inset:0; opacity:.28}
 .career-detail__close{position:absolute; top:16px; right:16px; z-index:2; width:34px; height:34px; border-radius:10px;
@@ -283,11 +308,20 @@
 /* ---- 未毕业必备知识面板 ---- */
 .career-prep{
   position:absolute; left:0; right:0; bottom:0; z-index:35; max-height:46vh; overflow:hidden;
-  background:linear-gradient(0deg,#0a0f1d 70%,rgba(10,15,29,0));
+  background:linear-gradient(0deg,#0a0f1d 72%,rgba(10,15,29,0));
   border-top:1px solid var(--glass-bd); padding:18px 22px 22px;
-  transform:translateY(106%); transition:transform .42s cubic-bezier(.2,.85,.25,1);
+  transform:translateY(106%); transition:transform .42s cubic-bezier(.2,.85,.25,1), right .42s cubic-bezier(.2,.85,.25,1);
 }
 .career-prep.show{transform:translateY(0)}
+/* 详情面板打开时，底部知识栈让出右侧空间，避免被遮挡 */
+.career-root.is-detail .career-prep{right:436px}
+.career-prep__main{display:flex; gap:18px; align-items:stretch}
+.career-prep__stacks{flex:1; min-width:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+  gap:12px; overflow:auto; max-height:30vh; padding-bottom:4px}
+.career-prep__aside{width:300px; flex:none; overflow:auto; max-height:30vh}
+.career-prep__aside .career-prep__deadline{margin:0; height:100%}
+.career-prep__aside-t{display:block; font-size:12px; font-weight:800; color:#fde68a; margin-bottom:6px; letter-spacing:.5px}
+.career-prep__empty{font-size:13px; color:var(--dim); line-height:1.7; padding:8px 2px}
 .career-prep__head{display:flex; align-items:flex-start; gap:12px; margin-bottom:12px}
 .career-prep__head h3{margin:0; font-size:17px; font-weight:800; color:#fff}
 .career-prep__head p{margin:3px 0 0; font-size:12.5px; color:var(--dim); line-height:1.55}
@@ -384,9 +418,16 @@
 
 @keyframes career-fade-up{from{opacity:0; transform:translateY(14px)}to{opacity:1; transform:translateY(0)}}
 
+@media (max-width:860px){
+  .career-prep__main{flex-direction:column}
+  .career-prep__aside{width:auto}
+}
 @media (max-width:640px){
-  .career-detail{width:100%}
-  .career-prep{max-height:54vh}
+  .career-detail{left:10px; right:10px; width:auto; top:50px; max-height:58%}
+  .career-prep{max-height:42vh}
+  .career-root.is-detail .career-prep{right:0}
+  .career-zoom{bottom:48px; right:10px}
+  .career-zoom button{width:36px; height:36px; font-size:18px}
   .career-topbar{gap:8px; padding:10px 12px}
   .career-topbar__meta{gap:6px 8px}
   .career-topbar__meta .pill{padding:3px 8px; font-size:11px}

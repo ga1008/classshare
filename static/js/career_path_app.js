@@ -411,6 +411,7 @@
     if (net) net.destroy();
     net = new window.CareerNetwork(el.canvas, {
       originLabel: (s.timeline && s.timeline.graduation_year ? ('🎓 ' + s.timeline.graduation_year + ' 毕业') : '🎓 毕业'),
+      timeline: s.timeline || {},
       tipEl: document.getElementById('career-tip'),
       onSelect: function (node, stage) { openDetail(node, stage, STATE || s); },
       onClear: function () { closePanels(); }
@@ -489,6 +490,7 @@
     el.detail.innerHTML = h;
     el.detail.querySelector('.career-detail__close').addEventListener('click', closePanels);
     el.detail.classList.add('show'); show(el.detail, true);
+    root.classList.add('is-detail');
     el.detail.querySelector('.career-detail__body').scrollTop = 0;
 
     openPrep(data, s);
@@ -530,11 +532,12 @@
       }
     }
     if (advice) deadline = deadline ? (deadline + ' ' + advice) : advice;
-    if (deadline) h += '<div class="career-prep__deadline">⏳ ' + esc(deadline) + '</div>';
 
+    // 主体：左侧三档技术栈，右侧时间/节奏建议（⏳）
     var stacks = (card && card.stacks) || [];
+    h += '<div class="career-prep__main">';
+    h += '<div class="career-prep__stacks">';
     if (stacks.length) {
-      h += '<div class="career-prep__grid">';
       stacks.forEach(function (st, i) {
         var lvl = i === 0 ? 'l0' : i === 1 ? 'l1' : 'l2';
         h += '<div class="career-stack career-stack--' + lvl + '">'
@@ -542,8 +545,14 @@
           + (st.items || []).map(function (it) { return '<li>' + esc(it) + '</li>'; }).join('')
           + '</ul></div>';
       });
-      h += '</div>';
+    } else {
+      h += '<p class="career-prep__empty">该方向暂无细分知识栈，可参考右侧节奏建议先打好通用基础。</p>';
     }
+    h += '</div>';
+    h += '<aside class="career-prep__aside">';
+    if (deadline) h += '<div class="career-prep__deadline"><span class="career-prep__aside-t">⏳ 时间与节奏</span>' + esc(deadline) + '</div>';
+    h += '</aside>';
+    h += '</div>';
     el.prep.innerHTML = h;
     el.prep.querySelector('.career-prep__close').addEventListener('click', closePanels);
     el.prep.classList.add('show'); show(el.prep, true);
@@ -557,6 +566,7 @@
 
   function closePanels() {
     hideInfoPanels();
+    root.classList.remove('is-detail');
     if (net) net.clear();
   }
 

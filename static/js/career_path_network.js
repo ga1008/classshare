@@ -18,7 +18,7 @@
 
   var NS = 'http://www.w3.org/2000/svg';
   var MAX_STAGES = 4;
-  var DEFAULT_TIME_LABELS = ['0–1 年 · 现在', '3–5 年', '5–10 年', '10 年以后 · 未来'];
+  var DEFAULT_TIME_LABELS = ['毕业后 0–1 年', '3–5 年', '5–10 年', '10 年以后'];
   var AXIS_LABELS = ['0–1 年', '3–5 年', '5–10 年', '10 年 +'];
   var CONTENT_W = 1240;
   var MIN_SCALE = 0.18, MAX_SCALE = 2.8, ZOOM_NEAR = 1.12;
@@ -132,9 +132,17 @@
     this.ch = rect.height || window.innerHeight;
 
     var W = CONTENT_W;
-    var originX = 96;
-    var firstCol = Math.round(W * 0.235);
-    var lastCol = W - Math.round(W * 0.10);
+    // 现在(在校) → 毕业 → 各成长阶段。现在在毕业之前，间距随距毕业年限变化；
+    // 临近毕业(<6个月)或已毕业则合并为「毕业·现在」单节点。
+    var tlm = this.opts.timeline || {};
+    var ytg = (typeof tlm.years_to_graduation === 'number') ? tlm.years_to_graduation : null;
+    var combined = !!tlm.already_graduated || (ytg != null && ytg < 0.5);
+    var nowX = 46;
+    var studyGap = combined ? 0 : clamp(90 + (ytg == null ? 1.4 : ytg) * 48, 100, 300);
+    var gradX = nowX + studyGap;
+    var originX = gradX;
+    var firstCol = Math.max(gradX + 172, Math.round(W * 0.285));
+    var lastCol = W - Math.round(W * 0.09);
     var stageX = [0, 1, 2, 3].map(function (i) { return Math.round(firstCol + (lastCol - firstCol) * (i / 3)); });
     var rowH = 46, catGap = 18, catHeadH = 36, topPad = 68;
 
@@ -160,6 +168,7 @@
     var axisY = H - 52;
 
     var coord = { origin: { x: originX, y: originY } };
+    if (!combined) coord.now = { x: nowX, y: originY };
     rows.forEach(function (n) {
       self._stagesOf(n).forEach(function (st, i) { coord[n.tag + '-' + i] = { x: stageX[i], y: n._y }; });
     });
@@ -173,6 +182,8 @@
       g += '<line x1="' + x + '" y1="' + (topPad - 32) + '" x2="' + x + '" y2="' + axisY + '" stroke="rgba(255,255,255,.05)" stroke-width="1"/>';
       g += '<text x="' + x + '" y="' + (topPad - 38) + '" text-anchor="middle" class="cn-axislab">' + esc(timeLab[i]) + '</text>';
     });
+    // 毕业分界线（在校 / 职业生涯的分界）
+    if (!combined) g += '<line x1="' + gradX + '" y1="' + (topPad - 20) + '" x2="' + gradX + '" y2="' + axisY + '" stroke="rgba(251,191,36,.12)" stroke-width="1" stroke-dasharray="3 8"/>';
 
     // 分类标题
     heads.forEach(function (h) {
@@ -216,13 +227,24 @@
         + '<path class="cn-cu" d="' + d + '" fill="none" stroke="#d8b4fe" stroke-opacity=".7" stroke-width="1.8" marker-end="url(#cnArrC)"/></g>';
     });
 
-    // 起点
-    var gradLabel = this.opts.originLabel || '🎓 毕业';
+    // 现在(在校) → 毕业
+    var gradLabel = combined ? '🎓 毕业 · 现在' : (this.opts.originLabel || '🎓 毕业');
+    if (!combined) {
+      g += '<line class="cn-studyline" x1="' + nowX + '" y1="' + originY + '" x2="' + gradX + '" y2="' + originY + '" stroke="#fbbf24" stroke-opacity=".5" stroke-width="2" stroke-dasharray="5 7"/>';
+      var yLab = (ytg != null)
+        ? (ytg >= 1 ? ('在校约 ' + (Math.round(ytg * 10) / 10) + ' 年') : ('在校约 ' + Math.max(1, Math.round((tlm.months_to_graduation != null ? tlm.months_to_graduation : ytg * 12))) + ' 个月'))
+        : '在校备战';
+      g += '<text x="' + ((nowX + gradX) / 2) + '" y="' + (originY - 13) + '" text-anchor="middle" class="cn-studylab">' + esc(yLab) + '</text>';
+      g += '<g class="cn-node" data-id="now">'
+        + '<circle class="cn-now-h" cx="' + nowX + '" cy="' + originY + '" r="20" fill="#6ee7ff" opacity=".26" filter="url(#cnBlurO)"/>'
+        + '<circle class="cn-core" data-now="1" cx="' + nowX + '" cy="' + originY + '" r="8.5" fill="#bdf0ff" stroke="#fff" stroke-width="1.4"/></g>';
+      g += '<text x="' + nowX + '" y="' + (originY + 27) + '" text-anchor="middle" class="cn-now-t">现在</text>';
+    }
     g += '<g class="cn-node" data-id="origin">'
-      + '<circle class="cn-origin-h" cx="' + originX + '" cy="' + originY + '" r="34" fill="#fbbf24" opacity=".30" filter="url(#cnBlurO)"/>'
-      + '<circle class="cn-core" data-origin="1" cx="' + originX + '" cy="' + originY + '" r="13" fill="#fde68a" stroke="#fff" stroke-width="1.5"/></g>';
-    g += '<text x="' + originX + '" y="' + (originY + 31) + '" text-anchor="middle" class="cn-origin-t">' + esc(gradLabel) + '</text>';
-    g += '<text x="' + originX + '" y="' + (originY + 46) + '" text-anchor="middle" class="cn-origin-s">起点 · 现在</text>';
+      + '<circle class="cn-origin-h" cx="' + gradX + '" cy="' + originY + '" r="34" fill="#fbbf24" opacity=".30" filter="url(#cnBlurO)"/>'
+      + '<circle class="cn-core" data-origin="1" cx="' + gradX + '" cy="' + originY + '" r="13" fill="#fde68a" stroke="#fff" stroke-width="1.5"/></g>';
+    g += '<text x="' + gradX + '" y="' + (originY + 31) + '" text-anchor="middle" class="cn-origin-t">' + esc(gradLabel) + '</text>';
+    g += '<text x="' + gradX + '" y="' + (originY + 46) + '" text-anchor="middle" class="cn-origin-s">' + (combined ? '起点 · 现在' : '职业起点') + '</text>';
 
     // 节点
     rows.forEach(function (n) {
@@ -248,10 +270,15 @@
       });
     });
 
-    // 时间轴
-    g += '<line x1="' + originX + '" y1="' + axisY + '" x2="' + (W - 26) + '" y2="' + axisY + '" stroke="#6ee7ff" stroke-opacity=".5" stroke-width="2" marker-end="url(#cnArr)"/>';
-    g += '<text x="' + originX + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axisnow">现在</text>';
+    // 时间轴：现在 →（毕业）→ 各阶段 → 未来
+    g += '<line x1="' + nowX + '" y1="' + axisY + '" x2="' + (W - 26) + '" y2="' + axisY + '" stroke="#6ee7ff" stroke-opacity=".5" stroke-width="2" marker-end="url(#cnArr)"/>';
     g += '<text x="' + (W - 30) + '" y="' + (axisY + 22) + '" text-anchor="end" class="cn-axislab">未来 →</text>';
+    g += '<circle cx="' + nowX + '" cy="' + axisY + '" r="4" fill="#bdf0ff"/>';
+    g += '<text x="' + nowX + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axisnow">' + (combined ? '毕业·现在' : '现在') + '</text>';
+    if (!combined) {
+      g += '<circle cx="' + gradX + '" cy="' + axisY + '" r="4.5" fill="#fbbf24"/>';
+      g += '<text x="' + gradX + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axisgrad">毕业</text>';
+    }
     stageX.forEach(function (x, i) {
       g += '<circle cx="' + x + '" cy="' + axisY + '" r="4" fill="#6ee7ff"/>';
       g += '<text x="' + x + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axissub">' + esc(AXIS_LABELS[i]) + '</text>';
@@ -332,6 +359,7 @@
     var self = this;
     var node = ns.node;
     var xs = [], ys = [];
+    if (this.coord.now) { xs.push(this.coord.now.x); ys.push(this.coord.now.y); }
     if (this.coord.origin) { xs.push(this.coord.origin.x); ys.push(this.coord.origin.y); }
     this._stagesOf(node).forEach(function (st, i) {
       var c = self.coord[node.tag + '-' + i];
@@ -381,6 +409,25 @@
     this.svg.querySelectorAll('.cn-node').forEach(function (e) { e.classList.toggle('hot', !!rel[e.dataset.id]); });
     this.svg.querySelectorAll('.cn-edge').forEach(function (e) { e.classList.toggle('hot', !!(rel[e.dataset.from] && rel[e.dataset.to])); });
     this.svg.querySelectorAll('.cn-nlabel').forEach(function (e) { e.classList.toggle('hot', !!tags[e.dataset.tag]); });
+    this._markSelected(id);
+  };
+
+  // 被选中节点：金色细波纹三圈散开循环 + 金色高亮，提示其在路线中的位置
+  CareerNetwork.prototype._markSelected = function (id) {
+    if (!this.vp || !this.svg) return;
+    var old = this.vp.querySelector('.cn-selmark'); if (old) old.parentNode.removeChild(old);
+    this.svg.querySelectorAll('.is-selected').forEach(function (e) { e.classList.remove('is-selected'); });
+    var ns = this.nodeStages[id], c = this.coord[id];
+    if (!ns || !c) return;
+    var g = this.svg.querySelector('.cn-node[data-id="' + id + '"]'); if (g) g.classList.add('is-selected');
+    var lab = this.svg.querySelector('.cn-nlabel[data-tag="' + ns.node.tag + '"]'); if (lab) lab.classList.add('is-selected');
+    var coreR = 4.2 + clamp(Number(ns.node.rec || 3), 1, 5) * 0.9;
+    var r0 = (coreR + 3).toFixed(1);
+    var mk = document.createElementNS(NS, 'g');
+    mk.setAttribute('class', 'cn-selmark');
+    mk.setAttribute('transform', 'translate(' + c.x + ',' + c.y + ')');
+    mk.innerHTML = '<circle class="cn-rip" r="' + r0 + '"/><circle class="cn-rip" r="' + r0 + '"/><circle class="cn-rip" r="' + r0 + '"/>';
+    this.vp.appendChild(mk);
   };
 
   CareerNetwork.prototype.select = function (id) {
@@ -396,7 +443,8 @@
     this.selectedId = null;
     if (!this.svg) return;
     this.svg.classList.remove('sel');
-    this.svg.querySelectorAll('.hot').forEach(function (e) { e.classList.remove('hot'); });
+    this.svg.querySelectorAll('.hot,.is-selected').forEach(function (e) { e.classList.remove('hot'); e.classList.remove('is-selected'); });
+    var mk = this.vp && this.vp.querySelector('.cn-selmark'); if (mk) mk.parentNode.removeChild(mk);
     this._hideTip();
     if (had) this.fitAll(true);
   };
@@ -417,7 +465,7 @@
       var b = e.target.closest('button'); if (!b) return;
       if (b.dataset.act === 'in') self.zoomBy(1.25);
       else if (b.dataset.act === 'out') self.zoomBy(0.8);
-      else { self.selectedId = null; self.svg.classList.remove('sel'); self.svg.querySelectorAll('.hot').forEach(function (x) { x.classList.remove('hot'); }); self.fitAll(true); self.onClear(); }
+      else { var had = !!self.selectedId; self.clear(); self.onClear(); if (!had) self.fitAll(true); }
     });
     host.appendChild(bar);
     this.controls = bar;
@@ -456,7 +504,8 @@
       // 用 elementFromPoint 取真实命中元素（兼容指针捕获/合成事件）。
       var hit = document.elementFromPoint(e.clientX, e.clientY);
       var g = hit && hit.closest ? hit.closest('.cn-node') : null;
-      if (g && g.dataset.id !== 'origin') {
+      var gid = g ? g.dataset.id : null;
+      if (g && gid !== 'origin' && gid !== 'now') {
         self.selectedId = g.dataset.id;
         self._applySelection(g.dataset.id);
         self._fitSelection(g.dataset.id, true);
@@ -479,9 +528,7 @@
     }, { passive: false });
     sv.addEventListener('dblclick', function (e) {
       e.preventDefault();
-      self.selectedId = null; sv.classList.remove('sel');
-      sv.querySelectorAll('.hot').forEach(function (x) { x.classList.remove('hot'); });
-      self.fitAll(true); self.onClear();
+      var had = !!self.selectedId; self.clear(); self.onClear(); if (!had) self.fitAll(true);
     });
     sv.addEventListener('mouseover', function (e) { if (!self._drag) self._hoverTip(e); });
     sv.addEventListener('mousemove', function (e) { if (!self._drag && self.tip && self.tip.classList.contains('show')) self._posTip(e); });
@@ -493,9 +540,18 @@
     if (!this.tip) return;
     var t = e.target;
     if (!t.classList || !t.classList.contains('cn-core')) return;
+    if (t.dataset.now) {
+      var tlm = this.opts.timeline || {};
+      var leftTxt = (tlm.years_to_graduation != null && tlm.years_to_graduation > 0)
+        ? ('距毕业约 ' + tlm.years_to_graduation + ' 年' + (tlm.months_to_graduation != null ? '（' + tlm.months_to_graduation + ' 个月）' : ''))
+        : '在校阶段';
+      this.tip.innerHTML = '<div class="cn-tcat">现在 · 在校</div><div class="cn-tname">📍 你在这里</div>'
+        + '<div class="cn-tdesc">' + esc(leftTxt) + '。这段在校时间是你为毕业后职业路线做准备的窗口——点击右侧任一方向的节点，看看从现在到毕业要补什么。</div>';
+      this.tip.classList.add('show'); this._posTip(e); return;
+    }
     if (t.dataset.origin) {
-      this.tip.innerHTML = '<div class="cn-tcat">起点 · 现在</div><div class="cn-tname">' + esc(this.opts.originLabel || '🎓 毕业') + '</div>'
-        + '<div class="cn-tdesc">向右就是你的未来。点击任一节点可看它的来路与全部下游分支，并展开为你定制的建议与必备知识。滚轮缩放 · 拖动平移 · 双击复位。</div>';
+      this.tip.innerHTML = '<div class="cn-tcat">毕业 · 职业起点</div><div class="cn-tname">' + esc(this.opts.originLabel || '🎓 毕业') + '</div>'
+        + '<div class="cn-tdesc">毕业是职业生涯的起点。向右就是你的未来——点击任一节点可看它的来路与全部下游分支，并展开为你定制的建议与必备知识。滚轮缩放 · 拖动平移 · 双击复位。</div>';
       this.tip.classList.add('show'); this._posTip(e); return;
     }
     var n = this.byTag[t.dataset.tag];
