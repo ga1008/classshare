@@ -18,6 +18,9 @@
     linear-gradient(160deg,#05070f,#0b1120 60%,#121a2e);
 }
 .career-root *{box-sizing:border-box}
+/* 这些浮层都显式设了 display（flex 等），会盖过 [hidden] 属性 —— 必须强制让 hidden 生效，
+   否则初始加载层「正在连接你的职业星图」不会消失，会压在测试题中间。 */
+.career-root [hidden]{display:none!important}
 
 /* ---- 顶部细条 ---- */
 .career-topbar{
