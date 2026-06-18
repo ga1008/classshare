@@ -25,11 +25,13 @@
     quiz: document.getElementById('career-quiz'),
     waiting: document.getElementById('career-waiting'),
     waitTitle: document.getElementById('career-waiting-title'),
-    waitDesc: document.getElementById('career-waiting-desc')
+    waitDesc: document.getElementById('career-waiting-desc'),
+    rain: document.getElementById('career-rain')
   };
 
   var net = null;
   var pollTimer = null;
+  var rain = null;
   var STATE = null;
 
   // ---------- 工具 ----------
@@ -72,6 +74,7 @@
   }
 
   function startIntro(s) {
+    stopRain();
     show(el.boot, false); show(el.stage, false); show(el.topbar, false);
     show(el.waiting, false); show(el.intro, true); show(el.quiz, false);
     el.typewriter.style.display = '';
@@ -236,6 +239,115 @@
       .catch(function () { el.quiz.innerHTML = '<div class="career-quiz__q" style="text-align:center">提交失败，请刷新重试。</div>'; });
   }
 
+  // ---------- 背景数据瀑布（黑客帝国式，克制） ----------
+  var RAIN_PALETTE = [[110, 231, 255], [52, 211, 153], [167, 139, 250]];
+
+  function buildRainPhrases(s) {
+    var ph = [];
+    if (s.major && s.major.name) { ph.push(s.major.name); ph.push(s.major.name + '·职业网络'); }
+    var nodes = (s.network && s.network.nodes) || [];
+    nodes.forEach(function (n) {
+      ph.push(n.name);
+      var r = Math.max(1, Math.min(5, n.rec || 3));
+      ph.push(n.name + ' ' + '★★★★★'.slice(0, r));
+      if (n.lang) ph.push(n.name + ' ⭐外语');
+    });
+    var dims = (s.test_result && s.test_result.top_dims) || [];
+    dims.forEach(function (d) { ph.push((d.label || d.dim) + (d.score != null ? ' ' + d.score : '')); });
+    if (s.test_result && s.test_result.holland_code) ph.push('HOLLAND·' + s.test_result.holland_code);
+    var tl = s.timeline || {};
+    if (tl.graduation_year) ph.push(tl.graduation_year + '届毕业');
+    if (tl.years_to_graduation != null) ph.push('T-' + tl.years_to_graduation + 'Y');
+    if (s.student && s.student.name) ph.push(s.student.name);
+    if (s.student && s.student.class_name) ph.push(s.student.class_name);
+    // 一点点“后台跑数据”的氛围 token
+    ph.push('MATCHING', 'ANALYZING', '计算推荐值', '匹配知识栈', '0110', 'WEIGHTING', '推演路径', 'RECOMMEND');
+    return ph.filter(Boolean);
+  }
+
+  function CareerRain(canvas, phrases) {
+    var self = this;
+    this.canvas = canvas; this.ctx = canvas.getContext('2d');
+    this.phrases = (phrases && phrases.length) ? phrases : ['ANALYZING', '匹配中'];
+    this.dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+    this.font = 15; this.rowH = this.font * 1.22; this.colW = this.font * 1.65;
+    this._raf = null;
+    this._onResize = function () { self.resize(); };
+    window.addEventListener('resize', this._onResize);
+    this.resize();
+    this.start();
+  }
+  CareerRain.prototype.resize = function () {
+    var r = this.canvas.getBoundingClientRect();
+    this.W = r.width || window.innerWidth; this.H = r.height || window.innerHeight;
+    this.canvas.width = Math.round(this.W * this.dpr);
+    this.canvas.height = Math.round(this.H * this.dpr);
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    var n = Math.max(1, Math.floor(this.W / this.colW));
+    this.cols = [];
+    for (var i = 0; i < n; i++) this.cols.push(this._spawn(i, true));
+  };
+  CareerRain.prototype._spawn = function (i, initial) {
+    var ph = this.phrases[(Math.random() * this.phrases.length) | 0];
+    return {
+      x: i * this.colW + this.colW * 0.5,
+      text: ph,
+      y: initial ? (Math.random() * this.H) : (-(Math.random() * this.H * 0.4) - ph.length * this.rowH),
+      speed: 16 + Math.random() * 40,
+      alpha: 0.14 + Math.random() * 0.46,           // 有的隐约、有的明显
+      hue: RAIN_PALETTE[(Math.random() * RAIN_PALETTE.length) | 0]
+    };
+  };
+  CareerRain.prototype.start = function () {
+    if (this._raf) return;
+    var self = this, last = performance.now();
+    function loop(now) {
+      var dt = Math.min((now - last) / 1000, 0.05); last = now;
+      self._step(dt); self._draw(); self._raf = requestAnimationFrame(loop);
+    }
+    this._raf = requestAnimationFrame(loop);
+  };
+  CareerRain.prototype._step = function (dt) {
+    for (var i = 0; i < this.cols.length; i++) {
+      var c = this.cols[i]; c.y += c.speed * dt;
+      if (c.y - c.text.length * this.rowH > this.H) this.cols[i] = this._spawn(i, false);
+    }
+  };
+  CareerRain.prototype._draw = function () {
+    var ctx = this.ctx; ctx.clearRect(0, 0, this.W, this.H);
+    ctx.font = '600 ' + this.font + 'px "PingFang SC","Microsoft YaHei",monospace';
+    ctx.textAlign = 'center';
+    for (var i = 0; i < this.cols.length; i++) {
+      var c = this.cols[i], chars = c.text, len = chars.length, hue = c.hue;
+      for (var k = 0; k < len; k++) {
+        var ch = chars[k]; if (ch === ' ') continue;
+        var y = c.y - (len - 1 - k) * this.rowH;       // 末字在最下（头部最亮）
+        if (y < -this.rowH || y > this.H + this.rowH) continue;
+        var headDist = (len - 1 - k);
+        if (headDist === 0) {
+          ctx.fillStyle = 'rgba(200,245,255,' + Math.min(0.85, c.alpha + 0.42) + ')';
+        } else {
+          var a = c.alpha * Math.max(0, 1 - headDist * 0.16);
+          if (a <= 0.01) continue;
+          ctx.fillStyle = 'rgba(' + hue[0] + ',' + hue[1] + ',' + hue[2] + ',' + a + ')';
+        }
+        ctx.fillText(ch, c.x, y);
+      }
+    }
+  };
+  CareerRain.prototype.destroy = function () {
+    if (this._raf) cancelAnimationFrame(this._raf); this._raf = null;
+    window.removeEventListener('resize', this._onResize);
+    if (this.ctx) this.ctx.clearRect(0, 0, this.W, this.H);
+  };
+
+  function startRain(s) {
+    if (!el.rain) return;
+    stopRain();
+    try { rain = new CareerRain(el.rain, buildRainPhrases(s)); } catch (e) { rain = null; }
+  }
+  function stopRain() { if (rain) { rain.destroy(); rain = null; } }
+
   // ---------- 等待 AI ----------
   function startWaiting(s) {
     show(el.boot, false); show(el.intro, false); show(el.stage, false);
@@ -247,6 +359,8 @@
       el.waitTitle.textContent = '正在为你设计专属职业网络…';
       el.waitDesc.textContent = '深度思考型 AI 正在结合你的性格、专业与毕业时间，重新设计推荐与必备知识。这通常需要 1–3 分钟。';
     }
+    // 等浮层显示出来（拿到尺寸）再启动数据瀑布
+    requestAnimationFrame(function () { startRain(s); });
     startPolling();
   }
 
@@ -264,7 +378,7 @@
 
   // ---------- 渲染星图 ----------
   function startNetwork(s) {
-    stopPolling();
+    stopPolling(); stopRain();
     show(el.boot, false); show(el.intro, false); show(el.waiting, false);
     show(el.topbar, true); show(el.stage, true);
     renderTopbar(s);

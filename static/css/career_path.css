@@ -196,18 +196,22 @@
 .career-btn[disabled]{opacity:.5; cursor:not-allowed; transform:none; filter:none}
 
 /* ---- 等待浮窗 ---- */
-.career-waiting{position:absolute; inset:0; z-index:55; display:flex; align-items:center; justify-content:center;
+.career-waiting{position:absolute; inset:0; z-index:55; display:flex; align-items:center; justify-content:center; overflow:hidden;
   background:radial-gradient(1000px 700px at 50% 40%,rgba(20,28,48,.82),rgba(5,7,15,.95)); backdrop-filter:blur(6px)}
-.career-waiting__inner{width:min(560px,92vw); text-align:center; padding:24px}
+.career-waiting__inner{position:relative; z-index:2; width:min(560px,92vw); text-align:center; padding:24px;
+  text-shadow:0 2px 18px rgba(5,8,16,.85), 0 0 8px rgba(5,8,16,.9)}
+/* 背景数据瀑布（黑客帝国式，克制、暗淡，边缘自然隐入背景） */
+.career-rain{position:absolute; inset:0; width:100%; height:100%; z-index:1; pointer-events:none; opacity:.85;
+  mix-blend-mode:screen;
+  -webkit-mask-image:radial-gradient(ellipse 56% 62% at 50% 47%, #000 22%, rgba(0,0,0,.55) 56%, transparent 82%);
+  mask-image:radial-gradient(ellipse 56% 62% at 50% 47%, #000 22%, rgba(0,0,0,.55) 56%, transparent 82%)}
+.career-waiting__back{position:absolute; top:16px; left:20px; z-index:3; text-decoration:none;
+  font-size:13px; font-weight:600; color:rgba(154,166,189,.5); padding:7px 13px; border-radius:999px;
+  border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); transition:.25s}
+.career-waiting__back:hover{color:rgba(232,237,247,.92); border-color:rgba(110,231,255,.4); background:rgba(255,255,255,.06)}
 .career-waiting__title{margin:18px 0 10px; font-size:22px; font-weight:800; color:#fff}
 .career-waiting__desc{margin:0 auto 10px; max-width:460px; font-size:14px; color:var(--dim); line-height:1.7}
 .career-waiting__hint{margin:0 auto; max-width:460px; font-size:13px; color:var(--accent); line-height:1.7}
-.career-waiting__orbit{position:relative; width:88px; height:88px; margin:0 auto}
-.career-waiting__orbit span{position:absolute; inset:0; border-radius:50%; border:2px solid transparent}
-.career-waiting__orbit span:nth-child(1){border-top-color:var(--accent); animation:career-spin 1.4s linear infinite}
-.career-waiting__orbit span:nth-child(2){inset:14px; border-top-color:var(--accent2); animation:career-spin 1.9s linear infinite reverse}
-.career-waiting__orbit span:nth-child(3){inset:28px; border-top-color:var(--accent3); animation:career-spin 1.1s linear infinite}
-@keyframes career-spin{to{transform:rotate(360deg)}}
 
 /* ---- 初始加载 ---- */
 .career-boot{position:absolute; inset:0; z-index:70; display:flex; flex-direction:column; gap:18px;
