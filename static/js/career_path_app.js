@@ -18,6 +18,10 @@
     canvas: document.getElementById('career-canvas'),
     banner: document.getElementById('career-banner'),
     legend: document.getElementById('career-legend'),
+    sectorControls: document.getElementById('career-sector-controls'),
+    sectorPrev: document.getElementById('career-sector-prev'),
+    sectorNext: document.getElementById('career-sector-next'),
+    sectorLabel: document.getElementById('career-sector-label'),
     cards: document.getElementById('career-path-cards'),
     detail: document.getElementById('career-detail'),
     prep: document.getElementById('career-prep'),
@@ -427,7 +431,8 @@
       net = new window.CareerNetwork(el.canvas, {
         hubLabel: (s.timeline && s.timeline.graduation_year ? ('🎓 ' + s.timeline.graduation_year + ' 毕业') : '起点 · 现在'),
         onHighlight: function (cards) { handleHighlight(cards, STATE || s); },
-        onBackground: function () { closePanels(); }
+        onBackground: function () { closePanels(); },
+        onSectorChange: updateSectorLabel
       });
     }
     // 等 canvas 尺寸稳定再 setData
@@ -461,10 +466,25 @@
   function renderLegend(s) {
     var items = [
       '<span class="it"><span class="dot" style="background:#6ee7ff;box-shadow:0 0 10px #6ee7ff"></span>星越亮＝越推荐 / 越契合你</span>',
-      '<span class="it"><span class="dot" style="background:#a78bfa"></span>紫线＝可转向的分叉路径</span>',
-      '<span class="it hint">点击星星点亮路径与卡片 · 点击卡片看完整成长线 · 滚轮缩放 · 拖拽平移</span>'
+      '<span class="it"><span class="dot" style="background:#fde68a;box-shadow:0 0 12px #fde68a"></span>地面＝现在，越往上＝越未来</span>',
+      '<span class="it hint">左右切换就业分类 · 点击星光查看成长路径 · 滚轮拉开未来距离</span>'
     ];
     el.legend.innerHTML = items.join('');
+  }
+
+  function updateSectorLabel(info) {
+    if (!el.sectorLabel || !info) return;
+    var total = info.total || 0;
+    if (!total) {
+      el.sectorLabel.textContent = '';
+      if (el.sectorPrev) el.sectorPrev.disabled = true;
+      if (el.sectorNext) el.sectorNext.disabled = true;
+      return;
+    }
+    el.sectorLabel.innerHTML = '<b>' + esc(info.name || '就业分类') + '</b>'
+      + '<span>' + (info.index + 1) + ' / ' + total + ' · ' + (info.count || 0) + ' 个方向</span>';
+    if (el.sectorPrev) el.sectorPrev.disabled = total < 2 || !!info.transitioning;
+    if (el.sectorNext) el.sectorNext.disabled = total < 2 || !!info.transitioning;
   }
 
   function handleHighlight(cards, s) {
@@ -718,6 +738,19 @@
   }
 
   // ---------- 重新测试 ----------
+  if (el.sectorPrev) {
+    el.sectorPrev.addEventListener('click', function () {
+      closePanels();
+      if (net) net.prevSector();
+    });
+  }
+  if (el.sectorNext) {
+    el.sectorNext.addEventListener('click', function () {
+      closePanels();
+      if (net) net.nextSector();
+    });
+  }
+
   el.redo.addEventListener('click', function () {
     if (!confirm('确定要重新做一次职业性格测试吗？将重新生成你的专属网络。')) return;
     fetchJSON('/api/career-path/reset', { method: 'POST' }).then(function () { return loadState(); }).then(route);

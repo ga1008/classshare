@@ -47,12 +47,11 @@
 
 /* ---- 主舞台 ---- */
 .career-stage{position:absolute; inset:0}
-.career-canvas{position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:grab}
-.career-canvas:active{cursor:grabbing}
+.career-canvas{position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:default}
 
 .career-banner{
   position:absolute; top:58px; left:50%; transform:translateX(-50%);
-  max-width:min(720px,92vw); z-index:20; text-align:center;
+  width:min(720px,92vw); z-index:20; text-align:center;
   padding:14px 22px; border-radius:18px; backdrop-filter:blur(12px);
   background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
   border:1px solid var(--glass-bd); box-shadow:0 18px 50px rgba(0,0,0,.45);
@@ -74,6 +73,38 @@
 .career-legend .it{display:flex; align-items:center; gap:6px; white-space:nowrap}
 .career-legend .dot{width:11px; height:11px; border-radius:50%; display:inline-block}
 .career-legend .hint{color:var(--mute)}
+
+.career-sector-controls{
+  position:absolute; inset:0; z-index:28; pointer-events:none;
+}
+.career-sector-btn{
+  position:absolute; top:52%; transform:translateY(-50%);
+  width:50px; height:58px; border-radius:18px; border:1px solid rgba(255,255,255,.15);
+  background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.035));
+  color:rgba(236,247,255,.88); font-size:36px; line-height:1; font-weight:300;
+  cursor:pointer; pointer-events:auto; backdrop-filter:blur(14px);
+  box-shadow:0 18px 45px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.12);
+  transition:transform .22s ease, border-color .22s ease, background .22s ease, color .22s ease, opacity .22s ease;
+}
+.career-sector-btn--prev{left:24px}
+.career-sector-btn--next{right:24px}
+.career-sector-btn:hover:not(:disabled){
+  transform:translateY(-50%) scale(1.04);
+  color:#fff; border-color:rgba(110,231,255,.55);
+  background:linear-gradient(180deg,rgba(110,231,255,.16),rgba(255,255,255,.05));
+}
+.career-sector-btn:disabled{opacity:.36; cursor:not-allowed}
+.career-sector-status{
+  position:absolute; left:50%; bottom:74px; transform:translateX(-50%);
+  min-width:min(420px,86vw); max-width:86vw; padding:10px 18px; border-radius:999px;
+  display:flex; align-items:center; justify-content:center; gap:10px; pointer-events:none;
+  background:rgba(5,10,19,.46); border:1px solid rgba(255,255,255,.12);
+  color:rgba(215,228,245,.78); backdrop-filter:blur(12px);
+  box-shadow:0 16px 40px rgba(0,0,0,.3);
+  font-size:12px; white-space:nowrap;
+}
+.career-sector-status b{font-size:14px; color:#fff; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.career-sector-status span{color:var(--dim)}
 
 /* ---- 高亮路径星旁信息卡片 ---- */
 .career-path-cards{
@@ -282,7 +313,19 @@
 @media (max-width:640px){
   .career-detail{width:100%}
   .career-prep{max-height:54vh}
-  .career-banner{top:52px}
+  .career-topbar{gap:8px; padding:10px 12px}
+  .career-topbar__meta{gap:6px 8px}
+  .career-topbar__meta .pill{padding:3px 8px; font-size:11px}
+  .career-topbar__redo{padding:6px 10px}
+  .career-banner{top:108px; width:calc(100vw - 28px); padding:10px 14px; border-radius:15px}
+  .career-banner h2{font-size:16px; line-height:1.35}
+  .career-banner p{font-size:12px; line-height:1.5}
+  .career-sector-btn{width:42px; height:50px; border-radius:15px; font-size:30px}
+  .career-sector-btn--prev{left:10px}
+  .career-sector-btn--next{right:10px}
+  .career-sector-status{bottom:118px; min-width:min(330px,78vw); padding:8px 12px; gap:6px}
+  .career-sector-status b{font-size:12px; max-width:150px}
+  .career-sector-status span{font-size:11px}
   .career-star-card{width:min(176px,calc(100vw - 24px)); min-height:104px; padding:9px 10px}
   .career-star-card__name{font-size:12px}
   .career-star-card__role{font-size:11.5px}

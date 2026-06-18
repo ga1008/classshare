@@ -3,7 +3,7 @@
 {% block body_class %}career-page-body{% endblock %}
 
 {% block head %}
-  <link rel="stylesheet" href="/static/css/career_path.css?v=20260618k">
+  <link rel="stylesheet" href="/static/css/career_path.css?v=20260618q">
 {% endblock %}
 
 {% block body %}
@@ -27,6 +27,13 @@
 
     <!-- 图例 + 缩放提示 -->
     <div class="career-legend" id="career-legend"></div>
+
+    <!-- 就业分类扇区切换 -->
+    <div class="career-sector-controls" id="career-sector-controls" aria-label="切换就业分类">
+      <button type="button" class="career-sector-btn career-sector-btn--prev" id="career-sector-prev" aria-label="上一个就业分类">‹</button>
+      <div class="career-sector-status" id="career-sector-label" aria-live="polite"></div>
+      <button type="button" class="career-sector-btn career-sector-btn--next" id="career-sector-next" aria-label="下一个就业分类">›</button>
+    </div>
 
     <!-- 高亮路径上的星旁信息卡片（HTML 层，缩放时尺寸保持稳定） -->
     <div class="career-path-cards" id="career-path-cards" hidden></div>
@@ -66,6 +73,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/career_path_network.js?v=20260618k"></script>
-<script src="/static/js/career_path_app.js?v=20260618k"></script>
+<script src="/static/js/career_path_network.js?v=20260618q"></script>
+<script src="/static/js/career_path_app.js?v=20260618q"></script>
 {% endblock %}
