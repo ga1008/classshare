@@ -1,10 +1,12 @@
 /* 职业发展网络 · 校园星空扇区（Canvas2D，无依赖）
  *
- * 视觉模型：
- *   - 地面/学校剪影 = 现在；越往天空越代表更远的未来。
- *   - 每次只展示一个就业分类扇区，所有该分类下的就业方向从地面向天空扇形散发。
- *   - 星光亮度 = 推荐度/契合度；点击就业星光后，当前方向的成长路径被点亮并弹出信息卡。
- *   - 左右切换分类时，当前扇区绕地面旋转下去，下一个扇区从另一侧旋转上来，星空背景同步旋转并带动态模糊。
+ * 视觉模型（融合真实照片）：
+ *   - 背景层 = 真实银河星空照片（sky_background.webp），随扇区切换绕地面旋转 + 动态模糊。
+ *   - 前景层 = 校园建筑 / 草坪 / 人物剪影照片（campus_foreground.webp），固定贴底，星图从屋顶后方升起。
+ *   - 就业星图夹在前景与背景之间：靠近地面＝现在，越往天空＝越远的未来；扇形向上散发。
+ *   - 每次只展示一个就业分类扇区，所有该分类下的就业方向从地面向天空扇形散发，星光亮度＝推荐度/契合度。
+ *   - 左右切换分类：当前扇区绕地面旋转下去，下一个扇区从另一侧旋转上来，星空背景同步旋转并带动态模糊。
+ *   - 星光持续呼吸闪烁；前景 / 背景与页面四边平滑渐隐融合。
  *
  * 暴露 window.CareerNetwork。回调：onHighlight(cards)、onBackground()、onHover(info|null)、onSectorChange(info)。
  */
@@ -13,10 +15,22 @@
 
   var TAU = Math.PI * 2;
   var ORIGIN_ID = '__ground_now__';
-  var SWITCH_MS = 900;
-  var FAN_ENTER_ANGLE = 1.08;
+  var SWITCH_MS = 980;
+  var FAN_ENTER_ANGLE = 1.12;     // 扇区进出旋转角（绕地面）
+  var SKY_SWING = 0.30;           // 背景星空每次切换跟随旋转角
   var MAX_STAGE_COUNT = 5;
   var TIME_LABELS = ['现在', '0-1 年', '1-3 年', '3-5 年', '5-10 年', '10 年+'];
+
+  // 照片合成参数（按 1600×2142 的素材标定）
+  var ASSET_DEFAULTS = {
+    background: '/static/img/career/sky_background.webp',
+    foreground: '/static/img/career/campus_foreground.webp'
+  };
+  var BG_OVERSCALE = 1.18;        // 背景放大留旋转余量
+  var SKY_BOTTOM_FRAC = 0.84;     // 背景照片此处对齐到画布底（裁掉照片里的楼，露上方银河）
+  var FG_BUILDING_LINE = 0.85;    // 前景照片中"屋顶主体"所在的高度比例
+  var FG_BUILDING_SCREEN = 0.80;  // 屋顶落在画布高度的此比例处
+  var GROUND_FRAC = 0.80;         // 扇形起点（地面）所在画布高度比例
 
   function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
   function lerp(a, b, t) { return a + (b - a) * t; }
@@ -76,10 +90,11 @@
     this.pointer = { x: 0, y: 0, downX: 0, downY: 0, moved: false };
 
     this.skyStars = [];
-    this.milkyStars = [];
-    this.nebula = [];
-    this.grass = [];
+    this.assets = Object.assign({}, ASSET_DEFAULTS, this.opts.assets || {});
+    this.bgImg = null;
+    this.fgImg = null;
     this._seedScene();
+    this._loadImages();
     this._bind();
     this.resize();
   }
@@ -99,68 +114,48 @@
     return ((h >>> (shift || 0)) % 10000) / 10000;
   };
 
+  CareerNetwork.prototype._loadImages = function () {
+    var self = this;
+    function load(src, set) {
+      if (!src) return;
+      var im = new Image();
+      im.decoding = 'async';
+      im.onload = function () { set(im); };
+      im.onerror = function () { set(null); };
+      im.src = src;
+    }
+    load(this.assets.background, function (im) { self.bgImg = im; });
+    load(this.assets.foreground, function (im) { self.fgImg = im; });
+  };
+
+  // 呼吸闪烁的星尘叠加层（盖在真实星空照片上，给静态照片注入"活"的星光）。
   CareerNetwork.prototype._seedScene = function () {
-    var i, h, t, off;
+    var i, h;
     this.skyStars = [];
-    for (i = 0; i < 1100; i++) {
+    for (i = 0; i < 620; i++) {
       h = this._hash('sky-star-' + i);
       this.skyStars.push({
-        wx: (this._rnd(h, 0) - 0.5) * 2.55,
-        wy: -0.08 - Math.pow(this._rnd(h, 8), 0.82) * 1.08,
-        core: 0.35 + this._rnd(h, 18) * 1.45,
-        alpha: 0.08 + this._rnd(h, 3) * 0.62,
+        wx: (this._rnd(h, 0) - 0.5) * 2.7,
+        wy: -0.04 - Math.pow(this._rnd(h, 8), 0.78) * 1.18,
+        core: 0.35 + this._rnd(h, 18) * 1.7,
+        alpha: 0.06 + this._rnd(h, 3) * 0.7,
         phase: this._rnd(h, 6) * TAU,
-        speed: 0.38 + this._rnd(h, 11) * 0.95,
+        speed: 0.45 + this._rnd(h, 11) * 1.25,
         warm: h % 9 === 0,
-        spike: h % 41 === 0
-      });
-    }
-
-    this.milkyStars = [];
-    for (i = 0; i < 2600; i++) {
-      h = this._hash('milky-star-' + i);
-      t = this._rnd(h, 2);
-      off = (this._rnd(h, 12) - 0.5) * (0.22 + 0.18 * Math.sin(t * Math.PI));
-      this.milkyStars.push({
-        t: t,
-        off: off,
-        core: 0.32 + this._rnd(h, 18) * 1.15,
-        alpha: 0.05 + this._rnd(h, 5) * 0.28,
-        phase: this._rnd(h, 7) * TAU,
-        speed: 0.22 + this._rnd(h, 14) * 0.72,
-        warm: h % 8 === 0
-      });
-    }
-
-    this.nebula = [
-      { x: 0.22, y: 0.26, r: 0.35, color: hexToRgb('#3268d8'), alpha: 0.08 },
-      { x: 0.72, y: 0.20, r: 0.32, color: hexToRgb('#9b5de5'), alpha: 0.07 },
-      { x: 0.64, y: 0.55, r: 0.42, color: hexToRgb('#0f9f9a'), alpha: 0.055 },
-      { x: 0.36, y: 0.64, r: 0.30, color: hexToRgb('#f5b14c'), alpha: 0.04 }
-    ];
-
-    this.grass = [];
-    for (i = 0; i < 260; i++) {
-      h = this._hash('grass-' + i);
-      this.grass.push({
-        x: this._rnd(h, 0),
-        h: 8 + this._rnd(h, 9) * 28,
-        bend: (this._rnd(h, 18) - 0.5) * 10,
-        a: 0.12 + this._rnd(h, 4) * 0.32
+        spike: h % 23 === 0
       });
     }
   };
 
   CareerNetwork.prototype._layout = function () {
-    var ground = this.H * (this.W < 760 ? 0.84 : 0.82);
-    var top = Math.max(118, this.H * 0.14);
+    var groundY = this.H * GROUND_FRAC;
+    var top = Math.max(110, this.H * 0.13);
     return {
-      groundY: ground,
-      horizonY: ground - Math.min(82, this.H * 0.105),
+      groundY: groundY,
       topY: top,
       pivotX: this.W / 2,
-      pivotY: ground + Math.min(38, this.H * 0.045),
-      skyHeight: Math.max(180, ground - top)
+      pivotY: this.H * 0.99,
+      skyHeight: Math.max(180, groundY - top)
     };
   };
 
@@ -271,7 +266,7 @@
       self.sectors.push(sec);
     });
 
-    function link(from, to, kind) {
+    function link(from, to) {
       self.adjF[from] = self.adjF[from] || [];
       self.adjB[to] = self.adjB[to] || [];
       self.adjF[from].push(to);
@@ -280,14 +275,14 @@
     this.sectors.forEach(function (sec) {
       sec.directions.forEach(function (path) {
         if (!path.stars.length) return;
-        link(ORIGIN_ID, path.stars[0].id, 'fan');
-        for (var i = 0; i < path.stars.length - 1; i++) link(path.stars[i].id, path.stars[i + 1].id, 'main');
+        link(ORIGIN_ID, path.stars[0].id);
+        for (var i = 0; i < path.stars.length - 1; i++) link(path.stars[i].id, path.stars[i + 1].id);
       });
     });
     (this.network.links || []).forEach(function (l) {
       var from = l[0] + '-' + l[1];
       var to = l[2] + '-' + l[3];
-      if (self.byId[from] && self.byId[to]) link(from, to, 'cross');
+      if (self.byId[from] && self.byId[to]) link(from, to);
     });
   };
 
@@ -414,7 +409,7 @@
       started: performance.now(),
       t: 0,
       skyFrom: this.skyBaseAngle,
-      skyTo: this.skyBaseAngle + dir * 0.36
+      skyTo: this.skyBaseAngle + dir * SKY_SWING
     };
     this.onHighlight([]);
     this._emitSector();
@@ -526,14 +521,14 @@
     });
   };
 
+  // ===== 背景：真实星空照片（旋转 + 模糊）+ 呼吸星尘 =====
   CareerNetwork.prototype._drawBackground = function (ctx, layout, angle, blur) {
     var W = this.W, H = this.H;
-    var sky = ctx.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, '#02040d');
-    sky.addColorStop(0.45, '#09162c');
-    sky.addColorStop(0.78, '#10223b');
-    sky.addColorStop(1, '#07100d');
-    ctx.fillStyle = sky;
+    var base = ctx.createLinearGradient(0, 0, 0, H);
+    base.addColorStop(0, '#02040c');
+    base.addColorStop(0.5, '#05091a');
+    base.addColorStop(1, '#02040d');
+    ctx.fillStyle = base;
     ctx.fillRect(0, 0, W, H);
 
     ctx.save();
@@ -542,92 +537,34 @@
     ctx.translate(-layout.pivotX, -layout.pivotY);
     if (blur > 0.1) ctx.filter = 'blur(' + blur.toFixed(1) + 'px)';
 
-    this._drawNebula(ctx);
-    this._drawMilkyWay(ctx, layout);
+    if (this.bgImg) {
+      this._drawSkyPhoto(ctx);
+      ctx.filter = 'none';
+    } else {
+      ctx.filter = 'none';
+    }
     this._drawSkyStars(ctx, layout);
-
     ctx.restore();
     ctx.filter = 'none';
   };
 
-  CareerNetwork.prototype._drawNebula = function (ctx) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (var i = 0; i < this.nebula.length; i++) {
-      var n = this.nebula[i];
-      var x = n.x * this.W;
-      var y = n.y * this.H;
-      var r = n.r * Math.max(this.W, this.H);
-      var g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, rgba(n.color, n.alpha));
-      g.addColorStop(0.46, rgba(n.color, n.alpha * 0.32));
-      g.addColorStop(1, rgba(n.color, 0));
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, TAU);
-      ctx.fill();
-    }
-    ctx.restore();
-  };
-
-  CareerNetwork.prototype._milkyPoint = function (t, off, layout) {
-    var W = this.W, H = this.H;
-    var x = lerp(-W * 0.18, W * 1.18, t);
-    var curve = Math.sin((t - 0.08) * Math.PI * 1.22);
-    var y = lerp(layout.groundY - layout.skyHeight * 0.18, layout.topY + layout.skyHeight * 0.06, t) - curve * H * 0.16;
-    var nx = -0.56 + t * 1.18;
-    var ny = -0.82 - Math.cos(t * Math.PI) * 0.16;
-    return {
-      x: x + off * W * 0.28,
-      y: y + off * H * 0.18,
-      nx: nx,
-      ny: ny
-    };
-  };
-
-  CareerNetwork.prototype._drawMilkyWay = function (ctx, layout) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    function band(stroke, width, alpha, shadow) {
-      ctx.save();
-      ctx.shadowColor = stroke;
-      ctx.shadowBlur = shadow;
-      ctx.strokeStyle = stroke.replace('ALPHA', alpha);
-      ctx.lineWidth = width;
-      ctx.beginPath();
-      ctx.moveTo(-this.W * 0.18, layout.groundY - layout.skyHeight * 0.18);
-      ctx.bezierCurveTo(this.W * 0.23, layout.topY - this.H * 0.04, this.W * 0.62, layout.topY + this.H * 0.04, this.W * 1.18, layout.topY + layout.skyHeight * 0.22);
-      ctx.stroke();
-      ctx.restore();
-    }
-    band.call(this, 'rgba(92,166,255,ALPHA)', 126, 0.055, 34);
-    band.call(this, 'rgba(235,246,255,ALPHA)', 62, 0.045, 24);
-    band.call(this, 'rgba(255,226,172,ALPHA)', 22, 0.034, 16);
-
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.strokeStyle = 'rgba(1,7,18,0.18)';
-    ctx.lineWidth = 28;
-    ctx.beginPath();
-    ctx.moveTo(-this.W * 0.12, layout.groundY - layout.skyHeight * 0.1);
-    ctx.bezierCurveTo(this.W * 0.22, layout.topY + this.H * 0.04, this.W * 0.6, layout.topY + this.H * 0.12, this.W * 1.12, layout.topY + layout.skyHeight * 0.3);
-    ctx.stroke();
-
-    ctx.globalCompositeOperation = 'lighter';
-    for (var i = 0; i < this.milkyStars.length; i++) {
-      var s = this.milkyStars[i];
-      var p = this._milkyPoint(s.t, s.off, layout);
-      var tw = 0.72 + 0.28 * Math.sin(this.timeSec * s.speed + s.phase);
-      var a = s.alpha * tw;
-      var col = s.warm ? '255,231,183' : '206,231,255';
-      ctx.fillStyle = 'rgba(' + col + ',' + a + ')';
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, s.core, 0, TAU);
-      ctx.fill();
-    }
-    ctx.restore();
+  CareerNetwork.prototype._drawSkyPhoto = function (ctx) {
+    var img = this.bgImg;
+    var iw = img.naturalWidth || img.width;
+    var ih = img.naturalHeight || img.height;
+    var s = Math.max(this.W / iw, this.H / ih) * BG_OVERSCALE;
+    var dw = iw * s, dh = ih * s;
+    var dx = (this.W - dw) / 2;
+    var dy = this.H - SKY_BOTTOM_FRAC * ih * s;
+    if (dy > 0) dy = 0;
+    ctx.drawImage(img, dx, dy, dw, dh);
+    // 轻压暗，让职业星光更突出；顶部更暗、银河带保留亮度
+    var grad = ctx.createLinearGradient(0, 0, 0, this.H);
+    grad.addColorStop(0, 'rgba(3,6,16,0.42)');
+    grad.addColorStop(0.4, 'rgba(3,6,16,0.12)');
+    grad.addColorStop(1, 'rgba(3,6,16,0.30)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(dx, dy, dw, dh);
   };
 
   CareerNetwork.prototype._drawSkyStars = function (ctx, layout) {
@@ -637,23 +574,22 @@
       var s = this.skyStars[i];
       var x = layout.pivotX + s.wx * this.W * this.spacing;
       var y = layout.pivotY + s.wy * this.H * this.spacing;
-      if (x < -30 || x > this.W + 30 || y < -40 || y > layout.groundY + 20) continue;
-      var tw = 0.68 + 0.32 * Math.sin(this.timeSec * s.speed + s.phase);
+      if (x < -40 || x > this.W + 40 || y < -50 || y > layout.groundY + 30) continue;
+      var tw = 0.6 + 0.4 * Math.sin(this.timeSec * s.speed + s.phase);
       var a = s.alpha * tw;
-      var col = s.warm ? '255,227,177' : '210,230,255';
+      if (a < 0.02) continue;
+      var col = s.warm ? '255,227,177' : '214,233,255';
       ctx.fillStyle = 'rgba(' + col + ',' + a + ')';
       ctx.beginPath();
       ctx.arc(x, y, s.core, 0, TAU);
       ctx.fill();
-      if (s.spike && a > 0.18) {
-        ctx.strokeStyle = 'rgba(' + col + ',' + Math.min(0.28, a * 0.75) + ')';
+      if (s.spike && a > 0.2) {
+        ctx.strokeStyle = 'rgba(' + col + ',' + Math.min(0.3, a * 0.7) + ')';
         ctx.lineWidth = 0.7;
-        var L = 6 + s.core * 6;
+        var L = 5 + s.core * 6;
         ctx.beginPath();
-        ctx.moveTo(x - L, y);
-        ctx.lineTo(x + L, y);
-        ctx.moveTo(x, y - L);
-        ctx.lineTo(x, y + L);
+        ctx.moveTo(x - L, y); ctx.lineTo(x + L, y);
+        ctx.moveTo(x, y - L); ctx.lineTo(x, y + L);
         ctx.stroke();
       }
     }
@@ -662,8 +598,6 @@
 
   CareerNetwork.prototype._drawTimeBands = function (ctx, layout, sec, opacity) {
     ctx.save();
-    ctx.strokeStyle = 'rgba(190,216,255,' + (0.08 * opacity) + ')';
-    ctx.fillStyle = 'rgba(210,230,255,' + (0.34 * opacity) + ')';
     ctx.font = '700 11px "PingFang SC","Microsoft YaHei",sans-serif';
     ctx.textAlign = 'center';
     ctx.setLineDash([2, 9]);
@@ -678,7 +612,7 @@
       ctx.moveTo(layout.pivotX - spread, y);
       ctx.quadraticCurveTo(layout.pivotX, y - 22, layout.pivotX + spread, y);
       ctx.stroke();
-      ctx.fillStyle = 'rgba(215,232,255,' + (0.24 * opacity) + ')';
+      ctx.fillStyle = 'rgba(215,232,255,' + (0.26 * opacity) + ')';
       ctx.fillText(TIME_LABELS[i] || '', layout.pivotX - spread - 34, y + 4);
     }
     ctx.setLineDash([]);
@@ -700,10 +634,8 @@
       ctx.strokeStyle = rgba(col, 0.46 * bright);
       ctx.lineWidth = 0.85;
       ctx.beginPath();
-      ctx.moveTo(x - L, y);
-      ctx.lineTo(x + L, y);
-      ctx.moveTo(x, y - L);
-      ctx.lineTo(x, y + L);
+      ctx.moveTo(x - L, y); ctx.lineTo(x + L, y);
+      ctx.moveTo(x, y - L); ctx.lineTo(x, y + L);
       ctx.stroke();
     }
   };
@@ -720,16 +652,19 @@
     var hasSel = !!(this.selectedId && this.related);
     var color = sec.meta.color || hexToRgb('#6ee7ff');
     if (this.W >= 700) {
-      var titleY = Math.max(104, layout.topY - 26);
+      var titleY = Math.max(96, layout.topY - 24);
       ctx.save();
       ctx.textAlign = 'center';
       ctx.font = '800 13px "PingFang SC","Microsoft YaHei",sans-serif';
-      ctx.fillStyle = rgba(color, 0.75 * opacity);
+      ctx.fillStyle = rgba(color, 0.78 * opacity);
+      ctx.shadowColor = 'rgba(2,5,12,0.9)';
+      ctx.shadowBlur = 10;
       var title = (sec.meta.icon ? sec.meta.icon + ' ' : '') + sec.meta.name + ' · ' + sec.directions.length + ' 个方向';
       ctx.fillText(title, layout.pivotX, titleY);
       ctx.restore();
     }
 
+    // 成长曲线
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     for (var p = 0; p < sec.directions.length; p++) {
@@ -737,13 +672,12 @@
       if (!path.stars.length) continue;
       var hotPath = hasSel && path.stars.some(function (s) { return !!this.related[s.id]; }, this);
       var dimPath = hasSel && !hotPath;
-      var lineAlpha = (dimPath ? 0.05 : 0.13 + path.glow * 0.18) * opacity;
-      var lineWidth = hotPath ? 2.2 : 0.9;
-      ctx.strokeStyle = hotPath ? rgba(color, 0.86 * opacity) : rgba(color, lineAlpha);
-      ctx.lineWidth = lineWidth;
+      var lineAlpha = (dimPath ? 0.05 : 0.14 + path.glow * 0.2) * opacity;
+      ctx.strokeStyle = hotPath ? rgba(color, 0.88 * opacity) : rgba(color, lineAlpha);
+      ctx.lineWidth = hotPath ? 2.3 : 1;
       ctx.beginPath();
       var first = path.stars[0];
-      ctx.moveTo(layout.pivotX, layout.groundY - 10);
+      ctx.moveTo(layout.pivotX, layout.groundY - 8);
       ctx.quadraticCurveTo((layout.pivotX + first.sx) / 2, layout.groundY - 44, first.sx, first.sy);
       for (var si = 1; si < path.stars.length; si++) {
         var prev = path.stars[si - 1], cur = path.stars[si];
@@ -753,17 +687,19 @@
     }
     ctx.restore();
 
+    // 星光（光晕）
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (var i = 0; i < sec.stars.length; i++) {
       var s = sec.stars[i];
       var inPath = !hasSel || (this.related && this.related[s.id]);
-      var tw = 0.7 + 0.3 * Math.sin(this.timeSec * s.twSpeed + s.twPhase);
-      var bright = s.glow * tw * (inPath ? 1 : 0.17) * opacity;
+      var tw = 0.68 + 0.32 * Math.sin(this.timeSec * s.twSpeed + s.twPhase);
+      var bright = s.glow * tw * (inPath ? 1 : 0.16) * opacity;
       this._star(ctx, s.sx, s.sy, s.core, s.color, bright, s.glow > 0.56 && inPath);
     }
     ctx.restore();
 
+    // 星核
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     for (var j = 0; j < sec.stars.length; j++) {
@@ -771,7 +707,7 @@
       var related = !hasSel || (this.related && this.related[n.id]);
       var selected = n.id === this.selectedId;
       var hovered = n.id === this.hoverId;
-      ctx.fillStyle = 'rgba(255,255,255,' + ((related ? 0.96 : 0.28) * opacity) + ')';
+      ctx.fillStyle = 'rgba(255,255,255,' + ((related ? 0.96 : 0.26) * opacity) + ')';
       ctx.beginPath();
       ctx.arc(n.sx, n.sy, n.core * (selected ? 1.45 : 1), 0, TAU);
       ctx.fill();
@@ -802,7 +738,7 @@
       var labelStage = Math.min(path.stars.length - 1, Math.max(0, path.labelStage || 0));
       var s = path.stars[labelStage];
       var hot = !hasSel || path.stars.some(function (st) { return this.related && this.related[st.id]; }, this);
-      var a = (hot ? 0.78 : 0.22) * opacity;
+      var a = (hot ? 0.8 : 0.2) * opacity;
       var text = ellipsis(ctx, path.dir.name || '', this.W < 640 ? 92 : 104);
       var side = path.labelSide;
       if (this.W < 640) {
@@ -814,7 +750,7 @@
       ctx.textAlign = side > 0 ? 'left' : 'right';
       var w = ctx.measureText(text).width + 12;
       var bx = side > 0 ? x - 6 : x - w + 6;
-      ctx.fillStyle = 'rgba(3,7,14,' + (0.5 * a) + ')';
+      ctx.fillStyle = 'rgba(3,7,14,' + (0.55 * a) + ')';
       ctx.fillRect(bx, y - 10, w, 20);
       ctx.fillStyle = 'rgba(232,242,255,' + a + ')';
       ctx.fillText(text, x, y);
@@ -847,121 +783,97 @@
     ctx.restore();
   };
 
+  // ===== 前景：校园建筑/草坪/人物剪影照片（贴底，固定不旋转）=====
   CareerNetwork.prototype._drawGround = function (ctx, layout) {
+    if (this.fgImg) {
+      this._drawCampusPhoto(ctx);
+    } else {
+      this._drawFallbackGround(ctx, layout);
+    }
+    this._drawNowMarker(ctx, layout);
+  };
+
+  CareerNetwork.prototype._drawCampusPhoto = function (ctx) {
+    var img = this.fgImg;
+    var iw = img.naturalWidth || img.width;
+    var ih = img.naturalHeight || img.height;
+    // 宽度覆盖；竖屏时按需放大保证底部铺满
+    var s = Math.max(this.W / iw, 1.34 * this.H / ih);
+    var dw = iw * s, dh = ih * s;
+    var dx = (this.W - dw) / 2;
+    var dy = this.H * FG_BUILDING_SCREEN - FG_BUILDING_LINE * ih * s;
+    // 屋顶后透出的暖光，让星图与建筑自然衔接
+    ctx.save();
+    var warm = ctx.createLinearGradient(0, this.H * (FG_BUILDING_SCREEN - 0.06), 0, this.H);
+    warm.addColorStop(0, 'rgba(255,196,120,0)');
+    warm.addColorStop(0.5, 'rgba(255,190,118,0.08)');
+    warm.addColorStop(1, 'rgba(255,184,110,0.16)');
+    ctx.fillStyle = warm;
+    ctx.fillRect(0, this.H * (FG_BUILDING_SCREEN - 0.06), this.W, this.H * (1.06 - FG_BUILDING_SCREEN));
+    ctx.restore();
+    ctx.drawImage(img, dx, dy, dw, dh);
+  };
+
+  CareerNetwork.prototype._drawFallbackGround = function (ctx, layout) {
     var W = this.W, H = this.H;
     ctx.save();
-    var ground = ctx.createLinearGradient(0, layout.horizonY, 0, H);
-    ground.addColorStop(0, 'rgba(9,30,22,0.55)');
-    ground.addColorStop(0.34, '#07140f');
-    ground.addColorStop(1, '#020604');
-    ctx.fillStyle = ground;
-    ctx.beginPath();
-    ctx.moveTo(0, layout.horizonY + 18);
-    ctx.quadraticCurveTo(W * 0.28, layout.horizonY - 12, W * 0.55, layout.horizonY + 7);
-    ctx.quadraticCurveTo(W * 0.78, layout.horizonY + 25, W, layout.horizonY - 3);
-    ctx.lineTo(W, H);
-    ctx.lineTo(0, H);
-    ctx.closePath();
-    ctx.fill();
-
-    this._drawSchool(ctx, layout);
-
-    ctx.save();
-    ctx.strokeStyle = 'rgba(122,210,151,0.16)';
-    ctx.lineWidth = 1;
-    for (var i = 0; i < this.grass.length; i++) {
-      var g = this.grass[i];
-      var x = g.x * W;
-      var y = layout.horizonY + 20 + (i % 13);
-      ctx.globalAlpha = g.a;
-      ctx.beginPath();
-      ctx.moveTo(x, y + g.h);
-      ctx.quadraticCurveTo(x + g.bend, y + g.h * 0.45, x + g.bend * 0.6, y);
-      ctx.stroke();
-    }
+    var g = ctx.createLinearGradient(0, layout.groundY - 30, 0, H);
+    g.addColorStop(0, 'rgba(7,16,12,0.6)');
+    g.addColorStop(0.4, '#06120d');
+    g.addColorStop(1, '#020604');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, layout.groundY - 30, W, H - layout.groundY + 30);
+    ctx.fillStyle = 'rgba(2,8,15,0.96)';
+    ctx.fillRect(W * 0.2, layout.groundY - 28, W * 0.6, 60);
     ctx.restore();
+  };
 
-    var glow = ctx.createRadialGradient(layout.pivotX, layout.groundY - 8, 0, layout.pivotX, layout.groundY - 8, 150);
-    glow.addColorStop(0, 'rgba(255,235,170,0.32)');
-    glow.addColorStop(0.28, 'rgba(110,231,255,0.14)');
+  CareerNetwork.prototype._drawNowMarker = function (ctx, layout) {
+    ctx.save();
+    var glow = ctx.createRadialGradient(layout.pivotX, layout.groundY, 0, layout.pivotX, layout.groundY, 150);
+    glow.addColorStop(0, 'rgba(255,235,170,0.30)');
+    glow.addColorStop(0.3, 'rgba(110,231,255,0.12)');
     glow.addColorStop(1, 'rgba(110,231,255,0)');
     ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(layout.pivotX, layout.groundY - 8, 150, 0, TAU);
+    ctx.arc(layout.pivotX, layout.groundY, 150, 0, TAU);
     ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = 'rgba(255,245,205,0.96)';
     ctx.beginPath();
-    ctx.arc(layout.pivotX, layout.groundY - 8, 4.8, 0, TAU);
+    ctx.arc(layout.pivotX, layout.groundY, 4.6, 0, TAU);
     ctx.fill();
     ctx.font = '800 12px "PingFang SC","Microsoft YaHei",sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255,240,180,0.92)';
-    ctx.fillText('现在', layout.pivotX, layout.groundY + 18);
+    ctx.fillStyle = 'rgba(255,240,180,0.95)';
+    ctx.shadowColor = 'rgba(2,5,12,0.9)';
+    ctx.shadowBlur = 8;
+    ctx.fillText('现在', layout.pivotX, layout.groundY + 20);
     ctx.restore();
   };
 
-  CareerNetwork.prototype._drawSchool = function (ctx, layout) {
-    var W = this.W;
-    var y = layout.horizonY + 34;
-    var cx = layout.pivotX;
-    var scale = clamp(W / 1440, 0.62, 1.15);
+  // ===== 四边渐隐：让前景/背景平滑融入页面深色边缘 =====
+  CareerNetwork.prototype._drawEdgeFade = function (ctx) {
+    var W = this.W, H = this.H;
+    var base = '2,4,12';
+    var fx = Math.max(46, W * 0.09);
+    var ft = Math.max(40, H * 0.085);
+    var fb = Math.max(26, H * 0.045);
+    var g;
     ctx.save();
-    ctx.fillStyle = 'rgba(2,8,15,0.96)';
-    ctx.strokeStyle = 'rgba(150,195,230,0.16)';
-    ctx.lineWidth = 1;
-
-    function rect(x, top, w, h) {
-      ctx.beginPath();
-      ctx.rect(x, top, w, h);
-      ctx.fill();
-      ctx.stroke();
-    }
-    rect(cx - 250 * scale, y - 44 * scale, 180 * scale, 44 * scale);
-    rect(cx + 70 * scale, y - 44 * scale, 180 * scale, 44 * scale);
-    rect(cx - 92 * scale, y - 82 * scale, 184 * scale, 82 * scale);
-    rect(cx - 34 * scale, y - 128 * scale, 68 * scale, 46 * scale);
-
-    ctx.beginPath();
-    ctx.moveTo(cx - 112 * scale, y - 82 * scale);
-    ctx.lineTo(cx, y - 118 * scale);
-    ctx.lineTo(cx + 112 * scale, y - 82 * scale);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(cx - 270 * scale, y - 44 * scale);
-    ctx.lineTo(cx - 160 * scale, y - 76 * scale);
-    ctx.lineTo(cx - 50 * scale, y - 44 * scale);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(cx + 50 * scale, y - 44 * scale);
-    ctx.lineTo(cx + 160 * scale, y - 76 * scale);
-    ctx.lineTo(cx + 270 * scale, y - 44 * scale);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = 'rgba(255,215,135,0.33)';
-    for (var row = 0; row < 3; row++) {
-      for (var col = 0; col < 6; col++) {
-        if ((row + col) % 4 === 0) continue;
-        ctx.fillRect(cx - 72 * scale + col * 26 * scale, y - 66 * scale + row * 19 * scale, 9 * scale, 8 * scale);
-      }
-    }
-    for (col = 0; col < 6; col++) {
-      if (col % 3 !== 1) ctx.fillRect(cx - 228 * scale + col * 24 * scale, y - 28 * scale, 8 * scale, 7 * scale);
-      if (col % 3 !== 0) ctx.fillRect(cx + 92 * scale + col * 24 * scale, y - 28 * scale, 8 * scale, 7 * scale);
-    }
-
-    ctx.fillStyle = 'rgba(1,5,10,0.98)';
-    ctx.beginPath();
-    ctx.rect(cx - 14 * scale, y - 30 * scale, 28 * scale, 30 * scale);
-    ctx.fill();
+    g = ctx.createLinearGradient(0, 0, 0, ft);
+    g.addColorStop(0, 'rgba(' + base + ',0.92)'); g.addColorStop(1, 'rgba(' + base + ',0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, ft);
+    g = ctx.createLinearGradient(0, H, 0, H - fb);
+    g.addColorStop(0, 'rgba(' + base + ',0.8)'); g.addColorStop(1, 'rgba(' + base + ',0)');
+    ctx.fillStyle = g; ctx.fillRect(0, H - fb, W, fb);
+    g = ctx.createLinearGradient(0, 0, fx, 0);
+    g.addColorStop(0, 'rgba(' + base + ',0.95)'); g.addColorStop(1, 'rgba(' + base + ',0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, fx, H);
+    g = ctx.createLinearGradient(W, 0, W - fx, 0);
+    g.addColorStop(0, 'rgba(' + base + ',0.95)'); g.addColorStop(1, 'rgba(' + base + ',0)');
+    ctx.fillStyle = g; ctx.fillRect(W - fx, 0, fx, H);
     ctx.restore();
   };
 
@@ -969,12 +881,12 @@
     var ctx = this.ctx;
     var layout = this._layout();
     var blur = 0;
-    var skyAngle = this.skyBaseAngle + Math.sin(this.timeSec * 0.018) * 0.018;
+    var skyAngle = this.skyBaseAngle + Math.sin(this.timeSec * 0.016) * 0.012;
 
     if (this.transition) {
       var k = ease(this.transition.t);
-      skyAngle = lerp(this.transition.skyFrom, this.transition.skyTo, k) + Math.sin(this.timeSec * 0.02) * 0.018;
-      blur = Math.sin(k * Math.PI) * 3.4;
+      skyAngle = lerp(this.transition.skyFrom, this.transition.skyTo, k) + Math.sin(this.timeSec * 0.02) * 0.012;
+      blur = Math.sin(k * Math.PI) * 3.6;
     }
 
     this._drawBackground(ctx, layout, skyAngle, blur);
@@ -985,13 +897,14 @@
       var t = ease(tr.t);
       var fromSec = this.sectors[tr.from];
       var toSec = this.sectors[tr.to];
-      this._drawSector(ctx, fromSec, layout, -tr.dir * FAN_ENTER_ANGLE * t, 1 - t * 0.28, Math.sin(t * Math.PI) * 2.1, false);
-      this._drawSector(ctx, toSec, layout, tr.dir * FAN_ENTER_ANGLE * (1 - t), 0.42 + t * 0.58, Math.sin(t * Math.PI) * 2.4, false);
+      this._drawSector(ctx, fromSec, layout, -tr.dir * FAN_ENTER_ANGLE * t, 1 - t * 0.3, Math.sin(t * Math.PI) * 2.2, false);
+      this._drawSector(ctx, toSec, layout, tr.dir * FAN_ENTER_ANGLE * (1 - t), 0.4 + t * 0.6, Math.sin(t * Math.PI) * 2.4, false);
     } else {
       this._drawSector(ctx, this.sectors[this.sectorIndex], layout, 0, 1, 0, true);
     }
 
     this._drawGround(ctx, layout);
+    this._drawEdgeFade(ctx);
   };
 
   CareerNetwork.prototype.start = function () {
