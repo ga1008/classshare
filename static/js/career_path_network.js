@@ -430,16 +430,20 @@
     sv.addEventListener('pointerdown', function (e) {
       if (e.button !== 0) return;
       var r = sv.getBoundingClientRect();
-      self._drag = { x: e.clientX - r.left, y: e.clientY - r.top, tx: self.tx, ty: self.ty, moved: false, id: e.pointerId };
+      // 不在按下时捕获指针——否则 pointerup 的 target 会变成 svg，点不中节点。
+      self._drag = { x: e.clientX - r.left, y: e.clientY - r.top, tx: self.tx, ty: self.ty, moved: false, id: e.pointerId, captured: false };
       self._hideTip();
-      if (sv.setPointerCapture) { try { sv.setPointerCapture(e.pointerId); } catch (_) {} }
     });
     sv.addEventListener('pointermove', function (e) {
       if (!self._drag) return;
       var r = sv.getBoundingClientRect();
       var dx = (e.clientX - r.left) - self._drag.x;
       var dy = (e.clientY - r.top) - self._drag.y;
-      if (!self._drag.moved && dx * dx + dy * dy > 25) { self._drag.moved = true; sv.classList.add('grabbing'); }
+      if (!self._drag.moved && dx * dx + dy * dy > 25) {
+        self._drag.moved = true; sv.classList.add('grabbing');
+        // 拖动确实开始后再捕获，保证拖出 svg 仍跟手；点选(无拖动)不受影响。
+        if (sv.setPointerCapture) { try { sv.setPointerCapture(self._drag.id); self._drag.captured = true; } catch (_) {} }
+      }
       if (self._drag.moved) {
         if (self._anim) { cancelAnimationFrame(self._anim); self._anim = null; }
         self.tx = self._drag.tx + dx; self.ty = self._drag.ty + dy; self._apply();
@@ -447,9 +451,11 @@
     });
     sv.addEventListener('pointerup', function (e) {
       var d = self._drag; self._drag = null; sv.classList.remove('grabbing');
-      if (sv.releasePointerCapture) { try { sv.releasePointerCapture(e.pointerId); } catch (_) {} }
+      if (d && d.captured && sv.releasePointerCapture) { try { sv.releasePointerCapture(e.pointerId); } catch (_) {} }
       if (d && d.moved) return; // 拖动后不触发点选
-      var g = e.target.closest('.cn-node');
+      // 用 elementFromPoint 取真实命中元素（兼容指针捕获/合成事件）。
+      var hit = document.elementFromPoint(e.clientX, e.clientY);
+      var g = hit && hit.closest ? hit.closest('.cn-node') : null;
       if (g && g.dataset.id !== 'origin') {
         self.selectedId = g.dataset.id;
         self._applySelection(g.dataset.id);
