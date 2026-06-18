@@ -3,7 +3,7 @@
 {% block body_class %}career-page-body{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="/static/css/career_path.css?v=20260618d">
+  <link rel="stylesheet" href="/static/css/career_path.css?v=20260618h">
 {% endblock %}
 
 {% block body %}
@@ -27,6 +27,9 @@
 
     <!-- 图例 + 缩放提示 -->
     <div class="career-legend" id="career-legend"></div>
+
+    <!-- 高亮路径上的星旁信息卡片（HTML 层，缩放时尺寸保持稳定） -->
+    <div class="career-path-cards" id="career-path-cards" hidden></div>
 
     <!-- 节点详情卡片（点击节点后出现，点空白处关闭） -->
     <aside class="career-detail" id="career-detail" hidden></aside>
@@ -63,6 +66,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/career_path_network.js?v=20260618e"></script>
-<script src="/static/js/career_path_app.js?v=20260618e"></script>
+<script src="/static/js/career_path_network.js?v=20260618h"></script>
+<script src="/static/js/career_path_app.js?v=20260618h"></script>
 {% endblock %}

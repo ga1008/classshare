@@ -1,16 +1,27 @@
-/* 职业发展网络 · 3D 动态星系（Canvas2D，无依赖）
- * 一整张倾斜、缓慢自转的螺旋星系：中心是「你 · 起点」的星核，每个就业大类是一条
- * 旋臂向外辐射，每个方向是一颗星——推荐度越高越亮（所有可能路径都在，不推荐的也存在、
- * 可点击，只是暗）。点击某颗星，会点亮它从星核辐射出去的路径与关联分叉，其余隐入背景。
- * 暴露 window.CareerNetwork。
+/* 职业发展网络 · 银河系式 3D 动态星系（Canvas2D，无依赖）
+ *
+ * 模型：把"现在→未来"的时间线卷进极坐标。
+ *   - 星系中心 = 现在/起点；半径 = 时间（内圈 0–1 年 → 外圈 10 年+，带浮动）。
+ *   - 角度 = 就业方向（按大类分组成扇区，整圈铺满该专业所有方向）。
+ *   - 每个方向是一条由内向外的"成长线"：它的 4 个阶段是 4 颗星，连成一条径向旋臂。
+ *   - 星越亮 = 推荐度越高；不推荐的也在场、可点。背景密布同款星尘 + 模糊星云，整体缓慢自转。
+ *   - 点击一颗星：从中心连出亮线，点亮"能发展到它的所有前序 + 它之后所有可发展方向"，
+ *     其余变暗，并在每颗高亮星旁弹出信息卡（去重叠）。点空白复位。
+ *   - 滚轮缩放只改变星与星的"间距"（半径），星/卡片/连线粗细都不变大。
+ *
+ * 暴露 window.CareerNetwork。回调：onHighlight(cards)、onBackground()、onHover(info|null)、onOpenDetail(tag)。
  */
 (function () {
   'use strict';
 
   var TAU = Math.PI * 2;
-  var TILT = 0.88;                 // 星盘倾角（弧度）→ 看上去是斜着的圆盘
+  var TILT = 0.92;
   var COS_T = Math.cos(TILT), SIN_T = Math.sin(TILT);
-  var ROT_SPEED = 0.045;           // 星系自转角速度（弧度/秒）
+  var ROT_SPEED = 0.025;
+  var RINGS = [150, 280, 410, 540];      // 时间环基础半径（缩放前）
+  var RING_LABELS = ['0–1 年', '3–5 年', '5–10 年', '10 年+'];
+  var TWIST = 0.0013;                     // 旋臂扭转
+  var ORIGIN_ID = '__origin__';
 
   function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
   function lerp(a, b, t) { return a + (b - a) * t; }
@@ -26,21 +37,23 @@
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.opts = options || {};
-    this.onSelect = this.opts.onSelect || function () {};
+    this.onHighlight = this.opts.onHighlight || function () {};
     this.onBackground = this.opts.onBackground || function () {};
+    this.onHover = this.opts.onHover || function () {};
 
     this.dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
     this.W = 0; this.H = 0;
-    this.scale = 1; this.targetScale = 1;
+    this.spacing = 1; this.targetSpacing = 1;       // 缩放只改这个（星距）
     this.pan = { x: 0, y: 0 };
     this.rotation = 0;
-    this.nodes = [];
-    this.bgStars = [];
+    this.stars = [];          // 阶段星
+    this.bg = [];             // 背景星尘
+    this.nebula = [];         // 模糊星云
     this.edges = [];
-    this.hub = null;
+    this.origin = null;
     this.selectedId = null;
-    this.hoverId = null;
     this.related = null;
+    this.hoverId = null;
     this.timeSec = 0;
     this._raf = null;
 
@@ -60,94 +73,127 @@
   CareerNetwork.prototype.setData = function (network, personalized) {
     var self = this;
     var cats = network.cats || [];
-    var nodes = network.nodes || [];
+    var dirs = network.nodes || [];
     var links = network.links || [];
 
     this.catColor = {};
-    cats.forEach(function (c) { self.catColor[c.id] = { c1: c.c1 || '#6ee7ff', c2: c.c2 || '#3b82f6', name: c.name, icon: c.icon, id: c.id }; });
-
-    // 旋臂：每个大类一条臂，均匀分布角度
-    var catIds = cats.map(function (c) { return c.id; });
-    if (!catIds.length) catIds = nodes.map(function (n) { return n.cat; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
-    var armBase = {};
-    catIds.forEach(function (id, i) { armBase[id] = (i / Math.max(catIds.length, 1)) * TAU; });
-
-    var byCat = {};
-    nodes.forEach(function (n) { (byCat[n.cat] = byCat[n.cat] || []).push(n); });
-
-    var INNER = 150, OUTER = 560, TWIST = 0.0045, THICK = 38;
-    this.maxR = OUTER + 80;
-    this.nodes = [];
-    nodes.forEach(function (n) {
-      var arm = byCat[n.cat] || [n];
-      var idx = arm.indexOf(n);
-      var m = arm.length;
-      var seed = self._hash((n.tag || n.name) + ':' + n.cat);
-      // 每个大类是一个扇形旋臂：节点沿角度铺开 + 半径黄金分割错落，避免堆叠
-      var f = m > 1 ? idx / (m - 1) : 0.5;
-      var wedge = clamp(0.5 + m * 0.045, 0.5, 1.25);     // 大类越大，扇面越宽
-      var rFrac = 0.22 + 0.78 * (((idx * 0.61803) + ((seed % 100) / 700)) % 1);
-      var r = INNER + rFrac * (OUTER - INNER);
-      var ang = (armBase[n.cat] || 0) + (f - 0.5) * wedge + ((seed % 1000) / 1000 - 0.5) * 0.06;
-      var theta0 = ang + r * TWIST;
-      var h = (((seed >> 7) % 1000) / 1000 - 0.5) * THICK;
-      var col = self.catColor[n.cat] || { c1: '#6ee7ff', c2: '#3b82f6' };
-      var rec = n.rec || 3;
-      var glow = (typeof n.glow === 'number') ? n.glow
-        : (rec >= 5 ? 0.95 : rec >= 4 ? 0.62 : rec >= 3 ? 0.4 : 0.22);
-      glow = clamp(glow, 0.12, 1);
-      self.nodes.push({
-        id: n.tag, tag: n.tag, name: n.name, cat: n.cat, rec: rec, data: n,
-        highlighted: !!n.highlighted, lang: !!n.lang,
-        glow: glow, color: hexToRgb(col.c1), color2: hexToRgb(col.c2),
-        r: r, theta0: theta0, h: h,
-        size: 2.6 + rec * 1.1 + (n.highlighted ? 1.4 : 0),
-        twPhase: (seed % 628) / 100, twSpeed: 0.5 + ((seed >> 9) % 100) / 80,
-        sx: 0, sy: 0, depth: 0, ss: 0
-      });
+    this.catMeta = {};
+    cats.forEach(function (c) {
+      self.catColor[c.id] = hexToRgb(c.c1 || '#6ee7ff');
+      self.catMeta[c.id] = { id: c.id, name: c.name || c.id, color: hexToRgb(c.c1 || '#6ee7ff') };
     });
 
-    // 星核（你 · 起点）
-    this.hub = {
-      id: '__hub__', name: this.opts.hubLabel || '起点 · 现在', isHub: true,
-      r: 0, theta0: 0, h: 0, color: hexToRgb('#fde68a'), color2: hexToRgb('#fbbf24'),
-      glow: 1, size: 13, twPhase: 0, twSpeed: 0.7, sx: 0, sy: 0, depth: 0, ss: 0
+    // 方向按大类分组排序，整圈铺开成扇区
+    var catOrder = cats.map(function (c) { return c.id; });
+    if (!catOrder.length) catOrder = dirs.map(function (d) { return d.cat; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+    var ordered = [];
+    catOrder.forEach(function (cid) { dirs.forEach(function (d) { if (d.cat === cid) ordered.push(d); }); });
+    dirs.forEach(function (d) { if (ordered.indexOf(d) < 0) ordered.push(d); });
+
+    var nDir = ordered.length || 1;
+    this.sectors = [];
+    var cursor = 0;
+    catOrder.forEach(function (cid) {
+      var count = ordered.filter(function (d) { return d.cat === cid; }).length;
+      if (!count) return;
+      self.sectors.push({
+        id: cid,
+        start: (cursor / nDir) * TAU,
+        end: ((cursor + count) / nDir) * TAU,
+        mid: ((cursor + count / 2) / nDir) * TAU,
+        meta: self.catMeta[cid] || { id: cid, name: cid, color: hexToRgb('#6ee7ff') }
+      });
+      cursor += count;
+    });
+
+    this.stars = [];
+    this.byId = {};
+    var dirAngle = {};
+    ordered.forEach(function (d, di) {
+      var base = (di / nDir) * TAU;
+      dirAngle[d.tag] = base;
+      var col = self.catColor[d.cat] || hexToRgb('#6ee7ff');
+      var rec = d.rec || 3;
+      var dirGlow = (typeof d.glow === 'number') ? d.glow
+        : (rec >= 5 ? 0.95 : rec >= 4 ? 0.62 : rec >= 3 ? 0.4 : 0.24);
+      dirGlow = clamp(dirGlow, 0.14, 1);
+      var tl = d.tl || [];
+      var stageCount = Math.max(1, Math.min(tl.length, 4));
+      for (var s = 0; s < stageCount; s++) {
+        var seed = self._hash(d.tag + '-' + s);
+        var baseR = RINGS[Math.min(s, RINGS.length - 1)];
+        var r = baseR + (((seed % 1000) / 1000 - 0.5) * 56);
+        var theta0 = base + r * TWIST + (((seed >>> 7) % 1000) / 1000 - 0.5) * 0.10;
+        var hh = (((seed >>> 11) % 1000) / 1000 - 0.5) * 44;
+        var st = tl[s] || ['', d.name, ''];
+        var star = {
+          id: d.tag + '-' + s, tag: d.tag, stage: s, dir: d,
+          name: d.name, cat: d.cat, rec: rec,
+          phase: st[0] || '', role: st[1] || d.name, sdesc: st[2] || '',
+          color: col, lang: !!d.lang, highlighted: !!d.highlighted,
+          glow: clamp(dirGlow * (1 - s * 0.05), 0.12, 1),
+          r: r, theta0: theta0, h: hh,
+          core: 1.3 + rec * 0.5, twPhase: (seed % 628) / 100, twSpeed: 0.5 + ((seed >>> 5) % 100) / 80,
+          sx: 0, sy: 0, depth: 0
+        };
+        self.stars.push(star);
+        self.byId[star.id] = star;
+      }
+    });
+
+    // 起点（现在）
+    this.origin = {
+      id: ORIGIN_ID, name: this.opts.hubLabel || '起点 · 现在', isOrigin: true,
+      r: 0, theta0: 0, h: 0, color: hexToRgb('#fde68a'), glow: 1, core: 7,
+      twPhase: 0, twSpeed: 0.7, sx: 0, sy: 0, depth: 0
     };
 
-    // 背景星尘（属于星系、一起转、营造“整张星图”的密度与纵深）
-    this.bgStars = [];
-    var BG = 320;
+    // 背景星尘（密集、与方向星同款审美，只是更小更暗、不可交互）
+    this.bg = [];
+    var BG = 980;
     for (var i = 0; i < BG; i++) {
-      var s2 = self._hash('bg' + i);
-      var rr = 50 + ((s2 % 1000) / 1000) * (OUTER + 60);
-      var th = ((s2 >> 6) % 6283) / 1000;
-      var hh = (((s2 >> 11) % 1000) / 1000 - 0.5) * (THICK + 36);
-      self.bgStars.push({
-        r: rr, theta0: th, h: hh,
-        glow: 0.06 + ((s2 >> 3) % 100) / 220,
-        size: 0.5 + ((s2 >> 5) % 100) / 90,
-        twPhase: (s2 % 628) / 100, twSpeed: 0.4 + ((s2 >> 8) % 100) / 70,
-        warm: (s2 % 7 === 0)
+      var b = self._hash('bg' + i);
+      var u = (b % 1000) / 1000;
+      var v = ((b >>> 10) % 1000) / 1000;
+      var rr = 24 + Math.pow(u, 0.72) * (RINGS[3] + 170);
+      var arm = b % 5;
+      var spiral = arm * TAU / 5 + rr * TWIST * 1.35 + (v - 0.5) * (0.42 + rr / 950);
+      var theta = (b % 4 === 0) ? ((b >>> 6) % 6283) / 1000 : spiral;
+      this.bg.push({
+        r: rr, theta0: theta, h: (((b >>> 11) % 1000) / 1000 - 0.5) * 90,
+        glow: 0.05 + ((b >>> 3) % 100) / 240, core: 0.5 + ((b >>> 5) % 100) / 95,
+        twPhase: (b % 628) / 100, twSpeed: 0.4 + ((b >>> 8) % 100) / 70,
+        warm: (b % 9 === 0), tint: (b % 4 === 0)
       });
     }
 
-    // 边：星核→各方向（辐射）+ 跨方向分叉
-    var byId = {};
-    this.nodes.forEach(function (nd) { byId[nd.id] = nd; });
-    this.byId = byId;
-    this.adj = {};
-    this.edges = [];
-    this.nodes.forEach(function (nd) {
-      self.edges.push({ a: self.hub, b: nd, kind: 'fan' });
-      (self.adj[nd.id] = self.adj[nd.id] || []);
+    // 模糊星云
+    this.nebula = [];
+    var NEB = [['#3b6fd8', 0.10], ['#7c3aed', 0.09], ['#0f766e', 0.07], ['#b45309', 0.06]];
+    for (var k = 0; k < NEB.length; k++) {
+      var nb = self._hash('neb' + k);
+      this.nebula.push({
+        r: 120 + (nb % 360), theta0: (nb % 6283) / 1000, h: 0,
+        rad: 220 + (nb % 200), color: hexToRgb(NEB[k][0]), alpha: NEB[k][1]
+      });
+    }
+
+    // 边 + 邻接（阶段级图）
+    this.edges = []; this.adjF = {}; this.adjB = {};
+    function link(from, to, kind) {
+      self.edges.push({ from: from, to: to, kind: kind });
+      (self.adjF[from] = self.adjF[from] || []).push(to);
+      (self.adjB[to] = self.adjB[to] || []).push(from);
+    }
+    ordered.forEach(function (d) {
+      var tl = d.tl || [];
+      var sc = Math.max(1, Math.min(tl.length, 4));
+      link(ORIGIN_ID, d.tag + '-0', 'fan');
+      for (var s = 0; s < sc - 1; s++) link(d.tag + '-' + s, d.tag + '-' + (s + 1), 'main');
     });
     links.forEach(function (l) {
-      var a = byId[l[0]], b = byId[l[2]];
-      if (a && b) {
-        self.edges.push({ a: a, b: b, kind: 'cross' });
-        (self.adj[a.id] = self.adj[a.id] || []).push(b.id);
-        (self.adj[b.id] = self.adj[b.id] || []).push(a.id);
-      }
+      var from = l[0] + '-' + l[1], to = l[2] + '-' + l[3];
+      if (self.byId[from] && self.byId[to]) link(from, to, 'cross');
     });
 
     this.fitView();
@@ -155,25 +201,25 @@
   };
 
   CareerNetwork.prototype.fitView = function () {
-    var spanX = this.maxR * 2;
-    var spanY = this.maxR * 2 * COS_T + 140;
-    var s = Math.min(this.W / spanX, this.H / spanY) * 0.92;
-    this.scale = this.targetScale = clamp(s || 0.6, 0.3, 1.4);
-    this.pan.x = 0;
-    this.pan.y = this.H * 0.05;     // 略向下，给顶部 banner 留白
+    var R = RINGS[3] + 70;
+    var sx = (this.W * 0.46) / R;
+    var sy = (this.H * 0.44) / (R * COS_T);
+    this.spacing = this.targetSpacing = clamp(Math.min(sx, sy), 0.3, 2.2);
+    this.pan.x = 0; this.pan.y = this.H * 0.04;
   };
 
-  // 3D 投影：极坐标(r,θ,h) → 自转 → 倾斜 → 屏幕
-  CareerNetwork.prototype._project = function (obj) {
-    var th = obj.theta0 + this.rotation;
-    var x = obj.r * Math.cos(th);
-    var y0 = obj.r * Math.sin(th);
-    var ty = y0 * COS_T - obj.h * SIN_T;
-    var tz = y0 * SIN_T + obj.h * COS_T;     // 深度（朝向观者为正）
-    obj.sx = this.W / 2 + x * this.scale + this.pan.x;
-    obj.sy = this.H / 2 + ty * this.scale + this.pan.y;
-    obj.depth = tz;
-    return obj;
+  // 极坐标(r,θ,h) → 自转 → 倾斜 → 屏幕。缩放只作用于半径(间距)，不作用于元素尺寸。
+  CareerNetwork.prototype._project = function (o) {
+    var r = o.r * this.spacing;
+    var th = o.theta0 + this.rotation;
+    var x = r * Math.cos(th);
+    var y0 = r * Math.sin(th);
+    var hz = o.h * this.spacing;
+    var ty = y0 * COS_T - hz * SIN_T;
+    o.depth = y0 * SIN_T + hz * COS_T;
+    o.sx = this.W / 2 + this.pan.x + x;
+    o.sy = this.H / 2 + this.pan.y + ty;
+    return o;
   };
 
   CareerNetwork.prototype.resize = function () {
@@ -182,6 +228,7 @@
     this.canvas.width = Math.round(this.W * this.dpr);
     this.canvas.height = Math.round(this.H * this.dpr);
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    if (this.selectedId && this.related) this._emitHighlight();
   };
 
   CareerNetwork.prototype._bind = function () {
@@ -191,7 +238,7 @@
     c.addEventListener('pointerdown', function (e) { self._down(e); });
     c.addEventListener('pointermove', function (e) { self._move(e); });
     window.addEventListener('pointerup', function (e) { self._up(e); });
-    c.addEventListener('pointerleave', function () { self.pointer.inside = false; });
+    c.addEventListener('pointerleave', function () { self.pointer.inside = false; self.hoverId = null; self.onHover(null); });
     c.addEventListener('wheel', function (e) { self._wheel(e); }, { passive: false });
   };
 
@@ -202,9 +249,9 @@
 
   CareerNetwork.prototype._pick = function (sx, sy) {
     var best = null, bestD = 1e9;
-    for (var i = 0; i < this.nodes.length; i++) {
-      var n = this.nodes[i];
-      var rr = Math.max(n.ss + 12, 16);
+    for (var i = 0; i < this.stars.length; i++) {
+      var n = this.stars[i];
+      var rr = n.core + 10;
       var dx = sx - n.sx, dy = sy - n.sy, d = dx * dx + dy * dy;
       if (d < rr * rr && d < bestD) { best = n; bestD = d; }
     }
@@ -227,19 +274,26 @@
     if (this.drag.panning && this.drag.moved) {
       this.pan.x += (p.x - this.drag.lastX);
       this.pan.y += (p.y - this.drag.lastY);
+      if (this.selectedId) this._emitHighlight();
     }
     this.drag.lastX = p.x; this.drag.lastY = p.y;
     if (!this.drag.moved) {
       var hit = this._pick(p.x, p.y);
-      this.hoverId = hit ? hit.id : null;
-      this.canvas.style.cursor = hit ? 'pointer' : 'grab';
+      var id = hit ? hit.id : null;
+      if (id !== this.hoverId) {
+        this.hoverId = id;
+        this.canvas.style.cursor = hit ? 'pointer' : 'grab';
+        this.onHover(hit ? { name: hit.name, phase: hit.phase, role: hit.role, rec: hit.rec, x: hit.sx, y: hit.sy } : null);
+      } else if (hit) {
+        this.onHover({ name: hit.name, phase: hit.phase, role: hit.role, rec: hit.rec, x: hit.sx, y: hit.sy });
+      }
     }
   };
 
   CareerNetwork.prototype._up = function () {
     if (!this.drag.moved) {
       var hit = this._pick(this.pointer.x, this.pointer.y);
-      if (hit) { this.select(hit.id); this.onSelect(hit.data, hit); }
+      if (hit) { this.select(hit.id); }
       else { this.select(null); this.onBackground(); }
     }
     this.drag.panning = false;
@@ -248,42 +302,110 @@
   CareerNetwork.prototype._wheel = function (e) {
     e.preventDefault();
     var p = this._localPos(e);
-    var wx = (p.x - this.W / 2 - this.pan.x) / this.scale;
-    var wy = (p.y - this.H / 2 - this.pan.y) / this.scale;
-    var factor = Math.pow(1.0015, -e.deltaY);
-    this.scale = this.targetScale = clamp(this.scale * factor, 0.22, 3.4);
-    this.pan.x = p.x - this.W / 2 - wx * this.scale;
-    this.pan.y = p.y - this.H / 2 - wy * this.scale;
+    // 以光标为锚心缩放"间距"：保持光标下的世界点不动
+    var wx = (p.x - this.W / 2 - this.pan.x);
+    var wy = (p.y - this.H / 2 - this.pan.y);
+    var old = this.spacing;
+    var factor = Math.pow(1.0016, -e.deltaY);
+    this.spacing = this.targetSpacing = clamp(this.spacing * factor, 0.22, 4);
+    var rscale = this.spacing / old;
+    this.pan.x = p.x - this.W / 2 - wx * rscale;
+    this.pan.y = p.y - this.H / 2 - wy * rscale;
+    if (this.selectedId) this._emitHighlight();
   };
 
   CareerNetwork.prototype.select = function (id) {
     this.selectedId = id;
-    if (!id) { this.related = null; return; }
-    // 点亮：选中星 + 星核 + 与它相连的分叉端点
-    var set = {}; set[id] = true; set['__hub__'] = true;
-    (this.adj[id] || []).forEach(function (o) { set[o] = true; });
+    if (!id) { this.related = null; this.onHighlight([]); return; }
+    var set = {}; set[ORIGIN_ID] = true; set[id] = true;
+    var st = [id], x; // 上游
+    while (st.length) { x = st.pop(); (this.adjB[x] || []).forEach(function (p) { if (!set[p]) { set[p] = true; st.push(p); } }); }
+    st = [id];        // 下游
+    while (st.length) { x = st.pop(); (this.adjF[x] || []).forEach(function (n) { if (!set[n]) { set[n] = true; st.push(n); } }); }
     this.related = set;
+    this._emitHighlight();
   };
 
-  // --- 渲染 ---
-  CareerNetwork.prototype._drawStar = function (ctx, x, y, size, col, bright, spikes) {
-    var haloR = size * (2.2 + bright * 4.2);
+  CareerNetwork.prototype._emitHighlight = function () {
+    if (!this.selectedId || !this.related) { this.onHighlight([]); return; }
+    var cards = [], self = this;
+    Object.keys(this.related).forEach(function (id) {
+      if (id === ORIGIN_ID) return;
+      var s = self.byId[id]; if (!s) return;
+      self._project(s);
+      var d = s.dir;
+      var skills = ((d.pre || []).concat(d.know || [])).slice(0, 3);
+      cards.push({
+        id: id, tag: s.tag, x: s.sx, y: s.sy,
+        name: s.name, phase: s.phase, role: s.role, rec: s.rec,
+        stage: s.stage, sdesc: s.sdesc, desc: d.desc || '', tip: d.tip || '',
+        baseRec: d.base_rec, lang: !!d.lang,
+        cat: s.cat, skills: skills, isClicked: id === self.selectedId,
+        colorHex: '#' + ((1 << 24) + (s.color.r << 16) + (s.color.g << 8) + s.color.b).toString(16).slice(1)
+      });
+    });
+    this.onHighlight(cards);
+  };
+
+  CareerNetwork.prototype._star = function (ctx, x, y, core, col, bright, spike) {
+    core = Math.max(0.4, Number(core) || 0.4);
+    var haloR = core * (2.0 + bright * 3.2);
     var g = ctx.createRadialGradient(x, y, 0, x, y, haloR);
-    g.addColorStop(0, rgba(col, 0.55 * bright));
-    g.addColorStop(0.35, rgba(col, 0.16 * bright));
+    g.addColorStop(0, rgba(col, 0.6 * bright));
+    g.addColorStop(0.4, rgba(col, 0.15 * bright));
     g.addColorStop(1, rgba(col, 0));
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(x, y, haloR, 0, TAU); ctx.fill();
-    if (spikes && bright > 0.45) {
-      var L = size * (3 + bright * 7);
-      var lg = ctx.createLinearGradient(x - L, y, x + L, y);
-      lg.addColorStop(0, rgba(col, 0)); lg.addColorStop(0.5, rgba(col, 0.5 * bright)); lg.addColorStop(1, rgba(col, 0));
-      ctx.strokeStyle = lg; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x - L, y); ctx.lineTo(x + L, y); ctx.stroke();
-      var lg2 = ctx.createLinearGradient(x, y - L, x, y + L);
-      lg2.addColorStop(0, rgba(col, 0)); lg2.addColorStop(0.5, rgba(col, 0.5 * bright)); lg2.addColorStop(1, rgba(col, 0));
-      ctx.strokeStyle = lg2;
-      ctx.beginPath(); ctx.moveTo(x, y - L); ctx.lineTo(x, y + L); ctx.stroke();
+    if (spike && bright > 0.5) {
+      var L = core * (3 + bright * 6);
+      ctx.strokeStyle = rgba(col, 0.4 * bright); ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(x - L, y); ctx.lineTo(x + L, y); ctx.moveTo(x, y - L); ctx.lineTo(x, y + L); ctx.stroke();
+    }
+  };
+
+  CareerNetwork.prototype._drawGuides = function (ctx, hasSel) {
+    if (!this.origin) return;
+    var ox = this.origin.sx, oy = this.origin.sy;
+
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.scale(1, COS_T);
+    ctx.setLineDash([4, 12]);
+    for (var i = 0; i < RINGS.length; i++) {
+      var r = RINGS[i] * this.spacing;
+      ctx.strokeStyle = 'rgba(185,215,255,' + (hasSel ? 0.05 : 0.09) + ')';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    ctx.save();
+    ctx.font = '700 11px "PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(185,215,255,' + (hasSel ? 0.22 : 0.38) + ')';
+    for (var l = 0; l < RINGS.length; l++) {
+      var rr = RINGS[l] * this.spacing;
+      ctx.fillText(RING_LABELS[l] || '', ox + rr * 0.72 + 8, oy - rr * COS_T * 0.36);
+    }
+    ctx.restore();
+
+    for (var s = 0; s < (this.sectors || []).length; s++) {
+      var sec = this.sectors[s];
+      var a = sec.start;
+      var edge = { r: RINGS[3] + 82, theta0: a, h: 0 };
+      var inner = { r: 78, theta0: a, h: 0 };
+      this._project(edge); this._project(inner);
+      ctx.strokeStyle = rgba(sec.meta.color, hasSel ? 0.05 : 0.13);
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(inner.sx, inner.sy); ctx.lineTo(edge.sx, edge.sy); ctx.stroke();
+
+      var label = { r: RINGS[3] + 110, theta0: sec.mid, h: 0 };
+      this._project(label);
+      ctx.font = '800 12px "PingFang SC","Microsoft YaHei",sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = rgba(sec.meta.color, hasSel ? 0.22 : 0.58);
+      ctx.fillText(sec.meta.name, label.sx, label.sy);
     }
   };
 
@@ -292,130 +414,95 @@
     ctx.clearRect(0, 0, this.W, this.H);
     var hasSel = !!this.selectedId;
 
-    // 项目所有对象
-    this._project(this.hub);
-    for (var i = 0; i < this.nodes.length; i++) this._project(this.nodes[i]);
+    this._project(this.origin);
+    for (var i = 0; i < this.stars.length; i++) this._project(this.stars[i]);
 
-    // 1) 星系核球 + 盘面薄雾（倾斜的椭圆辉光）
-    ctx.save();
-    var hx = this.hub.sx, hy = this.hub.sy;
-    var diskR = this.maxR * this.scale;
-    var neb = ctx.createRadialGradient(hx, hy, 0, hx, hy, diskR);
-    neb.addColorStop(0, 'rgba(150,170,255,0.10)');
-    neb.addColorStop(0.18, 'rgba(120,150,230,0.06)');
-    neb.addColorStop(0.55, 'rgba(80,110,190,0.03)');
-    neb.addColorStop(1, 'rgba(80,110,190,0)');
-    ctx.save();
-    ctx.translate(hx, hy); ctx.scale(1, COS_T); ctx.translate(-hx, -hy);
-    ctx.fillStyle = neb;
-    ctx.beginPath(); ctx.arc(hx, hy, diskR, 0, TAU); ctx.fill();
-    ctx.restore();
+    // 0) 时间环 + 就业类型扇区
+    this._drawGuides(ctx, hasSel);
 
-    // 2) 背景星尘
+    // 1) 模糊星云
     ctx.globalCompositeOperation = 'lighter';
-    for (var b = 0; b < this.bgStars.length; b++) {
-      var s = this.bgStars[b]; this._project(s);
-      var tw = 0.6 + 0.4 * Math.sin(this.timeSec * s.twSpeed + s.twPhase);
-      var a = s.glow * tw * (hasSel ? 0.4 : 1);
-      if (a < 0.02) continue;
-      ctx.fillStyle = s.warm ? 'rgba(255,225,180,' + a + ')' : 'rgba(180,210,255,' + a + ')';
-      var sz = s.size * (0.7 + (s.depth / this.maxR + 0.5) * 0.6) * this.scale;
-      ctx.beginPath(); ctx.arc(s.sx, s.sy, Math.max(0.4, sz), 0, TAU); ctx.fill();
+    for (var m = 0; m < this.nebula.length; m++) {
+      var nb = this.nebula[m]; this._project(nb);
+      var rad = nb.rad * this.spacing;
+      var g = ctx.createRadialGradient(nb.sx, nb.sy, 0, nb.sx, nb.sy, rad);
+      g.addColorStop(0, rgba(nb.color, nb.alpha * (hasSel ? 0.4 : 1)));
+      g.addColorStop(1, rgba(nb.color, 0));
+      ctx.fillStyle = g;
+      ctx.save(); ctx.translate(nb.sx, nb.sy); ctx.scale(1, COS_T); ctx.translate(-nb.sx, -nb.sy);
+      ctx.beginPath(); ctx.arc(nb.sx, nb.sy, rad, 0, TAU); ctx.fill(); ctx.restore();
     }
 
-    // 3) 边（路径）：默认全部存在但很淡；选中时点亮相关、其余更淡
+    // 2) 背景星尘（同款审美）
+    for (var b = 0; b < this.bg.length; b++) {
+      var s = this.bg[b]; this._project(s);
+      var tw = 0.6 + 0.4 * Math.sin(this.timeSec * s.twSpeed + s.twPhase);
+      var a = s.glow * tw * (hasSel ? 0.45 : 1);
+      if (a < 0.02) continue;
+      var col = s.warm ? '255,228,190' : s.tint ? '180,200,255' : '205,220,255';
+      ctx.fillStyle = 'rgba(' + col + ',' + a + ')';
+      ctx.beginPath(); ctx.arc(s.sx, s.sy, Math.max(0.35, s.core || 0.35), 0, TAU); ctx.fill();
+    }
+
+    // 3) 边（连线）：线宽固定，不随缩放变化
     ctx.globalCompositeOperation = 'source-over';
     for (var e = 0; e < this.edges.length; e++) {
-      var L = this.edges[e], A = L.a, B = L.b;
-      var hot = hasSel && this.related && this.related[A.id] && this.related[B.id];
-      var baseA, w, stroke;
-      if (L.kind === 'fan') {
-        baseA = hot ? 0.5 : (hasSel ? 0.02 : 0.07); w = hot ? 1.5 : 0.8;
-        stroke = 'rgba(140,180,235,' + baseA + ')';
+      var L = this.edges[e];
+      var A = L.from === ORIGIN_ID ? this.origin : this.byId[L.from];
+      var B = L.to === ORIGIN_ID ? this.origin : this.byId[L.to];
+      if (!A || !B) continue;
+      var hot = hasSel && this.related && this.related[L.from] && this.related[L.to];
+      var a2, w, stroke;
+      if (L.kind === 'cross') {
+        a2 = hot ? 0.9 : (hasSel ? 0.04 : 0.16); w = hot ? 2 : 1; stroke = hot ? '244,221,255' : '167,139,250';
       } else {
-        baseA = hot ? 0.85 : (hasSel ? 0.05 : 0.22); w = hot ? 2.4 : 1.1;
-        stroke = 'rgba(190,160,255,' + baseA + ')';
+        a2 = hot ? 0.85 : (hasSel ? 0.03 : 0.10); w = hot ? 1.8 : 0.9; stroke = hot ? '180,235,255' : '130,170,225';
       }
-      if (baseA < 0.02) continue;
-      ctx.strokeStyle = stroke; ctx.lineWidth = w;
-      var mx = (A.sx + B.sx) / 2, my = (A.sy + B.sy) / 2;
-      // 让分叉线微微弯，像星座连线
-      var bow = (L.kind === 'cross' ? 14 : 6) * (hot ? 1.4 : 1);
-      ctx.beginPath(); ctx.moveTo(A.sx, A.sy);
-      ctx.quadraticCurveTo(mx, my - bow, B.sx, B.sy); ctx.stroke();
+      if (a2 < 0.02) continue;
+      ctx.strokeStyle = 'rgba(' + stroke + ',' + a2 + ')'; ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); ctx.stroke();
     }
 
-    // 4) 方向星（按深度排序，远的先画）
-    var order = this.nodes.slice().sort(function (p, q) { return p.depth - q.depth; });
+    // 4) 阶段星（按深度排序）
+    var order = this.stars.slice().sort(function (p, q) { return p.depth - q.depth; });
     ctx.globalCompositeOperation = 'lighter';
     for (var k = 0; k < order.length; k++) {
       var n = order[k];
       var dim = hasSel && this.related && !this.related[n.id];
-      var tw2 = 0.7 + 0.3 * Math.sin(this.timeSec * n.twSpeed + n.twPhase);
-      var depthF = 0.78 + (n.depth / this.maxR + 0.5) * 0.5;
-      var bright = n.glow * tw2 * (dim ? 0.22 : 1);
-      var size = n.size * depthF * this.scale;
-      n.ss = size;
-      this._drawStar(ctx, n.sx, n.sy, size, n.color, bright, n.glow > 0.55 && !dim);
+      var tw2 = 0.72 + 0.28 * Math.sin(this.timeSec * n.twSpeed + n.twPhase);
+      var bright = n.glow * tw2 * (dim ? 0.18 : 1);
+      this._star(ctx, n.sx, n.sy, n.core, n.color, bright, n.glow > 0.55 && !dim);
     }
-
-    // 5) 星核
-    var hb = 1 + 0.12 * Math.sin(this.timeSec * 1.1);
-    this._drawStar(ctx, hx, hy, this.hub.size * this.scale * hb, this.hub.color, 1, true);
-
-    // 6) 星核核心实点
+    // 实心核
     ctx.globalCompositeOperation = 'source-over';
-    var cg = ctx.createRadialGradient(hx, hy, 0, hx, hy, this.hub.size * this.scale * 1.1);
-    cg.addColorStop(0, '#fffbe8'); cg.addColorStop(1, 'rgba(251,191,36,0.85)');
-    ctx.fillStyle = cg;
-    ctx.beginPath(); ctx.arc(hx, hy, this.hub.size * this.scale * 0.62, 0, TAU); ctx.fill();
-
-    // 7) 方向星实心点 + 选中/悬停环
-    for (var d = 0; d < order.length; d++) {
-      var nn = order[d];
+    for (var d2 = 0; d2 < order.length; d2++) {
+      var nn = order[d2];
       var dim2 = hasSel && this.related && !this.related[nn.id];
       var isSel = nn.id === this.selectedId, isHover = nn.id === this.hoverId;
-      var coreR = nn.ss * (isSel ? 0.62 : 0.42) + 1.2;
-      var pg = ctx.createRadialGradient(nn.sx - coreR * 0.3, nn.sy - coreR * 0.3, 0, nn.sx, nn.sy, coreR + 0.5);
-      pg.addColorStop(0, rgba(nn.color2 || nn.color, dim2 ? 0.5 : 1));
-      pg.addColorStop(1, rgba(nn.color, dim2 ? 0.3 : 0.92));
-      ctx.fillStyle = pg;
-      ctx.beginPath(); ctx.arc(nn.sx, nn.sy, coreR, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,' + (dim2 ? 0.25 : 0.95) + ')';
+      ctx.beginPath(); ctx.arc(nn.sx, nn.sy, nn.core * (isSel ? 1.5 : 1), 0, TAU); ctx.fill();
       if ((isSel || isHover) && !dim2) {
         ctx.strokeStyle = isSel ? '#fff' : rgba(nn.color, 0.9);
-        ctx.lineWidth = isSel ? 2 : 1.3;
-        ctx.beginPath(); ctx.arc(nn.sx, nn.sy, coreR + (isSel ? 6 : 4), 0, TAU); ctx.stroke();
+        ctx.lineWidth = isSel ? 2 : 1.2;
+        ctx.beginPath(); ctx.arc(nn.sx, nn.sy, nn.core + (isSel ? 6 : 4), 0, TAU); ctx.stroke();
       }
     }
 
-    // 8) 标签：星核、选中、悬停、相关、推荐度高/放大时
+    // 5) 起点
+    var hb = 1 + 0.1 * Math.sin(this.timeSec * 1.1);
+    ctx.globalCompositeOperation = 'lighter';
+    this._star(ctx, this.origin.sx, this.origin.sy, this.origin.core * hb, this.origin.color, 1, true);
     ctx.globalCompositeOperation = 'source-over';
-    for (var t = 0; t < order.length; t++) {
-      var m = order[t];
-      var rel = !hasSel || (this.related && this.related[m.id]);
-      // 默认只给最亮的（高亮/推荐满级）打标签，避免拥挤；其余悬停或放大后再显示。
-      var show = m.id === this.selectedId || m.id === this.hoverId
-        || (rel && (m.highlighted || m.rec >= 5)) || (rel && this.scale > 1.12);
-      if (!show || !m.name) continue;
-      var fontPx = clamp(11 * Math.max(this.scale, 0.72), 10, 15);
-      ctx.font = '700 ' + fontPx + 'px "PingFang SC","Microsoft YaHei",sans-serif';
-      ctx.textAlign = 'center';
-      var label = m.name + (m.lang ? ' ⭐' : '');
-      var ly = m.sy + m.ss + fontPx + 2;
-      var tw3 = ctx.measureText(label).width;
-      ctx.fillStyle = 'rgba(6,9,18,0.5)';
-      ctx.fillRect(m.sx - tw3 / 2 - 5, ly - fontPx, tw3 + 10, fontPx + 6);
-      ctx.fillStyle = (m.id === this.selectedId) ? '#fff' : 'rgba(232,237,247,0.92)';
-      ctx.fillText(label, m.sx, ly);
-    }
-    // 星核标签
-    ctx.font = '800 13px "PingFang SC","Microsoft YaHei",sans-serif';
-    ctx.textAlign = 'center';
-    var hl = this.hub.name, hw = ctx.measureText(hl).width;
-    ctx.fillStyle = 'rgba(6,9,18,0.55)';
-    ctx.fillRect(hx - hw / 2 - 6, hy + this.hub.size * this.scale + 4, hw + 12, 19);
+    var og = ctx.createRadialGradient(this.origin.sx, this.origin.sy, 0, this.origin.sx, this.origin.sy, this.origin.core);
+    og.addColorStop(0, '#fffbe8'); og.addColorStop(1, 'rgba(251,191,36,0.85)');
+    ctx.fillStyle = og;
+    ctx.beginPath(); ctx.arc(this.origin.sx, this.origin.sy, this.origin.core * 0.7, 0, TAU); ctx.fill();
+    ctx.font = '800 12px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.textAlign = 'center';
+    var hl = this.origin.name, hw = ctx.measureText(hl).width;
+    ctx.fillStyle = 'rgba(6,9,18,0.5)';
+    ctx.fillRect(this.origin.sx - hw / 2 - 6, this.origin.sy + 14, hw + 12, 18);
     ctx.fillStyle = '#fde68a';
-    ctx.fillText(hl, hx, hy + this.hub.size * this.scale + 18);
+    ctx.fillText(hl, this.origin.sx, this.origin.sy + 27);
   };
 
   CareerNetwork.prototype.start = function () {
@@ -424,9 +511,8 @@
     function loop(now) {
       var dt = Math.min((now - last) / 1000, 0.05); last = now;
       self.timeSec += dt;
-      // 选中时几乎停转，便于阅读路径
-      self.rotation += ROT_SPEED * dt * (self.selectedId ? 0.08 : 1);
-      self.scale = lerp(self.scale, self.targetScale, 0.18);
+      self.rotation += ROT_SPEED * dt * (self.selectedId ? 0 : 1);  // 选中时冻结自转
+      self.spacing = lerp(self.spacing, self.targetSpacing, 0.2);
       self._draw();
       self._raf = requestAnimationFrame(loop);
     }

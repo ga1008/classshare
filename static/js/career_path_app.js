@@ -18,6 +18,7 @@
     canvas: document.getElementById('career-canvas'),
     banner: document.getElementById('career-banner'),
     legend: document.getElementById('career-legend'),
+    cards: document.getElementById('career-path-cards'),
     detail: document.getElementById('career-detail'),
     prep: document.getElementById('career-prep'),
     intro: document.getElementById('career-intro'),
@@ -33,15 +34,21 @@
   var pollTimer = null;
   var rain = null;
   var STATE = null;
+  var lastHighlightCards = [];
+  var activeStarId = '';
 
   // ---------- 工具 ----------
   function show(node, on) { if (node) node.hidden = !on; }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (m) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m];
     });
   }
   function stars(n) { n = Math.max(0, Math.min(5, n | 0)); return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n); }
+  function findNodeByTag(s, tag) {
+    return ((s && s.network && s.network.nodes) || []).find(function (n) { return n.tag === tag; }) || null;
+  }
 
   function fetchJSON(url, opts) {
     return fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' }, opts || {}))
@@ -419,7 +426,7 @@
     if (!net) {
       net = new window.CareerNetwork(el.canvas, {
         hubLabel: (s.timeline && s.timeline.graduation_year ? ('🎓 ' + s.timeline.graduation_year + ' 毕业') : '起点 · 现在'),
-        onSelect: function (data, node) { openDetail(data, node, s); },
+        onHighlight: function (cards) { handleHighlight(cards, STATE || s); },
         onBackground: function () { closePanels(); }
       });
     }
@@ -455,9 +462,150 @@
     var items = [
       '<span class="it"><span class="dot" style="background:#6ee7ff;box-shadow:0 0 10px #6ee7ff"></span>星越亮＝越推荐 / 越契合你</span>',
       '<span class="it"><span class="dot" style="background:#a78bfa"></span>紫线＝可转向的分叉路径</span>',
-      '<span class="it hint">点击星星点亮它的发展路径 · 滚轮缩放 · 拖拽平移 · 星系缓慢自转</span>'
+      '<span class="it hint">点击星星点亮路径与卡片 · 点击卡片看完整成长线 · 滚轮缩放 · 拖拽平移</span>'
     ];
     el.legend.innerHTML = items.join('');
+  }
+
+  function handleHighlight(cards, s) {
+    cards = cards || [];
+    lastHighlightCards = cards;
+    if (!cards.length) {
+      activeStarId = '';
+      hideOrbitCards();
+      hideInfoPanels();
+      return;
+    }
+    var clicked = cards.find(function (c) { return c.isClicked; });
+    if (clicked && clicked.id !== activeStarId) {
+      activeStarId = clicked.id;
+      hideInfoPanels();
+    }
+    renderOrbitCards(cards, s);
+  }
+
+  function hideOrbitCards() {
+    if (!el.cards) return;
+    el.cards.innerHTML = '';
+    show(el.cards, false);
+  }
+
+  function reservedRects(stageRect) {
+    var out = [];
+    [el.topbar, el.banner, el.legend].forEach(function (node) {
+      if (!node || node.hidden) return;
+      var r = node.getBoundingClientRect();
+      out.push({
+        x: r.left - stageRect.left - 8,
+        y: r.top - stageRect.top - 8,
+        w: r.width + 16,
+        h: r.height + 16
+      });
+    });
+    return out;
+  }
+
+  function rectOverlaps(a, b, pad) {
+    pad = pad || 0;
+    return !(a.x + a.w + pad <= b.x || b.x + b.w + pad <= a.x || a.y + a.h + pad <= b.y || b.y + b.h + pad <= a.y);
+  }
+
+  function placeCards(cards) {
+    var rect = el.stage.getBoundingClientRect();
+    var W = rect.width || window.innerWidth;
+    var H = rect.height || window.innerHeight;
+    var cardW = W < 720 ? Math.min(176, W - 24) : 216;
+    var cardH = W < 720 ? 122 : 148;
+    var gap = 10;
+    var margin = W < 720 ? 10 : 16;
+    var maxX = Math.max(margin, W - margin - cardW);
+    var maxY = Math.max(68, H - (W < 720 ? 88 : 98) - cardH);
+    var fixed = reservedRects(rect);
+    var placed = [];
+
+    function ok(candidate) {
+      for (var i = 0; i < fixed.length; i++) if (rectOverlaps(candidate, fixed[i], 4)) return false;
+      for (var j = 0; j < placed.length; j++) if (rectOverlaps(candidate, placed[j], gap)) return false;
+      return true;
+    }
+
+    function clampCandidate(x, y) {
+      return { x: clamp(x, margin, maxX), y: clamp(y, 68, maxY), w: cardW, h: cardH };
+    }
+
+    function fallbackNear(card) {
+      var cols = Math.max(1, Math.floor((W - margin * 2 + gap) / (cardW + gap)));
+      var rows = Math.max(1, Math.floor((maxY - 68 + gap) / (cardH + gap)));
+      var best = null;
+      for (var r = 0; r < rows; r++) {
+        for (var c = 0; c < cols; c++) {
+          var x = margin + c * (cardW + gap);
+          var y = 68 + r * (cardH + gap);
+          var cand = { x: Math.min(x, maxX), y: Math.min(y, maxY), w: cardW, h: cardH };
+          if (!ok(cand)) continue;
+          var dx = cand.x + cardW / 2 - card.x;
+          var dy = cand.y + cardH / 2 - card.y;
+          var d = dx * dx + dy * dy;
+          if (!best || d < best.d) best = { x: cand.x, y: cand.y, w: cardW, h: cardH, d: d };
+        }
+      }
+      return best || clampCandidate(card.x + 18, card.y + 18);
+    }
+
+    return cards.map(function (card, idx) {
+      var near = [
+        [18, -cardH - 14], [18, 18], [-cardW - 18, -cardH - 14], [-cardW - 18, 18],
+        [-cardW / 2, -cardH - 22], [-cardW / 2, 24], [28, -cardH / 2], [-cardW - 28, -cardH / 2]
+      ];
+      var picked = null;
+      for (var i = 0; i < near.length; i++) {
+        var cand = clampCandidate(card.x + near[i][0], card.y + near[i][1]);
+        if (ok(cand)) { picked = cand; break; }
+      }
+      if (!picked) picked = fallbackNear(card);
+      picked.card = card;
+      picked.idx = idx;
+      placed.push(picked);
+      return picked;
+    });
+  }
+
+  function renderOrbitCards(cards, s) {
+    if (!el.cards) return;
+    if (!cards || !cards.length) { hideOrbitCards(); return; }
+    var sorted = cards.slice().sort(function (a, b) {
+      if (!!a.isClicked !== !!b.isClicked) return a.isClicked ? -1 : 1;
+      if (a.tag !== b.tag) return String(a.tag).localeCompare(String(b.tag));
+      return (a.stage || 0) - (b.stage || 0);
+    });
+    var placed = placeCards(sorted);
+    el.cards.innerHTML = placed.map(function (p) {
+      var c = p.card;
+      var skills = (c.skills || []).slice(0, 3).join(' / ');
+      var stage = c.phase || (c.stage === 0 ? '0–1 年' : '成长阶段');
+      var role = c.role || c.name || '';
+      return '<article class="career-star-card' + (c.isClicked ? ' is-clicked' : '') + '"'
+        + ' data-tag="' + esc(c.tag) + '" data-stage="' + esc(c.stage) + '" data-star-id="' + esc(c.id) + '"'
+        + ' style="left:' + Math.round(p.x) + 'px;top:' + Math.round(p.y) + 'px;--card-accent:' + esc(c.colorHex || '#6ee7ff') + '">'
+        + '<div class="career-star-card__top"><span class="career-star-card__spark"></span>'
+        + '<div class="career-star-card__name">' + esc(c.name) + '</div>'
+        + '<div class="career-star-card__rec">' + esc(c.rec || 0) + '/5</div></div>'
+        + '<div class="career-star-card__phase">' + esc(stage) + '</div>'
+        + '<div class="career-star-card__role">' + esc(role) + '</div>'
+        + (skills ? '<div class="career-star-card__skills">' + esc(skills) + '</div>' : '')
+        + '<span class="career-star-card__more">完整详情 →</span>'
+        + '</article>';
+    }).join('');
+    show(el.cards, true);
+    el.cards.querySelectorAll('.career-star-card').forEach(function (cardEl) {
+      cardEl.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var tag = cardEl.dataset.tag;
+        var node = findNodeByTag(s, tag);
+        var star = sorted.find(function (c) { return c.id === cardEl.dataset.starId; });
+        if (node) openDetail(node, star, s);
+      });
+    });
   }
 
   // ---------- 详情卡片 + 必备知识 ----------
@@ -465,7 +613,7 @@
     return ((s.network && s.network.cats) || []).find(function (c) { return c.id === catId; }) || {};
   }
 
-  function openDetail(data, node, s) {
+  function openDetail(data, stageNode, s) {
     if (!data) return;
     var cat = catOf(s, data.cat);
     var c1 = cat.c1 || '#6ee7ff';
@@ -479,6 +627,11 @@
       + (data.base_rec && data.base_rec !== data.rec ? '（已按你的特质调整）' : '') + '</small></div>';
     h += '</div><div class="career-detail__body">';
 
+    if (stageNode && (stageNode.phase || stageNode.role)) {
+      h += sec('当前点亮的时间节点', '<div class="career-stage-node"><b>' + esc(stageNode.phase || '成长阶段') + '</b>　'
+        + esc(stageNode.role || data.name)
+        + (stageNode.sdesc ? '<br>' + esc(stageNode.sdesc) : '') + '</div>');
+    }
     if (data.tip) h += sec('为你定制的建议', '<div class="career-tip">' + esc(data.tip) + '</div>');
     if (data.reason) h += sec('为什么推荐 / 适合谁', '<p>' + esc(data.reason) + '</p>');
     if (data.pre && data.pre.length) h += sec('必备前提条件', pills(data.pre));
@@ -550,11 +703,18 @@
     el.prep.classList.add('show'); show(el.prep, true);
   }
 
-  function closePanels() {
+  function hideInfoPanels() {
     el.detail.classList.remove('show');
     el.prep.classList.remove('show');
-    if (net) net.select(null);
     setTimeout(function () { show(el.detail, false); show(el.prep, false); }, 420);
+  }
+
+  function closePanels() {
+    hideInfoPanels();
+    hideOrbitCards();
+    activeStarId = '';
+    lastHighlightCards = [];
+    if (net) net.select(null);
   }
 
   // ---------- 重新测试 ----------
