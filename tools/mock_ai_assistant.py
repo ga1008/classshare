@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 def _build_response_json(payload: dict[str, Any]) -> dict[str, Any]:
     prompt = str(payload.get("new_message") or "").strip()
     response_format = str(payload.get("response_format") or "").strip().lower()
+    task_label = str(payload.get("task_label") or "").strip()
     tools = payload.get("tools") if isinstance(payload.get("tools"), list) else []
 
     if tools:
@@ -47,6 +48,51 @@ def _build_response_json(payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "success", "response_text": "", "tool_calls": []}
 
     if response_format == "json":
+        if task_label == "wrong_summary_knowledge_analysis":
+            return {
+                "status": "success",
+                "response_json": {
+                    "summary": "DHCP 地址获取与应用层端口是本次最需要回看讲评的知识点。",
+                    "knowledge_points": [
+                        {
+                            "name": "DHCP 地址获取",
+                            "mastery": 48,
+                            "reason": "错答集中在把 DHCP 与 DNS、ARP 的功能混淆。",
+                            "evidence_questions": [1],
+                            "risk_level": "danger",
+                        },
+                        {
+                            "name": "应用层端口",
+                            "mastery": 72,
+                            "reason": "默认端口记忆不稳，HTTP 与常见开发端口混淆。",
+                            "evidence_questions": [2],
+                            "risk_level": "warning",
+                        },
+                        {
+                            "name": "局域网互通",
+                            "mastery": 86,
+                            "reason": "大多数学生能解释同网段互通，少量答案缺少验证步骤。",
+                            "evidence_questions": [3],
+                            "risk_level": "normal",
+                        },
+                        {
+                            "name": "协议分层",
+                            "mastery": 100,
+                            "reason": "相关题目答题稳定。",
+                            "evidence_questions": [4],
+                            "risk_level": "mastered",
+                        },
+                    ],
+                    "weak_points": [
+                        {
+                            "name": "DHCP 地址获取",
+                            "issue": "学生主要错在不能区分自动分配地址、域名解析和地址解析三个动作。",
+                            "questions": [1],
+                            "priority": "high",
+                        }
+                    ],
+                },
+            }
         return {
             "status": "success",
             "response_json": {

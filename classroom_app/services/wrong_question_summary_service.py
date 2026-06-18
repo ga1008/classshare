@@ -18,11 +18,13 @@ from ..db.errors import DatabaseProgrammingError
 from .assignment_lifecycle_service import close_overdue_assignments, refresh_assignment_runtime_status
 
 
-PROMPT_VERSION = "wrong-question-summary-v2"
+PROMPT_VERSION = "wrong-question-summary-v3"
 TEXT_QUESTION_TYPES = {"text", "textarea"}
 CHOICE_QUESTION_TYPES = {"radio", "checkbox"}
 UNMATCHED_CHOICE_KEY = "__unmatched_choice__"
 BLANK_CHOICE_KEY = "__blank_choice__"
+KNOWLEDGE_ANALYSIS_CACHE_PREFIX = "assignment-knowledge"
+KNOWLEDGE_ANALYSIS_MAX_POINTS = 8
 WRONG_SUMMARY_JOB_STATUS_QUEUED = "queued"
 WRONG_SUMMARY_JOB_STATUS_RUNNING = "running"
 WRONG_SUMMARY_JOB_STATUS_COMPLETED = "completed"
@@ -233,6 +235,11 @@ async def build_assignment_wrong_question_summary(
     wrong_questions = [item for item in question_stats if item["wrong_count"] > 0]
     hard_questions = _build_score_based_hard_questions(wrong_questions)
     difficulty = _score_based_difficulty_summary(hard_questions)
+    knowledge_analysis = await _attach_assignment_knowledge_analysis(
+        source,
+        question_stats,
+        allow_generate=allow_ai_generation,
+    )
     worst_wrong_count = wrong_questions[0]["wrong_count"] if wrong_questions else 0
     source["stats"].update(
         {
@@ -245,10 +252,11 @@ async def build_assignment_wrong_question_summary(
     source["wrong_questions"] = wrong_questions
     source["hard_questions"] = hard_questions
     source["difficulty"] = difficulty
-    source["ai_status"] = _build_ai_status(source, question_stats, difficulty)
+    source["knowledge_analysis"] = knowledge_analysis
+    source["ai_status"] = _build_ai_status(source, question_stats, difficulty, knowledge_analysis)
     if schedule_ai and source["ai_status"]["needs_ai"]:
-        _ensure_wrong_summary_ai_job(source, question_stats, teacher_id, difficulty)
-        source["ai_status"] = _build_ai_status(source, question_stats, difficulty)
+        _ensure_wrong_summary_ai_job(source, question_stats, teacher_id, difficulty, knowledge_analysis)
+        source["ai_status"] = _build_ai_status(source, question_stats, difficulty, knowledge_analysis)
     return source
 
 
@@ -258,7 +266,11 @@ async def reorganize_assignment_wrong_summary_ai(
 ) -> dict[str, Any]:
     source = _load_summary_source(assignment_id, teacher_id)
     if source.get("unsupported_reason"):
-        source["reset_result"] = {"cleared_cache_rows": 0, "cleared_job_rows": 0}
+        source["reset_result"] = {
+            "cleared_cache_rows": 0,
+            "cleared_job_rows": 0,
+            "cleared_analysis_rows": 0,
+        }
         source["ai_status"] = _empty_ai_status()
         return source
 
@@ -319,7 +331,14 @@ async def run_assignment_wrong_summary_ai_job(
                 job_run_token=token,
             )
         difficulty = _score_based_difficulty_summary(_build_score_based_hard_questions(question_stats))
-        errors = _collect_ai_job_errors(question_stats, difficulty)
+        knowledge_analysis = await _attach_assignment_knowledge_analysis(
+            source,
+            question_stats,
+            allow_generate=True,
+            questions_signature=signature,
+            job_run_token=token,
+        )
+        errors = _collect_ai_job_errors(question_stats, difficulty, knowledge_analysis)
         if not _is_wrong_summary_job_token_current(assignment_key, signature, token):
             return
         if errors:
@@ -344,10 +363,15 @@ def _clear_assignment_wrong_summary_ai_state(assignment_id: str, questions_signa
             "DELETE FROM assignment_wrong_summary_jobs WHERE assignment_id = ?",
             (str(assignment_id),),
         )
+        analysis_cursor = conn.execute(
+            "DELETE FROM exam_paper_difficulty_ai_cache WHERE exam_paper_id = ?",
+            (_knowledge_analysis_cache_key(assignment_id),),
+        )
         conn.commit()
     return {
         "cleared_cache_rows": int(cache_cursor.rowcount or 0),
         "cleared_job_rows": int(job_cursor.rowcount or 0),
+        "cleared_analysis_rows": int(analysis_cursor.rowcount or 0),
     }
 
 
@@ -501,6 +525,7 @@ def _ensure_wrong_summary_ai_job(
     question_stats: list[dict[str, Any]],
     teacher_id: int,
     difficulty: dict[str, Any],
+    knowledge_analysis: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     assignment_id = str(source["assignment"]["id"])
     questions_signature = str(source.get("questions_signature") or "")
@@ -508,7 +533,7 @@ def _ensure_wrong_summary_ai_job(
         return None
 
     pending_text_questions = _pending_text_question_count(question_stats)
-    pending_difficulty = 0
+    pending_difficulty = 1 if _knowledge_analysis_needs_ai(knowledge_analysis) else 0
     if pending_text_questions <= 0 and pending_difficulty <= 0:
         return None
 
@@ -592,6 +617,7 @@ def _build_ai_status(
     source: dict[str, Any],
     question_stats: list[dict[str, Any]],
     difficulty: dict[str, Any],
+    knowledge_analysis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if source.get("unsupported_reason"):
         return _empty_ai_status()
@@ -600,9 +626,10 @@ def _build_ai_status(
     questions_signature = str(source.get("questions_signature") or "")
     job = _load_wrong_summary_job(assignment_id, questions_signature) if questions_signature else None
     pending_text_questions = _pending_text_question_count(question_stats)
-    pending_difficulty = 0
+    pending_difficulty = 1 if _knowledge_analysis_needs_ai(knowledge_analysis) else 0
     needs_ai = pending_text_questions > 0 or pending_difficulty > 0
     fallback_text_questions = _fallback_text_question_count(question_stats)
+    fallback_analysis = _knowledge_analysis_uses_fallback(knowledge_analysis)
 
     job_status = str((job or {}).get("status") or "").strip().lower()
     if job_status == WRONG_SUMMARY_JOB_STATUS_COMPLETED and needs_ai:
@@ -635,6 +662,8 @@ def _build_ai_status(
         pieces = []
         if pending_text_questions:
             pieces.append(f"{pending_text_questions} 道主观题错误答案/原因")
+        if pending_difficulty:
+            pieces.append("知识点掌握度与薄弱归因")
         pending_label = "、".join(pieces) or "待整理内容"
         if job_status in ACTIVE_WRONG_SUMMARY_JOB_STATUSES:
             is_active = True
@@ -649,8 +678,13 @@ def _build_ai_status(
         is_active = False
         job_status = job_status or WRONG_SUMMARY_JOB_STATUS_COMPLETED
         label = "归集完成"
+        fallback_pieces = []
         if fallback_text_questions:
-            message = f"错题归集已完成；{fallback_text_questions} 道题已使用本地错答分组兜底展示。"
+            fallback_pieces.append(f"{fallback_text_questions} 道题使用本地错答分组兜底展示")
+        if fallback_analysis:
+            fallback_pieces.append("知识点掌握度使用本地得分估算兜底展示")
+        if fallback_pieces:
+            message = "错题归集已完成；" + "，".join(fallback_pieces) + "。"
         else:
             message = "错题归集已完成。"
 
@@ -663,6 +697,7 @@ def _build_ai_status(
         "pending_text_questions": pending_text_questions,
         "pending_difficulty": pending_difficulty,
         "fallback_text_questions": fallback_text_questions,
+        "fallback_analysis": fallback_analysis,
         "job": _public_wrong_summary_job(job),
     }
 
@@ -677,6 +712,7 @@ def _empty_ai_status() -> dict[str, Any]:
         "pending_text_questions": 0,
         "pending_difficulty": 0,
         "fallback_text_questions": 0,
+        "fallback_analysis": False,
         "job": None,
     }
 
@@ -705,7 +741,11 @@ def _fallback_text_question_count(question_stats: list[dict[str, Any]]) -> int:
     )
 
 
-def _collect_ai_job_errors(question_stats: list[dict[str, Any]], difficulty: dict[str, Any]) -> list[str]:
+def _collect_ai_job_errors(
+    question_stats: list[dict[str, Any]],
+    difficulty: dict[str, Any],
+    knowledge_analysis: dict[str, Any] | None = None,
+) -> list[str]:
     errors: list[str] = []
     for item in question_stats:
         if (
@@ -714,6 +754,10 @@ def _collect_ai_job_errors(question_stats: list[dict[str, Any]], difficulty: dic
             and not item.get("top_wrong_answers")
         ):
             errors.append(f"第 {item['question']['ordinal']} 题错答归集失败：{item['text_cluster_error']}")
+    if knowledge_analysis and not knowledge_analysis.get("points"):
+        error = str(knowledge_analysis.get("error") or "").strip()
+        if error:
+            errors.append(f"知识点归因分析失败：{error}")
     return [_clip_text(error, 180) for error in errors[:4]]
 
 
@@ -1061,10 +1105,57 @@ def _extract_exam_questions(exam_data: dict[str, Any]) -> list[dict[str, Any]]:
                 if isinstance(raw_question.get("grading"), dict)
                 else raw_question.get("points"),
             }
+            question["knowledge_points"] = _extract_question_knowledge_points(raw_question, page_name)
             question["option_meta"] = _build_option_meta(question)
             question["answer_text"] = _format_correct_answer(question)
             questions.append(question)
     return questions
+
+
+def _extract_question_knowledge_points(raw_question: dict[str, Any], page_name: str) -> list[str]:
+    values: list[str] = []
+    for key in (
+        "knowledge_points",
+        "knowledgePoints",
+        "knowledge_point",
+        "knowledgePoint",
+        "knowledge",
+        "topic",
+        "topics",
+        "tag",
+        "tags",
+        "category",
+        "categories",
+        "skill",
+        "skills",
+        "考点",
+        "知识点",
+    ):
+        if key in raw_question:
+            values.extend(_split_knowledge_values(raw_question.get(key)))
+    if not values:
+        values.extend(_split_knowledge_values(page_name))
+    return _dedupe_aliases(_clip_text(value, 40) for value in values if str(value or "").strip())[:3]
+
+
+def _split_knowledge_values(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        result: list[str] = []
+        for item in value:
+            result.extend(_split_knowledge_values(item))
+        return result
+    if isinstance(value, dict):
+        for key in ("name", "label", "title", "知识点", "value"):
+            if key in value:
+                return _split_knowledge_values(value.get(key))
+        return []
+    text = str(value or "").strip()
+    if not text:
+        return []
+    parts = re.split(r"[、,，;；|/]+", text)
+    return [part.strip() for part in parts if part.strip()]
 
 
 def _build_question_error_stats(
@@ -1664,6 +1755,495 @@ def _score_based_difficulty_summary(hard_questions: list[dict[str, Any]]) -> dic
         "source": "score_based",
         "error": "",
     }
+
+
+async def _attach_assignment_knowledge_analysis(
+    source: dict[str, Any],
+    question_stats: list[dict[str, Any]],
+    *,
+    allow_generate: bool,
+    questions_signature: str = "",
+    job_run_token: str = "",
+) -> dict[str, Any]:
+    assignment_id = str((source.get("assignment") or {}).get("id") or "")
+    analysis_signature = _knowledge_analysis_signature(source, question_stats)
+    local_analysis = _build_local_knowledge_analysis(question_stats, status="pending" if question_stats else "completed")
+    if not assignment_id or not analysis_signature:
+        return local_analysis
+
+    cached = _load_knowledge_analysis_cache(assignment_id, analysis_signature)
+    if cached:
+        normalized = _normalize_knowledge_analysis_result(cached, question_stats, source_label="cached")
+        if cached.get("fallback"):
+            normalized["status"] = "fallback_cached"
+            normalized["source"] = "local_fallback"
+            normalized["error"] = _clip_text(cached.get("fallback_error") or normalized.get("error") or "", 180)
+        return normalized
+
+    if not allow_generate:
+        return local_analysis
+
+    if questions_signature and not _is_wrong_summary_job_token_current(
+        assignment_id,
+        str(questions_signature or ""),
+        str(job_run_token or ""),
+    ):
+        local_analysis["status"] = "stale"
+        return local_analysis
+
+    try:
+        raw = await _generate_assignment_knowledge_analysis(source, question_stats)
+        normalized = _normalize_knowledge_analysis_result(raw, question_stats, source_label="ai")
+        _save_knowledge_analysis_cache(assignment_id, analysis_signature, normalized)
+        return normalized
+    except Exception as exc:
+        reason = f"AI 知识点归因失败：{_clip_text(str(exc), 140)}"
+        fallback = _build_local_knowledge_analysis(
+            question_stats,
+            status="fallback",
+            source="local_fallback",
+            error=reason,
+        )
+        _save_knowledge_analysis_cache(
+            assignment_id,
+            analysis_signature,
+            {
+                **fallback,
+                "fallback": True,
+                "fallback_error": _clip_text(reason, 180),
+            },
+        )
+        return fallback
+
+
+def _knowledge_analysis_needs_ai(knowledge_analysis: dict[str, Any] | None) -> bool:
+    if not knowledge_analysis:
+        return False
+    return str(knowledge_analysis.get("status") or "").strip().lower() == "pending"
+
+
+def _knowledge_analysis_uses_fallback(knowledge_analysis: dict[str, Any] | None) -> bool:
+    if not knowledge_analysis:
+        return False
+    status = str(knowledge_analysis.get("status") or "").strip().lower()
+    source = str(knowledge_analysis.get("source") or "").strip().lower()
+    return status in {"fallback", "fallback_cached"} or source == "local_fallback"
+
+
+def _knowledge_analysis_signature(source: dict[str, Any], question_stats: list[dict[str, Any]]) -> str:
+    assignment = source.get("assignment") or {}
+    payload = {
+        "assignment_id": assignment.get("id"),
+        "questions_signature": source.get("questions_signature") or "",
+        "submitted_count": (source.get("stats") or {}).get("submitted_count"),
+        "questions": [
+            {
+                "id": (item.get("question") or {}).get("id"),
+                "ordinal": (item.get("question") or {}).get("ordinal"),
+                "knowledge_points": (item.get("question") or {}).get("knowledge_points") or [],
+                "wrong_count": item.get("wrong_count"),
+                "wrong_percent": item.get("wrong_percent"),
+                "average_score_percent": item.get("average_score_percent"),
+                "top_wrong_answers": [
+                    {
+                        "label": group.get("label"),
+                        "count": group.get("count"),
+                        "likely_issue": group.get("likely_issue"),
+                    }
+                    for group in (item.get("top_wrong_answers") or [])[:5]
+                    if isinstance(group, dict)
+                ],
+            }
+            for item in question_stats
+        ],
+    }
+    return _signature(payload) if question_stats else ""
+
+
+def _knowledge_analysis_cache_key(assignment_id: Any) -> str:
+    return f"{KNOWLEDGE_ANALYSIS_CACHE_PREFIX}:{assignment_id}"
+
+
+def _build_local_knowledge_analysis(
+    question_stats: list[dict[str, Any]],
+    *,
+    status: str = "completed",
+    source: str = "score_based",
+    error: str = "",
+) -> dict[str, Any]:
+    buckets: dict[str, dict[str, Any]] = {}
+    for item in question_stats:
+        question = item.get("question") or {}
+        point_names = question.get("knowledge_points") or [f"第 {question.get('ordinal') or '?'} 题"]
+        mastery = _question_mastery_percent(item)
+        weight = max(1, int(item.get("evaluated_count") or item.get("scored_count") or 1))
+        for raw_name in point_names[:3]:
+            name = _normalize_knowledge_name(raw_name)
+            if not name:
+                continue
+            bucket = buckets.setdefault(
+                name,
+                {
+                    "name": name,
+                    "mastery_total": 0.0,
+                    "weight_total": 0,
+                    "wrong_count": 0,
+                    "question_ordinals": [],
+                    "reasons": [],
+                },
+            )
+            bucket["mastery_total"] += float(mastery) * weight
+            bucket["weight_total"] += weight
+            bucket["wrong_count"] += int(item.get("wrong_count") or 0)
+            ordinal = question.get("ordinal")
+            if ordinal not in bucket["question_ordinals"]:
+                bucket["question_ordinals"].append(ordinal)
+            reason = str(item.get("difficulty_reason") or "").strip()
+            if int(item.get("wrong_count") or 0) > 0 and reason and len(bucket["reasons"]) < 2:
+                bucket["reasons"].append(reason)
+
+    points: list[dict[str, Any]] = []
+    for bucket in buckets.values():
+        weight_total = max(1, int(bucket.get("weight_total") or 0))
+        mastery = int(round(float(bucket.get("mastery_total") or 0.0) / weight_total))
+        reason = "；".join(bucket.get("reasons") or []) or "当前没有明显错答集中点。"
+        points.append(
+            _knowledge_point_payload(
+                bucket["name"],
+                mastery,
+                reason=reason,
+                evidence_questions=bucket.get("question_ordinals") or [],
+                wrong_count=int(bucket.get("wrong_count") or 0),
+                source=source,
+            )
+        )
+
+    points = _sort_knowledge_points(points)
+    weak_points = [
+        {
+            "name": point["name"],
+            "issue": point.get("reason") or "掌握度偏低，建议优先讲评。",
+            "questions": point.get("evidence_questions") or [],
+            "tone": point.get("tone") or "normal",
+        }
+        for point in points
+        if point.get("tone") in {"danger", "warning"}
+    ][:3]
+    if not points:
+        summary = "当前还没有足够的逐题数据生成知识点掌握度。"
+    elif weak_points:
+        summary = f"本地得分估算显示：{weak_points[0]['name']} 是当前最需要优先讲评的薄弱点。"
+    else:
+        summary = "本地得分估算显示：本次试卷各知识点整体掌握较稳定。"
+    return {
+        "status": status,
+        "source": source,
+        "summary": summary,
+        "points": points[:KNOWLEDGE_ANALYSIS_MAX_POINTS],
+        "weak_points": weak_points,
+        "tested_point_count": len(points),
+        "error": _clip_text(error, 180),
+    }
+
+
+def _question_mastery_percent(item: dict[str, Any]) -> int:
+    average_score_percent = item.get("average_score_percent")
+    if average_score_percent is not None:
+        try:
+            return max(0, min(100, int(round(float(average_score_percent)))))
+        except (TypeError, ValueError):
+            pass
+    wrong_percent = int(item.get("wrong_percent") or 0)
+    return max(0, min(100, 100 - wrong_percent))
+
+
+async def _generate_assignment_knowledge_analysis(
+    source: dict[str, Any],
+    question_stats: list[dict[str, Any]],
+) -> dict[str, Any]:
+    assignment = source.get("assignment") or {}
+    paper = source.get("paper") or {}
+    stats = source.get("stats") or {}
+    question_payload = []
+    for item in sorted(question_stats, key=lambda entry: int((entry.get("question") or {}).get("ordinal") or 0)):
+        question = item.get("question") or {}
+        question_payload.append(
+            {
+                "ordinal": question.get("ordinal"),
+                "type": question.get("type_label") or question.get("type"),
+                "page": question.get("page_name"),
+                "knowledge_points": question.get("knowledge_points") or [],
+                "text": _clip_text(question.get("text"), 220),
+                "answer": _clip_text(question.get("answer_text") or question.get("answer"), 140),
+                "points": question.get("points"),
+                "evaluated_count": item.get("evaluated_count"),
+                "wrong_count": item.get("wrong_count"),
+                "wrong_percent": item.get("wrong_percent"),
+                "average_score_percent": item.get("average_score_percent"),
+                "difficulty_reason": item.get("difficulty_reason"),
+                "wrong_patterns": [
+                    {
+                        "label": _clip_text(group.get("label"), 70),
+                        "count": group.get("count"),
+                        "likely_issue": _clip_text(group.get("likely_issue"), 110),
+                    }
+                    for group in (item.get("top_wrong_answers") or [])[:4]
+                    if isinstance(group, dict)
+                ],
+                "wrong_samples": [_clip_text(sample, 100) for sample in (item.get("wrong_samples") or [])[:4]],
+            }
+        )
+
+    system_prompt = (
+        "你是教学测评数据分析助手。请根据全班逐题表现分析整张试卷的知识点掌握度和错因归因。"
+        "必须覆盖所有主要考察知识点，不能只看错题；不要编造学生答案；返回严格 JSON。"
+    )
+    user_message = "\n".join(
+        [
+            "请输出全班错题归集的整卷归因分析。",
+            f"作业：{assignment.get('title') or ''}",
+            f"试卷：{paper.get('title') or ''}",
+            f"提交人数：{stats.get('submitted_count') or 0}",
+            "逐题统计 JSON：",
+            json.dumps(question_payload, ensure_ascii=False),
+            (
+                '返回 JSON：{"summary":"全班主要薄弱点一句话",'
+                '"knowledge_points":[{"name":"知识点原名，4到16字优先",'
+                '"mastery":0到100的整数,"reason":"错在什么地方或为何掌握好",'
+                '"evidence_questions":[1,2],"risk_level":"danger|warning|normal|mastered"}],'
+                '"weak_points":[{"name":"知识点","issue":"具体错因","questions":[1,2],"priority":"high|medium|low"}]}。'
+                "mastery 越高代表掌握越好；明显易错知识点用 danger 或 warning。"
+            ),
+        ]
+    )
+    return await _call_fast_json_ai(system_prompt, user_message, "wrong_summary_knowledge_analysis", timeout=75.0)
+
+
+def _normalize_knowledge_analysis_result(
+    raw: dict[str, Any],
+    question_stats: list[dict[str, Any]],
+    *,
+    source_label: str,
+) -> dict[str, Any]:
+    local = _build_local_knowledge_analysis(question_stats, status="completed", source="score_based")
+    raw_points = raw.get("knowledge_points") or raw.get("points") if isinstance(raw, dict) else None
+    if not isinstance(raw_points, list):
+        raw_points = []
+    normalized_points: list[dict[str, Any]] = []
+    for raw_point in raw_points:
+        if not isinstance(raw_point, dict):
+            continue
+        name = _normalize_knowledge_name(raw_point.get("name") or raw_point.get("label") or raw_point.get("title"))
+        if not name:
+            continue
+        mastery = _coerce_int(raw_point.get("mastery") or raw_point.get("mastery_percent") or raw_point.get("score"))
+        if mastery is None:
+            continue
+        mastery = max(0, min(100, mastery))
+        evidence_questions = _coerce_question_ordinals(raw_point.get("evidence_questions") or raw_point.get("questions"))
+        normalized_points.append(
+            _knowledge_point_payload(
+                name,
+                mastery,
+                reason=_clip_text(raw_point.get("reason") or raw_point.get("issue") or raw_point.get("analysis"), 150),
+                evidence_questions=evidence_questions,
+                wrong_count=_coerce_int(raw_point.get("wrong_count")) or 0,
+                source=source_label,
+                risk_level=str(raw_point.get("risk_level") or raw_point.get("risk") or "").strip().lower(),
+            )
+        )
+
+    if not normalized_points:
+        fallback = dict(local)
+        fallback["status"] = "fallback"
+        fallback["source"] = "local_fallback"
+        fallback["error"] = "AI 未返回可用知识点掌握度，已使用本地得分估算。"
+        return fallback
+
+    normalized_points = _sort_knowledge_points(normalized_points)
+    weak_points = _normalize_weak_points(raw.get("weak_points"), normalized_points)
+    summary = _clip_text(raw.get("summary") or raw.get("analysis") or "", 180) if isinstance(raw, dict) else ""
+    if not summary:
+        if weak_points:
+            summary = f"AI 归因显示：{weak_points[0]['name']} 是当前最需要优先讲评的薄弱点。"
+        else:
+            summary = "AI 归因显示：本次试卷知识点掌握整体较稳定。"
+    return {
+        "status": "completed",
+        "source": source_label,
+        "summary": summary,
+        "points": normalized_points[:KNOWLEDGE_ANALYSIS_MAX_POINTS],
+        "weak_points": weak_points,
+        "tested_point_count": max(len(local.get("points") or []), len(normalized_points)),
+        "error": "",
+    }
+
+
+def _knowledge_point_payload(
+    name: str,
+    mastery: int,
+    *,
+    reason: str,
+    evidence_questions: Iterable[Any],
+    wrong_count: int,
+    source: str,
+    risk_level: str = "",
+) -> dict[str, Any]:
+    tone = _knowledge_mastery_tone(mastery, risk_level)
+    return {
+        "name": _clip_text(name, 48),
+        "label": _compact_knowledge_label(name),
+        "mastery": int(max(0, min(100, mastery))),
+        "tone": tone,
+        "reason": _clip_text(reason, 150),
+        "evidence_questions": _coerce_question_ordinals(evidence_questions),
+        "wrong_count": int(max(0, wrong_count)),
+        "source": source,
+    }
+
+
+def _normalize_knowledge_name(value: Any) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip(" ：:，,。.;；、|")
+    cleaned = re.sub(r"^第\s*\d+\s*(部分|章|节|题)\s*[：:、.\-]?\s*", "", text)
+    return _clip_text(cleaned or text, 48)
+
+
+def _compact_knowledge_label(value: Any) -> str:
+    text = _normalize_knowledge_name(value)
+    if len(text) <= 14:
+        return text
+    for sep in ("：", ":", "，", ",", "；", ";", "、", "-", "—"):
+        if sep in text:
+            first = text.split(sep, 1)[0].strip()
+            if 4 <= len(first) <= 14:
+                return first
+    return text[:13].rstrip() + "…"
+
+
+def _knowledge_mastery_tone(mastery: int, risk_level: str = "") -> str:
+    risk = str(risk_level or "").strip().lower()
+    if mastery >= 95 and risk not in {"danger", "high", "warning", "medium"}:
+        return "mastered"
+    if risk in {"danger", "high"} or mastery < 60:
+        return "danger"
+    if risk in {"warning", "medium"} or mastery < 78:
+        return "warning"
+    return "normal"
+
+
+def _sort_knowledge_points(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    tone_rank = {"danger": 0, "warning": 1, "normal": 2, "mastered": 3}
+    return sorted(
+        points,
+        key=lambda point: (
+            tone_rank.get(str(point.get("tone") or "normal"), 2),
+            int(point.get("mastery") or 0),
+            -int(point.get("wrong_count") or 0),
+            str(point.get("name") or ""),
+        ),
+    )
+
+
+def _normalize_weak_points(raw_items: Any, points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_name = {str(point.get("name") or ""): point for point in points}
+    weak_points: list[dict[str, Any]] = []
+    if isinstance(raw_items, list):
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            name = _normalize_knowledge_name(item.get("name") or item.get("label"))
+            if not name:
+                continue
+            matched = by_name.get(name)
+            tone = str((matched or {}).get("tone") or _knowledge_mastery_tone(70)).strip()
+            weak_points.append(
+                {
+                    "name": _clip_text(name, 48),
+                    "issue": _clip_text(item.get("issue") or item.get("reason") or "", 160),
+                    "questions": _coerce_question_ordinals(item.get("questions") or item.get("evidence_questions")),
+                    "priority": str(item.get("priority") or "").strip() or ("high" if tone == "danger" else "medium"),
+                    "tone": tone,
+                }
+            )
+            if len(weak_points) >= 3:
+                break
+    if weak_points:
+        return weak_points
+    return [
+        {
+            "name": point["name"],
+            "issue": point.get("reason") or "掌握度偏低，建议优先讲评。",
+            "questions": point.get("evidence_questions") or [],
+            "priority": "high" if point.get("tone") == "danger" else "medium",
+            "tone": point.get("tone") or "normal",
+        }
+        for point in points
+        if point.get("tone") in {"danger", "warning"}
+    ][:3]
+
+
+def _coerce_int(value: Any) -> int | None:
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_question_ordinals(value: Any) -> list[int]:
+    raw_items = value if isinstance(value, list) else [value]
+    result: list[int] = []
+    for item in raw_items:
+        parsed = _coerce_int(item)
+        if parsed is None:
+            match = re.search(r"\d+", str(item or ""))
+            parsed = int(match.group(0)) if match else None
+        if parsed is None or parsed <= 0 or parsed in result:
+            continue
+        result.append(parsed)
+    return result[:6]
+
+
+def _load_knowledge_analysis_cache(assignment_id: str, analysis_signature: str) -> dict[str, Any] | None:
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        row = conn.execute(
+            """
+            SELECT result_json
+            FROM exam_paper_difficulty_ai_cache
+            WHERE exam_paper_id = ?
+              AND questions_signature = ?
+              AND prompt_version = ?
+            LIMIT 1
+            """,
+            (_knowledge_analysis_cache_key(assignment_id), analysis_signature, PROMPT_VERSION),
+        ).fetchone()
+        conn.commit()
+    return _load_json_object(row["result_json"]) if row else None
+
+
+def _save_knowledge_analysis_cache(assignment_id: str, analysis_signature: str, result: dict[str, Any]) -> None:
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        conn.execute(
+            """
+            INSERT INTO exam_paper_difficulty_ai_cache (
+                exam_paper_id, questions_signature, prompt_version,
+                result_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(exam_paper_id, questions_signature, prompt_version)
+            DO UPDATE SET result_json = excluded.result_json, updated_at = excluded.updated_at
+            """,
+            (
+                _knowledge_analysis_cache_key(assignment_id),
+                analysis_signature,
+                PROMPT_VERSION,
+                json.dumps(result, ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+        conn.commit()
 
 
 async def _attach_text_answer_clusters(

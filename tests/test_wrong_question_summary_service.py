@@ -9,10 +9,12 @@ from unittest.mock import AsyncMock, patch
 
 from classroom_app.services.wrong_question_summary_service import (
     PROMPT_VERSION,
+    _attach_assignment_knowledge_analysis,
     _attach_text_answer_clusters,
     _answer_value,
     _answers_by_question,
     _build_ai_status,
+    _build_local_knowledge_analysis,
     _build_question_error_stats,
     _build_score_based_hard_questions,
     _clear_assignment_wrong_summary_ai_state,
@@ -189,6 +191,172 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         hard_questions = _build_score_based_hard_questions(stats)
         self.assertEqual(hard_questions[0]["question"]["id"], "q1")
         self.assertIn("率", hard_questions[0]["difficulty_reason"])
+
+    def test_local_knowledge_analysis_builds_mastery_points_from_all_questions(self):
+        questions = _extract_exam_questions(
+            {
+                "pages": [
+                    {
+                        "name": "Network",
+                        "questions": [
+                            {
+                                "id": "q1",
+                                "type": "radio",
+                                "text": "Which protocol assigns IP addresses automatically?",
+                                "options": ["A. DHCP", "B. DNS", "C. ARP"],
+                                "answer": "A",
+                                "points": 1,
+                                "knowledge_points": ["DHCP 地址获取"],
+                            },
+                            {
+                                "id": "q2",
+                                "type": "text",
+                                "text": "Default HTTP port?",
+                                "answer": "80",
+                                "points": 1,
+                                "knowledge_points": ["应用层端口"],
+                            },
+                        ],
+                    }
+                ]
+            }
+        )
+        submissions = [
+            {
+                "id": 1,
+                "student_name": "Student A",
+                "status": "submitted",
+                "answers_json": json.dumps(
+                    {"answers": [{"question_id": "q1", "answer": "B. DNS"}, {"question_id": "q2", "answer": "80"}]},
+                    ensure_ascii=False,
+                ),
+                "feedback_md": _feedback((1, 0, 1), (2, 1, 1)),
+            },
+            {
+                "id": 2,
+                "student_name": "Student B",
+                "status": "submitted",
+                "answers_json": json.dumps(
+                    {"answers": [{"question_id": "q1", "answer": "C. ARP"}, {"question_id": "q2", "answer": "80"}]},
+                    ensure_ascii=False,
+                ),
+                "feedback_md": _feedback((1, 0, 1), (2, 1, 1)),
+            },
+        ]
+
+        stats = _build_question_error_stats(questions, submissions)
+        analysis = _build_local_knowledge_analysis(stats)
+        by_name = {item["name"]: item for item in analysis["points"]}
+
+        self.assertEqual(by_name["DHCP 地址获取"]["mastery"], 0)
+        self.assertEqual(by_name["DHCP 地址获取"]["tone"], "danger")
+        self.assertEqual(by_name["应用层端口"]["mastery"], 100)
+        self.assertEqual(by_name["应用层端口"]["tone"], "mastered")
+        self.assertIn("DHCP 地址获取", analysis["summary"])
+
+    def test_knowledge_analysis_ai_result_is_normalized_and_cached(self):
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            @contextmanager
+            def connect():
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    yield conn
+                finally:
+                    conn.close()
+
+            questions = _extract_exam_questions(
+                {
+                    "pages": [
+                        {
+                            "name": "Network",
+                            "questions": [
+                                {
+                                    "id": "q1",
+                                    "type": "radio",
+                                    "text": "Which protocol assigns IP addresses automatically?",
+                                    "options": ["A. DHCP", "B. DNS", "C. ARP"],
+                                    "answer": "A",
+                                    "points": 1,
+                                    "knowledge_points": ["DHCP 地址获取"],
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+            submissions = [
+                {
+                    "id": 1,
+                    "student_name": "Student A",
+                    "status": "submitted",
+                    "answers_json": json.dumps({"answers": [{"question_id": "q1", "answer": "B. DNS"}]}),
+                    "feedback_md": _feedback((1, 0, 1)),
+                }
+            ]
+            stats = _build_question_error_stats(questions, submissions)
+            source = {
+                "assignment": {"id": "assignment-1", "title": "Network Quiz"},
+                "paper": {"title": "Paper A"},
+                "stats": {"submitted_count": 1},
+                "questions_signature": "paper-sig",
+            }
+
+            with patch(
+                "classroom_app.services.wrong_question_summary_service.get_db_connection",
+                connect,
+            ), patch(
+                "classroom_app.services.wrong_question_summary_service._generate_assignment_knowledge_analysis",
+                new=AsyncMock(
+                    return_value={
+                        "summary": "DHCP 地址获取薄弱。",
+                        "knowledge_points": [
+                            {
+                                "name": "DHCP 地址获取",
+                                "mastery": 42,
+                                "reason": "把 DHCP 与 DNS/ARP 混淆。",
+                                "evidence_questions": [1],
+                                "risk_level": "danger",
+                            }
+                        ],
+                        "weak_points": [
+                            {
+                                "name": "DHCP 地址获取",
+                                "issue": "不能区分地址分配和域名解析。",
+                                "questions": [1],
+                                "priority": "high",
+                            }
+                        ],
+                    }
+                ),
+            ) as generate_analysis:
+                analysis = asyncio.run(
+                    _attach_assignment_knowledge_analysis(source, stats, allow_generate=True)
+                )
+                cached = asyncio.run(
+                    _attach_assignment_knowledge_analysis(source, stats, allow_generate=False)
+                )
+
+            with connect() as conn:
+                row = conn.execute(
+                    "SELECT exam_paper_id, result_json FROM exam_paper_difficulty_ai_cache"
+                ).fetchone()
+
+            self.assertEqual(analysis["status"], "completed")
+            self.assertEqual(analysis["points"][0]["tone"], "danger")
+            self.assertEqual(analysis["weak_points"][0]["issue"], "不能区分地址分配和域名解析。")
+            self.assertEqual(cached["status"], "completed")
+            self.assertEqual(cached["points"][0]["name"], "DHCP 地址获取")
+            self.assertEqual(generate_analysis.await_count, 1)
+            self.assertEqual(row["exam_paper_id"], "assignment-knowledge:assignment-1")
+            self.assertIn("DHCP 地址获取", json.loads(row["result_json"])["points"][0]["name"])
+        finally:
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
 
     def test_missing_question_score_is_not_counted_as_wrong(self):
         questions = _extract_exam_questions(

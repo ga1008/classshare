@@ -222,6 +222,25 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
         "emoji_usage_stats",
         ("class_offering_id", "user_id", "user_role", "emoji_type", "emoji_key"),
     ),
+    # Wrong-summary AI caches and job state use ON CONFLICT with these keys.
+    # SQLite keeps table-level UNIQUE constraints, but SQLite->PostgreSQL export
+    # drops them; recreate the unique indexes at runtime to keep teacher manual
+    # reorganization from failing with a 500.
+    (
+        "idx_assignment_wrong_answer_ai_cache_unique_entry",
+        "assignment_wrong_answer_ai_cache",
+        ("assignment_id", "question_key", "answer_signature", "prompt_version"),
+    ),
+    (
+        "idx_exam_paper_difficulty_ai_cache_unique_entry",
+        "exam_paper_difficulty_ai_cache",
+        ("exam_paper_id", "questions_signature", "prompt_version"),
+    ),
+    (
+        "idx_assignment_wrong_summary_jobs_unique_signature",
+        "assignment_wrong_summary_jobs",
+        ("assignment_id", "questions_signature", "prompt_version"),
+    ),
     # Classroom live activity responses rely on UPSERT (ON CONFLICT) keyed by
     # (activity_id, student_id). The SQLite table-level UNIQUE constraint is
     # dropped during the SQLite->PostgreSQL export, so the runtime must recreate

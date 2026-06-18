@@ -234,6 +234,7 @@ async def assignment_wrong_summary_status(
         "assignment_id": str(assignment_id),
         "ai_status": summary.get("ai_status") or {},
         "stats": summary.get("stats") or {},
+        "knowledge_analysis": summary.get("knowledge_analysis") or {},
     }
 
 
@@ -251,6 +252,7 @@ async def assignment_wrong_summary_reorganize(
         "assignment_id": str(assignment_id),
         "ai_status": summary.get("ai_status") or {},
         "stats": summary.get("stats") or {},
+        "knowledge_analysis": summary.get("knowledge_analysis") or {},
         "reset_result": summary.get("reset_result") or {},
     }
 

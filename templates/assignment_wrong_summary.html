@@ -148,9 +148,10 @@
 
     .wrong-summary-hero {
         display: grid;
-        grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
-        gap: 14px;
+        grid-template-columns: minmax(0, 1.12fr) minmax(420px, 0.88fr);
+        gap: 18px;
         padding: clamp(18px, 2.4vw, 26px);
+        align-items: stretch;
     }
 
     .wrong-summary-kicker {
@@ -179,42 +180,210 @@
         line-height: 1.72;
     }
 
-    .wrong-summary-metrics {
+    .wrong-summary-insight-panel {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-    }
-
-    .wrong-summary-metric {
-        display: grid;
-        gap: 4px;
-        min-height: 86px;
-        padding: 12px;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 12px;
+        min-width: 0;
+        padding: 14px;
         border: 1px solid rgba(226, 232, 240, 0.9);
         border-radius: 8px;
-        background: rgba(248, 250, 252, 0.86);
+        background:
+            linear-gradient(180deg, rgba(248, 250, 252, 0.94), rgba(255, 255, 255, 0.82));
     }
 
-    .wrong-summary-metric span {
-        color: #64748b;
-        font-size: 0.76rem;
+    .wrong-summary-tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        justify-content: flex-start;
+    }
+
+    .wrong-summary-stat-tag {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 6px;
+        min-height: 30px;
+        padding: 5px 9px;
+        border: 1px solid rgba(239, 68, 68, 0.22);
+        border-radius: 8px;
+        background: rgba(254, 242, 242, 0.86);
+        color: #7f1d1d;
+        white-space: nowrap;
+    }
+
+    .wrong-summary-stat-tag span {
+        font-size: 0.72rem;
         font-weight: 800;
     }
 
-    .wrong-summary-metric strong {
-        color: #0f172a;
-        font-size: 1.55rem;
+    .wrong-summary-stat-tag strong {
+        color: #b91c1c;
+        font-size: 1rem;
         font-weight: 900;
         line-height: 1;
     }
 
-    .wrong-summary-metric.is-danger {
-        border-color: rgba(239, 68, 68, 0.24);
-        background: rgba(254, 242, 242, 0.86);
+    .knowledge-mastery-card {
+        display: grid;
+        grid-template-rows: auto minmax(156px, 1fr);
+        gap: 10px;
+        min-width: 0;
     }
 
-    .wrong-summary-metric.is-danger strong {
-        color: #b91c1c;
+    .knowledge-mastery-card__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        min-width: 0;
+    }
+
+    .knowledge-mastery-card__head strong {
+        display: block;
+        color: #0f172a;
+        font-size: 0.92rem;
+        font-weight: 880;
+        line-height: 1.2;
+    }
+
+    .knowledge-mastery-card__head span {
+        display: block;
+        margin-top: 3px;
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 760;
+        line-height: 1.4;
+    }
+
+    .knowledge-mastery-source {
+        flex: 0 0 auto;
+        padding: 3px 7px;
+        border-radius: 999px;
+        background: rgba(14, 165, 233, 0.1);
+        color: #0369a1;
+        font-size: 0.68rem;
+        font-weight: 850;
+        white-space: nowrap;
+    }
+
+    .knowledge-mastery-chart {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(46px, 1fr);
+        align-items: end;
+        gap: 8px;
+        min-width: 0;
+        min-height: 156px;
+        padding: 8px 2px 0;
+        border-top: 1px solid rgba(226, 232, 240, 0.82);
+        overflow-x: auto;
+    }
+
+    .knowledge-mastery-bar {
+        display: grid;
+        grid-template-rows: minmax(92px, 1fr) auto;
+        gap: 6px;
+        min-width: 46px;
+        height: 100%;
+        color: #475569;
+    }
+
+    .knowledge-mastery-bar__track {
+        position: relative;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        min-height: 92px;
+        border-radius: 8px;
+        background: rgba(241, 245, 249, 0.86);
+        overflow: hidden;
+    }
+
+    .knowledge-mastery-bar__fill {
+        width: 100%;
+        min-height: 3px;
+        height: var(--mastery);
+        border-radius: 8px 8px 0 0;
+        background: #2563eb;
+    }
+
+    .knowledge-mastery-bar.is-danger .knowledge-mastery-bar__fill {
+        background: #dc2626;
+    }
+
+    .knowledge-mastery-bar.is-warning .knowledge-mastery-bar__fill {
+        background: #f97316;
+    }
+
+    .knowledge-mastery-bar.is-normal .knowledge-mastery-bar__fill {
+        background: #2563eb;
+    }
+
+    .knowledge-mastery-bar.is-mastered .knowledge-mastery-bar__fill {
+        background: #16a34a;
+    }
+
+    .knowledge-mastery-bar__value {
+        position: absolute;
+        top: 7px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 2px 4px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.88);
+        color: #0f172a;
+        font-size: 0.68rem;
+        font-weight: 900;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .knowledge-mastery-bar__label {
+        display: block;
+        max-width: 68px;
+        margin: 0 auto;
+        color: #475569;
+        font-size: 0.68rem;
+        font-weight: 780;
+        line-height: 1.2;
+        text-align: center;
+        overflow-wrap: anywhere;
+    }
+
+    .knowledge-mastery-empty {
+        display: grid;
+        place-items: center;
+        min-height: 132px;
+        border: 1px dashed rgba(148, 163, 184, 0.34);
+        border-radius: 8px;
+        color: #64748b;
+        font-size: 0.8rem;
+        font-weight: 800;
+        text-align: center;
+    }
+
+    .wrong-summary-analysis-note {
+        display: grid;
+        gap: 4px;
+        padding: 9px 10px;
+        border: 1px solid rgba(245, 158, 11, 0.24);
+        border-radius: 8px;
+        background: rgba(255, 251, 235, 0.82);
+    }
+
+    .wrong-summary-analysis-note strong {
+        color: #92400e;
+        font-size: 0.72rem;
+        font-weight: 880;
+    }
+
+    .wrong-summary-analysis-note span {
+        color: #475569;
+        font-size: 0.76rem;
+        font-weight: 760;
+        line-height: 1.45;
     }
 
     .wrong-summary-tabs {
@@ -604,6 +773,16 @@
         color: #0369a1;
         font-size: 0.86rem;
         font-weight: 800;
+        cursor: pointer;
+        transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .wrong-summary-ai-strip:hover,
+    .wrong-summary-ai-strip:focus-visible {
+        transform: translateY(-1px);
+        border-color: rgba(14, 165, 233, 0.42);
+        box-shadow: 0 12px 28px -24px rgba(14, 165, 233, 0.8);
+        outline: none;
     }
 
     .wrong-summary-ai-strip.is-failed,
@@ -986,8 +1165,12 @@
             margin-top: 10px;
         }
 
-        .wrong-summary-metrics {
-            grid-template-columns: 1fr;
+        .wrong-summary-insight-panel {
+            padding: 12px;
+        }
+
+        .knowledge-mastery-chart {
+            grid-auto-columns: 54px;
         }
 
         .wrong-summary-tablist {
@@ -1023,13 +1206,16 @@
 
         .wrong-answer-item,
         .wrong-option-stat,
-        .wrong-answer-detail-link {
+        .wrong-answer-detail-link,
+        .wrong-summary-ai-strip {
             transition: none;
         }
 
         .wrong-answer-item:hover,
         .wrong-option-stat:hover,
-        .wrong-answer-detail-link:hover {
+        .wrong-answer-detail-link:hover,
+        .wrong-summary-ai-strip:hover,
+        .wrong-summary-ai-strip:focus-visible {
             transform: none;
         }
     }
@@ -1075,29 +1261,65 @@
             <div
                 class="wrong-summary-ai-strip{% if summary.ai_status.job_status == 'failed' %} is-failed{% elif summary.ai_status.job_status == 'manual_required' %} is-manual{% endif %}"
                 data-wrong-summary-status-strip
-                {% if not summary.ai_status.is_active and summary.ai_status.job_status not in ['failed', 'manual_required'] and not summary.ai_status.fallback_text_questions %}hidden{% endif %}
+                data-wrong-summary-reorganize-trigger
+                role="button"
+                tabindex="0"
+                title="点击手动启动 AI 错题整理"
+                {% if not summary.ai_status.is_active and summary.ai_status.job_status not in ['failed', 'manual_required'] and not summary.ai_status.fallback_text_questions and not summary.ai_status.fallback_analysis %}hidden{% endif %}
             >
                 <span class="wrong-summary-spinner" aria-hidden="true" {% if not summary.ai_status.is_active %}hidden{% endif %}></span>
                 <span>{{ summary.ai_status.message }}</span>
             </div>
         </div>
-        <div class="wrong-summary-metrics" aria-label="统计摘要">
-            <div class="wrong-summary-metric">
-                <span>全班人数</span>
-                <strong>{{ summary.stats.total_students }}</strong>
+        {% set knowledge = summary.knowledge_analysis or {} %}
+        {% set weak_points = knowledge.weak_points or [] %}
+        <div class="wrong-summary-insight-panel" aria-label="知识点掌握度与统计摘要">
+            <div class="wrong-summary-tag-row" aria-label="错答统计">
+                <span class="wrong-summary-stat-tag">
+                    <span>出现错答题目</span>
+                    <strong>{{ summary.stats.wrong_question_count }}</strong>
+                </span>
+                <span class="wrong-summary-stat-tag">
+                    <span>单题最高错答</span>
+                    <strong>{{ summary.stats.worst_wrong_count }}</strong>
+                </span>
             </div>
-            <div class="wrong-summary-metric">
-                <span>已提交</span>
-                <strong>{{ summary.stats.submitted_count }}</strong>
+            <section class="knowledge-mastery-card" aria-label="知识点掌握度柱状图">
+                <div class="knowledge-mastery-card__head">
+                    <div>
+                        <strong>知识点掌握度</strong>
+                        <span>{{ knowledge.summary or '等待 AI 归因分析生成知识点掌握度。' }}</span>
+                    </div>
+                    <span class="knowledge-mastery-source">
+                        {% if knowledge.source in ['ai', 'cached'] %}AI归因{% elif knowledge.source == 'local_fallback' %}本地兜底{% else %}本地估算{% endif %}
+                    </span>
+                </div>
+                {% if knowledge.points %}
+                <div class="knowledge-mastery-chart" role="img" aria-label="横轴为知识点，纵轴为掌握度">
+                    {% for point in knowledge.points %}
+                    <div
+                        class="knowledge-mastery-bar is-{{ point.tone or 'normal' }}"
+                        style="--mastery: {{ point.mastery or 0 }}%;"
+                        title="{{ point.name }}：{{ point.mastery or 0 }}%，{{ point.reason }}"
+                    >
+                        <span class="knowledge-mastery-bar__track" aria-hidden="true">
+                            <span class="knowledge-mastery-bar__fill"></span>
+                            <span class="knowledge-mastery-bar__value">{{ point.mastery or 0 }}%</span>
+                        </span>
+                        <span class="knowledge-mastery-bar__label">{{ point.label or point.name }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="knowledge-mastery-empty">暂无可绘制的知识点掌握度</div>
+                {% endif %}
+            </section>
+            {% if weak_points %}
+            <div class="wrong-summary-analysis-note">
+                <strong>薄弱归因</strong>
+                <span>{{ weak_points[0].issue or weak_points[0].name }}</span>
             </div>
-            <div class="wrong-summary-metric is-danger">
-                <span>出现错答题目</span>
-                <strong>{{ summary.stats.wrong_question_count }}</strong>
-            </div>
-            <div class="wrong-summary-metric is-danger">
-                <span>单题最高错答</span>
-                <strong>{{ summary.stats.worst_wrong_count }}</strong>
-            </div>
+            {% endif %}
         </div>
     </section>
 
@@ -1501,7 +1723,8 @@
         }
         const isManual = aiStatus.job_status === 'manual_required';
         const hasFallbackNotice = Number(aiStatus.fallback_text_questions || 0) > 0;
-        strip.hidden = !aiStatus.is_active && aiStatus.job_status !== 'failed' && !isManual && !hasFallbackNotice;
+        const hasFallbackAnalysis = Boolean(aiStatus.fallback_analysis);
+        strip.hidden = !aiStatus.is_active && aiStatus.job_status !== 'failed' && !isManual && !hasFallbackNotice && !hasFallbackAnalysis;
         strip.classList.toggle('is-failed', aiStatus.job_status === 'failed');
         strip.classList.toggle('is-manual', isManual);
         if (spinner) {
@@ -1529,17 +1752,21 @@
 
     function setupReorganizeWrongSummary() {
         const button = document.querySelector('[data-wrong-summary-reorganize]');
-        if (!button) {
+        const triggers = Array.from(document.querySelectorAll('[data-wrong-summary-reorganize], [data-wrong-summary-reorganize-trigger]'));
+        if (!button || !triggers.length) {
             return;
         }
         const labelNode = button.querySelector('.app-topbar-action__text strong');
         const subLabelNode = button.querySelector('.app-topbar-action__text small');
         const originalLabel = labelNode ? labelNode.textContent : '';
         const originalSubLabel = subLabelNode ? subLabelNode.textContent : '';
+        let busy = false;
 
         const setBusy = (busy) => {
             button.disabled = busy;
-            button.setAttribute('aria-busy', busy ? 'true' : 'false');
+            triggers.forEach((trigger) => {
+                trigger.setAttribute('aria-busy', busy ? 'true' : 'false');
+            });
             if (labelNode) {
                 labelNode.textContent = busy ? '整理中' : originalLabel;
             }
@@ -1548,14 +1775,15 @@
             }
         };
 
-        button.addEventListener('click', async () => {
-            if (button.disabled || reloadScheduled) {
+        const startReorganize = async () => {
+            if (busy || reloadScheduled) {
                 return;
             }
             const confirmed = window.confirm('将手动启动本作业的 AI 错答整理；学生答案、分数和评语不会被修改。继续吗？');
             if (!confirmed) {
                 return;
             }
+            busy = true;
             setBusy(true);
             showStatusStrip('正在启动 AI 错答整理，页面会在完成后自动刷新结果。');
             try {
@@ -1580,9 +1808,24 @@
                 window.setTimeout(() => window.location.reload(), 450);
             } catch (error) {
                 console.warn('Wrong summary reorganize failed:', error);
+                busy = false;
                 setBusy(false);
                 showStatusStrip('整理没有发起成功，请稍后再试。', true, false);
             }
+        };
+
+        triggers.forEach((trigger) => {
+            trigger.addEventListener('click', (event) => {
+                event.preventDefault();
+                startReorganize();
+            });
+            trigger.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') {
+                    return;
+                }
+                event.preventDefault();
+                startReorganize();
+            });
         });
     }
 

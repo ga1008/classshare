@@ -185,6 +185,9 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "idx_private_message_blocks_unique_pair",
             "idx_blog_media_assets_unique_uploader_file",
             "idx_emoji_usage_stats_unique_target",
+            "idx_assignment_wrong_answer_ai_cache_unique_entry",
+            "idx_exam_paper_difficulty_ai_cache_unique_entry",
+            "idx_assignment_wrong_summary_jobs_unique_signature",
         }
 
         self.assertTrue(expected.issubset(runtime_index_names))
