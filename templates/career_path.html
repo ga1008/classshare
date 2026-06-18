@@ -18,25 +18,17 @@
     <button type="button" class="career-topbar__redo" id="career-redo" hidden>重新测试</button>
   </header>
 
-  <!-- 主舞台：3D 节点网络 canvas + 时间轴 + 详情/知识卡片 -->
+  <!-- 主舞台：时间轴 SVG 网络图 + 详情/知识卡片 -->
   <main class="career-stage" id="career-stage" hidden>
-    <canvas id="career-canvas" class="career-canvas"></canvas>
+    <div class="career-scroll" id="career-scroll">
+      <div id="career-canvas" class="career-canvas"></div>
+    </div>
 
     <!-- 顶部专属欢迎/定位条 -->
     <div class="career-banner" id="career-banner" hidden></div>
 
-    <!-- 图例 + 缩放提示 -->
+    <!-- 图例 -->
     <div class="career-legend" id="career-legend"></div>
-
-    <!-- 就业分类扇区切换 -->
-    <div class="career-sector-controls" id="career-sector-controls" aria-label="切换就业分类">
-      <button type="button" class="career-sector-btn career-sector-btn--prev" id="career-sector-prev" aria-label="上一个就业分类">‹</button>
-      <div class="career-sector-status" id="career-sector-label" aria-live="polite"></div>
-      <button type="button" class="career-sector-btn career-sector-btn--next" id="career-sector-next" aria-label="下一个就业分类">›</button>
-    </div>
-
-    <!-- 高亮路径上的星旁信息卡片（HTML 层，缩放时尺寸保持稳定） -->
-    <div class="career-path-cards" id="career-path-cards" hidden></div>
 
     <!-- 节点详情卡片（点击节点后出现，点空白处关闭） -->
     <aside class="career-detail" id="career-detail" hidden></aside>
@@ -44,6 +36,9 @@
     <!-- 未毕业阶段：必备知识卡片面板（点击未毕业节点后出现） -->
     <section class="career-prep" id="career-prep" hidden></section>
   </main>
+
+  <!-- 节点悬停浮窗 -->
+  <div id="career-tip"></div>
 
   <!-- 欢迎 + 测试 浮窗（首次） -->
   <div class="career-intro" id="career-intro" hidden>
@@ -73,6 +68,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/career_path_network.js?v=20260618s"></script>
-<script src="/static/js/career_path_app.js?v=20260618q"></script>
+<script src="/static/js/career_path_network.js?v=20260619a"></script>
+<script src="/static/js/career_path_app.js?v=20260619a"></script>
 {% endblock %}

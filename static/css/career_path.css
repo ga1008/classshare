@@ -7,7 +7,7 @@
   overflow:hidden;
 }
 .career-root{
-  --accent:#6ee7ff; --accent2:#a78bfa; --accent3:#34d399; --gold:#fbbf24; --rose:#fb7185;
+  --accent:#6ee7ff; --accent2:#a78bfa; --accent3:#34d399; --gold:#fbbf24; --rose:#fb7185; --cross:#d8b4fe;
   --txt:#e8edf7; --dim:#9aa6bd; --mute:#5d6a86;
   --glass:rgba(255,255,255,.06); --glass-bd:rgba(255,255,255,.12);
   position:fixed; inset:0; overflow:hidden;
@@ -47,7 +47,68 @@
 
 /* ---- 主舞台 ---- */
 .career-stage{position:absolute; inset:0}
-.career-canvas{position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:default}
+.career-scroll{position:absolute; inset:0; overflow:auto; -webkit-overflow-scrolling:touch;
+  padding:64px 8px 18px; display:flex; align-items:flex-start; justify-content:center}
+.career-scroll::-webkit-scrollbar{width:10px; height:10px}
+.career-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14); border-radius:8px}
+.career-canvas{margin:0 auto}
+
+/* ---- 时间轴 SVG 网络 ---- */
+.career-svg{display:block; margin:0 auto; max-width:none}
+.cn-catlabel{font-size:14px; font-weight:800; letter-spacing:.5px}
+.cn-nlabel{font-size:11.5px; font-weight:600; pointer-events:none}
+.cn-axislab{font-size:12.5px; font-weight:700; fill:var(--accent)}
+.cn-axisnow{font-size:13px; font-weight:800; fill:var(--gold)}
+.cn-axissub{font-size:12px; fill:var(--dim)}
+.cn-origin-t{font-size:12px; font-weight:800; fill:#fde68a}
+.cn-origin-s{font-size:11px; fill:var(--dim)}
+
+.cn-halo{transition:opacity .3s}
+.cn-flick5{animation:cn-flick5 2.6s ease-in-out infinite}
+.cn-flick4{animation:cn-flick4 3.4s ease-in-out infinite}
+@keyframes cn-flick5{0%,100%{opacity:.92}45%{opacity:.5}55%{opacity:.78}70%{opacity:.4}}
+@keyframes cn-flick4{0%,100%{opacity:.6}50%{opacity:.32}}
+.cn-core{cursor:pointer; transition:transform .2s}
+.cn-node:hover .cn-core{transform-box:fill-box; transform-origin:center; transform:scale(1.5)}
+.cn-ring{pointer-events:none}
+.cn-flow{stroke-dasharray:5 9; animation:cn-flow 1.4s linear infinite}
+@keyframes cn-flow{to{stroke-dashoffset:-28}}
+.cn-cu{stroke-dasharray:4 6; animation:cn-flow2 1.1s linear infinite}
+@keyframes cn-flow2{to{stroke-dashoffset:-20}}
+.cn-origin-h{animation:cn-pulseO 3s ease-in-out infinite}
+@keyframes cn-pulseO{0%,100%{opacity:.95}50%{opacity:.5}}
+
+/* selection highlight */
+.cn-node,.cn-edge,.cn-nlabel{transition:opacity .4s}
+.career-svg.sel .cn-node{opacity:.1}
+.career-svg.sel .cn-node.hot{opacity:1}
+.career-svg.sel .cn-edge{opacity:.05}
+.career-svg.sel .cn-edge.hot{opacity:1}
+.career-svg.sel .cn-edge.cross.hot .cn-cu{stroke:#f0d9ff; stroke-width:2.6}
+.career-svg.sel .cn-nlabel{opacity:.12}
+.career-svg.sel .cn-nlabel.hot{opacity:1}
+
+/* ---- 悬停浮窗 ---- */
+#career-tip{position:fixed; z-index:50; pointer-events:none; opacity:0; transform:translateY(6px);
+  transition:opacity .18s, transform .18s; width:276px;
+  background:linear-gradient(170deg,#161f33,#0d1322); border:1px solid rgba(255,255,255,.14);
+  border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,.55); padding:14px 16px}
+#career-tip.show{opacity:1; transform:translateY(0)}
+.cn-tcat{font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--accent)}
+.cn-tname{font-size:16px; font-weight:800; margin:3px 0 2px; color:#fff}
+.cn-tstars{font-size:13px; color:var(--gold); letter-spacing:1px}
+.cn-trow{margin-top:9px; font-size:12.5px; color:#cdd6e8; line-height:1.5}
+.cn-tphase{display:inline-block; font-size:11px; font-weight:700; color:#0a0e1a; background:var(--accent);
+  border-radius:6px; padding:2px 8px; margin-bottom:5px}
+.cn-tdesc{font-size:12px; color:var(--dim); margin-top:6px; line-height:1.55}
+.cn-ttip{font-size:12px; color:#fde68a; margin-top:8px; line-height:1.55;
+  background:rgba(251,191,36,.10); border:1px solid rgba(251,191,36,.26); border-radius:8px; padding:7px 9px}
+
+/* ---- 图例圆点 ---- */
+.career-legend .dot.d5{background:var(--accent); box-shadow:0 0 10px var(--accent),0 0 20px var(--accent)}
+.career-legend .dot.d4{background:var(--accent2); box-shadow:0 0 8px var(--accent2)}
+.career-legend .dot.d3{background:#7c8aa8; opacity:.6}
+.career-legend .dx{width:18px; height:0; border-top:2px dashed var(--cross); box-shadow:0 0 6px var(--cross); display:inline-block}
 
 .career-banner{
   position:absolute; top:58px; left:50%; transform:translateX(-50%);

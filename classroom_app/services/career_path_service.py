@@ -708,11 +708,16 @@ def build_network_generation_prompt(major_name: str) -> tuple[str, str]:
     )
     user = "\n\n".join([
         f"目标专业：{major_name}（中国普通本科，结合 2025–2026 就业现实与 AI 对行业的冲击）。",
-        "请产出该专业毕业生的完整就业去向网络，包含 4–6 个就业大类(cats)、每个大类下若干"
-        "细分方向(nodes，总计 18–26 个)、以及跨方向可转岗的分叉(links)。",
+        "请产出该专业毕业生的【完整、丰富】就业去向网络，覆盖该专业绝大多数真实出路，"
+        "包含 5–6 个就业大类(cats)、每个大类下 4–6 个细分方向(nodes，总计 22–28 个，务必充实，"
+        "绝不能太少或只给热门几个)、以及 10–16 条跨方向可转岗的分叉(links)。",
+        "每个方向(node)都必须信息完整：完整的 4 个成长阶段(tl)、pre 3–5 项、know 3–6 项、"
+        "reason/branch/trend 都要具体可执行、带真实的市场/薪资/地域信号(如南宁与一线城市的差异)，"
+        "不要空泛套话、不要留空。",
         "字段与结构必须与下方示例完全一致：",
-        "cats[].id 用大写字母 A/B/C…；nodes[].tag 形如 A1/A2；nodes[].cat 对应大类 id；"
-        "rec 为 1–5 的推荐度整数；lang 为是否属于『外语+技术/国际化』特色方向(布尔)；"
+        "cats[].id 用大写字母 A/B/C…；cats[].icon 给一个贴切 emoji；nodes[].tag 形如 A1/A2；nodes[].cat 对应大类 id；"
+        "rec 为 1–5 的推荐度整数(要拉开档次，最推荐的给 5，鸡肋的给 2–3，不要全是 4–5)；"
+        "lang 为是否属于『外语+技术/国际化』特色方向(布尔)；"
         "riasec 为该方向最相关的霍兰德代码数组(取 R/I/A/S/E/C 中 1–3 个)；"
         "pre/know 为字符串数组；tl 为 4 个阶段，每个阶段是 [时间, 职位, 说明] 三元数组(0–1年→3–5年→5–10年→10年+)；"
         "branch 为一句分叉路径文本；trend 为该方向的未来趋势。"
@@ -765,7 +770,8 @@ def build_personalization_prompt(
         "holland_code: 你最终判断的霍兰德代码；\n"
         "rec_overrides: { 节点tag: 1–5 }，对最契合 TA 的方向上调、不契合的下调（只列需要调整的节点，幅度克制合理）；\n"
         "highlights: 最推荐 TA 重点看的 3–5 个节点 tag 数组；\n"
-        "dim_glow: { 节点tag: 0–1 }，作为星图发光强度，越契合越亮（覆盖尽量多节点，弱相关给 0.15–0.35）；\n"
+        "dim_glow: { 节点tag: 0–1 }，作为节点发光强度/契合度，越契合越亮（必须覆盖全部节点，最契合给 0.9–1，"
+        "中等给 0.5–0.7，弱相关给 0.15–0.35，要拉开差异让推荐一目了然）；\n"
         "node_tips: { 节点tag: 针对 TA 的一句话建议 }（覆盖 highlights 与若干相关节点）；\n"
         "prep_cards: { 节点tag: { summary, stacks:[{level:'非常重要'|'一般重要'|'需了解', items:[知识/技能字符串]}] } }，"
         "为 highlights 中的节点给出『从现在到毕业要补的知识栈』，分重要程度；\n"
@@ -814,8 +820,8 @@ def _validate_network_payload(payload: dict[str, Any], major_name: str) -> dict[
     cats = payload.get("cats") or []
     nodes = payload.get("nodes") or []
     links = payload.get("links") or []
-    if not isinstance(cats, list) or not isinstance(nodes, list) or len(nodes) < 6:
-        raise RuntimeError("AI 网络结构不完整")
+    if not isinstance(cats, list) or not isinstance(nodes, list) or len(nodes) < 12:
+        raise RuntimeError(f"AI 网络结构不够丰富（仅 {len(nodes) if isinstance(nodes, list) else 0} 个方向，需≥12）")
 
     clean_cats = []
     for c in cats:
