@@ -47,16 +47,29 @@
 
 /* ---- 主舞台 ---- */
 .career-stage{position:absolute; inset:0}
-.career-scroll{position:absolute; inset:0; overflow:auto; -webkit-overflow-scrolling:touch;
-  padding:64px 8px 18px; display:flex; align-items:flex-start; justify-content:center}
-.career-scroll::-webkit-scrollbar{width:10px; height:10px}
-.career-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14); border-radius:8px}
-.career-canvas{margin:0 auto}
+.career-scroll{position:absolute; inset:0; overflow:hidden}
+.career-canvas{position:absolute; inset:0}
 
-/* ---- 时间轴 SVG 网络 ---- */
-.career-svg{display:block; margin:0 auto; max-width:none}
+/* ---- 时间轴 SVG 网络（可平移缩放）---- */
+.career-svg{position:absolute; inset:0; width:100%; height:100%; display:block;
+  cursor:grab; touch-action:none; user-select:none}
+.career-svg.grabbing{cursor:grabbing}
+.cn-vp{transform-origin:0 0}
 .cn-catlabel{font-size:14px; font-weight:800; letter-spacing:.5px}
 .cn-nlabel{font-size:11.5px; font-weight:600; pointer-events:none}
+.cn-rolelab{font-size:9px; font-weight:600; fill:#bcc8e0; opacity:0; transition:opacity .3s; pointer-events:none}
+.cn-vp.zoom-near .cn-rolelab{opacity:.72}
+.career-svg.sel .cn-vp .cn-rolelab{opacity:0}
+.career-svg.sel .cn-vp.zoom-near .cn-node.hot .cn-rolelab{opacity:.85}
+
+/* 缩放控件 */
+.career-zoom{position:absolute; right:18px; bottom:64px; z-index:26; display:flex; flex-direction:column; gap:8px}
+.career-zoom button{width:40px; height:40px; border-radius:12px; cursor:pointer;
+  border:1px solid rgba(255,255,255,.15); background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.035));
+  color:rgba(236,247,255,.9); font-size:20px; line-height:1; font-weight:400; backdrop-filter:blur(12px);
+  box-shadow:0 12px 30px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.12); transition:.2s}
+.career-zoom button:hover{color:#fff; border-color:rgba(110,231,255,.55);
+  background:linear-gradient(180deg,rgba(110,231,255,.16),rgba(255,255,255,.05)); transform:translateY(-1px)}
 .cn-axislab{font-size:12.5px; font-weight:700; fill:var(--accent)}
 .cn-axisnow{font-size:13px; font-weight:800; fill:var(--gold)}
 .cn-axissub{font-size:12px; fill:var(--dim)}
