@@ -453,9 +453,9 @@
 
   function renderLegend(s) {
     var items = [
-      '<span class="it"><span class="dot" style="background:#6ee7ff;box-shadow:0 0 10px #6ee7ff"></span>越亮＝越契合你</span>',
-      '<span class="it"><span class="dot" style="background:#a78bfa"></span>紫线＝可转向的分叉</span>',
-      '<span class="it hint">点击节点看详情与必备知识 · 滚轮缩放 · 拖拽平移 · 鼠标可拨弄节点</span>'
+      '<span class="it"><span class="dot" style="background:#6ee7ff;box-shadow:0 0 10px #6ee7ff"></span>星越亮＝越推荐 / 越契合你</span>',
+      '<span class="it"><span class="dot" style="background:#a78bfa"></span>紫线＝可转向的分叉路径</span>',
+      '<span class="it hint">点击星星点亮它的发展路径 · 滚轮缩放 · 拖拽平移 · 星系缓慢自转</span>'
     ];
     el.legend.innerHTML = items.join('');
   }
