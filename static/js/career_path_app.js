@@ -239,8 +239,9 @@
       .catch(function () { el.quiz.innerHTML = '<div class="career-quiz__q" style="text-align:center">提交失败，请刷新重试。</div>'; });
   }
 
-  // ---------- 背景数据瀑布（黑客帝国式，克制） ----------
-  var RAIN_PALETTE = [[110, 231, 255], [52, 211, 153], [167, 139, 250]];
+  // ---------- 背景数据瀑布（黑客帝国式：密集、快速、字形突变） ----------
+  var RAIN_GLYPHS = 'ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈ0123456789ABCDEFGHXYZ:.=*+<>|/\\';
+  function rainGlyph() { return RAIN_GLYPHS.charAt((Math.random() * RAIN_GLYPHS.length) | 0); }
 
   function buildRainPhrases(s) {
     var ph = [];
@@ -270,13 +271,14 @@
     this.canvas = canvas; this.ctx = canvas.getContext('2d');
     this.phrases = (phrases && phrases.length) ? phrases : ['ANALYZING', '匹配中'];
     this.dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-    this.font = 15; this.rowH = this.font * 1.22; this.colW = this.font * 1.65;
+    this.font = 15; this.rowH = this.font * 1.1; this.colW = this.font * 1.34;   // 密集列
     this._raf = null;
     this._onResize = function () { self.resize(); };
     window.addEventListener('resize', this._onResize);
     this.resize();
     this.start();
   }
+  CareerRain.prototype._pick = function () { return this.phrases[(Math.random() * this.phrases.length) | 0]; };
   CareerRain.prototype.resize = function () {
     var r = this.canvas.getBoundingClientRect();
     this.W = r.width || window.innerWidth; this.H = r.height || window.innerHeight;
@@ -288,15 +290,31 @@
     for (var i = 0; i < n; i++) this.cols.push(this._spawn(i, true));
   };
   CareerRain.prototype._spawn = function (i, initial) {
-    var ph = this.phrases[(Math.random() * this.phrases.length) | 0];
+    var content = Math.random() < 0.42;        // ~4 成是可读内容列，其余是字形雨
     return {
       x: i * this.colW + this.colW * 0.5,
-      text: ph,
-      y: initial ? (Math.random() * this.H) : (-(Math.random() * this.H * 0.4) - ph.length * this.rowH),
-      speed: 16 + Math.random() * 40,
-      alpha: 0.14 + Math.random() * 0.46,           // 有的隐约、有的明显
-      hue: RAIN_PALETTE[(Math.random() * RAIN_PALETTE.length) | 0]
+      headY: initial ? (Math.random() * this.H) : (-(0.05 + Math.random() * 0.5) * this.H),
+      speed: this.rowH * (17 + Math.random() * 23),   // 行/秒 → 快速下落
+      trail: 13 + (Math.random() * 22 | 0),
+      alpha: 0.5 + Math.random() * 0.5,         // 逐列明暗不一
+      content: content,
+      phrase: content ? this._pick() : '',
+      pi: 0, sep: 0,
+      buf: [], acc: 0
     };
+  };
+  CareerRain.prototype._emit = function (c) {
+    // 内容列：在流头按序吐出真实文字；词尾插几个字形再换下一句。字形列：纯字形。
+    if (c.content && c.phrase) {
+      if (c.pi >= c.phrase.length) {
+        if (c.sep <= 0) c.sep = 1 + (Math.random() * 2 | 0);
+        c.sep--;
+        if (c.sep <= 0) { c.phrase = this._pick(); c.pi = 0; }
+        return rainGlyph();
+      }
+      return c.phrase.charAt(c.pi++) || rainGlyph();
+    }
+    return rainGlyph();
   };
   CareerRain.prototype.start = function () {
     if (this._raf) return;
@@ -309,27 +327,40 @@
   };
   CareerRain.prototype._step = function (dt) {
     for (var i = 0; i < this.cols.length; i++) {
-      var c = this.cols[i]; c.y += c.speed * dt;
-      if (c.y - c.text.length * this.rowH > this.H) this.cols[i] = this._spawn(i, false);
+      var c = this.cols[i];
+      var adv = c.speed * dt;
+      c.headY += adv; c.acc += adv;
+      while (c.acc >= this.rowH) {                  // 每跨一行就在流头吐一个新字
+        c.acc -= this.rowH;
+        c.buf.unshift(this._emit(c));
+        if (c.buf.length > c.trail) c.buf.pop();
+      }
+      // 字形列随机让某个尾字闪变（矩阵质感）；内容列保持可读不突变。
+      if (!c.content && c.buf.length > 2 && Math.random() < 0.5) {
+        c.buf[1 + (Math.random() * (c.buf.length - 1) | 0)] = rainGlyph();
+      }
+      if (c.headY - c.trail * this.rowH > this.H) this.cols[i] = this._spawn(i, false);
     }
   };
   CareerRain.prototype._draw = function () {
     var ctx = this.ctx; ctx.clearRect(0, 0, this.W, this.H);
-    ctx.font = '600 ' + this.font + 'px "PingFang SC","Microsoft YaHei",monospace';
+    ctx.font = '700 ' + this.font + 'px "Consolas","PingFang SC","Microsoft YaHei",monospace';
     ctx.textAlign = 'center';
     for (var i = 0; i < this.cols.length; i++) {
-      var c = this.cols[i], chars = c.text, len = chars.length, hue = c.hue;
-      for (var k = 0; k < len; k++) {
-        var ch = chars[k]; if (ch === ' ') continue;
-        var y = c.y - (len - 1 - k) * this.rowH;       // 末字在最下（头部最亮）
+      var c = this.cols[i], buf = c.buf, n = buf.length;
+      for (var k = 0; k < n; k++) {
+        var ch = buf[k]; if (ch === ' ') continue;
+        var y = c.headY - k * this.rowH;             // buf[0] 是最新、在最下＝头部
         if (y < -this.rowH || y > this.H + this.rowH) continue;
-        var headDist = (len - 1 - k);
-        if (headDist === 0) {
-          ctx.fillStyle = 'rgba(200,245,255,' + Math.min(0.85, c.alpha + 0.42) + ')';
+        if (k === 0) {
+          ctx.fillStyle = 'rgba(228,255,240,' + Math.min(0.97, c.alpha + 0.34) + ')';   // 亮白头
+        } else if (k === 1) {
+          ctx.fillStyle = 'rgba(168,250,206,' + (c.alpha * 0.92) + ')';
         } else {
-          var a = c.alpha * Math.max(0, 1 - headDist * 0.16);
-          if (a <= 0.01) continue;
-          ctx.fillStyle = 'rgba(' + hue[0] + ',' + hue[1] + ',' + hue[2] + ',' + a + ')';
+          var f = 1 - k / n;
+          var a = c.alpha * f * f;                    // 二次衰减 → 细长暗绿尾
+          if (a < 0.014) continue;
+          ctx.fillStyle = 'rgba(70,221,158,' + a + ')';   // 矩阵绿
         }
         ctx.fillText(ch, c.x, y);
       }
