@@ -32,6 +32,7 @@
     return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
   }
   function rgba(c, a) { return 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + a + ')'; }
+  function rnd(seed, shift, mod) { mod = mod || 1000; return ((seed >>> shift) % mod) / mod; }
 
   function CareerNetwork(canvas, options) {
     this.canvas = canvas;
@@ -48,6 +49,7 @@
     this.rotation = 0;
     this.stars = [];          // 阶段星
     this.bg = [];             // 背景星尘
+    this.armDust = [];        // 可见银河旋臂尘埃
     this.nebula = [];         // 模糊星云
     this.edges = [];
     this.origin = null;
@@ -148,20 +150,45 @@
       twPhase: 0, twSpeed: 0.7, sx: 0, sy: 0, depth: 0
     };
 
-    // 背景星尘（密集、与方向星同款审美，只是更小更暗、不可交互）
+    // 可见银河盘：高密度粒子沿 5 条旋臂分布，保证第一眼像星系而不是散点关系网。
+    this.armDust = [];
+    var ARM_DUST = 3600;
+    var maxDustR = RINGS[3] + 250;
+    for (var g = 0; g < ARM_DUST; g++) {
+      var gd = self._hash('galaxy-dust' + g);
+      var gu = (gd % 10000) / 10000;
+      var gr = 12 + Math.pow(gu, 0.62) * maxDustR;
+      var armIndex = (gd >>> 4) % 5;
+      var armTheta = armIndex * TAU / 5 + gr * TWIST * 2.75;
+      var armSpread = 0.12 + 0.42 * (gr / maxDustR);
+      var drift = (rnd(gd, 10) - 0.5) * armSpread + (rnd(gd, 20) - 0.5) * 0.08;
+      this.armDust.push({
+        r: gr,
+        theta0: armTheta + drift,
+        h: (rnd(gd, 16) - 0.5) * (18 + 42 * (gr / maxDustR)),
+        glow: 0.04 + rnd(gd, 6) * 0.18 + (gr < 110 ? 0.07 : 0),
+        core: 0.42 + rnd(gd, 14) * 0.86,
+        warm: gd % 11 === 0,
+        blue: gd % 7 === 0,
+        twPhase: (gd % 628) / 100,
+        twSpeed: 0.25 + rnd(gd, 24) * 0.65
+      });
+    }
+
+    // 背景星尘（星系外沿与深空远星，不能抢旋臂的视觉主导）
     this.bg = [];
-    var BG = 980;
+    var BG = 620;
     for (var i = 0; i < BG; i++) {
       var b = self._hash('bg' + i);
       var u = (b % 1000) / 1000;
       var v = ((b >>> 10) % 1000) / 1000;
-      var rr = 24 + Math.pow(u, 0.72) * (RINGS[3] + 170);
+      var rr = 60 + Math.pow(u, 0.52) * (RINGS[3] + 330);
       var arm = b % 5;
-      var spiral = arm * TAU / 5 + rr * TWIST * 1.35 + (v - 0.5) * (0.42 + rr / 950);
+      var spiral = arm * TAU / 5 + rr * TWIST * 1.15 + (v - 0.5) * (0.9 + rr / 720);
       var theta = (b % 4 === 0) ? ((b >>> 6) % 6283) / 1000 : spiral;
       this.bg.push({
-        r: rr, theta0: theta, h: (((b >>> 11) % 1000) / 1000 - 0.5) * 90,
-        glow: 0.05 + ((b >>> 3) % 100) / 240, core: 0.5 + ((b >>> 5) % 100) / 95,
+        r: rr, theta0: theta, h: (((b >>> 11) % 1000) / 1000 - 0.5) * 120,
+        glow: 0.035 + ((b >>> 3) % 100) / 340, core: 0.42 + ((b >>> 5) % 100) / 125,
         twPhase: (b % 628) / 100, twSpeed: 0.4 + ((b >>> 8) % 100) / 70,
         warm: (b % 9 === 0), tint: (b % 4 === 0)
       });
@@ -409,6 +436,101 @@
     }
   };
 
+  CareerNetwork.prototype._drawGalaxyDisk = function (ctx, hasSel) {
+    if (!this.origin) return;
+    var ox = this.origin.sx;
+    var oy = this.origin.sy;
+    var radius = (RINGS[3] + 235) * this.spacing;
+    var dim = hasSel ? 0.52 : 1;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.translate(ox, oy);
+    ctx.scale(1, COS_T);
+    var disk = ctx.createRadialGradient(0, 0, radius * 0.02, 0, 0, radius);
+    disk.addColorStop(0, 'rgba(255,236,170,' + (0.30 * dim) + ')');
+    disk.addColorStop(0.12, 'rgba(170,232,255,' + (0.18 * dim) + ')');
+    disk.addColorStop(0.36, 'rgba(95,150,255,' + (0.10 * dim) + ')');
+    disk.addColorStop(0.72, 'rgba(60,96,180,' + (0.045 * dim) + ')');
+    disk.addColorStop(1, 'rgba(5,9,20,0)');
+    ctx.fillStyle = disk;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, TAU);
+    ctx.fill();
+
+    ctx.globalCompositeOperation = 'lighter';
+    for (var brightArm = 0; brightArm < 5; brightArm++) {
+      ctx.beginPath();
+      var brightStarted = false;
+      for (var br = 44; br <= radius / this.spacing; br += 14) {
+        var bth = brightArm * TAU / 5 + br * TWIST * 2.75 + this.rotation;
+        var bx = br * this.spacing * Math.cos(bth);
+        var by = br * this.spacing * Math.sin(bth);
+        if (!brightStarted) { ctx.moveTo(bx, by); brightStarted = true; }
+        else { ctx.lineTo(bx, by); }
+      }
+      ctx.shadowColor = 'rgba(132,220,255,' + (0.18 * dim) + ')';
+      ctx.shadowBlur = 18;
+      ctx.strokeStyle = 'rgba(132,220,255,' + (0.062 * dim) + ')';
+      ctx.lineWidth = 22;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = 'rgba(255,230,178,' + (0.032 * dim) + ')';
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Dark dust lanes offset from the bright particle arms.
+    ctx.globalCompositeOperation = 'source-over';
+    for (var arm = 0; arm < 5; arm++) {
+      ctx.beginPath();
+      var started = false;
+      for (var r = 62; r <= radius / this.spacing; r += 18) {
+        var th = arm * TAU / 5 + r * TWIST * 2.75 + this.rotation + 0.26;
+        var x = r * this.spacing * Math.cos(th);
+        var y = r * this.spacing * Math.sin(th);
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else { ctx.lineTo(x, y); }
+      }
+      ctx.strokeStyle = 'rgba(1,6,16,' + (0.09 * dim) + ')';
+      ctx.lineWidth = 11;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    var coreR = 150 * this.spacing;
+    var core = ctx.createRadialGradient(ox, oy, 0, ox, oy, coreR);
+    core.addColorStop(0, 'rgba(255,247,205,' + (0.55 * dim) + ')');
+    core.addColorStop(0.22, 'rgba(255,214,126,' + (0.26 * dim) + ')');
+    core.addColorStop(0.58, 'rgba(110,231,255,' + (0.10 * dim) + ')');
+    core.addColorStop(1, 'rgba(110,231,255,0)');
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(ox, oy, coreR, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  CareerNetwork.prototype._drawDust = function (ctx, hasSel) {
+    ctx.globalCompositeOperation = 'lighter';
+    for (var a = 0; a < this.armDust.length; a++) {
+      var p = this.armDust[a]; this._project(p);
+      var tw = 0.72 + 0.28 * Math.sin(this.timeSec * p.twSpeed + p.twPhase);
+      var alpha = p.glow * tw * (hasSel ? 0.52 : 1);
+      if (alpha < 0.018) continue;
+      var col = p.warm ? '255,226,174' : p.blue ? '155,205,255' : '210,230,255';
+      ctx.fillStyle = 'rgba(' + col + ',' + alpha + ')';
+      ctx.beginPath();
+      ctx.arc(p.sx, p.sy, p.core, 0, TAU);
+      ctx.fill();
+    }
+  };
+
   CareerNetwork.prototype._draw = function () {
     var ctx = this.ctx, self = this;
     ctx.clearRect(0, 0, this.W, this.H);
@@ -416,6 +538,9 @@
 
     this._project(this.origin);
     for (var i = 0; i < this.stars.length; i++) this._project(this.stars[i]);
+
+    this._drawGalaxyDisk(ctx, hasSel);
+    this._drawDust(ctx, hasSel);
 
     // 0) 时间环 + 就业类型扇区
     this._drawGuides(ctx, hasSel);
@@ -454,9 +579,11 @@
       var hot = hasSel && this.related && this.related[L.from] && this.related[L.to];
       var a2, w, stroke;
       if (L.kind === 'cross') {
-        a2 = hot ? 0.9 : (hasSel ? 0.04 : 0.16); w = hot ? 2 : 1; stroke = hot ? '244,221,255' : '167,139,250';
+        a2 = hot ? 0.9 : (hasSel ? 0.03 : 0.055); w = hot ? 2 : 0.75; stroke = hot ? '244,221,255' : '167,139,250';
+      } else if (L.kind === 'fan') {
+        a2 = hot ? 0.82 : (hasSel ? 0.018 : 0.028); w = hot ? 1.7 : 0.65; stroke = hot ? '180,235,255' : '130,170,225';
       } else {
-        a2 = hot ? 0.85 : (hasSel ? 0.03 : 0.10); w = hot ? 1.8 : 0.9; stroke = hot ? '180,235,255' : '130,170,225';
+        a2 = hot ? 0.85 : (hasSel ? 0.024 : 0.045); w = hot ? 1.8 : 0.7; stroke = hot ? '180,235,255' : '130,170,225';
       }
       if (a2 < 0.02) continue;
       ctx.strokeStyle = 'rgba(' + stroke + ',' + a2 + ')'; ctx.lineWidth = w;
