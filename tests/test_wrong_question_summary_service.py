@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 from classroom_app.services.wrong_question_summary_service import (
     PROMPT_VERSION,
     _attach_assignment_knowledge_analysis,
+    _attach_class_knowledge_comparison,
     _attach_text_answer_clusters,
     _answer_value,
     _answers_by_question,
@@ -919,6 +920,98 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         self.assertFalse(incomplete_completed_status["is_active"])
         self.assertEqual(incomplete_completed_status["job_status"], "failed")
         self.assertIn("没有生成全部", incomplete_completed_status["message"])
+
+    def test_knowledge_only_pending_does_not_fail_completed_job(self):
+        # 主观题已完成、仅知识点掌握度归因走了本地兜底时，整体应判定为完成而非失败。
+        questions = _extract_exam_questions(
+            {
+                "pages": [
+                    {
+                        "name": "Basics",
+                        "questions": [
+                            {
+                                "id": "q1",
+                                "type": "radio",
+                                "text": "How many layers are in the OSI model?",
+                                "options": ["A. 5 layers", "B. 7 layers"],
+                                "answer": "B",
+                                "points": 1,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        submissions = [
+            {
+                "id": 1,
+                "student_name": "Student 1",
+                "status": "submitted",
+                "answers_json": json.dumps(
+                    {"answers": [{"question_id": "q1", "answer": "A"}]}, ensure_ascii=False
+                ),
+                "feedback_md": "",
+            }
+        ]
+        stats = _build_question_error_stats(questions, submissions)
+        knowledge_fallback = {
+            "status": "fallback",
+            "source": "local_fallback",
+            "points": [],
+            "weak_points": [],
+            "error": "AI 知识点归因失败",
+        }
+        with patch(
+            "classroom_app.services.wrong_question_summary_service._load_wrong_summary_job",
+            return_value={
+                "status": "completed",
+                "error_message": "",
+                "run_token": "token-1",
+                "assignment_id": "assignment-1",
+            },
+        ):
+            ai_status = _build_ai_status(
+                {"assignment": {"id": "assignment-1"}, "questions_signature": "signature-1"},
+                stats,
+                _score_based_difficulty_summary(_build_score_based_hard_questions(stats)),
+                knowledge_fallback,
+            )
+
+        self.assertEqual(ai_status["pending_text_questions"], 0)
+        self.assertEqual(ai_status["pending_difficulty"], 1)
+        self.assertNotEqual(ai_status["job_status"], "failed")
+        self.assertEqual(ai_status["job_status"], "completed")
+        self.assertFalse(ai_status["is_active"])
+
+    def test_class_knowledge_comparison_maps_history_average_and_delta(self):
+        knowledge = {
+            "points": [
+                {"name": "TCP拥塞控制", "label": "TCP拥塞控制", "mastery": 70, "tone": "warning"},
+                {"name": "VLAN划分", "label": "VLAN划分", "mastery": 50, "tone": "danger"},
+            ]
+        }
+        source = {"assignment": {"id": 5, "class_offering_id": 9}}
+        with patch(
+            "classroom_app.services.wrong_question_summary_service._load_class_knowledge_history",
+            return_value={
+                "point_stats": {"TCP拥塞控制": {"total": 160.0, "count": 2}},
+                "assignment_count": 2,
+                "titles": ["期中考试", "随堂测验"],
+            },
+        ):
+            result = _attach_class_knowledge_comparison(source, knowledge)
+
+        comparison = result["comparison"]
+        self.assertEqual(comparison["assignment_count"], 2)
+        self.assertEqual(len(comparison["points"]), 1)
+        entry = comparison["points"][0]
+        self.assertEqual(entry["name"], "TCP拥塞控制")
+        self.assertEqual(entry["class_average"], 80)
+        self.assertEqual(entry["delta"], -10)
+        self.assertEqual(entry["sample_count"], 2)
+        # 当前点也回填了历史均值，供柱状图详情逐点展示
+        self.assertEqual(result["points"][0]["class_average"], 80)
+        self.assertEqual(result["points"][0]["class_delta"], -10)
 
     def test_sparse_fill_answers_use_local_cluster_without_ai_call(self):
         fd, db_path = tempfile.mkstemp(suffix=".db")

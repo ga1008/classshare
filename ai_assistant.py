@@ -1904,21 +1904,63 @@ def _strip_json_code_fence(raw_text: str) -> str:
     return text
 
 
+def _strip_reasoning_wrappers(text: str) -> str:
+    """移除思考型模型可能附带的推理包裹，避免污染 JSON 提取。"""
+    if not text:
+        return text
+    # 去掉成对的 <think>...</think> / <reasoning>...</reasoning> 等推理块。
+    # 注意：只移除闭合的推理块，避免把未闭合标签后真正的 JSON 一并清空。
+    cleaned = _re.sub(r"<\s*(think|thought|reasoning|analysis)\s*>.*?<\s*/\s*\1\s*>", " ", text, flags=_re.DOTALL | _re.IGNORECASE)
+    return cleaned
+
+
+def _extract_fenced_json_block(text: str) -> Optional[str]:
+    """从含说明文字的响应中提取 ```json ... ``` 代码块内容。"""
+    if not text:
+        return None
+    match = _re.search(r"```(?:json|json5)?\s*(.+?)```", text, flags=_re.DOTALL | _re.IGNORECASE)
+    if match and match.group(1).strip():
+        return match.group(1).strip()
+    return None
+
+
+def _remove_trailing_commas(text: str) -> str:
+    """移除对象/数组里多余的尾随逗号，修复模型常见的非法 JSON。"""
+    return _re.sub(r",(\s*[}\]])", r"\1", text)
+
+
 def _robust_parse_json_value(raw_text: str, *, purpose: str = "JSON", allow_array: bool = False) -> Any:
-    """从 AI 响应中提取 JSON 值，不绑定具体业务字段。"""
-    text = _strip_json_code_fence(raw_text)
+    """从 AI 响应中提取 JSON 值，不绑定具体业务字段。
+
+    依次尝试：直接解析 → 去推理包裹 → 提取 ```json 代码块 → 大括号/方括号截取
+    → 单引号修复 → 尾随逗号修复，最大化对各家模型不规范输出的容错。
+    """
+    cleaned_raw = _strip_reasoning_wrappers(raw_text)
+    text = _strip_json_code_fence(cleaned_raw)
 
     def accept_root(value: Any) -> bool:
         return isinstance(value, dict) or (allow_array and isinstance(value, list))
 
-    try:
-        result = json.loads(text)
-        if accept_root(result):
-            return result
-    except json.JSONDecodeError:
-        pass
+    def try_load(candidate: str) -> Any:
+        for attempt in (candidate, candidate.replace("'", '"'), _remove_trailing_commas(candidate),
+                        _remove_trailing_commas(candidate.replace("'", '"'))):
+            try:
+                result = json.loads(attempt)
+            except json.JSONDecodeError:
+                continue
+            if accept_root(result):
+                return result
+        return None
+
+    direct = try_load(text)
+    if direct is not None:
+        return direct
 
     candidates: list[str] = []
+    fenced = _extract_fenced_json_block(cleaned_raw)
+    if fenced:
+        candidates.append(fenced)
+
     first_brace = text.find("{")
     last_brace = text.rfind("}")
     if first_brace != -1 and last_brace > first_brace:
@@ -1931,20 +1973,9 @@ def _robust_parse_json_value(raw_text: str, *, purpose: str = "JSON", allow_arra
             candidates.append(text[first_bracket:last_bracket + 1])
 
     for candidate in candidates:
-        try:
-            result = json.loads(candidate)
-            if accept_root(result):
-                return result
-        except json.JSONDecodeError:
-            pass
-        # 策略 4: 修复常见问题 (单引号 → 双引号)
-        try:
-            fixed = candidate.replace("'", '"')
-            result = json.loads(fixed)
-            if accept_root(result):
-                return result
-        except json.JSONDecodeError:
-            pass
+        parsed = try_load(candidate)
+        if parsed is not None:
+            return parsed
 
     raise ValueError(f"无法从 AI 响应中解析出有效的{purpose}。原始内容前200字: {text[:200]}")
 

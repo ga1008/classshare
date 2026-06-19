@@ -240,6 +240,7 @@ async def build_assignment_wrong_question_summary(
         question_stats,
         allow_generate=allow_ai_generation,
     )
+    knowledge_analysis = _attach_class_knowledge_comparison(source, knowledge_analysis)
     worst_wrong_count = wrong_questions[0]["wrong_count"] if wrong_questions else 0
     source["stats"].update(
         {
@@ -628,12 +629,15 @@ def _build_ai_status(
     pending_text_questions = _pending_text_question_count(question_stats)
     pending_difficulty = 1 if _knowledge_analysis_needs_ai(knowledge_analysis) else 0
     needs_ai = pending_text_questions > 0 or pending_difficulty > 0
+    # 知识点掌握度归因属于“尽力而为”的增强项：即使它没生成，也不应判定整次归集失败，
+    # 因为本地得分估算始终能兜底展示。真正决定成败的只有主观题错答分组（pending_text_questions）。
+    blocking_pending = pending_text_questions > 0
     fallback_text_questions = _fallback_text_question_count(question_stats)
     fallback_analysis = _knowledge_analysis_uses_fallback(knowledge_analysis)
 
     job_status = str((job or {}).get("status") or "").strip().lower()
-    if job_status == WRONG_SUMMARY_JOB_STATUS_COMPLETED and needs_ai:
-        incomplete_message = "上次 AI 整理没有生成全部题目的可用分组，系统已先展示本地错答分组；请点击开始整理重新尝试。"
+    if job_status == WRONG_SUMMARY_JOB_STATUS_COMPLETED and blocking_pending:
+        incomplete_message = "上次 AI 整理没有生成全部主观题的可用分组，系统已先展示本地错答分组；请点击开始整理重新尝试。"
         if job and "run_token" in job and job.get("assignment_id") is not None:
             _mark_wrong_summary_job_failed(
                 assignment_id,
@@ -647,7 +651,8 @@ def _build_ai_status(
             "status": WRONG_SUMMARY_JOB_STATUS_FAILED,
             "error_message": incomplete_message,
         }
-    if job_status == WRONG_SUMMARY_JOB_STATUS_FAILED and not needs_ai and fallback_text_questions:
+    if job_status == WRONG_SUMMARY_JOB_STATUS_FAILED and not blocking_pending:
+        # 主观题错答分组已就位（哪怕走了本地兜底），知识点归因是尽力而为项，整体视为完成。
         job_status = WRONG_SUMMARY_JOB_STATUS_COMPLETED
         job = {
             **(job or {}),
@@ -658,13 +663,10 @@ def _build_ai_status(
         is_active = False
         label = "AI 归集失败"
         message = (job or {}).get("error_message") or "后台 AI 归集没有完成，请点击开始整理手动重试。"
-    elif needs_ai:
-        pieces = []
-        if pending_text_questions:
-            pieces.append(f"{pending_text_questions} 道主观题错误答案/原因")
+    elif blocking_pending:
+        pending_label = f"{pending_text_questions} 道主观题错误答案/原因"
         if pending_difficulty:
-            pieces.append("知识点掌握度与薄弱归因")
-        pending_label = "、".join(pieces) or "待整理内容"
+            pending_label += "、知识点掌握度与薄弱归因"
         if job_status in ACTIVE_WRONG_SUMMARY_JOB_STATUSES:
             is_active = True
             label = "后台归集中" if job_status == WRONG_SUMMARY_JOB_STATUS_RUNNING else "等待归集"
@@ -674,6 +676,11 @@ def _build_ai_status(
             job_status = WRONG_SUMMARY_JOB_STATUS_MANUAL_REQUIRED
             label = "待手动整理"
             message = f"有 {pending_label} 需要 AI 整理；点击开始整理后再运行，客观题统计已可查看。"
+    elif pending_difficulty and job_status in ACTIVE_WRONG_SUMMARY_JOB_STATUSES:
+        # 只剩知识点掌握度在后台分析：主观题已完成，保持后台刷新提示。
+        is_active = True
+        label = "后台归集中"
+        message = "快速 AI 正在分析整卷知识点掌握度与薄弱归因，页面会自动刷新结果。"
     else:
         is_active = False
         job_status = job_status or WRONG_SUMMARY_JOB_STATUS_COMPLETED
@@ -683,6 +690,8 @@ def _build_ai_status(
             fallback_pieces.append(f"{fallback_text_questions} 道题使用本地错答分组兜底展示")
         if fallback_analysis:
             fallback_pieces.append("知识点掌握度使用本地得分估算兜底展示")
+        elif pending_difficulty:
+            fallback_pieces.append("知识点掌握度可点击“开始整理”用 AI 重新生成")
         if fallback_pieces:
             message = "错题归集已完成；" + "，".join(fallback_pieces) + "。"
         else:
@@ -746,6 +755,8 @@ def _collect_ai_job_errors(
     difficulty: dict[str, Any],
     knowledge_analysis: dict[str, Any] | None = None,
 ) -> list[str]:
+    # 仅主观题错答分组完全失败（连本地兜底都没有）才判定整次归集失败；
+    # 知识点掌握度归因是尽力而为的增强项，失败时仅以本地估算兜底，不拖垮整个任务。
     errors: list[str] = []
     for item in question_stats:
         if (
@@ -754,10 +765,6 @@ def _collect_ai_job_errors(
             and not item.get("top_wrong_answers")
         ):
             errors.append(f"第 {item['question']['ordinal']} 题错答归集失败：{item['text_cluster_error']}")
-    if knowledge_analysis and not knowledge_analysis.get("points"):
-        error = str(knowledge_analysis.get("error") or "").strip()
-        if error:
-            errors.append(f"知识点归因分析失败：{error}")
     return [_clip_text(error, 180) for error in errors[:4]]
 
 
@@ -2007,28 +2014,74 @@ async def _generate_assignment_knowledge_analysis(
         )
 
     system_prompt = (
-        "你是教学测评数据分析助手。请根据全班逐题表现分析整张试卷的知识点掌握度和错因归因。"
-        "必须覆盖所有主要考察知识点，不能只看错题；不要编造学生答案；返回严格 JSON。"
+        "你是教学测评数据分析助手。请根据全班逐题表现，针对整张试卷做知识点掌握度评估与错因归因分析。"
+        "要求："
+        "1) 必须覆盖整卷所有主要考察知识点，而不仅是错题——掌握好的知识点也要给出并标记为 normal 或 mastered；"
+        "2) 若题目未提供知识点标签，请根据题干内容自行提炼简洁、可读的知识点名称（不要使用题号、题型或‘第X题’这类无意义名称）；"
+        "3) 归因要落到全班‘错在哪里’的共性问题，而不是泛泛而谈；"
+        "4) 不要编造学生答案，只基于给出的统计；"
+        "5) 返回严格 JSON，不要输出任何额外说明文字。"
     )
     user_message = "\n".join(
         [
-            "请输出全班错题归集的整卷归因分析。",
+            "请输出全班错题归集的整卷知识点掌握度与薄弱归因分析。",
             f"作业：{assignment.get('title') or ''}",
             f"试卷：{paper.get('title') or ''}",
             f"提交人数：{stats.get('submitted_count') or 0}",
-            "逐题统计 JSON：",
+            f"题目总数：{len(question_payload)}",
+            "逐题统计 JSON（mastery 估算可参考 average_score_percent / wrong_percent）：",
             json.dumps(question_payload, ensure_ascii=False),
             (
-                '返回 JSON：{"summary":"全班主要薄弱点一句话",'
-                '"knowledge_points":[{"name":"知识点原名，4到16字优先",'
-                '"mastery":0到100的整数,"reason":"错在什么地方或为何掌握好",'
-                '"evidence_questions":[1,2],"risk_level":"danger|warning|normal|mastered"}],'
-                '"weak_points":[{"name":"知识点","issue":"具体错因","questions":[1,2],"priority":"high|medium|low"}]}。'
-                "mastery 越高代表掌握越好；明显易错知识点用 danger 或 warning。"
+                '返回 JSON：{"summary":"全班整体掌握情况与最需优先讲评的薄弱点，一句话",'
+                '"knowledge_points":[{"name":"知识点名称，4到16字，可读、不缩写到看不懂",'
+                '"mastery":0到100的整数,"reason":"全班在此知识点上错在什么地方或为何掌握好，要具体",'
+                '"evidence_questions":[相关题号],"risk_level":"danger|warning|normal|mastered"}],'
+                '"weak_points":[{"name":"知识点","issue":"全班共性的具体错因","questions":[题号],"priority":"high|medium|low"}]}。'
+                "mastery 越高代表掌握越好：<60 用 danger，60-77 用 warning，78-94 用 normal，>=95 用 mastered。"
+                "knowledge_points 建议覆盖 5 到 8 个最具代表性的整卷知识点。"
             ),
         ]
     )
-    return await _call_fast_json_ai(system_prompt, user_message, "wrong_summary_knowledge_analysis", timeout=75.0)
+    try:
+        raw = await _call_fast_json_ai(
+            system_prompt,
+            user_message,
+            "wrong_summary_knowledge_analysis",
+            timeout=75.0,
+        )
+        if _knowledge_payload_has_points(raw):
+            return raw
+        last_error: Exception | None = RuntimeError("快速模型未返回可用知识点掌握度")
+    except Exception as exc:  # noqa: BLE001 - 快速模型失败后升级到推理模型重试
+        last_error = exc
+
+    # 升级到推理模型再试一次，显著提升复杂整卷归因的成功率
+    try:
+        return await _call_fast_json_ai(
+            system_prompt,
+            user_message,
+            "wrong_summary_knowledge_analysis_deep",
+            timeout=110.0,
+            model_capability="thinking",
+            task_type="deep_text",
+            max_attempts=1,
+        )
+    except Exception as deep_exc:  # noqa: BLE001
+        raise deep_exc from last_error
+
+
+def _knowledge_payload_has_points(raw: Any) -> bool:
+    if not isinstance(raw, dict):
+        return False
+    points = raw.get("knowledge_points")
+    if not isinstance(points, list):
+        points = raw.get("points")
+    if not isinstance(points, list):
+        return False
+    return any(
+        isinstance(point, dict) and str(point.get("name") or point.get("label") or "").strip()
+        for point in points
+    )
 
 
 def _normalize_knowledge_analysis_result(
@@ -2291,6 +2344,130 @@ def _save_knowledge_analysis_cache(assignment_id: str, analysis_signature: str, 
             ),
         )
         conn.commit()
+
+
+KNOWLEDGE_COMPARISON_MAX_ASSIGNMENTS = 8
+
+
+def _attach_class_knowledge_comparison(
+    source: dict[str, Any],
+    knowledge_analysis: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """为知识点掌握度补充“本班其他考试”的历史均值比对，供详情浮窗展示。
+
+    比对数据来自本班同一开课（class_offering）下其他试卷型作业已缓存的知识点归因结论，
+    按知识点名称聚合历史掌握度均值，并与当前掌握度求差值。无历史数据时返回空比对。
+    """
+    if not isinstance(knowledge_analysis, dict):
+        return knowledge_analysis
+    points = knowledge_analysis.get("points") or []
+    assignment = source.get("assignment") or {}
+    offering_id = assignment.get("class_offering_id") or assignment.get("offering_id")
+    current_id = assignment.get("id")
+    if not points or not offering_id or current_id is None:
+        knowledge_analysis["comparison"] = {"assignment_count": 0, "assignment_titles": [], "points": []}
+        return knowledge_analysis
+
+    try:
+        history = _load_class_knowledge_history(offering_id, current_id)
+    except Exception:  # noqa: BLE001 - 比对属增强信息，失败不影响主流程
+        knowledge_analysis["comparison"] = {"assignment_count": 0, "assignment_titles": [], "points": []}
+        return knowledge_analysis
+
+    point_stats = history.get("point_stats") or {}
+    comparison_points: list[dict[str, Any]] = []
+    for point in points:
+        name = str(point.get("name") or "").strip()
+        stat = point_stats.get(name)
+        if not name or not stat or not stat.get("count"):
+            continue
+        average = int(round(float(stat["total"]) / int(stat["count"])))
+        current_mastery = int(point.get("mastery") or 0)
+        delta = current_mastery - average
+        point["class_average"] = average
+        point["class_delta"] = delta
+        comparison_points.append(
+            {
+                "name": name,
+                "label": point.get("label") or name,
+                "current": current_mastery,
+                "class_average": average,
+                "delta": delta,
+                "sample_count": int(stat["count"]),
+                "tone": point.get("tone") or "normal",
+            }
+        )
+
+    knowledge_analysis["comparison"] = {
+        "assignment_count": int(history.get("assignment_count") or 0),
+        "assignment_titles": history.get("titles") or [],
+        "points": comparison_points,
+    }
+    return knowledge_analysis
+
+
+def _load_class_knowledge_history(offering_id: Any, current_assignment_id: Any) -> dict[str, Any]:
+    point_stats: dict[str, dict[str, float]] = {}
+    titles: list[str] = []
+    assignment_count = 0
+    try:
+        offering_value: Any = int(offering_id)
+    except (TypeError, ValueError):
+        offering_value = offering_id
+    try:
+        current_value: Any = int(current_assignment_id)
+    except (TypeError, ValueError):
+        current_value = current_assignment_id
+
+    with get_db_connection() as conn:
+        ensure_wrong_summary_cache_tables(conn)
+        rows = conn.execute(
+            """
+            SELECT id, title
+            FROM assignments
+            WHERE class_offering_id = ?
+              AND id <> ?
+              AND exam_paper_id IS NOT NULL
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (offering_value, current_value, KNOWLEDGE_COMPARISON_MAX_ASSIGNMENTS),
+        ).fetchall()
+        for row in rows:
+            other = dict(row)
+            cache_row = conn.execute(
+                """
+                SELECT result_json
+                FROM exam_paper_difficulty_ai_cache
+                WHERE exam_paper_id = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (_knowledge_analysis_cache_key(other.get("id")),),
+            ).fetchone()
+            if not cache_row:
+                continue
+            payload = _load_json_object(cache_row["result_json"] if hasattr(cache_row, "keys") else cache_row[0])
+            other_points = payload.get("points") or []
+            counted = False
+            for raw_point in other_points:
+                if not isinstance(raw_point, dict):
+                    continue
+                name = _normalize_knowledge_name(raw_point.get("name") or raw_point.get("label"))
+                mastery = _coerce_int(raw_point.get("mastery"))
+                if not _is_valid_knowledge_point_name(name) or mastery is None:
+                    continue
+                bucket = point_stats.setdefault(name, {"total": 0.0, "count": 0})
+                bucket["total"] += float(max(0, min(100, mastery)))
+                bucket["count"] = int(bucket["count"]) + 1
+                counted = True
+            if counted:
+                assignment_count += 1
+                title = _clip_text(other.get("title") or "", 40)
+                if title and title not in titles:
+                    titles.append(title)
+        conn.commit()
+    return {"point_stats": point_stats, "assignment_count": assignment_count, "titles": titles[:6]}
 
 
 async def _attach_text_answer_clusters(
@@ -2627,33 +2804,52 @@ async def _generate_text_wrong_clusters(
     return await _call_fast_json_ai(system_prompt, user_message, task_label, timeout=55.0)
 
 
-async def _call_fast_json_ai(system_prompt: str, user_message: str, task_label: str, *, timeout: float) -> dict[str, Any]:
-    response = await ai_client.post(
-        "/api/ai/chat",
-        json={
-            "system_prompt": system_prompt,
-            "messages": [],
-            "new_message": user_message,
-            "model_capability": "standard",
-            "task_type": "fast_text_response",
-            "response_format": "json",
-            "task_priority": "interactive",
-            "task_label": task_label,
-            "web_search_enabled": False,
-        },
-        timeout=timeout,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    if payload.get("status") != "success":
-        raise RuntimeError(f"AI 返回失败：{str(payload)[:240]}")
-    result = payload.get("response_json")
-    if isinstance(result, dict):
-        return result
-    result = _extract_json_object(payload.get("response_text"))
-    if isinstance(result, dict):
-        return result
-    raise RuntimeError("AI 未返回可解析的 JSON")
+async def _call_fast_json_ai(
+    system_prompt: str,
+    user_message: str,
+    task_label: str,
+    *,
+    timeout: float,
+    model_capability: str = "standard",
+    task_type: str = "fast_text_response",
+    max_attempts: int = 2,
+) -> dict[str, Any]:
+    """调用 AI 网关并解析 JSON；带指数退避重试，提升瞬时故障容错能力。"""
+    last_error: Exception | None = None
+    for attempt in range(1, max(1, int(max_attempts)) + 1):
+        try:
+            response = await ai_client.post(
+                "/api/ai/chat",
+                json={
+                    "system_prompt": system_prompt,
+                    "messages": [],
+                    "new_message": user_message,
+                    "model_capability": model_capability,
+                    "task_type": task_type,
+                    "response_format": "json",
+                    "task_priority": "interactive",
+                    "task_label": task_label,
+                    "web_search_enabled": False,
+                },
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("status") != "success":
+                raise RuntimeError(f"AI 返回失败：{str(payload)[:240]}")
+            result = payload.get("response_json")
+            if isinstance(result, dict):
+                return result
+            result = _extract_json_object(payload.get("response_text"))
+            if isinstance(result, dict):
+                return result
+            raise RuntimeError("AI 未返回可解析的 JSON")
+        except Exception as exc:  # noqa: BLE001 - 包含网络/超时/解析等多类异常，统一重试
+            last_error = exc
+            if attempt >= max(1, int(max_attempts)):
+                break
+            await asyncio.sleep(min(2.0 * attempt, 5.0))
+    raise last_error or RuntimeError("AI 调用失败")
 
 
 def _load_text_cluster_cache(assignment_id: str, question_key: str, answer_signature: str) -> dict[str, Any] | None:

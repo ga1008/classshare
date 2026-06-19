@@ -364,6 +364,296 @@
         text-align: center;
     }
 
+    .knowledge-mastery-bar.is-clickable {
+        cursor: pointer;
+    }
+
+    .knowledge-mastery-card__foot {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 2px;
+    }
+
+    .knowledge-mastery-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .knowledge-mastery-legend li {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: #64748b;
+        font-size: 0.66rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .knowledge-mastery-legend i {
+        width: 9px;
+        height: 9px;
+        border-radius: 3px;
+        flex: 0 0 auto;
+    }
+
+    .knowledge-mastery-legend i.is-danger { background: #dc2626; }
+    .knowledge-mastery-legend i.is-warning { background: #f97316; }
+    .knowledge-mastery-legend i.is-normal { background: #2563eb; }
+    .knowledge-mastery-legend i.is-mastered { background: #16a34a; }
+
+    .knowledge-detail-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 11px;
+        border: 1px solid rgba(14, 165, 233, 0.3);
+        border-radius: 999px;
+        background: rgba(14, 165, 233, 0.1);
+        color: #0369a1;
+        font: inherit;
+        font-size: 0.72rem;
+        font-weight: 850;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+    }
+
+    .knowledge-detail-trigger:hover,
+    .knowledge-detail-trigger:focus-visible {
+        transform: translateY(-1px);
+        background: rgba(14, 165, 233, 0.18);
+        border-color: rgba(14, 165, 233, 0.5);
+        outline: none;
+    }
+
+    .knowledge-detail-trigger[hidden] {
+        display: none;
+    }
+
+    /* 知识点归因详情大浮窗 */
+    .knowledge-detail-modal[hidden] {
+        display: none;
+    }
+
+    .knowledge-detail-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 1110;
+        display: grid;
+        place-items: center;
+        padding: 18px;
+        background: rgba(15, 23, 42, 0.46);
+        animation: wrong-summary-fade-in 0.18s ease both;
+    }
+
+    .knowledge-detail-dialog {
+        width: min(960px, 100%);
+        max-height: min(86vh, 820px);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        overflow: hidden;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.26);
+        animation: wrong-summary-dialog-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+
+    .knowledge-detail-dialog__head {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.86);
+        background: linear-gradient(135deg, rgba(240, 249, 255, 0.9), rgba(255, 255, 255, 0.96));
+    }
+
+    .knowledge-detail-dialog__head strong {
+        display: block;
+        color: #0f172a;
+        font-size: 1.06rem;
+        font-weight: 880;
+    }
+
+    .knowledge-detail-dialog__head small {
+        display: block;
+        margin-top: 5px;
+        color: #475569;
+        font-size: 0.82rem;
+        line-height: 1.5;
+    }
+
+    .knowledge-detail-dialog__close {
+        flex: 0 0 auto;
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 8px;
+        background: #fff;
+        color: #334155;
+        font-size: 1.25rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .knowledge-detail-dialog__body {
+        display: grid;
+        gap: 16px;
+        overflow: auto;
+        padding: 16px 20px 20px;
+    }
+
+    .knowledge-detail-metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 10px;
+    }
+
+    .knowledge-detail-metric {
+        display: grid;
+        gap: 3px;
+        padding: 10px 12px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 9px;
+        background: rgba(248, 250, 252, 0.84);
+    }
+
+    .knowledge-detail-metric strong {
+        color: #0f172a;
+        font-size: 1.3rem;
+        font-weight: 900;
+        line-height: 1;
+    }
+
+    .knowledge-detail-metric span {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 800;
+    }
+
+    .knowledge-detail-section > h3 {
+        margin: 0 0 8px;
+        color: #0f172a;
+        font-size: 0.92rem;
+        font-weight: 880;
+    }
+
+    .knowledge-detail-point-list {
+        display: grid;
+        gap: 9px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .knowledge-detail-point {
+        display: grid;
+        gap: 7px;
+        padding: 12px 14px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-left-width: 4px;
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.95);
+    }
+
+    .knowledge-detail-point.is-danger { border-left-color: #dc2626; }
+    .knowledge-detail-point.is-warning { border-left-color: #f97316; }
+    .knowledge-detail-point.is-normal { border-left-color: #2563eb; }
+    .knowledge-detail-point.is-mastered { border-left-color: #16a34a; }
+
+    .knowledge-detail-point__head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .knowledge-detail-point__name {
+        color: #0f172a;
+        font-size: 0.9rem;
+        font-weight: 850;
+        word-break: break-word;
+    }
+
+    .knowledge-detail-point__mastery {
+        flex: 0 0 auto;
+        font-size: 0.96rem;
+        font-weight: 900;
+    }
+
+    .knowledge-detail-point.is-danger .knowledge-detail-point__mastery { color: #b91c1c; }
+    .knowledge-detail-point.is-warning .knowledge-detail-point__mastery { color: #c2410c; }
+    .knowledge-detail-point.is-normal .knowledge-detail-point__mastery { color: #1d4ed8; }
+    .knowledge-detail-point.is-mastered .knowledge-detail-point__mastery { color: #15803d; }
+
+    .knowledge-detail-point__bar {
+        position: relative;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(241, 245, 249, 0.9);
+        overflow: hidden;
+    }
+
+    .knowledge-detail-point__bar i {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: var(--mastery, 0%);
+        border-radius: 999px;
+    }
+
+    .knowledge-detail-point.is-danger .knowledge-detail-point__bar i { background: #dc2626; }
+    .knowledge-detail-point.is-warning .knowledge-detail-point__bar i { background: #f97316; }
+    .knowledge-detail-point.is-normal .knowledge-detail-point__bar i { background: #2563eb; }
+    .knowledge-detail-point.is-mastered .knowledge-detail-point__bar i { background: #16a34a; }
+
+    .knowledge-detail-point__reason {
+        color: #475569;
+        font-size: 0.82rem;
+        line-height: 1.6;
+        word-break: break-word;
+    }
+
+    .knowledge-detail-point__meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .knowledge-detail-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.16);
+        color: #475569;
+        font-size: 0.7rem;
+        font-weight: 800;
+    }
+
+    .knowledge-detail-chip.is-up { background: rgba(220, 38, 38, 0.12); color: #b91c1c; }
+    .knowledge-detail-chip.is-down { background: rgba(16, 185, 129, 0.14); color: #047857; }
+
+    .knowledge-detail-empty {
+        padding: 14px;
+        border: 1px dashed rgba(148, 163, 184, 0.36);
+        border-radius: 9px;
+        color: #64748b;
+        font-size: 0.82rem;
+        font-weight: 760;
+        text-align: center;
+    }
+
+    .knowledge-detail-section[hidden] {
+        display: none;
+    }
+
     .wrong-summary-analysis-note {
         display: grid;
         gap: 4px;
@@ -1295,10 +1585,10 @@
                     </span>
                 </div>
                 {% if knowledge.points %}
-                <div class="knowledge-mastery-chart" role="img" aria-label="横轴为知识点，纵轴为掌握度">
+                <div class="knowledge-mastery-chart is-clickable" role="button" tabindex="0" data-knowledge-detail-open aria-label="点击查看整卷知识点掌握度归因详情">
                     {% for point in knowledge.points %}
                     <div
-                        class="knowledge-mastery-bar is-{{ point.tone or 'normal' }}"
+                        class="knowledge-mastery-bar is-clickable is-{{ point.tone or 'normal' }}"
                         style="--mastery: {{ point.mastery or 0 }}%;"
                         title="{{ point.name }}：{{ point.mastery or 0 }}%，{{ point.reason }}"
                     >
@@ -1309,6 +1599,17 @@
                         <span class="knowledge-mastery-bar__label">{{ point.label or point.name }}</span>
                     </div>
                     {% endfor %}
+                </div>
+                <div class="knowledge-mastery-card__foot">
+                    <ul class="knowledge-mastery-legend" aria-label="掌握度颜色图示">
+                        <li><i class="is-danger"></i>危险&lt;60</li>
+                        <li><i class="is-warning"></i>警告60–77</li>
+                        <li><i class="is-normal"></i>一般78–94</li>
+                        <li><i class="is-mastered"></i>掌握≥95</li>
+                    </ul>
+                    <button type="button" class="knowledge-detail-trigger" data-knowledge-detail-open>
+                        查看完整归因 →
+                    </button>
                 </div>
                 {% else %}
                 <div class="knowledge-mastery-empty">暂无可绘制的知识点掌握度</div>
@@ -1648,6 +1949,33 @@
         </div>
     </div>
 </div>
+<div class="knowledge-detail-modal" data-knowledge-detail-modal hidden>
+    <div class="knowledge-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="knowledge-detail-title">
+        <div class="knowledge-detail-dialog__head">
+            <div>
+                <strong id="knowledge-detail-title">整卷知识点掌握度归因</strong>
+                <small data-knowledge-detail-summary></small>
+            </div>
+            <button type="button" class="knowledge-detail-dialog__close" data-knowledge-detail-close aria-label="关闭">×</button>
+        </div>
+        <div class="knowledge-detail-dialog__body">
+            <div class="knowledge-detail-metrics" data-knowledge-detail-metrics></div>
+            <div class="knowledge-detail-section">
+                <h3>知识点掌握度（按薄弱优先排序）</h3>
+                <ul class="knowledge-detail-point-list" data-knowledge-detail-points></ul>
+            </div>
+            <div class="knowledge-detail-section" data-knowledge-detail-weak-section hidden>
+                <h3>重点薄弱归因</h3>
+                <ul class="knowledge-detail-point-list" data-knowledge-detail-weak></ul>
+            </div>
+            <div class="knowledge-detail-section" data-knowledge-detail-compare-section hidden>
+                <h3 data-knowledge-detail-compare-title>与本班其他考试比对</h3>
+                <ul class="knowledge-detail-point-list" data-knowledge-detail-compare></ul>
+            </div>
+        </div>
+    </div>
+</div>
+<script type="application/json" data-knowledge-analysis-json>{{ (summary.knowledge_analysis or {}) | tojson }}</script>
 {% set include_mermaid = true %}
 {% include "partials/markdown_assets.html" %}
 <script type="module">
@@ -2002,6 +2330,297 @@
         });
     }
 
+    function readKnowledgeAnalysis() {
+        const node = document.querySelector('[data-knowledge-analysis-json]');
+        if (!node) {
+            return null;
+        }
+        try {
+            return JSON.parse(node.textContent || '{}');
+        } catch (error) {
+            console.warn('Knowledge analysis payload parse failed:', error);
+            return null;
+        }
+    }
+
+    function setupKnowledgeDetail() {
+        const modal = document.querySelector('[data-knowledge-detail-modal]');
+        const triggers = Array.from(document.querySelectorAll('[data-knowledge-detail-open]'));
+        if (!modal || !triggers.length) {
+            return;
+        }
+        const summaryNode = modal.querySelector('[data-knowledge-detail-summary]');
+        const metricsNode = modal.querySelector('[data-knowledge-detail-metrics]');
+        const pointsNode = modal.querySelector('[data-knowledge-detail-points]');
+        const weakSection = modal.querySelector('[data-knowledge-detail-weak-section]');
+        const weakNode = modal.querySelector('[data-knowledge-detail-weak]');
+        const compareSection = modal.querySelector('[data-knowledge-detail-compare-section]');
+        const compareTitle = modal.querySelector('[data-knowledge-detail-compare-title]');
+        const compareNode = modal.querySelector('[data-knowledge-detail-compare]');
+        const closeButton = modal.querySelector('[data-knowledge-detail-close]');
+        const knowledge = readKnowledgeAnalysis();
+        if (!knowledge || !Array.isArray(knowledge.points) || !knowledge.points.length) {
+            return;
+        }
+
+        const TONE_RANK = { danger: 0, warning: 1, normal: 2, mastered: 3 };
+        const TONE_LABEL = { danger: '危险', warning: '警告', normal: '一般', mastered: '已掌握' };
+        const toneOf = (value) => (TONE_RANK[value] === undefined ? 'normal' : value);
+        const clampMastery = (value) => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+        let lastTrigger = null;
+        let built = false;
+
+        const sortedPoints = knowledge.points
+            .slice()
+            .sort((a, b) => (TONE_RANK[toneOf(a.tone)] - TONE_RANK[toneOf(b.tone)])
+                || (clampMastery(a.mastery) - clampMastery(b.mastery)));
+
+        const makeMetric = (value, label) => {
+            const cell = document.createElement('div');
+            cell.className = 'knowledge-detail-metric';
+            const strong = document.createElement('strong');
+            strong.textContent = String(value);
+            const span = document.createElement('span');
+            span.textContent = label;
+            cell.append(strong, span);
+            return cell;
+        };
+
+        const makePoint = (point) => {
+            const tone = toneOf(point.tone);
+            const mastery = clampMastery(point.mastery);
+            const li = document.createElement('li');
+            li.className = `knowledge-detail-point is-${tone}`;
+
+            const head = document.createElement('div');
+            head.className = 'knowledge-detail-point__head';
+            const name = document.createElement('span');
+            name.className = 'knowledge-detail-point__name';
+            name.textContent = point.name || point.label || '未命名知识点';
+            const masteryNode = document.createElement('span');
+            masteryNode.className = 'knowledge-detail-point__mastery';
+            masteryNode.textContent = `${mastery}%`;
+            head.append(name, masteryNode);
+
+            const bar = document.createElement('div');
+            bar.className = 'knowledge-detail-point__bar';
+            const fill = document.createElement('i');
+            fill.style.setProperty('--mastery', `${mastery}%`);
+            fill.style.width = `${mastery}%`;
+            bar.appendChild(fill);
+
+            li.append(head, bar);
+
+            if (point.reason) {
+                const reason = document.createElement('p');
+                reason.className = 'knowledge-detail-point__reason';
+                reason.textContent = point.reason;
+                li.appendChild(reason);
+            }
+
+            const meta = document.createElement('div');
+            meta.className = 'knowledge-detail-point__meta';
+            const toneChip = document.createElement('span');
+            toneChip.className = 'knowledge-detail-chip';
+            toneChip.textContent = TONE_LABEL[tone] || '一般';
+            meta.appendChild(toneChip);
+            const evidence = Array.isArray(point.evidence_questions) ? point.evidence_questions.filter((value) => Number(value) > 0) : [];
+            if (evidence.length) {
+                const chip = document.createElement('span');
+                chip.className = 'knowledge-detail-chip';
+                chip.textContent = `相关题：${evidence.join('、')}`;
+                meta.appendChild(chip);
+            }
+            if (Number(point.wrong_count) > 0) {
+                const chip = document.createElement('span');
+                chip.className = 'knowledge-detail-chip';
+                chip.textContent = `累计错答 ${point.wrong_count} 人次`;
+                meta.appendChild(chip);
+            }
+            if (point.class_average !== undefined && point.class_average !== null) {
+                const delta = Number(point.class_delta || 0);
+                const chip = document.createElement('span');
+                chip.className = `knowledge-detail-chip ${delta > 0 ? 'is-down' : (delta < 0 ? 'is-up' : '')}`.trim();
+                const sign = delta > 0 ? `高于均值 +${delta}` : (delta < 0 ? `低于均值 ${delta}` : '与均值持平');
+                chip.textContent = `本班历史均值 ${clampMastery(point.class_average)}% · ${sign}`;
+                meta.appendChild(chip);
+            }
+            li.appendChild(meta);
+            return li;
+        };
+
+        const makeWeak = (weak) => {
+            const li = document.createElement('li');
+            const tone = toneOf(weak.tone || 'warning');
+            li.className = `knowledge-detail-point is-${tone}`;
+            const head = document.createElement('div');
+            head.className = 'knowledge-detail-point__head';
+            const name = document.createElement('span');
+            name.className = 'knowledge-detail-point__name';
+            name.textContent = weak.name || '薄弱点';
+            head.appendChild(name);
+            if (weak.priority) {
+                const pr = document.createElement('span');
+                pr.className = 'knowledge-detail-point__mastery';
+                pr.style.fontSize = '0.78rem';
+                pr.textContent = { high: '优先级高', medium: '优先级中', low: '优先级低' }[weak.priority] || weak.priority;
+                head.appendChild(pr);
+            }
+            li.appendChild(head);
+            if (weak.issue) {
+                const issue = document.createElement('p');
+                issue.className = 'knowledge-detail-point__reason';
+                issue.textContent = weak.issue;
+                li.appendChild(issue);
+            }
+            const questions = Array.isArray(weak.questions) ? weak.questions.filter((value) => Number(value) > 0) : [];
+            if (questions.length) {
+                const meta = document.createElement('div');
+                meta.className = 'knowledge-detail-point__meta';
+                const chip = document.createElement('span');
+                chip.className = 'knowledge-detail-chip';
+                chip.textContent = `相关题：${questions.join('、')}`;
+                meta.appendChild(chip);
+                li.appendChild(meta);
+            }
+            return li;
+        };
+
+        const makeCompare = (entry) => {
+            const li = document.createElement('li');
+            const tone = toneOf(entry.tone);
+            li.className = `knowledge-detail-point is-${tone}`;
+            const head = document.createElement('div');
+            head.className = 'knowledge-detail-point__head';
+            const name = document.createElement('span');
+            name.className = 'knowledge-detail-point__name';
+            name.textContent = entry.name || entry.label || '知识点';
+            const delta = Number(entry.delta || 0);
+            const deltaNode = document.createElement('span');
+            deltaNode.className = 'knowledge-detail-point__mastery';
+            deltaNode.style.fontSize = '0.82rem';
+            deltaNode.style.color = delta > 0 ? '#15803d' : (delta < 0 ? '#b91c1c' : '#64748b');
+            deltaNode.textContent = delta > 0 ? `↑ +${delta}` : (delta < 0 ? `↓ ${delta}` : '→ 0');
+            head.append(name, deltaNode);
+            li.appendChild(head);
+            const meta = document.createElement('div');
+            meta.className = 'knowledge-detail-point__meta';
+            const current = document.createElement('span');
+            current.className = 'knowledge-detail-chip';
+            current.textContent = `本次 ${clampMastery(entry.current)}%`;
+            const average = document.createElement('span');
+            average.className = 'knowledge-detail-chip';
+            average.textContent = `历史均值 ${clampMastery(entry.class_average)}%`;
+            const samples = document.createElement('span');
+            samples.className = 'knowledge-detail-chip';
+            samples.textContent = `取自 ${entry.sample_count || 0} 次考试`;
+            meta.append(current, average, samples);
+            li.appendChild(meta);
+            return li;
+        };
+
+        const build = () => {
+            if (built) {
+                return;
+            }
+            if (summaryNode) {
+                summaryNode.textContent = knowledge.summary || '已根据全班逐题表现生成整卷知识点掌握度归因。';
+            }
+            if (metricsNode) {
+                const dangerCount = sortedPoints.filter((point) => toneOf(point.tone) === 'danger').length;
+                const warningCount = sortedPoints.filter((point) => toneOf(point.tone) === 'warning').length;
+                const avgMastery = sortedPoints.length
+                    ? Math.round(sortedPoints.reduce((sum, point) => sum + clampMastery(point.mastery), 0) / sortedPoints.length)
+                    : 0;
+                const sourceLabel = (knowledge.source === 'ai' || knowledge.source === 'cached')
+                    ? 'AI 归因'
+                    : (knowledge.source === 'local_fallback' ? '本地兜底' : '本地估算');
+                metricsNode.innerHTML = '';
+                metricsNode.append(
+                    makeMetric(sortedPoints.length, '考察知识点'),
+                    makeMetric(`${avgMastery}%`, '平均掌握度'),
+                    makeMetric(dangerCount + warningCount, '需关注知识点'),
+                    makeMetric(sourceLabel, '数据来源'),
+                );
+            }
+            if (pointsNode) {
+                pointsNode.innerHTML = '';
+                sortedPoints.forEach((point) => pointsNode.appendChild(makePoint(point)));
+            }
+            const weakPoints = Array.isArray(knowledge.weak_points) ? knowledge.weak_points : [];
+            if (weakSection && weakNode) {
+                if (weakPoints.length) {
+                    weakNode.innerHTML = '';
+                    weakPoints.forEach((weak) => weakNode.appendChild(makeWeak(weak)));
+                    weakSection.hidden = false;
+                } else {
+                    weakSection.hidden = true;
+                }
+            }
+            const comparison = knowledge.comparison || {};
+            const comparePoints = Array.isArray(comparison.points) ? comparison.points : [];
+            if (compareSection && compareNode) {
+                if (comparePoints.length) {
+                    if (compareTitle) {
+                        const titles = Array.isArray(comparison.assignment_titles) ? comparison.assignment_titles : [];
+                        compareTitle.textContent = `与本班其他考试比对（取自 ${comparison.assignment_count || titles.length} 次：${titles.join('、') || '历史考试'}）`;
+                    }
+                    compareNode.innerHTML = '';
+                    comparePoints.forEach((entry) => compareNode.appendChild(makeCompare(entry)));
+                    compareSection.hidden = false;
+                } else {
+                    compareSection.hidden = true;
+                }
+            }
+            built = true;
+        };
+
+        const openModal = (trigger) => {
+            lastTrigger = trigger || null;
+            build();
+            modal.hidden = false;
+            document.body.style.overflow = 'hidden';
+            if (closeButton) {
+                closeButton.focus();
+            }
+        };
+
+        const closeModal = () => {
+            modal.hidden = true;
+            document.body.style.removeProperty('overflow');
+            if (lastTrigger && typeof lastTrigger.focus === 'function') {
+                lastTrigger.focus();
+            }
+        };
+
+        triggers.forEach((trigger) => {
+            trigger.addEventListener('click', (event) => {
+                event.preventDefault();
+                openModal(trigger);
+            });
+            trigger.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') {
+                    return;
+                }
+                event.preventDefault();
+                openModal(trigger);
+            });
+        });
+        if (closeButton) {
+            closeButton.addEventListener('click', closeModal);
+        }
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !modal.hidden) {
+                closeModal();
+            }
+        });
+    }
+
     async function pollAiStatus() {
         if (reloadScheduled) {
             return;
@@ -2033,6 +2652,7 @@
         const activePanel = setupWrongSummaryTabs();
         setupReorganizeWrongSummary();
         setupWrongAnswerDetails();
+        setupKnowledgeDetail();
         renderQuestionMarkdown(activePanel || document);
         if (INITIAL_AI_ACTIVE) {
             window.setTimeout(pollAiStatus, POLL_INTERVAL_MS);
