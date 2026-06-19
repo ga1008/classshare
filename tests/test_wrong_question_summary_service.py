@@ -21,6 +21,7 @@ from classroom_app.services.wrong_question_summary_service import (
     _extract_exam_questions,
     _get_answer_record,
     _mark_wrong_summary_job_running_with_connection,
+    _normalize_knowledge_analysis_result,
     _score_based_difficulty_summary,
     ensure_wrong_summary_cache_tables,
     expire_interrupted_wrong_summary_jobs,
@@ -253,6 +254,119 @@ class WrongQuestionSummaryServiceTests(unittest.TestCase):
         self.assertEqual(by_name["应用层端口"]["mastery"], 100)
         self.assertEqual(by_name["应用层端口"]["tone"], "mastered")
         self.assertIn("DHCP 地址获取", analysis["summary"])
+
+    def test_exam_section_titles_are_not_used_as_knowledge_points(self):
+        questions = _extract_exam_questions(
+            {
+                "pages": [
+                    {
+                        "name": "六",
+                        "questions": [
+                            {
+                                "id": "q37",
+                                "type": "text",
+                                "text": "TCP 的拥塞窗口 cwnd 大小与传输轮次 n 的关系如下表所示。",
+                                "answer": "慢启动、拥塞避免、快速恢复",
+                                "points": 19,
+                            }
+                        ],
+                    },
+                    {
+                        "name": "综合题（共 2 小题，第 1 小题 19 分，第 2 小题 11 分，共 30 分）",
+                        "questions": [
+                            {
+                                "id": "q38",
+                                "type": "radio",
+                                "text": "HTTP 默认端口是多少？",
+                                "options": ["A. 80", "B. 53", "C. 443"],
+                                "answer": "A",
+                                "points": 5,
+                            }
+                        ],
+                    },
+                    {
+                        "name": "每小题 10 分",
+                        "questions": [
+                            {
+                                "id": "q39",
+                                "type": "radio",
+                                "text": "DNS 主要用于完成哪项工作？",
+                                "options": ["A. 域名解析", "B. IP 分配", "C. 拥塞控制"],
+                                "answer": "A",
+                                "points": 10,
+                            }
+                        ],
+                    },
+                ]
+            }
+        )
+        submissions = [
+            {
+                "id": 1,
+                "student_name": "Student A",
+                "status": "submitted",
+                "answers_json": json.dumps(
+                    {"answers": [{"question_id": "q38", "answer": "B. 53"}, {"question_id": "q39", "answer": "B. IP 分配"}]},
+                    ensure_ascii=False,
+                ),
+                "feedback_md": _feedback((37, 10, 19), (38, 0, 5), (39, 0, 10)),
+            }
+        ]
+
+        self.assertTrue(all(not question["knowledge_points"] for question in questions))
+        stats = _build_question_error_stats(questions, submissions)
+        analysis = _build_local_knowledge_analysis(stats, status="pending")
+
+        self.assertEqual(analysis["points"], [])
+        self.assertEqual(analysis["tested_point_count"], 0)
+
+    def test_ai_knowledge_analysis_rejects_exam_section_labels(self):
+        questions = _extract_exam_questions(
+            {
+                "pages": [
+                    {
+                        "name": "六",
+                        "questions": [
+                            {
+                                "id": "q37",
+                                "type": "text",
+                                "text": "TCP 的拥塞窗口 cwnd 大小与传输轮次 n 的关系如下表所示。",
+                                "answer": "慢启动、拥塞避免、快速恢复",
+                                "points": 19,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        stats = _build_question_error_stats(
+            questions,
+            [
+                {
+                    "id": 1,
+                    "student_name": "Student A",
+                    "status": "submitted",
+                    "answers_json": json.dumps({"answers": [{"question_id": "q37", "answer": "慢启动"}]}, ensure_ascii=False),
+                    "feedback_md": _feedback((37, 8, 19)),
+                }
+            ],
+        )
+
+        analysis = _normalize_knowledge_analysis_result(
+            {
+                "summary": "结构性标题不应作为知识点。",
+                "knowledge_points": [
+                    {"name": "六", "mastery": 80, "reason": "大题编号", "evidence_questions": [37]},
+                    {"name": "每小题 10 分", "mastery": 80, "reason": "分值说明", "evidence_questions": [37]},
+                    {"name": "综合题（共 2 小题）", "mastery": 90, "reason": "题型标题", "evidence_questions": [37]},
+                ],
+            },
+            stats,
+            source_label="ai",
+        )
+
+        self.assertEqual(analysis["points"], [])
+        self.assertEqual(analysis["source"], "local_fallback")
 
     def test_knowledge_analysis_ai_result_is_normalized_and_cached(self):
         fd, db_path = tempfile.mkstemp(suffix=".db")

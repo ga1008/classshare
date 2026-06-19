@@ -18,7 +18,7 @@ from ..db.errors import DatabaseProgrammingError
 from .assignment_lifecycle_service import close_overdue_assignments, refresh_assignment_runtime_status
 
 
-PROMPT_VERSION = "wrong-question-summary-v3"
+PROMPT_VERSION = "wrong-question-summary-v4"
 TEXT_QUESTION_TYPES = {"text", "textarea"}
 CHOICE_QUESTION_TYPES = {"radio", "checkbox"}
 UNMATCHED_CHOICE_KEY = "__unmatched_choice__"
@@ -1133,9 +1133,12 @@ def _extract_question_knowledge_points(raw_question: dict[str, Any], page_name: 
     ):
         if key in raw_question:
             values.extend(_split_knowledge_values(raw_question.get(key)))
-    if not values:
-        values.extend(_split_knowledge_values(page_name))
-    return _dedupe_aliases(_clip_text(value, 40) for value in values if str(value or "").strip())[:3]
+    return _dedupe_aliases(
+        name
+        for value in values
+        for name in [_normalize_knowledge_name(value)]
+        if _is_valid_knowledge_point_name(name)
+    )[:3]
 
 
 def _split_knowledge_values(value: Any) -> list[str]:
@@ -1819,7 +1822,12 @@ async def _attach_assignment_knowledge_analysis(
 def _knowledge_analysis_needs_ai(knowledge_analysis: dict[str, Any] | None) -> bool:
     if not knowledge_analysis:
         return False
-    return str(knowledge_analysis.get("status") or "").strip().lower() == "pending"
+    status = str(knowledge_analysis.get("status") or "").strip().lower()
+    if status == "pending":
+        return True
+    if status in {"fallback", "fallback_cached", "failed"} and not knowledge_analysis.get("points"):
+        return True
+    return False
 
 
 def _knowledge_analysis_uses_fallback(knowledge_analysis: dict[str, Any] | None) -> bool:
@@ -1874,13 +1882,17 @@ def _build_local_knowledge_analysis(
     buckets: dict[str, dict[str, Any]] = {}
     for item in question_stats:
         question = item.get("question") or {}
-        point_names = question.get("knowledge_points") or [f"第 {question.get('ordinal') or '?'} 题"]
+        point_names = [
+            name
+            for raw_name in (question.get("knowledge_points") or [])
+            for name in [_normalize_knowledge_name(raw_name)]
+            if _is_valid_knowledge_point_name(name)
+        ]
+        if not point_names:
+            continue
         mastery = _question_mastery_percent(item)
         weight = max(1, int(item.get("evaluated_count") or item.get("scored_count") or 1))
-        for raw_name in point_names[:3]:
-            name = _normalize_knowledge_name(raw_name)
-            if not name:
-                continue
+        for name in point_names[:3]:
             bucket = buckets.setdefault(
                 name,
                 {
@@ -2034,7 +2046,7 @@ def _normalize_knowledge_analysis_result(
         if not isinstance(raw_point, dict):
             continue
         name = _normalize_knowledge_name(raw_point.get("name") or raw_point.get("label") or raw_point.get("title"))
-        if not name:
+        if not _is_valid_knowledge_point_name(name):
             continue
         mastery = _coerce_int(raw_point.get("mastery") or raw_point.get("mastery_percent") or raw_point.get("score"))
         if mastery is None:
@@ -2106,6 +2118,41 @@ def _normalize_knowledge_name(value: Any) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip(" ：:，,。.;；、|")
     cleaned = re.sub(r"^第\s*\d+\s*(部分|章|节|题)\s*[：:、.\-]?\s*", "", text)
     return _clip_text(cleaned or text, 48)
+
+
+def _is_valid_knowledge_point_name(value: Any) -> bool:
+    text = _normalize_knowledge_name(value)
+    compact = re.sub(r"\s+", "", text)
+    if not compact:
+        return False
+    if re.fullmatch(r"[一二三四五六七八九十\d]+", compact):
+        return False
+    if re.fullmatch(r"第?[一二三四五六七八九十\d]+[题节章部分小题]*", compact):
+        return False
+    section_keywords = (
+        "选择题",
+        "单选题",
+        "多选题",
+        "判断题",
+        "填空题",
+        "问答题",
+        "简答题",
+        "综合题",
+        "计算分析题",
+        "客观题",
+        "主观题",
+    )
+    if compact in section_keywords or compact.endswith(section_keywords):
+        return False
+    section_patterns = (
+        r"第[一二三四五六七八九十\d]+小题",
+        r"每小题\d*分",
+        r"共\d+小题",
+        r"共\d+分",
+        r"\d+分$",
+        r"第\d+小题\d+分",
+    )
+    return not any(re.search(pattern, compact) for pattern in section_patterns)
 
 
 def _compact_knowledge_label(value: Any) -> str:
