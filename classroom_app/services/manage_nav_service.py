@@ -143,6 +143,17 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/exams",),
     ),
     ManageNavItem(
+        key="polls",
+        domain="teaching",
+        group="内容资产",
+        label="投票",
+        icon="bar-chart",
+        href="/manage/teaching/polls",
+        search_text="投票 表决 调查 vote poll survey",
+        ai_hint="投票：创建跨班级共享的投票活动，分配到一个或多个班级并查看统计。",
+        legacy_hrefs=("/manage/polls",),
+    ),
+    ManageNavItem(
         key="materials",
         domain="teaching",
         group="内容资产",

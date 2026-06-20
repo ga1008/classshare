@@ -12,6 +12,7 @@ from .schema_cultivation_progress import ensure_cultivation_progress_schema
 from .schema_foundation import ensure_foundation_schema
 from .schema_learning_blog import ensure_learning_blog_signature_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
+from .schema_polls import ensure_poll_schema
 from .schema_scheduler import ensure_scheduler_schema
 from .schema_gongwen import ensure_gongwen_schema
 from .schema_study_group_scheme import ensure_study_group_scheme_schema
@@ -98,6 +99,18 @@ def init_database():
             print("[DB] PostgreSQL study-group scheme tables ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL study-group scheme schema step skipped: {exc}")
+        # The poll / vote tables follow the same runtime-managed, engine-aware
+        # pattern (shared cross-class vote data lives here).
+        try:
+            poll_conn = get_db_connection()
+            try:
+                ensure_poll_schema(poll_conn)
+                poll_conn.commit()
+            finally:
+                poll_conn.close()
+            print("[DB] PostgreSQL poll tables ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL poll schema step skipped: {exc}")
         # Agent task extension columns follow the same runtime-managed pattern.
         try:
             agent_ext_conn = get_db_connection()
@@ -123,6 +136,7 @@ def init_database():
             ensure_assignment_schema(conn)
             ensure_classroom_activity_schema(conn)
             ensure_study_group_scheme_schema(conn)
+            ensure_poll_schema(conn)
             ensure_materials_integrations_schema(conn)
             ensure_learning_blog_signature_schema(conn)
             ensure_scheduler_schema(conn)

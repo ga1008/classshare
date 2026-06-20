@@ -1382,16 +1382,27 @@
                 {% endif %}
             </div>
 
+            <div class="assignment-section-tabs" role="tablist" aria-label="作业与投票切换" data-assignment-section-tabs>
+                <button type="button" class="assignment-section-tab is-active" role="tab" aria-selected="true" data-assignment-section-tab="tasks">作业与考试</button>
+                <button type="button" class="assignment-section-tab" role="tab" aria-selected="false" data-assignment-section-tab="polls">投票</button>
+            </div>
+
             <div
                 class="assignment-task-board-island"
                 data-lanshare-island="assignment-task-board-sync"
                 data-island-id="assignment-task-board-sync-{{ classroom.id }}"
+                data-assignment-section-view="tasks"
             ></div>
+
+            <section class="poll-panel" id="poll-panel" data-poll-root data-class-offering-id="{{ classroom.id }}" data-role="{{ user_info.role }}" data-assignment-section-view="polls" hidden aria-live="polite">
+                <div class="poll-panel__loading" data-poll-loading>正在加载投票…</div>
+                <div class="poll-panel__content" data-poll-content hidden></div>
+            </section>
             {% if user_info.role == 'teacher' %}
-            <p class="assignment-scope-note">此处仅显示教师创建并分配的练习与考试；学生个人试炼已汇总到班级成长统计。</p>
+            <p class="assignment-scope-note" data-assignment-section-view="tasks">此处仅显示教师创建并分配的练习与考试；学生个人试炼已汇总到班级成长统计。</p>
             {% endif %}
 
-            <div class="assignment-board" id="assignment-list" data-assignment-list-region>
+            <div class="assignment-board" id="assignment-list" data-assignment-list-region data-assignment-section-view="tasks">
                 <div class="assignment-board__head">
                     <div>
                         <span>任务列表</span>

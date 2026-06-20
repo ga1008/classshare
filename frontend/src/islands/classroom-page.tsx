@@ -11,8 +11,9 @@ const LEGACY_MODULES = {
   exams: '/static/js/app_exams.js',
   classroomPage: '/static/js/classroom_page.js?v=multi-material-list-20260617',
   learningProgress: '/static/js/learning_progress.js?v=cultivation-certificate-20260612',
-  interactions: '/static/js/classroom_interactions.js?v=activity-dock-declutter-20260606',
+  interactions: '/static/js/classroom_interactions.js?v=poll-extracted-20260621',
   collaboration: '/static/js/collaboration.js?v=unified-grouping-invite-picker-20260617',
+  polls: '/static/js/classroom_polls.js?v=poll-system-20260621',
 } as const;
 
 type LegacyModule = Record<string, unknown>;
@@ -64,6 +65,7 @@ async function bootstrapClassroomPage(app: HTMLElement) {
     learningProgressModule,
     interactionsModule,
     collaborationModule,
+    pollsModule,
   ] = await Promise.all([
     loadLegacyModule(LEGACY_MODULES.ui),
     loadLegacyModule(LEGACY_MODULES.chat),
@@ -75,6 +77,7 @@ async function bootstrapClassroomPage(app: HTMLElement) {
     loadLegacyModule(LEGACY_MODULES.learningProgress),
     loadLegacyModule(LEGACY_MODULES.interactions),
     loadLegacyModule(LEGACY_MODULES.collaboration),
+    loadLegacyModule(LEGACY_MODULES.polls),
   ]);
 
   window.UI = ui as Window['UI'];
@@ -97,6 +100,7 @@ async function bootstrapClassroomPage(app: HTMLElement) {
   resolveFunction(learningProgressModule, 'initLearningProgress')(appConfig);
   resolveFunction(interactionsModule, 'initClassroomInteractions')(appConfig);
   resolveFunction(collaborationModule, 'initCollaborationPanel')(appConfig);
+  resolveFunction(pollsModule, 'initClassroomPolls')(appConfig);
 
   document.addEventListener('click', (event) => {
     const target = event.target;

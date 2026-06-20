@@ -2,7 +2,6 @@ import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
 
 const ACTIVITY_KINDS = [
-    { key: 'poll', label: '投票', note: '快速收集判断' },
     { key: 'quiz', label: '随堂测', note: '一题检查理解' },
     { key: 'qna', label: '提问', note: '匿名问题入口' },
 ];
@@ -18,13 +17,12 @@ const DEFAULT_OPTIONS = ['我理解了', '还需要例子', '节奏偏快', '希
 
 const FEATURE_TABS = [
     { key: 'all', label: '总览', note: '全部互动' },
-    { key: 'poll', label: '投票', note: '快速判断' },
     { key: 'quiz', label: '随堂测', note: '理解检查' },
     { key: 'qna', label: '提问', note: '匿名入口' },
     { key: 'signals', label: '状态', note: '举手求助' },
 ];
 
-const ACTIVITY_TAB_KEYS = new Set(['poll', 'quiz', 'qna']);
+const ACTIVITY_TAB_KEYS = new Set(['quiz', 'qna']);
 
 function normalizeId(value) {
     const text = String(value ?? '').trim();
@@ -159,7 +157,7 @@ function renderCreateToggle(snapshot, state) {
         <div class="interaction-launch-strip">
             <div>
                 <strong>发起课堂互动</strong>
-                <span>投票、随堂测、匿名提问会同步到所有在线成员。</span>
+                <span>随堂测、匿名提问会同步到所有在线成员。</span>
             </div>
             <button type="button" class="btn btn-primary btn-sm" data-interaction-create-open>新建互动</button>
         </div>
@@ -167,7 +165,7 @@ function renderCreateToggle(snapshot, state) {
 }
 
 function renderCreatePanel(state) {
-    const kind = state.createKind || 'poll';
+    const kind = state.createKind || 'quiz';
     const isQna = kind === 'qna';
     const optionValues = state.createOptions?.length ? state.createOptions : DEFAULT_OPTIONS;
     return `
@@ -235,11 +233,6 @@ function renderOptionEditorRow(value, index, kind) {
 }
 
 function tabEmptyCopy(snapshot, activeTab) {
-    if (activeTab === 'poll') {
-        return snapshot.role === 'teacher'
-            ? ['还没有课堂投票', '可以用投票快速确认学生选择、偏好或理解程度。']
-            : ['还没有可参与的投票', '老师发起投票后，会在这里出现。'];
-    }
     if (activeTab === 'quiz') {
         return snapshot.role === 'teacher'
             ? ['还没有随堂测', '可以发起一道轻量检查题，马上看到全班理解情况。']
@@ -251,7 +244,7 @@ function tabEmptyCopy(snapshot, activeTab) {
             : ['还没有提问入口', '老师开启匿名提问后，你可以在这里写下问题。'];
     }
     return snapshot.role === 'teacher'
-        ? ['课堂互动还没有开始', '可以先发起一个投票、随堂测或匿名提问入口。']
+        ? ['课堂互动还没有开始', '可以先发起一个随堂测或匿名提问入口。']
         : ['课堂互动还没有开始', '教师发起后，这里会出现可参与的互动。'];
 }
 
@@ -531,7 +524,7 @@ function keepActiveFeatureTabVisible(root) {
 }
 
 function collectCreatePayload(form) {
-    const kind = form.dataset.kind || 'poll';
+    const kind = form.dataset.kind || 'quiz';
     const formData = new FormData(form);
     const payload = {
         kind,
@@ -572,7 +565,7 @@ export function initClassroomInteractions(config = {}) {
         selectedActivityId: null,
         activeTab: 'all',
         createOpen: false,
-        createKind: 'poll',
+        createKind: 'quiz',
         createOptions: DEFAULT_OPTIONS,
         refreshTimer: null,
         pending: false,
@@ -673,7 +666,7 @@ export function initClassroomInteractions(config = {}) {
                 showToast('最多支持 8 个选项', 'warning');
                 return;
             }
-            list.insertAdjacentHTML('beforeend', renderOptionEditorRow('', optionCount, form?.dataset.kind || 'poll'));
+            list.insertAdjacentHTML('beforeend', renderOptionEditorRow('', optionCount, form?.dataset.kind || 'quiz'));
             return;
         }
 

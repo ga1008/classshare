@@ -56,9 +56,9 @@ class ClassroomInteractionPostgresWriteTests(unittest.TestCase):
                 20,
                 {"id": 3, "role": "teacher", "name": "Teacher"},
                 {
-                    "kind": service.ACTIVITY_KIND_POLL,
+                    "kind": service.ACTIVITY_KIND_QUIZ,
                     "prompt": "Ready?",
-                    "options": [{"label": "Yes"}, {"label": "No"}],
+                    "options": [{"label": "Yes", "is_correct": True}, {"label": "No"}],
                 },
             )
 

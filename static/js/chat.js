@@ -670,6 +670,13 @@ export class ClassroomChat {
                 return;
             }
 
+            if (data.type === 'classroom_poll_changed') {
+                window.dispatchEvent(new CustomEvent('classroom:poll-ws', {
+                    detail: data,
+                }));
+                return;
+            }
+
             if (data.type === 'discussion_ai_stream_start') {
                 this.handleDiscussionAiStreamStart(data);
                 return;

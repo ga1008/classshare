@@ -10,12 +10,10 @@ from ..db.connection import execute_insert_returning_id
 from .resource_access_service import ensure_classroom_access as ensure_scoped_classroom_access
 
 
-ACTIVITY_KIND_POLL = "poll"
 ACTIVITY_KIND_QUIZ = "quiz"
 ACTIVITY_KIND_QNA = "qna"
-ACTIVITY_KINDS = {ACTIVITY_KIND_POLL, ACTIVITY_KIND_QUIZ, ACTIVITY_KIND_QNA}
+ACTIVITY_KINDS = {ACTIVITY_KIND_QUIZ, ACTIVITY_KIND_QNA}
 ACTIVITY_KIND_LABELS = {
-    ACTIVITY_KIND_POLL: "课堂投票",
     ACTIVITY_KIND_QUIZ: "随堂测",
     ACTIVITY_KIND_QNA: "匿名提问",
 }
@@ -328,7 +326,7 @@ def respond_to_activity(
         raise HTTPException(403, "只有学生可以提交互动回应")
     if activity["status"] != ACTIVITY_STATUS_ACTIVE:
         raise HTTPException(400, "该互动已结束")
-    if activity["kind"] not in {ACTIVITY_KIND_POLL, ACTIVITY_KIND_QUIZ}:
+    if activity["kind"] != ACTIVITY_KIND_QUIZ:
         raise HTTPException(400, "该互动不支持选项回应")
 
     option_id = _safe_int(payload.get("option_id"))
@@ -853,7 +851,7 @@ def _serialize_activity(
         "response_count": int(total_responses),
         "open_question_count": open_question_count,
         "can_close": role_is_teacher and activity["status"] == ACTIVITY_STATUS_ACTIVE,
-        "can_respond": _is_student(user) and activity["status"] == ACTIVITY_STATUS_ACTIVE and activity["kind"] in {ACTIVITY_KIND_POLL, ACTIVITY_KIND_QUIZ},
+        "can_respond": _is_student(user) and activity["status"] == ACTIVITY_STATUS_ACTIVE and activity["kind"] == ACTIVITY_KIND_QUIZ,
         "can_ask": _is_student(user) and activity["status"] == ACTIVITY_STATUS_ACTIVE and activity["kind"] == ACTIVITY_KIND_QNA,
         "has_responded": has_responded,
         "can_show_results": can_show_results,

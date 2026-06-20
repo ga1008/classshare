@@ -1,0 +1,27 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}投票管理{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('新建投票', '内容资产', 'plus', variant='primary', tone='indigo', attrs='data-poll-create-open') }}
+{% endblock %}
+
+{% block content %}
+<section class="manage-polls" data-poll-manage-root>
+    <div class="manage-polls__intro">
+        <div>
+            <h2>投票活动</h2>
+            <p>创建跨班级共享的投票活动：一个投票可分配到多个班级，所有班级成员共享同一份投票数据。草稿与已结束的投票仅你自己可见。</p>
+        </div>
+        <div class="manage-polls__summary" data-poll-summary></div>
+    </div>
+
+    <div class="manage-polls__loading" data-poll-loading>正在加载投票…</div>
+    <div class="manage-polls__content" data-poll-content hidden></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_polls.js') }}"></script>
+{% endblock %}
