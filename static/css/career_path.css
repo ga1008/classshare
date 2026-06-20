@@ -106,15 +106,42 @@
   will-change:opacity;
 }
 @keyframes cn-twinkle{0%,100%{opacity:var(--tw-max,.8)}50%{opacity:var(--tw-min,.4)}}
-/* 选中路线后：这条路上的节点按"起点→未来"次序依次亮起，像跑道指路灯（--chase-delay 逐级延后）。 */
+/* 选中路线后：一束脉冲从毕业(起点)出发，沿路径逐级点亮连线与节点，像光在导线里传递。
+   --chase-delay 逐级延后（连线略早于其目标节点），节点核心爆出白色光晕、光环同步增亮。 */
 .career-svg.chase .cn-node.hot .cn-halo{
-  animation:cn-chase 1.7s ease-in-out infinite;
+  animation:cn-chase-halo 1.5s ease-in-out infinite;
   animation-delay:var(--chase-delay,0s);
 }
-@keyframes cn-chase{
-  0%,100%{opacity:var(--tw-min,.3)}
-  16%{opacity:var(--chase-hi,.95)}
-  44%{opacity:var(--tw-min,.3)}
+@keyframes cn-chase-halo{
+  0%,100%{opacity:var(--tw-max,.7)}
+  9%{opacity:var(--chase-hi,.98)}
+  28%{opacity:var(--tw-max,.7)}
+}
+.career-svg.chase .cn-node.hot .cn-core{
+  animation:cn-chase-core 1.5s ease-in-out infinite;
+  animation-delay:var(--chase-delay,0s);
+}
+@keyframes cn-chase-core{
+  0%,30%,100%{filter:none}
+  9%{filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 12px var(--chase-col,#ffd76a))}
+}
+/* 主成长线 / 跨向线：保留原本的虚线流动，叠加一道随脉冲到来的增亮光。 */
+.career-svg.chase .cn-edge.hot .cn-flow{
+  animation:cn-flow 1.4s linear infinite, cn-chase-line 1.5s ease-in-out infinite;
+  animation-delay:0s, var(--chase-delay,0s);
+}
+.career-svg.chase .cn-edge.cross.hot .cn-cu{
+  animation:cn-flow2 1.1s linear infinite, cn-chase-line 1.5s ease-in-out infinite;
+  animation-delay:0s, var(--chase-delay,0s);
+}
+/* 毕业 → 首个方向的扇出线：让脉冲从起点流出，作为整条传递的"发车点"。 */
+.career-svg.chase .cn-edge.fan.hot path{
+  animation:cn-chase-line 1.5s ease-in-out infinite;
+  animation-delay:var(--chase-delay,0s);
+}
+@keyframes cn-chase-line{
+  0%,34%,100%{filter:none}
+  10%{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px var(--chase-col,#9bdcff))}
 }
 .cn-core{cursor:pointer; transition:transform .2s}
 .cn-node:hover .cn-core{transform-box:fill-box; transform-origin:center; transform:scale(1.5)}
@@ -128,8 +155,12 @@
 
 /* 尊重"减少动态效果"系统偏好：关闭呼吸/跑道/流动动画，保留静态发光与高亮。 */
 @media (prefers-reduced-motion: reduce){
-  .cn-twinkle,.career-svg.chase .cn-node.hot .cn-halo,.cn-flow,.cn-cu,
-  .cn-origin-h,.cn-now-h,.cn-rip{animation:none !important}
+  .cn-twinkle,.cn-flow,.cn-cu,.cn-origin-h,.cn-now-h,.cn-rip,
+  .career-svg.chase .cn-node.hot .cn-halo,
+  .career-svg.chase .cn-node.hot .cn-core,
+  .career-svg.chase .cn-edge.hot .cn-flow,
+  .career-svg.chase .cn-edge.cross.hot .cn-cu,
+  .career-svg.chase .cn-edge.fan.hot path{animation:none !important}
   .cn-twinkle{opacity:var(--tw-max,.8)}
 }
 

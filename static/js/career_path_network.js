@@ -274,10 +274,12 @@
         var dipK = 0.42 + Math.random() * 0.30;          // 谷底相对峰值的比例
         var twMin = (haloOp * dipK).toFixed(3);
         var chaseHi = Math.min(1, haloOp * 1.7).toFixed(3);
-        var twStyle = '--tw-dur:' + dur + 's; --tw-delay:' + delay + 's; --tw-max:' + haloOp.toFixed(3)
-          + '; --tw-min:' + twMin + '; --chase-hi:' + chaseHi;
-        g += '<g class="cn-node" data-id="' + n.tag + '-' + i + '" data-tag="' + n.tag + '">'
-          + '<circle class="cn-halo cn-twinkle" style="' + twStyle + '" cx="' + x + '" cy="' + yy + '" r="' + haloR + '" fill="url(#' + glowId(col) + ')" opacity="' + haloOp + '" filter="url(#cnBlur)"/>'
+        // 自定义属性放在 group 上（会向下继承）：halo 用 --tw-*/--chase-hi 做呼吸，
+        // core/edge 用 --chase-col 做脉冲传递的发光颜色。
+        var grpStyle = '--tw-dur:' + dur + 's; --tw-delay:' + delay + 's; --tw-max:' + haloOp.toFixed(3)
+          + '; --tw-min:' + twMin + '; --chase-hi:' + chaseHi + '; --chase-col:' + col;
+        g += '<g class="cn-node" style="' + grpStyle + '" data-id="' + n.tag + '-' + i + '" data-tag="' + n.tag + '">'
+          + '<circle class="cn-halo cn-twinkle" cx="' + x + '" cy="' + yy + '" r="' + haloR + '" fill="url(#' + glowId(col) + ')" opacity="' + haloOp + '" filter="url(#cnBlur)"/>'
           + (hot ? '<circle class="cn-ring" cx="' + x + '" cy="' + yy + '" r="' + (coreR + 5) + '" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1.1"/>' : '')
           + '<circle class="cn-core" cx="' + x + '" cy="' + yy + '" r="' + coreR + '" fill="' + col + '" fill-opacity="' + (rec >= 3 ? 1 : 0.7) + '" '
           + 'stroke="#fff" stroke-opacity="' + (bright >= 0.8 ? 0.9 : 0.5) + '" stroke-width="1.3" data-tag="' + n.tag + '" data-i="' + i + '"/>'
@@ -456,10 +458,18 @@
         if (rel[t] && levels[t] == null) { levels[t] = levels[x] + 1; queue.push(t); }
       });
     }
+    // 节点：脉冲在它所处的层级到达 → 相位 = 层级 × STEP。
     this.svg.querySelectorAll('.cn-node.hot').forEach(function (e) {
       var lvl = levels[e.dataset.id];
       if (lvl == null) lvl = 0;
       e.style.setProperty('--chase-delay', (lvl * STEP).toFixed(2) + 's');
+    });
+    // 连线：脉冲沿这条线"流向"目标节点 → 相位取目标节点层级减半，让线先于节点亮起、串成一条流动光。
+    this.svg.querySelectorAll('.cn-edge.hot').forEach(function (e) {
+      var lvl = levels[e.dataset.to];
+      if (lvl == null) lvl = levels[e.dataset.from];
+      if (lvl == null) lvl = 0;
+      e.style.setProperty('--chase-delay', ((lvl - 0.5) * STEP).toFixed(2) + 's');
     });
     this.svg.classList.add('chase');
   };
@@ -467,7 +477,7 @@
   CareerNetwork.prototype._clearChase = function () {
     if (!this.svg) return;
     this.svg.classList.remove('chase');
-    this.svg.querySelectorAll('.cn-node[style*="--chase-delay"]').forEach(function (e) {
+    this.svg.querySelectorAll('[style*="--chase-delay"]').forEach(function (e) {
       e.style.removeProperty('--chase-delay');
     });
   };
