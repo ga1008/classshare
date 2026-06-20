@@ -387,6 +387,18 @@ CAREER_PERSONALITY_QUESTIONS: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "q_loc", "kind": "single",
+        "title": "毕业后，你更想在哪里发展？（这会直接影响为你推荐的就业方向与节奏）",
+        "options": [
+            {"value": "nanning", "label": "留在南宁 / 广西本地，离家近、生活成本低"},
+            {"value": "newtier1", "label": "去新一线城市（成都、杭州、武汉、长沙、重庆等）"},
+            {"value": "tier1", "label": "闯一线城市（北京、上海、广州、深圳）"},
+            {"value": "coastal", "label": "长三角 / 珠三角等沿海发达地区"},
+            {"value": "abroad", "label": "出国 / 海外发展或海外远程"},
+            {"value": "flexible", "label": "哪里机会好就去哪 / 还没想好"},
+        ],
+    },
+    {
         "id": "q8", "kind": "multi", "max_select": 2,
         "title": "选 1–2 个你愿意为之多花时间死磕的方向：",
         "options": [
@@ -411,6 +423,16 @@ CAREER_PERSONALITY_QUESTIONS: list[dict[str, Any]] = [
         "placeholder": "例如：想做能独立做产品的全栈；担心普通本科找不到好工作……（只用于帮 AI 更懂你，不会公开）",
     },
 ]
+
+# 就业地域偏好 → 给 AI 用的自然语言描述（用于按城市定制推荐与节奏）
+LOCATION_PREF_LABELS = {
+    "nanning": "留在南宁 / 广西本地（看重离家近、生活成本低、本地体制内与区域产业机会）",
+    "newtier1": "去新一线城市（成都、杭州、武汉、长沙、重庆等，性价比与发展机会兼顾）",
+    "tier1": "闯一线城市（北京、上海、广州、深圳，机会多、竞争与成本也高）",
+    "coastal": "长三角 / 珠三角等沿海发达地区（产业密集、外贸与制造业机会多）",
+    "abroad": "出国 / 海外发展或海外远程（看重国际化、语言与跨境机会）",
+    "flexible": "地点灵活，哪里机会好去哪 / 尚未确定",
+}
 
 RIASEC_LABELS = {
     "R": "实干型 Realistic（动手、工程、硬技能）",
@@ -445,6 +467,7 @@ def score_personality_answers(answers: list[dict[str, Any]]) -> dict[str, Any]:
     by_id = {str(q["id"]): q for q in CAREER_PERSONALITY_QUESTIONS}
     free_text = ""
     selected_focus: list[str] = []
+    location_pref = ""
 
     for ans in answers or []:
         if not isinstance(ans, dict):
@@ -455,6 +478,10 @@ def score_personality_answers(answers: list[dict[str, Any]]) -> dict[str, Any]:
             continue
         kind = question.get("kind")
         value = ans.get("value")
+
+        if qid == "q_loc":
+            location_pref = str(value if not isinstance(value, list) else (value[0] if value else "")).strip()
+            continue
 
         if kind in ("single", "multi"):
             chosen = value if isinstance(value, list) else [value]
@@ -502,4 +529,6 @@ def score_personality_answers(answers: list[dict[str, Any]]) -> dict[str, Any]:
         "top_dims": top_dims,
         "focus_choices": selected_focus,
         "free_text": free_text,
+        "location_pref": location_pref,
+        "location_label": LOCATION_PREF_LABELS.get(location_pref, ""),
     }

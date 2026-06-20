@@ -96,10 +96,26 @@
 .cn-nlabel.is-selected{fill:#ffe08a !important; font-weight:800}
 
 .cn-halo{transition:opacity .3s}
-.cn-flick5{animation:cn-flick5 2.6s ease-in-out infinite}
-.cn-flick4{animation:cn-flick4 3.4s ease-in-out infinite}
-@keyframes cn-flick5{0%,100%{opacity:.92}45%{opacity:.5}55%{opacity:.78}70%{opacity:.4}}
-@keyframes cn-flick4{0%,100%{opacity:.6}50%{opacity:.32}}
+/* 每颗星独立呼吸：时长/相位由内联 CSS 变量随机化，幅度随亮度（--tw-max/--tw-min）成比例。 */
+.cn-twinkle{
+  animation-name:cn-twinkle;
+  animation-duration:var(--tw-dur,3.6s);
+  animation-delay:var(--tw-delay,0s);
+  animation-timing-function:ease-in-out;
+  animation-iteration-count:infinite;
+  will-change:opacity;
+}
+@keyframes cn-twinkle{0%,100%{opacity:var(--tw-max,.8)}50%{opacity:var(--tw-min,.4)}}
+/* 选中路线后：这条路上的节点按"起点→未来"次序依次亮起，像跑道指路灯（--chase-delay 逐级延后）。 */
+.career-svg.chase .cn-node.hot .cn-halo{
+  animation:cn-chase 1.7s ease-in-out infinite;
+  animation-delay:var(--chase-delay,0s);
+}
+@keyframes cn-chase{
+  0%,100%{opacity:var(--tw-min,.3)}
+  16%{opacity:var(--chase-hi,.95)}
+  44%{opacity:var(--tw-min,.3)}
+}
 .cn-core{cursor:pointer; transition:transform .2s}
 .cn-node:hover .cn-core{transform-box:fill-box; transform-origin:center; transform:scale(1.5)}
 .cn-ring{pointer-events:none}
@@ -109,6 +125,13 @@
 @keyframes cn-flow2{to{stroke-dashoffset:-20}}
 .cn-origin-h{animation:cn-pulseO 3s ease-in-out infinite}
 @keyframes cn-pulseO{0%,100%{opacity:.95}50%{opacity:.5}}
+
+/* 尊重"减少动态效果"系统偏好：关闭呼吸/跑道/流动动画，保留静态发光与高亮。 */
+@media (prefers-reduced-motion: reduce){
+  .cn-twinkle,.career-svg.chase .cn-node.hot .cn-halo,.cn-flow,.cn-cu,
+  .cn-origin-h,.cn-now-h,.cn-rip{animation:none !important}
+  .cn-twinkle{opacity:var(--tw-max,.8)}
+}
 
 /* selection highlight */
 .cn-node,.cn-edge,.cn-nlabel{transition:opacity .4s}
@@ -157,6 +180,8 @@
   background:linear-gradient(100deg,#fff,var(--accent) 60%,var(--accent2));
   -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
 .career-banner p{margin:0; font-size:13.5px; color:var(--dim); line-height:1.6}
+.career-banner__region{margin-top:7px !important; font-size:12.5px !important; color:#fcd9a0 !important;
+  background:rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.22); border-radius:10px; padding:6px 10px}
 @keyframes career-fade-down{from{opacity:0; transform:translate(-50%,-12px)}to{opacity:1; transform:translate(-50%,0)}}
 
 .career-legend{

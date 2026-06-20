@@ -969,6 +969,13 @@ class SoftwareInfoRequest(BaseModel):
     file_name: str
 
 
+class WebSearchRequest(BaseModel):
+    """通用联网检索请求：任意调用方都可用其拿到一段联网检索后的文本摘要。"""
+    query: str
+    instructions: str = ""
+    task_label: str = "web_search"
+
+
 # --- 提示词模板 (更新) ---
 GRADING_RESULT_MAX_ATTEMPTS = 2
 
@@ -3795,6 +3802,34 @@ async def get_software_info(req: SoftwareInfoRequest):
         traceback.print_exc()
         # 优雅降级 — 返回空数据而非报错
         return {"status": "success", "description": "", "download_url": ""}
+
+
+GENERIC_WEB_SEARCH_SYSTEM_PROMPT = (
+    "你是一个严谨的联网检索助手。请使用联网搜索，针对用户给出的检索意图，"
+    "返回真实、最新、可核验的信息。务必使用中文，条理清晰地给出关键事实、数据与来源线索"
+    "（如机构、时间、地域），不要编造，不确定就说明不确定。"
+)
+
+
+@app.post("/api/ai/web-search")
+async def ai_web_search(req: WebSearchRequest):
+    """通用联网检索：返回一段联网搜索后的文本摘要，供任意上层 AI 流程注入参考。
+
+    失败时优雅降级（返回空文本），让调用方在没有联网能力时也能继续工作。
+    """
+    query = str(req.query or "").strip()
+    if not query:
+        return {"status": "success", "text": ""}
+    try:
+        text = await _call_volcengine_with_web_search(
+            system_prompt=req.instructions or GENERIC_WEB_SEARCH_SYSTEM_PROMPT,
+            user_message=query,
+            task_label=req.task_label or "web_search",
+        )
+        return {"status": "success", "text": str(text or "")}
+    except Exception as e:  # noqa: BLE001
+        print(f"[WARN] 联网检索失败（已降级为空结果）: {e}")
+        return {"status": "success", "text": "", "degraded": True}
 
 
 @app.post("/api/ai/submit-grading-job")

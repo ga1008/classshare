@@ -150,6 +150,14 @@
     var colorOf = {};
     cats.forEach(function (c) { colorOf[c.id] = c.c1 || '#6ee7ff'; });
 
+    // 为每种大类颜色构建一个径向发光渐变（中心亮→边缘透明），让"发光"更有体积与质感。
+    var glowColors = [];
+    var glowIdOf = {};
+    function glowId(col) {
+      if (glowIdOf[col] == null) { glowIdOf[col] = glowColors.length; glowColors.push(col); }
+      return 'cnGlow-' + glowIdOf[col];
+    }
+
     var y = topPad;
     var heads = [], rows = [];
     cats.forEach(function (c) {
@@ -259,9 +267,17 @@
         var haloR = 9 + rec * 2.4 + (hot ? 3 : 0);
         var haloOp = clamp(bright * 0.85, 0.12, 0.95);
         var coreR = 4.2 + rec * 0.9;
-        var flick = bright >= 0.8 ? 'cn-flick5' : bright >= 0.55 ? 'cn-flick4' : '';
+        // 每颗星独立的呼吸闪烁：随机频率(2.6–6.4s)+随机相位，越亮的星呼吸幅度更大但比例克制，
+        // 营造"星光闪闪、各自呼吸"的质感，而不抢眼。
+        var dur = (2.6 + Math.random() * 3.8).toFixed(2);
+        var delay = (-Math.random() * 6).toFixed(2);
+        var dipK = 0.42 + Math.random() * 0.30;          // 谷底相对峰值的比例
+        var twMin = (haloOp * dipK).toFixed(3);
+        var chaseHi = Math.min(1, haloOp * 1.7).toFixed(3);
+        var twStyle = '--tw-dur:' + dur + 's; --tw-delay:' + delay + 's; --tw-max:' + haloOp.toFixed(3)
+          + '; --tw-min:' + twMin + '; --chase-hi:' + chaseHi;
         g += '<g class="cn-node" data-id="' + n.tag + '-' + i + '" data-tag="' + n.tag + '">'
-          + '<circle class="cn-halo ' + flick + '" cx="' + x + '" cy="' + yy + '" r="' + haloR + '" fill="' + col + '" opacity="' + haloOp + '" filter="url(#cnBlur)"/>'
+          + '<circle class="cn-halo cn-twinkle" style="' + twStyle + '" cx="' + x + '" cy="' + yy + '" r="' + haloR + '" fill="url(#' + glowId(col) + ')" opacity="' + haloOp + '" filter="url(#cnBlur)"/>'
           + (hot ? '<circle class="cn-ring" cx="' + x + '" cy="' + yy + '" r="' + (coreR + 5) + '" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1.1"/>' : '')
           + '<circle class="cn-core" cx="' + x + '" cy="' + yy + '" r="' + coreR + '" fill="' + col + '" fill-opacity="' + (rec >= 3 ? 1 : 0.7) + '" '
           + 'stroke="#fff" stroke-opacity="' + (bright >= 0.8 ? 0.9 : 0.5) + '" stroke-width="1.3" data-tag="' + n.tag + '" data-i="' + i + '"/>'
@@ -284,8 +300,17 @@
       g += '<text x="' + x + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axissub">' + esc(AXIS_LABELS[i]) + '</text>';
     });
 
+    var glowDefs = glowColors.map(function (col, idx) {
+      return '<radialGradient id="cnGlow-' + idx + '" cx="50%" cy="50%" r="50%">'
+        + '<stop offset="0%" stop-color="' + col + '" stop-opacity="1"/>'
+        + '<stop offset="42%" stop-color="' + col + '" stop-opacity="0.55"/>'
+        + '<stop offset="100%" stop-color="' + col + '" stop-opacity="0"/>'
+        + '</radialGradient>';
+    }).join('');
+
     var s = '<svg class="career-svg" width="' + this.cw + '" height="' + this.ch + '" xmlns="' + NS + '">'
       + '<defs>'
+      + glowDefs
       + '<filter id="cnBlur" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="5.5"/></filter>'
       + '<filter id="cnBlurO" x="-120%" y="-120%" width="340%" height="340%"><feGaussianBlur stdDeviation="9"/></filter>'
       + '<marker id="cnArr" markerWidth="11" markerHeight="11" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8" fill="#6ee7ff"/></marker>'
@@ -409,7 +434,42 @@
     this.svg.querySelectorAll('.cn-node').forEach(function (e) { e.classList.toggle('hot', !!rel[e.dataset.id]); });
     this.svg.querySelectorAll('.cn-edge').forEach(function (e) { e.classList.toggle('hot', !!(rel[e.dataset.from] && rel[e.dataset.to])); });
     this.svg.querySelectorAll('.cn-nlabel').forEach(function (e) { e.classList.toggle('hot', !!tags[e.dataset.tag]); });
+    this._applyChase(rel);
     this._markSelected(id);
+  };
+
+  // 选中后：让这条路线上的各节点按"从起点→未来"的次序依次呼吸闪烁，像交通指路灯/跑道灯一样
+  // 指引方向。次序＝从起点(现在/毕业)沿成长方向的层级距离，逐级延后动画相位。
+  CareerNetwork.prototype._applyChase = function (rel) {
+    if (!this.svg) return;
+    var self = this;
+    var STEP = 0.16; // 每一层之间的相位间隔（秒）
+    var levels = {};
+    var queue = [];
+    ['now', 'origin'].forEach(function (s) { if (rel[s] && levels[s] == null) { levels[s] = 0; queue.push(s); } });
+    if (!queue.length) { // 理论上起点总在路线里；兜底用任一相关节点起步
+      Object.keys(rel).forEach(function (k) { if (!queue.length) { levels[k] = 0; queue.push(k); } });
+    }
+    while (queue.length) {
+      var x = queue.shift();
+      (self.adjF[x] || []).forEach(function (t) {
+        if (rel[t] && levels[t] == null) { levels[t] = levels[x] + 1; queue.push(t); }
+      });
+    }
+    this.svg.querySelectorAll('.cn-node.hot').forEach(function (e) {
+      var lvl = levels[e.dataset.id];
+      if (lvl == null) lvl = 0;
+      e.style.setProperty('--chase-delay', (lvl * STEP).toFixed(2) + 's');
+    });
+    this.svg.classList.add('chase');
+  };
+
+  CareerNetwork.prototype._clearChase = function () {
+    if (!this.svg) return;
+    this.svg.classList.remove('chase');
+    this.svg.querySelectorAll('.cn-node[style*="--chase-delay"]').forEach(function (e) {
+      e.style.removeProperty('--chase-delay');
+    });
   };
 
   // 被选中节点：金色细波纹三圈散开循环 + 金色高亮，提示其在路线中的位置
@@ -443,6 +503,7 @@
     this.selectedId = null;
     if (!this.svg) return;
     this.svg.classList.remove('sel');
+    this._clearChase();
     this.svg.querySelectorAll('.hot,.is-selected').forEach(function (e) { e.classList.remove('hot'); e.classList.remove('is-selected'); });
     var mk = this.vp && this.vp.querySelector('.cn-selmark'); if (mk) mk.parentNode.removeChild(mk);
     this._hideTip();

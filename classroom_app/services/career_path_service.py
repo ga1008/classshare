@@ -25,8 +25,10 @@ from typing import Any, Optional
 from ..core import ai_client
 from ..database import get_db_connection
 from ..db.schema_career_path import ensure_career_path_schema
+from . import ai_web_research
 from .career_seed_data import (
     CAREER_PERSONALITY_QUESTIONS,
+    LOCATION_PREF_LABELS,
     RIASEC_LABELS,
     SEED_MAJOR_KEYS,
     SOFTWARE_ENGINEERING_NETWORK,
@@ -657,6 +659,7 @@ def _public_personalized(personalized: dict[str, Any]) -> dict[str, Any]:
     return {
         "greeting": sanitize_hidden_profile_leaks(personalized.get("greeting") or ""),
         "summary": sanitize_hidden_profile_leaks(personalized.get("summary") or ""),
+        "region_note": sanitize_hidden_profile_leaks(personalized.get("region_note") or ""),
         "timeline_advice": sanitize_hidden_profile_leaks(personalized.get("timeline_advice") or ""),
         "top_paths": [
             {
@@ -699,15 +702,20 @@ def _network_seed_example() -> str:
     return json.dumps(sample, ensure_ascii=False, indent=1)
 
 
-def build_network_generation_prompt(major_name: str) -> tuple[str, str]:
+def build_network_generation_prompt(major_name: str, research_digest: str = "") -> tuple[str, str]:
     system = (
         "你是资深的高校生涯规划与行业研究专家。你要为某个本科专业，编制一张"
         "结构化的『职业发展路线网络』数据，供前端渲染成可交互的职业网络图。"
         "必须严格输出 JSON，不要任何解释文字、不要 markdown 代码块。"
         + build_time_context_text()
     )
+    research_block = (
+        "【实时联网检索参考（请甄别真伪后采用，结合到就业方向、薪资与地域信号中）】\n" + research_digest + "\n"
+        if research_digest else ""
+    )
     user = "\n\n".join([
         f"目标专业：{major_name}（中国普通本科，结合 2025–2026 就业现实与 AI 对行业的冲击）。",
+        *( [research_block] if research_block else [] ),
         "请产出该专业毕业生的【完整、丰富】就业去向网络，覆盖该专业绝大多数真实出路，"
         "包含 5–6 个就业大类(cats)、每个大类下 4–6 个细分方向(nodes，总计 22–28 个，务必充实，"
         "绝不能太少或只给热门几个)、以及 10–16 条跨方向可转岗的分叉(links)。",
@@ -737,6 +745,7 @@ def build_personalization_prompt(
     test_result: dict[str, Any],
     explicit_prompt: str,
     hidden_block: str,
+    research_digest: str = "",
 ) -> tuple[str, str]:
     tl = ctx["timeline"]
     node_index = "\n".join(
@@ -745,6 +754,17 @@ def build_personalization_prompt(
     )
     scores = test_result.get("scores") or {}
     score_text = "；".join(f"{RIASEC_LABELS.get(k, k)}={v}" for k, v in scores.items())
+    location_label = test_result.get("location_label") or LOCATION_PREF_LABELS.get(test_result.get("location_pref") or "", "")
+    location_block = (
+        f"【就业地域意向】{location_label}。请据此调整推荐：该地域真实存在、有需求、可落地的方向上调；"
+        "在该地域机会很少或不现实的方向适当下调，并在 node_tips / timeline_advice / region_note 里给出"
+        "贴合该城市/地区的具体建议（如本地主导产业、典型雇主类型、是否需要先去大城市攒经验再回流等）。"
+        if location_label else "【就业地域意向】学生未明确选择，按通用情况处理，但可在 region_note 提示其尽早想清楚目标城市。"
+    )
+    research_block = (
+        "【实时联网检索参考（请甄别真伪后采用，用于让地域与市场判断更准确、更新）】\n" + research_digest
+        if research_digest else ""
+    )
 
     system = (
         "你是一位顶尖的生涯规划顾问与心理画像专家，正在为一名具体的大学生定制专属职业发展网络。"
@@ -762,11 +782,14 @@ def build_personalization_prompt(
         f"（{tl.get('months_to_graduation') if tl.get('months_to_graduation') is not None else '未知'} 个月）。",
         f"【霍兰德测试结果】代码 {test_result.get('holland_code') or '未知'}；各维度得分：{score_text}。"
         f"自填补充：{test_result.get('free_text') or '（无）'}；侧重选择：{('、'.join(test_result.get('focus_choices') or [])) or '（无）'}。",
+        location_block,
+        *( [research_block] if research_block else [] ),
         "【内部学习支持画像 — 仅供你判断性格与节奏，严禁外显或提及来源】\n" + hidden_block,
         "【该专业职业网络的全部方向节点】\n" + node_index,
         "请综合以上信息，输出一个 JSON 对象，字段如下：\n"
         "greeting: 给该生的一句专属欢迎/定位文案；\n"
         "summary: 用 1–2 句话点出最适合 TA 的发展基调（基于性格但不读心）；\n"
+        "region_note: 结合 TA 的就业地域意向，用 1–2 句话给出该城市/地区的就业现实与务实建议（无地域意向则提示尽早确定目标城市）；\n"
         "holland_code: 你最终判断的霍兰德代码；\n"
         "rec_overrides: { 节点tag: 1–5 }，对最契合 TA 的方向上调、不契合的下调（只列需要调整的节点，幅度克制合理）；\n"
         "highlights: 最推荐 TA 重点看的 3–5 个节点 tag 数组；\n"
@@ -922,6 +945,7 @@ def _validate_personalization_payload(payload: dict[str, Any], network: dict[str
     return {
         "greeting": sanitize_hidden_profile_leaks(payload.get("greeting") or ""),
         "summary": sanitize_hidden_profile_leaks(payload.get("summary") or ""),
+        "region_note": sanitize_hidden_profile_leaks(payload.get("region_note") or ""),
         "holland_code": str(payload.get("holland_code") or ""),
         "rec_overrides": _clean_map(payload.get("rec_overrides"), _as_rec),
         "highlights": [t for t in (payload.get("highlights") or []) if t in valid_tags][:6],
@@ -951,8 +975,20 @@ async def handle_network_generation(task: dict[str, Any]) -> str:
     major_name = str(payload.get("major_name") or major_key)
     if not major_key:
         return "skipped: missing major_key"
+    # 让 AI 自行决定是否需要联网检索该专业的最新就业市场信息（含地域差异），再据此生成网络。
+    research_digest = ""
     try:
-        system, user = build_network_generation_prompt(major_name)
+        research = await ai_web_research.gather(
+            objective=f"为中国普通本科「{major_name}」专业编制 2025–2026 年的就业去向网络，需要真实的就业方向、典型岗位、薪资区间、行业趋势，以及南宁/广西本地与一线城市的地域差异。",
+            context=f"目标专业：{major_name}。用途：生成可交互的职业发展路线网络图，覆盖该专业绝大多数真实出路。",
+            search_instructions="请聚焦中国大陆就业市场的真实、最新信息（招聘需求、薪资、行业动态、地域差异），给出可核验的关键事实。",
+            max_queries=3,
+        )
+        research_digest = research.get("digest") or ""
+    except Exception:  # noqa: BLE001
+        research_digest = ""
+    try:
+        system, user = build_network_generation_prompt(major_name, research_digest)
         raw = await _call_thinking_ai(system, user, label=f"career_network:{major_key}")
         network = _validate_network_payload(raw, major_name)
     except Exception as exc:  # noqa: BLE001
@@ -997,8 +1033,27 @@ async def handle_personalization(task: dict[str, Any]) -> str:
         # Major network still generating — retry shortly by raising.
         raise RuntimeError("major network not ready yet")
 
+    # 按学生的就业地域意向，让 AI 决定是否联网检索该城市/地区的真实就业行情，让推荐更精准。
+    research_digest = ""
+    location_label = test_result.get("location_label") or ""
+    if location_label:
+        try:
+            grad_label = ctx["timeline"].get("graduation_date_label") or "近一两年"
+            research = await ai_web_research.gather(
+                objective=f"为一名「{ctx['major_name']}」专业、计划在「{location_label}」就业、预计 {grad_label} 毕业的本科生，"
+                          "了解该地域当前真实的就业行情：主导产业、典型雇主、热门岗位与薪资、对该专业的需求、以及求职务实建议。",
+                context=f"学生专业：{ctx['major_name']}；地域意向：{location_label}；霍兰德代码：{test_result.get('holland_code') or '未知'}。",
+                search_instructions="请聚焦该城市/地区的真实、最新就业信息（招聘需求、薪资、主导产业、典型雇主），给出可核验的关键事实。",
+                max_queries=3,
+            )
+            research_digest = research.get("digest") or ""
+        except Exception:  # noqa: BLE001
+            research_digest = ""
+
     try:
-        system, user = build_personalization_prompt(ctx, network, test_result, explicit_prompt, hidden_block)
+        system, user = build_personalization_prompt(
+            ctx, network, test_result, explicit_prompt, hidden_block, research_digest
+        )
         raw = await _call_thinking_ai(system, user, label=f"career_personalize:{student_id}")
         personalized = _validate_personalization_payload(raw, network)
         personalized["holland_code"] = personalized.get("holland_code") or test_result.get("holland_code") or ""

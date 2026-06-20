@@ -436,10 +436,11 @@
 
   function renderBanner(s) {
     var p = s.personalized || {};
-    if (!p.greeting && !p.summary) { show(el.banner, false); return; }
+    if (!p.greeting && !p.summary && !p.region_note) { show(el.banner, false); return; }
     var h = '';
     if (p.greeting) h += '<h2>' + esc(p.greeting) + '</h2>';
     if (p.summary) h += '<p>' + esc(p.summary) + '</p>';
+    if (p.region_note) h += '<p class="career-banner__region">📍 ' + esc(p.region_note) + '</p>';
     el.banner.innerHTML = h; show(el.banner, true);
   }
 
