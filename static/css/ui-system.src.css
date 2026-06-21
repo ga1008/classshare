@@ -45886,3 +45886,71 @@ body.agenda-todo-open { overflow: hidden; }
     .agenda-todo-modal__card { transition: none; }
     .agenda-todo-modal__card { transform: none; }
 }
+
+/* Locked course field when editing an existing to-do. */
+.agenda-todo-field select:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    background: rgba(148, 163, 184, 0.12);
+}
+
+/* Manual to-do manage actions inside the agenda popover. */
+.agenda-popover__manage {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.agenda-popover__manage-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--text-secondary, #475569);
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.agenda-popover__manage-btn:hover {
+    transform: translateY(-1px);
+    border-color: rgba(99, 102, 241, 0.45);
+    color: #4338ca;
+}
+
+.agenda-popover__manage-btn.is-complete {
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #047857;
+    background: rgba(16, 185, 129, 0.1);
+}
+.agenda-popover__manage-btn.is-complete:hover { background: rgba(16, 185, 129, 0.18); color: #047857; }
+
+.agenda-popover__manage-btn.is-danger { color: #b91c1c; }
+.agenda-popover__manage-btn.is-danger:hover {
+    border-color: rgba(239, 68, 68, 0.45);
+    background: rgba(239, 68, 68, 0.1);
+    color: #b91c1c;
+}
+
+.agenda-popover__manage-btn:disabled { opacity: 0.55; cursor: progress; transform: none; }
+
+.agenda-popover__manage-status {
+    flex-basis: 100%;
+    margin: 0;
+    min-height: 1em;
+    font-size: 0.78rem;
+}
+.agenda-popover__manage-status[data-tone="error"] { color: #dc2626; }
+.agenda-popover__manage-status[data-tone="success"] { color: #059669; }
+.agenda-popover__manage-status[data-tone="info"] { color: var(--text-secondary, #475569); }
+
+@media (prefers-reduced-motion: reduce) {
+    .agenda-popover__manage-btn:hover { transform: none; }
+}

@@ -76,6 +76,14 @@
             data-href="{{ ev.href }}"
             {% if ev.priority %}data-priority="{{ ev.priority }}"{% endif %}
             {% if ev.is_high_priority %}data-high-priority="1"{% endif %}
+            {% if ev.is_manual %}
+            data-manual="1"
+            data-todo-id="{{ ev.todo_id }}"
+            data-class-offering-id="{{ ev.class_offering_id }}"
+            data-notes="{{ ev.notes }}"
+            data-due-at="{{ ev.due_at_raw }}"
+            data-start-at="{{ ev.start_at_raw }}"
+            {% endif %}
             {% if ev.detail %}
             data-subject="{{ ev.detail.subject }}"
             data-date="{{ ev.detail.date_label }}"

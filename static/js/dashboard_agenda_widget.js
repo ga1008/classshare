@@ -65,6 +65,21 @@ function buildPopover() {
       </div>
       <p class="agenda-popover__remind-status" data-remind-status role="status"></p>
     </form>
+    <div class="agenda-popover__manage" data-pop-manage hidden>
+      <button type="button" class="agenda-popover__manage-btn is-complete" data-pop-complete>
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        完成
+      </button>
+      <button type="button" class="agenda-popover__manage-btn" data-pop-edit>
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        编辑
+      </button>
+      <button type="button" class="agenda-popover__manage-btn is-danger" data-pop-delete>
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+        删除
+      </button>
+      <p class="agenda-popover__manage-status" data-manage-status role="status"></p>
+    </div>
   `;
   document.body.appendChild(pop);
   return pop;
@@ -141,6 +156,11 @@ function initAgendaWidget() {
   const remindUnit = pop.querySelector('[data-remind-unit]');
   const remindCancel = pop.querySelector('[data-remind-cancel]');
   const remindStatus = pop.querySelector('[data-remind-status]');
+  const manageEl = pop.querySelector('[data-pop-manage]');
+  const completeBtn = pop.querySelector('[data-pop-complete]');
+  const editBtn = pop.querySelector('[data-pop-edit]');
+  const deleteBtn = pop.querySelector('[data-pop-delete]');
+  const manageStatus = pop.querySelector('[data-manage-status]');
   let activeItem = null;
   let activeEndpoint = '';
   let activeEventId = '';
@@ -196,8 +216,13 @@ function initAgendaWidget() {
     // their jump link.
     remindBtn.hidden = true;
     remindForm.hidden = !canRemind;
+    const isManual = data.manual === '1';
+    if (manageEl) manageEl.hidden = !isManual;
+    if (manageStatus) { manageStatus.textContent = ''; manageStatus.dataset.tone = ''; }
+    if (completeBtn) completeBtn.disabled = false;
+    if (deleteBtn) deleteBtn.disabled = false;
     const href = data.href || '#';
-    goEl.hidden = canRemind;
+    goEl.hidden = canRemind || isManual;
     goEl.setAttribute('href', href);
     goEl.textContent = GO_LABELS[kind] || '前往查看';
     goEl.classList.toggle('is-disabled', !href || href === '#');
@@ -287,6 +312,69 @@ function initAgendaWidget() {
 
   pop.querySelector('[data-pop-close]').addEventListener('click', close);
 
+  const setManageStatus = (message, tone) => {
+    if (!manageStatus) return;
+    manageStatus.textContent = message || '';
+    manageStatus.dataset.tone = tone || '';
+  };
+
+  const activeTodoIds = () => ({
+    classOfferingId: Number(activeItem?.dataset.classOfferingId || 0),
+    todoId: Number(activeItem?.dataset.todoId || 0),
+  });
+
+  completeBtn?.addEventListener('click', async () => {
+    const { classOfferingId, todoId } = activeTodoIds();
+    if (!classOfferingId || !todoId) return;
+    completeBtn.disabled = true;
+    setManageStatus('正在更新…', 'info');
+    const { ok, payload } = await todoLifecycleRequest('PATCH', classOfferingId, todoId, { completed: true });
+    if (ok) {
+      setManageStatus('已完成', 'success');
+      notify(payload.message || '待办已完成。', 'success');
+      reloadSoon(500);
+    } else {
+      setManageStatus(payload.message || '操作失败，请稍后重试。', 'error');
+      completeBtn.disabled = false;
+    }
+  });
+
+  deleteBtn?.addEventListener('click', async () => {
+    const { classOfferingId, todoId } = activeTodoIds();
+    if (!classOfferingId || !todoId) return;
+    if (!window.confirm('确定删除这条待办吗？删除后不可恢复。')) return;
+    deleteBtn.disabled = true;
+    setManageStatus('正在删除…', 'info');
+    const { ok, payload } = await todoLifecycleRequest('DELETE', classOfferingId, todoId);
+    if (ok) {
+      setManageStatus('已删除', 'success');
+      notify(payload.message || '待办已删除。', 'success');
+      reloadSoon(500);
+    } else {
+      setManageStatus(payload.message || '删除失败，请稍后重试。', 'error');
+      deleteBtn.disabled = false;
+    }
+  });
+
+  editBtn?.addEventListener('click', () => {
+    if (!activeItem) return;
+    const controller = getTodoModalController();
+    if (!controller) { setManageStatus('暂时无法编辑。', 'error'); return; }
+    const data = activeItem.dataset;
+    const payload = {
+      todoId: data.todoId,
+      classOfferingId: data.classOfferingId,
+      title: data.title || '',
+      notes: data.notes || '',
+      priority: data.priority || 'normal',
+      dueAt: data.dueAt || '',
+      startAt: data.startAt || '',
+    };
+    const triggerEl = activeItem;
+    close();
+    controller.openEdit(payload, triggerEl);
+  });
+
   document.addEventListener('click', (event) => {
     if (pop.hidden) return;
     if (event.target.closest('.agenda-popover') || event.target.closest('[data-agenda-item]')) return;
@@ -357,10 +445,12 @@ function initAgendaReminderSync() {
 }
 
 // ---------------------------------------------------------------------------
-// "新增待办" quick-create: a + button in the agenda header opens a medium modal
-// that creates a course-scoped manual todo via the existing todo API. The new
-// todo flows into the agenda feed, the cockpit next-steps, the classroom todo
-// overview and the semester calendar — so on success we reload to reflect it.
+// Manual to-do lifecycle from the agenda widget: a + button opens a medium
+// modal to CREATE a course-scoped to-do, and clicking an existing manual to-do
+// opens a popover with 完成 / 编辑 / 删除. Everything reuses the existing
+// /api/classrooms/{id}/todos REST API; the new/changed item flows into the
+// agenda feed, cockpit next-steps, classroom overview and semester calendar —
+// so on success we reload to reflect it everywhere.
 // ---------------------------------------------------------------------------
 const TODO_ENDPOINT_BASE = '/api/classrooms';
 
@@ -376,7 +466,32 @@ function readTodoOptions() {
   }
 }
 
-function buildTodoModal() {
+function reloadSoon(delay = 600) {
+  window.setTimeout(() => window.location.reload(), delay);
+}
+
+// Split an ISO-ish datetime ("YYYY-MM-DDTHH:MM" / "YYYY-MM-DD HH:MM" / date)
+// into { date, time } for the native pickers.
+function splitTodoDateTime(value) {
+  const text = String(value || '').trim();
+  if (!text) return { date: '', time: '' };
+  const normalized = text.replace('T', ' ');
+  const [datePart, timePart = ''] = normalized.split(' ');
+  return { date: (datePart || '').slice(0, 10), time: (timePart || '').slice(0, 5) };
+}
+
+async function todoLifecycleRequest(method, classOfferingId, todoId, body) {
+  const opts = { method, headers: { Accept: 'application/json' }, credentials: 'same-origin' };
+  if (body) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const response = await fetch(`${TODO_ENDPOINT_BASE}/${classOfferingId}/todos/${todoId}`, opts);
+  const payload = await response.json().catch(() => ({}));
+  return { ok: response.ok && payload.status === 'success', payload };
+}
+
+function buildTodoModalDom() {
   const modal = document.createElement('div');
   modal.className = 'agenda-todo-modal';
   modal.hidden = true;
@@ -385,8 +500,8 @@ function buildTodoModal() {
     <div class="agenda-todo-modal__card" role="dialog" aria-modal="true" aria-labelledby="agendaTodoTitle">
       <div class="agenda-todo-modal__head">
         <div>
-          <span class="agenda-todo-modal__eyebrow">我的待办</span>
-          <h3 id="agendaTodoTitle">新增待办</h3>
+          <span class="agenda-todo-modal__eyebrow" data-todo-eyebrow>我的待办</span>
+          <h3 id="agendaTodoTitle" data-todo-heading>新增待办</h3>
         </div>
         <button type="button" class="agenda-todo-modal__close" data-todo-close aria-label="关闭">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -443,32 +558,41 @@ function buildTodoModal() {
   return modal;
 }
 
-function initAgendaTodoCreator() {
-  const triggers = Array.from(document.querySelectorAll('[data-agenda-add-todo]'));
-  if (!triggers.length) return;
-  const { options, defaultOfferingId } = readTodoOptions();
-  if (!options.length) {
-    triggers.forEach((btn) => { btn.hidden = true; });
-    return;
-  }
+let sharedTodoModal = null;
 
-  const modal = buildTodoModal();
+function getTodoModalController() {
+  if (sharedTodoModal) return sharedTodoModal;
+  const { options, defaultOfferingId } = readTodoOptions();
+  if (!options.length) return null;
+  sharedTodoModal = createTodoModalController(options, defaultOfferingId);
+  return sharedTodoModal;
+}
+
+function createTodoModalController(options, defaultOfferingId) {
+  const modal = buildTodoModalDom();
   const card = modal.querySelector('.agenda-todo-modal__card');
   const form = modal.querySelector('[data-todo-form]');
   const courseSelect = modal.querySelector('[data-todo-course]');
   const titleInput = form.elements.title;
   const statusEl = modal.querySelector('[data-todo-status]');
   const submitBtn = modal.querySelector('[data-todo-submit]');
+  const headingEl = modal.querySelector('[data-todo-heading]');
+  const eyebrowEl = modal.querySelector('[data-todo-eyebrow]');
   const priorityGroup = modal.querySelector('[data-todo-priority]');
   let priority = 'normal';
+  let mode = 'create';
+  let editingId = 0;
   let lastFocus = null;
 
   courseSelect.innerHTML = options
     .map((opt) => `<option value="${Number(opt.class_offering_id)}">${escapeHtml(opt.label || `${opt.course_name || ''} · ${opt.class_name || ''}`)}</option>`)
     .join('');
-  if (defaultOfferingId && options.some((opt) => Number(opt.class_offering_id) === defaultOfferingId)) {
-    courseSelect.value = String(defaultOfferingId);
-  }
+
+  const applyDefaultCourse = () => {
+    if (defaultOfferingId && options.some((opt) => Number(opt.class_offering_id) === defaultOfferingId)) {
+      courseSelect.value = String(defaultOfferingId);
+    }
+  };
 
   const setStatus = (message, tone) => {
     statusEl.textContent = message || '';
@@ -492,20 +616,56 @@ function initAgendaTodoCreator() {
     if (lastFocus && typeof lastFocus.focus === 'function') lastFocus.focus({ preventScroll: true });
   };
 
-  const open = (trigger) => {
-    lastFocus = trigger || null;
-    form.reset();
-    setPriority('normal');
-    setStatus('', '');
-    if (defaultOfferingId && options.some((opt) => Number(opt.class_offering_id) === defaultOfferingId)) {
-      courseSelect.value = String(defaultOfferingId);
-    }
+  const reveal = () => {
     modal.hidden = false;
     document.body.classList.add('agenda-todo-open');
     window.requestAnimationFrame(() => {
       modal.classList.add('is-open');
       titleInput?.focus({ preventScroll: true });
     });
+  };
+
+  const openCreate = (trigger) => {
+    lastFocus = trigger || null;
+    mode = 'create';
+    editingId = 0;
+    form.reset();
+    setPriority('normal');
+    setStatus('', '');
+    eyebrowEl.textContent = '我的待办';
+    headingEl.textContent = '新增待办';
+    submitBtn.textContent = '保存待办';
+    courseSelect.disabled = false;
+    applyDefaultCourse();
+    reveal();
+  };
+
+  const openEdit = (data, trigger) => {
+    lastFocus = trigger || null;
+    mode = 'edit';
+    editingId = Number(data.todoId || 0);
+    form.reset();
+    setStatus('', '');
+    eyebrowEl.textContent = '编辑待办';
+    headingEl.textContent = '编辑待办';
+    submitBtn.textContent = '保存修改';
+    // The course can't be moved for an existing to-do — show it, locked.
+    courseSelect.value = String(Number(data.classOfferingId || 0));
+    courseSelect.disabled = true;
+    titleInput.value = data.title || '';
+    if (form.elements.notes) form.elements.notes.value = data.notes || '';
+    setPriority(data.priority || 'normal');
+    const due = splitTodoDateTime(data.dueAt);
+    const start = splitTodoDateTime(data.startAt);
+    if (form.elements.due_date) form.elements.due_date.value = due.date;
+    if (form.elements.due_time) form.elements.due_time.value = due.time || '23:59';
+    if (form.elements.start_date) form.elements.start_date.value = start.date;
+    if (form.elements.start_time) form.elements.start_time.value = start.time || '00:00';
+    if (start.date || (form.elements.notes && form.elements.notes.value)) {
+      const more = modal.querySelector('.agenda-todo-more');
+      if (more) more.open = true;
+    }
+    reveal();
   };
 
   const dateTime = (dateValue, timeValue, fallbackTime) => (
@@ -519,14 +679,12 @@ function initAgendaTodoCreator() {
     if (!classOfferingId) { setStatus('请选择所属课堂。', 'error'); return; }
     if (!title) { setStatus('请填写待办名称。', 'error'); titleInput.focus(); return; }
 
-    const dueDate = form.elements.due_date?.value || '';
-    const startDate = form.elements.start_date?.value || '';
     const body = {
       title,
       notes: form.elements.notes?.value || '',
       priority,
-      start_at: dateTime(startDate, form.elements.start_time?.value, '00:00'),
-      due_at: dateTime(dueDate, form.elements.due_time?.value, '23:59'),
+      start_at: dateTime(form.elements.start_date?.value, form.elements.start_time?.value, '00:00'),
+      due_at: dateTime(form.elements.due_date?.value, form.elements.due_time?.value, '23:59'),
     };
     if (body.start_at && body.due_at && body.due_at < body.start_at) {
       setStatus('截止时间不能早于开始时间。', 'error');
@@ -536,17 +694,22 @@ function initAgendaTodoCreator() {
     submitBtn.disabled = true;
     setStatus('正在保存…', 'info');
     try {
-      const response = await fetch(`${TODO_ENDPOINT_BASE}/${classOfferingId}/todos`, {
-        method: 'POST',
+      const isEdit = mode === 'edit' && editingId;
+      const url = isEdit
+        ? `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos/${editingId}`
+        : `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos`;
+      const response = await fetch(url, {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify(body),
       });
       const payload = await response.json().catch(() => ({}));
       if (response.ok && payload.status === 'success') {
-        setStatus(payload.message || '待办已添加。', 'success');
-        notify(payload.message || '待办已添加。', 'success');
-        window.setTimeout(() => window.location.reload(), 650);
+        const message = payload.message || (isEdit ? '待办已更新。' : '待办已添加。');
+        setStatus(message, 'success');
+        notify(message, 'success');
+        reloadSoon(650);
       } else {
         setStatus(payload.message || '保存失败，请稍后重试。', 'error');
         submitBtn.disabled = false;
@@ -557,7 +720,6 @@ function initAgendaTodoCreator() {
     }
   };
 
-  triggers.forEach((trigger) => trigger.addEventListener('click', () => open(trigger)));
   priorityGroup.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-priority-value]');
     if (btn) setPriority(btn.dataset.priorityValue);
@@ -570,6 +732,19 @@ function initAgendaTodoCreator() {
     if (event.key === 'Escape' && !modal.hidden) close();
   });
   card.addEventListener('click', (event) => event.stopPropagation());
+
+  return { openCreate, openEdit };
+}
+
+function initAgendaTodoCreator() {
+  const triggers = Array.from(document.querySelectorAll('[data-agenda-add-todo]'));
+  if (!triggers.length) return;
+  const controller = getTodoModalController();
+  if (!controller) {
+    triggers.forEach((btn) => { btn.hidden = true; });
+    return;
+  }
+  triggers.forEach((trigger) => trigger.addEventListener('click', () => controller.openCreate(trigger)));
 }
 
 function initAgendaReminderWidget() {

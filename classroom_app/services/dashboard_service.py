@@ -891,6 +891,9 @@ _AGENDA_FALLBACK_TITLE = {
     "class": "课堂安排",
 }
 
+# Sort key for manual to-dos with no deadline: parks them after every dated item.
+_NO_DEADLINE_SORT_SENTINEL = "9999-12-31T00:00"
+
 
 def _dashboard_agenda_event(
     *,
@@ -1054,15 +1057,8 @@ def _build_agenda_events_from_todos(
             kind = "todo" if item.get("is_manual") else None
         if kind is None:
             continue
-        if kind in {"class", "exam"}:
-            raw = item.get("start_at") or item.get("effective_start_at") or item.get("due_at")
-        else:
-            raw = item.get("due_at") or item.get("effective_end_at") or item.get("effective_start_at")
-        when = _dashboard_parse_datetime(raw)
-        if when is None:
-            continue
-        if item.get("no_deadline") and kind not in {"class", "exam"}:
-            continue
+        is_manual = bool(item.get("is_manual"))
+        no_deadline = bool(item.get("no_deadline"))
         subtitle = " · ".join(
             part
             for part in (
@@ -1071,6 +1067,52 @@ def _build_agenda_events_from_todos(
             )
             if part
         )
+
+        def _attach_manual(event: dict[str, Any]) -> dict[str, Any]:
+            if not is_manual:
+                return event
+            event["is_manual"] = True
+            event["todo_id"] = item.get("source_id")
+            event["class_offering_id"] = item.get("class_offering_id")
+            event["priority"] = str(item.get("priority") or "normal")
+            event["is_high_priority"] = bool(item.get("is_high_priority"))
+            event["priority_label"] = str(item.get("priority_label") or "")
+            event["notes"] = str(item.get("notes") or "")
+            event["due_at_raw"] = str(item.get("due_at") or "")
+            event["start_at_raw"] = str(item.get("start_at") or "")
+            return event
+
+        if no_deadline and kind not in {"class", "exam"}:
+            if not is_manual:
+                continue
+            # Manual to-dos without a deadline still belong in the student's
+            # reminder list (the create form promises they "stay in 待办"); park
+            # them at the very bottom with a 无截止 label.
+            event = _dashboard_agenda_event(
+                kind=kind,
+                when=datetime(9999, 12, 31),
+                title=item.get("title"),
+                subtitle=subtitle,
+                href=item.get("link_url") or "#",
+                today=today,
+            )
+            event["starts_at"] = _NO_DEADLINE_SORT_SENTINEL
+            event["date_label"] = ""
+            event["year_label"] = ""
+            event["weekday_label"] = ""
+            event["hour_label"] = "无截止"
+            event["relative_label"] = "无截止"
+            event["status"] = "upcoming"
+            events.append(_attach_manual(event))
+            continue
+
+        if kind in {"class", "exam"}:
+            raw = item.get("start_at") or item.get("effective_start_at") or item.get("due_at")
+        else:
+            raw = item.get("due_at") or item.get("effective_end_at") or item.get("effective_start_at")
+        when = _dashboard_parse_datetime(raw)
+        if when is None:
+            continue
         event = _dashboard_agenda_event(
             kind=kind,
             when=when,
@@ -1079,12 +1121,7 @@ def _build_agenda_events_from_todos(
             href=item.get("link_url") or "#",
             today=today,
         )
-        if item.get("is_manual"):
-            event["is_manual"] = True
-            event["priority"] = str(item.get("priority") or "normal")
-            event["is_high_priority"] = bool(item.get("is_high_priority"))
-            event["priority_label"] = str(item.get("priority_label") or "")
-        events.append(event)
+        events.append(_attach_manual(event))
     return events
 
 
