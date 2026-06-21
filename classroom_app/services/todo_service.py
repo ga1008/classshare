@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import date, datetime, time, timedelta
 from typing import Any
@@ -22,9 +23,36 @@ TODO_SOURCE_ACADEMIC_EXAM = "academic_exam"
 TODO_MAX_TITLE_LENGTH = 120
 TODO_MAX_NOTES_LENGTH = 1200
 
+TODO_PRIORITY_DEFAULT = "normal"
+# rank → lower sorts earlier; label for display; tone drives chip colour.
+TODO_PRIORITIES: dict[str, dict[str, Any]] = {
+    "high": {"rank": 0, "label": "高", "full_label": "高优先级", "tone": "high"},
+    "normal": {"rank": 1, "label": "中", "full_label": "普通", "tone": "normal"},
+    "low": {"rank": 2, "label": "低", "full_label": "低优先级", "tone": "low"},
+}
+
 
 class TodoValidationError(ValueError):
     """Raised when manual todo data is invalid."""
+
+
+def normalize_priority(value: Any, default: str = TODO_PRIORITY_DEFAULT) -> str:
+    """Coerce arbitrary input to a known priority key, falling back to default."""
+    key = str(value or "").strip().lower()
+    return key if key in TODO_PRIORITIES else default
+
+
+def _load_todo_metadata(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    text = str(value or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError):
+        return {}
+    return dict(parsed) if isinstance(parsed, dict) else {}
 
 
 def _now_iso() -> str:
@@ -185,11 +213,12 @@ def _todo_overlaps_week(item: dict[str, Any], week_start: date) -> bool:
     return start_date <= week_end and end_date >= week_start
 
 
-def _sort_key(item: dict[str, Any]) -> tuple[int, str, str]:
+def _sort_key(item: dict[str, Any]) -> tuple[int, int, str, int, str]:
     completed_rank = 1 if item.get("is_completed") else 0
     no_deadline_rank = 1 if item.get("no_deadline") else 0
     end_at = str(item.get("effective_end_at") or item.get("effective_start_at") or "9999-12-31")
-    return (completed_rank, no_deadline_rank, end_at, str(item.get("title") or ""))
+    priority_rank = _safe_int(item.get("priority_rank"), TODO_PRIORITIES[TODO_PRIORITY_DEFAULT]["rank"])
+    return (completed_rank, no_deadline_rank, end_at, priority_rank, str(item.get("title") or ""))
 
 
 def _normalize_item(
@@ -210,9 +239,12 @@ def _normalize_item(
     is_completed: bool = False,
     can_complete: bool = False,
     metadata: dict[str, Any] | None = None,
+    priority: str = TODO_PRIORITY_DEFAULT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     current_now = now or china_now().replace(tzinfo=None)
+    priority_key = normalize_priority(priority)
+    priority_info = TODO_PRIORITIES[priority_key]
     effective_start = start_at or created_at or due_at or current_now
     effective_end = due_at or effective_start
     start_date = effective_start.date()
@@ -234,6 +266,12 @@ def _normalize_item(
         "is_completed": is_completed,
         "can_complete": can_complete,
         "no_deadline": no_deadline,
+        "priority": priority_key,
+        "priority_rank": priority_info["rank"],
+        "priority_label": priority_info["label"],
+        "priority_full_label": priority_info["full_label"],
+        "priority_tone": priority_info["tone"],
+        "is_high_priority": priority_key == "high",
         "start_at": start_at.isoformat(timespec="minutes") if start_at else "",
         "due_at": due_at.isoformat(timespec="minutes") if due_at else "",
         "created_at": created_at.isoformat(timespec="minutes") if created_at else "",
@@ -622,6 +660,8 @@ def _manual_items(rows: list[dict[str, Any]], now: datetime) -> list[dict[str, A
         created_at = parse_datetime_input(row.get("created_at"), "创建时间")
         completed_at = parse_datetime_input(row.get("completed_at"), "完成时间")
         status_label = "已完成" if completed_at else ("临近截止" if due_at and due_at >= now else "自定义")
+        stored_meta = _load_todo_metadata(row.get("metadata_json"))
+        priority = normalize_priority(stored_meta.get("priority"))
         items.append(
             _normalize_item(
                 source_type=TODO_SOURCE_MANUAL,
@@ -638,7 +678,8 @@ def _manual_items(rows: list[dict[str, Any]], now: datetime) -> list[dict[str, A
                 is_manual=True,
                 is_completed=completed_at is not None,
                 can_complete=True,
-                metadata={"todo_id": row["id"]},
+                metadata={"todo_id": row["id"], "priority": priority},
+                priority=priority,
                 now=now,
             )
         )
@@ -801,6 +842,8 @@ def create_manual_todo(
     due_at = parse_datetime_input(payload.get("due_at"), "截止时间")
     if start_at and due_at and due_at < start_at:
         raise TodoValidationError("截止时间不能早于开始时间")
+    priority = normalize_priority(payload.get("priority"))
+    metadata_json = json.dumps({"priority": priority}, ensure_ascii=False)
 
     timestamp = _now_iso()
     todo_id = execute_insert_returning_id(
@@ -808,9 +851,9 @@ def create_manual_todo(
         """
         INSERT INTO classroom_todos (
             class_offering_id, owner_role, owner_user_pk,
-            title, notes, start_at, due_at, created_at, updated_at
+            title, notes, start_at, due_at, metadata_json, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             int(class_offering_id),
@@ -820,6 +863,7 @@ def create_manual_todo(
             notes,
             start_at.isoformat(timespec="minutes") if start_at else None,
             due_at.isoformat(timespec="minutes") if due_at else None,
+            metadata_json,
             timestamp,
             timestamp,
         ),
@@ -886,6 +930,13 @@ def update_manual_todo(
     if "completed" in payload:
         completed_at = _now_iso() if bool(payload.get("completed")) else None
 
+    metadata = _load_todo_metadata(current.get("metadata_json"))
+    if "priority" in payload:
+        metadata["priority"] = normalize_priority(payload.get("priority"))
+    elif "priority" not in metadata:
+        metadata["priority"] = TODO_PRIORITY_DEFAULT
+    metadata_json = json.dumps(metadata, ensure_ascii=False)
+
     timestamp = _now_iso()
     conn.execute(
         """
@@ -895,6 +946,7 @@ def update_manual_todo(
             start_at = ?,
             due_at = ?,
             completed_at = ?,
+            metadata_json = ?,
             updated_at = ?
         WHERE id = ?
         """,
@@ -904,6 +956,7 @@ def update_manual_todo(
             start_at.isoformat(timespec="minutes") if start_at else None,
             due_at.isoformat(timespec="minutes") if due_at else None,
             completed_at,
+            metadata_json,
             timestamp,
             int(todo_id),
         ),

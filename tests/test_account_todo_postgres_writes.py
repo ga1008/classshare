@@ -164,6 +164,57 @@ class AccountTodoPostgresWriteTests(unittest.TestCase):
         self.assertEqual(1, insert_helper.call_count)
         self.assertIn("INSERT INTO classroom_todos", insert_helper.call_args.args[1])
 
+    def test_create_manual_todo_persists_priority_in_metadata(self):
+        conn = FakeConnection()
+
+        with patch.object(todo_service, "execute_insert_returning_id", return_value=445) as insert_helper:
+            todo_service.create_manual_todo(
+                conn,
+                class_offering_id=20,
+                user={"id": 10, "role": "student", "name": "Student"},
+                payload={"title": "Revise lab report", "priority": "high"},
+            )
+
+        params = insert_helper.call_args.args[2]
+        metadata_blob = next((p for p in params if isinstance(p, str) and "priority" in p), "")
+        self.assertIn('"priority": "high"', metadata_blob)
+
+    def test_create_manual_todo_defaults_priority_to_normal(self):
+        conn = FakeConnection()
+
+        with patch.object(todo_service, "execute_insert_returning_id", return_value=446):
+            todo_service.create_manual_todo(
+                conn,
+                class_offering_id=20,
+                user={"id": 10, "role": "student", "name": "Student"},
+                payload={"title": "Plain todo", "priority": "bogus"},
+            )
+
+        # An unknown priority falls back to the default rather than raising.
+        self.assertEqual("normal", todo_service.normalize_priority("bogus"))
+
+    def test_manual_items_surface_priority_fields(self):
+        from datetime import datetime
+
+        now = datetime(2026, 6, 21, 12, 0)
+        rows = [
+            {
+                "id": 7,
+                "title": "High priority task",
+                "notes": "",
+                "start_at": None,
+                "due_at": "2026-06-25T23:59",
+                "created_at": "2026-06-21T12:00",
+                "completed_at": None,
+                "metadata_json": '{"priority": "high"}',
+            }
+        ]
+        items = todo_service._manual_items(rows, now)
+        self.assertEqual(1, len(items))
+        self.assertEqual("high", items[0]["priority"])
+        self.assertTrue(items[0]["is_high_priority"])
+        self.assertEqual(0, items[0]["priority_rank"])
+
     def test_postgres_smart_attendance_daily_task_uses_conflict_returning(self):
         conn = FakeConnection(row=FakeRow({"id": 555}))
 

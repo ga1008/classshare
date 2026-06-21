@@ -69,6 +69,7 @@ class ManualTodoPayload(BaseModel):
     notes: Optional[str] = None
     start_at: Optional[str] = None
     due_at: Optional[str] = None
+    priority: Optional[str] = None
     completed: Optional[bool] = None
 
 

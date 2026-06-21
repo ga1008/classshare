@@ -356,9 +356,226 @@ function initAgendaReminderSync() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// "新增待办" quick-create: a + button in the agenda header opens a medium modal
+// that creates a course-scoped manual todo via the existing todo API. The new
+// todo flows into the agenda feed, the cockpit next-steps, the classroom todo
+// overview and the semester calendar — so on success we reload to reflect it.
+// ---------------------------------------------------------------------------
+const TODO_ENDPOINT_BASE = '/api/classrooms';
+
+function readTodoOptions() {
+  const holder = document.querySelector('[data-agenda-todo-options]');
+  if (!holder) return { options: [], defaultOfferingId: 0 };
+  try {
+    const parsed = JSON.parse(holder.textContent || '{}');
+    const options = Array.isArray(parsed.options) ? parsed.options : [];
+    return { options, defaultOfferingId: Number(parsed.default_offering_id || 0) };
+  } catch {
+    return { options: [], defaultOfferingId: 0 };
+  }
+}
+
+function buildTodoModal() {
+  const modal = document.createElement('div');
+  modal.className = 'agenda-todo-modal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="agenda-todo-modal__backdrop" data-todo-close></div>
+    <div class="agenda-todo-modal__card" role="dialog" aria-modal="true" aria-labelledby="agendaTodoTitle">
+      <div class="agenda-todo-modal__head">
+        <div>
+          <span class="agenda-todo-modal__eyebrow">我的待办</span>
+          <h3 id="agendaTodoTitle">新增待办</h3>
+        </div>
+        <button type="button" class="agenda-todo-modal__close" data-todo-close aria-label="关闭">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <form class="agenda-todo-modal__form" data-todo-form novalidate>
+        <label class="agenda-todo-field">
+          <span>所属课堂</span>
+          <select name="class_offering_id" data-todo-course required></select>
+        </label>
+        <label class="agenda-todo-field">
+          <span>待办名称</span>
+          <input type="text" name="title" maxlength="120" required placeholder="例如：完成第二章实验报告" autocomplete="off">
+        </label>
+        <div class="agenda-todo-field">
+          <span>优先级</span>
+          <div class="agenda-todo-priority" role="group" aria-label="优先级" data-todo-priority>
+            <button type="button" data-priority-value="low">低</button>
+            <button type="button" data-priority-value="normal" class="is-active" aria-pressed="true">中</button>
+            <button type="button" data-priority-value="high">高</button>
+          </div>
+        </div>
+        <div class="agenda-todo-grid">
+          <label class="agenda-todo-field">
+            <span>截止日期</span>
+            <input type="date" name="due_date">
+          </label>
+          <label class="agenda-todo-field">
+            <span>截止时间</span>
+            <input type="time" name="due_time" value="23:59" step="60">
+          </label>
+        </div>
+        <p class="agenda-todo-hint">不填截止日期则记为“无截止”，会一直留在待办里。</p>
+        <details class="agenda-todo-more">
+          <summary>更多选项（开始时间、备注）</summary>
+          <div class="agenda-todo-grid">
+            <label class="agenda-todo-field"><span>开始日期</span><input type="date" name="start_date"></label>
+            <label class="agenda-todo-field"><span>开始时间</span><input type="time" name="start_time" value="00:00" step="60"></label>
+          </div>
+          <label class="agenda-todo-field">
+            <span>备注</span>
+            <textarea name="notes" maxlength="1200" rows="3" placeholder="任务要求、材料位置，或提醒自己的话"></textarea>
+          </label>
+        </details>
+        <p class="agenda-todo-status" data-todo-status role="status"></p>
+        <div class="agenda-todo-actions">
+          <button type="button" class="agenda-todo-btn agenda-todo-btn--ghost" data-todo-close>取消</button>
+          <button type="submit" class="agenda-todo-btn agenda-todo-btn--primary" data-todo-submit>保存待办</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function initAgendaTodoCreator() {
+  const triggers = Array.from(document.querySelectorAll('[data-agenda-add-todo]'));
+  if (!triggers.length) return;
+  const { options, defaultOfferingId } = readTodoOptions();
+  if (!options.length) {
+    triggers.forEach((btn) => { btn.hidden = true; });
+    return;
+  }
+
+  const modal = buildTodoModal();
+  const card = modal.querySelector('.agenda-todo-modal__card');
+  const form = modal.querySelector('[data-todo-form]');
+  const courseSelect = modal.querySelector('[data-todo-course]');
+  const titleInput = form.elements.title;
+  const statusEl = modal.querySelector('[data-todo-status]');
+  const submitBtn = modal.querySelector('[data-todo-submit]');
+  const priorityGroup = modal.querySelector('[data-todo-priority]');
+  let priority = 'normal';
+  let lastFocus = null;
+
+  courseSelect.innerHTML = options
+    .map((opt) => `<option value="${Number(opt.class_offering_id)}">${escapeHtml(opt.label || `${opt.course_name || ''} · ${opt.class_name || ''}`)}</option>`)
+    .join('');
+  if (defaultOfferingId && options.some((opt) => Number(opt.class_offering_id) === defaultOfferingId)) {
+    courseSelect.value = String(defaultOfferingId);
+  }
+
+  const setStatus = (message, tone) => {
+    statusEl.textContent = message || '';
+    statusEl.dataset.tone = tone || '';
+  };
+
+  const setPriority = (value) => {
+    priority = ['low', 'normal', 'high'].includes(value) ? value : 'normal';
+    priorityGroup.querySelectorAll('[data-priority-value]').forEach((btn) => {
+      const active = btn.dataset.priorityValue === priority;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  };
+
+  const close = () => {
+    if (modal.hidden) return;
+    modal.classList.remove('is-open');
+    modal.hidden = true;
+    document.body.classList.remove('agenda-todo-open');
+    if (lastFocus && typeof lastFocus.focus === 'function') lastFocus.focus({ preventScroll: true });
+  };
+
+  const open = (trigger) => {
+    lastFocus = trigger || null;
+    form.reset();
+    setPriority('normal');
+    setStatus('', '');
+    if (defaultOfferingId && options.some((opt) => Number(opt.class_offering_id) === defaultOfferingId)) {
+      courseSelect.value = String(defaultOfferingId);
+    }
+    modal.hidden = false;
+    document.body.classList.add('agenda-todo-open');
+    window.requestAnimationFrame(() => {
+      modal.classList.add('is-open');
+      titleInput?.focus({ preventScroll: true });
+    });
+  };
+
+  const dateTime = (dateValue, timeValue, fallbackTime) => (
+    dateValue ? `${dateValue}T${timeValue || fallbackTime}` : null
+  );
+
+  const submit = async (event) => {
+    event.preventDefault();
+    const classOfferingId = Number(courseSelect.value || 0);
+    const title = (titleInput.value || '').trim();
+    if (!classOfferingId) { setStatus('请选择所属课堂。', 'error'); return; }
+    if (!title) { setStatus('请填写待办名称。', 'error'); titleInput.focus(); return; }
+
+    const dueDate = form.elements.due_date?.value || '';
+    const startDate = form.elements.start_date?.value || '';
+    const body = {
+      title,
+      notes: form.elements.notes?.value || '',
+      priority,
+      start_at: dateTime(startDate, form.elements.start_time?.value, '00:00'),
+      due_at: dateTime(dueDate, form.elements.due_time?.value, '23:59'),
+    };
+    if (body.start_at && body.due_at && body.due_at < body.start_at) {
+      setStatus('截止时间不能早于开始时间。', 'error');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    setStatus('正在保存…', 'info');
+    try {
+      const response = await fetch(`${TODO_ENDPOINT_BASE}/${classOfferingId}/todos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && payload.status === 'success') {
+        setStatus(payload.message || '待办已添加。', 'success');
+        notify(payload.message || '待办已添加。', 'success');
+        window.setTimeout(() => window.location.reload(), 650);
+      } else {
+        setStatus(payload.message || '保存失败，请稍后重试。', 'error');
+        submitBtn.disabled = false;
+      }
+    } catch {
+      setStatus('网络异常，保存失败。', 'error');
+      submitBtn.disabled = false;
+    }
+  };
+
+  triggers.forEach((trigger) => trigger.addEventListener('click', () => open(trigger)));
+  priorityGroup.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-priority-value]');
+    if (btn) setPriority(btn.dataset.priorityValue);
+  });
+  modal.addEventListener('click', (event) => {
+    if (event.target.closest('[data-todo-close]')) close();
+  });
+  form.addEventListener('submit', submit);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.hidden) close();
+  });
+  card.addEventListener('click', (event) => event.stopPropagation());
+}
+
 function initAgendaReminderWidget() {
   initAgendaWidget();
   initAgendaReminderSync();
+  initAgendaTodoCreator();
 }
 
 if (document.readyState === 'loading') {

@@ -78,10 +78,11 @@ def _dashboard_course_visual(course_id: Any) -> dict[str, str]:
     }
 
 
-def _dashboard_todo_sort_key(item: dict[str, Any]) -> tuple[int, str, str, int]:
+def _dashboard_todo_sort_key(item: dict[str, Any]) -> tuple[int, str, int, str, int]:
     return (
         1 if item.get("is_completed") else 0,
         str(item.get("effective_end_at") or item.get("effective_start_at") or "9999-12-31"),
+        _dashboard_int(item.get("priority_rank"), 1),
         str(item.get("offering_label") or ""),
         _dashboard_int(item.get("source_id")),
     )
@@ -1070,16 +1071,20 @@ def _build_agenda_events_from_todos(
             )
             if part
         )
-        events.append(
-            _dashboard_agenda_event(
-                kind=kind,
-                when=when,
-                title=item.get("title"),
-                subtitle=subtitle,
-                href=item.get("link_url") or "#",
-                today=today,
-            )
+        event = _dashboard_agenda_event(
+            kind=kind,
+            when=when,
+            title=item.get("title"),
+            subtitle=subtitle,
+            href=item.get("link_url") or "#",
+            today=today,
         )
+        if item.get("is_manual"):
+            event["is_manual"] = True
+            event["priority"] = str(item.get("priority") or "normal")
+            event["is_high_priority"] = bool(item.get("is_high_priority"))
+            event["priority_label"] = str(item.get("priority_label") or "")
+        events.append(event)
     return events
 
 
@@ -2040,6 +2045,7 @@ def _build_student_continue_action(offerings: list[dict[str, Any]]) -> dict[str,
         "label": "继续学习",
         "subtitle": f"继续 · {course_name}",
         "course_name": course_name,
+        "class_offering_id": _dashboard_int(selected.get("id")),
     }
 
 
@@ -2455,6 +2461,24 @@ def _build_student_dashboard_context(
     )
     continue_action = _build_student_continue_action(enriched_offerings)
 
+    # Options for the agenda "新增待办" quick-create popup. Manual todos are
+    # course-scoped (classroom_todos.class_offering_id NOT NULL), so the popup
+    # must let the student pick which course the todo belongs to.
+    todo_create_options: list[dict[str, Any]] = []
+    _seen_todo_option_ids: set[int] = set()
+    for offering in enriched_offerings:
+        option = _dashboard_todo_option(offering)
+        option_id = option.get("class_offering_id")
+        if not option_id or option_id in _seen_todo_option_ids:
+            continue
+        _seen_todo_option_ids.add(option_id)
+        todo_create_options.append(option)
+    todo_create_options.sort(key=lambda item: str(item.get("label") or ""))
+    default_todo_offering_id = _dashboard_int(
+        (continue_action or {}).get("class_offering_id")
+        or (todo_create_options[0]["class_offering_id"] if todo_create_options else 0)
+    )
+
     first_pending_href = str(
         (student_cockpit.get("primary") or {}).get("href")
         or (priority_items[0]["href"] if priority_items else "")
@@ -2618,6 +2642,9 @@ def _build_student_dashboard_context(
             ],
         },
         "dashboard_continue_action": continue_action,
+        "dashboard_todo_create_options": todo_create_options,
+        "dashboard_default_todo_offering_id": default_todo_offering_id,
+        "dashboard_can_create_todo": bool(todo_create_options),
         "class_offerings": enriched_offerings,
         "dashboard_semester_calendar": semester_calendar,
         "dashboard_agenda_events": _build_agenda_events_from_todos(
