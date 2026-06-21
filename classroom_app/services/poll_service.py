@@ -907,9 +907,12 @@ def load_classroom_snapshot(conn: sqlite3.Connection, class_offering_id: int, us
     ensure_poll_schema(conn)
     offering = dict(ensure_classroom_access(conn, int(class_offering_id), user))
 
+    # No DISTINCT needed: UNIQUE(poll_id, class_offering_id) means each poll
+    # joins exactly one assignment row for a given class, so a poll appears once.
+    # (DISTINCT + a derived ORDER BY expression is also rejected by PostgreSQL.)
     rows = conn.execute(
         """
-        SELECT DISTINCT p.*
+        SELECT p.*
         FROM polls p
         JOIN poll_assignments pa ON pa.poll_id = p.id
         WHERE pa.class_offering_id = ?
