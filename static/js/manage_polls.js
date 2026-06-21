@@ -414,6 +414,8 @@ export function initManagePolls() {
         if (!payload.title) { showToast('请填写标题', 'warning'); return; }
         if (payload.options.length < 2) { showToast('请至少填写两个选项', 'warning'); return; }
         if (status === 'active' && !payload.class_offering_ids.length) { showToast('开始投票前请至少分配一个班级', 'warning'); return; }
+        const saveButtons = Array.from(pollForm.querySelectorAll('button[type="submit"]'));
+        saveButtons.forEach((btn) => { btn.disabled = true; });
         try {
             if (pollId) {
                 await apiFetch(`/api/polls/${pollId}`, { method: 'PUT', body: payload, silent: true });
@@ -424,7 +426,10 @@ export function initManagePolls() {
             showToast('投票已保存', 'success');
             closeOverlay();
             await refresh();
-        } catch (error) { showToast(error.message || '保存失败', 'error'); }
+        } catch (error) {
+            saveButtons.forEach((btn) => { btn.disabled = false; });
+            showToast(error.message || '保存失败', 'error');
+        }
     });
 
     refresh().catch(() => {});

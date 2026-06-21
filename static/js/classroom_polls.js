@@ -56,6 +56,11 @@ function ownerText(poll) {
 function dispatchPollCounts(snapshot) {
     const summary = snapshot?.summary || {};
     const active = Number(summary.active || 0);
+    const badge = document.querySelector('[data-poll-tab-count]');
+    if (badge) {
+        badge.textContent = String(active);
+        badge.hidden = active <= 0;
+    }
     window.dispatchEvent(new CustomEvent('classroom:poll-counts', {
         detail: {
             counts: { polls: active },
@@ -179,21 +184,43 @@ function renderDetailBody(poll) {
     const meta = statusMeta(poll.effective_status);
     const typeLabel = poll.vote_type === 'multiple' ? '多选' : '单选';
     const showResults = poll.show_results;
-    const optionsHtml = (poll.options || []).map((option) => (
-        showResults ? renderResultOption(poll, option) : renderVoteOption(poll, option)
-    )).join('');
 
-    const voteControls = poll.can_vote ? `
-        <form class="poll-vote-form" data-poll-vote="${poll.id}">
-            ${!showResults ? '' : `<div class="poll-revote-options">${(poll.options || []).map((option) => renderVoteOption(poll, option)).join('')}</div>`}
-            <div class="poll-vote-actions">
-                <button type="submit" class="btn btn-primary btn-sm">${poll.has_voted ? '修改投票' : '提交投票'}</button>
-                ${poll.allow_change ? `<small>${poll.max_changes ? `可修改 ${Math.max(0, poll.max_changes - poll.change_count)} 次` : '可随时修改'}</small>` : '<small>提交后不可修改</small>'}
-            </div>
-        </form>
-    ` : (poll.has_voted ? '<p class="poll-detail-note">你已完成投票。</p>'
-        : (poll.effective_status === 'closed' ? '<p class="poll-detail-note">该投票已结束。</p>'
-            : (poll.is_participant ? '' : '<p class="poll-detail-note">你不在该投票的参与名单内。</p>')));
+    // Result bars (read-only) — only when statistics are visible to this viewer.
+    const resultsHtml = showResults
+        ? `<div class="poll-detail__options">${(poll.options || []).map((option) => renderResultOption(poll, option)).join('')}</div>`
+        : '';
+    const votedLine = showResults
+        ? `<p class="poll-detail__voted">已投 ${poll.total_voters} / 共 ${poll.participant_total} 人</p>`
+        : '';
+
+    // Voting form — the inputs ALWAYS live inside the form so the submit handler
+    // can read them. When results are already shown, the input list is collapsed
+    // behind a "修改投票/去投票" toggle to avoid duplicating the bars.
+    let voteControls = '';
+    if (poll.can_vote) {
+        const voteList = (poll.options || []).map((option) => renderVoteOption(poll, option)).join('');
+        const changeHint = poll.allow_change
+            ? `<small>${poll.max_changes ? `可修改 ${Math.max(0, poll.max_changes - poll.change_count)} 次` : '可随时修改'}</small>`
+            : '<small>提交后不可修改</small>';
+        voteControls = `
+            <form class="poll-vote-form" data-poll-vote="${poll.id}">
+                ${showResults ? `<button type="button" class="poll-revote-toggle" data-poll-revote-toggle>${poll.has_voted ? '修改投票' : '去投票'}</button>` : ''}
+                <div class="poll-vote-list" data-poll-vote-list${showResults ? ' hidden' : ''}>
+                    ${voteList}
+                    <div class="poll-vote-actions">
+                        <button type="submit" class="btn btn-primary btn-sm">${poll.has_voted ? '更新投票' : '提交投票'}</button>
+                        ${changeHint}
+                    </div>
+                </div>
+            </form>
+        `;
+    } else if (poll.has_voted && !showResults) {
+        voteControls = '<p class="poll-detail-note">你已完成投票。</p>';
+    } else if (poll.effective_status === 'closed' && !showResults) {
+        voteControls = '<p class="poll-detail-note">该投票已结束。</p>';
+    } else if (poll.is_participant === false && poll.owner_role) {
+        voteControls = '';
+    }
 
     const resultNote = (!showResults && poll.is_participant)
         ? `<p class="poll-detail-note poll-detail-note--muted">统计将于「${visibilityLabel(poll.result_visibility)}」后可见。</p>`
@@ -232,7 +259,8 @@ function renderDetailBody(poll) {
             </div>
             ${poll.description ? `<p class="poll-detail__desc">${escapeHtml(poll.description)}</p>` : ''}
             ${classScope ? `<p class="poll-detail__scope">参与范围：${classScope}（${poll.participant_total} 人）</p>` : ''}
-            <div class="poll-detail__options">${optionsHtml}</div>
+            ${resultsHtml}
+            ${votedLine}
             ${resultNote}
             ${voteControls}
             ${ownerControls}
@@ -476,6 +504,13 @@ export function initClassroomPolls(config = {}) {
     document.addEventListener('click', async (event) => {
         if (event.target.closest('[data-poll-overlay-close]')) { closeOverlay(); return; }
 
+        const revoteToggle = event.target.closest('[data-poll-revote-toggle]');
+        if (revoteToggle) {
+            const list = revoteToggle.closest('.poll-vote-form')?.querySelector('[data-poll-vote-list]');
+            if (list) list.hidden = !list.hidden;
+            return;
+        }
+
         const addOption = event.target.closest('[data-poll-add-option]');
         if (addOption) {
             const list = document.querySelector('[data-poll-option-list]');
@@ -547,12 +582,17 @@ export function initClassroomPolls(config = {}) {
             const pollId = voteForm.dataset.pollVote;
             const selected = Array.from(voteForm.querySelectorAll('input[name="poll_option"]:checked')).map((i) => Number(i.value));
             if (!selected.length) { showToast('请选择至少一个选项', 'warning'); return; }
+            const submitBtn = voteForm.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
             try {
                 const data = await apiFetch(`/api/polls/${pollId}/vote`, { method: 'POST', body: { option_ids: selected }, silent: true });
                 showToast(data.message || '投票已提交', 'success');
                 if (data.poll) openOverlay(renderDetailBody(data.poll));
                 await refresh({ silent: true });
-            } catch (error) { showToast(error.message || '投票失败', 'error'); }
+            } catch (error) {
+                if (submitBtn) submitBtn.disabled = false;
+                showToast(error.message || '投票失败', 'error');
+            }
             return;
         }
 
@@ -568,6 +608,8 @@ export function initClassroomPolls(config = {}) {
             if (state.role === 'student' && (!payload.participant_ids || !payload.participant_ids.length)) {
                 showToast('请至少选择一名参与者', 'warning'); return;
             }
+            const saveButtons = Array.from(pollForm.querySelectorAll('button[type="submit"]'));
+            saveButtons.forEach((btn) => { btn.disabled = true; });
             try {
                 if (pollId) {
                     await apiFetch(`/api/polls/${pollId}`, { method: 'PUT', body: payload, silent: true });
@@ -578,7 +620,10 @@ export function initClassroomPolls(config = {}) {
                 showToast('投票已保存', 'success');
                 closeOverlay();
                 await refresh({ silent: true });
-            } catch (error) { showToast(error.message || '保存失败', 'error'); }
+            } catch (error) {
+                saveButtons.forEach((btn) => { btn.disabled = false; });
+                showToast(error.message || '保存失败', 'error');
+            }
             return;
         }
     });

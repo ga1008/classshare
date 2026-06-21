@@ -652,7 +652,7 @@ def create_poll(
         participants = _validate_custom_participants(
             conn, int(class_offering_id), _user_pk(user), payload.get("participant_ids") or []
         )
-        if len(participants) < 1:
+        if len([p for p in participants if p != _user_pk(user)]) < 1:
             raise HTTPException(400, "请至少选择一名参与者")
         assigned_classes = [int(class_offering_id)]
     else:
@@ -712,12 +712,17 @@ def update_poll(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any], pa
         conn.execute("SELECT 1 FROM poll_ballots WHERE poll_id = ? LIMIT 1", (int(poll_id),)).fetchone()
     )
 
-    # Options / vote_type can only change while there are no votes yet.
+    # Options / vote_type can only *change* once votes exist — but editing other
+    # fields (title, deadline, etc.) must still work. So only block when the
+    # submitted options actually differ from what's stored.
     new_labels: Optional[list[str]] = None
     if "options" in payload and payload.get("options") is not None:
-        if has_votes:
-            raise HTTPException(400, "已有投票记录，无法修改选项")
-        new_labels = _normalize_options(payload.get("options"))
+        submitted_labels = _normalize_options(payload.get("options"))
+        existing_labels = [str(o["label"] or "") for o in _load_options(conn, int(poll_id))]
+        if submitted_labels != existing_labels:
+            if has_votes:
+                raise HTTPException(400, "已有投票记录，无法修改选项")
+            new_labels = submitted_labels
     if has_votes and fields["vote_type"] != str(poll.get("vote_type")):
         raise HTTPException(400, "已有投票记录，无法修改单选/多选")
 
@@ -748,17 +753,20 @@ def update_poll(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any], pa
     # Audience updates (custom participants for student polls; class assignment
     # for teacher management polls) — only the owner, only before votes exist.
     if str(poll.get("audience_scope")) == AUDIENCE_CUSTOM and "participant_ids" in payload:
-        if has_votes:
-            raise HTTPException(400, "已有投票记录，无法修改参与者")
         class_id = _safe_int(poll.get("origin_class_offering_id"))
         if class_id is not None:
             participants = _validate_custom_participants(
                 conn, int(class_id), int(poll["owner_user_pk"]), payload.get("participant_ids") or []
             )
-            if len(participants) < 1:
+            owner_pk = int(poll["owner_user_pk"])
+            if len([p for p in participants if p != owner_pk]) < 1:
                 raise HTTPException(400, "请至少选择一名参与者")
-            conn.execute("DELETE FROM poll_participants WHERE poll_id = ?", (int(poll_id),))
-            _write_participants(conn, poll_id, participants)
+            # Only block / rewrite when the participant set actually changes.
+            if set(participants) != _custom_participant_ids(conn, int(poll_id)):
+                if has_votes:
+                    raise HTTPException(400, "已有投票记录，无法修改参与者")
+                conn.execute("DELETE FROM poll_participants WHERE poll_id = ?", (int(poll_id),))
+                _write_participants(conn, poll_id, participants)
     elif (
         str(poll.get("audience_scope")) == AUDIENCE_CLASS
         and str(poll.get("origin")) == ORIGIN_MANAGEMENT
@@ -782,6 +790,8 @@ def set_poll_status(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any]
             raise HTTPException(400, "请先分配到至少一个班级再开始投票")
         if len(_load_options(conn, int(poll_id))) < MIN_OPTIONS:
             raise HTTPException(400, "选项不足，无法开始投票")
+        if _deadline_passed(poll.get("deadline_at")):
+            raise HTTPException(400, "截止时间已过，请先调整或清空截止时间再开始")
     now = _now_iso()
     closed_at = now if new_status == POLL_STATUS_CLOSED else None
     conn.execute(

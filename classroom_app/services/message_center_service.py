@@ -61,6 +61,7 @@ MESSAGE_CATEGORY_COLLABORATION = "collaboration"
 MESSAGE_CATEGORY_ATTENDANCE_ALERT = "attendance_alert"
 MESSAGE_CATEGORY_ACADEMIC_EXAM = "academic_exam"
 MESSAGE_CATEGORY_GONGWEN_FOLLOW = "gongwen_follow"
+MESSAGE_CATEGORY_POLL = "poll"
 
 AI_ASSISTANT_ROLE = "assistant"
 AI_ASSISTANT_LABEL = "AI助教"
@@ -207,6 +208,7 @@ CATEGORY_LABELS = {
     MESSAGE_CATEGORY_ATTENDANCE_ALERT: "考勤提醒",
     MESSAGE_CATEGORY_ACADEMIC_EXAM: "教务考试",
     MESSAGE_CATEGORY_GONGWEN_FOLLOW: "公文关注",
+    MESSAGE_CATEGORY_POLL: "投票活动",
 }
 
 APP_FEEDBACK_TYPE_LABELS = {
@@ -3639,6 +3641,75 @@ def create_assignment_published_notifications(
             allow_duplicates=bool(send_email_notification),
         ) else 0
     return inserted_count
+
+
+def create_poll_published_notifications(conn, poll_id: int | str) -> int:
+    """Notify every eligible voter that a poll has gone live. Deduped by
+    (recipient, category, ref_type='poll', ref_id) so re-activating a poll never
+    re-spams a student who was already told. Best-effort — callers wrap in
+    try/except so a notification hiccup never blocks the status change."""
+    poll = conn.execute(
+        "SELECT * FROM polls WHERE id = ? LIMIT 1",
+        (poll_id,),
+    ).fetchone()
+    if not poll:
+        return 0
+    poll = dict(poll)
+    owner_role = str(poll.get("owner_role") or "teacher")
+    owner_pk = _safe_int(poll.get("owner_user_pk"))
+    actor_display_name = build_actor_display_name(str(poll.get("owner_name") or ""), owner_role)
+
+    # Resolve (student_id -> a classroom to deep-link into).
+    targets: dict[int, int] = {}
+    if str(poll.get("audience_scope")) == "custom":
+        class_offering_id = _safe_int(poll.get("origin_class_offering_id"))
+        if class_offering_id is None:
+            return 0
+        rows = conn.execute(
+            "SELECT student_id FROM poll_participants WHERE poll_id = ?",
+            (poll_id,),
+        ).fetchall()
+        for row in rows:
+            targets[int(row["student_id"])] = int(class_offering_id)
+    else:
+        rows = conn.execute(
+            """
+            SELECT s.id AS student_id, o.id AS class_offering_id
+            FROM poll_assignments pa
+            JOIN class_offerings o ON o.id = pa.class_offering_id
+            JOIN students s ON s.class_id = o.class_id
+            WHERE pa.poll_id = ?
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
+            ORDER BY s.id, o.id
+            """,
+            (poll_id,),
+        ).fetchall()
+        for row in rows:
+            targets.setdefault(int(row["student_id"]), int(row["class_offering_id"]))
+
+    title = str(poll.get("title") or "投票")
+    body = _truncate_text(poll.get("description") or "有一个新的投票活动等待你参与", 120)
+    inserted = 0
+    for student_id, class_offering_id in targets.items():
+        if owner_role == "student" and owner_pk is not None and int(student_id) == int(owner_pk):
+            continue  # don't notify the creator about their own poll
+        payload = _build_notification_payload(
+            recipient_role="student",
+            recipient_user_pk=int(student_id),
+            category=MESSAGE_CATEGORY_POLL,
+            title=f"新投票：{title}",
+            body_preview=body,
+            actor_role=owner_role,
+            actor_user_pk=owner_pk,
+            actor_display_name=actor_display_name,
+            link_url=f"/classroom/{class_offering_id}",
+            class_offering_id=class_offering_id,
+            ref_type=MESSAGE_CATEGORY_POLL,
+            ref_id=str(poll_id),
+            metadata={"poll_id": int(poll_id)},
+        )
+        inserted += 1 if _insert_notification_if_allowed(conn, payload) else 0
+    return inserted
 
 
 def _load_submission_notification_context(conn, submission_id: int | str) -> Optional[dict[str, Any]]:

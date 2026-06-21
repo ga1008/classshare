@@ -54,6 +54,7 @@ IMPORTANT_NOTIFICATION_CATEGORIES = {
     "academic_exam",
     "gongwen_follow",
     "agent_task",
+    "poll",
 }
 
 SYSTEM_NOTIFICATION_CATEGORIES = {

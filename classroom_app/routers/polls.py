@@ -55,6 +55,19 @@ def _poll_class_ids(conn, poll_id: int) -> list[int]:
     return [int(row["class_offering_id"]) for row in rows]
 
 
+def _notify_if_active(conn, poll: dict) -> None:
+    """Best-effort: notify participants when a poll is (now) active. Deduped at
+    the message-center layer, so calling on every activation is safe."""
+    if not poll or str(poll.get("status")) != "active":
+        return
+    try:
+        from ..services.message_center_service import create_poll_published_notifications
+
+        create_poll_published_notifications(conn, int(poll["id"]))
+    except Exception:
+        pass
+
+
 # --------------------------------------------------------------------------- #
 # classroom-scoped endpoints
 # --------------------------------------------------------------------------- #
@@ -79,6 +92,7 @@ async def create_classroom_poll(class_offering_id: int, request: Request, user: 
         poll = poll_service.create_poll(
             conn, user, payload, origin=poll_service.ORIGIN_CLASSROOM, class_offering_id=class_offering_id
         )
+        _notify_if_active(conn, poll)
         snapshot = poll_service.load_classroom_snapshot(conn, class_offering_id, user)
         conn.commit()
     await _broadcast_poll_changed([class_offering_id], reason="poll_created", poll_id=poll["id"])
@@ -107,6 +121,7 @@ async def create_management_poll(request: Request, user: dict = Depends(get_curr
     payload = await _json_payload(request)
     with get_db_connection() as conn:
         poll = poll_service.create_poll(conn, user, payload, origin=poll_service.ORIGIN_MANAGEMENT)
+        _notify_if_active(conn, poll)
         data = poll_service.load_management_list(conn, user)
         class_ids = _poll_class_ids(conn, poll["id"])
         conn.commit()
@@ -154,6 +169,7 @@ async def poll_set_status(poll_id: int, request: Request, user: dict = Depends(g
     payload = await _json_payload(request)
     with get_db_connection() as conn:
         poll = poll_service.set_poll_status(conn, poll_id, user, payload.get("status"))
+        _notify_if_active(conn, poll)
         class_ids = _poll_class_ids(conn, poll_id)
         conn.commit()
     await _broadcast_poll_changed(class_ids, reason="poll_status", poll_id=poll_id)

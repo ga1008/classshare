@@ -45368,6 +45368,37 @@ body.has-teaching-session-modal {
 .manage-polls__summary-item small { font-size: 0.74rem; color: var(--text-tertiary, #94a3b8); }
 .manage-polls__loading { padding: 2rem 0; text-align: center; color: var(--text-secondary, #64748b); }
 
+.assignment-section-tab__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    margin-left: 0.35rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: #16a34a;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+}
+.poll-detail__voted { margin: 0.6rem 0 0; font-size: 0.84rem; font-weight: 600; color: var(--text-secondary, #475569); }
+.poll-revote-toggle {
+    border: 1px solid var(--primary-color, #4f46e5);
+    background: var(--surface-color, #fff);
+    color: var(--primary-color, #4f46e5);
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    cursor: pointer;
+    margin-top: 1rem;
+}
+.poll-revote-toggle:hover { background: rgba(79, 70, 229, 0.08); }
+.poll-vote-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.8rem; }
+.poll-vote-list[hidden] { display: none; }
+
 @media (max-width: 640px) {
     .poll-form { grid-template-columns: 1fr; }
     .poll-card-grid { grid-template-columns: 1fr; }
