@@ -260,6 +260,11 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
 )
 
 POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
+    "assignment_wrong_summary_jobs": {
+        # Added to the CREATE TABLE later without an ALTER migration, so a
+        # PostgreSQL provisioned from an older schema lacks it. Auto-add here.
+        "run_token": "TEXT NOT NULL DEFAULT ''",
+    },
     "class_offerings": {
         "cultivation_weights_json": "TEXT NOT NULL DEFAULT ''",
         "cultivation_weights_version": "TEXT NOT NULL DEFAULT 'default-v1'",

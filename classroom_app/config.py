@@ -254,8 +254,12 @@ def ensure_runtime_directories() -> None:
     for directory in RUNTIME_DIRECTORIES:
         directory.mkdir(parents=True, exist_ok=True)
 
-# --- SQLite ---
-DB_ENGINE = str(os.getenv("DB_ENGINE", "sqlite") or "sqlite").strip().lower()
+# --- Database engine ---
+# PostgreSQL is the one and only runtime backend for the application (dev + prod
+# are aligned). SQLite is no longer a runtime option — it survives ONLY as the
+# read source of the one-way migration exporter (tools/db_postgres_export.py) and
+# as in-memory isolation for the unit-test suite (forced via tests/__init__.py).
+DB_ENGINE = str(os.getenv("DB_ENGINE", "postgres") or "postgres").strip().lower()
 DATABASE_URL = str(os.getenv("DATABASE_URL", "") or "").strip()
 SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", 30000))
 SQLITE_CACHE_SIZE_KB = int(os.getenv("SQLITE_CACHE_SIZE_KB", 8192))
@@ -273,7 +277,7 @@ POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS = max(
     0,
     int(os.getenv("POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS", 30000)),
 )
-POSTGRES_BACKEND_READY = _read_bool_env("POSTGRES_BACKEND_READY", False)
+POSTGRES_BACKEND_READY = _read_bool_env("POSTGRES_BACKEND_READY", True)
 
 # --- Behavior tracking ---
 BEHAVIOR_WRITE_QUEUE_SIZE = int(os.getenv("BEHAVIOR_WRITE_QUEUE_SIZE", 20000))

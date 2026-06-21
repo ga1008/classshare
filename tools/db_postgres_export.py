@@ -215,6 +215,32 @@ def _foreign_key_constraints(conn: sqlite3.Connection, table: str) -> list[str]:
     return constraints
 
 
+def _unique_constraints(conn: sqlite3.Connection, table: str) -> list[str]:
+    """Emit UNIQUE constraints for inline ``UNIQUE (...)`` table constraints.
+
+    SQLite stores these as auto-indexes (``origin='u'``) that have no ``sql`` in
+    sqlite_master, so ``_indexes()`` skips them and the constraint would be lost
+    on PostgreSQL — breaking every ``ON CONFLICT`` that targets those columns.
+    """
+    statements: list[str] = []
+    index_rows = [dict(row) for row in conn.execute(f"PRAGMA index_list({_quote_ident(table)})").fetchall()]
+    for index in index_rows:
+        if int(index.get("unique") or 0) != 1:
+            continue
+        if str(index.get("origin") or "") != "u":  # 'u' = from an inline UNIQUE constraint
+            continue
+        info = conn.execute(f"PRAGMA index_info({_quote_ident(str(index['name']))})").fetchall()
+        cols = [str(dict(col)["name"]) for col in info if dict(col).get("name")]
+        if not cols:
+            continue
+        col_sql = ", ".join(_quote_ident(col) for col in cols)
+        name = f"uq_{table}_{'_'.join(cols)}"[:63]
+        statements.append(
+            f"ALTER TABLE {_quote_ident(table)} ADD CONSTRAINT {_quote_ident(name)} UNIQUE ({col_sql});"
+        )
+    return statements
+
+
 def _fk_action(action: str) -> str:
     normalized = str(action or "NO ACTION").upper().replace("_", " ")
     return normalized if normalized in {"NO ACTION", "RESTRICT", "CASCADE", "SET NULL", "SET DEFAULT"} else "NO ACTION"
@@ -337,6 +363,8 @@ def build_postgres_export_package(
             reset_sql = _identity_reset_sql(table, columns)
             if reset_sql:
                 identity_resets.append(reset_sql)
+            for constraint in _unique_constraints(conn, table):
+                constraints_lines.append(constraint)
             for constraint in _foreign_key_constraints(conn, table):
                 constraints_lines.append(constraint)
             verify_lines.append(
