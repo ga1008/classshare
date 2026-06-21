@@ -43830,39 +43830,33 @@ body.has-teaching-session-modal {
     box-shadow: var(--dash-shadow-rest);
 }
 
+/* Course-tone ambient corner glow — replaces the old graph-paper mask patterns
+   (grid/dots/diagonal/rings). One soft wash of the course colour, no busy lines. */
 .dashboard-page.role-student .dashboard-offering-card[data-course-tone]::after {
     content: "";
     position: absolute;
-    top: 12px;
-    right: 12px;
+    inset: 0;
     z-index: -1;
-    width: 128px;
-    height: 92px;
-    border-radius: 999px;
-    opacity: 0.55;
     pointer-events: none;
-    background-color: var(--course-tone);
-    mask-size: 18px 18px;
-    mask-repeat: repeat;
+    border-radius: inherit;
+    background:
+        radial-gradient(150px 120px at calc(100% + 12px) -18px,
+            var(--course-tone), transparent 72%);
+    opacity: 0.42;
+    transition: opacity var(--transition-normal), transform var(--transition-normal);
 }
 
-.dashboard-page.role-student .dashboard-offering-card[data-course-pattern="grid"]::after {
-    mask-image:
-        linear-gradient(90deg, #000 1px, transparent 1px),
-        linear-gradient(180deg, #000 1px, transparent 1px);
+.dashboard-page.role-student .dashboard-offering-card[data-course-tone]:hover::after,
+.dashboard-page.role-student .dashboard-offering-card[data-course-tone]:focus-within::after {
+    opacity: 0.62;
+    transform: scale(1.06);
 }
 
-.dashboard-page.role-student .dashboard-offering-card[data-course-pattern="dots"]::after {
-    mask-image: radial-gradient(circle, #000 1.4px, transparent 1.8px);
-}
-
-.dashboard-page.role-student .dashboard-offering-card[data-course-pattern="diagonal"]::after {
-    mask-image: repeating-linear-gradient(135deg, #000 0 1px, transparent 1px 9px);
-}
-
-.dashboard-page.role-student .dashboard-offering-card[data-course-pattern="rings"]::after {
-    mask-image: radial-gradient(circle, transparent 0 5px, #000 5.5px 6.5px, transparent 7px);
-    mask-size: 28px 28px;
+@media (prefers-reduced-motion: reduce) {
+    .dashboard-page.role-student .dashboard-offering-card[data-course-tone]:hover::after,
+    .dashboard-page.role-student .dashboard-offering-card[data-course-tone]:focus-within::after {
+        transform: none;
+    }
 }
 
 .dashboard-page.role-student .dashboard-offering-card__eyebrow {
@@ -45402,4 +45396,188 @@ body.has-teaching-session-modal {
 @media (max-width: 640px) {
     .poll-form { grid-template-columns: 1fr; }
     .poll-card-grid { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   Student dashboard declutter & polish (2026-06-21)
+   - Enter-button arrow motion
+   - Progressive disclosure for verbose quick-action descriptions
+   ============================================================ */
+
+/* "进入课堂" — icon-forward button with a nudging arrow */
+.dashboard-offering-card__enter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.dashboard-offering-card__enter-arrow {
+    transition: transform var(--transition-fast);
+}
+
+.dashboard-offering-card__enter:hover .dashboard-offering-card__enter-arrow,
+.dashboard-offering-card:hover .dashboard-offering-card__enter .dashboard-offering-card__enter-arrow,
+.dashboard-offering-card:focus-within .dashboard-offering-card__enter .dashboard-offering-card__enter-arrow {
+    transform: translateX(3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dashboard-offering-card__enter-arrow { transition: none; }
+    .dashboard-offering-card__enter:hover .dashboard-offering-card__enter-arrow,
+    .dashboard-offering-card:hover .dashboard-offering-card__enter .dashboard-offering-card__enter-arrow,
+    .dashboard-offering-card:focus-within .dashboard-offering-card__enter .dashboard-offering-card__enter-arrow {
+        transform: none;
+    }
+}
+
+/* Quick-action entries (快捷入口): the label is self-explanatory, so the
+   one-line blurb stays hidden until hover/focus — "描述藏起来直到有需要才显示".
+   Uses grid-rows collapse (not display:none) so it remains screen-reader readable. */
+.dashboard-page.role-student .dashboard-quick-action p {
+    display: grid;
+    grid-template-rows: 0fr;
+    margin-top: 0;
+    opacity: 0;
+    transition: grid-template-rows var(--transition-normal), opacity var(--transition-fast), margin-top var(--transition-fast);
+}
+
+.dashboard-page.role-student .dashboard-quick-action p > * { min-height: 0; }
+
+.dashboard-page.role-student .dashboard-quick-action p {
+    overflow: hidden;
+}
+
+.dashboard-page.role-student .dashboard-quick-action:hover p,
+.dashboard-page.role-student .dashboard-quick-action:focus-visible p,
+.dashboard-page.role-student .dashboard-quick-action:focus-within p {
+    grid-template-rows: 1fr;
+    margin-top: 4px;
+    opacity: 1;
+}
+
+@media (hover: none) {
+    /* Touch devices have no hover — keep blurbs visible there. */
+    .dashboard-page.role-student .dashboard-quick-action p {
+        grid-template-rows: 1fr;
+        margin-top: 4px;
+        opacity: 1;
+    }
+}
+
+/* ============================================================
+   Classroom page — visual refresh layer (2026-06-21)
+   CSS-only: every id/data-hook the JS modules bind to is untouched.
+   - Living aurora behind the hero (was display:none → flat white box)
+   - Entrance + hover micro-interactions on panels, buttons, nav
+   - Subtle 3D tilt on the hero card
+   ============================================================ */
+
+@keyframes classroom-aurora-drift {
+    0%   { transform: translate3d(-4%, -3%, 0) scale(1.04) rotate(0deg); }
+    50%  { transform: translate3d(5%, 4%, 0) scale(1.12) rotate(8deg); }
+    100% { transform: translate3d(-4%, -3%, 0) scale(1.04) rotate(0deg); }
+}
+
+@keyframes classroom-rise-in {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Opacity-only entrance for the hero: it hosts a position:fixed floating nav,
+   so it must NOT retain a transform (animation-fill-mode would turn it into a
+   containing block and trap the fixed nav inside the hero). */
+@keyframes classroom-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* Re-enable the hero decorative layer as a soft, slowly-drifting aurora. */
+.classroom-page .workspace-hero {
+    isolation: isolate;
+}
+
+.classroom-page .workspace-hero::before {
+    display: block;
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    overflow: hidden;
+    background:
+        radial-gradient(42% 60% at 14% 8%, var(--classroom-accent-soft), transparent 70%),
+        radial-gradient(46% 64% at 92% 4%, var(--classroom-glow), transparent 72%),
+        radial-gradient(50% 70% at 78% 110%, var(--classroom-accent-strong), transparent 70%);
+    opacity: 0.9;
+    animation: classroom-aurora-drift 26s ease-in-out infinite;
+    will-change: transform;
+}
+
+/* Lift the hero's real content above the aurora. */
+.classroom-page .workspace-hero > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Subtle 3D presence on the hero card. */
+.classroom-page #hero-info-card {
+    transition: transform var(--transition-normal), background-color var(--transition-fast), box-shadow var(--transition-normal);
+}
+
+.classroom-page #hero-info-card:hover {
+    transform: perspective(1200px) translateY(-2px) rotateX(1.1deg);
+}
+
+/* Hero action buttons — gentle lift + accent ring. */
+.classroom-page .workspace-hero-action-btn {
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.classroom-page .workspace-hero-action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 30px -22px rgba(15, 23, 42, 0.5);
+}
+
+/* Floating quick-jump nav — icon pop + lift. */
+.classroom-page .workspace-floating-nav-link {
+    transition: transform var(--transition-fast), border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.classroom-page .workspace-floating-nav-link:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 18px 32px -26px rgba(15, 23, 42, 0.5);
+}
+
+.classroom-page .workspace-floating-nav-icon {
+    transition: transform var(--transition-normal), color var(--transition-fast);
+}
+
+.classroom-page .workspace-floating-nav-link:hover .workspace-floating-nav-icon {
+    transform: translateY(-1px) scale(1.12);
+    color: var(--classroom-accent);
+}
+
+/* Panels rise in on load and lift slightly on hover. */
+.classroom-page .workspace-hero {
+    animation: classroom-fade-in 0.5s ease both;
+}
+
+.classroom-page .workspace-panel {
+    animation: classroom-fade-in 0.5s ease both;
+    transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-fast);
+}
+
+.classroom-page .workspace-panel:hover {
+    box-shadow: 0 22px 44px -32px rgba(15, 23, 42, 0.34);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .classroom-page .workspace-hero::before { animation: none; }
+    .classroom-page .workspace-hero,
+    .classroom-page .workspace-panel { animation: none; }
+    .classroom-page #hero-info-card:hover,
+    .classroom-page .workspace-hero-action-btn:hover,
+    .classroom-page .workspace-floating-nav-link:hover,
+    .classroom-page .workspace-floating-nav-link:hover .workspace-floating-nav-icon { transform: none; }
 }

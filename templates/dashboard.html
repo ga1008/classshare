@@ -327,7 +327,10 @@
                                 <span class="dashboard-offering-card__eyebrow">{{ offering.class_name }}</span>
                                 <h2 class="dashboard-offering-card__title">{{ offering.course_name }}</h2>
                             </div>
-                            <a href="/classroom/{{ offering.id }}" class="btn btn-primary btn-sm dashboard-offering-card__enter">进入课堂</a>
+                            <a href="/classroom/{{ offering.id }}" class="btn btn-primary btn-sm dashboard-offering-card__enter">
+                                <span>进入课堂</span>
+                                <svg class="dashboard-offering-card__enter-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                            </a>
                         </div>
 
                         {% if offering.summary %}
