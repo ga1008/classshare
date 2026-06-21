@@ -1080,6 +1080,8 @@ def _build_agenda_events_from_todos(
             event["notes"] = str(item.get("notes") or "")
             event["due_at_raw"] = str(item.get("due_at") or "")
             event["start_at_raw"] = str(item.get("start_at") or "")
+            event["reminder_enabled"] = bool(item.get("reminder_enabled"))
+            event["reminder_lead_minutes"] = int(item.get("reminder_lead_minutes") or 1440)
             return event
 
         if no_deadline and kind not in {"class", "exam"}:

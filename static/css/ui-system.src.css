@@ -45954,3 +45954,87 @@ body.agenda-todo-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
     .agenda-popover__manage-btn:hover { transform: none; }
 }
+
+/* Due-reminder control inside the to-do modal. */
+.agenda-todo-reminder {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 12px 13px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 12px;
+    background: rgba(248, 250, 252, 0.7);
+    transition: border-color var(--transition-fast), background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.agenda-todo-reminder.is-active {
+    border-color: rgba(99, 102, 241, 0.4);
+    background: rgba(99, 102, 241, 0.06);
+}
+
+.agenda-todo-reminder.is-disabled {
+    opacity: 0.7;
+}
+
+.agenda-todo-reminder__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 0.86rem;
+    font-weight: 650;
+    color: var(--text-primary, #0f172a);
+    cursor: pointer;
+}
+
+.agenda-todo-reminder.is-disabled .agenda-todo-reminder__toggle {
+    cursor: not-allowed;
+    color: var(--text-muted, #94a3b8);
+}
+
+.agenda-todo-reminder__toggle input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--dashboard-accent, #4f46e5);
+    cursor: inherit;
+}
+
+.agenda-todo-reminder__lead {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.84rem;
+    color: var(--text-secondary, #475569);
+}
+
+.agenda-todo-reminder.is-active .agenda-todo-reminder__lead {
+    display: flex;
+}
+
+.agenda-todo-reminder__lead input {
+    width: 64px;
+    padding: 7px 9px;
+    border: 1px solid rgba(148, 163, 184, 0.36);
+    border-radius: 9px;
+    background: #fff;
+    color: var(--text-primary, #0f172a);
+    font: inherit;
+    text-align: center;
+}
+
+.agenda-todo-reminder__lead select {
+    padding: 7px 9px;
+    border: 1px solid rgba(148, 163, 184, 0.36);
+    border-radius: 9px;
+    background: #fff;
+    color: var(--text-primary, #0f172a);
+    font: inherit;
+}
+
+.agenda-todo-reminder__hint {
+    margin: 0;
+    color: var(--text-muted, #94a3b8);
+    font-size: 0.76rem;
+    line-height: 1.5;
+}
+
+.agenda-todo-reminder__hint[hidden] { display: none; }

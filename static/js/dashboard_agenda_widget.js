@@ -535,6 +535,22 @@ function buildTodoModalDom() {
           </label>
         </div>
         <p class="agenda-todo-hint">不填截止日期则记为“无截止”，会一直留在待办里。</p>
+        <div class="agenda-todo-reminder" data-todo-reminder>
+          <label class="agenda-todo-reminder__toggle">
+            <input type="checkbox" name="reminder_enabled" data-reminder-toggle>
+            <span>到期前在站内提醒我</span>
+          </label>
+          <div class="agenda-todo-reminder__lead" data-reminder-lead>
+            <span>提前</span>
+            <input type="number" name="reminder_lead_value" min="1" max="60" value="1" inputmode="numeric" aria-label="提前数值">
+            <select name="reminder_lead_unit" aria-label="提前单位">
+              <option value="day">天</option>
+              <option value="hour">小时</option>
+              <option value="minute">分钟</option>
+            </select>
+          </div>
+          <p class="agenda-todo-reminder__hint" data-reminder-hint>设置截止日期后可开启到期提醒。</p>
+        </div>
         <details class="agenda-todo-more">
           <summary>更多选项（开始时间、备注）</summary>
           <div class="agenda-todo-grid">
@@ -579,10 +595,16 @@ function createTodoModalController(options, defaultOfferingId) {
   const headingEl = modal.querySelector('[data-todo-heading]');
   const eyebrowEl = modal.querySelector('[data-todo-eyebrow]');
   const priorityGroup = modal.querySelector('[data-todo-priority]');
+  const reminderWrap = modal.querySelector('[data-todo-reminder]');
+  const reminderToggle = form.elements.reminder_enabled;
+  const reminderLeadValue = form.elements.reminder_lead_value;
+  const reminderLeadUnit = form.elements.reminder_lead_unit;
+  const reminderHint = modal.querySelector('[data-reminder-hint]');
   let priority = 'normal';
   let mode = 'create';
   let editingId = 0;
   let lastFocus = null;
+  let reminderTouched = false;
 
   courseSelect.innerHTML = options
     .map((opt) => `<option value="${Number(opt.class_offering_id)}">${escapeHtml(opt.label || `${opt.course_name || ''} · ${opt.class_name || ''}`)}</option>`)
@@ -625,6 +647,37 @@ function createTodoModalController(options, defaultOfferingId) {
     });
   };
 
+  const hasDeadline = () => Boolean(form.elements.due_date?.value);
+
+  // A reminder only makes sense with a deadline; the lead inputs only matter
+  // when the toggle is on. Keep the control's enabled/visual state in sync.
+  const syncReminderAvailability = () => {
+    const due = hasDeadline();
+    reminderToggle.disabled = !due;
+    if (!due) reminderToggle.checked = false;
+    const leadOn = due && reminderToggle.checked;
+    reminderLeadValue.disabled = !leadOn;
+    reminderLeadUnit.disabled = !leadOn;
+    reminderWrap.classList.toggle('is-disabled', !due);
+    reminderWrap.classList.toggle('is-active', leadOn);
+    if (reminderHint) reminderHint.hidden = due;
+  };
+
+  const setReminderLeadFromMinutes = (minutes) => {
+    let value = Math.max(1, parseInt(minutes, 10) || 1440);
+    let unit = 'minute';
+    if (value % 1440 === 0) { unit = 'day'; value /= 1440; }
+    else if (value % 60 === 0) { unit = 'hour'; value /= 60; }
+    reminderLeadValue.value = String(Math.min(value, 60));
+    reminderLeadUnit.value = unit;
+  };
+
+  const reminderLeadMinutes = () => {
+    const value = Math.max(1, parseInt(reminderLeadValue.value, 10) || 1);
+    const factor = reminderLeadUnit.value === 'day' ? 1440 : reminderLeadUnit.value === 'hour' ? 60 : 1;
+    return Math.min(value * factor, 30 * 24 * 60);
+  };
+
   const openCreate = (trigger) => {
     lastFocus = trigger || null;
     mode = 'create';
@@ -637,6 +690,9 @@ function createTodoModalController(options, defaultOfferingId) {
     submitBtn.textContent = '保存待办';
     courseSelect.disabled = false;
     applyDefaultCourse();
+    reminderTouched = false;
+    setReminderLeadFromMinutes(1440);
+    syncReminderAvailability();
     reveal();
   };
 
@@ -665,6 +721,10 @@ function createTodoModalController(options, defaultOfferingId) {
       const more = modal.querySelector('.agenda-todo-more');
       if (more) more.open = true;
     }
+    reminderTouched = true; // respect the stored setting; don't auto-flip
+    setReminderLeadFromMinutes(data.reminderLead || 1440);
+    reminderToggle.checked = data.reminderEnabled === '1';
+    syncReminderAvailability();
     reveal();
   };
 
@@ -685,6 +745,8 @@ function createTodoModalController(options, defaultOfferingId) {
       priority,
       start_at: dateTime(form.elements.start_date?.value, form.elements.start_time?.value, '00:00'),
       due_at: dateTime(form.elements.due_date?.value, form.elements.due_time?.value, '23:59'),
+      reminder_enabled: Boolean(hasDeadline() && reminderToggle.checked),
+      reminder_lead_minutes: reminderLeadMinutes(),
     };
     if (body.start_at && body.due_at && body.due_at < body.start_at) {
       setStatus('截止时间不能早于开始时间。', 'error');
@@ -724,8 +786,17 @@ function createTodoModalController(options, defaultOfferingId) {
     const btn = event.target.closest('[data-priority-value]');
     if (btn) setPriority(btn.dataset.priorityValue);
   });
-  modal.addEventListener('click', (event) => {
-    if (event.target.closest('[data-todo-close]')) close();
+  form.elements.due_date?.addEventListener('change', () => {
+    // First time a deadline is set (and the user hasn't touched the toggle),
+    // default the reminder on — the helpful, expected behaviour.
+    if (form.elements.due_date.value && !reminderTouched && mode === 'create') {
+      reminderToggle.checked = true;
+    }
+    syncReminderAvailability();
+  });
+  reminderToggle.addEventListener('change', () => {
+    reminderTouched = true;
+    syncReminderAvailability();
   });
   form.addEventListener('submit', submit);
   document.addEventListener('keydown', (event) => {

@@ -12,6 +12,7 @@ from .assignment_lifecycle_service import submission_effective_status, submissio
 from .course_planning_service import weekday_label
 from .learning_progress_service import get_learning_level, personal_stage_assignment_filter_sql, public_level_payload
 from .message_center_service import create_todo_notification
+from .scheduled_task_service import cancel_tasks_by_dedupe, schedule_task
 
 
 TODO_SOURCE_LESSON = "lesson"
@@ -31,6 +32,12 @@ TODO_PRIORITIES: dict[str, dict[str, Any]] = {
     "low": {"rank": 2, "label": "低", "full_label": "低优先级", "tone": "low"},
 }
 
+# In-app "due reminder" delivered via the unified scheduler + message center.
+TODO_DUE_REMINDER_TASK_KIND = "todo_due_reminder"
+TODO_REMINDER_DEFAULT_LEAD_MINUTES = 24 * 60  # 1 day
+TODO_REMINDER_MIN_LEAD_MINUTES = 1
+TODO_REMINDER_MAX_LEAD_MINUTES = 30 * 24 * 60  # 30 days
+
 
 class TodoValidationError(ValueError):
     """Raised when manual todo data is invalid."""
@@ -40,6 +47,76 @@ def normalize_priority(value: Any, default: str = TODO_PRIORITY_DEFAULT) -> str:
     """Coerce arbitrary input to a known priority key, falling back to default."""
     key = str(value or "").strip().lower()
     return key if key in TODO_PRIORITIES else default
+
+
+def _todo_reminder_dedupe_key(owner_role: str, owner_user_pk: int, todo_id: int) -> str:
+    return f"todo-reminder:{str(owner_role or '').strip().lower()}:{int(owner_user_pk)}:{int(todo_id)}"
+
+
+def normalize_reminder(payload: dict[str, Any], *, has_deadline: bool, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Resolve the {enabled, lead_minutes} reminder setting from a payload.
+
+    Missing keys fall back to ``existing`` (for partial PATCH updates), then to
+    the defaults. A reminder is only meaningful when the to-do has a deadline.
+    """
+    base = dict(existing or {})
+    enabled = base.get("enabled", False)
+    lead = _safe_int(base.get("lead_minutes"), TODO_REMINDER_DEFAULT_LEAD_MINUTES)
+    if "reminder_enabled" in payload:
+        enabled = bool(payload.get("reminder_enabled"))
+    if "reminder_lead_minutes" in payload and payload.get("reminder_lead_minutes") not in (None, ""):
+        lead = _safe_int(payload.get("reminder_lead_minutes"), lead)
+    lead = max(TODO_REMINDER_MIN_LEAD_MINUTES, min(int(lead), TODO_REMINDER_MAX_LEAD_MINUTES))
+    if not has_deadline:
+        enabled = False
+    return {"enabled": bool(enabled), "lead_minutes": lead}
+
+
+def _sync_todo_reminder(
+    conn: sqlite3.Connection,
+    *,
+    todo_id: int,
+    class_offering_id: int,
+    owner_role: str,
+    owner_user_pk: int,
+    title: str,
+    due_at: datetime | None,
+    reminder: dict[str, Any],
+) -> None:
+    """Arm or cancel the one-shot in-app due reminder for a manual to-do.
+
+    Best-effort: scheduling must never block the to-do write, so failures here
+    are swallowed (the to-do itself is already persisted by the caller).
+    """
+    dedupe_key = _todo_reminder_dedupe_key(owner_role, owner_user_pk, todo_id)
+    now = china_now().replace(tzinfo=None)
+    try:
+        if reminder.get("enabled") and due_at is not None and due_at > now:
+            lead = int(reminder.get("lead_minutes") or TODO_REMINDER_DEFAULT_LEAD_MINUTES)
+            run_at = due_at - timedelta(minutes=lead)
+            if run_at <= now:
+                run_at = now + timedelta(seconds=30)
+            schedule_task(
+                conn,
+                task_kind=TODO_DUE_REMINDER_TASK_KIND,
+                run_at=run_at,
+                payload={
+                    "todo_id": int(todo_id),
+                    "class_offering_id": int(class_offering_id),
+                    "owner_role": str(owner_role or "").strip().lower(),
+                    "owner_user_pk": int(owner_user_pk),
+                },
+                dedupe_key=dedupe_key,
+                owner_role=str(owner_role or "").strip().lower(),
+                owner_user_pk=int(owner_user_pk),
+                title=f"待办到期提醒：{title}"[:120],
+                replace=True,
+            )
+        else:
+            cancel_tasks_by_dedupe(conn, dedupe_key)
+    except Exception:
+        # Reminder scheduling is a best-effort enhancement, never fatal.
+        pass
 
 
 def _load_todo_metadata(value: Any) -> dict[str, Any]:
@@ -662,27 +739,29 @@ def _manual_items(rows: list[dict[str, Any]], now: datetime) -> list[dict[str, A
         status_label = "已完成" if completed_at else ("临近截止" if due_at and due_at >= now else "自定义")
         stored_meta = _load_todo_metadata(row.get("metadata_json"))
         priority = normalize_priority(stored_meta.get("priority"))
-        items.append(
-            _normalize_item(
-                source_type=TODO_SOURCE_MANUAL,
-                source_id=row["id"],
-                title=str(row.get("title") or "自定义待办"),
-                subtitle="我的待办",
-                notes=str(row.get("notes") or ""),
-                start_at=start_at,
-                due_at=due_at,
-                created_at=created_at,
-                status="completed" if completed_at else "open",
-                status_label=status_label,
-                tone="manual",
-                is_manual=True,
-                is_completed=completed_at is not None,
-                can_complete=True,
-                metadata={"todo_id": row["id"], "priority": priority},
-                priority=priority,
-                now=now,
-            )
+        reminder = normalize_reminder({}, has_deadline=due_at is not None, existing=stored_meta.get("reminder") or {})
+        item = _normalize_item(
+            source_type=TODO_SOURCE_MANUAL,
+            source_id=row["id"],
+            title=str(row.get("title") or "自定义待办"),
+            subtitle="我的待办",
+            notes=str(row.get("notes") or ""),
+            start_at=start_at,
+            due_at=due_at,
+            created_at=created_at,
+            status="completed" if completed_at else "open",
+            status_label=status_label,
+            tone="manual",
+            is_manual=True,
+            is_completed=completed_at is not None,
+            can_complete=True,
+            metadata={"todo_id": row["id"], "priority": priority},
+            priority=priority,
+            now=now,
         )
+        item["reminder_enabled"] = bool(reminder["enabled"])
+        item["reminder_lead_minutes"] = int(reminder["lead_minutes"])
+        items.append(item)
     return items
 
 
@@ -843,7 +922,8 @@ def create_manual_todo(
     if start_at and due_at and due_at < start_at:
         raise TodoValidationError("截止时间不能早于开始时间")
     priority = normalize_priority(payload.get("priority"))
-    metadata_json = json.dumps({"priority": priority}, ensure_ascii=False)
+    reminder = normalize_reminder(payload, has_deadline=due_at is not None)
+    metadata_json = json.dumps({"priority": priority, "reminder": reminder}, ensure_ascii=False)
 
     timestamp = _now_iso()
     todo_id = execute_insert_returning_id(
@@ -883,6 +963,16 @@ def create_manual_todo(
             actor_display_name=str(user.get("name") or "学生"),
             metadata={"todo_id": todo_id, "due_at": due_at.isoformat(timespec="minutes")},
         )
+    _sync_todo_reminder(
+        conn,
+        todo_id=int(todo_id),
+        class_offering_id=int(class_offering_id),
+        owner_role=role,
+        owner_user_pk=int(user["id"]),
+        title=title,
+        due_at=due_at,
+        reminder=reminder,
+    )
     return {"id": todo_id, "message": "待办已添加。"}
 
 
@@ -935,6 +1025,8 @@ def update_manual_todo(
         metadata["priority"] = normalize_priority(payload.get("priority"))
     elif "priority" not in metadata:
         metadata["priority"] = TODO_PRIORITY_DEFAULT
+    reminder = normalize_reminder(payload, has_deadline=due_at is not None, existing=metadata.get("reminder") or {})
+    metadata["reminder"] = reminder
     metadata_json = json.dumps(metadata, ensure_ascii=False)
 
     timestamp = _now_iso()
@@ -960,6 +1052,17 @@ def update_manual_todo(
             timestamp,
             int(todo_id),
         ),
+    )
+    # A completed to-do never needs a reminder; otherwise (re)arm or cancel.
+    _sync_todo_reminder(
+        conn,
+        todo_id=int(todo_id),
+        class_offering_id=int(class_offering_id),
+        owner_role=str(user.get("role") or "").strip().lower(),
+        owner_user_pk=int(user["id"]),
+        title=title,
+        due_at=None if completed_at else due_at,
+        reminder=reminder,
     )
     return {"id": int(todo_id), "message": "待办已更新。"}
 
@@ -987,4 +1090,11 @@ def delete_manual_todo(
     )
     if cursor.rowcount <= 0:
         raise LookupError("待办不存在或无权操作")
+    try:
+        cancel_tasks_by_dedupe(
+            conn,
+            _todo_reminder_dedupe_key(str(user.get("role") or ""), int(user["id"]), int(todo_id)),
+        )
+    except Exception:
+        pass
     return {"id": int(todo_id), "message": "待办已删除。"}

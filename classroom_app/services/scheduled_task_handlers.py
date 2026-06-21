@@ -157,6 +157,91 @@ def handle_exam_email_reminder(task: dict[str, Any]) -> str:
 register_task_handler(TASK_KIND_EXAM_EMAIL_REMINDER, handle_exam_email_reminder)
 
 
+# Value must match todo_service.TODO_DUE_REMINDER_TASK_KIND (kept as a literal
+# here to avoid importing the heavier todo_service into the worker boot path).
+TASK_KIND_TODO_DUE_REMINDER = "todo_due_reminder"
+
+
+def _todo_due_labels(due_at_text: str) -> tuple[str, str]:
+    """Return ("M月D日 HH:MM", "还有 N 天/小时/分钟" | "已超时")."""
+    from .academic_service import china_now
+
+    raw = _text(due_at_text)
+    if not raw:
+        return "", ""
+    try:
+        due = datetime.fromisoformat(raw.replace("Z", "").replace("T", " ").strip())
+    except (TypeError, ValueError):
+        return raw, ""
+    when = f"{due.month}月{due.day}日 {due.hour:02d}:{due.minute:02d}"
+    now = china_now().replace(tzinfo=None)
+    minutes = int((due - now).total_seconds() // 60)
+    if minutes < 0:
+        relative = "已超时"
+    elif minutes < 60:
+        relative = f"还有 {minutes} 分钟"
+    elif minutes < 60 * 24:
+        relative = f"还有 {minutes // 60} 小时"
+    else:
+        relative = f"还有 {minutes // (60 * 24)} 天"
+    return when, relative
+
+
+def handle_todo_due_reminder(task: dict[str, Any]) -> str:
+    """Fire an in-app reminder for a student's manual to-do approaching its due
+    time. Skips silently if the to-do was completed/deleted or lost its deadline."""
+    payload = task.get("payload") or {}
+    todo_id = int(payload.get("todo_id") or 0)
+    class_offering_id = int(payload.get("class_offering_id") or 0)
+    role = _text(payload.get("owner_role")).lower()
+    user_pk = int(payload.get("owner_user_pk") or 0)
+    if not (todo_id and user_pk and role):
+        return "skipped: missing ids"
+
+    from .message_center_service import create_todo_notification
+
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT title, due_at, completed_at, deleted_at
+            FROM classroom_todos
+            WHERE id = ? AND class_offering_id = ? AND owner_role = ? AND owner_user_pk = ?
+            LIMIT 1
+            """,
+            (todo_id, class_offering_id, role, user_pk),
+        ).fetchone()
+        if row is None:
+            return "skipped: todo missing"
+        if row["deleted_at"]:
+            return "skipped: deleted"
+        if row["completed_at"]:
+            return "skipped: completed"
+        due_at_text = _text(row["due_at"])
+        if not due_at_text:
+            return "skipped: no deadline"
+
+        title = _text(row["title"]) or "待办"
+        when_label, relative = _todo_due_labels(due_at_text)
+        body = f"{relative}（{when_label} 截止）" if relative else f"{when_label} 截止"
+        created = create_todo_notification(
+            conn,
+            recipient_role=role,
+            recipient_user_pk=user_pk,
+            title=f"待办即将到期：{title}",
+            body_preview=body,
+            link_url="/dashboard#dashboard-class-list",
+            class_offering_id=class_offering_id or None,
+            ref_id=f"todo-due:{todo_id}:{due_at_text}",
+            actor_role="system",
+            actor_display_name="到期提醒",
+        )
+        conn.commit()
+    return f"todo due reminder notified={created}"
+
+
+register_task_handler(TASK_KIND_TODO_DUE_REMINDER, handle_todo_due_reminder)
+
+
 from .cultivation_alert_service import (  # noqa: E402
     CULTIVATION_ALERT_TASK_KIND,
     generate_cultivation_alerts,

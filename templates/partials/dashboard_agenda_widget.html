@@ -83,6 +83,8 @@
             data-notes="{{ ev.notes }}"
             data-due-at="{{ ev.due_at_raw }}"
             data-start-at="{{ ev.start_at_raw }}"
+            data-reminder-enabled="{{ '1' if ev.reminder_enabled else '0' }}"
+            data-reminder-lead="{{ ev.reminder_lead_minutes }}"
             {% endif %}
             {% if ev.detail %}
             data-subject="{{ ev.detail.subject }}"

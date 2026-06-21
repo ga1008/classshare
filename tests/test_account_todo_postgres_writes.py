@@ -35,6 +35,9 @@ class FakeConnection:
         self.execute_calls.append((" ".join(str(sql).split()), tuple(params)))
         return FakeCursor(self.row)
 
+    def commit(self):
+        pass
+
 
 class AccountTodoPostgresWriteTests(unittest.TestCase):
     def test_create_teacher_email_config_uses_insert_returning_helper(self):
@@ -214,6 +217,121 @@ class AccountTodoPostgresWriteTests(unittest.TestCase):
         self.assertEqual("high", items[0]["priority"])
         self.assertTrue(items[0]["is_high_priority"])
         self.assertEqual(0, items[0]["priority_rank"])
+
+    def test_normalize_reminder_disables_without_deadline_and_clamps(self):
+        off = todo_service.normalize_reminder({"reminder_enabled": True}, has_deadline=False)
+        self.assertFalse(off["enabled"])
+        clamped = todo_service.normalize_reminder(
+            {"reminder_enabled": True, "reminder_lead_minutes": 9_999_999},
+            has_deadline=True,
+        )
+        self.assertTrue(clamped["enabled"])
+        self.assertEqual(todo_service.TODO_REMINDER_MAX_LEAD_MINUTES, clamped["lead_minutes"])
+
+    def test_create_manual_todo_schedules_due_reminder(self):
+        from datetime import timedelta
+        from classroom_app.services.academic_service import china_now
+
+        conn = FakeConnection()
+        due = (china_now().replace(tzinfo=None) + timedelta(days=3)).isoformat(timespec="minutes")
+
+        with patch.object(todo_service, "execute_insert_returning_id", return_value=501), patch.object(
+            todo_service, "create_todo_notification", return_value=1,
+        ), patch.object(todo_service, "schedule_task", return_value=9) as sched, patch.object(
+            todo_service, "cancel_tasks_by_dedupe",
+        ) as cancel:
+            todo_service.create_manual_todo(
+                conn,
+                class_offering_id=20,
+                user={"id": 10, "role": "student", "name": "S"},
+                payload={"title": "复习", "due_at": due, "reminder_enabled": True, "reminder_lead_minutes": 60},
+            )
+
+        self.assertEqual(1, sched.call_count)
+        self.assertEqual(0, cancel.call_count)
+        kwargs = sched.call_args.kwargs
+        self.assertEqual(todo_service.TODO_DUE_REMINDER_TASK_KIND, kwargs["task_kind"])
+        self.assertEqual("todo-reminder:student:10:501", kwargs["dedupe_key"])
+
+    def test_create_manual_todo_without_reminder_cancels(self):
+        from datetime import timedelta
+        from classroom_app.services.academic_service import china_now
+
+        conn = FakeConnection()
+        due = (china_now().replace(tzinfo=None) + timedelta(days=3)).isoformat(timespec="minutes")
+
+        with patch.object(todo_service, "execute_insert_returning_id", return_value=502), patch.object(
+            todo_service, "create_todo_notification", return_value=1,
+        ), patch.object(todo_service, "schedule_task") as sched, patch.object(
+            todo_service, "cancel_tasks_by_dedupe", return_value=0,
+        ) as cancel:
+            todo_service.create_manual_todo(
+                conn,
+                class_offering_id=20,
+                user={"id": 10, "role": "student", "name": "S"},
+                payload={"title": "复习", "due_at": due, "reminder_enabled": False},
+            )
+
+        self.assertEqual(0, sched.call_count)
+        self.assertEqual(1, cancel.call_count)
+
+    def test_handle_todo_due_reminder_creates_notification(self):
+        import contextlib
+
+        from classroom_app.services import message_center_service, scheduled_task_handlers
+
+        fake = FakeConnection(
+            row=FakeRow({
+                "title": "读完第三章",
+                "due_at": "2999-01-01T08:00",
+                "completed_at": None,
+                "deleted_at": None,
+            })
+        )
+
+        @contextlib.contextmanager
+        def fake_conn():
+            yield fake
+
+        with patch.object(scheduled_task_handlers, "get_db_connection", fake_conn), patch.object(
+            message_center_service, "create_todo_notification", return_value=1,
+        ) as note:
+            result = scheduled_task_handlers.handle_todo_due_reminder(
+                {"payload": {"todo_id": 1, "class_offering_id": 20, "owner_role": "student", "owner_user_pk": 10}}
+            )
+
+        note.assert_called_once()
+        self.assertEqual("student", note.call_args.kwargs["recipient_role"])
+        self.assertIn("读完第三章", note.call_args.kwargs["title"])
+        self.assertIn("notified", result)
+
+    def test_handle_todo_due_reminder_skips_completed(self):
+        import contextlib
+
+        from classroom_app.services import message_center_service, scheduled_task_handlers
+
+        fake = FakeConnection(
+            row=FakeRow({
+                "title": "x",
+                "due_at": "2999-01-01T08:00",
+                "completed_at": "2026-06-21T10:00",
+                "deleted_at": None,
+            })
+        )
+
+        @contextlib.contextmanager
+        def fake_conn():
+            yield fake
+
+        with patch.object(scheduled_task_handlers, "get_db_connection", fake_conn), patch.object(
+            message_center_service, "create_todo_notification", return_value=1,
+        ) as note:
+            result = scheduled_task_handlers.handle_todo_due_reminder(
+                {"payload": {"todo_id": 1, "class_offering_id": 20, "owner_role": "student", "owner_user_pk": 10}}
+            )
+
+        note.assert_not_called()
+        self.assertIn("completed", result)
 
     def test_postgres_smart_attendance_daily_task_uses_conflict_returning(self):
         conn = FakeConnection(row=FakeRow({"id": 555}))
