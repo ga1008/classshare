@@ -145,11 +145,13 @@ function renderGroupList(snapshot, selectedGroup) {
 
 function renderMembers(snapshot, group) {
     const currentRole = snapshot.role;
-    const removeButton = (member) => (
-        currentRole === 'teacher'
-            ? `<button type="button" class="collaboration-member-remove" data-collab-remove-member="${group.id}" data-student-id="${member.student_id}" aria-label="移出${escapeHtml(member.name)}">移出</button>`
-            : ''
-    );
+    const canRemove = Boolean(group.can_remove_members);
+    const removeButton = (member) => {
+        if (!canRemove) return '';
+        // A student owner cannot remove themselves (they are the group leader).
+        if (currentRole !== 'teacher' && member.is_leader) return '';
+        return `<button type="button" class="collaboration-member-remove" data-collab-remove-member="${group.id}" data-student-id="${member.student_id}" aria-label="移出${escapeHtml(member.name)}">移出</button>`;
+    };
     const members = (group.members || []).map((member) => `
         <span class="collaboration-member-pill${member.member_role === 'leader' ? ' is-leader' : ''}">
             <strong>${escapeHtml(member.name)}</strong>
@@ -1154,6 +1156,7 @@ function renderBoardGroupCard(group) {
                     <span class="collab-board-group__member-name">${escapeHtml(m.name)}${m.is_leader ? ' <em>组长</em>' : ''}</span>
                     <span class="collab-board-group__member-no">${escapeHtml(m.student_id_number || '')}</span>
                     ${canAssign && !m.is_leader ? `<button type="button" class="collab-board-set-leader" data-collab-assign-leader="${group.id}" data-candidate="${m.student_id}">设为组长</button>` : ''}
+                    <button type="button" class="collab-board-remove" data-collab-board-remove="${group.id}" data-student-id="${m.student_id}" title="移出该成员（将变为未分组）" aria-label="移出${escapeHtml(m.name)}">移出</button>
                 </li>`).join('') || '<li class="collaboration-muted">空</li>'}
             </ul>
         </article>
@@ -1172,6 +1175,7 @@ function showSchemeBoard(snapshot, schemeId) {
                     <span>每组 ${scheme.min_members}-${scheme.max_members} 人 · ${scheme.group_count} 组</span>
                 </div>
                 <div class="collab-board__head-actions">
+                    ${scheme.is_active && scheme.needs_redistribute ? `<button type="button" class="btn btn-warning btn-sm" data-collab-redistribute="${scheme.id}" title="将少于最低人数的小组成员打散，重新分配到合理的小组">少人组重新分配 (${scheme.deficient_group_count || 0})</button>` : ''}
                     ${scheme.is_active && scheme.leaderless_group_count > 0 ? `<button type="button" class="btn btn-primary btn-sm" data-collab-auto-leaders="${scheme.id}">一键配置组长 (${scheme.leaderless_group_count})</button>` : ''}
                     <button type="button" class="collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button>
                 </div>
@@ -1521,6 +1525,40 @@ function bindOverlayEvents(root, state) {
                 showSchemeBoard(state.snapshot, schemeId);
             } catch (error) {
                 showToast(error.message || '配置失败', 'error');
+            }
+            return;
+        }
+        const redistributeBtn = event.target.closest('[data-collab-redistribute]');
+        if (redistributeBtn) {
+            const schemeId = redistributeBtn.dataset.collabRedistribute;
+            if (!window.confirm('将把所有未达最低人数的小组成员打散，重新随机分配到合理人数的小组（原组长需重新配置），确定继续？')) return;
+            redistributeBtn.disabled = true;
+            try {
+                const response = await apiFetch(`/api/collaboration/schemes/${schemeId}/redistribute`, { method: 'POST' });
+                applyAndRender(root, state, response);
+                showToast(response.message || '已重新分配少人组', 'success');
+                closeOverlays();
+                showSchemeBoard(state.snapshot, schemeId);
+            } catch (error) {
+                redistributeBtn.disabled = false;
+                showToast(error.message || '重新分配失败', 'error');
+            }
+            return;
+        }
+        const boardRemoveBtn = event.target.closest('[data-collab-board-remove]');
+        if (boardRemoveBtn) {
+            const groupId = boardRemoveBtn.dataset.collabBoardRemove;
+            const studentId = boardRemoveBtn.dataset.studentId;
+            const found = findSchemeGroup(state.snapshot, groupId);
+            const schemeId = found ? found.scheme.id : null;
+            try {
+                const response = await apiFetch(`/api/collaboration/groups/${groupId}/members/${studentId}`, { method: 'DELETE' });
+                applyAndRender(root, state, response);
+                showToast(response.message || '成员已移出，已变为未分组', 'success');
+                closeOverlays();
+                if (schemeId != null) showSchemeBoard(state.snapshot, schemeId);
+            } catch (error) {
+                showToast(error.message || '移出失败', 'error');
             }
             return;
         }

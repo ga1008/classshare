@@ -799,8 +799,28 @@ def add_group_member(conn, group_id: int, user: dict[str, Any], student_id: int)
 
 def remove_group_member(conn, group_id: int, user: dict[str, Any], student_id: int) -> dict[str, Any]:
     group = _ensure_group_access(conn, group_id, user)
-    if not _is_teacher(user):
-        raise HTTPException(403, "只有教师可以移出小组成员")
+    scheme_id = _safe_int(group.get("scheme_id"))
+    if _is_teacher(user):
+        # Teacher may remove anyone from any group in their classroom.
+        if int(group.get("teacher_id") or 0) != _user_pk(user):
+            raise HTTPException(403, "无权操作该课堂的小组")
+    else:
+        # A student may only remove members from a group they created
+        # (student-initiated invite group); never from a teacher's random
+        # grouping scheme.
+        if scheme_id is not None:
+            raise HTTPException(403, "随机分组方案由教师管理，学生无法移出成员")
+        is_owner = (
+            _is_student(user)
+            and str(group.get("join_policy")) == STUDENT_GROUP_JOIN_POLICY
+            and int(group.get("created_by_user_pk") or 0) == _user_pk(user)
+        )
+        if not is_owner:
+            raise HTTPException(403, "只有小组创建者可以移出成员")
+        if int(student_id) == _user_pk(user):
+            raise HTTPException(400, "创建者不能移出自己，请使用解散或退出小组")
+        if not _is_active_member(conn, int(group_id), int(student_id)):
+            raise HTTPException(400, "该成员不在本组")
     now = _now_iso()
     conn.execute(
         """
@@ -829,6 +849,11 @@ def remove_group_member(conn, group_id: int, user: dict[str, Any], student_id: i
         _sync_leader_role(conn, group_id, next_leader_id)
     else:
         conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (now, int(group_id)))
+    # For scheme groups, the now-empty group is kept as a drop target (the
+    # removed student is ungrouped again); empty groups are only pruned once
+    # the whole class is grouped (handled by _cleanup_empty_scheme_groups).
+    if scheme_id is not None:
+        _cleanup_empty_scheme_groups(conn, scheme_id)
     return _load_group(conn, group_id)
 
 
@@ -2084,6 +2109,123 @@ def _cleanup_empty_scheme_groups(conn, scheme_id: int) -> int:
     return len(empty_ids)
 
 
+def _resolve_redistribution_group_count(total: int, min_members: int, max_members: int) -> int:
+    """Pick the number of groups so an even split keeps every group within
+    [min, max]. Uses the *fullest* feasible layout (fewest groups). Falls back
+    gracefully when the constraints are infeasible for the given headcount."""
+    if total <= 0:
+        return 0
+    min_members = max(1, int(min_members or 1))
+    max_members = max(min_members, int(max_members or min_members))
+    lo = math.ceil(total / max_members)          # fewest groups (fullest)
+    hi = total // min_members                      # most groups (each >= min)
+    if hi < 1:
+        return 1                                   # fewer students than one min group
+    if lo > hi:
+        return max(1, hi)                          # infeasible window -> best effort
+    return max(1, lo)
+
+
+def redistribute_scheme_groups(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    """Re-balance a scheme so every non-empty group satisfies min<=size<=max.
+
+    Only allowed once every student in the class is assigned (so the headcount
+    is fixed and a valid partition is guaranteed to exist for a feasible scheme).
+    All assigned students are pooled, randomly shuffled, and packed into the
+    fewest groups that keep each group within the configured bounds; leftover
+    empty groups are deleted and leaders are cleared (re-run 一键配置组长 after).
+    """
+    scheme = _ensure_scheme_access(conn, scheme_id, user)
+    if not _is_teacher(user):
+        raise HTTPException(403, "只有教师可以重新分配少人组")
+    if _scheme_is_expired(scheme.get("expires_at")) or str(scheme.get("status")) != SCHEME_STATUS_ACTIVE:
+        raise HTTPException(400, "分组方案已结束或过期，不能重新分配")
+
+    class_offering_id = int(scheme["class_offering_id"])
+    min_members = int(scheme.get("min_members") or 1)
+    max_members = int(scheme.get("max_members") or DEFAULT_GROUP_MAX_MEMBERS)
+
+    students = _load_classroom_students(conn, class_offering_id)
+    total = len(students)
+    if total == 0:
+        raise HTTPException(400, "当前班级没有可分组的学生")
+
+    groups = _scheme_group_rows(conn, scheme_id)
+    assigned_ids: set[int] = set()
+    for group in groups:
+        rows = conn.execute(
+            "SELECT student_id FROM study_group_members WHERE group_id = ? AND status = 'active'",
+            (int(group["id"]),),
+        ).fetchall()
+        assigned_ids.update(int(row["student_id"]) for row in rows)
+    ungrouped = [s for s in students if int(s["id"]) not in assigned_ids]
+    if ungrouped:
+        raise HTTPException(400, "还有学生未分组，请先完成全部分组，再重新分配少人组")
+
+    pool = [int(s["id"]) for s in students]
+    random.shuffle(pool)
+    k = _resolve_redistribution_group_count(total, min_members, max_members)
+    k = max(1, k)
+
+    # Ensure we have at least k group rows to fill (reuse existing, create more
+    # only if somehow short).
+    now = _now_iso()
+    while len(groups) < k:
+        index = len(groups) + 1
+        new_id = execute_insert_returning_id(
+            conn,
+            """
+            INSERT INTO study_groups (
+                class_offering_id, assignment_id, name, description, status, join_policy,
+                max_members, leader_student_id, scheme_id, group_index, goal_text, progress_percent,
+                created_by_role, created_by_user_pk, created_at, updated_at
+            )
+            VALUES (?, NULL, ?, '', 'active', ?, ?, NULL, ?, ?, '', 0, ?, ?, ?, ?)
+            """,
+            (
+                class_offering_id, f"第 {index} 组", SCHEME_JOIN_POLICY, max_members,
+                int(scheme_id), index, str(user.get("role") or ""), _user_pk(user), now, now,
+            ),
+        )
+        groups.append({"id": new_id, "group_index": index, "max_members": max_members})
+
+    # Clear every membership + leader in the scheme before repacking.
+    group_ids = [int(g["id"]) for g in groups]
+    placeholders = ",".join("?" for _ in group_ids)
+    conn.execute(
+        f"UPDATE study_group_members SET status = 'removed', left_at = ?, member_role = 'member' "
+        f"WHERE group_id IN ({placeholders}) AND status = 'active'",
+        (now, *group_ids),
+    )
+    conn.execute(
+        f"UPDATE study_groups SET leader_student_id = NULL, updated_at = ? WHERE id IN ({placeholders})",
+        (now, *group_ids),
+    )
+
+    # Even split across the first k groups: rem groups get one extra member.
+    base, rem = divmod(total, k)
+    cursor = 0
+    for position in range(k):
+        size = base + (1 if position < rem else 0)
+        chunk = pool[cursor:cursor + size]
+        cursor += size
+        group_id = int(groups[position]["id"])
+        for student_pk_id in chunk:
+            _upsert_member(
+                conn,
+                group_id=group_id,
+                student_id=int(student_pk_id),
+                member_role="member",
+                added_by_role="teacher",
+                added_by_user_pk=_user_pk(user),
+            )
+        conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (now, group_id))
+
+    # Drop the now-empty leftover groups and refresh group_count.
+    _cleanup_empty_scheme_groups(conn, int(scheme_id))
+    return _serialize_scheme(conn, _load_scheme(conn, scheme_id), user)
+
+
 def close_group_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
     scheme = _ensure_scheme_access(conn, scheme_id, user)
     if not _is_teacher(user):
@@ -2276,6 +2418,14 @@ def _serialize_group_entry(
     member_ids = {int(m["student_id"]) for m in members}
     is_member = current_student_id in member_ids if current_student_id is not None else False
     max_members = int(row.get("max_members") or DEFAULT_GROUP_MAX_MEMBERS)
+    is_scheme_group = _safe_int(row.get("scheme_id")) is not None
+    is_owner_student = bool(
+        current_student_id is not None
+        and str(row.get("join_policy")) == STUDENT_GROUP_JOIN_POLICY
+        and int(row.get("created_by_user_pk") or 0) == int(current_student_id)
+    )
+    # Teacher may remove from any group; a student only from their own invite group.
+    can_remove_members = bool((is_teacher and editable) or (is_owner_student and editable))
     serialized_members = [
         {
             "student_id": int(m["student_id"]),
@@ -2303,6 +2453,9 @@ def _serialize_group_entry(
         "can_set_goal": bool((is_member and leader_id == current_student_id and editable) or (is_teacher and editable)),
         "can_nominate": bool(is_member and leader_id is None and editable),
         "can_assign_leader": bool(is_teacher and leader_id is None and len(members) > 0 and editable),
+        "is_scheme_group": is_scheme_group,
+        "is_owner_student": is_owner_student,
+        "can_remove_members": can_remove_members,
     }
 
 
@@ -2338,6 +2491,13 @@ def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dic
         my_group_id = int(existing["id"]) if existing else None
     has_open_group = any(not g["is_full"] for g in serialized_groups)
 
+    # The "少人组重新分配" affordance: everyone is grouped but at least one
+    # non-empty group is below the configured minimum size.
+    min_members = int(scheme.get("min_members") or 0)
+    all_grouped = len(ungrouped) == 0 and len(students) > 0
+    has_deficient_group = any(0 < g["member_count"] < min_members for g in serialized_groups)
+    needs_redistribute = bool(is_teacher and not expired_or_closed and all_grouped and has_deficient_group)
+
     return {
         "id": scheme_id,
         "class_offering_id": class_offering_id,
@@ -2353,6 +2513,8 @@ def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any]) -> dic
         "is_history": expired_or_closed,
         "can_close": bool(is_teacher and not expired_or_closed),
         "leaderless_group_count": sum(1 for g in serialized_groups if not g["has_leader"] and g["member_count"] > 0),
+        "needs_redistribute": needs_redistribute,
+        "deficient_group_count": sum(1 for g in serialized_groups if 0 < g["member_count"] < min_members),
         "created_at": str(scheme.get("created_at") or ""),
         "groups": serialized_groups,
         "grouped_count": len(grouped_student_ids),

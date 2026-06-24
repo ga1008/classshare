@@ -46278,3 +46278,22 @@ body.agenda-todo-open { overflow: hidden; }
     .peer-eval-pt { padding: 9px 0; }
     .ga-field-row { flex-wrap: wrap; }
 }
+
+/* Group big-screen: per-member remove (移出) button */
+.collab-board-remove {
+    margin-left: auto;
+    border: 1px solid rgba(220, 38, 38, 0.34);
+    border-radius: 6px;
+    background: rgba(254, 242, 242, 0.85);
+    color: #dc2626;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.collab-board-remove:hover {
+    background: rgba(254, 226, 226, 0.95);
+    border-color: rgba(220, 38, 38, 0.5);
+}
+.collab-board-group__members li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

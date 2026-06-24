@@ -12,7 +12,7 @@ const LEGACY_MODULES = {
   classroomPage: '/static/js/classroom_page.js?v=multi-material-list-20260617',
   learningProgress: '/static/js/learning_progress.js?v=cultivation-certificate-20260612',
   interactions: '/static/js/classroom_interactions.js?v=poll-extracted-20260621',
-  collaboration: '/static/js/collaboration.js?v=unified-grouping-invite-picker-20260617',
+  collaboration: '/static/js/collaboration.js?v=group-remove-redistribute-20260624',
   polls: '/static/js/classroom_polls.js?v=poll-review-20260621b',
 } as const;
 

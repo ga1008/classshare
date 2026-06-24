@@ -18,6 +18,7 @@ from ..services.collaboration_service import (
     assign_scheme_leader,
     auto_assign_scheme_leaders,
     close_group_scheme,
+    redistribute_scheme_groups,
     create_group,
     create_group_scheme,
     create_group_submission_blog_draft,
@@ -248,6 +249,15 @@ async def auto_assign_random_scheme_leaders(scheme_id: int, user: dict = Depends
         "message": f"已为 {result['assigned']} 个小组自动配置组长",
         "snapshot": snapshot,
     }
+
+
+@router.post("/schemes/{scheme_id}/redistribute", response_class=JSONResponse)
+async def redistribute_random_scheme_groups(scheme_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        redistribute_scheme_groups(conn, scheme_id, user)
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
+        conn.commit()
+    return {"status": "ok", "message": "已重新分配少人组，所有小组人数均已达标", "snapshot": snapshot}
 
 
 @router.post("/groups/{group_id}/assign-leader", response_class=JSONResponse)
