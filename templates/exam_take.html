@@ -1731,6 +1731,12 @@
     const SUBMISSION_SCORE = null;
     {% endif %}
 
+    // Group-assignment gating
+    const GROUP_IS = {{ (group_assignment_state.is_group if group_assignment_state else false) | tojson }};
+    const GROUP_REVEALED = {{ (group_assignment_state.revealed if group_assignment_state else false) | tojson }};
+    const GROUP_PENDING = {{ (group_assignment_state.pending if group_assignment_state else false) | tojson }};
+    const GROUP_IN_GROUP = {{ (group_peer_context.in_group if group_peer_context else false) | tojson }};
+
     // Paper data
     const EXAM_PAGES_RAW = {{ paper.questions_json | tojson }};
     let EXAM_PAGES = {};
@@ -3520,8 +3526,13 @@
             );
             localStorage.removeItem(LOCAL_DRAFT_KEY);
 
+            // Group exam: prompt teammate peer-evaluation before showing result.
+            if (window.openGroupPeerEval) {
+                try { await window.openGroupPeerEval(ASSIGNMENT_ID); } catch (err) {}
+            }
+
             // Reload to show submitted state
-            setTimeout(() => location.reload(), 1500);
+            setTimeout(() => location.reload(), 1000);
 
         } catch(e) {
             showMessage(getApiFailureMessage(e, '提交失败，请按提示调整后重试。'), 'error');
@@ -3568,12 +3579,24 @@
                     ${CAN_RESUBMIT_SUBMISSION ? '<button class="btn btn-primary" id="resubmitExamBtn" style="margin-top: 1rem;">重新作答并提交</button>' : ''}
                 </div>
             `;
+        } else if (SUBMISSION_STATUS === 'graded' && GROUP_IS && !GROUP_REVEALED) {
+            html += `
+                <div class="result-banner">
+                    <div class="result-icon">👥</div>
+                    <h3>等待小组成员完成</h3>
+                    <p>你的试卷已完成批改，本次为小组考试。为保证公平，需等小组所有成员都提交并完成批改后，再统一公布每个人的综合表现分。</p>
+                    ${GROUP_IN_GROUP ? `<button type="button" class="btn btn-outline btn-sm" style="margin-top:0.75rem;" data-open-peer-eval data-assignment-id="${ASSIGNMENT_ID}">填写 / 修改组员互评</button>` : ''}
+                </div>
+            `;
         } else if (SUBMISSION_STATUS === 'graded') {
+            const gradedTitle = (GROUP_IS && GROUP_REVEALED) ? '小组考试 · 已完成' : '考试已批改';
+            const scoreCaption = (GROUP_IS && GROUP_REVEALED) ? '<div style="margin-top:0.4rem;color:var(--text-muted);font-size:0.85rem;">综合表现分（作业得分 × 0.8 + 组员评分均分）</div>' : '';
             html += `
                 <div class="result-banner success">
                     <div class="result-icon">🎉</div>
-                    <h3>考试已批改</h3>
+                    <h3>${gradedTitle}</h3>
                     <div class="result-score">${SUBMISSION_SCORE || 0} <span style="font-size:1.2rem;color:var(--text-muted);">分</span></div>
+                    ${scoreCaption}
                     <div class="flex items-center justify-center gap-2 flex-wrap" style="margin-top:0.75rem;">
                         <a href="/feedback-review?status=active" class="btn btn-outline btn-sm">进入错题本复盘</a>
                         <a href="/api/assignments/${ASSIGNMENT_ID}/export-review-docx" class="btn btn-primary btn-sm" data-review-docx-export data-export-url="/api/assignments/${ASSIGNMENT_ID}/export-review-docx" data-suggested-filename="${esc(PAPER_TITLE || '复习导出')}_复习导出.docx">导出复习 Word</a>
@@ -3994,6 +4017,9 @@
 </script>
 {% if exam_ai_allowed and user_info.role == 'student' and assignment.class_offering_id %}
 <script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
+{% endif %}
+{% if user_info.role == 'student' %}
+<script type="module" src="{{ asset_url('js/group_peer_eval.js') }}"></script>
 {% endif %}
 </body>
 </html>

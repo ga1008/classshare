@@ -630,16 +630,31 @@
                         </p>
                         {% endif %}
                     </div>
+                {% elif submission.status == 'graded' and group_assignment_state and group_assignment_state.is_group and not group_assignment_state.revealed %}
+                    <div class="status-card info card-body rounded-lg mb-lg group-wait-card">
+                        <div class="status-card-header text-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                            等待小组成员完成
+                        </div>
+                        <p class="text-muted">你的作业已完成批改，本次为<strong>小组作业</strong>。为保证公平，需要等小组所有成员都提交并完成批改后，再统一公布每个人的<strong>综合表现分</strong>。</p>
+                        {% if group_peer_context and group_peer_context.in_group %}
+                        <button type="button" class="btn btn-outline btn-sm mt-md" data-open-peer-eval data-assignment-id="{{ assignment.id }}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 15.09 8.26 22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+                            填写 / 修改组员互评
+                        </button>
+                        {% endif %}
+                    </div>
                 {% elif submission.status == 'graded' %}
+                    {% set is_group_final = group_assignment_state and group_assignment_state.is_group and group_assignment_state.revealed %}
                     <div class="status-card success card-body rounded-lg mb-lg">
                         <div class="status-card-header text-success">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                            已批改
+                            {% if is_group_final %}小组作业 · 已完成{% else %}已批改{% endif %}
                         </div>
                         <div class="grade-result-layout">
                             <div class="grade-result-score">
                                 <div class="score-display">{{ submission.score or 0 }}<span class="text-lg text-muted font-normal ml-1">/ 100</span></div>
-                                <span class="text-sm text-muted">批改结果已返回</span>
+                                <span class="text-sm text-muted">{% if is_group_final %}综合表现分（作业得分 × 0.8 + 组员评分均分）{% else %}批改结果已返回{% endif %}</span>
                                 <a href="/feedback-review?status=active" class="btn btn-outline btn-sm">进入错题本复盘</a>
                                 <a href="/api/assignments/{{ assignment.id }}/export-review-docx" class="btn btn-primary btn-sm" data-review-docx-export data-export-url="/api/assignments/{{ assignment.id }}/export-review-docx" data-suggested-filename="{{ (assignment.title ~ '_复习导出.docx') | e }}">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M16 13H8"></path><path d="M16 17H8"></path><path d="M10 9H8"></path></svg>
@@ -1173,9 +1188,13 @@
             const droppedCount = Number(payload.dropped_file_count || 0);
             const successMessage = droppedCount > 0
                 ? `${droppedCount} filtered file(s) were ignored during submission.`
-                : (payload.is_late_submission ? '提交成功，已按补交规则记录，批改后会自动扣分。' : 'Submission completed.');
+                : (payload.is_late_submission ? '提交成功，已按补交规则记录，批改后会自动扣分。' : '提交成功。');
             showToast(successMessage, droppedCount > 0 ? 'warning' : 'success');
-            setTimeout(() => location.reload(), 1200);
+            // Group assignment: prompt the teammate peer-evaluation before reload.
+            if (window.openGroupPeerEval) {
+                try { await window.openGroupPeerEval(ASSIGNMENT_ID); } catch (err) {}
+            }
+            setTimeout(() => location.reload(), 800);
         } catch (e) {
             showToast('Submit failed: ' + e.message, 'error');
             submitBtn.disabled = false;
@@ -1203,4 +1222,5 @@
     }
 </script>
 {{ vite_entry_tags('frontend/src/islands/assignment-submit-sync.tsx') }}
+<script type="module" src="{{ asset_url('js/group_peer_eval.js') }}"></script>
 {% endblock %}

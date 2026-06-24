@@ -249,6 +249,12 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
             handle_assignment_stage_grading_complete(conn, submission_id)
         except Exception as exc:
             print(f"[LEARNING_PROGRESS] manual grading teacher-stage handling failed: {exc}")
+        try:
+            from ...services.group_assignment_service import record_member_work_score
+
+            record_member_work_score(conn, submission_id)
+        except Exception as exc:
+            print(f"[GROUP_ASSIGNMENT] manual grading group finalize failed: {exc}")
         if submission.get("class_offering_id") and submission.get("student_pk_id"):
             try:
                 refresh_student_learning_state(

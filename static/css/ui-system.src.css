@@ -46038,3 +46038,243 @@ body.agenda-todo-open { overflow: hidden; }
 }
 
 .agenda-todo-reminder__hint[hidden] { display: none; }
+
+/* ==========================================================================
+   Group assignment — teacher config modal + student peer-evaluation modal
+   ========================================================================== */
+.ga-modal-overlay,
+.peer-eval-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(3px);
+    animation: gaFadeIn 0.18s ease;
+}
+
+@keyframes gaFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes gaSlideUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+
+.ga-modal,
+.peer-eval-modal {
+    width: 100%;
+    max-width: 560px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--card-bg, #fff);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.32);
+    overflow: hidden;
+    animation: gaSlideUp 0.22s ease;
+}
+
+.ga-modal__header,
+.peer-eval-modal__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+
+.ga-modal__title,
+.peer-eval-modal__title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--text-color, #0f172a);
+}
+
+.ga-modal__subtitle,
+.peer-eval-modal__subtitle {
+    margin: 4px 0 0;
+    font-size: 0.82rem;
+    color: var(--text-muted, #64748b);
+}
+
+.ga-modal__close,
+.peer-eval-modal__close {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    font-size: 1.4rem;
+    line-height: 1;
+    color: var(--text-muted, #64748b);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.ga-modal__close:hover,
+.peer-eval-modal__close:hover { background: rgba(100, 116, 139, 0.12); }
+
+.ga-modal__body,
+.peer-eval-modal__body {
+    padding: 18px 22px;
+    overflow-y: auto;
+}
+
+.ga-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    background: rgba(124, 58, 237, 0.08);
+    color: #6d28d9;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+.ga-current__dot { width: 8px; height: 8px; border-radius: 50%; background: #7c3aed; }
+
+.ga-section { margin-bottom: 18px; }
+.ga-section__title {
+    margin: 0 0 10px;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: var(--text-muted, #64748b);
+    text-transform: none;
+}
+
+.ga-scheme-list { display: grid; gap: 8px; }
+.ga-scheme-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 13px;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 11px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.ga-scheme-option:hover { border-color: rgba(124, 58, 237, 0.4); background: rgba(245, 243, 255, 0.6); }
+.ga-scheme-option input { accent-color: #7c3aed; width: 16px; height: 16px; }
+.ga-scheme-option__body { display: flex; flex-direction: column; gap: 2px; }
+.ga-scheme-option__name { font-weight: 700; font-size: 0.9rem; color: var(--text-color, #0f172a); }
+.ga-scheme-option__meta { font-size: 0.76rem; color: var(--text-muted, #64748b); }
+
+.ga-empty { font-size: 0.84rem; color: var(--text-muted, #64748b); margin: 0; }
+
+.ga-newscheme { border-top: 1px dashed var(--border-color, #e2e8f0); padding-top: 14px; }
+.ga-newscheme__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px dashed rgba(124, 58, 237, 0.45);
+    border-radius: 9px;
+    background: transparent;
+    color: #6d28d9;
+    font-weight: 700;
+    font-size: 0.82rem;
+    padding: 7px 12px;
+    cursor: pointer;
+}
+.ga-newscheme__toggle:hover { background: rgba(245, 243, 255, 0.7); }
+.ga-newscheme__form { margin-top: 12px; display: grid; gap: 10px; }
+.ga-newscheme__form[hidden] { display: none; }
+
+.ga-field { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.ga-field > span { font-size: 0.75rem; color: var(--text-muted, #64748b); font-weight: 600; }
+.ga-field input {
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.86rem;
+    background: var(--bg-color, #fff);
+    color: var(--text-color, #0f172a);
+}
+.ga-field input:focus { outline: none; border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.14); }
+.ga-field-row { display: flex; gap: 10px; }
+.ga-hint { margin: 2px 0 0; font-size: 0.74rem; color: var(--text-muted, #94a3b8); }
+
+.ga-modal__footer,
+.peer-eval-modal__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 22px;
+    border-top: 1px solid var(--border-color, #e2e8f0);
+    background: var(--bg-color, #f8fafc);
+}
+.ga-modal__footer-right { display: flex; gap: 8px; }
+.ga-btn-danger { color: #dc2626; border-color: rgba(220, 38, 38, 0.4); }
+.ga-btn-danger:hover { background: rgba(254, 226, 226, 0.7); }
+
+/* --- Student peer-evaluation modal --- */
+.peer-eval-modal { max-width: 600px; }
+.peer-eval-modal__hint { font-size: 0.76rem; color: var(--text-muted, #94a3b8); }
+
+.peer-eval-item {
+    padding: 14px 0;
+    border-bottom: 1px dashed var(--border-color, #e2e8f0);
+}
+.peer-eval-item:first-child { padding-top: 0; }
+.peer-eval-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+.peer-eval-item__head {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin-bottom: 11px;
+}
+.peer-eval-item__avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex: none;
+    background: rgba(124, 58, 237, 0.12);
+}
+.peer-eval-item__q { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.peer-eval-item__q strong { font-size: 0.92rem; color: var(--text-color, #0f172a); }
+.peer-eval-item__q span { font-size: 0.75rem; color: var(--text-muted, #64748b); }
+.peer-eval-item__value {
+    flex: none;
+    min-width: 40px;
+    text-align: center;
+    font-size: 1.2rem;
+    font-weight: 850;
+    color: #7c3aed;
+}
+
+.peer-eval-scale { display: grid; gap: 6px; }
+.peer-eval-scale__row {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 5px;
+}
+.peer-eval-pt {
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 7px;
+    background: var(--bg-color, #fff);
+    color: var(--text-color, #334155);
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 7px 0;
+    cursor: pointer;
+    transition: all 0.12s ease;
+}
+.peer-eval-pt:hover { border-color: #a78bfa; background: rgba(245, 243, 255, 0.8); }
+.peer-eval-pt.is-selected {
+    border-color: #7c3aed;
+    background: #7c3aed;
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(124, 58, 237, 0.3);
+}
+
+.group-wait-card .status-card-header { color: var(--primary-color, #6366f1); }
+
+@media (max-width: 640px) {
+    .ga-modal, .peer-eval-modal { max-width: 100%; }
+    .peer-eval-pt { padding: 9px 0; }
+    .ga-field-row { flex-wrap: wrap; }
+}

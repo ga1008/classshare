@@ -164,4 +164,84 @@ def ensure_study_group_scheme_schema(conn: Any) -> None:
         "ON group_invitations (group_id, status)"
     )
 
+    # ------------------------------------------------------------------
+    # Group-based assignment / exam completion.
+    #
+    # A teacher can mark an assignment (or exam) as "completed by group",
+    # binding it to a specific group scheme. Each group member still submits
+    # their own work and gets their own AI score, but at submit time they rate
+    # every teammate's contribution on a 20-point scale. Once *all* members of a
+    # group have submitted and been graded (and their peer ratings are in), each
+    # member's final score is computed as:
+    #
+    #     final = round(work_score * 0.8 + peer_avg, 2)
+    #
+    # where ``peer_avg`` is the average of the 20-point ratings the member
+    # received from teammates. Scores stay hidden ("等待小组成员完成") until the
+    # whole group is finalized, after which every member sees only their own
+    # blended "综合表现分" — never the individual ratings teammates gave them.
+    # ------------------------------------------------------------------
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS assignment_group_bindings (
+            {id_column},
+            assignment_id TEXT NOT NULL,
+            class_offering_id INTEGER NOT NULL,
+            scheme_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_by_teacher_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            metadata_json TEXT NOT NULL DEFAULT '{{}}'
+        )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_assignment_group_bindings_assignment "
+        "ON assignment_group_bindings (assignment_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_assignment_group_bindings_scheme "
+        "ON assignment_group_bindings (scheme_id, status)"
+    )
+
+    # Per-member finalization ledger for a group assignment. One row per
+    # (assignment, student). ``revealed=0`` means the score is computed but
+    # withheld until the whole group is done.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS group_assignment_member_results (
+            {id_column},
+            assignment_id TEXT NOT NULL,
+            class_offering_id INTEGER NOT NULL,
+            group_id INTEGER NOT NULL,
+            student_pk_id INTEGER NOT NULL,
+            submission_id INTEGER,
+            work_score REAL,
+            peer_avg REAL,
+            peer_review_count INTEGER NOT NULL DEFAULT 0,
+            final_score REAL,
+            revealed INTEGER NOT NULL DEFAULT 0,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_group_assignment_member_results_unique "
+        "ON group_assignment_member_results (assignment_id, student_pk_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_group_assignment_member_results_group "
+        "ON group_assignment_member_results (assignment_id, group_id)"
+    )
+
+    # Extend peer_reviews with the 20-point contribution score used by group
+    # assignments + a flag marking auto-filled defaults (student closed the page
+    # without rating). These are additive/nullable so the legacy 3-axis peer
+    # review path is unaffected.
+    _add_column(conn, "peer_reviews", "contribution_points", "INTEGER", engine=engine)
+    _add_column(conn, "peer_reviews", "is_auto_default", "INTEGER NOT NULL DEFAULT 0", engine=engine)
+
     _SCHEMA_READY = True

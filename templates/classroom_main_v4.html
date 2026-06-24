@@ -45,6 +45,38 @@
         height: 14px;
     }
 
+    .assignment-group-config-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-height: 30px;
+        padding: 5px 9px;
+        border: 1px solid rgba(124, 58, 237, 0.24);
+        border-radius: 8px;
+        background: rgba(245, 243, 255, 0.86);
+        color: #6d28d9;
+        font-size: 0.76rem;
+        font-weight: 850;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .assignment-group-config-link:hover,
+    .assignment-group-config-link:focus-visible {
+        border-color: rgba(124, 58, 237, 0.45);
+        background: rgba(237, 233, 254, 0.96);
+        color: #5b21b6;
+        outline: none;
+        transform: translateY(-1px);
+    }
+
+    .assignment-group-config-link svg {
+        width: 15px;
+        height: 15px;
+    }
+
     .student-security-summary {
         display: grid;
         gap: var(--spacing-sm);
@@ -1491,6 +1523,12 @@
                                     {% if assignment.learning_stage %}
                                     <span class="badge badge-primary">试炼 · {{ assignment.learning_stage.short_name }}</span>
                                     {% endif %}
+                                    {% if assignment.is_group_assignment %}
+                                    <span class="badge badge-outline">小组</span>
+                                    {% endif %}
+                                    {% if user_info.role == 'student' and assignment.group_pending %}
+                                    <span class="badge badge-warning">待组内揭晓</span>
+                                    {% endif %}
                                     {% if user_info.role == 'teacher' and teacher_review_queue %}
                                     <span class="badge badge-danger">待批改 {{ teacher_review_queue }}</span>
                                     {% endif %}
@@ -1590,6 +1628,22 @@
                                         {{ app_topbar_icon('alert') }}
                                         错题归集
                                     </a>
+                                    {% endif %}
+                                    {% if user_info.role == 'teacher' %}
+                                    <button
+                                        type="button"
+                                        class="assignment-group-config-link"
+                                        data-group-config-btn
+                                        data-assignment-id="{{ assignment.id }}"
+                                        data-class-offering-id="{{ classroom.id }}"
+                                        data-assignment-title="{{ assignment.title }}"
+                                        onclick="event.stopPropagation();"
+                                        title="设置按小组完成"
+                                        aria-label="为 {{ assignment.title }} 配置小组完成"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                                        <span>分组配置</span>
+                                    </button>
                                     {% endif %}
                                     <span class="assignment-meta-link">查看详情</span>
                                 </span>
@@ -2632,6 +2686,9 @@
 
 {% if user_info.role == 'student' %}
 <script type="module" src="/static/js/student_security.js"></script>
+{% endif %}
+{% if user_info.role == 'teacher' %}
+<script type="module" src="{{ asset_url('js/group_assignment_config.js') }}"></script>
 {% endif %}
 <script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
 <script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>

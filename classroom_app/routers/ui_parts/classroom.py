@@ -169,6 +169,22 @@ def classroom_main(
                     assignment['submission_id'] = submission['id']
                     assignment['submission_feedback_md'] = submission['feedback_md']
                     assignment['submission_feedback_preview'] = _plain_feedback_preview(submission['feedback_md'])
+                    # Group assignment: withhold the score (and feedback preview)
+                    # until the whole group is finalized; never leak peer detail.
+                    try:
+                        from ...services.group_assignment_service import get_student_display_state
+
+                        group_state = get_student_display_state(conn, assignment['id'], int(user['id']))
+                    except Exception as exc:
+                        group_state = None
+                        print(f"[GROUP_ASSIGNMENT] card gating failed: {exc}")
+                    if group_state and group_state.get('is_group'):
+                        assignment['is_group_assignment'] = True
+                        if not group_state.get('revealed'):
+                            assignment['group_pending'] = bool(group_state.get('pending'))
+                            assignment['submission_score'] = None
+                            assignment['submission_feedback_preview'] = ""
+                            assignment['submission_feedback_md'] = None
                 else:
                     assignment['submission_status'] = 'unsubmitted'
                     assignment['can_resubmit_submission'] = False

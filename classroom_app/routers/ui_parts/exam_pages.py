@@ -248,6 +248,21 @@ def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(ge
                     (submission['id'],)
                 )
                 submission_files = _serialize_submission_file_rows(files_cursor)
+
+        group_assignment_state = None
+        group_peer_context = None
+        if user['role'] == 'student':
+            try:
+                from ...services.group_assignment_service import (
+                    get_student_display_state,
+                    get_student_group_context,
+                )
+
+                group_assignment_state = get_student_display_state(conn, assignment_id, int(user["id"]))
+                if group_assignment_state:
+                    group_peer_context = get_student_group_context(conn, assignment_id, int(user["id"]))
+            except Exception as exc:
+                print(f"[GROUP_ASSIGNMENT] exam student display state failed: {exc}")
         conn.commit()
 
     submission_returned = bool(submission and submission_is_returned(submission))
@@ -299,6 +314,8 @@ def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(ge
         "submission_returned": submission_returned,
         "resubmission_state": resubmission_state,
         "resubmission_due_at": submission.get("resubmission_due_at") if submission else None,
+        "group_assignment_state": group_assignment_state,
+        "group_peer_context": group_peer_context,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
         "max_per_file_mb": MAX_SUBMISSION_PER_FILE_MB,

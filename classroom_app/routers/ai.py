@@ -449,6 +449,12 @@ async def handle_ai_grading_callback(request: Request):
                     handle_assignment_stage_grading_complete(conn, submission_id)
                 except Exception as exc:
                     print(f"[LEARNING_PROGRESS] AI grading teacher-stage handling failed: {exc}")
+                try:
+                    from ..services.group_assignment_service import record_member_work_score
+
+                    record_member_work_score(conn, submission_id)
+                except Exception as exc:
+                    print(f"[GROUP_ASSIGNMENT] AI grading group finalize failed: {exc}")
                 if assignment_for_progress and assignment_for_progress.get("class_offering_id"):
                     try:
                         refresh_student_learning_state(
