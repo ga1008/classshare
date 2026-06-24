@@ -9,7 +9,7 @@ const LEGACY_MODULES = {
   files: '/static/js/app_files.js',
   materials: '/static/js/classroom_materials.js?v=html-render-20260617',
   exams: '/static/js/app_exams.js',
-  classroomPage: '/static/js/classroom_page.js?v=multi-material-list-20260617',
+  classroomPage: '/static/js/classroom_page.js?v=activity-scroll-isolation-20260624',
   learningProgress: '/static/js/learning_progress.js?v=cultivation-certificate-20260612',
   interactions: '/static/js/classroom_interactions.js?v=poll-extracted-20260621',
   collaboration: '/static/js/collaboration.js?v=group-remove-redistribute-20260624',

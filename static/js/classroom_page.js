@@ -3673,6 +3673,52 @@ function initClassroomTopbarMenus() {
     });
 }
 
+// 课堂活动区滚动隔离：鼠标在活动区内滚动时，优先滚动活动区内部的可滚动容器，
+// 仅当其滚到顶/底之后才把滚动交还给外层页面，避免“悬停在活动区却滚动整页”的体验问题。
+function initActivityScrollIsolation(shell) {
+    if (!shell || shell.dataset.scrollIsolationBound === '1') return;
+    shell.dataset.scrollIsolationBound = '1';
+
+    const isScrollableY = (node) => {
+        if (!(node instanceof HTMLElement)) return false;
+        if (node.scrollHeight - node.clientHeight <= 1) return false;
+        const overflowY = window.getComputedStyle(node).overflowY;
+        return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+    };
+
+    // 将不同 deltaMode 统一为像素，兼容鼠标滚轮（行）与触控板（像素）。
+    const normalizeWheelDelta = (event) => {
+        if (event.deltaMode === 1) return event.deltaY * 16; // 行
+        if (event.deltaMode === 2) return event.deltaY * (window.innerHeight || 800); // 页
+        return event.deltaY; // 像素
+    };
+
+    // 从事件目标向上查找活动区内第一个、且在当前滚动方向上仍能滚动的容器。
+    const resolveActivityScroller = (start, delta) => {
+        let node = start instanceof Node ? start : null;
+        while (node && node !== shell) {
+            if (isScrollableY(node)) {
+                const atTop = node.scrollTop <= 0;
+                const atBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 1;
+                if (delta < 0 && !atTop) return node;
+                if (delta > 0 && !atBottom) return node;
+            }
+            node = node.parentElement;
+        }
+        return null;
+    };
+
+    shell.addEventListener('wheel', (event) => {
+        if (event.ctrlKey) return; // 浏览器缩放手势，放行
+        const delta = normalizeWheelDelta(event);
+        if (!delta) return;
+        const scroller = resolveActivityScroller(event.target, delta);
+        if (!scroller) return; // 活动区已到顶/底 → 交还给外层页面滚动
+        scroller.scrollTop += delta;
+        event.preventDefault();
+    }, { passive: false });
+}
+
 function initClassroomActivitySidebar() {
     const shell = document.querySelector('[data-classroom-activity-shell]');
     if (!shell) return;
@@ -3684,6 +3730,8 @@ function initClassroomActivitySidebar() {
         Array.from(shell.querySelectorAll('[data-classroom-activity-panel]'))
             .map((panel) => [panel.dataset.classroomActivityPanel, panel]),
     );
+    initActivityScrollIsolation(shell);
+
     const tabByKey = new Map(tabs.map((tab) => [tab.dataset.classroomActivityTab, tab]));
     const sectionToKey = new Map(
         tabs.map((tab) => [tab.dataset.classroomActivityTarget, tab.dataset.classroomActivityTab]),
