@@ -197,6 +197,10 @@ async function openModal(btn) {
   }
 }
 
+// NOTE: the trigger button carries an inline `onclick="event.stopPropagation()"`
+// (so clicking it does not navigate the surrounding card). A bubble-phase
+// delegated listener would therefore never fire — so we listen in the CAPTURE
+// phase, which runs top-down before the button's own handler stops propagation.
 document.addEventListener('click', (event) => {
   const btn = event.target.closest ? event.target.closest('[data-group-config-btn]') : null;
   if (btn) {
@@ -204,4 +208,4 @@ document.addEventListener('click', (event) => {
     event.stopPropagation();
     openModal(btn);
   }
-});
+}, true);
