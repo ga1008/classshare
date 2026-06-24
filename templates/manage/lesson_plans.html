@@ -1,0 +1,63 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}教案管理{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('空白新建', '内容资产', 'plus', variant='primary', tone='indigo', attrs='data-lp-create-blank') }}
+{{ topbar_action('按课堂生成', '内容资产', 'robot', variant='soft', tone='indigo', attrs='data-lp-generate-open') }}
+{{ topbar_action('导入教案', '内容资产', 'upload', variant='soft', tone='slate', attrs='data-lp-import-open') }}
+{% endblock %}
+
+{% block content %}
+<section class="manage-lp" data-lp-root>
+    <div class="manage-lp__intro">
+        <div>
+            <h2>教案库</h2>
+            <p>整门课一份教案（封面 + 每次课一张表）。可空白新建、按课堂一键生成整学期教案、或导入文件由 AI 解析；支持渲染预览、导出 Word/PDF/PNG、系部/院级/校级公开与一键继承他人公开教案。</p>
+        </div>
+        <div class="manage-lp__summary" data-lp-summary></div>
+    </div>
+
+    <div class="manage-lp__toolbar">
+        <div class="manage-lp__search">
+            <input type="search" data-lp-search placeholder="搜索课程 / 标题 / 班级 / 标签…" />
+        </div>
+        <div class="manage-lp__filters">
+            <select data-lp-filter-scope>
+                <option value="">全部范围</option>
+                <option value="mine">我的教案</option>
+                <option value="shared">他人公开</option>
+                <option value="private">私有</option>
+                <option value="department">本系部公开</option>
+                <option value="college">本院级公开</option>
+                <option value="school">全校公开</option>
+            </select>
+            <select data-lp-sort>
+                <option value="updated_desc">最近更新</option>
+                <option value="updated_asc">最早更新</option>
+                <option value="title_asc">标题 A→Z</option>
+                <option value="sessions_desc">课次最多</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="manage-lp__loading" data-lp-loading>正在加载教案…</div>
+    <div class="manage-lp__grid" data-lp-grid hidden></div>
+    <div class="manage-lp__empty" data-lp-empty hidden>
+        <strong>还没有教案</strong>
+        <p>点击右上角「空白新建」「按课堂生成」或「导入教案」开始。</p>
+    </div>
+</section>
+
+<script id="lesson-plan-boot" type="application/json">
+{
+    "offerings": {{ lesson_plan_offerings | tojson }},
+    "scope_options": {{ lesson_plan_scope_options | tojson }}
+}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_lesson_plans.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="lanshare">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>编辑教案 · {{ plan.title }}</title>
+    {% include "partials/ui_system_assets.html" %}
+</head>
+<body class="lp-editor-body">
+    <header class="lp-editor__header">
+        <a class="lp-btn lp-btn--ghost" href="/manage/teaching/lesson-plans">← 返回教案库</a>
+        <strong class="lp-editor__title" id="lp-editor-title">{{ plan.title }}</strong>
+        <div class="lp-editor__header-actions">
+            <button type="button" class="lp-btn lp-btn--ghost" id="lp-add-session">+ 添加课次</button>
+            <a class="lp-btn lp-btn--ghost" href="/lesson-plan/{{ plan.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
+            <button type="button" class="lp-btn lp-btn--primary" id="lp-save">保存</button>
+        </div>
+    </header>
+
+    <main class="lp-editor">
+        <section class="lp-editor__form" id="lp-editor-form">
+            <details class="lp-editor__cover" open>
+                <summary>封面信息</summary>
+                <div class="lp-editor__cover-grid" id="lp-cover-grid"></div>
+            </details>
+            <div class="lp-editor__sessions" id="lp-sessions"></div>
+        </section>
+        <section class="lp-editor__preview">
+            <div class="lp-editor__preview-bar">
+                <span>实时预览</span>
+                <button type="button" class="lp-btn lp-btn--ghost" id="lp-refresh-preview">刷新预览</button>
+            </div>
+            <iframe id="lp-preview-frame" class="lp-editor__frame" src="/lesson-plan/{{ plan.id }}/preview" title="教案预览"></iframe>
+        </section>
+    </main>
+
+    <script id="lp-editor-boot" type="application/json">
+    {
+        "id": {{ plan.id | tojson }},
+        "title": {{ plan.title | tojson }},
+        "cover": {{ plan.cover | tojson }},
+        "sessions": {{ plan.sessions | tojson }}
+    }
+    </script>
+    <script type="module" src="{{ asset_url('js/auth.js') }}"></script>
+    <script type="module" src="{{ asset_url('js/lesson_plan_editor.js') }}"></script>
+</body>
+</html>

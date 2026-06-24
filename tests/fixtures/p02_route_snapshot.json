@@ -368,6 +368,38 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/assignments/{assignment_id}/group-config",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_group_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/group-config",
+    "methods": [
+      "POST"
+    ],
+    "name": "set_group_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/peer-eval",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_peer_eval",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/peer-eval",
+    "methods": [
+      "POST"
+    ],
+    "name": "submit_peer_eval",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/assignments/{assignment_id}/submissions",
     "methods": [
       "GET"
@@ -632,6 +664,46 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/career-path/answers",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_path_answers",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-path/progress",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_path_progress",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-path/questions",
+    "methods": [
+      "GET"
+    ],
+    "name": "career_path_questions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-path/reset",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_path_reset",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-path/state",
+    "methods": [
+      "GET"
+    ],
+    "name": "career_path_state",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classroom-interactions/activities/{activity_id}/close",
     "methods": [
       "POST"
@@ -789,6 +861,30 @@
       "PUT"
     ],
     "name": "update_classroom_home_learning_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning-materials",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "remove_classroom_learning_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning-materials",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_classroom_learning_materials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning-materials",
+    "methods": [
+      "POST"
+    ],
+    "name": "add_classroom_learning_material",
     "include_in_schema": true
   },
   {
@@ -1000,11 +1096,43 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/collaboration/classrooms/{class_offering_id}/invite-candidates",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_invite_candidates",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/classrooms/{class_offering_id}/member-card/{student_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_member_public_card",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/classrooms/{class_offering_id}/schemes",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_random_group_scheme",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/collaboration/classrooms/{class_offering_id}/snapshot",
     "methods": [
       "GET"
     ],
     "name": "collaboration_snapshot",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/classrooms/{class_offering_id}/student-groups",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_student_invite_group",
     "include_in_schema": true
   },
   {
@@ -1024,6 +1152,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/collaboration/groups/{group_id}/assign-leader",
+    "methods": [
+      "POST"
+    ],
+    "name": "teacher_assign_group_leader",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/collaboration/groups/{group_id}/blog-draft",
     "methods": [
       "POST"
@@ -1032,11 +1168,67 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/collaboration/groups/{group_id}/chat",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_group_chat",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/chat",
+    "methods": [
+      "POST"
+    ],
+    "name": "send_group_chat",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/chat/attachments",
+    "methods": [
+      "POST"
+    ],
+    "name": "upload_group_chat_attachments",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/chat/attachments/{attachment_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_group_chat_attachment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/chat/{message_id}/recall",
+    "methods": [
+      "POST"
+    ],
+    "name": "recall_group_chat",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/collaboration/groups/{group_id}/files",
     "methods": [
       "POST"
     ],
     "name": "upload_study_group_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/goal",
+    "methods": [
+      "PUT"
+    ],
+    "name": "set_study_group_goal",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/groups/{group_id}/invite",
+    "methods": [
+      "POST"
+    ],
+    "name": "invite_group_members",
     "include_in_schema": true
   },
   {
@@ -1072,6 +1264,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/collaboration/groups/{group_id}/nominate-leader",
+    "methods": [
+      "POST"
+    ],
+    "name": "nominate_study_group_leader",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/collaboration/groups/{group_id}/peer-reviews",
     "methods": [
       "POST"
@@ -1080,11 +1280,67 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/collaboration/groups/{group_id}/scheme-assign",
+    "methods": [
+      "POST"
+    ],
+    "name": "assign_scheme_group_member",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/collaboration/groups/{group_id}/submission",
     "methods": [
       "PUT"
     ],
     "name": "save_group_submission",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/invitations/{invitation_id}/accept",
+    "methods": [
+      "POST"
+    ],
+    "name": "accept_group_invitation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/invitations/{invitation_id}/decline",
+    "methods": [
+      "POST"
+    ],
+    "name": "decline_group_invitation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/schemes/{scheme_id}/auto-leaders",
+    "methods": [
+      "POST"
+    ],
+    "name": "auto_assign_random_scheme_leaders",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/schemes/{scheme_id}/close",
+    "methods": [
+      "POST"
+    ],
+    "name": "close_random_group_scheme",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/schemes/{scheme_id}/random-join",
+    "methods": [
+      "POST"
+    ],
+    "name": "random_join_group_scheme",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/schemes/{scheme_id}/redistribute",
+    "methods": [
+      "POST"
+    ],
+    "name": "redistribute_random_scheme_groups",
     "include_in_schema": true
   },
   {
@@ -1413,6 +1669,118 @@
       "GET"
     ],
     "name": "get_cultivation_profile",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_plans",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_blank_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "generate_from_classroom",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/import",
+    "methods": [
+      "POST"
+    ],
+    "name": "import_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/{plan_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/{plan_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/{plan_id}/attributes",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/{plan_id}/attributes",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "patch_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/{plan_id}/content",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/{plan_id}/export",
+    "methods": [
+      "GET"
+    ],
+    "name": "export_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/{plan_id}/inherit",
+    "methods": [
+      "POST"
+    ],
+    "name": "inherit_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/{plan_id}/retry",
+    "methods": [
+      "POST"
+    ],
+    "name": "retry_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/{plan_id}/tags",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_tags",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/{plan_id}/task",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_task_status",
     "include_in_schema": true
   },
   {
@@ -2800,6 +3168,102 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/polls/classrooms/{class_offering_id}/candidates",
+    "methods": [
+      "GET"
+    ],
+    "name": "classroom_poll_candidates",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/classrooms/{class_offering_id}/polls",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_classroom_poll",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/classrooms/{class_offering_id}/snapshot",
+    "methods": [
+      "GET"
+    ],
+    "name": "classroom_poll_snapshot",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/manage/list",
+    "methods": [
+      "GET"
+    ],
+    "name": "management_poll_list",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/manage/offerings",
+    "methods": [
+      "GET"
+    ],
+    "name": "management_offerings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/manage/polls",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_management_poll",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/{poll_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "poll_delete",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/{poll_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "poll_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/{poll_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "poll_update",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/{poll_id}/assignments",
+    "methods": [
+      "POST"
+    ],
+    "name": "poll_set_assignments",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/{poll_id}/status",
+    "methods": [
+      "POST"
+    ],
+    "name": "poll_set_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/polls/{poll_id}/vote",
+    "methods": [
+      "POST"
+    ],
+    "name": "poll_vote",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/profile/avatar",
     "methods": [
       "GET"
@@ -3200,6 +3664,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/career-path",
+    "methods": [
+      "GET"
+    ],
+    "name": "career_path_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/classroom/{class_offering_id}",
     "methods": [
       "GET"
@@ -3269,6 +3741,22 @@
       "GET"
     ],
     "name": "learning_path_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/lesson-plan/{plan_id}/edit",
+    "methods": [
+      "GET"
+    ],
+    "name": "lesson_plan_editor_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/lesson-plan/{plan_id}/preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "lesson_plan_preview_page",
     "include_in_schema": true
   },
   {
@@ -3432,6 +3920,22 @@
     "include_in_schema": false
   },
   {
+    "path": "/manage/lesson-plans",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_lesson_plans_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/lesson-plans",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_lesson_plans",
+    "include_in_schema": false
+  },
+  {
     "path": "/manage/materials",
     "methods": [
       "GET"
@@ -3493,6 +3997,22 @@
       "GET"
     ],
     "name": "redirect_manage_legacy_offerings",
+    "include_in_schema": false
+  },
+  {
+    "path": "/manage/polls",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_polls_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/polls",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_polls",
     "include_in_schema": false
   },
   {
@@ -3712,6 +4232,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/teaching/lesson-plans",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_lesson_plans_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/teaching/materials",
     "methods": [
       "GET"
@@ -3725,6 +4253,14 @@
       "GET"
     ],
     "name": "get_manage_offerings_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/polls",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_polls_page",
     "include_in_schema": true
   },
   {
@@ -3781,6 +4317,22 @@
       "GET"
     ],
     "name": "get_material_raw",
+    "include_in_schema": true
+  },
+  {
+    "path": "/materials/render/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "render_material_entry",
+    "include_in_schema": true
+  },
+  {
+    "path": "/materials/render/{material_id}/{subpath:path}",
+    "methods": [
+      "GET"
+    ],
+    "name": "render_material_asset",
     "include_in_schema": true
   },
   {

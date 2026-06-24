@@ -143,6 +143,17 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/exams",),
     ),
     ManageNavItem(
+        key="lesson_plans",
+        domain="teaching",
+        group="内容资产",
+        label="教案",
+        icon="file-text",
+        href="/manage/teaching/lesson-plans",
+        search_text="教案 备课 教学设计 lesson plan teaching",
+        ai_hint="教案：空白新建 / 按课堂一键生成整学期教案 / 导入文件解析，支持渲染预览、导出 Word、系部院校级公开与一键继承。",
+        legacy_hrefs=("/manage/lesson-plans",),
+    ),
+    ManageNavItem(
         key="polls",
         domain="teaching",
         group="内容资产",

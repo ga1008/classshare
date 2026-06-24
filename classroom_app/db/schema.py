@@ -11,6 +11,7 @@ from .schema_classroom_activity import ensure_classroom_activity_schema
 from .schema_cultivation_progress import ensure_cultivation_progress_schema
 from .schema_foundation import ensure_foundation_schema
 from .schema_learning_blog import ensure_learning_blog_signature_schema
+from .schema_lesson_plans import ensure_lesson_plan_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
 from .schema_polls import ensure_poll_schema
 from .schema_scheduler import ensure_scheduler_schema
@@ -122,6 +123,19 @@ def init_database():
             print("[DB] PostgreSQL agent task extension columns ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL agent task extension step skipped: {exc}")
+        # The lesson-plan (教案) table follows the same runtime-managed,
+        # engine-aware pattern (isolated connection so the validate path above
+        # stays DDL-free) — owned content asset with org-scoped sharing.
+        try:
+            lesson_plan_conn = get_db_connection()
+            try:
+                ensure_lesson_plan_schema(lesson_plan_conn)
+                lesson_plan_conn.commit()
+            finally:
+                lesson_plan_conn.close()
+            print("[DB] PostgreSQL lesson-plan table ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL lesson-plan schema step skipped: {exc}")
         print(
             "[DB] PostgreSQL schema verified: "
             f"{report['present_required_table_count']}/{report['required_table_count']} required tables"
@@ -142,6 +156,7 @@ def init_database():
             ensure_scheduler_schema(conn)
             ensure_gongwen_schema(conn)
             ensure_agent_task_extension_schema(conn)
+            ensure_lesson_plan_schema(conn)
             conn.commit()
         except Exception:
             conn.rollback()
