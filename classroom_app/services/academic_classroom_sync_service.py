@@ -692,42 +692,53 @@ async def sync_teaching_places_from_academic_system(teacher_id: int) -> dict[str
     source_summary: list[dict[str, Any]] = []
     places: list[AcademicTeachingPlace] = []
 
-    async with open_authenticated_academic_client(access_payload) as (client, profile, _login_result):
-        await client.get(
-            ZF_TEACHING_PLACE_INDEX_PATH,
-            headers=_ajax_headers(client, referer_path=ZF_TEACHING_PLACE_INDEX_PATH, accept="text/html,*/*;q=0.8"),
-        )
-        page = 1
-        total_page = 1
-        while page <= max(1, total_page):
-            payload = await _fetch_json(
-                client,
-                ZF_TEACHING_PLACE_QUERY_PATH,
-                _jqgrid_form(
-                    page=page,
-                    show_count=TEACHING_PLACE_PAGE_SIZE,
-                    extra=_teaching_place_form(),
-                ),
-                referer_path=ZF_TEACHING_PLACE_INDEX_PATH,
+    try:
+        async with open_authenticated_academic_client(access_payload) as (client, profile, _login_result):
+            await client.get(
+                ZF_TEACHING_PLACE_INDEX_PATH,
+                headers=_ajax_headers(client, referer_path=ZF_TEACHING_PLACE_INDEX_PATH, accept="text/html,*/*;q=0.8"),
             )
-            rows, total_count, payload_total_page = _extract_items(payload)
-            source_summary.append(
-                {
-                    "endpoint": ZF_TEACHING_PLACE_QUERY_PATH,
-                    "page": page,
-                    "rows": len(rows),
-                    "total_count": total_count,
-                    "total_page": payload_total_page,
-                }
-            )
-            for row in rows:
-                place = _place_from_row(row)
-                if place:
-                    places.append(place)
-            if payload_total_page <= 0 or not rows:
-                break
-            total_page = min(payload_total_page, 50)
-            page += 1
+            page = 1
+            total_page = 1
+            while page <= max(1, total_page):
+                payload = await _fetch_json(
+                    client,
+                    ZF_TEACHING_PLACE_QUERY_PATH,
+                    _jqgrid_form(
+                        page=page,
+                        show_count=TEACHING_PLACE_PAGE_SIZE,
+                        extra=_teaching_place_form(),
+                    ),
+                    referer_path=ZF_TEACHING_PLACE_INDEX_PATH,
+                )
+                rows, total_count, payload_total_page = _extract_items(payload)
+                source_summary.append(
+                    {
+                        "endpoint": ZF_TEACHING_PLACE_QUERY_PATH,
+                        "page": page,
+                        "rows": len(rows),
+                        "total_count": total_count,
+                        "total_page": payload_total_page,
+                    }
+                )
+                for row in rows:
+                    place = _place_from_row(row)
+                    if place:
+                        places.append(place)
+                if payload_total_page <= 0 or not rows:
+                    break
+                total_page = min(payload_total_page, 50)
+                page += 1
+    except AcademicSessionRedirectError as exc:
+        return {
+            "status": "academic_session_expired",
+            "message": str(exc) or "教务系统会话被重置，请稍后重新同步教学场地。",
+        }
+    except (ValueError, httpx.HTTPError) as exc:
+        return {
+            "status": "academic_unavailable",
+            "message": f"教务系统登录或教学场地同步失败：{str(exc)[:180]}",
+        }
 
     existing_keys: set[str] = set()
     with get_db_connection() as conn:
@@ -1150,10 +1161,10 @@ async def load_free_classroom_options_from_academic_system(
                 "sections": [],
             },
         }
-    except httpx.HTTPError as exc:
+    except (ValueError, httpx.HTTPError) as exc:
         return {
             "status": "academic_unavailable",
-            "message": f"教务系统教室选项读取失败：{str(exc)[:160]}",
+            "message": f"教务系统登录或教室选项读取失败：{str(exc)[:160]}",
             "term": term_params,
             "semester_id": semester.get("id") if semester else None,
             "semester_name": str(semester.get("name") or "") if semester else "",
@@ -1307,6 +1318,19 @@ async def query_free_classrooms_from_academic_system(
             return {
                 "status": "academic_session_expired",
                 "message": str(last_session_error),
+                "items": [],
+                "total_count": 0,
+                "total_page": 0,
+                "page": page,
+                "page_size": page_size,
+                "term": term_params,
+                "semester_id": semester.get("id") if semester else None,
+                "semester_name": str(semester.get("name") or "") if semester else "",
+            }
+        except ValueError as exc:
+            return {
+                "status": "academic_login_failed",
+                "message": f"教务系统登录或空闲教室查询失败：{str(exc)[:180]}",
                 "items": [],
                 "total_count": 0,
                 "total_page": 0,
