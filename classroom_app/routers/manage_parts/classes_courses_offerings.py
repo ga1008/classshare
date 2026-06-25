@@ -525,26 +525,26 @@ async def api_ai_generate_config(
 async def api_list_offerings(user: dict = Depends(get_current_teacher)):
     """获取当前教师的课堂列表（用于试卷分配）"""
     try:
-        conn = get_db_connection()
-        cursor = conn.execute(
-            """
-               SELECT o.id,
-                      COALESCE(s.name, o.semester) AS semester,
-                      c.name AS class_name,
-                      co.name AS course_name,
-                      tb.title AS textbook_title
-               FROM class_offerings o
-               JOIN classes c ON o.class_id = c.id
-               JOIN courses co ON o.course_id = co.id
-               LEFT JOIN academic_semesters s ON s.id = o.semester_id
-               LEFT JOIN textbooks tb ON tb.id = o.textbook_id
-               WHERE o.teacher_id = ?
-               ORDER BY COALESCE(s.start_date, o.created_at) DESC, co.name, c.name
-            """,
-            (user['id'],)
-        )
-        offerings = [dict(row) for row in cursor]
-        conn.close()
+        # Context manager guarantees the (pooled) connection is returned even on error.
+        with get_db_connection() as conn:
+            cursor = conn.execute(
+                """
+                   SELECT o.id,
+                          COALESCE(s.name, o.semester) AS semester,
+                          c.name AS class_name,
+                          co.name AS course_name,
+                          tb.title AS textbook_title
+                   FROM class_offerings o
+                   JOIN classes c ON o.class_id = c.id
+                   JOIN courses co ON o.course_id = co.id
+                   LEFT JOIN academic_semesters s ON s.id = o.semester_id
+                   LEFT JOIN textbooks tb ON tb.id = o.textbook_id
+                   WHERE o.teacher_id = ?
+                   ORDER BY COALESCE(s.start_date, o.created_at) DESC, co.name, c.name
+                """,
+                (user['id'],)
+            )
+            offerings = [dict(row) for row in cursor]
         return {"status": "success", "offerings": offerings}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

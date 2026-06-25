@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import re
+import threading
 from typing import Any, Iterable, Sequence
 
 from .. import config
@@ -9,6 +10,12 @@ from .errors import DatabaseConfigurationError, DatabaseConnectionError, redact_
 
 
 POSTGRES_DRIVER_REQUIREMENT = "psycopg[binary]==3.3.4"
+
+# Per-process connection pool (psycopg_pool). Created lazily on first pooled
+# checkout so importing this module never opens sockets, and so each worker
+# container builds its own pool. See connect_postgres / _get_connection_pool.
+_connection_pool: Any | None = None
+_connection_pool_lock = threading.Lock()
 _LIKE_NOCASE_RE = re.compile(r"\bLIKE\s+(%s)\s+COLLATE\s+NOCASE\b", re.IGNORECASE)
 _COLLATE_NOCASE_RE = re.compile(r"\s+COLLATE\s+NOCASE\b", re.IGNORECASE)
 
@@ -209,8 +216,9 @@ def qmark_to_psycopg(sql: str) -> str:
 class LanSharePostgresConnection:
     """Small sqlite-like facade over psycopg while services are migrated by domain."""
 
-    def __init__(self, raw_connection: Any):
+    def __init__(self, raw_connection: Any, pool: Any | None = None):
         self._raw_connection = raw_connection
+        self._pool = pool
 
     @property
     def raw_connection(self) -> Any:
@@ -235,7 +243,16 @@ class LanSharePostgresConnection:
         self._raw_connection.rollback()
 
     def close(self) -> None:
-        self._raw_connection.close()
+        raw = self._raw_connection
+        if raw is None:
+            return
+        # Prevent reuse-after-return and double-return.
+        self._raw_connection = None
+        if self._pool is not None:
+            # Return the physical connection to the pool instead of closing it.
+            self._pool.putconn(raw)
+        else:
+            raw.close()
 
     def __enter__(self) -> "LanSharePostgresConnection":
         return self
@@ -311,11 +328,116 @@ def apply_postgres_session_settings(raw_connection: Any) -> None:
     raw_connection.execute(f"SELECT {projection}", tuple(params))
 
 
+def _configure_pooled_connection(raw_connection: Any) -> None:
+    """Run once per *physical* pooled connection (statement/lock timeouts, app name).
+
+    The session settings use ``set_config(..., is_local=false)`` (session scope), so
+    they survive the commit. The commit is required: psycopg_pool discards any
+    connection the configure callback leaves in an open transaction (INTRANS).
+    """
+    apply_postgres_session_settings(raw_connection)
+    raw_connection.commit()
+
+
+def _build_connection_pool(row_factory: Any) -> Any:
+    try:
+        from psycopg_pool import ConnectionPool
+    except ModuleNotFoundError as exc:
+        raise DatabaseConfigurationError(
+            "POSTGRES_POOL_ENABLED=true requires the psycopg-pool package. "
+            "Install psycopg-pool, or set POSTGRES_POOL_ENABLED=false to use per-request connections."
+        ) from exc
+
+    database_url = validate_database_url(config.DATABASE_URL)
+    pool = ConnectionPool(
+        conninfo=database_url,
+        min_size=int(config.POSTGRES_POOL_MIN),
+        max_size=int(config.POSTGRES_POOL_MAX),
+        timeout=float(config.POSTGRES_POOL_CHECKOUT_TIMEOUT),
+        max_lifetime=float(config.POSTGRES_POOL_MAX_LIFETIME),
+        max_idle=float(config.POSTGRES_POOL_MAX_IDLE),
+        kwargs={"autocommit": False, "row_factory": row_factory},
+        configure=_configure_pooled_connection,
+        check=ConnectionPool.check_connection,
+        name="lanshare-app",
+        open=True,
+    )
+    print(
+        f"[DB] PostgreSQL connection pool ready: min={config.POSTGRES_POOL_MIN}, "
+        f"max={config.POSTGRES_POOL_MAX}, checkout_timeout={config.POSTGRES_POOL_CHECKOUT_TIMEOUT}s, "
+        f"max_lifetime={config.POSTGRES_POOL_MAX_LIFETIME}s"
+    )
+    return pool
+
+
+def _get_connection_pool(row_factory: Any) -> Any:
+    global _connection_pool
+    if _connection_pool is None:
+        with _connection_pool_lock:
+            if _connection_pool is None:
+                _connection_pool = _build_connection_pool(row_factory)
+    return _connection_pool
+
+
+def get_pool_stats() -> dict[str, Any] | None:
+    """Snapshot of the live pool for the health endpoint; None when pooling is off/unused."""
+    pool = _connection_pool
+    if pool is None:
+        return None
+    try:
+        stats = pool.get_stats()
+    except Exception:
+        return None
+    return {
+        "min": int(config.POSTGRES_POOL_MIN),
+        "max": int(config.POSTGRES_POOL_MAX),
+        "size": stats.get("pool_size"),
+        "available": stats.get("pool_available"),
+        "waiting": stats.get("requests_waiting"),
+    }
+
+
+def close_connection_pool() -> None:
+    """Close the pool on shutdown (best-effort)."""
+    global _connection_pool
+    pool = _connection_pool
+    if pool is None:
+        return
+    _connection_pool = None
+    try:
+        pool.close()
+    except Exception as exc:  # pragma: no cover - shutdown best-effort
+        print(f"[DB] connection pool close failed: {exc}")
+
+
 def connect_postgres(*, driver: Any | None = None, row_factory: Any | None = None) -> LanSharePostgresConnection:
     database_url = validate_database_url(config.DATABASE_URL)
-    psycopg_driver = driver or load_psycopg_driver()
+    caller_row_factory = row_factory
     if row_factory is None:
         row_factory = sqlite_compatible_dict_row
+
+    # Pooled path (default). Bypassed when a driver is injected (tests) or a custom
+    # row_factory is requested, since the pool is built once with the default factory.
+    use_pool = (
+        getattr(config, "POSTGRES_POOL_ENABLED", True)
+        and driver is None
+        and caller_row_factory is None
+    )
+    if use_pool:
+        try:
+            pool = _get_connection_pool(row_factory)
+            raw_connection = pool.getconn()
+            return LanSharePostgresConnection(raw_connection, pool=pool)
+        except DatabaseConfigurationError:
+            raise
+        except Exception as exc:
+            redacted_url = redact_database_url(database_url)
+            raise DatabaseConnectionError(
+                f"Unable to acquire pooled PostgreSQL connection: {redacted_url}"
+            ) from exc
+
+    # Fallback: per-request connection (kill-switch off, driver injection, or custom row_factory).
+    psycopg_driver = driver or load_psycopg_driver()
     try:
         raw_connection = psycopg_driver.connect(
             database_url,

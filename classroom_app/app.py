@@ -26,6 +26,7 @@ from .config import (
 )
 from .database import init_database
 from .db.connection import database_backend_state
+from .db.postgres import close_connection_pool, get_pool_stats
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
 from .dependencies import infer_required_role_from_path
@@ -214,6 +215,7 @@ async def shutdown_event():
     await stop_behavior_profile_scheduler()
     stop_behavior_write_pipeline()
     await ai_client.__aexit__(None, None, None)  # 关闭 HTTP 客户端
+    close_connection_pool()  # 归还并关闭 PostgreSQL 连接池
     print("[SERVER] FastAPI 应用已关闭。")
 
 
@@ -266,6 +268,7 @@ async def internal_health():
         "timezone": app_timezone_name(),
         "server_local_time": local_iso(),
         "threadpool_tokens": int(thread_limiter.total_tokens),
+        "db_pool": get_pool_stats(),
         "behavior_write_worker_alive": behavior_stats["alive"],
         "behavior_write_queue_depth": behavior_stats["queue_depth"],
         "behavior_write_queue_capacity": behavior_stats["queue_capacity"],

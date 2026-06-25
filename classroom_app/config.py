@@ -266,11 +266,22 @@ SQLITE_CACHE_SIZE_KB = int(os.getenv("SQLITE_CACHE_SIZE_KB", 8192))
 SQLITE_WAL_AUTOCHECKPOINT_PAGES = int(os.getenv("SQLITE_WAL_AUTOCHECKPOINT_PAGES", 2000))
 
 # --- PostgreSQL ---
+# Connection pooling. Each request previously opened a fresh psycopg connection
+# (TCP+auth+session-setup per call); under 200 concurrent users that churns the
+# 2c/4GB box and risks exhausting Postgres max_connections. A per-process pool
+# (psycopg_pool) reuses connections. POSTGRES_POOL_ENABLED is a kill-switch:
+# set it false (+restart) to fall back to per-request connections without a redeploy.
+POSTGRES_POOL_ENABLED = _read_bool_env("POSTGRES_POOL_ENABLED", True)
 POSTGRES_POOL_MIN = max(1, int(os.getenv("POSTGRES_POOL_MIN", 1)))
 POSTGRES_POOL_MAX = max(
     POSTGRES_POOL_MIN,
-    int(os.getenv("POSTGRES_POOL_MAX", max(4, MAIN_WORKERS * 4))),
+    int(os.getenv("POSTGRES_POOL_MAX", max(8, MAIN_WORKERS * 8))),
 )
+# Seconds a checkout waits for a free connection before erroring (backpressure,
+# not instant failure). Recycle knobs cap connection age/idle to avoid stale ones.
+POSTGRES_POOL_CHECKOUT_TIMEOUT = max(1.0, float(os.getenv("POSTGRES_POOL_CHECKOUT_TIMEOUT", 10.0)))
+POSTGRES_POOL_MAX_LIFETIME = max(60.0, float(os.getenv("POSTGRES_POOL_MAX_LIFETIME", 1800.0)))
+POSTGRES_POOL_MAX_IDLE = max(10.0, float(os.getenv("POSTGRES_POOL_MAX_IDLE", 300.0)))
 POSTGRES_STATEMENT_TIMEOUT_MS = max(0, int(os.getenv("POSTGRES_STATEMENT_TIMEOUT_MS", 30000)))
 POSTGRES_LOCK_TIMEOUT_MS = max(0, int(os.getenv("POSTGRES_LOCK_TIMEOUT_MS", 5000)))
 POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS = max(
