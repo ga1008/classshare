@@ -43,6 +43,23 @@ TEMPLATE_CONFIGS: dict[str, dict[str, str]] = {
     "final_teaching_summary": {"title": "教师教学工作总结", "preferred_format": "docx"},
 }
 
+_ASSESSMENT_PLAN_PAGE_TWIPS = {
+    "width": 11907,
+    "height": 16839,
+    "top": 851,
+    "right": 708,
+    "bottom": 851,
+    "left": 851,
+    "header": 851,
+    "footer": 992,
+}
+_ASSESSMENT_PLAN_TABLE_WIDTH_TWIPS = 10343
+_ASSESSMENT_PLAN_META_GRID_TWIPS = [2628, 2442, 2409, 2864]
+_ASSESSMENT_PLAN_META_ROW_HEIGHTS_TWIPS = [626, 629, 629, 624]
+_ASSESSMENT_PLAN_ITEMS_GRID_TWIPS = [2628, 5731, 1984]
+_ASSESSMENT_PLAN_ITEMS_HEADER_HEIGHT_TWIPS = 652
+_ASSESSMENT_PLAN_ITEMS_BODY_HEIGHT_TWIPS = 1134
+
 FIELD_LABELS = {
     "school": "学校",
     "college": "学院",
@@ -208,7 +225,7 @@ def _build_final_material_docx_export(payload: dict[str, Any], *, title: str, te
         from docx.enum.text import WD_ALIGN_PARAGRAPH
         from docx.oxml import OxmlElement
         from docx.oxml.ns import qn
-        from docx.shared import Cm, Pt, RGBColor
+        from docx.shared import Cm, Pt, RGBColor, Twips
     except ImportError as exc:
         raise RuntimeError(f"缺少 DOCX 导出依赖 python-docx: {exc}") from exc
 
@@ -226,18 +243,24 @@ def _build_final_material_docx_export(payload: dict[str, Any], *, title: str, te
 
     document = Document()
     section = document.sections[0]
-    section.page_width = Cm(21)
-    section.page_height = Cm(29.7)
-    section.top_margin = Cm(float(margins.get("top") or 1.5))
-    section.bottom_margin = Cm(float(margins.get("bottom") or 1.5))
-    section.left_margin = Cm(float(margins.get("left") or 1.5))
-    section.right_margin = Cm(float(margins.get("right") or 1.5))
-    section.footer_distance = Cm(float(margins.get("footer") or 1.5))
+    if template_key == "assessment_plan":
+        _apply_assessment_plan_section(section)
+    else:
+        section.page_width = Cm(21)
+        section.page_height = Cm(29.7)
+        section.top_margin = Cm(float(margins.get("top") or 1.5))
+        section.bottom_margin = Cm(float(margins.get("bottom") or 1.5))
+        section.left_margin = Cm(float(margins.get("left") or 1.5))
+        section.right_margin = Cm(float(margins.get("right") or 1.5))
+        section.footer_distance = Cm(float(margins.get("footer") or 1.5))
 
     styles = document.styles
-    styles["Normal"].font.name = "Times New Roman"
-    styles["Normal"].font.size = Pt(10.5)
-    styles["Normal"]._element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
+    if template_key == "assessment_plan":
+        _apply_assessment_plan_normal_style(styles)
+    else:
+        styles["Normal"].font.name = "Times New Roman"
+        styles["Normal"].font.size = Pt(10.5)
+        styles["Normal"]._element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
 
     if template_key == "assessment_plan":
         _add_assessment_plan_title_block(document, fields)
@@ -309,19 +332,19 @@ def _add_assessment_plan_title_block(document: Any, fields: dict[str, Any]) -> N
 
     title = document.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title.paragraph_format.space_before = Pt(34)
-    title.paragraph_format.space_after = Pt(12)
-    _set_run_songti(title.add_run("广西外国语学院课程考核计划表"), 18, bold=True)
+    title.paragraph_format.space_before = Pt(8.5)
+    title.paragraph_format.space_after = Pt(2)
+    _set_run_assessment_songti(title.add_run("广西外国语学院课程考核计划表"), 18, bold=True)
 
     period = document.add_paragraph()
     period.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    period.paragraph_format.space_after = Pt(4)
+    period.paragraph_format.space_after = Pt(3)
     _add_assessment_period_runs(period, fields)
 
     subtitle = document.add_paragraph()
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    subtitle.paragraph_format.space_after = Pt(2)
-    _set_run_songti(subtitle.add_run(f"（{_assessment_mode_label(fields)}）"), 12)
+    subtitle.paragraph_format.space_after = Pt(1)
+    _set_run_assessment_songti(subtitle.add_run(f"（{_assessment_mode_label(fields)}）"), 12)
 
 
 def _add_grading_rubric_title_block(document: Any, fields: dict[str, Any]) -> None:
@@ -368,12 +391,8 @@ def _add_exam_paper_title_block(document: Any, fields: dict[str, Any]) -> None:
 
 
 def _add_assessment_plan_export_body(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> None:
-    from docx.shared import Pt
-
     _add_plan_meta_table(document, fields)
-    gap = document.add_paragraph()
-    gap.paragraph_format.space_before = Pt(10)
-    gap.paragraph_format.space_after = Pt(0)
+    document.add_paragraph()
     items = structured.get("assessment_items") if isinstance(structured.get("assessment_items"), list) else []
     _add_assessment_items_table(document, items)
     _add_plan_notes(document)
@@ -419,30 +438,35 @@ def _add_exam_paper_export_body(document: Any, fields: dict[str, Any], structure
 
 
 def _add_plan_meta_table(document: Any, fields: dict[str, Any]) -> None:
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
-
     rows = [
         ["课程名称", _field(fields, "course_name"), "", ""],
-        ["专业年级班级", _field(fields, "class_name"), "考核类型", _checked_pair("考查", "考试", _field(fields, "assessment_type") or "考试")],
-        ["命题教师", _signature_value(fields, "examiner_name", "teacher_name", signature_key="examiner_signature"), "系（教研室）主任\n审核签字", _signature_value(fields, "reviewer_name", signature_key="reviewer_signature")],
+        ["专业年级班级", _field(fields, "class_name"), "考核类型", _checked_pair_ascii("考查", "考试", _field(fields, "assessment_type") or "考试")],
+        ["命题教师", _signature_value(fields, "examiner_name", "teacher_name", signature_key="examiner_signature"), "系（教研室）主任审核签字", _signature_value(fields, "reviewer_name", signature_key="reviewer_signature")],
         ["命题日期", _field(fields, "date"), "", ""],
     ]
     table = document.add_table(rows=len(rows), cols=4)
-    table.style = "Table Grid"
-    table.alignment = 1
     table.autofit = False
-    _set_table_borders(table)
-    widths = [4.45, 4.15, 4.05, 4.85]
+    _set_assessment_table_geometry(table, _ASSESSMENT_PLAN_META_GRID_TWIPS)
+    _set_table_borders(table, color="auto", size=4)
     for row_index, row_values in enumerate(rows):
         row = table.rows[row_index]
-        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-        row.height = _cm(1.12)
+        _set_row_height_twips(row, _ASSESSMENT_PLAN_META_ROW_HEIGHTS_TWIPS[row_index])
         for col_index, value in enumerate(row_values):
-            cell = row.cells[col_index]
-            _set_cell_text(cell, value, bold=True, align=1)
-            _set_cell_width(cell, widths[col_index])
+            _set_cell_width_twips(row.cells[col_index], _ASSESSMENT_PLAN_META_GRID_TWIPS[col_index])
         if row_index in {0, 3}:
-            row.cells[1].merge(row.cells[3])
+            merged_cell = row.cells[1].merge(row.cells[3])
+            _set_cell_width_twips(merged_cell, sum(_ASSESSMENT_PLAN_META_GRID_TWIPS[1:]))
+            _set_assessment_cell_text(row.cells[0], row_values[0], bold=True, center=True)
+            _set_assessment_cell_text(merged_cell, row_values[1], bold=True, center=True)
+            continue
+        for col_index, value in enumerate(row_values):
+            is_signature_value = row_index == 2 and col_index in {1, 3}
+            _set_assessment_cell_text(
+                row.cells[col_index],
+                value,
+                bold=not is_signature_value,
+                center=not is_signature_value,
+            )
 
 
 def _add_rubric_meta_table(document: Any, fields: dict[str, Any]) -> None:
@@ -525,24 +549,18 @@ def _add_exam_meta_table(document: Any, fields: dict[str, Any]) -> None:
 
 
 def _add_assessment_items_table(document: Any, items: list[dict[str, Any]]) -> None:
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
-
     table = document.add_table(rows=1, cols=3)
-    table.style = "Table Grid"
-    table.alignment = 1
     table.autofit = False
-    _set_table_borders(table)
+    _set_assessment_table_geometry(table, _ASSESSMENT_PLAN_ITEMS_GRID_TWIPS)
+    _set_table_borders(table, color="auto", size=4)
     headers = ["考核形式", "考核技能/内容", "分 值"]
-    widths = [4.45, 9.65, 3.35]
-    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    table.rows[0].height = _cm(1.0)
+    _set_row_height_twips(table.rows[0], _ASSESSMENT_PLAN_ITEMS_HEADER_HEIGHT_TWIPS)
     for index, header in enumerate(headers):
-        _set_cell_text(table.rows[0].cells[index], header, bold=True, align=1)
-        _set_cell_width(table.rows[0].cells[index], widths[index])
+        _set_cell_width_twips(table.rows[0].cells[index], _ASSESSMENT_PLAN_ITEMS_GRID_TWIPS[index])
+        _set_assessment_cell_text(table.rows[0].cells[index], header, bold=True, center=True)
     for item in items:
         row = table.add_row()
-        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-        row.height = _cm(1.75)
+        _set_row_height_twips(row, _ASSESSMENT_PLAN_ITEMS_BODY_HEIGHT_TWIPS)
         cells = row.cells
         values = [
             item.get("assessment_form") or item.get("form") or "机试",
@@ -550,8 +568,8 @@ def _add_assessment_items_table(document: Any, items: list[dict[str, Any]]) -> N
             item.get("score") or "",
         ]
         for index, value in enumerate(values):
-            _set_cell_text(cells[index], value, align=1 if index != 1 else 0)
-            _set_cell_width(cells[index], widths[index])
+            _set_cell_width_twips(cells[index], _ASSESSMENT_PLAN_ITEMS_GRID_TWIPS[index])
+            _set_assessment_cell_text(cells[index], value, center=index != 1)
 
 
 def _add_exam_score_summary_table(document: Any, structured: dict[str, Any]) -> None:
@@ -774,10 +792,7 @@ def _add_exam_student_line(document: Any) -> None:
 def _add_plan_notes(document: Any) -> None:
     for line in ASSESSMENT_PLAN_NOTES:
         p = document.add_paragraph()
-        p.paragraph_format.space_before = _pt(0)
-        p.paragraph_format.space_after = _pt(0)
-        p.paragraph_format.line_spacing = 1.08
-        _set_run_songti(p.add_run(line), 10.5)
+        p.add_run(line)
 
 
 def _add_rubric_notes(document: Any) -> None:
@@ -913,15 +928,14 @@ def _format_period_line(fields: dict[str, Any]) -> str:
 
 def _add_assessment_period_runs(paragraph: Any, fields: dict[str, Any]) -> None:
     start, end, semester = _assessment_period_parts(fields)
-    _set_run_songti(paragraph.add_run("（"), 14, bold=True)
-    _set_run_songti(paragraph.add_run(start[:2]), 14, bold=True)
-    _set_run_songti(paragraph.add_run(start[2:] or "__"), 14, bold=True, underline=True)
-    _set_run_songti(paragraph.add_run("  —  "), 14, bold=True)
-    _set_run_songti(paragraph.add_run(end[:2]), 14, bold=True)
-    _set_run_songti(paragraph.add_run(end[2:] or "__"), 14, bold=True, underline=True)
-    _set_run_songti(paragraph.add_run("  学年度第"), 14, bold=True)
-    _set_run_songti(paragraph.add_run(semester or "    "), 14, bold=True, underline=True)
-    _set_run_songti(paragraph.add_run("学期）"), 14, bold=True)
+    _set_run_assessment_songti(paragraph.add_run(f"（{start[:2]}"), 14, bold=True)
+    _set_run_assessment_songti(paragraph.add_run(f" {start[2:] or '__'} "), 14, bold=True, underline=True)
+    _set_run_assessment_songti(paragraph.add_run(" — "), 14, bold=True)
+    _set_run_assessment_songti(paragraph.add_run(end[:2]), 14, bold=True)
+    _set_run_assessment_songti(paragraph.add_run(f" {end[2:] or '__'} "), 14, bold=True, underline=True)
+    _set_run_assessment_songti(paragraph.add_run(" 学年度第"), 14, bold=True)
+    _set_run_assessment_songti(paragraph.add_run(f" {semester or '    '} "), 14, bold=True, underline=True)
+    _set_run_assessment_songti(paragraph.add_run("学期）"), 14, bold=True)
 
 
 def _assessment_period_parts(fields: dict[str, Any]) -> tuple[str, str, str]:
@@ -960,6 +974,17 @@ def _checked_pair(left: str, right: str, selected: str) -> str:
     return f"{left}（ {left_checked} ）/ {right}（ {right_checked} ）"
 
 
+def _checked_pair_ascii(left: str, right: str, selected: str) -> str:
+    raw = str(selected or "")
+    left_checked = left in raw and right not in raw
+    right_checked = right in raw or not raw
+
+    def box(checked: bool) -> str:
+        return "( √ )" if checked else "(  )"
+
+    return f"{left}{box(left_checked)} / {right}{box(right_checked)}"
+
+
 def _field(fields: dict[str, Any], *keys: str) -> str:
     for key in keys:
         value = fields.get(key)
@@ -974,6 +999,150 @@ def _signature_value(fields: dict[str, Any], *keys: str, signature_key: str) -> 
     if signature and signature != name:
         return f"{name}    {signature}".strip()
     return name
+
+
+def _apply_assessment_plan_section(section: Any) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Twips
+
+    section.page_width = Twips(_ASSESSMENT_PLAN_PAGE_TWIPS["width"])
+    section.page_height = Twips(_ASSESSMENT_PLAN_PAGE_TWIPS["height"])
+    section.top_margin = Twips(_ASSESSMENT_PLAN_PAGE_TWIPS["top"])
+    section.bottom_margin = Twips(_ASSESSMENT_PLAN_PAGE_TWIPS["bottom"])
+    section.left_margin = Twips(_ASSESSMENT_PLAN_PAGE_TWIPS["left"])
+    section.right_margin = Twips(_ASSESSMENT_PLAN_PAGE_TWIPS["right"])
+    section.header_distance = Twips(_ASSESSMENT_PLAN_PAGE_TWIPS["header"])
+    section.footer_distance = Twips(_ASSESSMENT_PLAN_PAGE_TWIPS["footer"])
+    sect_pr = section._sectPr
+    doc_grid = sect_pr.find(qn("w:docGrid"))
+    if doc_grid is None:
+        doc_grid = OxmlElement("w:docGrid")
+        sect_pr.append(doc_grid)
+    doc_grid.set(qn("w:type"), "lines")
+    doc_grid.set(qn("w:linePitch"), "312")
+
+
+def _apply_assessment_plan_normal_style(styles: Any) -> None:
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    normal = styles["Normal"]
+    normal.font.name = "宋体"
+    normal.font.size = Pt(10.5)
+    normal.paragraph_format.space_before = Pt(0)
+    normal.paragraph_format.space_after = Pt(0)
+    normal.paragraph_format.line_spacing = 1
+    fonts = normal._element.rPr.rFonts
+    fonts.set(qn("w:ascii"), "宋体")
+    fonts.set(qn("w:hAnsi"), "宋体")
+    fonts.set(qn("w:eastAsia"), "宋体")
+
+
+def _set_run_assessment_songti(run: Any, size: float, *, bold: bool = False, underline: bool = False) -> None:
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    run.font.name = "宋体"
+    fonts = run._element.get_or_add_rPr().get_or_add_rFonts()
+    fonts.set(qn("w:ascii"), "宋体")
+    fonts.set(qn("w:hAnsi"), "宋体")
+    fonts.set(qn("w:eastAsia"), "宋体")
+    fonts.set(qn("w:hint"), "eastAsia")
+    run.font.size = Pt(size)
+    if bold:
+        run.font.bold = True
+    if underline:
+        run.font.underline = True
+
+
+def _set_assessment_table_geometry(table: Any, grid_twips: list[int]) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tbl_pr = table._tbl.tblPr
+    tbl_w = tbl_pr.first_child_found_in("w:tblW")
+    if tbl_w is None:
+        tbl_w = OxmlElement("w:tblW")
+        tbl_pr.insert(0, tbl_w)
+    tbl_w.set(qn("w:w"), str(_ASSESSMENT_PLAN_TABLE_WIDTH_TWIPS))
+    tbl_w.set(qn("w:type"), "dxa")
+
+    tbl_layout = tbl_pr.first_child_found_in("w:tblLayout")
+    if tbl_layout is None:
+        tbl_layout = OxmlElement("w:tblLayout")
+        tbl_pr.append(tbl_layout)
+    tbl_layout.set(qn("w:type"), "fixed")
+
+    tbl_look = tbl_pr.first_child_found_in("w:tblLook")
+    if tbl_look is None:
+        tbl_look = OxmlElement("w:tblLook")
+        tbl_pr.append(tbl_look)
+    for key, value in {
+        "val": "0000",
+        "firstRow": "0",
+        "lastRow": "0",
+        "firstColumn": "0",
+        "lastColumn": "0",
+        "noHBand": "0",
+        "noVBand": "0",
+    }.items():
+        tbl_look.set(qn(f"w:{key}"), value)
+
+    tbl_grid = table._tbl.tblGrid
+    if tbl_grid is None:
+        tbl_grid = OxmlElement("w:tblGrid")
+        table._tbl.insert(1, tbl_grid)
+    for child in list(tbl_grid):
+        tbl_grid.remove(child)
+    for width in grid_twips:
+        col = OxmlElement("w:gridCol")
+        col.set(qn("w:w"), str(int(width)))
+        tbl_grid.append(col)
+
+
+def _set_row_height_twips(row: Any, height_twips: int) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tr_pr = row._tr.get_or_add_trPr()
+    tr_height = tr_pr.find(qn("w:trHeight"))
+    if tr_height is None:
+        tr_height = OxmlElement("w:trHeight")
+        tr_pr.append(tr_height)
+    tr_height.set(qn("w:val"), str(int(height_twips)))
+    h_rule = qn("w:hRule")
+    if h_rule in tr_height.attrib:
+        del tr_height.attrib[h_rule]
+
+
+def _set_cell_width_twips(cell: Any, width_twips: int) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Twips
+
+    cell.width = Twips(int(width_twips))
+    tc_pr = cell._tc.get_or_add_tcPr()
+    tc_w = tc_pr.first_child_found_in("w:tcW")
+    if tc_w is None:
+        tc_w = OxmlElement("w:tcW")
+        tc_pr.append(tc_w)
+    tc_w.set(qn("w:w"), str(int(width_twips)))
+    tc_w.set(qn("w:type"), "dxa")
+
+
+def _set_assessment_cell_text(cell: Any, text: Any, *, bold: bool = False, center: bool = False) -> None:
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    cell.text = ""
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    paragraph = cell.paragraphs[0]
+    if center:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = paragraph.add_run(_stringify(text))
+    if bold:
+        run.font.bold = True
 
 
 def _set_cell_text(cell: Any, text: Any, *, bold: bool = False, align: int = 0, size: float = 10.5) -> None:
