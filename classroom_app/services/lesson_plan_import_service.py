@@ -20,7 +20,7 @@ from ..core import ai_client
 from ..db.connection import get_db_connection
 from . import lesson_plan_prompts as prompts
 from . import lesson_plan_service as lp
-from .lesson_plan_generation_service import _loads_ai_json
+from .lesson_plan_generation_service import _json_from_ai_chat_payload, _repair_json_text
 from .material_ai_import_service import MAX_VISION_IMAGES, extract_material_content
 
 _TEXT_BUDGET_PER_FILE = 16000
@@ -71,7 +71,14 @@ async def _parse_with_ai(extracted: dict[str, Any], extra_prompt: str) -> dict[s
     response = await ai_client.post("/api/ai/chat", json=payload, timeout=_AI_TIMEOUT)
     response.raise_for_status()
     data = response.json()
-    return _loads_ai_json(data.get("response_text"))
+    parsed = _json_from_ai_chat_payload(data)
+    if parsed:
+        return parsed
+    return await _repair_json_text(
+        data.get("response_text"),
+        schema_hint=prompts.IMPORT_OUTPUT_SCHEMA,
+        label="lesson-plan:import-parse",
+    )
 
 
 def _set_status(plan_id: str, **kwargs: Any) -> None:

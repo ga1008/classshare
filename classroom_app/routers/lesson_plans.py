@@ -26,7 +26,12 @@ from ..services.lesson_plan_docx_service import (
     convert_docx_to_pdf,
     convert_docx_to_png,
 )
-from ..services.lesson_plan_generation_service import run_generation_job
+from ..services.lesson_plan_generation_service import (
+    build_generation_plan_preview,
+    draft_manual_session,
+    normalize_generation_session_plan,
+    run_generation_job,
+)
 from ..services.lesson_plan_import_service import run_import_job
 from ..services.resource_access_service import is_super_admin_teacher
 
@@ -82,6 +87,47 @@ async def list_plans(user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         plans = lp.list_lesson_plans(conn, teacher=user)
     return {"lesson_plans": plans}
+
+
+def _ensure_offering_access(conn, class_offering_id: int, user: dict) -> None:
+    owns = conn.execute(
+        "SELECT id FROM class_offerings WHERE id = ? AND teacher_id = ? LIMIT 1",
+        (int(class_offering_id), int(user["id"])),
+    ).fetchone()
+    if not owns and not is_super_admin_teacher(conn, int(user["id"])):
+        raise HTTPException(403, "No permission to access this classroom.")
+
+
+@router.get("/classroom/{class_offering_id}/generation-plan", response_class=JSONResponse)
+async def get_classroom_generation_plan(
+    class_offering_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        _ensure_offering_access(conn, int(class_offering_id), user)
+    return await build_generation_plan_preview(int(class_offering_id), int(user["id"]))
+
+
+@router.post("/classroom/{class_offering_id}/session-draft", response_class=JSONResponse)
+async def create_session_draft(
+    class_offering_id: int,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    body = await _json_body(request)
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise HTTPException(400, "Please enter the topic or prompt for this session.")
+    with get_db_connection() as conn:
+        _ensure_offering_access(conn, int(class_offering_id), user)
+    session = await draft_manual_session(
+        class_offering_id=int(class_offering_id),
+        teacher_id=int(user["id"]),
+        prompt=prompt,
+        previous_context=str(body.get("previous_context") or ""),
+        next_context=str(body.get("next_context") or ""),
+    )
+    return {"session": session}
 
 
 @router.get("/{plan_id}", response_class=JSONResponse)
@@ -168,6 +214,7 @@ async def generate_from_classroom(request: Request, user: dict = Depends(get_cur
         if not owns and not is_super_admin_teacher(conn, int(user["id"])):
             raise HTTPException(403, "无权访问该课堂")
         cover = lp.build_cover_from_offering(conn, int(class_offering_id), teacher=user)
+        requested_sessions = normalize_generation_session_plan(body.get("sessions"))
         title = body.get("title") or (cover.get("course_name") or "教案") + "（按课堂生成）"
         plan_id = lp.create_lesson_plan(
             conn,
@@ -184,7 +231,14 @@ async def generate_from_classroom(request: Request, user: dict = Depends(get_cur
         lp.set_generation_status(conn, plan_id, task_id=plan_id)
         conn.commit()
         plan = lp.get_lesson_plan(conn, plan_id)
-    asyncio.create_task(run_generation_job(plan_id, int(class_offering_id), int(user["id"])))
+    asyncio.create_task(
+        run_generation_job(
+            plan_id,
+            int(class_offering_id),
+            int(user["id"]),
+            session_plan=requested_sessions,
+        )
+    )
     return {"id": plan_id, "card": lp.serialize_card(plan)}
 
 

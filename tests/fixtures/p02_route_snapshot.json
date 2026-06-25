@@ -1688,6 +1688,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/lesson-plans/classroom/{class_offering_id}/generation-plan",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_generation_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lesson-plans/classroom/{class_offering_id}/session-draft",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_session_draft",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/lesson-plans/generate",
     "methods": [
       "POST"

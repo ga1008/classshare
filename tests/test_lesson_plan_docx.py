@@ -9,6 +9,7 @@ import unittest
 from io import BytesIO
 
 from docx import Document
+from docx.oxml.ns import qn
 
 from classroom_app.services import lesson_plan_docx_service as docx_svc
 from classroom_app.services import lesson_plan_markdown as md
@@ -107,6 +108,11 @@ class DocxBuilderTests(unittest.TestCase):
     def test_table_count_cover_plus_sessions(self):
         # python-docx .tables is top-level only: 1 cover + 2 session tables.
         self.assertEqual(len(self.document.tables), 3)
+
+    def test_sessions_are_page_separated(self):
+        breaks = self.document.element.body.findall(".//" + qn("w:br"))
+        page_breaks = [br for br in breaks if br.get(qn("w:type")) == "page"]
+        self.assertGreaterEqual(len(page_breaks), len(_PLAN["sessions"]) - 1)
 
     def test_markdown_table_rendered_as_nested_table(self):
         # The PBL Markdown table in session 1's 教学内容及过程 cell becomes a

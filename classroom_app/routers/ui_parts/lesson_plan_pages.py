@@ -12,12 +12,18 @@ def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
     rows = conn.execute(
         """
         SELECT o.id, c.name AS class_name, co.name AS course_name,
+               COALESCE(NULLIF(o.academic_teaching_class_name, ''), c.academic_class_name, c.name) AS display_class_name,
+               COALESCE(NULLIF(sem.name, ''), NULLIF(o.semester, ''), '') AS semester_label,
+               tb.title AS textbook_title, tb.publisher AS textbook_publisher,
+               o.schedule_source AS schedule_source,
                (SELECT COUNT(*) FROM class_offering_sessions s WHERE s.class_offering_id = o.id) AS session_count
         FROM class_offerings o
         JOIN classes c ON o.class_id = c.id
         JOIN courses co ON o.course_id = co.id
+        LEFT JOIN academic_semesters sem ON sem.id = o.semester_id
+        LEFT JOIN textbooks tb ON tb.id = o.textbook_id
         WHERE o.teacher_id = ?
-        ORDER BY co.name
+        ORDER BY co.name, c.name
         """,
         (int(teacher_id),),
     ).fetchall()

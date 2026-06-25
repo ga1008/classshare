@@ -55,6 +55,7 @@ def build_generation_system_prompt() -> str:
         + "\n你将收到一次课的课程信息与本次课对应的教学材料正文，请据此生成这次课的教案。\n"
         + "只输出一个 JSON 对象，键与含义如下(值均为字符串)：\n"
         + json.dumps(SESSION_OUTPUT_SCHEMA, ensure_ascii=False, indent=2)
+        + "\nJSON mode requirement: return exactly one JSON object, no markdown fence, no explanation, no leading or trailing prose."
         + "\n不要输出 JSON 以外的任何内容，不要用代码块包裹。"
     )
 
@@ -156,8 +157,51 @@ def build_import_system_prompt(extra_hint: str = "") -> str:
         "请尽量完整还原每一次课，按出现顺序排列；教学内容及过程尽量保留 Markdown(表格用 Markdown 表格)。\n"
         "只输出一个 JSON 对象，结构如下：\n"
         + json.dumps(IMPORT_OUTPUT_SCHEMA, ensure_ascii=False, indent=2)
+        + "\nJSON mode requirement: return exactly one JSON object, no markdown fence, no explanation, no JSON array, no leading or trailing prose."
         + "\n缺失字段填空字符串；不要编造原文没有的内容；不要输出 JSON 以外的任何内容。"
     )
     if extra_hint.strip():
         base += f"\n\n【用户补充提示】{extra_hint.strip()}"
     return base
+
+
+def build_json_repair_system_prompt(schema_hint: dict[str, Any]) -> str:
+    return (
+        "You are a JSON repair worker. Extract useful data from the user's malformed AI output "
+        "and return exactly one valid JSON object matching the target structure. Do not invent "
+        "business content that is not present. Use empty strings or empty arrays when uncertain. "
+        "Return JSON only, with no markdown fence or explanation.\n\n"
+        "Target structure:\n"
+        + json.dumps(schema_hint or {"cover": {}, "sessions": []}, ensure_ascii=False, indent=2)
+    )
+
+
+def build_session_draft_system_prompt() -> str:
+    return (
+        "You are a course-session planning assistant. Based on the teacher's topic hint, "
+        "course context, and neighboring sessions, create one concise session card that can be "
+        "inserted into a semester lesson plan. Return exactly one JSON object with keys: "
+        "chapter, material_outline, prompt_hint. chapter <= 40 Chinese chars; "
+        "material_outline 200-500 Chinese chars; prompt_hint <= 120 Chinese chars. "
+        "Return JSON only."
+    )
+
+
+def build_session_draft_user_message(
+    *,
+    cover: dict[str, Any],
+    prompt: str,
+    previous_context: str,
+    next_context: str,
+) -> str:
+    return "\n".join(
+        [
+            f"Course: {cover.get('course_name') or ''}",
+            f"Class: {cover.get('class_name') or ''}",
+            f"Textbook: {cover.get('textbook') or ''}",
+            f"Teacher hint: {prompt or 'Please bridge the neighboring sessions naturally.'}",
+            f"Previous session: {previous_context or '(none)'}",
+            f"Next session: {next_context or '(none)'}",
+            "Return the new session card JSON.",
+        ]
+    )

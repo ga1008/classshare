@@ -56,7 +56,9 @@ function Test-ProtectedDeployPath {
     param([string]$Path)
 
     $p = Normalize-ArchivePath $Path
-    $p = $p.TrimStart("./")
+    while ($p.StartsWith("./", [System.StringComparison]::Ordinal)) {
+        $p = $p.Substring(2)
+    }
     if ([string]::IsNullOrWhiteSpace($p)) {
         return $true
     }
@@ -69,6 +71,7 @@ function Test-ProtectedDeployPath {
 
     $protectedPrefixes = @(
         ".git/",
+        ".claude/",
         ".idea/",
         ".sync_state/",
         ".deploy_tmp/",
@@ -317,7 +320,7 @@ else
   exit 2
 fi
 
-if grep -E '(^|/)(data|attendance|chat_logs|homework_submissions|logs|rosters|shared_files|storage|node_modules|venv|\.venv|\.git|tools/guardianangel\.net\.cn_nginx)(/|$)|(^|/)(\.env|docker\.env|[^/]*\.env)$' "$list"; then
+if grep -E '(^|/)(data|attendance|chat_logs|homework_submissions|logs|rosters|shared_files|storage|node_modules|venv|\.venv|\.git|\.claude|tools/guardianangel\.net\.cn_nginx)(/|$)|(^|/)(\.env|docker\.env|[^/]*\.env)$' "$list"; then
   echo "Archive contains protected production/runtime paths. Refusing to deploy." >&2
   exit 2
 fi
@@ -351,6 +354,7 @@ echo "Backing up remote code to $backup_dir"
 code_backup="$backup_dir/code-$ts.tgz"
 tar --ignore-failed-read \
   --exclude='./.git' \
+  --exclude='./.claude' \
   --exclude='./.env' \
   --exclude='./*.env' \
   --exclude='./docker.env' \

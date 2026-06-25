@@ -302,7 +302,7 @@ async def generate_material_blurb(*, name: str, type_label: str, material_path: 
         "system_prompt": system_prompt,
         "messages": [],
         "new_message": user_message,
-        "model_capability": "fast",
+        "model_capability": "standard",
         "task_type": "fast_text_response",
         "web_search_enabled": False,
         "response_format": "text",

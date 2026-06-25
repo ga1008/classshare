@@ -129,6 +129,71 @@ COVER_FIELDS = (
     "school_name",
 )
 
+_PAYLOAD_CONTAINER_KEYS = (
+    "lesson_plan",
+    "lessonPlan",
+    "payload",
+    "result",
+    "data",
+    "content",
+    "parsed",
+)
+
+_COVER_CONTAINER_KEYS = (
+    "cover",
+    "metadata",
+    "basic_info",
+    "basicInfo",
+    "course_info",
+    "courseInfo",
+    "fields",
+)
+
+_SESSION_CONTAINER_KEYS = (
+    "sessions",
+    "lesson_sessions",
+    "lessonSessions",
+    "session_plans",
+    "sessionPlans",
+    "lessons",
+    "tables",
+    "items",
+)
+
+_COVER_ALIASES = {
+    "course_name": ("course", "course_title", "courseTitle", "title", "课程名称", "课程名"),
+    "course_category": ("category", "course_type", "courseType", "course_nature", "课程类别", "课程性质"),
+    "credits": ("credit", "学分"),
+    "total_hours": ("hours", "total_periods", "totalHours", "学时", "总学时"),
+    "teacher_name": ("teacher", "teacher", "teacherName", "instructor", "授课教师", "教师"),
+    "teaching_unit": ("unit", "department", "college", "teachingUnit", "教学单位", "学院", "系部"),
+    "class_name": ("class", "className", "teaching_class", "teachingClass", "授课班级", "班级"),
+    "textbook": ("book", "textbook_name", "textbookName", "教材", "使用教材"),
+    "publisher": ("press", "publisher_name", "publisherName", "出版社", "出版单位"),
+    "semester_label": ("semester", "term", "semesterLabel", "学期", "开课学期"),
+    "school_name": ("school", "schoolName", "university", "学校", "学校名称"),
+}
+
+_SESSION_ALIASES = {
+    "chapter": ("title", "topic", "lesson_title", "lessonTitle", "content_title", "授课章节", "章节", "主题"),
+    "objectives": ("objective", "teaching_objectives", "teachingObjectives", "教学目标", "教学目的和要求"),
+    "key_points": ("keypoints", "key_points_and_difficulties", "重点", "教学重点"),
+    "difficulties": ("difficulty", "difficult_points", "难点", "教学难点"),
+    "methods": ("method", "teaching_methods", "教学方法"),
+    "means": ("teaching_means", "tools", "教学手段"),
+    "process": ("content", "teaching_process", "teachingProcess", "lesson_process", "教学内容及过程", "教学过程"),
+    "side_notes": ("notes", "sideNotes", "annotation", "旁批", "批注"),
+    "post_notes": ("reflection", "postNotes", "after_class_notes", "教学后记"),
+}
+
+_SCHEDULE_ALIASES = {
+    "date": ("session_date", "date_text", "授课日期", "日期"),
+    "week_index": ("week", "weekIndex", "周次", "第几周"),
+    "weekday": ("day", "weekdayIndex", "星期", "星期几"),
+    "sections": ("period", "periods", "section", "sections_text", "节次", "课节"),
+    "text": ("schedule_text", "scheduleText", "time", "class_time", "授课时间"),
+}
+
 
 def _text(value: Any) -> str:
     if value is None:
@@ -136,15 +201,61 @@ def _text(value: Any) -> str:
     return str(value).strip()
 
 
+def _first_value(data: dict[str, Any], primary: str, aliases: dict[str, tuple[str, ...]]) -> Any:
+    for key in (primary, *aliases.get(primary, ())):
+        if key in data and data.get(key) not in (None, ""):
+            return data.get(key)
+    return data.get(primary)
+
+
+def _first_mapping(data: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _first_sequence(data: dict[str, Any], keys: tuple[str, ...]) -> list[Any]:
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, list):
+            return value
+    structured = data.get("structured")
+    if isinstance(structured, dict):
+        return _first_sequence(structured, keys)
+    return []
+
+
+def _unwrap_payload(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    data = raw
+    for _ in range(3):
+        nested = None
+        for key in _PAYLOAD_CONTAINER_KEYS:
+            value = data.get(key)
+            if isinstance(value, dict):
+                nested = value
+                break
+        if not nested:
+            break
+        if _first_mapping(nested, _COVER_CONTAINER_KEYS) or _first_sequence(nested, _SESSION_CONTAINER_KEYS):
+            data = nested
+        else:
+            break
+    return data
+
+
 def normalize_cover(raw: Any) -> dict[str, str]:
     data = raw if isinstance(raw, dict) else {}
-    return {field: _text(data.get(field)) for field in COVER_FIELDS}
+    return {field: _text(_first_value(data, field, _COVER_ALIASES)) for field in COVER_FIELDS}
 
 
 def _normalize_schedule(raw: Any) -> dict[str, Any]:
     data = raw if isinstance(raw, dict) else {}
-    week = data.get("week_index")
-    weekday = data.get("weekday")
+    week = _first_value(data, "week_index", _SCHEDULE_ALIASES)
+    weekday = _first_value(data, "weekday", _SCHEDULE_ALIASES)
     try:
         week = int(week) if week not in (None, "") else None
     except (TypeError, ValueError):
@@ -154,11 +265,11 @@ def _normalize_schedule(raw: Any) -> dict[str, Any]:
     except (TypeError, ValueError):
         weekday = None
     return {
-        "date": _text(data.get("date")),
+        "date": _text(_first_value(data, "date", _SCHEDULE_ALIASES)),
         "week_index": week,
         "weekday": weekday,
-        "sections": _text(data.get("sections")),
-        "text": _text(data.get("text")),
+        "sections": _text(_first_value(data, "sections", _SCHEDULE_ALIASES)),
+        "text": _text(_first_value(data, "text", _SCHEDULE_ALIASES)),
     }
 
 
@@ -169,16 +280,16 @@ def normalize_session(raw: Any, index: int) -> dict[str, Any]:
         material_ids = []
     return {
         "index": index,
-        "schedule": _normalize_schedule(data.get("schedule")),
-        "chapter": _text(data.get("chapter")),
-        "objectives": _text(data.get("objectives")),
-        "key_points": _text(data.get("key_points")),
-        "difficulties": _text(data.get("difficulties")),
-        "methods": _text(data.get("methods")),
-        "means": _text(data.get("means")),
-        "process": _text(data.get("process")),
-        "side_notes": _text(data.get("side_notes")),
-        "post_notes": _text(data.get("post_notes")),
+        "schedule": _normalize_schedule(data.get("schedule") if isinstance(data.get("schedule"), dict) else data),
+        "chapter": _text(_first_value(data, "chapter", _SESSION_ALIASES)),
+        "objectives": _text(_first_value(data, "objectives", _SESSION_ALIASES)),
+        "key_points": _text(_first_value(data, "key_points", _SESSION_ALIASES)),
+        "difficulties": _text(_first_value(data, "difficulties", _SESSION_ALIASES)),
+        "methods": _text(_first_value(data, "methods", _SESSION_ALIASES)),
+        "means": _text(_first_value(data, "means", _SESSION_ALIASES)),
+        "process": _text(_first_value(data, "process", _SESSION_ALIASES)),
+        "side_notes": _text(_first_value(data, "side_notes", _SESSION_ALIASES)),
+        "post_notes": _text(_first_value(data, "post_notes", _SESSION_ALIASES)),
         "source_material_ids": [str(m) for m in material_ids if str(m).strip()],
         "ai_filled": bool(data.get("ai_filled")),
     }
@@ -190,10 +301,12 @@ def normalize_sessions(raw: Any) -> list[dict[str, Any]]:
 
 
 def normalize_lesson_plan_payload(raw: Any) -> dict[str, Any]:
-    data = raw if isinstance(raw, dict) else {}
+    data = _unwrap_payload(raw)
+    cover_raw = _first_mapping(data, _COVER_CONTAINER_KEYS) or data.get("cover") or {}
+    sessions_raw = _first_sequence(data, _SESSION_CONTAINER_KEYS)
     return {
-        "cover": normalize_cover(data.get("cover")),
-        "sessions": normalize_sessions(data.get("sessions")),
+        "cover": normalize_cover(cover_raw),
+        "sessions": normalize_sessions(sessions_raw),
     }
 
 
@@ -216,10 +329,12 @@ def build_cover_from_offering(
                co.name AS course_name, co.credits AS credits,
                co.total_hours AS total_hours, co.college AS course_college,
                co.department AS course_department, co.school_name AS course_school_name,
-               cl.name AS class_name, cl.academic_class_name AS academic_class_name
+               cl.name AS class_name, cl.academic_class_name AS academic_class_name,
+               tb.title AS textbook_title, tb.publisher AS textbook_publisher
         FROM class_offerings o
         LEFT JOIN courses co ON co.id = o.course_id
         LEFT JOIN classes cl ON cl.id = o.class_id
+        LEFT JOIN textbooks tb ON tb.id = o.textbook_id
         WHERE o.id = ?
         """,
         (int(class_offering_id),),
@@ -233,6 +348,8 @@ def build_cover_from_offering(
         cover["total_hours"] = "" if hours in (None, "", 0) else _text(hours)
         cover["class_name"] = _text(row.get("academic_class_name") or row.get("class_name"))
         cover["semester_label"] = _text(row.get("semester"))
+        cover["textbook"] = _text(row.get("textbook_title")) or cover["textbook"]
+        cover["publisher"] = _text(row.get("textbook_publisher")) or cover["publisher"]
         if row.get("course_school_name"):
             cover["school_name"] = _text(row.get("course_school_name"))
         unit = _text(row.get("course_college") or row.get("course_department"))

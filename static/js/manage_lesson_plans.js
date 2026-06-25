@@ -256,6 +256,390 @@ function openCreateBlankModal() {
     });
 }
 
+function normalizePlannerSessions(sessions) {
+    return (sessions || []).map((session, index) => {
+        const schedule = session.schedule && typeof session.schedule === 'object' ? session.schedule : {};
+        return {
+            ...session,
+            client_id: session.client_id || `session-${Date.now()}-${index}`,
+            source_type: session.source_type || 'classroom',
+            source_session_id: Number(session.source_session_id || session.session_id || 0),
+            chapter: session.chapter || session.title || `第 ${index + 1} 次课`,
+            title: session.title || session.chapter || `第 ${index + 1} 次课`,
+            schedule,
+            schedule_text: session.schedule_text || schedule.text || '',
+            section_minutes: Number(session.section_minutes || 80),
+            source_material_ids: Array.isArray(session.source_material_ids) ? session.source_material_ids : [],
+            materials: Array.isArray(session.materials) ? session.materials : [],
+            material_summary: session.material_summary || '',
+            prompt_hint: session.prompt_hint || '',
+            manual_outline: session.manual_outline || '',
+        };
+    });
+}
+
+function plannerSessionContext(session) {
+    return [
+        session.chapter || session.title || '',
+        session.schedule_text || '',
+        session.material_summary || session.manual_outline || '',
+        session.prompt_hint || '',
+    ].filter(Boolean).join('\n').slice(0, 1600);
+}
+
+function renderPlannerCourseCard(offering, selectedId) {
+    const active = Number(offering.id) === Number(selectedId) ? ' is-active' : '';
+    const count = Number(offering.session_count || 0);
+    const className = offering.display_class_name || offering.class_name || '';
+    const meta = [
+        offering.semester_label || '',
+        offering.textbook_title ? `教材：${offering.textbook_title}` : '',
+        `${count} 次课`,
+    ].filter(Boolean).join(' · ');
+    return `
+        <button type="button" class="lp-gen-course${active}" data-offering-id="${offering.id}">
+            <strong>${escapeHtml(offering.course_name || '未命名课程')}</strong>
+            <span>${escapeHtml(className || '未绑定班级')}</span>
+            <small>${escapeHtml(meta)}</small>
+        </button>`;
+}
+
+function renderPlannerSessionCard(session, index) {
+    const materials = (session.materials || []).slice(0, 4)
+        .map((item) => `<span>${escapeHtml(item.name || item.material_path || '教学文档')}</span>`)
+        .join('');
+    const scheduleText = session.schedule_text || session.schedule?.text || '';
+    return `
+        <article class="lp-gen-session" data-session-key="${escapeHtml(session.client_id)}" draggable="true">
+            <div class="lp-gen-session__head">
+                <span class="lp-gen-session__grab" title="拖动排序">↕</span>
+                <strong>第 ${index + 1} 次课</strong>
+                <div class="lp-gen-session__actions">
+                    <button type="button" class="lp-btn lp-btn--ghost" data-action="move-session" data-dir="-1" title="上移">↑</button>
+                    <button type="button" class="lp-btn lp-btn--ghost" data-action="move-session" data-dir="1" title="下移">↓</button>
+                    <button type="button" class="lp-link lp-link--danger" data-action="remove-session">删除</button>
+                </div>
+            </div>
+            <div class="lp-gen-session__grid">
+                <label>课次主题
+                    <input data-field="chapter" value="${escapeHtml(session.chapter || '')}">
+                </label>
+                <label>时间/节次
+                    <input data-field="schedule_text" value="${escapeHtml(scheduleText)}" placeholder="第几周、星期、节次">
+                </label>
+                <label>课时分钟
+                    <input data-field="section_minutes" type="number" min="40" max="240" step="10" value="${Number(session.section_minutes || 80)}">
+                </label>
+                <label class="lp-form__full">课堂绑定材料摘要
+                    <textarea data-field="material_summary" rows="3" placeholder="课堂页绑定材料会自动带出摘要，可在此微调">${escapeHtml(session.material_summary || '')}</textarea>
+                </label>
+                <label class="lp-form__full">给 AI 的课次提示
+                    <textarea data-field="prompt_hint" rows="2" placeholder="例如：强调组件通信、课堂演示、分层练习">${escapeHtml(session.prompt_hint || '')}</textarea>
+                </label>
+            </div>
+            ${materials ? `<div class="lp-gen-session__materials">${materials}</div>` : ''}
+        </article>`;
+}
+
+function renderPlannerDetail(plan, offering, loading = false) {
+    if (loading) {
+        return `<div class="lp-gen-placeholder"><span></span><p>正在读取课堂课次与教学文档...</p></div>`;
+    }
+    if (!plan) {
+        return `<div class="lp-gen-placeholder"><span></span><p>请选择左侧课程</p></div>`;
+    }
+    const cover = plan.cover || {};
+    const classroom = plan.classroom || {};
+    const sessions = plan.sessions || [];
+    const titleValue = `${cover.course_name || offering?.course_name || '课程'} · ${cover.class_name || offering?.display_class_name || offering?.class_name || '班级'} 教案`;
+    const infoItems = [
+        ['课程', cover.course_name || offering?.course_name || ''],
+        ['班级', cover.class_name || offering?.display_class_name || offering?.class_name || ''],
+        ['教师', cover.teacher_name || classroom.teacher_name || ''],
+        ['学期', cover.semester_label || offering?.semester_label || classroom.semester_name || ''],
+        ['教材', cover.textbook || offering?.textbook_title || classroom.textbook_title || ''],
+        ['出版社', cover.publisher || offering?.textbook_publisher || ''],
+    ].filter(([, value]) => value);
+    const insertOptions = [
+        `<option value="${sessions.length}">追加到最后</option>`,
+        ...sessions.map((session, index) => `<option value="${index}">插入到第 ${index + 1} 次课前：${escapeHtml(session.chapter || session.title || '')}</option>`),
+    ].join('');
+    return `
+        <div class="lp-gen-detail">
+            <div class="lp-gen-detail__top">
+                <label>教案标题
+                    <input data-gen-title value="${escapeHtml(titleValue)}">
+                </label>
+                <div class="lp-gen-detail__meta">
+                    ${infoItems.map(([label, value]) => `<span><b>${escapeHtml(label)}</b>${escapeHtml(value)}</span>`).join('')}
+                </div>
+            </div>
+            <div class="lp-gen-sessions-head">
+                <div>
+                    <strong>${sessions.length} 次课</strong>
+                    <small>拖动卡片即可调整生成顺序</small>
+                </div>
+                <button type="button" class="lp-btn lp-btn--ghost" data-action="reload-plan">重新读取课堂</button>
+            </div>
+            <div class="lp-gen-session-list" data-gen-session-list>
+                ${sessions.map((session, index) => renderPlannerSessionCard(session, index)).join('') || '<div class="lp-gen-empty">该课堂暂无课次，可在下方新增。</div>'}
+            </div>
+            <div class="lp-gen-add">
+                <label>插入位置
+                    <select data-gen-insert-index>${insertOptions}</select>
+                </label>
+                <label class="lp-form__full">新增课次提示
+                    <textarea data-gen-new-prompt rows="2" placeholder="输入本次课主要内容，AI 会结合前后课次润色成可生成的课次卡片"></textarea>
+                </label>
+                <button type="button" class="lp-btn" data-action="draft-session">新增课次</button>
+            </div>
+        </div>`;
+}
+
+function openGeneratePlannerModal() {
+    const offerings = state.offerings;
+    if (!offerings.length) {
+        showToast('你还没有可用课堂，请先在开设课堂中创建并安排课次。', 'error');
+        return;
+    }
+    const planner = {
+        selectedId: Number(offerings[0].id),
+        loadingId: null,
+        plans: new Map(),
+        draggingKey: '',
+    };
+    const body = `
+        <div class="lp-gen-planner">
+            <aside class="lp-gen-sidebar" data-gen-course-list></aside>
+            <section class="lp-gen-main" data-gen-main></section>
+        </div>`;
+    const footer = `
+        <button type="button" class="lp-btn lp-btn--ghost" data-lp-close>取消</button>
+        <button type="button" class="lp-btn lp-btn--primary" data-gen-submit>开始生成</button>`;
+
+    function currentOffering() {
+        return offerings.find((item) => Number(item.id) === Number(planner.selectedId)) || offerings[0];
+    }
+
+    function currentPlan() {
+        return planner.plans.get(String(planner.selectedId));
+    }
+
+    function render(overlay) {
+        const courseList = overlay.querySelector('[data-gen-course-list]');
+        const main = overlay.querySelector('[data-gen-main]');
+        const submit = overlay.querySelector('[data-gen-submit]');
+        courseList.innerHTML = offerings.map((offering) => renderPlannerCourseCard(offering, planner.selectedId)).join('');
+        main.innerHTML = renderPlannerDetail(
+            currentPlan(),
+            currentOffering(),
+            Number(planner.loadingId) === Number(planner.selectedId),
+        );
+        const canSubmit = Boolean(currentPlan()?.sessions?.length);
+        if (submit) submit.disabled = !canSubmit || Number(planner.loadingId) === Number(planner.selectedId);
+    }
+
+    async function loadPlan(overlay, offeringId, { force = false } = {}) {
+        planner.selectedId = Number(offeringId);
+        if (!force && planner.plans.has(String(offeringId))) {
+            render(overlay);
+            return;
+        }
+        planner.loadingId = Number(offeringId);
+        render(overlay);
+        try {
+            const data = await apiFetch(`/api/lesson-plans/classroom/${offeringId}/generation-plan`);
+            data.sessions = normalizePlannerSessions(data.sessions || []);
+            planner.plans.set(String(offeringId), data);
+        } catch (err) {
+            showToast(err.message || '读取课堂生成计划失败', 'error');
+        } finally {
+            planner.loadingId = null;
+            render(overlay);
+        }
+    }
+
+    function updateSessionField(target) {
+        const card = target.closest('[data-session-key]');
+        const plan = currentPlan();
+        if (!card || !plan) return;
+        const session = plan.sessions.find((item) => item.client_id === card.dataset.sessionKey);
+        if (!session) return;
+        const field = target.dataset.field;
+        if (field === 'chapter') {
+            session.chapter = target.value;
+            session.title = target.value;
+        } else if (field === 'schedule_text') {
+            session.schedule_text = target.value;
+            session.schedule = { ...(session.schedule || {}), text: target.value };
+        } else if (field === 'section_minutes') {
+            session.section_minutes = Math.max(40, Number(target.value || 80));
+        } else if (field === 'material_summary' || field === 'prompt_hint') {
+            session[field] = target.value;
+        }
+    }
+
+    function moveSession(key, delta) {
+        const plan = currentPlan();
+        if (!plan) return;
+        const from = plan.sessions.findIndex((item) => item.client_id === key);
+        const to = from + delta;
+        if (from < 0 || to < 0 || to >= plan.sessions.length) return;
+        const [item] = plan.sessions.splice(from, 1);
+        plan.sessions.splice(to, 0, item);
+    }
+
+    function payloadSessions(plan) {
+        return (plan.sessions || []).map((session, index) => ({
+            client_id: session.client_id,
+            index: index + 1,
+            source_type: session.source_type || 'classroom',
+            source_session_id: Number(session.source_session_id || 0),
+            chapter: session.chapter || session.title || `第 ${index + 1} 次课`,
+            title: session.title || session.chapter || `第 ${index + 1} 次课`,
+            schedule: session.schedule || {},
+            schedule_text: session.schedule_text || session.schedule?.text || '',
+            section_minutes: Number(session.section_minutes || 80),
+            source_material_ids: Array.isArray(session.source_material_ids) ? session.source_material_ids : [],
+            material_summary: session.material_summary || '',
+            prompt_hint: session.prompt_hint || '',
+            manual_outline: session.manual_outline || '',
+            content: session.content || '',
+        }));
+    }
+
+    openModal('按课堂生成整学期教案', body, {
+        footerHtml: footer,
+        wide: true,
+        onMount: (overlay, close) => {
+            render(overlay);
+            loadPlan(overlay, planner.selectedId);
+
+            overlay.addEventListener('click', async (e) => {
+                const offeringBtn = e.target.closest('[data-offering-id]');
+                if (offeringBtn) {
+                    await loadPlan(overlay, Number(offeringBtn.dataset.offeringId));
+                    return;
+                }
+                const actionBtn = e.target.closest('[data-action]');
+                if (!actionBtn) return;
+                const action = actionBtn.dataset.action;
+                if (action === 'reload-plan') {
+                    await loadPlan(overlay, planner.selectedId, { force: true });
+                    return;
+                }
+                const card = actionBtn.closest('[data-session-key]');
+                if (action === 'remove-session' && card) {
+                    const plan = currentPlan();
+                    plan.sessions = plan.sessions.filter((item) => item.client_id !== card.dataset.sessionKey);
+                    render(overlay);
+                    return;
+                }
+                if (action === 'move-session' && card) {
+                    moveSession(card.dataset.sessionKey, Number(actionBtn.dataset.dir || 0));
+                    render(overlay);
+                    return;
+                }
+                if (action === 'draft-session') {
+                    const plan = currentPlan();
+                    const promptEl = overlay.querySelector('[data-gen-new-prompt]');
+                    const prompt = (promptEl?.value || '').trim();
+                    if (!plan || !prompt) {
+                        showToast('请先输入新增课次的主要内容。', 'error');
+                        return;
+                    }
+                    const insertIndex = Math.min(
+                        plan.sessions.length,
+                        Math.max(0, Number(overlay.querySelector('[data-gen-insert-index]')?.value || plan.sessions.length)),
+                    );
+                    actionBtn.disabled = true;
+                    try {
+                        const data = await apiFetch(`/api/lesson-plans/classroom/${planner.selectedId}/session-draft`, {
+                            method: 'POST',
+                            body: {
+                                prompt,
+                                previous_context: insertIndex > 0 ? plannerSessionContext(plan.sessions[insertIndex - 1]) : '',
+                                next_context: insertIndex < plan.sessions.length ? plannerSessionContext(plan.sessions[insertIndex]) : '',
+                            },
+                        });
+                        const [draft] = normalizePlannerSessions([data.session || {}]);
+                        draft.source_type = 'manual';
+                        draft.source_session_id = 0;
+                        plan.sessions.splice(insertIndex, 0, draft);
+                        if (promptEl) promptEl.value = '';
+                        render(overlay);
+                    } catch (err) {
+                        showToast(err.message || '新增课次失败', 'error');
+                    } finally {
+                        actionBtn.disabled = false;
+                    }
+                    return;
+                }
+            });
+
+            overlay.addEventListener('input', (e) => {
+                if (e.target.matches('[data-field]')) updateSessionField(e.target);
+            });
+            overlay.addEventListener('change', (e) => {
+                if (e.target.matches('[data-field]')) updateSessionField(e.target);
+            });
+            overlay.addEventListener('dragstart', (e) => {
+                const card = e.target.closest('[data-session-key]');
+                if (!card) return;
+                planner.draggingKey = card.dataset.sessionKey;
+                card.classList.add('is-dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            overlay.addEventListener('dragover', (e) => {
+                if (planner.draggingKey && e.target.closest('[data-session-key]')) e.preventDefault();
+            });
+            overlay.addEventListener('drop', (e) => {
+                const target = e.target.closest('[data-session-key]');
+                const plan = currentPlan();
+                if (!target || !plan || !planner.draggingKey || target.dataset.sessionKey === planner.draggingKey) return;
+                e.preventDefault();
+                const from = plan.sessions.findIndex((item) => item.client_id === planner.draggingKey);
+                const to = plan.sessions.findIndex((item) => item.client_id === target.dataset.sessionKey);
+                if (from >= 0 && to >= 0) {
+                    const [item] = plan.sessions.splice(from, 1);
+                    plan.sessions.splice(to, 0, item);
+                    render(overlay);
+                }
+            });
+            overlay.addEventListener('dragend', () => {
+                planner.draggingKey = '';
+                overlay.querySelectorAll('.is-dragging').forEach((item) => item.classList.remove('is-dragging'));
+            });
+            overlay.querySelector('[data-gen-submit]').addEventListener('click', async () => {
+                const plan = currentPlan();
+                if (!plan || !plan.sessions.length) {
+                    showToast('请至少保留 1 次课。', 'error');
+                    return;
+                }
+                const title = (overlay.querySelector('[data-gen-title]')?.value || '').trim();
+                const submit = overlay.querySelector('[data-gen-submit]');
+                submit.disabled = true;
+                try {
+                    await apiFetch('/api/lesson-plans/generate', {
+                        method: 'POST',
+                        body: {
+                            class_offering_id: Number(planner.selectedId),
+                            title,
+                            sessions: payloadSessions(plan),
+                        },
+                    });
+                    close();
+                    showToast('已开始分课次生成，列表中会显示进度。', 'success');
+                    loadPlans();
+                } catch (err) {
+                    showToast(err.message || '启动生成失败', 'error');
+                    submit.disabled = false;
+                }
+            });
+        },
+    });
+}
+
 function openGenerateModal() {
     const offerings = state.offerings;
     if (!offerings.length) {
@@ -460,9 +844,22 @@ async function deletePlan(id) {
 // Events
 // ---------------------------------------------------------------------------
 function bindEvents() {
-    document.querySelectorAll('[data-lp-create-blank]').forEach((b) => b.addEventListener('click', openCreateBlankModal));
-    document.querySelectorAll('[data-lp-generate-open]').forEach((b) => b.addEventListener('click', openGenerateModal));
-    document.querySelectorAll('[data-lp-import-open]').forEach((b) => b.addEventListener('click', openImportModal));
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('[data-lp-create-blank]')) {
+            e.preventDefault();
+            openCreateBlankModal();
+            return;
+        }
+        if (e.target.closest('[data-lp-generate-open]')) {
+            e.preventDefault();
+            openGeneratePlannerModal();
+            return;
+        }
+        if (e.target.closest('[data-lp-import-open]')) {
+            e.preventDefault();
+            openImportModal();
+        }
+    });
 
     const search = root.querySelector('[data-lp-search]');
     search.addEventListener('input', () => { state.search = search.value; render(); });

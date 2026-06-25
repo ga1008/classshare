@@ -76,6 +76,37 @@ class PayloadNormalizationTests(unittest.TestCase):
         self.assertEqual(payload["sessions"][0]["schedule"]["weekday"], 1)
 
 
+    def test_wrapped_alias_payload_is_normalized(self):
+        payload = svc.normalize_lesson_plan_payload(
+            {
+                "lesson_plan": {
+                    "metadata": {
+                        "courseTitle": "Dynamic Web Programming",
+                        "teacherName": "Teacher A",
+                        "className": "SE2401",
+                        "textbookName": "Web Engineering",
+                    },
+                    "lessonSessions": [
+                        {
+                            "topic": "Vue Components",
+                            "teachingObjectives": "Understand component composition",
+                            "teachingProcess": "Demo and practice",
+                            "scheduleText": "week 3 sections 1-2",
+                        }
+                    ],
+                }
+            }
+        )
+        self.assertEqual(payload["cover"]["course_name"], "Dynamic Web Programming")
+        self.assertEqual(payload["cover"]["teacher_name"], "Teacher A")
+        self.assertEqual(payload["cover"]["class_name"], "SE2401")
+        self.assertEqual(payload["cover"]["textbook"], "Web Engineering")
+        self.assertEqual(payload["sessions"][0]["chapter"], "Vue Components")
+        self.assertEqual(payload["sessions"][0]["objectives"], "Understand component composition")
+        self.assertEqual(payload["sessions"][0]["process"], "Demo and practice")
+        self.assertEqual(payload["sessions"][0]["schedule"]["text"], "week 3 sections 1-2")
+
+
 class CrudAndVisibilityTests(unittest.TestCase):
     def setUp(self):
         self.conn = _make_conn()
