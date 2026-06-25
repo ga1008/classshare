@@ -45,6 +45,10 @@ from .session_learning_materials_service import (
 _MATERIAL_CHAR_BUDGET = 12000
 _NEIGHBOR_CHAR_BUDGET = 1200
 _AI_TIMEOUT = 240.0
+_AI_RETRY_TIMEOUT = 150.0
+_RETRY_USER_MESSAGE_BUDGET = 14000
+_RETRY_MATERIAL_BUDGET = 5000
+_FALLBACK_TEXT_BUDGET = 900
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -60,6 +64,37 @@ def _safe_text(value: Any) -> str:
 
 def _limit_text(value: Any, limit: int) -> str:
     return _safe_text(value)[:limit]
+
+
+def _compact_file_texts(
+    file_texts: list[dict[str, str]] | None,
+    *,
+    max_items: int = 2,
+    content_limit: int = _RETRY_MATERIAL_BUDGET,
+) -> list[dict[str, str]]:
+    compacted: list[dict[str, str]] = []
+    for item in (file_texts or [])[:max_items]:
+        if not isinstance(item, dict):
+            continue
+        compacted.append(
+            {
+                **item,
+                "content": str(item.get("content") or "")[:content_limit],
+            }
+        )
+    return compacted
+
+
+def _standard_retry_payload(payload: dict[str, Any], *, label: str) -> dict[str, Any]:
+    """Shrink a thinking-model request so a slow session can continue on fast AI."""
+    return {
+        **payload,
+        "model_capability": "standard",
+        "task_type": "fast_text_response",
+        "task_label": f"{label}:standard-retry",
+        "new_message": str(payload.get("new_message") or "")[:_RETRY_USER_MESSAGE_BUDGET],
+        "file_texts": _compact_file_texts(payload.get("file_texts")),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -172,19 +207,14 @@ async def _chat_json(
         status = exc.response.status_code if exc.response is not None else 0
         if status < 500 or model_capability == "standard":
             raise
-        retry_payload = {
-            **payload,
-            "model_capability": "standard",
-            "task_type": "fast_text_response",
-            "task_label": f"{label}:standard-retry",
-            "new_message": str(user_message or "")[:18000],
-            "file_texts": [
-                {**item, "content": str(item.get("content") or "")[:8000]}
-                for item in (file_texts or [])[:2]
-                if isinstance(item, dict)
-            ],
-        }
-        response = await ai_client.post("/api/ai/chat", json=retry_payload, timeout=_AI_TIMEOUT)
+        retry_payload = _standard_retry_payload(payload, label=label)
+        response = await ai_client.post("/api/ai/chat", json=retry_payload, timeout=_AI_RETRY_TIMEOUT)
+        response.raise_for_status()
+    except (httpx.TimeoutException, httpx.TransportError):
+        if model_capability == "standard":
+            raise
+        retry_payload = _standard_retry_payload(payload, label=label)
+        response = await ai_client.post("/api/ai/chat", json=retry_payload, timeout=_AI_RETRY_TIMEOUT)
         response.raise_for_status()
     data = response.json()
     parsed = _json_from_ai_chat_payload(data)
@@ -595,6 +625,128 @@ def _offering_homework_hint(class_offering_id: int) -> dict[int, str]:
     return {0: "；".join(titles[:12])} if titles else {}
 
 
+def _fallback_excerpt(*values: Any, limit: int = _FALLBACK_TEXT_BUDGET) -> str:
+    parts: list[str] = []
+    for value in values:
+        text = re.sub(r"\s+", " ", _safe_text(value))
+        if text:
+            parts.append(text)
+    return "；".join(parts)[:limit]
+
+
+def _fallback_topic(meta: dict[str, Any], chapter: str, material_text: str) -> str:
+    for value in (
+        chapter,
+        meta.get("chapter"),
+        meta.get("title"),
+        meta.get("material_summary"),
+        meta.get("manual_outline"),
+        material_text,
+    ):
+        text = _fallback_excerpt(value, limit=80)
+        if text:
+            return text
+    return "本次课核心内容"
+
+
+def _fallback_process(
+    *,
+    topic: str,
+    section_minutes: int,
+    material_hint: str,
+    homework_hint: str,
+    neighbor: str,
+) -> str:
+    intro_minutes = 10 if section_minutes >= 70 else 5
+    summary_minutes = 10 if section_minutes >= 70 else 5
+    practice_minutes = max(20, section_minutes - intro_minutes - summary_minutes)
+    context_line = f"前后课衔接：{neighbor}" if neighbor else "前后课衔接：承接上一课知识基础，并为后续实践任务做铺垫。"
+    material_line = material_hint or f"围绕“{topic}”梳理概念、步骤、实践任务与常见问题。"
+    homework_line = homework_hint or f"完成与“{topic}”相关的基础练习，并记录操作过程、关键结果和问题反思。"
+    return "\n".join(
+        [
+            f"一、教学导入（约{intro_minutes}分钟）",
+            f"- 回顾相关知识与课堂任务背景，引出“{topic}”。",
+            f"- {context_line}",
+            "- 明确本次课的学习产出：能说清关键概念，能完成核心操作，能解释常见错误原因。",
+            "",
+            f"二、讲授新课与实践训练（约{practice_minutes}分钟）",
+            "",
+            "| 教学环节 | 教学活动（教师引导） | 学生活动（主体） | 设计意图（OBE & 两性一度） |",
+            "| --- | --- | --- | --- |",
+            f"| 问题导入 | 结合课程案例提出与“{topic}”相关的真实问题，说明任务目标和评价标准。 | 阅读任务要求，提出已有经验和疑问。 | 以问题驱动学习，帮助学生建立成果导向意识。 |",
+            f"| 核心讲解 | 围绕“{topic}”讲解关键概念、流程、命令或代码结构，并结合材料提示：{material_line} | 跟随示范记录关键步骤，标注易错点。 | 强化知识结构，降低实践任务的认知负荷。 |",
+            "| 课堂实践 | 组织学生分步完成任务，巡视并针对典型错误进行集中讲评。 | 独立或结对完成实践，提交阶段性结果。 | 通过动手实践形成可观察学习成果，提升解决问题能力。 |",
+            "| 拓展提升 | 引导学生比较不同方案的适用场景，讨论安全性、可维护性或工程规范。 | 归纳方案差异，尝试优化自己的实现。 | 增强挑战度和创新性，培养工程思维。 |",
+            "",
+            f"三、教学小结（约{summary_minutes}分钟）",
+            f"- 总结“{topic}”的核心知识、实践步骤和常见问题处理方法。",
+            "- 引导学生从技术规范、协作意识和职业责任角度反思本次实践。",
+            "",
+            "四、作业布置",
+            f"- 基础任务：{homework_line}",
+            f"- Pro 任务：在基础任务上增加一个扩展场景，说明设计思路、关键步骤和验证结果。",
+        ]
+    )
+
+
+def _fallback_session_from_context(
+    *,
+    cover: dict[str, Any],
+    meta: dict[str, Any],
+    chapter: str,
+    index: int,
+    total: int,
+    material_text: str,
+    homework_hint: str,
+    neighbor: str,
+    ai_filled: bool,
+    error: Exception | None = None,
+) -> dict[str, Any]:
+    topic = _fallback_topic(meta, chapter, material_text)
+    section_minutes = max(40, min(240, _safe_int(meta.get("section_minutes"), 80) or 80))
+    material_hint = _fallback_excerpt(
+        meta.get("material_summary"),
+        meta.get("manual_outline"),
+        meta.get("prompt_hint"),
+        material_text,
+        limit=_FALLBACK_TEXT_BUDGET,
+    )
+    course_name = _safe_text(cover.get("course_name")) or "本课程"
+    return {
+        "index": index,
+        "schedule": meta.get("schedule"),
+        "chapter": chapter or topic,
+        "objectives": "\n".join(
+            [
+                f"知识目标：理解{topic}的核心概念、基本流程和适用场景。",
+                f"能力目标：能够结合{course_name}的课堂任务完成与{topic}相关的实践操作，并能定位常见问题。",
+                "素养目标：形成规范操作、主动验证、持续改进和负责任使用技术的职业意识。",
+            ]
+        ),
+        "key_points": f"{topic}的关键概念与操作流程；课堂实践任务的完成标准；常见错误的识别与修正。",
+        "difficulties": f"{topic}在真实任务中的综合应用；错误现象与原因之间的对应分析；实践结果的验证与表达。",
+        "methods": "讲授法、案例法、PBL项目驱动法、任务驱动法、演示法、课堂实践指导",
+        "means": "PPT、教学文档、课堂演示、代码或命令示例、在线课堂平台、AI辅助答疑",
+        "process": _fallback_process(
+            topic=topic,
+            section_minutes=section_minutes,
+            material_hint=material_hint,
+            homework_hint=homework_hint,
+            neighbor=neighbor,
+        ),
+        "side_notes": "课前检查课件、教学文档、演示环境和网络环境。\n课堂中重点观察学生实践进度，对共性问题及时集中讲评。\n课后根据学生提交情况补充案例或微调下一次课的衔接内容。",
+        "post_notes": "",
+        "source_material_ids": (
+            [str(mid) for mid in (meta.get("source_material_ids") or []) if str(mid).strip()]
+            or ([str(meta.get("learning_material_id"))] if meta.get("learning_material_id") else [])
+        ),
+        "ai_filled": ai_filled,
+        "ai_fallback": True,
+        "ai_fallback_reason": _safe_text(error)[:200] if error else "",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Background job
 # ---------------------------------------------------------------------------
@@ -638,6 +790,7 @@ async def run_generation_job(
         homework = await asyncio.to_thread(_offering_homework_hint, class_offering_id)
         total = len(metas)
         sessions: list[dict[str, Any]] = []
+        warnings: list[str] = []
         for index, meta in enumerate(metas, start=1):
             _set_status(
                 plan_id,
@@ -647,39 +800,71 @@ async def run_generation_job(
                     "current_label": meta.get("title") or f"第{index}次课",
                 },
             )
-            material_text = await asyncio.to_thread(
-                _gather_session_material_text, class_offering_id, meta, teacher_id
-            )
             chapter = meta.get("title") or ""
             ai_filled = False
             neighbor = _neighbor_context(metas, index - 1)
-            if not material_text.strip():
-                filled = await _fill_missing(cover, index, total, neighbor)
-                if filled:
-                    chapter = chapter or str(filled.get("chapter") or "")
-                    material_text = str(filled.get("outline") or "")
-                    ai_filled = True
-            session_obj = await _generate_one_session(
-                cover=cover,
-                meta=meta,
-                chapter=chapter,
-                index=index,
-                total=total,
-                material_text=material_text,
-                homework_hint=homework.get(0, ""),
-                neighbor=neighbor,
-                ai_filled=ai_filled,
-                classroom_context=classroom_context,
-            )
+            material_text = ""
+            try:
+                material_text = await asyncio.to_thread(
+                    _gather_session_material_text, class_offering_id, meta, teacher_id
+                )
+                if not material_text.strip():
+                    filled = await _fill_missing(cover, index, total, neighbor)
+                    if filled:
+                        chapter = chapter or str(filled.get("chapter") or "")
+                        material_text = str(filled.get("outline") or "")
+                        ai_filled = True
+                session_obj = await _generate_one_session(
+                    cover=cover,
+                    meta=meta,
+                    chapter=chapter,
+                    index=index,
+                    total=total,
+                    material_text=material_text,
+                    homework_hint=homework.get(0, ""),
+                    neighbor=neighbor,
+                    ai_filled=ai_filled,
+                    classroom_context=classroom_context,
+                )
+            except Exception as exc:  # noqa: BLE001 - isolate one failed AI call from the semester job.
+                print(
+                    "[LESSON_PLAN] session generation fallback "
+                    f"plan_id={plan_id} session_index={index}: {type(exc).__name__}: {exc}"
+                )
+                chapter = chapter or _fallback_topic(meta, "", material_text)
+                warnings.append(f"第 {index} 次课 AI 生成超时或失败，已自动使用结构化兜底内容。")
+                session_obj = _fallback_session_from_context(
+                    cover=cover,
+                    meta=meta,
+                    chapter=chapter,
+                    index=index,
+                    total=total,
+                    material_text=material_text,
+                    homework_hint=homework.get(0, ""),
+                    neighbor=neighbor,
+                    ai_filled=ai_filled,
+                    error=exc,
+                )
             sessions.append(session_obj)
-            _save_progress(plan_id, cover, sessions, {"done": index, "total": total, "current_label": chapter})
+            _save_progress(
+                plan_id,
+                cover,
+                sessions,
+                {
+                    "done": index,
+                    "total": total,
+                    "current_label": chapter,
+                    "warnings": warnings[-5:],
+                },
+            )
 
+        warning_text = "；".join(warnings[:8])
         _set_status(
             plan_id,
             status="ready",
-            ai_gen_status="completed",
-            ai_gen_error="",
-            progress={"done": total, "total": total, "current_label": "完成"},
+            ai_gen_status="completed_with_fallback" if warnings else "completed",
+            ai_gen_error=warning_text[:800] if warning_text else "",
+            progress={"done": total, "total": total, "current_label": "完成", "warnings": warnings[-5:]},
         )
     except Exception as exc:  # noqa: BLE001 — surface any failure on the card
         traceback.print_exc()

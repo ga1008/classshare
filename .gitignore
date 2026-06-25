@@ -32,6 +32,7 @@ MANIFEST
 /.codex-temp/
 /.codex_tmp*
 /.tmp_*
+/.claude/
 /logs
 /artifacts/
 node_modules/
