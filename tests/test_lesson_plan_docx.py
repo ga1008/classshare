@@ -1,9 +1,4 @@
-"""Tests for the 教案 docx builder + Markdown parser.
-
-Validates the document structure (cover table + one 8x4 table per session, the
-旁批 column, and a nested table rendered from Markdown inside 教学内容及过程)
-without needing LibreOffice (PDF/PNG conversion is exercised separately).
-"""
+"""Tests for the GXUFL lesson-plan DOCX builder and Markdown parser."""
 
 import unittest
 from io import BytesIO
@@ -17,62 +12,67 @@ from classroom_app.services import lesson_plan_markdown as md
 
 _PROCESS_MD = """\
 ## 一、教学导入（8分钟）
-回顾上节课内容。**高阶提问**：为什么需要规划？
+回顾上节课内容。**高阶提问**：为什么需要规范构建环境？
 
 ## 二、讲授新课
-| 教学环节 | 教学活动（教师引导） | 学生活动（主体） | 设计意图 |
+| 教学环节 | 教学活动（教师引导） | 学生活动（主体） | 设计意图（OBE & 两性一度） |
 | :--- | :--- | :--- | :--- |
-| 任务1 | 手把手演示 | 动手实践 | 高阶性 |
-| 任务2 | 设置陷阱 | 自主排错 | 挑战度 |
+| 任务1 | 手把手演示 Maven 环境配置 | 动手实践 | 高阶性：建立工程化思维 |
+| 任务2 | 设置端口冲突排错情境 | 自主排错 | 挑战度：训练日志定位 |
 
 ## 三、教学小结
-- 知识梳理
-- 反思展望
+- 梳理知识
+- 布置作业
 """
 
 _PLAN = {
     "cover": {
-        "course_name": "服务器配置与管理",
-        "course_category": "专业限选课程",
-        "credits": "3.0",
-        "total_hours": "48",
-        "teacher_name": "张老师",
+        "course_name": "动态web程序设计",
+        "course_category": "专业任选课程",
+        "credits": "2.0",
+        "total_hours": "32",
+        "teacher_name": "张海林",
         "teaching_unit": "数字科技学院",
-        "class_name": "软工2406班",
-        "textbook": "《Linux服务器运维管理》",
-        "publisher": "清华大学出版社",
-        "semester_label": "2025—2026学年第一学期",
+        "class_name": "软工2401班",
+        "textbook": "《Spring+Spring MVC+MyBatis+Spring Boot框架整合开发》",
+        "publisher": "人民邮电出版社",
+        "semester_label": "2025—2026学年第二学期",
         "school_name": "广西外国语学院",
     },
     "sessions": [
         {
             "index": 1,
-            "schedule": {"text": "2025年09月01日 第一周 星期一 第6-7节"},
-            "chapter": "第1章 认识Linux",
-            "objectives": "知识目标：了解Linux\n能力目标：能够安装系统",
-            "key_points": "开源协议",
-            "difficulties": "内核与发行版区别",
-            "methods": "讲授法、案例法",
-            "means": "PPT、虚拟机",
+            "schedule": {"text": "2026年 03月 09 日 第 一 周 星期 一  第 10-11 节"},
+            "chapter": "第一讲：开宗明义——开发环境构建与Spring初探",
+            "objectives": "知识目标：了解 Spring 生态。\n能力目标：能够完成 Maven 配置。",
+            "key_points": "Maven 核心配置；Spring Boot 项目创建流程。",
+            "difficulties": "环境变量与路径排错。",
+            "methods": "讲授法，演示法，案例法",
+            "means": "课件，上机实操",
             "process": _PROCESS_MD,
-            "side_notes": "提前准备饼图",
-            "post_notes": "类比效果好",
+            "side_notes": "提醒重开终端以生效变量",
+            "post_notes": "类比教学效果较好。",
         },
         {
             "index": 2,
-            "schedule": {"text": "2025年09月05日 第一周 星期五 第2-3节"},
-            "chapter": "第2章 系统安装",
-            "objectives": "掌握虚拟机部署",
-            "key_points": "分区",
-            "difficulties": "网络配置",
+            "schedule": {"text": "2026年 03月 16 日 第 二 周 星期 一  第 10-11 节"},
+            "chapter": "第二讲：Spring Boot 控制器",
+            "objectives": "掌握 Controller 的基本写法。",
+            "key_points": "注解与请求映射。",
+            "difficulties": "参数绑定。",
             "methods": "任务驱动",
-            "means": "PPT",
-            "process": "## 一、教学导入\n情景创设。",
+            "means": "PPT，上机实操",
+            "process": "## 一、教学导入\n情境创设。",
             "side_notes": "",
             "post_notes": "",
         },
     ],
 }
+
+
+def _tbl_grid_widths(table) -> list[int]:
+    grid = table._tbl.find(qn("w:tblGrid"))
+    return [int(col.get(qn("w:w"))) for col in grid.findall(qn("w:gridCol"))]
 
 
 class MarkdownParserTests(unittest.TestCase):
@@ -105,50 +105,60 @@ class DocxBuilderTests(unittest.TestCase):
         self.assertIsInstance(self.doc_bytes, bytes)
         self.assertGreater(len(self.doc_bytes), 1000)
 
-    def test_table_count_cover_plus_sessions(self):
-        # python-docx .tables is top-level only: 1 cover + 2 session tables.
-        self.assertEqual(len(self.document.tables), 3)
+    def test_uses_reference_page_setup(self):
+        section = self.document.sections[0]
+        self.assertEqual(section.page_width, 7_560_310)
+        self.assertEqual(section.page_height, 10_692_130)
+        self.assertEqual(section.top_margin, 914_400)
+        self.assertEqual(section.left_margin, 810_260)
 
-    def test_sessions_are_page_separated(self):
+    def test_cover_is_not_a_grid_table(self):
+        cover_text = "\n".join(p.text for p in self.document.paragraphs)
+        self.assertIn("教  案", cover_text)
+        self.assertIn("动态web程序设计", cover_text)
+        # Top-level tables are only session tables; the school cover uses
+        # underlined paragraphs, not the old gray cover table.
+        self.assertEqual(len(self.document.tables), len(_PLAN["sessions"]))
+
+    def test_sessions_are_page_separated_without_extra_caption(self):
         breaks = self.document.element.body.findall(".//" + qn("w:br"))
         page_breaks = [br for br in breaks if br.get(qn("w:type")) == "page"]
-        self.assertGreaterEqual(len(page_breaks), len(_PLAN["sessions"]) - 1)
+        self.assertGreaterEqual(len(page_breaks), len(_PLAN["sessions"]))
+        all_paragraphs = "\n".join(p.text for p in self.document.paragraphs)
+        self.assertNotIn("第 1 次课", all_paragraphs)
 
-    def test_markdown_table_rendered_as_nested_table(self):
-        # The PBL Markdown table in session 1's 教学内容及过程 cell becomes a
-        # nested docx table somewhere inside the session tables.
-        nested_found = False
+    def test_session_table_uses_reference_grid(self):
+        self.assertEqual(_tbl_grid_widths(self.document.tables[0]), [1911, 324, 6095, 1678])
+        first_row = self.document.tables[0].rows[0]
+        self.assertIn("授课时间", first_row.cells[0].text)
+        self.assertIn("2026年 03月 09 日", first_row.cells[2].text)
+
+    def test_markdown_table_rendered_as_reference_nested_table(self):
+        nested = []
         for table in self.document.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    if cell.tables:
-                        for nested in cell.tables:
-                            header = " ".join(c.text for c in nested.rows[0].cells)
-                            if "教学环节" in header:
-                                nested_found = True
-        self.assertTrue(nested_found, "PBL markdown table not rendered as nested docx table")
-
-    def test_title_and_semester_present(self):
-        full_text = "\n".join(p.text for p in self.document.paragraphs)
-        self.assertIn("教", full_text)  # 教  案 title
-        self.assertIn("2025—2026学年第一学期", full_text)
+                    nested.extend(cell.tables)
+        self.assertTrue(nested, "PBL markdown table not rendered as nested docx table")
+        activity = nested[0]
+        self.assertEqual(_tbl_grid_widths(activity), [1141, 2684, 2439, 1844])
+        header = " ".join(c.text for c in activity.rows[0].cells)
+        self.assertIn("教学环节", header)
+        self.assertIn("设计意图", header)
 
     def test_session_table_has_required_labels(self):
-        all_cell_text = []
-        for table in self.document.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    all_cell_text.append(cell.text)
-        joined = "\n".join(all_cell_text)
-        for label in ("授课时间", "授课章节", "教学目的和要求", "教学重点和难点",
-                      "教学方法和手段", "教学内容及过程", "旁批", "教学后记"):
-            self.assertIn(label, joined, f"missing label {label}")
-
-    def test_cover_fields_present(self):
         joined = "\n".join(c.text for t in self.document.tables for r in t.rows for c in r.cells)
-        self.assertIn("服务器配置与管理", joined)
-        self.assertIn("清华大学出版社", joined)
-        self.assertIn("软工2406班", joined)
+        for label in (
+            "授课时间",
+            "授课章节",
+            "教学目的和要求",
+            "教学重点和难点",
+            "教学方法和手段",
+            "教学内容及过程",
+            "旁批",
+            "教学后记",
+        ):
+            self.assertIn(label, joined, f"missing label {label}")
 
 
 if __name__ == "__main__":
