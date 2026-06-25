@@ -62,6 +62,11 @@ class LessonPlanGenerationJsonTests(unittest.TestCase):
 
 
 class LessonPlanGenerationResilienceTests(unittest.IsolatedAsyncioTestCase):
+    def test_exception_description_keeps_type_when_message_is_empty(self):
+        label = svc._describe_exception(TimeoutError())
+
+        self.assertEqual(label, "TimeoutError: operation timed out")
+
     async def test_chat_json_retries_timeout_with_standard_model(self):
         class FakeAIClient:
             def __init__(self):
@@ -197,6 +202,101 @@ class LessonPlanGenerationResilienceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(statuses[-1]["status"], "ready")
         self.assertEqual(statuses[-1]["ai_gen_status"], "completed_with_fallback")
         self.assertIn("第 1 次课", statuses[-1]["ai_gen_error"])
+        self.assertIn("ReadTimeout", statuses[-1]["ai_gen_error"])
+
+    async def test_generation_job_records_exception_class_when_setup_error_message_is_empty(self):
+        statuses = []
+        originals = {
+            "_set_status": svc._set_status,
+            "_build_cover": svc._build_cover,
+        }
+        original_print_exc = svc.traceback.print_exc
+
+        def fake_set_status(plan_id, **kwargs):
+            statuses.append({"plan_id": plan_id, **kwargs})
+
+        try:
+            svc._set_status = fake_set_status
+            svc.traceback.print_exc = lambda: None
+
+            def raise_empty_timeout(class_offering_id, teacher_id):
+                raise TimeoutError()
+
+            svc._build_cover = raise_empty_timeout
+
+            await svc.run_generation_job("plan-empty-error", 10, 20)
+        finally:
+            for name, value in originals.items():
+                setattr(svc, name, value)
+            svc.traceback.print_exc = original_print_exc
+
+        self.assertEqual(statuses[-1]["status"], "failed")
+        self.assertEqual(statuses[-1]["ai_gen_status"], "failed")
+        self.assertIn("生成失败：TimeoutError: operation timed out", statuses[-1]["ai_gen_error"])
+
+    async def test_generation_job_uses_minimal_card_when_structured_fallback_fails(self):
+        statuses = []
+        saved = []
+
+        originals = {
+            "_set_status": svc._set_status,
+            "_save_progress": svc._save_progress,
+            "_build_cover": svc._build_cover,
+            "_build_classroom_context": svc._build_classroom_context,
+            "read_generation_sessions": svc.read_generation_sessions,
+            "_offering_homework_hint": svc._offering_homework_hint,
+            "_gather_session_material_text": svc._gather_session_material_text,
+            "_generate_one_session": svc._generate_one_session,
+            "_fallback_session_from_context": svc._fallback_session_from_context,
+        }
+
+        def fake_set_status(plan_id, **kwargs):
+            statuses.append({"plan_id": plan_id, **kwargs})
+
+        def fake_save_progress(plan_id, cover, sessions, progress):
+            saved.append(
+                {
+                    "plan_id": plan_id,
+                    "cover": cover,
+                    "sessions": [dict(item) for item in sessions],
+                    "progress": dict(progress),
+                }
+            )
+
+        async def fail_generate(**kwargs):
+            raise RuntimeError("model unavailable")
+
+        def fail_structured_fallback(**kwargs):
+            raise AssertionError()
+
+        try:
+            svc._set_status = fake_set_status
+            svc._save_progress = fake_save_progress
+            svc._build_cover = lambda class_offering_id, teacher_id: {"course_name": "Dynamic Web"}
+            svc._build_classroom_context = lambda class_offering_id: {}
+            svc.read_generation_sessions = lambda class_offering_id, teacher_id: [
+                {"title": "Session A", "section_minutes": 80, "schedule": {}, "source_material_ids": ["7"]},
+            ]
+            svc._offering_homework_hint = lambda class_offering_id: {}
+            svc._gather_session_material_text = lambda class_offering_id, meta, teacher_id: "material"
+            svc._generate_one_session = fail_generate
+            svc._fallback_session_from_context = fail_structured_fallback
+
+            await svc.run_generation_job("plan-minimal-fallback", 10, 20)
+        finally:
+            for name, value in originals.items():
+                setattr(svc, name, value)
+
+        self.assertEqual(len(saved[-1]["sessions"]), 1)
+        session = saved[-1]["sessions"][0]
+        self.assertEqual(session["chapter"], "Session A")
+        self.assertTrue(session["ai_fallback"])
+        self.assertIn("AssertionError", session["ai_fallback_reason"])
+        self.assertEqual(session["source_material_ids"], ["7"])
+        self.assertEqual(statuses[-1]["status"], "ready")
+        self.assertEqual(statuses[-1]["ai_gen_status"], "completed_with_fallback")
+        self.assertIn("RuntimeError", statuses[-1]["ai_gen_error"])
+        self.assertIn("AssertionError", statuses[-1]["ai_gen_error"])
 
 
 if __name__ == "__main__":

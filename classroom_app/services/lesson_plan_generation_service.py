@@ -51,6 +51,20 @@ _RETRY_MATERIAL_BUDGET = 5000
 _FALLBACK_TEXT_BUDGET = 900
 
 
+def _describe_exception(exc: BaseException, *, limit: int = 240) -> str:
+    name = type(exc).__name__
+    message = str(exc).strip()
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        status = exc.response.status_code
+        body = (exc.response.text or "").strip().replace("\n", " ")
+        message = f"HTTP {status}" + (f" {body[:160]}" if body else "")
+    elif isinstance(exc, (httpx.TimeoutException, TimeoutError)) and not message:
+        message = "operation timed out"
+    if not message:
+        message = repr(exc)
+    return f"{name}: {message}"[:limit]
+
+
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
@@ -747,6 +761,41 @@ def _fallback_session_from_context(
     }
 
 
+def _minimal_session_fallback(
+    *,
+    meta: dict[str, Any],
+    index: int,
+    total: int,
+    error: BaseException,
+) -> dict[str, Any]:
+    chapter = _safe_text(meta.get("title") or meta.get("chapter")) or f"第 {index} 次课"
+    section_minutes = max(40, min(240, _safe_int(meta.get("section_minutes"), 80) or 80))
+    return {
+        "index": index,
+        "schedule": meta.get("schedule") or {},
+        "chapter": chapter,
+        "objectives": f"围绕“{chapter}”完成知识理解、实践操作与学习反思。",
+        "key_points": f"{chapter} 的核心概念、基本流程与实践要求。",
+        "difficulties": f"{chapter} 在真实任务中的综合应用与常见问题排查。",
+        "methods": "讲授法、案例法、任务驱动法、课堂实践指导",
+        "means": "PPT、教学文档、课堂演示、在线课堂平台",
+        "process": "\n".join(
+            [
+                f"一、教学导入（约10分钟）：回顾前序知识，引出“{chapter}”的学习任务。",
+                f"二、讲授新课与实践训练（约{max(20, section_minutes - 20)}分钟）：结合课堂材料组织讲解、示范和实践。",
+                "三、教学小结（约10分钟）：总结关键知识、实践步骤和常见问题。",
+                "四、作业布置：完成与本次课主题相关的基础练习，并记录问题与反思。",
+            ]
+        ),
+        "side_notes": "本课次由系统兜底生成，建议教师课后结合课堂实际进一步微调。",
+        "post_notes": "",
+        "source_material_ids": [str(mid) for mid in (meta.get("source_material_ids") or []) if str(mid).strip()],
+        "ai_filled": False,
+        "ai_fallback": True,
+        "ai_fallback_reason": _describe_exception(error),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Background job
 # ---------------------------------------------------------------------------
@@ -763,6 +812,28 @@ def _save_progress(
         lp.update_content(conn, plan_id, cover=cover, sessions=sessions)
         lp.set_generation_status(conn, plan_id, progress=progress)
         conn.commit()
+
+
+async def _save_progress_resilient(
+    plan_id: str,
+    cover: dict[str, Any],
+    sessions: list[dict[str, Any]],
+    progress: dict[str, Any],
+) -> None:
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            await asyncio.to_thread(_save_progress, plan_id, cover, sessions, progress)
+            return
+        except Exception as exc:  # noqa: BLE001 - retry transient DB/serialization failures once.
+            last_exc = exc
+            print(
+                "[LESSON_PLAN] progress save failed "
+                f"plan_id={plan_id} attempt={attempt + 1}: {_describe_exception(exc)}"
+            )
+            await asyncio.sleep(0.5)
+    if last_exc is not None:
+        raise last_exc
 
 
 async def run_generation_job(
@@ -802,9 +873,10 @@ async def run_generation_job(
             )
             chapter = meta.get("title") or ""
             ai_filled = False
-            neighbor = _neighbor_context(metas, index - 1)
             material_text = ""
+            neighbor = ""
             try:
+                neighbor = _neighbor_context(metas, index - 1)
                 material_text = await asyncio.to_thread(
                     _gather_session_material_text, class_offering_id, meta, teacher_id
                 )
@@ -827,26 +899,41 @@ async def run_generation_job(
                     classroom_context=classroom_context,
                 )
             except Exception as exc:  # noqa: BLE001 - isolate one failed AI call from the semester job.
+                error_label = _describe_exception(exc)
                 print(
                     "[LESSON_PLAN] session generation fallback "
-                    f"plan_id={plan_id} session_index={index}: {type(exc).__name__}: {exc}"
+                    f"plan_id={plan_id} session_index={index}: {error_label}"
                 )
                 chapter = chapter or _fallback_topic(meta, "", material_text)
-                warnings.append(f"第 {index} 次课 AI 生成超时或失败，已自动使用结构化兜底内容。")
-                session_obj = _fallback_session_from_context(
-                    cover=cover,
-                    meta=meta,
-                    chapter=chapter,
-                    index=index,
-                    total=total,
-                    material_text=material_text,
-                    homework_hint=homework.get(0, ""),
-                    neighbor=neighbor,
-                    ai_filled=ai_filled,
-                    error=exc,
-                )
+                warnings.append(f"第 {index} 次课 AI 生成超时或失败，已自动使用结构化兜底内容（{error_label}）。")
+                try:
+                    session_obj = _fallback_session_from_context(
+                        cover=cover,
+                        meta=meta,
+                        chapter=chapter,
+                        index=index,
+                        total=total,
+                        material_text=material_text,
+                        homework_hint=homework.get(0, ""),
+                        neighbor=neighbor,
+                        ai_filled=ai_filled,
+                        error=exc,
+                    )
+                except Exception as fallback_exc:  # noqa: BLE001 - keep the semester job alive.
+                    fallback_label = _describe_exception(fallback_exc)
+                    print(
+                        "[LESSON_PLAN] minimal session fallback "
+                        f"plan_id={plan_id} session_index={index}: {fallback_label}"
+                    )
+                    warnings.append(f"第 {index} 次课兜底内容生成异常，已使用最小可编辑教案卡片（{fallback_label}）。")
+                    session_obj = _minimal_session_fallback(
+                        meta=meta,
+                        index=index,
+                        total=total,
+                        error=fallback_exc,
+                    )
             sessions.append(session_obj)
-            _save_progress(
+            await _save_progress_resilient(
                 plan_id,
                 cover,
                 sessions,
@@ -867,12 +954,13 @@ async def run_generation_job(
             progress={"done": total, "total": total, "current_label": "完成", "warnings": warnings[-5:]},
         )
     except Exception as exc:  # noqa: BLE001 — surface any failure on the card
+        error_label = _describe_exception(exc, limit=600)
         traceback.print_exc()
         _set_status(
             plan_id,
             status="failed",
             ai_gen_status="failed",
-            ai_gen_error=f"生成失败：{exc}"[:800],
+            ai_gen_error=f"生成失败：{error_label}"[:800],
         )
 
 
