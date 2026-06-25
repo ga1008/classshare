@@ -367,9 +367,61 @@ def _build_model_routes(
     return routes
 
 
+# 关键任务（批改/出题/教案/错题归因/精修教学材料）默认使用最高思考强度。
+# 通过 task_type 或 task_label 关键字识别，便于覆盖经由通用 task_type 调用的关键链路（如批改）。
+AI_CRITICAL_TASK_HINTS = (
+    "grading",
+    "exam_generation",
+    "stage_exam",
+    "assignment_generation",
+    "lesson_plan",
+    "wrong_question",
+    "material_final",
+)
+
+
+def _is_critical_task(task_type: Optional[str], task_label: Optional[str] = None) -> bool:
+    # 连字符归一为下划线，使 "lesson-plan:..." 一类的 task_label 也能命中关键字。
+    blob = f"{task_type or ''} {task_label or ''}".lower().replace("-", "_")
+    return any(hint in blob for hint in AI_CRITICAL_TASK_HINTS)
+
+
+def _effort_for_task(task_type: Optional[str], task_label: Optional[str] = None) -> str:
+    # DeepSeek 思考强度仅支持 high / max；关键任务用 max，其余 high（默认即 high）。
+    return "max" if _is_critical_task(task_type, task_label) else "high"
+
+
+def _messages_contain_visual(messages: Optional[List[Dict[str, Any]]]) -> bool:
+    """检测消息体里是否含图片/视频内容（用于把误标为纯文本的多模态请求改路由到火山引擎）。"""
+    for message in messages or []:
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type") or "").strip().lower()
+            if item_type in {"image_url", "input_image", "video_url", "input_video"}:
+                return True
+            if "image_url" in item or "video_url" in item or "file_data" in item:
+                return True
+    return False
+
+
+def _should_fallback_to_next_platform(exc: BaseException) -> bool:
+    """是否对“当前平台无法处理/调用失败”类错误做跨平台降级。
+
+    现仅启用 deepseek、volcengine 两个平台，候选集天然有界（最多 2 次尝试），
+    因此除显式鉴权缺失外，几乎所有错误都允许尝试下一平台以保证功能可用性。
+    """
+    return True
+
+
 def _apply_openai_provider_options(
     kwargs: dict[str, Any],
     route: AIModelRoute,
+    *,
+    effort: str = "high",
 ) -> None:
     if route.platform_name != "deepseek":
         return
@@ -377,12 +429,44 @@ def _apply_openai_provider_options(
     extra_body = dict(kwargs.get("extra_body") or {})
     if route.task_type == AI_TASK_FAST_TEXT:
         extra_body["thinking"] = {"type": "disabled"}
-    elif route.task_type == AI_TASK_DEEP_TEXT:
+    elif route.task_type in (AI_TASK_DEEP_TEXT, AI_TASK_DEEP_MULTIMODAL):
         extra_body["thinking"] = {"type": "enabled"}
-        kwargs.setdefault("reasoning_effort", "high")
+        kwargs["reasoning_effort"] = effort
 
     if extra_body:
         kwargs["extra_body"] = extra_body
+
+
+def _apply_volcengine_thinking(kwargs: dict[str, Any], route: AIModelRoute) -> None:
+    """火山方舟 doubao 深度思考开关（OpenAI 兼容 extra_body）。
+
+    仅对深度任务显式开启思考；快速/轻量任务保留模型默认值，避免在 lite 模型上触发参数报错。
+    """
+    if route.task_type in (AI_TASK_DEEP_TEXT, AI_TASK_DEEP_MULTIMODAL):
+        extra_body = dict(kwargs.get("extra_body") or {})
+        extra_body.setdefault("thinking", {"type": "enabled"})
+        kwargs["extra_body"] = extra_body
+
+
+async def _provider_call_with_retry(
+    do_attempt,
+    *,
+    platform_name: str,
+) -> Any:
+    """对单次厂商网络调用做 429/5xx/网络抖动重试（指数退避，遵守 Retry-After）。"""
+    for attempt in range(1, AI_PROVIDER_HTTP_MAX_ATTEMPTS + 1):
+        try:
+            return await do_attempt()
+        except Exception as exc:  # noqa: BLE001 - 由下方判定是否可重试
+            if not _is_retryable_provider_error(exc) or attempt >= AI_PROVIDER_HTTP_MAX_ATTEMPTS:
+                raise
+            delay_seconds = _provider_retry_delay_seconds(exc, attempt)
+            print(
+                f"[AI WORKER] {platform_name} transient error; retry "
+                f"{attempt + 1}/{AI_PROVIDER_HTTP_MAX_ATTEMPTS} after {delay_seconds:.1f}s: "
+                f"{_provider_error_summary(exc)}"
+            )
+            await asyncio.sleep(delay_seconds)
 
 
 class AIModelLoadRouter:
@@ -2812,82 +2896,85 @@ def _get_selected_platform_config(
     return None
 
 
-async def _call_ai_platform(
+async def _do_provider_call(
+        selected_route: AIModelRoute,
         messages: List[Dict],
-        capability: Literal["standard", "thinking", "vision"] = "standard",
+        *,
         require_json_output: bool = False,
         allow_json_array: bool = False,
         parse_json_response: bool = True,
         task_priority: str = "default",
         task_label: Optional[str] = None,
-        preferred_platform: Optional[str] = None,
-        task_type: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Any = None,
         return_tool_calls: bool = False,
+        effort: str = "high",
 ) -> Any:
-    routes = _build_model_routes(capability, task_type=task_type, preferred_platform=preferred_platform)
-    if not routes:
-        normalized_task_type = _normalize_ai_task_type(task_type, capability)
-        if preferred_platform:
-            raise HTTPException(500, f"没有找到已启用且支持 '{normalized_task_type}' 任务的 {preferred_platform} AI 平台。")
-        raise HTTPException(500, f"没有找到支持 '{normalized_task_type}' 任务的已启用AI平台。")
+    """对单个已选定平台执行一次非流式调用（含厂商级 429/5xx 重试），解析并记账。
 
-    async with ai_model_router.route(routes, task_priority=task_priority) as selected_route:
-        selected_platform_config = selected_route.platform_config
-        platform_name = selected_route.platform_name
-        model_name = selected_route.model_name
-        capability = selected_route.capability
-        api_key = selected_platform_config["api_key"]
-        platform_type = selected_platform_config["type"]
-        can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
-        prepared_messages = _prepare_chat_messages_for_platform(messages, capability=capability)
-        request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
-        safe_tools = [tool for tool in (tools or []) if isinstance(tool, dict)]
-        call_id, started_at, start_perf = _new_ai_usage_context()
-        provider_usage: dict[str, Any] | None = None
-        response_thinking = ""
-        logged_usage = False
+    任意失败都会抛出 HTTPException，由上层 :func:`_call_ai_platform` 决定是否跨平台降级。
+    """
+    selected_platform_config = selected_route.platform_config
+    platform_name = selected_route.platform_name
+    model_name = selected_route.model_name
+    capability = selected_route.capability
+    api_key = selected_platform_config["api_key"]
+    platform_type = selected_platform_config["type"]
+    can_force_json = selected_platform_config.get("can_force_json", {}).get(capability, False)
+    prepared_messages = _prepare_chat_messages_for_platform(messages, capability=capability)
+    request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
+    safe_tools = [tool for tool in (tools or []) if isinstance(tool, dict)]
+    call_id, started_at, start_perf = _new_ai_usage_context()
+    provider_usage: dict[str, Any] | None = None
+    response_thinking = ""
+    response_content: Optional[str] = None
+    tool_calls: list[dict[str, Any]] = []
+    provider_stream_used = False
+    api_style = "chat_completions"
+    logged_usage = False
 
-        async with ai_limiter.slot(priority=task_priority, label=task_label or f"call:{selected_route.task_type}"):
-            print(
-                f"[AI WORKER] start task platform={platform_name}, model={model_name}, "
-                f"task_type={selected_route.task_type}, capability={capability}, spillover={selected_route.spillover}"
-            )
+    async with ai_limiter.slot(priority=task_priority, label=task_label or f"call:{selected_route.task_type}"):
+        print(
+            f"[AI WORKER] start task platform={platform_name}, model={model_name}, "
+            f"task_type={selected_route.task_type}, capability={capability}, "
+            f"spillover={selected_route.spillover}, effort={effort}"
+        )
 
-            if not api_key:
-                raise HTTPException(500, f"未配置 {platform_name} 的 API_KEY")
+        if not api_key:
+            raise HTTPException(500, f"未配置 {platform_name} 的 API_KEY")
 
-            response_content = None
-            provider_stream_used = False
-            api_style = "chat_completions"
-            try:
-                if platform_type == "volcengine":
-                    if not AsyncArk:
-                        raise ImportError("volcenginesdkarkruntime 未安装")
+        try:
+            if platform_type == "volcengine":
+                if not AsyncArk:
+                    raise ImportError("volcenginesdkarkruntime 未安装")
+                volc_kwargs: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
+                if safe_tools:
+                    volc_kwargs["tools"] = safe_tools
+                    if tool_choice is not None:
+                        volc_kwargs["tool_choice"] = tool_choice
+                _apply_volcengine_thinking(volc_kwargs, selected_route)
+                use_stream = AI_NONSTREAM_USE_PROVIDER_STREAM and not safe_tools
+
+                async def _volc_attempt() -> None:
+                    nonlocal response_content, response_thinking, provider_usage
+                    nonlocal tool_calls, request_payload, api_style, provider_stream_used
                     client = AsyncArk(
                         api_key=api_key,
                         base_url=selected_platform_config.get("base_url") or VOLCENGINE_OPENAI_BASE_URL,
                         timeout=180.0,
                     )
-                    volc_kwargs: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
-                    if safe_tools:
-                        volc_kwargs["tools"] = safe_tools
-                        if tool_choice is not None:
-                            volc_kwargs["tool_choice"] = tool_choice
-                    if AI_NONSTREAM_USE_PROVIDER_STREAM and not safe_tools:
+                    if use_stream:
                         provider_stream_used = True
                         api_style = "chat_completions_stream_collect"
-                        request_payload = {"model": model_name, "messages": prepared_messages, "stream": True}
-                        stream = await client.chat.completions.create(
-                            model=model_name,
-                            messages=prepared_messages,
-                            stream=True,
-                        )
+                        stream_kwargs = dict(volc_kwargs)
+                        stream_kwargs["stream"] = True
+                        request_payload = dict(stream_kwargs)
+                        stream = await client.chat.completions.create(**stream_kwargs)
                         answer_parts: list[str] = []
                         thinking_parts: list[str] = []
+                        usage_local: dict[str, Any] | None = None
                         async for chunk in stream:
-                            provider_usage = _extract_provider_usage(chunk) or provider_usage
+                            usage_local = _extract_provider_usage(chunk) or usage_local
                             if not getattr(chunk, "choices", None) or not chunk.choices[0].delta:
                                 continue
                             reasoning_text, content_text = _extract_delta_parts(chunk.choices[0].delta)
@@ -2897,9 +2984,9 @@ async def _call_ai_platform(
                                 answer_parts.append(content_text)
                         response_content = "".join(answer_parts)
                         response_thinking = "".join(thinking_parts)
+                        provider_usage = usage_local
                     else:
-                        if safe_tools:
-                            api_style = "chat_completions_tools"
+                        api_style = "chat_completions_tools" if safe_tools else "chat_completions"
                         request_payload = dict(volc_kwargs)
                         completion = await client.chat.completions.create(**volc_kwargs)
                         message = completion.choices[0].message
@@ -2908,35 +2995,43 @@ async def _call_ai_platform(
                         tool_calls = _extract_message_tool_calls(message)
                         provider_usage = _extract_provider_usage(completion)
 
-                elif platform_type == "openai":
-                    if not AsyncOpenAI:
-                        raise ImportError("openai 库未安装")
-                    base_url = selected_platform_config["base_url"]
+                await _provider_call_with_retry(_volc_attempt, platform_name=platform_name)
+
+            elif platform_type == "openai":
+                if not AsyncOpenAI:
+                    raise ImportError("openai 库未安装")
+                base_url = selected_platform_config["base_url"]
+                kwargs: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
+                if safe_tools:
+                    kwargs["tools"] = safe_tools
+                    if tool_choice is not None:
+                        kwargs["tool_choice"] = tool_choice
+
+                if require_json_output and can_force_json:
+                    print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 支持强制JSON，正在启用。")
+                    kwargs["response_format"] = {"type": "json_object"}
+                elif require_json_output:
+                    print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 不支持强制JSON，将依赖提示词。")
+
+                _apply_openai_provider_options(kwargs, selected_route, effort=effort)
+                use_stream = AI_NONSTREAM_USE_PROVIDER_STREAM and not safe_tools
+
+                async def _openai_attempt() -> None:
+                    nonlocal response_content, response_thinking, provider_usage
+                    nonlocal tool_calls, request_payload, api_style, provider_stream_used
                     client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
-                    kwargs = {"model": model_name, "messages": prepared_messages}
-                    if safe_tools:
-                        kwargs["tools"] = safe_tools
-                        if tool_choice is not None:
-                            kwargs["tool_choice"] = tool_choice
-
-                    if require_json_output and can_force_json:
-                        print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 支持强制JSON，正在启用。")
-                        kwargs["response_format"] = {"type": "json_object"}
-                    elif require_json_output:
-                        print(f"[AI WORKER] 平台 {platform_name} 模型 {model_name} 不支持强制JSON，将依赖提示词。")
-
-                    _apply_openai_provider_options(kwargs, selected_route)
-                    request_payload = dict(kwargs)
-                    if AI_NONSTREAM_USE_PROVIDER_STREAM and not safe_tools:
+                    if use_stream:
                         provider_stream_used = True
                         api_style = "chat_completions_stream_collect"
-                        kwargs["stream"] = True
-                        request_payload = dict(kwargs)
-                        stream = await client.chat.completions.create(**kwargs)
+                        stream_kwargs = dict(kwargs)
+                        stream_kwargs["stream"] = True
+                        request_payload = dict(stream_kwargs)
+                        stream = await client.chat.completions.create(**stream_kwargs)
                         answer_parts: list[str] = []
                         thinking_parts: list[str] = []
+                        usage_local: dict[str, Any] | None = None
                         async for chunk in stream:
-                            provider_usage = _extract_provider_usage(chunk) or provider_usage
+                            usage_local = _extract_provider_usage(chunk) or usage_local
                             if not getattr(chunk, "choices", None) or not chunk.choices[0].delta:
                                 continue
                             reasoning_text, content_text = _extract_delta_parts(chunk.choices[0].delta)
@@ -2946,9 +3041,10 @@ async def _call_ai_platform(
                                 answer_parts.append(content_text)
                         response_content = "".join(answer_parts)
                         response_thinking = "".join(thinking_parts)
+                        provider_usage = usage_local
                     else:
-                        if safe_tools:
-                            api_style = "chat_completions_tools"
+                        api_style = "chat_completions_tools" if safe_tools else "chat_completions"
+                        request_payload = dict(kwargs)
                         completion = await client.chat.completions.create(**kwargs)
                         message = completion.choices[0].message
                         response_content = _coerce_stream_text(getattr(message, "content", None))
@@ -2956,20 +3052,77 @@ async def _call_ai_platform(
                         tool_calls = _extract_message_tool_calls(message)
                         provider_usage = _extract_provider_usage(completion)
 
-                else:
-                    raise HTTPException(500, f"不支持的平台类型: {platform_type}")
+                await _provider_call_with_retry(_openai_attempt, platform_name=platform_name)
 
-                print(f"[AI WORKER] {platform_name} 调用成功。")
-                print(f"[AI WORKER] 原始响应内容: >>>\n{response_content}\n<<<")
+            else:
+                raise HTTPException(500, f"不支持的平台类型: {platform_type}")
 
-                usage_extra = {
-                    "require_json_output": require_json_output,
-                    "return_tool_calls": bool(return_tool_calls),
-                    "tool_count": len(safe_tools),
-                    "task_type": selected_route.task_type,
-                    "spillover": selected_route.spillover,
-                    "route_reason": selected_route.reason,
+            print(f"[AI WORKER] {platform_name} 调用成功。")
+            print(f"[AI WORKER] 原始响应内容: >>>\n{response_content}\n<<<")
+
+            usage_extra = {
+                "require_json_output": require_json_output,
+                "return_tool_calls": bool(return_tool_calls),
+                "tool_count": len(safe_tools),
+                "task_type": selected_route.task_type,
+                "spillover": selected_route.spillover,
+                "route_reason": selected_route.reason,
+                "effort": effort,
+            }
+            _log_ai_usage(
+                call_id=call_id,
+                started_at=started_at,
+                start_perf=start_perf,
+                task_label=task_label,
+                platform_name=platform_name,
+                platform_type=platform_type,
+                model_name=model_name,
+                capability=capability,
+                api_style=api_style,
+                request_payload=request_payload,
+                response_text=response_content or "",
+                thinking_text=response_thinking,
+                provider_usage=provider_usage,
+                status="success",
+                stream=provider_stream_used,
+                extra=usage_extra,
+            )
+            logged_usage = True
+
+            if return_tool_calls and safe_tools:
+                return {
+                    "text": response_content or "",
+                    "tool_calls": tool_calls,
                 }
+
+            if not response_content:
+                print("[ERROR] AI 返回了空内容。")
+                raise HTTPException(500, "AI 返回空内容")
+
+            if require_json_output:
+                try:
+                    return _robust_parse_json_value(
+                        response_content,
+                        purpose="JSON",
+                        allow_array=allow_json_array,
+                    )
+                except ValueError as e:
+                    raise HTTPException(500, str(e)) from e
+
+            if not parse_json_response:
+                return {"text": response_content}
+            try:
+                return _robust_parse_json_value(
+                    response_content,
+                    purpose="JSON",
+                    allow_array=allow_json_array,
+                )
+            except ValueError:
+                return {"text": response_content}
+
+        except HTTPException as he:
+            print(f"[ERROR] {platform_name} 处理失败: {he.detail}")
+            if not logged_usage:
                 _log_ai_usage(
                     call_id=call_id,
                     started_at=started_at,
@@ -2984,100 +3137,139 @@ async def _call_ai_platform(
                     response_text=response_content or "",
                     thinking_text=response_thinking,
                     provider_usage=provider_usage,
-                    status="success",
+                    status="error",
                     stream=provider_stream_used,
-                    extra=usage_extra,
+                    error=he.detail,
+                    extra={
+                        "require_json_output": require_json_output,
+                        "task_type": selected_route.task_type,
+                        "spillover": selected_route.spillover,
+                        "route_reason": selected_route.reason,
+                        "effort": effort,
+                    },
                 )
-                logged_usage = True
+            raise he
+        except Exception as e:
+            print(f"[ERROR] {platform_name} 调用失败: {e}")
+            print(traceback.format_exc())
+            if not logged_usage:
+                _log_ai_usage(
+                    call_id=call_id,
+                    started_at=started_at,
+                    start_perf=start_perf,
+                    task_label=task_label,
+                    platform_name=platform_name,
+                    platform_type=platform_type,
+                    model_name=model_name,
+                    capability=capability,
+                    api_style=api_style,
+                    request_payload=request_payload,
+                    response_text=response_content or "",
+                    thinking_text=response_thinking,
+                    provider_usage=provider_usage,
+                    status="error",
+                    stream=provider_stream_used,
+                    error=e,
+                    extra={
+                        "require_json_output": require_json_output,
+                        "task_type": selected_route.task_type,
+                        "spillover": selected_route.spillover,
+                        "route_reason": selected_route.reason,
+                        "effort": effort,
+                    },
+                )
+            raise HTTPException(500, f"{platform_name} 调用失败: {e}")
 
-                if return_tool_calls and safe_tools:
-                    return {
-                        "text": response_content or "",
-                        "tool_calls": tool_calls if "tool_calls" in locals() else [],
-                    }
 
-                if not response_content:
-                    print("[ERROR] AI 返回了空内容。")
-                    raise HTTPException(500, "AI 返回空内容")
+async def _call_ai_platform(
+        messages: List[Dict],
+        capability: Literal["standard", "thinking", "vision"] = "standard",
+        require_json_output: bool = False,
+        allow_json_array: bool = False,
+        parse_json_response: bool = True,
+        task_priority: str = "default",
+        task_label: Optional[str] = None,
+        preferred_platform: Optional[str] = None,
+        task_type: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Any = None,
+        return_tool_calls: bool = False,
+) -> Any:
+    normalized_task_type = _normalize_ai_task_type(task_type, capability)
 
-                if require_json_output:
-                    try:
-                        return _robust_parse_json_value(
-                            response_content,
-                            purpose="JSON",
-                            allow_array=allow_json_array,
-                        )
-                    except ValueError as e:
-                        raise HTTPException(500, str(e)) from e
+    # 安全网：纯文本任务里检测到图片/视频内容时，升级为多模态并强制走火山引擎
+    # （DeepSeek 无视觉能力）。符合“检测到图片/视频则降级到火山引擎”的要求。
+    if normalized_task_type in TEXT_TASK_TYPES and _messages_contain_visual(messages):
+        print(
+            f"[AI ROUTER] detected visual content on text task '{normalized_task_type}'; "
+            "upgrading to multimodal and routing to volcengine."
+        )
+        task_type = AI_TASK_DEEP_MULTIMODAL
+        capability = "vision"
+        normalized_task_type = AI_TASK_DEEP_MULTIMODAL
 
-                if not parse_json_response:
-                    return {"text": response_content}
-                try:
-                    return _robust_parse_json_value(
-                        response_content,
-                        purpose="JSON",
-                        allow_array=allow_json_array,
-                    )
-                except ValueError:
-                    return {"text": response_content}
+    # 候选路由：preferred 平台优先，其后补齐其余启用平台用于跨平台降级。
+    primary_routes = _build_model_routes(
+        capability, task_type=task_type, preferred_platform=preferred_platform
+    )
+    fallback_routes = _build_model_routes(capability, task_type=task_type)
+    seen_platforms: set[str] = set()
+    candidate_routes: list[AIModelRoute] = []
+    for route in [*primary_routes, *fallback_routes]:
+        if route.platform_name in seen_platforms:
+            continue
+        seen_platforms.add(route.platform_name)
+        candidate_routes.append(route)
 
-            except HTTPException as he:
-                print(f"[ERROR] {platform_name} 处理失败: {he.detail}")
-                if not logged_usage:
-                    _log_ai_usage(
-                        call_id=call_id,
-                        started_at=started_at,
-                        start_perf=start_perf,
-                        task_label=task_label,
-                        platform_name=platform_name,
-                        platform_type=platform_type,
-                        model_name=model_name,
-                        capability=capability,
-                        api_style=api_style,
-                        request_payload=request_payload,
-                        response_text=response_content or "",
-                        thinking_text=response_thinking,
-                        provider_usage=provider_usage,
-                        status="error",
-                        stream=provider_stream_used,
-                        error=he.detail,
-                        extra={
-                            "require_json_output": require_json_output,
-                            "task_type": selected_route.task_type,
-                            "spillover": selected_route.spillover,
-                            "route_reason": selected_route.reason,
-                        },
-                    )
-                raise he
-            except Exception as e:
-                print(f"[ERROR] {platform_name} 调用失败: {e}")
-                print(traceback.format_exc())
-                if not logged_usage:
-                    _log_ai_usage(
-                        call_id=call_id,
-                        started_at=started_at,
-                        start_perf=start_perf,
-                        task_label=task_label,
-                        platform_name=platform_name,
-                        platform_type=platform_type,
-                        model_name=model_name,
-                        capability=capability,
-                        api_style=api_style,
-                        request_payload=request_payload,
-                        response_text=response_content or "",
-                        thinking_text=response_thinking,
-                        provider_usage=provider_usage,
-                        status="error",
-                        stream=provider_stream_used,
-                        error=e,
-                        extra={
-                            "require_json_output": require_json_output,
-                            "task_type": selected_route.task_type,
-                            "spillover": selected_route.spillover,
-                            "route_reason": selected_route.reason,
-                        },
-                    )
-                raise HTTPException(500, f"{platform_name} 调用失败: {e}")
+    if not candidate_routes:
+        if preferred_platform:
+            raise HTTPException(500, f"没有找到已启用且支持 '{normalized_task_type}' 任务的 {preferred_platform} AI 平台。")
+        raise HTTPException(500, f"没有找到支持 '{normalized_task_type}' 任务的已启用AI平台。")
+
+    effort = _effort_for_task(task_type, task_label)
+    distinct_platform_count = len({route.platform_name for route in candidate_routes})
+    attempted_platforms: set[str] = set()
+    last_exc: Optional[BaseException] = None
+
+    while True:
+        remaining = [
+            route for route in candidate_routes
+            if route.platform_name not in attempted_platforms
+        ]
+        if not remaining:
+            break
+        async with ai_model_router.route(remaining, task_priority=task_priority) as selected_route:
+            attempted_platforms.add(selected_route.platform_name)
+            try:
+                return await _do_provider_call(
+                    selected_route,
+                    messages,
+                    require_json_output=require_json_output,
+                    allow_json_array=allow_json_array,
+                    parse_json_response=parse_json_response,
+                    task_priority=task_priority,
+                    task_label=task_label,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    return_tool_calls=return_tool_calls,
+                    effort=effort,
+                )
+            except Exception as exc:
+                last_exc = exc
+                if (
+                    len(attempted_platforms) >= distinct_platform_count
+                    or not _should_fallback_to_next_platform(exc)
+                ):
+                    raise
+                print(
+                    f"[AI ROUTER] platform={selected_route.platform_name} failed "
+                    f"({type(exc).__name__}: {getattr(exc, 'detail', exc)}); "
+                    f"falling back to next platform. tried={sorted(attempted_platforms)}"
+                )
+
+    if last_exc is not None:
+        raise last_exc
+    raise HTTPException(500, f"没有可用于 '{normalized_task_type}' 任务的AI平台。")
 
 
 async def _call_ai_platform_chat_stream_generator(
@@ -3388,11 +3580,14 @@ async def _call_ai_platform_chat_stream_events(
                     base_url=selected_platform_config.get("base_url") or VOLCENGINE_OPENAI_BASE_URL,
                     timeout=180.0,
                 )
-                stream = await client.chat.completions.create(
-                    model=model_name,
-                    messages=prepared_messages,
-                    stream=True
-                )
+                volc_kwargs: dict[str, Any] = {
+                    "model": model_name,
+                    "messages": prepared_messages,
+                    "stream": True,
+                }
+                _apply_volcengine_thinking(volc_kwargs, selected_route)
+                request_payload = dict(volc_kwargs)
+                stream = await client.chat.completions.create(**volc_kwargs)
             elif platform_type == "openai":
                 if not AsyncOpenAI:
                     raise ImportError("openai 搴撴湭瀹夎")
@@ -3405,7 +3600,9 @@ async def _call_ai_platform_chat_stream_events(
                 }
                 if "DeepSeek-R1" in model_name:
                     kwargs["extra_body"] = {"thinking_budget": 1024}
-                _apply_openai_provider_options(kwargs, selected_route)
+                _apply_openai_provider_options(
+                    kwargs, selected_route, effort=_effort_for_task(task_type, task_label)
+                )
                 request_payload = dict(kwargs)
                 stream = await client.chat.completions.create(**kwargs)
             else:

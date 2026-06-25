@@ -2063,7 +2063,7 @@ async def _generate_assignment_knowledge_analysis(
             "wrong_summary_knowledge_analysis_deep",
             timeout=110.0,
             model_capability="thinking",
-            task_type="deep_text",
+            task_type="wrong_question_summary",
             max_attempts=1,
         )
     except Exception as deep_exc:  # noqa: BLE001

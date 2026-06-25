@@ -79,7 +79,7 @@ async def _chat_json(
         "new_message": user_message,
         "file_texts": file_texts or [],
         "model_capability": "thinking",
-        "task_type": "deep_text_reasoning",
+        "task_type": "lesson_plan_generate",
         "response_format": "json",
         "web_search_enabled": False,
         "task_priority": "background",
