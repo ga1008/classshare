@@ -107,6 +107,112 @@ class PayloadNormalizationTests(unittest.TestCase):
         self.assertEqual(payload["sessions"][0]["schedule"]["text"], "week 3 sections 1-2")
 
 
+class CoverAutoFillTests(unittest.TestCase):
+    def setUp(self):
+        self.conn = _make_conn()
+        self.teacher = _add_teacher(self.conn, 1, "Teacher A", "Digital College", "Software")
+        self.conn.executescript(
+            """
+            CREATE TABLE courses (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                credits REAL,
+                total_hours INTEGER,
+                college TEXT,
+                department TEXT,
+                school_name TEXT
+            );
+            CREATE TABLE classes (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                academic_class_name TEXT
+            );
+            CREATE TABLE textbooks (
+                id INTEGER PRIMARY KEY,
+                title TEXT,
+                publisher TEXT
+            );
+            CREATE TABLE class_offerings (
+                id INTEGER PRIMARY KEY,
+                teacher_id INTEGER,
+                course_id INTEGER,
+                class_id INTEGER,
+                textbook_id INTEGER,
+                semester TEXT
+            );
+            CREATE TABLE class_offering_sessions (
+                id INTEGER PRIMARY KEY,
+                class_offering_id INTEGER,
+                academic_sync_item_id INTEGER,
+                order_index INTEGER
+            );
+            CREATE TABLE teacher_academic_course_sync_items (
+                id INTEGER PRIMARY KEY,
+                teacher_id INTEGER,
+                course_id INTEGER,
+                course_name TEXT,
+                teaching_class_name TEXT,
+                course_nature TEXT,
+                course_total_hours_text TEXT,
+                total_hours_text TEXT,
+                academic_year_name TEXT,
+                academic_term_name TEXT,
+                synced_at TEXT,
+                updated_at TEXT
+            );
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO courses (id, name, credits, total_hours, college, department, school_name) "
+            "VALUES (10, 'Dynamic Web', 2.0, 0, 'Digital College', 'Software', 'GXUFL')"
+        )
+        self.conn.execute(
+            "INSERT INTO classes (id, name, academic_class_name) VALUES (20, 'SE2401', 'SE2401')"
+        )
+        self.conn.execute(
+            "INSERT INTO textbooks (id, title, publisher) VALUES (30, 'Spring Boot', 'PT Press')"
+        )
+        self.conn.execute(
+            "INSERT INTO class_offerings (id, teacher_id, course_id, class_id, textbook_id, semester) "
+            "VALUES (40, 1, 10, 20, 30, '2025-2026-2')"
+        )
+        self.conn.execute(
+            "INSERT INTO teacher_academic_course_sync_items ("
+            "id, teacher_id, course_id, course_name, teaching_class_name, course_nature, "
+            "course_total_hours_text, total_hours_text, academic_year_name, academic_term_name, synced_at, updated_at"
+            ") VALUES (50, 1, 10, 'Dynamic Web', 'SE2401', 'Professional Elective', "
+            "'32', '', '2025-2026', 'Term 2', '2026-06-25T12:00:00', '2026-06-25T12:00:00')"
+        )
+        self.conn.execute(
+            "INSERT INTO class_offering_sessions (id, class_offering_id, academic_sync_item_id, order_index) "
+            "VALUES (60, 40, 50, 1)"
+        )
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_cover_reads_sync_item_without_class_offering_id_column(self):
+        cover = svc.build_cover_from_offering(self.conn, 40, teacher=self.teacher)
+
+        self.assertEqual(cover["course_name"], "Dynamic Web")
+        self.assertEqual(cover["course_category"], "Professional Elective")
+        self.assertEqual(cover["total_hours"], "32")
+        self.assertEqual(cover["semester_label"], "2025-2026 Term 2")
+
+        plan_id = svc.create_lesson_plan(
+            self.conn,
+            teacher=self.teacher,
+            title="Generated",
+            cover=cover,
+            sessions=[],
+            class_offering_id=40,
+            source_type="classroom",
+            status="generating",
+        )
+        self.conn.commit()
+        self.assertIsNotNone(svc.get_lesson_plan(self.conn, plan_id))
+
+
 class CrudAndVisibilityTests(unittest.TestCase):
     def setUp(self):
         self.conn = _make_conn()

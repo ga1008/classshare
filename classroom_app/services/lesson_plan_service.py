@@ -21,6 +21,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from ..db.connection import get_configured_db_engine
 from ..db.schema_lesson_plans import ensure_lesson_plan_schema
 from . import material_scope_service as scope_core
 from .organization_scope_service import load_teacher_org_scope
@@ -325,7 +326,7 @@ def build_cover_from_offering(
 
     row = conn.execute(
         """
-        SELECT o.id AS offering_id, o.semester AS semester,
+        SELECT o.id AS offering_id, o.course_id AS course_id, o.semester AS semester,
                co.name AS course_name, co.credits AS credits,
                co.total_hours AS total_hours, co.college AS course_college,
                co.department AS course_department, co.school_name AS course_school_name,
@@ -358,37 +359,28 @@ def build_cover_from_offering(
 
         # Best-effort: pull 课程性质/总学时/学期 from the academic sync item.
         # Wrapped defensively — the table/column set varies across deployments.
-        sync = None
-        try:
-            sync = conn.execute(
-                """
-                SELECT course_nature, course_total_hours_text, total_hours_text,
-                       academic_year_name, academic_term_name
-                FROM teacher_academic_course_sync_items
-                WHERE class_offering_id = ?
-                ORDER BY id DESC LIMIT 1
-                """,
-                (int(class_offering_id),),
-            ).fetchone()
-        except Exception:
-            sync = None
+        sync = _load_academic_sync_cover_row(
+            conn,
+            class_offering_id=int(class_offering_id),
+            teacher_id=int(teacher["id"]),
+            offering_row=row,
+        )
         if sync:
-                sync = dict(sync)
-                cover["course_category"] = _text(sync.get("course_nature")) or cover["course_category"]
-                if not cover["total_hours"]:
-                    cover["total_hours"] = _text(
-                        sync.get("course_total_hours_text") or sync.get("total_hours_text")
-                    )
-                term = " ".join(
-                    p
-                    for p in (
-                        _text(sync.get("academic_year_name")),
-                        _text(sync.get("academic_term_name")),
-                    )
-                    if p
+            cover["course_category"] = _text(sync.get("course_nature")) or cover["course_category"]
+            if not cover["total_hours"]:
+                cover["total_hours"] = _text(
+                    sync.get("course_total_hours_text") or sync.get("total_hours_text")
                 )
-                if term:
-                    cover["semester_label"] = term
+            term = " ".join(
+                p
+                for p in (
+                    _text(sync.get("academic_year_name")),
+                    _text(sync.get("academic_term_name")),
+                )
+                if p
+            )
+            if term:
+                cover["semester_label"] = term
     return cover
 
 
@@ -416,6 +408,171 @@ def _load(raw: Any, default: Any) -> Any:
         return json.loads(raw)
     except (TypeError, json.JSONDecodeError):
         return default
+
+
+def _uses_postgres_metadata(conn: Any) -> bool:
+    if isinstance(conn, sqlite3.Connection):
+        return False
+    try:
+        return get_configured_db_engine() == "postgres"
+    except Exception:
+        return False
+
+
+def _row_value(row: Any, key: str, index: int = 0) -> Any:
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return row.get(key)
+    try:
+        if key in row.keys():
+            return row[key]
+    except Exception:
+        pass
+    try:
+        return row[index]
+    except Exception:
+        return None
+
+
+def _table_columns(conn: Any, table_name: str) -> set[str]:
+    if _uses_postgres_metadata(conn):
+        rows = conn.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ?
+            """,
+            ("public", table_name),
+        ).fetchall()
+        return {str(_row_value(row, "column_name", 0) or "") for row in rows if _row_value(row, "column_name", 0)}
+    rows = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+    return {str(_row_value(row, "name", 1) or "") for row in rows if _row_value(row, "name", 1)}
+
+
+def _optional_fetchone(conn: Any, sql: str, params: tuple[Any, ...]) -> Any | None:
+    """Run optional schema-drift-prone reads without poisoning the outer transaction."""
+    savepoint_name = "lesson_plan_optional_read"
+    savepoint_active = False
+    try:
+        conn.execute(f"SAVEPOINT {savepoint_name}")
+        savepoint_active = True
+    except Exception:
+        savepoint_active = False
+    try:
+        row = conn.execute(sql, params).fetchone()
+    except Exception:
+        if savepoint_active:
+            try:
+                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+            finally:
+                try:
+                    conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+                except Exception:
+                    pass
+        elif _uses_postgres_metadata(conn):
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return None
+    if savepoint_active:
+        conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+    return row
+
+
+_SYNC_COVER_FIELDS = (
+    "course_nature",
+    "course_total_hours_text",
+    "total_hours_text",
+    "academic_year_name",
+    "academic_term_name",
+)
+
+
+def _load_academic_sync_cover_row(
+    conn: Any,
+    *,
+    class_offering_id: int,
+    teacher_id: int,
+    offering_row: dict[str, Any],
+) -> dict[str, Any] | None:
+    sync_cols = _table_columns(conn, "teacher_academic_course_sync_items")
+    select_fields = [field for field in _SYNC_COVER_FIELDS if field in sync_cols]
+    if not select_fields:
+        return None
+    select_sql = ", ".join(f"sync.{field} AS {field}" for field in select_fields)
+
+    session_cols = _table_columns(conn, "class_offering_sessions")
+    if {"class_offering_id", "academic_sync_item_id"}.issubset(session_cols) and "id" in sync_cols:
+        where_parts = ["cos.class_offering_id = ?", "cos.academic_sync_item_id IS NOT NULL"]
+        params: list[Any] = [int(class_offering_id)]
+        if "teacher_id" in sync_cols:
+            where_parts.append("sync.teacher_id = ?")
+            params.append(int(teacher_id))
+        order_parts = []
+        if "order_index" in session_cols:
+            order_parts.append("cos.order_index")
+        if "synced_at" in sync_cols:
+            order_parts.append("sync.synced_at DESC")
+        if "id" in sync_cols:
+            order_parts.append("sync.id DESC")
+        order_sql = ", ".join(order_parts) or "sync.id DESC"
+        row = _optional_fetchone(
+            conn,
+            f"""
+            SELECT {select_sql}
+            FROM class_offering_sessions cos
+            JOIN teacher_academic_course_sync_items sync ON sync.id = cos.academic_sync_item_id
+            WHERE {" AND ".join(where_parts)}
+            ORDER BY {order_sql}
+            LIMIT 1
+            """,
+            tuple(params),
+        )
+        if row:
+            return dict(row)
+
+    where_parts = []
+    params = []
+    strong_match = False
+    if "teacher_id" in sync_cols:
+        where_parts.append("sync.teacher_id = ?")
+        params.append(int(teacher_id))
+    course_id = offering_row.get("course_id")
+    if "course_id" in sync_cols and course_id not in (None, "", 0):
+        where_parts.append("sync.course_id = ?")
+        params.append(int(course_id))
+        strong_match = True
+    course_name = _text(offering_row.get("course_name"))
+    if not strong_match and "course_name" in sync_cols and course_name:
+        where_parts.append("sync.course_name = ?")
+        params.append(course_name)
+        strong_match = True
+    class_name = _text(offering_row.get("academic_class_name") or offering_row.get("class_name"))
+    if "teaching_class_name" in sync_cols and class_name:
+        where_parts.append("sync.teaching_class_name = ?")
+        params.append(class_name)
+        strong_match = True
+    if not where_parts or not strong_match:
+        return None
+    order_parts = []
+    for field in ("synced_at", "updated_at", "id"):
+        if field in sync_cols:
+            order_parts.append(f"sync.{field} DESC")
+    order_sql = ", ".join(order_parts) or "1"
+    row = _optional_fetchone(
+        conn,
+        f"""
+        SELECT {select_sql}
+        FROM teacher_academic_course_sync_items sync
+        WHERE {" AND ".join(where_parts)}
+        ORDER BY {order_sql}
+        LIMIT 1
+        """,
+        tuple(params),
+    )
+    return dict(row) if row else None
 
 
 def _normalize_tags(tags: Any) -> list[str]:
