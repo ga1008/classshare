@@ -170,10 +170,15 @@ def normalize_final_material_payload(
 
     normalized_tables = normalize_table_payloads(tables or [])
     fields = _normalize_field_map(metadata or {})
+    table_fields = _fields_from_markdown_tables(normalized_tables)
+    text_fields = _fields_from_text(content_markdown)
     if export_payload:
-        fields.update({k: v for k, v in _normalize_field_map(_as_dict(export_payload.get("fields"))).items() if _is_blank(fields.get(k))})
-    fields.update({k: v for k, v in _fields_from_markdown_tables(normalized_tables).items() if _is_blank(fields.get(k))})
-    fields.update({k: v for k, v in _fields_from_text(content_markdown).items() if _is_blank(fields.get(k))})
+        export_fields = _normalize_field_map(_as_dict(export_payload.get("fields")))
+    else:
+        export_fields = {}
+    fields.update({k: v for k, v in table_fields.items() if _is_blank(fields.get(k))})
+    fields.update({k: v for k, v in export_fields.items() if _is_blank(fields.get(k))})
+    fields.update({k: v for k, v in text_fields.items() if _is_blank(fields.get(k))})
     if classroom_context:
         fields.update({k: v for k, v in _fields_from_classroom_context(classroom_context).items() if _is_blank(fields.get(k))})
 
@@ -397,7 +402,7 @@ def _assessment_plan_payload(
     *,
     seed_items: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    items = seed_items or _assessment_items_from_tables(tables)
+    items = _assessment_items_from_tables(tables) or seed_items
     if not items:
         items = _default_assessment_items(fields)
     total = _sum_score(item.get("score") for item in items) or _to_number(fields.get("total_score")) or 100
@@ -586,6 +591,11 @@ def _normalize_exam_paper_fields(fields: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_assessment_type(value: Any) -> str:
     raw = _stringify(value)
+    compact = re.sub(r"\s+", "", raw)
+    if re.search(r"考查[（(][^）)]*[√✓✔]", compact):
+        return "考查"
+    if re.search(r"考试[（(][^）)]*[√✓✔]", compact):
+        return "考试"
     if "考查" in raw or "考察" in raw:
         return "考查"
     if "考试" in raw:
@@ -1111,7 +1121,9 @@ def _fields_from_text(content: str) -> dict[str, Any]:
         fields["total_score"] = total_match.group(1)
     course_match = re.search(r"课程名称\s*([^\s|]{2,40}(?:\s*[A-Za-z0-9]+)?(?:\s*程序设计|\s*管理|\s*开发|\s*实验)?)", text)
     if course_match:
-        fields["course_name"] = course_match.group(1).strip()
+        candidate = course_match.group(1).strip()
+        if not re.match(r"^(必须|应当|应|须|需|不得)", candidate):
+            fields["course_name"] = candidate
     class_match = re.search(r"专业年级班级\s*([^\s|]{2,80}?班(?:（[^）]+）)?)", text)
     if class_match:
         fields["class_name"] = class_match.group(1).strip()

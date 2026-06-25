@@ -1,3 +1,4 @@
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -127,6 +128,59 @@ class MaterialsPostgresWriteTests(unittest.TestCase):
         self.assertEqual(19, record_id)
         self.assertIn("RETURNING id", conn.calls[0][0])
         self.assertEqual(3, conn.calls[0][1][0])
+
+    def test_postgres_assessment_plan_import_record_preserves_export_payload(self):
+        conn = _FakeMaterialConnection()
+        export_payload = {
+            "template_key": "assessment_plan",
+            "document_group": "final_material",
+            "document_type": "assessment_plan",
+            "fields": {"course_name": "\u52a8\u6001web\u7a0b\u5e8f\u8bbe\u8ba1"},
+            "structured": {
+                "assessment_items": [
+                    {
+                        "assessment_form": "\u673a\u8bd5",
+                        "content": "Spring Boot project delivery",
+                        "score": "100",
+                    }
+                ],
+                "total_score": 100,
+            },
+        }
+        parse_result = SimpleNamespace(
+            document_group="final_material",
+            document_type="assessment_plan",
+            document_type_label="\u8bfe\u7a0b\u8003\u6838\u8ba1\u5212\u8868",
+            ai_used=True,
+            extraction_method="ai",
+            content_markdown="# assessment plan",
+            content_quality={"status": "ok"},
+        )
+
+        with patch.object(final_material_helpers, "get_configured_db_engine", return_value="postgres"):
+            record_id = final_material_helpers._insert_completed_material_ai_import_record(
+                conn,
+                user_id=3,
+                package_id=17,
+                parsed_id=18,
+                parent_id=None,
+                parse_result=parse_result,
+                source_file_name="assessment-plan.json",
+                metadata_json="{}",
+                parse_payload_json="{}",
+                export_payload_json=json.dumps(export_payload, ensure_ascii=False),
+                warnings_json="[]",
+                content_quality_json="{}",
+                now="2026-01-01T00:00:00",
+            )
+
+        self.assertEqual(19, record_id)
+        params = conn.calls[0][1]
+        self.assertEqual("final_material", params[4])
+        self.assertEqual("assessment_plan", params[5])
+        persisted_payload = json.loads(params[13])
+        self.assertEqual(persisted_payload["template_key"], "assessment_plan")
+        self.assertEqual(persisted_payload["structured"]["assessment_items"][0]["score"], "100")
 
 
 if __name__ == "__main__":
