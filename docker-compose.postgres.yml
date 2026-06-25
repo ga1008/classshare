@@ -37,6 +37,10 @@ services:
       - wal_compression=${POSTGRES_WAL_COMPRESSION:-on}
       - -c
       - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+      # Log any statement slower than this (ms) so slow queries surface under real
+      # multi-user load. Set to -1 to disable. Pure observability, no behavior change.
+      - -c
+      - log_min_duration_statement=${POSTGRES_LOG_MIN_DURATION_MS:-1000}
     volumes:
       - ${POSTGRES_HOST_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data
       - ./data/postgres-backups:/backups

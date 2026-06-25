@@ -6,7 +6,12 @@ import threading
 from typing import Any, Iterable, Sequence
 
 from .. import config
-from .errors import DatabaseConfigurationError, DatabaseConnectionError, redact_database_url
+from .errors import (
+    DatabaseBusyError,
+    DatabaseConfigurationError,
+    DatabaseConnectionError,
+    redact_database_url,
+)
 
 
 POSTGRES_DRIVER_REQUIREMENT = "psycopg[binary]==3.3.4"
@@ -370,6 +375,15 @@ def _build_connection_pool(row_factory: Any) -> Any:
     return pool
 
 
+def _is_pool_timeout(exc: BaseException) -> bool:
+    """True when the pool could not hand out a connection within the checkout timeout."""
+    try:
+        from psycopg_pool import PoolTimeout
+    except Exception:  # pragma: no cover - psycopg_pool always present when pooling is on
+        return False
+    return isinstance(exc, PoolTimeout)
+
+
 def _get_connection_pool(row_factory: Any) -> Any:
     global _connection_pool
     if _connection_pool is None:
@@ -431,6 +445,11 @@ def connect_postgres(*, driver: Any | None = None, row_factory: Any | None = Non
         except DatabaseConfigurationError:
             raise
         except Exception as exc:
+            # Pool saturated (all connections busy past the checkout timeout): signal
+            # "temporarily busy" so the web layer can return 503 + Retry-After instead
+            # of a generic 500. This is graceful degradation under load, not an outage.
+            if _is_pool_timeout(exc):
+                raise DatabaseBusyError("数据库连接繁忙，请稍候重试。") from exc
             redacted_url = redact_database_url(database_url)
             raise DatabaseConnectionError(
                 f"Unable to acquire pooled PostgreSQL connection: {redacted_url}"

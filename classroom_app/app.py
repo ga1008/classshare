@@ -26,6 +26,7 @@ from .config import (
 )
 from .database import init_database
 from .db.connection import database_backend_state
+from .db.errors import DatabaseBusyError
 from .db.postgres import close_connection_pool, get_pool_stats
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
@@ -474,6 +475,32 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         )
 
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+
+
+@app.exception_handler(DatabaseBusyError)
+async def database_busy_exception_handler(request: Request, exc: DatabaseBusyError):
+    """连接池在高峰被占满（PoolTimeout）时，优雅返回 503 + Retry-After，而非 500。
+
+    这是高并发下的优雅降级：客户端/浏览器可据 Retry-After 退避重试，体验远好于直接报错。
+    """
+    headers = {"Retry-After": "3"}
+    detail = "服务器繁忙，请稍候重试。"
+    if _is_api_request(request):
+        return _api_error_response(
+            request,
+            status_code=503,
+            detail=detail,
+            code=ApiErrorCode.SERVICE_UNAVAILABLE,
+            headers=headers,
+        )
+
+    return templates.TemplateResponse(request, "error.html", {
+        "request": request,
+        "error_code": 503,
+        "error_title": "服务器繁忙",
+        "error_message": "当前访问人数较多，请稍候几秒后刷新重试。",
+        "back_url": "/",
+    }, status_code=503, headers=headers)
 
 
 @app.exception_handler(Exception)
