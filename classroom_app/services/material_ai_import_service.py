@@ -14,6 +14,11 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import HTTPException
 
+from .libreoffice_service import (
+    LibreOfficeConversionError,
+    LibreOfficeUnavailable,
+    convert_office_file,
+)
 from .file_preview_service import TEXT_CONTENT_ENCODINGS
 from .material_final_document_service import (
     FINAL_MATERIAL_TYPES,
@@ -594,45 +599,28 @@ def _extract_doc_with_antiword(file_path: Path, warnings: list[str]) -> str:
 
 
 def _extract_legacy_doc_via_libreoffice(file_path: Path, warnings: list[str]) -> MaterialExtraction:
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
-    if not soffice:
-        warnings.append("未检测到 LibreOffice，无法将旧版 Word 转换为 docx/PDF 兜底。")
-        return MaterialExtraction(method="legacy_doc_libreoffice_unavailable", source_kind="doc", warnings=warnings)
     try:
+        converted = convert_office_file(file_path, "docx", timeout=90)
         with tempfile.TemporaryDirectory(prefix="material-ai-doc-convert-") as temp_dir:
-            temp_path = Path(temp_dir)
-            completed = subprocess.run(
-                [
-                    soffice,
-                    "--headless",
-                    "--convert-to",
-                    "docx",
-                    "--outdir",
-                    str(temp_path),
-                    str(file_path),
-                ],
-                check=False,
-                capture_output=True,
-                timeout=90,
-            )
-            if completed.returncode != 0:
-                stderr = completed.stderr.decode("utf-8", errors="ignore").strip()
-                warnings.append(f"LibreOffice 转 docx 失败: {stderr[:160] or '转换失败'}")
-                return MaterialExtraction(method="legacy_doc_libreoffice_convert_failed", source_kind="doc", warnings=warnings)
-            docx_files = sorted(temp_path.glob("*.docx"))
-            if not docx_files:
-                warnings.append("LibreOffice 转换未生成 docx，已尝试其他兜底。")
-                return MaterialExtraction(method="legacy_doc_libreoffice_no_docx", source_kind="doc", warnings=warnings)
-            extracted = _extract_docx(docx_files[0])
+            docx_path = Path(temp_dir) / "converted.docx"
+            docx_path.write_bytes(converted.output_bytes)
+            extracted = _extract_docx(docx_path)
             extracted.method = "libreoffice_doc_to_docx_extract"
             if extracted.text.strip():
                 warnings.append("已使用 LibreOffice 转换旧版 Word 后抽取正文。")
             return extracted
+    except LibreOfficeUnavailable:
+        warnings.append("未检测到 LibreOffice，无法将旧版 Word 转换为 docx/PDF 兜底。")
+        return MaterialExtraction(method="legacy_doc_libreoffice_unavailable", source_kind="doc", warnings=warnings)
     except subprocess.TimeoutExpired:
         warnings.append("LibreOffice 转换旧版 Word 超时，已尝试其他兜底。")
+        return MaterialExtraction(method="legacy_doc_libreoffice_timeout", source_kind="doc", warnings=warnings)
+    except LibreOfficeConversionError as exc:
+        warnings.append(f"LibreOffice 转 docx 失败: {str(exc)[:160] or '转换失败'}")
+        return MaterialExtraction(method="legacy_doc_libreoffice_convert_failed", source_kind="doc", warnings=warnings)
     except Exception as exc:
         warnings.append(f"LibreOffice 转换旧版 Word 异常: {_format_exception(exc)}")
-    return MaterialExtraction(method="legacy_doc_libreoffice_exception", source_kind="doc", warnings=warnings)
+        return MaterialExtraction(method="legacy_doc_libreoffice_exception", source_kind="doc", warnings=warnings)
 
 
 def _extract_xlsx(file_path: Path) -> MaterialExtraction:
@@ -744,45 +732,27 @@ def _render_office_pages_to_images(file_path: Path, ext: str, warnings: list[str
     if ext not in {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"}:
         return []
 
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
-    if not soffice:
-        warnings.append("未检测到 LibreOffice，无法把该 Office 文档渲染为图片兜底。")
-        return []
-
     try:
+        converted = convert_office_file(file_path, "pdf", timeout=90)
         with tempfile.TemporaryDirectory(prefix="material-ai-render-") as temp_dir:
-            temp_path = Path(temp_dir)
-            completed = subprocess.run(
-                [
-                    soffice,
-                    "--headless",
-                    "--convert-to",
-                    "pdf",
-                    "--outdir",
-                    str(temp_path),
-                    str(file_path),
-                ],
-                check=False,
-                capture_output=True,
-                timeout=90,
-            )
-            if completed.returncode != 0:
-                stderr = completed.stderr.decode("utf-8", errors="ignore").strip()
-                warnings.append(f"Office 文档渲染失败: {stderr[:160] or 'LibreOffice 转换失败'}")
-                return []
-            pdf_files = sorted(temp_path.glob("*.pdf"))
-            if not pdf_files:
-                warnings.append("Office 文档渲染未生成 PDF，已跳过视觉兜底。")
-                return []
-            images = render_pdf_pages_to_data_urls(pdf_files[0], dpi=144, max_pages=MAX_VISION_IMAGES)
+            pdf_path = Path(temp_dir) / "render.pdf"
+            pdf_path.write_bytes(converted.output_bytes)
+            images = render_pdf_pages_to_data_urls(pdf_path, dpi=144, max_pages=MAX_VISION_IMAGES)
             if images:
                 warnings.append("已将 Office 文档渲染为页面图片用于视觉兜底。")
             return images[:MAX_VISION_IMAGES]
+    except LibreOfficeUnavailable:
+        warnings.append("未检测到 LibreOffice，无法把该 Office 文档渲染为图片兜底。")
+        return []
     except subprocess.TimeoutExpired:
         warnings.append("Office 文档渲染超时，已跳过视觉兜底。")
+        return []
+    except LibreOfficeConversionError as exc:
+        warnings.append(f"Office 文档渲染失败: {str(exc)[:160] or 'LibreOffice 转换失败'}")
+        return []
     except Exception as exc:
         warnings.append(f"Office 文档渲染异常: {_format_exception(exc)}")
-    return []
+        return []
 
 
 def _docx_table_to_markdown(table) -> str:

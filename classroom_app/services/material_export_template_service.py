@@ -1,14 +1,12 @@
 import io
 import json
 import re
-import shutil
-import subprocess
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .libreoffice_service import convert_docx_bytes_to_pdf
 from .material_final_document_service import (
     ASSESSMENT_PLAN_NOTES,
     FINAL_MATERIAL_TYPES,
@@ -123,33 +121,7 @@ def build_material_export_artifact(
 
 
 def _convert_docx_bytes_to_pdf(docx_content: bytes, *, base_name: str) -> bytes:
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
-    if not soffice:
-        raise RuntimeError("当前服务器未安装 LibreOffice，无法导出 PDF；请先导出 Word 或安装 LibreOffice。")
-    with tempfile.TemporaryDirectory(prefix="lanshare-material-export-") as temp_dir:
-        work_dir = Path(temp_dir)
-        docx_path = work_dir / f"{base_name or 'material'}.docx"
-        docx_path.write_bytes(docx_content)
-        command = [
-            soffice,
-            "--headless",
-            "--convert-to",
-            "pdf",
-            "--outdir",
-            str(work_dir),
-            str(docx_path),
-        ]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=90)
-        if result.returncode != 0:
-            stderr = (result.stderr or result.stdout or "").strip()
-            raise RuntimeError(f"LibreOffice PDF 转换失败：{stderr[:240] or '未知错误'}")
-        pdf_path = docx_path.with_suffix(".pdf")
-        if not pdf_path.exists():
-            pdf_files = sorted(work_dir.glob("*.pdf"))
-            pdf_path = pdf_files[0] if pdf_files else pdf_path
-        if not pdf_path.exists():
-            raise RuntimeError("LibreOffice PDF 转换未生成文件。")
-        return pdf_path.read_bytes()
+    return convert_docx_bytes_to_pdf(docx_content, timeout=90)
 
 
 def _build_docx_export(payload: dict[str, Any], *, title: str) -> bytes:

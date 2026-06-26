@@ -9,9 +9,6 @@ Word/PDF/print output stays stable.
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-import tempfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -23,6 +20,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, Pt, RGBColor
 
+from .libreoffice_service import convert_docx_bytes_to_pdf as _safe_docx_to_pdf
 from . import lesson_plan_markdown as md
 
 _CN_FONT = "宋体"
@@ -628,29 +626,7 @@ def build_lesson_plan_docx(plan: dict[str, Any]) -> bytes:
 # PDF / PNG previews (LibreOffice)
 # ---------------------------------------------------------------------------
 def convert_docx_to_pdf(docx_bytes: bytes, *, base_name: str = "lesson_plan") -> bytes:
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
-    if not soffice:
-        raise RuntimeError("当前服务器未安装 LibreOffice，无法导出 PDF；请改用 Word 导出。")
-    with tempfile.TemporaryDirectory(prefix="lanshare-lessonplan-") as temp_dir:
-        work = Path(temp_dir)
-        docx_path = work / f"{base_name}.docx"
-        docx_path.write_bytes(docx_bytes)
-        result = subprocess.run(
-            [soffice, "--headless", "--convert-to", "pdf", "--outdir", str(work), str(docx_path)],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if result.returncode != 0:
-            stderr = (result.stderr or result.stdout or "").strip()
-            raise RuntimeError(f"LibreOffice PDF 转换失败：{stderr[:240] or '未知错误'}")
-        pdf_path = docx_path.with_suffix(".pdf")
-        if not pdf_path.exists():
-            pdfs = sorted(work.glob("*.pdf"))
-            pdf_path = pdfs[0] if pdfs else pdf_path
-        if not pdf_path.exists():
-            raise RuntimeError("LibreOffice PDF 转换未生成文件。")
-        return pdf_path.read_bytes()
+    return _safe_docx_to_pdf(docx_bytes, timeout=120)
 
 
 def convert_docx_to_png(docx_bytes: bytes, *, base_name: str = "lesson_plan", max_pages: int = 4) -> bytes:
