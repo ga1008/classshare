@@ -159,6 +159,13 @@ AI_PROVIDER_HTTP_RETRY_MAX_SECONDS = max(
 )
 AI_PROVIDER_HTTP_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 
+# 多模态批改走火山方舟 Responses API：图片多时（8~21 张）单次响应常超过默认 180s，
+# 导致首个尝试超时→重试，单题耗时成倍放大并堵塞批改队列。提升超时让首次尝试即可成功。
+AI_RESPONSES_HTTP_TIMEOUT_SECONDS = max(
+    60.0,
+    _read_float_env("AI_RESPONSES_HTTP_TIMEOUT_SECONDS", 600.0),
+)
+
 AI_TASK_LIGHT_MULTIMODAL = "light_multimodal_understanding"
 AI_TASK_DEEP_MULTIMODAL = "deep_multimodal_reasoning"
 AI_TASK_FAST_TEXT = "fast_text_response"
@@ -2687,7 +2694,7 @@ async def _call_volcengine_responses_api(
                     priority=task_priority,
                     label=task_label or f"responses_api:{normalized_task_type}",
                 ):
-                    async with httpx.AsyncClient(timeout=180.0) as client:
+                    async with httpx.AsyncClient(timeout=AI_RESPONSES_HTTP_TIMEOUT_SECONDS) as client:
                         response = await client.post(
                             f"{VOLCENGINE_OPENAI_BASE_URL}/responses",
                             headers={
