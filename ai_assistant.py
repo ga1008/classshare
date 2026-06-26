@@ -165,6 +165,17 @@ AI_RESPONSES_HTTP_TIMEOUT_SECONDS = max(
     60.0,
     _read_float_env("AI_RESPONSES_HTTP_TIMEOUT_SECONDS", 600.0),
 )
+# 厂商客户端超时分级：交互式聊天用较短超时（用户在线等待，快速失败更友好）；
+# 批改/出题/教案等深度任务（深度思考 + 多模态单次响应可能很慢）用更长超时，
+# 让首次尝试就能成功，避免“超时→重试”把单题耗时成倍放大并堵塞批改/生成队列。
+AI_HTTP_TIMEOUT_INTERACTIVE = max(30.0, _read_float_env("AI_HTTP_TIMEOUT_INTERACTIVE", 180.0))
+AI_HTTP_TIMEOUT_DEEP = max(60.0, _read_float_env("AI_HTTP_TIMEOUT_DEEP", 600.0))
+# 纯超时类错误的最大重试次数（远小于 429/5xx 的 AI_PROVIDER_HTTP_MAX_ATTEMPTS）。
+# 一次超时说明该请求确实很慢，无界重试只会用同样的超时一遍遍挂死并发槽位。
+AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS = max(
+    1,
+    min(_read_int_env("AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS", default=2), AI_PROVIDER_HTTP_MAX_ATTEMPTS),
+)
 
 AI_TASK_LIGHT_MULTIMODAL = "light_multimodal_understanding"
 AI_TASK_DEEP_MULTIMODAL = "deep_multimodal_reasoning"
@@ -455,22 +466,46 @@ def _apply_volcengine_thinking(kwargs: dict[str, Any], route: AIModelRoute) -> N
         kwargs["extra_body"] = extra_body
 
 
+def _provider_timeout_for_task(
+    task_type: Optional[str],
+    task_priority: str = "default",
+) -> float:
+    """按任务类型选厂商客户端超时：深度任务（批改/出题/教案/多模态）用长超时，交互式用短超时。"""
+    if str(task_priority or "").strip().lower() == "interactive":
+        return AI_HTTP_TIMEOUT_INTERACTIVE
+    if task_type in (AI_TASK_DEEP_TEXT, AI_TASK_DEEP_MULTIMODAL):
+        return AI_HTTP_TIMEOUT_DEEP
+    return AI_HTTP_TIMEOUT_INTERACTIVE
+
+
+def _max_attempts_for_error(exc: BaseException) -> int:
+    """超时类错误用较小的重试上限，避免“慢请求 × 多次重试”挂死并发槽位。"""
+    if isinstance(exc, httpx.TimeoutException):
+        return AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS
+    return AI_PROVIDER_HTTP_MAX_ATTEMPTS
+
+
 async def _provider_call_with_retry(
     do_attempt,
     *,
     platform_name: str,
 ) -> Any:
-    """对单次厂商网络调用做 429/5xx/网络抖动重试（指数退避，遵守 Retry-After）。"""
+    """对单次厂商网络调用做 429/5xx/网络抖动重试（指数退避，遵守 Retry-After）。
+
+    超时类错误的重试上限单独收紧（AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS），避免一个很慢的
+    请求被反复用同样的超时重试，长时间占住批改/生成的并发槽。
+    """
     for attempt in range(1, AI_PROVIDER_HTTP_MAX_ATTEMPTS + 1):
         try:
             return await do_attempt()
         except Exception as exc:  # noqa: BLE001 - 由下方判定是否可重试
-            if not _is_retryable_provider_error(exc) or attempt >= AI_PROVIDER_HTTP_MAX_ATTEMPTS:
+            max_attempts = _max_attempts_for_error(exc)
+            if not _is_retryable_provider_error(exc) or attempt >= max_attempts:
                 raise
             delay_seconds = _provider_retry_delay_seconds(exc, attempt)
             print(
                 f"[AI WORKER] {platform_name} transient error; retry "
-                f"{attempt + 1}/{AI_PROVIDER_HTTP_MAX_ATTEMPTS} after {delay_seconds:.1f}s: "
+                f"{attempt + 1}/{max_attempts} after {delay_seconds:.1f}s: "
                 f"{_provider_error_summary(exc)}"
             )
             await asyncio.sleep(delay_seconds)
@@ -2708,7 +2743,9 @@ async def _call_volcengine_responses_api(
             break
         except (httpx.HTTPStatusError, httpx.TransportError) as exc:
             retryable = _is_retryable_provider_error(exc)
-            should_retry = retryable and provider_attempt < AI_PROVIDER_HTTP_MAX_ATTEMPTS
+            # 超时类错误收紧重试上限，避免大图批改一遍遍超时把并发槽挂死几十分钟。
+            attempt_cap = _max_attempts_for_error(exc)
+            should_retry = retryable and provider_attempt < attempt_cap
             delay_seconds = _provider_retry_delay_seconds(exc, provider_attempt) if should_retry else 0.0
             error_summary = _provider_error_summary(exc)
             _log_ai_usage(
@@ -2968,7 +3005,7 @@ async def _do_provider_call(
                     client = AsyncArk(
                         api_key=api_key,
                         base_url=selected_platform_config.get("base_url") or VOLCENGINE_OPENAI_BASE_URL,
-                        timeout=180.0,
+                        timeout=_provider_timeout_for_task(selected_route.task_type, task_priority),
                     )
                     if use_stream:
                         provider_stream_used = True
@@ -3026,7 +3063,11 @@ async def _do_provider_call(
                 async def _openai_attempt() -> None:
                     nonlocal response_content, response_thinking, provider_usage
                     nonlocal tool_calls, request_payload, api_style, provider_stream_used
-                    client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
+                    client = AsyncOpenAI(
+                        api_key=api_key,
+                        base_url=base_url,
+                        timeout=_provider_timeout_for_task(selected_route.task_type, task_priority),
+                    )
                     if use_stream:
                         provider_stream_used = True
                         api_style = "chat_completions_stream_collect"

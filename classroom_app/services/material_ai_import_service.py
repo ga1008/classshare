@@ -247,7 +247,8 @@ async def parse_material_document(
                     task_type="deep_multimodal_reasoning",
                     task_priority="background",
                     task_label="material_ai_import:vision",
-                    timeout=300.0,
+                    # 多模态单次响应可能较慢，放宽到 600s 匹配 AI 端深度超时。
+                    timeout=600.0,
                 )
                 ai_used = True
             except Exception as exc:

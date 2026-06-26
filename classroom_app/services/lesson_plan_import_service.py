@@ -24,7 +24,9 @@ from .lesson_plan_generation_service import _json_from_ai_chat_payload, _repair_
 from .material_ai_import_service import MAX_VISION_IMAGES, extract_material_content
 
 _TEXT_BUDGET_PER_FILE = 16000
-_AI_TIMEOUT = 300.0
+# 教案导入可能带多张图片走火山多模态，单次响应可能较慢；放宽到 600s 以匹配 AI 端
+# 深度任务超时（AI_HTTP_TIMEOUT_DEEP），避免 app 端先行超时而 AI 仍在处理。
+_AI_TIMEOUT = 600.0
 
 
 def _extract_files(files: list[dict[str, str]]) -> dict[str, Any]:
