@@ -47,6 +47,62 @@
     return fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' }, opts || {}))
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
   }
+  function enc(s) { return encodeURIComponent(String(s == null ? '' : s)); }
+
+  // ---------- 招聘平台直达：注册表 + 地域排序 ----------
+  // 只收录口碑可靠的大平台与本地特色平台；URL 直接落到对应关键字的搜索结果页。
+  var PLATFORMS = {
+    boss:   { name: 'BOSS直聘', short: 'BOSS', color: '#00b8b9', bg: 'rgba(0,184,185,.16)', url: function (kw) { return 'https://www.zhipin.com/web/geek/job?query=' + enc(kw); } },
+    zhaopin:{ name: '智联招聘', short: '智联', color: '#2e7bff', bg: 'rgba(46,123,255,.16)', url: function (kw) { return 'https://sou.zhaopin.com/?kw=' + enc(kw); } },
+    job51:  { name: '前程无忧 51job', short: '51', color: '#ff7a18', bg: 'rgba(255,122,24,.16)', url: function (kw) { return 'https://we.51job.com/pc/search?keyword=' + enc(kw); } },
+    lagou:  { name: '拉勾招聘', short: '拉勾', color: '#22c98a', bg: 'rgba(34,201,138,.16)', url: function (kw) { return 'https://www.lagou.com/wn/jobs?kd=' + enc(kw); } },
+    liepin: { name: '猎聘', short: '猎聘', color: '#ff8a3d', bg: 'rgba(255,138,61,.16)', url: function (kw) { return 'https://www.liepin.com/zhaopin/?key=' + enc(kw); } },
+    gxrc:   { name: '广西人才网', short: '桂才', color: '#3ec46d', bg: 'rgba(62,196,109,.18)', local: true, url: function (kw) { return 'https://s.gxrc.com/sJob?keyword=' + enc(kw); } },
+    nfrc:   { name: '南方人才网', short: '南方', color: '#3c8df0', bg: 'rgba(60,141,240,.18)', local: true, url: function (kw) { return 'https://www.job168.com/2010/searchjob/searchjob.php?keyword=' + enc(kw); } }
+  };
+  // 意向地域 → 优先展示的本地特色平台（其余无可靠本地站则只用大平台）。
+  function localPlatformsFor(loc) {
+    if (loc === 'nanning') return ['gxrc'];
+    if (loc === 'coastal') return ['nfrc'];
+    return [];
+  }
+  function platformOrderFor(loc) {
+    var local = localPlatformsFor(loc);
+    var big = ['boss', 'zhaopin', 'job51', 'lagou', 'liepin'];
+    return local.concat(big.filter(function (p) { return local.indexOf(p) < 0; }));
+  }
+
+  // ---------- 岗位搜索关键字缓存 ----------
+  var KW_CACHE = {};
+  function fallbackKeywords(data) {
+    var name = String(data.name || '').replace(/[（(].*?[）)]/g, '').trim();
+    if (!name) return [];
+    var core = name.replace(/(开发工程师|研发工程师|工程师|开发|研发|师)$/, '').trim() || name;
+    var out = [];
+    function add(x) { x = (x || '').trim(); if (x && out.indexOf(x) < 0 && out.length < 6) out.push(x); }
+    add(name);
+    if (core !== name) { add(core + '工程师'); add(core + '开发'); add(core); }
+    return out;
+  }
+
+  // 平台弹窗（全屏浮层，懒创建一次）。
+  var modal = null;
+  function ensureModal() {
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.className = 'career-modal';
+    modal.id = 'career-modal';
+    modal.hidden = true;
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+    root.appendChild(modal);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && modal && !modal.hidden) closeModal(); });
+    return modal;
+  }
+  function closeModal() {
+    if (!modal) return;
+    modal.classList.remove('show');
+    setTimeout(function () { if (modal) { modal.hidden = true; modal.innerHTML = ''; } }, 260);
+  }
 
   // ---------- 引导：拉取状态 ----------
   function loadState() {
@@ -554,9 +610,101 @@
     if (deadline) h += '<div class="career-prep__deadline"><span class="career-prep__aside-t">⏳ 时间与节奏</span>' + esc(deadline) + '</div>';
     h += '</aside>';
     h += '</div>';
+
+    // 岗位搜索关键字（位于知识栈下方，点击任一关键字 → 各平台一键直达）
+    h += '<div class="career-kw" id="career-kw" data-tag="' + esc(data.tag || '') + '"></div>';
+
     el.prep.innerHTML = h;
     el.prep.querySelector('.career-prep__close').addEventListener('click', closePanels);
     el.prep.classList.add('show'); show(el.prep, true);
+
+    hydrateKeywords(data, s);
+  }
+
+  // ---------- 岗位关键字卡片 ----------
+  function hydrateKeywords(data, s) {
+    var box = document.getElementById('career-kw');
+    if (!box || !data.tag) return;
+    var cached = KW_CACHE[data.tag] || (s.job_keywords || {})[data.tag];
+    if (cached && cached.length) { KW_CACHE[data.tag] = cached; paintKeywords(box, data, cached, s); return; }
+    box.innerHTML = '<div class="career-kw__head">🔎 求职搜索关键字</div>'
+      + '<div class="career-kw__loading"><span class="career-kw__spin"></span>正在为你生成贴合的求职关键字…</div>';
+    fetchJSON('/api/career-path/keywords', { method: 'POST', body: JSON.stringify({ tag: data.tag }) })
+      .then(function (r) {
+        var kws = (r && r.keywords) || [];
+        if (!kws.length) kws = fallbackKeywords(data);
+        KW_CACHE[data.tag] = kws;
+        repaintIfCurrent(data, kws, s);
+      })
+      .catch(function () {
+        var kws = fallbackKeywords(data);
+        KW_CACHE[data.tag] = kws;
+        repaintIfCurrent(data, kws, s);
+      });
+  }
+  function repaintIfCurrent(data, kws, s) {
+    var box = document.getElementById('career-kw');
+    if (box && box.dataset.tag === data.tag) paintKeywords(box, data, kws, s);
+  }
+  function paintKeywords(box, data, kws, s) {
+    if (!kws || !kws.length) { box.innerHTML = ''; return; }
+    var chips = kws.map(function (k, i) {
+      return '<button type="button" class="career-kw__chip' + (i === 0 ? ' is-top' : '') + '" data-kw="' + esc(k) + '">'
+        + '<span class="career-kw__rank">' + (i + 1) + '</span>' + esc(k)
+        + '<span class="career-kw__go">直达 ›</span></button>';
+    }).join('');
+    box.innerHTML = '<div class="career-kw__head">🔎 求职搜索关键字 <small>点击关键字 · 各大平台一键直达搜索结果</small></div>'
+      + '<div class="career-kw__chips">' + chips + '</div>';
+    box.querySelectorAll('.career-kw__chip').forEach(function (b) {
+      b.addEventListener('click', function () { openPlatformModal(data, kws, b.dataset.kw, s); });
+    });
+  }
+
+  // ---------- 平台一键直达弹窗（按关键字归集） ----------
+  function openPlatformModal(data, kws, focusKw, s) {
+    ensureModal();
+    var tr = (s && s.test_result) || {};
+    var loc = tr.location_pref || '';
+    var locLabel = tr.location_label || '';
+    var order = platformOrderFor(loc);
+
+    var groups = kws.map(function (kw, gi) {
+      var btns = order.map(function (pid) {
+        var p = PLATFORMS[pid];
+        if (!p) return '';
+        return '<a class="career-pf' + (p.local ? ' is-local' : '') + '" href="' + esc(p.url(kw)) + '"'
+          + ' target="_blank" rel="noopener noreferrer">'
+          + '<span class="career-pf__logo" style="background:' + p.bg + ';color:' + p.color + '">' + esc(p.short) + '</span>'
+          + '<span class="career-pf__meta"><b>' + esc(p.name) + '</b>'
+          + '<i>' + (p.local ? '本地特色 · ' : '') + '搜“' + esc(kw) + '”</i></span>'
+          + '<span class="career-pf__arrow">↗</span></a>';
+      }).join('');
+      return '<section class="career-kwgroup' + (kw === focusKw ? ' is-focus' : '') + '" data-kw="' + esc(kw) + '">'
+        + '<header class="career-kwgroup__h"><span class="career-kwgroup__rank">' + (gi + 1) + '</span>'
+        + '<h4>' + esc(kw) + '</h4>'
+        + (gi === 0 ? '<span class="career-kwgroup__tag">最贴合</span>' : '') + '</header>'
+        + '<div class="career-kwgroup__pf">' + btns + '</div></section>';
+    }).join('');
+
+    var note = locLabel
+      ? '已按你的地域意向（' + esc(locLabel) + '）优先推荐本地特色平台，再按口碑大平台排序。'
+      : '点击任意平台直接跳到该关键字的搜索结果页（如需登录，注册后即可查看）。';
+
+    modal.innerHTML = '<div class="career-modal__panel" role="dialog" aria-modal="true">'
+      + '<header class="career-modal__head">'
+      + '<div class="career-modal__titles"><div class="career-modal__cat">' + esc(data.tag || '') + ' · 求职关键字 → 招聘平台</div>'
+      + '<h3>「' + esc(data.name) + '」一键直达各大招聘平台</h3>'
+      + '<p>' + note + '</p></div>'
+      + '<button type="button" class="career-modal__close" aria-label="关闭">✕</button></header>'
+      + '<div class="career-modal__body">' + groups + '</div></div>';
+
+    modal.hidden = false;
+    requestAnimationFrame(function () { modal.classList.add('show'); });
+    modal.querySelector('.career-modal__close').addEventListener('click', closeModal);
+    var focus = modal.querySelector('.career-kwgroup.is-focus');
+    if (focus && focus !== modal.querySelector('.career-kwgroup')) {
+      setTimeout(function () { focus.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 280);
+    }
   }
 
   function hideInfoPanels() {

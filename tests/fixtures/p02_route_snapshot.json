@@ -672,6 +672,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/career-path/keywords",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_path_keywords",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/career-path/progress",
     "methods": [
       "POST"

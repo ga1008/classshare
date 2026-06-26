@@ -559,6 +559,79 @@ def build_prep_cards(network: dict[str, Any], personalized: dict[str, Any]) -> d
     return cards
 
 
+# ---------------------------------------------------------------------------
+# job-search keywords (baseline derivation + AI merge + on-demand fast AI)
+# ---------------------------------------------------------------------------
+MAX_JOB_KEYWORDS = 6
+_JOB_TAIL_RE = re.compile(r"(开发工程师|研发工程师|工程师|开发|研发|师)$")
+# 招聘市场上常见、好搜的语言/技术词，用于把方向名扩展成更贴合岗位命名的关键字。
+_KEYWORD_TECH_HINTS = (
+    "Java", "Python", "Go", "Golang", "C++", "C#", "PHP", "Node", "JavaScript",
+    "Vue", "React", "Android", "iOS", "Flutter", "Unity", "Unreal", "Kubernetes",
+    "Spring", "SQL", "BI", "RAG", "Agent", "鸿蒙", "ArkTS",
+)
+
+
+def derive_job_keywords_from_node(node: dict[str, Any]) -> list[str]:
+    """Deterministic fallback keywords from a node when the AI hasn't supplied any.
+
+    Expands the direction name into a few market-style search terms and folds in
+    any well-known tech tokens mentioned in its prerequisites/knowledge.
+    """
+    name = re.sub(r"[（(].*?[）)]", "", str(node.get("name") or "")).strip()
+    if not name:
+        return []
+    core = _JOB_TAIL_RE.sub("", name).strip() or name
+
+    out: list[str] = []
+
+    def add(value: str) -> None:
+        value = str(value or "").strip()
+        if value and value not in out and len(out) < MAX_JOB_KEYWORDS:
+            out.append(value)
+
+    add(name)
+    if core and core != name:
+        add(core + "工程师")
+        add(core + "开发")
+        add(core)
+
+    haystack = " ".join([name] + [str(x) for x in (node.get("pre") or [])] + [str(x) for x in (node.get("know") or [])])
+    for tech in _KEYWORD_TECH_HINTS:
+        if len(out) >= MAX_JOB_KEYWORDS:
+            break
+        if tech.lower() in haystack.lower():
+            add(tech + core if core and core != name else tech + name)
+    return out[:MAX_JOB_KEYWORDS]
+
+
+def _sanitize_keyword_list(raw: Any) -> list[str]:
+    out: list[str] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        kw = sanitize_hidden_profile_leaks(str(item)).strip()
+        if kw and kw not in out:
+            out.append(kw[:24])
+        if len(out) >= MAX_JOB_KEYWORDS:
+            break
+    return out
+
+
+def build_job_keywords(network: dict[str, Any], personalized: dict[str, Any]) -> dict[str, list[str]]:
+    """Per-node search keywords: AI-tailored if present, else derived from node."""
+    ai_keywords = personalized.get("job_keywords") or {}
+    out: dict[str, list[str]] = {}
+    for node in network.get("nodes", []):
+        tag = node.get("tag")
+        if not tag:
+            continue
+        kws = _sanitize_keyword_list(ai_keywords.get(tag)) or derive_job_keywords_from_node(node)
+        if kws:
+            out[tag] = kws
+    return out
+
+
 def apply_personalization(network: dict[str, Any], personalized: dict[str, Any]) -> dict[str, Any]:
     """Overlay AI rec-overrides + glow onto a copy of the network for the page."""
     net = copy.deepcopy(network)
@@ -603,12 +676,14 @@ def build_state(conn, student_id: int) -> dict[str, Any]:
     network = net_state.get("network")
     display_network = None
     prep_cards: dict[str, Any] = {}
+    job_keywords: dict[str, list[str]] = {}
     if network:
         if status == "ready" and personalized:
             display_network = apply_personalization(network, personalized)
         else:
             display_network = copy.deepcopy(network)
         prep_cards = build_prep_cards(network, personalized if status == "ready" else {})
+        job_keywords = build_job_keywords(network, personalized if status == "ready" else {})
 
     tl = ctx["timeline"]
     address = polite_address(ctx["name"], "student")
@@ -645,8 +720,14 @@ def build_state(conn, student_id: int) -> dict[str, Any]:
         "network_status": net_state.get("status"),
         "network_source": net_state.get("source"),
         "prep_cards": prep_cards,
+        "job_keywords": job_keywords,
         "personalized": _public_personalized(personalized) if status == "ready" else {},
-        "test_result": {"holland_code": test_result.get("holland_code"), "top_dims": test_result.get("top_dims")},
+        "test_result": {
+            "holland_code": test_result.get("holland_code"),
+            "top_dims": test_result.get("top_dims"),
+            "location_pref": test_result.get("location_pref") or "",
+            "location_label": test_result.get("location_label") or "",
+        },
         "draft": draft,
         "error_message": sanitize_hidden_profile_leaks(session.get("error_message") or ""),
     }
@@ -798,6 +879,10 @@ def build_personalization_prompt(
         "node_tips: { 节点tag: 针对 TA 的一句话建议 }（覆盖 highlights 与若干相关节点）；\n"
         "prep_cards: { 节点tag: { summary, stacks:[{level:'非常重要'|'一般重要'|'需了解', items:[知识/技能字符串]}] } }，"
         "为 highlights 中的节点给出『从现在到毕业要补的知识栈』，分重要程度；\n"
+        "job_keywords: { 节点tag: [3–6 条招聘平台搜索关键字] }，给出该岗位在智联/BOSS直聘等主流招聘网站上"
+        "最贴合 TA、最好搜的中文搜索词，要符合招聘市场真实岗位命名习惯（如『Java后端』『Python研发』『前端开发』"
+        "『数据分析师』『测试开发』），结合 TA 的应届/起步阶段与就业地域意向，按『最贴合 TA 且最主流好搜』在前排序，"
+        "至少覆盖 highlights 中的节点（其他重点节点也可给）；\n"
         "timeline_advice: 结合 TA 距毕业的时间，给出『来不来得及、该怎么准备』的温馨而具体的建议；\n"
         "top_paths: [ {tag, name, why} ]，2–4 条最推荐路径及理由。\n"
         "只返回这个 JSON 对象。",
@@ -834,6 +919,80 @@ async def _call_thinking_ai(system_prompt: str, user_message: str, *, label: str
     if not isinstance(payload, dict):
         raise RuntimeError("AI 未返回 JSON 对象")
     return payload
+
+
+# ---------------------------------------------------------------------------
+# on-demand fast-AI keyword generation (when a node has no cached keywords)
+# ---------------------------------------------------------------------------
+async def _fast_keywords_ai(
+    node: dict[str, Any], ctx: dict[str, Any], test_result: dict[str, Any], location_label: str
+) -> list[str]:
+    """Quick model call → 3–6 market-style search keywords for one direction."""
+    system = (
+        "你是中国大学生求职助手。根据给定目标岗位与学生背景，输出该岗位在主流招聘平台（智联招聘、"
+        "BOSS直聘、前程无忧等）上最贴合、最好搜的中文搜索关键字。"
+        "只返回 JSON：{\"keywords\":[\"...\"]}，3–6 条，符合招聘市场真实岗位命名（如『Java后端』『Python研发』"
+        "『数据分析师』），按『最贴合该生且最主流好搜』在前排序，不要解释、不要 markdown。"
+    )
+    user = "\n".join([
+        f"目标岗位：{node.get('name')}（方向简介：{node.get('desc') or '（无）'}）。",
+        f"学生背景：{ctx.get('major_name') or ''} 专业、应届/起步阶段；霍兰德代码 {test_result.get('holland_code') or '未知'}。",
+        f"就业地域意向：{location_label or '未明确'}。",
+        f"该岗位常见技能/前提：{('、'.join([str(x) for x in (node.get('pre') or [])][:3])) or '（无）'}。",
+        "请只返回 JSON 对象。",
+    ])
+    response = await ai_client.post(
+        "/api/ai/chat",
+        json={
+            "system_prompt": system,
+            "messages": [],
+            "new_message": user,
+            "model_capability": "standard",
+            "task_type": "fast_text_response",
+            "response_format": "json",
+            "task_priority": "interactive",
+            "task_label": f"career_keywords:{node.get('tag')}",
+        },
+        timeout=45.0,
+    )
+    response.raise_for_status()
+    data = response.json()
+    parsed = data.get("response_json") if isinstance(data, dict) else None
+    if not isinstance(parsed, dict):
+        parsed = _extract_json_object(data.get("response_text") if isinstance(data, dict) else None)
+    return _sanitize_keyword_list((parsed or {}).get("keywords"))
+
+
+async def generate_keywords_on_demand(student_id: int, tag: str) -> dict[str, Any]:
+    """Resolve a node by tag and return tailored search keywords (AI, else derived).
+
+    Used by the page when a node has no cached keywords yet — fast model with a
+    deterministic fallback so the card always populates.
+    """
+    with get_db_connection() as conn:
+        ctx = resolve_student_context(conn, student_id)
+        if not ctx:
+            return {"ok": False, "error": "student_not_found"}
+        net_state = get_or_prepare_network(conn, ctx)
+        session = _load_session_row(conn, student_id) or {}
+        test_result = _json_loads(session.get("test_result_json"), {})
+        conn.commit()
+
+    network = net_state.get("network") or {}
+    node = next((n for n in network.get("nodes", []) if n.get("tag") == tag), None)
+    if not node:
+        return {"ok": False, "error": "node_not_found"}
+
+    baseline = derive_job_keywords_from_node(node)
+    location_label = test_result.get("location_label") or LOCATION_PREF_LABELS.get(test_result.get("location_pref") or "", "")
+    ai_keywords: list[str] = []
+    try:
+        ai_keywords = await _fast_keywords_ai(node, ctx, test_result, location_label)
+    except Exception:  # noqa: BLE001 — never block the card on AI failure
+        ai_keywords = []
+
+    keywords = ai_keywords or baseline
+    return {"ok": True, "tag": tag, "keywords": keywords, "source": "ai" if ai_keywords else "baseline"}
 
 
 # ---------------------------------------------------------------------------
@@ -942,6 +1101,16 @@ def _validate_personalization_payload(payload: dict[str, Any], network: dict[str
             if stacks:
                 prep_cards[tag] = {"summary": sanitize_hidden_profile_leaks(card.get("summary") or ""), "stacks": stacks}
 
+    job_keywords = {}
+    raw_keywords = payload.get("job_keywords")
+    if isinstance(raw_keywords, dict):
+        for tag, arr in raw_keywords.items():
+            if tag not in valid_tags:
+                continue
+            kws = _sanitize_keyword_list(arr)
+            if kws:
+                job_keywords[tag] = kws
+
     return {
         "greeting": sanitize_hidden_profile_leaks(payload.get("greeting") or ""),
         "summary": sanitize_hidden_profile_leaks(payload.get("summary") or ""),
@@ -956,6 +1125,7 @@ def _validate_personalization_payload(payload: dict[str, Any], network: dict[str
             if k in valid_tags and str(v or "").strip()
         },
         "prep_cards": prep_cards,
+        "job_keywords": job_keywords,
         "timeline_advice": sanitize_hidden_profile_leaks(payload.get("timeline_advice") or ""),
         "top_paths": [
             {"tag": str(p.get("tag") or ""), "name": str(p.get("name") or ""), "why": sanitize_hidden_profile_leaks(p.get("why") or "")}

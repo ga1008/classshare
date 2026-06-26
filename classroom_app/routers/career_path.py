@@ -22,6 +22,7 @@ from ..database import get_db_connection
 from ..dependencies import get_current_user
 from ..services.career_path_service import (
     build_state,
+    generate_keywords_on_demand,
     get_questions,
     resolve_student_context,
     reset_session,
@@ -103,6 +104,23 @@ async def career_path_progress(request: Request, user: dict = Depends(get_curren
         result = save_test_progress(conn, ctx, answers)
         conn.commit()
     return {"ok": True, **result}
+
+
+@router.post("/api/career-path/keywords", response_class=JSONResponse)
+async def career_path_keywords(request: Request, user: dict = Depends(get_current_user)):
+    """On-demand search keywords for a single direction (fast AI + fallback)."""
+    student_id = _require_student(user)
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, "请求 JSON 格式不正确") from exc
+    tag = str(payload.get("tag") or "").strip() if isinstance(payload, dict) else ""
+    if not tag:
+        raise HTTPException(400, "缺少岗位标识")
+    result = await generate_keywords_on_demand(student_id, tag)
+    if not result.get("ok"):
+        raise HTTPException(404, "未找到该职业方向")
+    return result
 
 
 @router.post("/api/career-path/reset", response_class=JSONResponse)

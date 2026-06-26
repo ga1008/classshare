@@ -363,18 +363,20 @@
 
 /* ---- 未毕业必备知识面板 ---- */
 .career-prep{
-  position:absolute; left:0; right:0; bottom:0; z-index:35; max-height:46vh; overflow:hidden;
+  position:absolute; left:0; right:0; bottom:0; z-index:35; max-height:58vh; overflow-y:auto; overflow-x:hidden;
   background:linear-gradient(0deg,#0a0f1d 72%,rgba(10,15,29,0));
   border-top:1px solid var(--glass-bd); padding:18px 22px 22px;
   transform:translateY(106%); transition:transform .42s cubic-bezier(.2,.85,.25,1), right .42s cubic-bezier(.2,.85,.25,1);
 }
+.career-prep::-webkit-scrollbar{width:8px}
+.career-prep::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14); border-radius:8px}
 .career-prep.show{transform:translateY(0)}
 /* 详情面板打开时，底部知识栈让出右侧空间，避免被遮挡 */
 .career-root.is-detail .career-prep{right:436px}
 .career-prep__main{display:flex; gap:18px; align-items:stretch}
 .career-prep__stacks{flex:1; min-width:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
-  gap:12px; overflow:auto; max-height:30vh; padding-bottom:4px}
-.career-prep__aside{width:300px; flex:none; overflow:auto; max-height:30vh}
+  gap:12px; overflow:auto; max-height:26vh; padding-bottom:4px}
+.career-prep__aside{width:300px; flex:none; overflow:auto; max-height:26vh}
 .career-prep__aside .career-prep__deadline{margin:0; height:100%}
 .career-prep__aside-t{display:block; font-size:12px; font-weight:800; color:#fde68a; margin-bottom:6px; letter-spacing:.5px}
 .career-prep__empty{font-size:13px; color:var(--dim); line-height:1.7; padding:8px 2px}
@@ -474,6 +476,73 @@
 
 @keyframes career-fade-up{from{opacity:0; transform:translateY(14px)}to{opacity:1; transform:translateY(0)}}
 
+/* ---- 岗位搜索关键字（知识栈下方） ---- */
+.career-kw{margin-top:16px; padding-top:14px; border-top:1px dashed rgba(255,255,255,.12)}
+.career-kw__head{font-size:13px; font-weight:800; color:#cfe6ff; letter-spacing:.4px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+.career-kw__head small{font-size:11.5px; font-weight:600; color:var(--mute); letter-spacing:0}
+.career-kw__loading{display:flex; align-items:center; gap:9px; margin-top:10px; font-size:12.5px; color:var(--dim)}
+.career-kw__spin{width:14px; height:14px; border-radius:50%; border:2px solid rgba(110,231,255,.25);
+  border-top-color:var(--accent); animation:cn-kw-spin .8s linear infinite}
+@keyframes cn-kw-spin{to{transform:rotate(360deg)}}
+.career-kw__chips{display:flex; flex-wrap:wrap; gap:9px; margin-top:11px}
+.career-kw__chip{display:inline-flex; align-items:center; gap:8px; cursor:pointer; font:inherit; font-size:13px; font-weight:700;
+  color:#e8f3ff; padding:8px 12px 8px 8px; border-radius:999px; border:1px solid var(--glass-bd);
+  background:linear-gradient(160deg,rgba(110,231,255,.10),rgba(167,139,250,.06)); transition:.2s}
+.career-kw__chip:hover{transform:translateY(-2px); border-color:var(--accent);
+  background:linear-gradient(160deg,rgba(110,231,255,.2),rgba(167,139,250,.12)); box-shadow:0 8px 22px rgba(0,0,0,.3)}
+.career-kw__chip.is-top{border-color:rgba(251,191,36,.5); background:linear-gradient(160deg,rgba(251,191,36,.16),rgba(110,231,255,.08))}
+.career-kw__rank{width:19px; height:19px; flex:none; display:grid; place-items:center; border-radius:50%;
+  font-size:11px; font-weight:800; color:#06121a; background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.career-kw__chip.is-top .career-kw__rank{background:linear-gradient(135deg,var(--gold),#fbbf24); color:#3a2400}
+.career-kw__go{font-size:11px; font-weight:700; color:var(--accent); opacity:.75}
+.career-kw__chip.is-top .career-kw__go{color:var(--gold)}
+
+/* ---- 平台一键直达弹窗 ---- */
+.career-modal{position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center; padding:24px;
+  background:radial-gradient(1200px 800px at 50% 30%,rgba(8,12,24,.72),rgba(3,5,11,.86)); backdrop-filter:blur(8px);
+  opacity:0; transition:opacity .26s}
+.career-modal.show{opacity:1}
+.career-modal__panel{width:min(720px,96vw); max-height:88vh; display:flex; flex-direction:column; overflow:hidden;
+  border-radius:22px; border:1px solid var(--glass-bd); background:linear-gradient(180deg,rgba(20,28,47,.98),rgba(9,13,26,.98));
+  box-shadow:0 40px 100px rgba(0,0,0,.6); transform:translateY(14px) scale(.985); transition:transform .3s cubic-bezier(.2,.85,.25,1)}
+.career-modal.show .career-modal__panel{transform:none}
+.career-modal__head{position:relative; padding:22px 24px 18px; border-bottom:1px solid var(--glass-bd); flex:none;
+  background:linear-gradient(180deg,rgba(110,231,255,.08),transparent)}
+.career-modal__cat{font-size:11.5px; letter-spacing:1.4px; text-transform:uppercase; color:var(--accent)}
+.career-modal__titles h3{margin:7px 44px 0 0; font-size:20px; font-weight:800; color:#fff; line-height:1.35}
+.career-modal__titles p{margin:8px 0 0; font-size:12.5px; color:var(--dim); line-height:1.6}
+.career-modal__close{position:absolute; top:18px; right:18px; width:36px; height:36px; border-radius:11px; cursor:pointer;
+  border:1px solid var(--glass-bd); background:var(--glass); color:var(--txt); font-size:17px; transition:.25s}
+.career-modal__close:hover{background:rgba(255,255,255,.14); transform:rotate(90deg)}
+.career-modal__body{padding:8px 24px 26px; overflow-y:auto; flex:1}
+.career-modal__body::-webkit-scrollbar{width:8px}
+.career-modal__body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14); border-radius:8px}
+
+.career-kwgroup{margin-top:18px; padding:14px 16px; border-radius:16px; border:1px solid var(--glass-bd);
+  background:linear-gradient(160deg,rgba(255,255,255,.04),rgba(255,255,255,.015)); animation:career-fade-up .4s both}
+.career-kwgroup.is-focus{border-color:rgba(251,191,36,.45); box-shadow:0 0 0 1px rgba(251,191,36,.18)}
+.career-kwgroup__h{display:flex; align-items:center; gap:10px; margin-bottom:13px}
+.career-kwgroup__rank{width:24px; height:24px; flex:none; display:grid; place-items:center; border-radius:8px;
+  font-size:13px; font-weight:800; color:#06121a; background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.career-kwgroup:first-child .career-kwgroup__rank{background:linear-gradient(135deg,var(--gold),#fbbf24); color:#3a2400}
+.career-kwgroup__h h4{margin:0; font-size:16px; font-weight:800; color:#fff; flex:1; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.career-kwgroup__tag{flex:none; font-size:11px; font-weight:800; color:#3a2400; padding:3px 9px; border-radius:999px;
+  background:linear-gradient(90deg,var(--gold),#fcd34d)}
+.career-kwgroup__pf{display:grid; grid-template-columns:repeat(auto-fill,minmax(196px,1fr)); gap:10px}
+.career-pf{display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:13px; text-decoration:none;
+  border:1px solid var(--glass-bd); background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.02)); transition:.2s}
+.career-pf:hover{transform:translateY(-2px); border-color:rgba(255,255,255,.32); background:rgba(255,255,255,.07);
+  box-shadow:0 10px 26px rgba(0,0,0,.35)}
+.career-pf.is-local{border-color:rgba(62,196,109,.4)}
+.career-pf__logo{width:38px; height:38px; flex:none; display:grid; place-items:center; border-radius:11px;
+  font-size:13px; font-weight:800; letter-spacing:.3px}
+.career-pf__meta{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px}
+.career-pf__meta b{font-size:13.5px; font-weight:700; color:#eef4ff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.career-pf__meta i{font-style:normal; font-size:11px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.career-pf__arrow{flex:none; font-size:15px; color:var(--mute); transition:.2s}
+.career-pf:hover .career-pf__arrow{color:var(--accent); transform:translate(2px,-2px)}
+
 @media (max-width:860px){
   .career-prep__main{flex-direction:column}
   .career-prep__aside{width:auto}
@@ -502,4 +571,10 @@
   .career-star-card__role{font-size:11.5px}
   .career-star-card__skills{display:none}
   .career-legend{bottom:10px; border-radius:16px; padding:8px 10px}
+  .career-modal{padding:12px}
+  .career-modal__panel{max-height:92vh; border-radius:18px}
+  .career-modal__head{padding:18px 18px 14px}
+  .career-modal__titles h3{font-size:17px}
+  .career-modal__body{padding:6px 16px 20px}
+  .career-kwgroup__pf{grid-template-columns:1fr}
 }
