@@ -8,6 +8,7 @@ from .ui_parts import manage_pages as _manage_pages
 from .ui_parts import exam_pages as _exam_pages
 from .ui_parts import poll_pages as _poll_pages
 from .ui_parts import lesson_plan_pages as _lesson_plan_pages
+from .ui_parts import assessment_plan_pages as _assessment_plan_pages
 
 from .ui_parts.common import *
 from .ui_parts.auth import *
@@ -18,6 +19,7 @@ from .ui_parts.manage_pages import *
 from .ui_parts.exam_pages import *
 from .ui_parts.poll_pages import *
 from .ui_parts.lesson_plan_pages import *
+from .ui_parts.assessment_plan_pages import *
 
 
 router = APIRouter()
@@ -29,6 +31,7 @@ router.include_router(_manage_pages.router)
 router.include_router(_exam_pages.router)
 router.include_router(_poll_pages.router)
 router.include_router(_lesson_plan_pages.router)
+router.include_router(_assessment_plan_pages.router)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

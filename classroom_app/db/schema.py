@@ -12,6 +12,7 @@ from .schema_cultivation_progress import ensure_cultivation_progress_schema
 from .schema_foundation import ensure_foundation_schema
 from .schema_learning_blog import ensure_learning_blog_signature_schema
 from .schema_lesson_plans import ensure_lesson_plan_schema
+from .schema_assessment_plans import ensure_assessment_plan_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
 from .schema_polls import ensure_poll_schema
 from .schema_scheduler import ensure_scheduler_schema
@@ -136,6 +137,19 @@ def init_database():
             print("[DB] PostgreSQL lesson-plan table ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL lesson-plan schema step skipped: {exc}")
+        # The assessment-plan (考核计划表 / 过程材料) table uses the same
+        # runtime-managed, engine-aware pattern (isolated connection so the
+        # validate path above stays DDL-free).
+        try:
+            assessment_plan_conn = get_db_connection()
+            try:
+                ensure_assessment_plan_schema(assessment_plan_conn)
+                assessment_plan_conn.commit()
+            finally:
+                assessment_plan_conn.close()
+            print("[DB] PostgreSQL assessment-plan table ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL assessment-plan schema step skipped: {exc}")
         print(
             "[DB] PostgreSQL schema verified: "
             f"{report['present_required_table_count']}/{report['required_table_count']} required tables"
@@ -157,6 +171,7 @@ def init_database():
             ensure_gongwen_schema(conn)
             ensure_agent_task_extension_schema(conn)
             ensure_lesson_plan_schema(conn)
+            ensure_assessment_plan_schema(conn)
             conn.commit()
         except Exception:
             conn.rollback()

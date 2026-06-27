@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="lanshare">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>编辑考核计划表 · {{ plan.title }}</title>
+    {% include "partials/ui_system_assets.html" %}
+</head>
+<body class="lp-editor-body">
+    <header class="lp-editor__header">
+        <a class="lp-btn lp-btn--ghost" href="/manage/teaching/assessment-plans">← 返回考核计划表库</a>
+        <strong class="lp-editor__title" id="ap-editor-title">{{ plan.title }}</strong>
+        <div class="lp-editor__header-actions">
+            <span class="ap-score-pill" id="ap-score-pill">分值合计 —</span>
+            <a class="lp-btn lp-btn--ghost" href="/assessment-plan/{{ plan.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
+            <button type="button" class="lp-btn lp-btn--primary" id="ap-save">保存</button>
+        </div>
+    </header>
+
+    <main class="lp-editor">
+        <section class="lp-editor__form" id="ap-editor-form">
+            <details class="lp-editor__cover" open>
+                <summary>基础信息</summary>
+                <div class="ap-field-grid" id="ap-field-grid"></div>
+            </details>
+
+            <details class="lp-editor__cover" open>
+                <summary>考核项目（分值合计须为 100）</summary>
+                <div class="ap-items" id="ap-items"></div>
+                <div class="ap-items__foot">
+                    <button type="button" class="lp-btn lp-btn--ghost" id="ap-add-item">+ 添加考核项</button>
+                    <span class="ap-items__total" id="ap-items-total"></span>
+                </div>
+            </details>
+
+            <details class="lp-editor__cover" open>
+                <summary>签名</summary>
+                <div class="ap-signatures" id="ap-signatures"></div>
+                <p class="ap-hint">命题教师可绑定本人签名；系（教研室）主任审核签字通常线下手写，也可从签名库选择（需使用授权）。</p>
+            </details>
+
+            <details class="lp-editor__cover" id="ap-import-details" hidden>
+                <summary>导入详情（每个识别到的细节）</summary>
+                <div class="ap-import" id="ap-import"></div>
+            </details>
+        </section>
+
+        <section class="lp-editor__preview">
+            <div class="lp-editor__preview-bar">
+                <span>实时预览</span>
+                <button type="button" class="lp-btn lp-btn--ghost" id="ap-refresh-preview">刷新预览</button>
+                <a class="lp-btn lp-btn--ghost" href="/api/assessment-plans/{{ plan.id }}/export?fmt=docx">导出 Word</a>
+            </div>
+            <iframe id="ap-preview-frame" class="lp-editor__frame" src="/assessment-plan/{{ plan.id }}/preview" title="考核计划表预览"></iframe>
+        </section>
+    </main>
+
+    <script id="ap-editor-boot" type="application/json">
+    {
+        "id": {{ plan['id'] | tojson }},
+        "title": {{ plan['title'] | tojson }},
+        "fields": {{ plan['fields'] | tojson }},
+        "items": {{ plan['items'] | tojson }},
+        "notes": {{ plan['notes'] | tojson }},
+        "examiner_signature": {{ plan['examiner_signature'] | tojson }},
+        "reviewer_signature": {{ plan['reviewer_signature'] | tojson }},
+        "import_preview": {{ plan['import_preview'] | tojson }}
+    }
+    </script>
+    <script type="module" src="{{ asset_url('js/auth.js') }}"></script>
+    <script type="module" src="{{ asset_url('js/assessment_plan_editor.js') }}?v=20260627"></script>
+</body>
+</html>

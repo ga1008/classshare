@@ -433,6 +433,14 @@ def _add_plan_meta_table(document: Any, fields: dict[str, Any]) -> None:
             continue
         for col_index, value in enumerate(row_values):
             is_signature_value = row_index == 2 and col_index in {1, 3}
+            if is_signature_value:
+                image_key = "examiner_signature_image_path" if col_index == 1 else "reviewer_signature_image_path"
+                _set_assessment_signature_cell(
+                    row.cells[col_index],
+                    value,
+                    str(fields.get(image_key) or "").strip(),
+                )
+                continue
             _set_assessment_cell_text(
                 row.cells[col_index],
                 value,
@@ -1115,6 +1123,31 @@ def _set_assessment_cell_text(cell: Any, text: Any, *, bold: bool = False, cente
     run = paragraph.add_run(_stringify(text))
     if bold:
         run.font.bold = True
+
+
+def _set_assessment_signature_cell(cell: Any, text: Any, image_path: str = "") -> None:
+    """Render a signature cell: the name text, plus the bound signature image if present."""
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    cell.text = ""
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    paragraph = cell.paragraphs[0]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    name_text = _stringify(text).strip()
+    if name_text:
+        paragraph.add_run(name_text)
+    path = Path(image_path) if image_path else None
+    if path and path.is_file():
+        try:
+            from docx.shared import Cm
+
+            picture_paragraph = cell.add_paragraph()
+            picture_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            picture_paragraph.add_run().add_picture(str(path), height=Cm(1.05))
+        except Exception:
+            # Never let a bad image break the export — the name text already stands.
+            pass
 
 
 def _set_cell_text(cell: Any, text: Any, *, bold: bool = False, align: int = 0, size: float = 10.5) -> None:

@@ -176,6 +176,17 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/materials",),
     ),
     ManageNavItem(
+        key="assessment_plans",
+        domain="teaching",
+        group="过程材料",
+        label="考核计划表",
+        icon="clipboard-list",
+        href="/manage/teaching/assessment-plans",
+        search_text="考核计划表 过程材料 命题 考核 评分 归档 assessment plan",
+        ai_hint="考核计划表：空白新建 / 完整表单填写（可按课堂自动带入）/ 按课堂深度思考生成 / 导入解析（自动归集签名到签名库并去重），支持渲染预览、导出 Word、系部院校级公开与一键继承。",
+        legacy_hrefs=("/manage/assessment-plans",),
+    ),
+    ManageNavItem(
         key="system_smart_classroom_integrations",
         domain="teaching",
         group="课堂工具",

@@ -1,0 +1,62 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}考核计划表{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('空白新建', '过程材料', 'plus', variant='primary', tone='indigo', attrs='data-ap-create-blank') }}
+{{ topbar_action('按课堂生成', '过程材料', 'robot', variant='soft', tone='indigo', attrs='data-ap-generate-open') }}
+{{ topbar_action('导入解析', '过程材料', 'upload', variant='soft', tone='slate', attrs='data-ap-import-open') }}
+{% endblock %}
+
+{% block content %}
+<section class="manage-lp" data-ap-root>
+    <div class="manage-lp__intro">
+        <div>
+            <h2>考核计划表库</h2>
+            <p>过程材料 · 每学期每门课一份《课程考核计划表》。可空白新建并用完整表单填写（可按课堂自动带入）、按课堂用深度思考 AI 生成、或导入文件由 AI 解析；导入时会把签名图片自动归集到签名库（自动去重）。支持渲染预览、导出 Word、系部/院级/校级公开与一键继承。</p>
+        </div>
+        <div class="manage-lp__summary" data-ap-summary></div>
+    </div>
+
+    <div class="manage-lp__toolbar">
+        <div class="manage-lp__search">
+            <input type="search" data-ap-search placeholder="搜索课程 / 标题 / 班级 / 标签…" />
+        </div>
+        <div class="manage-lp__filters">
+            <select data-ap-filter-scope>
+                <option value="">全部范围</option>
+                <option value="mine">我的</option>
+                <option value="shared">他人公开</option>
+                <option value="private">私有</option>
+                <option value="department">本系部公开</option>
+                <option value="college">本院级公开</option>
+                <option value="school">全校公开</option>
+            </select>
+            <select data-ap-sort>
+                <option value="updated_desc">最近更新</option>
+                <option value="updated_asc">最早更新</option>
+                <option value="title_asc">标题 A→Z</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="manage-lp__loading" data-ap-loading>正在加载考核计划表…</div>
+    <div class="manage-lp__grid" data-ap-grid hidden></div>
+    <div class="manage-lp__empty" data-ap-empty hidden>
+        <strong>还没有考核计划表</strong>
+        <p>点击右上角「空白新建」「按课堂生成」或「导入解析」开始。</p>
+    </div>
+</section>
+
+<script id="assessment-plan-boot" type="application/json">
+{
+    "offerings": {{ assessment_plan_offerings | tojson }},
+    "scope_options": {{ assessment_plan_scope_options | tojson }}
+}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_assessment_plans.js') }}?v=20260627"></script>
+{% endblock %}

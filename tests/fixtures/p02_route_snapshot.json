@@ -296,6 +296,134 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/assessment-plans",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_plans",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/classroom/{class_offering_id}/prefill",
+    "methods": [
+      "GET"
+    ],
+    "name": "classroom_prefill",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "generate_from_classroom",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/import",
+    "methods": [
+      "POST"
+    ],
+    "name": "import_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}/attributes",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}/attributes",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "patch_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}/content",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}/export",
+    "methods": [
+      "GET"
+    ],
+    "name": "export_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}/inherit",
+    "methods": [
+      "POST"
+    ],
+    "name": "inherit_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}/retry",
+    "methods": [
+      "POST"
+    ],
+    "name": "retry_plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}/signature",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_signature",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}/tags",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_tags",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assessment-plans/{plan_id}/task",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_task_status",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/assignments/time-state",
     "methods": [
       "GET"
@@ -3656,6 +3784,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/assessment-plan/{plan_id}/edit",
+    "methods": [
+      "GET"
+    ],
+    "name": "assessment_plan_editor_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/assessment-plan/{plan_id}/preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "assessment_plan_preview_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/assignment/{assignment_id}",
     "methods": [
       "GET"
@@ -3861,6 +4005,22 @@
       "GET"
     ],
     "name": "redirect_manage_legacy_ai",
+    "include_in_schema": false
+  },
+  {
+    "path": "/manage/assessment-plans",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_assessment_plans_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/assessment-plans",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_assessment_plans",
     "include_in_schema": false
   },
   {
@@ -4229,6 +4389,14 @@
       "GET"
     ],
     "name": "get_manage_ai_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/assessment-plans",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_assessment_plans_page",
     "include_in_schema": true
   },
   {

@@ -1107,6 +1107,121 @@ async def create_signature_from_upload(
     return serialize_signature(row, refreshed_actor, conn)
 
 
+def find_owned_signature_by_hash(
+    conn: sqlite3.Connection,
+    actor: dict[str, Any],
+    file_hash: str,
+) -> sqlite3.Row | None:
+    """Return an active signature with this hash already owned by the actor (dedup)."""
+    actor_role, actor_id = _actor_identity(actor)
+    if not file_hash or actor_id <= 0:
+        return None
+    return conn.execute(
+        _base_signature_select()
+        + """
+        WHERE s.file_hash = ?
+          AND s.owner_role = ?
+          AND s.owner_id = ?
+          AND s.status = 'active'
+          AND s.deleted_at IS NULL
+        ORDER BY s.created_at ASC, s.id ASC
+        LIMIT 1
+        """,
+        (str(file_hash).strip().lower(), actor_role, actor_id),
+    ).fetchone()
+
+
+async def create_signature_from_bytes(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    data: bytes,
+    *,
+    ext: str = ".png",
+    name: str = "",
+    subject_role: str = "teacher",
+    subject_name: str = "",
+    scope_level: str = "",
+    description: str = "",
+    original_filename: str = "signature.png",
+) -> dict[str, Any]:
+    """Create a signature from raw bytes, **deduping by SHA-256 hash per owner**.
+
+    Used by document importers (e.g. 考核计划表) to harvest embedded signature
+    images into the library without producing duplicate rows on re-import.
+    Returns the serialized signature plus a ``deduped`` flag.
+    """
+    actor = build_signature_actor(conn, user)
+    normalized_ext = ".jpg" if str(ext or "").lower() in {".jpg", ".jpeg"} else str(ext or "").lower()
+    if normalized_ext not in ALLOWED_SIGNATURE_EXTENSIONS:
+        normalized_ext = ".png"
+    if not data:
+        raise SignatureServiceError(400, "签名图片数据为空。")
+    if len(data) > MAX_SIGNATURE_FILE_BYTES:
+        raise SignatureServiceError(400, "签名图片不能超过 5 MB。")
+    mime_type = _detect_mime(data, normalized_ext)
+    if ALLOWED_SIGNATURE_EXTENSIONS[normalized_ext] != mime_type:
+        normalized_ext = ".png" if mime_type == "image/png" else ".jpg"
+
+    file_hash = hashlib.sha256(data).hexdigest()
+    existing = find_owned_signature_by_hash(conn, actor, file_hash)
+    if existing is not None:
+        return {**serialize_signature(existing, actor, conn), "deduped": True}
+
+    target_path = await _store_signature_bytes(file_hash, normalized_ext, data)
+    actor_role, actor_id = _actor_identity(actor)
+
+    if actor.get("is_super_admin"):
+        normalized_scope = _normalize_scope_level(scope_level, "department")
+        normalized_subject_role = _normalize_subject_role(subject_role, "teacher")
+    else:
+        normalized_subject_role = _normalize_subject_role(subject_role, actor_role)
+        normalized_scope = "department" if actor_role == "teacher" else "personal"
+
+    clean_name = _clean_text(name, 80) or "导入签名"
+    clean_subject_name = _clean_text(subject_name, 80) or clean_name
+    owner_scope = _owner_scope_for_upload(actor, normalized_scope)
+
+    signature_id = execute_insert_returning_id(
+        conn,
+        """
+        INSERT INTO electronic_signatures (
+            name, subject_name, subject_role, scope_level,
+            owner_role, owner_id, owner_name_snapshot,
+            uploaded_by_role, uploaded_by_id, uploaded_by_name_snapshot,
+            school_code, school_name, college, department,
+            file_hash, file_ext, mime_type, stored_path, file_size,
+            description, metadata_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            clean_name,
+            clean_subject_name,
+            normalized_subject_role,
+            normalized_scope,
+            actor_role,
+            actor_id,
+            actor.get("name") or "",
+            actor_role,
+            actor_id,
+            actor.get("name") or "",
+            owner_scope["school_code"],
+            owner_scope["school_name"],
+            owner_scope["college"],
+            owner_scope["department"],
+            file_hash,
+            normalized_ext,
+            mime_type,
+            str(signature_relative_path(file_hash, normalized_ext)).replace("\\", "/"),
+            int(target_path.stat().st_size),
+            _clean_text(description, 300),
+            _safe_json({"original_filename": original_filename, "source": "document_import"}),
+        ),
+    )
+    row, refreshed_actor = get_signature_row_for_actor(conn, user, signature_id)
+    return {**serialize_signature(row, refreshed_actor, conn), "deduped": False}
+
+
 def _candidate_signature_paths(row: sqlite3.Row | dict[str, Any]) -> tuple[Path, ...]:
     roots = unique_paths((SIGNATURES_DIR, *SIGNATURES_LEGACY_DIRS))
     stored_path = str(row["stored_path"] or "").strip()

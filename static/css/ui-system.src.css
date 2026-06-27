@@ -46441,3 +46441,53 @@ body.agenda-todo-open { overflow: hidden; }
 .lp-field textarea { resize: vertical; line-height: 1.6; }
 .lp-editor__empty { color: #94a3b8; padding: 20px; text-align: center; }
 @media (max-width: 900px) { .lp-editor { grid-template-columns: 1fr; } .lp-editor__preview { display: none; } }
+
+/* ===========================================================================
+   过程材料 · 考核计划表 (assessment plan) editor — .ap-* polish layer
+   Reuses the lesson-plan editor/card/modal shell; only adds the form grid,
+   assessment-item table, signature picker and import-detail blocks.
+   =========================================================================== */
+.ap-score-pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #eef2ff; color: #4f46e5; white-space: nowrap; }
+.ap-score-pill.is-ok { background: #ecfdf5; color: #047857; }
+.ap-score-pill.is-warn { background: #fef2f2; color: #b91c1c; }
+
+.ap-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 4px 2px 8px; }
+.ap-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #475569; }
+.ap-field--full { grid-column: 1 / -1; }
+.ap-field input, .ap-field select { padding: 8px 10px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; }
+
+.ap-items { display: flex; flex-direction: column; gap: 6px; padding: 4px 2px; }
+.ap-item-row { display: grid; grid-template-columns: 110px 1fr 80px 48px; gap: 8px; align-items: start; }
+.ap-item-row--head { font-size: 12px; color: #94a3b8; font-weight: 600; padding: 0 2px; }
+.ap-item-row input, .ap-item-row textarea { padding: 7px 9px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; font-size: 13px; font-family: inherit; width: 100%; }
+.ap-item-row textarea { resize: vertical; line-height: 1.5; }
+.ap-item-score { text-align: center; }
+.ap-items__foot { display: flex; align-items: center; justify-content: space-between; padding: 8px 2px 2px; }
+.ap-items__total { font-size: 13px; font-weight: 600; }
+.ap-items__total.is-ok { color: #047857; }
+.ap-items__total.is-warn { color: #b91c1c; }
+.ap-empty { color: #94a3b8; padding: 12px; text-align: center; font-size: 13px; }
+
+.ap-signatures { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
+.ap-sign-row { display: grid; grid-template-columns: 160px 1fr 120px; gap: 10px; align-items: center; }
+.ap-sign-label { font-size: 13px; color: #475569; }
+.ap-sign-row select { padding: 8px 10px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; font-size: 14px; background: #fff; }
+.ap-sign-preview { display: flex; align-items: center; justify-content: flex-end; min-height: 36px; }
+.ap-sign-img { max-height: 40px; max-width: 120px; object-fit: contain; }
+.ap-sign-empty { font-size: 12px; color: #cbd5e1; }
+.ap-hint { font-size: 12px; color: #94a3b8; padding: 4px 2px; }
+
+.ap-import { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; }
+.ap-import__block { font-size: 13px; color: #475569; }
+.ap-import__block strong { display: block; font-size: 12px; color: #64748b; margin-bottom: 2px; }
+.ap-import__list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.ap-import__list img { vertical-align: middle; }
+.ap-import .is-ok { color: #047857; }
+.ap-import .is-warn, .ap-import__list .is-warn { color: #b91c1c; }
+
+@media (max-width: 720px) {
+    .ap-field-grid { grid-template-columns: 1fr; }
+    .ap-item-row { grid-template-columns: 90px 1fr 64px 40px; }
+    .ap-sign-row { grid-template-columns: 1fr; }
+    .ap-sign-preview { justify-content: flex-start; }
+}
