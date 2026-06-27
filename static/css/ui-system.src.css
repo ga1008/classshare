@@ -46472,6 +46472,10 @@ body.agenda-todo-open { overflow: hidden; }
 .ap-sign-row { display: grid; grid-template-columns: 160px 1fr 120px; gap: 10px; align-items: center; }
 .ap-sign-label { font-size: 13px; color: #475569; }
 .ap-sign-row select { padding: 8px 10px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; font-size: 14px; background: #fff; }
+.ap-sign-picker { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ap-sign-upload { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.ap-sign-upload input[type="file"] { max-width: 220px; font-size: 12px; color: #64748b; }
+.ap-sign-notice { font-size: 12px; color: #b45309; line-height: 1.5; }
 .ap-sign-preview { display: flex; align-items: center; justify-content: flex-end; min-height: 36px; }
 .ap-sign-img { max-height: 40px; max-width: 120px; object-fit: contain; }
 .ap-sign-empty { font-size: 12px; color: #cbd5e1; }
@@ -46489,5 +46493,6 @@ body.agenda-todo-open { overflow: hidden; }
     .ap-field-grid { grid-template-columns: 1fr; }
     .ap-item-row { grid-template-columns: 90px 1fr 64px 40px; }
     .ap-sign-row { grid-template-columns: 1fr; }
+    .ap-sign-upload { flex-wrap: wrap; }
     .ap-sign-preview { justify-content: flex-start; }
 }

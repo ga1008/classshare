@@ -553,7 +553,8 @@ def _build_final_material_ai_system_prompt(document_type: str) -> str:
             "assessment_type 只能是“考查”或“考试”。如果教务或课堂信息显示考查，assessment_mode 必须是 non_written、"
             "assessment_mode_label 必须是“非笔试考核”。如果是考试，优先服从教师补充的笔试/非笔试；教师未说明时生成非笔试草稿，"
             "并在 warnings 中提醒教师确认。assessment_method 写具体形式，例如“机试”“闭卷笔试”“项目实操”。"
-            "export_payload.structured.assessment_items 必须是数组，每项包含 assessment_form、content、score，分值合计必须为100。"
+            "export_payload.structured.assessment_items 必须是数组，每项包含 assessment_form、content、score，分值合计必须为100，数量控制在3-6项。"
+            "assessment_items 只描述期末考试/期末考核本身考什么、怎么考、多少分；严禁写入平时成绩、考勤、课堂表现、课后作业、阶段性实验、过程性成绩等整学期成绩构成。"
             "export_payload.structured.notes 必须原样包含：注：；1．课程名称必须与教学计划上的名称一致。；"
             "2．考核类型：考查、考试（按教学计划填写）。；"
             "3．命题教师：务必输入命题教师名字，打印纸质版后再手写签名；系（教研室）主任审核签字：须手写签名。；"
@@ -622,6 +623,7 @@ def _build_final_material_ai_user_prompt(
             [
                 "请根据课堂信息生成《广西外国语学院课程考核计划表》的结构化填表数据。",
                 "固定模板要求：标题为“广西外国语学院课程考核计划表”；学年学期行由导出模板渲染下划线；基础信息表包含课程名称、专业年级班级、考核类型、命题教师、系主任审核签字、命题日期；考核信息表列为考核形式、考核技能/内容、分值；表后注释必须原样保留。",
+                "业务要求：这是期末考试/期末考核的命题计划表，不是课程成绩构成表。考核信息只写考试形式、题目/技能大类和对应分值，通常3-6行；不要写平时分、考勤分、课堂表现、课后作业、阶段性过程项目。",
                 "不要输出自由发挥的长文。只给模板字段、考核项目和必要提醒。",
                 f"课堂与教务上下文 JSON：\n{json.dumps(classroom_context, ensure_ascii=False, indent=2)}",
                 f"教师补充要求：\n{prompt.strip() or '无'}",

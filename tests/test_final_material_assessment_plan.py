@@ -293,6 +293,39 @@ class FinalMaterialAssessmentPlanTests(unittest.TestCase):
         self.assertIn("考查(  ) / 考试( √ )", _text(tables[0]))
         self.assertIn("6. 命题完成后将该表与评分细则", _text(root))
 
+    def test_export_docx_does_not_leak_signature_paths(self):
+        payload = {
+            "template_key": "assessment_plan",
+            "document_group": "final_material",
+            "document_type": "assessment_plan",
+            "fields": {
+                "course_name": SERVER_COURSE_NAME,
+                "class_name": "软工2406、2407、2408班（专升本）",
+                "examiner_name": TEACHER_NAME,
+                "examiner_signature": "/app/data/media/signatures/sha256/raw-signature.png",
+                "reviewer_name": REVIEWER_NAME,
+                "reviewer_signature": "C:/data/signatures/reviewer.png",
+                "academic_year": "2025-2026",
+                "semester": "第一学期",
+                "assessment_type": EXAM_TYPE,
+                "date": "2025年10月13日",
+            },
+            "structured": {
+                "assessment_items": [
+                    {"assessment_form": MACHINE_TEST, "content": "Linux 用户与目录管理", "score": "50"},
+                    {"assessment_form": MACHINE_TEST, "content": "Web 与数据库部署", "score": "50"},
+                ],
+            },
+        }
+        artifact = build_material_export_artifact(payload, fallback_filename="assessment-plan", requested_format="docx")
+        with zipfile.ZipFile(io.BytesIO(artifact.content)) as docx:
+            root = ET.fromstring(docx.read("word/document.xml"))
+        text = _text(root)
+        self.assertIn(TEACHER_NAME, text)
+        self.assertIn(REVIEWER_NAME, text)
+        self.assertNotIn("/app/data/media", text)
+        self.assertNotIn("C:/data/signatures", text)
+
     def _assert_table(self, table, expected_grid, expected_heights):
         tbl_w = table.find("w:tblPr/w:tblW", NS)
         self.assertEqual((_attr(tbl_w, "w"), _attr(tbl_w, "type")), ("10343", "dxa"))

@@ -250,7 +250,17 @@ def _unwrap_payload(raw: Any) -> dict[str, Any]:
 
 def normalize_cover(raw: Any) -> dict[str, str]:
     data = raw if isinstance(raw, dict) else {}
-    return {field: _text(_first_value(data, field, _COVER_ALIASES)) for field in COVER_FIELDS}
+    cover = {field: _text(_first_value(data, field, _COVER_ALIASES)) for field in COVER_FIELDS}
+    cover["course_category"] = _normalize_course_category_label(cover.get("course_category"))
+    return cover
+
+
+def _normalize_course_category_label(value: Any) -> str:
+    text = _text(value)
+    compact = text.replace(" ", "")
+    if compact in {"专业", "专业限选", "专业限选课"}:
+        return "专业限选课程"
+    return text
 
 
 def _normalize_schedule(raw: Any) -> dict[str, Any]:
@@ -279,9 +289,14 @@ def normalize_session(raw: Any, index: int) -> dict[str, Any]:
     material_ids = data.get("source_material_ids")
     if not isinstance(material_ids, list):
         material_ids = []
+    try:
+        section_minutes = int(data.get("section_minutes") or 0)
+    except (TypeError, ValueError):
+        section_minutes = 0
     return {
         "index": index,
         "schedule": _normalize_schedule(data.get("schedule") if isinstance(data.get("schedule"), dict) else data),
+        "section_minutes": section_minutes if section_minutes > 0 else None,
         "chapter": _text(_first_value(data, "chapter", _SESSION_ALIASES)),
         "objectives": _text(_first_value(data, "objectives", _SESSION_ALIASES)),
         "key_points": _text(_first_value(data, "key_points", _SESSION_ALIASES)),
@@ -366,7 +381,9 @@ def build_cover_from_offering(
             offering_row=row,
         )
         if sync:
-            cover["course_category"] = _text(sync.get("course_nature")) or cover["course_category"]
+            cover["course_category"] = _normalize_course_category_label(
+                _text(sync.get("course_nature")) or cover["course_category"]
+            )
             if not cover["total_hours"]:
                 cover["total_hours"] = _text(
                     sync.get("course_total_hours_text") or sync.get("total_hours_text")

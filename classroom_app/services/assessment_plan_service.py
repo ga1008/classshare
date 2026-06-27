@@ -78,6 +78,19 @@ FIELD_KEYS = (
     "total_score",
 )
 
+DEPARTMENT_SHORT_NAMES = {
+    "软件工程": "软工",
+    "网络工程": "网工",
+    "计算机科学与技术": "计科",
+    "计算机科学": "计科",
+    "人工智能": "人工",
+    "数据科学与大数据技术": "大数据",
+    "大数据": "大数据",
+    "数字媒体技术": "数媒",
+    "数字媒体": "数媒",
+    "信息管理与信息系统": "信管",
+}
+
 
 def normalize_scope_level(value: Any, *, default: str = SCOPE_PRIVATE) -> str:
     candidate = str(value or "").strip().lower()
@@ -140,6 +153,46 @@ def _text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
+def _uses_postgres_metadata(conn: Any) -> bool:
+    if isinstance(conn, sqlite3.Connection):
+        return False
+    try:
+        return get_configured_db_engine() == "postgres"
+    except Exception:
+        return False
+
+
+def _row_value(row: Any, key: str, index: int = 0) -> Any:
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return row.get(key)
+    try:
+        if key in row.keys():
+            return row[key]
+    except Exception:
+        pass
+    try:
+        return row[index]
+    except Exception:
+        return None
+
+
+def _table_columns(conn: Any, table_name: str) -> set[str]:
+    if _uses_postgres_metadata(conn):
+        rows = conn.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ?
+            """,
+            ("public", table_name),
+        ).fetchall()
+        return {str(_row_value(row, "column_name", 0) or "") for row in rows if _row_value(row, "column_name", 0)}
+    rows = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+    return {str(_row_value(row, "name", 1) or "") for row in rows if _row_value(row, "name", 1)}
+
+
 def normalize_plan_payload(fields: Any, items: Any) -> dict[str, Any]:
     """Normalize raw teacher/AI/import input into the canonical plan shape.
 
@@ -195,6 +248,123 @@ def _score_text(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else str(value)
 
 
+def _department_short_name(*values: Any) -> str:
+    text = " ".join(_text(value) for value in values if _text(value))
+    compact = re.sub(r"[\s（）()系部学院]+", "", text)
+    for keyword, short in DEPARTMENT_SHORT_NAMES.items():
+        if keyword in compact:
+            return short
+    match = re.search(r"([\u4e00-\u9fff]{2,8})(?:工程|科学|技术|智能|媒体|管理)", compact)
+    if match:
+        return match.group(1)[:2]
+    return ""
+
+
+def _looks_like_course_teaching_class(value: str, course_name: str) -> bool:
+    text = _text(value)
+    if not text:
+        return True
+    if "班" in text:
+        return False
+    if course_name and course_name.replace(" ", "") in text.replace(" ", ""):
+        return True
+    return bool(re.search(r"[-_]\d{3,}$", text))
+
+
+def _normalize_class_fragment(value: Any, *, department_short: str = "", course_name: str = "") -> str:
+    text = _text(value)
+    if not text or _looks_like_course_teaching_class(text, course_name):
+        return ""
+    text = re.sub(r"\s+", " ", text).strip()
+    text = text.replace(",", "、").replace("，", "、")
+    for suffix in ("软件工程系", "网络工程系", "计算机科学与技术系", "人工智能系"):
+        text = text.replace(suffix, department_short or "")
+    if department_short and text.startswith(department_short):
+        return text
+    number_match = re.search(r"(\d{2,4}(?:\s*[、/]\s*\d{2,4})*\s*班)", text)
+    if department_short and number_match:
+        return f"{department_short} {number_match.group(1).replace(' ', '')}"
+    return text
+
+
+def _is_upgrade_program(row: dict[str, Any], *extra_values: Any) -> bool:
+    sources = [*extra_values]
+    sources.extend(row.get(key) for key in ("class_name", "academic_class_name", "academic_major", "major", "description"))
+    raw_meta = _text(row.get("academic_metadata_json"))
+    if raw_meta:
+        sources.append(raw_meta)
+    return "专升本" in " ".join(_text(value) for value in sources if value is not None)
+
+
+def _assessment_class_label(row: dict[str, Any]) -> str:
+    course_name = _text(row.get("course_name"))
+    department_short = _department_short_name(
+        row.get("class_department"),
+        row.get("class_academic_major"),
+        row.get("class_major"),
+        row.get("course_department"),
+        row.get("teacher_department"),
+    )
+    candidates = [
+        row.get("academic_teaching_class_name"),
+        row.get("academic_class_name"),
+        row.get("class_name"),
+    ]
+    label = ""
+    for candidate in candidates:
+        label = _normalize_class_fragment(candidate, department_short=department_short, course_name=course_name)
+        if label:
+            break
+    if not label and department_short:
+        label = department_short
+    if department_short and label and not label.startswith(department_short) and re.search(r"\d{2,4}", label):
+        label = f"{department_short} {label}"
+    if _is_upgrade_program(row, label) and "专升本" not in label:
+        label = f"{label}（专升本）" if label else "（专升本）"
+    return label
+
+
+def _format_cn_date(value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    match = re.search(r"(20\d{2})\D+(\d{1,2})\D+(\d{1,2})", text)
+    if not match:
+        return text
+    return f"{match.group(1)}年{int(match.group(2)):02d}月{int(match.group(3)):02d}日"
+
+
+def _last_session_date(conn: sqlite3.Connection, class_offering_id: int) -> str:
+    try:
+        columns = _table_columns(conn, "class_offering_sessions")
+    except Exception:
+        return ""
+    if "session_date" not in columns or "class_offering_id" not in columns:
+        return ""
+    status_filter = ""
+    if "schedule_status" in columns:
+        status_filter = "AND lower(trim(COALESCE(schedule_status, 'scheduled'))) NOT IN ('cancelled', 'canceled')"
+    order_sql = "session_date DESC"
+    if "order_index" in columns:
+        order_sql += ", order_index DESC"
+    try:
+        row = conn.execute(
+            f"""
+            SELECT session_date
+            FROM class_offering_sessions
+            WHERE class_offering_id = ?
+              AND TRIM(COALESCE(session_date, '')) != ''
+              {status_filter}
+            ORDER BY {order_sql}
+            LIMIT 1
+            """,
+            (int(class_offering_id),),
+        ).fetchone()
+    except Exception:
+        return ""
+    return _format_cn_date(_row_value(row, "session_date", 0))
+
+
 # ---------------------------------------------------------------------------
 # Field auto-fill from a class offering (method-one prefill / method-two seed)
 # ---------------------------------------------------------------------------
@@ -207,21 +377,28 @@ def build_fields_from_offering(
         "school": _text(org.get("school_name")) or "广西外国语学院",
         "teacher_name": _text(teacher.get("name") or teacher.get("username")),
         "examiner_name": _text(teacher.get("name") or teacher.get("username")),
-        "date": datetime.now().strftime("%Y年%m月%d日"),
+        "date": _last_session_date(conn, int(class_offering_id)) or datetime.now().strftime("%Y年%m月%d日"),
     }
     row = conn.execute(
         """
         SELECT o.semester AS semester,
+               o.academic_teaching_class_name AS academic_teaching_class_name,
                co.name AS course_name,
                co.college AS course_college,
                co.department AS course_department,
                co.school_name AS course_school_name,
                cl.name AS class_name,
                cl.academic_class_name AS academic_class_name,
-               o.academic_teaching_class_name AS academic_teaching_class_name
+               cl.academic_major AS class_academic_major,
+               cl.major AS class_major,
+               cl.department AS class_department,
+               cl.description AS description,
+               cl.academic_metadata_json AS academic_metadata_json,
+               t.department AS teacher_department
         FROM class_offerings o
         LEFT JOIN courses co ON co.id = o.course_id
         LEFT JOIN classes cl ON cl.id = o.class_id
+        LEFT JOIN teachers t ON t.id = o.teacher_id
         WHERE o.id = ?
         LIMIT 1
         """,
@@ -230,11 +407,7 @@ def build_fields_from_offering(
     if row:
         row = dict(row)
         fields["course_name"] = _text(row.get("course_name"))
-        fields["class_name"] = _text(
-            row.get("academic_teaching_class_name")
-            or row.get("academic_class_name")
-            or row.get("class_name")
-        )
+        fields["class_name"] = _assessment_class_label(row)
         if row.get("course_school_name"):
             fields["school"] = _text(row.get("course_school_name"))
         semester_text = _text(row.get("semester"))
@@ -705,24 +878,81 @@ def _signature_image_path(conn: sqlite3.Connection, signature_id: Any) -> tuple[
     return subject, (str(path) if path else "")
 
 
+def _signature_image_for_subject(conn: sqlite3.Connection, plan: dict[str, Any], subject_name: Any) -> tuple[str, str]:
+    subject = _text(subject_name)
+    if not subject:
+        return "", ""
+    where = [
+        "status = 'active'",
+        "deleted_at IS NULL",
+        "(lower(trim(COALESCE(subject_name, ''))) = lower(trim(?)) "
+        "OR lower(trim(COALESCE(name, ''))) = lower(trim(?)))",
+    ]
+    params: list[Any] = [subject, subject]
+    school_code = _text(plan.get("school_code"))
+    if school_code:
+        where.append("lower(trim(COALESCE(school_code, ''))) = lower(trim(?))")
+        params.append(school_code)
+    department = _text(plan.get("department"))
+    college = _text(plan.get("college"))
+    rows = []
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT *
+            FROM electronic_signatures
+            WHERE {" AND ".join(where)}
+            ORDER BY
+              CASE WHEN lower(trim(COALESCE(department, ''))) = lower(trim(?)) THEN 0 ELSE 1 END,
+              CASE WHEN lower(trim(COALESCE(college, ''))) = lower(trim(?)) THEN 0 ELSE 1 END,
+              created_at DESC,
+              id DESC
+            LIMIT 1
+            """,
+            (*params, department, college),
+        ).fetchall()
+    except Exception:
+        return "", ""
+    if not rows:
+        return "", ""
+    data = dict(rows[0])
+    path = signature_service.resolve_signature_file_path(data)
+    return subject, (str(path) if path else "")
+
+
 def build_export_fields(conn: sqlite3.Connection, plan: dict[str, Any]) -> dict[str, Any]:
     """Build the export fields, injecting bound signature image paths + names."""
     fields = dict(plan.get("fields") or {})
     examiner_subject, examiner_path = _signature_image_path(conn, plan.get("examiner_signature_id"))
+    if not examiner_path:
+        examiner_subject, examiner_path = _signature_image_for_subject(
+            conn, plan, fields.get("examiner_name") or fields.get("teacher_name")
+        )
     if examiner_path:
         fields["examiner_signature_image_path"] = examiner_path
     if examiner_subject and not fields.get("examiner_name"):
         fields["examiner_name"] = examiner_subject
     reviewer_subject, reviewer_path = _signature_image_path(conn, plan.get("reviewer_signature_id"))
+    if not reviewer_path:
+        reviewer_subject, reviewer_path = _signature_image_for_subject(conn, plan, fields.get("reviewer_name"))
     if reviewer_path:
         fields["reviewer_signature_image_path"] = reviewer_path
     if reviewer_subject and not fields.get("reviewer_name"):
         fields["reviewer_name"] = reviewer_subject
+    if not _text(fields.get("reviewer_name")):
+        fields["reviewer_name"] = "【系主任未填写】"
+        fields["reviewer_missing_notice"] = "请填写系主任姓名，并从签名库绑定或上传签名。"
     return fields
 
 
 def export_plan_docx(conn: sqlite3.Connection, plan: dict[str, Any]) -> tuple[bytes, str]:
     """Render the plan to the official 《课程考核计划表》 docx. Returns (bytes, filename)."""
+    artifact = export_plan_artifact(conn, plan, requested_format="docx")
+    return artifact.content, artifact.filename
+
+
+def export_plan_artifact(conn: sqlite3.Connection, plan: dict[str, Any], *, requested_format: str = "docx"):
+    """Render the plan through the canonical assessment-plan export template."""
     fields = build_export_fields(conn, plan)
     items = plan.get("items") or []
     notes = plan.get("notes") or list(ASSESSMENT_PLAN_NOTES)
@@ -742,19 +972,15 @@ def export_plan_docx(conn: sqlite3.Connection, plan: dict[str, Any]) -> tuple[by
         },
     }
     base_title = (plan.get("title") or "课程考核计划表").replace("/", "_").replace("\\", "_")
-    artifact = build_material_export_artifact(
-        parse_payload, fallback_filename=base_title, requested_format="docx"
+    return build_material_export_artifact(
+        parse_payload, fallback_filename=base_title, requested_format=requested_format
     )
-    return artifact.content, artifact.filename
 
 
 def render_preview_html(conn: sqlite3.Connection, plan: dict[str, Any]) -> str:
-    """A lightweight HTML preview mirroring the docx layout (for the editor iframe)."""
-    fields = plan.get("fields") or {}
-    items = plan.get("items") or []
-    notes = plan.get("notes") or list(ASSESSMENT_PLAN_NOTES)
-    examiner = plan.get("examiner_signature") or {}
-    reviewer = plan.get("reviewer_signature") or {}
+    """PDF-backed preview shell: same template path as actual export."""
+    plan_id = _text(plan.get("id"))
+    title = _text(plan.get("title")) or "课程考核计划表"
 
     def esc(value: Any) -> str:
         return (
@@ -764,58 +990,22 @@ def render_preview_html(conn: sqlite3.Connection, plan: dict[str, Any]) -> str:
             .replace(">", "&gt;")
         )
 
-    period = " ".join(p for p in (fields.get("academic_year") or "", fields.get("semester") or "") if p)
-    mode_label = fields.get("assessment_mode_label") or "非笔试考核"
-    assessment_type = fields.get("assessment_type") or "考试"
-
-    def signature_cell(name_key: str, sig: dict[str, Any]) -> str:
-        name = esc(fields.get(name_key) or (sig.get("subject_name") if sig else ""))
-        img = (
-            f'<img src="{esc(sig.get("image_url"))}" alt="签名" style="height:38px;margin-left:8px;vertical-align:middle;">'
-            if sig and sig.get("image_url")
-            else ""
-        )
-        return f"{name}{img}"
-
-    item_rows = "".join(
-        f"<tr><td style='text-align:center'>{esc(it.get('assessment_form'))}</td>"
-        f"<td>{esc(it.get('content'))}</td>"
-        f"<td style='text-align:center'>{esc(it.get('score'))}</td></tr>"
-        for it in items
-    )
-    score_total = _sum_scores(items)
-    note_html = "".join(f"<div>{esc(n)}</div>" for n in notes)
-    score_hint = "（已满 100）" if abs(score_total - 100) < 1e-6 else "（应为 100，请核对）"
-    score_display = int(score_total) if float(score_total).is_integer() else score_total
-
     return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
-<title>{esc(plan.get('title') or '课程考核计划表')} · 预览</title>
+<title>{esc(title)} · 预览</title>
 <style>
-  body{{font-family:'宋体',SimSun,serif;color:#111;margin:24px;background:#fff;}}
-  .ap-doc{{max-width:760px;margin:0 auto;}}
-  h1{{font-size:24px;text-align:center;margin:4px 0;}}
-  .ap-period{{text-align:center;font-size:18px;font-weight:bold;margin:4px 0;}}
-  .ap-mode{{text-align:center;font-size:15px;margin:2px 0 14px;}}
-  table{{border-collapse:collapse;width:100%;margin:8px 0;}}
-  td,th{{border:1px solid #000;padding:6px 8px;font-size:14px;}}
-  .ap-meta td:nth-child(odd){{text-align:center;font-weight:bold;width:18%;background:#fafafa;}}
-  .ap-items th{{text-align:center;background:#f4f4f5;font-weight:bold;}}
-  .ap-notes{{font-size:13px;margin-top:12px;line-height:1.7;}}
-  .ap-total{{font-size:13px;color:#444;margin:6px 0;}}
-</style></head><body><div class="ap-doc">
-<h1>广西外国语学院课程考核计划表</h1>
-<div class="ap-period">{esc(period)}</div>
-<div class="ap-mode">（{esc(mode_label)}）</div>
-<table class="ap-meta">
-  <tr><td>课程名称</td><td colspan="3">{esc(fields.get('course_name'))}</td></tr>
-  <tr><td>专业年级班级</td><td>{esc(fields.get('class_name'))}</td><td>考核类型</td><td>考查（{'√' if assessment_type=='考查' else '　'}） / 考试（{'√' if assessment_type=='考试' else '　'}）</td></tr>
-  <tr><td>命题教师</td><td>{signature_cell('examiner_name', examiner)}</td><td>系（教研室）主任审核签字</td><td>{signature_cell('reviewer_name', reviewer)}</td></tr>
-  <tr><td>命题日期</td><td colspan="3">{esc(fields.get('date'))}</td></tr>
-</table>
-<table class="ap-items">
-  <tr><th style="width:18%">考核形式</th><th>考核技能/内容</th><th style="width:14%">分值</th></tr>
-  {item_rows}
-</table>
-<div class="ap-total">分值合计：{score_display} 分{score_hint}</div>
-<div class="ap-notes">{note_html}</div>
-</div></body></html>"""
+  html,body{{height:100%;margin:0;background:#eef1f5;color:#111;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}}
+  .ap-preview{{height:100%;display:flex;flex-direction:column;}}
+  .ap-preview__bar{{display:flex;gap:8px;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid #d8dee8;}}
+  .ap-preview__bar strong{{font-size:14px;margin-right:auto;}}
+  .ap-preview__bar a{{font-size:13px;text-decoration:none;color:#0f766e;border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;background:#fff;}}
+  iframe{{flex:1;width:100%;border:0;background:#eef1f5;}}
+</style></head><body>
+<div class="ap-preview">
+  <div class="ap-preview__bar">
+    <strong>{esc(title)}</strong>
+    <a href="/api/assessment-plans/{esc(plan_id)}/export?fmt=docx">Word</a>
+    <a href="/api/assessment-plans/{esc(plan_id)}/export?fmt=pdf&inline=1" target="_blank" rel="noopener">PDF</a>
+  </div>
+  <iframe src="/api/assessment-plans/{esc(plan_id)}/export?fmt=pdf&inline=1" title="考核计划表 PDF 预览"></iframe>
+</div>
+</body></html>"""

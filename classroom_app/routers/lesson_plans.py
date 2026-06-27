@@ -414,7 +414,12 @@ _EXPORT_MEDIA = {
 
 
 @router.get("/{plan_id}/export")
-async def export_plan(plan_id: str, fmt: str = "docx", user: dict = Depends(get_current_teacher)):
+async def export_plan(
+    plan_id: str,
+    fmt: str = "docx",
+    inline: bool = False,
+    user: dict = Depends(get_current_teacher),
+):
     fmt = (fmt or "docx").lower()
     if fmt not in _EXPORT_MEDIA:
         raise HTTPException(400, "不支持的导出格式")
@@ -432,7 +437,8 @@ async def export_plan(plan_id: str, fmt: str = "docx", user: dict = Depends(get_
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
     filename = f"{base_title}.{fmt}"
-    disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
+    disposition_type = "inline" if inline else "attachment"
+    disposition = f"{disposition_type}; filename*=UTF-8''{quote(filename)}"
     return Response(
         content=content,
         media_type=_EXPORT_MEDIA[fmt],

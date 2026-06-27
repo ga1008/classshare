@@ -26,8 +26,9 @@ PEDAGOGY_SPEC = """\
 - 思政融入：与专业知识自然结合(数字中国/数字主权/工匠精神/网络安全责任)，导入处立意、小结处升华，拒绝生硬。
 
 【教学内容及过程(process)必须包含且按顺序】
-一、教学导入(约8-10分钟)：回顾(承上启下)→引入(PBL/情景案例)→思政融入→目标(OBE)。
-二、讲授新课：分 1-2 个小节，每个小节给出"核心理念"，并【必须用 Markdown 表格】，表头固定为：
+先写清课时说明：1课时=1小节=40分钟；若本次课是2课时，则必须拆成第1小节(40分钟)和第2小节(40分钟)，不能笼统写成一个80分钟段落；各环节分钟数相加必须等于本次课总分钟数。
+一、教学导入(约8-10分钟，需标明属于第几小节)：回顾(承上启下)→引入(PBL/情景案例)→思政融入→目标(OBE)。
+二、讲授新课：按40分钟小节组织，每个小节给出"核心理念"和精确分钟分配，并【必须用 Markdown 表格】，表头固定为：
    | 教学环节 | 教学活动（教师引导） | 学生活动（主体） | 设计意图（OBE & 两性一度） |
    表格内用"手把手/演示/提问/创设情景"描述教师活动，用"动手实践/自主排错/成果输出/结对协作"描述学生活动；
    适当主动设置"陷阱"(如 SELinux/防火墙/语法错误)引导排错；复杂流程/架构可附 Mermaid 代码块。
@@ -71,6 +72,13 @@ def build_generation_user_message(
     homework_hint: str = "",
     neighbor_context: str = "",
 ) -> str:
+    section_count = max(1, round(max(40, int(section_minutes or 40)) / 40))
+    time_instruction = (
+        f"课时换算：1课时/1小节=40分钟；本次课共 {section_count} 课时/小节，"
+        f"总计 {section_count * 40} 分钟。教学内容及过程必须按第1小节"
+        + (f"至第{section_count}小节" if section_count > 1 else "")
+        + "分别写清楚时间安排，每个小节内部环节分钟数合计必须为40分钟，总合计必须与本次课总分钟数一致。"
+    )
     lines = [
         f"课程名称：{cover.get('course_name') or '（未填写）'}",
         f"授课班级：{cover.get('class_name') or '（未填写）'}",
@@ -78,7 +86,7 @@ def build_generation_user_message(
         f"本次课为第 {session_index}/{total_sessions} 次课。",
         f"授课时间：{schedule_text or '（未排）'}",
         f"授课章节：{chapter or '（未指定，请根据教学材料自行拟定章节标题）'}",
-        f"本次课时长约 {section_minutes} 分钟，请据此分配各环节时间。",
+        time_instruction,
     ]
     if homework_hint:
         lines.append(f"本次课已布置的作业(可作为作业布置参考)：{homework_hint}")

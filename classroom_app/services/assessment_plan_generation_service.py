@@ -27,6 +27,19 @@ from .material_final_document_service import build_final_material_generation_see
 
 _AI_TIMEOUT = 240.0
 _AI_RETRY_TIMEOUT = 150.0
+_PROCESS_ASSESSMENT_TERMS = (
+    "平时",
+    "考勤",
+    "课堂表现",
+    "课堂互动",
+    "课堂参与",
+    "课后",
+    "书面作业",
+    "编程作业",
+    "作业",
+    "阶段性",
+    "过程性",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +55,8 @@ def _system_prompt() -> str:
         "assessment_type 只能是“考查”或“考试”。如果教务或课堂信息显示考查，assessment_mode 必须是 non_written、"
         "assessment_mode_label 必须是“非笔试考核”。assessment_method 写具体形式，例如“机试”“闭卷笔试”“项目实操”。"
         "reviewer_name 留空（系主任线下手写签名）。"
-        "assessment_items 必须是数组，每项包含 assessment_form、content、score；分值合计必须严格等于 100。"
+        "assessment_items 必须是数组，每项包含 assessment_form、content、score；分值合计必须严格等于 100，数量控制在 3-6 项。"
+        "assessment_items 只描述期末考试/期末考核本身考什么、怎么考、多少分；严禁写入平时成绩、考勤、课堂表现、作业、阶段性实验、过程性成绩等整学期成绩构成。"
         "content 要结合课堂内容、绑定文档、使用教材和考试形式，具体、可考核、可评分。"
     )
 
@@ -53,6 +67,7 @@ def _user_prompt(fields: dict[str, Any], classroom_context: dict[str, Any], prom
             "请根据课堂信息生成《广西外国语学院课程考核计划表》的结构化填表数据。",
             "固定模板要求：基础信息包含课程名称、专业年级班级、考核类型(考查/考试)、命题教师、系主任审核签字、命题日期；"
             "考核信息列为考核形式、考核技能/内容、分值；分值合计必须为 100。",
+            "注意：这是期末考试/期末考核的命题计划表，不是课程成绩构成表。考核信息只写考试形式、题目/技能大类和对应分值，通常 3-6 行；不要写平时分、考勤分、课堂表现、课后作业或阶段性过程项目。",
             "请优先沿用下面给出的课程名称、专业年级班级、命题教师、学年学期等字段，不要篡改。",
             f"已知模板字段 JSON：\n{json.dumps(fields, ensure_ascii=False, indent=2)}",
             f"课堂与教务上下文 JSON：\n{json.dumps(classroom_context, ensure_ascii=False, indent=2)}",
@@ -169,6 +184,59 @@ def _merge_fields(offering_fields: dict[str, Any], ai_fields: dict[str, Any]) ->
     return merged
 
 
+def _score_total(items: list[Any]) -> float:
+    total = 0.0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        raw = str(item.get("score") or "").strip()
+        match = re.search(r"-?\d+(?:\.\d+)?", raw)
+        if match:
+            total += float(match.group(0))
+    return total
+
+
+def _looks_like_process_assessment(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    text = " ".join(
+        str(item.get(key) or "")
+        for key in ("assessment_form", "form", "content", "assessment_content")
+    )
+    return any(term in text for term in _PROCESS_ASSESSMENT_TERMS)
+
+
+def _seed_assessment_items(fields: dict[str, Any], classroom_context: dict[str, Any], prompt: str) -> list[dict[str, Any]]:
+    seed = build_final_material_generation_seed(
+        document_type="assessment_plan",
+        classroom_context={**(classroom_context or {}), **(fields or {})},
+        prompt=prompt,
+    )
+    export_payload = seed.get("export_payload") if isinstance(seed.get("export_payload"), dict) else {}
+    structured = export_payload.get("structured") if isinstance(export_payload.get("structured"), dict) else {}
+    items = structured.get("assessment_items") if isinstance(structured.get("assessment_items"), list) else []
+    return [dict(item) for item in items if isinstance(item, dict)]
+
+
+def _final_exam_items_or_seed(
+    items: Any,
+    *,
+    fields: dict[str, Any],
+    classroom_context: dict[str, Any],
+    prompt: str,
+    warnings: list[str],
+) -> list[dict[str, Any]]:
+    raw_items = [dict(item) for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+    filtered = [item for item in raw_items if not _looks_like_process_assessment(item)]
+    if len(filtered) != len(raw_items):
+        warnings.append("已移除 AI 误写入的平时/过程性成绩项，仅保留期末考试计划项。")
+    if 3 <= len(filtered) <= 6 and abs(_score_total(filtered) - 100.0) < 1e-6:
+        return filtered
+    if filtered:
+        warnings.append("AI 生成的期末考核项数量或分值不符合要求，已改用本地期末考试项模板。")
+    return _seed_assessment_items(fields, classroom_context, prompt)
+
+
 # ---------------------------------------------------------------------------
 # Background job
 # ---------------------------------------------------------------------------
@@ -220,6 +288,13 @@ async def run_generation_job(
             items = structured.get("assessment_items") or []
             warnings.append(f"AI 生成不可用，已使用本地草稿模板（{type(exc).__name__}: {str(exc)[:160]}）。请教师复核分值与考核项。")
 
+        items = _final_exam_items_or_seed(
+            items,
+            fields=fields,
+            classroom_context=classroom_context,
+            prompt=prompt,
+            warnings=warnings,
+        )
         normalized = ap.normalize_plan_payload(fields, items)
         if not normalized["score_balanced"]:
             warnings.append(f"考核项分值合计为 {normalized['score_total']}，未达到 100，请在编辑器中调整。")

@@ -1,6 +1,7 @@
 """Tests for the GXUFL lesson-plan DOCX builder and Markdown parser."""
 
 import unittest
+from copy import deepcopy
 from io import BytesIO
 
 from docx import Document
@@ -116,14 +117,37 @@ class DocxBuilderTests(unittest.TestCase):
         cover_text = "\n".join(p.text for p in self.document.paragraphs)
         self.assertIn("教  案", cover_text)
         self.assertIn("动态web程序设计", cover_text)
+        self.assertIn("2025—2026学年第 二 学期", cover_text)
         # Top-level tables are only session tables; the school cover uses
         # underlined paragraphs, not the old gray cover table.
         self.assertEqual(len(self.document.tables), len(_PLAN["sessions"]))
 
+    def test_cover_uses_first_page_footer_for_imprint(self):
+        footer_text = "\n".join(p.text for p in self.document.sections[0].first_page_footer.paragraphs)
+        body_text = "\n".join(p.text for p in self.document.paragraphs)
+        self.assertIn("广西外国语学院教务处 印制", footer_text)
+        self.assertNotIn("广西外国语学院教务处 印制", body_text)
+
+    def test_long_textbook_continuation_starts_at_field_left(self):
+        plan = deepcopy(_PLAN)
+        plan["cover"]["textbook"] = "《Spring+Spring MVC+MyBatis+Spring Boot框架整合开发（IntelliJ IDEA版·微课视频版）》"
+        plan["cover"]["publisher"] = "人民邮电出版社"
+        document = Document(BytesIO(docx_svc.build_lesson_plan_docx(plan)))
+        publisher_para = next(p for p in document.paragraphs if "人民邮电出版社" in p.text)
+        publisher_run = next(r.text for r in publisher_para.runs if "人民邮电出版社" in r.text)
+        self.assertTrue(publisher_run.startswith("人民邮电出版社"))
+
+    def test_semester_year_and_term_are_underlined(self):
+        semester_para = next(p for p in self.document.paragraphs if "学年第" in p.text)
+        self.assertTrue(any(r.text == "2025—2026" and r.underline for r in semester_para.runs))
+        self.assertTrue(any(r.text == "二" and r.underline for r in semester_para.runs))
+
     def test_sessions_are_page_separated_without_extra_caption(self):
         breaks = self.document.element.body.findall(".//" + qn("w:br"))
         page_breaks = [br for br in breaks if br.get(qn("w:type")) == "page"]
-        self.assertGreaterEqual(len(page_breaks), len(_PLAN["sessions"]))
+        self.assertEqual(page_breaks, [])
+        paragraph_breaks = self.document.element.body.findall(".//" + qn("w:pageBreakBefore"))
+        self.assertGreaterEqual(len(paragraph_breaks), len(_PLAN["sessions"]))
         all_paragraphs = "\n".join(p.text for p in self.document.paragraphs)
         self.assertNotIn("第 1 次课", all_paragraphs)
 
@@ -131,7 +155,19 @@ class DocxBuilderTests(unittest.TestCase):
         self.assertEqual(_tbl_grid_widths(self.document.tables[0]), [1911, 324, 6095, 1678])
         first_row = self.document.tables[0].rows[0]
         self.assertIn("授课时间", first_row.cells[0].text)
-        self.assertIn("2026年 03月 09 日", first_row.cells[2].text)
+        self.assertIn("2026 年 03 月 09 日", first_row.cells[2].text)
+        runs = first_row.cells[2].paragraphs[0].runs
+        self.assertTrue(any(r.text == "03" and r.underline for r in runs))
+        self.assertTrue(any(r.text == "10-11" and r.underline for r in runs))
+
+    def test_objective_and_key_labels_are_bold(self):
+        table = self.document.tables[0]
+        objective_runs = table.rows[2].cells[2].paragraphs[0].runs
+        key_runs = table.rows[3].cells[2].paragraphs[0].runs
+        difficult_runs = table.rows[3].cells[2].paragraphs[1].runs
+        self.assertTrue(any(r.text == "知识目标：" and r.bold for r in objective_runs))
+        self.assertTrue(any(r.text == "重点：" and r.bold for r in key_runs))
+        self.assertTrue(any(r.text == "难点：" and r.bold for r in difficult_runs))
 
     def test_markdown_table_rendered_as_reference_nested_table(self):
         nested = []
@@ -159,6 +195,19 @@ class DocxBuilderTests(unittest.TestCase):
             "教学后记",
         ):
             self.assertIn(label, joined, f"missing label {label}")
+
+    def test_mermaid_code_block_is_inserted_as_image(self):
+        plan = deepcopy(_PLAN)
+        plan["sessions"] = [
+            {
+                **plan["sessions"][0],
+                "process": "```mermaid\nflowchart TD\nA[开始] --> B[处理]\nB --> C[结束]\n```",
+            }
+        ]
+        document = Document(BytesIO(docx_svc.build_lesson_plan_docx(plan)))
+        self.assertGreaterEqual(len(document.inline_shapes), 2)
+        joined = "\n".join(c.text for t in document.tables for r in t.rows for c in r.cells)
+        self.assertNotIn("flowchart TD", joined)
 
 
 if __name__ == "__main__":

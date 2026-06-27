@@ -47,8 +47,11 @@ def _import_system_prompt(extra_prompt: str) -> str:
         "fields 必须尽量包含 school、course_name、class_name、examiner_name、reviewer_name、academic_year、semester、"
         "date、assessment_type(考查/考试)、assessment_mode(non_written/written)、assessment_mode_label(非笔试考核/笔试考核)、"
         "assessment_method、total_score。"
+        "course_name 来自“课程名称”单元格；class_name 必须来自“专业年级班级”单元格，不得用课程名称、教学班号或文件名替代；"
+        "examiner_name 来自“命题教师”文字姓名，reviewer_name 来自“系（教研室）主任审核签字”处的文字姓名，手写签名图片不要当作文字路径写入字段。"
         "assessment_items 是数组，每项 assessment_form、content、score，必须忠实还原原文的考核形式、考核技能/内容与分值，"
         "不得臆造或改动分值。如果原文分值合计不是 100，也要如实返回原始分值。"
+        "assessment_items 只从“考核形式 / 考核技能/内容 / 分值”三列表读取，保持原有行数、顺序和大类描述，不要补入平时成绩、考勤、课堂表现等模板外内容。"
         "命题教师签名、系主任签名是手写图片，无法识别为文字时 examiner_name/reviewer_name 可留空，由系统从签名图片单独入库。"
     )
     if str(extra_prompt or "").strip():

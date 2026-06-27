@@ -57,14 +57,15 @@ def parse_blocks(markdown: Any) -> list[dict[str, Any]]:
         fence = _FENCE_RE.match(line)
         if fence:
             flush_para()
-            lang = fence.group(1)
+            lang = fence.group(1).strip()
             i += 1
             buf: list[str] = []
             while i < n and not _FENCE_RE.match(lines[i]):
                 buf.append(lines[i])
                 i += 1
             i += 1  # consume closing fence
-            blocks.append({"type": "code", "lang": lang, "text": "\n".join(buf)})
+            block_type = "mermaid" if lang.lower() in {"mermaid", "mmd"} else "code"
+            blocks.append({"type": block_type, "lang": lang, "text": "\n".join(buf)})
             continue
         # blank line
         if not line.strip():
@@ -177,6 +178,12 @@ def blocks_to_html(blocks: list[dict[str, Any]]) -> str:
             )
         elif btype == "code":
             out.append(f"<pre class='lp-md-code'>{html.escape(block.get('text', ''))}</pre>")
+        elif btype == "mermaid":
+            out.append(
+                "<figure class='lp-md-mermaid'>"
+                f"<pre>{html.escape(block.get('text', ''))}</pre>"
+                "</figure>"
+            )
     return "\n".join(out)
 
 

@@ -13,6 +13,7 @@ from pathlib import Path
 from classroom_app.db.schema_assessment_plans import ensure_assessment_plan_schema
 import classroom_app.db.schema_assessment_plans as schema_mod
 from classroom_app.services import assessment_plan_service as svc
+from classroom_app.services import assessment_plan_generation_service as gen
 from classroom_app.services import assessment_plan_import_service as imp
 
 
@@ -88,6 +89,99 @@ class NormalizeTests(unittest.TestCase):
         result = svc.normalize_plan_payload({"course_name": "服务器配置与管理"}, [])
         self.assertTrue(result["items"])
         self.assertEqual(result["score_total"], 100)
+
+
+class OfferingFieldTests(unittest.TestCase):
+    def setUp(self):
+        self.conn = _make_conn()
+        self.teacher = _add_teacher(self.conn, 1, "张海林", "数字科技学院", "软件工程系")
+        self.conn.executescript(
+            """
+            CREATE TABLE courses (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                college TEXT,
+                department TEXT,
+                school_name TEXT
+            );
+            CREATE TABLE classes (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                academic_class_name TEXT,
+                academic_major TEXT,
+                major TEXT,
+                department TEXT,
+                description TEXT,
+                academic_metadata_json TEXT
+            );
+            CREATE TABLE class_offerings (
+                id INTEGER PRIMARY KEY,
+                course_id INTEGER,
+                class_id INTEGER,
+                teacher_id INTEGER,
+                semester TEXT,
+                academic_teaching_class_name TEXT
+            );
+            CREATE TABLE class_offering_sessions (
+                id INTEGER PRIMARY KEY,
+                class_offering_id INTEGER,
+                session_date TEXT,
+                order_index INTEGER,
+                schedule_status TEXT
+            );
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO courses (id, name, college, department, school_name) VALUES (10, '动态 web 程序设计', '数字科技学院', '软件工程系', '广西外国语学院')"
+        )
+        self.conn.execute(
+            "INSERT INTO classes (id, name, academic_class_name, academic_major, major, department, description, academic_metadata_json) "
+            "VALUES (20, '2401班', '2401班', '软件工程', '软件工程', '软件工程系', '专升本班级', '{}')"
+        )
+        self.conn.execute(
+            "INSERT INTO class_offerings (id, course_id, class_id, teacher_id, semester, academic_teaching_class_name) "
+            "VALUES (30, 10, 20, 1, '2025-2026-2', '动态 web 程序设计-0001')"
+        )
+        self.conn.executemany(
+            "INSERT INTO class_offering_sessions (id, class_offering_id, session_date, order_index, schedule_status) VALUES (?, 30, ?, ?, ?)",
+            [
+                (1, "2026-06-20", 1, "scheduled"),
+                (2, "2026-06-27", 2, "cancelled"),
+                (3, "2026-06-26", 3, "scheduled"),
+            ],
+        )
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_prefill_uses_department_class_label_and_last_course_day(self):
+        fields = svc.build_fields_from_offering(self.conn, 30, teacher=self.teacher)
+        self.assertEqual(fields["course_name"], "动态 web 程序设计")
+        self.assertEqual(fields["class_name"], "软工 2401班（专升本）")
+        self.assertNotIn("动态 web 程序设计-0001", fields["class_name"])
+        self.assertEqual(fields["date"], "2026年06月26日")
+
+
+class GenerationItemFilterTests(unittest.TestCase):
+    def test_process_scores_are_replaced_by_final_exam_items(self):
+        warnings: list[str] = []
+        items = gen._final_exam_items_or_seed(
+            [
+                {"assessment_form": "平时成绩（考勤、课堂表现、作业）", "content": "整学期学习表现", "score": "20"},
+                {"assessment_form": "阶段性实验项目（上机实操）", "content": "6 次实验完成情况", "score": "30"},
+                {"assessment_form": "机试", "content": "期末 Web 部署与数据库综合任务", "score": "50"},
+            ],
+            fields={"course_name": "服务器配置与管理", "assessment_method": "机试"},
+            classroom_context={},
+            prompt="",
+            warnings=warnings,
+        )
+        joined = "\n".join(f"{item.get('assessment_form')} {item.get('content')}" for item in items)
+        self.assertNotIn("平时", joined)
+        self.assertNotIn("考勤", joined)
+        self.assertNotIn("阶段性", joined)
+        self.assertEqual(sum(float(item["score"]) for item in items), 100.0)
+        self.assertTrue(warnings)
 
 
 class CrudAndVisibilityTests(unittest.TestCase):
@@ -195,6 +289,20 @@ class ExportTests(unittest.TestCase):
         self.assertTrue(content.startswith(b"PK"))  # docx is a zip
         self.assertTrue(filename.endswith(".docx"))
         self.assertGreater(len(content), 2000)
+
+    def test_missing_reviewer_is_explicit_in_export_fields(self):
+        plan_id = svc.create_assessment_plan(
+            self.conn,
+            teacher=self.teacher,
+            title="课程考核计划表",
+            fields={"course_name": "服务器配置与管理", "class_name": "软工2406班", "examiner_name": "张海林"},
+            items=[{"assessment_form": "机试", "content": "Linux 用户与目录管理", "score": "100"}],
+            status="ready",
+        )
+        plan = svc.get_assessment_plan(self.conn, plan_id)
+        fields = svc.build_export_fields(self.conn, plan)
+        self.assertEqual(fields["reviewer_name"], "【系主任未填写】")
+        self.assertIn("签名库", fields["reviewer_missing_notice"])
 
 
 class SignatureExtractionTests(unittest.TestCase):

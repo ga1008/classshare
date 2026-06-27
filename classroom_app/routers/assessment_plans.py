@@ -398,19 +398,25 @@ async def inherit_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
 # Export (docx)
 # ---------------------------------------------------------------------------
 @router.get("/{plan_id}/export")
-async def export_plan(plan_id: str, fmt: str = "docx", user: dict = Depends(get_current_teacher)):
+async def export_plan(
+    plan_id: str,
+    fmt: str = "docx",
+    inline: bool = False,
+    user: dict = Depends(get_current_teacher),
+):
     fmt = (fmt or "docx").lower()
-    if fmt != "docx":
-        raise HTTPException(400, "考核计划表当前仅支持导出 Word(.docx)")
+    if fmt not in {"docx", "pdf"}:
+        raise HTTPException(400, "考核计划表当前支持导出 Word(.docx) 和 PDF")
     with get_db_connection() as conn:
         plan = _load_viewable(conn, plan_id, user)
         try:
-            content, filename = ap.export_plan_docx(conn, plan)
+            artifact = ap.export_plan_artifact(conn, plan, requested_format=fmt)
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
-    disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
+    disposition_type = "inline" if inline else "attachment"
+    disposition = f"{disposition_type}; filename*=UTF-8''{quote(artifact.filename)}"
     return Response(
-        content=content,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        content=artifact.content,
+        media_type=artifact.media_type,
         headers={"Content-Disposition": disposition},
     )

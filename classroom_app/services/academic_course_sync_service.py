@@ -422,7 +422,10 @@ def _parse_schedule_items_from_html(page_html: str, source_url: str) -> list[Aca
             campus=_extract_labeled_value(info_text, "校区")[:120],
             location=location[:220],
             class_composition=class_composition[:260],
-            course_nature=_extract_labeled_value(info_text, "课程性质简称")[:80],
+            course_nature=(
+                _extract_labeled_value(info_text, "课程性质")
+                or _extract_labeled_value(info_text, "课程性质简称")
+            )[:80],
             exam_method=_extract_labeled_value(info_text, "考核方式")[:80],
             exam_mode=_extract_labeled_value(info_text, "考试方式")[:80],
             course_hour_text=_extract_labeled_value(info_text, "课程学时组成")[:160],
@@ -560,7 +563,7 @@ def _parse_schedule_items_from_json(payload: Any, source_url: str) -> list[Acade
             classroom_code=_first_text(raw, "cdbh", "cdh", "classroomCode")[:80],
             classroom_type=_first_text(raw, "cdlbmc", "cdlb", "classroomType")[:120],
             class_composition=_first_text(raw, "jxbzc", "jxbmc", "bj", "classComposition", "class_composition")[:260],
-            course_nature=_first_text(raw, "kcxzjc", "kcxzmc", "kcxz", "courseNature")[:80],
+            course_nature=_first_text(raw, "kcxzmc", "kcxz", "courseNature", "kcxzjc")[:80],
             exam_method=_first_text(raw, "khfs", "khfsmc", "examMethod")[:80],
             exam_mode=_first_text(raw, "ksfs", "ksfsmc", "examMode")[:80],
             course_hour_text=course_hour_text[:160],

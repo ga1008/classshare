@@ -190,6 +190,7 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
         "xszd[xf]": "true",
         "xszd[xq]": "true",
         "xszd[jxbrs]": "true",
+        "xszd[kcxzmc]": "true",
         "xszd[kcxzjc]": "true",
         "xszd[khfs]": "true",
         "xszd[ksfs]": "true",

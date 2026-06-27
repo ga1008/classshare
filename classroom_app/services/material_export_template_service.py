@@ -414,7 +414,7 @@ def _add_plan_meta_table(document: Any, fields: dict[str, Any]) -> None:
         ["课程名称", _field(fields, "course_name"), "", ""],
         ["专业年级班级", _field(fields, "class_name"), "考核类型", _checked_pair_ascii("考查", "考试", _field(fields, "assessment_type") or "考试")],
         ["命题教师", _signature_value(fields, "examiner_name", "teacher_name", signature_key="examiner_signature"), "系（教研室）主任审核签字", _signature_value(fields, "reviewer_name", signature_key="reviewer_signature")],
-        ["命题日期", _field(fields, "date"), "", ""],
+        ["命题日期", _assessment_date_text(_field(fields, "date")), "", ""],
     ]
     table = document.add_table(rows=len(rows), cols=4)
     table.autofit = False
@@ -974,11 +974,20 @@ def _field(fields: dict[str, Any], *keys: str) -> str:
 
 
 def _signature_value(fields: dict[str, Any], *keys: str, signature_key: str) -> str:
-    name = _field(fields, *keys)
-    signature = _field(fields, signature_key)
-    if signature and signature != name:
-        return f"{name}    {signature}".strip()
-    return name
+    # Signature identifiers/paths are handled as images by the template and must
+    # never leak into visible document text.
+    return _field(fields, *keys)
+
+
+def _assessment_date_text(value: Any) -> str:
+    text = _stringify(value).strip()
+    if not text:
+        return ""
+    match = re.search(r"(20\d{2})\D+(\d{1,2})\D+(\d{1,2})", text)
+    if not match:
+        return text
+    year, month, day = match.groups()
+    return f"{year} 年 {int(month)} 月 {int(day)} 日"
 
 
 def _apply_assessment_plan_section(section: Any) -> None:
@@ -1120,9 +1129,7 @@ def _set_assessment_cell_text(cell: Any, text: Any, *, bold: bool = False, cente
     paragraph = cell.paragraphs[0]
     if center:
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = paragraph.add_run(_stringify(text))
-    if bold:
-        run.font.bold = True
+    _set_run_assessment_songti(paragraph.add_run(_stringify(text)), 10.5, bold=bold)
 
 
 def _set_assessment_signature_cell(cell: Any, text: Any, image_path: str = "") -> None:
@@ -1134,17 +1141,19 @@ def _set_assessment_signature_cell(cell: Any, text: Any, image_path: str = "") -
     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     paragraph = cell.paragraphs[0]
     paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    paragraph.paragraph_format.space_before = _pt(0)
+    paragraph.paragraph_format.space_after = _pt(0)
     name_text = _stringify(text).strip()
     if name_text:
-        paragraph.add_run(name_text)
+        _set_run_assessment_songti(paragraph.add_run(name_text), 10.5, bold=True)
     path = Path(image_path) if image_path else None
     if path and path.is_file():
         try:
             from docx.shared import Cm
 
-            picture_paragraph = cell.add_paragraph()
-            picture_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            picture_paragraph.add_run().add_picture(str(path), height=Cm(1.05))
+            if name_text:
+                paragraph.add_run("  ")
+            paragraph.add_run().add_picture(str(path), height=Cm(0.62))
         except Exception:
             # Never let a bad image break the export — the name text already stands.
             pass

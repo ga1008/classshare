@@ -294,11 +294,11 @@ def _format_generation_schedule_text(row: dict[str, Any]) -> str:
     weekday = _safe_int(row.get("weekday"))
     parts = [_safe_text(row.get("session_date"))]
     if week:
-        parts.append(f"week {week}")
+        parts.append(f"第{week}周")
     if weekday:
         parts.append(weekday_label(weekday))
     if sections:
-        parts.append(f"sections {sections}")
+        parts.append(f"第{sections}节")
     return " ".join(p for p in parts if p)
 
 
@@ -671,37 +671,68 @@ def _fallback_process(
     homework_hint: str,
     neighbor: str,
 ) -> str:
-    intro_minutes = 10 if section_minutes >= 70 else 5
-    summary_minutes = 10 if section_minutes >= 70 else 5
-    practice_minutes = max(20, section_minutes - intro_minutes - summary_minutes)
     context_line = f"前后课衔接：{neighbor}" if neighbor else "前后课衔接：承接上一课知识基础，并为后续实践任务做铺垫。"
     material_line = material_hint or f"围绕“{topic}”梳理概念、步骤、实践任务与常见问题。"
     homework_line = homework_hint or f"完成与“{topic}”相关的基础练习，并记录操作过程、关键结果和问题反思。"
-    return "\n".join(
-        [
-            f"一、教学导入（约{intro_minutes}分钟）",
-            f"- 回顾相关知识与课堂任务背景，引出“{topic}”。",
-            f"- {context_line}",
-            "- 明确本次课的学习产出：能说清关键概念，能完成核心操作，能解释常见错误原因。",
-            "",
-            f"二、讲授新课与实践训练（约{practice_minutes}分钟）",
-            "",
-            "| 教学环节 | 教学活动（教师引导） | 学生活动（主体） | 设计意图（OBE & 两性一度） |",
-            "| --- | --- | --- | --- |",
-            f"| 问题导入 | 结合课程案例提出与“{topic}”相关的真实问题，说明任务目标和评价标准。 | 阅读任务要求，提出已有经验和疑问。 | 以问题驱动学习，帮助学生建立成果导向意识。 |",
-            f"| 核心讲解 | 围绕“{topic}”讲解关键概念、流程、命令或代码结构，并结合材料提示：{material_line} | 跟随示范记录关键步骤，标注易错点。 | 强化知识结构，降低实践任务的认知负荷。 |",
-            "| 课堂实践 | 组织学生分步完成任务，巡视并针对典型错误进行集中讲评。 | 独立或结对完成实践，提交阶段性结果。 | 通过动手实践形成可观察学习成果，提升解决问题能力。 |",
-            "| 拓展提升 | 引导学生比较不同方案的适用场景，讨论安全性、可维护性或工程规范。 | 归纳方案差异，尝试优化自己的实现。 | 增强挑战度和创新性，培养工程思维。 |",
-            "",
-            f"三、教学小结（约{summary_minutes}分钟）",
-            f"- 总结“{topic}”的核心知识、实践步骤和常见问题处理方法。",
-            "- 引导学生从技术规范、协作意识和职业责任角度反思本次实践。",
-            "",
-            "四、作业布置",
-            f"- 基础任务：{homework_line}",
-            f"- Pro 任务：在基础任务上增加一个扩展场景，说明设计思路、关键步骤和验证结果。",
-        ]
-    )
+    section_count = max(1, round(max(40, section_minutes) / 40))
+    lines = [f"课时说明：本次课共{section_count}课时/小节，每小节40分钟，总计{section_count * 40}分钟。"]
+    for idx in range(1, section_count + 1):
+        if idx == 1:
+            lines.extend(
+                [
+                    "",
+                    f"一、第{idx}小节（40分钟）：导入、核心讲解与示范",
+                    "1. 教学导入（8分钟）",
+                    f"- 回顾相关知识与课堂任务背景，引出“{topic}”。",
+                    f"- {context_line}",
+                    "- 明确本次课的学习产出：能说清关键概念，能完成核心操作，能解释常见错误原因。",
+                    "",
+                    "2. 核心讲解与示范（22分钟）",
+                    "",
+                    "| 教学环节 | 教学活动（教师引导） | 学生活动（主体） | 设计意图（OBE & 两性一度） |",
+                    "| --- | --- | --- | --- |",
+                    f"| 问题导入 | 结合课程案例提出与“{topic}”相关的真实问题，说明任务目标和评价标准。 | 阅读任务要求，提出已有经验和疑问。 | 以问题驱动学习，帮助学生建立成果导向意识。 |",
+                    f"| 核心讲解 | 围绕“{topic}”讲解关键概念、流程、命令或代码结构，并结合材料提示：{material_line} | 跟随示范记录关键步骤，标注易错点。 | 强化知识结构，降低实践任务的认知负荷。 |",
+                    "",
+                    "3. 阶段练习与即时反馈（10分钟）",
+                    "- 组织学生完成一个基础验证任务，教师巡视并记录共性问题。",
+                    "- 小节合计：8 + 22 + 10 = 40分钟。",
+                ]
+            )
+        elif idx == section_count:
+            lines.extend(
+                [
+                    "",
+                    f"二、第{idx}小节（40分钟）：实践提升、小结与作业",
+                    "1. 课堂实践与排错训练（25分钟）",
+                    "",
+                    "| 教学环节 | 教学活动（教师引导） | 学生活动（主体） | 设计意图（OBE & 两性一度） |",
+                    "| --- | --- | --- | --- |",
+                    "| 课堂实践 | 组织学生分步完成任务，巡视并针对典型错误进行集中讲评。 | 独立或结对完成实践，提交阶段性结果。 | 通过动手实践形成可观察学习成果，提升解决问题能力。 |",
+                    "| 拓展提升 | 引导学生比较不同方案的适用场景，讨论安全性、可维护性或工程规范。 | 归纳方案差异，尝试优化自己的实现。 | 增强挑战度和创新性，培养工程思维。 |",
+                    "",
+                    "2. 教学小结（10分钟）",
+                    f"- 总结“{topic}”的核心知识、实践步骤和常见问题处理方法。",
+                    "- 引导学生从技术规范、协作意识和职业责任角度反思本次实践。",
+                    "",
+                    "3. 作业布置（5分钟）",
+                    f"- 基础任务：{homework_line}",
+                    f"- Pro 任务：在基础任务上增加一个扩展场景，说明设计思路、关键步骤和验证结果。",
+                    "- 小节合计：25 + 10 + 5 = 40分钟。",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "",
+                    f"二、第{idx}小节（40分钟）：分层练习与拓展应用",
+                    "1. 分层练习（25分钟）：学生完成基础任务与进阶任务，教师巡回指导。",
+                    "2. 共性问题讲评（10分钟）：集中讲解错误原因、修正路径与验证方法。",
+                    "3. 学习成果确认（5分钟）：学生提交阶段结果并记录反思。",
+                    "- 小节合计：25 + 10 + 5 = 40分钟。",
+                ]
+            )
+    return "\n".join(lines)
 
 
 def _fallback_session_from_context(
@@ -730,6 +761,7 @@ def _fallback_session_from_context(
     return {
         "index": index,
         "schedule": meta.get("schedule"),
+        "section_minutes": section_minutes,
         "chapter": chapter or topic,
         "objectives": "\n".join(
             [
@@ -773,6 +805,7 @@ def _minimal_session_fallback(
     return {
         "index": index,
         "schedule": meta.get("schedule") or {},
+        "section_minutes": section_minutes,
         "chapter": chapter,
         "objectives": f"围绕“{chapter}”完成知识理解、实践操作与学习反思。",
         "key_points": f"{chapter} 的核心概念、基本流程与实践要求。",
@@ -781,10 +814,15 @@ def _minimal_session_fallback(
         "means": "PPT、教学文档、课堂演示、在线课堂平台",
         "process": "\n".join(
             [
-                f"一、教学导入（约10分钟）：回顾前序知识，引出“{chapter}”的学习任务。",
-                f"二、讲授新课与实践训练（约{max(20, section_minutes - 20)}分钟）：结合课堂材料组织讲解、示范和实践。",
-                "三、教学小结（约10分钟）：总结关键知识、实践步骤和常见问题。",
-                "四、作业布置：完成与本次课主题相关的基础练习，并记录问题与反思。",
+                f"课时说明：本次课共{max(1, round(section_minutes / 40))}课时/小节，每小节40分钟，总计{max(1, round(section_minutes / 40)) * 40}分钟。",
+                f"一、第1小节（40分钟）：导入（8分钟）、讲解示范（22分钟）、阶段练习（10分钟），引出“{chapter}”的学习任务并完成基础验证。",
+                *(
+                    [
+                        f"二、第2小节（40分钟）：课堂实践与排错训练（25分钟）、教学小结（10分钟）、作业布置（5分钟），完成与“{chapter}”相关的实践任务并记录问题与反思。"
+                    ]
+                    if section_minutes >= 70
+                    else []
+                ),
             ]
         ),
         "side_notes": "本课次由系统兜底生成，建议教师课后结合课堂实际进一步微调。",
@@ -1059,6 +1097,7 @@ async def _generate_one_session(
     return {
         "index": index,
         "schedule": meta.get("schedule"),
+        "section_minutes": max(40, min(240, _safe_int(meta.get("section_minutes"), 80) or 80)),
         "chapter": chapter or str(result.get("chapter") or ""),
         "objectives": str(result.get("objectives") or ""),
         "key_points": str(result.get("key_points") or ""),

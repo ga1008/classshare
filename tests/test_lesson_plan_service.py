@@ -75,6 +75,15 @@ class PayloadNormalizationTests(unittest.TestCase):
         self.assertEqual(payload["sessions"][0]["schedule"]["week_index"], 1)
         self.assertEqual(payload["sessions"][0]["schedule"]["weekday"], 1)
 
+    def test_course_category_short_label_expands_for_cover(self):
+        payload = svc.normalize_lesson_plan_payload(
+            {
+                "cover": {"course_name": "动态web程序设计", "course_category": "专业"},
+                "sessions": [],
+            }
+        )
+        self.assertEqual(payload["cover"]["course_category"], "专业限选课程")
+
 
     def test_wrapped_alias_payload_is_normalized(self):
         payload = svc.normalize_lesson_plan_payload(

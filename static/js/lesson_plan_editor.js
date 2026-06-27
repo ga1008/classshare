@@ -44,7 +44,9 @@ function renderCover() {
 
 function scheduleText(session) {
     const s = session.schedule || {};
-    return s.text || [s.date, s.week_index ? `第${s.week_index}周` : '', s.sections ? `第${s.sections}节` : '']
+    const weekdayMap = { 1: '星期一', 2: '星期二', 3: '星期三', 4: '星期四', 5: '星期五', 6: '星期六', 7: '星期日' };
+    const weekday = s.weekday ? (weekdayMap[Number(s.weekday)] || s.weekday) : '';
+    return s.text || [s.date, s.week_index ? `第${s.week_index}周` : '', weekday, s.sections ? `第${s.sections}节` : '']
         .filter(Boolean).join(' ');
 }
 
