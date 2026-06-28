@@ -15,6 +15,7 @@ from .schema_lesson_plans import ensure_lesson_plan_schema
 from .schema_assessment_plans import ensure_assessment_plan_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
 from .schema_polls import ensure_poll_schema
+from .schema_resume import ensure_resume_schema
 from .schema_scheduler import ensure_scheduler_schema
 from .schema_gongwen import ensure_gongwen_schema
 from .schema_study_group_scheme import ensure_study_group_scheme_schema
@@ -150,6 +151,19 @@ def init_database():
             print("[DB] PostgreSQL assessment-plan table ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL assessment-plan schema step skipped: {exc}")
+        # The resume console (简历管理与优化) tables follow the same
+        # runtime-managed, engine-aware pattern (isolated connection so the
+        # validate path above stays DDL-free) — student-owned résumé workbench.
+        try:
+            resume_conn = get_db_connection()
+            try:
+                ensure_resume_schema(resume_conn)
+                resume_conn.commit()
+            finally:
+                resume_conn.close()
+            print("[DB] PostgreSQL resume console tables ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL resume console schema step skipped: {exc}")
         print(
             "[DB] PostgreSQL schema verified: "
             f"{report['present_required_table_count']}/{report['required_table_count']} required tables"
@@ -172,6 +186,7 @@ def init_database():
             ensure_agent_task_extension_schema(conn)
             ensure_lesson_plan_schema(conn)
             ensure_assessment_plan_schema(conn)
+            ensure_resume_schema(conn)
             conn.commit()
         except Exception:
             conn.rollback()

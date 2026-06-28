@@ -1,0 +1,351 @@
+"""Personal info + list-section CRUD for the student resume console.
+
+Sections:
+
+* ``personal``    — singleton row per student (``resume_personal_info``).
+* list sections   — ``self_intro`` / ``certificate`` / ``skill`` / ``experience``
+                    / ``education`` (one table each, many rows per student).
+
+All writes go through small whitelisted helpers so the router only forwards a
+plain payload dict. Validation raises ``ValueError`` (the router maps it to HTTP
+400). Mirrors the lightweight engine-aware approach used across the codebase
+(``execute_insert_returning_id``).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime, timezone
+from typing import Any
+
+from ...db.connection import execute_insert_returning_id
+from ...db.schema_resume import ensure_resume_schema
+
+# ---------------------------------------------------------------------------
+# Section registry — column whitelist + required fields per list section.
+# ---------------------------------------------------------------------------
+LIST_SECTIONS: dict[str, dict[str, Any]] = {
+    "self_intro": {
+        "table": "resume_self_intros",
+        "fields": ("title", "content_md", "source"),
+        "required": ("content_md",),
+        "label": "自我介绍",
+    },
+    "certificate": {
+        "table": "resume_certificates",
+        "fields": ("name", "acquired_date", "expiry_date", "description"),
+        "required": ("name", "acquired_date"),
+        "label": "证书",
+        "has_attachments": True,
+    },
+    "skill": {
+        "table": "resume_skills",
+        "fields": ("name", "level", "acquired_date", "expiry_date", "description"),
+        "required": ("name", "acquired_date"),
+        "label": "技能",
+        "has_attachments": True,
+    },
+    "experience": {
+        "table": "resume_experiences",
+        "fields": ("kind", "title", "start_date", "end_date", "role", "content", "contribution", "achievement"),
+        "required": ("title", "start_date", "end_date"),
+        "label": "经验",
+        "has_attachments": True,
+    },
+    "education": {
+        "table": "resume_educations",
+        "fields": ("kind", "school", "college", "major", "start_date", "end_date", "content", "source"),
+        "required": ("school", "start_date", "end_date"),
+        "label": "学历",
+    },
+}
+
+PERSONAL_FIELDS = (
+    "name", "gender", "birthday", "phone", "email", "qq", "wechat", "address",
+    "hometown", "id_card", "expected_position", "expected_industry", "expected_salary",
+)
+PERSONAL_REQUIRED = ("name", "gender", "birthday", "email", "expected_position")
+
+_FIELD_LIMIT = 2000
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).astimezone().replace(microsecond=0).isoformat()
+
+
+def _clean(value: Any, *, limit: int = _FIELD_LIMIT) -> str:
+    text = str(value if value is not None else "").strip()
+    return text[:limit]
+
+
+def _normalize_section(section: str) -> str:
+    key = str(section or "").strip().replace("-", "_")
+    if key not in LIST_SECTIONS:
+        raise ValueError(f"未知的资料分区：{section}")
+    return key
+
+
+# ---------------------------------------------------------------------------
+# Personal info (singleton)
+# ---------------------------------------------------------------------------
+def _row_to_dict(row: Any) -> dict[str, Any]:
+    return dict(row) if row is not None else {}
+
+
+def get_personal_info(conn, student_id: int) -> dict[str, Any]:
+    ensure_resume_schema(conn)
+    row = conn.execute(
+        "SELECT * FROM resume_personal_info WHERE student_id = ? LIMIT 1",
+        (int(student_id),),
+    ).fetchone()
+    info = _row_to_dict(row)
+    if info:
+        try:
+            info["extra"] = json.loads(info.get("extra_json") or "{}")
+        except (TypeError, ValueError):
+            info["extra"] = {}
+    return info
+
+
+def _ensure_personal_row(conn, student_id: int) -> dict[str, Any]:
+    info = get_personal_info(conn, student_id)
+    if info:
+        return info
+    now = _now()
+    execute_insert_returning_id(
+        conn,
+        "INSERT INTO resume_personal_info (student_id, created_at, updated_at) VALUES (?, ?, ?)",
+        (int(student_id), now, now),
+    )
+    return get_personal_info(conn, student_id)
+
+
+def validate_personal_info(payload: dict[str, Any]) -> dict[str, str]:
+    cleaned = {field: _clean(payload.get(field), limit=200) for field in PERSONAL_FIELDS}
+    missing = [field for field in PERSONAL_REQUIRED if not cleaned.get(field)]
+    if missing:
+        labels = {
+            "name": "姓名", "gender": "性别", "birthday": "生日",
+            "email": "邮箱", "expected_position": "期望岗位",
+        }
+        names = "、".join(labels.get(field, field) for field in missing)
+        raise ValueError(f"请填写必填项：{names}")
+    if cleaned.get("email") and not _EMAIL_RE.match(cleaned["email"]):
+        raise ValueError("邮箱格式不正确")
+    return cleaned
+
+
+def update_personal_info(conn, student_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_resume_schema(conn)
+    cleaned = validate_personal_info(payload)
+    _ensure_personal_row(conn, student_id)
+    extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
+    assignments = ", ".join(f"{field} = ?" for field in PERSONAL_FIELDS)
+    params = [cleaned[field] for field in PERSONAL_FIELDS]
+    params.extend([json.dumps(extra, ensure_ascii=False), 1, _now(), int(student_id)])
+    conn.execute(
+        f"UPDATE resume_personal_info SET {assignments}, extra_json = ?, seeded = ?, "
+        f"updated_at = ? WHERE student_id = ?",
+        params,
+    )
+    return get_personal_info(conn, student_id)
+
+
+def set_personal_avatar(conn, student_id: int, file_hash: str, mime_type: str) -> None:
+    ensure_resume_schema(conn)
+    _ensure_personal_row(conn, student_id)
+    conn.execute(
+        "UPDATE resume_personal_info SET avatar_file_hash = ?, avatar_mime_type = ?, "
+        "updated_at = ? WHERE student_id = ?",
+        (_clean(file_hash, limit=128), _clean(mime_type, limit=64), _now(), int(student_id)),
+    )
+
+
+def seed_personal_info_from_platform(conn, student_id: int, user: dict[str, Any] | None = None) -> dict[str, Any]:
+    """First-visit pre-fill from the platform profile (idempotent: only if unseeded)."""
+    ensure_resume_schema(conn)
+    info = _ensure_personal_row(conn, student_id)
+    if int(info.get("seeded") or 0) == 1 or _clean(info.get("name")):
+        return get_personal_info(conn, student_id)
+    try:
+        from ..profile_service import get_user_profile
+
+        profile = get_user_profile(conn, {"id": student_id, "role": "student"})
+    except Exception:
+        profile = {}
+    user = user or {}
+    mapped = {
+        "name": profile.get("name") or profile.get("nickname") or user.get("name") or "",
+        "gender": profile.get("gender") or "",
+        "email": profile.get("email") or user.get("email") or "",
+        "phone": profile.get("phone") or "",
+        "qq": profile.get("qq") or "",
+        "wechat": profile.get("wechat") or "",
+    }
+    assignments = ", ".join(f"{field} = ?" for field in mapped)
+    params = [_clean(value, limit=200) for value in mapped.values()]
+    params.extend([profile.get("avatar_file_hash") or "", profile.get("avatar_mime_type") or "", _now(), int(student_id)])
+    conn.execute(
+        f"UPDATE resume_personal_info SET {assignments}, avatar_file_hash = ?, "
+        f"avatar_mime_type = ?, updated_at = ? WHERE student_id = ? AND seeded = 0",
+        params,
+    )
+    return get_personal_info(conn, student_id)
+
+
+# ---------------------------------------------------------------------------
+# List sections — generic CRUD
+# ---------------------------------------------------------------------------
+def _validate_list_payload(section: str, payload: dict[str, Any]) -> dict[str, str]:
+    spec = LIST_SECTIONS[section]
+    cleaned: dict[str, str] = {}
+    for field in spec["fields"]:
+        cleaned[field] = _clean(payload.get(field))
+    missing = [field for field in spec["required"] if not cleaned.get(field)]
+    if missing:
+        labels = {
+            "name": "名称",
+            "school": "学校 / 机构名称",
+            "title": "名称",
+            "start_date": "开始时间",
+            "end_date": "结束时间",
+            "acquired_date": "获得时间",
+            "content_md": "自我介绍内容",
+        }
+        raise ValueError(f"{spec['label']}缺少必填信息：{'、'.join(labels.get(field, field) for field in missing)}")
+    if section in {"experience", "education"}:
+        start, end = cleaned.get("start_date"), cleaned.get("end_date")
+        if start and end and start > end:
+            raise ValueError("开始时间不能晚于结束时间")
+    return cleaned
+
+
+def list_section(conn, student_id: int, section: str) -> list[dict[str, Any]]:
+    section = _normalize_section(section)
+    ensure_resume_schema(conn)
+    table = LIST_SECTIONS[section]["table"]
+    rows = conn.execute(
+        f"SELECT * FROM {table} WHERE student_id = ? ORDER BY created_at DESC, id DESC",
+        (int(student_id),),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_section_item(conn, student_id: int, section: str, item_id: int) -> dict[str, Any]:
+    section = _normalize_section(section)
+    ensure_resume_schema(conn)
+    table = LIST_SECTIONS[section]["table"]
+    row = conn.execute(
+        f"SELECT * FROM {table} WHERE id = ? AND student_id = ? LIMIT 1",
+        (int(item_id), int(student_id)),
+    ).fetchone()
+    if not row:
+        raise ValueError("未找到该记录")
+    return dict(row)
+
+
+def create_section_item(conn, student_id: int, section: str, payload: dict[str, Any]) -> int:
+    section = _normalize_section(section)
+    ensure_resume_schema(conn)
+    cleaned = _validate_list_payload(section, payload)
+    table = LIST_SECTIONS[section]["table"]
+    columns = list(cleaned.keys()) + ["student_id", "created_at", "updated_at"]
+    now = _now()
+    values = list(cleaned.values()) + [int(student_id), now, now]
+    placeholders = ", ".join("?" for _ in columns)
+    new_id = execute_insert_returning_id(
+        conn,
+        f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
+        values,
+    )
+    return int(new_id)
+
+
+def update_section_item(conn, student_id: int, section: str, item_id: int, payload: dict[str, Any]) -> None:
+    section = _normalize_section(section)
+    ensure_resume_schema(conn)
+    get_section_item(conn, student_id, section, item_id)  # ownership + existence
+    cleaned = _validate_list_payload(section, payload)
+    table = LIST_SECTIONS[section]["table"]
+    assignments = ", ".join(f"{field} = ?" for field in cleaned)
+    params = list(cleaned.values()) + [_now(), int(item_id), int(student_id)]
+    conn.execute(
+        f"UPDATE {table} SET {assignments}, updated_at = ? WHERE id = ? AND student_id = ?",
+        params,
+    )
+
+
+def delete_section_item(conn, student_id: int, section: str, item_id: int) -> None:
+    section = _normalize_section(section)
+    ensure_resume_schema(conn)
+    table = LIST_SECTIONS[section]["table"]
+    conn.execute(
+        f"DELETE FROM {table} WHERE id = ? AND student_id = ?",
+        (int(item_id), int(student_id)),
+    )
+
+
+def create_education_auto(conn, student_id: int, *, school: str, college: str = "",
+                          major: str = "", start_date: str = "", end_date: str = "",
+                          content: str = "", kind: str = "university") -> int:
+    """Insert an AI-seeded education row (source='ai_auto')."""
+    return create_section_item(
+        conn,
+        student_id,
+        "education",
+        {
+            "kind": kind, "school": school, "college": college, "major": major,
+            "start_date": start_date, "end_date": end_date, "content": content,
+            "source": "ai_auto",
+        },
+    )
+
+
+def has_any_education(conn, student_id: int) -> bool:
+    ensure_resume_schema(conn)
+    row = conn.execute(
+        "SELECT 1 FROM resume_educations WHERE student_id = ? LIMIT 1",
+        (int(student_id),),
+    ).fetchone()
+    return row is not None
+
+
+def collect_profile_bundle(conn, student_id: int) -> dict[str, Any]:
+    """Everything filled so far — used by the builder palette + AI prompts."""
+    bundle: dict[str, Any] = {"personal": get_personal_info(conn, student_id)}
+    for section in LIST_SECTIONS:
+        bundle[section] = list_section(conn, student_id, section)
+    return bundle
+
+
+# ---------------------------------------------------------------------------
+# Self-intro placeholder lifecycle (for AI generation)
+# ---------------------------------------------------------------------------
+def create_self_intro_placeholder(conn, student_id: int, *, title: str = "AI 生成中…") -> int:
+    ensure_resume_schema(conn)
+    now = _now()
+    return int(
+        execute_insert_returning_id(
+            conn,
+            "INSERT INTO resume_self_intros (student_id, title, content_md, source, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, 'ai_generated', 'generating', ?, ?)",
+            (int(student_id), _clean(title, limit=120), "", now, now),
+        )
+    )
+
+
+def finish_self_intro(conn, intro_id: int, *, content_md: str, title: str = "", status: str = "ready",
+                      error_text: str = "") -> None:
+    ensure_resume_schema(conn)
+    sets = ["content_md = ?", "status = ?", "error_text = ?", "updated_at = ?"]
+    params: list[Any] = [_clean(content_md, limit=8000), status, _clean(error_text, limit=600), _now()]
+    if title:
+        sets.append("title = ?")
+        params.append(_clean(title, limit=120))
+    params.append(int(intro_id))
+    conn.execute(
+        f"UPDATE resume_self_intros SET {', '.join(sets)} WHERE id = ?",
+        params,
+    )

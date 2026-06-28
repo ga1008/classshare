@@ -1,0 +1,38 @@
+{% extends "resume/layout.html" %}
+
+{% block content %}
+<div class="rz-page-head">
+    <div>
+        <div class="rz-page-head__title">新建简历</div>
+        <div class="rz-page-head__sub">从右侧把已填写的内容拖入左侧各区域，像搭积木一样组装你的简历。技术栈会由 AI 自动生成。</div>
+    </div>
+    <button type="button" class="rz-btn rz-btn--primary" id="rzBuildSubmit">确定生成</button>
+</div>
+
+<div class="rz-builder">
+    <div class="rz-builder__main">
+        <div class="rz-field">
+            <label>简历标题</label>
+            <input class="rz-input" id="rzResumeTitle" placeholder="例如：后端开发工程师 - 张三">
+        </div>
+
+        <div class="rz-field">
+            <label>选择模板</label>
+            <div class="rz-tpl-row" id="rzTplRow"></div>
+        </div>
+
+        <div id="rzZones"></div>
+    </div>
+
+    <div class="rz-builder__aside">
+        <div style="font-weight:800;margin-bottom:6px">可选内容</div>
+        <div style="color:var(--rz-muted);font-size:.78rem;margin-bottom:10px">拖动或点击卡片加入左侧区域</div>
+        <div id="rzPalette"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script src="/static/js/resume_common.js?v=20260629b"></script>
+<script src="/static/js/resume_builder.js?v=20260629b"></script>
+{% endblock %}

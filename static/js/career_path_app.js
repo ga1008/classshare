@@ -690,13 +690,20 @@
       ? '已按你的地域意向（' + esc(locLabel) + '）优先推荐本地特色平台，再按口碑大平台排序。'
       : '点击任意平台直接跳到该关键字的搜索结果页（如需登录，注册后即可查看）。';
 
+    var resumeCta = '<a class="career-modal__resume-cta" href="/resume">'
+      + '<span class="career-modal__resume-icon">'
+      + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path><path d="M8 13h8M8 17h6"></path></svg></span>'
+      + '<span class="career-modal__resume-copy"><b>简历管理与优化</b>'
+      + '<i>沉淀资料 · AI 撰写 · 拖拽搭建 · 一键导出 Word / PDF</i></span>'
+      + '<span class="career-modal__resume-go">打开控制台 →</span></a>';
+
     modal.innerHTML = '<div class="career-modal__panel" role="dialog" aria-modal="true">'
       + '<header class="career-modal__head">'
       + '<div class="career-modal__titles"><div class="career-modal__cat">' + esc(data.tag || '') + ' · 求职关键字 → 招聘平台</div>'
       + '<h3>「' + esc(data.name) + '」一键直达各大招聘平台</h3>'
       + '<p>' + note + '</p></div>'
       + '<button type="button" class="career-modal__close" aria-label="关闭">✕</button></header>'
-      + '<div class="career-modal__body">' + groups + '</div></div>';
+      + '<div class="career-modal__body">' + resumeCta + groups + '</div></div>';
 
     modal.hidden = false;
     requestAnimationFrame(function () { modal.classList.add('show'); });

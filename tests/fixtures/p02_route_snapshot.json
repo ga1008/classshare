@@ -3536,6 +3536,198 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/resume/attachments",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_attachment_upload",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/attachments/{attachment_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_attachment_delete",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/attachments/{attachment_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_attachment_get",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/builder/palette",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_builder_palette",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/education/seed",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_education_seed",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/personal",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_personal_get",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/personal",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_personal_update",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/personal/avatar",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_personal_avatar_get",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/personal/avatar",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_personal_avatar",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/personal/suggest",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_personal_suggest",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_resumes_list",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_create",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_resume_delete",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_resume_get",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_resume_update",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}/export",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_resume_export",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}/preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_resume_preview",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/sections/{section}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_section_list",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/sections/{section}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_section_create",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/sections/{section}/{item_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_section_delete",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/sections/{section}/{item_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_section_update",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/self-intro/generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_self_intro_generate",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/self-intro/optimize",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_self_intro_optimize",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/templates",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_templates",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/session/active",
     "methods": [
       "GET"
@@ -4565,6 +4757,46 @@
       "GET"
     ],
     "name": "profile_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/resume",
+    "methods": [
+      "GET"
+    ],
+    "name": "resume_home",
+    "include_in_schema": true
+  },
+  {
+    "path": "/resume/builder",
+    "methods": [
+      "GET"
+    ],
+    "name": "resume_builder_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/resume/list",
+    "methods": [
+      "GET"
+    ],
+    "name": "resume_list_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/resume/profile/personal",
+    "methods": [
+      "GET"
+    ],
+    "name": "resume_personal_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/resume/profile/{section}",
+    "methods": [
+      "GET"
+    ],
+    "name": "resume_section_page",
     "include_in_schema": true
   },
   {

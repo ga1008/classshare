@@ -78,6 +78,7 @@ from .routers import career_path
 from .routers import polls
 from .routers import lesson_plans
 from .routers import assessment_plans
+from .routers import resume_console
 
 
 class CacheControlStaticFiles(StaticFiles):
@@ -557,6 +558,7 @@ app.include_router(review.router)
 app.include_router(learning_path.router)
 app.include_router(collaboration.router)
 app.include_router(career_path.router)
+app.include_router(resume_console.router)
 app.include_router(classroom_interactions.router)
 app.include_router(polls.router)
 app.include_router(lesson_plans.router)
