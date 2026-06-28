@@ -257,7 +257,7 @@ def _build_final_material_docx_export(payload: dict[str, Any], *, title: str, te
         document.save(buffer)
         return buffer.getvalue()
     if template_key == "exam_paper":
-        _add_exam_paper_footer(footer)
+        _add_exam_paper_footer(document.sections[0])
         buffer = io.BytesIO()
         document.save(buffer)
         return buffer.getvalue()
@@ -359,7 +359,7 @@ def _add_exam_paper_title_block(document: Any, fields: dict[str, Any]) -> None:
     flags.alignment = WD_ALIGN_PARAGRAPH.CENTER
     flags.paragraph_format.space_after = Pt(12)
     _set_run_songti(flags.add_run(_exam_flags_text(fields)), 12, bold=True)
-    _add_exam_student_line(document)
+    _add_exam_seal_line_text_box(period)
 
 
 def _add_assessment_plan_export_body(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> None:
@@ -455,7 +455,7 @@ def _add_rubric_meta_table(document: Any, fields: dict[str, Any]) -> None:
     rows = [
         ["课程名称", _field(fields, "course_name"), "", ""],
         ["专业年级班级", _field(fields, "class_name"), "", ""],
-        ["考核形式", _field(fields, "assessment_type") or _field(fields, "assessment_method") or "考试", "命题日期", _field(fields, "date")],
+        ["考核形式", _field(fields, "assessment_type") or _field(fields, "assessment_method") or "考试", "命题日期", _assessment_date_text(_field(fields, "date"))],
         ["命题教师", _signature_value(fields, "examiner_name", "teacher_name", signature_key="examiner_signature"), "系（教研室）主任\n审核签字", _signature_value(fields, "reviewer_name", signature_key="reviewer_signature")],
     ]
     table = document.add_table(rows=len(rows), cols=4)
@@ -467,11 +467,20 @@ def _add_rubric_meta_table(document: Any, fields: dict[str, Any]) -> None:
     for row_index, row_values in enumerate(rows):
         row = table.rows[row_index]
         row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-        row.height = _cm(0.9)
+        row.height = _cm(1.12 if row_index == 3 else 0.9)
         for col_index, value in enumerate(row_values):
             cell = row.cells[col_index]
-            _set_cell_text(cell, value, bold=True, align=1)
             _set_cell_width(cell, widths[col_index])
+            if row_index == 3 and col_index in {1, 3}:
+                image_key = "examiner_signature_image_path" if col_index == 1 else "reviewer_signature_image_path"
+                fallback_key = "examiner_signature_path" if col_index == 1 else "reviewer_signature_path"
+                _set_assessment_signature_cell(
+                    cell,
+                    value,
+                    str(fields.get(image_key) or fields.get(fallback_key) or "").strip(),
+                )
+                continue
+            _set_cell_text(cell, value, bold=True, align=1)
         if row_index in {0, 1}:
             row.cells[1].merge(row.cells[3])
 
@@ -495,7 +504,7 @@ def _add_exam_meta_table(document: Any, fields: dict[str, Any]) -> None:
         ],
         [
             (0, 1, "试卷类型"),
-            (2, 5, _checked_pair("开卷", "闭卷", _field(fields, "paper_type") or "开卷")),
+            (2, 5, _exam_paper_type_text(fields)),
             (6, 7, "命题教师"),
             (8, 10, _field(fields, "examiner_name", "teacher_name")),
         ],
@@ -515,7 +524,7 @@ def _add_exam_meta_table(document: Any, fields: dict[str, Any]) -> None:
     for row_index, spans in enumerate(rows):
         row = table.rows[row_index]
         row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-        row.height = _cm(0.73 if row_index < 4 else 0.86)
+        row.height = _cm(0.73 if row_index < 3 else 0.86)
         for col_index, width in enumerate(grid_widths):
             _set_cell_width(row.cells[col_index], width)
         for start, end, value in spans:
@@ -523,6 +532,27 @@ def _add_exam_meta_table(document: Any, fields: dict[str, Any]) -> None:
             if end > start:
                 cell = cell.merge(row.cells[end])
             _set_cell_width(cell, sum(grid_widths[start:end + 1]))
+            if row_index == 3 and start == 8:
+                _set_exam_signature_cell(
+                    cell,
+                    value,
+                    str(fields.get("examiner_signature_image_path") or fields.get("examiner_signature_path") or "").strip(),
+                )
+                continue
+            if row_index == 4 and start == 2:
+                _set_exam_signature_cell(
+                    cell,
+                    value,
+                    str(fields.get("reviewer_signature_image_path") or fields.get("reviewer_signature_path") or "").strip(),
+                )
+                continue
+            if row_index == 4 and start == 10:
+                _set_exam_signature_cell(
+                    cell,
+                    value,
+                    str(fields.get("leader_signature_image_path") or fields.get("leader_signature_path") or "").strip(),
+                )
+                continue
             _set_cell_text(cell, value, bold=start in {0, 6}, align=1, size=10)
     gap = document.add_paragraph()
     gap.paragraph_format.space_after = _pt(8)
@@ -603,32 +633,30 @@ def _add_exam_score_box(document: Any) -> None:
 def _add_exam_section_heading(document: Any, heading_text: str) -> None:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-    layout = document.add_table(rows=2, cols=3)
+    layout = document.add_table(rows=1, cols=2)
     layout.alignment = 0
     layout.autofit = False
     _set_table_borders(layout, color="FFFFFF", size=0)
-    widths = [1.44, 2.25, 10.64]
+    widths = [3.69, 10.64]
     for index, width in enumerate(widths):
         layout.columns[index].width = _cm(width)
     for row in layout.rows:
+        _set_row_cant_split(row)
         row.height_rule = 1
-        row.height = _cm(0.65)
+        row.height = _cm(1.3)
         for index, cell in enumerate(row.cells):
             _set_cell_width(cell, widths[index])
             _set_cell_borders(cell, size=0)
-    _set_cell_text(layout.rows[0].cells[0], "得分", bold=True, align=1, size=11)
-    _set_cell_text(layout.rows[0].cells[1], "评卷人", bold=True, align=1, size=11)
-    _set_cell_text(layout.rows[1].cells[0], "", align=1, size=11)
-    _set_cell_text(layout.rows[1].cells[1], "", align=1, size=11)
-    for cell in (layout.rows[0].cells[0], layout.rows[0].cells[1], layout.rows[1].cells[0], layout.rows[1].cells[1]):
-        _set_cell_borders(cell)
-    right = layout.rows[0].cells[2].merge(layout.rows[1].cells[2])
-    _set_cell_borders(right, size=0)
+    score_cell = layout.rows[0].cells[0]
+    _clear_cell(score_cell)
+    _add_exam_score_box_to_cell(score_cell)
+    right = layout.rows[0].cells[1]
     _clear_cell(right)
     p = right.paragraphs[0]
     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    p.paragraph_format.space_before = _pt(6)
+    p.paragraph_format.space_before = _pt(18)
     p.paragraph_format.space_after = _pt(2)
+    p.paragraph_format.keep_with_next = True
     _set_run_songti(p.add_run(str(heading_text or "试题")), 12, bold=True, font_name="黑体")
 
 
@@ -767,6 +795,97 @@ def _add_exam_student_line(document: Any) -> None:
     seal = document.add_paragraph()
     seal.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _set_run_songti(seal.add_run("-密----------------封----------------线------------------内------------------不--------------------要----------------------答------------------题----------------"), 9, bold=True)
+
+
+def _add_exam_seal_line_text_box(paragraph: Any) -> None:
+    """Insert the official first-page vertical seal line as a floating VML textbox."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsmap
+    from xml.sax.saxutils import escape
+
+    if "v" not in nsmap:
+        nsmap["v"] = "urn:schemas-microsoft-com:vml"
+    if "o" not in nsmap:
+        nsmap["o"] = "urn:schemas-microsoft-com:office:office"
+
+    underline_short = "_" * 14
+    underline_long = "_" * 20
+    spacer = "   "
+    student_line = (
+        f"姓名：{underline_short}{spacer}"
+        f"学号：{underline_short}{spacer}"
+        f"年级、专业、班级：{underline_long}{spacer}"
+        f"座位号：{underline_short}"
+    )
+    dash_unit = "- "
+    side = dash_unit * 8
+    gap = dash_unit * 5
+    seal_line = f"{side}{gap.join(list('密封线内不要答题'))}{side}"
+    guide_line = dash_unit * (8 * 2 + 5 * 7 + 8)
+    vml_style = (
+        "position:absolute; "
+        "mso-position-horizontal-relative:page; "
+        "mso-position-vertical-relative:page; "
+        "left:20pt; top:50pt; "
+        "width:60pt; height:700pt; "
+        "z-index:1"
+    )
+    vml_xml = f"""
+        <v:shape xmlns:v="urn:schemas-microsoft-com:vml"
+                 xmlns:o="urn:schemas-microsoft-com:office:office"
+                 id="ExamSealLineShape"
+                 style="{vml_style}"
+                 filled="f" stroked="f" coordsize="21600,21600">
+            <v:textbox style="layout-flow:vertical-ideographic; mso-layout-flow-alt:bottom-to-top" inset="0,0,0,0">
+                <w:txbxContent xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                    <w:p>
+                        <w:pPr>
+                            <w:spacing w:line="320" w:lineRule="exact"/>
+                            <w:jc w:val="center"/>
+                        </w:pPr>
+                        <w:r>
+                            <w:rPr>
+                                <w:rFonts w:ascii="SimHei" w:eastAsia="SimHei"/>
+                                <w:sz w:val="24"/>
+                            </w:rPr>
+                            <w:t xml:space="preserve">{escape(student_line)}</w:t>
+                        </w:r>
+                    </w:p>
+                    <w:p>
+                        <w:pPr>
+                            <w:spacing w:line="260" w:lineRule="exact" w:after="0"/>
+                            <w:jc w:val="center"/>
+                        </w:pPr>
+                        <w:r>
+                            <w:rPr>
+                                <w:rFonts w:ascii="SimHei" w:eastAsia="SimHei"/>
+                                <w:b/>
+                                <w:sz w:val="24"/>
+                            </w:rPr>
+                            <w:t xml:space="preserve">{escape(seal_line)}</w:t>
+                        </w:r>
+                    </w:p>
+                    <w:p>
+                        <w:pPr>
+                            <w:spacing w:line="260" w:lineRule="exact"/>
+                            <w:jc w:val="center"/>
+                        </w:pPr>
+                        <w:r>
+                            <w:rPr>
+                                <w:rFonts w:ascii="SimHei" w:eastAsia="SimHei"/>
+                                <w:b/>
+                                <w:sz w:val="24"/>
+                            </w:rPr>
+                            <w:t xml:space="preserve">{escape(guide_line)}</w:t>
+                        </w:r>
+                    </w:p>
+                </w:txbxContent>
+            </v:textbox>
+        </v:shape>
+    """
+    pict = parse_xml('<w:pict xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>')
+    pict.append(parse_xml(vml_xml))
+    paragraph.add_run()._element.append(pict)
 
 
 def _add_plan_notes(document: Any) -> None:
@@ -945,6 +1064,14 @@ def _assessment_mode_label(fields: dict[str, Any]) -> str:
 def _exam_flags_text(fields: dict[str, Any]) -> str:
     text = str(fields.get("exam_flags") or fields.get("exam_kind") or "期末考试").strip()
     return f"期末考试（ {'√' if '期末' in text else ' '} ）    补考（ {'√' if '补考' in text else ' '} ）    重新学习考试（ {'√' if '重新' in text else ' '} ）"
+
+
+def _exam_paper_type_text(fields: dict[str, Any]) -> str:
+    volume = _field(fields, "paper_volume", "paper_set", "exam_paper_volume") or "A卷"
+    volume_raw = volume.upper().replace(" ", "")
+    volume_selected = "B 卷" if "B" in volume_raw or "乙" in volume_raw else "A 卷"
+    paper_type = _field(fields, "paper_type") or "开卷"
+    return f"{_checked_pair('A 卷', 'B 卷', volume_selected)}\n{_checked_pair('开卷', '闭卷', paper_type)}"
 
 
 def _checked_pair(left: str, right: str, selected: str) -> str:
@@ -1159,6 +1286,33 @@ def _set_assessment_signature_cell(cell: Any, text: Any, image_path: str = "") -
             pass
 
 
+def _set_exam_signature_cell(cell: Any, text: Any, image_path: str = "") -> None:
+    """Render exam-paper signature cells: bold name followed by a compact signature image."""
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    cell.text = ""
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    paragraph = cell.paragraphs[0]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    paragraph.paragraph_format.space_before = _pt(0)
+    paragraph.paragraph_format.space_after = _pt(0)
+    name_text = _stringify(text).strip()
+    if name_text:
+        _set_run_songti(paragraph.add_run(name_text), 10, bold=True)
+    path = Path(image_path) if image_path else None
+    if path and path.is_file():
+        try:
+            from docx.shared import Cm
+
+            if name_text:
+                paragraph.add_run(" ")
+            paragraph.add_run().add_picture(str(path), height=Cm(0.55))
+        except Exception:
+            pass
+    _set_cell_margins(cell, top=40, bottom=40, left=70, right=70)
+
+
 def _set_cell_text(cell: Any, text: Any, *, bold: bool = False, align: int = 0, size: float = 10.5) -> None:
     from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -1177,6 +1331,21 @@ def _clear_cell(cell: Any) -> None:
     cell.text = ""
     if not cell.paragraphs:
         cell.add_paragraph()
+
+
+def _clear_paragraph(paragraph: Any) -> None:
+    p = paragraph._p
+    for child in list(p):
+        p.remove(child)
+
+
+def _set_row_cant_split(row: Any) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tr_pr = row._tr.get_or_add_trPr()
+    if tr_pr.find(qn("w:cantSplit")) is None:
+        tr_pr.append(OxmlElement("w:cantSplit"))
 
 
 def _set_cell_width(cell: Any, width_cm: float) -> None:
@@ -1231,6 +1400,36 @@ def _set_cell_borders(cell: Any, *, color: str = "000000", size: int = 8) -> Non
             element = OxmlElement(tag)
             borders.append(element)
         element.set(qn("w:val"), "nil" if int(size) <= 0 else "single")
+        element.set(qn("w:sz"), str(max(0, int(size))))
+        element.set(qn("w:space"), "0")
+        element.set(qn("w:color"), color)
+
+
+def _set_cell_specific_borders(
+    cell: Any,
+    *,
+    top: str = "single",
+    bottom: str = "single",
+    left: str = "single",
+    right: str = "single",
+    color: str = "000000",
+    size: int = 8,
+) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tc_pr = cell._tc.get_or_add_tcPr()
+    borders = tc_pr.first_child_found_in("w:tcBorders")
+    if borders is None:
+        borders = OxmlElement("w:tcBorders")
+        tc_pr.append(borders)
+    for edge, value in {"top": top, "bottom": bottom, "left": left, "right": right}.items():
+        tag = f"w:{edge}"
+        element = borders.find(qn(tag))
+        if element is None:
+            element = OxmlElement(tag)
+            borders.append(element)
+        element.set(qn("w:val"), value)
         element.set(qn("w:sz"), str(max(0, int(size))))
         element.set(qn("w:space"), "0")
         element.set(qn("w:color"), color)
@@ -1318,14 +1517,45 @@ def _exam_section_number_label(index: int) -> str:
     return _chinese_index(index) if int(index) <= 10 else str(index)
 
 
-def _add_exam_paper_footer(footer: Any) -> None:
-    paragraph = footer
-    paragraph.alignment = 1
-    _set_run_songti(paragraph.add_run("广西外国语学院课程考核试卷          第 "), 9, color="000000")
-    _add_docx_field(paragraph, "PAGE", size=9, color="000000")
-    _set_run_songti(paragraph.add_run(" 页 共 "), 9, color="000000")
-    _add_docx_field(paragraph, "NUMPAGES", size=9, color="000000")
-    _set_run_songti(paragraph.add_run(" 页考试过程中不得将试卷拆开"), 9, color="000000")
+def _add_exam_paper_footer(section: Any) -> None:
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    footer = section.footer
+    if footer.paragraphs:
+        _clear_paragraph(footer.paragraphs[0])
+    table = footer.add_table(rows=1, cols=3, width=_cm(16.0))
+    table.autofit = False
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    widths = [6.5, 3.0, 6.5]
+    for index, cell in enumerate(table.rows[0].cells):
+        _set_cell_width(cell, widths[index])
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        _set_cell_margins(cell, top=35, bottom=0, left=0, right=0)
+        _set_cell_specific_borders(
+            cell,
+            top="single" if index != 1 else "nil",
+            bottom="nil",
+            left="nil",
+            right="nil",
+            size=6,
+        )
+
+    left = table.cell(0, 0).paragraphs[0]
+    left.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    _set_run_songti(left.add_run("广西外国语学院课程考核试卷"), 9, color="000000")
+
+    middle = table.cell(0, 1).paragraphs[0]
+    middle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_run_songti(middle.add_run("第 "), 9, color="000000")
+    _add_docx_field(middle, "PAGE", size=9, color="000000")
+    _set_run_songti(middle.add_run(" 页 共 "), 9, color="000000")
+    _add_docx_field(middle, "NUMPAGES", size=9, color="000000")
+    _set_run_songti(middle.add_run(" 页"), 9, color="000000")
+
+    right = table.cell(0, 2).paragraphs[0]
+    right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    _set_run_songti(right.add_run("考试过程中不得将试卷拆开"), 9, color="000000")
 
 
 def _build_xlsx_export(payload: dict[str, Any], *, title: str) -> bytes:

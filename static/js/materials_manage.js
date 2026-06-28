@@ -181,7 +181,7 @@ const state = {
     },
 };
 
-const config = window.MATERIALS_MANAGE_CONFIG || { offerings: [], canAssign: false, materialAiImportRegistry: [] };
+const config = window.MATERIALS_MANAGE_CONFIG || { offerings: [], canAssign: false, materialAiImportRegistry: [], initialAiGenerate: {} };
 
 const refs = {
     listBody: document.getElementById('materials-list-body'),
@@ -300,6 +300,72 @@ const refs = {
 
 if (refs.detail && refs.detailModalBody && refs.detail.parentElement !== refs.detailModalBody) {
     refs.detailModalBody.appendChild(refs.detail);
+}
+
+function getInitialAiGeneratePreset() {
+    const params = new URLSearchParams(window.location.search);
+    const initial = config.initialAiGenerate && typeof config.initialAiGenerate === 'object'
+        ? config.initialAiGenerate
+        : {};
+    const openValue = String(params.get('open') || params.get('action') || '').trim();
+    const shouldOpen = Boolean(initial.open)
+        || openValue === 'ai-generate'
+        || openValue === 'generate'
+        || params.get('ai_generate') === '1';
+    const documentGroup = normalizeKeyword(
+        params.get('document_group')
+        || params.get('group')
+        || initial.document_group
+        || initial.group
+    );
+    const documentType = normalizeKeyword(
+        params.get('document_type')
+        || params.get('type')
+        || initial.document_type
+        || initial.type
+    );
+    if (!shouldOpen && !documentGroup && !documentType) {
+        return null;
+    }
+    return {
+        open: shouldOpen,
+        document_group: documentGroup,
+        document_type: documentType,
+        prompt: normalizeKeyword(params.get('prompt') || initial.prompt || ''),
+        status: normalizeKeyword(initial.status || ''),
+    };
+}
+
+function applyAiGeneratePreset(preset) {
+    if (!preset || !refs.aiGenerateGroup || !refs.aiGenerateType) return;
+    const desiredGroup = String(preset.document_group || preset.group || '').trim();
+    const desiredType = String(preset.document_type || preset.type || '').trim();
+    const groupOption = desiredGroup
+        ? Array.from(refs.aiGenerateGroup.options || []).find((option) => option.value === desiredGroup)
+        : null;
+    if (groupOption) {
+        refs.aiGenerateGroup.value = desiredGroup;
+    }
+    updateAiGenerateTypeOptions();
+    if (desiredType) {
+        const typeOption = Array.from(refs.aiGenerateType.options || []).find((option) => (
+            option.value === desiredType
+            && !option.disabled
+            && !option.hidden
+            && (option.dataset.group || 'teaching_material') === (refs.aiGenerateGroup.value || 'teaching_material')
+        ));
+        if (typeOption) {
+            refs.aiGenerateType.value = desiredType;
+            updateAiGeneratePromptPlaceholder();
+        }
+    }
+    const prompt = String(preset.prompt || '').trim();
+    if (prompt && refs.aiGeneratePrompt) {
+        refs.aiGeneratePrompt.value = prompt;
+    }
+    if (preset.status) {
+        setAiGenerateStatus(preset.status, 'info');
+    }
 }
 
 function getMetaText(item) {
@@ -1527,8 +1593,9 @@ function selectAiGenerateCandidate(kind, idValue) {
     renderAiGenerateModal();
 }
 
-function openAiGenerateModal() {
+function openAiGenerateModal(preset = null) {
     resetAiGenerateState();
+    applyAiGeneratePreset(preset);
     setAiGenerateBusy(false);
     renderAiGenerateModal();
     openModal('materials-ai-generate-modal');
@@ -2703,3 +2770,8 @@ loadLibrary(state.currentParentId, false).catch(async (error) => {
     console.error(error);
     refs.listBody.innerHTML = `<div class="materials-empty">加载材料失败：${escapeHtml(error.message || '未知错误')}</div>`;
 });
+
+const initialAiGeneratePreset = getInitialAiGeneratePreset();
+if (initialAiGeneratePreset?.open) {
+    window.setTimeout(() => openAiGenerateModal(initialAiGeneratePreset), 0);
+}

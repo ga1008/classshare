@@ -6,6 +6,11 @@ future AI agents and engineers who add similar "upload an existing school
 document, parse it into structured data, fill/generate data, then export a
 pixel-faithful Word/PDF document" features.
 
+For a fuller Chinese implementation guide that covers multiple document types,
+AI prompt boundaries, signature handling, preview/export parity, classroom and
+academic field mapping, and the required QA checklist, start with
+[`document-feature-ai-implementation-guide.md`](document-feature-ai-implementation-guide.md).
+
 ## Current Lesson-Plan Code Map
 
 - API routes: `classroom_app/routers/lesson_plans.py`

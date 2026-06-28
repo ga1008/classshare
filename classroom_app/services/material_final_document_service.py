@@ -118,9 +118,17 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "course_code": ("课程代码", "课程编号", "course_code"),
     "class_name": ("专业年级班级", "授课班级", "班级", "专业班级", "class_name"),
     "examiner_name": ("命题教师", "出题人", "命题人", "examiner_name"),
-    "reviewer_name": ("系（教研室）主任审核签字", "系（教研室）主任", "系主任", "审核人", "reviewer_name"),
+    "reviewer_name": ("系（教研室）主任审核签字", "系（教研室）主任", "系主任", "审核人", "主任审核", "reviewer_name"),
     "teacher_name": ("授课教师", "任课教师", "教师", "teacher_name"),
-    "leader_name": ("二级学院（部）主管教学领导", "主管教学领导", "审批人", "leader_name"),
+    "leader_name": (
+        "二级学院（部）主管教学领导",
+        "二级学院主管教学领导",
+        "主管教学领导",
+        "学院领导",
+        "院长",
+        "审批人",
+        "leader_name",
+    ),
     "academic_year": ("学年", "学年度", "academic_year"),
     "semester": ("学期", "semester"),
     "date": ("日期", "命题日期", "date"),
@@ -130,8 +138,10 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "assessment_mode_label": ("考核方式标注", "考核计划类型", "assessment_mode_label"),
     "examiner_signature": ("命题教师签名", "命题教师签字", "examiner_signature"),
     "reviewer_signature": ("系主任签名", "审核签名", "系（教研室）主任签名", "reviewer_signature"),
+    "leader_signature": ("主管教学领导签名", "学院领导签名", "院长签名", "leader_signature"),
     "academic_exam_method": ("教务考核方式", "教务考核类型", "academic_exam_method"),
     "academic_exam_mode": ("教务考试方式", "教务考试形式", "academic_exam_mode"),
+    "paper_volume": ("试卷卷别", "卷别", "A卷B卷", "A/B卷", "paper_volume", "paper_set"),
     "paper_type": ("试卷类型", "开闭卷", "paper_type"),
     "exam_flags": ("考试类别", "考试标记", "期末考试", "补考", "重新学习考试", "exam_flags", "exam_kind"),
     "education_level": ("学历层次", "education_level"),
@@ -143,6 +153,15 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "source_exam_paper_record_id": ("来源试卷记录", "试卷解析记录", "source_exam_paper_record_id"),
     "source_exam_paper_title": ("来源试卷", "关联试卷", "source_exam_paper_title"),
     "source_exam_paper_updated_at": ("来源试卷更新时间", "试卷更新时间", "source_exam_paper_updated_at"),
+}
+
+SIGNATURE_TEMPLATE_PATH_FIELDS = {
+    "examiner_signature_image_path",
+    "reviewer_signature_image_path",
+    "leader_signature_image_path",
+    "examiner_signature_path",
+    "reviewer_signature_path",
+    "leader_signature_path",
 }
 
 
@@ -552,6 +571,10 @@ def _normalize_grading_rubric_fields(fields: dict[str, Any]) -> dict[str, Any]:
         normalized["requires_teacher_confirmation"] = True
     normalized.setdefault("assessment_method", "机试" if mode_code == "non_written" else "闭卷笔试")
     normalized.setdefault("examiner_name", normalized.get("teacher_name") or "")
+    if not _stringify(normalized.get("reviewer_name")).strip():
+        normalized["reviewer_name"] = "【系主任未填写】"
+        normalized["reviewer_missing_notice"] = "请填写系主任姓名，并从签名库绑定或上传签名。"
+        normalized["requires_teacher_confirmation"] = True
     normalized.setdefault("date", datetime.now().strftime("%Y.%m.%d"))
     return normalized
 
@@ -581,10 +604,19 @@ def _normalize_exam_paper_fields(fields: dict[str, Any]) -> dict[str, Any]:
         normalized["requires_teacher_confirmation"] = True
     normalized.setdefault("assessment_method", "机试" if mode_code == "non_written" else "闭卷笔试")
     normalized.setdefault("education_level", "本科")
+    normalized.setdefault("paper_volume", "A卷")
     normalized.setdefault("paper_type", "开卷" if mode_code == "non_written" else "闭卷")
     normalized.setdefault("exam_flags", "期末考试")
     normalized.setdefault("exam_duration", "120" if mode_code == "non_written" else "90")
     normalized.setdefault("examiner_name", normalized.get("teacher_name") or "")
+    if not _stringify(normalized.get("reviewer_name")).strip():
+        normalized["reviewer_name"] = "【系主任未填写】"
+        normalized["reviewer_missing_notice"] = "请填写系主任姓名，并从签名库绑定或上传签名。"
+        normalized["requires_teacher_confirmation"] = True
+    if not _stringify(normalized.get("leader_name")).strip():
+        normalized["leader_name"] = "【主管教学领导未填写】"
+        normalized["leader_missing_notice"] = "请填写二级学院（部）主管教学领导姓名，并从签名库绑定或上传签名。"
+        normalized["requires_teacher_confirmation"] = True
     normalized.setdefault("date", datetime.now().strftime("%Y年%m月%d日"))
     return normalized
 
@@ -1148,33 +1180,141 @@ def _fields_from_text(content: str) -> dict[str, Any]:
         fields["paper_type"] = "开卷"
     elif re.search(r"闭\s*卷\s*[（(]\s*√", text):
         fields["paper_type"] = "闭卷"
+    if re.search(r"A\s*卷\s*[（(]\s*√", text, re.IGNORECASE):
+        fields["paper_volume"] = "A卷"
+    elif re.search(r"B\s*卷\s*[（(]\s*√", text, re.IGNORECASE):
+        fields["paper_volume"] = "B卷"
+    examiner_name = _extract_labeled_person_name(text, ("命题教师", "命题人", "出题人"))
+    if examiner_name:
+        fields["examiner_name"] = examiner_name
+        fields.setdefault("teacher_name", fields["examiner_name"])
+    reviewer_name = _extract_labeled_person_name(
+        text,
+        ("系（教研室）主任审核签字", "系（教研室）主任", "系主任", "主任审核签字"),
+    )
+    if reviewer_name:
+        fields["reviewer_name"] = reviewer_name
+    leader_name = _extract_labeled_person_name(
+        text,
+        ("二级学院（部）主管教学领导", "二级学院主管教学领导", "主管教学领导", "学院领导", "院长"),
+    )
+    if leader_name:
+        fields["leader_name"] = leader_name
     return fields
+
+
+def _extract_labeled_person_name(text: str, labels: tuple[str, ...]) -> str:
+    stop_labels = (
+        "课程名称",
+        "学历层次",
+        "考核类型",
+        "专业年级班级",
+        "考试时间",
+        "试卷类型",
+        "命题教师",
+        "命题人",
+        "出题人",
+        "系（教研室）主任审核签字",
+        "系（教研室）主任",
+        "系主任",
+        "主任审核签字",
+        "二级学院（部）主管教学领导",
+        "二级学院主管教学领导",
+        "主管教学领导",
+        "学院领导",
+        "院长",
+        "题号",
+        "满分",
+        "得分",
+        "评卷人",
+        "命题日期",
+    )
+    for label in sorted(labels, key=len, reverse=True):
+        start = text.find(label)
+        if start < 0:
+            continue
+        chunk = text[start + len(label): start + len(label) + 80]
+        stop_at = len(chunk)
+        for stop_label in stop_labels:
+            if stop_label in labels:
+                continue
+            index = chunk.find(stop_label)
+            if 0 <= index < stop_at:
+                stop_at = index
+        chunk = chunk[:stop_at]
+        chunk = re.sub(r"^[\s:：/\\]+", "", chunk)
+        chunk = re.sub(r"(?i)[a-z]:[\\/]\S+|\S+[\\/]\S+|\S+\.(?:png|jpg|jpeg|webp|gif)", " ", chunk)
+        candidates = re.findall(r"[\u4e00-\u9fff·]{2,8}", chunk)
+        for candidate in candidates:
+            name = _dedupe_ocr_person_name(candidate)
+            if 2 <= len(name) <= 8 and name not in {"审核签字", "主管教学", "教学领导"}:
+                return name
+    return ""
+
+
+def _dedupe_ocr_person_name(value: str) -> str:
+    text = re.sub(r"\s+", "", str(value or "")).strip("·")
+    if not text:
+        return ""
+    for width in range(2, (len(text) // 2) + 1):
+        if len(text) == width * 2 and text[:width] == text[width:]:
+            return text[:width]
+    return text
 
 
 def _fields_from_classroom_context(context: dict[str, Any]) -> dict[str, Any]:
     raw = _as_dict(context)
+    source_plan = _as_dict(raw.get("source_assessment_plan"))
+    source_plan_fields = _as_dict(source_plan.get("fields"))
+    source_exam = _as_dict(raw.get("source_exam_paper"))
+    source_exam_fields = _as_dict(source_exam.get("fields"))
+
+    def from_sources(key: str, *raw_keys: str) -> Any:
+        for raw_key in raw_keys or (key,):
+            value = raw.get(raw_key)
+            if not _is_blank(value):
+                return value
+        for source_fields in (source_plan_fields, source_exam_fields):
+            for raw_key in raw_keys or (key,):
+                value = source_fields.get(raw_key)
+                if not _is_blank(value):
+                    return value
+        return ""
+
     fields = {
-        "course_name": raw.get("course_name") or raw.get("course") or "",
-        "course_code": raw.get("course_code") or "",
-        "class_name": raw.get("class_name") or "",
-        "teacher_name": raw.get("teacher_name") or raw.get("teacher") or "",
-        "examiner_name": raw.get("teacher_name") or raw.get("teacher") or "",
-        "academic_year": raw.get("academic_year") or "",
-        "semester": raw.get("semester") or "",
-        "college": raw.get("college") or "",
-        "department": raw.get("department") or "",
-        "assessment_type": raw.get("assessment_type") or raw.get("academic_exam_method") or "",
-        "assessment_method": raw.get("assessment_method") or "",
-        "assessment_mode": raw.get("assessment_mode") or "",
-        "assessment_mode_label": raw.get("assessment_mode_label") or "",
-        "academic_exam_method": raw.get("academic_exam_method") or "",
-        "academic_exam_mode": raw.get("academic_exam_mode") or "",
-        "source_assessment_plan_record_id": _as_dict(raw.get("source_assessment_plan")).get("record_id") or "",
-        "source_assessment_plan_title": _as_dict(raw.get("source_assessment_plan")).get("title") or "",
-        "source_assessment_plan_updated_at": _as_dict(raw.get("source_assessment_plan")).get("updated_at") or "",
-        "source_exam_paper_record_id": _as_dict(raw.get("source_exam_paper")).get("record_id") or "",
-        "source_exam_paper_title": _as_dict(raw.get("source_exam_paper")).get("title") or "",
-        "source_exam_paper_updated_at": _as_dict(raw.get("source_exam_paper")).get("updated_at") or "",
+        "course_name": from_sources("course_name", "course_name", "course"),
+        "course_code": from_sources("course_code"),
+        "class_name": from_sources("class_name"),
+        "teacher_name": from_sources("teacher_name", "teacher_name", "teacher"),
+        "examiner_name": from_sources("examiner_name", "examiner_name", "teacher_name", "teacher"),
+        "reviewer_name": from_sources("reviewer_name"),
+        "leader_name": from_sources("leader_name"),
+        "academic_year": from_sources("academic_year"),
+        "semester": from_sources("semester"),
+        "date": from_sources("date"),
+        "college": from_sources("college"),
+        "department": from_sources("department"),
+        "assessment_type": from_sources("assessment_type", "assessment_type", "academic_exam_method"),
+        "assessment_method": from_sources("assessment_method"),
+        "assessment_mode": from_sources("assessment_mode"),
+        "assessment_mode_label": from_sources("assessment_mode_label"),
+        "academic_exam_method": from_sources("academic_exam_method"),
+        "academic_exam_mode": from_sources("academic_exam_mode"),
+        "paper_volume": from_sources("paper_volume"),
+        "paper_type": from_sources("paper_type"),
+        "exam_duration": from_sources("exam_duration"),
+        "exam_flags": from_sources("exam_flags"),
+        "education_level": from_sources("education_level"),
+        "total_score": from_sources("total_score"),
+        "examiner_signature_image_path": from_sources("examiner_signature_image_path", "examiner_signature_image_path", "examiner_signature_path"),
+        "reviewer_signature_image_path": from_sources("reviewer_signature_image_path", "reviewer_signature_image_path", "reviewer_signature_path"),
+        "leader_signature_image_path": from_sources("leader_signature_image_path", "leader_signature_image_path", "leader_signature_path"),
+        "source_assessment_plan_record_id": source_plan.get("record_id") or "",
+        "source_assessment_plan_title": source_plan.get("title") or "",
+        "source_assessment_plan_updated_at": source_plan.get("updated_at") or "",
+        "source_exam_paper_record_id": source_exam.get("record_id") or "",
+        "source_exam_paper_title": source_exam.get("title") or "",
+        "source_exam_paper_updated_at": source_exam.get("updated_at") or "",
     }
     return {key: value for key, value in fields.items() if not _is_blank(value)}
 
@@ -1184,7 +1324,8 @@ def _normalize_field_map(metadata: dict[str, Any]) -> dict[str, Any]:
     for key, value in metadata.items():
         if _is_blank(value):
             continue
-        canonical = _canonical_field_key(key) or str(key)
+        raw_key = str(key).strip()
+        canonical = raw_key if raw_key in SIGNATURE_TEMPLATE_PATH_FIELDS else (_canonical_field_key(key) or raw_key)
         fields[canonical] = _normalize_field_value(canonical, value)
     if "document_type" in fields:
         fields.pop("document_type", None)

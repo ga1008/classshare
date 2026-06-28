@@ -54,8 +54,8 @@
     <div class="manage-pagehead__intro">
         <div>
             <div class="academic-eyebrow">Material Library</div>
-            <h2>课程资料与 Git 教学仓库</h2>
-            <p class="manage-pagehead__lead">批量上传、目录浏览、模糊搜索与排序，保留课堂分配、AI 解析与仓库同步。</p>
+            <h2>{{ materials_page_heading | default('课程资料与 Git 教学仓库') }}</h2>
+            <p class="manage-pagehead__lead">{{ materials_page_lead | default('批量上传、目录浏览、模糊搜索与排序，保留课堂分配、AI 解析与仓库同步。') }}</p>
         </div>
     </div>
     <div hidden aria-hidden="true">
@@ -244,8 +244,8 @@
                         <span>材料类型</span>
                         <select id="materials-ai-generate-type" class="form-control">
                             <option value="teaching_document" data-group="teaching_material">教学文档</option>
-                            <option value="exam_paper" data-group="final_material">课程考核试卷</option>
                             <option value="assessment_plan" data-group="final_material">课程考核计划表</option>
+                            <option value="exam_paper" data-group="final_material">课程考核试卷</option>
                             <option value="grading_rubric" data-group="final_material">评分细则</option>
                         </select>
                     </label>
@@ -575,7 +575,8 @@
         offerings: {{ offerings | tojson }},
         canAssign: {{ 'true' if offerings else 'false' }},
         userIdentityHints: {{ [(user_info.name | default('', true)), (user_info.email | default('', true))] | tojson }},
-        materialAiImportRegistry: {{ material_ai_import_registry | tojson }}
+        materialAiImportRegistry: {{ material_ai_import_registry | tojson }},
+        initialAiGenerate: {{ initial_ai_generate | default({}) | tojson }}
     };
 </script>
 {% endblock %}

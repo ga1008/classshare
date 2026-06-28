@@ -94,9 +94,35 @@ def _rename_material_subtree(conn, material, new_name: str) -> None:
         )
 
 
-@router.get("/manage/teaching/materials", response_class=HTMLResponse)
-@router.get("/manage/materials", response_class=HTMLResponse)
-async def manage_materials_page(request: Request, user: dict = Depends(get_current_teacher)):
+def _build_material_type_registry() -> list[dict[str, Any]]:
+    type_registry = []
+    seen_labels = set()
+    for extension, meta in MATERIAL_TYPE_REGISTRY.items():
+        type_key = (meta["type_label"], meta["preview_type"])
+        if type_key in seen_labels:
+            continue
+        seen_labels.add(type_key)
+        type_registry.append(
+            {
+                "extension": extension,
+                "type_label": meta["type_label"],
+                "preview_type": meta["preview_type"],
+                "ai_capability": meta["ai_capability"],
+            }
+        )
+    return type_registry
+
+
+def _render_manage_materials_page(
+    request: Request,
+    user: dict,
+    *,
+    page_title: str = "课程材料",
+    active_page: str = "materials",
+    page_heading: str = "课程资料与 Git 教学仓库",
+    page_lead: str = "批量上传、目录浏览、模糊搜索与排序，保留课堂分配、AI 解析与仓库同步。",
+    initial_ai_generate: dict[str, Any] | None = None,
+):
     with get_db_connection() as conn:
         offerings = conn.execute(
             """
@@ -115,37 +141,48 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
         ).fetchall()
         stats = _get_teacher_material_stats(conn, user["id"])
 
-    type_registry = []
-    seen_labels = set()
-    for extension, meta in MATERIAL_TYPE_REGISTRY.items():
-        type_key = (meta["type_label"], meta["preview_type"])
-        if type_key in seen_labels:
-            continue
-        seen_labels.add(type_key)
-        type_registry.append(
-            {
-                "extension": extension,
-                "type_label": meta["type_label"],
-                "preview_type": meta["preview_type"],
-                "ai_capability": meta["ai_capability"],
-            }
-        )
-
     return templates.TemplateResponse(
         request,
         "manage/materials.html",
         _build_manage_template_context(
             request,
             user,
-            page_title="课程材料",
-            active_page="materials",
+            page_title=page_title,
+            active_page=active_page,
             extra={
                 "offerings": [dict(row) for row in offerings],
                 "material_stats": stats,
-                "type_registry": type_registry,
+                "type_registry": _build_material_type_registry(),
                 "material_ai_import_registry": get_material_ai_import_registry(),
+                "materials_page_heading": page_heading,
+                "materials_page_lead": page_lead,
+                "initial_ai_generate": initial_ai_generate or {},
             },
         ),
+    )
+
+
+@router.get("/manage/teaching/materials", response_class=HTMLResponse)
+@router.get("/manage/materials", response_class=HTMLResponse)
+async def manage_materials_page(request: Request, user: dict = Depends(get_current_teacher)):
+    return _render_manage_materials_page(request, user)
+
+
+@router.get("/manage/teaching/grading-rubrics", response_class=HTMLResponse)
+async def manage_grading_rubrics_page(request: Request, user: dict = Depends(get_current_teacher)):
+    return _render_manage_materials_page(
+        request,
+        user,
+        page_title="评分细则",
+        active_page="grading_rubrics",
+        page_heading="评分细则",
+        page_lead="关联具体试卷或题目附件，按试题顺序生成评分标准、扣分项、例外情况和截图/提交物要求。",
+        initial_ai_generate={
+            "open": True,
+            "document_group": "final_material",
+            "document_type": "grading_rubric",
+            "status": "请关联具体试卷或上传试卷题目后生成评分细则，系统会按试题逐项拆分给分点和扣分项。",
+        },
     )
 
 

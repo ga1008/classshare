@@ -187,6 +187,16 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/assessment-plans",),
     ),
     ManageNavItem(
+        key="grading_rubrics",
+        domain="teaching",
+        group="过程材料",
+        label="评分细则",
+        icon="clipboard-list",
+        href="/manage/teaching/grading-rubrics",
+        search_text="评分细则 评分标准 课程考核评分细则 过程材料 命题 归档 rubric",
+        ai_hint="评分细则：从材料库入口关联具体试卷或题目附件生成，逐题给出评分标准、扣分项、例外情况和截图/提交物要求，导出为官方模板 Word。",
+    ),
+    ManageNavItem(
         key="system_smart_classroom_integrations",
         domain="teaching",
         group="课堂工具",

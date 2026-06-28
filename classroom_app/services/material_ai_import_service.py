@@ -893,8 +893,8 @@ def _schema_hint(type_meta: dict[str, Any]) -> str:
         "teaching_document": "教学文档应抽取：标题、适用课程、章节/主题、知识点、操作步骤、课堂任务、附件或图片说明。",
         "syllabus": "教学大纲应抽取：课程基本信息、课程性质、目标、内容模块、学时分配、教学方法、考核方式、教材与参考资料。",
         "assessment_plan": "考核计划表应抽取：school, academic_year, semester, course_name, class_name, assessment_type(考查/考试), assessment_mode(non_written/written), assessment_mode_label(非笔试考核/笔试考核), assessment_method, assessment_items(assessment_form/content/score), total_score, examiner_name, examiner_signature, reviewer_name, reviewer_signature, date, notes；表后注释必须原样保留。",
-        "grading_rubric": "评分细则应抽取：school, academic_year, semester, course_name, class_name, assessment_type(考查/考试), assessment_mode(non_written/written), assessment_mode_label(非笔试考核/笔试考核), assessment_method, examiner_name, examiner_signature, reviewer_name, reviewer_signature, date, source_exam_paper_title, rubric_items(title/score/criteria), deduction_points, screenshot_requirements, total_score, notes；正文不能丢失扣分原则、例外情况、截图/提交物要求，表后注释必须原样保留。",
-        "exam_paper": "考核试卷应抽取：school, academic_year, semester, course_name, class_name, exam_flags(期末考试/补考/重新学习考试), education_level(本科/专科), assessment_type(考查/考试), assessment_mode(non_written/written), assessment_mode_label, assessment_method, paper_type(开卷/闭卷), exam_duration, examiner_name, reviewer_name, leader_name, source_assessment_plan_title, score_table, paper_sections(title/score/content/tasks/screenshot_requirements/submission_requirements/command_blocks), student_fields, total_score；题干、任务步骤、代码块、截图/提交要求不能缺漏。",
+        "grading_rubric": "评分细则应抽取：school, academic_year, semester, course_name, class_name, assessment_type(考查/考试), assessment_mode(non_written/written), assessment_mode_label(非笔试考核/笔试考核), assessment_method, examiner_name, examiner_signature, reviewer_name, reviewer_signature, date, source_exam_paper_title, rubric_items(title/score/criteria), deduction_points, screenshot_requirements, total_score, notes；正文不能丢失扣分原则、例外情况、截图/提交物要求，表后注释必须原样保留；签名图片或文件路径不得写进 examiner_name/reviewer_name。",
+        "exam_paper": "考核试卷应抽取：school, academic_year, semester, course_name, class_name, exam_flags(期末考试/补考/重新学习考试), education_level(本科/专科), assessment_type(考查/考试), assessment_mode(non_written/written), assessment_mode_label, assessment_method, paper_volume(A卷/B卷), paper_type(开卷/闭卷), exam_duration, examiner_name, reviewer_name, leader_name, examiner_signature, reviewer_signature, leader_signature, source_assessment_plan_title, score_table, paper_sections(title/score/content/tasks/screenshot_requirements/submission_requirements/command_blocks), student_fields, total_score；题干、任务步骤、代码块、截图/提交要求不能缺漏；签名图片或文件路径不得写进 examiner_name/reviewer_name/leader_name。",
         "final_teaching_summary": "教学工作总结应抽取：课程/班级/教师/日期、教学任务完成情况、考核与成绩分析、问题、改进建议。",
     }.get(key, "")
     final_schema = ""
@@ -920,6 +920,7 @@ def _schema_hint(type_meta: dict[str, Any]) -> str:
             final_schema += (
                 " 课程考核试卷不是自由文档，必须按广西外国语学院课程考核试卷模板填字段；"
                 "paper_sections 要尽量按试卷大题拆分并保留每题分值、题干、任务步骤、代码块、截图要求和最终提交要求；"
+                "命题教师、系主任、主管教学领导的姓名字段只放姓名，手写签名、图片路径或 OCR 重复姓名必须单独作为签名线索处理；"
                 "如果来源材料没有考核计划表或分值分配，保留题干并在 warnings 中提示教师补充或确认考核计划。"
             )
     return f"{common}{specific}{final_schema}"

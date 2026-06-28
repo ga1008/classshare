@@ -1,4 +1,8 @@
+import base64
+import tempfile
 import unittest
+import zipfile
+from pathlib import Path
 
 from classroom_app.services.material_export_template_service import build_material_export_artifact
 from classroom_app.services.material_final_document_service import (
@@ -76,6 +80,8 @@ class FinalMaterialGradingRubricTests(unittest.TestCase):
         structured = payload["structured"]
         self.assertEqual(payload["template_key"], "grading_rubric")
         self.assertEqual(payload["fields"]["date"], "2025.10.13")
+        self.assertEqual(payload["fields"]["reviewer_name"], "【系主任未填写】")
+        self.assertTrue(payload["fields"]["requires_teacher_confirmation"])
         self.assertEqual(structured["total_score"], 10.0)
         self.assertTrue(structured["requires_exam_paper_confirmation"])
         self.assertIn("若权限设置错误，扣 3 分。", structured["deduction_points"])
@@ -112,6 +118,62 @@ class FinalMaterialGradingRubricTests(unittest.TestCase):
         self.assertEqual(artifact.media_type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         self.assertTrue(artifact.filename.endswith(".docx"))
         self.assertGreater(len(artifact.content), 25000)
+
+    def test_grading_rubric_export_formats_date_and_hides_signature_paths(self):
+        png_bytes = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            signature_path = Path(tmpdir) / "examiner-signature.png"
+            signature_path.write_bytes(png_bytes)
+            payload = normalize_final_material_payload(
+                document_type="grading_rubric",
+                metadata={
+                    "course_name": "服务器配置与管理",
+                    "class_name": "软工2406班（专升本）",
+                    "teacher_name": "张海林",
+                    "examiner_name": "张海林",
+                    "reviewer_name": "阮小琴",
+                    "academic_year": "2025-2026",
+                    "semester": "第一学期",
+                    "assessment_type": "考试",
+                    "assessment_mode": "non_written",
+                    "date": "2025.10.13",
+                    "examiner_signature": "/app/data/media/signatures/raw-path.png",
+                    "reviewer_signature": "C:/data/signatures/reviewer.png",
+                    "examiner_signature_image_path": str(signature_path),
+                    "reviewer_signature_image_path": str(signature_path),
+                    "source_exam_paper_record_id": "9",
+                    "source_exam_paper_title": "服务器配置与管理课程考核试卷",
+                },
+                content_markdown=(
+                    "## 评分细则\n"
+                    "机试扣分项与给分原则\n"
+                    "【50分】Web 服务配置正确，对应截图 20.png。\n"
+                    "【50分】数据库服务配置正确，对应截图 30.png。"
+                ),
+                tables=[],
+                export_payload={},
+            )
+
+            artifact = build_material_export_artifact(
+                payload,
+                fallback_filename="grading-rubric-signature",
+                requested_format="docx",
+            )
+            docx_path = Path(tmpdir) / artifact.filename
+            docx_path.write_bytes(artifact.content)
+            with zipfile.ZipFile(docx_path) as package:
+                document_xml = package.read("word/document.xml").decode("utf-8")
+                media_entries = [name for name in package.namelist() if name.startswith("word/media/")]
+
+        self.assertIn("2025 年 10 月 13 日", document_xml)
+        self.assertIn("张海林", document_xml)
+        self.assertIn("阮小琴", document_xml)
+        self.assertNotIn("/app/data/media/signatures/raw-path.png", document_xml)
+        self.assertNotIn("C:/data/signatures/reviewer.png", document_xml)
+        self.assertNotIn(str(signature_path), document_xml)
+        self.assertGreaterEqual(len(media_entries), 1)
 
 
 if __name__ == "__main__":

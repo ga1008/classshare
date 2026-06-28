@@ -31,6 +31,12 @@ class ManageNavServiceTests(unittest.TestCase):
                     self.assertTrue(legacy_href.startswith("/manage"))
                     self.assertNotEqual(legacy_href, item.href)
 
+    def test_grading_rubric_entry_sits_under_assessment_plan(self):
+        process_items = [item.key for item in MANAGE_NAV_ITEMS if item.group == "过程材料"]
+        self.assertIn("assessment_plans", process_items)
+        self.assertIn("grading_rubrics", process_items)
+        self.assertLess(process_items.index("assessment_plans"), process_items.index("grading_rubrics"))
+
     def test_manage_nav_filters_admin_items_and_marks_active_domain(self):
         teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "classrooms", is_super_admin=False)
         self.assertEqual("academic", teacher_nav["active_domain"])
