@@ -194,10 +194,10 @@ def api_personal_avatar_get(user: dict = Depends(get_current_user)):
         conn.commit()
     file_hash = str(info.get("avatar_file_hash") or "")
     if not file_hash:
-        raise HTTPException(404, "未设置头像")
+        return RedirectResponse("/api/profile/avatar", status_code=302)
     path = resolve_global_file_path(file_hash)
     if not path:
-        raise HTTPException(404, "头像文件丢失")
+        return RedirectResponse("/api/profile/avatar", status_code=302)
     return FileResponse(str(path), media_type=str(info.get("avatar_mime_type") or "image/png"))
 
 

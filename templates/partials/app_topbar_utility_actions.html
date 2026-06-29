@@ -75,6 +75,14 @@
             <span><strong>个人中心</strong><small>资料、通知与设置</small></span>
         </a>
         {% if user_info.role == 'student' %}
+        <a href="/career-path" class="app-topbar-menu__item" title="职业路径" aria-label="打开职业路径" role="menuitem">
+            {{ app_topbar_icon('map') }}
+            <span><strong>职业路径</strong><small>推荐方向与准备清单</small></span>
+        </a>
+        <a href="/resume" class="app-topbar-menu__item" title="个人简历" aria-label="打开个人简历" role="menuitem">
+            {{ app_topbar_icon('file-plus') }}
+            <span><strong>个人简历</strong><small>资料优化与简历生成</small></span>
+        </a>
         <button type="button" class="app-topbar-menu__item" data-open-student-security title="账号安全" aria-label="修改密码" role="menuitem">
             {{ app_topbar_icon('shield') }}
             <span><strong>账号安全</strong><small>修改登录密码</small></span>

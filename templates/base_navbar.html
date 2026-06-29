@@ -29,6 +29,31 @@
         color: var(--text-primary);
         text-align: right;
     }
+
+    @media (max-width: 768px) {
+        .app-topbar,
+        .app-topbar-nav,
+        .app-topbar-actions,
+        .app-topbar-menu {
+            overflow: visible;
+        }
+
+        .app-topbar.app-topbar--menu-open {
+            z-index: 5000;
+        }
+
+        .app-topbar-menu__panel--floating {
+            position: fixed;
+            top: 12.6rem;
+            right: 1rem;
+            left: 1rem;
+            width: auto;
+            max-height: min(27rem, calc(100vh - 13.8rem));
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            z-index: 5001;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -125,10 +150,60 @@
         if (!topbarMenus.length) {
             return;
         }
+        const topbar = document.querySelector('.app-topbar');
+        const mobileMenuQuery = window.matchMedia('(max-width: 768px)');
+        const floatingPanels = new Map();
+
+        const getDirectPanel = (menu) => Array.from(menu.children).find((child) => (
+            child.classList?.contains('app-topbar-menu__panel')
+        ));
+
+        const restoreFloatingPanel = (menu) => {
+            const state = floatingPanels.get(menu);
+            if (!state) {
+                return;
+            }
+            state.panel.classList.remove('app-topbar-menu__panel--floating');
+            state.panel.removeAttribute('data-floating-menu-panel');
+            state.placeholder.replaceWith(state.panel);
+            floatingPanels.delete(menu);
+        };
+
+        const floatPanel = (menu) => {
+            if (!mobileMenuQuery.matches || !menu.open || floatingPanels.has(menu)) {
+                return;
+            }
+            const panel = getDirectPanel(menu);
+            if (!panel) {
+                return;
+            }
+            const placeholder = document.createComment('app-topbar-menu-panel');
+            panel.before(placeholder);
+            panel.classList.add('app-topbar-menu__panel--floating');
+            panel.setAttribute('data-floating-menu-panel', '');
+            document.body.appendChild(panel);
+            floatingPanels.set(menu, { panel, placeholder });
+        };
+
+        const syncFloatingPanels = () => {
+            topbarMenus.forEach((menu) => {
+                if (menu.open && mobileMenuQuery.matches) {
+                    floatPanel(menu);
+                } else {
+                    restoreFloatingPanel(menu);
+                }
+            });
+        };
+
+        const syncTopbarMenuLayer = () => {
+            syncFloatingPanels();
+            topbar?.classList.toggle('app-topbar--menu-open', topbarMenus.some((menu) => menu.open));
+        };
 
         topbarMenus.forEach((menu) => {
             menu.addEventListener('toggle', () => {
                 if (!menu.open) {
+                    syncTopbarMenuLayer();
                     return;
                 }
                 topbarMenus.forEach((otherMenu) => {
@@ -136,16 +211,18 @@
                         otherMenu.open = false;
                     }
                 });
+                syncTopbarMenuLayer();
             });
         });
 
         document.addEventListener('click', (event) => {
-            if (event.target.closest('.app-topbar-menu')) {
+            if (event.target.closest('.app-topbar-menu') || event.target.closest('[data-floating-menu-panel]')) {
                 return;
             }
             topbarMenus.forEach((menu) => {
                 menu.open = false;
             });
+            syncTopbarMenuLayer();
         });
 
         document.addEventListener('keydown', (event) => {
@@ -155,7 +232,10 @@
             topbarMenus.forEach((menu) => {
                 menu.open = false;
             });
+            syncTopbarMenuLayer();
         });
+
+        mobileMenuQuery.addEventListener?.('change', syncTopbarMenuLayer);
     })();
 </script>
 {% if user_info.role == 'student' %}
