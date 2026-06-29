@@ -17,6 +17,28 @@
 .rz-body { margin: 0; background: var(--rz-bg); color: var(--rz-text);
   font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; }
 .rz-layout { display: flex; min-height: 100vh; }
+.rz-nav, .rz-modal__body, .rz-builder__aside, .rz-preview-shell {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.42) transparent;
+  scrollbar-gutter: stable;
+}
+.rz-nav::-webkit-scrollbar,
+.rz-modal__body::-webkit-scrollbar,
+.rz-builder__aside::-webkit-scrollbar,
+.rz-preview-shell::-webkit-scrollbar { width: 8px; height: 8px; }
+.rz-nav::-webkit-scrollbar-thumb,
+.rz-modal__body::-webkit-scrollbar-thumb,
+.rz-builder__aside::-webkit-scrollbar-thumb,
+.rz-preview-shell::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.38);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.rz-nav::-webkit-scrollbar-thumb:hover,
+.rz-modal__body::-webkit-scrollbar-thumb:hover,
+.rz-builder__aside::-webkit-scrollbar-thumb:hover,
+.rz-preview-shell::-webkit-scrollbar-thumb:hover { background-color: rgba(100, 116, 139, 0.55); }
 
 /* Sidebar */
 .rz-sidebar {
@@ -121,6 +143,52 @@
 .rz-textarea { min-height: 96px; resize: vertical; line-height: 1.6; }
 .rz-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 16px; }
 .rz-form-grid .rz-field--full { grid-column: 1 / -1; }
+
+/* Friendly month picker */
+.rz-month-field, .rz-month-range { position: relative; width: 100%; }
+.rz-month-trigger { width: 100%; min-height: 42px; border: 1px solid var(--rz-border); border-radius: 10px;
+  background: #fff; color: var(--rz-text); display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 9px 11px 9px 12px; cursor: pointer; text-align: left; transition: all .16s ease;
+  font-family: inherit; font-size: .9rem; }
+.rz-month-trigger:hover { border-color: rgba(79,70,229,.38); background: #fbfbff; }
+.rz-month-field.is-open .rz-month-trigger,
+.rz-month-range.is-open .rz-month-trigger,
+.rz-month-trigger:focus-visible { outline: none; border-color: var(--rz-accent); box-shadow: 0 0 0 3px var(--rz-accent-soft); }
+.rz-month-trigger__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rz-month-trigger__label.is-placeholder { color: var(--rz-muted); }
+.rz-month-trigger__icon { flex: 0 0 auto; color: var(--rz-muted); display: inline-flex; align-items: center; justify-content: center; }
+.rz-month-panel { margin-top: 9px; padding: 12px; border: 1px solid rgba(79,70,229,.18); border-radius: 14px;
+  background: #fff; box-shadow: 0 18px 44px -28px rgba(15,23,42,.55); }
+.rz-month-field.is-open { z-index: 45; }
+.rz-month-field .rz-month-panel { position: absolute; left: 0; top: calc(100% + 9px); width: 100%; margin-top: 0;
+  z-index: 46; }
+.rz-month-panel[hidden] { display: none; }
+.rz-month-panel__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.rz-month-panel__head strong { font-size: .94rem; font-weight: 800; }
+.rz-month-panel__head button { width: 32px; height: 32px; border: 1px solid var(--rz-border); border-radius: 9px;
+  background: #f8fafc; color: var(--rz-text); cursor: pointer; font-weight: 900; }
+.rz-month-panel__head button:hover { border-color: var(--rz-accent); color: var(--rz-accent); background: var(--rz-accent-soft); }
+.rz-month-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.rz-month-option { min-width: 0; min-height: 36px; border: 1px solid var(--rz-border); border-radius: 10px; background: #fff;
+  color: #334155; cursor: pointer; font-weight: 700; transition: all .14s ease; }
+.rz-month-option:hover, .rz-month-option:focus-visible { outline: none; border-color: var(--rz-accent); color: var(--rz-accent);
+  background: var(--rz-accent-soft); }
+.rz-month-option.is-current { border-style: dashed; border-color: rgba(79,70,229,.5); }
+.rz-month-option.is-selected, .rz-month-option.is-start, .rz-month-option.is-end { background: var(--rz-accent);
+  border-color: var(--rz-accent); color: #fff; box-shadow: 0 10px 24px -16px rgba(79,70,229,.75); }
+.rz-month-option.is-range:not(.is-start):not(.is-end) { background: rgba(79,70,229,.11); color: var(--rz-accent-dark);
+  border-color: rgba(79,70,229,.18); }
+.rz-month-range__roles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; border-radius: 12px;
+  background: #f3f4f9; margin-bottom: 10px; }
+.rz-month-range__roles button { border: none; border-radius: 9px; padding: 7px 8px; background: transparent;
+  color: var(--rz-muted); cursor: pointer; font-weight: 800; }
+.rz-month-range__roles button.is-active { background: #fff; color: var(--rz-accent); box-shadow: 0 8px 22px -18px rgba(15,23,42,.5); }
+.rz-month-panel__result { margin-top: 10px; border-radius: 10px; background: #f8fafc; color: var(--rz-muted);
+  padding: 8px 10px; font-size: .8rem; line-height: 1.5; }
+.rz-month-panel__actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.rz-month-panel__actions button { border: none; background: transparent; color: var(--rz-accent); cursor: pointer;
+  padding: 6px 8px; border-radius: 8px; font-weight: 800; }
+.rz-month-panel__actions button:hover { background: var(--rz-accent-soft); }
 
 /* Modal */
 .rz-modal { position: fixed; inset: 0; background: rgba(15,23,42,.5); backdrop-filter: blur(2px);
@@ -228,6 +296,9 @@
   .rz-tpl { min-width: 0; }
   .rz-chip { width: 100%; margin-right: 0; }
   .rz-chip__label { white-space: normal; }
+  .rz-month-field .rz-month-panel { position: static; width: 100%; margin-top: 9px; }
+  .rz-month-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rz-month-trigger__label { white-space: normal; }
   .rz-builder__aside { position: fixed; left: 12px; right: 12px; bottom: 12px; top: auto; z-index: 1002;
     max-height: min(72vh, 560px); transform: translateY(calc(100% + 28px)); opacity: 0; pointer-events: none;
     transition: transform .22s ease, opacity .18s ease; box-shadow: 0 24px 70px -24px rgba(15,23,42,.62); }

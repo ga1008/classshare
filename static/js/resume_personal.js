@@ -27,7 +27,7 @@
       input = '<select class="rz-select" name="' + def.key + '"><option value="">请选择</option>' +
         def.options.map(function (o) { return '<option value="' + o + '">' + o + '</option>'; }).join('') + '</select>';
     } else if (def.type === 'month') {
-      input = '<input class="rz-input" type="month" name="' + def.key + '">';
+      input = RZ.monthPickerHtml(def.key, '', { placeholder: '请选择生日年月' });
     } else {
       input = '<input class="rz-input" type="' + (def.type === 'email' ? 'email' : 'text') + '" name="' + def.key + '">';
     }
@@ -40,6 +40,7 @@
       var el = document.querySelector('[name="' + def.key + '"]');
       if (el) el.value = info[def.key] || '';
     });
+    RZ.syncMonthPickers(document.getElementById('rzFields'));
   }
 
   function collect() {
@@ -52,7 +53,9 @@
   }
 
   async function load() {
-    document.getElementById('rzFields').innerHTML = FIELD_DEFS.map(fieldHtml).join('');
+    var fields = document.getElementById('rzFields');
+    fields.innerHTML = FIELD_DEFS.map(fieldHtml).join('');
+    RZ.initMonthPickers(fields);
     try {
       var data = await RZ.api('/api/resume/personal');
       fill(data.info || {});

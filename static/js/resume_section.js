@@ -85,8 +85,8 @@
       var k = item.kind === 'competition' ? '比赛' : '项目';
       return [k, RZ.fmtRange(item.start_date, item.end_date)].filter(Boolean).join(' · ');
     }
-    if (SECTION === 'skill') return [item.level, item.acquired_date, item.expiry_date ? '有效期 ' + item.expiry_date : ''].filter(Boolean).join(' · ');
-    if (SECTION === 'certificate') return [item.acquired_date, item.expiry_date ? '有效期 ' + item.expiry_date : ''].filter(Boolean).join(' · ');
+    if (SECTION === 'skill') return [item.level, RZ.formatMonthLabel(item.acquired_date), item.expiry_date ? '有效期 ' + RZ.formatMonthLabel(item.expiry_date) : ''].filter(Boolean).join(' · ');
+    if (SECTION === 'certificate') return [RZ.formatMonthLabel(item.acquired_date), item.expiry_date ? '有效期 ' + RZ.formatMonthLabel(item.expiry_date) : ''].filter(Boolean).join(' · ');
     if (SECTION === 'self_intro') return (item.content_md || '').slice(0, 60);
     return '';
   }
@@ -173,6 +173,7 @@
         var opt = (f.options || []).filter(function (o) { return o[0] === v; })[0];
         v = opt ? opt[1] : v;
       }
+      if (f.type === 'month') v = RZ.formatMonthLabel(v) || v;
       if (!v) return '';
       return '<div style="margin-bottom:8px"><div style="color:#999;font-size:.78rem">' + RZ.esc(f.label) +
         '</div><div style="white-space:pre-wrap">' + RZ.esc(v) + '</div></div>';
@@ -197,11 +198,30 @@
     } else if (f.type === 'textarea') {
       input = '<textarea class="rz-textarea" name="' + f.key + '">' + RZ.esc(val) + '</textarea>';
     } else if (f.type === 'month') {
-      input = '<input class="rz-input" type="month" name="' + f.key + '" value="' + RZ.esc(val) + '">';
+      input = RZ.monthPickerHtml(f.key, val, { placeholder: f.required ? '请选择年月' : '可选年月' });
     } else {
       input = '<input class="rz-input" type="text" name="' + f.key + '" value="' + RZ.esc(val) + '">';
     }
     return '<div class="rz-field' + (f.full ? ' rz-field--full' : '') + '"><label>' + RZ.esc(f.label) + req + '</label>' + input + '</div>';
+  }
+
+  function formFieldsHtml(item) {
+    var hasRange = CFG.fields.some(function (f) { return f.key === 'start_date'; }) &&
+      CFG.fields.some(function (f) { return f.key === 'end_date'; });
+    var html = [];
+    CFG.fields.forEach(function (f) {
+      if (hasRange && f.key === 'end_date') return;
+      if (hasRange && f.key === 'start_date') {
+        html.push('<div class="rz-field rz-field--full"><label>起止时间<span class="req">*</span></label>' +
+          RZ.monthRangePickerHtml('start_date', 'end_date', {
+            start: item.start_date,
+            end: item.end_date
+          }, { placeholder: '请选择开始和结束年月' }) + '</div>');
+        return;
+      }
+      html.push(fieldHtml(f, item[f.key]));
+    });
+    return html.join('');
   }
 
   function openStandardForm(item) {
@@ -209,9 +229,10 @@
     var isEdit = !!item.id;
     var m = RZ.openModal({ title: (isEdit ? '编辑' : '新建') + CFG.label, wide: true });
     m.body.innerHTML = '<div class="rz-form-grid">' +
-      CFG.fields.map(function (f) { return fieldHtml(f, item[f.key]); }).join('') + '</div>' +
+      formFieldsHtml(item) + '</div>' +
       (CFG.attach ? '<div class="rz-field rz-field--full"><label>图片附件（≤5 张，每张 ≤5MB）</label>' +
         '<div class="rz-attach" id="rzAttachBox"></div></div>' : '');
+    RZ.initMonthPickers(m.body);
     if (CFG.attach) buildAttachUI(m.body.querySelector('#rzAttachBox'), item);
 
     var cancel = btn('取消', 'rz-btn'); cancel.onclick = m.close;
