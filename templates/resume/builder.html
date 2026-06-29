@@ -25,8 +25,13 @@
     </div>
 
     <div class="rz-builder__aside">
-        <div style="font-weight:800;margin-bottom:6px">可选内容</div>
-        <div style="color:var(--rz-muted);font-size:.78rem;margin-bottom:10px">拖动或点击卡片加入左侧区域</div>
+        <div class="rz-palette-head">
+            <div>
+                <div class="rz-palette-head__title">可选内容</div>
+                <div class="rz-palette-head__sub">拖动或点击卡片加入左侧区域</div>
+            </div>
+            <button type="button" class="rz-palette-head__close" id="rzPaletteClose">收起</button>
+        </div>
         <div id="rzPalette"></div>
     </div>
 </div>
@@ -34,5 +39,5 @@
 
 {% block page_script %}
 <script src="/static/js/resume_common.js?v=20260629b"></script>
-<script src="/static/js/resume_builder.js?v=20260629b"></script>
+<script src="/static/js/resume_builder.js?v=20260629f"></script>
 {% endblock %}

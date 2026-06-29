@@ -50,7 +50,33 @@
   function openPreview(r) {
     var m = RZ.openModal({ title: r.title + ' · 预览', wide: true });
     m.body.classList.add('rz-modal__body--preview');
-    m.body.innerHTML = '<div class="rz-preview-shell"><iframe class="rz-preview-frame" src="/api/resume/resumes/' + r.id + '/preview"></iframe></div>';
+    m.body.innerHTML = '<div class="rz-preview-tools" aria-label="预览尺寸">' +
+      '<button type="button" class="rz-btn rz-btn--sm" data-preview-mode="fit">适应宽度</button>' +
+      '<button type="button" class="rz-btn rz-btn--sm" data-preview-mode="original">原始尺寸</button></div>' +
+      '<div class="rz-preview-shell"><iframe class="rz-preview-frame" src="/api/resume/resumes/' + r.id + '/preview"></iframe></div>';
+    var shell = m.body.querySelector('.rz-preview-shell');
+    var frame = m.body.querySelector('.rz-preview-frame');
+    var modeBtns = m.body.querySelectorAll('[data-preview-mode]');
+    var mode = window.matchMedia && window.matchMedia('(max-width: 768px)').matches ? 'fit' : 'original';
+    function applyPreviewMode(nextMode) {
+      mode = nextMode || mode;
+      modeBtns.forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.previewMode === mode);
+      });
+      if (mode === 'fit') {
+        var scale = Math.min(1, Math.max(0.32, (shell.clientWidth || 820) / 820));
+        shell.style.setProperty('--rz-preview-scale', scale.toFixed(3));
+        shell.classList.add('is-fit');
+      } else {
+        shell.style.setProperty('--rz-preview-scale', '1');
+        shell.classList.remove('is-fit');
+      }
+    }
+    modeBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () { applyPreviewMode(btn.dataset.previewMode); });
+    });
+    frame.addEventListener('load', function () { setTimeout(function () { applyPreviewMode(mode); }, 60); });
+    setTimeout(function () { applyPreviewMode(mode); }, 60);
     var pdf = document.createElement('a'); pdf.className = 'rz-btn'; pdf.textContent = '下载 PDF';
     pdf.href = '/api/resume/resumes/' + r.id + '/export?fmt=pdf'; pdf.target = '_blank';
     var word = document.createElement('a'); word.className = 'rz-btn'; word.textContent = '下载 Word';

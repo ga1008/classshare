@@ -259,7 +259,7 @@
       var total = (item.attachments || []).length + staged.length;
       var add = total < 5 ? '<label class="rz-attach__add">+<input type="file" accept="image/*" hidden id="rzAddImg"></label>' : '';
       container.innerHTML = existing + stagedHtml + add +
-        '<div class="rz-attach__hint">支持 PNG/JPG/GIF/WebP，单张 ≤5MB，最多 5 张</div>';
+        '<div class="rz-attach__hint">已用 ' + total + '/5 张；支持 PNG/JPG/GIF/WebP，单张 ≤5MB</div>';
       var input = container.querySelector('#rzAddImg');
       if (input) input.addEventListener('change', function () {
         if (!this.files || !this.files[0]) return;

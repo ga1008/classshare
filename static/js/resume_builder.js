@@ -18,6 +18,14 @@
     self_intro: [], education: [], experience: [], skill: [], cert: [],
     tech_stack: true
   };
+  var mobilePalette = {
+    button: null,
+    scrim: null,
+    aside: null,
+    close: null,
+    bodyOverflow: '',
+    htmlOverflow: ''
+  };
 
   var ZONES = [
     { key: 'personal', label: '个人信息' },
@@ -188,6 +196,66 @@
     });
   }
 
+  function closePaletteSheet() {
+    if (!mobilePalette.aside) return;
+    mobilePalette.aside.classList.remove('open');
+    if (mobilePalette.scrim) mobilePalette.scrim.classList.remove('show');
+    if (mobilePalette.button) mobilePalette.button.setAttribute('aria-expanded', 'false');
+    document.body.style.overflow = mobilePalette.bodyOverflow || '';
+    document.documentElement.style.overflow = mobilePalette.htmlOverflow || '';
+  }
+
+  function openPaletteSheet() {
+    if (!mobilePalette.aside) return;
+    mobilePalette.bodyOverflow = document.body.style.overflow;
+    mobilePalette.htmlOverflow = document.documentElement.style.overflow;
+    mobilePalette.aside.classList.add('open');
+    if (mobilePalette.scrim) mobilePalette.scrim.classList.add('show');
+    if (mobilePalette.button) mobilePalette.button.setAttribute('aria-expanded', 'true');
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+  }
+
+  function initMobilePaletteSheet() {
+    var aside = document.querySelector('.rz-builder__aside');
+    if (!aside || document.getElementById('rzPaletteOpen')) return;
+    var scrim = document.createElement('div');
+    scrim.className = 'rz-builder-scrim';
+    scrim.addEventListener('click', closePaletteSheet);
+    document.body.appendChild(scrim);
+
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'rz-btn rz-btn--primary rz-palette-fab';
+    button.id = 'rzPaletteOpen';
+    button.setAttribute('aria-controls', 'rzPalette');
+    button.setAttribute('aria-expanded', 'false');
+    button.textContent = '+ 添加内容';
+    button.addEventListener('click', function () {
+      if (aside.classList.contains('open')) closePaletteSheet();
+      else openPaletteSheet();
+    });
+    document.body.appendChild(button);
+
+    var close = document.getElementById('rzPaletteClose');
+    if (close) close.addEventListener('click', closePaletteSheet);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closePaletteSheet();
+    });
+    if (window.matchMedia) {
+      var mobileQuery = window.matchMedia('(max-width: 768px)');
+      var handleViewportChange = function (event) {
+        if (!event.matches) closePaletteSheet();
+      };
+      if (mobileQuery.addEventListener) mobileQuery.addEventListener('change', handleViewportChange);
+      else if (mobileQuery.addListener) mobileQuery.addListener(handleViewportChange);
+    }
+    window.addEventListener('resize', function () {
+      if (window.innerWidth > 768) closePaletteSheet();
+    });
+    mobilePalette = { button: button, scrim: scrim, aside: aside, close: close, bodyOverflow: '', htmlOverflow: '' };
+  }
+
   function buildLayout() {
     var blocks = [];
     if (state.self_intro.length) blocks.push({ type: 'self_intro', ids: state.self_intro });
@@ -242,6 +310,7 @@
 
   async function init() {
     document.getElementById('rzBuildSubmit').addEventListener('click', submit);
+    initMobilePaletteSheet();
     try {
       DATA = await RZ.api('/api/resume/builder/palette');
       TEMPLATES = DATA.templates || [];
