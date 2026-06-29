@@ -135,8 +135,15 @@ def api_personal_get(user: dict = Depends(get_current_user)):
     student_id = _require_student(user)
     with get_db_connection() as conn:
         info = profile.seed_personal_info_from_platform(conn, student_id, user)
+        position_options = profile.build_expected_position_options(conn, student_id)
         conn.commit()
-    return {"ok": True, "info": info, "required": list(profile.PERSONAL_REQUIRED), "fields": list(profile.PERSONAL_FIELDS)}
+    return {
+        "ok": True,
+        "info": info,
+        "required": list(profile.PERSONAL_REQUIRED),
+        "fields": list(profile.PERSONAL_FIELDS),
+        "position_options": position_options,
+    }
 
 
 @router.post("/api/resume/personal", response_class=JSONResponse)

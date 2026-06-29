@@ -195,6 +195,92 @@ def seed_personal_info_from_platform(conn, student_id: int, user: dict[str, Any]
     return get_personal_info(conn, student_id)
 
 
+def _career_position_options_from_state(state: dict[str, Any], *, limit: int = 14) -> list[dict[str, Any]]:
+    """Extract expected-position choices from the career recommendation network."""
+    if not isinstance(state, dict) or not state.get("ok"):
+        return []
+    network = state.get("network") if isinstance(state.get("network"), dict) else {}
+    nodes = network.get("nodes") if isinstance(network.get("nodes"), list) else []
+    top_paths = (
+        (state.get("personalized") or {}).get("top_paths")
+        if isinstance(state.get("personalized"), dict)
+        else []
+    )
+    top_paths = top_paths if isinstance(top_paths, list) else []
+    top_rank = {
+        str(path.get("tag") or ""): index
+        for index, path in enumerate(top_paths)
+        if isinstance(path, dict) and str(path.get("tag") or "").strip()
+    }
+    by_tag = {
+        str(node.get("tag") or ""): node
+        for node in nodes
+        if isinstance(node, dict) and str(node.get("tag") or "").strip()
+    }
+
+    candidates: list[dict[str, Any]] = []
+
+    def add(label: Any, *, tag: Any = "", node: dict[str, Any] | None = None,
+            reason: Any = "", order: int = 999) -> None:
+        name = _clean(label, limit=80)
+        if not name:
+            return
+        node = node or {}
+        tag_text = _clean(tag or node.get("tag"), limit=24)
+        try:
+            rec = max(1, min(5, int(round(float(node.get("rec") or 0)))))
+        except (TypeError, ValueError):
+            rec = 0
+        try:
+            glow = float(node.get("glow") or 0)
+        except (TypeError, ValueError):
+            glow = 0.0
+        rank = top_rank.get(tag_text, order)
+        candidates.append({
+            "value": name,
+            "label": name,
+            "tag": tag_text,
+            "meta": f"推荐度 {rec}/5" if rec else "职业推荐",
+            "hint": _clean(reason or node.get("tip") or node.get("reason") or "", limit=120),
+            "_sort": (rank, 0 if node.get("highlighted") else 1, -glow, -rec, order, name),
+        })
+
+    for index, path in enumerate(top_paths):
+        if not isinstance(path, dict):
+            continue
+        tag = str(path.get("tag") or "")
+        node = by_tag.get(tag, {})
+        add(path.get("name") or node.get("name"), tag=tag, node=node, reason=path.get("why"), order=index)
+
+    for index, node in enumerate(nodes, start=len(candidates)):
+        if isinstance(node, dict):
+            add(node.get("name"), tag=node.get("tag"), node=node, order=index + 100)
+
+    seen: set[str] = set()
+    options: list[dict[str, Any]] = []
+    for option in sorted(candidates, key=lambda item: item["_sort"]):
+        key = option["value"].casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        option.pop("_sort", None)
+        options.append(option)
+        if len(options) >= limit:
+            break
+    return options
+
+
+def build_expected_position_options(conn, student_id: int, *, limit: int = 14) -> list[dict[str, Any]]:
+    """Best-effort bridge from career recommendations to the resume form."""
+    try:
+        from ..career_path_service import build_state
+
+        state = build_state(conn, int(student_id))
+    except Exception:
+        return []
+    return _career_position_options_from_state(state, limit=limit)
+
+
 # ---------------------------------------------------------------------------
 # List sections — generic CRUD
 # ---------------------------------------------------------------------------

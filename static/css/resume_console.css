@@ -144,6 +144,29 @@
 .rz-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 16px; }
 .rz-form-grid .rz-field--full { grid-column: 1 / -1; }
 
+/* Combo input (career recommendation + custom entry) */
+.rz-combo { position: relative; width: 100%; }
+.rz-combo__input { padding-right: 44px; }
+.rz-combo__toggle { position: absolute; right: 5px; top: 5px; width: 32px; height: 32px; border: 0;
+  border-radius: 8px; background: transparent; color: var(--rz-muted); display: inline-flex; align-items: center;
+  justify-content: center; cursor: pointer; transition: all .16s ease; }
+.rz-combo__toggle:hover { color: var(--rz-accent); background: var(--rz-accent-soft); }
+.rz-combo.is-open .rz-combo__input { border-color: var(--rz-accent); box-shadow: 0 0 0 3px var(--rz-accent-soft); }
+.rz-combo.is-open .rz-combo__toggle { color: var(--rz-accent); transform: rotate(180deg); }
+.rz-combo__menu { position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 70;
+  max-height: 260px; overflow-y: auto; padding: 6px; border: 1px solid rgba(79,70,229,.18); border-radius: 13px;
+  background: #fff; box-shadow: 0 20px 48px -28px rgba(15,23,42,.62); scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.46) transparent; }
+.rz-combo__menu[hidden] { display: none; }
+.rz-combo__option { width: 100%; min-height: 40px; border: 0; border-radius: 10px; background: transparent;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px;
+  cursor: pointer; color: var(--rz-text); text-align: left; font-family: inherit; transition: all .14s ease; }
+.rz-combo__option:hover, .rz-combo__option.is-active { background: var(--rz-accent-soft); color: var(--rz-accent-dark); }
+.rz-combo__option--custom .rz-combo__name { color: var(--rz-accent-dark); }
+.rz-combo__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 800; font-size: .88rem; }
+.rz-combo__meta { flex: 0 0 auto; color: var(--rz-muted); font-size: .74rem; font-weight: 700; }
+.rz-combo__empty { color: var(--rz-muted); font-size: .82rem; padding: 12px 10px; }
+
 /* Friendly month picker */
 .rz-month-field, .rz-month-range { position: relative; width: 100%; }
 .rz-month-trigger { width: 100%; min-height: 42px; border: 1px solid var(--rz-border); border-radius: 10px;

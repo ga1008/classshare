@@ -95,6 +95,23 @@ def _personal_brief(personal: dict[str, Any]) -> str:
     return "；".join(parts) or "（暂无个人信息）"
 
 
+def _compact_self_intro(text: Any, *, limit: int = 180) -> str:
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    raw = re.sub(r"```(?:markdown|md|text)?\s*|\s*```", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", raw)
+    raw = re.sub(r"(?m)^\s*[-*]\s+", "", raw)
+    raw = re.sub(r"^\s*(个人介绍|自我介绍|职业摘要|简历摘要)\s*\n+", "", raw)
+    raw = re.sub(r"^\s*(个人介绍|自我介绍|职业摘要|简历摘要)\s*[:：]\s*", "", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    if len(raw) > limit:
+        raw = raw[:limit].rstrip("，、；; ")
+    if raw and raw[-1] not in "。！？!?":
+        raw += "。"
+    return raw
+
+
 # ---------------------------------------------------------------------------
 # 1) Optimize an existing self-introduction
 # ---------------------------------------------------------------------------
@@ -103,14 +120,16 @@ async def optimize_self_intro(text: str, personal: dict[str, Any]) -> dict[str, 
     if not text:
         return {"ok": False, "error": "请先输入自我介绍内容"}
     system = (
-        "你是资深简历顾问。请在不虚构事实的前提下，对学生的自我介绍进行润色优化："
-        "结构清晰、语言专业、突出与目标岗位相关的能力与亮点，可用简洁的 Markdown。"
-        "只返回优化后的正文，不要解释。"
+        "你是资深简历顾问。请在不虚构事实的前提下，把学生输入改写为可直接放入简历"
+        "“个人介绍/职业摘要”栏位的中文正文。要求：80-140 个中文字符，最多 3 句；"
+        "专业、严谨、简洁，突出与目标岗位相关的技能、项目/学习成果和工作方式。"
+        "删除聊天式自述、流水账、课堂任务过程、弱项说明、求职愿望和空泛套话；"
+        "不要 Markdown、标题、称呼或解释，只返回正文。"
     )
     user = f"目标岗位与个人信息：{_personal_brief(personal)}\n\n原始自我介绍：\n{text}"
     try:
         result = await _chat(system, user, want_json=False, label="resume:optimize-intro")
-        result = str(result or "").strip()
+        result = _compact_self_intro(result)
         if not result:
             return {"ok": False, "error": "AI 未返回内容，请稍后重试"}
         return {"ok": True, "content": result}

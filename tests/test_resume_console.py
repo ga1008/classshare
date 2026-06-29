@@ -80,6 +80,21 @@ class PersonalInfoTests(unittest.TestCase):
         self.assertEqual(info["name"], "平台学生")
         self.assertEqual(info["email"], "platform@example.com")
 
+    def test_career_position_options_prefer_top_paths_and_dedupe(self):
+        state = {
+            "ok": True,
+            "personalized": {"top_paths": [{"tag": "B2", "name": "后端开发工程师", "why": "匹配项目实践"}]},
+            "network": {"nodes": [
+                {"tag": "A1", "name": "前端开发工程师", "rec": 5},
+                {"tag": "B2", "name": "后端开发工程师", "rec": 4, "highlighted": True, "glow": 0.9},
+                {"tag": "C1", "name": "后端开发工程师", "rec": 3},
+            ]},
+        }
+        options = P._career_position_options_from_state(state)
+        self.assertEqual(options[0]["value"], "后端开发工程师")
+        self.assertEqual(len([o for o in options if o["value"] == "后端开发工程师"]), 1)
+        self.assertIn("推荐度", options[0]["meta"])
+
 
 class SectionCrudTests(unittest.TestCase):
     def test_each_section_crud(self):
@@ -246,8 +261,17 @@ class FallbackTests(unittest.TestCase):
         bundle = {"personal": {"name": "李四", "expected_position": "前端"},
                   "skill": [{"name": "Vue"}], "experience": [{"title": "官网"}]}
         text = G._fallback_self_intro(bundle, {"major_name": "软件工程"})
-        self.assertIn("李四", text)
         self.assertIn("前端", text)
+        self.assertIn("Vue", text)
+        self.assertLessEqual(len(text), 181)
+        self.assertNotIn("希望", text)
+        self.assertNotIn("贵单位", text)
+
+    def test_compact_resume_intro_removes_heading_and_long_tail(self):
+        text = G._compact_resume_intro("## 自我介绍\n具备软件工程背景，掌握 Vue。关注代码质量与协作交付。多余内容很多很多很多。", limit=38)
+        self.assertNotIn("#", text)
+        self.assertNotIn("自我介绍", text)
+        self.assertLessEqual(len(text), 39)
 
     def test_education_fallback(self):
         edu = G._fallback_education({"major_name": "软件工程", "college": "信息工程学院",

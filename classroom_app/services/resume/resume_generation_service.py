@@ -15,6 +15,7 @@ Jobs:
 from __future__ import annotations
 
 import json
+import re
 import traceback
 from typing import Any
 
@@ -48,23 +49,61 @@ def _hidden_block(conn, student_id: int) -> str:
 # ---------------------------------------------------------------------------
 # 1) Self-introduction deep generation
 # ---------------------------------------------------------------------------
+_INTRO_SENTENCE_RE = re.compile(r"(?<=[。！？!?])\s*")
+
+
+def _compact_resume_intro(text: Any, *, limit: int = 180) -> str:
+    """Keep AI output shaped like a resume summary, not a chatty essay."""
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    raw = re.sub(r"```(?:markdown|md|text)?\s*|\s*```", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", raw)
+    raw = re.sub(r"(?m)^\s*[-*]\s+", "", raw)
+    raw = re.sub(r"^\s*(个人介绍|自我介绍|职业摘要|简历摘要)\s*\n+", "", raw)
+    raw = re.sub(r"^\s*(个人介绍|自我介绍|职业摘要|简历摘要)\s*[:：]\s*", "", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    if not raw:
+        return ""
+
+    sentences = [s.strip() for s in _INTRO_SENTENCE_RE.split(raw) if s.strip()]
+    compact = ""
+    for sentence in sentences:
+        candidate = (compact + sentence).strip()
+        if compact and len(candidate) > limit:
+            break
+        compact = candidate
+        if compact.count("。") + compact.count("！") + compact.count("？") >= 3:
+            break
+    compact = compact or raw[:limit]
+    if len(compact) > limit:
+        compact = compact[:limit].rstrip("，、；; ")
+    if compact and compact[-1] not in "。！？!?":
+        compact += "。"
+    return compact
+
+
 def _fallback_self_intro(bundle: dict[str, Any], ctx: dict[str, Any]) -> str:
     personal = bundle.get("personal") or {}
-    name = personal.get("name") or ctx.get("name") or "本人"
     position = personal.get("expected_position") or "相关岗位"
-    major = ctx.get("major_name") or personal.get("expected_industry") or "本专业"
-    skills = "、".join(s.get("name") for s in bundle.get("skill", []) if s.get("name"))[:200]
-    exp = bundle.get("experience", [])
-    exp_line = ""
-    if exp:
-        exp_line = "曾参与" + "、".join(e.get("title") for e in exp[:3] if e.get("title")) + "等项目实践，"
-    parts = [
-        f"我是{name}，{major}专业学生，求职意向为{position}。",
-        (f"掌握 {skills} 等技能。" if skills else "在专业学习中打下了扎实的基础。"),
-        (exp_line + "具备较强的实践能力与团队协作意识。" if exp_line else "学习态度认真，具备良好的学习与协作能力。"),
-        "希望能在贵单位的岗位上持续成长，创造价值。",
+    major = ctx.get("major_name") or personal.get("expected_industry") or ""
+    skills = [str(s.get("name") or "").strip() for s in bundle.get("skill", []) if str(s.get("name") or "").strip()]
+    experiences = [
+        str(e.get("title") or "").strip()
+        for e in bundle.get("experience", [])
+        if str(e.get("title") or "").strip()
     ]
-    return "".join(parts)
+
+    opening = f"{major}专业背景，求职意向为{position}" if major else f"求职意向为{position}"
+    if skills:
+        opening += f"，掌握{'、'.join(skills[:4])}等技能"
+    opening += "。"
+
+    if experiences:
+        practice = f"具备{'、'.join(experiences[:2])}等项目实践经验，能够围绕需求拆解、功能实现与问题定位推进交付。"
+    else:
+        practice = "具备扎实的专业学习基础，重视需求理解、代码质量与协作交付。"
+    return _compact_resume_intro(opening + practice)
 
 
 async def run_self_intro_generation_job(intro_id: int, student_id: int) -> None:
@@ -88,12 +127,13 @@ async def run_self_intro_generation_job(intro_id: int, student_id: int) -> None:
             "证书": [c.get("name") for c in bundle.get("certificate", [])][:20],
         }
         system = (
-            "你是资深简历与求职顾问。请基于学生的真实资料，撰写一段有针对性、专业且自然的中文自我介绍，"
-            "突出与期望岗位匹配的能力、项目经历与个人优势，长度约 200-320 字，可用简洁段落。"
-            "不要虚构未提供的事实，不要使用浮夸套话，只返回自我介绍正文。"
+            "你是资深简历顾问。请基于学生的真实资料，写一段可直接放入简历“个人介绍/职业摘要”栏位的中文正文。"
+            "要求：80-140 个中文字符，最多 3 句；专业、严谨、简洁，突出与期望岗位匹配的技能、项目/学习成果和工作方式。"
+            "禁止聊天式自述、流水账、课堂任务过程、弱项说明、求职愿望、空泛表态；不要出现“希望”“贵单位”“未来我会”等套话。"
+            "不要虚构未提供的事实，不要 Markdown、标题、称呼或解释，只返回正文。"
         )
         if hidden:
-            system += "\n（以下后台学习支持参考仅用于把握语气与侧重，绝不可在正文中提及其存在。）\n" + hidden
+            system += "\n（以下后台学习支持参考仅用于推断能力侧重，绝不可在正文中提及课堂、班级、作业过程或其存在。）\n" + hidden
         user = "学生资料 JSON：\n" + json.dumps(digest, ensure_ascii=False, indent=2)
 
         content = ""
@@ -103,7 +143,7 @@ async def run_self_intro_generation_job(intro_id: int, student_id: int) -> None:
                 system, user, want_json=False, capability="thinking",
                 task_type="deep_text_reasoning", timeout=240.0, label="resume:self-intro",
             )
-            content = str(content or "").strip()
+            content = _compact_resume_intro(content)
         except (httpx.HTTPError, ValueError):
             content = ""
         if not content:
