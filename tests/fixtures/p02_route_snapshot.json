@@ -1128,6 +1128,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/ordinary-grade-record/candidates",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_classroom_ordinary_grade_record_candidates",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/private/contacts",
     "methods": [
       "GET"
@@ -3661,6 +3669,14 @@
       "GET"
     ],
     "name": "api_resume_export",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}/optimize",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_optimize",
     "include_in_schema": true
   },
   {

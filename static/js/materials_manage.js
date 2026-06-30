@@ -657,6 +657,7 @@ function renderDetail(detail) {
     const optimizedUrl = detail.has_optimized_version ? `/materials/view/${detail.id}?variant=optimized` : '';
     const exportUrl = detail.ai_import_record?.export_url || '';
     const exportPdfUrl = detail.ai_import_record?.export_pdf_url || '';
+    const exportLabel = detail.ai_import_record?.document_type === 'ordinary_grade_record' ? '导出Excel' : '导出Word';
     const aiSummary = detail.ai_parse_result?.summary || '尚未执行 AI 解析。';
     const assignmentCount = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
     const canManage = detail.can_manage !== false;
@@ -714,7 +715,7 @@ function renderDetail(detail) {
                         ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
                         ${isRenderable(detail) ? `<a href="${getRenderUrl(detail)}" class="btn btn-primary" target="_blank" rel="noopener">${escapeHtml(getRenderLabel(detail))}</a>` : ''}
                         ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
-                        ${exportUrl ? `<a href="${exportUrl}" class="btn btn-outline">导出Word</a>` : ''}
+                        ${exportUrl ? `<a href="${exportUrl}" class="btn btn-outline">${exportLabel}</a>` : ''}
                         ${exportPdfUrl ? `<a href="${exportPdfUrl}" class="btn btn-outline">导出PDF</a>` : ''}
                         ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
                         ${isGitRepository(detail) && canManage ? '<button type="button" class="btn btn-outline" data-detail-action="repository">仓库</button>' : ''}

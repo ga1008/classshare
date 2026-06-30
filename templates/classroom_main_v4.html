@@ -1778,6 +1778,7 @@
                             <option value="exam_paper">课程考核试卷</option>
                             <option value="assessment_plan">课程考核计划表</option>
                             <option value="grading_rubric">评分细则</option>
+                            <option value="ordinary_grade_record">平时成绩记录表</option>
                         </select>
                     </label>
                     <div class="classroom-final-material-template-options" id="classroom-assessment-plan-options" hidden>
@@ -1800,6 +1801,25 @@
                     <div class="classroom-final-material-template-options classroom-final-material-template-options--notice" id="classroom-exam-paper-options" hidden>
                         <strong>生成试卷前，请先在本课堂导入或生成课程考核计划表。</strong>
                         <span>系统会继承最新考核计划表中的考核形式、分值分布和课程字段，再结合课堂材料与提示生成题目。</span>
+                    </div>
+                    <div class="classroom-final-material-template-options" id="classroom-ordinary-grade-record-options" hidden>
+                        <label class="form-group">
+                            <span>平时作业 1</span>
+                            <select id="classroom-ordinary-homework-1"></select>
+                        </label>
+                        <label class="form-group">
+                            <span>平时作业 2</span>
+                            <select id="classroom-ordinary-homework-2"></select>
+                        </label>
+                        <label class="form-group">
+                            <span>平时作业 3</span>
+                            <select id="classroom-ordinary-homework-3"></select>
+                        </label>
+                        <label class="form-group">
+                            <span>测评</span>
+                            <select id="classroom-ordinary-assessment"></select>
+                        </label>
+                        <div class="classroom-final-material-status" id="classroom-ordinary-grade-record-status" style="grid-column:1 / -1;" hidden></div>
                     </div>
                     <label class="form-group">
                         <span>生成要求</span>

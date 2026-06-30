@@ -24,6 +24,8 @@ const state = {
     detailPreview: null,
     detailExportUrl: '',
     detailExportPdfUrl: '',
+    ordinaryGradeCandidates: [],
+    ordinaryGradeCandidatesLoaded: false,
 };
 
 function withClassroomLearningContext(urlText) {
@@ -66,6 +68,14 @@ function refs() {
         examPaperOptions: document.getElementById('classroom-exam-paper-options'),
         assessmentPlanOptions: document.getElementById('classroom-assessment-plan-options'),
         gradingRubricOptions: document.getElementById('classroom-grading-rubric-options'),
+        ordinaryGradeOptions: document.getElementById('classroom-ordinary-grade-record-options'),
+        ordinaryGradeStatus: document.getElementById('classroom-ordinary-grade-record-status'),
+        ordinaryHomeworkSelects: [
+            document.getElementById('classroom-ordinary-homework-1'),
+            document.getElementById('classroom-ordinary-homework-2'),
+            document.getElementById('classroom-ordinary-homework-3'),
+        ],
+        ordinaryAssessmentSelect: document.getElementById('classroom-ordinary-assessment'),
         finalMaterialAssessmentMode: document.getElementById('classroom-final-material-assessment-mode'),
         finalMaterialAssessmentMethod: document.getElementById('classroom-final-material-assessment-method'),
         finalMaterialPrompt: document.getElementById('classroom-final-material-prompt'),
@@ -260,6 +270,9 @@ function renderFields(fields = {}) {
         exam_flags: '考试标记',
         source_assessment_plan_title: '来源考核计划表',
         source_exam_paper_title: '来源试卷',
+        source_homework_titles: '平时作业来源',
+        source_assessment_title: '测评来源',
+        class_size: '班级人数',
         exam_duration: '考试时间',
         total_score: '总分',
         date: '日期',
@@ -320,6 +333,31 @@ function renderStructuredSummary(preview) {
                         <em>${escapeHtml(compactValue(section.score || ''))}分</em>
                     </div>
                 `).join('') || '<p class="text-muted text-sm">暂无试卷题目摘要。</p>'}
+            </div>
+        `;
+    }
+    if (type === 'ordinary_grade_record') {
+        const students = Array.isArray(structured.students) ? structured.students : [];
+        const source = structured.source_assignments || {};
+        const homework = Array.isArray(source.homework_assignments) ? source.homework_assignments : [];
+        const assessment = source.assessment_assignment || {};
+        return `
+            <div class="classroom-material-preview-list">
+                <div>
+                    <strong>学生</strong>
+                    <span>${escapeHtml(compactValue(students.length))} 人，按每 25 人一版生成 Excel。</span>
+                    <em>A4</em>
+                </div>
+                <div>
+                    <strong>作业</strong>
+                    <span>${escapeHtml(homework.map((item) => item.title || '').filter(Boolean).join('；') || '未绑定')}</span>
+                    <em>3次</em>
+                </div>
+                <div>
+                    <strong>测评</strong>
+                    <span>${escapeHtml(assessment.title || '未绑定')}</span>
+                    <em>1次</em>
+                </div>
             </div>
         `;
     }
@@ -384,6 +422,18 @@ function renderDetailContent(material, preview = null) {
     `;
 }
 
+function isOrdinaryGradeRecord(material = null, preview = null) {
+    return preview?.document_type === 'ordinary_grade_record'
+        || material?.ai_import_record?.document_type === 'ordinary_grade_record';
+}
+
+function setDetailExportButtons(material = null, preview = null) {
+    const dom = refs();
+    if (dom.detailExportBtn) {
+        dom.detailExportBtn.textContent = isOrdinaryGradeRecord(material, preview) ? '导出Excel' : '导出Word';
+    }
+}
+
 async function openMaterialDetail(materialId) {
     const dom = refs();
     const item = state.items.find((entry) => Number(entry.id) === Number(materialId));
@@ -410,6 +460,7 @@ async function openMaterialDetail(materialId) {
     dom.detailContent.innerHTML = '';
     if (dom.detailExportBtn) dom.detailExportBtn.disabled = true;
     if (dom.detailExportPdfBtn) dom.detailExportPdfBtn.disabled = true;
+    setDetailExportButtons(item, null);
     if (dom.detailOpenBtn) dom.detailOpenBtn.textContent = item?.node_type === 'folder' ? '打开文件夹' : '打开';
     if (dom.detailDownloadBtn) dom.detailDownloadBtn.disabled = !item || item.node_type !== 'file' || item.download_allowed === false;
     openModal(dom.detailModal);
@@ -442,11 +493,92 @@ async function openMaterialDetail(materialId) {
         if (dom.detailDownloadBtn) dom.detailDownloadBtn.disabled = material.node_type !== 'file' || material.download_allowed === false;
         if (dom.detailExportBtn) dom.detailExportBtn.disabled = !state.detailExportUrl;
         if (dom.detailExportPdfBtn) dom.detailExportPdfBtn.disabled = !state.detailExportPdfUrl;
+        setDetailExportButtons(material, preview);
     } catch (error) {
         dom.detailLoading.hidden = true;
         dom.detailContent.hidden = false;
         dom.detailContent.innerHTML = `<div class="materials-empty">加载材料详情失败：${escapeHtml(error.message || '未知错误')}</div>`;
     }
+}
+
+function ordinaryCandidateLabel(item) {
+    const title = item?.title || `作业 ${item?.id || ''}`;
+    const stats = `${item?.graded_count || 0}/${item?.submission_count || 0}`;
+    const kind = item?.kind === 'exam' ? '考试' : '作业';
+    const average = item?.average_score === null || item?.average_score === undefined ? '' : `，均分 ${item.average_score}`;
+    return `${title}（${kind}，已评分 ${stats}${average}）`;
+}
+
+function populateOrdinaryGradeSelects() {
+    const dom = refs();
+    const selects = [...(dom.ordinaryHomeworkSelects || []), dom.ordinaryAssessmentSelect].filter(Boolean);
+    const options = [
+        '<option value="">请选择</option>',
+        ...state.ordinaryGradeCandidates.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(ordinaryCandidateLabel(item))}</option>`),
+    ].join('');
+    selects.forEach((select) => {
+        const previous = select.value;
+        select.innerHTML = options;
+        if (previous && state.ordinaryGradeCandidates.some((item) => String(item.id) === String(previous))) {
+            select.value = previous;
+        }
+    });
+    if (state.ordinaryGradeCandidates.length >= 4) {
+        dom.ordinaryHomeworkSelects?.forEach((select, index) => {
+            if (select && !select.value && state.ordinaryGradeCandidates[index]) {
+                select.value = String(state.ordinaryGradeCandidates[index].id);
+            }
+        });
+        if (dom.ordinaryAssessmentSelect && !dom.ordinaryAssessmentSelect.value && state.ordinaryGradeCandidates[3]) {
+            dom.ordinaryAssessmentSelect.value = String(state.ordinaryGradeCandidates[3].id);
+        }
+    }
+}
+
+async function loadOrdinaryGradeCandidates() {
+    const dom = refs();
+    if (state.ordinaryGradeCandidatesLoaded) {
+        populateOrdinaryGradeSelects();
+        return;
+    }
+    if (dom.ordinaryGradeStatus) {
+        dom.ordinaryGradeStatus.hidden = false;
+        dom.ordinaryGradeStatus.textContent = '正在读取当前课堂的作业和测评...';
+    }
+    try {
+        const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/ordinary-grade-record/candidates`, { silent: true });
+        state.ordinaryGradeCandidates = Array.isArray(data.items) ? data.items : [];
+        state.ordinaryGradeCandidatesLoaded = true;
+        populateOrdinaryGradeSelects();
+        if (dom.ordinaryGradeStatus) {
+            if (state.ordinaryGradeCandidates.length < 4) {
+                dom.ordinaryGradeStatus.hidden = false;
+                dom.ordinaryGradeStatus.textContent = '当前课堂至少需要 4 份已发布或可评分的作业/测评记录。';
+            } else {
+                dom.ordinaryGradeStatus.hidden = true;
+                dom.ordinaryGradeStatus.textContent = '';
+            }
+        }
+    } catch (error) {
+        if (dom.ordinaryGradeStatus) {
+            dom.ordinaryGradeStatus.hidden = false;
+            dom.ordinaryGradeStatus.textContent = error.message || '读取作业候选失败';
+        }
+    }
+}
+
+function collectOrdinaryGradeSelection() {
+    const dom = refs();
+    const homeworkIds = (dom.ordinaryHomeworkSelects || []).map((select) => Number(select?.value || 0)).filter((value) => value > 0);
+    const assessmentId = Number(dom.ordinaryAssessmentSelect?.value || 0);
+    const unique = new Set([...homeworkIds, assessmentId].filter((value) => value > 0));
+    if (homeworkIds.length !== 3 || assessmentId <= 0) {
+        throw new Error('请选择 3 份平时作业和 1 份测评。');
+    }
+    if (unique.size !== 4) {
+        throw new Error('三次作业和一次测评不能重合。');
+    }
+    return { homeworkIds, assessmentId };
 }
 
 function updateFinalMaterialTemplateOptions() {
@@ -455,6 +587,7 @@ function updateFinalMaterialTemplateOptions() {
     const isAssessmentPlan = selectedType === 'assessment_plan';
     const isGradingRubric = selectedType === 'grading_rubric';
     const isExamPaper = selectedType === 'exam_paper';
+    const isOrdinary = selectedType === 'ordinary_grade_record';
     if (dom.examPaperOptions) {
         dom.examPaperOptions.hidden = !isExamPaper;
     }
@@ -464,6 +597,12 @@ function updateFinalMaterialTemplateOptions() {
     if (dom.gradingRubricOptions) {
         dom.gradingRubricOptions.hidden = !isGradingRubric;
     }
+    if (dom.ordinaryGradeOptions) {
+        dom.ordinaryGradeOptions.hidden = !isOrdinary;
+    }
+    if (isOrdinary) {
+        loadOrdinaryGradeCandidates();
+    }
     if (isAssessmentPlan && dom.finalMaterialAssessmentMethod && !dom.finalMaterialAssessmentMethod.value.trim()) {
         dom.finalMaterialAssessmentMethod.value = dom.finalMaterialAssessmentMode?.value === 'written' ? '闭卷笔试' : '机试';
     }
@@ -472,6 +611,8 @@ function updateFinalMaterialTemplateOptions() {
             dom.finalMaterialPrompt.placeholder = '例如：评分时突出脚本可执行性、截图编号一致性和例外情况；每个任务写清楚可给一半分的情形。';
         } else if (isAssessmentPlan) {
             dom.finalMaterialPrompt.placeholder = '例如：按机试方式拆分 Linux 服务部署、数据库授权、脚本备份等考核技能，分值合计100。';
+        } else if (isOrdinary) {
+            dom.finalMaterialPrompt.placeholder = '例如：需要保留样表版式，按智慧课堂出勤、三次作业和一次测评生成 Excel。';
         } else {
             dom.finalMaterialPrompt.placeholder = '例如：根据本课堂最新考核计划表，围绕 Linux 服务部署、数据库授权、脚本备份设计机试任务，写清截图编号、提交物和考试时长。';
         }
@@ -492,6 +633,19 @@ async function submitFinalMaterialGeneration() {
     const documentType = dom.finalMaterialType?.value || 'exam_paper';
     const prompt = dom.finalMaterialPrompt?.value || '';
     const statusEl = dom.finalMaterialStatus;
+    let ordinarySelection = null;
+    if (documentType === 'ordinary_grade_record') {
+        try {
+            ordinarySelection = collectOrdinaryGradeSelection();
+        } catch (error) {
+            if (statusEl) {
+                statusEl.hidden = false;
+                statusEl.textContent = error.message || '请选择成绩来源';
+            }
+            showToast(error.message || '请选择成绩来源', 'warning');
+            return;
+        }
+    }
     dom.finalMaterialSubmitBtn.disabled = true;
     if (statusEl) {
         statusEl.hidden = false;
@@ -506,6 +660,8 @@ async function submitFinalMaterialGeneration() {
                 parent_id: state.currentParentId,
                 assessment_mode: documentType === 'assessment_plan' ? (dom.finalMaterialAssessmentMode?.value || '') : '',
                 assessment_method: documentType === 'assessment_plan' ? (dom.finalMaterialAssessmentMethod?.value || '') : '',
+                homework_assignment_ids: ordinarySelection?.homeworkIds || [],
+                assessment_assignment_id: ordinarySelection?.assessmentId || null,
             },
         });
         showToast(data.message || '期末材料已生成', 'success');

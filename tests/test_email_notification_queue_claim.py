@@ -289,6 +289,19 @@ class EmailNotificationQueueClaimTests(unittest.TestCase):
         self.assertEqual(2, snapshot["queue_depth"])
         self.assertEqual("running", snapshot["status"])
 
+    def test_email_worker_health_snapshot_tolerates_missing_queue_schema(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            with patch.object(email_service, "get_db_connection", return_value=conn):
+                snapshot = email_worker_health_snapshot()
+        finally:
+            conn.close()
+
+        self.assertFalse(snapshot["ok"])
+        self.assertEqual(0, snapshot["queue_depth"])
+        self.assertEqual("schema_missing", snapshot["status"])
+
     def test_unsupported_claim_engine_fails_explicitly(self):
         conn = self._sqlite_conn()
         try:

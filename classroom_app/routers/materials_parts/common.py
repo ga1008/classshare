@@ -14,7 +14,7 @@ import aiofiles
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from ...core import ai_client, templates
@@ -176,6 +176,8 @@ class ClassroomFinalMaterialGenerateRequest(BaseModel):
     parent_id: int | None = None
     assessment_mode: str = ""
     assessment_method: str = ""
+    homework_assignment_ids: list[int] = Field(default_factory=list)
+    assessment_assignment_id: int | None = None
 
 
 class MaterialAiRewriteRequest(BaseModel):

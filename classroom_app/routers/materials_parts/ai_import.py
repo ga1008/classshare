@@ -236,9 +236,12 @@ async def ai_generate_material_from_context(
         attachments.append(_build_assignment_context_attachment(assignment_row))
     attachments = _limit_ai_context_attachments(attachments)
 
-    if str(document_group or "").strip() == "final_material" and str(document_type or "").strip() in FINAL_MATERIAL_TYPES:
+    final_document_type = str(document_type or "").strip()
+    if str(document_group or "").strip() == "final_material" and final_document_type == "ordinary_grade_record":
+        raise HTTPException(400, "平时成绩记录表需要在课堂材料中选择 3 份作业和 1 份测评后生成。")
+    if str(document_group or "").strip() == "final_material" and final_document_type in FINAL_MATERIAL_TYPES:
         return await _generate_final_material_from_manage_context(
-            document_type=str(document_type or "").strip(),
+            document_type=final_document_type,
             prompt=prompt,
             parent_id=parent_id,
             parent_context=parent_context,

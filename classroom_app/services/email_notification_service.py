@@ -1544,19 +1544,31 @@ def update_email_worker_heartbeat(worker_id: str, *, status: str, last_error: st
         conn.commit()
 
 
+def _is_missing_email_worker_schema_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    if "no such table" not in message and "undefinedtable" not in message and "does not exist" not in message:
+        return False
+    return "email_worker_heartbeats" in message or "email_outbox" in message
+
+
 def email_worker_health_snapshot() -> dict[str, Any]:
-    with get_db_connection() as conn:
-        row = conn.execute(
-            """
-            SELECT *
-            FROM email_worker_heartbeats
-            ORDER BY updated_at DESC
-            LIMIT 1
-            """
-        ).fetchone()
-        queue_depth = int(_row_scalar(conn.execute(
-            "SELECT COUNT(*) AS row_count FROM email_outbox WHERE status IN ('queued', 'sending')"
-        ).fetchone()) or 0)
+    try:
+        with get_db_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT *
+                FROM email_worker_heartbeats
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            queue_depth = int(_row_scalar(conn.execute(
+                "SELECT COUNT(*) AS row_count FROM email_outbox WHERE status IN ('queued', 'sending')"
+            ).fetchone()) or 0)
+    except Exception as exc:
+        if _is_missing_email_worker_schema_error(exc):
+            return {"ok": False, "queue_depth": 0, "status": "schema_missing", "updated_at": "", "last_error": ""}
+        raise
     if not row:
         return {"ok": False, "queue_depth": queue_depth, "status": "missing", "updated_at": "", "last_error": ""}
     updated_at = datetime.fromisoformat(str(row["updated_at"]))

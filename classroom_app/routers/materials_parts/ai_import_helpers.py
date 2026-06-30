@@ -477,6 +477,7 @@ def _build_ai_import_preview(record, *, content_limit: int = 8000) -> dict:
     structured = _parse_json_object(export_payload.get("structured"))
     content_markdown = str(payload.get("content_markdown") or record["content_markdown"] or "")
     warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else _parse_json_array(record["warnings_json"])
+    export_format = "xlsx" if record["document_type"] == "ordinary_grade_record" else "docx"
     return {
         "id": int(record["id"]),
         "document_group": record["document_group"] or "",
@@ -493,7 +494,7 @@ def _build_ai_import_preview(record, *, content_limit: int = 8000) -> dict:
         "warnings": warnings,
         "content_markdown": content_markdown[:content_limit],
         "content_truncated": len(content_markdown) > content_limit,
-        "export_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format=docx",
+        "export_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format={export_format}",
         "export_pdf_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format=pdf" if record["document_type"] == "exam_paper" else "",
     }
 

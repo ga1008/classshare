@@ -3,14 +3,22 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
+from .ordinary_grade_record_service import (
+    ORDINARY_GRADE_LAYOUT,
+    ORDINARY_GRADE_RECORD_LABEL,
+    ORDINARY_GRADE_RECORD_SCHEMA_VERSION,
+    ORDINARY_GRADE_RECORD_TYPE,
+    normalize_ordinary_grade_record_payload,
+)
 
-FINAL_MATERIAL_TYPES = {"assessment_plan", "grading_rubric", "exam_paper"}
+FINAL_MATERIAL_TYPES = {"assessment_plan", "grading_rubric", "exam_paper", ORDINARY_GRADE_RECORD_TYPE}
 
 
 FINAL_MATERIAL_LABELS = {
     "assessment_plan": "课程考核计划表",
     "grading_rubric": "课程考核评分细则",
     "exam_paper": "课程考核试卷",
+    ORDINARY_GRADE_RECORD_TYPE: ORDINARY_GRADE_RECORD_LABEL,
 }
 
 
@@ -55,6 +63,7 @@ FINAL_MATERIAL_LAYOUTS: dict[str, dict[str, Any]] = {
         "score_box_widths_cm": [1.44, 2.25],
         "body_indent_cm": 0.72,
     },
+    ORDINARY_GRADE_RECORD_TYPE: deepcopy(ORDINARY_GRADE_LAYOUT),
 }
 
 
@@ -186,6 +195,14 @@ def normalize_final_material_payload(
     key = str(document_type or "").strip()
     if key not in FINAL_MATERIAL_TYPES:
         return deepcopy(export_payload or {})
+    if key == ORDINARY_GRADE_RECORD_TYPE:
+        return normalize_ordinary_grade_record_payload(
+            metadata=metadata,
+            content_markdown=content_markdown,
+            tables=tables,
+            export_payload=export_payload,
+            classroom_context=classroom_context,
+        )
 
     normalized_tables = normalize_table_payloads(tables or [])
     fields = _normalize_field_map(metadata or {})
@@ -385,7 +402,7 @@ def build_final_material_generation_seed(
         sections = [
             {"title": "评分细则", "content": _rubric_content_from_items(fields, source_items, prompt)},
         ]
-    else:
+    elif key == "exam_paper":
         source_sections = _paper_sections_from_assessment_plan_context(classroom_context, fields)
         if source_sections:
             sections = source_sections
@@ -396,6 +413,21 @@ def build_final_material_generation_seed(
                 {"title": "二、综合服务部署（共70分）", "content": _default_exam_section_two(prompt)},
             ]
         tables = []
+    else:
+        export_payload = normalize_ordinary_grade_record_payload(
+            metadata=fields,
+            content_markdown="",
+            tables=[],
+            export_payload={"structured": {"template_schema_version": ORDINARY_GRADE_RECORD_SCHEMA_VERSION}},
+            classroom_context=classroom_context,
+        )
+        return {
+            "metadata": export_payload["fields"],
+            "content_markdown": export_payload.get("content_markdown") or "",
+            "tables": [],
+            "warnings": ["平时成绩记录表需在课堂中选择 3 份作业和 1 份测评后生成。"],
+            "export_payload": export_payload,
+        }
     content = "\n\n".join(f"## {item['title']}\n{item['content']}" for item in sections)
     export_payload = normalize_final_material_payload(
         document_type=key,

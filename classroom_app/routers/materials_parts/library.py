@@ -313,6 +313,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
         ai_import_record = _find_material_ai_import_record(conn, material_id, user["id"])
         if ai_import_record:
             task = _serialize_material_ai_import_task(conn, ai_import_record, user)
+            export_format = "xlsx" if task["document_type"] == "ordinary_grade_record" else "docx"
             detail["ai_import_record"] = {
                 "id": task["id"],
                 "document_group": task["document_group"],
@@ -322,7 +323,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
                 "parse_mode": task["parse_mode"],
                 "updated_at": task["updated_at"],
                 "completed_at": task["completed_at"],
-                "export_url": f"/api/materials/ai-import-records/{task['id']}/export?format=docx",
+                "export_url": f"/api/materials/ai-import-records/{task['id']}/export?format={export_format}",
                 "export_pdf_url": f"/api/materials/ai-import-records/{task['id']}/export?format=pdf" if task["document_type"] == "exam_paper" else "",
                 "preview_url": f"/api/materials/{material_id}/ai-import/preview",
             }
