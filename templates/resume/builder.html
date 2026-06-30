@@ -4,13 +4,24 @@
 <div class="rz-page-head">
     <div>
         <div class="rz-page-head__title">新建简历</div>
-        <div class="rz-page-head__sub">从右侧把已填写的内容拖入左侧各区域，像搭积木一样组装你的简历。技术栈会由 AI 自动生成。</div>
+        <div class="rz-page-head__sub">先确定目标岗位，再把已填写的内容拖入各区域。AI 会围绕岗位优化摘要、技术栈和最终呈现。</div>
     </div>
     <button type="button" class="rz-btn rz-btn--primary" id="rzBuildSubmit">确定生成</button>
 </div>
 
 <div class="rz-builder">
     <div class="rz-builder__main">
+        <div class="rz-target-card">
+            <div class="rz-target-card__copy">
+                <strong>目标岗位</strong>
+                <span>一份简历只服务一个主要岗位；需要投不同方向时，可以为每个岗位单独生成一版。</span>
+            </div>
+            <div class="rz-target-card__input">
+                <input class="rz-input" id="rzTargetPosition" placeholder="选择职业推荐岗位，或输入自定义目标岗位">
+                <div class="rz-target-options" id="rzTargetOptions"></div>
+            </div>
+        </div>
+
         <div class="rz-field">
             <label>简历标题</label>
             <input class="rz-input" id="rzResumeTitle" placeholder="例如：后端开发工程师 - 张三">
@@ -39,5 +50,5 @@
 
 {% block page_script %}
 <script src="/static/js/resume_common.js?v=20260629b"></script>
-<script src="/static/js/resume_builder.js?v=20260629f"></script>
+<script src="/static/js/resume_builder.js?v=20260630a"></script>
 {% endblock %}

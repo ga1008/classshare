@@ -6,7 +6,9 @@
 
   var DATA = null;
   var TEMPLATES = [];
+  var POSITION_OPTIONS = [];
   var EDIT_ID = null;
+  var lastAutoTitle = '';
   var PERSONAL_REQUIRED = ['name', 'gender', 'birthday', 'email', 'expected_position'];
   var PERSONAL_FIELD_ORDER = [
     'name', 'gender', 'birthday', 'email', 'phone', 'qq', 'wechat',
@@ -14,6 +16,7 @@
   ];
   var state = {
     template: 'classic',
+    target_position: '',
     fields: PERSONAL_REQUIRED.slice(),
     self_intro: [], education: [], experience: [], skill: [], cert: [],
     tech_stack: true
@@ -63,6 +66,65 @@
     });
   }
 
+  function normalize(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function autoTitleFor(target) {
+    var name = DATA && DATA.personal ? String(DATA.personal.name || '').trim() : '';
+    target = String(target || '').trim();
+    return target ? target + (name ? ' - ' + name : '') : (name ? name + '的简历' : '我的简历');
+  }
+
+  function syncTitleFromTarget(force) {
+    var titleEl = document.getElementById('rzResumeTitle');
+    if (!titleEl) return;
+    var next = autoTitleFor(state.target_position);
+    var current = titleEl.value.trim();
+    if (force || !current || current === lastAutoTitle) {
+      titleEl.value = next;
+      lastAutoTitle = next;
+    }
+  }
+
+  function setTargetPosition(value, forceTitle) {
+    state.target_position = String(value || '').trim();
+    var input = document.getElementById('rzTargetPosition');
+    if (input && input.value !== state.target_position) input.value = state.target_position;
+    renderTargetOptions();
+    syncTitleFromTarget(!!forceTitle);
+    if (DATA) renderZones();
+  }
+
+  function targetOptionHtml(option, active) {
+    var value = option.value || option.label || '';
+    var meta = option.meta || option.tag || '职业推荐';
+    return '<button type="button" class="rz-target-option' + (active ? ' active' : '') +
+      '" data-target-position="' + RZ.esc(value) + '">' +
+      '<strong>' + RZ.esc(value) + '</strong><span>' + RZ.esc(meta) + '</span></button>';
+  }
+
+  function renderTargetOptions() {
+    var box = document.getElementById('rzTargetOptions');
+    if (!box) return;
+    var current = normalize(state.target_position);
+    var options = POSITION_OPTIONS.filter(function (option) {
+      return option && String(option.value || option.label || '').trim();
+    }).slice(0, 8);
+    if (!options.length) {
+      box.innerHTML = '<div class="rz-target-options__empty">暂无职业推荐，可直接输入自定义岗位</div>';
+      return;
+    }
+    box.innerHTML = options.map(function (option) {
+      return targetOptionHtml(option, normalize(option.value || option.label) === current);
+    }).join('');
+    box.querySelectorAll('[data-target-position]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        setTargetPosition(btn.dataset.targetPosition || '', true);
+      });
+    });
+  }
+
   function personalFieldItems(includeBlank) {
     var labels = DATA.personal_labels || {};
     var personal = DATA.personal || {};
@@ -82,10 +144,13 @@
   function renderZones() {
     var html = ZONES.map(function (z) {
       if (z.key === 'tech_stack') {
+        var targetHint = state.target_position
+          ? '当前目标岗位：' + RZ.esc(state.target_position) + '。AI 会优先保留与该岗位相关、有材料支撑的技能。'
+          : '先填写目标岗位，AI 才能按岗位筛选技术栈。';
         return '<div class="rz-zone" data-zone="tech_stack"><div class="rz-zone__head"><strong>技术栈</strong>' +
           '<label style="font-size:.8rem;font-weight:600"><input type="checkbox" id="rzTechToggle" ' +
           (state.tech_stack ? 'checked' : '') + '> 由 AI 自动生成</label></div>' +
-          '<div class="rz-zone__hint">勾选后，根据你的经历与技能自动生成技术栈分组。</div></div>';
+          '<div class="rz-zone__hint">' + targetHint + '</div></div>';
       }
       var inner;
       if (z.key === 'personal') {
@@ -269,11 +334,13 @@
   async function submit() {
     var btn = document.getElementById('rzBuildSubmit');
     var layout = buildLayout();
+    if (!state.target_position.trim()) { RZ.toast('请先填写这份简历的目标岗位', 'error'); return; }
     if (!layout.blocks.length) { RZ.toast('请至少拖入一项内容', 'error'); return; }
     btn.disabled = true; btn.textContent = '生成中…';
     try {
       var body = {
         title: document.getElementById('rzResumeTitle').value.trim() || '我的简历',
+        target_position: state.target_position.trim(),
         template_key: state.template, layout: layout
       };
       if (EDIT_ID) await RZ.api('/api/resume/resumes/' + EDIT_ID, { method: 'PUT', body: body });
@@ -287,6 +354,7 @@
     var d = await RZ.api('/api/resume/resumes/' + id);
     var r = d.resume || {};
     EDIT_ID = id;
+    state.target_position = r.target_position || state.target_position;
     var layout = r.layout || {};
     if (Array.isArray(layout.personal_fields) && layout.personal_fields.length) {
       state.fields = PERSONAL_REQUIRED.concat(layout.personal_fields).filter(function (value, index, arr) {
@@ -305,23 +373,33 @@
     });
     var titleEl = document.getElementById('rzResumeTitle');
     titleEl.value = r.title || '';
+    lastAutoTitle = titleEl.value.trim();
+    var targetInput = document.getElementById('rzTargetPosition');
+    if (targetInput) targetInput.value = state.target_position || '';
     document.getElementById('rzBuildSubmit').textContent = '保存修改';
   }
 
   async function init() {
     document.getElementById('rzBuildSubmit').addEventListener('click', submit);
+    var targetInput = document.getElementById('rzTargetPosition');
+    if (targetInput) {
+      targetInput.addEventListener('input', function () { setTargetPosition(targetInput.value, false); });
+      targetInput.addEventListener('blur', function () { setTargetPosition(targetInput.value, false); });
+    }
     initMobilePaletteSheet();
     try {
       DATA = await RZ.api('/api/resume/builder/palette');
       TEMPLATES = DATA.templates || [];
+      POSITION_OPTIONS = Array.isArray(DATA.position_options) ? DATA.position_options : [];
       var t = (DATA.personal || {});
+      state.target_position = t.expected_position || '';
+      if (targetInput) targetInput.value = state.target_position;
       var editId = new URLSearchParams(window.location.search).get('edit');
       if (editId) {
         try { await prefillFromResume(editId); } catch (e) { RZ.toast('载入简历失败：' + e.message, 'error'); }
       }
-      if (!document.getElementById('rzResumeTitle').value && t.expected_position) {
-        document.getElementById('rzResumeTitle').value = t.expected_position + (t.name ? ' - ' + t.name : '');
-      }
+      renderTargetOptions();
+      if (!editId) syncTitleFromTarget(true);
       renderTemplates(); renderZones(); renderPalette();
     } catch (e) { RZ.toast(e.message, 'error'); }
   }

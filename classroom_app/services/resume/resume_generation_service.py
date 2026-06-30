@@ -83,10 +83,31 @@ def _compact_resume_intro(text: Any, *, limit: int = 180) -> str:
     return compact
 
 
+def _clean_intro_background_label(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    lowered = raw.lower()
+    if any(term in lowered for term in ("regression", "fixture", "mock", "qa-", "qa ", "test", "p03")):
+        return ""
+    if raw in {"待完善", "未知", "无", "暂无"}:
+        return ""
+    return raw[:24]
+
+
+def _first_education_major(bundle: dict[str, Any]) -> str:
+    for edu in bundle.get("education", []):
+        if isinstance(edu, dict):
+            major = _clean_intro_background_label(edu.get("major"))
+            if major:
+                return major
+    return ""
+
+
 def _fallback_self_intro(bundle: dict[str, Any], ctx: dict[str, Any]) -> str:
     personal = bundle.get("personal") or {}
     position = personal.get("expected_position") or "相关岗位"
-    major = ctx.get("major_name") or personal.get("expected_industry") or ""
+    major = _clean_intro_background_label(ctx.get("major_name")) or _first_education_major(bundle)
     skills = [str(s.get("name") or "").strip() for s in bundle.get("skill", []) if str(s.get("name") or "").strip()]
     experiences = [
         str(e.get("title") or "").strip()
@@ -94,7 +115,7 @@ def _fallback_self_intro(bundle: dict[str, Any], ctx: dict[str, Any]) -> str:
         if str(e.get("title") or "").strip()
     ]
 
-    opening = f"{major}专业背景，求职意向为{position}" if major else f"求职意向为{position}"
+    opening = f"具备{major}相关学习背景，求职意向为{position}" if major else f"求职意向为{position}"
     if skills:
         opening += f"，掌握{'、'.join(skills[:4])}等技能"
     opening += "。"
@@ -144,6 +165,11 @@ async def run_self_intro_generation_job(intro_id: int, student_id: int) -> None:
                 task_type="deep_text_reasoning", timeout=240.0, label="resume:self-intro",
             )
             content = _compact_resume_intro(content)
+            if not ai._resume_summary_is_useful(
+                content,
+                str((bundle.get("personal") or {}).get("expected_position") or ""),
+            ):
+                content = ""
         except (httpx.HTTPError, ValueError):
             content = ""
         if not content:
@@ -183,7 +209,10 @@ async def run_resume_render_job(resume_id: int, student_id: int) -> None:
         wants_tech = any(b.get("type") == "tech_stack" for b in resume.get("layout", {}).get("blocks", []))
         tech_stack = resume.get("tech_stack") or []
         if wants_tech and not tech_stack:
-            result = await ai.generate_tech_stack(bundle, ctx)
+            result = await ai.generate_tech_stack(
+                bundle, ctx,
+                target_position=str(resume.get("target_position") or (bundle.get("personal") or {}).get("expected_position") or ""),
+            )
             tech_stack = result.get("groups") or []
         resume["tech_stack"] = tech_stack
 
@@ -197,6 +226,44 @@ async def run_resume_render_job(resume_id: int, student_id: int) -> None:
             with get_db_connection() as conn:
                 docs.set_status(conn, resume_id, "failed",
                                 f"渲染失败：{type(exc).__name__}: {str(exc)[:200]}")
+                conn.commit()
+        except Exception:
+            pass
+
+
+async def run_resume_optimization_job(resume_id: int, student_id: int) -> None:
+    try:
+        with get_db_connection() as conn:
+            resume = docs.get_resume(conn, student_id, resume_id)
+            bundle = profile.collect_profile_bundle(conn, student_id)
+            ctx = _student_context(conn, student_id)
+            conn.commit()
+
+        result = await ai.optimize_resume_for_target(resume, bundle, ctx)
+        resume["target_position"] = result.get("target_position") or resume.get("target_position") or ""
+        resume["optimized_summary_md"] = result.get("summary_md") or ""
+        resume["tech_stack"] = result.get("tech_stack") or []
+        resume["optimization_notes"] = {"items": result.get("notes") or []}
+
+        with get_db_connection() as conn:
+            html = render.assemble_resume_html(conn, student_id, resume)
+            docs.save_optimization(
+                conn, resume_id,
+                target_position=resume["target_position"],
+                optimized_summary_md=resume["optimized_summary_md"],
+                optimization_notes=resume["optimization_notes"],
+                render_html=html,
+                tech_stack=resume["tech_stack"],
+                status="ready",
+                error_text=str(result.get("error") or ""),
+            )
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        traceback.print_exc()
+        try:
+            with get_db_connection() as conn:
+                docs.set_status(conn, resume_id, "failed",
+                                f"AI 优化失败：{type(exc).__name__}: {str(exc)[:200]}")
                 conn.commit()
         except Exception:
             pass

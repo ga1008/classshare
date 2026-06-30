@@ -104,13 +104,18 @@ def build_content_model(conn, student_id: int, resume: dict[str, Any]) -> dict[s
     layout = resume.get("layout") if isinstance(resume.get("layout"), dict) else {}
     bundle = profile.collect_profile_bundle(conn, student_id)
     personal = bundle.get("personal") or {}
+    target_position = str(resume.get("target_position") or personal.get("expected_position") or "").strip()
 
     fields = layout.get("personal_fields")
     if not isinstance(fields, list) or not fields:
         fields = list(_DEFAULT_PERSONAL_FIELDS)
     personal_pairs = [
-        {"label": _PERSONAL_LABELS.get(f, f), "value": _esc(personal.get(f))}
-        for f in fields if f != "name" and str(personal.get(f) or "").strip()
+        {
+            "label": _PERSONAL_LABELS.get(f, f),
+            "value": _esc(target_position if f == "expected_position" else personal.get(f)),
+        }
+        for f in fields
+        if f != "name" and str((target_position if f == "expected_position" else personal.get(f)) or "").strip()
     ]
     avatar_uri = None
     if str(personal.get("avatar_file_hash") or "").strip():
@@ -155,9 +160,24 @@ def build_content_model(conn, student_id: int, resume: dict[str, Any]) -> dict[s
                                "skills": [s.get("name") for s in skills],
                                "certs": [_cert_view(c) for c in certs]})
 
+    optimized_summary = str(resume.get("optimized_summary_md") or "").strip()
+    if optimized_summary:
+        optimized_block = {
+            "type": "self_intro",
+            "title": "个人介绍",
+            "html": _md_to_html(optimized_summary),
+            "optimized": True,
+        }
+        for index, block in enumerate(blocks):
+            if block.get("type") == "self_intro":
+                blocks[index] = optimized_block
+                break
+        else:
+            blocks.insert(0, optimized_block)
+
     return {
         "name": _esc(personal.get("name")) or "姓名",
-        "headline": _esc(personal.get("expected_position")),
+        "headline": _esc(target_position),
         "avatar": avatar_uri,
         "personal_pairs": personal_pairs,
         "blocks": blocks,
@@ -410,4 +430,8 @@ def parse_resume_row(row: dict[str, Any]) -> dict[str, Any]:
         item["tech_stack"] = json.loads(item.get("tech_stack_json") or "[]")
     except (TypeError, ValueError):
         item["tech_stack"] = []
+    try:
+        item["optimization_notes"] = json.loads(item.get("optimization_notes_json") or "{}")
+    except (TypeError, ValueError):
+        item["optimization_notes"] = {}
     return item

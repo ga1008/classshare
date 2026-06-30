@@ -20,6 +20,7 @@ from classroom_app.services.resume import resume_render_service as R
 from classroom_app.services.resume import resume_attachment_service as A
 from classroom_app.services.resume import resume_nav_service as N
 from classroom_app.services.resume import resume_generation_service as G
+from classroom_app.services.resume import resume_ai_service as AI
 
 
 def _conn() -> sqlite3.Connection:
@@ -177,11 +178,17 @@ class DocumentTests(unittest.TestCase):
     def test_create_get_list_delete(self):
         c = _conn()
         _full_personal(c)
-        rid = D.create_resume(c, 1, title="我的简历", template_key="classic", layout=self._layout(c))
+        rid = D.create_resume(
+            c, 1, title="我的简历", template_key="classic",
+            target_position="Java 后端开发工程师", layout=self._layout(c),
+        )
         got = D.get_resume(c, 1, rid)
         self.assertEqual(got["status"], "rendering")
+        self.assertEqual(got["target_position"], "Java 后端开发工程师")
         self.assertEqual(len(got["layout"]["blocks"]), 4)
-        self.assertEqual(len(D.list_resumes(c, 1)), 1)
+        listed = D.list_resumes(c, 1)
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(listed[0]["target_position"], "Java 后端开发工程师")
         D.delete_resume(c, 1, rid)
         with self.assertRaises(ValueError):
             D.get_resume(c, 1, rid)
@@ -197,14 +204,44 @@ class DocumentTests(unittest.TestCase):
     def test_render_html_contains_content(self):
         c = _conn()
         _full_personal(c)
-        rid = D.create_resume(c, 1, title="我的简历", template_key="sidebar", layout=self._layout(c))
+        rid = D.create_resume(
+            c, 1, title="我的简历", template_key="sidebar",
+            target_position="Python 后端开发工程师", layout=self._layout(c),
+        )
         resume = D.get_resume(c, 1, rid)
         resume["tech_stack"] = [{"group": "编程语言", "items": ["Python"]}]
         html = R.assemble_resume_html(c, 1, resume)
         self.assertIn("张三", html)
+        self.assertIn("Python 后端开发工程师", html)
         self.assertIn("外卖系统", html)
         self.assertIn("编程语言", html)
         self.assertTrue(html.strip().startswith("<!DOCTYPE html>"))
+
+    def test_optimized_summary_is_per_resume_and_export_source(self):
+        c = _conn()
+        _full_personal(c)
+        rid = D.create_resume(
+            c, 1, title="前端求职版", template_key="classic",
+            target_position="前端开发工程师", layout=self._layout(c),
+        )
+        resume = D.get_resume(c, 1, rid)
+        resume["optimized_summary_md"] = "面向前端开发岗位，掌握 Vue 与 Python，具备外卖系统项目实践，关注交互实现与协作交付。"
+        resume["tech_stack"] = [{"group": "前端相关", "items": ["Vue"]}]
+        html = R.assemble_resume_html(c, 1, resume)
+        self.assertIn("前端开发工程师", html)
+        self.assertIn("面向前端开发岗位", html)
+        D.save_optimization(
+            c, rid,
+            target_position="前端开发工程师",
+            optimized_summary_md=resume["optimized_summary_md"],
+            optimization_notes={"items": ["摘要已按岗位重写"]},
+            render_html=html,
+            tech_stack=resume["tech_stack"],
+        )
+        saved = D.get_resume(c, 1, rid)
+        self.assertEqual(saved["status"], "ready")
+        self.assertEqual(saved["optimization_notes"]["items"], ["摘要已按岗位重写"])
+        self.assertIn("面向前端开发岗位", saved["render_html"])
 
     def test_all_templates_render(self):
         c = _conn()
@@ -266,6 +303,41 @@ class FallbackTests(unittest.TestCase):
         self.assertLessEqual(len(text), 181)
         self.assertNotIn("希望", text)
         self.assertNotIn("贵单位", text)
+
+    def test_self_intro_fallback_ignores_test_background(self):
+        bundle = {"personal": {"expected_position": "前端开发工程师"},
+                  "skill": [], "experience": []}
+        text = G._fallback_self_intro(bundle, {"major_name": "Regression"})
+        self.assertIn("前端开发工程师", text)
+        self.assertNotIn("Regression", text)
+        self.assertNotIn("专业背景", text)
+
+    def test_self_intro_fallback_uses_education_major(self):
+        bundle = {"personal": {"expected_position": "前端开发工程师"},
+                  "education": [{"major": "软件工程"}], "skill": [], "experience": []}
+        text = G._fallback_self_intro(bundle, {})
+        self.assertIn("软件工程", text)
+        self.assertIn("前端开发工程师", text)
+
+    def test_mock_ai_summary_is_rejected(self):
+        self.assertFalse(AI._resume_summary_is_useful("这是用于压测的 mock AI 响应。", "前端开发工程师"))
+        self.assertTrue(AI._resume_summary_is_useful(
+            "面向前端开发工程师岗位，掌握 Vue 与组件化开发，具备项目实践和协作交付意识。",
+            "前端开发工程师",
+        ))
+
+    def test_targeted_summary_fallback_ignores_test_background(self):
+        bundle = {"personal": {}, "skill": [], "experience": []}
+        text = AI._fallback_targeted_summary(bundle, {"major_name": "Regression"}, "前端开发工程师")
+        self.assertIn("求职目标为前端开发工程师", text)
+        self.assertNotIn("Regression", text)
+        self.assertNotIn("背景，", text)
+
+    def test_targeted_summary_fallback_uses_real_major(self):
+        bundle = {"personal": {}, "education": [{"major": "软件工程"}], "skill": [], "experience": []}
+        text = AI._fallback_targeted_summary(bundle, {}, "前端开发工程师")
+        self.assertIn("软件工程", text)
+        self.assertIn("前端开发工程师", text)
 
     def test_compact_resume_intro_removes_heading_and_long_tail(self):
         text = G._compact_resume_intro("## 自我介绍\n具备软件工程背景，掌握 Vue。关注代码质量与协作交付。多余内容很多很多很多。", limit=38)

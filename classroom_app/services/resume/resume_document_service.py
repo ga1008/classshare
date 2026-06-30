@@ -48,11 +48,21 @@ def _normalize_layout(layout: Any) -> dict[str, Any]:
 def list_resumes(conn, student_id: int) -> list[dict[str, Any]]:
     ensure_resume_schema(conn)
     rows = conn.execute(
-        "SELECT id, title, template_key, status, error_text, created_at, updated_at "
+        "SELECT id, title, target_position, template_key, optimized_summary_md, optimization_notes_json, "
+        "status, error_text, created_at, updated_at "
         "FROM resumes WHERE student_id = ? ORDER BY created_at DESC, id DESC",
         (int(student_id),),
     ).fetchall()
-    return [dict(row) for row in rows]
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["optimization_notes"] = json.loads(item.get("optimization_notes_json") or "{}")
+        except (TypeError, ValueError):
+            item["optimization_notes"] = {}
+        item.pop("optimization_notes_json", None)
+        items.append(item)
+    return items
 
 
 def get_resume(conn, student_id: int, resume_id: int) -> dict[str, Any]:
@@ -66,28 +76,36 @@ def get_resume(conn, student_id: int, resume_id: int) -> dict[str, Any]:
     return render.parse_resume_row(dict(row))
 
 
-def create_resume(conn, student_id: int, *, title: str, template_key: str, layout: Any) -> int:
+def create_resume(conn, student_id: int, *, title: str, template_key: str,
+                  layout: Any, target_position: str = "") -> int:
     ensure_resume_schema(conn)
     now = _now()
     layout_json = json.dumps(_normalize_layout(layout), ensure_ascii=False)
     return int(
         execute_insert_returning_id(
             conn,
-            "INSERT INTO resumes (student_id, title, template_key, layout_json, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, 'rendering', ?, ?)",
-            (int(student_id), str(title or "我的简历")[:120], str(template_key or "classic")[:40], layout_json, now, now),
+            "INSERT INTO resumes (student_id, title, target_position, template_key, layout_json, status, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'rendering', ?, ?)",
+            (
+                int(student_id), str(title or "我的简历")[:120], str(target_position or "")[:120],
+                str(template_key or "classic")[:40], layout_json, now, now,
+            ),
         )
     )
 
 
-def update_resume(conn, student_id: int, resume_id: int, *, title: str, template_key: str, layout: Any) -> None:
+def update_resume(conn, student_id: int, resume_id: int, *, title: str, template_key: str,
+                  layout: Any, target_position: str = "") -> None:
     get_resume(conn, student_id, resume_id)  # ownership
     layout_json = json.dumps(_normalize_layout(layout), ensure_ascii=False)
     conn.execute(
-        "UPDATE resumes SET title = ?, template_key = ?, layout_json = ?, status = 'rendering', "
+        "UPDATE resumes SET title = ?, target_position = ?, template_key = ?, layout_json = ?, "
+        "optimized_summary_md = '', optimization_notes_json = '{}', status = 'rendering', "
         "error_text = '', updated_at = ? WHERE id = ? AND student_id = ?",
-        (str(title or "我的简历")[:120], str(template_key or "classic")[:40], layout_json, _now(),
-         int(resume_id), int(student_id)),
+        (
+            str(title or "我的简历")[:120], str(target_position or "")[:120],
+            str(template_key or "classic")[:40], layout_json, _now(), int(resume_id), int(student_id),
+        ),
     )
 
 
@@ -99,6 +117,27 @@ def save_render(conn, resume_id: int, *, render_html: str, tech_stack: list[Any]
         "updated_at = ? WHERE id = ?",
         (str(render_html or ""), json.dumps(tech_stack or [], ensure_ascii=False),
          status, str(error_text or "")[:600], _now(), int(resume_id)),
+    )
+
+
+def save_optimization(conn, resume_id: int, *, target_position: str, optimized_summary_md: str,
+                      optimization_notes: Any, render_html: str, tech_stack: list[Any],
+                      status: str = "ready", error_text: str = "") -> None:
+    ensure_resume_schema(conn)
+    conn.execute(
+        "UPDATE resumes SET target_position = ?, optimized_summary_md = ?, optimization_notes_json = ?, "
+        "render_html = ?, tech_stack_json = ?, status = ?, error_text = ?, updated_at = ? WHERE id = ?",
+        (
+            str(target_position or "")[:120],
+            str(optimized_summary_md or "")[:2000],
+            json.dumps(optimization_notes or {}, ensure_ascii=False),
+            str(render_html or ""),
+            json.dumps(tech_stack or [], ensure_ascii=False),
+            status,
+            str(error_text or "")[:600],
+            _now(),
+            int(resume_id),
+        ),
     )
 
 

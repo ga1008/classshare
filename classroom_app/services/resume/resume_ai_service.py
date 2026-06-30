@@ -130,8 +130,10 @@ async def optimize_self_intro(text: str, personal: dict[str, Any]) -> dict[str, 
     try:
         result = await _chat(system, user, want_json=False, label="resume:optimize-intro")
         result = _compact_self_intro(result)
+        if not _resume_summary_is_useful(result, str(personal.get("expected_position") or "")):
+            result = ""
         if not result:
-            return {"ok": False, "error": "AI 未返回内容，请稍后重试"}
+            return {"ok": False, "error": "AI 未返回可用于简历的专业内容，请稍后重试"}
         return {"ok": True, "content": result}
     except (httpx.HTTPError, ValueError) as exc:
         return {"ok": False, "error": f"AI 优化暂不可用（{type(exc).__name__}）"}
@@ -166,13 +168,21 @@ async def build_personal_info_suggestions(personal: dict[str, Any], student_cont
 # ---------------------------------------------------------------------------
 # 3) Generate a grouped tech stack for the résumé builder
 # ---------------------------------------------------------------------------
-async def generate_tech_stack(bundle: dict[str, Any], student_context: dict[str, Any]) -> dict[str, Any]:
+async def generate_tech_stack(
+    bundle: dict[str, Any],
+    student_context: dict[str, Any],
+    *,
+    target_position: str = "",
+) -> dict[str, Any]:
+    target_position = str(target_position or (bundle.get("personal") or {}).get("expected_position") or "").strip()
     system = (
         "你是技术简历顾问。请根据学生的项目/比赛经验、学习经历与技能，归纳出适合写进简历的技术栈。"
+        "技术栈必须围绕目标岗位筛选和排序：与目标岗位直接相关的能力优先，不相关或证据不足的能力不要硬塞。"
         "必须返回 JSON 数组，每个元素是对象：{\"group\":\"分组名\",\"items\":[\"技能1\",\"技能2\"]}。"
         "分组例如 编程语言 / 框架与工具 / 数据库 / 其他。只罗列有依据的技术，不要编造。只返回 JSON。"
     )
     digest = {
+        "目标岗位": target_position,
         "专业": student_context.get("major_name"),
         "技能": [s.get("name") for s in bundle.get("skill", [])][:30],
         "项目比赛": [
@@ -196,6 +206,69 @@ async def generate_tech_stack(bundle: dict[str, Any], student_context: dict[str,
         return {"ok": False, "error": "AI 未返回有效技术栈", "groups": _fallback_tech_stack(bundle)}
     except (httpx.HTTPError, ValueError) as exc:
         return {"ok": False, "error": f"AI 生成暂不可用（{type(exc).__name__}）", "groups": _fallback_tech_stack(bundle)}
+
+
+async def optimize_resume_for_target(
+    resume: dict[str, Any],
+    bundle: dict[str, Any],
+    student_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Produce per-resume optimized summary + tech stack + human-readable notes."""
+    target_position = str(
+        resume.get("target_position") or (bundle.get("personal") or {}).get("expected_position") or "目标岗位"
+    ).strip()
+    layout = resume.get("layout") if isinstance(resume.get("layout"), dict) else {}
+    selected = _selected_resume_digest(bundle, layout)
+    system = (
+        "你是资深校招简历顾问。请根据学生已选择进入简历的真实材料，把这份简历优化成更匹配目标岗位的版本。"
+        "必须遵守：不虚构项目、证书、学校、奖项；不写空泛口号；不要暴露课堂表现、隐私推断或后台分析过程。"
+        "返回 JSON 对象，格式为："
+        "{\"summary_md\":\"80-140字职业摘要\","
+        "\"tech_stack\":[{\"group\":\"分组名\",\"items\":[\"技能\"]}],"
+        "\"notes\":[\"给学生看的优化说明，3-5条\"]}。"
+        "summary_md 要专业、严谨、短促有力，可直接放入简历。"
+        "tech_stack 只保留和目标岗位相关且材料中有依据的技能，并按岗位重要性排序。"
+    )
+    digest = {
+        "目标岗位": target_position,
+        "学生背景": {
+            "专业": student_context.get("major_name"),
+            "班级": student_context.get("class_name"),
+            "姓名": (bundle.get("personal") or {}).get("name"),
+        },
+        "已放入简历的材料": selected,
+        "全部技能候选": [s.get("name") for s in bundle.get("skill", [])][:30],
+    }
+    user = "简历优化输入：\n" + json.dumps(digest, ensure_ascii=False, indent=2)
+    try:
+        result = await _chat(
+            system, user, want_json=True, capability="thinking",
+            task_type="deep_text_reasoning", timeout=_THINK_TIMEOUT, label="resume:optimize-resume",
+        )
+        if not isinstance(result, dict):
+            raise ValueError("AI returned non-object")
+        summary = _compact_self_intro(result.get("summary_md") or result.get("summary") or "", limit=170)
+        if not _resume_summary_is_useful(summary, target_position):
+            summary = ""
+        groups = _coerce_tech_groups(result.get("tech_stack") or result.get("groups"))
+        notes = _coerce_notes(result.get("notes"))
+        if not summary:
+            summary = _fallback_targeted_summary(bundle, student_context, target_position)
+        if not groups:
+            groups = _fallback_tech_stack(bundle)
+        if not notes:
+            notes = _fallback_optimization_notes(target_position, bool(groups), bool(summary))
+        return {"ok": True, "target_position": target_position, "summary_md": summary,
+                "tech_stack": groups, "notes": notes}
+    except (httpx.HTTPError, ValueError) as exc:
+        return {
+            "ok": False,
+            "target_position": target_position,
+            "summary_md": _fallback_targeted_summary(bundle, student_context, target_position),
+            "tech_stack": _fallback_tech_stack(bundle),
+            "notes": _fallback_optimization_notes(target_position, True, True),
+            "error": f"AI 优化暂不可用（{type(exc).__name__}），已生成基础优化版",
+        }
 
 
 def _coerce_tech_groups(result: Any) -> list[dict[str, Any]]:
@@ -222,3 +295,130 @@ def _fallback_tech_stack(bundle: dict[str, Any]) -> list[dict[str, Any]]:
     if not skills:
         return []
     return [{"group": "技能", "items": skills[:20]}]
+
+
+def _coerce_notes(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    notes: list[str] = []
+    for item in raw:
+        text = str(item or "").strip()
+        if text:
+            notes.append(text[:160])
+        if len(notes) >= 5:
+            break
+    return notes
+
+
+def _resume_summary_is_useful(text: Any, target_position: str = "") -> bool:
+    raw = str(text or "").strip()
+    if len(raw) < 28:
+        return False
+    lowered = raw.lower()
+    bad_terms = ("mock", "压测", "测试响应", "占位", "示例响应", "ai 响应", "ai响应")
+    if any(term in lowered for term in bad_terms):
+        return False
+    target = str(target_position or "").strip()
+    if not target:
+        return True
+    target_keys = {target}
+    core = re.sub(r"(开发工程师|工程师|实习生|岗位|方向|开发|助理)$", "", target).strip()
+    if len(core) >= 2:
+        target_keys.add(core)
+    return any(key and key in raw for key in target_keys)
+
+
+def _clean_resume_background_label(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    lowered = raw.lower()
+    noisy_terms = ("regression", "fixture", "mock", "qa-", "qa ", "test", "p03")
+    if any(term in lowered for term in noisy_terms):
+        return ""
+    if raw in {"待完善", "未知", "无", "暂无"}:
+        return ""
+    return raw[:24]
+
+
+def _first_education_major(bundle: dict[str, Any]) -> str:
+    for edu in bundle.get("education", []):
+        if isinstance(edu, dict):
+            major = _clean_resume_background_label(edu.get("major"))
+            if major:
+                return major
+    return ""
+
+
+def _fallback_targeted_summary(bundle: dict[str, Any], student_context: dict[str, Any], target_position: str) -> str:
+    personal = bundle.get("personal") or {}
+    target = str(target_position or personal.get("expected_position") or "相关岗位").strip()
+    major = _clean_resume_background_label(student_context.get("major_name")) or _first_education_major(bundle)
+    skills = [str(s.get("name") or "").strip() for s in bundle.get("skill", []) if str(s.get("name") or "").strip()]
+    experiences = [
+        str(e.get("title") or "").strip()
+        for e in bundle.get("experience", [])
+        if str(e.get("title") or "").strip()
+    ]
+    opening = f"具备{major}相关学习背景，求职目标为{target}" if major else f"求职目标为{target}"
+    if skills:
+        opening += f"，掌握{'、'.join(skills[:4])}等技能"
+    opening += "。"
+    if experiences:
+        body = f"具备{experiences[0]}等实践经历，能够围绕需求拆解、功能实现与问题定位推进交付。"
+    else:
+        body = "具备扎实的专业学习基础，重视需求理解、代码质量与协作交付。"
+    return _compact_self_intro(opening + body, limit=170)
+
+
+def _fallback_optimization_notes(target_position: str, has_stack: bool, has_summary: bool) -> list[str]:
+    notes = [f"已将简历摘要与技术栈优先对齐「{target_position or '目标岗位'}」。"]
+    if has_stack:
+        notes.append("技术栈按岗位相关性重新筛选和排序，避免把无关技能堆在前面。")
+    if has_summary:
+        notes.append("个人介绍已压缩为可直接放入简历的职业摘要，弱化流水账和口语化表达。")
+    return notes
+
+
+def _selected_resume_digest(bundle: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any]:
+    indexes = {
+        "education": {int(i["id"]): i for i in bundle.get("education", []) if i.get("id") is not None},
+        "experience": {int(i["id"]): i for i in bundle.get("experience", []) if i.get("id") is not None},
+        "skill": {int(i["id"]): i for i in bundle.get("skill", []) if i.get("id") is not None},
+        "certificate": {int(i["id"]): i for i in bundle.get("certificate", []) if i.get("id") is not None},
+        "self_intro": {int(i["id"]): i for i in bundle.get("self_intro", []) if i.get("id") is not None},
+    }
+
+    def pick(kind: str, ids: Any) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for raw in (ids if isinstance(ids, list) else []):
+            try:
+                item = indexes[kind].get(int(raw))
+            except (TypeError, ValueError):
+                item = None
+            if item:
+                out.append(item)
+        return out
+
+    digest: dict[str, Any] = {"个人信息": bundle.get("personal") or {}}
+    for block in layout.get("blocks") if isinstance(layout.get("blocks"), list) else []:
+        if not isinstance(block, dict):
+            continue
+        btype = str(block.get("type") or "")
+        if btype == "education":
+            digest["学习经历"] = [
+                {"学校": i.get("school"), "专业": i.get("major"), "内容": (i.get("content") or "")[:180]}
+                for i in pick("education", block.get("ids"))
+            ]
+        elif btype == "experience":
+            digest["项目比赛经验"] = [
+                {"标题": i.get("title"), "角色": i.get("role"), "内容": (i.get("content") or "")[:240],
+                 "贡献": (i.get("contribution") or "")[:200], "成果": (i.get("achievement") or "")[:160]}
+                for i in pick("experience", block.get("ids"))
+            ]
+        elif btype == "skill_cert":
+            digest["技能"] = [i.get("name") for i in pick("skill", block.get("skill_ids"))]
+            digest["证书"] = [i.get("name") for i in pick("certificate", block.get("cert_ids"))]
+        elif btype == "self_intro":
+            digest["原个人介绍"] = [(i.get("content_md") or "")[:240] for i in pick("self_intro", block.get("ids"))]
+    return digest

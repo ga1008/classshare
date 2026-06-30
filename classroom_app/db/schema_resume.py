@@ -219,9 +219,12 @@ def ensure_resume_schema(conn: Any) -> None:
             {id_column},
             student_id INTEGER NOT NULL,
             title TEXT NOT NULL DEFAULT '我的简历',
+            target_position TEXT NOT NULL DEFAULT '',
             template_key TEXT NOT NULL DEFAULT 'classic',
             layout_json TEXT NOT NULL DEFAULT '{{}}',
             tech_stack_json TEXT NOT NULL DEFAULT '[]',
+            optimized_summary_md TEXT NOT NULL DEFAULT '',
+            optimization_notes_json TEXT NOT NULL DEFAULT '{{}}',
             render_html TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'draft',
             error_text TEXT NOT NULL DEFAULT '',
@@ -238,6 +241,9 @@ def ensure_resume_schema(conn: Any) -> None:
     # Backfill columns for databases created before a column existed.
     _add_column(conn, "resume_personal_info", "seeded", "INTEGER NOT NULL DEFAULT 0", engine=engine)
     _add_column(conn, "resume_skills", "expiry_date", "TEXT NOT NULL DEFAULT ''", engine=engine)
+    _add_column(conn, "resumes", "target_position", "TEXT NOT NULL DEFAULT ''", engine=engine)
     _add_column(conn, "resumes", "tech_stack_json", "TEXT NOT NULL DEFAULT '[]'", engine=engine)
+    _add_column(conn, "resumes", "optimized_summary_md", "TEXT NOT NULL DEFAULT ''", engine=engine)
+    _add_column(conn, "resumes", "optimization_notes_json", "TEXT NOT NULL DEFAULT '{}'", engine=engine)
 
     _SCHEMA_READY = True

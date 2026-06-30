@@ -10,25 +10,31 @@
   function fmtTime(s) { return (s || '').replace('T', ' ').slice(0, 16); }
 
   function renderCard(r) {
-    if (r.status === 'rendering') {
+    if (r.status === 'rendering' || r.status === 'optimizing') {
+      var loadingTitle = r.status === 'optimizing' ? 'AI 正在按目标岗位优化…' : '正在渲染整合…';
+      var loadingMeta = r.target_position ? '目标岗位：' + r.target_position : r.title;
       return '<div class="rz-card rz-card--placeholder" data-rendering="1">' +
-        '<div class="rz-card__title"><span class="rz-spin"></span> 正在渲染整合…</div>' +
-        '<div class="rz-card__meta">' + RZ.esc(r.title) + '</div></div>';
+        '<div class="rz-card__title"><span class="rz-spin"></span> ' + loadingTitle + '</div>' +
+        '<div class="rz-card__meta">' + RZ.esc(loadingMeta) + '</div></div>';
     }
     var failed = r.status === 'failed';
     var tag = '<span class="rz-card__tag">' + RZ.esc(TPL_LABEL[r.template_key] || r.template_key) + '</span>';
-    var actions = failed ? '<span style="color:#dc2626">渲染失败</span>' :
-      '<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">' +
-      '<button class="rz-btn rz-btn--sm" data-act="preview">预览</button>' +
+    var target = r.target_position ? '<span class="rz-card__target">目标：' + RZ.esc(r.target_position) + '</span>' : '';
+    var optimized = r.optimized_summary_md ? '<span class="rz-card__target rz-card__target--ok">AI 已优化</span>' : '';
+    var notes = r.optimization_notes && Array.isArray(r.optimization_notes.items) ? r.optimization_notes.items : [];
+    var noteHtml = notes.length ? '<div class="rz-card__note">' + RZ.esc(notes[0]) + '</div>' : '';
+    var actionList = '<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">' +
+      (failed ? '' : '<button class="rz-btn rz-btn--sm" data-act="preview">预览</button>') +
+      '<button class="rz-btn rz-btn--sm rz-btn--primary" data-act="optimize">AI 优化</button>' +
       '<button class="rz-btn rz-btn--sm" data-act="edit">编辑</button>' +
-      '<a class="rz-btn rz-btn--sm" href="/api/resume/resumes/' + r.id + '/export?fmt=pdf" target="_blank">PDF</a>' +
-      '<a class="rz-btn rz-btn--sm" href="/api/resume/resumes/' + r.id + '/export?fmt=docx" target="_blank">Word</a>' +
+      (failed ? '' : '<a class="rz-btn rz-btn--sm" href="/api/resume/resumes/' + r.id + '/export?fmt=pdf" target="_blank">PDF</a>' +
+      '<a class="rz-btn rz-btn--sm" href="/api/resume/resumes/' + r.id + '/export?fmt=docx" target="_blank">Word</a>') +
       '<button class="rz-btn rz-btn--sm rz-btn--danger" data-act="del">删除</button></div>';
     return '<div class="rz-card' + (failed ? ' rz-card--failed' : '') + '" data-id="' + r.id + '" style="cursor:default">' +
       '<div class="rz-card__title">' + RZ.esc(r.title) + '</div>' +
-      '<div class="rz-card__meta">' + tag + fmtTime(r.updated_at) +
+      '<div class="rz-card__meta">' + tag + target + optimized + fmtTime(r.updated_at) +
       (failed && r.error_text ? '<br><span style="color:#dc2626">' + RZ.esc(r.error_text) + '</span>' : '') + '</div>' +
-      actions + '</div>';
+      noteHtml + actionList + '</div>';
   }
 
   function bind(items) {
@@ -40,6 +46,7 @@
           e.stopPropagation();
           var act = b.dataset.act;
           if (act === 'preview') openPreview(r);
+          else if (act === 'optimize') optimizeResume(r, b);
           else if (act === 'edit') window.location.href = '/resume/builder?edit=' + id;
           else if (act === 'del') del(r);
         });
@@ -81,8 +88,28 @@
     pdf.href = '/api/resume/resumes/' + r.id + '/export?fmt=pdf'; pdf.target = '_blank';
     var word = document.createElement('a'); word.className = 'rz-btn'; word.textContent = '下载 Word';
     word.href = '/api/resume/resumes/' + r.id + '/export?fmt=docx'; word.target = '_blank';
+    var optimizeBtn = document.createElement('button'); optimizeBtn.className = 'rz-btn rz-btn--primary'; optimizeBtn.textContent = 'AI 优化这份';
+    optimizeBtn.onclick = function () { optimizeResume(r, optimizeBtn, m.close); };
     var close = document.createElement('button'); close.className = 'rz-btn rz-btn--primary'; close.textContent = '关闭'; close.onclick = m.close;
-    m.foot.appendChild(pdf); m.foot.appendChild(word); m.foot.appendChild(close);
+    m.foot.appendChild(optimizeBtn); m.foot.appendChild(pdf); m.foot.appendChild(word); m.foot.appendChild(close);
+  }
+
+  async function optimizeResume(r, trigger, done) {
+    if (!r.target_position) {
+      RZ.toast('这份简历还没有目标岗位，请先编辑补充', 'error');
+      return;
+    }
+    var oldText = trigger ? trigger.textContent : '';
+    if (trigger) { trigger.disabled = true; trigger.textContent = '优化中…'; }
+    try {
+      await RZ.api('/api/resume/resumes/' + r.id + '/optimize', { method: 'POST' });
+      RZ.toast('AI 正在按目标岗位优化这份简历', 'success');
+      if (typeof done === 'function') done();
+      load();
+    } catch (e) {
+      RZ.toast(e.message, 'error');
+      if (trigger) { trigger.disabled = false; trigger.textContent = oldText || 'AI 优化'; }
+    }
   }
 
   function del(r) {
@@ -104,7 +131,7 @@
         box.innerHTML = items.map(renderCard).join('');
         bind(items);
       }
-      var rendering = items.some(function (i) { return i.status === 'rendering'; });
+      var rendering = items.some(function (i) { return i.status === 'rendering' || i.status === 'optimizing'; });
       if (rendering && !pollTimer) pollTimer = setInterval(load, 2500);
       else if (!rendering && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     } catch (e) { RZ.toast(e.message, 'error'); }

@@ -356,12 +356,15 @@ def api_templates(user: dict = Depends(get_current_user)):
 def api_builder_palette(user: dict = Depends(get_current_user)):
     student_id = _require_student(user)
     with get_db_connection() as conn:
+        profile.seed_personal_info_from_platform(conn, student_id, user)
         bundle = profile.collect_profile_bundle(conn, student_id)
+        position_options = profile.build_expected_position_options(conn, student_id)
         conn.commit()
     return {
         "ok": True,
         "personal": bundle.get("personal") or {},
         "personal_labels": render._PERSONAL_LABELS,
+        "position_options": position_options,
         "education": bundle.get("education", []),
         "experience": bundle.get("experience", []),
         "skill": bundle.get("skill", []),
@@ -398,9 +401,12 @@ async def api_resume_create(request: Request, user: dict = Depends(get_current_u
     student_id = _require_student(user)
     payload = await _read_json(request)
     with get_db_connection() as conn:
+        personal = profile.get_personal_info(conn, student_id)
+        target_position = str(payload.get("target_position") or personal.get("expected_position") or "").strip()
         resume_id = docs.create_resume(
             conn, student_id,
             title=str(payload.get("title") or "我的简历"),
+            target_position=target_position,
             template_key=str(payload.get("template_key") or "classic"),
             layout=payload.get("layout"),
         )
@@ -415,9 +421,12 @@ async def api_resume_update(resume_id: int, request: Request, user: dict = Depen
     payload = await _read_json(request)
     try:
         with get_db_connection() as conn:
+            personal = profile.get_personal_info(conn, student_id)
+            target_position = str(payload.get("target_position") or personal.get("expected_position") or "").strip()
             docs.update_resume(
                 conn, student_id, resume_id,
                 title=str(payload.get("title") or "我的简历"),
+                target_position=target_position,
                 template_key=str(payload.get("template_key") or "classic"),
                 layout=payload.get("layout"),
             )
@@ -426,6 +435,39 @@ async def api_resume_update(resume_id: int, request: Request, user: dict = Depen
         raise HTTPException(404, str(exc)) from exc
     asyncio.create_task(gen.run_resume_render_job(resume_id, student_id))
     return {"ok": True, "id": resume_id}
+
+
+@router.post("/api/resume/resumes/{resume_id}/optimize", response_class=JSONResponse)
+async def api_resume_optimize(resume_id: int, request: Request, user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    try:
+        payload = await request.json()
+        payload = payload if isinstance(payload, dict) else {}
+    except Exception:
+        payload = {}
+    try:
+        with get_db_connection() as conn:
+            resume = docs.get_resume(conn, student_id, resume_id)
+            personal = profile.get_personal_info(conn, student_id)
+            target_position = str(
+                payload.get("target_position")
+                or resume.get("target_position")
+                or personal.get("expected_position")
+                or ""
+            ).strip()
+            docs.update_resume(
+                conn, student_id, resume_id,
+                title=str(resume.get("title") or "我的简历"),
+                target_position=target_position,
+                template_key=str(resume.get("template_key") or "classic"),
+                layout=resume.get("layout"),
+            )
+            docs.set_status(conn, resume_id, "optimizing")
+            conn.commit()
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    asyncio.create_task(gen.run_resume_optimization_job(resume_id, student_id))
+    return {"ok": True, "id": resume_id, "target_position": target_position}
 
 
 @router.delete("/api/resume/resumes/{resume_id}", response_class=JSONResponse)
