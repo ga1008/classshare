@@ -15,6 +15,7 @@ from .material_final_document_service import (
     normalize_final_material_payload,
 )
 from .ordinary_grade_record_service import ORDINARY_GRADE_RECORD_TYPE, build_ordinary_grade_record_xlsx
+from .exam_grade_record_service import EXAM_GRADE_RECORD_TYPE, build_exam_grade_record_xlsx
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ TEMPLATE_CONFIGS: dict[str, dict[str, str]] = {
     "grading_rubric": {"title": "课程考核评分细则", "preferred_format": "docx"},
     "exam_paper": {"title": "课程考核试卷", "preferred_format": "docx"},
     ORDINARY_GRADE_RECORD_TYPE: {"title": "学生平时成绩记录表", "preferred_format": "xlsx"},
+    EXAM_GRADE_RECORD_TYPE: {"title": "机试（作品设计）考核登分表", "preferred_format": "xlsx"},
     "final_teaching_summary": {"title": "教师教学工作总结", "preferred_format": "docx"},
 }
 
@@ -105,6 +107,12 @@ def build_material_export_artifact(
     if template_key == ORDINARY_GRADE_RECORD_TYPE:
         return MaterialExportArtifact(
             content=build_ordinary_grade_record_xlsx(payload),
+            filename=f"{base_name}.xlsx",
+            media_type=XLSX_MEDIA_TYPE,
+        )
+    if template_key == EXAM_GRADE_RECORD_TYPE:
+        return MaterialExportArtifact(
+            content=build_exam_grade_record_xlsx(payload),
             filename=f"{base_name}.xlsx",
             media_type=XLSX_MEDIA_TYPE,
         )

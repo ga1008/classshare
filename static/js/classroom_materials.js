@@ -26,6 +26,8 @@ const state = {
     detailExportPdfUrl: '',
     ordinaryGradeCandidates: [],
     ordinaryGradeCandidatesLoaded: false,
+    examGradeCandidates: [],
+    examGradeCandidatesLoaded: false,
 };
 
 function withClassroomLearningContext(urlText) {
@@ -70,6 +72,9 @@ function refs() {
         gradingRubricOptions: document.getElementById('classroom-grading-rubric-options'),
         ordinaryGradeOptions: document.getElementById('classroom-ordinary-grade-record-options'),
         ordinaryGradeStatus: document.getElementById('classroom-ordinary-grade-record-status'),
+        examGradeOptions: document.getElementById('classroom-exam-grade-record-options'),
+        examGradeSelect: document.getElementById('classroom-exam-grade-record-assignment'),
+        examGradeStatus: document.getElementById('classroom-exam-grade-record-status'),
         ordinaryHomeworkSelects: [
             document.getElementById('classroom-ordinary-homework-1'),
             document.getElementById('classroom-ordinary-homework-2'),
@@ -361,6 +366,30 @@ function renderStructuredSummary(preview) {
             </div>
         `;
     }
+    if (type === 'exam_grade_record') {
+        const students = Array.isArray(structured.students) ? structured.students : [];
+        const sections = Array.isArray(structured.sections) ? structured.sections : [];
+        const source = structured.source_exam || {};
+        return `
+            <div class="classroom-material-preview-list">
+                <div>
+                    <strong>学生</strong>
+                    <span>${escapeHtml(compactValue(students.length))} 人，按考试最终分生成 Excel。</span>
+                    <em>A4</em>
+                </div>
+                <div>
+                    <strong>大题</strong>
+                    <span>${escapeHtml(sections.map((item) => `${item.label || ''}${item.full_score ? `(${item.full_score}分)` : ''}`).filter(Boolean).join('；') || '未识别')}</span>
+                    <em>${escapeHtml(compactValue(sections.length))}列</em>
+                </div>
+                <div>
+                    <strong>考试</strong>
+                    <span>${escapeHtml(source.assignment_title || source.exam_paper_title || '未绑定')}</span>
+                    <em>${escapeHtml(compactValue(source.total_score || ''))}分</em>
+                </div>
+            </div>
+        `;
+    }
     return '<p class="text-muted text-sm">这份材料暂未绑定期末材料模板。</p>';
 }
 
@@ -422,15 +451,15 @@ function renderDetailContent(material, preview = null) {
     `;
 }
 
-function isOrdinaryGradeRecord(material = null, preview = null) {
-    return preview?.document_type === 'ordinary_grade_record'
-        || material?.ai_import_record?.document_type === 'ordinary_grade_record';
+function isExcelFinalMaterial(material = null, preview = null) {
+    const type = preview?.document_type || material?.ai_import_record?.document_type || '';
+    return type === 'ordinary_grade_record' || type === 'exam_grade_record';
 }
 
 function setDetailExportButtons(material = null, preview = null) {
     const dom = refs();
     if (dom.detailExportBtn) {
-        dom.detailExportBtn.textContent = isOrdinaryGradeRecord(material, preview) ? '导出Excel' : '导出Word';
+        dom.detailExportBtn.textContent = isExcelFinalMaterial(material, preview) ? '导出Excel' : '导出Word';
     }
 }
 
@@ -581,6 +610,71 @@ function collectOrdinaryGradeSelection() {
     return { homeworkIds, assessmentId };
 }
 
+function examGradeCandidateLabel(item) {
+    const title = item?.title || `考试 ${item?.id || ''}`;
+    const stats = `${item?.graded_count || 0}/${item?.submission_count || 0}`;
+    const sections = item?.section_count ? `，${item.section_count} 个大题` : '';
+    const total = item?.total_score ? `，满分 ${item.total_score}` : '';
+    const average = item?.average_score === null || item?.average_score === undefined ? '' : `，均分 ${item.average_score}`;
+    return `${title}（已评分 ${stats}${sections}${total}${average}）`;
+}
+
+function populateExamGradeSelect() {
+    const dom = refs();
+    if (!dom.examGradeSelect) return;
+    const previous = dom.examGradeSelect.value;
+    dom.examGradeSelect.innerHTML = [
+        '<option value="">请选择考试</option>',
+        ...state.examGradeCandidates.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(examGradeCandidateLabel(item))}</option>`),
+    ].join('');
+    if (previous && state.examGradeCandidates.some((item) => String(item.id) === String(previous))) {
+        dom.examGradeSelect.value = previous;
+    } else if (state.examGradeCandidates.length === 1) {
+        dom.examGradeSelect.value = String(state.examGradeCandidates[0].id);
+    }
+}
+
+async function loadExamGradeCandidates() {
+    const dom = refs();
+    if (state.examGradeCandidatesLoaded) {
+        populateExamGradeSelect();
+        return;
+    }
+    if (dom.examGradeStatus) {
+        dom.examGradeStatus.hidden = false;
+        dom.examGradeStatus.textContent = '正在读取当前课堂的考试成绩...';
+    }
+    try {
+        const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/exam-grade-record/candidates`, { silent: true });
+        state.examGradeCandidates = Array.isArray(data.items) ? data.items : [];
+        state.examGradeCandidatesLoaded = true;
+        populateExamGradeSelect();
+        if (dom.examGradeStatus) {
+            if (!state.examGradeCandidates.length) {
+                dom.examGradeStatus.hidden = false;
+                dom.examGradeStatus.textContent = '当前课堂还没有可用于生成登分表的考试记录。';
+            } else {
+                dom.examGradeStatus.hidden = true;
+                dom.examGradeStatus.textContent = '';
+            }
+        }
+    } catch (error) {
+        if (dom.examGradeStatus) {
+            dom.examGradeStatus.hidden = false;
+            dom.examGradeStatus.textContent = error.message || '读取考试候选失败';
+        }
+    }
+}
+
+function collectExamGradeSelection() {
+    const dom = refs();
+    const examAssignmentId = Number(dom.examGradeSelect?.value || 0);
+    if (examAssignmentId <= 0) {
+        throw new Error('请选择一个用于生成考核登分表的考试。');
+    }
+    return { examAssignmentId };
+}
+
 function updateFinalMaterialTemplateOptions() {
     const dom = refs();
     const selectedType = dom.finalMaterialType?.value || '';
@@ -588,6 +682,7 @@ function updateFinalMaterialTemplateOptions() {
     const isGradingRubric = selectedType === 'grading_rubric';
     const isExamPaper = selectedType === 'exam_paper';
     const isOrdinary = selectedType === 'ordinary_grade_record';
+    const isExamGrade = selectedType === 'exam_grade_record';
     if (dom.examPaperOptions) {
         dom.examPaperOptions.hidden = !isExamPaper;
     }
@@ -600,8 +695,14 @@ function updateFinalMaterialTemplateOptions() {
     if (dom.ordinaryGradeOptions) {
         dom.ordinaryGradeOptions.hidden = !isOrdinary;
     }
+    if (dom.examGradeOptions) {
+        dom.examGradeOptions.hidden = !isExamGrade;
+    }
     if (isOrdinary) {
         loadOrdinaryGradeCandidates();
+    }
+    if (isExamGrade) {
+        loadExamGradeCandidates();
     }
     if (isAssessmentPlan && dom.finalMaterialAssessmentMethod && !dom.finalMaterialAssessmentMethod.value.trim()) {
         dom.finalMaterialAssessmentMethod.value = dom.finalMaterialAssessmentMode?.value === 'written' ? '闭卷笔试' : '机试';
@@ -613,6 +714,8 @@ function updateFinalMaterialTemplateOptions() {
             dom.finalMaterialPrompt.placeholder = '例如：按机试方式拆分 Linux 服务部署、数据库授权、脚本备份等考核技能，分值合计100。';
         } else if (isOrdinary) {
             dom.finalMaterialPrompt.placeholder = '例如：需要保留样表版式，按智慧课堂出勤、三次作业和一次测评生成 Excel。';
+        } else if (isExamGrade) {
+            dom.finalMaterialPrompt.placeholder = '例如：按考试大题生成“一、二、三”列，迟交和小组互评扣分要整数分摊并核验总分。';
         } else {
             dom.finalMaterialPrompt.placeholder = '例如：根据本课堂最新考核计划表，围绕 Linux 服务部署、数据库授权、脚本备份设计机试任务，写清截图编号、提交物和考试时长。';
         }
@@ -634,6 +737,7 @@ async function submitFinalMaterialGeneration() {
     const prompt = dom.finalMaterialPrompt?.value || '';
     const statusEl = dom.finalMaterialStatus;
     let ordinarySelection = null;
+    let examGradeSelection = null;
     if (documentType === 'ordinary_grade_record') {
         try {
             ordinarySelection = collectOrdinaryGradeSelection();
@@ -643,6 +747,18 @@ async function submitFinalMaterialGeneration() {
                 statusEl.textContent = error.message || '请选择成绩来源';
             }
             showToast(error.message || '请选择成绩来源', 'warning');
+            return;
+        }
+    }
+    if (documentType === 'exam_grade_record') {
+        try {
+            examGradeSelection = collectExamGradeSelection();
+        } catch (error) {
+            if (statusEl) {
+                statusEl.hidden = false;
+                statusEl.textContent = error.message || '请选择考试';
+            }
+            showToast(error.message || '请选择考试', 'warning');
             return;
         }
     }
@@ -662,6 +778,7 @@ async function submitFinalMaterialGeneration() {
                 assessment_method: documentType === 'assessment_plan' ? (dom.finalMaterialAssessmentMethod?.value || '') : '',
                 homework_assignment_ids: ordinarySelection?.homeworkIds || [],
                 assessment_assignment_id: ordinarySelection?.assessmentId || null,
+                exam_assignment_id: examGradeSelection?.examAssignmentId || null,
             },
         });
         showToast(data.message || '期末材料已生成', 'success');

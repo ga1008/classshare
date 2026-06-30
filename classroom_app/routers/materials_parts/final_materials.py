@@ -8,6 +8,11 @@ from ...services.ordinary_grade_record_service import (
     build_ordinary_grade_record_payload,
     list_ordinary_grade_assignment_candidates,
 )
+from ...services.exam_grade_record_service import (
+    EXAM_GRADE_RECORD_TYPE,
+    build_exam_grade_record_payload,
+    list_exam_grade_record_candidates,
+)
 
 
 router = APIRouter()
@@ -21,6 +26,21 @@ async def list_classroom_ordinary_grade_record_candidates(
     with get_db_connection() as conn:
         ensure_classroom_access(conn, class_offering_id, user)
         items = list_ordinary_grade_assignment_candidates(
+            conn,
+            class_offering_id=class_offering_id,
+            teacher_id=user["id"],
+        )
+    return {"status": "success", "items": items}
+
+
+@router.get("/api/classrooms/{class_offering_id}/exam-grade-record/candidates", response_class=JSONResponse)
+async def list_classroom_exam_grade_record_candidates(
+    class_offering_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        ensure_classroom_access(conn, class_offering_id, user)
+        items = list_exam_grade_record_candidates(
             conn,
             class_offering_id=class_offering_id,
             teacher_id=user["id"],
@@ -117,6 +137,52 @@ async def generate_classroom_final_material(
             return {
                 "status": "success",
                 "message": "已根据智慧课堂签到、3 份作业和 1 份测评生成平时成绩记录表，并保存到课程材料。",
+                "task": task,
+                "ai_used": False,
+            }
+        if document_type == EXAM_GRADE_RECORD_TYPE:
+            export_payload = build_exam_grade_record_payload(
+                conn,
+                class_offering_id=class_offering_id,
+                teacher_id=user["id"],
+                exam_assignment_id=payload.exam_assignment_id or 0,
+                classroom_context=classroom_context,
+            )
+            raw_result = {
+                "metadata": export_payload.get("fields") or {},
+                "content_markdown": export_payload.get("content_markdown") or "",
+                "tables": export_payload.get("tables") or [],
+                "warnings": (export_payload.get("structured") or {}).get("warnings") or [],
+                "export_payload": export_payload,
+            }
+            extraction = MaterialExtraction(
+                text=str(raw_result.get("content_markdown") or ""),
+                method="exam_grade_local_generation",
+                source_kind="classroom_exam_scores",
+                warnings=[],
+                quality={"usable": True},
+            )
+            parse_result = normalize_ai_parse_result(
+                raw_result,
+                original_name=f"{type_meta['label']}-{classroom_context.get('course_name') or '期末材料'}.json",
+                type_meta=type_meta,
+                extraction=extraction,
+                extra_warnings=[],
+                ai_used=False,
+            )
+            parse_result.export_payload = export_payload
+            parse_result.metadata.update(export_payload.get("fields") or {})
+            parse_result.parsed_payload["metadata"] = parse_result.metadata
+            parse_result.parsed_payload["export_payload"] = parse_result.export_payload
+            task = await _create_generated_final_material_package(
+                class_offering_id=class_offering_id,
+                parent_id=payload.parent_id,
+                parse_result=parse_result,
+                user=user,
+            )
+            return {
+                "status": "success",
+                "message": "已根据所选课堂考试成绩生成考核登分表 Excel，并保存到课程材料。",
                 "task": task,
                 "ai_used": False,
             }

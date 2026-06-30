@@ -313,7 +313,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
         ai_import_record = _find_material_ai_import_record(conn, material_id, user["id"])
         if ai_import_record:
             task = _serialize_material_ai_import_task(conn, ai_import_record, user)
-            export_format = "xlsx" if task["document_type"] == "ordinary_grade_record" else "docx"
+            export_format = "xlsx" if task["document_type"] in {"ordinary_grade_record", "exam_grade_record"} else "docx"
             detail["ai_import_record"] = {
                 "id": task["id"],
                 "document_group": task["document_group"],

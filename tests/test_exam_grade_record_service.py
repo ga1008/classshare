@@ -1,0 +1,280 @@
+import asyncio
+import io
+import json
+import sqlite3
+import tempfile
+import unittest
+from pathlib import Path
+
+from openpyxl import load_workbook
+
+from classroom_app.services.exam_grade_record_service import (
+    EXAM_GRADE_RECORD_TYPE,
+    build_exam_grade_record_payload,
+    build_exam_grade_record_xlsx,
+    list_exam_grade_record_candidates,
+    parse_exam_grade_record_file,
+)
+from classroom_app.services.material_ai_import_service import parse_material_document
+from classroom_app.services.material_export_template_service import (
+    XLSX_MEDIA_TYPE,
+    build_material_export_artifact,
+)
+
+
+class ExamGradeRecordServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self._create_schema()
+        self._seed_data()
+
+    def tearDown(self) -> None:
+        self.conn.close()
+
+    def _create_schema(self) -> None:
+        self.conn.executescript(
+            """
+            CREATE TABLE teachers (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                college TEXT,
+                department TEXT
+            );
+            CREATE TABLE courses (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                total_hours INTEGER,
+                credits REAL,
+                college TEXT,
+                department TEXT
+            );
+            CREATE TABLE classes (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                college TEXT,
+                department TEXT
+            );
+            CREATE TABLE class_offerings (
+                id INTEGER PRIMARY KEY,
+                class_id INTEGER,
+                course_id INTEGER,
+                teacher_id INTEGER,
+                semester TEXT
+            );
+            CREATE TABLE students (
+                id INTEGER PRIMARY KEY,
+                class_id INTEGER,
+                student_id_number TEXT,
+                name TEXT,
+                enrollment_status TEXT
+            );
+            CREATE TABLE exam_papers (
+                id TEXT PRIMARY KEY,
+                teacher_id INTEGER,
+                title TEXT,
+                description TEXT,
+                questions_json TEXT,
+                exam_config_json TEXT,
+                status TEXT
+            );
+            CREATE TABLE assignments (
+                id INTEGER PRIMARY KEY,
+                title TEXT,
+                status TEXT,
+                exam_paper_id TEXT,
+                created_at TEXT,
+                due_at TEXT,
+                grading_mode TEXT,
+                class_offering_id INTEGER
+            );
+            CREATE TABLE submissions (
+                id INTEGER PRIMARY KEY,
+                assignment_id TEXT,
+                student_pk_id INTEGER,
+                student_name TEXT,
+                status TEXT,
+                score REAL,
+                feedback_md TEXT,
+                score_before_late_penalty REAL,
+                late_penalty_points REAL,
+                is_late_submission INTEGER,
+                late_by_seconds INTEGER,
+                late_score_cap_applied INTEGER
+            );
+            CREATE TABLE group_assignment_member_results (
+                id INTEGER PRIMARY KEY,
+                assignment_id TEXT,
+                class_offering_id INTEGER,
+                group_id INTEGER,
+                student_pk_id INTEGER,
+                submission_id INTEGER,
+                work_score REAL,
+                peer_avg REAL,
+                peer_review_count INTEGER,
+                final_score REAL,
+                revealed INTEGER,
+                finalized_at TEXT
+            );
+            """
+        )
+
+    def _seed_data(self) -> None:
+        self.conn.execute("INSERT INTO teachers VALUES (1, '张海林', '数字科技学院', '软件工程系')")
+        self.conn.execute("INSERT INTO courses VALUES (10, '服务器配置与管理', 48, 3.0, '数字科技学院', '软件工程系')")
+        self.conn.execute("INSERT INTO classes VALUES (20, '软工2406班（专升本）', '数字科技学院', '软件工程系')")
+        self.conn.execute("INSERT INTO class_offerings VALUES (30, 20, 10, 1, '2025-2026-1')")
+        self.conn.executemany(
+            "INSERT INTO students VALUES (?, ?, ?, ?, ?)",
+            [
+                (101, 20, "20240101", "学生一", "active"),
+                (102, 20, "20240102", "学生二", "active"),
+                (103, 20, "20240103", "学生三", "active"),
+            ],
+        )
+        paper = {
+            "grading": {"total_score": 100},
+            "pages": [
+                {"name": "第一部分", "questions": [{"id": "p1_q1", "type": "textarea", "text": "一", "answer": "A", "points": 30, "grading_guidance": "按步骤", "deduction_points": "缺步骤扣分"}]},
+                {"name": "第二部分", "questions": [{"id": "p2_q1", "type": "textarea", "text": "二", "answer": "B", "points": 30, "grading_guidance": "按步骤", "deduction_points": "缺步骤扣分"}]},
+                {"name": "第三部分", "questions": [{"id": "p3_q1", "type": "textarea", "text": "三", "answer": "C", "points": 40, "grading_guidance": "按步骤", "deduction_points": "缺步骤扣分"}]},
+            ],
+        }
+        self.conn.execute(
+            "INSERT INTO exam_papers VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("paper-1", 1, "服务器配置与管理期末机试", "", json.dumps(paper, ensure_ascii=False), "", "ready"),
+        )
+        self.conn.execute(
+            "INSERT INTO assignments VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (301, "期末机试", "published", "paper-1", "2025-12-20", "2025-12-30", "ai", 30),
+        )
+        feedback_one = """
+## 逐题反馈
+### 第 p1_q1 题
+- 本题得分：30/30
+### 第 p2_q1 题
+- 本题得分：30/30
+### 第 p3_q1 题
+- 本题得分：31/40
+"""
+        feedback_two = """
+## 逐题反馈
+### 第 p1_q1 题
+- 本题得分：30/30
+### 第 p2_q1 题
+- 本题得分：30/30
+### 第 p3_q1 题
+- 本题得分：30/40
+"""
+        self.conn.executemany(
+            "INSERT INTO submissions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (1, "301", 101, "学生一", "graded", 87, feedback_one, 91, 4, 1, 7200, 0),
+                (2, "301", 102, "学生二", "graded", 82, feedback_two, None, 0, 0, 0, 0),
+            ],
+        )
+        self.conn.execute(
+            "INSERT INTO group_assignment_member_results VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (1, "301", 30, 1, 102, 2, 90, 10, 2, 82, 1, "2025-12-30"),
+        )
+        self.conn.commit()
+
+    def test_candidates_and_payload_distribute_integer_deductions(self):
+        candidates = list_exam_grade_record_candidates(self.conn, class_offering_id=30, teacher_id=1)
+        self.assertEqual([item["id"] for item in candidates], [301])
+        self.assertEqual(candidates[0]["section_count"], 3)
+        self.assertEqual(candidates[0]["total_score"], 100)
+        self.assertEqual(candidates[0]["graded_count"], 2)
+
+        payload = build_exam_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            exam_assignment_id=301,
+        )
+
+        self.assertEqual(payload["document_type"], EXAM_GRADE_RECORD_TYPE)
+        self.assertEqual([item["label"] for item in payload["structured"]["sections"]], ["一", "二", "三"])
+        students = payload["structured"]["students"]
+        self.assertEqual(students[0]["raw_section_scores"], [30, 30, 31])
+        self.assertEqual(students[0]["section_scores"], [29, 29, 29])
+        self.assertEqual(students[0]["total_score"], 87)
+        self.assertEqual(sum(students[0]["section_scores"]), students[0]["total_score"])
+        self.assertIn("迟交扣 4 分", students[0]["score_adjustment_reason"])
+        self.assertEqual(students[1]["total_score"], 82)
+        self.assertEqual(sum(students[1]["section_scores"]), 82)
+        self.assertIn("小组互评折算扣", students[1]["score_adjustment_reason"])
+        self.assertTrue(any("学生三" in warning for warning in payload["structured"]["warnings"]))
+
+    def test_xlsx_export_uses_a4_sample_headers_widths_and_formulas(self):
+        payload = build_exam_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            exam_assignment_id=301,
+        )
+        content = build_exam_grade_record_xlsx(payload)
+        wb = load_workbook(io.BytesIO(content), data_only=False)
+        ws = wb.active
+
+        self.assertEqual(ws["A1"].value, "广西外国语学院机试（作品设计）考核登分表")
+        self.assertIn("课程：服务器配置与管理", ws["A2"].value)
+        self.assertIn("A1:G1", [str(item) for item in ws.merged_cells.ranges])
+        self.assertIn("A2:G2", [str(item) for item in ws.merged_cells.ranges])
+        self.assertEqual(ws["D3"].value, "一")
+        self.assertEqual(ws["E3"].value, "二")
+        self.assertEqual(ws["F3"].value, "三")
+        self.assertEqual(ws["D4"].value, 30)
+        self.assertEqual(ws["D4"].fill.fgColor.rgb, "FF92D050")
+        self.assertEqual(ws["G4"].value, 100)
+        self.assertEqual(ws["G5"].value, "=SUM(D5:F5)")
+        self.assertEqual(ws["D5"].value, 29)
+        self.assertEqual(ws["E5"].value, 29)
+        self.assertEqual(ws["F5"].value, 29)
+        self.assertEqual(str(ws.page_setup.paperSize), "9")
+        self.assertEqual(ws.page_setup.fitToWidth, 1)
+        self.assertLessEqual(ws.column_dimensions["D"].width, 16)
+
+    def test_parser_ai_import_and_export_artifact_force_xlsx(self):
+        payload = build_exam_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            exam_assignment_id=301,
+        )
+        content = build_exam_grade_record_xlsx(payload)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp:
+            temp.write(content)
+            temp_path = Path(temp.name)
+        try:
+            parsed = parse_exam_grade_record_file(temp_path, "考核登分表.xlsx")
+            self.assertEqual(parsed.formula_count, 2)
+            self.assertEqual(len(parsed.export_payload["structured"]["sections"]), 3)
+            self.assertEqual(parsed.export_payload["structured"]["students"][0]["total_score"], 87)
+
+            async def fail_ai_chat(*args, **kwargs):  # pragma: no cover - must not be called
+                raise AssertionError("exam grade import must use the local Excel parser")
+
+            result = asyncio.run(
+                parse_material_document(
+                    file_path=temp_path,
+                    original_name="考核登分表.xlsx",
+                    document_group="final_material",
+                    document_type=EXAM_GRADE_RECORD_TYPE,
+                    ai_chat=fail_ai_chat,
+                )
+            )
+            self.assertFalse(result.ai_used)
+            self.assertEqual(result.document_type, EXAM_GRADE_RECORD_TYPE)
+            self.assertEqual(result.extraction_method, "exam_grade_excel_formula_parser")
+
+            artifact = build_material_export_artifact(payload, fallback_filename="exam-grade", requested_format="docx")
+            self.assertEqual(artifact.media_type, XLSX_MEDIA_TYPE)
+            self.assertTrue(artifact.filename.endswith(".xlsx"))
+            self.assertGreater(len(artifact.content), 5000)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+
+if __name__ == "__main__":
+    unittest.main()

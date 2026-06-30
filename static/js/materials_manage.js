@@ -657,7 +657,7 @@ function renderDetail(detail) {
     const optimizedUrl = detail.has_optimized_version ? `/materials/view/${detail.id}?variant=optimized` : '';
     const exportUrl = detail.ai_import_record?.export_url || '';
     const exportPdfUrl = detail.ai_import_record?.export_pdf_url || '';
-    const exportLabel = detail.ai_import_record?.document_type === 'ordinary_grade_record' ? '导出Excel' : '导出Word';
+    const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(detail.ai_import_record?.document_type) ? '导出Excel' : '导出Word';
     const aiSummary = detail.ai_parse_result?.summary || '尚未执行 AI 解析。';
     const assignmentCount = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
     const canManage = detail.can_manage !== false;

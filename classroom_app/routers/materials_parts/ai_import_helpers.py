@@ -477,7 +477,7 @@ def _build_ai_import_preview(record, *, content_limit: int = 8000) -> dict:
     structured = _parse_json_object(export_payload.get("structured"))
     content_markdown = str(payload.get("content_markdown") or record["content_markdown"] or "")
     warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else _parse_json_array(record["warnings_json"])
-    export_format = "xlsx" if record["document_type"] == "ordinary_grade_record" else "docx"
+    export_format = "xlsx" if record["document_type"] in {"ordinary_grade_record", "exam_grade_record"} else "docx"
     return {
         "id": int(record["id"]),
         "document_group": record["document_group"] or "",

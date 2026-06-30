@@ -30,6 +30,11 @@ from .ordinary_grade_record_service import (
     ORDINARY_GRADE_RECORD_TYPE,
     parse_ordinary_grade_record_file,
 )
+from .exam_grade_record_service import (
+    EXAM_GRADE_RECORD_LABEL,
+    EXAM_GRADE_RECORD_TYPE,
+    parse_exam_grade_record_file,
+)
 
 try:
     from ai_assistant_doc_extract import extract_document_text, render_pdf_pages_to_data_urls
@@ -119,6 +124,12 @@ MATERIAL_AI_IMPORT_GROUPS: list[dict[str, Any]] = [
                 "label": ORDINARY_GRADE_RECORD_LABEL,
                 "template_key": ORDINARY_GRADE_RECORD_TYPE,
                 "aliases": ["学生平时成绩记录表", "平时成绩记录表", "平时成绩表", "学生平时成绩"],
+            },
+            {
+                "key": EXAM_GRADE_RECORD_TYPE,
+                "label": EXAM_GRADE_RECORD_LABEL,
+                "template_key": EXAM_GRADE_RECORD_TYPE,
+                "aliases": ["考核登分表", "机试考核登分表", "作品设计考核登分表", "期末考试登分表"],
             },
             {
                 "key": "final_teaching_summary",
@@ -237,6 +248,42 @@ async def parse_material_document(
             parsed_payload=payload,
             content_quality=content_quality,
             extraction_method="ordinary_grade_excel_formula_parser",
+            document_group=type_meta["group_key"],
+            document_type=type_meta["key"],
+            document_type_label=type_meta["label"],
+            ai_used=False,
+        )
+    if type_meta["group_key"] == "final_material" and type_meta["key"] == EXAM_GRADE_RECORD_TYPE:
+        parsed = await asyncio.to_thread(parse_exam_grade_record_file, file_path, original_name)
+        content_quality = _assess_text_quality(parsed.content_markdown, method="exam_grade_excel_formula_parser")
+        payload = {
+            "metadata": parsed.metadata,
+            "content_markdown": parsed.content_markdown,
+            "tables": parsed.tables,
+            "warnings": parsed.warnings,
+            "export_payload": parsed.export_payload,
+            "document_group": type_meta["group_key"],
+            "document_type": type_meta["key"],
+            "document_type_label": type_meta["label"],
+            "extraction": {
+                "method": "exam_grade_excel_formula_parser",
+                "source_kind": Path(original_name or file_path.name).suffix.lower().lstrip(".") or "excel",
+                "truncated": False,
+                "quality": {"usable": True, "formula_count": parsed.formula_count},
+            },
+            "content_quality": content_quality,
+            "ai_used": False,
+        }
+        return MaterialParseResult(
+            metadata=parsed.metadata,
+            content_markdown=parsed.content_markdown,
+            tables=parsed.tables,
+            warnings=parsed.warnings,
+            export_payload=parsed.export_payload,
+            raw_ai_result={"local_parser": EXAM_GRADE_RECORD_TYPE, "formula_count": parsed.formula_count},
+            parsed_payload=payload,
+            content_quality=content_quality,
+            extraction_method="exam_grade_excel_formula_parser",
             document_group=type_meta["group_key"],
             document_type=type_meta["key"],
             document_type_label=type_meta["label"],
@@ -943,10 +990,11 @@ def _schema_hint(type_meta: dict[str, Any]) -> str:
         "grading_rubric": "评分细则应抽取：school, academic_year, semester, course_name, class_name, assessment_type(考查/考试), assessment_mode(non_written/written), assessment_mode_label(非笔试考核/笔试考核), assessment_method, examiner_name, examiner_signature, reviewer_name, reviewer_signature, date, source_exam_paper_title, rubric_items(title/score/criteria), deduction_points, screenshot_requirements, total_score, notes；正文不能丢失扣分原则、例外情况、截图/提交物要求，表后注释必须原样保留；签名图片或文件路径不得写进 examiner_name/reviewer_name。",
         "exam_paper": "考核试卷应抽取：school, academic_year, semester, course_name, class_name, exam_flags(期末考试/补考/重新学习考试), education_level(本科/专科), assessment_type(考查/考试), assessment_mode(non_written/written), assessment_mode_label, assessment_method, paper_volume(A卷/B卷), paper_type(开卷/闭卷), exam_duration, examiner_name, reviewer_name, leader_name, examiner_signature, reviewer_signature, leader_signature, source_assessment_plan_title, score_table, paper_sections(title/score/content/tasks/screenshot_requirements/submission_requirements/command_blocks), student_fields, total_score；题干、任务步骤、代码块、截图/提交要求不能缺漏；签名图片或文件路径不得写进 examiner_name/reviewer_name/leader_name。",
         ORDINARY_GRADE_RECORD_TYPE: "平时成绩记录表应从 Excel 公式表中抽取：school, college, course_name, course_hours, credits, teacher_name, class_name, class_size, academic_year, semester, students(student_number/student_name/attendance_raw_score/homework_scores/assessment_score/source_formulas)，并保留每版标题、表头、附注和公式模板。",
+        EXAM_GRADE_RECORD_TYPE: "考核登分表应从 Excel 公式表中抽取：school, course_code, course_name, teacher_name, class_name, sections(label/full_score), students(student_number/student_name/section_scores/total_score/source_formula)，并保留标题、课程班级元数据、大题表头、满分行和总分公式。",
         "final_teaching_summary": "教学工作总结应抽取：课程/班级/教师/日期、教学任务完成情况、考核与成绩分析、问题、改进建议。",
     }.get(key, "")
     final_schema = ""
-    if key in FINAL_MATERIAL_TYPES and key != ORDINARY_GRADE_RECORD_TYPE:
+    if key in FINAL_MATERIAL_TYPES and key not in {ORDINARY_GRADE_RECORD_TYPE, EXAM_GRADE_RECORD_TYPE}:
         final_schema = (
             " export_payload.structured 必须包含与材料类型匹配的结构："
             "考核计划表包含 assessment_items；评分细则包含 rubric_items；试卷包含 paper_sections。"
@@ -973,6 +1021,8 @@ def _schema_hint(type_meta: dict[str, Any]) -> str:
             )
     elif key == ORDINARY_GRADE_RECORD_TYPE:
         final_schema = " export_payload.structured 必须包含 students、source_assignments、formula_templates、notes；导出时按 Excel 模板分页复刻。"
+    elif key == EXAM_GRADE_RECORD_TYPE:
+        final_schema = " export_payload.structured 必须包含 sections、students、source_exam；导出时按 Excel 考核登分表模板生成总分公式。"
     return f"{common}{specific}{final_schema}"
 
 
@@ -986,6 +1036,8 @@ def _sample_knowledge(type_meta: dict[str, Any]) -> str:
         return "样例特征：标题通常为“广西外国语学院课程考核试卷”；首页有学年学期下划线、期末考试/补考/重新学习考试勾选、学生信息与密封线、课程名称/学历层次/考核类型/专业年级班级/考试时间/试卷类型/命题教师/系主任/主管教学领导元信息表、题号满分实得分表、每道大题前的“得分/评卷人”小表；正文按大题、任务、代码块、截图和提交要求展开；页脚显示学校试卷名称、页码和“考试过程中不得将试卷拆开”。"
     if key == ORDINARY_GRADE_RECORD_TYPE:
         return "样例特征：标题为“广西外国语学院学生平时成绩记录表”，Excel 每 25 人一版，每版含完整标题、学年学期、课程元信息、两行表头、学生成绩行和固定附注；I/J/K/L 列是公式列，导出必须保持 Excel 公式。"
+    if key == EXAM_GRADE_RECORD_TYPE:
+        return "样例特征：标题为“广西外国语学院机试（作品设计）考核登分表”，Excel 顶部合并标题，第二行含课程、专业年级班级、授课老师；表头为序号、学号、姓名、各大题题号和总分；满分行在表头下方，总分列为公式。"
     if key == "lesson_plan":
         return "样例特征：教案通常有封面页，包含课程名称、课程类别、学分学时、授课教师、使用教材，正文以周次/章节/目标/重点难点/教学过程表格组织。"
     if key == "teaching_calendar":

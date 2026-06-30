@@ -178,6 +178,7 @@ class ClassroomFinalMaterialGenerateRequest(BaseModel):
     assessment_method: str = ""
     homework_assignment_ids: list[int] = Field(default_factory=list)
     assessment_assignment_id: int | None = None
+    exam_assignment_id: int | None = None
 
 
 class MaterialAiRewriteRequest(BaseModel):

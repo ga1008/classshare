@@ -10,8 +10,15 @@ from .ordinary_grade_record_service import (
     ORDINARY_GRADE_RECORD_TYPE,
     normalize_ordinary_grade_record_payload,
 )
+from .exam_grade_record_service import (
+    EXAM_GRADE_LAYOUT,
+    EXAM_GRADE_RECORD_LABEL,
+    EXAM_GRADE_RECORD_SCHEMA_VERSION,
+    EXAM_GRADE_RECORD_TYPE,
+    normalize_exam_grade_record_payload,
+)
 
-FINAL_MATERIAL_TYPES = {"assessment_plan", "grading_rubric", "exam_paper", ORDINARY_GRADE_RECORD_TYPE}
+FINAL_MATERIAL_TYPES = {"assessment_plan", "grading_rubric", "exam_paper", ORDINARY_GRADE_RECORD_TYPE, EXAM_GRADE_RECORD_TYPE}
 
 
 FINAL_MATERIAL_LABELS = {
@@ -19,6 +26,7 @@ FINAL_MATERIAL_LABELS = {
     "grading_rubric": "课程考核评分细则",
     "exam_paper": "课程考核试卷",
     ORDINARY_GRADE_RECORD_TYPE: ORDINARY_GRADE_RECORD_LABEL,
+    EXAM_GRADE_RECORD_TYPE: EXAM_GRADE_RECORD_LABEL,
 }
 
 
@@ -64,6 +72,7 @@ FINAL_MATERIAL_LAYOUTS: dict[str, dict[str, Any]] = {
         "body_indent_cm": 0.72,
     },
     ORDINARY_GRADE_RECORD_TYPE: deepcopy(ORDINARY_GRADE_LAYOUT),
+    EXAM_GRADE_RECORD_TYPE: deepcopy(EXAM_GRADE_LAYOUT),
 }
 
 
@@ -197,6 +206,14 @@ def normalize_final_material_payload(
         return deepcopy(export_payload or {})
     if key == ORDINARY_GRADE_RECORD_TYPE:
         return normalize_ordinary_grade_record_payload(
+            metadata=metadata,
+            content_markdown=content_markdown,
+            tables=tables,
+            export_payload=export_payload,
+            classroom_context=classroom_context,
+        )
+    if key == EXAM_GRADE_RECORD_TYPE:
+        return normalize_exam_grade_record_payload(
             metadata=metadata,
             content_markdown=content_markdown,
             tables=tables,
@@ -413,7 +430,7 @@ def build_final_material_generation_seed(
                 {"title": "二、综合服务部署（共70分）", "content": _default_exam_section_two(prompt)},
             ]
         tables = []
-    else:
+    elif key == ORDINARY_GRADE_RECORD_TYPE:
         export_payload = normalize_ordinary_grade_record_payload(
             metadata=fields,
             content_markdown="",
@@ -426,6 +443,21 @@ def build_final_material_generation_seed(
             "content_markdown": export_payload.get("content_markdown") or "",
             "tables": [],
             "warnings": ["平时成绩记录表需在课堂中选择 3 份作业和 1 份测评后生成。"],
+            "export_payload": export_payload,
+        }
+    else:
+        export_payload = normalize_exam_grade_record_payload(
+            metadata=fields,
+            content_markdown="",
+            tables=[],
+            export_payload={"structured": {"template_schema_version": EXAM_GRADE_RECORD_SCHEMA_VERSION}},
+            classroom_context=classroom_context,
+        )
+        return {
+            "metadata": export_payload["fields"],
+            "content_markdown": export_payload.get("content_markdown") or "",
+            "tables": [],
+            "warnings": ["考核登分表需在课堂中选择一个已绑定试卷的考试后生成。"],
             "export_payload": export_payload,
         }
     content = "\n\n".join(f"## {item['title']}\n{item['content']}" for item in sections)
