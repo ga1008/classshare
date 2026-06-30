@@ -9,6 +9,7 @@
   var POSITION_OPTIONS = [];
   var EDIT_ID = null;
   var lastAutoTitle = '';
+  var activeDrag = null;
   var PERSONAL_REQUIRED = ['name', 'gender', 'birthday', 'email', 'expected_position'];
   var PERSONAL_FIELD_ORDER = [
     'name', 'gender', 'birthday', 'email', 'phone', 'qq', 'wechat',
@@ -229,11 +230,43 @@
     return zoneKey === kind;
   }
 
+  function dragZones() {
+    return Array.prototype.slice.call(document.querySelectorAll('.rz-zone'));
+  }
+
+  function setDropGuidance(kind) {
+    var builder = document.querySelector('.rz-builder');
+    if (builder) builder.classList.toggle('is-drag-guiding', !!kind);
+    dragZones().forEach(function (zone) {
+      var accepts = !!kind && zoneAccepts(zone.dataset.zone, kind);
+      zone.classList.toggle('is-drop-match', accepts);
+      zone.classList.toggle('is-drop-mismatch', !!kind && !accepts);
+      if (!kind) zone.classList.remove('is-drop-hot');
+    });
+  }
+
+  function startPaletteDrag(kind, id, source) {
+    activeDrag = { kind: kind, id: id };
+    if (source) source.classList.add('is-drag-source');
+    setDropGuidance(kind);
+  }
+
+  function finishPaletteDrag() {
+    activeDrag = null;
+    document.querySelectorAll('.is-drag-source').forEach(function (el) {
+      el.classList.remove('is-drag-source');
+    });
+    setDropGuidance('');
+  }
+
   function bindPalette() {
     document.querySelectorAll('#rzPalette .rz-chip').forEach(function (el) {
       el.addEventListener('dragstart', function (e) {
         e.dataTransfer.setData('text/plain', el.dataset.kind + ':' + el.dataset.id);
+        e.dataTransfer.effectAllowed = 'copy';
+        startPaletteDrag(el.dataset.kind, el.dataset.id, el);
       });
+      el.addEventListener('dragend', finishPaletteDrag);
       el.addEventListener('click', function () { addToState(el.dataset.kind, el.dataset.id); });
     });
   }
@@ -241,15 +274,34 @@
   function bindZones() {
     document.querySelectorAll('.rz-zone').forEach(function (zone) {
       var zk = zone.dataset.zone;
-      zone.addEventListener('dragover', function (e) { e.preventDefault(); zone.classList.add('drag-over'); });
-      zone.addEventListener('dragleave', function () { zone.classList.remove('drag-over'); });
+      zone.addEventListener('dragenter', function (e) {
+        var kind = activeDrag ? activeDrag.kind : ((e.dataTransfer.getData('text/plain') || '').split(':')[0]);
+        if (kind && zoneAccepts(zk, kind)) zone.classList.add('is-drop-hot');
+      });
+      zone.addEventListener('dragover', function (e) {
+        var raw = e.dataTransfer.getData('text/plain') || '';
+        var kind = activeDrag ? activeDrag.kind : raw.split(':')[0];
+        e.preventDefault();
+        if (kind && zoneAccepts(zk, kind)) {
+          e.dataTransfer.dropEffect = 'copy';
+          zone.classList.add('drag-over', 'is-drop-hot');
+        } else {
+          e.dataTransfer.dropEffect = 'none';
+          zone.classList.remove('drag-over', 'is-drop-hot');
+        }
+      });
+      zone.addEventListener('dragleave', function (e) {
+        if (e.relatedTarget && zone.contains(e.relatedTarget)) return;
+        zone.classList.remove('drag-over', 'is-drop-hot');
+      });
       zone.addEventListener('drop', function (e) {
-        e.preventDefault(); zone.classList.remove('drag-over');
+        e.preventDefault(); zone.classList.remove('drag-over', 'is-drop-hot');
         var raw = e.dataTransfer.getData('text/plain') || '';
         var parts = raw.split(':'); var kind = parts[0]; var id = parts[1];
         if (!kind || !id) return;
         if (zoneAccepts(zk, kind)) addToState(kind, id);
         else RZ.toast('该内容不能放入此区域', 'error');
+        finishPaletteDrag();
       });
       zone.querySelectorAll('.rz-chip__x').forEach(function (x) {
         x.addEventListener('click', function (ev) {
