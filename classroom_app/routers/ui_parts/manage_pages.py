@@ -285,6 +285,7 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                    c.school_name,
                    c.college,
                    c.major,
+                   c.class_kind,
                    c.owner_role,
                    c.owner_user_pk,
                    c.scope_level,
@@ -335,7 +336,7 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
               GROUP BY c.id, c.name, c.department, c.description,
                        c.academic_source, c.academic_class_code, c.academic_class_name,
                        c.academic_college, c.academic_grade, c.academic_major,
-                       c.school_code, c.school_name, c.college, c.major,
+                       c.school_code, c.school_name, c.college, c.major, c.class_kind,
                        c.owner_role, c.owner_user_pk, c.scope_level,
                        c.updated_at, c.archived_at, c.deleted_at,
                        c.academic_sync_at, c.academic_sync_message, c.created_at,
@@ -357,6 +358,9 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             class_item["missing_email_count"] = int(class_item.get("missing_email_count") or 0)
             class_item["academic_synced_student_count"] = int(class_item.get("academic_synced_student_count") or 0)
             class_item["offering_count"] = int(class_item.get("offering_count") or 0)
+            class_item["class_kind"] = normalize_class_kind(class_item.get("class_kind"))
+            class_item["class_kind_label"] = class_kind_label(class_item.get("class_kind"))
+            class_item["is_custom_class"] = is_custom_class_kind(class_item.get("class_kind"))
             class_item["is_owned"] = int(class_item.get("created_by_teacher_id") or 0) == int(user["id"])
             class_item["can_manage"] = class_item["is_owned"] or current_teacher_is_super_admin
             teaches_class = conn.execute(
@@ -420,6 +424,7 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
         "missing_email_count": missing_email_total,
         "active_class_count": active_class_count,
         "department_count": len({item.get("department_label") for item in my_classes if item.get("department_label")}),
+        "custom_class_count": sum(1 for item in my_classes if item.get("is_custom_class")),
         "academic_synced_class_count": sum(1 for item in my_classes if item.get("is_academic_synced")),
         "academic_synced_student_count": sum(int(item.get("academic_synced_student_count") or 0) for item in my_classes),
     }

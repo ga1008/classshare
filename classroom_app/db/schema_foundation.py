@@ -218,6 +218,7 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
         f"ALTER TABLE classes ADD COLUMN school_code TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_CODE}'",
         f"ALTER TABLE classes ADD COLUMN school_name TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
         "ALTER TABLE classes ADD COLUMN college TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE classes ADD COLUMN class_kind TEXT NOT NULL DEFAULT 'administrative'",
     ):
         try:
             conn.execute(statement)
@@ -246,7 +247,11 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
             owner_user_pk = COALESCE(owner_user_pk, created_by_teacher_id),
             scope_level = COALESCE(NULLIF(TRIM(scope_level), ''), 'school'),
             updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP),
-            major = COALESCE(NULLIF(TRIM(major), ''), academic_major, '')
+            major = COALESCE(NULLIF(TRIM(major), ''), academic_major, ''),
+            class_kind = CASE
+                WHEN LOWER(TRIM(COALESCE(class_kind, ''))) = 'custom' THEN 'custom'
+                ELSE 'administrative'
+            END
         """
     )
 

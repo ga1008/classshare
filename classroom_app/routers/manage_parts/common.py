@@ -46,6 +46,13 @@ from ...services.course_planning_service import (
 from ...services.file_handler import save_upload_file
 from ...services.file_service import save_file_globally
 from ...services.department_service import infer_department_from_text, normalize_department
+from ...services.class_kind_service import (
+    CLASS_KIND_ADMINISTRATIVE,
+    CLASS_KIND_CUSTOM,
+    class_kind_label,
+    is_custom_class_kind,
+    normalize_class_kind,
+)
 from ...services.organization_scope_service import (
     apply_teacher_scope_to_org,
     is_same_department,

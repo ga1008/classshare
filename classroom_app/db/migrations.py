@@ -423,6 +423,7 @@ def _ensure_resource_scope_schema(conn: sqlite3.Connection) -> None:
             "enrollment_year": "INTEGER",
             "expected_graduation_year": "INTEGER",
             "program_duration_years": "INTEGER",
+            "class_kind": "TEXT NOT NULL DEFAULT 'administrative'",
             "owner_role": "TEXT NOT NULL DEFAULT 'teacher'",
             "owner_user_pk": "INTEGER",
             "scope_level": "TEXT NOT NULL DEFAULT 'school'",
@@ -438,7 +439,11 @@ def _ensure_resource_scope_schema(conn: sqlite3.Connection) -> None:
                 owner_user_pk = COALESCE(owner_user_pk, created_by_teacher_id),
                 scope_level = COALESCE(NULLIF(TRIM(scope_level), ''), 'school'),
                 updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP),
-                major = COALESCE(NULLIF(TRIM(major), ''), academic_major, '')
+                major = COALESCE(NULLIF(TRIM(major), ''), academic_major, ''),
+                class_kind = CASE
+                    WHEN LOWER(TRIM(COALESCE(class_kind, ''))) = 'custom' THEN 'custom'
+                    ELSE 'administrative'
+                END
             """
         )
         conn.execute(

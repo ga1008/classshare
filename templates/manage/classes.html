@@ -7,6 +7,7 @@
 {% from "macros/app_topbar.html" import topbar_action %}
 {{ topbar_action('名单模板', '下载导入表', 'download', button_id='classTemplateDownloadBtn', variant='solid', tone='slate') }}
 {{ topbar_action('教务同步', '班级学生', 'refresh', button_id='syncAcademicRosterTopBtn', variant='solid', tone='teal') }}
+{{ topbar_action('自定义班级', '单独建班', 'plus', button_id='customClassCreateTopBtn', variant='solid', tone='slate') }}
 {{ topbar_action('导入班级', '批量建班', 'upload', button_id='focusClassCreateBtn', variant='primary', tone='blue') }}
 {% endblock %}
 
@@ -30,6 +31,7 @@
             <div class="manage-pagehead__actions">
                 <button type="button" class="btn btn-outline" id="syncAcademicRosterBtn">从教务系统同步</button>
                 <button type="button" class="btn btn-outline" id="heroTemplateDownloadBtn">名单模板</button>
+                <button type="button" class="btn btn-outline" id="heroCustomClassCreateBtn">自定义班级</button>
                 <button type="button" class="btn btn-primary" id="heroClassCreateBtn">导入新班级</button>
             </div>
         </div>
@@ -47,7 +49,7 @@
                     '已进入教学流程的班级，可直接开课与布置任务。', 'teal',
                     class_stats.active_class_count ~ ' / ' ~ class_stats.class_count ~ ' 个班') }}
                 {{ insight_bars('班级按系别', _dept_ns.dist,
-                    class_stats.academic_synced_class_count ~ ' 个班已教务同步（' ~ class_stats.academic_synced_student_count ~ ' 条学生记录）。', 'violet') }}
+                    class_stats.custom_class_count ~ ' 个自定义班级 · ' ~ class_stats.academic_synced_class_count ~ ' 个班已教务同步（' ~ class_stats.academic_synced_student_count ~ ' 条学生记录）。', 'violet') }}
             </div>
         </div>
     </section>
@@ -76,6 +78,7 @@
                         <option value="missing-email">有学生缺邮箱</option>
                         <option value="complete-email">邮箱完整</option>
                         <option value="has-suspended">含休学学生</option>
+                        <option value="custom-class">自定义班级</option>
                         <option value="academic-synced">已教务同步</option>
                         <option value="bound">已绑定课堂</option>
                         <option value="unbound">未绑定课堂</option>
@@ -128,6 +131,7 @@
                     data-suspended-student-count="{{ class_item.suspended_student_count }}"
                     data-missing-email-count="{{ class_item.missing_email_count }}"
                     data-academic-synced-student-count="{{ class_item.academic_synced_student_count }}"
+                    data-class-kind="{{ class_item.class_kind }}"
                     data-offering-count="{{ class_item.offering_count }}"
                     data-latest-time="{{ latest_time }}"
                 >
@@ -138,6 +142,7 @@
                             {% if class_item.organization_label or class_item.is_academic_synced %}
                             <div class="academic-badge-row class-card-badges">
                                 {% if class_item.organization_label %}<span class="academic-badge">{{ class_item.organization_label }}</span>{% endif %}
+                                {% if class_item.is_custom_class %}<span class="academic-badge is-info">自定义班级</span>{% endif %}
                                 {% if class_item.is_academic_synced %}
                                 <span class="academic-badge is-success">教务同步</span>
                                 {% if class_item.academic_grade %}<span class="academic-badge">{{ class_item.academic_grade }} 级</span>{% endif %}
@@ -190,6 +195,9 @@
                     </div>
 
                     <div class="class-card-students" aria-label="{{ class_item.name }} 学生预览">
+                        {% if not class_item.can_view_content %}
+                        <span class="class-student-empty">名单未开放</span>
+                        {% else %}
                         {% for student in class_item.active_students[:6] %}
                         <span class="class-student-avatar{% if not student.has_email %} is-warning{% endif %}" title="{{ student.name }}{% if not student.has_email %}：缺少邮箱{% endif %}">
                             {{ (student.name or student.display_name or '学')[:1] }}
@@ -201,14 +209,22 @@
                         {% if not class_item.student_count %}
                         <span class="class-student-empty">暂无在读学生</span>
                         {% endif %}
+                        {% endif %}
                     </div>
 
                     <div class="class-card-actions">
                         <button type="button" class="btn btn-outline btn-sm" data-resource-attributes data-resource-type="class" data-resource-id="{{ class_item.id }}">属性</button>
+                        {% if class_item.can_view_content %}
                         <button type="button" class="btn btn-primary btn-sm" data-action="open-students" data-class-id="{{ class_item.id }}">学生</button>
+                        {% endif %}
+                        {% if class_item.can_manage %}
                         <button type="button" class="btn btn-outline btn-sm" data-action="add-student" data-class-id="{{ class_item.id }}" data-class-name="{{ class_item.name }}">新增学生</button>
+                        {% endif %}
+                        {% if class_item.can_view_content %}
                         <button type="button" class="btn btn-outline btn-sm" data-action="export-class" data-class-id="{{ class_item.id }}">导出名单</button>
+                        {% endif %}
                         <a class="btn btn-outline btn-sm" href="/manage/teaching/offerings">开设课堂</a>
+                        {% if class_item.can_manage %}
                         <button
                             type="button"
                             class="btn btn-ghost btn-sm text-danger"
@@ -218,6 +234,7 @@
                         >
                             删除
                         </button>
+                        {% endif %}
                     </div>
                 </article>
                 {% else %}
@@ -347,6 +364,61 @@
     </section>
 </div>
 
+<div class="class-custom-modal-backdrop class-student-modal-backdrop" id="classCustomCreateModal" hidden aria-hidden="true">
+    <section class="class-student-modal class-custom-modal" role="dialog" aria-modal="true" aria-labelledby="classCustomCreateTitle" tabindex="-1">
+        <div class="class-student-modal-head">
+            <div>
+                <span>Custom Class</span>
+                <h3 id="classCustomCreateTitle">创建自定义班级</h3>
+                <p>用于额外辅导、跨专业学生或临时学生名单。</p>
+            </div>
+            <button type="button" class="class-student-drawer-close" id="classCustomCreateClose" aria-label="关闭自定义班级表单">&times;</button>
+        </div>
+        <form id="classCustomCreateForm" class="class-student-modal-form class-custom-modal-form academic-form-grid">
+            <div class="academic-field">
+                <label for="classCustomNameInput">班级名称</label>
+                <input type="text" id="classCustomNameInput" name="class_name" class="form-control" required placeholder="例如：2026 春季专项辅导班">
+            </div>
+            <div class="academic-field">
+                <label for="classCustomSchoolInput">学校</label>
+                <input type="text" id="classCustomSchoolInput" name="school_name" class="form-control" placeholder="留空则使用当前教师所在学校">
+            </div>
+            <div class="academic-field">
+                <label for="classCustomCollegeInput">归属学院</label>
+                <input type="text" id="classCustomCollegeInput" name="college" class="form-control" placeholder="例如：信息工程学院">
+            </div>
+            <div class="academic-field">
+                <label for="classCustomDepartmentInput">项目或方向</label>
+                <input type="text" id="classCustomDepartmentInput" name="department" class="form-control" list="classDepartmentOptions" placeholder="可留空">
+            </div>
+            <div class="academic-field">
+                <label for="classCustomMajorInput">专业</label>
+                <input type="text" id="classCustomMajorInput" name="major" class="form-control" placeholder="跨专业或临时学生可留空">
+            </div>
+            <div class="academic-field">
+                <label for="classCustomScopeInput">可见范围</label>
+                <select id="classCustomScopeInput" name="scope_level" class="form-control">
+                    <option value="private">仅维护教师</option>
+                    <option value="department">本系部</option>
+                    <option value="school">本学校</option>
+                </select>
+            </div>
+            <div class="academic-field class-student-modal-wide">
+                <label for="classCustomDescriptionInput">说明</label>
+                <textarea id="classCustomDescriptionInput" name="description" class="form-control" rows="3" placeholder="例如：竞赛辅导、补修答疑、校外临时学习支持"></textarea>
+            </div>
+            <label class="class-form-note class-student-modal-wide">
+                <input type="checkbox" id="classCustomCreateAndAddStudent" checked>
+                <span>创建后添加第一个学生</span>
+            </label>
+            <div class="class-student-modal-actions">
+                <button type="button" class="btn btn-outline" id="classCustomCreateCancel">取消</button>
+                <button type="submit" class="btn btn-primary">创建班级</button>
+            </div>
+        </form>
+    </section>
+</div>
+
 <div class="class-academic-sync-backdrop" id="classAcademicSyncModal" hidden aria-hidden="true">
     <section class="class-academic-sync-modal" role="dialog" aria-modal="true" aria-labelledby="classAcademicSyncTitle" tabindex="-1">
         <div class="class-student-modal-head">
@@ -374,5 +446,5 @@
 
 {% block scripts %}
 <script type="module" src="{{ asset_url('js/base_resource_modes.js') }}"></script>
-<script type="module" src="/static/js/manage_classes.js?v=class-academic-roster-sync-20260518"></script>
+<script type="module" src="/static/js/manage_classes.js?v=class-custom-roster-20260702"></script>
 {% endblock %}

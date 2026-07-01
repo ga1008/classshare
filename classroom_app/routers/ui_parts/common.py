@@ -73,6 +73,7 @@ from ...services.course_planning_service import (
     serialize_course_row,
 )
 from ...services.department_service import collect_department_options, normalize_department
+from ...services.class_kind_service import class_kind_label, is_custom_class_kind, normalize_class_kind
 from ...services.organization_scope_service import load_teacher_org_memberships, load_teacher_org_scope, normalize_school_code, organization_label
 from ...services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
 from ...services.learning_progress_service import (

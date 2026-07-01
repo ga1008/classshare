@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from ..db.connection import get_configured_db_engine
+from .class_kind_service import class_kind_label, is_custom_class_kind, normalize_class_kind
 from .course_planning_service import load_course_lessons_by_course_id, serialize_course_row
 from .organization_scope_service import apply_teacher_scope_to_org, load_teacher_org_scope
 from .resource_access_service import (
@@ -491,6 +492,9 @@ def serialize_class_attributes(conn: sqlite3.Connection, class_row: Any, teacher
         "college": row.get("college") or "",
         "department": row.get("department") or "",
         "major": row.get("major") or row.get("academic_major") or "",
+        "class_kind": normalize_class_kind(row.get("class_kind")),
+        "class_kind_label": class_kind_label(row.get("class_kind")),
+        "is_custom_class": is_custom_class_kind(row.get("class_kind")),
         "enrollment_year": _safe_int(row.get("enrollment_year")),
         "expected_graduation_year": _safe_int(row.get("expected_graduation_year")),
         "program_duration_years": _safe_int(row.get("program_duration_years")),
@@ -726,6 +730,10 @@ def update_class_attributes(
         college=payload.get("college", _row_value(class_row, "college") or ""),
         department=payload.get("department", _row_value(class_row, "department") or ""),
     )
+    requested_department = str(payload.get("department", _row_value(class_row, "department") or "") or "").strip()
+    class_kind = normalize_class_kind(_row_value(class_row, "class_kind"))
+    if is_custom_class_kind(class_kind) and not requested_department:
+        org_scope["department"] = ""
     major = str(payload.get("major", _row_value(class_row, "major", _row_value(class_row, "academic_major", ""))) or "").strip()
     enrollment_year = _safe_int(payload.get("enrollment_year", _row_value(class_row, "enrollment_year")))
     graduation_year = _safe_int(payload.get("expected_graduation_year", _row_value(class_row, "expected_graduation_year")))

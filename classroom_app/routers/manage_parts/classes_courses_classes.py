@@ -45,9 +45,9 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
             """
             INSERT INTO classes (
                 name, department, created_by_teacher_id,
-                school_code, school_name, college
+                school_code, school_name, college, class_kind
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 class_name,
@@ -56,6 +56,7 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
                 org_scope["school_code"],
                 org_scope["school_name"],
                 org_scope["college"],
+                CLASS_KIND_ADMINISTRATIVE,
             ),
         )
 
@@ -104,6 +105,105 @@ async def api_create_class(request: Request, class_name: str = Form(), file: Upl
     if missing_email_count:
         message += f" 其中 {missing_email_count} 名学生缺少邮箱，后续只能收到站内通知，可提醒学生在个人中心补充。"
     return {"status": "success", "message": message, "missing_email_count": missing_email_count}
+
+
+@router.post("/classes/custom", response_class=JSONResponse)
+async def api_create_custom_class(
+    class_name: str = Form(...),
+    school_name: str = Form(default=""),
+    college: str = Form(default=""),
+    department: str = Form(default=""),
+    major: str = Form(default=""),
+    description: str = Form(default=""),
+    scope_level: str = Form(default="private"),
+    user: dict = Depends(get_current_teacher),
+):
+    """Create a teacher-owned custom class without requiring an imported roster."""
+    cleaned_name = _clean_form_text(class_name, limit=120)
+    cleaned_school_name = _clean_form_text(school_name, limit=160)
+    cleaned_college = _clean_form_text(college, limit=160)
+    cleaned_department = normalize_department(department)
+    cleaned_major = _clean_form_text(major, limit=160)
+    cleaned_description = _clean_form_text(description, limit=1000)
+    cleaned_scope_level = str(scope_level or "private").strip().lower()
+    if cleaned_scope_level not in {"private", "department", "school"}:
+        cleaned_scope_level = "private"
+
+    if not cleaned_name:
+        raise HTTPException(status_code=400, detail="请填写班级名称")
+
+    with get_db_connection() as conn:
+        org_scope = apply_teacher_scope_to_org(
+            conn,
+            user["id"],
+            school_name=cleaned_school_name,
+            college=cleaned_college,
+            department=cleaned_department,
+        )
+        if not cleaned_department:
+            org_scope["department"] = ""
+        try:
+            class_id = execute_insert_returning_id(
+                conn,
+                """
+                INSERT INTO classes (
+                    name, department, description, created_by_teacher_id,
+                    school_code, school_name, college, major,
+                    class_kind, owner_role, owner_user_pk, scope_level, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'teacher', ?, ?, ?)
+                """,
+                (
+                    cleaned_name,
+                    org_scope["department"],
+                    cleaned_description,
+                    user["id"],
+                    org_scope["school_code"],
+                    org_scope["school_name"],
+                    org_scope["college"],
+                    cleaned_major,
+                    CLASS_KIND_CUSTOM,
+                    user["id"],
+                    cleaned_scope_level,
+                    local_iso(),
+                ),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError as exc:
+            conn.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail=f"创建失败：班级名称“{cleaned_name}”已存在，请换一个更具体的名称。",
+            ) from exc
+
+    return {
+        "status": "success",
+        "message": f"自定义班级“{cleaned_name}”已创建，可以继续添加学生。",
+        "class": {
+            "id": class_id,
+            "name": cleaned_name,
+            "department": org_scope["department"],
+            "department_label": org_scope["department"] or "未分类",
+            "description": cleaned_description,
+            "school_code": org_scope["school_code"],
+            "school_name": org_scope["school_name"],
+            "college": org_scope["college"],
+            "major": cleaned_major,
+            "class_kind": CLASS_KIND_CUSTOM,
+            "class_kind_label": class_kind_label(CLASS_KIND_CUSTOM),
+            "is_custom_class": True,
+            "student_count": 0,
+            "suspended_student_count": 0,
+            "total_student_count": 0,
+            "missing_email_count": 0,
+            "academic_synced_student_count": 0,
+            "offering_count": 0,
+            "students": [],
+            "active_students": [],
+            "can_manage": True,
+            "can_view_content": True,
+        },
+    }
 
 
 @router.post("/classes/sync-current-academic", response_class=JSONResponse)
@@ -362,6 +462,10 @@ async def api_create_class_student(
             college=class_row["college"] if "college" in class_row.keys() else "",
             department=class_row["department"] if "department" in class_row.keys() else "",
         )
+        class_kind = class_row["class_kind"] if "class_kind" in class_row.keys() else ""
+        class_department = class_row["department"] if "department" in class_row.keys() else ""
+        if is_custom_class_kind(class_kind) and not _clean_form_text(class_department):
+            class_scope["department"] = ""
         try:
             student_id = execute_insert_returning_id(
                 conn,

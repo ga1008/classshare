@@ -72,6 +72,51 @@ def run_async(coro):
 
 
 class ManagePostgresWriteTests(unittest.TestCase):
+    def test_custom_class_create_marks_kind_and_preserves_empty_department(self):
+        conn = FakeConnection()
+        inserted = []
+
+        def fake_insert(active_conn, sql, params, **kwargs):
+            inserted.append((active_conn, sql, params, kwargs))
+            return 401
+
+        with patch.object(classes_courses_classes, "get_db_connection", return_value=conn), patch.object(
+            classes_courses_classes,
+            "apply_teacher_scope_to_org",
+            return_value={
+                "school_code": "gxufl",
+                "school_name": "School",
+                "college": "College",
+                "department": "CS",
+            },
+        ), patch.object(
+            classes_courses_classes,
+            "execute_insert_returning_id",
+            side_effect=fake_insert,
+        ):
+            result = run_async(
+                classes_courses_classes.api_create_custom_class(
+                    class_name="Mentoring 2026",
+                    school_name="",
+                    college="College",
+                    department="",
+                    major="",
+                    description="Cross-major support",
+                    scope_level="private",
+                    user={"id": 3},
+                )
+            )
+
+        self.assertEqual("success", result["status"])
+        self.assertEqual(401, result["class"]["id"])
+        self.assertEqual("custom", result["class"]["class_kind"])
+        self.assertEqual("", result["class"]["department"])
+        self.assertTrue(conn.committed)
+        self.assertEqual(1, len(inserted))
+        self.assertIn("class_kind", inserted[0][1])
+        self.assertEqual("custom", inserted[0][2][8])
+        self.assertEqual("", inserted[0][2][1])
+
     def test_class_student_create_uses_insert_returning_helper(self):
         conn = FakeConnection()
         inserted = []
@@ -123,6 +168,58 @@ class ManagePostgresWriteTests(unittest.TestCase):
         self.assertTrue(conn.committed)
         self.assertEqual(1, len(inserted))
         self.assertIn("INSERT INTO students", inserted[0][1])
+
+    def test_custom_class_student_create_preserves_blank_department_scope(self):
+        conn = FakeConnection()
+        inserted = []
+
+        def fake_insert(active_conn, sql, params, **kwargs):
+            inserted.append((active_conn, sql, params, kwargs))
+            return 502
+
+        with patch.object(classes_courses_classes, "get_db_connection", return_value=conn), patch.object(
+            classes_courses_classes,
+            "_ensure_teacher_owned_class",
+            return_value=FakeRow(
+                {
+                    "id": 7,
+                    "school_code": "gxufl",
+                    "school_name": "School",
+                    "college": "College",
+                    "department": "",
+                    "class_kind": "custom",
+                }
+            ),
+        ), patch.object(
+            classes_courses_classes,
+            "apply_teacher_scope_to_org",
+            return_value={
+                "school_code": "gxufl",
+                "school_name": "School",
+                "college": "College",
+                "department": "CS",
+            },
+        ), patch.object(
+            classes_courses_classes,
+            "execute_insert_returning_id",
+            side_effect=fake_insert,
+        ):
+            result = run_async(
+                classes_courses_classes.api_create_class_student(
+                    class_id=7,
+                    name="Bob",
+                    student_id_number="S002",
+                    gender="",
+                    email="",
+                    phone="",
+                    user={"id": 3},
+                )
+            )
+
+        self.assertEqual("success", result["status"])
+        self.assertEqual(502, result["student"]["id"])
+        self.assertTrue(conn.committed)
+        self.assertEqual("", inserted[0][2][-1])
 
     def test_course_save_create_uses_insert_returning_helper(self):
         conn = FakeConnection()

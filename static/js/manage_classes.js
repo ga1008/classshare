@@ -12,6 +12,10 @@ const elements = {
         document.getElementById('focusClassCreateBtn'),
         document.getElementById('heroClassCreateBtn'),
     ].filter(Boolean),
+    customClassButtons: [
+        document.getElementById('customClassCreateTopBtn'),
+        document.getElementById('heroCustomClassCreateBtn'),
+    ].filter(Boolean),
     templateButtons: [
         document.getElementById('classTemplateDownloadBtn'),
         document.getElementById('heroTemplateDownloadBtn'),
@@ -50,6 +54,13 @@ const elements = {
     addTitle: document.getElementById('classStudentAddTitle'),
     addMeta: document.getElementById('classStudentAddMeta'),
     addName: document.getElementById('classStudentAddName'),
+    customModal: document.getElementById('classCustomCreateModal'),
+    customModalPanel: document.querySelector('.class-custom-modal'),
+    customModalClose: document.getElementById('classCustomCreateClose'),
+    customModalCancel: document.getElementById('classCustomCreateCancel'),
+    customForm: document.getElementById('classCustomCreateForm'),
+    customName: document.getElementById('classCustomNameInput'),
+    customCreateAndAddStudent: document.getElementById('classCustomCreateAndAddStudent'),
     syncModal: document.getElementById('classAcademicSyncModal'),
     syncPanel: document.querySelector('.class-academic-sync-modal'),
     syncClose: document.getElementById('classAcademicSyncClose'),
@@ -62,6 +73,7 @@ const elements = {
 let activeDrawerClass = null;
 let activeDrawerTrigger = null;
 let activeAddTrigger = null;
+let activeCustomTrigger = null;
 
 function normalize(value) {
     return String(value || '').trim().toLowerCase();
@@ -102,6 +114,8 @@ function classSearchText(classItem) {
         classItem.school_name,
         classItem.college,
         classItem.organization_label,
+        classItem.class_kind,
+        classItem.class_kind_label,
         classItem.academic_class_name,
         classItem.academic_college,
         classItem.academic_major,
@@ -154,9 +168,11 @@ function cardPassesHealthFilter(card) {
     const offeringCount = numberValue(card.dataset.offeringCount);
     const suspendedCount = numberValue(card.dataset.suspendedStudentCount);
     const academicCount = numberValue(card.dataset.academicSyncedStudentCount);
+    const classKind = normalize(card.dataset.classKind);
     if (health === 'missing-email') return missingCount > 0;
     if (health === 'complete-email') return missingCount === 0;
     if (health === 'has-suspended') return suspendedCount > 0;
+    if (health === 'custom-class') return classKind === 'custom';
     if (health === 'bound') return offeringCount > 0;
     if (health === 'unbound') return offeringCount === 0;
     if (health === 'academic-synced') return academicCount > 0;
@@ -426,6 +442,97 @@ function closeAddStudentModal() {
     }, 160);
 }
 
+function openCustomClassModal(trigger = null) {
+    if (!elements.customModal) return;
+    activeCustomTrigger = trigger;
+    elements.customForm?.reset();
+    if (elements.customCreateAndAddStudent) {
+        elements.customCreateAndAddStudent.checked = true;
+    }
+    elements.customModal.hidden = false;
+    elements.customModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('has-class-student-modal');
+    window.requestAnimationFrame(() => {
+        elements.customModal.classList.add('is-open');
+        elements.customName?.focus({ preventScroll: true });
+    });
+}
+
+function closeCustomClassModal() {
+    if (!elements.customModal) return;
+    elements.customModal.classList.remove('is-open');
+    elements.customModal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('has-class-student-modal');
+    window.setTimeout(() => {
+        if (!elements.customModal.classList.contains('is-open')) {
+            elements.customModal.hidden = true;
+            activeCustomTrigger?.focus?.({ preventScroll: true });
+            activeCustomTrigger = null;
+        }
+    }, 160);
+}
+
+function normalizeCreatedClass(classItem) {
+    const item = classItem || {};
+    return {
+        id: Number(item.id || 0),
+        name: item.name || '自定义班级',
+        department: item.department || '',
+        department_label: item.department_label || item.department || '未分类',
+        school_name: item.school_name || '',
+        college: item.college || '',
+        major: item.major || '',
+        organization_label: [item.school_name, item.college].filter(Boolean).join(' / '),
+        class_kind: item.class_kind || 'custom',
+        class_kind_label: item.class_kind_label || '自定义班级',
+        is_custom_class: true,
+        student_count: Number(item.student_count || 0),
+        suspended_student_count: Number(item.suspended_student_count || 0),
+        missing_email_count: Number(item.missing_email_count || 0),
+        academic_synced_student_count: Number(item.academic_synced_student_count || 0),
+        offering_count: Number(item.offering_count || 0),
+        students: Array.isArray(item.students) ? item.students : [],
+        active_students: Array.isArray(item.active_students) ? item.active_students : [],
+        can_manage: true,
+        can_view_content: true,
+    };
+}
+
+async function submitCustomClass(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalText = submitButton?.innerHTML;
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> 创建中...';
+    }
+    try {
+        const formData = new FormData(form);
+        const result = await apiFetch('/api/manage/classes/custom', {
+            method: 'POST',
+            body: formData,
+            silent: true,
+        });
+        const createdClass = normalizeCreatedClass(result.class);
+        showMessage(result.message || '自定义班级已创建', 'success');
+        const shouldAddStudent = Boolean(elements.customCreateAndAddStudent?.checked);
+        closeCustomClassModal();
+        if (shouldAddStudent && createdClass.id) {
+            window.setTimeout(() => openAddStudentModal(createdClass), 180);
+        } else {
+            window.setTimeout(() => window.location.reload(), 650);
+        }
+    } catch (error) {
+        showMessage(error.message || '创建自定义班级失败', 'error');
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalText;
+        }
+    }
+}
+
 async function submitAddStudent(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -646,6 +753,10 @@ function bindEvents() {
         button.addEventListener('click', focusCreateForm);
     });
 
+    elements.customClassButtons.forEach((button) => {
+        button.addEventListener('click', () => openCustomClassModal(button));
+    });
+
     elements.templateButtons.forEach((button) => {
         button.addEventListener('click', downloadRosterTemplate);
     });
@@ -712,6 +823,12 @@ function bindEvents() {
     elements.addModal?.addEventListener('click', (event) => {
         if (event.target === elements.addModal) closeAddStudentModal();
     });
+    elements.customForm?.addEventListener('submit', submitCustomClass);
+    elements.customModalClose?.addEventListener('click', closeCustomClassModal);
+    elements.customModalCancel?.addEventListener('click', closeCustomClassModal);
+    elements.customModal?.addEventListener('click', (event) => {
+        if (event.target === elements.customModal) closeCustomClassModal();
+    });
     elements.syncClose?.addEventListener('click', () => closeSyncModal({ reload: false }));
     elements.syncDismiss?.addEventListener('click', () => closeSyncModal({ reload: false }));
     elements.syncReload?.addEventListener('click', () => closeSyncModal({ reload: true }));
@@ -725,6 +842,10 @@ function bindEvents() {
         }
         if (event.key === 'Escape' && elements.addModal && !elements.addModal.hidden) {
             closeAddStudentModal();
+            return;
+        }
+        if (event.key === 'Escape' && elements.customModal && !elements.customModal.hidden) {
+            closeCustomClassModal();
             return;
         }
         if (event.key === 'Escape' && elements.drawer && !elements.drawer.hidden) {

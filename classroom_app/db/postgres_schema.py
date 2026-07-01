@@ -265,6 +265,9 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
         # PostgreSQL provisioned from an older schema lacks it. Auto-add here.
         "run_token": "TEXT NOT NULL DEFAULT ''",
     },
+    "classes": {
+        "class_kind": "TEXT NOT NULL DEFAULT 'administrative'",
+    },
     "class_offerings": {
         "cultivation_weights_json": "TEXT NOT NULL DEFAULT ''",
         "cultivation_weights_version": "TEXT NOT NULL DEFAULT 'default-v1'",
@@ -541,6 +544,7 @@ REQUIRED_POSTGRES_COLUMNS = {
         "school_code",
         "school_name",
         "college",
+        "class_kind",
     ),
     "courses": (
         "id",

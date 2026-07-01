@@ -984,6 +984,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/exam-grade-record/candidates",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_classroom_exam_grade_record_candidates",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/final-materials/generate",
     "methods": [
       "POST"
@@ -2005,6 +2013,14 @@
       "POST"
     ],
     "name": "api_create_class",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classes/custom",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_custom_class",
     "include_in_schema": true
   },
   {
@@ -3576,11 +3592,27 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/resume/builder/validate",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_builder_validate",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/resume/education/seed",
     "methods": [
       "POST"
     ],
     "name": "api_education_seed",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/import",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_import",
     "include_in_schema": true
   },
   {
@@ -3621,6 +3653,14 @@
       "POST"
     ],
     "name": "api_personal_suggest",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/readiness",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_resume_readiness",
     "include_in_schema": true
   },
   {
@@ -3669,6 +3709,14 @@
       "GET"
     ],
     "name": "api_resume_export",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}/import-conflicts/{conflict_index}/accept",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_import_conflict_accept",
     "include_in_schema": true
   },
   {
