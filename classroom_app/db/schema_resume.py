@@ -225,6 +225,11 @@ def ensure_resume_schema(conn: Any) -> None:
             tech_stack_json TEXT NOT NULL DEFAULT '[]',
             optimized_summary_md TEXT NOT NULL DEFAULT '',
             optimization_notes_json TEXT NOT NULL DEFAULT '{{}}',
+            source_file_hash TEXT NOT NULL DEFAULT '',
+            source_filename TEXT NOT NULL DEFAULT '',
+            source_mime_type TEXT NOT NULL DEFAULT '',
+            source_file_size INTEGER NOT NULL DEFAULT 0,
+            import_summary_json TEXT NOT NULL DEFAULT '{{}}',
             render_html TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'draft',
             error_text TEXT NOT NULL DEFAULT '',
@@ -245,5 +250,10 @@ def ensure_resume_schema(conn: Any) -> None:
     _add_column(conn, "resumes", "tech_stack_json", "TEXT NOT NULL DEFAULT '[]'", engine=engine)
     _add_column(conn, "resumes", "optimized_summary_md", "TEXT NOT NULL DEFAULT ''", engine=engine)
     _add_column(conn, "resumes", "optimization_notes_json", "TEXT NOT NULL DEFAULT '{}'", engine=engine)
+    _add_column(conn, "resumes", "source_file_hash", "TEXT NOT NULL DEFAULT ''", engine=engine)
+    _add_column(conn, "resumes", "source_filename", "TEXT NOT NULL DEFAULT ''", engine=engine)
+    _add_column(conn, "resumes", "source_mime_type", "TEXT NOT NULL DEFAULT ''", engine=engine)
+    _add_column(conn, "resumes", "source_file_size", "INTEGER NOT NULL DEFAULT 0", engine=engine)
+    _add_column(conn, "resumes", "import_summary_json", "TEXT NOT NULL DEFAULT '{}'", engine=engine)
 
     _SCHEMA_READY = True

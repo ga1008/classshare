@@ -153,6 +153,40 @@ def update_personal_info(conn, student_id: int, payload: dict[str, Any]) -> dict
     return get_personal_info(conn, student_id)
 
 
+def merge_personal_info_partial(conn, student_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    """Fill blank personal fields from an import without overwriting student data."""
+    ensure_resume_schema(conn)
+    current = _ensure_personal_row(conn, student_id)
+    updates: dict[str, str] = {}
+    conflicts: list[dict[str, str]] = []
+    skipped: list[str] = []
+    for field in PERSONAL_FIELDS:
+        incoming = _clean(payload.get(field), limit=200)
+        if not incoming:
+            continue
+        if field == "email" and not _EMAIL_RE.match(incoming):
+            skipped.append(field)
+            continue
+        existing = _clean(current.get(field), limit=200)
+        if not existing:
+            updates[field] = incoming
+        elif existing != incoming:
+            conflicts.append({"field": field, "existing": existing, "incoming": incoming})
+    if updates:
+        assignments = ", ".join(f"{field} = ?" for field in updates)
+        params = list(updates.values()) + [_now(), int(student_id)]
+        conn.execute(
+            f"UPDATE resume_personal_info SET {assignments}, updated_at = ? WHERE student_id = ?",
+            params,
+        )
+    return {
+        "updated_fields": list(updates.keys()),
+        "conflicts": conflicts,
+        "skipped_fields": skipped,
+        "info": get_personal_info(conn, student_id),
+    }
+
+
 def set_personal_avatar(conn, student_id: int, file_hash: str, mime_type: str) -> None:
     ensure_resume_schema(conn)
     _ensure_personal_row(conn, student_id)

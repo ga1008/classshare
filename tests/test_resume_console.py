@@ -21,6 +21,7 @@ from classroom_app.services.resume import resume_attachment_service as A
 from classroom_app.services.resume import resume_nav_service as N
 from classroom_app.services.resume import resume_generation_service as G
 from classroom_app.services.resume import resume_ai_service as AI
+from classroom_app.services.resume import resume_import_service as I
 
 
 def _conn() -> sqlite3.Connection:
@@ -49,6 +50,10 @@ class SchemaTests(unittest.TestCase):
                   "resume_skills", "resume_experiences", "resume_educations",
                   "resume_attachments", "resumes"):
             self.assertIn(t, names)
+        resume_columns = {r[1] for r in c.execute("PRAGMA table_info(resumes)").fetchall()}
+        for column in ("source_file_hash", "source_filename", "source_mime_type",
+                       "source_file_size", "import_summary_json"):
+            self.assertIn(column, resume_columns)
 
 
 class PersonalInfoTests(unittest.TestCase):
@@ -192,6 +197,18 @@ class DocumentTests(unittest.TestCase):
         D.delete_resume(c, 1, rid)
         with self.assertRaises(ValueError):
             D.get_resume(c, 1, rid)
+
+    def test_import_resume_placeholder_and_summary(self):
+        c = _conn()
+        rid = D.create_import_resume(
+            c, 1, filename="resume.pdf", file_hash="abc123", mime_type="application/pdf", file_size=128,
+        )
+        row = D.get_resume(c, 1, rid)
+        self.assertEqual(row["status"], "parsing")
+        self.assertEqual(row["source_filename"], "resume.pdf")
+        self.assertEqual(row["import_summary"]["source"], "import")
+        listed = D.list_resumes(c, 1)
+        self.assertEqual(listed[0]["import_summary"]["source_filename"], "resume.pdf")
 
     def test_layout_normalization_drops_bad_blocks(self):
         c = _conn()
@@ -350,6 +367,56 @@ class FallbackTests(unittest.TestCase):
                                      "timeline": {"enrollment_year": 2021, "graduation_year": 2025}})
         self.assertEqual(edu["major"], "软件工程")
         self.assertEqual(edu["start_date"], "2021-09")
+
+
+class ResumeImportTests(unittest.TestCase):
+    def test_normalize_import_payload_keeps_partial_but_real_resume_items(self):
+        payload = I.normalize_resume_import_payload({
+            "personal": {"姓名": "王五", "邮箱": "w@example.com", "求职意向": "后端开发工程师"},
+            "skills": ["Python", {"name": "FastAPI", "level": "熟悉"}],
+            "experience": [{"title": "校园服务平台", "start_date": "2024.03", "end_date": "至今"}],
+            "education": [{"school": "广西外国语学院", "major": "软件工程", "start_date": "2021年9月"}],
+        })
+        self.assertEqual(payload["personal"]["name"], "王五")
+        self.assertEqual(payload["personal"]["expected_position"], "后端开发工程师")
+        self.assertEqual(payload["skill"][0]["name"], "Python")
+        self.assertEqual(payload["experience"][0]["start_date"], "2024-03")
+        self.assertEqual(payload["experience"][0]["end_date"], "至今")
+        self.assertEqual(payload["education"][0]["start_date"], "2021-09")
+
+    def test_import_merge_fills_blanks_adds_new_and_records_conflicts(self):
+        c = _conn()
+        _full_personal(c)
+        existing_skill = P.create_section_item(c, 1, "skill", {"name": "Python", "acquired_date": "2023-01"})
+        existing_exp = P.create_section_item(
+            c, 1, "experience",
+            {"kind": "project", "title": "校园服务平台", "start_date": "2024-03", "end_date": "2024-06"},
+        )
+        payload = I.normalize_resume_import_payload({
+            "personal": {"phone": "13900000000", "wechat": "wx-import", "email": "other@example.com"},
+            "skill": [{"name": "Python", "level": "熟练"}, {"name": "Docker"}],
+            "certificate": [{"name": "英语四级"}],
+            "experience": [{
+                "title": "校园服务平台",
+                "start_date": "2024-03",
+                "end_date": "2024-06",
+                "content": "负责后端接口开发",
+            }],
+        })
+        summary = I.merge_resume_import_payload(c, 1, payload, source_filename="resume.pdf")
+        info = P.get_personal_info(c, 1)
+        self.assertEqual(info["phone"], "13800000000")
+        self.assertEqual(info["wechat"], "wx-import")
+        self.assertEqual(info["email"], "z@example.com")
+        self.assertEqual(len(P.list_section(c, 1, "skill")), 2)
+        self.assertEqual(len(P.list_section(c, 1, "certificate")), 1)
+        updated_skill = P.get_section_item(c, 1, "skill", existing_skill)
+        self.assertEqual(updated_skill["level"], "熟练")
+        updated_exp = P.get_section_item(c, 1, "experience", existing_exp)
+        self.assertEqual(updated_exp["content"], "负责后端接口开发")
+        self.assertIn("personal", summary["updated"])
+        self.assertIn("skill", summary["added"])
+        self.assertTrue(any(c["section"] == "personal" and c["field"] == "email" for c in summary["conflicts"]))
 
 
 @unittest.skipUnless(

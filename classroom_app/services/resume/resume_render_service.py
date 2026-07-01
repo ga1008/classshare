@@ -434,4 +434,8 @@ def parse_resume_row(row: dict[str, Any]) -> dict[str, Any]:
         item["optimization_notes"] = json.loads(item.get("optimization_notes_json") or "{}")
     except (TypeError, ValueError):
         item["optimization_notes"] = {}
+    try:
+        item["import_summary"] = json.loads(item.get("import_summary_json") or "{}")
+    except (TypeError, ValueError):
+        item["import_summary"] = {}
     return item

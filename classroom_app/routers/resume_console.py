@@ -24,6 +24,7 @@ from ..services.resume import resume_ai_service as ai
 from ..services.resume import resume_attachment_service as attach
 from ..services.resume import resume_document_service as docs
 from ..services.resume import resume_generation_service as gen
+from ..services.resume import resume_import_service as resume_import
 from ..services.resume import resume_profile_service as profile
 from ..services.resume import resume_render_service as render
 from ..services.resume.resume_nav_service import build_resume_nav, get_resume_nav_item
@@ -413,6 +414,33 @@ async def api_resume_create(request: Request, user: dict = Depends(get_current_u
         conn.commit()
     asyncio.create_task(gen.run_resume_render_job(resume_id, student_id))
     return {"ok": True, "id": resume_id}
+
+
+@router.post("/api/resume/import", response_class=JSONResponse)
+async def api_resume_import(user: dict = Depends(get_current_user), file: UploadFile = File(...)):
+    student_id = _require_student(user)
+    filename = str(file.filename or "resume")
+    resume_import.validate_import_file(filename, str(file.content_type or ""))
+    result = await save_file_globally(file)
+    if not result:
+        raise HTTPException(500, "简历文件保存失败")
+    meta = resume_import.validate_import_file(
+        filename,
+        str(file.content_type or ""),
+        int(result.get("size") or 0),
+    )
+    with get_db_connection() as conn:
+        resume_id = docs.create_import_resume(
+            conn,
+            student_id,
+            filename=meta["filename"],
+            file_hash=str(result.get("hash") or ""),
+            mime_type=meta["mime_type"],
+            file_size=int(result.get("size") or 0),
+        )
+        conn.commit()
+    asyncio.create_task(resume_import.run_resume_import_parse_job(resume_id, student_id))
+    return {"ok": True, "id": resume_id, "status": "parsing"}
 
 
 @router.put("/api/resume/resumes/{resume_id}", response_class=JSONResponse)

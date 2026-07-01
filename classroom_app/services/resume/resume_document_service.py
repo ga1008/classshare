@@ -49,6 +49,7 @@ def list_resumes(conn, student_id: int) -> list[dict[str, Any]]:
     ensure_resume_schema(conn)
     rows = conn.execute(
         "SELECT id, title, target_position, template_key, optimized_summary_md, optimization_notes_json, "
+        "source_filename, source_mime_type, source_file_size, import_summary_json, "
         "status, error_text, created_at, updated_at "
         "FROM resumes WHERE student_id = ? ORDER BY created_at DESC, id DESC",
         (int(student_id),),
@@ -60,7 +61,12 @@ def list_resumes(conn, student_id: int) -> list[dict[str, Any]]:
             item["optimization_notes"] = json.loads(item.get("optimization_notes_json") or "{}")
         except (TypeError, ValueError):
             item["optimization_notes"] = {}
+        try:
+            item["import_summary"] = json.loads(item.get("import_summary_json") or "{}")
+        except (TypeError, ValueError):
+            item["import_summary"] = {}
         item.pop("optimization_notes_json", None)
+        item.pop("import_summary_json", None)
         items.append(item)
     return items
 
@@ -94,6 +100,45 @@ def create_resume(conn, student_id: int, *, title: str, template_key: str,
     )
 
 
+def create_import_resume(
+    conn,
+    student_id: int,
+    *,
+    filename: str,
+    file_hash: str,
+    mime_type: str = "",
+    file_size: int = 0,
+) -> int:
+    ensure_resume_schema(conn)
+    now = _now()
+    title = f"导入解析：{str(filename or '简历文件')[:90]}"
+    summary = {
+        "source": "import",
+        "source_filename": str(filename or "")[:240],
+        "message": "正在解析简历文件",
+    }
+    return int(
+        execute_insert_returning_id(
+            conn,
+            "INSERT INTO resumes (student_id, title, template_key, layout_json, status, "
+            "source_file_hash, source_filename, source_mime_type, source_file_size, "
+            "import_summary_json, created_at, updated_at) "
+            "VALUES (?, ?, 'classic', '{}', 'parsing', ?, ?, ?, ?, ?, ?, ?)",
+            (
+                int(student_id),
+                title[:120],
+                str(file_hash or "")[:128],
+                str(filename or "")[:240],
+                str(mime_type or "")[:100],
+                int(file_size or 0),
+                json.dumps(summary, ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+    )
+
+
 def update_resume(conn, student_id: int, resume_id: int, *, title: str, template_key: str,
                   layout: Any, target_position: str = "") -> None:
     get_resume(conn, student_id, resume_id)  # ownership
@@ -105,6 +150,42 @@ def update_resume(conn, student_id: int, resume_id: int, *, title: str, template
         (
             str(title or "我的简历")[:120], str(target_position or "")[:120],
             str(template_key or "classic")[:40], layout_json, _now(), int(resume_id), int(student_id),
+        ),
+    )
+
+
+def save_import_result(
+    conn,
+    resume_id: int,
+    *,
+    title: str,
+    target_position: str,
+    template_key: str,
+    layout: Any,
+    render_html: str,
+    tech_stack: list[Any],
+    import_summary: Any,
+    status: str = "ready",
+    error_text: str = "",
+) -> None:
+    ensure_resume_schema(conn)
+    layout_json = json.dumps(_normalize_layout(layout), ensure_ascii=False)
+    conn.execute(
+        "UPDATE resumes SET title = ?, target_position = ?, template_key = ?, layout_json = ?, "
+        "render_html = ?, tech_stack_json = ?, import_summary_json = ?, status = ?, error_text = ?, "
+        "updated_at = ? WHERE id = ?",
+        (
+            str(title or "导入简历")[:120],
+            str(target_position or "")[:120],
+            str(template_key or "classic")[:40],
+            layout_json,
+            str(render_html or ""),
+            json.dumps(tech_stack or [], ensure_ascii=False),
+            json.dumps(import_summary or {}, ensure_ascii=False),
+            status,
+            str(error_text or "")[:600],
+            _now(),
+            int(resume_id),
         ),
     )
 

@@ -8,5 +8,6 @@ HTTP surface. Modules:
 * ``resume_attachment_service`` — image attachments for cert/skill/experience.
 * ``resume_ai_service``         — synchronous AI helpers (optimize / suggest / tech stack).
 * ``resume_generation_service`` — background AI jobs (self-intro / education / render).
+* ``resume_import_service``     — uploaded resume parse + cautious profile merge.
 * ``resume_render_service``     — résumé HTML assembly + docx/pdf export.
 """
