@@ -515,6 +515,74 @@ def merge_resume_import_payload(
     return summary
 
 
+def accept_import_conflict(conn, student_id: int, resume_id: int, conflict_index: int) -> dict[str, Any]:
+    """Apply one import conflict's incoming value and refresh the rendered resume."""
+    resume = docs.get_resume(conn, student_id, resume_id)
+    summary = resume.get("import_summary") if isinstance(resume.get("import_summary"), dict) else {}
+    conflicts = summary.get("conflicts") if isinstance(summary.get("conflicts"), list) else []
+    index = int(conflict_index)
+    if index < 0 or index >= len(conflicts) or not isinstance(conflicts[index], dict):
+        raise ValueError("未找到该导入冲突")
+    conflict = dict(conflicts[index])
+    if conflict.get("accepted"):
+        return {"summary": summary, "conflict": conflict, "changed": False}
+
+    section = str(conflict.get("section") or "").strip()
+    field = str(conflict.get("field") or "").strip()
+    incoming = _clean(conflict.get("incoming"), 8000 if field in {"content_md", "content", "contribution"} else 2000)
+    if not section or not field or not incoming:
+        raise ValueError("该冲突缺少可应用的导入值")
+
+    if section == "personal":
+        _apply_personal_conflict(conn, student_id, field, incoming)
+    else:
+        existing_id = int(conflict.get("existing_id") or 0)
+        _apply_section_conflict(conn, student_id, section, existing_id, field, incoming)
+
+    conflict["accepted"] = True
+    conflict["resolved_at"] = _now()
+    conflicts[index] = conflict
+    summary["conflicts"] = conflicts
+    summary["message"] = _summary_message(summary)
+    docs.save_import_summary(conn, resume_id, summary)
+
+    refreshed = docs.get_resume(conn, student_id, resume_id)
+    html = render.assemble_resume_html(conn, student_id, refreshed)
+    docs.save_render(
+        conn,
+        resume_id,
+        render_html=html,
+        tech_stack=refreshed.get("tech_stack") or [],
+        status="ready",
+        error_text="",
+    )
+    return {"summary": summary, "conflict": conflict, "changed": True}
+
+
+def _apply_personal_conflict(conn, student_id: int, field: str, incoming: str) -> None:
+    if field not in profile.PERSONAL_FIELDS:
+        raise ValueError("该个人信息字段不能自动更新")
+    profile.get_personal_info(conn, student_id)
+    conn.execute(
+        f"UPDATE resume_personal_info SET {field} = ?, updated_at = ? WHERE student_id = ?",
+        (incoming[:200], _now(), int(student_id)),
+    )
+
+
+def _apply_section_conflict(conn, student_id: int, section: str, item_id: int, field: str, incoming: str) -> None:
+    if section not in profile.LIST_SECTIONS:
+        raise ValueError("该资料分区不能自动更新")
+    spec = profile.LIST_SECTIONS[section]
+    if field not in spec["fields"]:
+        raise ValueError("该资料字段不能自动更新")
+    profile.get_section_item(conn, student_id, section, item_id)
+    limit = 8000 if field in {"content_md", "content", "contribution"} else 2000
+    conn.execute(
+        f"UPDATE {spec['table']} SET {field} = ?, updated_at = ? WHERE id = ? AND student_id = ?",
+        (incoming[:limit], _now(), int(item_id), int(student_id)),
+    )
+
+
 def _insert_import_section(conn, student_id: int, section: str, item: dict[str, Any]) -> int | None:
     if not _section_has_identity(section, item):
         return None
@@ -685,7 +753,10 @@ def _build_resume_doc(
 def _summary_message(summary: dict[str, Any]) -> str:
     added_count = sum(len(v) for v in (summary.get("added") or {}).values() if isinstance(v, list))
     updated_count = sum(len(v) for v in (summary.get("updated") or {}).values() if isinstance(v, list))
-    conflict_count = len(summary.get("conflicts") or [])
+    conflict_count = sum(
+        1 for item in (summary.get("conflicts") or [])
+        if isinstance(item, dict) and not item.get("accepted")
+    )
     parts = []
     if added_count:
         parts.append(f"新增 {added_count} 项资料")

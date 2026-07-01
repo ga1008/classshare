@@ -22,6 +22,7 @@ from classroom_app.services.resume import resume_nav_service as N
 from classroom_app.services.resume import resume_generation_service as G
 from classroom_app.services.resume import resume_ai_service as AI
 from classroom_app.services.resume import resume_import_service as I
+from classroom_app.services.resume import resume_readiness_service as Y
 
 
 def _conn() -> sqlite3.Connection:
@@ -269,6 +270,39 @@ class DocumentTests(unittest.TestCase):
             self.assertIn("张三", html)
 
 
+class ReadinessTests(unittest.TestCase):
+    def test_readiness_tracks_missing_next_actions(self):
+        c = _conn()
+        data = Y.build_resume_readiness(c, 1)
+        self.assertLess(data["score"], 60)
+        self.assertTrue(any(item["kind"] == "personal" for item in data["next_actions"]))
+        _full_personal(c)
+        P.create_section_item(c, 1, "self_intro", {"content_md": "面向后端开发岗位，具备项目实践。"})
+        data = Y.build_resume_readiness(c, 1)
+        self.assertGreaterEqual(data["score"], 40)
+        self.assertTrue(any(check["key"] == "self_intro" and check["status"] == "done" for check in data["checks"]))
+
+    def test_builder_validation_requires_target_personal_and_real_content(self):
+        c = _conn()
+        result = Y.validate_resume_build(c, 1, target_position="", layout={"blocks": []})
+        self.assertFalse(result["ok"])
+        self.assertTrue(any(item["key"] == "target_position" for item in result["missing"]))
+
+        _full_personal(c)
+        thin = Y.validate_resume_build(c, 1, target_position="后端开发工程师", layout={"blocks": [{"type": "tech_stack"}]})
+        self.assertFalse(thin["ok"])
+        self.assertTrue(any(item["key"] == "content" for item in thin["missing"]))
+
+        sid = P.create_section_item(c, 1, "skill", {"name": "Python", "acquired_date": "2024-01"})
+        ok = Y.validate_resume_build(
+            c,
+            1,
+            target_position="后端开发工程师",
+            layout={"blocks": [{"type": "skill_cert", "skill_ids": [sid], "cert_ids": []}]},
+        )
+        self.assertTrue(ok["ok"])
+
+
 class AttachmentTests(unittest.TestCase):
     def _insert(self, c, sid, kind, owner_id, h="abc"):
         from classroom_app.db.connection import execute_insert_returning_id
@@ -417,6 +451,43 @@ class ResumeImportTests(unittest.TestCase):
         self.assertIn("personal", summary["updated"])
         self.assertIn("skill", summary["added"])
         self.assertTrue(any(c["section"] == "personal" and c["field"] == "email" for c in summary["conflicts"]))
+
+    def test_accept_import_conflict_updates_data_and_render(self):
+        c = _conn()
+        _full_personal(c)
+        rid = D.create_resume(
+            c,
+            1,
+            title="导入简历",
+            template_key="classic",
+            target_position="后端开发工程师",
+            layout={"personal_fields": ["email"], "blocks": []},
+        )
+        D.save_import_result(
+            c,
+            rid,
+            title="导入简历",
+            target_position="后端开发工程师",
+            template_key="classic",
+            layout={"personal_fields": ["email"], "blocks": []},
+            render_html="old",
+            tech_stack=[],
+            import_summary={
+                "source": "import",
+                "conflicts": [{
+                    "section": "personal",
+                    "field": "email",
+                    "existing": "z@example.com",
+                    "incoming": "new@example.com",
+                }],
+            },
+        )
+        result = I.accept_import_conflict(c, 1, rid, 0)
+        self.assertTrue(result["changed"])
+        self.assertTrue(result["summary"]["conflicts"][0]["accepted"])
+        self.assertEqual(P.get_personal_info(c, 1)["email"], "new@example.com")
+        saved = D.get_resume(c, 1, rid)
+        self.assertIn("new@example.com", saved["render_html"])
 
 
 @unittest.skipUnless(

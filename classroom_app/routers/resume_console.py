@@ -26,6 +26,7 @@ from ..services.resume import resume_document_service as docs
 from ..services.resume import resume_generation_service as gen
 from ..services.resume import resume_import_service as resume_import
 from ..services.resume import resume_profile_service as profile
+from ..services.resume import resume_readiness_service as readiness
 from ..services.resume import resume_render_service as render
 from ..services.resume.resume_nav_service import build_resume_nav, get_resume_nav_item
 
@@ -375,6 +376,30 @@ def api_builder_palette(user: dict = Depends(get_current_user)):
     }
 
 
+@router.get("/api/resume/readiness", response_class=JSONResponse)
+def api_resume_readiness(user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    with get_db_connection() as conn:
+        data = readiness.build_resume_readiness(conn, student_id)
+        conn.commit()
+    return {"ok": True, "readiness": data}
+
+
+@router.post("/api/resume/builder/validate", response_class=JSONResponse)
+async def api_resume_builder_validate(request: Request, user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    payload = await _read_json(request)
+    with get_db_connection() as conn:
+        result = readiness.validate_resume_build(
+            conn,
+            student_id,
+            target_position=str(payload.get("target_position") or ""),
+            layout=payload.get("layout"),
+        )
+        conn.commit()
+    return {"ok": True, "validation": result}
+
+
 @router.get("/api/resume/resumes", response_class=JSONResponse)
 def api_resumes_list(user: dict = Depends(get_current_user)):
     student_id = _require_student(user)
@@ -404,6 +429,15 @@ async def api_resume_create(request: Request, user: dict = Depends(get_current_u
     with get_db_connection() as conn:
         personal = profile.get_personal_info(conn, student_id)
         target_position = str(payload.get("target_position") or personal.get("expected_position") or "").strip()
+        validation = readiness.validate_resume_build(
+            conn,
+            student_id,
+            target_position=target_position,
+            layout=payload.get("layout"),
+        )
+        if not validation.get("ok"):
+            labels = "、".join(str(item.get("label") or item.get("key")) for item in validation.get("missing", [])[:4])
+            raise HTTPException(400, f"请先完善：{labels}")
         resume_id = docs.create_resume(
             conn, student_id,
             title=str(payload.get("title") or "我的简历"),
@@ -451,6 +485,15 @@ async def api_resume_update(resume_id: int, request: Request, user: dict = Depen
         with get_db_connection() as conn:
             personal = profile.get_personal_info(conn, student_id)
             target_position = str(payload.get("target_position") or personal.get("expected_position") or "").strip()
+            validation = readiness.validate_resume_build(
+                conn,
+                student_id,
+                target_position=target_position,
+                layout=payload.get("layout"),
+            )
+            if not validation.get("ok"):
+                labels = "、".join(str(item.get("label") or item.get("key")) for item in validation.get("missing", [])[:4])
+                raise HTTPException(400, f"请先完善：{labels}")
             docs.update_resume(
                 conn, student_id, resume_id,
                 title=str(payload.get("title") or "我的简历"),
@@ -496,6 +539,22 @@ async def api_resume_optimize(resume_id: int, request: Request, user: dict = Dep
         raise HTTPException(404, str(exc)) from exc
     asyncio.create_task(gen.run_resume_optimization_job(resume_id, student_id))
     return {"ok": True, "id": resume_id, "target_position": target_position}
+
+
+@router.post("/api/resume/resumes/{resume_id}/import-conflicts/{conflict_index}/accept", response_class=JSONResponse)
+async def api_resume_import_conflict_accept(
+    resume_id: int,
+    conflict_index: int,
+    user: dict = Depends(get_current_user),
+):
+    student_id = _require_student(user)
+    try:
+        with get_db_connection() as conn:
+            result = resume_import.accept_import_conflict(conn, student_id, resume_id, conflict_index)
+            conn.commit()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, **result}
 
 
 @router.delete("/api/resume/resumes/{resume_id}", response_class=JSONResponse)

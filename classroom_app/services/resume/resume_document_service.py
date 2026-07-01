@@ -45,6 +45,11 @@ def _normalize_layout(layout: Any) -> dict[str, Any]:
     return safe
 
 
+def normalize_layout(layout: Any) -> dict[str, Any]:
+    """Public wrapper used by request validation without creating a document."""
+    return _normalize_layout(layout)
+
+
 def list_resumes(conn, student_id: int) -> list[dict[str, Any]]:
     ensure_resume_schema(conn)
     rows = conn.execute(
@@ -187,6 +192,14 @@ def save_import_result(
             _now(),
             int(resume_id),
         ),
+    )
+
+
+def save_import_summary(conn, resume_id: int, import_summary: Any) -> None:
+    ensure_resume_schema(conn)
+    conn.execute(
+        "UPDATE resumes SET import_summary_json = ?, updated_at = ? WHERE id = ?",
+        (json.dumps(import_summary or {}, ensure_ascii=False), _now(), int(resume_id)),
     )
 
 

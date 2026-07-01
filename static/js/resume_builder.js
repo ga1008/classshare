@@ -10,6 +10,7 @@
   var EDIT_ID = null;
   var lastAutoTitle = '';
   var activeDrag = null;
+  var lastAdded = null;
   var PERSONAL_REQUIRED = ['name', 'gender', 'birthday', 'email', 'expected_position'];
   var PERSONAL_FIELD_ORDER = [
     'name', 'gender', 'birthday', 'email', 'phone', 'qq', 'wechat',
@@ -88,6 +89,43 @@
     }
   }
 
+  function sectionCount() {
+    var count = 0;
+    if (state.self_intro.length) count++;
+    if (state.education.length) count++;
+    if (state.experience.length) count++;
+    if (state.skill.length || state.cert.length) count++;
+    if (state.tech_stack) count++;
+    return count;
+  }
+
+  function requiredPersonalFilled() {
+    var personal = DATA && DATA.personal ? DATA.personal : {};
+    return PERSONAL_REQUIRED.filter(function (key) {
+      return String(personal[key] || '').trim();
+    }).length;
+  }
+
+  function renderBuildProgress() {
+    var box = document.getElementById('rzBuildProgress');
+    if (!box || !DATA) return;
+    var steps = [
+      { key: 'target', label: '目标岗位', done: !!state.target_position.trim() },
+      { key: 'personal', label: '必填信息', done: requiredPersonalFilled() === PERSONAL_REQUIRED.length },
+      { key: 'intro', label: '自我介绍', done: state.self_intro.length > 0 },
+      { key: 'experience', label: '经历证明', done: state.education.length > 0 || state.experience.length > 0 },
+      { key: 'skill', label: '技能证书', done: state.skill.length > 0 || state.cert.length > 0 },
+      { key: 'layout', label: '简历区块', done: sectionCount() > 1 }
+    ];
+    var done = steps.filter(function (step) { return step.done; }).length;
+    var pct = Math.round(done / steps.length * 100);
+    box.innerHTML = '<div class="rz-build-progress__top"><strong>搭建进度</strong><span>' + pct + '%</span></div>' +
+      '<div class="rz-build-progress__bar"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="rz-build-progress__steps">' + steps.map(function (step) {
+        return '<div class="rz-build-progress__step' + (step.done ? ' is-done' : '') + '"><i></i><span>' + RZ.esc(step.label) + '</span></div>';
+      }).join('') + '</div>';
+  }
+
   function setTargetPosition(value, forceTitle) {
     state.target_position = String(value || '').trim();
     var input = document.getElementById('rzTargetPosition');
@@ -95,6 +133,7 @@
     renderTargetOptions();
     syncTitleFromTarget(!!forceTitle);
     if (DATA) renderZones();
+    renderBuildProgress();
   }
 
   function targetOptionHtml(option, active) {
@@ -172,8 +211,10 @@
     }).join('');
     document.getElementById('rzZones').innerHTML = html;
     bindZones();
+    markJustAdded();
+    renderBuildProgress();
     var toggle = document.getElementById('rzTechToggle');
-    if (toggle) toggle.addEventListener('change', function () { state.tech_stack = toggle.checked; });
+    if (toggle) toggle.addEventListener('change', function () { state.tech_stack = toggle.checked; renderBuildProgress(); });
   }
 
   function renderPalette() {
@@ -197,15 +238,28 @@
     bindPalette();
   }
 
+  function markJustAdded() {
+    if (!lastAdded) return;
+    var selector = '.rz-zone .rz-chip[data-kind="' + lastAdded.kind + '"][data-id="' + lastAdded.id + '"]';
+    var el = document.querySelector(selector);
+    if (el) {
+      el.classList.add('is-just-added');
+      setTimeout(function () { el.classList.remove('is-just-added'); }, 420);
+    }
+    lastAdded = null;
+  }
+
   function addToState(kind, id) {
     if (kind === 'personal_field') {
       id = String(id);
       if (state.fields.indexOf(id) < 0) state.fields.push(id);
+      lastAdded = { kind: kind, id: id };
       renderZones(); renderPalette();
       return;
     }
     var key = selKey(kind); id = Number(id);
     if (state[key].indexOf(id) < 0) state[key].push(id);
+    lastAdded = { kind: kind, id: id };
     renderZones(); renderPalette();
   }
   function removeFromState(kind, id) {
@@ -217,11 +271,13 @@
       }
       state.fields = state.fields.filter(function (x) { return x !== id; });
       renderZones(); renderPalette();
+      renderBuildProgress();
       return;
     }
     var key = selKey(kind); id = Number(id);
     state[key] = state[key].filter(function (x) { return x !== id; });
     renderZones(); renderPalette();
+    renderBuildProgress();
   }
 
   function zoneAccepts(zoneKey, kind) {
@@ -383,6 +439,35 @@
     return { personal_fields: state.fields.filter(function (key) { return key !== 'name'; }), blocks: blocks };
   }
 
+  function openBuildIssues(validation) {
+    validation = validation || {};
+    var missing = Array.isArray(validation.missing) ? validation.missing : [];
+    var warnings = Array.isArray(validation.warnings) ? validation.warnings : [];
+    var m = RZ.openModal({ title: '还差一点就能生成' });
+    m.body.innerHTML = '<div class="rz-import-summary">' +
+      '<div class="rz-import-summary__section"><h4>需要先补齐</h4>' +
+      (missing.length ? '<ul class="rz-import-summary__list">' + missing.map(function (item) {
+        return '<li>' + RZ.esc(item.label || item.key || '') + '</li>';
+      }).join('') + '</ul>' : '<div class="rz-card__meta">没有必填缺口。</div>') + '</div>' +
+      (warnings.length ? '<div class="rz-import-summary__section"><h4>建议优化</h4><ul class="rz-import-summary__list">' +
+        warnings.map(function (item) { return '<li>' + RZ.esc(item.label || item.key || '') + '</li>'; }).join('') +
+        '</ul></div>' : '') +
+      '</div>';
+    var first = missing[0];
+    if (first && first.href && first.href !== '/resume/builder') {
+      var go = document.createElement('a');
+      go.className = 'rz-btn rz-btn--primary';
+      go.href = first.href;
+      go.textContent = '去补充';
+      m.foot.appendChild(go);
+    }
+    var close = document.createElement('button');
+    close.className = 'rz-btn';
+    close.textContent = '继续编辑';
+    close.onclick = m.close;
+    m.foot.appendChild(close);
+  }
+
   async function submit() {
     var btn = document.getElementById('rzBuildSubmit');
     var layout = buildLayout();
@@ -395,11 +480,18 @@
         target_position: state.target_position.trim(),
         template_key: state.template, layout: layout
       };
+      var validation = await RZ.api('/api/resume/builder/validate', { method: 'POST', body: body });
+      if (!validation.validation || !validation.validation.ok) {
+        openBuildIssues(validation.validation || {});
+        btn.disabled = false;
+        btn.textContent = EDIT_ID ? '保存修改' : '确定生成';
+        return;
+      }
       if (EDIT_ID) await RZ.api('/api/resume/resumes/' + EDIT_ID, { method: 'PUT', body: body });
       else await RZ.api('/api/resume/resumes', { method: 'POST', body: body });
       RZ.toast('已提交，正在渲染整合…', 'success');
       setTimeout(function () { window.location.href = '/resume/list'; }, 700);
-    } catch (e) { RZ.toast(e.message, 'error'); btn.disabled = false; btn.textContent = '确定生成'; }
+    } catch (e) { RZ.toast(e.message, 'error'); btn.disabled = false; btn.textContent = EDIT_ID ? '保存修改' : '确定生成'; }
   }
 
   async function prefillFromResume(id) {
