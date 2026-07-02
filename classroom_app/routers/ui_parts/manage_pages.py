@@ -816,6 +816,34 @@ async def get_manage_system_smart_classroom_integrations_page(request: Request, 
     )
 
 
+@router.get("/manage/teaching/course-schedule", response_class=HTMLResponse)
+async def get_manage_course_schedule_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """教师课时统计页面：同步智慧课堂课程表，按周 3D 展示并归集课时。"""
+    from ...services.smart_classroom_schedule_sync_service import (
+        build_teacher_course_schedule_overview,
+    )
+
+    with get_db_connection() as conn:
+        overview = build_teacher_course_schedule_overview(conn, int(user["id"]))
+        smart_credentials = list_teacher_smart_classroom_credentials(conn, int(user["id"]))
+        conn.commit()
+
+    return templates.TemplateResponse(
+        request,
+        "manage/course_schedule.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="课时统计",
+            active_page="course_schedule",
+            extra={
+                "course_schedule_overview": overview,
+                "has_smart_credential": bool(smart_credentials),
+            },
+        ),
+    )
+
+
 @router.get("/manage/academic/gongwen-sync", response_class=HTMLResponse)
 @router.get("/manage/system/gongwen-integrations", response_class=HTMLResponse)
 async def get_manage_system_gongwen_integrations_page(request: Request, user: dict = Depends(get_current_teacher)):

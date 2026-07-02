@@ -217,6 +217,16 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         ai_hint="考核登分表：集中管理由课堂考试生成或从 Excel 导入解析的期末考核登分表，按大题列与总分校验保存，支持导出 Excel 和开放范围。",
     ),
     ManageNavItem(
+        key="course_schedule",
+        domain="teaching",
+        group="课堂工具",
+        label="课时统计",
+        icon="calendar",
+        href="/manage/teaching/course-schedule",
+        search_text="课时统计 课程表 课表 周课表 课时 schedule timetable hours",
+        ai_hint="课时统计：同步智慧课堂教师课程表，按学年学期、课程、班级查询，3D 周课表展示并统计课程课时与学期课时。",
+    ),
+    ManageNavItem(
         key="system_smart_classroom_integrations",
         domain="teaching",
         group="课堂工具",

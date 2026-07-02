@@ -2952,6 +2952,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/teaching/course-schedule/overview",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_course_schedule_overview",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/teaching/course-schedule/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_course_schedule",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/textbooks/ai-format-intro-catalog",
     "methods": [
       "POST"
@@ -4733,6 +4749,14 @@
       "GET"
     ],
     "name": "get_manage_classes_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/course-schedule",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_course_schedule_page",
     "include_in_schema": true
   },
   {

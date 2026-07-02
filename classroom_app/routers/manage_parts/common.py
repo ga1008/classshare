@@ -192,6 +192,10 @@ from ...services.smart_classroom_checkin_sync_service import (
     sync_teacher_smart_classroom_checkins,
     sync_teacher_smart_classroom_data_after_credential_verified,
 )
+from ...services.smart_classroom_schedule_sync_service import (
+    build_teacher_course_schedule_overview,
+    sync_teacher_course_schedule,
+)
 from ...services.smart_classroom_integration_service import (
     build_saved_smart_classroom_verification_payload,
     delete_teacher_smart_classroom_credential,

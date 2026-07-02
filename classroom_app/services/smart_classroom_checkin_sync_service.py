@@ -2091,7 +2091,10 @@ def build_smart_classroom_sync_capabilities(conn, teacher_id: int) -> list[dict[
     ).fetchone()
     checkin_count = int((row["count"] if row else 0) or 0)
     schedule_count = int((schedule_row["count"] if schedule_row else 0) or 0)
+    from .smart_classroom_schedule_sync_service import build_course_schedule_capability
+
     return [
+        build_course_schedule_capability(conn, int(teacher_id)),
         {
             "key": "checkins",
             "label": "点名记录与出勤明细",
@@ -2139,23 +2142,45 @@ def build_smart_classroom_sync_capabilities(conn, teacher_id: int) -> list[dict[
 
 
 async def sync_teacher_smart_classroom_data_after_credential_verified(teacher_id: int) -> dict[str, Any]:
+    from .smart_classroom_schedule_sync_service import sync_teacher_course_schedule
+
+    schedule_result = await sync_teacher_course_schedule(int(teacher_id))
     result = await sync_teacher_smart_classroom_checkins(int(teacher_id))
-    stage = {
-        "key": "checkins",
-        "label": "点名记录",
-        "status": result.get("status") or "unknown",
-        "message": result.get("message") or "",
-        "counts": result.get("counts") or {},
-        "warnings": result.get("warnings") or [],
-    }
-    if result.get("status") in {"success", "partial_success", "empty"}:
+    stages = [
+        {
+            "key": "course_schedule",
+            "label": "教师课程表",
+            "status": schedule_result.get("status") or "unknown",
+            "message": schedule_result.get("message") or "",
+            "counts": schedule_result.get("counts") or {},
+            "warnings": schedule_result.get("warnings") or [],
+        },
+        {
+            "key": "checkins",
+            "label": "点名记录",
+            "status": result.get("status") or "unknown",
+            "message": result.get("message") or "",
+            "counts": result.get("counts") or {},
+            "warnings": result.get("warnings") or [],
+        },
+    ]
+    ok_statuses = {"success", "partial_success", "empty"}
+    checkins_ok = result.get("status") in ok_statuses
+    schedule_ok = schedule_result.get("status") in ok_statuses
+    if checkins_ok and schedule_ok:
         return {
             "status": result.get("status"),
-            "message": result.get("message") or "智慧课堂账号已验证并保存，系统已自动同步点名记录。",
-            "stages": [stage],
+            "message": result.get("message") or "智慧课堂账号已验证并保存，系统已自动同步课程表和点名记录。",
+            "stages": stages,
+        }
+    if checkins_ok or schedule_ok:
+        return {
+            "status": "partial_success",
+            "message": "智慧课堂部分同步完成：课程表或点名记录有一项未成功，可稍后手动重试。",
+            "stages": stages,
         }
     return {
         "status": "failed",
-        "message": "智慧课堂账号已验证并保存，但点名记录自动同步未完成；可以稍后在本页面手动同步。",
-        "stages": [stage],
+        "message": "智慧课堂账号已验证并保存，但自动同步未完成；可以稍后在本页面手动同步。",
+        "stages": stages,
     }

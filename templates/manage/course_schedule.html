@@ -1,0 +1,410 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}课时统计{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('同步智慧课堂', '课堂工具', 'refresh', variant='primary', tone='indigo', attrs='data-cs-sync') }}
+{{ topbar_action('智慧课堂对接', '账号与凭据', 'bar-chart', href='/manage/teaching/smart-classroom-integrations', variant='outline', tone='slate') }}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .cs-shell { display: grid; gap: var(--spacing-lg); }
+
+    .cs-panel {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: var(--shadow-sm);
+        padding: var(--spacing-lg);
+    }
+
+    .cs-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: var(--spacing-md);
+    }
+
+    .cs-toolbar__field { display: grid; gap: 6px; min-width: 0; }
+    .cs-toolbar__field label {
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: var(--text-muted);
+        letter-spacing: 0.04em;
+    }
+    .cs-toolbar__field select {
+        min-width: 180px;
+        padding: 8px 12px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        border-radius: var(--radius-md);
+        background: #fff;
+        font-size: 0.88rem;
+        color: var(--text-primary);
+    }
+    .cs-toolbar__spacer { flex: 1 1 auto; }
+    .cs-toolbar__meta {
+        display: grid;
+        gap: 2px;
+        text-align: right;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+    }
+    .cs-toolbar__meta strong { color: var(--text-secondary); font-size: 0.8rem; }
+    .cs-reset-btn {
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        background: #fff;
+        color: var(--text-secondary);
+        border-radius: var(--radius-md);
+        padding: 8px 14px;
+        font-size: 0.84rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .cs-reset-btn:hover { border-color: #6366f1; color: #4f46e5; }
+
+    .cs-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-lg);
+    }
+    .cs-summary__card {
+        border: 1px solid rgba(99, 102, 241, 0.14);
+        border-radius: var(--radius-md);
+        padding: 14px 16px;
+        background: linear-gradient(160deg, rgba(238, 242, 255, 0.8), rgba(255, 255, 255, 0.9));
+        display: grid;
+        gap: 4px;
+    }
+    .cs-summary__card strong { font-size: 1.5rem; color: #312e81; line-height: 1.1; }
+    .cs-summary__card span { font-size: 0.76rem; color: var(--text-muted); font-weight: 700; }
+    .cs-summary__card small { font-size: 0.72rem; color: var(--text-muted); }
+
+    .cs-courses { display: grid; gap: var(--spacing-md); margin-top: var(--spacing-lg); }
+    .cs-courses__title {
+        font-size: 0.8rem;
+        font-weight: 800;
+        color: var(--text-muted);
+        letter-spacing: 0.06em;
+    }
+    .cs-course-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: var(--spacing-md);
+    }
+    .cs-course-card {
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-left: 4px solid var(--cs-accent, #6366f1);
+        border-radius: var(--radius-md);
+        background: #fff;
+        padding: 12px 14px;
+        display: grid;
+        gap: 6px;
+        cursor: pointer;
+        transition: box-shadow 0.16s ease, transform 0.16s ease;
+    }
+    .cs-course-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+    .cs-course-card.is-active { outline: 2px solid var(--cs-accent, #6366f1); }
+    .cs-course-card__head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .cs-course-card__head h4 { margin: 0; font-size: 0.95rem; color: var(--text-primary); }
+    .cs-course-card__hours { font-size: 1.2rem; font-weight: 900; color: var(--cs-accent, #4f46e5); white-space: nowrap; }
+    .cs-course-card__hours small { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); }
+    .cs-course-card__meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.72rem; color: var(--text-muted); }
+    .cs-course-card__meta span {
+        background: rgba(148, 163, 184, 0.12);
+        border-radius: var(--radius-full);
+        padding: 2px 8px;
+        font-weight: 700;
+    }
+
+    /* ---- 3D week deck --------------------------------------------------- */
+    .cs-deck-panel { position: relative; overflow: hidden; }
+    .cs-deck-head { display: flex; align-items: center; gap: var(--spacing-md); flex-wrap: wrap; }
+    .cs-deck-head h3 { margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text-primary); }
+    .cs-deck-head p { margin: 0; font-size: 0.78rem; color: var(--text-muted); }
+    .cs-deck-nav { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .cs-deck-nav button {
+        width: 34px; height: 34px;
+        border-radius: 50%;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        background: #fff;
+        color: var(--text-secondary);
+        font-size: 1rem;
+        cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .cs-deck-nav button:hover { border-color: #6366f1; color: #4f46e5; }
+    .cs-week-indicator { font-size: 0.86rem; font-weight: 800; color: #312e81; min-width: 120px; text-align: center; }
+    .cs-week-indicator small { display: block; font-weight: 600; color: var(--text-muted); font-size: 0.7rem; }
+    .cs-deck-slider { width: 180px; accent-color: #6366f1; }
+
+    .cs-stage {
+        position: relative;
+        height: 460px;
+        margin-top: var(--spacing-md);
+        perspective: 1500px;
+        perspective-origin: 50% 38%;
+        border-radius: var(--radius-lg);
+        background:
+            radial-gradient(1200px 400px at 70% -10%, rgba(99, 102, 241, 0.14), transparent 60%),
+            radial-gradient(900px 380px at 10% 110%, rgba(14, 165, 233, 0.12), transparent 55%),
+            linear-gradient(180deg, #eef2ff 0%, #f8fafc 100%);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        touch-action: pan-y;
+    }
+    .cs-stage__hint {
+        position: absolute;
+        left: 14px; bottom: 10px;
+        z-index: 400;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.78);
+        border-radius: var(--radius-full);
+        padding: 4px 12px;
+        pointer-events: none;
+    }
+
+    .cs-card {
+        position: absolute;
+        left: 50%; top: 50%;
+        width: min(680px, 82%);
+        height: 380px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.97);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        box-shadow: 0 22px 44px rgba(30, 41, 59, 0.22);
+        transition: transform 0.5s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.4s ease;
+        transform-style: preserve-3d;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        will-change: transform, opacity;
+    }
+    .cs-card[hidden] { display: none; }
+    .cs-card__bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        background: linear-gradient(120deg, #4f46e5, #6366f1 55%, #0ea5e9);
+        color: #fff;
+    }
+    .cs-card__bar strong { font-size: 0.98rem; font-weight: 900; letter-spacing: 0.04em; }
+    .cs-card__bar span { font-size: 0.74rem; opacity: 0.92; font-weight: 700; }
+    .cs-card__badge {
+        margin-left: auto;
+        font-size: 0.7rem;
+        font-weight: 900;
+        background: rgba(255, 255, 255, 0.22);
+        border-radius: var(--radius-full);
+        padding: 3px 10px;
+    }
+    .cs-card__badge.is-current { background: #fbbf24; color: #713f12; }
+    .cs-card__body { padding: 10px 12px 12px; min-height: 0; }
+    .cs-card.is-active { cursor: zoom-in; }
+
+    /* ---- timetable grid (shared by mini card and expanded view) ---------- */
+    .cs-grid {
+        display: grid;
+        height: 100%;
+        gap: 3px;
+        min-height: 0;
+    }
+    .cs-grid__corner, .cs-grid__day, .cs-grid__section {
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800;
+        color: var(--text-muted);
+        background: rgba(148, 163, 184, 0.1);
+        border-radius: 6px;
+        font-size: 0.68rem;
+    }
+    .cs-grid__cellbg { background: rgba(148, 163, 184, 0.06); border-radius: 6px; }
+    .cs-lesson {
+        border-radius: 8px;
+        padding: 6px 8px;
+        color: #fff;
+        background: var(--cs-accent, #6366f1);
+        display: grid;
+        align-content: center;
+        gap: 2px;
+        overflow: hidden;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+        min-width: 0;
+    }
+    .cs-lesson strong { font-size: 0.76rem; line-height: 1.25; font-weight: 900; }
+    .cs-lesson span { font-size: 0.64rem; opacity: 0.94; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cs-grid--expanded .cs-lesson strong { font-size: 1.02rem; }
+    .cs-grid--expanded .cs-lesson span { font-size: 0.8rem; white-space: normal; }
+    .cs-grid--expanded .cs-grid__corner,
+    .cs-grid--expanded .cs-grid__day,
+    .cs-grid--expanded .cs-grid__section { font-size: 0.84rem; }
+
+    /* ---- expanded overlay ------------------------------------------------ */
+    .cs-expand {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        background: rgba(15, 23, 42, 0.55);
+        backdrop-filter: blur(6px);
+        display: grid;
+        place-items: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s ease;
+    }
+    .cs-expand.is-open { opacity: 1; pointer-events: auto; }
+    .cs-expand__card {
+        width: min(1240px, 94vw);
+        height: min(86vh, 900px);
+        border-radius: 18px;
+        background: #fff;
+        box-shadow: 0 40px 90px rgba(2, 6, 23, 0.5);
+        display: grid;
+        grid-template-rows: auto 1fr;
+        overflow: hidden;
+        transform: scale(0.82) rotateX(8deg);
+        transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.3, 1);
+    }
+    .cs-expand.is-open .cs-expand__card { transform: scale(1) rotateX(0deg); }
+    .cs-expand__bar {
+        display: flex; align-items: center; gap: 12px;
+        padding: 14px 20px;
+        background: linear-gradient(120deg, #4f46e5, #6366f1 55%, #0ea5e9);
+        color: #fff;
+        flex-wrap: wrap;
+    }
+    .cs-expand__bar strong { font-size: 1.15rem; font-weight: 900; }
+    .cs-expand__bar span { font-size: 0.8rem; opacity: 0.92; }
+    .cs-expand__nav { margin-left: auto; display: flex; gap: 8px; }
+    .cs-expand__nav button {
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        background: rgba(255, 255, 255, 0.14);
+        color: #fff;
+        border-radius: var(--radius-md);
+        padding: 6px 14px;
+        font-size: 0.82rem;
+        font-weight: 800;
+        cursor: pointer;
+    }
+    .cs-expand__nav button:hover { background: rgba(255, 255, 255, 0.28); }
+    .cs-expand__body { padding: 16px 20px 20px; min-height: 0; }
+
+    .cs-empty {
+        display: grid;
+        place-items: center;
+        gap: 8px;
+        padding: 60px 20px;
+        text-align: center;
+        color: var(--text-muted);
+    }
+    .cs-empty strong { color: var(--text-secondary); font-size: 1rem; }
+    .cs-empty a { color: #4f46e5; font-weight: 800; }
+
+    .cs-toast {
+        position: fixed;
+        top: 84px; right: 24px;
+        z-index: 1400;
+        max-width: 380px;
+        border-radius: var(--radius-md);
+        padding: 12px 16px;
+        font-size: 0.84rem;
+        font-weight: 700;
+        color: #fff;
+        background: #334155;
+        box-shadow: var(--shadow-lg);
+        opacity: 0;
+        transform: translateY(-8px);
+        transition: opacity 0.25s ease, transform 0.25s ease;
+        pointer-events: none;
+    }
+    .cs-toast.is-show { opacity: 1; transform: translateY(0); }
+    .cs-toast--success { background: #047857; }
+    .cs-toast--error { background: #b91c1c; }
+
+    @media (max-width: 860px) {
+        .cs-stage { height: 400px; }
+        .cs-card { height: 330px; }
+        .cs-deck-slider { width: 110px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="cs-shell" data-cs-root>
+    <div class="cs-panel">
+        <div class="cs-toolbar">
+            <div class="cs-toolbar__field">
+                <label>学年学期</label>
+                <select data-cs-term></select>
+            </div>
+            <div class="cs-toolbar__field">
+                <label>课程</label>
+                <select data-cs-course><option value="">全部课程</option></select>
+            </div>
+            <div class="cs-toolbar__field">
+                <label>班级</label>
+                <select data-cs-class><option value="">全部班级</option></select>
+            </div>
+            <button type="button" class="cs-reset-btn" data-cs-reset>重置筛选</button>
+            <div class="cs-toolbar__spacer"></div>
+            <div class="cs-toolbar__meta">
+                <strong data-cs-sync-time>尚未同步</strong>
+                <span>数据来源：广外智慧课堂 · 每次同步替换本地学期课表</span>
+            </div>
+        </div>
+        <div class="cs-summary" data-cs-summary></div>
+        <div class="cs-courses">
+            <div class="cs-courses__title">按课程统计课时（点击卡片可筛选）</div>
+            <div class="cs-course-grid" data-cs-courses></div>
+        </div>
+    </div>
+
+    <div class="cs-panel cs-deck-panel">
+        <div class="cs-deck-head">
+            <div>
+                <h3>周课程时间轴</h3>
+                <p>滚轮或方向键切换周次，点击最前面的周卡片放大查看整周课表。</p>
+            </div>
+            <div class="cs-deck-nav">
+                <button type="button" data-cs-prev title="上一周">‹</button>
+                <div class="cs-week-indicator" data-cs-indicator>—</div>
+                <button type="button" data-cs-next title="下一周">›</button>
+                <input type="range" class="cs-deck-slider" data-cs-slider min="1" max="1" value="1" />
+            </div>
+        </div>
+        <div class="cs-stage" data-cs-stage tabindex="0" aria-label="按周课程表，使用滚轮或方向键切换周次">
+            <div class="cs-stage__hint">滚轮切换周次 · 点击卡片放大</div>
+        </div>
+    </div>
+</section>
+
+<div class="cs-expand" data-cs-expand aria-modal="true" role="dialog">
+    <div class="cs-expand__card">
+        <div class="cs-expand__bar">
+            <strong data-cs-expand-title>第1周</strong>
+            <span data-cs-expand-sub></span>
+            <div class="cs-expand__nav">
+                <button type="button" data-cs-expand-prev>‹ 上一周</button>
+                <button type="button" data-cs-expand-next>下一周 ›</button>
+                <button type="button" data-cs-expand-close>返回 3D 视图</button>
+            </div>
+        </div>
+        <div class="cs-expand__body" data-cs-expand-body></div>
+    </div>
+</div>
+
+<div class="cs-toast" data-cs-toast></div>
+
+<script id="course-schedule-boot" type="application/json">
+{
+    "overview": {{ course_schedule_overview | tojson }},
+    "has_credential": {{ has_smart_credential | tojson }}
+}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_course_schedule.js') }}"></script>
+{% endblock %}

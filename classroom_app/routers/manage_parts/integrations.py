@@ -259,6 +259,54 @@ async def api_sync_smart_classroom_data(user: dict = Depends(get_current_teacher
     }
 
 
+@router.get("/teaching/course-schedule/overview", response_class=JSONResponse)
+async def api_course_schedule_overview(
+    year: str = "",
+    term: str = "",
+    course: str = "",
+    class_label: str = "",
+    user: dict = Depends(get_current_teacher),
+):
+    """课时统计页数据：学期选项 + 归集统计 + 按周课表（跟随查询条件变化）。"""
+    with get_db_connection() as conn:
+        overview = build_teacher_course_schedule_overview(
+            conn,
+            int(user["id"]),
+            year=str(year or "").strip(),
+            term=str(term or "").strip(),
+            course=str(course or "").strip(),
+            class_label=str(class_label or "").strip(),
+        )
+        conn.commit()
+    return {"status": "success", "overview": overview}
+
+
+@router.post("/teaching/course-schedule/sync", response_class=JSONResponse)
+async def api_sync_course_schedule(request: Request, user: dict = Depends(get_current_teacher)):
+    """立即从智慧课堂同步教师课程表（替换本地对应学期数据），并返回最新概览。"""
+    try:
+        payload = await _parse_json_request(request)
+    except HTTPException:
+        payload = {}  # 允许无请求体触发同步
+    result = await sync_teacher_course_schedule(int(user["id"]))
+    with get_db_connection() as conn:
+        overview = build_teacher_course_schedule_overview(
+            conn,
+            int(user["id"]),
+            year=str(payload.get("year") or "").strip(),
+            term=str(payload.get("term") or "").strip(),
+            course=str(payload.get("course") or "").strip(),
+            class_label=str(payload.get("class_label") or "").strip(),
+        )
+        conn.commit()
+    return {
+        "status": result.get("status") or "unknown",
+        "message": result.get("message") or "智慧课堂课程表同步已完成。",
+        "result": result,
+        "overview": overview,
+    }
+
+
 @router.post("/system/smart-classroom-credentials", response_class=JSONResponse)
 async def api_save_smart_classroom_credential(request: Request, user: dict = Depends(get_current_teacher)):
     """Verify and save a Smart Classroom credential for later sync jobs."""
