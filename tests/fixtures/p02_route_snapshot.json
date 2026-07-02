@@ -3304,6 +3304,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/materials/{material_id}/tree",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_subtree",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/message-center/bootstrap",
     "methods": [
       "GET"

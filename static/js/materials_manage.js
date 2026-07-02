@@ -1,5 +1,5 @@
 import { apiFetch } from './api.js';
-import { closeModal, escapeHtml, formatDate, formatSize, getFileIcon, openModal, showToast } from './ui.js';
+import { closeModal, escapeHtml, formatDate, formatSize, getFileIcon, openModal, renderMarkdown, showToast } from './ui.js';
 import {
     getLearningDocumentUrl,
     getMaterialPreviewUrl,
@@ -152,6 +152,24 @@ const state = {
     activeMaterialId: null,
     activeDetail: null,
     detailRequestId: 0,
+    materialWorkspace: {
+        root: null,
+        stats: null,
+        expandedIds: new Set(),
+        selectedId: null,
+        treeLoading: false,
+        treeRequestId: 0,
+        content: {
+            materialId: null,
+            text: '',
+            originalText: '',
+            encoding: 'utf-8',
+            loading: false,
+            dirty: false,
+            error: '',
+            requestId: 0,
+        },
+    },
     selectedIds: new Set(),
     currentFolder: null,
     currentBreadcrumbs: [],
@@ -199,6 +217,8 @@ const state = {
     createNode: {
         type: 'folder',
         busy: false,
+        parentId: null,
+        fromWorkspace: false,
     },
     move: {
         materialId: null,
@@ -570,8 +590,8 @@ function renderRepositoryToolbar() {
 }
 
 function renderNavigationState() {
-    refs.backBtn.disabled = state.history.length === 0;
-    refs.upBtn.disabled = state.currentBreadcrumbs.length === 0;
+    if (refs.backBtn) refs.backBtn.disabled = state.history.length === 0;
+    if (refs.upBtn) refs.upBtn.disabled = state.currentBreadcrumbs.length === 0;
 }
 
 function updateDetailModalHeader(detail) {
@@ -652,6 +672,9 @@ function renderList() {
         const activeClass = Number(item.id) === Number(state.activeMaterialId) ? 'is-active' : '';
         const selectedClass = state.selectedIds.has(Number(item.id)) ? 'is-selected' : '';
         const primaryAction = getMaterialPrimaryAction(item);
+        const primaryActionHtml = item.node_type === 'folder'
+            ? ''
+            : `<button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">${primaryAction.label}</button>`;
         const aiStatus = item.can_ai_parse ? `<span class="materials-meta-item">AI ${escapeHtml(item.ai_parse_status || 'idle')}</span>` : '';
         const optimizingBadge = item.ai_optimize_status === 'running'
             ? '<span class="materials-meta-item" style="color:#0d9488;">AI 优化中…</span>'
@@ -703,12 +726,12 @@ function renderList() {
                 </div>
                 <div class="materials-row-actions">
                     <button type="button" class="btn btn-ghost btn-sm" data-resource-attributes data-resource-type="material" data-resource-id="${item.id}">属性</button>
-                    <button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">${primaryAction.label}</button>
+                    ${primaryActionHtml}
                     ${renderAction}
                     ${documentAction}
                     ${repositoryAction}
                     ${item.node_type === 'file' ? '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>' : ''}
-                    <button type="button" class="btn btn-ghost btn-sm" data-action="details">详情</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-action="details">查看</button>
                 </div>
             </div>
         `;
@@ -785,24 +808,277 @@ function renderRepositorySummary(detail) {
     `;
 }
 
-function renderDetail(detail) {
-    updateDetailModalHeader(detail);
+function resetMaterialWorkspace() {
+    state.materialWorkspace.root = null;
+    state.materialWorkspace.stats = null;
+    state.materialWorkspace.expandedIds.clear();
+    state.materialWorkspace.selectedId = null;
+    state.materialWorkspace.treeLoading = false;
+    resetWorkspaceContent();
+}
 
-    if (!detail) {
-        refs.detail.innerHTML = '<div class="materials-empty">选择一项材料后，这里会显示详情、AI 摘要与课堂分配状态。</div>';
-        return;
+function resetWorkspaceContent() {
+    const nextRequestId = (state.materialWorkspace.content?.requestId || 0) + 1;
+    state.materialWorkspace.content = {
+        materialId: null,
+        text: '',
+        originalText: '',
+        encoding: 'utf-8',
+        loading: false,
+        dirty: false,
+        error: '',
+        requestId: nextRequestId,
+    };
+}
+
+function resetWorkspaceContentForDetail(detail) {
+    const nextRequestId = (state.materialWorkspace.content?.requestId || 0) + 1;
+    state.materialWorkspace.content = {
+        materialId: detail?.editable ? Number(detail.id) : null,
+        text: '',
+        originalText: '',
+        encoding: 'utf-8',
+        loading: Boolean(detail?.editable),
+        dirty: false,
+        error: '',
+        requestId: nextRequestId,
+    };
+}
+
+function findTreeNode(materialId, node = state.materialWorkspace.root) {
+    if (!node || !materialId) return null;
+    if (Number(node.id) === Number(materialId)) return node;
+    for (const child of node.children || []) {
+        const found = findTreeNode(materialId, child);
+        if (found) return found;
     }
+    return null;
+}
 
+function findTreePath(materialId, node = state.materialWorkspace.root, path = []) {
+    if (!node || !materialId) return [];
+    const nextPath = [...path, node];
+    if (Number(node.id) === Number(materialId)) return nextPath;
+    for (const child of node.children || []) {
+        const found = findTreePath(materialId, child, nextPath);
+        if (found.length) return found;
+    }
+    return [];
+}
+
+function syncWorkspaceSelection(materialId) {
+    const selectedId = Number(materialId || 0) || null;
+    state.materialWorkspace.selectedId = selectedId;
+    if (!selectedId) return;
+    const path = findTreePath(selectedId);
+    path.forEach((node) => {
+        if (node.node_type === 'folder') {
+            state.materialWorkspace.expandedIds.add(Number(node.id));
+        }
+    });
+}
+
+function renderWorkspaceStats() {
+    const stats = state.materialWorkspace.stats || {};
+    return `
+        <div class="materials-workspace-stats" aria-label="当前材料包统计">
+            <span><strong>${escapeHtml(String(stats.folder_count ?? 0))}</strong>文件夹</span>
+            <span><strong>${escapeHtml(String(stats.file_count ?? 0))}</strong>文件</span>
+            <span><strong>${escapeHtml(formatSize(stats.total_size || 0))}</strong>总大小</span>
+            <span><strong>${escapeHtml(formatDateLabel(stats.latest_updated_at))}</strong>最近更新</span>
+        </div>
+    `;
+}
+
+function renderWorkspaceTopbar(detail) {
     const previewUrl = getMaterialPreviewUrl(detail);
     const optimizedUrl = detail.has_optimized_version ? `/materials/view/${detail.id}?variant=optimized` : '';
     const exportUrl = detail.ai_import_record?.export_url || '';
     const exportPdfUrl = detail.ai_import_record?.export_pdf_url || '';
     const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(detail.ai_import_record?.document_type) ? '导出Excel' : '导出Word';
-    const aiSummary = detail.ai_parse_result?.summary || '尚未执行 AI 解析。';
-    const assignmentCount = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
     const canManage = detail.can_manage !== false;
-    const scopeLevel = detail.scope_level || 'private';
+    const isFolder = detail.node_type === 'folder';
+    const isBindable = Boolean(detail.is_markdown) || isRenderable(detail);
+
+    return `
+        <section class="materials-workspace-top">
+            <div class="materials-workspace-actions">
+                ${isFolder && canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="create-folder">新建文件夹</button>' : ''}
+                ${isFolder && canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="create-file">新建文档</button>' : ''}
+                ${previewUrl ? `<a href="${escapeHtml(previewUrl)}" class="btn btn-primary btn-sm" target="_blank" rel="noopener">全屏预览</a>` : ''}
+                ${isRenderable(detail) ? `<a href="${escapeHtml(getRenderUrl(detail))}" class="btn btn-primary btn-sm" target="_blank" rel="noopener">${escapeHtml(getRenderLabel(detail))}</a>` : ''}
+                ${optimizedUrl ? `<a href="${escapeHtml(optimizedUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">查看优化稿</a>` : ''}
+                ${exportUrl ? `<a href="${escapeHtml(exportUrl)}" class="btn btn-outline btn-sm">${exportLabel}</a>` : ''}
+                ${exportPdfUrl ? `<a href="${escapeHtml(exportPdfUrl)}" class="btn btn-outline btn-sm">导出PDF</a>` : ''}
+                ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline btn-sm">下载</a>` : ''}
+                ${isGitRepository(detail) && canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="repository">仓库</button>' : ''}
+                <button type="button" class="btn btn-outline btn-sm" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
+                ${isBindable && canManage && config.canAssign ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="bind">绑定课次 / 首页</button>' : ''}
+                ${canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="move">移动</button>' : ''}
+                <button type="button" class="btn btn-outline btn-sm" data-detail-action="ai-parse" ${canManage && detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
+                <button type="button" class="btn btn-outline btn-sm" data-detail-action="ai-optimize" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
+                <button type="button" class="btn btn-outline btn-sm" data-detail-action="ai-polish" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 润色</button>
+                <button type="button" class="btn btn-outline btn-sm" data-detail-action="ai-regenerate" ${canManage && detail.can_ai_regenerate ? '' : 'disabled'}>AI 重生成</button>
+                ${canManage ? '<button type="button" class="btn btn-danger btn-sm" data-detail-action="delete">删除</button>' : ''}
+            </div>
+            ${renderWorkspaceStats()}
+        </section>
+    `;
+}
+
+function renderTreeNode(node, depth = 0) {
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    const expanded = state.materialWorkspace.expandedIds.has(Number(node.id));
+    const selected = Number(node.id) === Number(state.materialWorkspace.selectedId || state.activeDetail?.id);
+    const visualMeta = getVisualMeta(node);
+    const childHtml = hasChildren && expanded
+        ? `<div class="materials-tree-children">${node.children.map((child) => renderTreeNode(child, depth + 1)).join('')}</div>`
+        : '';
+    return `
+        <div class="materials-tree-node" style="--tree-depth:${depth}">
+            <div class="materials-tree-row ${selected ? 'is-selected' : ''}" data-node-id="${node.id}">
+                <button type="button" class="materials-tree-toggle" data-tree-toggle="${node.id}" ${hasChildren ? '' : 'disabled'} aria-label="${expanded ? '收起' : '展开'}">
+                    ${hasChildren ? (expanded ? '-' : '+') : ''}
+                </button>
+                <button type="button" class="materials-tree-select" data-tree-select="${node.id}" title="${escapeHtml(node.material_path || node.name || '')}">
+                    <span class="materials-tree-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</span>
+                    <span class="materials-tree-copy">
+                        <strong>${escapeHtml(node.name || '未命名')}</strong>
+                        <small>${node.node_type === 'folder' ? `${node.child_count || 0} 项` : formatSize(node.file_size || 0)}</small>
+                    </span>
+                </button>
+            </div>
+            ${childHtml}
+        </div>
+    `;
+}
+
+function renderWorkspaceTree() {
+    if (state.materialWorkspace.treeLoading && !state.materialWorkspace.root) {
+        return '<div class="materials-workspace-loading">正在加载目录树...</div>';
+    }
+    if (!state.materialWorkspace.root) {
+        return '<div class="materials-workspace-empty">暂无目录结构。</div>';
+    }
+    return `<div class="materials-tree">${renderTreeNode(state.materialWorkspace.root)}</div>`;
+}
+
+function renderFolderChildCards(detail) {
+    const node = findTreeNode(detail.id);
+    const children = node?.children || [];
+    if (!children.length) {
+        return '<div class="materials-workspace-empty">这个文件夹下暂时没有下一层材料。</div>';
+    }
+    return `
+        <div class="materials-folder-child-grid">
+            ${children.map((child) => {
+                const visualMeta = getVisualMeta(child);
+                return `
+                    <button type="button" class="materials-folder-child" data-tree-select="${child.id}">
+                        <span class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</span>
+                        <span>
+                            <strong>${escapeHtml(child.name || '未命名')}</strong>
+                            <small>${escapeHtml(child.node_type === 'folder' ? `${child.child_count || 0} 项` : formatSize(child.file_size || 0))}</small>
+                        </span>
+                    </button>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function renderFolderPreview(detail) {
+    const aiSummary = detail.ai_parse_result?.summary || '文件夹用于组织课程材料。选择左侧目录树或下方项目，可继续查看下一层内容。';
+    return `
+        <section class="materials-workspace-preview-card">
+            <div class="materials-section-header">
+                <h3>文件夹概览</h3>
+                <span class="materials-type-pill">${escapeHtml(getMetaText(detail))}</span>
+            </div>
+            <div class="materials-folder-summary">
+                <div>
+                    <strong>${escapeHtml(detail.name || '未命名文件夹')}</strong>
+                    <p>${escapeHtml(aiSummary)}</p>
+                </div>
+                ${hasLearningDocument(detail) ? `<a href="${escapeHtml(getLearningDocumentUrl(detail))}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">查看 README</a>` : ''}
+            </div>
+            <div class="materials-folder-child-title">下一层内容</div>
+            ${renderFolderChildCards(detail)}
+        </section>
+        ${renderRepositorySummary(detail)}
+    `;
+}
+
+function renderEditableFilePreview(detail) {
+    const content = state.materialWorkspace.content;
+    const matches = Number(content.materialId) === Number(detail.id);
+    const text = matches ? content.text : '';
+    const status = content.error
+        ? `<div class="materials-workspace-status is-error">${escapeHtml(content.error)}</div>`
+        : (content.loading ? '<div class="materials-workspace-status">正在读取文件内容...</div>' : '');
+    const markdownPreview = detail.preview_type === 'markdown' && !content.loading && !content.error
+        ? `
+            <div class="materials-workspace-rendered">
+                <div class="materials-workspace-pane-title">渲染预览</div>
+                <div id="materials-workspace-rendered-preview" data-material-rendered-preview></div>
+            </div>
+        `
+        : '';
+    return `
+        <section class="materials-workspace-preview-card materials-workspace-preview-card--editor">
+            <div class="materials-workspace-editor-head">
+                <div>
+                    <h3>文件内容</h3>
+                    <p>${escapeHtml(detail.preview_type === 'markdown' ? 'Markdown 源码与渲染预览同步展示。' : '文本材料可直接在这里编辑保存。')}</p>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm" data-detail-action="save-content" ${content.dirty && !content.loading ? '' : 'disabled'}>保存内容</button>
+            </div>
+            ${status}
+            <div class="materials-workspace-editor-grid ${markdownPreview ? '' : 'materials-workspace-editor-grid--single'}">
+                <label class="materials-workspace-source">
+                    <span class="materials-workspace-pane-title">源码</span>
+                    <textarea data-material-content-editor spellcheck="false" ${content.loading ? 'disabled' : ''}>${escapeHtml(text)}</textarea>
+                </label>
+                ${markdownPreview}
+            </div>
+        </section>
+    `;
+}
+
+function renderFilePreview(detail) {
+    if (detail.editable) {
+        return renderEditableFilePreview(detail);
+    }
+    const previewUrl = getMaterialPreviewUrl(detail);
+    if (previewUrl) {
+        return `
+            <section class="materials-workspace-preview-card materials-workspace-preview-card--frame">
+                <div class="materials-section-header">
+                    <h3>文件预览</h3>
+                    <a href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener">全屏查看</a>
+                </div>
+                <iframe class="materials-workspace-frame" src="${escapeHtml(previewUrl)}" title="${escapeHtml(detail.name || '材料预览')}"></iframe>
+            </section>
+        `;
+    }
+    return `
+        <section class="materials-workspace-preview-card">
+            <div class="materials-workspace-empty">
+                当前文件暂不支持内嵌预览，可下载后查看。
+                <div class="mt-3"><a class="btn btn-outline btn-sm" href="/materials/download/${detail.id}">下载文件</a></div>
+            </div>
+        </section>
+    `;
+}
+
+function renderWorkspacePreview(detail) {
+    return detail.node_type === 'folder' ? renderFolderPreview(detail) : renderFilePreview(detail);
+}
+
+function renderScopePropertyControl(detail) {
+    const canManage = detail.can_manage !== false;
     const isScopeRoot = detail.parent_id === null || detail.parent_id === undefined;
+    const scopeLevel = detail.scope_level || 'private';
     const scopeOptions = [
         ['private', '私有'],
         ['department', '本系部公开'],
@@ -810,144 +1086,223 @@ function renderDetail(detail) {
         ['school', '全校公开'],
         ['public', '完全公开'],
     ];
-    const scopeControl = canManage && isScopeRoot
-        ? `<select class="form-control" data-material-scope-select aria-label="材料开放范围">
-            ${scopeOptions.map(([value, label]) => `<option value="${value}" ${scopeLevel === value ? 'selected' : ''}>${label}</option>`).join('')}
-          </select>`
-        : `<span title="开放范围由最外层文件夹统一设置">${escapeHtml(detail.scope_label || '私有')}${isScopeRoot ? '' : ' · 随最外层'}</span>`;
-    const isBindable = Boolean(detail.is_markdown) || isRenderable(detail);
+    if (canManage && isScopeRoot) {
+        return `
+            <label class="materials-property-field">
+                <span>开放范围</span>
+                <select class="form-control" data-property-scope>
+                    ${scopeOptions.map(([value, label]) => `<option value="${value}" ${scopeLevel === value ? 'selected' : ''}>${label}</option>`).join('')}
+                </select>
+            </label>
+        `;
+    }
+    return `
+        <div class="materials-property-readonly">
+            <span>开放范围</span>
+            <strong>${escapeHtml(detail.scope_label || '私有')}${isScopeRoot ? '' : ' · 随最外层'}</strong>
+        </div>
+    `;
+}
+
+function renderWorkspaceProperties(detail) {
+    const canManage = detail.can_manage !== false;
+    const assignments = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
+    const aiSummary = detail.ai_parse_result?.summary || '';
+    const keywords = detail.ai_parse_result?.keywords?.length ? detail.ai_parse_result.keywords.join('、') : '';
+    return `
+        <aside class="materials-workspace-properties">
+            <div class="materials-section-header">
+                <h3>属性</h3>
+                ${canManage ? '<button type="button" class="btn btn-primary btn-sm" data-detail-action="save-properties">保存</button>' : ''}
+            </div>
+            <label class="materials-property-field">
+                <span>名称</span>
+                <input type="text" class="form-control" data-property-name value="${escapeHtml(detail.name || '')}" maxlength="120" ${canManage ? '' : 'disabled'}>
+            </label>
+            ${renderScopePropertyControl(detail)}
+            <div class="materials-property-readonly">
+                <span>路径</span>
+                <strong title="${escapeHtml(detail.material_path || '')}">${escapeHtml(detail.material_path || '/')}</strong>
+            </div>
+            <div class="materials-property-grid">
+                <div><span>类型</span><strong>${escapeHtml(getMaterialTypeLabel(detail))}</strong></div>
+                <div><span>大小/子项</span><strong>${escapeHtml(getMetaText(detail))}</strong></div>
+                <div><span>分配课堂</span><strong>${escapeHtml(String(assignments))}</strong></div>
+                <div><span>AI解析</span><strong>${escapeHtml(detail.ai_parse_status || 'idle')}</strong></div>
+            </div>
+            <div class="materials-property-readonly">
+                <span>创建时间</span>
+                <strong>${escapeHtml(formatDateLabel(detail.created_at))}</strong>
+            </div>
+            <div class="materials-property-readonly">
+                <span>更新时间</span>
+                <strong>${escapeHtml(formatDateLabel(detail.updated_at || detail.created_at))}</strong>
+            </div>
+            <div class="materials-property-readonly">
+                <span>AI 摘要</span>
+                <p>${escapeHtml(aiSummary || '暂无 AI 摘要。')}</p>
+                ${keywords ? `<small>关键词：${escapeHtml(keywords)}</small>` : ''}
+            </div>
+            <details class="materials-property-more">
+                <summary>解析目录</summary>
+                ${renderOutline(detail.ai_parse_result?.outline)}
+            </details>
+            <details class="materials-property-more">
+                <summary>课堂分配</summary>
+                ${renderAssignments(detail.assignments || [])}
+            </details>
+        </aside>
+    `;
+}
+
+function renderWorkspaceRenderedContent(detail) {
+    if (!detail?.editable || detail.preview_type !== 'markdown') return;
+    const content = state.materialWorkspace.content;
+    if (Number(content.materialId) !== Number(detail.id) || content.loading || content.error) return;
+    renderMarkdown('materials-workspace-rendered-preview', content.text || '');
+}
+
+function renderDetail(detail) {
+    updateDetailModalHeader(detail);
+    if (!refs.detail) return;
+
+    if (!detail) {
+        const loading = state.materialWorkspace.treeLoading ? '正在加载材料工作区...' : '选择一项材料后，这里会显示目录树、内容预览与属性信息。';
+        refs.detail.innerHTML = `<div class="materials-empty">${escapeHtml(loading)}</div>`;
+        return;
+    }
+
+    syncWorkspaceSelection(detail.id);
     const repositoryMeta = getRepositoryVisualMeta(detail);
-    const previewLabel = detail.node_type === 'folder' && detail.document_readme_id
-        ? '查看文档'
-        : (detail.editable ? '预览 / 编辑' : '全屏预览');
     const repositoryBadge = repositoryMeta
         ? `<span class="materials-repo-badge" style="--repo-color:${repositoryMeta.color};">${escapeHtml(repositoryMeta.badge)}</span>`
         : '';
-    const keywords = detail.ai_parse_result?.keywords?.length
-        ? `<div class="text-muted text-sm mt-2">关键词：${escapeHtml(detail.ai_parse_result.keywords.join('、'))}</div>`
-        : '';
-    const teachingValue = detail.ai_parse_result?.teaching_value
-        ? `
-            <div class="materials-detail-note">
-                <strong>教学价值</strong>
-                <div>${escapeHtml(detail.ai_parse_result.teaching_value)}</div>
-            </div>
-        `
-        : '';
-    const cautions = detail.ai_parse_result?.cautions
-        ? `
-            <div class="materials-detail-note">
-                <strong>使用提醒</strong>
-                <div>${escapeHtml(detail.ai_parse_result.cautions)}</div>
-            </div>
-        `
-        : '';
-
     refs.detail.innerHTML = `
-        <div class="materials-detail-shell">
-            <section class="materials-detail-hero">
-                <div class="materials-detail-hero-main">
-                    <div class="materials-detail-badges">
-                        <span class="materials-type-pill">${escapeHtml(getMaterialTypeLabel(detail))}</span>
-                        ${repositoryBadge}
-                        ${hasLearningDocument(detail) ? '<span class="materials-meta-item">README</span>' : ''}
+        <div class="materials-workspace-shell">
+            ${renderWorkspaceTopbar(detail)}
+            <div class="materials-workspace-layout">
+                <aside class="materials-workspace-tree-panel">
+                    <div class="materials-workspace-panel-head">
+                        <span>目录树</span>
+                        ${state.materialWorkspace.treeLoading ? '<small>刷新中...</small>' : ''}
                     </div>
-                    <h3 title="${escapeHtml(detail.name)}">${escapeHtml(detail.name)}</h3>
-                    <div class="text-muted text-sm">${escapeHtml(detail.material_path || '')}</div>
-                    <div class="materials-detail-actions">
-                        <button type="button" class="btn btn-outline" data-resource-attributes data-resource-type="material" data-resource-id="${detail.id}">属性</button>
-                        ${previewUrl ? `<a href="${previewUrl}" class="btn btn-primary" target="_blank" rel="noopener">${previewLabel}</a>` : ''}
-                        ${isRenderable(detail) ? `<a href="${getRenderUrl(detail)}" class="btn btn-primary" target="_blank" rel="noopener">${escapeHtml(getRenderLabel(detail))}</a>` : ''}
-                        ${optimizedUrl ? `<a href="${optimizedUrl}" class="btn btn-outline" target="_blank" rel="noopener">查看优化稿</a>` : ''}
-                        ${exportUrl ? `<a href="${exportUrl}" class="btn btn-outline">${exportLabel}</a>` : ''}
-                        ${exportPdfUrl ? `<a href="${exportPdfUrl}" class="btn btn-outline">导出PDF</a>` : ''}
-                        ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
-                        ${isGitRepository(detail) && canManage ? '<button type="button" class="btn btn-outline" data-detail-action="repository">仓库</button>' : ''}
-                        <button type="button" class="btn btn-outline" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
-                        ${isBindable && canManage && config.canAssign ? '<button type="button" class="btn btn-outline" data-detail-action="bind">绑定课次 / 首页</button>' : ''}
-                        ${canManage ? '<button type="button" class="btn btn-outline" data-detail-action="move">移动</button>' : ''}
-                        <button type="button" class="btn btn-outline" data-detail-action="ai-parse" ${canManage && detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
-                        <button type="button" class="btn btn-outline" data-detail-action="ai-optimize" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 优化排版</button>
-                        <button type="button" class="btn btn-outline" data-detail-action="ai-polish" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 深度润色</button>
-                        <button type="button" class="btn btn-outline" data-detail-action="ai-regenerate" ${canManage && detail.can_ai_regenerate ? '' : 'disabled'}>AI 重新生成</button>
-                        ${canManage ? '<button type="button" class="btn btn-danger" data-detail-action="delete">删除</button>' : ''}
+                    ${renderWorkspaceTree()}
+                </aside>
+                <main class="materials-workspace-preview">
+                    <div class="materials-workspace-titlebar">
+                        <div>
+                            <div class="materials-detail-badges">
+                                <span class="materials-type-pill">${escapeHtml(getMaterialTypeLabel(detail))}</span>
+                                ${repositoryBadge}
+                                ${hasLearningDocument(detail) ? '<span class="materials-meta-item">README</span>' : ''}
+                            </div>
+                            <h3 title="${escapeHtml(detail.name || '')}">${escapeHtml(detail.name || '未命名材料')}</h3>
+                            <p title="${escapeHtml(detail.material_path || '')}">${escapeHtml(detail.material_path || '/')}</p>
+                        </div>
                     </div>
-                </div>
-                <div class="materials-detail-meta">
-                    <div class="meta-chip">
-                        <strong>大小 / 子项</strong>
-                        <span>${escapeHtml(getMetaText(detail))}</span>
-                    </div>
-                    <div class="meta-chip">
-                        <strong>创建时间</strong>
-                        <span>${escapeHtml(formatDateLabel(detail.created_at))}</span>
-                    </div>
-                    <div class="meta-chip">
-                        <strong>更新时间</strong>
-                        <span>${escapeHtml(formatDateLabel(detail.updated_at || detail.created_at))}</span>
-                    </div>
-                    <div class="meta-chip">
-                        <strong>已分配课堂</strong>
-                        <span>${escapeHtml(String(assignmentCount))}</span>
-                    </div>
-                    <div class="meta-chip">
-                        <strong>开放范围</strong>
-                        ${scopeControl}
-                    </div>
-                    <div class="meta-chip">
-                        <strong>AI 解析状态</strong>
-                        <span>${escapeHtml(detail.ai_parse_status || 'idle')}</span>
-                    </div>
-                    <div class="meta-chip">
-                        <strong>AI 优化状态</strong>
-                        <span>${escapeHtml(detail.ai_optimize_status || 'idle')}</span>
-                    </div>
-                </div>
-            </section>
-            ${renderRepositorySummary(detail)}
-            <div class="materials-detail-section-grid">
-                <div class="materials-section">
-                    <div class="materials-section-header">
-                        <h3>AI 摘要</h3>
-                    </div>
-                    <div class="text-muted text-sm">${escapeHtml(aiSummary)}</div>
-                    ${keywords}
-                    ${teachingValue}
-                    ${cautions}
-                </div>
-                <div class="materials-section">
-                    <div class="materials-section-header">
-                        <h3>已分配课堂</h3>
-                    </div>
-                    ${renderAssignments(detail.assignments || [])}
-                </div>
-                <div class="materials-section materials-section--wide">
-                    <div class="materials-section-header">
-                        <h3>解析目录</h3>
-                    </div>
-                    ${renderOutline(detail.ai_parse_result?.outline)}
-                </div>
+                    ${renderWorkspacePreview(detail)}
+                </main>
+                ${renderWorkspaceProperties(detail)}
             </div>
         </div>
     `;
+    renderWorkspaceRenderedContent(detail);
+}
+
+async function loadMaterialTree(materialId) {
+    const requestId = ++state.materialWorkspace.treeRequestId;
+    state.materialWorkspace.treeLoading = true;
+    renderDetail(state.activeDetail);
+    try {
+        const data = await apiFetch(`/api/materials/${materialId}/tree`, { silent: true });
+        if (requestId !== state.materialWorkspace.treeRequestId) {
+            return state.materialWorkspace.root;
+        }
+        state.materialWorkspace.root = data.tree || null;
+        state.materialWorkspace.stats = data.stats || null;
+        if (state.materialWorkspace.root) {
+            state.materialWorkspace.expandedIds.add(Number(state.materialWorkspace.root.id));
+        }
+        syncWorkspaceSelection(state.materialWorkspace.selectedId || data.selected_id || materialId);
+        return state.materialWorkspace.root;
+    } finally {
+        if (requestId === state.materialWorkspace.treeRequestId) {
+            state.materialWorkspace.treeLoading = false;
+            renderDetail(state.activeDetail);
+        }
+    }
+}
+
+async function loadWorkspaceContent(detail) {
+    if (!detail?.editable) return;
+    const materialId = Number(detail.id);
+    const requestId = state.materialWorkspace.content.requestId;
+    try {
+        const data = await apiFetch(`/api/materials/${materialId}/content`, { silent: true });
+        if (
+            requestId !== state.materialWorkspace.content.requestId
+            || Number(state.activeDetail?.id) !== materialId
+        ) {
+            return;
+        }
+        const text = String(data.content || '');
+        state.materialWorkspace.content = {
+            materialId,
+            text,
+            originalText: text,
+            encoding: data.encoding || 'utf-8',
+            loading: false,
+            dirty: false,
+            error: '',
+            requestId,
+        };
+    } catch (error) {
+        if (requestId === state.materialWorkspace.content.requestId) {
+            state.materialWorkspace.content.loading = false;
+            state.materialWorkspace.content.error = error.message || '文件内容读取失败';
+        }
+    } finally {
+        if (requestId === state.materialWorkspace.content.requestId) {
+            renderDetail(state.activeDetail);
+        }
+    }
 }
 
 async function loadMaterialDetail(materialId) {
     const requestId = ++state.detailRequestId;
     state.activeMaterialId = Number(materialId);
+    state.materialWorkspace.selectedId = Number(materialId);
     renderList();
     const detail = await apiFetch(`/api/materials/${materialId}`, { silent: true }).then((data) => data.material);
     if (requestId !== state.detailRequestId) {
         return state.activeDetail;
     }
     state.activeDetail = detail;
+    resetWorkspaceContentForDetail(detail);
     renderDetail(state.activeDetail);
+    loadWorkspaceContent(detail).catch(() => {});
     return state.activeDetail;
 }
 
 async function openMaterialDetail(materialId) {
-    await loadMaterialDetail(materialId);
+    resetMaterialWorkspace();
+    state.activeMaterialId = Number(materialId);
+    state.materialWorkspace.selectedId = Number(materialId);
+    renderList();
+    renderDetail(null);
     openDetailModal();
+    await Promise.all([
+        loadMaterialTree(materialId),
+        loadMaterialDetail(materialId),
+    ]);
+}
+
+async function selectWorkspaceNode(materialId) {
+    const normalizedId = Number(materialId);
+    if (!normalizedId) return;
+    syncWorkspaceSelection(normalizedId);
+    renderDetail(state.activeDetail);
+    await loadMaterialDetail(normalizedId);
 }
 
 function buildLibraryQuery(parentId) {
@@ -1008,10 +1363,12 @@ async function loadLibrary(parentId = null, trackHistory = false) {
     state.stats = data.stats || null;
 
     const activeStillVisible = state.items.some((item) => Number(item.id) === Number(previousActiveId));
-    state.activeMaterialId = activeStillVisible ? previousActiveId : null;
-    if (!activeStillVisible) {
+    const activeStillInWorkspace = Boolean(previousActiveId && findTreeNode(previousActiveId));
+    state.activeMaterialId = activeStillVisible || activeStillInWorkspace ? previousActiveId : null;
+    if (!activeStillVisible && !activeStillInWorkspace) {
         state.detailRequestId += 1;
         state.activeDetail = null;
+        resetMaterialWorkspace();
         if (isDetailModalOpen()) {
             closeDetailModal();
         }
@@ -2104,6 +2461,56 @@ async function updateActiveMaterialScope(scopeLevel) {
     await loadMaterialDetail(state.activeDetail.id);
 }
 
+async function refreshActiveWorkspace(materialId, { refreshTree = true } = {}) {
+    const targetId = Number(materialId || state.activeDetail?.id || 0);
+    if (!targetId) return;
+    if (refreshTree) {
+        await loadMaterialTree(targetId);
+    }
+    await loadMaterialDetail(targetId);
+    await loadLibrary(state.currentParentId, false);
+}
+
+async function saveActiveMaterialProperties() {
+    if (!state.activeDetail || state.activeDetail.can_manage === false) return;
+    const nameInput = refs.detail?.querySelector('[data-property-name]');
+    const scopeSelect = refs.detail?.querySelector('[data-property-scope]');
+    const payload = {};
+    const nextName = String(nameInput?.value || '').trim();
+    if (nextName && nextName !== String(state.activeDetail.name || '')) {
+        payload.name = nextName;
+    }
+    if (scopeSelect && scopeSelect.value !== String(state.activeDetail.scope_level || 'private')) {
+        payload.scope_level = scopeSelect.value;
+    }
+    if (!Object.keys(payload).length) {
+        showToast('属性没有变化', 'info');
+        return;
+    }
+    const result = await apiFetch(`/api/materials/${state.activeDetail.id}/attributes`, {
+        method: 'PATCH',
+        body: payload,
+    });
+    showToast(result.message || '材料属性已保存', 'success');
+    await refreshActiveWorkspace(state.activeDetail.id);
+}
+
+async function saveActiveMaterialContent() {
+    if (!state.activeDetail || state.activeDetail.can_manage === false || !state.activeDetail.editable) return;
+    const editor = refs.detail?.querySelector('[data-material-content-editor]');
+    if (!editor) return;
+    const materialId = Number(state.activeDetail.id);
+    const result = await apiFetch(`/api/materials/${materialId}/content`, {
+        method: 'PUT',
+        body: {
+            content: String(editor.value || ''),
+            encoding: state.materialWorkspace.content.encoding || 'utf-8',
+        },
+    });
+    showToast(result.message || '材料内容已保存', 'success');
+    await refreshActiveWorkspace(materialId);
+}
+
 async function deleteActiveMaterial() {
     if (!state.activeDetail) return;
     if (!window.confirm(`确定删除材料“${state.activeDetail.name}”吗？`)) return;
@@ -2487,14 +2894,18 @@ async function loadFolderOptions(select, { excludeSubtreeOf = null, selectedId =
 }
 
 function setCreateMenuOpen(open) {
-    if (!refs.createDropdown || !refs.createMenuBtn) return;
-    refs.createDropdown.hidden = !open;
-    refs.createMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    const dropdown = refs.createDropdown || document.getElementById('materials-create-dropdown');
+    const button = refs.createMenuBtn || document.getElementById('materials-create-menu-btn');
+    if (!dropdown || !button) return;
+    dropdown.hidden = !open;
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 
-function openCreateNodeModal(type) {
+function openCreateNodeModal(type, parentId = state.currentParentId, { fromWorkspace = false } = {}) {
     state.createNode.type = type === 'file' ? 'file' : 'folder';
     state.createNode.busy = false;
+    state.createNode.parentId = parentId ?? null;
+    state.createNode.fromWorkspace = Boolean(fromWorkspace);
     const isFile = state.createNode.type === 'file';
     if (refs.createNodeTitle) refs.createNodeTitle.textContent = isFile ? '新建文档' : '新建文件夹';
     if (refs.createNodeSubtitle) {
@@ -2518,7 +2929,7 @@ function openCreateNodeModal(type) {
     }
     setModalStatus(refs.createNodeStatus, '', 'info');
     openModal('materials-create-node-modal');
-    loadFolderOptions(refs.createNodeLocation, { selectedId: state.currentParentId }).catch((error) => {
+    loadFolderOptions(refs.createNodeLocation, { selectedId: state.createNode.parentId }).catch((error) => {
         setModalStatus(refs.createNodeStatus, error.message || '目录加载失败', 'error');
     });
     window.setTimeout(() => refs.createNodeName?.focus(), 50);
@@ -2548,9 +2959,15 @@ async function submitCreateNode() {
         });
         closeModal('materials-create-node-modal');
         showToast(result.message || '创建成功', 'success');
-        await loadLibrary(parentId ?? state.currentParentId, false);
-        if (isFile && result.viewer_url) {
+        if (state.createNode.fromWorkspace && result.material?.id) {
+            await loadLibrary(state.currentParentId, false);
+            await loadMaterialTree(result.material.id);
+            await loadMaterialDetail(result.material.id);
+        } else if (isFile && result.viewer_url) {
+            await loadLibrary(parentId ?? state.currentParentId, false);
             window.open(result.viewer_url, '_blank', 'noopener');
+        } else {
+            await loadLibrary(parentId ?? state.currentParentId, false);
         }
     } catch (error) {
         setModalStatus(refs.createNodeStatus, error.message || '创建失败', 'error');
@@ -2781,6 +3198,32 @@ function submitAiExpand() {
 
 function bindEvents() {
     document.addEventListener('click', (event) => {
+        const createTrigger = event.target.closest('#materials-create-menu-btn');
+        if (createTrigger) {
+            event.preventDefault();
+            event.stopPropagation();
+            setCreateMenuOpen((document.getElementById('materials-create-dropdown'))?.hidden !== false);
+            return;
+        }
+
+        const createFolder = event.target.closest('#materials-create-folder-btn');
+        if (createFolder) {
+            event.preventDefault();
+            event.stopPropagation();
+            setCreateMenuOpen(false);
+            openCreateNodeModal('folder');
+            return;
+        }
+
+        const createFile = event.target.closest('#materials-create-file-btn');
+        if (createFile) {
+            event.preventDefault();
+            event.stopPropagation();
+            setCreateMenuOpen(false);
+            openCreateNodeModal('file');
+            return;
+        }
+
         const uploadTrigger = event.target.closest('#materials-upload-menu-btn');
         if (uploadTrigger) {
             event.preventDefault();
@@ -3047,9 +3490,51 @@ function bindEvents() {
     });
 
     refs.detail?.addEventListener('click', (event) => {
+        const treeToggle = event.target.closest('[data-tree-toggle]');
+        if (treeToggle) {
+            event.preventDefault();
+            const nodeId = Number(treeToggle.dataset.treeToggle || 0);
+            if (!nodeId || treeToggle.disabled) return;
+            if (state.materialWorkspace.expandedIds.has(nodeId)) {
+                state.materialWorkspace.expandedIds.delete(nodeId);
+            } else {
+                state.materialWorkspace.expandedIds.add(nodeId);
+            }
+            renderDetail(state.activeDetail);
+            return;
+        }
+
+        const treeSelect = event.target.closest('[data-tree-select]');
+        if (treeSelect) {
+            event.preventDefault();
+            selectWorkspaceNode(Number(treeSelect.dataset.treeSelect || 0)).catch((error) => {
+                showToast(error.message || '加载材料失败', 'error');
+            });
+            return;
+        }
+
         const action = event.target.closest('[data-detail-action]')?.dataset.detailAction;
         if (!action || !state.activeDetail) return;
 
+        if (action === 'create-folder' || action === 'create-file') {
+            const targetFolderId = state.activeDetail.node_type === 'folder'
+                ? Number(state.activeDetail.id)
+                : (state.activeDetail.parent_id ? Number(state.activeDetail.parent_id) : null);
+            openCreateNodeModal(action === 'create-file' ? 'file' : 'folder', targetFolderId, { fromWorkspace: true });
+            return;
+        }
+        if (action === 'save-properties') {
+            saveActiveMaterialProperties().catch((error) => {
+                showToast(error.message || '保存属性失败', 'error');
+            });
+            return;
+        }
+        if (action === 'save-content') {
+            saveActiveMaterialContent().catch((error) => {
+                showToast(error.message || '保存内容失败', 'error');
+            });
+            return;
+        }
         if (action === 'repository') {
             openRepositoryModal(state.activeDetail.id).catch((error) => {
                 showToast(error.message || '加载仓库信息失败', 'error');
@@ -3175,6 +3660,22 @@ function bindEvents() {
         });
     });
 
+    refs.detail?.addEventListener('input', (event) => {
+        const editor = event.target.closest('[data-material-content-editor]');
+        if (!editor || !state.activeDetail?.editable) return;
+        const content = state.materialWorkspace.content;
+        if (Number(content.materialId) !== Number(state.activeDetail.id)) return;
+        content.text = String(editor.value || '');
+        content.dirty = content.text !== content.originalText;
+        const saveButton = refs.detail.querySelector('[data-detail-action="save-content"]');
+        if (saveButton) {
+            saveButton.disabled = !content.dirty || content.loading;
+        }
+        if (state.activeDetail.preview_type === 'markdown') {
+            renderMarkdown('materials-workspace-rendered-preview', content.text || '');
+        }
+    });
+
     refs.detail?.addEventListener('change', (event) => {
         const select = event.target.closest('[data-material-scope-select]');
         if (!select) return;
@@ -3289,11 +3790,9 @@ function bindEvents() {
         const item = state.items.find((entry) => Number(entry.id) === materialId);
         if (!item) return;
 
-        if (item.node_type === 'folder') {
-            openFolder(materialId, true);
-        } else if (item.preview_supported) {
-            previewMaterial(materialId);
-        }
+        openMaterialDetail(materialId).catch((error) => {
+            showToast(error.message || '加载详情失败', 'error');
+        });
     });
 
     refs.repositoryUpdateBtn?.addEventListener('click', () => {

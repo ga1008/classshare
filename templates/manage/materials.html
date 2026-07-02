@@ -117,8 +117,6 @@
     <section class="materials-card materials-library-card materials-library-card--expanded">
         <div class="materials-toolbar materials-library-nav">
             <div class="materials-toolbar-group">
-                <button type="button" class="btn btn-ghost btn-sm" id="materials-back-btn">返回</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="materials-up-btn">上一级</button>
                 <button type="button" class="btn btn-outline btn-sm" id="materials-repository-btn" hidden>仓库</button>
                 <button type="button" class="btn btn-outline btn-sm" id="materials-ai-expand-btn" hidden title="根据本文件夹已有材料，让 AI 续写下一份材料">AI 续写</button>
                 <button type="button" class="btn btn-outline btn-sm" id="materials-refresh-btn" data-testid="p03-materials-refresh">刷新</button>
@@ -229,11 +227,6 @@
         </div>
     </section>
 
-    <aside class="materials-card materials-detail-card">
-        <div class="materials-detail" id="materials-detail">
-            <div class="materials-empty">选择一项材料后，这里会显示详情、AI 摘要与课堂分配状态。</div>
-        </div>
-    </aside>
 </div>
 
 <input type="file" id="materials-file-input" class="hidden" data-testid="p03-materials-file-input" multiple>
@@ -611,7 +604,11 @@
                 </div>
                 <button class="modal-close" id="materials-detail-modal-close-btn" aria-label="&#20851;&#38381;">&times;</button>
             </div>
-            <div class="modal-body materials-detail-modal-body" id="materials-detail-modal-body"></div>
+            <div class="modal-body materials-detail-modal-body" id="materials-detail-modal-body">
+                <div class="materials-detail" id="materials-detail">
+                    <div class="materials-empty">选择一项材料后，这里会显示目录树、内容预览与属性信息。</div>
+                </div>
+            </div>
         </div>
     </div>
 </div>

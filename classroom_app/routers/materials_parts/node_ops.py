@@ -293,6 +293,86 @@ async def move_material_node(
     return {"status": "success", "message": message, "material": item, "renamed": renamed}
 
 
+def _serialize_tree_node(row: dict) -> dict[str, Any]:
+    item = serialize_material_row(row)
+    return {
+        "id": int(row["id"]),
+        "root_id": int(row["root_id"]) if row.get("root_id") is not None else int(row["id"]),
+        "parent_id": int(row["parent_id"]) if row.get("parent_id") is not None else None,
+        "name": str(row.get("name") or ""),
+        "node_type": str(row.get("node_type") or "file"),
+        "preview_type": str(row.get("preview_type") or ""),
+        "type_label": str(item.get("type_label") or ""),
+        "file_ext": str(row.get("file_ext") or ""),
+        "file_size": int(row.get("file_size") or 0),
+        "material_path": str(row.get("material_path") or ""),
+        "created_at": str(row.get("created_at") or ""),
+        "updated_at": str(row.get("updated_at") or ""),
+        "preview_supported": bool(item.get("preview_supported")),
+        "editable": bool(item.get("editable")),
+        "is_markdown": bool(item.get("is_markdown")),
+        "is_text": bool(item.get("is_text")),
+        "is_image": bool(item.get("is_image")),
+        "can_ai_parse": bool(item.get("can_ai_parse")),
+        "can_ai_optimize": bool(item.get("can_ai_optimize")),
+        "children": [],
+    }
+
+
+@router.get("/api/materials/{material_id}/tree", response_class=JSONResponse)
+async def get_material_subtree(
+    material_id: int,
+    user: dict = Depends(get_current_user),
+):
+    """材料所属最外层节点的完整目录树（排除 Git 内部内容），供浮窗资源管理器使用。"""
+    with get_db_connection() as conn:
+        material = ensure_user_material_access(conn, material_id, user)
+        root_row = conn.execute(
+            "SELECT * FROM course_materials WHERE id = ?",
+            (int(material["root_id"]),),
+        ).fetchone()
+        if not root_row:
+            raise HTTPException(404, "材料根节点不存在")
+        rows = [dict(row) for row in _collect_subtree_rows(conn, root_row, include_internal=False)]
+
+    nodes: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        nodes[int(row["id"])] = _serialize_tree_node(row)
+
+    root_node = nodes.get(int(root_row["id"]))
+    if not root_node:
+        raise HTTPException(404, "材料根节点不存在")
+    for node in nodes.values():
+        parent_id = node["parent_id"]
+        if node["id"] == root_node["id"] or parent_id is None:
+            continue
+        parent = nodes.get(parent_id)
+        if parent:
+            parent["children"].append(node)
+
+    def _sort_children(node: dict[str, Any]):
+        node["children"].sort(key=lambda item: (0 if item["node_type"] == "folder" else 1, item["name"].lower()))
+        node["child_count"] = len(node["children"])
+        for child in node["children"]:
+            _sort_children(child)
+
+    _sort_children(root_node)
+
+    file_rows = [row for row in rows if row.get("node_type") == "file"]
+    stats = {
+        "folder_count": sum(1 for row in rows if row.get("node_type") == "folder"),
+        "file_count": len(file_rows),
+        "total_size": sum(int(row.get("file_size") or 0) for row in file_rows),
+        "latest_updated_at": max((str(row.get("updated_at") or "") for row in rows), default=""),
+    }
+    return {
+        "status": "success",
+        "tree": root_node,
+        "selected_id": int(material["id"]),
+        "stats": stats,
+    }
+
+
 def _build_ai_material_expand_system_prompt() -> str:
     return (
         "你是一名深度思考型课程材料续写助手。"

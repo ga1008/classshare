@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sqlite3
 import unittest
 from contextlib import contextmanager
@@ -230,6 +231,33 @@ class MaterialNodeOpsTests(unittest.TestCase):
         row = _row(self.conn, file_id)
         self.assertEqual(row["name"], "讲义 (2).md")
         self.assertEqual(row["material_path"], "乙/讲义 (2).md")
+
+    def test_get_material_subtree_sorts_tree_and_hides_git_internal_nodes(self):
+        root = self._create_folder("课程树")
+        lesson = self._create_folder("第1课", parent_id=root)
+        file_id = self._create_file("导读", parent_id=lesson, content="# 导读")
+        root_file = self._create_file("说明", parent_id=root, content="# 说明")
+        self.conn.execute(
+            """
+            INSERT INTO course_materials
+                (teacher_id, parent_id, root_id, material_path, name, node_type, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'folder', ?, ?)
+            """,
+            (1, root, root, "课程树/.git", ".git", "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
+        )
+        self.conn.commit()
+
+        result = asyncio.run(node_ops.get_material_subtree(file_id, TEACHER))
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["selected_id"], file_id)
+        self.assertEqual(result["tree"]["id"], root)
+        self.assertEqual(result["stats"]["folder_count"], 2)
+        self.assertEqual(result["stats"]["file_count"], 2)
+        self.assertEqual(result["stats"]["total_size"], len("# 导读".encode("utf-8")) + len("# 说明".encode("utf-8")))
+        self.assertEqual([child["name"] for child in result["tree"]["children"]], ["第1课", "说明.md"])
+        self.assertEqual(result["tree"]["children"][0]["children"][0]["id"], file_id)
+        self.assertNotIn(".git", json.dumps(result["tree"], ensure_ascii=False))
 
 
 class MaterialLearningBindingContextTests(unittest.TestCase):
