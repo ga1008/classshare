@@ -9,6 +9,14 @@ def _normalize_uploaded_filename(filename: str | None, fallback: str = "material
     return name or fallback
 
 
+MATERIAL_SCOPE_LEVELS = {"private", "department", "college", "school", "public"}
+
+
+def _normalize_material_scope_level(value: str | None) -> str:
+    scope = str(value or "private").strip().lower()
+    return scope if scope in MATERIAL_SCOPE_LEVELS else "private"
+
+
 def _insert_material_folder_row(
     conn,
     *,
@@ -19,6 +27,7 @@ def _insert_material_folder_row(
     inherited_root_id: int | None,
     owner_scope: dict,
     now: str,
+    scope_level: str = "private",
 ) -> tuple[int, int]:
     db_engine = get_configured_db_engine()
     insert_sql = """
@@ -28,7 +37,7 @@ def _insert_material_folder_row(
          ai_parse_status, ai_optimize_status, owner_role, owner_user_pk, scope_level,
          school_code, school_name, college, department, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 'folder', 'inode/directory', 'folder', 'none', '', NULL, 0,
-                'idle', 'idle', 'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
+                'idle', 'idle', 'teacher', ?, ?, ?, ?, ?, ?, ?, ?)
     """
     folder_id = execute_insert_returning_id(
         conn,
@@ -40,6 +49,7 @@ def _insert_material_folder_row(
             material_path,
             name,
             user["id"],
+            _normalize_material_scope_level(scope_level),
             owner_scope["school_code"],
             owner_scope["school_name"],
             owner_scope["college"],
@@ -70,6 +80,7 @@ def _insert_material_file_row(
     now: str,
     ai_parse_status: str = "idle",
     ai_parse_result_json: str | None = None,
+    scope_level: str = "private",
 ) -> int:
     db_engine = get_configured_db_engine()
     check_questions_json = ""
@@ -94,7 +105,7 @@ def _insert_material_file_row(
          check_questions_error, check_questions_generated_at, ai_optimize_status, owner_role, owner_user_pk, scope_level,
          school_code, school_name, college, department, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle',
-                'teacher', ?, 'private', ?, ?, ?, ?, ?, ?)
+                'teacher', ?, ?, ?, ?, ?, ?, ?, ?)
     """
     file_id = execute_insert_returning_id(
         conn,
@@ -118,6 +129,7 @@ def _insert_material_file_row(
             check_questions_error,
             check_questions_generated_at,
             user["id"],
+            _normalize_material_scope_level(scope_level),
             owner_scope["school_code"],
             owner_scope["school_name"],
             owner_scope["college"],
@@ -574,19 +586,55 @@ def _build_ai_material_generation_user_prompt(
     )
 
 
-def _build_ai_material_rewrite_system_prompt(mode: str) -> str:
+MATERIAL_REWRITE_STRICTNESS_LEVELS = {"strict", "balanced", "loose"}
+MATERIAL_REWRITE_STRICTNESS_LABELS = {"strict": "严格", "balanced": "一般", "loose": "宽松"}
+
+_REWRITE_JSON_CONTRACT = (
+    "请严格返回 JSON 对象，不要 Markdown 代码块，也不要输出与材料内容无关的说明。"
+    "JSON 必须包含 title、summary、content_markdown、metadata、outline、keywords、teaching_value、cautions、warnings。"
+)
+
+_REWRITE_STRICTNESS_RULES = {
+    "strict": (
+        "改动限制为【严格】：对原文文字一字不改，不得增删、替换、改写任何实义文字，"
+        "只允许调整 Markdown 排版结构（标题层级、列表、表格、代码块、空行、加粗等标记）。"
+    ),
+    "balanced": (
+        "改动限制为【一般】：以保留原文为主，排版与原文均衡；"
+        "可以修正明显的错别字、乱码、重复和断行错误，可以拆分合并段落，但不得改写句意或增删知识点。"
+    ),
+    "loose": (
+        "改动限制为【宽松】：排版优先，可以为可读性重写句子、重组段落和章节结构，"
+        "但必须保留原材料的全部事实、知识点和操作步骤，不得编造新内容。"
+    ),
+}
+
+
+def _normalize_rewrite_strictness(value: str | None) -> str:
+    normalized = str(value or "balanced").strip().lower()
+    return normalized if normalized in MATERIAL_REWRITE_STRICTNESS_LEVELS else "balanced"
+
+
+def _build_ai_material_rewrite_system_prompt(mode: str, strictness: str = "balanced") -> str:
     if mode == "regenerate":
         return (
             "你是一名深度思考型教学材料重生成助手。"
-            "请严格返回 JSON 对象，不要 Markdown 代码块。"
-            "JSON 必须包含 title、summary、content_markdown、metadata、outline、keywords、teaching_value、cautions、warnings。"
-            "请基于原材料重新组织内容，回应教师调整提示；可以重写结构，但不得丢失原材料的关键事实。"
+            + _REWRITE_JSON_CONTRACT
+            + "请基于原材料重新组织内容，回应教师调整提示；可以重写结构，但不得丢失原材料的关键事实。"
+        )
+    if mode == "polish":
+        return (
+            "你是一名深度思考型教学材料润色助手。"
+            + _REWRITE_JSON_CONTRACT
+            + "请根据原材料的意思进行深度重写润色并优化排版：让表达更清晰流畅、层次更合理、更适合课堂教学；"
+            "如果提供了课程、班级、专业目标等课堂信息，请让措辞、案例和难度贴合该课堂的培养目标；"
+            "保留原材料的全部关键事实、知识点与操作步骤，不得编造未提供的内容。"
         )
     return (
-        "你是一名深度思考型教学材料优化助手。"
-        "请严格返回 JSON 对象，不要 Markdown 代码块。"
-        "JSON 必须包含 title、summary、content_markdown、metadata、outline、keywords、teaching_value、cautions、warnings。"
-        "请优化原材料表达、层次、标题和课堂可读性，保留关键事实与操作步骤，修正明显乱码、重复和格式混乱。"
+        "你是一名深度思考型教学材料排版优化助手。"
+        + _REWRITE_JSON_CONTRACT
+        + "你的任务是把原材料整理成排版规整、可直接用于教学的 Markdown 文档。"
+        + _REWRITE_STRICTNESS_RULES.get(strictness, _REWRITE_STRICTNESS_RULES["balanced"])
     )
 
 
@@ -596,17 +644,33 @@ def _build_ai_material_rewrite_user_prompt(
     material: dict,
     prompt: str,
     attachment: dict[str, Any],
+    strictness: str = "balanced",
+    classroom_context: dict[str, Any] | None = None,
 ) -> str:
-    return "\n\n".join(
+    mode_labels = {"regenerate": "重新生成", "polish": "深度润色", "optimize": "优化排版"}
+    parts = [
+        "请处理下面这份课程材料。",
+        f"处理模式：{mode_labels.get(mode, '优化排版')}",
+        f"材料信息：\n{json.dumps({'id': material.get('id'), 'name': material.get('name'), 'material_path': material.get('material_path'), 'node_type': material.get('node_type'), 'preview_type': material.get('preview_type')}, ensure_ascii=False, indent=2)}",
+    ]
+    if mode == "optimize":
+        parts.append(
+            f"改动限制：{MATERIAL_REWRITE_STRICTNESS_LABELS.get(strictness, '一般')}。"
+            + _REWRITE_STRICTNESS_RULES.get(strictness, _REWRITE_STRICTNESS_RULES["balanced"])
+        )
+    if mode == "polish" and classroom_context:
+        parts.append(
+            "润色目标课堂（请让内容贴合该课程、班级与专业培养目标）：\n"
+            + json.dumps(classroom_context, ensure_ascii=False, indent=2)[:6000]
+        )
+    parts.extend(
         [
-            "请处理下面这份课程材料。",
-            f"处理模式：{'重新生成' if mode == 'regenerate' else '优化'}",
-            f"材料信息：\n{json.dumps({'id': material.get('id'), 'name': material.get('name'), 'material_path': material.get('material_path'), 'node_type': material.get('node_type'), 'preview_type': material.get('preview_type')}, ensure_ascii=False, indent=2)}",
             f"教师调整提示：\n{prompt.strip() or '无补充要求，请按教学材料质量标准处理。'}",
             f"可用原始内容来源：{attachment.get('title')}",
             "输出 content_markdown 时请给出完整正文，不要只给建议。",
         ]
     )
+    return "\n\n".join(parts)
 
 
 def _build_material_ai_parse_payload(parse_result) -> dict:

@@ -8,6 +8,33 @@
 {% block header_actions %}
 {% from "macros/app_topbar.html" import app_topbar_icon, topbar_action %}
 <div class="materials-toolbar-group materials-header-actions">
+    <div class="materials-upload-menu" id="materials-create-menu">
+        <button
+            type="button"
+            class="app-topbar-action app-topbar-action--primary app-topbar-action--tone-indigo materials-upload-menu__trigger"
+            id="materials-create-menu-btn"
+            title="新建"
+            aria-label="新建"
+            aria-haspopup="true"
+            aria-expanded="false"
+        >
+            <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('plus') }}</span>
+            <span class="app-topbar-action__text">
+                <strong>新建</strong>
+                <small>文件夹 / 文档</small>
+            </span>
+        </button>
+        <div class="materials-upload-dropdown" id="materials-create-dropdown" hidden>
+            <button type="button" id="materials-create-folder-btn">
+                <strong>新建文件夹</strong>
+                <small>在当前目录下创建</small>
+            </button>
+            <button type="button" id="materials-create-file-btn">
+                <strong>新建文档</strong>
+                <small>Markdown 材料文件</small>
+            </button>
+        </div>
+    </div>
     {{ topbar_action('AI生成材料', '提示与附件', 'robot', button_id='materials-ai-generate-open-btn', variant='solid', tone='teal') }}
     {{ topbar_action('上传文件夹', '批量资料', 'folder-up', button_id='materials-upload-folder-btn', variant='solid', tone='cyan') }}
     <div class="materials-upload-menu" id="materials-upload-menu">
@@ -93,6 +120,7 @@
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-back-btn">返回</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="materials-up-btn">上一级</button>
                 <button type="button" class="btn btn-outline btn-sm" id="materials-repository-btn" hidden>仓库</button>
+                <button type="button" class="btn btn-outline btn-sm" id="materials-ai-expand-btn" hidden title="根据本文件夹已有材料，让 AI 续写下一份材料">AI 续写</button>
                 <button type="button" class="btn btn-outline btn-sm" id="materials-refresh-btn" data-testid="p03-materials-refresh">刷新</button>
             </div>
             <div class="materials-breadcrumbs" id="materials-breadcrumbs">
@@ -130,6 +158,7 @@
                         <option value="department">本系部公开</option>
                         <option value="college">本院级公开</option>
                         <option value="school">全校公开</option>
+                        <option value="public">完全公开</option>
                     </select>
                 </label>
                 <label class="materials-inline-field">
@@ -318,6 +347,20 @@
                 <button class="modal-close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
+                <label class="materials-form-field" id="materials-ai-rewrite-strictness-field" hidden>
+                    <span>改动限制</span>
+                    <select id="materials-ai-rewrite-strictness" class="form-control">
+                        <option value="strict">严格 · 一字不改，只调整排版</option>
+                        <option value="balanced" selected>一般 · 均衡排版和原文</option>
+                        <option value="loose">宽松 · 排版优先，可改写表达</option>
+                    </select>
+                </label>
+                <label class="materials-form-field" id="materials-ai-rewrite-offering-field" hidden>
+                    <span>润色目标课堂（可选）</span>
+                    <select id="materials-ai-rewrite-offering" class="form-control">
+                        <option value="">不关联课堂，按通用教学标准润色</option>
+                    </select>
+                </label>
                 <label class="materials-form-field">
                     <span>调整提示语</span>
                     <textarea id="materials-ai-rewrite-prompt" class="form-control" rows="5" placeholder="例如：更适合软件工程专业学生；增加表格；减少铺垫，突出课堂可执行步骤。"></textarea>
@@ -569,6 +612,134 @@
                 <button class="modal-close" id="materials-detail-modal-close-btn" aria-label="&#20851;&#38381;">&times;</button>
             </div>
             <div class="modal-body materials-detail-modal-body" id="materials-detail-modal-body"></div>
+        </div>
+    </div>
+</div>
+
+<div id="materials-create-node-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title" id="materials-create-node-title">新建文件夹</h3>
+                    <p class="modal-subtitle" id="materials-create-node-subtitle">在当前目录下创建。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <label class="materials-form-field">
+                    <span>创建位置</span>
+                    <select id="materials-create-node-location" class="form-control"></select>
+                </label>
+                <label class="materials-form-field">
+                    <span id="materials-create-node-name-label">名称</span>
+                    <input type="text" id="materials-create-node-name" class="form-control" maxlength="120" placeholder="例如：第4次课">
+                </label>
+                <div class="text-muted text-sm" id="materials-create-node-hint"></div>
+                <div class="materials-ai-import-status" id="materials-create-node-status" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="materials-create-node-submit-btn">创建</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="materials-move-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">移动到</h3>
+                    <p class="modal-subtitle">移动后开放范围随目标最外层文件夹统一调整。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="materials-section">
+                    <div class="text-muted text-sm">当前材料</div>
+                    <strong id="materials-move-name">-</strong>
+                    <div class="text-muted text-sm" id="materials-move-path">-</div>
+                </div>
+                <label class="materials-form-field">
+                    <span>目标位置</span>
+                    <select id="materials-move-target" class="form-control"></select>
+                </label>
+                <div class="materials-ai-import-status" id="materials-move-status" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="materials-move-submit-btn">移动</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="materials-bind-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">绑定课次 / 首页</h3>
+                    <p class="modal-subtitle">把材料挂到课堂材料区首页按钮或具体课次的学习文档列表，可同时绑定多个位置。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="materials-section">
+                    <div class="text-muted text-sm">当前材料</div>
+                    <strong id="materials-bind-name">-</strong>
+                </div>
+                <label class="materials-form-field">
+                    <span>选择课堂</span>
+                    <select id="materials-bind-offering" class="form-control"></select>
+                </label>
+                <div class="materials-section">
+                    <div class="materials-section-header">
+                        <h3>绑定位置</h3>
+                        <span class="text-muted text-sm" id="materials-bind-count">已选 0 处</span>
+                    </div>
+                    <div class="materials-modal-options" id="materials-bind-targets">
+                        <div class="materials-empty">请选择课堂后勾选首页或课次。</div>
+                    </div>
+                </div>
+                <div class="materials-ai-import-status" id="materials-bind-status" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="materials-bind-save-btn">保存绑定</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="materials-ai-expand-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">AI 续写材料</h3>
+                    <p class="modal-subtitle">AI 会阅读当前文件夹的目录结构与已有材料，按同样体例续写下一份材料并保存到本文件夹。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="materials-section">
+                    <div class="text-muted text-sm">依据文件夹</div>
+                    <strong id="materials-ai-expand-folder">-</strong>
+                    <div class="text-muted text-sm" id="materials-ai-expand-folder-path">-</div>
+                </div>
+                <label class="materials-form-field">
+                    <span>补充提示（可选）</span>
+                    <textarea id="materials-ai-expand-prompt" class="form-control" rows="4" placeholder="例如：根据前三次课的材料和目录文档，生成第四次课的课程材料。留空则由 AI 自动判断。"></textarea>
+                </label>
+                <div class="materials-ai-import-status" id="materials-ai-expand-status" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="materials-ai-expand-submit-btn">开始续写</button>
+            </div>
         </div>
     </div>
 </div>

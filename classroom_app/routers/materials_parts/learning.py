@@ -4,6 +4,7 @@ from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
 from ...services.material_render_service import attach_render_metadata
+from ...services.materials_service import is_bindable_learning_material
 from ...services.session_learning_materials_service import (
     AI_BLURB_GENERATE_LIMIT,
     add_material as add_session_learning_material,
@@ -161,6 +162,172 @@ async def remove_classroom_learning_material(
         patch = _build_session_material_patch(conn, class_offering_id, int(payload.session_id or 0), int(user["id"]))
         conn.commit()
     return {"status": "success", "message": "已解绑该材料", **patch}
+
+
+class MaterialLearningBindingTarget(BaseModel):
+    class_offering_id: int
+    session_id: int = 0
+
+
+class MaterialLearningBindingsUpdateRequest(BaseModel):
+    targets: list[MaterialLearningBindingTarget] = []
+
+
+def _load_material_learning_binding_context(conn, material_id: int, teacher_id: int) -> dict:
+    """教师全部课堂 + 课次 + 该材料当前绑定到的目标（session_id=0 表示首页）。"""
+    offering_rows = conn.execute(
+        """
+        SELECT o.id, o.semester, c.name AS class_name, co.name AS course_name
+        FROM class_offerings o
+        JOIN classes c ON c.id = o.class_id
+        JOIN courses co ON co.id = o.course_id
+        WHERE o.teacher_id = ?
+        ORDER BY co.name, c.name
+        """,
+        (teacher_id,),
+    ).fetchall()
+    offerings = [dict(row) for row in offering_rows]
+    offering_ids = [int(row["id"]) for row in offerings]
+
+    sessions_by_offering: dict[int, list[dict]] = {oid: [] for oid in offering_ids}
+    if offering_ids:
+        placeholders = ",".join("?" for _ in offering_ids)
+        session_rows = conn.execute(
+            f"""
+            SELECT id, class_offering_id, order_index, title
+            FROM class_offering_sessions
+            WHERE class_offering_id IN ({placeholders})
+            ORDER BY class_offering_id, order_index
+            """,
+            offering_ids,
+        ).fetchall()
+        for row in session_rows:
+            sessions_by_offering[int(row["class_offering_id"])].append(
+                {
+                    "id": int(row["id"]),
+                    "order_index": int(row["order_index"] or 0),
+                    "title": str(row["title"] or ""),
+                }
+            )
+
+    bound_rows = conn.execute(
+        """
+        SELECT lm.class_offering_id, lm.session_id
+        FROM class_offering_learning_materials lm
+        JOIN class_offerings o ON o.id = lm.class_offering_id
+        WHERE lm.material_id = ? AND o.teacher_id = ?
+        """,
+        (material_id, teacher_id),
+    ).fetchall()
+    bound = {(int(row["class_offering_id"]), int(row["session_id"] or 0)) for row in bound_rows}
+    # 旧单列镜像也算已绑定（列表表可能尚未回填）
+    legacy_home = conn.execute(
+        "SELECT id FROM class_offerings WHERE teacher_id = ? AND home_learning_material_id = ?",
+        (teacher_id, material_id),
+    ).fetchall()
+    for row in legacy_home:
+        bound.add((int(row["id"]), 0))
+    legacy_sessions = conn.execute(
+        """
+        SELECT s.id, s.class_offering_id
+        FROM class_offering_sessions s
+        JOIN class_offerings o ON o.id = s.class_offering_id
+        WHERE o.teacher_id = ? AND s.learning_material_id = ?
+        """,
+        (teacher_id, material_id),
+    ).fetchall()
+    for row in legacy_sessions:
+        bound.add((int(row["class_offering_id"]), int(row["id"])))
+
+    for offering in offerings:
+        oid = int(offering["id"])
+        offering["sessions"] = sessions_by_offering.get(oid, [])
+        offering["home_bound"] = (oid, 0) in bound
+        offering["bound_session_ids"] = sorted(
+            session_id for (offering_id, session_id) in bound if offering_id == oid and session_id > 0
+        )
+    return {"offerings": offerings, "bound_targets": sorted(bound)}
+
+
+@router.get("/api/materials/{material_id}/learning-bindings", response_class=JSONResponse)
+async def get_material_learning_bindings(
+    material_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        bindable = is_bindable_learning_material(conn, material)
+        context = _load_material_learning_binding_context(conn, material_id, int(user["id"]))
+    return {
+        "status": "success",
+        "material": {"id": int(material["id"]), "name": material["name"]},
+        "bindable": bindable,
+        "offerings": context["offerings"],
+    }
+
+
+@router.put("/api/materials/{material_id}/learning-bindings", response_class=JSONResponse)
+async def update_material_learning_bindings(
+    material_id: int,
+    payload: MaterialLearningBindingsUpdateRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        ensure_teacher_learning_material_owner(conn, material_id, user["id"])
+        context = _load_material_learning_binding_context(conn, material_id, int(user["id"]))
+        allowed_offering_ids = {int(item["id"]) for item in context["offerings"]}
+        allowed_session_ids = {
+            (int(item["id"]), int(session["id"]))
+            for item in context["offerings"]
+            for session in item["sessions"]
+        }
+
+        desired: set[tuple[int, int]] = set()
+        for target in payload.targets:
+            offering_id = int(target.class_offering_id)
+            session_id = int(target.session_id or 0)
+            if offering_id not in allowed_offering_ids:
+                raise HTTPException(403, "包含无权绑定的课堂")
+            if session_id > 0 and (offering_id, session_id) not in allowed_session_ids:
+                raise HTTPException(400, "包含不存在的课次")
+            desired.add((offering_id, session_id))
+
+        current = set(context["bound_targets"])
+        to_add = sorted(desired - current)
+        to_remove = sorted(current - desired)
+
+        for offering_id, session_id in to_add:
+            add_session_learning_material(
+                conn,
+                class_offering_id=offering_id,
+                session_id=session_id,
+                material_id=material_id,
+                teacher_id=int(user["id"]),
+            )
+        for offering_id, session_id in to_remove:
+            remove_session_learning_material(
+                conn,
+                class_offering_id=offering_id,
+                session_id=session_id,
+                material_id=material_id,
+                teacher_id=int(user["id"]),
+            )
+        refreshed = _load_material_learning_binding_context(conn, material_id, int(user["id"]))
+        conn.commit()
+
+    message_parts = []
+    if to_add:
+        message_parts.append(f"新增绑定 {len(to_add)} 处")
+    if to_remove:
+        message_parts.append(f"解绑 {len(to_remove)} 处")
+    message = "，".join(message_parts) if message_parts else "绑定没有变化"
+    return {
+        "status": "success",
+        "message": message,
+        "added_count": len(to_add),
+        "removed_count": len(to_remove),
+        "offerings": refreshed["offerings"],
+    }
 
 
 @router.post("/api/materials/{material_id}/ai-assign-sessions", response_class=JSONResponse)

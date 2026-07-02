@@ -9,11 +9,18 @@ async def _run_ai_material_rewrite(
     mode: str,
     prompt: str,
     user: dict,
+    strictness: str = "balanced",
+    class_offering_id: int | None = None,
 ) -> dict[str, Any]:
-    normalized_mode = "regenerate" if str(mode or "").strip().lower() == "regenerate" else "optimize"
+    mode_value = str(mode or "").strip().lower()
+    normalized_mode = mode_value if mode_value in {"regenerate", "polish"} else "optimize"
+    normalized_strictness = _normalize_rewrite_strictness(strictness)
+    classroom_context: dict[str, Any] = {}
     with get_db_connection() as conn:
         material = dict(ensure_teacher_material_owner(conn, material_id, user["id"]))
         context_rows = _collect_material_context_rows(conn, material)
+        if normalized_mode == "polish" and class_offering_id:
+            classroom_context = _load_final_material_classroom_context(conn, int(class_offering_id), user)
         conn.execute(
             "UPDATE course_materials SET ai_optimize_status = 'running', updated_at = ? WHERE id = ?",
             (datetime.now().isoformat(), material_id),
@@ -23,12 +30,14 @@ async def _run_ai_material_rewrite(
     try:
         attachment = await _build_material_context_attachment(material, context_rows)
         raw_result = await _call_ai_chat(
-            _build_ai_material_rewrite_system_prompt(normalized_mode),
+            _build_ai_material_rewrite_system_prompt(normalized_mode, normalized_strictness),
             _build_ai_material_rewrite_user_prompt(
                 mode=normalized_mode,
                 material=material,
                 prompt=prompt,
                 attachment=attachment,
+                strictness=normalized_strictness,
+                classroom_context=classroom_context,
             ),
             capability="thinking",
             response_format="json",
@@ -59,7 +68,7 @@ async def _run_ai_material_rewrite(
         check_error = "" if check_status == "ready" else str(check_payload.get("reason") or "")
 
         if (
-            normalized_mode == "optimize"
+            normalized_mode in {"optimize", "polish"}
             and material["node_type"] == "file"
             and str(material.get("preview_type") or "") == "markdown"
         ):
@@ -93,7 +102,7 @@ async def _run_ai_material_rewrite(
                 item = _fetch_material_response_item(conn, material_id, user)
             return {
                 "status": "success",
-                "message": "AI 已优化材料，并生成可查看优化稿",
+                "message": "AI 已深度润色材料，并生成可查看的润色稿" if normalized_mode == "polish" else "AI 已优化材料，并生成可查看优化稿",
                 "mode": normalized_mode,
                 "material": item,
                 "viewer_url": f"/materials/view/{material_id}?variant=optimized",
@@ -109,7 +118,7 @@ async def _run_ai_material_rewrite(
             title=str(parse_result.metadata.get("title") or fallback_title),
             markdown_content=markdown_content,
             parse_payload_json=parse_payload_json,
-            name_prefix="AI重生成" if normalized_mode == "regenerate" else "AI优化",
+            name_prefix={"regenerate": "AI重生成", "polish": "AI润色"}.get(normalized_mode, "AI优化"),
         )
         with get_db_connection() as conn:
             conn.execute(

@@ -5,6 +5,7 @@ from .materials_parts import ai_import as _ai_import
 from .materials_parts import final_materials as _final_materials
 from .materials_parts import exports as _exports
 from .materials_parts import learning as _learning
+from .materials_parts import node_ops as _node_ops
 
 from .materials_parts.common import *
 from .materials_parts.generation_helpers import *
@@ -16,9 +17,12 @@ from .materials_parts.ai_import import *
 from .materials_parts.final_materials import *
 from .materials_parts.exports import *
 from .materials_parts.learning import *
+from .materials_parts.node_ops import *
 
 
 router = APIRouter()
+# node_ops 先注册：/api/materials/folder-options 等单段路径不能被 /api/materials/{material_id} 拦截
+router.include_router(_node_ops.router)
 router.include_router(_library.router)
 router.include_router(_ai_import.router)
 router.include_router(_final_materials.router)

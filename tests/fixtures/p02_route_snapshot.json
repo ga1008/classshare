@@ -3016,6 +3016,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/materials/ai-expand",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_expand_material_folder",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/materials/ai-generate",
     "methods": [
       "POST"
@@ -3077,6 +3085,30 @@
       "POST"
     ],
     "name": "batch_download_materials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/files",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_material_markdown_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/folder-options",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_material_folder_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/folders",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_material_folder",
     "include_in_schema": true
   },
   {
@@ -3205,6 +3237,30 @@
       "PUT"
     ],
     "name": "update_material_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/learning-bindings",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_learning_bindings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/learning-bindings",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_material_learning_bindings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/move",
+    "methods": [
+      "POST"
+    ],
+    "name": "move_material_node",
     "include_in_schema": true
   },
   {

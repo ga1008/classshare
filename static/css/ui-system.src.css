@@ -46496,3 +46496,11 @@ body.agenda-todo-open { overflow: hidden; }
     .ap-sign-upload { flex-wrap: wrap; }
     .ap-sign-preview { justify-content: flex-start; }
 }
+
+/* ==== 材料库节点管理（2026-07-02）：hidden 属性必须压过 .btn 的 display 规则 ==== */
+.btn[hidden] {
+    display: none !important;
+}
+.materials-form-field[hidden] {
+    display: none !important;
+}

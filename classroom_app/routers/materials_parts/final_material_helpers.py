@@ -297,6 +297,7 @@ async def _create_generated_markdown_material(
         base_prefix = ""
         inherited_root_id = None
         parent_key = None
+        inherited_scope = "private"
         if parent_id is not None:
             base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
             if base_parent["node_type"] != "folder":
@@ -304,6 +305,7 @@ async def _create_generated_markdown_material(
             base_prefix = str(base_parent["material_path"])
             inherited_root_id = int(base_parent["root_id"])
             parent_key = int(base_parent["id"])
+            inherited_scope = str(base_parent["scope_level"] or "private")
         owner_scope = load_teacher_org_scope(conn, int(user["id"]))
         now = datetime.now().isoformat()
         material_name = make_unique_material_name(conn, int(user["id"]), parent_key, desired_name)
@@ -323,6 +325,7 @@ async def _create_generated_markdown_material(
             now=now,
             ai_parse_status="completed",
             ai_parse_result_json=parse_payload_json,
+            scope_level=inherited_scope,
         )
         actual_root_id = inherited_root_id or material_id
         if inherited_root_id is None:

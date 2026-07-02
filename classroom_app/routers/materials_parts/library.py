@@ -387,7 +387,7 @@ async def patch_material_attributes(
     normalized_scope = None
     if "scope_level" in payload:
         normalized_scope = str(payload.get("scope_level") or "private").strip().lower()
-        if normalized_scope not in {"private", "school", "college", "department"}:
+        if normalized_scope not in {"private", "school", "college", "department", "public"}:
             raise HTTPException(400, "Invalid material scope")
 
     with get_db_connection() as conn:
@@ -395,6 +395,8 @@ async def patch_material_attributes(
         if "name" in payload:
             _rename_material_subtree(conn, material, str(payload.get("name") or ""))
             material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        if normalized_scope is not None and material["parent_id"] is not None:
+            raise HTTPException(400, "开放范围由最外层文件夹统一决定，请在最外层文件夹上设置")
         if normalized_scope is not None:
             owner_scope = load_teacher_org_scope(conn, int(material["teacher_id"]))
             now_text = datetime.now().isoformat()
@@ -533,12 +535,14 @@ async def upload_materials(
         base_parent = None
         base_prefix = ""
         base_root_id = None
+        inherited_scope = "private"
         if parent_id is not None:
             base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
             if base_parent["node_type"] != "folder":
                 raise HTTPException(400, "只能上传到文件夹中")
             base_prefix = str(base_parent["material_path"])
             base_root_id = int(base_parent["root_id"])
+            inherited_scope = str(base_parent["scope_level"] or "private")
 
         top_level_name_map: dict[str, str] = {}
         for entry in prepared_entries:
@@ -592,6 +596,7 @@ async def upload_materials(
                     inherited_root_id=inherited_root_id,
                     owner_scope=owner_scope,
                     now=now,
+                    scope_level=inherited_scope,
                 )
 
                 created_paths[folder_path] = folder_id
@@ -630,6 +635,7 @@ async def upload_materials(
                 file_size=file_info["size"],
                 owner_scope=owner_scope,
                 now=now,
+                scope_level=inherited_scope,
             )
             actual_root_id = inherited_root_id or file_id
 
@@ -761,11 +767,13 @@ async def update_material_scope(
     user: dict = Depends(get_current_teacher),
 ):
     normalized_scope = str(payload.scope_level or "private").strip().lower()
-    if normalized_scope not in {"private", "school", "college", "department"}:
+    if normalized_scope not in {"private", "school", "college", "department", "public"}:
         raise HTTPException(400, "Invalid material scope")
     now_text = datetime.now().isoformat()
     with get_db_connection() as conn:
         material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        if material["parent_id"] is not None:
+            raise HTTPException(400, "开放范围由最外层文件夹统一决定，请在最外层文件夹上设置")
         owner_scope = load_teacher_org_scope(conn, int(material["teacher_id"]))
         conn.execute(
             """
@@ -841,6 +849,8 @@ async def ai_rewrite_material(
         mode=payload.mode,
         prompt=payload.prompt,
         user=user,
+        strictness=payload.strictness,
+        class_offering_id=payload.class_offering_id,
     )
 
 

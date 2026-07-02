@@ -59,7 +59,7 @@ function normalizeSortOrder(value, sortBy = 'name') {
 
 function normalizeScopeFilter(value) {
     const scope = String(value || 'all').trim().toLowerCase();
-    return ['all', 'owned', 'shared', 'private', 'department', 'college', 'school'].includes(scope) ? scope : 'all';
+    return ['all', 'owned', 'shared', 'private', 'department', 'college', 'school', 'public'].includes(scope) ? scope : 'all';
 }
 
 function normalizeDocumentTypeFilter(value) {
@@ -194,7 +194,28 @@ const state = {
         busy: false,
         mode: 'regenerate',
         materialId: null,
+        materialName: '',
     },
+    createNode: {
+        type: 'folder',
+        busy: false,
+    },
+    move: {
+        materialId: null,
+        materialName: '',
+        busy: false,
+    },
+    bind: {
+        materialId: null,
+        busy: false,
+        offerings: [],
+        selected: new Set(),
+    },
+    aiExpand: {
+        busy: false,
+    },
+    // 本地 AI 处理中的提示卡（优化 / 润色 / 续写），key → {label, message, tone}
+    aiPending: new Map(),
     repository: {
         materialId: null,
         detail: null,
@@ -263,6 +284,40 @@ const refs = {
     aiRewritePrompt: document.getElementById('materials-ai-rewrite-prompt'),
     aiRewriteStatus: document.getElementById('materials-ai-rewrite-status'),
     aiRewriteSubmitBtn: document.getElementById('materials-ai-rewrite-submit-btn'),
+    aiRewriteStrictnessField: document.getElementById('materials-ai-rewrite-strictness-field'),
+    aiRewriteStrictness: document.getElementById('materials-ai-rewrite-strictness'),
+    aiRewriteOfferingField: document.getElementById('materials-ai-rewrite-offering-field'),
+    aiRewriteOffering: document.getElementById('materials-ai-rewrite-offering'),
+    createMenu: document.getElementById('materials-create-menu'),
+    createMenuBtn: document.getElementById('materials-create-menu-btn'),
+    createDropdown: document.getElementById('materials-create-dropdown'),
+    createFolderBtn: document.getElementById('materials-create-folder-btn'),
+    createFileBtn: document.getElementById('materials-create-file-btn'),
+    createNodeTitle: document.getElementById('materials-create-node-title'),
+    createNodeSubtitle: document.getElementById('materials-create-node-subtitle'),
+    createNodeLocation: document.getElementById('materials-create-node-location'),
+    createNodeName: document.getElementById('materials-create-node-name'),
+    createNodeNameLabel: document.getElementById('materials-create-node-name-label'),
+    createNodeHint: document.getElementById('materials-create-node-hint'),
+    createNodeStatus: document.getElementById('materials-create-node-status'),
+    createNodeSubmitBtn: document.getElementById('materials-create-node-submit-btn'),
+    moveName: document.getElementById('materials-move-name'),
+    movePath: document.getElementById('materials-move-path'),
+    moveTarget: document.getElementById('materials-move-target'),
+    moveStatus: document.getElementById('materials-move-status'),
+    moveSubmitBtn: document.getElementById('materials-move-submit-btn'),
+    bindName: document.getElementById('materials-bind-name'),
+    bindOffering: document.getElementById('materials-bind-offering'),
+    bindTargets: document.getElementById('materials-bind-targets'),
+    bindCount: document.getElementById('materials-bind-count'),
+    bindStatus: document.getElementById('materials-bind-status'),
+    bindSaveBtn: document.getElementById('materials-bind-save-btn'),
+    aiExpandBtn: document.getElementById('materials-ai-expand-btn'),
+    aiExpandFolder: document.getElementById('materials-ai-expand-folder'),
+    aiExpandFolderPath: document.getElementById('materials-ai-expand-folder-path'),
+    aiExpandPrompt: document.getElementById('materials-ai-expand-prompt'),
+    aiExpandStatus: document.getElementById('materials-ai-expand-status'),
+    aiExpandSubmitBtn: document.getElementById('materials-ai-expand-submit-btn'),
     searchInput: document.getElementById('materials-search-input'),
     searchClearBtn: document.getElementById('materials-search-clear-btn'),
     scopeFilter: document.getElementById('materials-scope-filter'),
@@ -509,6 +564,9 @@ function renderBreadcrumbs(breadcrumbs) {
 
 function renderRepositoryToolbar() {
     refs.repositoryBtn.hidden = !(state.currentFolder && isGitRepository(state.currentFolder));
+    if (refs.aiExpandBtn) {
+        refs.aiExpandBtn.hidden = !(state.currentFolder && state.currentFolder.can_manage !== false);
+    }
 }
 
 function renderNavigationState() {
@@ -538,8 +596,47 @@ function closeDetailModal() {
     closeModal('materials-detail-modal');
 }
 
+function renderAiPendingCards() {
+    if (!state.aiPending.size) return '';
+    return Array.from(state.aiPending.entries()).map(([key, task]) => {
+        const tone = task.tone || 'info';
+        const active = tone === 'info';
+        const dismissAction = active
+            ? ''
+            : `<button type="button" class="btn btn-ghost btn-sm" data-ai-pending-dismiss="${escapeHtml(key)}">关闭</button>`;
+        return `
+            <section class="materials-ai-task-card is-${tone}" data-ai-pending-key="${escapeHtml(key)}">
+                <div class="materials-ai-task-indicator" aria-hidden="true">${active ? '<span></span>' : ''}</div>
+                <div class="materials-ai-task-main">
+                    <div class="materials-ai-task-head">
+                        <span class="materials-ai-task-status">${escapeHtml(task.statusLabel || (active ? '处理中' : '已结束'))}</span>
+                        <strong>${escapeHtml(task.label || 'AI 正在处理材料')}</strong>
+                    </div>
+                    <p>${escapeHtml(task.message || 'AI 正在深度思考，完成后会自动刷新列表。')}</p>
+                </div>
+                <div class="materials-ai-task-actions">${dismissAction}</div>
+            </section>
+        `;
+    }).join('');
+}
+
+function addAiPendingTask(key, label, message) {
+    state.aiPending.set(key, { label, message, tone: 'info', statusLabel: '处理中' });
+    renderList();
+}
+
+function finishAiPendingTask(key, { success, label, message }) {
+    if (!state.aiPending.has(key)) return;
+    if (success) {
+        state.aiPending.delete(key);
+    } else {
+        state.aiPending.set(key, { label, message, tone: 'danger', statusLabel: '失败' });
+    }
+    renderList();
+}
+
 function renderList() {
-    const aiTaskCards = renderAiImportTaskCards();
+    const aiTaskCards = renderAiPendingCards() + renderAiImportTaskCards();
     if (!state.items.length && !aiTaskCards) {
         const documentTypeLabel = getDocumentTypeLabel(state.filters.documentType);
         const emptyText = state.filters.keyword
@@ -556,6 +653,9 @@ function renderList() {
         const selectedClass = state.selectedIds.has(Number(item.id)) ? 'is-selected' : '';
         const primaryAction = getMaterialPrimaryAction(item);
         const aiStatus = item.can_ai_parse ? `<span class="materials-meta-item">AI ${escapeHtml(item.ai_parse_status || 'idle')}</span>` : '';
+        const optimizingBadge = item.ai_optimize_status === 'running'
+            ? '<span class="materials-meta-item" style="color:#0d9488;">AI 优化中…</span>'
+            : '';
         const readmeStatus = hasLearningDocument(item) ? '<span class="materials-meta-item">README</span>' : '';
         const scopeBadge = item.scope_label ? `<span class="materials-meta-item">${escapeHtml(item.scope_label)}</span>` : '';
         const sharedBadge = item.can_manage === false ? '<span class="materials-meta-item">共享材料</span>' : '';
@@ -593,6 +693,7 @@ function renderList() {
                         ${scopeBadge}
                         ${sharedBadge}
                         ${aiStatus}
+                        ${optimizingBadge}
                         ${readmeStatus}
                     </div>
                 </div>
@@ -701,17 +802,20 @@ function renderDetail(detail) {
     const assignmentCount = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
     const canManage = detail.can_manage !== false;
     const scopeLevel = detail.scope_level || 'private';
+    const isScopeRoot = detail.parent_id === null || detail.parent_id === undefined;
     const scopeOptions = [
         ['private', '私有'],
         ['department', '本系部公开'],
         ['college', '本院级公开'],
         ['school', '全校公开'],
+        ['public', '完全公开'],
     ];
-    const scopeControl = canManage
+    const scopeControl = canManage && isScopeRoot
         ? `<select class="form-control" data-material-scope-select aria-label="材料开放范围">
             ${scopeOptions.map(([value, label]) => `<option value="${value}" ${scopeLevel === value ? 'selected' : ''}>${label}</option>`).join('')}
           </select>`
-        : `<span>${escapeHtml(detail.scope_label || '私有')}</span>`;
+        : `<span title="开放范围由最外层文件夹统一设置">${escapeHtml(detail.scope_label || '私有')}${isScopeRoot ? '' : ' · 随最外层'}</span>`;
+    const isBindable = Boolean(detail.is_markdown) || isRenderable(detail);
     const repositoryMeta = getRepositoryVisualMeta(detail);
     const previewLabel = detail.node_type === 'folder' && detail.document_readme_id
         ? '查看文档'
@@ -760,8 +864,11 @@ function renderDetail(detail) {
                         ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline">下载</a>` : ''}
                         ${isGitRepository(detail) && canManage ? '<button type="button" class="btn btn-outline" data-detail-action="repository">仓库</button>' : ''}
                         <button type="button" class="btn btn-outline" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
+                        ${isBindable && canManage && config.canAssign ? '<button type="button" class="btn btn-outline" data-detail-action="bind">绑定课次 / 首页</button>' : ''}
+                        ${canManage ? '<button type="button" class="btn btn-outline" data-detail-action="move">移动</button>' : ''}
                         <button type="button" class="btn btn-outline" data-detail-action="ai-parse" ${canManage && detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
-                        <button type="button" class="btn btn-outline" data-detail-action="ai-optimize" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
+                        <button type="button" class="btn btn-outline" data-detail-action="ai-optimize" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 优化排版</button>
+                        <button type="button" class="btn btn-outline" data-detail-action="ai-polish" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 深度润色</button>
                         <button type="button" class="btn btn-outline" data-detail-action="ai-regenerate" ${canManage && detail.can_ai_regenerate ? '' : 'disabled'}>AI 重新生成</button>
                         ${canManage ? '<button type="button" class="btn btn-danger" data-detail-action="delete">删除</button>' : ''}
                     </div>
@@ -1733,17 +1840,51 @@ function setAiRewriteBusy(busy) {
     if (refs.aiRewritePrompt) refs.aiRewritePrompt.disabled = busy;
 }
 
+const AI_REWRITE_MODE_COPY = {
+    regenerate: {
+        title: 'AI重新生成材料',
+        subtitle: '写下希望调整的方向；留空则基于原材料重新组织并生成新材料。',
+        pendingLabel: 'AI 正在重新生成',
+    },
+    optimize: {
+        title: 'AI优化排版',
+        subtitle: '整理为排版规整的 Markdown 文档。改动限制决定允许对原文改动多少，默认“一般”。',
+        pendingLabel: 'AI 正在优化排版',
+    },
+    polish: {
+        title: 'AI深度润色',
+        subtitle: '按材料意思深度重写并优化排版；可选择目标课堂，让内容贴合课程、班级与专业目标。',
+        pendingLabel: 'AI 正在深度润色',
+    },
+};
+
+function renderAiRewriteOfferingOptions() {
+    if (!refs.aiRewriteOffering) return;
+    const offerings = Array.isArray(config.offerings) ? config.offerings : [];
+    refs.aiRewriteOffering.innerHTML = [
+        '<option value="">不关联课堂，按通用教学标准润色</option>',
+        ...offerings.map((offering) => `
+            <option value="${escapeHtml(String(offering.id))}">
+                ${escapeHtml(`${offering.course_name} / ${offering.class_name}${offering.semester ? ` · ${offering.semester}` : ''}`)}
+            </option>
+        `),
+    ].join('');
+}
+
 function openAiRewriteModal(mode = 'regenerate') {
     if (!state.activeDetail) return;
-    state.aiRewrite.mode = mode;
+    const normalizedMode = ['regenerate', 'optimize', 'polish'].includes(mode) ? mode : 'optimize';
+    state.aiRewrite.mode = normalizedMode;
     state.aiRewrite.materialId = state.activeDetail.id;
-    if (refs.aiRewriteTitle) {
-        refs.aiRewriteTitle.textContent = mode === 'regenerate' ? 'AI重新生成材料' : 'AI优化材料';
-    }
-    if (refs.aiRewriteSubtitle) {
-        refs.aiRewriteSubtitle.textContent = mode === 'regenerate'
-            ? '写下希望调整的方向；留空则基于原材料重新组织并生成新材料。'
-            : '留空则保留关键信息并优化表达、层级和格式。';
+    state.aiRewrite.materialName = state.activeDetail.name || '';
+    const copy = AI_REWRITE_MODE_COPY[normalizedMode];
+    if (refs.aiRewriteTitle) refs.aiRewriteTitle.textContent = copy.title;
+    if (refs.aiRewriteSubtitle) refs.aiRewriteSubtitle.textContent = copy.subtitle;
+    if (refs.aiRewriteStrictnessField) refs.aiRewriteStrictnessField.hidden = normalizedMode !== 'optimize';
+    if (refs.aiRewriteStrictness) refs.aiRewriteStrictness.value = 'balanced';
+    if (refs.aiRewriteOfferingField) refs.aiRewriteOfferingField.hidden = normalizedMode !== 'polish';
+    if (normalizedMode === 'polish') {
+        renderAiRewriteOfferingOptions();
     }
     if (refs.aiRewritePrompt) refs.aiRewritePrompt.value = '';
     setAiRewriteStatus('', 'info');
@@ -1752,33 +1893,50 @@ function openAiRewriteModal(mode = 'regenerate') {
     window.setTimeout(() => refs.aiRewritePrompt?.focus(), 50);
 }
 
-async function submitAiRewrite() {
+function submitAiRewrite() {
     if (state.aiRewrite.busy || !state.aiRewrite.materialId) return;
     const materialId = state.aiRewrite.materialId;
+    const materialName = state.aiRewrite.materialName || '材料';
     const mode = state.aiRewrite.mode || 'regenerate';
     const prompt = refs.aiRewritePrompt?.value || '';
-    setAiRewriteBusy(true);
-    setAiRewriteStatus(mode === 'regenerate' ? 'AI 正在重新生成材料...' : 'AI 正在优化材料...', 'info');
-    try {
-        const result = await apiFetch(`/api/materials/${materialId}/ai-rewrite`, {
-            method: 'POST',
-            body: { mode, prompt },
-        });
-        closeModal('materials-ai-rewrite-modal');
+    const strictness = refs.aiRewriteStrictness?.value || 'balanced';
+    const offeringValue = mode === 'polish' ? (refs.aiRewriteOffering?.value || '') : '';
+    const copy = AI_REWRITE_MODE_COPY[mode] || AI_REWRITE_MODE_COPY.optimize;
+
+    // 立即回到列表页并展示“处理中”提示卡；请求在后台完成后扭转提示并刷新。
+    closeModal('materials-ai-rewrite-modal');
+    closeDetailModal();
+    const pendingKey = `rewrite:${mode}:${materialId}:${Date.now()}`;
+    addAiPendingTask(
+        pendingKey,
+        `${copy.pendingLabel}《${materialName}》`,
+        'AI 正在深度思考处理材料，期间可继续其他操作，完成后会自动刷新列表。',
+    );
+
+    apiFetch(`/api/materials/${materialId}/ai-rewrite`, {
+        method: 'POST',
+        body: {
+            mode,
+            prompt,
+            strictness,
+            class_offering_id: offeringValue ? Number(offeringValue) : null,
+        },
+        silent: true,
+    }).then(async (result) => {
+        finishAiPendingTask(pendingKey, { success: true });
         showToast(result.message || 'AI 处理完成', 'success', 5200);
         await loadLibrary(state.currentParentId, false);
-        const nextMaterialId = result.material?.id || materialId;
-        await loadMaterialDetail(nextMaterialId);
-        openDetailModal();
         if (result.viewer_url) {
             window.open(result.viewer_url, '_blank', 'noopener');
         }
-    } catch (error) {
-        setAiRewriteStatus(error.message || 'AI 处理失败', 'error');
-        throw error;
-    } finally {
-        setAiRewriteBusy(false);
-    }
+    }).catch((error) => {
+        finishAiPendingTask(pendingKey, {
+            success: false,
+            label: `《${materialName}》AI 处理失败`,
+            message: error.message || 'AI 处理失败，请稍后重试。',
+        });
+        loadLibrary(state.currentParentId, false).catch(() => {});
+    });
 }
 
 function toggleSelection(materialId, checked) {
@@ -1934,21 +2092,9 @@ async function runAiParse() {
     await loadMaterialDetail(materialId);
 }
 
-async function runAiOptimize() {
-    if (!state.activeDetail) return;
-    const materialId = state.activeDetail.id;
-    const result = await apiFetch(`/api/materials/${materialId}/ai-optimize`, { method: 'POST' });
-    showToast(result.message || 'AI 优化完成', 'success');
-    await loadLibrary(state.currentParentId);
-    await loadMaterialDetail(result.material?.id || materialId);
-    if (result.viewer_url) {
-        window.open(result.viewer_url, '_blank', 'noopener');
-    }
-}
-
 async function updateActiveMaterialScope(scopeLevel) {
     if (!state.activeDetail || state.activeDetail.can_manage === false) return;
-    const normalizedScope = ['private', 'department', 'college', 'school'].includes(scopeLevel) ? scopeLevel : 'private';
+    const normalizedScope = ['private', 'department', 'college', 'school', 'public'].includes(scopeLevel) ? scopeLevel : 'private';
     const result = await apiFetch(`/api/materials/${state.activeDetail.id}/scope`, {
         method: 'PATCH',
         body: { scope_level: normalizedScope },
@@ -2313,6 +2459,326 @@ async function saveRepositoryCredential() {
     }
 }
 
+function setModalStatus(statusEl, message = '', type = 'info') {
+    if (!statusEl) return;
+    const normalizedMessage = String(message || '').trim();
+    statusEl.hidden = !normalizedMessage;
+    statusEl.className = `materials-ai-import-status materials-ai-import-status--${type}`;
+    statusEl.textContent = normalizedMessage;
+}
+
+async function loadFolderOptions(select, { excludeSubtreeOf = null, selectedId = null, rootLabel = '材料库根目录' } = {}) {
+    if (!select) return;
+    select.innerHTML = '<option value="">正在加载目录...</option>';
+    const params = new URLSearchParams();
+    if (excludeSubtreeOf) params.set('exclude_subtree_of', String(excludeSubtreeOf));
+    const result = await apiFetch(`/api/materials/folder-options${params.toString() ? `?${params.toString()}` : ''}`, {
+        method: 'GET',
+        silent: true,
+    });
+    const folders = result.folders || [];
+    const optionHtml = folders.map((folder) => {
+        const indent = '&nbsp;&nbsp;'.repeat(Math.min(Number(folder.depth) || 0, 8));
+        return `<option value="${escapeHtml(String(folder.id))}" title="${escapeHtml(folder.material_path)}">${indent}${escapeHtml(folder.name)}</option>`;
+    }).join('');
+    select.innerHTML = `<option value="">${escapeHtml(rootLabel)}</option>${optionHtml}`;
+    const desired = selectedId ? String(selectedId) : '';
+    select.value = folders.some((folder) => String(folder.id) === desired) ? desired : '';
+}
+
+function setCreateMenuOpen(open) {
+    if (!refs.createDropdown || !refs.createMenuBtn) return;
+    refs.createDropdown.hidden = !open;
+    refs.createMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function openCreateNodeModal(type) {
+    state.createNode.type = type === 'file' ? 'file' : 'folder';
+    state.createNode.busy = false;
+    const isFile = state.createNode.type === 'file';
+    if (refs.createNodeTitle) refs.createNodeTitle.textContent = isFile ? '新建文档' : '新建文件夹';
+    if (refs.createNodeSubtitle) {
+        refs.createNodeSubtitle.textContent = isFile
+            ? '创建一个 Markdown 材料文档，创建后可直接在线编辑。'
+            : '空文件夹可继续在里面新建子文件夹和材料文档。';
+    }
+    if (refs.createNodeNameLabel) refs.createNodeNameLabel.textContent = isFile ? '文档名称' : '文件夹名称';
+    if (refs.createNodeName) {
+        refs.createNodeName.value = '';
+        refs.createNodeName.placeholder = isFile ? '例如：第4次课讲义（自动加 .md）' : '例如：第4次课';
+    }
+    if (refs.createNodeHint) {
+        refs.createNodeHint.textContent = isFile
+            ? '文档会保存为 Markdown（.md）格式；开放范围随所在最外层文件夹。'
+            : '开放范围随所在最外层文件夹；顶层文件夹默认私有，可在属性中调整。';
+    }
+    if (refs.createNodeSubmitBtn) {
+        refs.createNodeSubmitBtn.disabled = false;
+        refs.createNodeSubmitBtn.textContent = '创建';
+    }
+    setModalStatus(refs.createNodeStatus, '', 'info');
+    openModal('materials-create-node-modal');
+    loadFolderOptions(refs.createNodeLocation, { selectedId: state.currentParentId }).catch((error) => {
+        setModalStatus(refs.createNodeStatus, error.message || '目录加载失败', 'error');
+    });
+    window.setTimeout(() => refs.createNodeName?.focus(), 50);
+}
+
+async function submitCreateNode() {
+    if (state.createNode.busy) return;
+    const name = String(refs.createNodeName?.value || '').trim();
+    if (!name) {
+        showToast('请填写名称', 'warning');
+        refs.createNodeName?.focus();
+        return;
+    }
+    const isFile = state.createNode.type === 'file';
+    const locationValue = refs.createNodeLocation?.value || '';
+    const parentId = locationValue ? Number(locationValue) : null;
+    state.createNode.busy = true;
+    if (refs.createNodeSubmitBtn) {
+        refs.createNodeSubmitBtn.disabled = true;
+        refs.createNodeSubmitBtn.textContent = '创建中...';
+    }
+    try {
+        const endpoint = isFile ? '/api/materials/files' : '/api/materials/folders';
+        const result = await apiFetch(endpoint, {
+            method: 'POST',
+            body: { name, parent_id: parentId },
+        });
+        closeModal('materials-create-node-modal');
+        showToast(result.message || '创建成功', 'success');
+        await loadLibrary(parentId ?? state.currentParentId, false);
+        if (isFile && result.viewer_url) {
+            window.open(result.viewer_url, '_blank', 'noopener');
+        }
+    } catch (error) {
+        setModalStatus(refs.createNodeStatus, error.message || '创建失败', 'error');
+    } finally {
+        state.createNode.busy = false;
+        if (refs.createNodeSubmitBtn) {
+            refs.createNodeSubmitBtn.disabled = false;
+            refs.createNodeSubmitBtn.textContent = '创建';
+        }
+    }
+}
+
+function openMoveModal() {
+    if (!state.activeDetail || state.activeDetail.can_manage === false) return;
+    state.move.materialId = Number(state.activeDetail.id);
+    state.move.materialName = state.activeDetail.name || '';
+    state.move.busy = false;
+    if (refs.moveName) refs.moveName.textContent = state.activeDetail.name || '-';
+    if (refs.movePath) refs.movePath.textContent = state.activeDetail.material_path || '-';
+    if (refs.moveSubmitBtn) {
+        refs.moveSubmitBtn.disabled = false;
+        refs.moveSubmitBtn.textContent = '移动';
+    }
+    setModalStatus(refs.moveStatus, '', 'info');
+    openModal('materials-move-modal');
+    const excludeId = state.activeDetail.node_type === 'folder' ? state.move.materialId : null;
+    loadFolderOptions(refs.moveTarget, {
+        excludeSubtreeOf: excludeId,
+        selectedId: state.activeDetail.parent_id || null,
+    }).catch((error) => {
+        setModalStatus(refs.moveStatus, error.message || '目录加载失败', 'error');
+    });
+}
+
+async function submitMove() {
+    if (state.move.busy || !state.move.materialId) return;
+    const targetValue = refs.moveTarget?.value || '';
+    state.move.busy = true;
+    if (refs.moveSubmitBtn) {
+        refs.moveSubmitBtn.disabled = true;
+        refs.moveSubmitBtn.textContent = '移动中...';
+    }
+    try {
+        const result = await apiFetch(`/api/materials/${state.move.materialId}/move`, {
+            method: 'POST',
+            body: { target_parent_id: targetValue ? Number(targetValue) : null },
+        });
+        closeModal('materials-move-modal');
+        showToast(result.message || '移动完成', 'success');
+        closeDetailModal();
+        await loadLibrary(state.currentParentId, false);
+    } catch (error) {
+        setModalStatus(refs.moveStatus, error.message || '移动失败', 'error');
+    } finally {
+        state.move.busy = false;
+        if (refs.moveSubmitBtn) {
+            refs.moveSubmitBtn.disabled = false;
+            refs.moveSubmitBtn.textContent = '移动';
+        }
+    }
+}
+
+function getBindTargetKey(offeringId, sessionId) {
+    return `${Number(offeringId)}:${Number(sessionId) || 0}`;
+}
+
+function updateBindCount() {
+    if (refs.bindCount) refs.bindCount.textContent = `已选 ${state.bind.selected.size} 处`;
+}
+
+function renderBindTargets() {
+    if (!refs.bindTargets) return;
+    const offeringId = Number(refs.bindOffering?.value || 0);
+    const offering = state.bind.offerings.find((item) => Number(item.id) === offeringId);
+    if (!offering) {
+        refs.bindTargets.innerHTML = '<div class="materials-empty">请选择课堂后勾选首页或课次。</div>';
+        updateBindCount();
+        return;
+    }
+    const homeKey = getBindTargetKey(offering.id, 0);
+    const sessionRows = (offering.sessions || []).map((session) => {
+        const key = getBindTargetKey(offering.id, session.id);
+        return `
+            <label class="materials-modal-option">
+                <input type="checkbox" data-bind-target="${escapeHtml(key)}" ${state.bind.selected.has(key) ? 'checked' : ''}>
+                <div>
+                    <strong>第 ${escapeHtml(String(session.order_index || ''))} 次课</strong>
+                    <div class="text-muted text-sm">${escapeHtml(session.title || '未命名课次')}</div>
+                </div>
+            </label>
+        `;
+    }).join('');
+    refs.bindTargets.innerHTML = `
+        <label class="materials-modal-option">
+            <input type="checkbox" data-bind-target="${escapeHtml(homeKey)}" ${state.bind.selected.has(homeKey) ? 'checked' : ''}>
+            <div>
+                <strong>课堂材料区首页</strong>
+                <div class="text-muted text-sm">学生打开课堂材料区时的首页按钮</div>
+            </div>
+        </label>
+        ${sessionRows || '<div class="materials-empty">该课堂暂无课次安排，只能绑定首页。</div>'}
+    `;
+    updateBindCount();
+}
+
+async function openBindModal() {
+    if (!state.activeDetail) return;
+    state.bind.materialId = Number(state.activeDetail.id);
+    state.bind.busy = false;
+    if (refs.bindName) refs.bindName.textContent = state.activeDetail.name || '-';
+    setModalStatus(refs.bindStatus, '', 'info');
+    if (refs.bindSaveBtn) {
+        refs.bindSaveBtn.disabled = false;
+        refs.bindSaveBtn.textContent = '保存绑定';
+    }
+    openModal('materials-bind-modal');
+    if (refs.bindTargets) refs.bindTargets.innerHTML = '<div class="materials-empty">正在加载课堂与课次...</div>';
+    try {
+        const result = await apiFetch(`/api/materials/${state.bind.materialId}/learning-bindings`, {
+            method: 'GET',
+            silent: true,
+        });
+        if (!result.bindable) {
+            setModalStatus(refs.bindStatus, '当前材料不是 Markdown 或可渲染 HTML，暂不能绑定课次/首页。', 'warning');
+        }
+        state.bind.offerings = result.offerings || [];
+        state.bind.selected = new Set();
+        state.bind.offerings.forEach((offering) => {
+            if (offering.home_bound) state.bind.selected.add(getBindTargetKey(offering.id, 0));
+            (offering.bound_session_ids || []).forEach((sessionId) => {
+                state.bind.selected.add(getBindTargetKey(offering.id, sessionId));
+            });
+        });
+        if (refs.bindOffering) {
+            refs.bindOffering.innerHTML = state.bind.offerings.length
+                ? state.bind.offerings.map((offering) => `
+                    <option value="${escapeHtml(String(offering.id))}">
+                        ${escapeHtml(`${offering.course_name} / ${offering.class_name}${offering.semester ? ` · ${offering.semester}` : ''}`)}
+                    </option>
+                `).join('')
+                : '<option value="">暂无课堂，请先创建课堂</option>';
+        }
+        renderBindTargets();
+    } catch (error) {
+        setModalStatus(refs.bindStatus, error.message || '加载绑定信息失败', 'error');
+    }
+}
+
+async function submitBindTargets() {
+    if (state.bind.busy || !state.bind.materialId) return;
+    state.bind.busy = true;
+    if (refs.bindSaveBtn) {
+        refs.bindSaveBtn.disabled = true;
+        refs.bindSaveBtn.textContent = '保存中...';
+    }
+    try {
+        const targets = Array.from(state.bind.selected).map((key) => {
+            const [offeringId, sessionId] = key.split(':');
+            return { class_offering_id: Number(offeringId), session_id: Number(sessionId) || 0 };
+        });
+        const result = await apiFetch(`/api/materials/${state.bind.materialId}/learning-bindings`, {
+            method: 'PUT',
+            body: { targets },
+        });
+        closeModal('materials-bind-modal');
+        showToast(result.message || '绑定已保存', 'success');
+    } catch (error) {
+        setModalStatus(refs.bindStatus, error.message || '保存绑定失败', 'error');
+    } finally {
+        state.bind.busy = false;
+        if (refs.bindSaveBtn) {
+            refs.bindSaveBtn.disabled = false;
+            refs.bindSaveBtn.textContent = '保存绑定';
+        }
+    }
+}
+
+function openAiExpandModal() {
+    if (!state.currentFolder) {
+        showToast('请先进入一个文件夹，AI 会基于该文件夹的材料续写', 'warning');
+        return;
+    }
+    if (refs.aiExpandFolder) refs.aiExpandFolder.textContent = state.currentFolder.name || '-';
+    if (refs.aiExpandFolderPath) refs.aiExpandFolderPath.textContent = state.currentFolder.material_path || '-';
+    if (refs.aiExpandPrompt) refs.aiExpandPrompt.value = '';
+    if (refs.aiExpandSubmitBtn) {
+        refs.aiExpandSubmitBtn.disabled = false;
+        refs.aiExpandSubmitBtn.textContent = '开始续写';
+    }
+    setModalStatus(refs.aiExpandStatus, '', 'info');
+    openModal('materials-ai-expand-modal');
+    window.setTimeout(() => refs.aiExpandPrompt?.focus(), 50);
+}
+
+function submitAiExpand() {
+    if (state.aiExpand.busy || !state.currentFolder) return;
+    const folderId = Number(state.currentFolder.id);
+    const folderName = state.currentFolder.name || '当前文件夹';
+    const prompt = refs.aiExpandPrompt?.value || '';
+
+    closeModal('materials-ai-expand-modal');
+    const pendingKey = `expand:${folderId}:${Date.now()}`;
+    addAiPendingTask(
+        pendingKey,
+        `AI 正在为《${folderName}》续写下一份材料`,
+        'AI 正在阅读文件夹内已有材料并深度思考续写，完成后新材料会自动出现在列表。',
+    );
+
+    apiFetch('/api/materials/ai-expand', {
+        method: 'POST',
+        body: { parent_id: folderId, prompt },
+        silent: true,
+    }).then(async (result) => {
+        finishAiPendingTask(pendingKey, { success: true });
+        showToast(result.message || 'AI 续写完成', 'success', 5200);
+        await loadLibrary(state.currentParentId, false);
+        if (result.viewer_url) {
+            window.open(result.viewer_url, '_blank', 'noopener');
+        }
+    }).catch((error) => {
+        finishAiPendingTask(pendingKey, {
+            success: false,
+            label: `《${folderName}》AI 续写失败`,
+            message: error.message || 'AI 续写失败，请稍后重试。',
+        });
+    });
+}
+
 function bindEvents() {
     document.addEventListener('click', (event) => {
         const uploadTrigger = event.target.closest('#materials-upload-menu-btn');
@@ -2386,6 +2852,64 @@ function bindEvents() {
         openAiGenerateModal();
     });
     refs.folderBtn?.addEventListener('click', () => refs.folderInput?.click());
+
+    refs.createMenuBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setCreateMenuOpen(refs.createDropdown?.hidden !== false);
+    });
+    refs.createFolderBtn?.addEventListener('click', () => {
+        setCreateMenuOpen(false);
+        openCreateNodeModal('folder');
+    });
+    refs.createFileBtn?.addEventListener('click', () => {
+        setCreateMenuOpen(false);
+        openCreateNodeModal('file');
+    });
+    refs.createNodeSubmitBtn?.addEventListener('click', () => {
+        submitCreateNode().catch((error) => {
+            showToast(error.message || '创建失败', 'error');
+        });
+    });
+    refs.createNodeName?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        submitCreateNode().catch((error) => {
+            showToast(error.message || '创建失败', 'error');
+        });
+    });
+
+    refs.moveSubmitBtn?.addEventListener('click', () => {
+        submitMove().catch((error) => {
+            showToast(error.message || '移动失败', 'error');
+        });
+    });
+
+    refs.bindOffering?.addEventListener('change', () => {
+        renderBindTargets();
+    });
+    refs.bindTargets?.addEventListener('change', (event) => {
+        const checkbox = event.target.closest('[data-bind-target]');
+        if (!checkbox) return;
+        const key = checkbox.dataset.bindTarget;
+        if (checkbox.checked) {
+            state.bind.selected.add(key);
+        } else {
+            state.bind.selected.delete(key);
+        }
+        updateBindCount();
+    });
+    refs.bindSaveBtn?.addEventListener('click', () => {
+        submitBindTargets().catch((error) => {
+            showToast(error.message || '保存绑定失败', 'error');
+        });
+    });
+
+    refs.aiExpandBtn?.addEventListener('click', () => {
+        openAiExpandModal();
+    });
+    refs.aiExpandSubmitBtn?.addEventListener('click', () => {
+        submitAiExpand();
+    });
 
     refs.fileInput?.addEventListener('change', async () => {
         try {
@@ -2545,13 +3069,25 @@ function bindEvents() {
             return;
         }
         if (action === 'ai-optimize') {
-            runAiOptimize().catch((error) => {
-                showToast(error.message || 'AI 优化失败', 'error');
-            });
+            openAiRewriteModal('optimize');
+            return;
+        }
+        if (action === 'ai-polish') {
+            openAiRewriteModal('polish');
             return;
         }
         if (action === 'ai-regenerate') {
             openAiRewriteModal('regenerate');
+            return;
+        }
+        if (action === 'move') {
+            openMoveModal();
+            return;
+        }
+        if (action === 'bind') {
+            openBindModal().catch((error) => {
+                showToast(error.message || '加载绑定信息失败', 'error');
+            });
             return;
         }
         if (action === 'delete') {
@@ -2657,6 +3193,15 @@ function bindEvents() {
     });
 
     refs.listBody?.addEventListener('click', (event) => {
+        const pendingDismissButton = event.target.closest('[data-ai-pending-dismiss]');
+        if (pendingDismissButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            state.aiPending.delete(pendingDismissButton.dataset.aiPendingDismiss);
+            renderList();
+            return;
+        }
+
         const taskActionButton = event.target.closest('[data-ai-import-action]');
         if (taskActionButton) {
             event.preventDefault();
@@ -2802,6 +3347,7 @@ function bindEvents() {
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             setUploadMenuOpen(false);
+            setCreateMenuOpen(false);
         }
         if (event.key === 'Escape' && isDetailModalOpen()) {
             closeDetailModal();
@@ -2811,6 +3357,9 @@ function bindEvents() {
     document.addEventListener('click', (event) => {
         if (refs.uploadMenu && !refs.uploadMenu.contains(event.target)) {
             setUploadMenuOpen(false);
+        }
+        if (refs.createMenu && !refs.createMenu.contains(event.target)) {
+            setCreateMenuOpen(false);
         }
     });
 }

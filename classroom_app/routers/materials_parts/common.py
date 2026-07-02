@@ -184,6 +184,10 @@ class ClassroomFinalMaterialGenerateRequest(BaseModel):
 class MaterialAiRewriteRequest(BaseModel):
     mode: str = "optimize"
     prompt: str = ""
+    # AI 优化排版时的改动限制：strict（一字不改）/ balanced（均衡）/ loose（排版优先）
+    strictness: str = "balanced"
+    # AI 深度润色时可选关联课堂，用课程/班级/专业目标定制润色方向
+    class_offering_id: int | None = None
 
 
 MATERIAL_LIBRARY_SORT_LABELS = {
@@ -293,8 +297,9 @@ def _decorate_material_ownership(conn, item: dict, user: dict | None) -> dict:
         "college": "本院级公开",
         "school": "全校公开",
         "classroom": "课堂可见",
-        "public": "全网公开",
+        "public": "完全公开",
     }.get(item["scope_level"], "私有")
+    item["is_scope_root"] = item.get("parent_id") is None
     return item
 
 
@@ -412,7 +417,7 @@ def _normalize_material_sort(sort_by: str | None, sort_order: str | None) -> tup
 
 def _normalize_material_scope_filter(value: str | None) -> str:
     scope = str(value or "all").strip().lower()
-    return scope if scope in {"all", "private", "department", "college", "school", "shared", "owned"} else "all"
+    return scope if scope in {"all", "private", "department", "college", "school", "public", "shared", "owned"} else "all"
 
 
 def _normalize_material_org_filter(value: str | None) -> str:
@@ -459,7 +464,7 @@ def _apply_material_library_filters(rows, *, teacher_id: int, scope_filter: str,
             continue
         if scope_filter == "shared" and owned:
             continue
-        if scope_filter in {"private", "department", "college", "school"} and row_scope != scope_filter:
+        if scope_filter in {"private", "department", "college", "school", "public"} and row_scope != scope_filter:
             continue
         row_school = str(row["school_name"] or row["school_code"] or "").strip().lower()
         if school_filter and row_school != school_filter:
@@ -561,7 +566,7 @@ def _material_visibility_condition(conn, teacher_id: int) -> tuple[str, list[obj
         }
     )
 
-    conditions = ["m.teacher_id = ?"]
+    conditions = ["m.teacher_id = ?", "m.scope_level = 'public'"]
     params: list[object] = [int(teacher_id)]
 
     if school_codes:
