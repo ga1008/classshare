@@ -25,6 +25,14 @@ const DEFAULT_SORT_ORDERS = {
     updated_at: 'desc',
 };
 
+const DOCUMENT_TYPE_LABELS = {
+    assessment_plan: '课程考核计划表',
+    grading_rubric: '课程考核评分细则',
+    exam_paper: '课程考核试卷',
+    ordinary_grade_record: '学生平时成绩记录表',
+    exam_grade_record: '考核登分表',
+};
+
 const SEARCH_DEBOUNCE_MS = 280;
 const AI_IMPORT_POLL_INTERVAL_MS = 3500;
 const AI_IMPORT_ACTIVE_STATUSES = new Set(['queued', 'running']);
@@ -51,7 +59,19 @@ function normalizeSortOrder(value, sortBy = 'name') {
 
 function normalizeScopeFilter(value) {
     const scope = String(value || 'all').trim().toLowerCase();
-    return ['all', 'owned', 'shared', 'private', 'department', 'school'].includes(scope) ? scope : 'all';
+    return ['all', 'owned', 'shared', 'private', 'department', 'college', 'school'].includes(scope) ? scope : 'all';
+}
+
+function normalizeDocumentTypeFilter(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized || normalized.length > 80) return '';
+    const allowed = 'abcdefghijklmnopqrstuvwxyz0123456789_:-';
+    return [...normalized].every((char) => allowed.includes(char)) ? normalized : '';
+}
+
+function getDocumentTypeLabel(value) {
+    const documentType = normalizeDocumentTypeFilter(value);
+    return DOCUMENT_TYPE_LABELS[documentType] || documentType;
 }
 
 function parsePositiveInt(value) {
@@ -77,11 +97,18 @@ function shouldIgnoreInitialKeyword(keyword) {
 
 function getInitialLibraryState() {
     const params = new URLSearchParams(window.location.search);
+    const initial = window.MATERIALS_MANAGE_CONFIG?.initialLibraryFilter || {};
     const sortBy = normalizeSortBy(params.get('sort_by'));
     const initialKeyword = normalizeKeyword(params.get('keyword'));
     return {
         parentId: parsePositiveInt(params.get('parent_id')),
         keyword: shouldIgnoreInitialKeyword(initialKeyword) ? '' : initialKeyword,
+        documentType: normalizeDocumentTypeFilter(
+            params.get('document_type')
+            || params.get('type')
+            || initial.document_type
+            || initial.type
+        ),
         scopeLevel: normalizeScopeFilter(params.get('scope_level')),
         school: normalizeKeyword(params.get('school')),
         department: normalizeKeyword(params.get('department')),
@@ -130,6 +157,7 @@ const state = {
     currentBreadcrumbs: [],
     filters: {
         keyword: initialLibraryState.keyword,
+        documentType: initialLibraryState.documentType,
         scopeLevel: initialLibraryState.scopeLevel,
         school: initialLibraryState.school,
         department: initialLibraryState.department,
@@ -181,7 +209,7 @@ const state = {
     },
 };
 
-const config = window.MATERIALS_MANAGE_CONFIG || { offerings: [], canAssign: false, materialAiImportRegistry: [], initialAiGenerate: {} };
+const config = window.MATERIALS_MANAGE_CONFIG || { offerings: [], canAssign: false, materialAiImportRegistry: [], initialAiGenerate: {}, initialLibraryFilter: {} };
 
 const refs = {
     listBody: document.getElementById('materials-list-body'),
@@ -248,6 +276,7 @@ const refs = {
     resultCount: document.getElementById('materials-result-count'),
     sortSummary: document.getElementById('materials-sort-summary'),
     searchSummary: document.getElementById('materials-search-summary'),
+    documentTypeSummary: document.getElementById('materials-document-type-summary'),
     selectAll: document.getElementById('materials-select-all'),
     selectionBar: document.getElementById('materials-selection-bar'),
     selectionCount: document.getElementById('materials-selection-count'),
@@ -441,6 +470,15 @@ function renderLibraryOverview() {
     refs.resultCount.textContent = `${overview.result_count || 0} 项`;
     refs.sortSummary.textContent = getSortSummary(overview.sort_by || state.filters.sortBy, overview.sort_order || state.filters.sortOrder);
 
+    const documentTypeLabel = overview.document_type_label || getDocumentTypeLabel(state.filters.documentType);
+    if (documentTypeLabel && refs.documentTypeSummary) {
+        refs.documentTypeSummary.hidden = false;
+        refs.documentTypeSummary.textContent = `类型：${documentTypeLabel}`;
+    } else if (refs.documentTypeSummary) {
+        refs.documentTypeSummary.hidden = true;
+        refs.documentTypeSummary.textContent = '';
+    }
+
     if (overview.search_active) {
         refs.searchSummary.hidden = false;
         refs.searchSummary.textContent = `搜索：${overview.search_keyword || state.filters.keyword}`;
@@ -503,9 +541,10 @@ function closeDetailModal() {
 function renderList() {
     const aiTaskCards = renderAiImportTaskCards();
     if (!state.items.length && !aiTaskCards) {
+        const documentTypeLabel = getDocumentTypeLabel(state.filters.documentType);
         const emptyText = state.filters.keyword
             ? `未找到与“${escapeHtml(state.filters.keyword)}”匹配的材料，请尝试简化关键词或清空搜索。`
-            : '当前目录暂无材料。';
+            : (documentTypeLabel ? `当前范围暂无“${escapeHtml(documentTypeLabel)}”资源。` : '当前目录暂无材料。');
         refs.listBody.innerHTML = `<div class="materials-empty">${emptyText}</div>`;
         updateSelectionBar();
         return;
@@ -664,8 +703,9 @@ function renderDetail(detail) {
     const scopeLevel = detail.scope_level || 'private';
     const scopeOptions = [
         ['private', '私有'],
-        ['department', '本系部可见'],
-        ['school', '本校可见'],
+        ['department', '本系部公开'],
+        ['college', '本院级公开'],
+        ['school', '全校公开'],
     ];
     const scopeControl = canManage
         ? `<select class="form-control" data-material-scope-select aria-label="材料开放范围">
@@ -811,6 +851,9 @@ function buildLibraryQuery(parentId) {
     if (state.filters.keyword) {
         params.set('keyword', state.filters.keyword);
     }
+    if (state.filters.documentType) {
+        params.set('document_type', state.filters.documentType);
+    }
     if (state.filters.scopeLevel && state.filters.scopeLevel !== 'all') {
         params.set('scope_level', state.filters.scopeLevel);
     }
@@ -847,6 +890,7 @@ async function loadLibrary(parentId = null, trackHistory = false) {
     state.currentFolder = data.current_folder || null;
     state.currentBreadcrumbs = data.breadcrumbs || [];
     state.filters.keyword = normalizeKeyword(data.filters?.keyword ?? state.filters.keyword);
+    state.filters.documentType = normalizeDocumentTypeFilter(data.filters?.document_type ?? state.filters.documentType);
     state.filters.scopeLevel = normalizeScopeFilter(data.filters?.scope_level ?? state.filters.scopeLevel);
     state.filters.school = normalizeKeyword(data.filters?.school ?? state.filters.school);
     state.filters.department = normalizeKeyword(data.filters?.department ?? state.filters.department);
@@ -1068,6 +1112,12 @@ function normalizeAiImportTask(rawTask) {
     };
 }
 
+function isAiGenerationTask(task) {
+    const parseMode = String(task?.parse_mode || '').trim().toLowerCase();
+    const extractionMethod = String(task?.extraction_method || '').trim().toLowerCase();
+    return ['ai_generated', 'local_fallback'].includes(parseMode) || extractionMethod === 'exam_reverse';
+}
+
 function getAiImportTaskStateKey(task) {
     return `${task.id}:${task.parse_status}:${task.updated_at || ''}`;
 }
@@ -1082,6 +1132,10 @@ function isAiImportTaskTerminal(task) {
 
 function isAiImportTaskVisible(task) {
     const currentParentId = state.currentParentId ? Number(state.currentParentId) : null;
+    const documentType = normalizeDocumentTypeFilter(state.filters.documentType);
+    if (documentType && normalizeDocumentTypeFilter(task?.document_type) !== documentType) {
+        return false;
+    }
     return (task?.parent_material_id || null) === currentParentId;
 }
 
@@ -1128,24 +1182,30 @@ function getAiImportTaskTone(task) {
 
 function getAiImportTaskTitle(task) {
     const fileName = task?.source_file_name || '材料文件';
-    if (task.parse_status === 'queued') return `AI 正在等待解析《${fileName}》`;
-    if (task.parse_status === 'running') return `AI 正在解析《${fileName}》`;
-    if (task.parse_status === 'completed') return `AI 已完成《${fileName}》解析`;
+    const action = isAiGenerationTask(task) ? '生成' : '解析';
+    if (task.parse_status === 'queued') return `AI 正在等待${action}《${fileName}》`;
+    if (task.parse_status === 'running') return `AI 正在${action}《${fileName}》`;
+    if (task.parse_status === 'completed') return `AI 已完成《${fileName}》${action}`;
     if (task.parse_status === 'quality_failed') return `《${fileName}》疑似乱码`;
     if (task.parse_status === 'unsupported') return `《${fileName}》暂不支持解析`;
-    if (task.parse_status === 'ai_failed') return `AI 未能识别《${fileName}》`;
-    return `《${fileName}》解析失败`;
+    if (task.parse_status === 'ai_failed') return isAiGenerationTask(task) ? `AI 未能生成《${fileName}》` : `AI 未能识别《${fileName}》`;
+    return `《${fileName}》${action}失败`;
 }
 
 function getAiImportTaskMessage(task) {
     if (task?.message) return task.message;
-    if (task?.parse_status === 'queued') return '任务已进入后台队列，会按顺序调用 AI，避免影响平台其他 AI 功能。';
-    if (task?.parse_status === 'running') return '系统正在抽取正文、校验乱码并调用 AI 识别，完成后会自动刷新材料列表。';
+    const isGeneration = isAiGenerationTask(task);
+    if (task?.parse_status === 'queued') return isGeneration
+        ? '任务已进入后台生成队列，会按顺序处理并在完成后刷新材料列表。'
+        : '任务已进入后台队列，会按顺序调用 AI，避免影响平台其他 AI 功能。';
+    if (task?.parse_status === 'running') return isGeneration
+        ? '系统正在根据来源内容生成结构化材料，完成后会自动刷新材料列表。'
+        : '系统正在抽取正文、校验乱码并调用 AI 识别，完成后会自动刷新材料列表。';
     if (task?.parse_status === 'completed') return '已生成可阅读正文和结构化 JSON，后续可按同类模板导出。';
     if (task?.parse_status === 'quality_failed') return '系统检测到解析结果质量不足，已阻止保存无效内容。';
     if (task?.parse_status === 'unsupported') return '请先转换为 docx、xlsx 或 PDF 后重试。';
     if (task?.parse_status === 'ai_failed') return 'AI 服务未返回可用结果，请稍后重试。';
-    return '解析未完成，请稍后重试。';
+    return isGeneration ? '生成未完成，请稍后重试。' : '解析未完成，请稍后重试。';
 }
 
 function renderAiImportTaskCards() {
@@ -1241,10 +1301,10 @@ async function pollAiImportTasks() {
 
             if (previousStateKey !== nextStateKey && isAiImportTaskTerminal(nextTask)) {
                 if (nextTask.parse_status === 'completed') {
-                    showToast(`《${nextTask.source_file_name}》AI 解析完成`, 'success', 4200);
+                    showToast(`《${nextTask.source_file_name}》AI ${isAiGenerationTask(nextTask) ? '生成' : '解析'}完成`, 'success', 4200);
                 } else {
                     const toastType = ['quality_failed', 'unsupported'].includes(nextTask.parse_status) ? 'warning' : 'error';
-                    showToast(nextTask.message || `《${nextTask.source_file_name}》解析未完成`, toastType, 5200);
+                    showToast(nextTask.message || `《${nextTask.source_file_name}》${isAiGenerationTask(nextTask) ? '生成' : '解析'}未完成`, toastType, 5200);
                 }
                 if (isAiImportTaskVisible(nextTask)) {
                     shouldRefreshLibrary = true;
@@ -1888,7 +1948,7 @@ async function runAiOptimize() {
 
 async function updateActiveMaterialScope(scopeLevel) {
     if (!state.activeDetail || state.activeDetail.can_manage === false) return;
-    const normalizedScope = ['private', 'department', 'school'].includes(scopeLevel) ? scopeLevel : 'private';
+    const normalizedScope = ['private', 'department', 'college', 'school'].includes(scopeLevel) ? scopeLevel : 'private';
     const result = await apiFetch(`/api/materials/${state.activeDetail.id}/scope`, {
         method: 'PATCH',
         body: { scope_level: normalizedScope },

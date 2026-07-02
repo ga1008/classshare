@@ -16,6 +16,7 @@ SCOPE_PRIVATE = "private"
 SCOPE_CLASSROOM = "classroom"
 SCOPE_CLASS = "class"
 SCOPE_DEPARTMENT = "department"
+SCOPE_COLLEGE = "college"
 SCOPE_SCHOOL = "school"
 SCOPE_PUBLIC = "public"
 
@@ -24,6 +25,7 @@ RESOURCE_SCOPE_LEVELS = {
     SCOPE_CLASSROOM,
     SCOPE_CLASS,
     SCOPE_DEPARTMENT,
+    SCOPE_COLLEGE,
     SCOPE_SCHOOL,
     SCOPE_PUBLIC,
 }
@@ -118,9 +120,18 @@ def _same_department(scope: dict[str, str], candidate: dict[str, str]) -> bool:
     return _same_school(scope, candidate) and bool(scope.get("department")) and scope.get("department") == candidate.get("department")
 
 
+def _same_college(scope: dict[str, str], candidate: dict[str, str]) -> bool:
+    return _same_school(scope, candidate) and bool(scope.get("college")) and scope.get("college") == candidate.get("college")
+
+
 def _teacher_matches_school(conn: sqlite3.Connection, teacher_id: int, row: Any) -> bool:
     target = _resource_scope(row)
     return any(_same_school(scope, target) for scope in _teacher_memberships(conn, teacher_id))
+
+
+def _teacher_matches_college(conn: sqlite3.Connection, teacher_id: int, row: Any) -> bool:
+    target = _resource_scope(row)
+    return any(_same_college(scope, target) for scope in _teacher_memberships(conn, teacher_id))
 
 
 def _teacher_matches_department(conn: sqlite3.Connection, teacher_id: int, row: Any) -> bool:
@@ -140,6 +151,13 @@ def teacher_matches_department(conn: sqlite3.Connection, teacher_id: int | str, 
     if teacher_pk is None:
         return False
     return _teacher_matches_department(conn, teacher_pk, row)
+
+
+def teacher_matches_college(conn: sqlite3.Connection, teacher_id: int | str, row: Any) -> bool:
+    teacher_pk = _safe_int(teacher_id)
+    if teacher_pk is None:
+        return False
+    return _teacher_matches_college(conn, teacher_pk, row)
 
 
 def teacher_can_manage_owned_row(
@@ -278,6 +296,11 @@ def _student_matches_school(conn: sqlite3.Connection, student_id: int, row: Any)
 def _student_matches_department(conn: sqlite3.Connection, student_id: int, row: Any) -> bool:
     student = _load_student_context(conn, student_id)
     return bool(student and _same_department(student["scope"], _resource_scope(row)))
+
+
+def _student_matches_college(conn: sqlite3.Connection, student_id: int, row: Any) -> bool:
+    student = _load_student_context(conn, student_id)
+    return bool(student and _same_college(student["scope"], _resource_scope(row)))
 
 
 def user_owns_resource(user: dict[str, Any] | None, row: Any) -> bool:
@@ -534,6 +557,12 @@ def can_read_scoped_resource(conn: sqlite3.Connection, row: Any, user: dict[str,
             return _teacher_matches_department(conn, user_pk, row)
         if role == "student":
             return _student_matches_department(conn, user_pk, row)
+        return False
+    if scope == SCOPE_COLLEGE:
+        if role == "teacher":
+            return _teacher_matches_college(conn, user_pk, row)
+        if role == "student":
+            return _student_matches_college(conn, user_pk, row)
         return False
     if scope == SCOPE_CLASS:
         class_id = _safe_int(_row_value(row, "class_id", _row_value(row, "visible_class_id")))

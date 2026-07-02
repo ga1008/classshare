@@ -59,7 +59,7 @@ const RESOURCE_CONFIG = {
         attributesUrl: (id) => `/api/materials/${id}/attributes`,
         fields: [
             { key: 'name', label: '材料名称', type: 'text', required: true },
-            { key: 'scope_level', label: '可见范围', type: 'select', options: [['private', '私有'], ['department', '本系部'], ['school', '本学校']] },
+            { key: 'scope_level', label: '开放范围', type: 'select', options: [['private', '私有'], ['department', '本系部公开'], ['college', '本院级公开'], ['school', '全校公开']] },
         ],
     },
 };

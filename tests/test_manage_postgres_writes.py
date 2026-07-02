@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import Mock, patch
 
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, HTTPException
 
 from classroom_app.routers.manage_parts import (
     classes_courses_classes,
@@ -26,9 +26,10 @@ class FakeCursor:
 
 
 class FakeConnection:
-    def __init__(self):
+    def __init__(self, execute_rows=None):
         self.execute_calls = []
         self.executemany_calls = []
+        self.execute_rows = list(execute_rows or [])
         self.committed = False
         self.rolled_back = False
         self.closed = False
@@ -44,7 +45,8 @@ class FakeConnection:
 
     def execute(self, sql, params=()):
         self.execute_calls.append((sql, params))
-        return FakeCursor()
+        row = self.execute_rows.pop(0) if self.execute_rows else None
+        return FakeCursor(row)
 
     def executemany(self, sql, params_seq):
         self.executemany_calls.append((sql, list(params_seq)))
@@ -117,6 +119,31 @@ class ManagePostgresWriteTests(unittest.TestCase):
         self.assertEqual("custom", inserted[0][2][8])
         self.assertEqual("", inserted[0][2][1])
 
+    def test_custom_class_create_rejects_duplicate_name_before_insert(self):
+        conn = FakeConnection(execute_rows=[FakeRow({"id": 11})])
+
+        with patch.object(classes_courses_classes, "get_db_connection", return_value=conn), patch.object(
+            classes_courses_classes,
+            "execute_insert_returning_id",
+        ) as insert_helper:
+            with self.assertRaises(HTTPException) as ctx:
+                run_async(
+                    classes_courses_classes.api_create_custom_class(
+                        class_name="Mentoring 2026",
+                        school_name="",
+                        college="College",
+                        department="",
+                        major="",
+                        description="",
+                        scope_level="private",
+                        user={"id": 3},
+                    )
+                )
+
+        self.assertEqual(400, ctx.exception.status_code)
+        self.assertIn("Mentoring 2026", str(ctx.exception.detail))
+        insert_helper.assert_not_called()
+
     def test_class_student_create_uses_insert_returning_helper(self):
         conn = FakeConnection()
         inserted = []
@@ -168,6 +195,109 @@ class ManagePostgresWriteTests(unittest.TestCase):
         self.assertTrue(conn.committed)
         self.assertEqual(1, len(inserted))
         self.assertIn("INSERT INTO students", inserted[0][1])
+
+    def test_class_student_create_rejects_duplicate_student_number_before_insert(self):
+        conn = FakeConnection(
+            execute_rows=[
+                FakeRow({"id": 88, "name": "Existing Student", "class_name": "Existing Class"}),
+            ]
+        )
+
+        with patch.object(classes_courses_classes, "get_db_connection", return_value=conn), patch.object(
+            classes_courses_classes,
+            "_ensure_teacher_owned_class",
+            return_value=FakeRow(
+                {
+                    "id": 7,
+                    "school_code": "gxufl",
+                    "school_name": "School",
+                    "college": "College",
+                    "department": "CS",
+                }
+            ),
+        ), patch.object(
+            classes_courses_classes,
+            "teacher_can_manage_student",
+            return_value=True,
+        ), patch.object(
+            classes_courses_classes,
+            "execute_insert_returning_id",
+        ) as insert_helper:
+            with self.assertRaises(HTTPException) as ctx:
+                run_async(
+                    classes_courses_classes.api_create_class_student(
+                        class_id=7,
+                        name="Alice",
+                        student_id_number="S001",
+                        gender="",
+                        email="alice@example.test",
+                        phone="",
+                        user={"id": 3},
+                    )
+                )
+
+        self.assertEqual(400, ctx.exception.status_code)
+        self.assertIn("S001", str(ctx.exception.detail))
+        self.assertIn("Existing Class", str(ctx.exception.detail))
+        insert_helper.assert_not_called()
+
+    def test_class_student_create_hides_duplicate_details_without_manage_permission(self):
+        conn = FakeConnection(
+            execute_rows=[
+                FakeRow(
+                    {
+                        "id": 88,
+                        "name": "Existing Student",
+                        "student_id_number": "S001",
+                        "class_id": 9,
+                        "class_name": "Existing Class",
+                        "created_by_teacher_id": 99,
+                    }
+                ),
+            ]
+        )
+
+        with patch.object(classes_courses_classes, "get_db_connection", return_value=conn), patch.object(
+            classes_courses_classes,
+            "_ensure_teacher_owned_class",
+            return_value=FakeRow(
+                {
+                    "id": 7,
+                    "school_code": "gxufl",
+                    "school_name": "School",
+                    "college": "College",
+                    "department": "CS",
+                }
+            ),
+        ), patch.object(
+            classes_courses_classes,
+            "teacher_can_manage_student",
+            return_value=False,
+        ) as manage_check, patch.object(
+            classes_courses_classes,
+            "execute_insert_returning_id",
+        ) as insert_helper:
+            with self.assertRaises(HTTPException) as ctx:
+                run_async(
+                    classes_courses_classes.api_create_class_student(
+                        class_id=7,
+                        name="Alice",
+                        student_id_number="S001",
+                        gender="",
+                        email="alice@example.test",
+                        phone="",
+                        user={"id": 3},
+                    )
+                )
+
+        detail = str(ctx.exception.detail)
+        self.assertEqual(400, ctx.exception.status_code)
+        self.assertIn("S001", detail)
+        self.assertIn("系统中", detail)
+        self.assertNotIn("Existing Class", detail)
+        self.assertNotIn("Existing Student", detail)
+        manage_check.assert_called_once()
+        insert_helper.assert_not_called()
 
     def test_custom_class_student_create_preserves_blank_department_scope(self):
         conn = FakeConnection()

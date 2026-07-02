@@ -9,7 +9,7 @@ module.exports = {
     './static/css/ui-system.src.css',
     './node_modules/flowbite/**/*.js',
   ],
-  blocklist: ['[content_start:end_index]'],
+  blocklist: ['[content_start:end_index]', '[a-z0-9_:-]'],
   corePlugins: {
     preflight: false,
   },

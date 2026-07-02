@@ -22,7 +22,7 @@ const STATUS_META = {
     failed: { label: '失败', tone: 'is-failed' },
 };
 
-const SOURCE_LABEL = { blank: '表单新建', classroom: '按课堂生成', import: '导入解析' };
+const SOURCE_LABEL = { blank: '表单新建', classroom: '按课堂生成', import: '导入解析', exam_reverse: '试卷反推' };
 
 const root = document.querySelector('[data-ap-root]');
 

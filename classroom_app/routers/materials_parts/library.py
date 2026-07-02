@@ -122,6 +122,7 @@ def _render_manage_materials_page(
     page_heading: str = "课程资料与 Git 教学仓库",
     page_lead: str = "批量上传、目录浏览、模糊搜索与排序，保留课堂分配、AI 解析与仓库同步。",
     initial_ai_generate: dict[str, Any] | None = None,
+    initial_library_filter: dict[str, Any] | None = None,
 ):
     with get_db_connection() as conn:
         offerings = conn.execute(
@@ -157,6 +158,7 @@ def _render_manage_materials_page(
                 "materials_page_heading": page_heading,
                 "materials_page_lead": page_lead,
                 "initial_ai_generate": initial_ai_generate or {},
+                "initial_library_filter": initial_library_filter or {},
             },
         ),
     )
@@ -173,16 +175,43 @@ async def manage_grading_rubrics_page(request: Request, user: dict = Depends(get
     return _render_manage_materials_page(
         request,
         user,
-        page_title="评分细则",
+        page_title="评分细则表",
         active_page="grading_rubrics",
-        page_heading="评分细则",
+        page_heading="评分细则表",
         page_lead="关联具体试卷或题目附件，按试题顺序生成评分标准、扣分项、例外情况和截图/提交物要求。",
+        initial_library_filter={"document_type": "grading_rubric"},
         initial_ai_generate={
             "open": True,
             "document_group": "final_material",
             "document_type": "grading_rubric",
             "status": "请关联具体试卷或上传试卷题目后生成评分细则，系统会按试题逐项拆分给分点和扣分项。",
         },
+    )
+
+
+@router.get("/manage/teaching/ordinary-grade-records", response_class=HTMLResponse)
+async def manage_ordinary_grade_records_page(request: Request, user: dict = Depends(get_current_teacher)):
+    return _render_manage_materials_page(
+        request,
+        user,
+        page_title="平时成绩表",
+        active_page="ordinary_grade_records",
+        page_heading="平时成绩表",
+        page_lead="管理由课堂考勤、作业与测评生成，或从 Excel 导入解析的学生平时成绩记录表；可设置私有、系部、院级、校级公开并导出 Excel。",
+        initial_library_filter={"document_type": "ordinary_grade_record"},
+    )
+
+
+@router.get("/manage/teaching/exam-grade-records", response_class=HTMLResponse)
+async def manage_exam_grade_records_page(request: Request, user: dict = Depends(get_current_teacher)):
+    return _render_manage_materials_page(
+        request,
+        user,
+        page_title="考核登分表",
+        active_page="exam_grade_records",
+        page_heading="考核登分表",
+        page_lead="管理由课堂考试生成，或从 Excel 导入解析的期末考核登分表；保留大题列、总分校验、开放范围与 Excel 导出。",
+        initial_library_filter={"document_type": "exam_grade_record"},
     )
 
 
@@ -195,6 +224,7 @@ async def manage_grading_rubrics_page(request: Request, user: dict = Depends(get
 async def get_teacher_material_library(
     parent_id: int | None = Query(default=None),
     keyword: str = Query(default=""),
+    document_type: str = Query(default=""),
     scope_level: str = Query(default="all"),
     school: str = Query(default=""),
     department: str = Query(default=""),
@@ -203,6 +233,7 @@ async def get_teacher_material_library(
     user: dict = Depends(get_current_teacher),
 ):
     normalized_keyword = _normalize_material_keyword(keyword)
+    normalized_document_type_filter = _normalize_material_document_type_filter(document_type)
     normalized_scope_filter = _normalize_material_scope_filter(scope_level)
     normalized_school_filter = _normalize_material_org_filter(school)
     normalized_department_filter = _normalize_material_org_filter(department)
@@ -222,6 +253,7 @@ async def get_teacher_material_library(
             user["id"],
             current_folder,
             keyword=normalized_keyword,
+            document_type=normalized_document_type_filter,
             sort_by=normalized_sort_by,
             sort_order=normalized_sort_order,
         )
@@ -247,6 +279,7 @@ async def get_teacher_material_library(
             normalized_sort_by,
             normalized_sort_order,
             len(items),
+            document_type=normalized_document_type_filter,
         )
 
     return {
@@ -257,6 +290,7 @@ async def get_teacher_material_library(
         "stats": stats,
         "filters": {
             "keyword": normalized_keyword,
+            "document_type": normalized_document_type_filter,
             "scope_level": normalized_scope_filter,
             "school": normalized_school_filter,
             "department": normalized_department_filter,
@@ -310,7 +344,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
             detail = attach_learning_document_metadata(conn, [detail])[0]
             detail = _decorate_learning_document_item(detail)
         detail = _decorate_material_download_policy(detail)
-        ai_import_record = _find_material_ai_import_record(conn, material_id, user["id"])
+        ai_import_record = _find_material_ai_import_record(conn, material_id, material["teacher_id"])
         if ai_import_record:
             task = _serialize_material_ai_import_task(conn, ai_import_record, user)
             export_format = "xlsx" if task["document_type"] in {"ordinary_grade_record", "exam_grade_record"} else "docx"
@@ -353,7 +387,7 @@ async def patch_material_attributes(
     normalized_scope = None
     if "scope_level" in payload:
         normalized_scope = str(payload.get("scope_level") or "private").strip().lower()
-        if normalized_scope not in {"private", "school", "department"}:
+        if normalized_scope not in {"private", "school", "college", "department"}:
             raise HTTPException(400, "Invalid material scope")
 
     with get_db_connection() as conn:
@@ -727,7 +761,7 @@ async def update_material_scope(
     user: dict = Depends(get_current_teacher),
 ):
     normalized_scope = str(payload.scope_level or "private").strip().lower()
-    if normalized_scope not in {"private", "school", "department"}:
+    if normalized_scope not in {"private", "school", "college", "department"}:
         raise HTTPException(400, "Invalid material scope")
     now_text = datetime.now().isoformat()
     with get_db_connection() as conn:

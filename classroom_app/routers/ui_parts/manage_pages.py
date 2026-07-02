@@ -9,6 +9,24 @@ from ...services.profile_service import build_profile_page_context
 router = APIRouter()
 
 
+def _table_has_column(conn, table_name: str, column_name: str) -> bool:
+    if get_configured_db_engine() == "postgres":
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = ?
+              AND column_name = ?
+            LIMIT 1
+            """,
+            (table_name, column_name),
+        ).fetchone()
+        return row is not None
+    rows = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+    return any(str(row["name"]) == column_name for row in rows)
+
+
 def _password_reset_login_summary_sql() -> str:
     today_login_expr = (
         "logged_at::date = CURRENT_DATE"
@@ -269,6 +287,9 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
             else "c.created_by_teacher_id = ?"
         )
         class_scope_params = [] if current_teacher_is_super_admin else (school_codes or [int(user["id"])])
+        has_class_kind = _table_has_column(conn, "classes", "class_kind")
+        class_kind_select = "c.class_kind" if has_class_kind else "'administrative' AS class_kind"
+        class_kind_group_by = ", c.class_kind" if has_class_kind else ""
         my_classes_cursor = conn.execute(
             f"""
             SELECT c.id,
@@ -285,7 +306,7 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                    c.school_name,
                    c.college,
                    c.major,
-                   c.class_kind,
+                   {class_kind_select},
                    c.owner_role,
                    c.owner_user_pk,
                    c.scope_level,
@@ -336,7 +357,7 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
               GROUP BY c.id, c.name, c.department, c.description,
                        c.academic_source, c.academic_class_code, c.academic_class_name,
                        c.academic_college, c.academic_grade, c.academic_major,
-                       c.school_code, c.school_name, c.college, c.major, c.class_kind,
+                       c.school_code, c.school_name, c.college, c.major{class_kind_group_by},
                        c.owner_role, c.owner_user_pk, c.scope_level,
                        c.updated_at, c.archived_at, c.deleted_at,
                        c.academic_sync_at, c.academic_sync_message, c.created_at,

@@ -3,16 +3,29 @@ from .generation_helpers import *
 from ...db.connection import get_configured_db_engine
 
 
+def _is_material_ai_generation_record(row: dict) -> bool:
+    parse_mode = str(row.get("parse_mode") or "").strip().lower()
+    extraction_method = str(row.get("extraction_method") or "").strip().lower()
+    return parse_mode in {"ai_generated", "local_fallback"} or extraction_method == "exam_reverse"
+
+
 def _material_ai_import_status_message(row: dict, *, queue_position: int | None = None) -> str:
     status = str(row.get("parse_status") or "queued").strip().lower()
     source_name = row.get("source_file_name") or "材料文件"
+    is_generation = _is_material_ai_generation_record(row)
     if status == "queued":
+        if is_generation:
+            return f"《{source_name}》已进入 AI 生成队列，系统会按顺序处理。"
         if queue_position and queue_position > 1:
             return f"《{source_name}》已进入 AI 解析队列，当前约第 {queue_position} 位。"
         return f"《{source_name}》已进入 AI 解析队列，系统会按顺序处理。"
     if status == "running":
+        if is_generation:
+            return f"AI 正在生成《{source_name}》，会根据来源试卷校验结构并保存为规范材料。"
         return f"AI 正在解析《{source_name}》，会先校验乱码和结构，再生成可保存的材料内容。"
     if status == "completed":
+        if is_generation:
+            return f"《{source_name}》生成完成，已生成材料包和结构化内容。"
         return f"《{source_name}》解析完成，已生成材料包和结构化内容。"
 
     error_message = str(row.get("error_message") or "").strip()
@@ -24,7 +37,7 @@ def _material_ai_import_status_message(row: dict, *, queue_position: int | None 
         return "解析内容疑似乱码或质量不足，系统已阻止保存无效正文。"
     if status == "unsupported":
         return "当前文档格式暂不支持自动解析，请先转换为 docx、xlsx 或 PDF 后重试。"
-    return "解析未完成，请稍后重试。"
+    return "生成未完成，请稍后重试。" if is_generation else "解析未完成，请稍后重试。"
 
 
 def _material_ai_import_queue_position(conn, record_id: int) -> int | None:
@@ -47,6 +60,16 @@ def _serialize_material_ai_import_task(conn, row, user: dict) -> dict:
     status = str(item.get("parse_status") or "queued").strip().lower()
     record_id = int(item.get("id") or 0)
     queue_position = _material_ai_import_queue_position(conn, record_id) if status == "queued" else None
+    is_generation = _is_material_ai_generation_record(item)
+    status_label = MATERIAL_AI_IMPORT_STATUS_LABELS.get(status, "处理中")
+    if is_generation:
+        status_label = {
+            "queued": "排队生成",
+            "running": "生成中",
+            "completed": "生成完成",
+            "failed": "生成失败",
+            "ai_failed": "AI 生成失败",
+        }.get(status, status_label.replace("解析", "生成"))
 
     package_id = int(item.get("package_material_id") or 0) or None
     source_id = int(item.get("source_material_id") or 0) or None
@@ -68,7 +91,7 @@ def _serialize_material_ai_import_task(conn, row, user: dict) -> dict:
         "document_type_label": item.get("document_type_label") or "",
         "parse_status": status,
         "status": status,
-        "status_label": MATERIAL_AI_IMPORT_STATUS_LABELS.get(status, "处理中"),
+        "status_label": status_label,
         "is_active": status in MATERIAL_AI_IMPORT_ACTIVE_STATUSES,
         "is_terminal": status in MATERIAL_AI_IMPORT_FINAL_STATUSES,
         "parse_mode": item.get("parse_mode") or "ai",
@@ -123,6 +146,25 @@ def _enqueue_material_ai_import_task(record_id: int) -> bool:
 def _recover_stale_material_ai_import_tasks(conn) -> int:
     cutoff = (datetime.now() - timedelta(minutes=MATERIAL_AI_IMPORT_STALE_MINUTES)).isoformat()
     now = datetime.now().isoformat()
+    generated_cursor = conn.execute(
+        """
+        UPDATE material_ai_import_records
+        SET parse_status = 'failed',
+            error_message = CASE
+                WHEN TRIM(COALESCE(error_message, '')) = '' THEN '上次生成进程中断，请重新发起材料反推。'
+                ELSE error_message
+            END,
+            updated_at = ?,
+            failed_at = COALESCE(failed_at, ?)
+        WHERE parse_status = 'running'
+          AND COALESCE(started_at, updated_at, created_at) < ?
+          AND (
+                LOWER(COALESCE(parse_mode, '')) IN ('ai_generated', 'local_fallback')
+                OR LOWER(COALESCE(extraction_method, '')) = 'exam_reverse'
+          )
+        """,
+        (now, now, cutoff),
+    )
     cursor = conn.execute(
         """
         UPDATE material_ai_import_records
@@ -135,10 +177,14 @@ def _recover_stale_material_ai_import_tasks(conn) -> int:
             updated_at = ?
         WHERE parse_status = 'running'
           AND COALESCE(started_at, updated_at, created_at) < ?
+          AND NOT (
+                LOWER(COALESCE(parse_mode, '')) IN ('ai_generated', 'local_fallback')
+                OR LOWER(COALESCE(extraction_method, '')) = 'exam_reverse'
+          )
         """,
         (now, cutoff),
     )
-    return int(cursor.rowcount or 0)
+    return int(cursor.rowcount or 0) + int(generated_cursor.rowcount or 0)
 
 
 def _classify_material_ai_import_error(exc: Exception) -> tuple[str, str]:

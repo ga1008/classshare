@@ -289,8 +289,9 @@ def _decorate_material_ownership(conn, item: dict, user: dict | None) -> dict:
     item["scope_level"] = str(item.get("scope_level") or "private")
     item["scope_label"] = {
         "private": "私有",
-        "school": "本校可见",
-        "department": "本系部可见",
+        "department": "本系部公开",
+        "college": "本院级公开",
+        "school": "全校公开",
         "classroom": "课堂可见",
         "public": "全网公开",
     }.get(item["scope_level"], "私有")
@@ -411,11 +412,18 @@ def _normalize_material_sort(sort_by: str | None, sort_order: str | None) -> tup
 
 def _normalize_material_scope_filter(value: str | None) -> str:
     scope = str(value or "all").strip().lower()
-    return scope if scope in {"all", "private", "department", "school", "shared", "owned"} else "all"
+    return scope if scope in {"all", "private", "department", "college", "school", "shared", "owned"} else "all"
 
 
 def _normalize_material_org_filter(value: str | None) -> str:
     return " ".join(str(value or "").split())[:80]
+
+
+def _normalize_material_document_type_filter(value: str | None) -> str:
+    document_type = str(value or "").strip().lower()
+    if not document_type:
+        return ""
+    return document_type if re.fullmatch(r"[a-z0-9_:-]{1,80}", document_type) else ""
 
 
 def _build_material_filter_facets(rows, teacher_id: int) -> dict[str, Any]:
@@ -451,7 +459,7 @@ def _apply_material_library_filters(rows, *, teacher_id: int, scope_filter: str,
             continue
         if scope_filter == "shared" and owned:
             continue
-        if scope_filter in {"private", "department", "school"} and row_scope != scope_filter:
+        if scope_filter in {"private", "department", "college", "school"} and row_scope != scope_filter:
             continue
         row_school = str(row["school_name"] or row["school_code"] or "").strip().lower()
         if school_filter and row_school != school_filter:
@@ -489,12 +497,12 @@ def _material_visibility_condition(conn, teacher_id: int) -> tuple[str, list[obj
     memberships = load_teacher_org_memberships(conn, int(teacher_id))
     raw_membership_rows = conn.execute(
         """
-        SELECT school_code, department
+        SELECT school_code, college, department
         FROM teacher_organization_memberships
         WHERE teacher_id = ?
           AND COALESCE(is_active, 1) = 1
         UNION ALL
-        SELECT school_code, department
+        SELECT school_code, college, department
         FROM teachers
         WHERE id = ?
         """,
@@ -530,6 +538,26 @@ def _material_visibility_condition(conn, teacher_id: int) -> tuple[str, list[obj
             for row in raw_membership_rows
             if str(row["school_code"] or "").strip()
             and str(row["department"] or "").strip()
+        }
+    )
+    college_pairs = sorted(
+        {
+            (
+                str(scope.get("school_code") or "").strip().lower(),
+                str(scope.get("college") or "").strip().lower(),
+            )
+            for scope in memberships
+            if str(scope.get("school_code") or "").strip()
+            and str(scope.get("college") or "").strip()
+        }
+        | {
+            (
+                str(row["school_code"] or "").strip().lower(),
+                str(row["college"] or "").strip().lower(),
+            )
+            for row in raw_membership_rows
+            if str(row["school_code"] or "").strip()
+            and str(row["college"] or "").strip()
         }
     )
 
@@ -573,6 +601,31 @@ def _material_visibility_condition(conn, teacher_id: int) -> tuple[str, list[obj
             """
         )
 
+    if college_pairs:
+        pair_conditions = []
+        for school_code, college in college_pairs:
+            pair_conditions.append(
+                """
+                (
+                    lower(TRIM(COALESCE(m.school_code, ''))) = ?
+                    AND lower(TRIM(COALESCE(m.college, ''))) = ?
+                )
+                """
+            )
+            params.extend([school_code, college])
+        conditions.append(
+            """
+            (
+                m.scope_level = 'college'
+                AND (
+            """
+            + " OR ".join(pair_conditions)
+            + """
+                )
+            )
+            """
+        )
+
     return "(" + " OR ".join(f"({condition})" for condition in conditions) + ")", params
 
 
@@ -581,10 +634,12 @@ def _list_material_rows_for_parent(
     teacher_id: int,
     parent_row,
     keyword: str = "",
+    document_type: str = "",
     sort_by: str = MATERIAL_LIBRARY_DEFAULT_SORT_BY,
     sort_order: str = MATERIAL_LIBRARY_DEFAULT_SORT_ORDER,
 ):
     keyword = _normalize_material_keyword(keyword)
+    document_type = _normalize_material_document_type_filter(document_type)
     sort_by, sort_order = _normalize_material_sort(sort_by, sort_order)
 
     visible_sql, visible_params = _material_visibility_condition(conn, int(teacher_id))
@@ -611,6 +666,24 @@ def _list_material_rows_for_parent(
         else:
             conditions.append("m.parent_id = ?")
             params.append(parent_row["id"])
+
+    if document_type:
+        conditions.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM material_ai_import_records r
+                WHERE r.document_type = ?
+                  AND COALESCE(r.parse_status, '') = 'completed'
+                  AND (
+                        r.package_material_id = m.id
+                        OR r.source_material_id = m.id
+                        OR r.parsed_material_id = m.id
+                  )
+            )
+            """
+        )
+        params.append(document_type)
 
     order_clause = _build_material_order_clause(sort_by, sort_order)
     query = f"""
@@ -660,14 +733,28 @@ def _get_teacher_material_stats(conn, teacher_id: int) -> dict:
     }
 
 
-def _build_teacher_library_overview(parent_row, keyword: str, sort_by: str, sort_order: str, result_count: int) -> dict:
+def _build_teacher_library_overview(
+    parent_row,
+    keyword: str,
+    sort_by: str,
+    sort_order: str,
+    result_count: int,
+    *,
+    document_type: str = "",
+) -> dict:
     normalized_keyword = _normalize_material_keyword(keyword)
+    normalized_document_type = _normalize_material_document_type_filter(document_type)
     normalized_sort_by, normalized_sort_order = _normalize_material_sort(sort_by, sort_order)
     scope_name = parent_row["name"] if parent_row else "材料库根目录"
     scope_path = parent_row["material_path"] if parent_row else ""
     search_scope_label = f"{scope_name}及其子级" if parent_row else "全部材料"
-    if normalized_keyword:
+    document_label = final_material_label(normalized_document_type) if normalized_document_type else ""
+    if normalized_keyword and document_label:
+        description = f"在{search_scope_label}中筛选“{document_label}”并匹配到 {result_count} 项"
+    elif normalized_keyword:
         description = f"在{search_scope_label}中匹配到 {result_count} 项"
+    elif document_label:
+        description = f"在{search_scope_label}中筛选“{document_label}”共 {result_count} 项"
     else:
         description = f"当前目录显示 {result_count} 项"
 
@@ -678,6 +765,9 @@ def _build_teacher_library_overview(parent_row, keyword: str, sort_by: str, sort
         "result_count": int(result_count),
         "search_active": bool(normalized_keyword),
         "search_keyword": normalized_keyword,
+        "document_type_active": bool(normalized_document_type),
+        "document_type": normalized_document_type,
+        "document_type_label": document_label,
         "search_scope_label": search_scope_label,
         "sort_by": normalized_sort_by,
         "sort_order": normalized_sort_order,

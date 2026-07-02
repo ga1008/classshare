@@ -4,6 +4,34 @@ from ...services.base_resource_modes_service import build_class_delete_blockers,
 
 router = APIRouter()
 
+
+def _row_get(row, key: str, default=None):
+    if not row:
+        return default
+    try:
+        if key in row.keys():
+            return row[key]
+    except AttributeError:
+        pass
+    try:
+        return row[key]
+    except (KeyError, TypeError, IndexError):
+        return default
+
+
+def _is_integrity_error(exc: Exception) -> bool:
+    if isinstance(exc, sqlite3.IntegrityError):
+        return True
+    error_name = exc.__class__.__name__.lower()
+    error_module = exc.__class__.__module__.lower()
+    if "integrity" in error_name or "uniqueviolation" in error_name:
+        return True
+    return error_module.startswith("psycopg") and any(
+        token in error_name
+        for token in ("unique", "foreignkey", "notnull", "checkviolation", "exclusion")
+    )
+
+
 @router.post("/classes/create", response_class=JSONResponse)
 async def api_create_class(request: Request, class_name: str = Form(), file: UploadFile = File(...),
                            department: str = Form(default=""),
@@ -133,6 +161,15 @@ async def api_create_custom_class(
         raise HTTPException(status_code=400, detail="请填写班级名称")
 
     with get_db_connection() as conn:
+        existing_class = conn.execute(
+            "SELECT id FROM classes WHERE name = ? LIMIT 1",
+            (cleaned_name,),
+        ).fetchone()
+        if existing_class:
+            raise HTTPException(
+                status_code=400,
+                detail=f"班级名称“{cleaned_name}”已存在，请加上用途、年份或教师姓名区分。",
+            )
         org_scope = apply_teacher_scope_to_org(
             conn,
             user["id"],
@@ -169,8 +206,10 @@ async def api_create_custom_class(
                 ),
             )
             conn.commit()
-        except sqlite3.IntegrityError as exc:
+        except Exception as exc:
             conn.rollback()
+            if not _is_integrity_error(exc):
+                raise
             raise HTTPException(
                 status_code=400,
                 detail=f"创建失败：班级名称“{cleaned_name}”已存在，请换一个更具体的名称。",
@@ -454,6 +493,35 @@ async def api_create_class_student(
 
     with get_db_connection() as conn:
         class_row = _ensure_teacher_owned_class(conn, class_id=class_id, teacher_id=user["id"])
+        existing_student = conn.execute(
+            """
+            SELECT
+                s.id,
+                s.name,
+                s.student_id_number,
+                s.class_id,
+                c.name AS class_name,
+                c.created_by_teacher_id
+            FROM students s
+            LEFT JOIN classes c ON c.id = s.class_id
+            WHERE s.student_id_number = ?
+            LIMIT 1
+            """,
+            (cleaned_student_id,),
+        ).fetchone()
+        if existing_student:
+            can_manage_existing = teacher_can_manage_student(conn, user["id"], existing_student)
+            if not can_manage_existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"学号“{cleaned_student_id}”已存在于系统中，请不要重复创建学生账号；如需调整班级，请联系管理员处理。",
+                )
+            existing_name = _row_get(existing_student, "name") or "该学生"
+            existing_class_name = _row_get(existing_student, "class_name") or "其他班级"
+            raise HTTPException(
+                status_code=400,
+                detail=f"学号“{cleaned_student_id}”已存在于“{existing_class_name}”（{existing_name}），请勿重复创建学生账号。",
+            )
         class_scope = apply_teacher_scope_to_org(
             conn,
             user["id"],
@@ -491,8 +559,10 @@ async def api_create_class_student(
                 ),
             )
             conn.commit()
-        except sqlite3.IntegrityError as exc:
+        except Exception as exc:
             conn.rollback()
+            if not _is_integrity_error(exc):
+                raise
             raise HTTPException(
                 status_code=400,
                 detail="新增失败：该学号已经存在，请先确认学生是否已在其它班级名单中。",

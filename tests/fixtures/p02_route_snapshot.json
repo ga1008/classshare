@@ -1568,6 +1568,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/exam-papers/material-reverse",
+    "methods": [
+      "POST"
+    ],
+    "name": "reverse_exam_paper_to_material",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/exam-papers/{paper_id}",
     "methods": [
       "DELETE"
@@ -4672,6 +4680,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/teaching/exam-grade-records",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_exam_grade_records_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/teaching/exams",
     "methods": [
       "GET"
@@ -4709,6 +4725,14 @@
       "GET"
     ],
     "name": "get_manage_offerings_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/ordinary-grade-records",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_ordinary_grade_records_page",
     "include_in_schema": true
   },
   {

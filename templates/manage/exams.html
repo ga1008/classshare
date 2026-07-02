@@ -3,7 +3,26 @@
 {% block title %}试卷库{% endblock %}
 
 {% block header_actions %}
-{% from "macros/app_topbar.html" import topbar_action %}
+{% from "macros/app_topbar.html" import topbar_action, app_topbar_icon %}
+<div class="exam-reverse-topbar" id="materialReverseTopbar">
+    <button type="button" class="app-topbar-action app-topbar-action--solid app-topbar-action--tone-amber" onclick="toggleMaterialReverseMenu(event)" aria-haspopup="menu" aria-expanded="false" id="materialReverseMenuButton">
+        <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('refresh') }}</span>
+        <span class="app-topbar-action__text">
+            <strong>材料反推</strong>
+            <small>试卷生成表单</small>
+        </span>
+    </button>
+    <div class="exam-reverse-dropdown" id="materialReverseDropdown" role="menu" aria-labelledby="materialReverseMenuButton">
+        <button type="button" role="menuitem" onclick="openMaterialReverseModal('assessment_plan')">
+            <strong>考核计划表</strong>
+            <small>按试卷内容反推考核项目</small>
+        </button>
+        <button type="button" role="menuitem" onclick="openMaterialReverseModal('grading_rubric')">
+            <strong>评分细则表</strong>
+            <small>逐题生成给分与扣分标准</small>
+        </button>
+    </div>
+</div>
 {{ topbar_action('新建试卷', '题库与考试', 'file-plus', href='/exam/new', variant='primary', tone='rose') }}
 {% endblock %}
 
@@ -17,6 +36,173 @@
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
         gap: var(--spacing-5);
+    }
+
+    .exam-reverse-topbar {
+        position: relative;
+        display: inline-flex;
+    }
+
+    .exam-reverse-dropdown {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        width: min(280px, calc(100vw - 24px));
+        padding: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 22px 50px rgba(15, 23, 42, 0.16);
+        backdrop-filter: blur(14px);
+        z-index: 1200;
+        display: none;
+    }
+
+    .exam-reverse-dropdown.open {
+        display: grid;
+        gap: 6px;
+    }
+
+    .exam-reverse-dropdown button {
+        border: 0;
+        background: transparent;
+        border-radius: 10px;
+        padding: 12px;
+        text-align: left;
+        cursor: pointer;
+        display: grid;
+        gap: 4px;
+        color: #111827;
+    }
+
+    .exam-reverse-dropdown button:hover {
+        background: #fff7ed;
+    }
+
+    .exam-reverse-dropdown strong {
+        font-size: 0.95rem;
+    }
+
+    .exam-reverse-dropdown small {
+        color: #64748b;
+        font-size: 0.78rem;
+        line-height: 1.45;
+    }
+
+    .exam-reverse-modal {
+        max-width: 860px;
+    }
+
+    .exam-reverse-field {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 18px;
+    }
+
+    .exam-reverse-field label,
+    .exam-reverse-list-title {
+        font-size: 0.86rem;
+        font-weight: 700;
+        color: #334155;
+    }
+
+    .exam-reverse-field textarea {
+        min-height: 92px;
+        resize: vertical;
+        border: 1px solid #dbe3ef;
+        border-radius: 12px;
+        padding: 12px 14px;
+        color: #111827;
+        line-height: 1.6;
+        background: #fff;
+        outline: none;
+    }
+
+    .exam-reverse-field textarea:focus {
+        border-color: #f59e0b;
+        box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+    }
+
+    .exam-reverse-list {
+        display: grid;
+        gap: 10px;
+        max-height: min(420px, 44vh);
+        overflow: auto;
+        padding-right: 4px;
+    }
+
+    .exam-reverse-paper-option {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: #fff;
+        cursor: pointer;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+
+    .exam-reverse-paper-option:hover,
+    .exam-reverse-paper-option:has(input:checked) {
+        border-color: #f59e0b;
+        background: #fffaf0;
+        box-shadow: 0 12px 26px rgba(245, 158, 11, 0.12);
+    }
+
+    .exam-reverse-paper-option input {
+        width: 18px;
+        height: 18px;
+        margin-top: 4px;
+        accent-color: #f59e0b;
+    }
+
+    .exam-reverse-paper-main {
+        min-width: 0;
+        display: grid;
+        gap: 7px;
+    }
+
+    .exam-reverse-paper-title {
+        font-weight: 700;
+        color: #111827;
+        line-height: 1.35;
+    }
+
+    .exam-reverse-paper-desc {
+        color: #64748b;
+        font-size: 0.86rem;
+        line-height: 1.55;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .exam-reverse-paper-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .exam-reverse-paper-meta span {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 0.74rem;
+        color: #475569;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+    }
+
+    .exam-reverse-empty {
+        border: 1px dashed #cbd5e1;
+        border-radius: 14px;
+        padding: 24px;
+        text-align: center;
+        color: #64748b;
+        background: #f8fafc;
     }
 
     .exam-card {
@@ -1662,6 +1848,30 @@
 </div>
 {% endif %}
 
+<!-- 材料反推模态框 -->
+<div class="modal-overlay" id="materialReverseModal" role="dialog" aria-modal="true" aria-labelledby="materialReverseModalTitle">
+    <div class="modal-box exam-reverse-modal">
+        <div class="modal-header">
+            <h3 class="modal-title" id="materialReverseModalTitle">材料反推</h3>
+            <button class="modal-close" type="button" onclick="closeMaterialReverseModal()" aria-label="关闭材料反推窗口">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="exam-reverse-field">
+                <label for="material-reverse-prompt">额外提示</label>
+                <textarea id="material-reverse-prompt" maxlength="1200" placeholder="可补充课程性质、考核形式、评分侧重点、特殊扣分规则；留空则严格依据所选试卷反推。"></textarea>
+            </div>
+            <div class="exam-reverse-list-title" id="materialReverseListTitle">选择试卷</div>
+            <div class="exam-reverse-list" id="materialReversePaperList"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" type="button" onclick="closeMaterialReverseModal()">取消</button>
+            <button class="btn btn-primary" type="button" id="material-reverse-confirm-btn" onclick="confirmMaterialReverse()">确定生成</button>
+        </div>
+    </div>
+</div>
+
 <!-- 分配模态框 -->
 <div class="modal-overlay" id="assignModal">
     <div class="modal-box">
@@ -1868,6 +2078,24 @@
 
     // ===== Tag Popover State =====
     let currentTagPaperId = null;
+
+    // ===== Material Reverse State =====
+    const MATERIAL_REVERSE_TARGETS = {
+        assessment_plan: {
+            title: '反推考核计划表',
+            listTitle: '选择用于生成考核计划表的试卷',
+            buttonText: '生成考核计划表',
+            emptyText: '暂无可反推的试卷，请先完成试卷题目和分值设置。'
+        },
+        grading_rubric: {
+            title: '反推评分细则表',
+            listTitle: '选择用于生成评分细则表的试卷',
+            buttonText: '生成评分细则表',
+            emptyText: '暂无可反推的试卷，请先补齐试卷每题分值、标准答案、评分指导和扣分点。'
+        }
+    };
+    let materialReverseTargetType = '';
+    let materialReverseSelectedPaperId = '';
 
     // ===== Computed: all unique tags & available question types =====
     function collectTagsByRecentPapers() {
@@ -2570,8 +2798,155 @@
         tagsContainer.innerHTML = html;
     }
 
+    // ===== Material Reverse =====
+    function toggleMaterialReverseMenu(event) {
+        event?.stopPropagation();
+        const dropdown = document.getElementById('materialReverseDropdown');
+        const button = document.getElementById('materialReverseMenuButton');
+        if (!dropdown) return;
+        const willOpen = !dropdown.classList.contains('open');
+        dropdown.classList.toggle('open', willOpen);
+        if (button) button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    }
+
+    function closeMaterialReverseMenu() {
+        const dropdown = document.getElementById('materialReverseDropdown');
+        const button = document.getElementById('materialReverseMenuButton');
+        if (dropdown) dropdown.classList.remove('open');
+        if (button) button.setAttribute('aria-expanded', 'false');
+    }
+
+    function openMaterialReverseModal(targetType) {
+        const config = MATERIAL_REVERSE_TARGETS[targetType];
+        if (!config) return;
+        closeMaterialReverseMenu();
+        materialReverseTargetType = targetType;
+        materialReverseSelectedPaperId = '';
+        const modal = document.getElementById('materialReverseModal');
+        const title = document.getElementById('materialReverseModalTitle');
+        const listTitle = document.getElementById('materialReverseListTitle');
+        const prompt = document.getElementById('material-reverse-prompt');
+        const button = document.getElementById('material-reverse-confirm-btn');
+        if (title) title.textContent = config.title;
+        if (listTitle) listTitle.textContent = config.listTitle;
+        if (prompt) prompt.value = '';
+        if (button) {
+            button.disabled = false;
+            button.textContent = config.buttonText;
+        }
+        renderMaterialReversePaperList();
+        modal?.classList.add('active');
+        setTimeout(() => prompt?.focus(), 40);
+    }
+
+    function closeMaterialReverseModal() {
+        document.getElementById('materialReverseModal')?.classList.remove('active');
+        materialReverseTargetType = '';
+        materialReverseSelectedPaperId = '';
+    }
+
+    function getPaperMetric(paper, metric, dataKey) {
+        const direct = Number(paper?.[metric] || 0);
+        if (Number.isFinite(direct) && direct > 0) return direct;
+        const card = getCardForPaper(paper?.id);
+        const fromCard = Number(card?.dataset?.[dataKey] || 0);
+        return Number.isFinite(fromCard) ? fromCard : 0;
+    }
+
+    function getMaterialReverseEligiblePapers() {
+        return sortPapers(papersData.filter(paper => {
+            const questionCount = getPaperMetric(paper, 'questionCount', 'questionCount');
+            const totalPoints = getPaperMetric(paper, 'totalPoints', 'totalPoints');
+            if (questionCount <= 0 || totalPoints <= 0) return false;
+            return !['generating', 'failed'].includes(resolveStatusKey(paper));
+        }));
+    }
+
+    function renderMaterialReversePaperList() {
+        const list = document.getElementById('materialReversePaperList');
+        if (!list) return;
+        const config = MATERIAL_REVERSE_TARGETS[materialReverseTargetType] || MATERIAL_REVERSE_TARGETS.assessment_plan;
+        const papers = getMaterialReverseEligiblePapers();
+        if (!papers.length) {
+            list.innerHTML = `<div class="exam-reverse-empty">${escapeHtml(config.emptyText)}</div>`;
+            return;
+        }
+        list.innerHTML = papers.map(paper => {
+            const questionCount = getPaperMetric(paper, 'questionCount', 'questionCount');
+            const pageCount = getPaperMetric(paper, 'pageCount', 'pageCount');
+            const totalPoints = getPaperMetric(paper, 'totalPoints', 'totalPoints');
+            const tags = (paper.tags || []).slice(0, 3).map(tag => `<span># ${escapeHtml(tag)}</span>`).join('');
+            return `
+                <label class="exam-reverse-paper-option">
+                    <input type="radio" name="material_reverse_paper" value="${escapeHtml(paper.id)}" onchange="selectMaterialReversePaper('${escapeHtml(paper.id)}')">
+                    <span class="exam-reverse-paper-main">
+                        <span class="exam-reverse-paper-title">${escapeHtml(paper.title || '未命名试卷')}</span>
+                        <span class="exam-reverse-paper-desc">${escapeHtml(paper.description || '暂无描述')}</span>
+                        <span class="exam-reverse-paper-meta">
+                            <span>${questionCount} 题</span>
+                            <span>${pageCount || 1} 页</span>
+                            <span>${totalPoints || 0} 分</span>
+                            <span>${escapeHtml(paper.statusLabel || '试卷')}</span>
+                            ${tags}
+                        </span>
+                    </span>
+                </label>
+            `;
+        }).join('');
+    }
+
+    function selectMaterialReversePaper(paperId) {
+        materialReverseSelectedPaperId = String(paperId || '').trim();
+    }
+
+    async function confirmMaterialReverse() {
+        const config = MATERIAL_REVERSE_TARGETS[materialReverseTargetType];
+        if (!config) return;
+        const checked = document.querySelector('input[name="material_reverse_paper"]:checked');
+        const paperId = materialReverseSelectedPaperId || String(checked?.value || '').trim();
+        if (!paperId) {
+            window.showMessage?.('请选择一份试卷', 'warning');
+            return;
+        }
+        const button = document.getElementById('material-reverse-confirm-btn');
+        const originalText = button?.textContent || config.buttonText;
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin-right:8px;"></span> 生成中...';
+        }
+        try {
+            const result = await window.apiFetch('/api/exam-papers/material-reverse', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_type: materialReverseTargetType,
+                    paper_id: paperId,
+                    prompt: document.getElementById('material-reverse-prompt')?.value || ''
+                })
+            });
+            window.showMessage?.(result.message || '已开始生成', 'success');
+            const redirectUrl = result.redirect_url || '/manage/teaching/materials';
+            setTimeout(() => {
+                window.location.href = redirectUrl;
+            }, 450);
+        } catch (error) {
+            console.error('Material reverse failed:', error);
+            window.showMessage?.(error.message || '材料反推启动失败', 'error');
+            if (button) {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+    }
+
     // ===== Close popups on outside click =====
     document.addEventListener('click', function(e) {
+        const reverseTopbar = document.getElementById('materialReverseTopbar');
+        const reverseMenu = document.getElementById('materialReverseDropdown');
+        if (reverseMenu && reverseMenu.classList.contains('open') && reverseTopbar && !reverseTopbar.contains(e.target)) {
+            closeMaterialReverseMenu();
+        }
+
         // Close tag dropdown
         const tagDropdown = document.getElementById('tagDropdown');
         const tagMenu = document.getElementById('tagDropdownMenu');
@@ -2989,6 +3364,21 @@
             modeEl.addEventListener('change', syncAssignScheduleFields);
         }
         syncAssignScheduleFields();
+
+        document.getElementById('materialReverseModal')?.addEventListener('click', function(event) {
+            if (event.target === event.currentTarget) {
+                closeMaterialReverseModal();
+            }
+        });
+    });
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            closeMaterialReverseMenu();
+            if (document.getElementById('materialReverseModal')?.classList.contains('active')) {
+                closeMaterialReverseModal();
+            }
+        }
     });
 
     window.addEventListener('beforeunload', function() {

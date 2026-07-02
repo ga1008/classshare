@@ -74,6 +74,7 @@ let activeDrawerClass = null;
 let activeDrawerTrigger = null;
 let activeAddTrigger = null;
 let activeCustomTrigger = null;
+let reloadAfterAddModalClose = false;
 
 function normalize(value) {
     return String(value || '').trim().toLowerCase();
@@ -408,9 +409,10 @@ function closeStudentDrawer() {
     }, 180);
 }
 
-function openAddStudentModal(classItem, trigger = null) {
+function openAddStudentModal(classItem, trigger = null, options = {}) {
     if (!elements.addModal || !classItem) return;
     activeAddTrigger = trigger;
+    reloadAfterAddModalClose = Boolean(options.reloadOnClose);
     if (elements.addClassId) elements.addClassId.value = String(classItem.id || '');
     if (elements.addTitle) elements.addTitle.textContent = `加入 ${classItem.name || '班级'}`;
     if (elements.addMeta) {
@@ -430,12 +432,18 @@ function openAddStudentModal(classItem, trigger = null) {
 
 function closeAddStudentModal() {
     if (!elements.addModal) return;
+    const shouldReload = reloadAfterAddModalClose;
+    reloadAfterAddModalClose = false;
     elements.addModal.classList.remove('is-open');
     elements.addModal.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('has-class-student-modal');
     window.setTimeout(() => {
         if (!elements.addModal.classList.contains('is-open')) {
             elements.addModal.hidden = true;
+            if (shouldReload) {
+                window.location.reload();
+                return;
+            }
             activeAddTrigger?.focus?.({ preventScroll: true });
             activeAddTrigger = null;
         }
@@ -519,7 +527,7 @@ async function submitCustomClass(event) {
         const shouldAddStudent = Boolean(elements.customCreateAndAddStudent?.checked);
         closeCustomClassModal();
         if (shouldAddStudent && createdClass.id) {
-            window.setTimeout(() => openAddStudentModal(createdClass), 180);
+            window.setTimeout(() => openAddStudentModal(createdClass, null, { reloadOnClose: true }), 180);
         } else {
             window.setTimeout(() => window.location.reload(), 650);
         }
@@ -556,6 +564,7 @@ async function submitAddStudent(event) {
             silent: true,
         });
         showMessage(result.message || '学生已加入班级', 'success');
+        reloadAfterAddModalClose = false;
         window.setTimeout(() => window.location.reload(), 650);
     } catch (error) {
         showMessage(error.message || '新增学生失败', 'error');

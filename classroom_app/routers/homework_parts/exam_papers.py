@@ -8,6 +8,12 @@ from ...services.base_resource_modes_service import (
     serialize_exam_content,
     update_exam_attributes,
 )
+from ...services.exam_material_reverse_service import (
+    create_assessment_plan_reverse_placeholder,
+    create_grading_rubric_reverse_placeholder,
+    run_assessment_plan_reverse_job,
+    run_grading_rubric_reverse_job,
+)
 
 
 router = APIRouter()
@@ -353,6 +359,63 @@ async def create_exam_paper(request: Request, user: dict = Depends(get_current_t
         )
         conn.commit()
     return {"status": "success", "paper_id": paper_id}
+
+
+@router.post("/exam-papers/material-reverse", response_class=JSONResponse)
+async def reverse_exam_paper_to_material(request: Request, user: dict = Depends(get_current_teacher)):
+    """从具体试卷反推考核计划表或评分细则表。"""
+    data = await request.json()
+    paper_id = str(data.get("paper_id") or "").strip()
+    target_type = str(data.get("target_type") or data.get("document_type") or "").strip()
+    prompt = str(data.get("prompt") or "").strip()
+    if not paper_id:
+        raise HTTPException(400, "请选择要反推的试卷")
+    if target_type not in {"assessment_plan", "grading_rubric"}:
+        raise HTTPException(400, "材料反推类型不受支持")
+
+    with get_db_connection() as conn:
+        if target_type == "assessment_plan":
+            result = create_assessment_plan_reverse_placeholder(
+                conn,
+                teacher=user,
+                paper_id=paper_id,
+                prompt=prompt,
+            )
+            conn.commit()
+            asyncio.create_task(
+                run_assessment_plan_reverse_job(
+                    str(result["plan_id"]),
+                    paper_id,
+                    int(user["id"]),
+                    prompt,
+                )
+            )
+            return {
+                "status": "success",
+                "message": "已开始从试卷反推考核计划表，列表中会显示生成进度。",
+                **result,
+            }
+
+        result = create_grading_rubric_reverse_placeholder(
+            conn,
+            teacher=user,
+            paper_id=paper_id,
+            prompt=prompt,
+        )
+        conn.commit()
+        asyncio.create_task(
+            run_grading_rubric_reverse_job(
+                int(result["record_id"]),
+                paper_id,
+                int(user["id"]),
+                prompt,
+            )
+        )
+        return {
+            "status": "success",
+            "message": "已开始从试卷反推评分细则表，列表中会显示生成进度。",
+            **result,
+        }
 
 
 @router.get(

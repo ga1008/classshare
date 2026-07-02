@@ -32,6 +32,7 @@ RESOURCE_SCOPE_LABELS = {
     "class": "本班",
     "classroom": "本课堂",
     SCOPE_DEPARTMENT: "本系部",
+    "college": "本院级",
     SCOPE_SCHOOL: "本学校",
     "public": "公开",
 }

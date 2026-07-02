@@ -35,7 +35,27 @@ class ManageNavServiceTests(unittest.TestCase):
         process_items = [item.key for item in MANAGE_NAV_ITEMS if item.group == "过程材料"]
         self.assertIn("assessment_plans", process_items)
         self.assertIn("grading_rubrics", process_items)
+        self.assertIn("ordinary_grade_records", process_items)
+        self.assertIn("exam_grade_records", process_items)
         self.assertLess(process_items.index("assessment_plans"), process_items.index("grading_rubrics"))
+        self.assertLess(process_items.index("grading_rubrics"), process_items.index("ordinary_grade_records"))
+        self.assertLess(process_items.index("ordinary_grade_records"), process_items.index("exam_grade_records"))
+
+        labels = {
+            item.key: item.label
+            for item in MANAGE_NAV_ITEMS
+            if item.key in {"assessment_plans", "grading_rubrics", "ordinary_grade_records", "exam_grade_records"}
+        }
+        self.assertEqual(
+            {
+                "assessment_plans": "考核计划表",
+                "grading_rubrics": "评分细则表",
+                "ordinary_grade_records": "平时成绩表",
+                "exam_grade_records": "考核登分表",
+            },
+            labels,
+        )
+        self.assertEqual({5}, {len(label) for label in labels.values()})
 
     def test_manage_nav_filters_admin_items_and_marks_active_domain(self):
         teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "classrooms", is_super_admin=False)

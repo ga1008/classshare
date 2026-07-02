@@ -23,11 +23,29 @@ async def export_ai_import_record(
             """
             SELECT *
             FROM material_ai_import_records
-            WHERE id = ? AND teacher_id = ?
+            WHERE id = ?
             """,
-            (record_id, user["id"]),
+            (record_id,),
         ).fetchone()
         if not row:
+            raise HTTPException(404, "未找到可导出的解析记录")
+        material_ids = [
+            row["package_material_id"],
+            row["parsed_material_id"],
+            row["source_material_id"],
+            row["parent_material_id"],
+        ]
+        has_access = False
+        for material_id in material_ids:
+            if not material_id:
+                continue
+            try:
+                ensure_user_material_access(conn, int(material_id), user)
+                has_access = True
+                break
+            except HTTPException:
+                continue
+        if not has_access:
             raise HTTPException(404, "未找到可导出的解析记录")
         payload = _build_ai_import_payload_from_record(row)
         fallback_filename = row["source_file_name"] or f"材料解析-{record_id}"
@@ -56,13 +74,12 @@ async def export_ai_import_material(
     user: dict = Depends(get_current_teacher),
 ):
     with get_db_connection() as conn:
-        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        material = ensure_user_material_access(conn, material_id, user)
         row = conn.execute(
             """
             SELECT *
             FROM material_ai_import_records
-            WHERE teacher_id = ?
-              AND (
+            WHERE (
                     parsed_material_id = ?
                     OR package_material_id = ?
                     OR source_material_id = ?
@@ -70,7 +87,7 @@ async def export_ai_import_material(
             ORDER BY updated_at DESC, id DESC
             LIMIT 1
             """,
-            (user["id"], material["id"], material["id"], material["id"]),
+            (material["id"], material["id"], material["id"]),
         ).fetchone()
         if not row:
             raise HTTPException(404, "该材料没有关联的 AI 解析导出记录")

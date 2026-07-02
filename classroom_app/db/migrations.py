@@ -626,7 +626,11 @@ def _ensure_resource_scope_schema(conn: sqlite3.Connection) -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_course_materials_scope_org "
-            "ON course_materials (scope_level, school_code COLLATE NOCASE, department COLLATE NOCASE)"
+            "ON course_materials (scope_level, school_code COLLATE NOCASE, college COLLATE NOCASE, department COLLATE NOCASE)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_course_materials_scope_college_org "
+            "ON course_materials (scope_level, school_code COLLATE NOCASE, college COLLATE NOCASE)"
         )
 
     if _source_table_exists(conn, "exam_papers"):

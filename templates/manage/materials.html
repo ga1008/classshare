@@ -127,8 +127,9 @@
                         <option value="owned">我管理的</option>
                         <option value="shared">共享给我的</option>
                         <option value="private">私有</option>
-                        <option value="department">本系部开放</option>
-                        <option value="school">全校开放</option>
+                        <option value="department">本系部公开</option>
+                        <option value="college">本院级公开</option>
+                        <option value="school">全校公开</option>
                     </select>
                 </label>
                 <label class="materials-inline-field">
@@ -171,6 +172,7 @@
             <div class="materials-library-summary-chips">
                 <span class="materials-summary-chip" id="materials-result-count">0 项</span>
                 <span class="materials-summary-chip" id="materials-sort-summary">按名称升序</span>
+                <span class="materials-summary-chip" id="materials-document-type-summary" hidden>文档类型</span>
                 <span class="materials-summary-chip" id="materials-search-summary" hidden>未启用搜索</span>
             </div>
         </div>
@@ -577,7 +579,8 @@
         canAssign: {{ 'true' if offerings else 'false' }},
         userIdentityHints: {{ [(user_info.name | default('', true)), (user_info.email | default('', true))] | tojson }},
         materialAiImportRegistry: {{ material_ai_import_registry | tojson }},
-        initialAiGenerate: {{ initial_ai_generate | default({}) | tojson }}
+        initialAiGenerate: {{ initial_ai_generate | default({}) | tojson }},
+        initialLibraryFilter: {{ initial_library_filter | default({}) | tojson }}
     };
 </script>
 {% endblock %}
