@@ -6,6 +6,17 @@
 
 {% block css %}
 {{ super() }}
+<style>
+    /* 3D课表归纳方式：网格容器退化为整块面板，deck 样式由模块注入。 */
+    .dashboard-offering-grid.is-schedule3d { display: block; }
+    .dashboard-schedule3d {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+        padding: 20px;
+    }
+</style>
 {% endblock %}
 
 {% block navbar_actions %}
@@ -271,6 +282,7 @@
                             <button type="button" class="dashboard-group-mode-btn" data-group-mode="department" aria-pressed="true">系别班级</button>
                             <button type="button" class="dashboard-group-mode-btn" data-group-mode="course" aria-pressed="false">课程</button>
                             <button type="button" class="dashboard-group-mode-btn" data-group-mode="timeline" aria-pressed="false">时间轴</button>
+                            <button type="button" class="dashboard-group-mode-btn" data-group-mode="schedule3d" aria-pressed="false">3D课表</button>
                         </div>
                     </div>
                     {% elif user_info.role == 'student' %}
@@ -582,7 +594,7 @@
 </script>
 {% endif %}
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
-<script type="module" src="/static/js/dashboard.js?v=student-dashboard-polish-20260612"></script>
+<script type="module" src="/static/js/dashboard.js?v=schedule3d-20260703"></script>
 <script type="module" src="/static/js/dashboard_count_up.js?v=student-dashboard-polish-20260612"></script>
 <script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260621-reminder"></script>
 {% endblock %}

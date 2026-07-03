@@ -172,14 +172,26 @@ async def _fetch_teacher_schedule(client: httpx.AsyncClient) -> dict[str, Any]:
 
 
 def _load_teaching_class_candidates(conn, teacher_id: int) -> list[dict[str, Any]]:
+    """Load check-in schedule rows joined with the local classroom mapping.
+
+    ``smart_classroom_schedule_items.class_offering_id`` is filled by the
+    check-in sync's offering matcher, so joining through ``class_offerings``
+    to ``classes`` yields the real class name (软件工程2303班) instead of the
+    remote teaching-class code (计算机网络实验-0002).
+    """
     try:
         rows = conn.execute(
             """
-            SELECT remote_course_id, remote_course_name, remote_teaching_class_name,
-                   weekday, sections_text, student_count
-            FROM smart_classroom_schedule_items
-            WHERE teacher_id = ?
-              AND COALESCE(remote_teaching_class_name, '') <> ''
+            SELECT ssi.remote_course_id, ssi.remote_course_name,
+                   ssi.remote_teaching_class_name, ssi.weekday, ssi.sections_text,
+                   ssi.student_count, ssi.class_offering_id, ssi.match_status,
+                   COALESCE(cls.name, '') AS local_class_name
+            FROM smart_classroom_schedule_items ssi
+            LEFT JOIN class_offerings o ON o.id = ssi.class_offering_id
+            LEFT JOIN classes cls ON cls.id = o.class_id
+            WHERE ssi.teacher_id = ?
+              AND (COALESCE(ssi.remote_teaching_class_name, '') <> ''
+                   OR ssi.class_offering_id IS NOT NULL)
             """,
             (int(teacher_id),),
         ).fetchall()
@@ -188,36 +200,86 @@ def _load_teaching_class_candidates(conn, teacher_id: int) -> list[dict[str, Any
     return [dict(row) for row in rows]
 
 
-def _match_teaching_class_name(item: dict[str, Any], candidates: list[dict[str, Any]]) -> str:
-    """Score the check-in schedule rows against one course-schedule slot.
+# 显示班级名至少需要课程一致 + 一个时段/人数信号；写入课堂跳转 (offering)
+# 需要课程一致 + 至少两个信号，并且最高分候选必须唯一映射到一个本地课堂。
+_MIN_CLASS_NAME_SCORE = 5
+_MIN_OFFERING_SCORE = 7
+
+_EMPTY_CLASS_MATCH: dict[str, Any] = {
+    "teaching_class_name": "",
+    "local_class_name": "",
+    "class_offering_id": None,
+}
+
+
+def _score_class_candidate(item: dict[str, Any], candidate: dict[str, Any], item_sections: set[int]) -> int:
+    """Score one check-in schedule row against one course-schedule slot.
 
     The check-in sync stores weekday as 0-6 (local) while the schedule payload
     uses 1-7; both sides carry course code/name, section list and student
     count, which together identify the teaching class reliably.
     """
-    best_score = 0
-    best_name = ""
+    code = _clean_text(candidate.get("remote_course_id"))
+    name = _clean_text(candidate.get("remote_course_name"))
+    code_ok = bool(code) and code == item["course_code"]
+    name_ok = bool(name) and name == item["course_name"]
+    if not code_ok and not name_ok:
+        return 0
+    score = 3 if code_ok else 2
+    if _coerce_int(candidate.get("weekday"), -1) == item["weekday"] - 1:
+        score += 2
+    candidate_sections = set(_int_list(candidate.get("sections_text")))
+    if candidate_sections and candidate_sections & item_sections:
+        score += 2
+    if item["student_count"] > 0 and _coerce_int(candidate.get("student_count")) == item["student_count"]:
+        score += 2
+    return score
+
+
+def _match_teaching_class(item: dict[str, Any], candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    """Resolve teaching-class labels and (if unambiguous) the local classroom.
+
+    Returns ``{"teaching_class_name", "local_class_name", "class_offering_id"}``.
+    The offering id is only set when every top-scoring candidate points at the
+    same matched local classroom — a wrong deep link is worse than none.
+    """
     item_sections = set(item["sections"])
+    scored: list[tuple[int, dict[str, Any]]] = []
     for candidate in candidates:
-        code = _clean_text(candidate.get("remote_course_id"))
-        name = _clean_text(candidate.get("remote_course_name"))
-        code_ok = bool(code) and code == item["course_code"]
-        name_ok = bool(name) and name == item["course_name"]
-        if not code_ok and not name_ok:
-            continue
-        score = 3 if code_ok else 2
-        candidate_weekday = _coerce_int(candidate.get("weekday"), -1)
-        if candidate_weekday == item["weekday"] - 1:
-            score += 2
-        candidate_sections = set(_int_list(candidate.get("sections_text")))
-        if candidate_sections and candidate_sections & item_sections:
-            score += 2
-        if _coerce_int(candidate.get("student_count")) == item["student_count"] and item["student_count"] > 0:
-            score += 2
-        if score > best_score:
-            best_score = score
-            best_name = _clean_text(candidate.get("remote_teaching_class_name"))
-    return best_name if best_score >= 5 else ""
+        score = _score_class_candidate(item, candidate, item_sections)
+        if score > 0:
+            scored.append((score, candidate))
+    if not scored:
+        return dict(_EMPTY_CLASS_MATCH)
+    best_score = max(score for score, _candidate in scored)
+    if best_score < _MIN_CLASS_NAME_SCORE:
+        return dict(_EMPTY_CLASS_MATCH)
+    top = [candidate for score, candidate in scored if score == best_score]
+
+    remote_names = {
+        _clean_text(candidate.get("remote_teaching_class_name"))
+        for candidate in top
+        if _clean_text(candidate.get("remote_teaching_class_name"))
+    }
+    local_names = {
+        _clean_text(candidate.get("local_class_name"))
+        for candidate in top
+        if _clean_text(candidate.get("local_class_name"))
+    }
+    offering_ids = {
+        int(candidate["class_offering_id"])
+        for candidate in top
+        if candidate.get("class_offering_id")
+        and str(candidate.get("match_status") or "") == "matched"
+    }
+    result = dict(_EMPTY_CLASS_MATCH)
+    if len(remote_names) == 1:
+        result["teaching_class_name"] = next(iter(remote_names))
+    if len(local_names) == 1:
+        result["local_class_name"] = next(iter(local_names))
+    if best_score >= _MIN_OFFERING_SCORE and len(offering_ids) == 1:
+        result["class_offering_id"] = offering_ids.pop()
+    return result
 
 
 def _fallback_class_label(item: dict[str, Any]) -> str:
@@ -267,6 +329,7 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
         term_keys = {key for key in term_keys if key[0] or key[1]}
 
         matched_class_count = 0
+        linked_offering_count = 0
         with get_db_connection() as conn:
             ensure_course_schedule_schema(conn)
             candidates = _load_teaching_class_candidates(conn, int(teacher_id))
@@ -280,24 +343,29 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
                     (int(teacher_id), SMART_PLATFORM_CODE, year, term),
                 )
             for item in items:
-                teaching_class_name = _match_teaching_class_name(item, candidates)
-                if teaching_class_name:
+                class_match = _match_teaching_class(item, candidates)
+                if class_match["teaching_class_name"] or class_match["local_class_name"]:
                     matched_class_count += 1
+                if class_match["class_offering_id"]:
+                    linked_offering_count += 1
                 conn.execute(
                     """
                     INSERT INTO smart_classroom_course_schedule_items (
                         teacher_id, platform_code, remote_id, course_name, course_code,
-                        classroom, teaching_class_name, teacher_name, teacher_no,
+                        classroom, teaching_class_name, local_class_name,
+                        class_offering_id, teacher_name, teacher_no,
                         academic_year, academic_term, weekday, sections_json, weeks_json,
                         week_text, single_or_double, student_count, metadata_json,
                         synced_at, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(teacher_id, platform_code, remote_id) DO UPDATE SET
                         course_name = excluded.course_name,
                         course_code = excluded.course_code,
                         classroom = excluded.classroom,
                         teaching_class_name = excluded.teaching_class_name,
+                        local_class_name = excluded.local_class_name,
+                        class_offering_id = excluded.class_offering_id,
                         teacher_name = excluded.teacher_name,
                         teacher_no = excluded.teacher_no,
                         academic_year = excluded.academic_year,
@@ -318,7 +386,9 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
                         item["course_name"],
                         item["course_code"],
                         item["classroom"],
-                        teaching_class_name,
+                        class_match["teaching_class_name"],
+                        class_match["local_class_name"],
+                        class_match["class_offering_id"],
                         item["teacher_name"],
                         item["teacher_no"],
                         item["academic_year"],
@@ -377,6 +447,7 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
             "course_count": course_count,
             "total_hours": total_hours,
             "matched_class_count": matched_class_count,
+            "linked_offering_count": linked_offering_count,
         }
         if not items:
             return {
@@ -390,7 +461,8 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
             "status": "success",
             "message": (
                 f"已同步 {len(items)} 条排课、{course_count} 门课程，"
-                f"本学期共 {total_hours} 课时。"
+                f"本学期共 {total_hours} 课时"
+                + (f"；{linked_offering_count} 条已关联本地课堂。" if linked_offering_count else "。")
             ),
             "counts": counts,
             "warnings": [],
@@ -423,6 +495,9 @@ def _serialize_item(row: Any) -> dict[str, Any]:
     weekday = _coerce_int(row_dict.get("weekday"))
     single_or_double = str(row_dict.get("single_or_double") or "NONE").upper()
     class_name = _clean_text(row_dict.get("teaching_class_name"))
+    local_class_name = _clean_text(row_dict.get("local_class_name"))
+    raw_offering_id = row_dict.get("class_offering_id")
+    class_offering_id = int(raw_offering_id) if raw_offering_id else None
     item = {
         "id": int(row_dict["id"]),
         "remote_id": str(row_dict.get("remote_id") or ""),
@@ -430,6 +505,9 @@ def _serialize_item(row: Any) -> dict[str, Any]:
         "course_code": str(row_dict.get("course_code") or ""),
         "classroom": str(row_dict.get("classroom") or ""),
         "teaching_class_name": class_name,
+        "local_class_name": local_class_name,
+        "class_offering_id": class_offering_id,
+        "classroom_url": f"/classroom/{class_offering_id}" if class_offering_id else "",
         "academic_year": str(row_dict.get("academic_year") or ""),
         "academic_term": str(row_dict.get("academic_term") or ""),
         "weekday": weekday,
@@ -445,12 +523,16 @@ def _serialize_item(row: Any) -> dict[str, Any]:
         "total_hours": len(sections) * len(weeks),
         "synced_at": _display_datetime(row_dict.get("synced_at")),
     }
-    if not item["teaching_class_name"]:
+    # 展示优先级：本地真实班级名（软工2303班）> 智慧课堂教学班名 > 人数兜底。
+    if local_class_name:
+        item["class_label"] = local_class_name
+        item["class_is_fallback"] = False
+    elif class_name:
+        item["class_label"] = class_name
+        item["class_is_fallback"] = False
+    else:
         item["class_label"] = _fallback_class_label({"student_count": item["student_count"]})
         item["class_is_fallback"] = True
-    else:
-        item["class_label"] = item["teaching_class_name"]
-        item["class_is_fallback"] = False
     return item
 
 
@@ -518,6 +600,8 @@ def _build_week_deck(items: list[dict[str, Any]], *, max_week: int, cur_week: in
                 "classroom": item["classroom"],
                 "class_label": item["class_label"],
                 "class_is_fallback": item["class_is_fallback"],
+                "class_offering_id": item["class_offering_id"],
+                "classroom_url": item["classroom_url"],
                 "student_count": item["student_count"],
                 "hours": item["hours_per_meeting"],
             }

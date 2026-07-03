@@ -1,5 +1,6 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
 import { initSemesterCalendar } from '/static/js/semester_calendar.js?v=dashboard-todo-axis-20260507';
+import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260703';
 
 const root = document.querySelector('[data-dashboard-root]');
 
@@ -101,6 +102,7 @@ if (root) {
         department: '系别班级',
         course: '课程',
         timeline: '时间轴',
+        schedule3d: '3D课表',
         flat: '列表',
     };
     const allowedGroupModes = new Set(groupModeButtons.map((button) => button.dataset.groupMode || 'department'));
@@ -393,13 +395,15 @@ if (root) {
         if (resultsSummary) {
             resultsSummary.textContent = buildResultsSummary(keyword);
         }
+        // 3D课表模式不依赖课堂卡片的可见性：始终显示课表面板，不显示空态。
+        const isSchedule3d = groupModeButtons.length && activeGroupMode === 'schedule3d';
         if (offeringList) {
-            offeringList.hidden = count === 0;
+            offeringList.hidden = isSchedule3d ? false : count === 0;
             renderOfferingList(visibleCards);
         }
         if (emptySearch) {
-            emptySearch.hidden = count !== 0;
-            if (count === 0) {
+            emptySearch.hidden = isSchedule3d || count !== 0;
+            if (!emptySearch.hidden) {
                 renderEmptySearchHelp(keyword);
             }
         }
@@ -521,6 +525,58 @@ if (root) {
         onMessage: (message, tone) => showMessage(message, tone || 'info'),
     });
 
+    /* ---------------- 3D课表归纳方式 ----------------
+     * 复用可移植的 course_schedule_deck 模块，仅提供学年学期切换，
+     * 不显示课时统计页的课程/班级筛选与归集信息。面板与 deck 实例
+     * 跨 applyFilters 重渲染持久存在，DOM 节点被移动而非重建。 */
+    let scheduleDeckPanel = null;
+    let scheduleDeck = null;
+    let scheduleDeckLoaded = false;
+    let scheduleDeckLoading = false;
+
+    function getScheduleDeckPanel() {
+        if (!scheduleDeckPanel) {
+            scheduleDeckPanel = document.createElement('div');
+            scheduleDeckPanel.className = 'dashboard-schedule3d';
+            const mount = document.createElement('div');
+            scheduleDeckPanel.appendChild(mount);
+            scheduleDeck = createScheduleDeck(mount, {
+                title: '3D 课表',
+                description: '本学期课表 · 滚轮或方向键切换周次，点击卡片放大；放大后点击课程进入课堂。',
+                showTermSelect: true,
+                onTermChange: (year, term) => loadScheduleOverview({ year, term }),
+                emptyHtml: () => '<strong>暂无课表数据</strong><p>请先到 <a href="/manage/teaching/course-schedule">课时统计</a> 同步智慧课堂课程表。</p>',
+            });
+        }
+        if (!scheduleDeckLoaded && !scheduleDeckLoading) {
+            loadScheduleOverview();
+        }
+        return scheduleDeckPanel;
+    }
+
+    async function loadScheduleOverview({ year = '', term = '' } = {}) {
+        if (!scheduleDeck || scheduleDeckLoading) {
+            return;
+        }
+        scheduleDeckLoading = true;
+        try {
+            const params = new URLSearchParams({ year, term });
+            const response = await fetch(`/api/manage/teaching/course-schedule/overview?${params.toString()}`, {
+                credentials: 'same-origin',
+            });
+            if (!response.ok) {
+                throw new Error(`课表加载失败（${response.status}）`);
+            }
+            const data = await response.json();
+            scheduleDeckLoaded = true;
+            scheduleDeck.setOverview(data.overview, { keepWeek: false });
+        } catch (error) {
+            showMessage(error instanceof Error ? error.message : '课表加载失败。', 'error');
+        } finally {
+            scheduleDeckLoading = false;
+        }
+    }
+
     function renderOfferingList(visibleCards) {
         if (!offeringList) {
             return;
@@ -529,6 +585,12 @@ if (root) {
         offeringList.replaceChildren();
         offeringList.className = 'dashboard-offering-grid';
         offeringList.removeAttribute('aria-label');
+
+        if (groupModeButtons.length && activeGroupMode === 'schedule3d') {
+            offeringList.classList.add('is-schedule3d');
+            offeringList.appendChild(getScheduleDeckPanel());
+            return;
+        }
 
         if (!visibleCards.length) {
             return;

@@ -145,34 +145,45 @@ class ParsePayloadTests(unittest.TestCase):
         self.assertTrue(parsed["items"][0]["remote_id"].startswith("derived-"))
 
 
+_MATCH_ITEM = {
+    "course_name": "计算机网络",
+    "course_code": "E020204B6",
+    "weekday": 1,          # 周一 (remote 1-7)
+    "sections": [2, 3],
+    "student_count": 49,
+}
+
+
+def _candidate(**overrides):
+    base = {
+        "remote_course_id": "E020204B6",
+        "remote_course_name": "计算机网络",
+        "remote_teaching_class_name": "计算机网络-0002",
+        "weekday": 0,      # 本地 0-6
+        "sections_text": "2,3",
+        "student_count": 49,
+        "class_offering_id": None,
+        "match_status": "unmatched",
+        "local_class_name": "",
+    }
+    base.update(overrides)
+    return base
+
+
 class TeachingClassMatchTests(unittest.TestCase):
     def test_matches_by_code_weekday_sections_and_stu_count(self):
-        item = {
-            "course_name": "计算机网络",
-            "course_code": "E020204B6",
-            "weekday": 1,          # 周一 (remote 1-7)
-            "sections": [2, 3],
-            "student_count": 49,
-        }
         candidates = [
-            {
-                "remote_course_id": "E020204B6",
-                "remote_course_name": "计算机网络",
-                "remote_teaching_class_name": "计科2401班",
-                "weekday": 0,      # 本地 0-6
-                "sections_text": "2,3",
-                "student_count": 49,
-            },
-            {
-                "remote_course_id": "E020204B6",
-                "remote_course_name": "计算机网络",
-                "remote_teaching_class_name": "计科2402班",
-                "weekday": 2,
-                "sections_text": "6,7",
-                "student_count": 47,
-            },
+            _candidate(remote_teaching_class_name="计科2401班"),
+            _candidate(
+                remote_teaching_class_name="计科2402班",
+                weekday=2,
+                sections_text="6,7",
+                student_count=47,
+            ),
         ]
-        self.assertEqual(svc._match_teaching_class_name(item, candidates), "计科2401班")
+        match = svc._match_teaching_class(_MATCH_ITEM, candidates)
+        self.assertEqual(match["teaching_class_name"], "计科2401班")
+        self.assertIsNone(match["class_offering_id"])
 
     def test_weak_match_returns_empty(self):
         item = {
@@ -182,17 +193,97 @@ class TeachingClassMatchTests(unittest.TestCase):
             "sections": [1],
             "student_count": 10,
         }
+        match = svc._match_teaching_class(item, [_candidate()])
+        self.assertEqual(match["teaching_class_name"], "")
+        self.assertEqual(match["local_class_name"], "")
+        self.assertIsNone(match["class_offering_id"])
+
+    def test_local_class_name_and_offering_from_matched_candidate(self):
         candidates = [
-            {
-                "remote_course_id": "E020204B6",
-                "remote_course_name": "计算机网络",
-                "remote_teaching_class_name": "计科2401班",
-                "weekday": 0,
-                "sections_text": "2,3",
-                "student_count": 49,
-            }
+            _candidate(
+                class_offering_id=77,
+                match_status="matched",
+                local_class_name="软件工程2303班",
+            ),
         ]
-        self.assertEqual(svc._match_teaching_class_name(item, candidates), "")
+        match = svc._match_teaching_class(_MATCH_ITEM, candidates)
+        self.assertEqual(match["local_class_name"], "软件工程2303班")
+        self.assertEqual(match["class_offering_id"], 77)
+
+    def test_ambiguous_offerings_are_not_linked(self):
+        # 两个同分候选映射到不同课堂：宁可不给链接也不能给错。
+        candidates = [
+            _candidate(class_offering_id=77, match_status="matched", local_class_name="软工2303班"),
+            _candidate(class_offering_id=88, match_status="matched", local_class_name="软工2304班"),
+        ]
+        match = svc._match_teaching_class(_MATCH_ITEM, candidates)
+        self.assertIsNone(match["class_offering_id"])
+        self.assertEqual(match["local_class_name"], "")
+
+    def test_low_score_match_keeps_name_but_not_offering(self):
+        # 仅课程码 + 节次重叠（3+2=5 分）：可标注班级名，不足以关联课堂。
+        candidates = [
+            _candidate(
+                weekday=4,
+                student_count=0,
+                class_offering_id=77,
+                match_status="matched",
+                local_class_name="软工2303班",
+            ),
+        ]
+        match = svc._match_teaching_class(_MATCH_ITEM, candidates)
+        self.assertEqual(match["local_class_name"], "软工2303班")
+        self.assertIsNone(match["class_offering_id"])
+
+    def test_unmatched_offering_status_is_ignored(self):
+        candidates = [
+            _candidate(class_offering_id=77, match_status="unmatched"),
+        ]
+        match = svc._match_teaching_class(_MATCH_ITEM, candidates)
+        self.assertIsNone(match["class_offering_id"])
+
+
+class SchemaMigrationTests(unittest.TestCase):
+    def test_extension_columns_added_to_legacy_table(self):
+        schema_mod._SCHEMA_READY = False
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        # 模拟第一轮上线的旧表（没有 local_class_name / class_offering_id）。
+        conn.execute(
+            """
+            CREATE TABLE smart_classroom_course_schedule_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NOT NULL,
+                platform_code TEXT NOT NULL DEFAULT 'gxufl_smart_classroom',
+                remote_id TEXT NOT NULL DEFAULT '',
+                course_name TEXT NOT NULL DEFAULT '',
+                course_code TEXT NOT NULL DEFAULT '',
+                classroom TEXT NOT NULL DEFAULT '',
+                teaching_class_name TEXT NOT NULL DEFAULT '',
+                teacher_name TEXT NOT NULL DEFAULT '',
+                teacher_no TEXT NOT NULL DEFAULT '',
+                academic_year TEXT NOT NULL DEFAULT '',
+                academic_term TEXT NOT NULL DEFAULT '',
+                weekday INTEGER NOT NULL DEFAULT 0,
+                sections_json TEXT NOT NULL DEFAULT '[]',
+                weeks_json TEXT NOT NULL DEFAULT '[]',
+                week_text TEXT NOT NULL DEFAULT '',
+                single_or_double TEXT NOT NULL DEFAULT 'NONE',
+                student_count INTEGER NOT NULL DEFAULT 0,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                synced_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (teacher_id, platform_code, remote_id)
+            )
+            """
+        )
+        ensure_course_schedule_schema(conn)
+        columns = {row[1] for row in conn.execute(
+            "PRAGMA table_info(smart_classroom_course_schedule_items)"
+        ).fetchall()}
+        self.assertIn("local_class_name", columns)
+        self.assertIn("class_offering_id", columns)
+        conn.close()
 
 
 class OverviewTests(unittest.TestCase):
@@ -211,14 +302,16 @@ class OverviewTests(unittest.TestCase):
             week_text="1-2周",
             student_count=47,
         )
-        # 动态Web：周一 8-9节，第2周 → 2 课时，带教学班
+        # 动态Web：周一 8-9节，第2周 → 2 课时，带教学班 + 本地课堂映射
         _insert_item(
             self.conn,
             remote_id="r3",
             course_name="动态Web程序设计",
             course_code="E020141B4",
             classroom="（知新楼B320）示例实验室",
-            teaching_class_name="软工2402班",
+            teaching_class_name="动态Web程序设计-0001",
+            local_class_name="软工2402班",
+            class_offering_id=77,
             sections_json="[8,9]",
             weeks_json="[2]",
             week_text="2周",
@@ -253,10 +346,16 @@ class OverviewTests(unittest.TestCase):
         lesson = week2["lessons"][0]
         self.assertEqual(lesson["weekday"], 1)
         self.assertEqual(lesson["section_label"], "第2-3节")
-        # 教学班兜底标签
+        # 本地班级名优先于教学班代号；无匹配时用人数兜底
         labels = {lesson["class_label"] for lesson in week2["lessons"]}
         self.assertIn("软工2402班", labels)
+        self.assertNotIn("动态Web程序设计-0001", labels)
         self.assertIn("教学班 · 49人", labels)
+        # 已关联课堂的课程块带跳转链接，未关联的没有
+        by_label = {lesson["class_label"]: lesson for lesson in week2["lessons"]}
+        self.assertEqual(by_label["软工2402班"]["classroom_url"], "/classroom/77")
+        self.assertEqual(by_label["软工2402班"]["class_offering_id"], 77)
+        self.assertEqual(by_label["教学班 · 49人"]["classroom_url"], "")
 
     def test_course_filter_changes_aggregation_and_deck(self):
         overview = svc.build_teacher_course_schedule_overview(self.conn, 1, course="计算机网络")

@@ -65,6 +65,9 @@ def ensure_course_schedule_schema(conn: Any) -> None:
 
     # One row per remote schedule slot. sections_json / weeks_json are JSON
     # arrays of integers; weekday follows the remote convention 1=周一 .. 7=周日.
+    # local_class_name / class_offering_id are resolved at sync time from the
+    # check-in schedule sync so the UI can show real class names (软工2303班)
+    # and deep-link each lesson to its本地课堂 when the mapping is unambiguous.
     conn.execute(
         f"""
         CREATE TABLE IF NOT EXISTS smart_classroom_course_schedule_items (
@@ -76,6 +79,8 @@ def ensure_course_schedule_schema(conn: Any) -> None:
             course_code TEXT NOT NULL DEFAULT '',
             classroom TEXT NOT NULL DEFAULT '',
             teaching_class_name TEXT NOT NULL DEFAULT '',
+            local_class_name TEXT NOT NULL DEFAULT '',
+            class_offering_id INTEGER,
             teacher_name TEXT NOT NULL DEFAULT '',
             teacher_no TEXT NOT NULL DEFAULT '',
             academic_year TEXT NOT NULL DEFAULT '',
@@ -98,5 +103,33 @@ def ensure_course_schedule_schema(conn: Any) -> None:
         "ON smart_classroom_course_schedule_items "
         "(teacher_id, academic_year, academic_term, weekday)"
     )
+    _ensure_extension_columns(conn, engine)
 
     _SCHEMA_READY = True
+
+
+def _ensure_extension_columns(conn: Any, engine: str) -> None:
+    """Add columns introduced after the first release to pre-existing tables."""
+    extension_columns = (
+        ("local_class_name", "TEXT NOT NULL DEFAULT ''"),
+        ("class_offering_id", "INTEGER"),
+    )
+    if engine == "postgres":
+        for name, ddl_type in extension_columns:
+            conn.execute(
+                "ALTER TABLE smart_classroom_course_schedule_items "
+                f"ADD COLUMN IF NOT EXISTS {name} {ddl_type}"
+            )
+        return
+    existing = {
+        str(row[1])
+        for row in conn.execute(
+            "PRAGMA table_info(smart_classroom_course_schedule_items)"
+        ).fetchall()
+    }
+    for name, ddl_type in extension_columns:
+        if name not in existing:
+            conn.execute(
+                "ALTER TABLE smart_classroom_course_schedule_items "
+                f"ADD COLUMN {name} {ddl_type}"
+            )

@@ -2,24 +2,19 @@
  * 课时统计（教师课程表）页面。
  *
  * - 查询 + 信息归集板块：学年学期 / 课程 / 班级筛选，汇总卡片与按课程课时统计；
- * - 周课程时间轴板块：Win7 Flip3D 风格的 3D 周卡片堆栈，滚轮 / 方向键 / 滑杆
- *   切换前后周，点击最前卡片放大铺满页面查看整周课表；
+ * - 周课程时间轴板块：复用可移植的 course_schedule_deck 模块（Win7 Flip3D
+ *   风格 3D 周卡片堆栈，放大视图含早读/上午/下午/晚上分区与课堂跳转）；
  * - 顶栏「同步智慧课堂」立即拉取 teacherSchedule/list 并替换本地学期数据。
  */
+
+import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260703';
 
 const bootElement = document.getElementById('course-schedule-boot');
 const boot = bootElement ? JSON.parse(bootElement.textContent || '{}') : {};
 
-const COURSE_PALETTE = [
-    '#4f46e5', '#0ea5e9', '#059669', '#d97706', '#db2777',
-    '#7c3aed', '#0891b2', '#65a30d', '#ea580c', '#e11d48',
-];
-
 const state = {
     overview: boot.overview || null,
     hasCredential: Boolean(boot.has_credential),
-    activeWeekIndex: 0,     // index into overview.weeks
-    expanded: false,
     syncing: false,
     loading: false,
 };
@@ -33,20 +28,17 @@ const refs = {
     syncTime: document.querySelector('[data-cs-sync-time]'),
     summary: document.querySelector('[data-cs-summary]'),
     courses: document.querySelector('[data-cs-courses]'),
-    stage: document.querySelector('[data-cs-stage]'),
-    indicator: document.querySelector('[data-cs-indicator]'),
-    prevBtn: document.querySelector('[data-cs-prev]'),
-    nextBtn: document.querySelector('[data-cs-next]'),
-    slider: document.querySelector('[data-cs-slider]'),
-    expand: document.querySelector('[data-cs-expand]'),
-    expandTitle: document.querySelector('[data-cs-expand-title]'),
-    expandSub: document.querySelector('[data-cs-expand-sub]'),
-    expandBody: document.querySelector('[data-cs-expand-body]'),
-    expandPrev: document.querySelector('[data-cs-expand-prev]'),
-    expandNext: document.querySelector('[data-cs-expand-next]'),
-    expandClose: document.querySelector('[data-cs-expand-close]'),
+    deckMount: document.querySelector('[data-cs-deck]'),
     toast: document.querySelector('[data-cs-toast]'),
 };
+
+const deck = createScheduleDeck(refs.deckMount, {
+    title: '周课程时间轴',
+    description: '滚轮或方向键切换周次，点击最前面的周卡片放大查看整周课表；放大后点击课程块可进入对应课堂。',
+    emptyHtml: () => (state.hasCredential
+        ? '<strong>暂无课表数据</strong><p>点击右上角「同步智慧课堂」拉取本学期排课。</p>'
+        : '<strong>还未配置智慧课堂账号</strong><p>请先到 <a href="/manage/teaching/smart-classroom-integrations">智慧课堂对接</a> 保存并验证账号，再回来同步课程表。</p>'),
+});
 
 let toastTimer = null;
 
@@ -64,12 +56,6 @@ function escapeHtml(value) {
         .replaceAll('<', '&lt;')
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;');
-}
-
-function courseAccent(courseName) {
-    const options = state.overview?.filters?.course_options || [];
-    const index = options.indexOf(courseName);
-    return COURSE_PALETTE[(index >= 0 ? index : 0) % COURSE_PALETTE.length];
 }
 
 function currentFilters() {
@@ -165,7 +151,7 @@ function renderCourses() {
     }
     const activeCourse = overview.filters?.course || '';
     refs.courses.innerHTML = courses.map((course) => {
-        const accent = courseAccent(course.course_name);
+        const accent = courseAccentFor(overview, course.course_name);
         const metaChips = [
             course.week_span,
             `${course.week_count} 个教学周`,
@@ -188,212 +174,15 @@ function renderCourses() {
 }
 
 /* ------------------------------------------------------------------ *
- * 课表网格（迷你卡片与放大视图共用）
- * ------------------------------------------------------------------ */
-
-function renderWeekGrid(week, { expanded = false } = {}) {
-    const range = state.overview?.section_range || { min: 1, max: 11 };
-    const minSection = Math.max(1, Number(range.min) || 1);
-    const maxSection = Math.max(minSection, Number(range.max) || 11);
-    const sectionCount = maxSection - minSection + 1;
-    const headerRow = expanded ? '34px' : '24px';
-    const labelCol = expanded ? '54px' : '30px';
-
-    const dayHeads = ['一', '二', '三', '四', '五', '六', '日']
-        .map((day, index) => `<div class="cs-grid__day" style="grid-column:${index + 2};grid-row:1;">周${day}</div>`)
-        .join('');
-    const sectionLabels = Array.from({ length: sectionCount }, (_, offset) => {
-        const section = minSection + offset;
-        return `<div class="cs-grid__section" style="grid-column:1;grid-row:${offset + 2};">${section}</div>`;
-    }).join('');
-    const cellBackgrounds = Array.from({ length: sectionCount * 7 }, (_, cell) => {
-        const row = Math.floor(cell / 7) + 2;
-        const column = (cell % 7) + 2;
-        return `<div class="cs-grid__cellbg" style="grid-column:${column};grid-row:${row};"></div>`;
-    }).join('');
-
-    const lessons = (week?.lessons || []).map((lesson) => {
-        const sections = lesson.sections || [];
-        const start = Math.max(minSection, sections[0] || minSection);
-        const end = Math.min(maxSection, sections[sections.length - 1] || start);
-        const rowStart = start - minSection + 2;
-        const rowSpan = Math.max(1, end - start + 1);
-        const column = Math.min(7, Math.max(1, lesson.weekday || 1)) + 1;
-        const accent = courseAccent(lesson.course_name);
-        const detailLines = expanded
-            ? `<span>${escapeHtml(lesson.section_label)} · ${escapeHtml(lesson.classroom || '教室待定')}</span>
-               <span>${escapeHtml(lesson.class_label || '')}${lesson.student_count ? ` · ${lesson.student_count}人` : ''}</span>`
-            : `<span>${escapeHtml(lesson.classroom || '')}</span>
-               <span>${escapeHtml(lesson.class_label || '')}</span>`;
-        return `
-        <div class="cs-lesson" style="--cs-accent:${accent};grid-column:${column};grid-row:${rowStart} / span ${rowSpan};"
-             title="${escapeHtml(`${lesson.course_name} ${lesson.section_label} ${lesson.classroom || ''} ${lesson.class_label || ''}`)}">
-            <strong>${escapeHtml(lesson.course_name)}</strong>
-            ${detailLines}
-        </div>`;
-    }).join('');
-
-    return `
-    <div class="cs-grid ${expanded ? 'cs-grid--expanded' : ''}"
-         style="grid-template-columns:${labelCol} repeat(7, 1fr);grid-template-rows:${headerRow} repeat(${sectionCount}, 1fr);">
-        <div class="cs-grid__corner" style="grid-column:1;grid-row:1;">节</div>
-        ${dayHeads}
-        ${sectionLabels}
-        ${cellBackgrounds}
-        ${lessons}
-    </div>`;
-}
-
-/* ------------------------------------------------------------------ *
- * 3D 周卡片堆栈
- * ------------------------------------------------------------------ */
-
-function renderDeck() {
-    const overview = state.overview;
-    if (!refs.stage) return;
-    refs.stage.querySelectorAll('.cs-card, .cs-empty').forEach((node) => node.remove());
-    const weeks = overview?.weeks || [];
-
-    if (!weeks.length) {
-        const empty = document.createElement('div');
-        empty.className = 'cs-empty';
-        empty.innerHTML = state.hasCredential
-            ? '<strong>暂无课表数据</strong><p>点击右上角「同步智慧课堂」拉取本学期排课。</p>'
-            : '<strong>还未配置智慧课堂账号</strong><p>请先到 <a href="/manage/teaching/smart-classroom-integrations">智慧课堂对接</a> 保存并验证账号，再回来同步课程表。</p>';
-        refs.stage.appendChild(empty);
-        updateDeckNav();
-        return;
-    }
-
-    state.activeWeekIndex = Math.min(Math.max(state.activeWeekIndex, 0), weeks.length - 1);
-    weeks.forEach((week, index) => {
-        const card = document.createElement('div');
-        card.className = 'cs-card';
-        card.dataset.weekIndex = String(index);
-        card.innerHTML = `
-            <div class="cs-card__bar">
-                <strong>${escapeHtml(week.label)}</strong>
-                <span>${week.lesson_count} 节安排 · ${week.total_hours} 课时</span>
-                <span class="cs-card__badge ${week.is_current ? 'is-current' : ''}">${week.is_current ? '本周' : escapeHtml(week.label)}</span>
-            </div>
-            <div class="cs-card__body">${renderWeekGrid(week)}</div>`;
-        refs.stage.appendChild(card);
-    });
-    layoutDeck();
-}
-
-function layoutDeck() {
-    const cards = refs.stage ? refs.stage.querySelectorAll('.cs-card') : [];
-    cards.forEach((card) => {
-        const index = Number(card.dataset.weekIndex);
-        const offset = index - state.activeWeekIndex;
-        card.classList.toggle('is-active', offset === 0);
-        if (offset < -1 || offset > 6) {
-            card.hidden = true;
-            return;
-        }
-        card.hidden = false;
-        let transform;
-        let opacity;
-        let zIndex;
-        if (offset === 0) {
-            transform = 'translate(-50%, -50%) translateZ(60px)';
-            opacity = 1;
-            zIndex = 300;
-        } else if (offset > 0) {
-            // 后面的周：像 Win7 Flip3D 一样向右上方纵深堆叠。
-            transform = `translate(-50%, -50%) translate3d(${offset * 64}px, ${offset * -34}px, ${-offset * 170 + 60}px) rotateY(-7deg)`;
-            opacity = Math.max(0.28, 1 - offset * 0.14);
-            zIndex = 300 - offset;
-        } else {
-            // 刚翻过去的周：滑向左前方并淡出。
-            transform = 'translate(-50%, -50%) translate3d(-420px, 120px, 240px) rotateY(18deg)';
-            opacity = 0;
-            zIndex = 301;
-        }
-        card.style.transform = transform;
-        card.style.opacity = String(opacity);
-        card.style.zIndex = String(zIndex);
-        card.style.pointerEvents = offset === 0 ? 'auto' : 'none';
-    });
-    updateDeckNav();
-    if (state.expanded) renderExpanded();
-}
-
-function updateDeckNav() {
-    const weeks = state.overview?.weeks || [];
-    const active = weeks[state.activeWeekIndex];
-    if (refs.indicator) {
-        refs.indicator.innerHTML = active
-            ? `${escapeHtml(active.label)}${active.is_current ? ' · 本周' : ''}<small>${active.lesson_count} 节安排 · ${active.total_hours} 课时</small>`
-            : '—';
-    }
-    if (refs.slider) {
-        refs.slider.min = '1';
-        refs.slider.max = String(Math.max(1, weeks.length));
-        refs.slider.value = String(state.activeWeekIndex + 1);
-        refs.slider.disabled = !weeks.length;
-    }
-    if (refs.prevBtn) refs.prevBtn.disabled = state.activeWeekIndex <= 0;
-    if (refs.nextBtn) refs.nextBtn.disabled = state.activeWeekIndex >= weeks.length - 1;
-}
-
-function goToWeek(index) {
-    const weeks = state.overview?.weeks || [];
-    if (!weeks.length) return;
-    const next = Math.min(Math.max(index, 0), weeks.length - 1);
-    if (next === state.activeWeekIndex) return;
-    state.activeWeekIndex = next;
-    layoutDeck();
-}
-
-/* ------------------------------------------------------------------ *
- * 放大视图
- * ------------------------------------------------------------------ */
-
-function renderExpanded() {
-    const weeks = state.overview?.weeks || [];
-    const week = weeks[state.activeWeekIndex];
-    if (!week || !refs.expandBody) return;
-    if (refs.expandTitle) refs.expandTitle.textContent = week.label + (week.is_current ? '（本周）' : '');
-    if (refs.expandSub) {
-        const termLabel = state.overview?.selected_term?.label || '';
-        refs.expandSub.textContent = `${termLabel} · ${week.lesson_count} 节安排 · ${week.total_hours} 课时`;
-    }
-    refs.expandBody.innerHTML = renderWeekGrid(week, { expanded: true });
-}
-
-function openExpanded() {
-    if (!state.overview?.weeks?.length || !refs.expand) return;
-    state.expanded = true;
-    renderExpanded();
-    refs.expand.classList.add('is-open');
-}
-
-function closeExpanded() {
-    state.expanded = false;
-    refs.expand?.classList.remove('is-open');
-    refs.stage?.focus({ preventScroll: true });
-}
-
-/* ------------------------------------------------------------------ *
  * 数据加载与同步
  * ------------------------------------------------------------------ */
 
 function applyOverview(overview, { keepWeek = false } = {}) {
-    const previousWeek = state.overview?.weeks?.[state.activeWeekIndex]?.week_index;
     state.overview = overview;
-    const weeks = overview?.weeks || [];
-    let nextIndex = weeks.findIndex((week) => week.is_current);
-    if (keepWeek && previousWeek) {
-        const kept = weeks.findIndex((week) => week.week_index === previousWeek);
-        if (kept >= 0) nextIndex = kept;
-    }
-    state.activeWeekIndex = nextIndex >= 0 ? nextIndex : 0;
     renderFilters();
     renderSummary();
     renderCourses();
-    renderDeck();
+    deck?.setOverview(overview, { keepWeek });
 }
 
 async function reloadOverview({ keepWeek = true } = {}) {
@@ -469,56 +258,6 @@ refs.courses?.addEventListener('click', (event) => {
     const courseName = card.dataset.course || '';
     refs.courseSelect.value = refs.courseSelect.value === courseName ? '' : courseName;
     reloadOverview();
-});
-
-let wheelLockUntil = 0;
-refs.stage?.addEventListener('wheel', (event) => {
-    if (!state.overview?.weeks?.length) return;
-    event.preventDefault();
-    const now = Date.now();
-    if (now < wheelLockUntil) return;
-    wheelLockUntil = now + 240;
-    goToWeek(state.activeWeekIndex + (event.deltaY > 0 ? 1 : -1));
-}, { passive: false });
-
-refs.stage?.addEventListener('keydown', (event) => {
-    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-        event.preventDefault();
-        goToWeek(state.activeWeekIndex + 1);
-    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        goToWeek(state.activeWeekIndex - 1);
-    } else if (event.key === 'Enter') {
-        openExpanded();
-    }
-});
-
-refs.stage?.addEventListener('click', (event) => {
-    const card = event.target.closest('.cs-card');
-    if (card && card.classList.contains('is-active')) openExpanded();
-});
-
-refs.prevBtn?.addEventListener('click', () => goToWeek(state.activeWeekIndex - 1));
-refs.nextBtn?.addEventListener('click', () => goToWeek(state.activeWeekIndex + 1));
-refs.slider?.addEventListener('input', () => goToWeek(Number(refs.slider.value) - 1));
-
-refs.expandPrev?.addEventListener('click', () => { goToWeek(state.activeWeekIndex - 1); renderExpanded(); });
-refs.expandNext?.addEventListener('click', () => { goToWeek(state.activeWeekIndex + 1); renderExpanded(); });
-refs.expandClose?.addEventListener('click', closeExpanded);
-refs.expand?.addEventListener('click', (event) => {
-    if (event.target === refs.expand) closeExpanded();
-});
-refs.expand?.addEventListener('wheel', (event) => {
-    event.preventDefault();
-    const now = Date.now();
-    if (now < wheelLockUntil) return;
-    wheelLockUntil = now + 260;
-    goToWeek(state.activeWeekIndex + (event.deltaY > 0 ? 1 : -1));
-    renderExpanded();
-}, { passive: false });
-
-document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && state.expanded) closeExpanded();
 });
 
 /* ------------------------------------------------------------------ *
