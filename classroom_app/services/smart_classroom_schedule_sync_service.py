@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import json
 import re
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -38,7 +39,138 @@ TEACHER_SCHEDULE_LIST_PATH = "/teaching/teacherSchedule/list"
 WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 SINGLE_OR_DOUBLE_LABELS = {"NONE": "", "SINGLE": "单周", "DOUBLE": "双周"}
 
+# 历史学期回溯数量：从当前学期往前逐学期请求（远端不支持参数时会因
+# 严格的学期过滤而自动落空，不会污染本地数据）。
+HISTORY_TERM_LOOKBACK = 6
+
 _teacher_schedule_sync_locks: dict[int, asyncio.Lock] = {}
+
+
+# --------------------------------------------------------------------------- #
+# 学年学期与教学周锚定工具
+#
+# 全平台口径（与 academic_service.compute_semester_week_count 一致）：
+# 第 1 教学周 = 含学期开始日的自然周，周一为一周之始。
+# --------------------------------------------------------------------------- #
+
+
+def _monday_of(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def _parse_iso_date(value: Any) -> date | None:
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
+def _today_local() -> date:
+    """Asia/Shanghai 的今天（与平台学期日历同一时区口径）。"""
+    try:
+        from .academic_service import china_today
+
+        return china_today()
+    except Exception:  # noqa: BLE001 — 兜底本机日期
+        return datetime.now().date()
+
+
+def _derive_week1_monday(synced_at_iso: str, cur_week: int) -> str:
+    """由同步时刻与当时的教学周反推第 1 教学周周一（ISO 日期）。"""
+    if cur_week < 1:
+        return ""
+    synced_day = _parse_iso_date(synced_at_iso)
+    if synced_day is None:
+        return ""
+    return (_monday_of(synced_day) - timedelta(weeks=cur_week - 1)).isoformat()
+
+
+def _previous_term_key(year: str, term: str) -> tuple[str, str] | None:
+    """('2025-2026','2') → ('2025-2026','1')；('2025-2026','1') → ('2024-2025','2')。"""
+    matched = re.fullmatch(r"(\d{4})-(\d{4})", str(year or "").strip())
+    term_text = str(term or "").strip()
+    if not matched:
+        return None
+    if term_text == "2":
+        return (str(year).strip(), "1")
+    if term_text == "1":
+        start_year = int(matched.group(1)) - 1
+        return (f"{start_year}-{start_year + 1}", "2")
+    return None
+
+
+def _history_term_keys(year: str, term: str, count: int = HISTORY_TERM_LOOKBACK) -> list[tuple[str, str]]:
+    keys: list[tuple[str, str]] = []
+    cursor: tuple[str, str] | None = (year, term)
+    for _ in range(count):
+        cursor = _previous_term_key(*cursor) if cursor else None
+        if cursor is None:
+            break
+        keys.append(cursor)
+    return keys
+
+
+# 平台学期名（academic_semesters.name，如 "2025-2026第二学期" / "2025-2026学年第2学期"）
+# → 智慧课堂 (year, term)。
+_SEMESTER_NAME_RE = re.compile(r"(\d{4})\s*[-–—~]\s*(\d{4}).*?([一二12])\s*学期")
+_TERM_DIGITS = {"一": "1", "1": "1", "二": "2", "2": "2"}
+
+
+def _parse_platform_semester_name(name: Any) -> tuple[str, str] | None:
+    matched = _SEMESTER_NAME_RE.search(str(name or ""))
+    if not matched:
+        return None
+    term = _TERM_DIGITS.get(matched.group(3), "")
+    if not term:
+        return None
+    return (f"{matched.group(1)}-{matched.group(2)}", term)
+
+
+def _load_platform_semester_anchors(conn, teacher_id: int) -> dict[tuple[str, str], dict[str, Any]]:
+    """教师可见的平台学期设置（academic_semesters）→ 教学周锚点。
+
+    平台学期设置是全平台教学活动的权威时间基准；本人创建的学期优先于
+    组织共享的学期。解析失败/无学期时返回空 dict，调用方退回同步锚点。
+    """
+    try:
+        from .academic_service import load_teacher_semester_rows
+
+        rows = load_teacher_semester_rows(conn, int(teacher_id))
+    except Exception:  # noqa: BLE001 — 学期模块不可用时静默降级
+        return {}
+    anchors: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        key = _parse_platform_semester_name(row.get("name"))
+        if key is None:
+            continue
+        start_day = _parse_iso_date(row.get("start_date"))
+        if start_day is None:
+            continue
+        entry = {
+            "semester_id": _coerce_int(row.get("id")),
+            "name": _clean_text(row.get("name")),
+            "week1_monday": _monday_of(start_day),
+            "week_count": _coerce_int(row.get("week_count")),
+            "is_owned": bool(row.get("is_owned")),
+        }
+        existing = anchors.get(key)
+        if existing is None or (entry["is_owned"] and not existing["is_owned"]):
+            anchors[key] = entry
+    return anchors
+
+
+def _platform_week_for_date(conn, semester_id: int, on_date: date) -> int:
+    """平台学期日历的逐日 week_index（含调休等人工修正），查不到返回 0。"""
+    if semester_id <= 0:
+        return 0
+    try:
+        row = conn.execute(
+            "SELECT week_index FROM academic_semester_calendar_days WHERE semester_id = ? AND date = ?",
+            (int(semester_id), on_date.isoformat()),
+        ).fetchone()
+    except Exception:  # noqa: BLE001 — 日历表不存在时退回算术推算
+        return 0
+    return _coerce_int(row["week_index"]) if row else 0
 
 
 def _now_iso() -> str:
@@ -160,8 +292,17 @@ def _parse_schedule_payload(payload: Any) -> dict[str, Any]:
     }
 
 
-async def _fetch_teacher_schedule(client: httpx.AsyncClient) -> dict[str, Any]:
-    response = await client.post(TEACHER_SCHEDULE_LIST_PATH, data={})
+async def _fetch_teacher_schedule(
+    client: httpx.AsyncClient,
+    *,
+    year: str = "",
+    semester: str = "",
+) -> dict[str, Any]:
+    """拉取课表：不带参数 = 当前学期；带 year/semester = 指定（历史）学期。"""
+    data: dict[str, str] = {}
+    if year and semester:
+        data = {"year": year, "semester": semester}
+    response = await client.post(TEACHER_SCHEDULE_LIST_PATH, data=data)
     response.raise_for_status()
     return _parse_schedule_payload(response.json())
 
@@ -308,9 +449,41 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
                 "warnings": [],
             }
 
+        history_synced: list[tuple[str, str]] = []
+        history_warnings: list[str] = []
+        history_items: list[dict[str, Any]] = []
+        history_meta: dict[tuple[str, str], dict[str, int]] = {}
         try:
             async with open_authenticated_smart_classroom_client(access_payload) as (client, _profile, _login):
                 parsed = await _fetch_teacher_schedule(client)
+                current_key = (parsed["year"], parsed["semester"])
+                # 历史学期：从当前学期逐学期回溯请求。严格过滤——只保留
+                # academic_year/term 与请求学期完全一致的条目；远端不支持
+                # 参数时会原样返回当前学期，过滤后为空 → 跳过且不动本地。
+                if current_key[0] and current_key[1]:
+                    for hist_year, hist_term in _history_term_keys(*current_key):
+                        try:
+                            hist = await _fetch_teacher_schedule(
+                                client, year=hist_year, semester=hist_term
+                            )
+                        except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
+                            history_warnings.append(
+                                f"{hist_year} 第{hist_term}学期历史课表拉取失败：{str(exc)[:80]}"
+                            )
+                            continue
+                        hist_items = [
+                            item
+                            for item in hist["items"]
+                            if (item["academic_year"], item["academic_term"]) == (hist_year, hist_term)
+                        ]
+                        if not hist_items:
+                            continue
+                        history_synced.append((hist_year, hist_term))
+                        history_items.extend(hist_items)
+                        highest_week = max(max(item["weeks"]) for item in hist_items)
+                        history_meta[(hist_year, hist_term)] = {
+                            "max_week": max(hist["max_week"], highest_week),
+                        }
         except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
             return {
                 "status": "failed",
@@ -320,8 +493,9 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
             }
 
         synced_at = _now_iso()
-        items = parsed["items"]
-        # Terms present in the payload — replacement is scoped to these so an
+        current_items = parsed["items"]
+        items = current_items + history_items
+        # Terms present in the payloads — replacement is scoped to these so an
         # empty remote answer never wipes previously synced history.
         term_keys = {(item["academic_year"], item["academic_term"]) for item in items}
         if parsed["year"] or parsed["semester"]:
@@ -404,23 +578,41 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
                         synced_at,
                     ),
                 )
+            # cur_week / 第 1 周锚点只属于远端标记的"当前学期"；历史学期
+            # cur_week=0（没有"本周"概念），锚点交给平台学期设置在查询时解析。
+            current_week1_monday = _derive_week1_monday(synced_at, parsed["cur_week"])
             for year, term in term_keys:
-                item_count = sum(
-                    1 for item in items if (item["academic_year"], item["academic_term"]) == (year, term)
-                )
+                is_current_term = (year, term) == (parsed["year"], parsed["semester"])
+                term_items = [
+                    item for item in items if (item["academic_year"], item["academic_term"]) == (year, term)
+                ]
+                highest_week = max((max(item["weeks"]) for item in term_items if item["weeks"]), default=0)
+                if is_current_term:
+                    cur_week_value = parsed["cur_week"]
+                    cur_xq_value = parsed["cur_xq"]
+                    max_week_value = max(parsed["max_week"], highest_week)
+                    week1_value = current_week1_monday
+                else:
+                    cur_week_value = 0
+                    cur_xq_value = 0
+                    max_week_value = max(
+                        history_meta.get((year, term), {}).get("max_week", 0), highest_week
+                    )
+                    week1_value = ""
                 conn.execute(
                     """
                     INSERT INTO smart_classroom_course_schedule_meta (
                         teacher_id, platform_code, academic_year, academic_term,
-                        cur_week, max_week, cur_xq, item_count, synced_at,
-                        created_at, updated_at
+                        cur_week, max_week, cur_xq, item_count, week1_monday_date,
+                        synced_at, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(teacher_id, platform_code, academic_year, academic_term) DO UPDATE SET
                         cur_week = excluded.cur_week,
                         max_week = excluded.max_week,
                         cur_xq = excluded.cur_xq,
                         item_count = excluded.item_count,
+                        week1_monday_date = excluded.week1_monday_date,
                         synced_at = excluded.synced_at,
                         updated_at = excluded.updated_at
                     """,
@@ -429,10 +621,11 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
                         SMART_PLATFORM_CODE,
                         year,
                         term,
-                        parsed["cur_week"],
-                        parsed["max_week"],
-                        parsed["cur_xq"],
-                        item_count,
+                        cur_week_value,
+                        max_week_value,
+                        cur_xq_value,
+                        len(term_items),
+                        week1_value,
                         synced_at,
                         synced_at,
                         synced_at,
@@ -440,34 +633,42 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
                 )
             conn.commit()
 
-        total_hours = sum(len(item["sections"]) * len(item["weeks"]) for item in items)
-        course_count = len({(item["course_name"], item["course_code"]) for item in items})
+        total_hours = sum(len(item["sections"]) * len(item["weeks"]) for item in current_items)
+        course_count = len({(item["course_name"], item["course_code"]) for item in current_items})
         counts = {
-            "schedule_count": len(items),
+            "schedule_count": len(current_items),
             "course_count": course_count,
             "total_hours": total_hours,
             "matched_class_count": matched_class_count,
             "linked_offering_count": linked_offering_count,
+            "history_term_count": len(history_synced),
+            "history_schedule_count": len(history_items),
         }
         if not items:
             return {
                 "status": "empty",
                 "message": "智慧课堂本学期暂未返回任何排课记录。",
                 "counts": counts,
-                "warnings": [],
+                "warnings": history_warnings,
                 "synced_at": synced_at,
             }
+        history_text = (
+            f"；另同步 {len(history_synced)} 个历史学期（{len(history_items)} 条排课）"
+            if history_synced
+            else ""
+        )
         return {
             "status": "success",
             "message": (
-                f"已同步 {len(items)} 条排课、{course_count} 门课程，"
+                f"已同步 {len(current_items)} 条排课、{course_count} 门课程，"
                 f"本学期共 {total_hours} 课时"
                 + (f"；{matched_class_count} 条已标注班级" if matched_class_count else "")
                 + (f"；{linked_offering_count} 条已关联本地课堂" if linked_offering_count else "")
+                + history_text
                 + "。"
             ),
             "counts": counts,
-            "warnings": [],
+            "warnings": history_warnings,
             "synced_at": synced_at,
         }
 
@@ -585,7 +786,13 @@ def _build_course_stats(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return stats
 
 
-def _build_week_deck(items: list[dict[str, Any]], *, max_week: int, cur_week: int) -> list[dict[str, Any]]:
+def _build_week_deck(
+    items: list[dict[str, Any]],
+    *,
+    max_week: int,
+    cur_week: int,
+    week1_monday: date | None = None,
+) -> list[dict[str, Any]]:
     highest_item_week = max((max(item["weeks"]) for item in items if item["weeks"]), default=0)
     deck_max = max(max_week, highest_item_week)
     if deck_max <= 0:
@@ -615,17 +822,73 @@ def _build_week_deck(items: list[dict[str, Any]], *, max_week: int, cur_week: in
             if week_index in item["weeks"]
         ]
         lessons.sort(key=lambda lesson: (lesson["weekday"], lesson["sections"][0] if lesson["sections"] else 0))
+        monday = week1_monday + timedelta(weeks=week_index - 1) if week1_monday else None
+        sunday = monday + timedelta(days=6) if monday else None
         weeks.append(
             {
                 "week_index": week_index,
                 "label": f"第{week_index}周",
                 "is_current": week_index == cur_week,
+                "monday_date": monday.isoformat() if monday else "",
+                "date_range_label": (
+                    f"{monday.month}月{monday.day}日 – {sunday.month}月{sunday.day}日"
+                    if monday and sunday
+                    else ""
+                ),
                 "lesson_count": len(lessons),
                 "total_hours": sum(lesson["hours"] for lesson in lessons),
                 "lessons": lessons,
             }
         )
     return weeks
+
+
+def _resolve_term_anchor(
+    entry: dict[str, Any], platform_anchors: dict[tuple[str, str], dict[str, Any]]
+) -> dict[str, Any]:
+    """教学周锚点解析：平台学期设置 > 同步时推算 > 无锚点。
+
+    平台学期（academic_semesters）是全平台教学活动的权威时间基准，教师改
+    了学期设置后无需重新同步即可生效；同步锚点由 synced_at+curWeek 反推。
+    """
+    platform = platform_anchors.get((entry["year"], entry["term"]))
+    if platform is not None:
+        return {
+            "week1_monday": platform["week1_monday"],
+            "week_count_hint": max(platform["week_count"], entry["max_week"]),
+            "anchor_source": "platform",
+            "anchor_label": f"平台学期设置（{platform['name']}）",
+            "semester_id": platform["semester_id"],
+        }
+    sync_monday = _parse_iso_date(entry.get("week1_monday_date"))
+    if sync_monday is not None:
+        return {
+            "week1_monday": sync_monday,
+            "week_count_hint": entry["max_week"],
+            "anchor_source": "sync",
+            "anchor_label": "按智慧课堂同步时的教学周推算",
+            "semester_id": 0,
+        }
+    return {
+        "week1_monday": None,
+        "week_count_hint": entry["max_week"],
+        "anchor_source": "",
+        "anchor_label": "",
+        "semester_id": 0,
+    }
+
+
+def _term_status(anchor: dict[str, Any], today: date) -> str:
+    """current / ended / future / unknown（无锚点无法判断日期归属）。"""
+    week1 = anchor["week1_monday"]
+    weeks_total = max(_coerce_int(anchor["week_count_hint"]), 1)
+    if week1 is None:
+        return "unknown"
+    if today < week1:
+        return "future"
+    if today > week1 + timedelta(days=weeks_total * 7 - 1):
+        return "ended"
+    return "current"
 
 
 def build_teacher_course_schedule_overview(
@@ -637,9 +900,20 @@ def build_teacher_course_schedule_overview(
     course: str = "",
     class_label: str = "",
 ) -> dict[str, Any]:
-    """Build the filtered overview: filters + aggregation + week deck."""
+    """Build the filtered overview: filters + aggregation + week deck.
+
+    学年学期与教学周对齐规则（教学正确性关键，勿随意改动）：
+    - 教学周锚点优先用平台学期设置（academic_semesters + 逐日学期日历的
+      week_index，权威且含人工调整），其次用同步时推算的第 1 周周一；
+    - "本周"由锚点 + 今天动态计算，不使用同步时落库的 cur_week 快照，
+      避免长时间未同步导致周次漂移；
+    - 默认选中学期：日期落在其教学周范围内的"进行中"学期；假期（无进行
+      中学期）选最近结束的学期并定位其最后一个教学周（focus_week）。
+    """
     ensure_course_schedule_schema(conn)
+    today = _today_local()
     meta_rows = _load_meta_rows(conn, int(teacher_id))
+    platform_anchors = _load_platform_semester_anchors(conn, int(teacher_id))
     terms = [
         {
             "year": str(meta.get("academic_year") or ""),
@@ -650,10 +924,19 @@ def build_teacher_course_schedule_overview(
             "cur_week": _coerce_int(meta.get("cur_week")),
             "max_week": _coerce_int(meta.get("max_week")),
             "item_count": _coerce_int(meta.get("item_count")),
+            "week1_monday_date": str(meta.get("week1_monday_date") or ""),
             "synced_at": _display_datetime(meta.get("synced_at")),
         }
         for meta in meta_rows
     ]
+    for entry in terms:
+        anchor = _resolve_term_anchor(entry, platform_anchors)
+        entry["anchor_source"] = anchor["anchor_source"]
+        entry["week1_monday"] = (
+            anchor["week1_monday"].isoformat() if anchor["week1_monday"] else ""
+        )
+        entry["status"] = _term_status(anchor, today)
+        entry["_anchor"] = anchor
     if not terms:
         return {
             "status": "empty",
@@ -668,10 +951,19 @@ def build_teacher_course_schedule_overview(
             "section_range": {"min": 1, "max": 12},
         }
 
+    # 学期选择：显式请求 > 进行中的学期 > 最近结束的学期（假期场景）> 最新学期。
     selected = next(
         (entry for entry in terms if entry["year"] == year and entry["term"] == term),
-        terms[0],
+        None,
     )
+    if selected is None:
+        selected = next((entry for entry in terms if entry["status"] == "current"), None)
+    if selected is None:
+        ended_terms = [entry for entry in terms if entry["status"] == "ended"]
+        if ended_terms:
+            selected = max(ended_terms, key=lambda entry: entry["week1_monday"])
+    if selected is None:
+        selected = terms[0]
     rows = conn.execute(
         """
         SELECT *
@@ -693,8 +985,34 @@ def build_teacher_course_schedule_overview(
     if class_label:
         items = [item for item in items if item["class_label"] == class_label]
 
+    # 动态"本周"与打开定位（focus_week）：
+    # - 进行中：本周 = 平台学期日历逐日 week_index（权威）或按锚点周一推算；
+    # - 已结束（假期）：无"本周"，定位最后一个教学周；
+    # - 未开始：定位第 1 周；
+    # - 无锚点：退回同步时落库的 cur_week 快照。
+    anchor = selected["_anchor"]
+    status = selected["status"]
+    live_cur_week = 0
+    if status == "current":
+        live_cur_week = _platform_week_for_date(conn, anchor["semester_id"], today)
+        if live_cur_week <= 0:
+            live_cur_week = ((today - anchor["week1_monday"]).days // 7) + 1
+    elif status == "unknown":
+        live_cur_week = selected["cur_week"]
+
     course_stats = _build_course_stats(items)
-    weeks = _build_week_deck(items, max_week=selected["max_week"], cur_week=selected["cur_week"])
+    weeks = _build_week_deck(
+        items,
+        max_week=selected["max_week"],
+        cur_week=live_cur_week,
+        week1_monday=anchor["week1_monday"],
+    )
+    if status == "ended":
+        focus_week = len(weeks)
+    elif status == "future":
+        focus_week = 1 if weeks else 0
+    else:
+        focus_week = min(max(live_cur_week, 1), len(weeks)) if weeks else 0
     total_hours = sum(item["total_hours"] for item in items)
     cur_week_entry = next((week for week in weeks if week["is_current"]), None)
     all_sections = [section for item in items for section in item["sections"]]
@@ -707,8 +1025,12 @@ def build_teacher_course_schedule_overview(
         "slot_count": len(items),
         "total_hours": total_hours,
         "current_week_hours": cur_week_entry["total_hours"] if cur_week_entry else 0,
-        "cur_week": selected["cur_week"],
+        "cur_week": live_cur_week,
         "max_week": selected["max_week"],
+        "term_status": status,
+        "week1_monday": selected["week1_monday"],
+        "anchor_source": anchor["anchor_source"],
+        "anchor_label": anchor["anchor_label"],
         "weekly_average_hours": (
             round(total_hours / len([week for week in weeks if week["lesson_count"]]), 1)
             if any(week["lesson_count"] for week in weeks)
@@ -716,12 +1038,21 @@ def build_teacher_course_schedule_overview(
         ),
     }
 
+    selected_payload = {
+        key: value for key, value in selected.items() if key != "_anchor"
+    }
+    selected_payload["focus_week"] = focus_week
+    selected_payload["live_cur_week"] = live_cur_week
+    terms_payload = [
+        {key: value for key, value in entry.items() if key != "_anchor"} for entry in terms
+    ]
+
     return {
         "status": "success",
         "has_data": bool(all_items),
         "message": "",
-        "terms": terms,
-        "selected_term": selected,
+        "terms": terms_payload,
+        "selected_term": selected_payload,
         "filters": {
             "course": course if course in course_options else "",
             "class_label": class_label if class_label in class_options else "",

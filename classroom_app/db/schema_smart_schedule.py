@@ -51,6 +51,7 @@ def ensure_course_schedule_schema(conn: Any) -> None:
             max_week INTEGER NOT NULL DEFAULT 0,
             cur_xq INTEGER NOT NULL DEFAULT 0,
             item_count INTEGER NOT NULL DEFAULT 0,
+            week1_monday_date TEXT NOT NULL DEFAULT '',
             synced_at TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -110,26 +111,26 @@ def ensure_course_schedule_schema(conn: Any) -> None:
 
 def _ensure_extension_columns(conn: Any, engine: str) -> None:
     """Add columns introduced after the first release to pre-existing tables."""
-    extension_columns = (
-        ("local_class_name", "TEXT NOT NULL DEFAULT ''"),
-        ("class_offering_id", "INTEGER"),
-    )
-    if engine == "postgres":
-        for name, ddl_type in extension_columns:
-            conn.execute(
-                "ALTER TABLE smart_classroom_course_schedule_items "
-                f"ADD COLUMN IF NOT EXISTS {name} {ddl_type}"
-            )
-        return
-    existing = {
-        str(row[1])
-        for row in conn.execute(
-            "PRAGMA table_info(smart_classroom_course_schedule_items)"
-        ).fetchall()
+    extension_columns: dict[str, tuple[tuple[str, str], ...]] = {
+        "smart_classroom_course_schedule_items": (
+            ("local_class_name", "TEXT NOT NULL DEFAULT ''"),
+            ("class_offering_id", "INTEGER"),
+        ),
+        # week1_monday_date：该学期第 1 教学周周一（ISO 日期），同步当前学期时由
+        # synced_at 与 curWeek 反推，是"第几周/几月几号"换算的兜底锚点。
+        "smart_classroom_course_schedule_meta": (
+            ("week1_monday_date", "TEXT NOT NULL DEFAULT ''"),
+        ),
     }
-    for name, ddl_type in extension_columns:
-        if name not in existing:
-            conn.execute(
-                "ALTER TABLE smart_classroom_course_schedule_items "
-                f"ADD COLUMN {name} {ddl_type}"
-            )
+    for table, columns in extension_columns.items():
+        if engine == "postgres":
+            for name, ddl_type in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {name} {ddl_type}")
+            continue
+        existing = {
+            str(row[1])
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        for name, ddl_type in columns:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl_type}")

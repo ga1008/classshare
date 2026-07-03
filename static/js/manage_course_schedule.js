@@ -7,7 +7,7 @@
  * - 顶栏「同步智慧课堂」立即拉取 teacherSchedule/list 并替换本地学期数据。
  */
 
-import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260703b';
+import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260704';
 
 const bootElement = document.getElementById('course-schedule-boot');
 const boot = bootElement ? JSON.parse(bootElement.textContent || '{}') : {};
@@ -94,11 +94,14 @@ function renderFilters() {
     if (!refs.termSelect || !overview) return;
     const terms = overview.terms || [];
     const selected = overview.selected_term;
+    const statusSuffix = (term) => (
+        term.status === 'current' ? '（进行中）' : term.status === 'ended' ? '（已结束）' : term.status === 'future' ? '（未开始）' : ''
+    );
     refs.termSelect.innerHTML = terms.length
         ? terms.map((term) => `
             <option value="${escapeHtml(term.year)}|${escapeHtml(term.term)}"
                 ${selected && term.year === selected.year && term.term === selected.term ? 'selected' : ''}>
-                ${escapeHtml(term.label)}
+                ${escapeHtml(term.label)}${statusSuffix(term)}
             </option>`).join('')
         : '<option value="">暂无学期数据</option>';
 
@@ -136,16 +139,36 @@ function renderSummary() {
         { value: summary.slot_count ?? 0, label: '排课记录', hint: '每条 = 固定星期与节次', tone: 'violet' },
         { value: summary.weekly_average_hours ?? 0, label: '周均课时', hint: '仅计入有课的周', tone: 'slate' },
     ];
-    // 教学周进度条：跨满整行，展示本学期推进程度。
+    // 教学周进度条：跨满整行，展示本学期推进程度与教学周锚点来源。
     const curWeek = Number(summary.cur_week) || 0;
     const maxWeek = Number(summary.max_week) || 0;
-    const progressHtml = maxWeek > 0 && curWeek > 0
+    const termStatus = summary.term_status || '';
+    const anchorParts = [];
+    if (summary.week1_monday) anchorParts.push(`第1周周一 ${summary.week1_monday}`);
+    if (summary.anchor_label) anchorParts.push(summary.anchor_label);
+    const anchorHtml = anchorParts.length
+        ? `<small class="cs-progress__anchor">${escapeHtml(anchorParts.join(' · '))}</small>`
+        : '';
+    let progressText = '';
+    let progressWidth = 0;
+    if (curWeek > 0 && maxWeek > 0) {
+        progressText = `第${curWeek}周 / 共${maxWeek}周`;
+        progressWidth = Math.min(100, Math.round((curWeek / maxWeek) * 100));
+    } else if (termStatus === 'ended' && maxWeek > 0) {
+        progressText = `学期已结束 · 共${maxWeek}周`;
+        progressWidth = 100;
+    } else if (termStatus === 'future' && maxWeek > 0) {
+        progressText = `学期未开始 · 共${maxWeek}周`;
+        progressWidth = 0;
+    }
+    const progressHtml = progressText
         ? `<div class="cs-progress">
                <span class="cs-progress__label">教学周进度</span>
-               <div class="cs-progress__bar" role="progressbar" aria-valuemin="1" aria-valuemax="${maxWeek}" aria-valuenow="${Math.min(curWeek, maxWeek)}">
-                   <i style="width:${Math.min(100, Math.round((curWeek / maxWeek) * 100))}%"></i>
+               <div class="cs-progress__bar" role="progressbar" aria-valuemin="0" aria-valuemax="${maxWeek}" aria-valuenow="${Math.min(Math.max(curWeek, 0), maxWeek)}">
+                   <i style="width:${progressWidth}%"></i>
                </div>
-               <strong>第${curWeek}周 / 共${maxWeek}周</strong>
+               <strong>${escapeHtml(progressText)}</strong>
+               ${anchorHtml}
            </div>`
         : '';
     refs.summary.innerHTML = progressHtml + cards.map((card) => `

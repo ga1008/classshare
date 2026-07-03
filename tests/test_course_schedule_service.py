@@ -8,6 +8,8 @@ matcher against check-in schedule rows, and the aggregated 课时统计 overview
 import json
 import sqlite3
 import unittest
+from datetime import date
+from unittest import mock
 
 import classroom_app.db.schema_smart_schedule as schema_mod
 from classroom_app.db.schema_smart_schedule import ensure_course_schedule_schema
@@ -395,6 +397,155 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(svc._section_label([5]), "第5节")
         self.assertEqual(svc._section_label([2, 5]), "第2,5节")
         self.assertEqual(svc._section_label([]), "")
+
+
+class TermDerivationTests(unittest.TestCase):
+    def test_previous_term_key(self):
+        self.assertEqual(svc._previous_term_key("2025-2026", "2"), ("2025-2026", "1"))
+        self.assertEqual(svc._previous_term_key("2025-2026", "1"), ("2024-2025", "2"))
+        self.assertIsNone(svc._previous_term_key("bad-year", "2"))
+        self.assertIsNone(svc._previous_term_key("2025-2026", "3"))
+
+    def test_history_term_keys(self):
+        self.assertEqual(
+            svc._history_term_keys("2025-2026", "2", 4),
+            [("2025-2026", "1"), ("2024-2025", "2"), ("2024-2025", "1"), ("2023-2024", "2")],
+        )
+        self.assertEqual(svc._history_term_keys("", "", 4), [])
+
+
+class WeekAnchorTests(unittest.TestCase):
+    def test_derive_week1_monday(self):
+        # 2026-07-03 是周五（所在周周一 2026-06-29），第 17 周 → 第 1 周周一 2026-03-09
+        self.assertEqual(svc._derive_week1_monday("2026-07-03T09:00:00", 17), "2026-03-09")
+        self.assertEqual(svc._derive_week1_monday("2026-07-03T09:00:00", 1), "2026-06-29")
+        self.assertEqual(svc._derive_week1_monday("2026-07-03T09:00:00", 0), "")
+        self.assertEqual(svc._derive_week1_monday("not-a-date", 3), "")
+
+    def test_parse_platform_semester_name(self):
+        self.assertEqual(svc._parse_platform_semester_name("2025-2026第二学期"), ("2025-2026", "2"))
+        self.assertEqual(svc._parse_platform_semester_name("2025-2026学年第1学期"), ("2025-2026", "1"))
+        self.assertEqual(svc._parse_platform_semester_name("2025-2026 第 一 学期"), ("2025-2026", "1"))
+        self.assertIsNone(svc._parse_platform_semester_name("春季学期"))
+        self.assertIsNone(svc._parse_platform_semester_name(""))
+
+    def test_term_status(self):
+        anchor = {"week1_monday": date(2026, 3, 2), "week_count_hint": 19}
+        # 19 周 → 最后一天 2026-07-12
+        self.assertEqual(svc._term_status(anchor, date(2026, 7, 3)), "current")
+        self.assertEqual(svc._term_status(anchor, date(2026, 7, 12)), "current")
+        self.assertEqual(svc._term_status(anchor, date(2026, 7, 13)), "ended")
+        self.assertEqual(svc._term_status(anchor, date(2026, 3, 1)), "future")
+        self.assertEqual(svc._term_status({"week1_monday": None, "week_count_hint": 19}, date(2026, 7, 3)), "unknown")
+
+
+class OverviewAnchoringTests(unittest.TestCase):
+    """学年学期/教学周对齐：动态本周、假期定位、进行中学期优先。"""
+
+    def setUp(self):
+        self.conn = _make_conn()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _seed_term(self, year, term, *, week1="", max_week=19, cur_week=0, remote_prefix="r"):
+        self.conn.execute(
+            """
+            INSERT INTO smart_classroom_course_schedule_meta (
+                teacher_id, platform_code, academic_year, academic_term,
+                cur_week, max_week, cur_xq, item_count, week1_monday_date,
+                synced_at, created_at, updated_at
+            ) VALUES (1, ?, ?, ?, ?, ?, 3, 1, ?, '2026-03-20T10:00:00',
+                      '2026-03-20T10:00:00', '2026-03-20T10:00:00')
+            """,
+            (svc.SMART_PLATFORM_CODE, year, term, cur_week, max_week, week1),
+        )
+        _insert_item(
+            self.conn,
+            remote_id=f"{remote_prefix}-{year}-{term}",
+            academic_year=year,
+            academic_term=term,
+            weeks_json=json.dumps(list(range(1, max_week + 1))),
+        )
+
+    def test_dynamic_current_week_overrides_stale_snapshot(self):
+        # 同步时 cur_week=2（快照已过期）；锚点第 1 周周一 2026-03-02，
+        # 今天 2026-03-25 → 实际第 4 周。
+        self._seed_term("2025-2026", "2", week1="2026-03-02", max_week=19, cur_week=2)
+        with mock.patch.object(svc, "_today_local", return_value=date(2026, 3, 25)):
+            overview = svc.build_teacher_course_schedule_overview(self.conn, 1)
+        self.assertEqual(overview["summary"]["cur_week"], 4)
+        self.assertEqual(overview["summary"]["term_status"], "current")
+        self.assertEqual(overview["selected_term"]["focus_week"], 4)
+        self.assertTrue(overview["weeks"][3]["is_current"])
+        self.assertFalse(overview["weeks"][1]["is_current"])  # 不再用过期快照第 2 周
+        self.assertEqual(overview["weeks"][0]["date_range_label"], "3月2日 – 3月8日")
+        self.assertEqual(overview["weeks"][0]["monday_date"], "2026-03-02")
+
+    def test_holiday_focuses_last_week_of_ended_term(self):
+        # 学期 19 周止于 2026-07-12；今天 2026-08-05（假期）→ 定位最后教学周。
+        self._seed_term("2025-2026", "2", week1="2026-03-02", max_week=19, cur_week=19)
+        with mock.patch.object(svc, "_today_local", return_value=date(2026, 8, 5)):
+            overview = svc.build_teacher_course_schedule_overview(self.conn, 1)
+        self.assertEqual(overview["summary"]["term_status"], "ended")
+        self.assertEqual(overview["summary"]["cur_week"], 0)
+        self.assertEqual(overview["selected_term"]["focus_week"], len(overview["weeks"]))
+        self.assertFalse(any(week["is_current"] for week in overview["weeks"]))
+
+    def test_current_term_selected_over_newer_future_term(self):
+        # 新学期已同步但未开学（第 1 周周一 2026-09-07），进行中的旧学期优先。
+        self._seed_term("2025-2026", "2", week1="2026-03-02", max_week=19, remote_prefix="cur")
+        self._seed_term("2026-2027", "1", week1="2026-09-07", max_week=19, remote_prefix="next")
+        with mock.patch.object(svc, "_today_local", return_value=date(2026, 6, 20)):
+            overview = svc.build_teacher_course_schedule_overview(self.conn, 1)
+        self.assertEqual(overview["selected_term"]["year"], "2025-2026")
+        self.assertEqual(overview["selected_term"]["term"], "2")
+        statuses = {(t["year"], t["term"]): t["status"] for t in overview["terms"]}
+        self.assertEqual(statuses[("2026-2027", "1")], "future")
+
+    def test_explicit_term_request_wins(self):
+        self._seed_term("2025-2026", "2", week1="2026-03-02", max_week=19, remote_prefix="cur")
+        self._seed_term("2025-2026", "1", max_week=18, remote_prefix="hist")
+        with mock.patch.object(svc, "_today_local", return_value=date(2026, 6, 20)):
+            overview = svc.build_teacher_course_schedule_overview(
+                self.conn, 1, year="2025-2026", term="1"
+            )
+        self.assertEqual(overview["selected_term"]["term"], "1")
+        # 历史学期无锚点 → unknown，退回快照 cur_week=0，无"本周"
+        self.assertEqual(overview["summary"]["term_status"], "unknown")
+        self.assertFalse(any(week["is_current"] for week in overview["weeks"]))
+
+    def test_platform_anchor_overrides_sync_anchor(self):
+        # 平台学期设置（含逐日日历的人工调整周次）优先于同步推算锚点。
+        self._seed_term("2025-2026", "2", week1="2026-03-09", max_week=19, cur_week=2)
+        platform_anchor = {
+            ("2025-2026", "2"): {
+                "semester_id": 55,
+                "name": "2025-2026第二学期",
+                "week1_monday": date(2026, 3, 2),
+                "week_count": 19,
+                "is_owned": True,
+            }
+        }
+        self.conn.execute(
+            """
+            CREATE TABLE academic_semester_calendar_days (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                semester_id INTEGER, date TEXT, week_index INTEGER
+            )
+            """
+        )
+        # 平台日历把 2026-03-25 标为第 7 周（模拟调休/人工修正的权威值）。
+        self.conn.execute(
+            "INSERT INTO academic_semester_calendar_days (semester_id, date, week_index) VALUES (55, '2026-03-25', 7)"
+        )
+        with mock.patch.object(svc, "_today_local", return_value=date(2026, 3, 25)), \
+                mock.patch.object(svc, "_load_platform_semester_anchors", return_value=platform_anchor):
+            overview = svc.build_teacher_course_schedule_overview(self.conn, 1)
+        self.assertEqual(overview["summary"]["anchor_source"], "platform")
+        self.assertEqual(overview["summary"]["week1_monday"], "2026-03-02")
+        self.assertEqual(overview["summary"]["cur_week"], 7)
+        self.assertEqual(overview["selected_term"]["focus_week"], 7)
 
 
 if __name__ == "__main__":

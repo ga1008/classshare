@@ -524,7 +524,7 @@ export function createScheduleDeck(container, options = {}) {
             card.innerHTML = `
                 <div class="cs-card__bar">
                     <strong>${escapeHtml(week.label)}</strong>
-                    <span>${week.lesson_count} 节安排 · ${week.total_hours} 课时</span>
+                    <span>${week.date_range_label ? `${escapeHtml(week.date_range_label)} · ` : ''}${week.lesson_count} 节安排 · ${week.total_hours} 课时</span>
                     <span class="cs-card__badge ${week.is_current ? 'is-current' : ''}">${week.is_current ? '本周' : escapeHtml(week.label)}</span>
                 </div>
                 <div class="cs-card__body">${renderWeekGrid(week)}${weekEmptyMarkHtml(week)}</div>`;
@@ -577,7 +577,7 @@ export function createScheduleDeck(container, options = {}) {
         const active = weeks[state.activeWeekIndex];
         if (refs.indicator) {
             refs.indicator.innerHTML = active
-                ? `${escapeHtml(active.label)}${active.is_current ? ' · 本周' : ''}<small>${active.lesson_count} 节安排 · ${active.total_hours} 课时</small>`
+                ? `${escapeHtml(active.label)}${active.is_current ? ' · 本周' : ''}<small>${active.date_range_label ? `${escapeHtml(active.date_range_label)} · ` : ''}${active.lesson_count} 节安排 · ${active.total_hours} 课时</small>`
                 : '—';
         }
         if (refs.slider) {
@@ -608,7 +608,8 @@ export function createScheduleDeck(container, options = {}) {
         if (refs.expandTitle) refs.expandTitle.textContent = week.label + (week.is_current ? '（本周）' : '');
         if (refs.expandSub) {
             const termLabel = state.overview?.selected_term?.label || '';
-            refs.expandSub.textContent = `${termLabel} · ${week.lesson_count} 节安排 · ${week.total_hours} 课时`;
+            const dateRange = week.date_range_label ? ` · ${week.date_range_label}` : '';
+            refs.expandSub.textContent = `${termLabel}${dateRange} · ${week.lesson_count} 节安排 · ${week.total_hours} 课时`;
         }
         refs.expandBody.innerHTML = renderWeekGrid(week, { expanded: true }) + weekEmptyMarkHtml(week);
     }
@@ -632,11 +633,14 @@ export function createScheduleDeck(container, options = {}) {
         if (!refs.termSelect) return;
         const terms = state.overview?.terms || [];
         const selected = state.overview?.selected_term;
+        const statusSuffix = (term) => (
+            term.status === 'current' ? '（进行中）' : term.status === 'ended' ? '（已结束）' : term.status === 'future' ? '（未开始）' : ''
+        );
         refs.termSelect.innerHTML = terms.length
             ? terms.map((term) => `
                 <option value="${escapeHtml(term.year)}|${escapeHtml(term.term)}"
                     ${selected && term.year === selected.year && term.term === selected.term ? 'selected' : ''}>
-                    ${escapeHtml(term.label)}
+                    ${escapeHtml(term.label)}${statusSuffix(term)}
                 </option>`).join('')
             : '<option value="">暂无学期数据</option>';
         refs.termSelect.disabled = !terms.length;
@@ -764,7 +768,15 @@ export function createScheduleDeck(container, options = {}) {
             const previousWeek = state.overview?.weeks?.[state.activeWeekIndex]?.week_index;
             state.overview = overview || null;
             const weeks = state.overview?.weeks || [];
-            let nextIndex = weeks.findIndex((week) => week.is_current);
+            // 打开定位：后端 focus_week（本周 / 假期→上学期最后教学周 / 未开学→第1周）
+            // 优先，其次"本周"标记。
+            const focusWeek = Number(state.overview?.selected_term?.focus_week) || 0;
+            let nextIndex = focusWeek > 0
+                ? weeks.findIndex((week) => week.week_index === focusWeek)
+                : -1;
+            if (nextIndex < 0) {
+                nextIndex = weeks.findIndex((week) => week.is_current);
+            }
             if (keepWeek && previousWeek) {
                 const kept = weeks.findIndex((week) => week.week_index === previousWeek);
                 if (kept >= 0) nextIndex = kept;
