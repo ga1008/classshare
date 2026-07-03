@@ -70,6 +70,100 @@ _PROCESS_ASSESSMENT_TERMS = (
 )
 
 
+def _uses_postgres_metadata(conn: Any) -> bool:
+    if isinstance(conn, sqlite3.Connection):
+        return False
+    try:
+        return get_configured_db_engine() == "postgres"
+    except Exception:
+        return False
+
+
+def _row_value(row: Any, key: str, index: int = 0) -> Any:
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return row.get(key)
+    try:
+        if key in row.keys():
+            return row[key]
+    except Exception:
+        pass
+    try:
+        return row[index]
+    except Exception:
+        return None
+
+
+def _run_optional_db(conn: Any, callback: Any, default: Any = None) -> Any:
+    """Run schema-drift-prone optional reads without poisoning the caller transaction."""
+    savepoint_name = "exam_material_reverse_optional"
+    savepoint_active = False
+    try:
+        conn.execute(f"SAVEPOINT {savepoint_name}")
+        savepoint_active = True
+    except Exception:
+        savepoint_active = False
+    try:
+        result = callback()
+    except Exception:
+        if savepoint_active:
+            try:
+                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+            finally:
+                try:
+                    conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+                except Exception:
+                    pass
+        return default
+    if savepoint_active:
+        try:
+            conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+        except Exception:
+            return default
+    return result
+
+
+def _optional_fetchone(conn: Any, sql: str, params: tuple[Any, ...]) -> Any | None:
+    return _run_optional_db(conn, lambda: conn.execute(sql, params).fetchone(), None)
+
+
+def _table_columns(conn: Any, table_name: str) -> set[str]:
+    def load() -> set[str]:
+        if _uses_postgres_metadata(conn):
+            rows = conn.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = ? AND table_name = ?
+                """,
+                ("public", table_name),
+            ).fetchall()
+            return {
+                str(_row_value(row, "column_name", 0) or "")
+                for row in rows
+                if _row_value(row, "column_name", 0)
+            }
+        rows = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+        return {str(_row_value(row, "name", 1) or "") for row in rows if _row_value(row, "name", 1)}
+
+    return _run_optional_db(conn, load, set())
+
+
+def _select_if_present(
+    table_alias: str,
+    columns: set[str],
+    column_name: str,
+    output_alias: str,
+    *,
+    join_enabled: bool = True,
+    fallback: str = "NULL",
+) -> str:
+    if join_enabled and column_name in columns:
+        return f"{table_alias}.{column_name} AS {output_alias}"
+    return f"{fallback} AS {output_alias}"
+
+
 def create_assessment_plan_reverse_placeholder(
     conn: Any,
     *,
@@ -383,15 +477,13 @@ def _get_exam_paper_for_teacher(conn: Any, paper_id: str, teacher_id: int) -> di
     if not row:
         raise HTTPException(404, "试卷不存在或无权访问")
     paper = dict(row)
-    try:
-        blocked = conn.execute(
-            "SELECT 1 FROM learning_stage_exam_attempts WHERE exam_paper_id = ? LIMIT 1",
-            (str(paper_id),),
-        ).fetchone()
-        if blocked:
-            raise HTTPException(404, "阶段考试试卷不能用于材料反推")
-    except sqlite3.OperationalError:
-        pass
+    blocked = _optional_fetchone(
+        conn,
+        "SELECT 1 FROM learning_stage_exam_attempts WHERE exam_paper_id = ? LIMIT 1",
+        (str(paper_id),),
+    )
+    if blocked:
+        raise HTTPException(404, "阶段考试试卷不能用于材料反推")
     if not teacher_can_use_exam_paper(conn, int(teacher_id), paper):
         raise HTTPException(404, "试卷不存在或无权访问")
     if str(paper.get("ai_gen_status") or "").strip().lower() in {"pending", "running"}:
@@ -469,40 +561,83 @@ def _exam_total_score(exam_data: dict[str, Any], questions: list[dict[str, Any]]
 
 
 def _latest_assignment_context(conn: Any, paper_id: str, teacher_id: int) -> dict[str, Any]:
-    try:
-        row = conn.execute(
-            """
-            SELECT a.id AS assignment_id,
-                   a.course_id AS assignment_course_id,
-                   a.class_offering_id AS class_offering_id,
-                   a.title AS assignment_title,
-                   a.updated_at AS assignment_updated_at,
-                   o.course_id AS offering_course_id,
-                   o.semester AS offering_semester,
-                   o.academic_teaching_class_name AS academic_teaching_class_name,
-                   c.id AS course_id,
-                   c.name AS course_name,
-                   c.school_name AS course_school_name,
-                   c.college AS course_college,
-                   c.department AS course_department,
-                   cl.name AS class_name,
-                   cl.academic_class_name AS academic_class_name,
-                   cl.academic_major AS academic_major,
-                   cl.major AS major,
-                   cl.department AS class_department
-            FROM assignments a
-            LEFT JOIN class_offerings o ON o.id = a.class_offering_id
-            LEFT JOIN courses c ON c.id = COALESCE(o.course_id, a.course_id)
-            LEFT JOIN classes cl ON cl.id = o.class_id
-            WHERE a.exam_paper_id = ?
-              AND (o.teacher_id = ? OR o.teacher_id IS NULL)
-            ORDER BY COALESCE(a.updated_at, a.created_at) DESC, a.id DESC
-            LIMIT 1
-            """,
-            (str(paper_id), int(teacher_id)),
-        ).fetchone()
-    except Exception:
+    assignment_cols = _table_columns(conn, "assignments")
+    if "exam_paper_id" not in assignment_cols:
         return {}
+    offering_cols = _table_columns(conn, "class_offerings")
+    course_cols = _table_columns(conn, "courses")
+    class_cols = _table_columns(conn, "classes")
+
+    join_offering = "class_offering_id" in assignment_cols and "id" in offering_cols
+    offering_course_expr = "o.course_id" if join_offering and "course_id" in offering_cols else ""
+    assignment_course_expr = "a.course_id" if "course_id" in assignment_cols else ""
+    course_link_exprs = [expr for expr in (offering_course_expr, assignment_course_expr) if expr]
+    if len(course_link_exprs) > 1:
+        course_link_sql = f"COALESCE({', '.join(course_link_exprs)})"
+    else:
+        course_link_sql = course_link_exprs[0] if course_link_exprs else ""
+    join_course = "id" in course_cols and bool(course_link_sql)
+    join_class = join_offering and "class_id" in offering_cols and "id" in class_cols
+    updated_expr = (
+        "a.updated_at"
+        if "updated_at" in assignment_cols
+        else ("a.created_at" if "created_at" in assignment_cols else "NULL")
+    )
+
+    select_parts = [
+        _select_if_present("a", assignment_cols, "id", "assignment_id"),
+        _select_if_present("a", assignment_cols, "course_id", "assignment_course_id"),
+        _select_if_present("a", assignment_cols, "class_offering_id", "class_offering_id"),
+        _select_if_present("a", assignment_cols, "title", "assignment_title"),
+        f"{updated_expr} AS assignment_updated_at",
+        _select_if_present("o", offering_cols, "course_id", "offering_course_id", join_enabled=join_offering),
+        _select_if_present("o", offering_cols, "semester", "offering_semester", join_enabled=join_offering),
+        _select_if_present(
+            "o",
+            offering_cols,
+            "academic_teaching_class_name",
+            "academic_teaching_class_name",
+            join_enabled=join_offering,
+        ),
+        _select_if_present("c", course_cols, "id", "course_id", join_enabled=join_course),
+        _select_if_present("c", course_cols, "name", "course_name", join_enabled=join_course),
+        _select_if_present("c", course_cols, "school_name", "course_school_name", join_enabled=join_course),
+        _select_if_present("c", course_cols, "college", "course_college", join_enabled=join_course),
+        _select_if_present("c", course_cols, "department", "course_department", join_enabled=join_course),
+        _select_if_present("cl", class_cols, "name", "class_name", join_enabled=join_class),
+        _select_if_present("cl", class_cols, "academic_class_name", "academic_class_name", join_enabled=join_class),
+        _select_if_present("cl", class_cols, "academic_major", "academic_major", join_enabled=join_class),
+        _select_if_present("cl", class_cols, "major", "major", join_enabled=join_class),
+        _select_if_present("cl", class_cols, "department", "class_department", join_enabled=join_class),
+    ]
+    joins: list[str] = []
+    if join_offering:
+        joins.append("LEFT JOIN class_offerings o ON o.id = a.class_offering_id")
+    if join_course:
+        joins.append(f"LEFT JOIN courses c ON c.id = {course_link_sql}")
+    if join_class:
+        joins.append("LEFT JOIN classes cl ON cl.id = o.class_id")
+
+    where_parts = ["a.exam_paper_id = ?"]
+    params: list[Any] = [str(paper_id)]
+    if join_offering and "teacher_id" in offering_cols:
+        where_parts.append("(o.teacher_id = ? OR o.teacher_id IS NULL)")
+        params.append(int(teacher_id))
+
+    order_parts = [f"a.{column} DESC" for column in ("updated_at", "created_at", "id") if column in assignment_cols]
+    order_sql = f"ORDER BY {', '.join(order_parts)}" if order_parts else ""
+    row = _optional_fetchone(
+        conn,
+        f"""
+        SELECT {', '.join(select_parts)}
+        FROM assignments a
+        {' '.join(joins)}
+        WHERE {' AND '.join(where_parts)}
+        {order_sql}
+        LIMIT 1
+        """,
+        tuple(params),
+    )
     if not row:
         return {}
     data = dict(row)
@@ -521,10 +656,13 @@ def _build_reverse_fields(
     fields: dict[str, Any] = {}
     offering_id = _optional_int(assignment_context.get("class_offering_id"))
     if offering_id:
-        try:
-            fields.update(ap.build_fields_from_offering(conn, offering_id, teacher=teacher))
-        except Exception:
-            fields = {}
+        offering_fields = _run_optional_db(
+            conn,
+            lambda: ap.build_fields_from_offering(conn, offering_id, teacher=teacher),
+            {},
+        )
+        if isinstance(offering_fields, dict):
+            fields.update(offering_fields)
     org = load_teacher_org_scope(conn, int(teacher["id"]))
     teacher_name = _text(teacher.get("name") or teacher.get("username") or teacher.get("email"))
     course_name = _text(fields.get("course_name") or assignment_context.get("course_name"))

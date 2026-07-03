@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import unittest
+from unittest.mock import patch
 
 import classroom_app.db.schema_assessment_plans as assessment_schema
 from classroom_app.services import exam_material_reverse_service as svc
@@ -106,6 +107,119 @@ def _insert_paper(conn: sqlite3.Connection, *, paper_id: str = "paper-1", comple
     )
 
 
+def _create_assignment_context_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE courses (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            school_name TEXT,
+            college TEXT,
+            department TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE classes (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            academic_class_name TEXT,
+            academic_major TEXT,
+            major TEXT,
+            department TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE class_offerings (
+            id INTEGER PRIMARY KEY,
+            course_id INTEGER,
+            class_id INTEGER,
+            teacher_id INTEGER,
+            semester TEXT,
+            academic_teaching_class_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE assignments (
+            id INTEGER PRIMARY KEY,
+            course_id INTEGER,
+            title TEXT,
+            status TEXT,
+            created_at TEXT,
+            exam_paper_id TEXT,
+            class_offering_id INTEGER
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO courses (id, name, school_name, college, department)
+        VALUES (10, 'Dynamic Web Program Design', 'GXUFL', 'Software College', 'Software Engineering')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO classes (id, name, academic_class_name, academic_major, major, department)
+        VALUES (20, 'Software 2401', 'Soft2401', 'Software Engineering', 'Software Engineering', 'Software Engineering')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO class_offerings (id, course_id, class_id, teacher_id, semester, academic_teaching_class_name)
+        VALUES (30, 10, 20, 1, '2025-2026-2', 'Soft2401')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO assignments (id, course_id, title, status, created_at, exam_paper_id, class_offering_id)
+        VALUES (40, 10, 'Final exam', 'published', '2026-07-03T13:05:32', 'paper-1', 30)
+        """
+    )
+
+
+def _create_material_ai_import_records_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE material_ai_import_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER,
+            package_material_id INTEGER,
+            source_material_id INTEGER,
+            parsed_material_id INTEGER,
+            parent_material_id INTEGER,
+            document_group TEXT,
+            document_type TEXT,
+            document_type_label TEXT,
+            parse_status TEXT,
+            parse_mode TEXT,
+            extraction_method TEXT,
+            source_file_name TEXT,
+            source_file_hash TEXT,
+            source_file_size INTEGER,
+            source_mime_type TEXT,
+            metadata_json TEXT,
+            content_markdown TEXT,
+            parsed_payload_json TEXT,
+            export_payload_json TEXT,
+            warnings_json TEXT,
+            content_quality_status TEXT,
+            content_quality_json TEXT,
+            error_message TEXT,
+            created_at TEXT,
+            started_at TEXT,
+            updated_at TEXT,
+            completed_at TEXT,
+            failed_at TEXT
+        )
+        """
+    )
+
+
 class ExamMaterialReverseServiceTests(unittest.TestCase):
     def setUp(self):
         self.conn = _make_conn()
@@ -151,6 +265,77 @@ class ExamMaterialReverseServiceTests(unittest.TestCase):
         self.assertEqual(row["status"], "generating")
         self.assertEqual(row["ai_gen_status"], "pending")
         self.assertEqual(result["redirect_url"], "/manage/teaching/assessment-plans")
+
+    def test_assignment_context_tolerates_assignments_without_updated_at(self):
+        _insert_paper(self.conn)
+        _create_assignment_context_tables(self.conn)
+
+        context = svc.build_exam_reverse_context(
+            self.conn,
+            paper_id="paper-1",
+            teacher=self.teacher,
+            require_complete=True,
+        )
+
+        self.assertEqual(context["course_id"], 10)
+        self.assertEqual(context["class_offering_id"], 30)
+        self.assertEqual(context["fields"]["course_name"], "Dynamic Web Program Design")
+        self.assertEqual(context["fields"]["class_name"], "Soft2401")
+        self.assertEqual(sum(int(item["score"]) for item in context["assessment_items"]), 100)
+        self.assertEqual(len(context["rubric_items"]), 12)
+
+    def test_grading_rubric_placeholder_creates_running_import_record(self):
+        _insert_paper(self.conn)
+        _create_assignment_context_tables(self.conn)
+        _create_material_ai_import_records_table(self.conn)
+
+        with (
+            patch.object(svc, "ensure_materials_integrations_schema", lambda conn: None),
+            patch.object(svc, "get_configured_db_engine", return_value="sqlite"),
+        ):
+            result = svc.create_grading_rubric_reverse_placeholder(
+                self.conn,
+                teacher=self.teacher,
+                paper_id="paper-1",
+                prompt="Focus on Spring Boot project delivery.",
+            )
+
+        row = self.conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ?",
+            (result["record_id"],),
+        ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["document_group"], "final_material")
+        self.assertEqual(row["document_type"], "grading_rubric")
+        self.assertEqual(row["parse_status"], "running")
+        self.assertEqual(row["parse_mode"], "ai_generated")
+        self.assertEqual(row["extraction_method"], "exam_reverse")
+        self.assertEqual(result["redirect_url"], "/manage/teaching/grading-rubrics")
+        metadata = json.loads(row["metadata_json"])
+        self.assertEqual(metadata["source_exam_paper_id"], "paper-1")
+        self.assertEqual(metadata["generation_mode"], "exam_reverse")
+        self.assertEqual(metadata["teacher_prompt"], "Focus on Spring Boot project delivery.")
+
+    def test_optional_fetchone_rolls_back_failed_optional_query(self):
+        log: list[str] = []
+
+        class FakeCursor:
+            def fetchone(self):
+                return {"ok": 1}
+
+        class FakeConn:
+            def execute(self, sql, params=()):
+                log.append(str(sql))
+                if "bad_table" in str(sql):
+                    raise RuntimeError("missing relation")
+                return FakeCursor()
+
+        result = svc._optional_fetchone(FakeConn(), "SELECT * FROM bad_table WHERE id = ?", (1,))
+
+        self.assertIsNone(result)
+        self.assertTrue(any(entry.startswith("SAVEPOINT exam_material_reverse_optional") for entry in log))
+        self.assertTrue(any(entry.startswith("ROLLBACK TO SAVEPOINT exam_material_reverse_optional") for entry in log))
+        self.assertTrue(any(entry.startswith("RELEASE SAVEPOINT exam_material_reverse_optional") for entry in log))
 
     def test_grading_rubric_requires_complete_scoring_source(self):
         _insert_paper(self.conn, paper_id="paper-incomplete", complete=False)

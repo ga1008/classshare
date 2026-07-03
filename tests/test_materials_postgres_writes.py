@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from classroom_app.routers.materials_parts import final_material_helpers
 from classroom_app.routers.materials_parts import generation_helpers
+from classroom_app.services import exam_material_reverse_service
 
 
 class _FakeCursor:
@@ -181,6 +182,26 @@ class MaterialsPostgresWriteTests(unittest.TestCase):
         persisted_payload = json.loads(params[13])
         self.assertEqual(persisted_payload["template_key"], "assessment_plan")
         self.assertEqual(persisted_payload["structured"]["assessment_items"][0]["score"], "100")
+
+    def test_postgres_exam_reverse_running_import_record_uses_returning(self):
+        conn = _FakeMaterialConnection()
+
+        with patch.object(exam_material_reverse_service, "get_configured_db_engine", return_value="postgres"):
+            record_id = exam_material_reverse_service._insert_running_material_generation_record(
+                conn,
+                teacher_id=3,
+                document_group="final_material",
+                document_type="grading_rubric",
+                document_type_label="Grading rubric",
+                source_file_name="rubric.json",
+                metadata_json="{}",
+                now="2026-01-01T00:00:00",
+            )
+
+        self.assertEqual(19, record_id)
+        self.assertIn("RETURNING id", conn.calls[0][0])
+        self.assertEqual(9, len(conn.calls[0][1]))
+        self.assertIn("'exam_reverse'", conn.calls[0][0])
 
 
 if __name__ == "__main__":
