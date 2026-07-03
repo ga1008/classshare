@@ -63,6 +63,8 @@
         cursor: pointer;
     }
     .cs-reset-btn:hover { border-color: #6366f1; color: #4f46e5; }
+    .cs-reset-btn:disabled { opacity: 0.45; cursor: default; }
+    .cs-reset-btn:disabled:hover { border-color: rgba(148, 163, 184, 0.4); color: var(--text-secondary); }
 
     .cs-summary {
         display: grid;
@@ -81,6 +83,47 @@
     .cs-summary__card strong { font-size: 1.5rem; color: #312e81; line-height: 1.1; }
     .cs-summary__card span { font-size: 0.76rem; color: var(--text-muted); font-weight: 700; }
     .cs-summary__card small { font-size: 0.72rem; color: var(--text-muted); }
+    /* 汇总卡片按主题分色，便于扫读 */
+    .cs-summary__card--indigo { border-color: rgba(99, 102, 241, 0.22); background: linear-gradient(160deg, #eef2ff, #fff); }
+    .cs-summary__card--indigo strong { color: #312e81; }
+    .cs-summary__card--amber { border-color: rgba(217, 119, 6, 0.22); background: linear-gradient(160deg, #fffbeb, #fff); }
+    .cs-summary__card--amber strong { color: #92400e; }
+    .cs-summary__card--sky { border-color: rgba(14, 165, 233, 0.22); background: linear-gradient(160deg, #f0f9ff, #fff); }
+    .cs-summary__card--sky strong { color: #075985; }
+    .cs-summary__card--emerald { border-color: rgba(5, 150, 105, 0.22); background: linear-gradient(160deg, #ecfdf5, #fff); }
+    .cs-summary__card--emerald strong { color: #065f46; }
+    .cs-summary__card--violet { border-color: rgba(124, 58, 237, 0.22); background: linear-gradient(160deg, #f5f3ff, #fff); }
+    .cs-summary__card--violet strong { color: #5b21b6; }
+    .cs-summary__card--slate { border-color: rgba(100, 116, 139, 0.24); background: linear-gradient(160deg, #f8fafc, #fff); }
+    .cs-summary__card--slate strong { color: #334155; }
+
+    /* 教学周进度条（跨满汇总区整行） */
+    .cs-progress {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+        border: 1px solid rgba(99, 102, 241, 0.16);
+        border-radius: var(--radius-md);
+        background: rgba(238, 242, 255, 0.55);
+    }
+    .cs-progress__label { font-size: 0.76rem; font-weight: 800; color: var(--text-muted); white-space: nowrap; }
+    .cs-progress__bar {
+        flex: 1 1 auto;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.24);
+        overflow: hidden;
+    }
+    .cs-progress__bar i {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #4f46e5, #0ea5e9);
+        transition: width 0.4s ease;
+    }
+    .cs-progress strong { font-size: 0.8rem; color: #312e81; white-space: nowrap; }
 
     .cs-courses { display: grid; gap: var(--spacing-md); margin-top: var(--spacing-lg); }
     .cs-courses__title {
@@ -105,8 +148,22 @@
         cursor: pointer;
         transition: box-shadow 0.16s ease, transform 0.16s ease;
     }
+    .cs-course-card { position: relative; }
     .cs-course-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+    .cs-course-card:focus-visible { outline: 2px solid var(--cs-accent, #6366f1); outline-offset: 2px; }
     .cs-course-card.is-active { outline: 2px solid var(--cs-accent, #6366f1); }
+    .cs-course-card__check {
+        position: absolute;
+        top: -9px;
+        right: 10px;
+        font-size: 0.66rem;
+        font-weight: 900;
+        color: #fff;
+        background: var(--cs-accent, #6366f1);
+        border-radius: var(--radius-full);
+        padding: 2px 9px;
+        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.18);
+    }
     .cs-course-card__head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
     .cs-course-card__head h4 { margin: 0; font-size: 0.95rem; color: var(--text-primary); }
     .cs-course-card__hours { font-size: 1.2rem; font-weight: 900; color: var(--cs-accent, #4f46e5); white-space: nowrap; }

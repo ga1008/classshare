@@ -7,7 +7,7 @@
  * - 顶栏「同步智慧课堂」立即拉取 teacherSchedule/list 并替换本地学期数据。
  */
 
-import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260703';
+import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260703b';
 
 const bootElement = document.getElementById('course-schedule-boot');
 const boot = bootElement ? JSON.parse(bootElement.textContent || '{}') : {};
@@ -115,6 +115,9 @@ function renderFilters() {
     if (refs.syncTime) {
         refs.syncTime.textContent = selected?.synced_at ? `最近同步：${selected.synced_at}` : '尚未同步';
     }
+    if (refs.resetBtn) {
+        refs.resetBtn.disabled = !(filters.course || filters.class_label);
+    }
 }
 
 function renderSummary() {
@@ -126,15 +129,27 @@ function renderSummary() {
         return;
     }
     const cards = [
-        { value: summary.total_hours ?? 0, label: '学期总课时', hint: '筛选条件下 节数 × 周数 合计' },
-        { value: summary.current_week_hours ?? 0, label: `本周课时${summary.cur_week ? `（第${summary.cur_week}周）` : ''}`, hint: '当前教学周安排' },
-        { value: summary.course_count ?? 0, label: '课程数', hint: '筛选后统计' },
-        { value: summary.class_count ?? 0, label: '教学班数', hint: '含智慧课堂教学班标注' },
-        { value: summary.slot_count ?? 0, label: '排课记录', hint: '每条 = 固定星期与节次' },
-        { value: summary.weekly_average_hours ?? 0, label: '周均课时', hint: '仅计入有课的周' },
+        { value: summary.total_hours ?? 0, label: '学期总课时', hint: '筛选条件下 节数 × 周数 合计', tone: 'indigo' },
+        { value: summary.current_week_hours ?? 0, label: `本周课时${summary.cur_week ? `（第${summary.cur_week}周）` : ''}`, hint: '当前教学周安排', tone: 'amber' },
+        { value: summary.course_count ?? 0, label: '课程数', hint: '筛选后统计', tone: 'sky' },
+        { value: summary.class_count ?? 0, label: '教学班数', hint: '含智慧课堂教学班标注', tone: 'emerald' },
+        { value: summary.slot_count ?? 0, label: '排课记录', hint: '每条 = 固定星期与节次', tone: 'violet' },
+        { value: summary.weekly_average_hours ?? 0, label: '周均课时', hint: '仅计入有课的周', tone: 'slate' },
     ];
-    refs.summary.innerHTML = cards.map((card) => `
-        <div class="cs-summary__card">
+    // 教学周进度条：跨满整行，展示本学期推进程度。
+    const curWeek = Number(summary.cur_week) || 0;
+    const maxWeek = Number(summary.max_week) || 0;
+    const progressHtml = maxWeek > 0 && curWeek > 0
+        ? `<div class="cs-progress">
+               <span class="cs-progress__label">教学周进度</span>
+               <div class="cs-progress__bar" role="progressbar" aria-valuemin="1" aria-valuemax="${maxWeek}" aria-valuenow="${Math.min(curWeek, maxWeek)}">
+                   <i style="width:${Math.min(100, Math.round((curWeek / maxWeek) * 100))}%"></i>
+               </div>
+               <strong>第${curWeek}周 / 共${maxWeek}周</strong>
+           </div>`
+        : '';
+    refs.summary.innerHTML = progressHtml + cards.map((card) => `
+        <div class="cs-summary__card cs-summary__card--${card.tone}">
             <strong>${escapeHtml(card.value)}</strong>
             <span>${escapeHtml(card.label)}</span>
             <small>${escapeHtml(card.hint)}</small>
@@ -159,9 +174,13 @@ function renderCourses() {
             course.max_student_count ? `最多 ${course.max_student_count} 人` : '',
             ...(course.classes || []).slice(0, 2),
         ].filter(Boolean);
+        const isActive = course.course_name === activeCourse;
         return `
-        <div class="cs-course-card ${course.course_name === activeCourse ? 'is-active' : ''}"
-             style="--cs-accent:${accent}" data-course="${escapeHtml(course.course_name)}" role="button" tabindex="0">
+        <div class="cs-course-card ${isActive ? 'is-active' : ''}"
+             style="--cs-accent:${accent}" data-course="${escapeHtml(course.course_name)}" role="button" tabindex="0"
+             aria-pressed="${isActive}"
+             title="${isActive ? '再次点击取消筛选' : '点击筛选该课程'}">
+            ${isActive ? '<span class="cs-course-card__check">✓ 筛选中</span>' : ''}
             <div class="cs-course-card__head">
                 <h4>${escapeHtml(course.course_name)}</h4>
                 <div class="cs-course-card__hours">${escapeHtml(course.total_hours)}<small> 课时</small></div>
@@ -258,6 +277,14 @@ refs.courses?.addEventListener('click', (event) => {
     const courseName = card.dataset.course || '';
     refs.courseSelect.value = refs.courseSelect.value === courseName ? '' : courseName;
     reloadOverview();
+});
+
+refs.courses?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const card = event.target.closest('.cs-course-card');
+    if (!card) return;
+    event.preventDefault();
+    card.click();
 });
 
 /* ------------------------------------------------------------------ *

@@ -31,7 +31,8 @@ const BAND_LABELS = { dawn: '早读', am: '上午', pm: '下午', eve: '晚上' 
 
 const DECK_CSS = `
 .cs-deck { display: grid; gap: 12px; }
-.cs-deck-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+/* 头部悬于后排堆叠卡片之上，避免被 Flip3D 上浮的卡片遮住 */
+.cs-deck-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; position: relative; z-index: 520; }
 .cs-deck-head__copy h3 { margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text-primary, #0f172a); }
 .cs-deck-head__copy p { margin: 0; font-size: 0.78rem; color: var(--text-muted, #64748b); }
 .cs-deck-term {
@@ -122,8 +123,23 @@ const DECK_CSS = `
     padding: 3px 10px;
 }
 .cs-card__badge.is-current { background: #fbbf24; color: #713f12; }
-.cs-card__body { padding: 10px 12px 12px; min-height: 0; }
+.cs-card__body { padding: 10px 12px 12px; min-height: 0; position: relative; }
 .cs-card.is-active { cursor: zoom-in; }
+.cs-card.is-active:hover { box-shadow: 0 28px 56px rgba(30, 41, 59, 0.32); }
+/* 无排课周的水印 */
+.cs-week-empty-mark {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    font-size: clamp(1.2rem, 4vw, 2rem);
+    font-weight: 900;
+    letter-spacing: 0.3em;
+    color: rgba(100, 116, 139, 0.18);
+    transform: rotate(-8deg);
+    user-select: none;
+}
 
 /* ---- 课表网格（迷你卡片与放大视图共用） ---- */
 .cs-grid { display: grid; height: 100%; gap: 3px; min-height: 0; }
@@ -136,6 +152,12 @@ const DECK_CSS = `
     font-size: 0.68rem;
 }
 .cs-grid__cellbg { background: rgba(148, 163, 184, 0.06); border-radius: 6px; }
+/* 周末列弱化、今天列强调 */
+.cs-grid__day--weekend { color: rgba(100, 116, 139, 0.6); background: rgba(148, 163, 184, 0.06); }
+.cs-grid__cellbg--weekend { filter: saturate(0.35) opacity(0.75); }
+.cs-grid__day--today { background: #4f46e5; color: #fff; box-shadow: 0 4px 10px rgba(79, 70, 229, 0.35); }
+.cs-grid__day--today small { font-weight: 700; opacity: 0.9; margin-left: 4px; }
+.cs-grid__cellbg--today { background-image: linear-gradient(rgba(99, 102, 241, 0.12), rgba(99, 102, 241, 0.12)); }
 /* 早读 / 上午 / 下午 / 晚上分区背景 */
 .cs-grid__cellbg--dawn { background: rgba(251, 191, 36, 0.12); }
 .cs-grid__cellbg--am { background: rgba(14, 165, 233, 0.09); }
@@ -234,7 +256,7 @@ a.cs-lesson:hover, a.cs-lesson:focus-visible {
     cursor: pointer;
 }
 .cs-expand__nav button:hover { background: rgba(255, 255, 255, 0.28); }
-.cs-expand__body { padding: 16px 20px 20px; min-height: 0; }
+.cs-expand__body { padding: 16px 20px 20px; min-height: 0; position: relative; }
 
 .cs-empty {
     display: grid;
@@ -285,6 +307,15 @@ function sectionBand(section) {
     return 'eve';
 }
 
+/** 今天对应的远端星期（1=周一 .. 7=周日）。 */
+function todayRemoteWeekday() {
+    return ((new Date().getDay() + 6) % 7) + 1;
+}
+
+function weekEmptyMarkHtml(week) {
+    return week && !week.lesson_count ? '<div class="cs-week-empty-mark">本周无排课</div>' : '';
+}
+
 export function createScheduleDeck(container, options = {}) {
     if (!container) return null;
     ensureStyles();
@@ -316,13 +347,13 @@ export function createScheduleDeck(container, options = {}) {
             ${config.showTermSelect ? '<select class="cs-deck-term" data-csd-term aria-label="学年学期"></select>' : ''}
             <div class="cs-deck-nav">
                 <button type="button" class="cs-deck-nav__btn" data-csd-prev title="上一周">‹</button>
-                <div class="cs-week-indicator" data-csd-indicator>—</div>
+                <div class="cs-week-indicator" data-csd-indicator aria-live="polite">—</div>
                 <button type="button" class="cs-deck-nav__btn" data-csd-next title="下一周">›</button>
-                <input type="range" class="cs-deck-slider" data-csd-slider min="1" max="1" value="1" />
+                <input type="range" class="cs-deck-slider" data-csd-slider min="1" max="1" value="1" aria-label="周次选择滑杆" />
             </div>
         </div>
-        <div class="cs-stage" data-csd-stage tabindex="0" aria-label="按周课程表，使用滚轮或方向键切换周次">
-            <div class="cs-stage__hint">滚轮切换周次 · 点击卡片放大</div>
+        <div class="cs-stage" data-csd-stage tabindex="0" aria-label="按周课程表，使用滚轮、方向键或左右拖拽切换周次">
+            <div class="cs-stage__hint">滚轮/拖拽切换周次 · 点击卡片放大</div>
         </div>`;
 
     const expand = document.createElement('div');
@@ -372,8 +403,9 @@ export function createScheduleDeck(container, options = {}) {
         const accent = courseAccentFor(state.overview, lesson.course_name);
         const href = String(lesson.classroom_url || '');
         const linkable = Boolean(expanded && href);
+        const sdLabel = lesson.single_or_double_label ? ` · ${escapeHtml(lesson.single_or_double_label)}` : '';
         const detailLines = expanded
-            ? `<span>${escapeHtml(lesson.section_label)} · ${escapeHtml(lesson.classroom || '教室待定')}</span>
+            ? `<span>${escapeHtml(lesson.section_label)}${sdLabel} · ${escapeHtml(lesson.classroom || '教室待定')}</span>
                <span>${escapeHtml(lesson.class_label || '')}${lesson.student_count ? ` · ${lesson.student_count}人` : ''}</span>`
               + (linkable ? '<span class="cs-lesson__link-hint">点击进入课堂 →</span>' : '')
             : `<span>${escapeHtml(lesson.classroom || '')}</span>
@@ -403,8 +435,17 @@ export function createScheduleDeck(container, options = {}) {
             ? `30px ${labelCol} repeat(7, 1fr)`
             : `${labelCol} repeat(7, 1fr)`;
 
+        // 仅"本周"卡片高亮今天所在列；周六/日弱化。
+        const todayColumn = week?.is_current ? todayRemoteWeekday() : 0;
         const dayHeads = ['一', '二', '三', '四', '五', '六', '日']
-            .map((day, index) => `<div class="cs-grid__day" style="grid-column:${index + columnBase};grid-row:1;">周${day}</div>`)
+            .map((day, index) => {
+                const weekday = index + 1;
+                const classes = ['cs-grid__day'];
+                if (weekday >= 6) classes.push('cs-grid__day--weekend');
+                if (weekday === todayColumn) classes.push('cs-grid__day--today');
+                const todayTag = weekday === todayColumn && expanded ? '<small>今天</small>' : '';
+                return `<div class="${classes.join(' ')}" style="grid-column:${index + columnBase};grid-row:1;">周${day}${todayTag}</div>`;
+            })
             .join('');
         const sectionLabels = Array.from({ length: sectionCount }, (_, offset) => {
             const section = minSection + offset;
@@ -415,8 +456,12 @@ export function createScheduleDeck(container, options = {}) {
             const rowOffset = Math.floor(cell / 7);
             const band = sectionBand(minSection + rowOffset);
             const row = rowOffset + 2;
-            const column = (cell % 7) + columnBase;
-            return `<div class="cs-grid__cellbg cs-grid__cellbg--${band}" style="grid-column:${column};grid-row:${row};"></div>`;
+            const weekday = (cell % 7) + 1;
+            const column = weekday - 1 + columnBase;
+            const classes = ['cs-grid__cellbg', `cs-grid__cellbg--${band}`];
+            if (weekday >= 6) classes.push('cs-grid__cellbg--weekend');
+            if (weekday === todayColumn) classes.push('cs-grid__cellbg--today');
+            return `<div class="${classes.join(' ')}" style="grid-column:${column};grid-row:${row};"></div>`;
         }).join('');
         let bandBlocks = '';
         if (expanded) {
@@ -482,7 +527,7 @@ export function createScheduleDeck(container, options = {}) {
                     <span>${week.lesson_count} 节安排 · ${week.total_hours} 课时</span>
                     <span class="cs-card__badge ${week.is_current ? 'is-current' : ''}">${week.is_current ? '本周' : escapeHtml(week.label)}</span>
                 </div>
-                <div class="cs-card__body">${renderWeekGrid(week)}</div>`;
+                <div class="cs-card__body">${renderWeekGrid(week)}${weekEmptyMarkHtml(week)}</div>`;
             refs.stage.appendChild(card);
         });
         layoutDeck();
@@ -494,7 +539,7 @@ export function createScheduleDeck(container, options = {}) {
             const index = Number(card.dataset.weekIndex);
             const offset = index - state.activeWeekIndex;
             card.classList.toggle('is-active', offset === 0);
-            if (offset < -1 || offset > 6) {
+            if (offset < -1 || offset > 5) {
                 card.hidden = true;
                 return;
             }
@@ -508,8 +553,9 @@ export function createScheduleDeck(container, options = {}) {
                 zIndex = 300;
             } else if (offset > 0) {
                 // 后面的周：像 Win7 Flip3D 一样向右上方纵深堆叠。
-                transform = `translate(-50%, -50%) translate3d(${offset * 64}px, ${offset * -34}px, ${-offset * 170 + 60}px) rotateY(-7deg)`;
-                opacity = Math.max(0.28, 1 - offset * 0.14);
+                // 上浮幅度收窄（-24px/张），避免后排卡片顶出面板遮住标题。
+                transform = `translate(-50%, -50%) translate3d(${offset * 72}px, ${offset * -24}px, ${-offset * 170 + 60}px) rotateY(-7deg)`;
+                opacity = Math.max(0.22, 1 - offset * 0.16);
                 zIndex = 300 - offset;
             } else {
                 // 刚翻过去的周：滑向左前方并淡出。
@@ -564,7 +610,7 @@ export function createScheduleDeck(container, options = {}) {
             const termLabel = state.overview?.selected_term?.label || '';
             refs.expandSub.textContent = `${termLabel} · ${week.lesson_count} 节安排 · ${week.total_hours} 课时`;
         }
-        refs.expandBody.innerHTML = renderWeekGrid(week, { expanded: true });
+        refs.expandBody.innerHTML = renderWeekGrid(week, { expanded: true }) + weekEmptyMarkHtml(week);
     }
 
     function openExpanded() {
@@ -620,8 +666,45 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function onStageClick(event) {
+        if (dragMoved) return;
         const card = event.target.closest('.cs-card');
         if (card && card.classList.contains('is-active')) openExpanded();
+    }
+
+    /* 触摸 / 鼠标水平拖拽翻周（移动端没有滚轮）。每拖 90px 翻一周；
+       拖动超过阈值后抑制随后的点击放大。 */
+    let dragState = null;
+    let dragMoved = false;
+
+    function onStagePointerDown(event) {
+        if (!state.overview?.weeks?.length || event.button > 0) return;
+        dragState = { pointerId: event.pointerId, startX: event.clientX, consumedSteps: 0 };
+        dragMoved = false;
+    }
+
+    function onStagePointerMove(event) {
+        if (!dragState || event.pointerId !== dragState.pointerId) return;
+        const delta = event.clientX - dragState.startX;
+        if (!dragMoved && Math.abs(delta) > 8) {
+            dragMoved = true;
+            // 拖动确立后才捕获指针：轻点仍按 click 冒泡到卡片（放大）。
+            try {
+                refs.stage.setPointerCapture(event.pointerId);
+            } catch { /* pointer capture unsupported */ }
+        }
+        const steps = Math.trunc(delta / 90);
+        if (steps !== dragState.consumedSteps) {
+            // 向右拖 = 翻回上一周（把前面的卡片拉回来）。
+            goToWeek(state.activeWeekIndex - (steps - dragState.consumedSteps));
+            dragState.consumedSteps = steps;
+        }
+    }
+
+    function onStagePointerUp(event) {
+        if (!dragState || event.pointerId !== dragState.pointerId) return;
+        dragState = null;
+        // 让 click 事件先读取 dragMoved，再复位。
+        setTimeout(() => { dragMoved = false; }, 0);
     }
 
     function onExpandWheel(event) {
@@ -658,6 +741,10 @@ export function createScheduleDeck(container, options = {}) {
     refs.stage.addEventListener('wheel', onStageWheel, { passive: false });
     refs.stage.addEventListener('keydown', onStageKeydown);
     refs.stage.addEventListener('click', onStageClick);
+    refs.stage.addEventListener('pointerdown', onStagePointerDown);
+    refs.stage.addEventListener('pointermove', onStagePointerMove);
+    refs.stage.addEventListener('pointerup', onStagePointerUp);
+    refs.stage.addEventListener('pointercancel', onStagePointerUp);
     refs.prevBtn.addEventListener('click', () => goToWeek(state.activeWeekIndex - 1));
     refs.nextBtn.addEventListener('click', () => goToWeek(state.activeWeekIndex + 1));
     refs.slider.addEventListener('input', () => goToWeek(Number(refs.slider.value) - 1));

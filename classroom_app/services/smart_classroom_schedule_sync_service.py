@@ -462,7 +462,9 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
             "message": (
                 f"已同步 {len(items)} 条排课、{course_count} 门课程，"
                 f"本学期共 {total_hours} 课时"
-                + (f"；{linked_offering_count} 条已关联本地课堂。" if linked_offering_count else "。")
+                + (f"；{matched_class_count} 条已标注班级" if matched_class_count else "")
+                + (f"；{linked_offering_count} 条已关联本地课堂" if linked_offering_count else "")
+                + "。"
             ),
             "counts": counts,
             "warnings": [],
@@ -558,7 +560,9 @@ def _build_course_stats(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         stat["weeks"].update(item["weeks"])
         if item["classroom"]:
             stat["classrooms"].add(item["classroom"])
-        stat["classes"].add(item["class_label"])
+        # 人数兜底标签（"教学班 · N人"）与"最多 N 人"信息重复，不进班级 chips。
+        if not item["class_is_fallback"]:
+            stat["classes"].add(item["class_label"])
         stat["max_student_count"] = max(stat["max_student_count"], item["student_count"])
     stats = []
     for stat in grouped.values():
@@ -602,6 +606,8 @@ def _build_week_deck(items: list[dict[str, Any]], *, max_week: int, cur_week: in
                 "class_is_fallback": item["class_is_fallback"],
                 "class_offering_id": item["class_offering_id"],
                 "classroom_url": item["classroom_url"],
+                "single_or_double": item["single_or_double"],
+                "single_or_double_label": item["single_or_double_label"],
                 "student_count": item["student_count"],
                 "hours": item["hours_per_meeting"],
             }

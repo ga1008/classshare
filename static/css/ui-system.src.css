@@ -24754,6 +24754,14 @@ body.has-chat-image-preview-open {
     background: linear-gradient(135deg, #b45309, #92400e);
 }
 
+.dashboard-group-mode-btn[data-group-mode="schedule3d"].is-active {
+    background: linear-gradient(135deg, #0ea5e9, #0369a1);
+}
+
+.dashboard-group-mode-btn[data-group-mode="flat"].is-active {
+    background: linear-gradient(135deg, #475569, #334155);
+}
+
 .dashboard-group-mode-btn.is-active:hover,
 .dashboard-group-mode-btn.is-active:focus-visible {
     border-color: transparent;

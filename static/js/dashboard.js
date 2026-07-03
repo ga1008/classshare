@@ -1,6 +1,6 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
 import { initSemesterCalendar } from '/static/js/semester_calendar.js?v=dashboard-todo-axis-20260507';
-import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260703';
+import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260703b';
 
 const root = document.querySelector('[data-dashboard-root]');
 
@@ -531,6 +531,7 @@ if (root) {
      * 跨 applyFilters 重渲染持久存在，DOM 节点被移动而非重建。 */
     let scheduleDeckPanel = null;
     let scheduleDeck = null;
+    let scheduleDeckStatus = null;
     let scheduleDeckLoaded = false;
     let scheduleDeckLoading = false;
 
@@ -538,8 +539,17 @@ if (root) {
         if (!scheduleDeckPanel) {
             scheduleDeckPanel = document.createElement('div');
             scheduleDeckPanel.className = 'dashboard-schedule3d';
+            scheduleDeckStatus = document.createElement('div');
+            scheduleDeckStatus.className = 'dashboard-schedule3d__status';
+            scheduleDeckStatus.hidden = true;
+            scheduleDeckStatus.setAttribute('aria-live', 'polite');
+            scheduleDeckStatus.addEventListener('click', (event) => {
+                if (event.target.closest('[data-schedule3d-retry]')) {
+                    loadScheduleOverview();
+                }
+            });
             const mount = document.createElement('div');
-            scheduleDeckPanel.appendChild(mount);
+            scheduleDeckPanel.append(scheduleDeckStatus, mount);
             scheduleDeck = createScheduleDeck(mount, {
                 title: '3D 课表',
                 description: '本学期课表 · 滚轮或方向键切换周次，点击卡片放大；放大后点击课程进入课堂。',
@@ -554,11 +564,20 @@ if (root) {
         return scheduleDeckPanel;
     }
 
+    function setScheduleDeckStatus(html) {
+        if (!scheduleDeckStatus) {
+            return;
+        }
+        scheduleDeckStatus.hidden = !html;
+        scheduleDeckStatus.innerHTML = html || '';
+    }
+
     async function loadScheduleOverview({ year = '', term = '' } = {}) {
         if (!scheduleDeck || scheduleDeckLoading) {
             return;
         }
         scheduleDeckLoading = true;
+        setScheduleDeckStatus('正在加载课表…');
         try {
             const params = new URLSearchParams({ year, term });
             const response = await fetch(`/api/manage/teaching/course-schedule/overview?${params.toString()}`, {
@@ -569,9 +588,15 @@ if (root) {
             }
             const data = await response.json();
             scheduleDeckLoaded = true;
+            setScheduleDeckStatus('');
             scheduleDeck.setOverview(data.overview, { keepWeek: false });
         } catch (error) {
-            showMessage(error instanceof Error ? error.message : '课表加载失败。', 'error');
+            const message = error instanceof Error ? error.message : '课表加载失败。';
+            setScheduleDeckStatus(
+                `${normalizeText(message) ? message.replace(/[<>&"]/g, '') : '课表加载失败。'} `
+                + '<button type="button" class="dashboard-schedule3d__retry" data-schedule3d-retry>重试</button>',
+            );
+            showMessage(message, 'error');
         } finally {
             scheduleDeckLoading = false;
         }

@@ -16,6 +16,28 @@
         box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
         padding: 20px;
     }
+    .dashboard-schedule3d__status {
+        margin-bottom: 12px;
+        padding: 9px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(14, 165, 233, 0.24);
+        background: rgba(240, 249, 255, 0.85);
+        color: #075985;
+        font-size: 0.82rem;
+        font-weight: 700;
+    }
+    .dashboard-schedule3d__retry {
+        margin-left: 8px;
+        border: 1px solid rgba(14, 165, 233, 0.5);
+        background: #fff;
+        color: #0369a1;
+        border-radius: 999px;
+        padding: 2px 12px;
+        font-size: 0.78rem;
+        font-weight: 800;
+        cursor: pointer;
+    }
+    .dashboard-schedule3d__retry:hover { background: #e0f2fe; }
 </style>
 {% endblock %}
 
@@ -594,7 +616,7 @@
 </script>
 {% endif %}
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
-<script type="module" src="/static/js/dashboard.js?v=schedule3d-20260703"></script>
+<script type="module" src="/static/js/dashboard.js?v=schedule3d-polish-20260703b"></script>
 <script type="module" src="/static/js/dashboard_count_up.js?v=student-dashboard-polish-20260612"></script>
 <script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260621-reminder"></script>
 {% endblock %}
