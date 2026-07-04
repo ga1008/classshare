@@ -142,7 +142,15 @@ const DECK_CSS = `
 }
 
 /* ---- 课表网格（迷你卡片与放大视图共用） ---- */
-.cs-grid { display: grid; height: 100%; gap: 3px; min-height: 0; }
+/* 网格用绝对定位铺满 body 的内容区（inset 精确等于各 body 的 padding）。
+   这样网格拿到一个明确的高度（body 内容盒），grid-template-rows 的 fr 就
+   按这个真实高度定轨、绝不溢出。之前用 height:100% 或 flex 都失败：前者在
+   border-box 下把 padding 算进高度、后者 flex-basis 取内容高（如 745px）作
+   定轨基准却渲染在被压缩的实际盒（605px）里，最后几行按错误高度溢出被裁
+   （"挤压的下面看不见了"）。绝对定位 + 明确 inset 从根上消除这个歧义。 */
+.cs-grid { display: grid; position: absolute; gap: 3px; overflow: hidden; }
+.cs-card__body > .cs-grid { inset: 10px 12px 12px; }
+.cs-expand__body > .cs-grid { inset: 16px 20px 20px; }
 .cs-grid__corner, .cs-grid__day, .cs-grid__section {
     display: flex; align-items: center; justify-content: center;
     font-weight: 800;
@@ -455,9 +463,15 @@ export function createScheduleDeck(container, options = {}) {
 
     /**
      * 纵轴节次行高自适应：没课的节压缩到仅够显示节次序号的最小高度，
-     * 让出的空间分给有课的节，容器总高度不变（父级固定高度 + fr 单位
-     * 按权重分配剩余空间）。一条课程占用的每一行（span 覆盖的所有行，
-     * 不仅是起始行）都按"有课"计权，确保多节课与单节课都有足够展示空间。
+     * 让出的空间分给有课的节，课表整体高度不变。
+     *
+     * 关键：有课行用 minmax(0, Nfr) —— **不设 px 下限**。容器（放大卡片）
+     * 是固定高度 + overflow:hidden，若给有课行设较大 px 下限（如 64px），
+     * 密集周（如 8 行有课）下限累加 8×64=512px 就会超出容器把底部裁掉
+     * （用户反馈"挤压的下面都看不见了"就是这个原因）。纯 fr 权重让所有
+     * 有课行按比例分摊"扣除空堂行后剩余"的全部高度，无论多少节有课都
+     * 恰好铺满、永不溢出；空堂行保留很小的 px 下限，仅保证节次序号可读。
+     * 单节课与多节课都按其跨越的行数计权，多节课自然更高。
      */
     function buildRowSizes(week, { minSection, maxSection, expanded }) {
         const sectionCount = maxSection - minSection + 1;
@@ -471,9 +485,12 @@ export function createScheduleDeck(container, options = {}) {
                 hasLesson[section - minSection] = true;
             }
         });
-        const emptyRow = expanded ? 'minmax(20px, 0.45fr)' : 'minmax(13px, 0.4fr)';
-        const lessonRow = expanded ? 'minmax(64px, 3fr)' : 'minmax(32px, 2.2fr)';
-        return hasLesson.map((occupied) => (occupied ? lessonRow : emptyRow)).join(' ');
+        const emptyRow = expanded ? 'minmax(18px, 0.4fr)' : 'minmax(12px, 0.35fr)';
+        // 有课行给足权重（放大 3fr、迷你 2.4fr），但下限为 0 → 永不溢出。
+        const lessonWeight = expanded ? 3 : 2.4;
+        return hasLesson
+            .map((occupied) => (occupied ? `minmax(0, ${lessonWeight}fr)` : emptyRow))
+            .join(' ');
     }
 
     function renderWeekGrid(week, { expanded = false } = {}) {

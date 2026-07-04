@@ -797,17 +797,42 @@ def _serialize_item(row: Any) -> dict[str, Any]:
         "total_hours": len(sections) * len(weeks),
         "synced_at": _display_datetime(row_dict.get("synced_at")),
     }
-    # 展示优先级：本地真实班级名（软工2303班）> 智慧课堂教学班名 > 人数兜底。
-    if local_class_name:
-        item["class_label"] = local_class_name
+    _apply_class_label(item)
+    return item
+
+
+def _apply_class_label(item: dict[str, Any]) -> None:
+    """按优先级设置 class_label / class_is_fallback：
+    本地真实班级名（软工2303班）> 智慧课堂教学班名 > 人数兜底。
+    """
+    if item.get("local_class_name"):
+        item["class_label"] = item["local_class_name"]
         item["class_is_fallback"] = False
-    elif class_name:
-        item["class_label"] = class_name
+    elif item.get("teaching_class_name"):
+        item["class_label"] = item["teaching_class_name"]
         item["class_is_fallback"] = False
     else:
         item["class_label"] = _fallback_class_label({"student_count": item["student_count"]})
         item["class_is_fallback"] = True
-    return item
+
+
+def _resolve_item_class_name(item: dict[str, Any], academic_map: dict[Any, str]) -> None:
+    """读取时用教务名单关系把教学班代号解析成真实行政班名（就地修改 item）。
+
+    班级名解析放在读取时（而非仅同步时）：存量课表可能在映射逻辑上线前
+    就已同步、local_class_name 为空只能显示教学班代号；每次打开课表都按
+    最新名单关系重算，存量数据自动自愈，无需重新同步或重置数据库。
+    键优先 (course_code, teaching_class_name)，回退教学班名单键。
+    """
+    if not academic_map:
+        return
+    tcn = item.get("teaching_class_name") or ""
+    if not tcn:
+        return
+    resolved = academic_map.get((item.get("course_code") or "", tcn)) or academic_map.get(tcn)
+    if resolved:
+        item["local_class_name"] = resolved
+        _apply_class_label(item)
 
 
 def _build_course_stats(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -975,11 +1000,22 @@ def _offering_term_key(offering: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
-def _text_overlaps(left: Any, right: Any) -> bool:
-    left_text, right_text = _clean_text(left), _clean_text(right)
+def _text_match_score(left: Any, right: Any) -> int:
+    """名称匹配强度：2=完全相等（忽略大小写），1=互为子串，0=无关。
+
+    大小写不敏感：课表课程名"动态Web程序设计"与平台课堂"动态web程序设计"
+    应视为同一门课。精确匹配（2）优先于子串（1），用于区分"计算机网络"
+    与"计算机网络实验"这类互为子串但不同的课程。
+    """
+    left_text = _clean_text(left).casefold()
+    right_text = _clean_text(right).casefold()
     if not left_text or not right_text:
-        return False
-    return left_text == right_text or left_text in right_text or right_text in left_text
+        return 0
+    if left_text == right_text:
+        return 2
+    if left_text in right_text or right_text in left_text:
+        return 1
+    return 0
 
 
 def _match_local_offering(
@@ -987,26 +1023,36 @@ def _match_local_offering(
     offerings: list[dict[str, Any]],
     term_key: tuple[str, str] | None,
 ) -> int | None:
-    """宽松匹配平台课堂：课程名互含 + 班级名互含 + 学期兼容，且唯一。
+    """匹配平台课堂：课程名 + 班级名都要有交集，学期兼容，取唯一最优。
 
-    学期兼容 = 双方都能解析出 (学年, 学期) 时必须一致；任一方解析不出
-    则不作为否决条件（避免硬匹配漏掉信息）。多个候选 → 不链接（宁缺勿错）。
+    - 学期兼容 = 双方都能解析出 (学年, 学期) 时必须一致；任一方解析不出
+      则不作为否决条件（避免硬匹配漏掉信息）。
+    - 打分 = 课程名匹配强度 + 班级名匹配强度（精确 2 / 子串 1）。只有唯一
+      拿到最高分的候选才链接——保证"计算机网络"命中"计算机网络"课堂而非
+      同时命中被它子串串味的"计算机网络实验"课堂；并列最高分则判为歧义、
+      不链接（宁缺勿错）。
     """
-    matched_ids: set[int] = set()
+    scored: list[tuple[int, int]] = []  # (score, offering_id)
     for offering in offerings:
-        if not _text_overlaps(offering.get("course_name"), item["course_name"]):
+        course_score = _text_match_score(offering.get("course_name"), item["course_name"])
+        if course_score == 0:
             continue
-        class_name = _clean_text(offering.get("class_name"))
-        if not (
-            _text_overlaps(class_name, item["local_class_name"])
-            or _text_overlaps(class_name, item["teaching_class_name"])
-        ):
+        class_name = offering.get("class_name")
+        class_score = max(
+            _text_match_score(class_name, item["local_class_name"]),
+            _text_match_score(class_name, item["teaching_class_name"]),
+        )
+        if class_score == 0:
             continue
         offering_key = _offering_term_key(offering)
         if offering_key is not None and term_key is not None and offering_key != term_key:
             continue
-        matched_ids.add(int(offering["id"]))
-    return matched_ids.pop() if len(matched_ids) == 1 else None
+        scored.append((course_score + class_score, int(offering["id"])))
+    if not scored:
+        return None
+    best_score = max(score for score, _oid in scored)
+    best_ids = {oid for score, oid in scored if score == best_score}
+    return best_ids.pop() if len(best_ids) == 1 else None
 
 
 def _offering_create_url(item: dict[str, Any], year: str, term: str) -> str:
@@ -1157,6 +1203,12 @@ def build_teacher_course_schedule_overview(
         (int(teacher_id), SMART_PLATFORM_CODE, selected["year"], selected["term"]),
     ).fetchall()
     all_items = [_serialize_item(row) for row in rows]
+
+    # 读取时用教务名单关系把教学班代号解析成真实行政班名（存量课表自愈，
+    # 必须在下面 offering 匹配之前完成，好让宽松匹配用上真实班级名）。
+    academic_map = _load_academic_class_mappings(conn, int(teacher_id))
+    for item in all_items:
+        _resolve_item_class_name(item, academic_map)
 
     # 课表 → 平台课堂：同步时的严格匹配优先；未命中的再按
     # 课程名+班级名+学期宽松匹配；仍无对应 → 提供预填的新建课堂链接。

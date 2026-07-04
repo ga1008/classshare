@@ -339,10 +339,77 @@ class LocalOfferingMatchTests(unittest.TestCase):
             svc._match_local_offering(self._item(), offerings, ("2025-2026", "2"))
         )
 
+    def test_exact_course_beats_substring_sibling(self):
+        # 线上真实场景：同班既有"计算机网络"又有"计算机网络实验"课堂，
+        # 二者互为子串。精确匹配必须胜出，不能因子串串味判为歧义。
+        offerings = [
+            {"id": 4, "course_name": "计算机网络", "class_name": "软工2302班",
+             "semester": "2025-2026第二学期", "semester_name": ""},
+            {"id": 8, "course_name": "计算机网络实验", "class_name": "软工2302班",
+             "semester": "2025-2026第二学期", "semester_name": ""},
+        ]
+        net = self._item(course_name="计算机网络", local_class_name="软工2302班")
+        self.assertEqual(svc._match_local_offering(net, offerings, ("2025-2026", "2")), 4)
+        lab = self._item(course_name="计算机网络实验", local_class_name="软工2302班")
+        self.assertEqual(svc._match_local_offering(lab, offerings, ("2025-2026", "2")), 8)
+
+    def test_case_insensitive_course_match(self):
+        # 课表"动态Web程序设计" vs 平台课堂"动态web程序设计"（大小写不同）。
+        offerings = [
+            {"id": 6, "course_name": "动态web程序设计", "class_name": "软工2401班",
+             "semester": "2025-2026第二学期", "semester_name": ""},
+        ]
+        item = self._item(course_name="动态Web程序设计", local_class_name="软工2401班")
+        self.assertEqual(svc._match_local_offering(item, offerings, ("2025-2026", "2")), 6)
+
     def test_short_classroom(self):
         self.assertEqual(svc._short_classroom("（知新楼B414）网络渗透实验室"), "知新楼B414")
         self.assertEqual(svc._short_classroom("知新楼B414"), "知新楼B414")
         self.assertEqual(svc._short_classroom(""), "")
+
+
+class ReadTimeClassResolutionTests(unittest.TestCase):
+    """读取时用教务名单关系把教学班代号解析成真实行政班名（存量数据自愈）。"""
+
+    def _item(self, **overrides):
+        base = {
+            "course_code": "E020204B6",
+            "teaching_class_name": "计算机网络-0002",
+            "local_class_name": "",
+            "student_count": 49,
+        }
+        base.update(overrides)
+        return base
+
+    def test_resolves_code_to_real_name_by_tcn_fallback(self):
+        # 教务名单的 course_code 是学术长 ID，与课表的 E020204B6 不同 →
+        # 靠教学班名单键回退命中，仍能解析出真实班级名。
+        item = self._item()
+        academic_map = {"计算机网络-0002": "软工2302班"}
+        svc._resolve_item_class_name(item, academic_map)
+        self.assertEqual(item["local_class_name"], "软工2302班")
+        self.assertEqual(item["class_label"], "软工2302班")
+        self.assertFalse(item["class_is_fallback"])
+
+    def test_no_mapping_keeps_code_label(self):
+        item = self._item()
+        svc._resolve_item_class_name(item, {})
+        # 未解析时保持退回教学班代号（class_label 由 _apply_class_label 兜底）。
+        svc._apply_class_label(item)
+        self.assertEqual(item["local_class_name"], "")
+        self.assertEqual(item["class_label"], "计算机网络-0002")
+
+    def test_apply_class_label_priority(self):
+        real = {"local_class_name": "软工2302班", "teaching_class_name": "计算机网络-0002", "student_count": 49}
+        svc._apply_class_label(real)
+        self.assertEqual(real["class_label"], "软工2302班")
+        code_only = {"local_class_name": "", "teaching_class_name": "计算机网络-0002", "student_count": 49}
+        svc._apply_class_label(code_only)
+        self.assertEqual(code_only["class_label"], "计算机网络-0002")
+        bare = {"local_class_name": "", "teaching_class_name": "", "student_count": 40}
+        svc._apply_class_label(bare)
+        self.assertTrue(bare["class_is_fallback"])
+        self.assertIn("40", bare["class_label"])
 
 
 class SchemaMigrationTests(unittest.TestCase):

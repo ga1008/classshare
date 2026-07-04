@@ -1,6 +1,6 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
 import { initSemesterCalendar } from '/static/js/semester_calendar.js?v=dashboard-todo-axis-20260507';
-import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260704c';
+import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260705';
 
 const root = document.querySelector('[data-dashboard-root]');
 
