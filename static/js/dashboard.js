@@ -82,6 +82,7 @@ if (root) {
     const filterButtons = Array.from(root.querySelectorAll('[data-filter-value]'));
     const groupModeButtons = Array.from(root.querySelectorAll('[data-group-mode]'));
     const searchForm = root.querySelector('[data-dashboard-search-form]');
+    const semesterSelect = root.querySelector('[data-semester-filter]');
     const filterField = root.querySelector('[data-dashboard-filter-field]');
     const searchInput = root.querySelector('[data-dashboard-search]');
     const visibleCount = root.querySelector('[data-visible-count]');
@@ -148,9 +149,37 @@ if (root) {
             recentLoginCount: toNumber(card.dataset.recentLoginCount),
             lastActivitySort: toNumber(card.dataset.lastActivitySort),
             timelineItems: parseTimelineItems(card.dataset.timelineItems),
+            semesterKey: String(card.dataset.semesterKey || ''),
+            semesterLabel: String(card.dataset.semesterLabel || '未设学期'),
             visible: !card.hidden,
         });
     });
+
+    // 学年学期筛选：默认定位今天所在学期；用户显式选择后记忆。
+    const currentSemesterKey = String(root.dataset.currentSemesterKey || '');
+    const semesterOptionValues = new Set(
+        Array.from(semesterSelect?.options || []).map((option) => option.value),
+    );
+    let activeSemesterKey = '';
+    if (semesterSelect) {
+        const savedSemesterKey = readStorageValue(`${storagePrefix}:semester-key`);
+        if (savedSemesterKey !== null && savedSemesterKey !== undefined && semesterOptionValues.has(savedSemesterKey)) {
+            activeSemesterKey = savedSemesterKey;
+        } else if (currentSemesterKey && semesterOptionValues.has(currentSemesterKey)) {
+            activeSemesterKey = currentSemesterKey;
+        }
+        semesterSelect.value = activeSemesterKey;
+    }
+
+    function semesterKeyToTerm(key) {
+        const matched = /^(\d{4}-\d{4})\|([12])$/.exec(String(key || ''));
+        return matched ? { year: matched[1], term: matched[2] } : null;
+    }
+
+    function activeSemesterLabel() {
+        const option = semesterSelect?.selectedOptions?.[0];
+        return option ? option.textContent.replace(/（\d+）\s*$/, '').trim() : '';
+    }
 
     const formatDateNodes = () => {
         root.querySelectorAll('[data-datetime]').forEach((node) => {
@@ -229,6 +258,9 @@ if (root) {
 
     const buildResultsSummary = (keyword) => {
         const fragments = [];
+        if (activeSemesterKey) {
+            fragments.push(`学期：${activeSemesterLabel() || activeSemesterKey}`);
+        }
         if (activeFilter !== 'all') {
             fragments.push(`筛选：${filterLabels.get(activeFilter) || activeFilter}`);
         }
@@ -377,7 +409,9 @@ if (root) {
             const matchesKeyword = !normalizedKeyword
                 || normalizedSearch.includes(normalizedKeyword)
                 || (compactKeyword && compactSearch.includes(compactKeyword));
-            const visible = Boolean(matchesKeyword && matchesFilter(card));
+            const matchesSemester = !activeSemesterKey
+                || (state?.semesterKey || '') === activeSemesterKey;
+            const visible = Boolean(matchesKeyword && matchesSemester && matchesFilter(card));
             if (state) {
                 state.visible = visible;
             }
@@ -449,6 +483,17 @@ if (root) {
 
     searchForm?.addEventListener('submit', (event) => {
         event.preventDefault();
+        applyFilters();
+    });
+
+    semesterSelect?.addEventListener('change', () => {
+        activeSemesterKey = semesterSelect.value || '';
+        writeStorageValue(`${storagePrefix}:semester-key`, activeSemesterKey);
+        // 3D课表模式：顶部学期切换直接驱动课表数据重载。
+        if (activeGroupMode === 'schedule3d') {
+            const term = semesterKeyToTerm(activeSemesterKey);
+            loadScheduleOverview(term ? { year: term.year, term: term.term } : {});
+        }
         applyFilters();
     });
 
@@ -559,7 +604,8 @@ if (root) {
             });
         }
         if (!scheduleDeckLoaded && !scheduleDeckLoading) {
-            loadScheduleOverview();
+            const term = semesterKeyToTerm(activeSemesterKey);
+            loadScheduleOverview(term ? { year: term.year, term: term.term } : {});
         }
         return scheduleDeckPanel;
     }

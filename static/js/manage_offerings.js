@@ -529,6 +529,68 @@ async function handleDelete(button) {
     }
 }
 
+const SEMESTER_NAME_PATTERN = /(\d{4})\s*[-–—~]\s*(\d{4}).*?([一二12])\s*学期/;
+const TERM_DIGITS = { '一': '1', '1': '1', '二': '2', '2': '2' };
+
+function selectOptionByText(select, targets) {
+    if (!select) return false;
+    const candidates = (Array.isArray(targets) ? targets : [targets])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+    if (!candidates.length) return false;
+    const options = Array.from(select.options).filter((option) => option.value);
+    // 先找完全相等，再找互相包含（避免"软件工程2302班"与选项"软工2302班"漏配）。
+    for (const target of candidates) {
+        const exact = options.find((option) => (option.textContent || '').trim() === target);
+        if (exact) { select.value = exact.value; return true; }
+    }
+    for (const target of candidates) {
+        const fuzzy = options.find((option) => {
+            const text = (option.textContent || '').trim();
+            return text && (text.includes(target) || target.includes(text));
+        });
+        if (fuzzy) { select.value = fuzzy.value; return true; }
+    }
+    return false;
+}
+
+/** 智慧课堂课表"点击创建课堂"深链的自动预填。 */
+function applySmartSchedulePrefill(params) {
+    const courseName = (params.get('course') || '').trim();
+    const rawClassName = (params.get('class_name') || '').trim();
+    const year = (params.get('year') || '').trim();
+    const term = (params.get('term') || '').trim();
+    const missing = [];
+
+    if (year && term && elements.semesterSelect) {
+        const target = Array.from(elements.semesterSelect.options).find((option) => {
+            const matched = SEMESTER_NAME_PATTERN.exec(option.textContent || '');
+            if (!matched) return false;
+            return `${matched[1]}-${matched[2]}` === year && (TERM_DIGITS[matched[3]] || '') === term;
+        });
+        if (target) {
+            elements.semesterSelect.value = target.value;
+        } else {
+            missing.push(`学期（${year} 第${term}学期，请先在学期管理中创建）`);
+        }
+    }
+    // 教学班组成可能是逗号分隔的多个行政班，逐个尝试。
+    const classCandidates = rawClassName.split(/[,，、]/).map((part) => part.trim()).filter(Boolean);
+    if (classCandidates.length && !selectOptionByText(elements.classSelect, classCandidates)) {
+        missing.push(`班级（${classCandidates[0]}，请先在班级管理中创建）`);
+    }
+    if (courseName && !selectOptionByText(elements.courseSelect, courseName)) {
+        missing.push(`课程（${courseName}，请先在课程管理中创建）`);
+    }
+    elements.courseSelect?.dispatchEvent(new Event('change'));
+    elements.form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (missing.length) {
+        showMessage(`已带入智慧课堂课表信息；以下项未匹配到，请补充：${missing.join('；')}`, 'info');
+    } else {
+        showMessage('已从智慧课堂课表带入开课信息，请核对后保存。', 'success');
+    }
+}
+
 function applyQueryDefaults() {
     const params = new URLSearchParams(window.location.search);
     const courseId = params.get('course_id');
@@ -538,6 +600,9 @@ function applyQueryDefaults() {
 
     if (elements.semesterSelect && config.defaultSemesterId && !elements.semesterSelect.value) {
         elements.semesterSelect.value = String(config.defaultSemesterId);
+    }
+    if (params.get('prefill') === 'smart_schedule') {
+        applySmartSchedulePrefill(params);
     }
     updateScheduleMode({ preserveSelection: false });
 }

@@ -237,6 +237,14 @@ def _display_datetime(value: Any) -> str:
     return format_display_datetime(value, fallback=str(value or "").replace("T", " "))
 
 
+def _short_classroom(text: Any) -> str:
+    """'（知新楼B414）网络渗透实验室' → '知新楼B414'（无括号则原文）。"""
+    matched = re.search(r"[（(]([^（）()]+)[）)]", str(text or ""))
+    if matched:
+        return matched.group(1).strip()
+    return _clean_text(text)
+
+
 # --------------------------------------------------------------------------- #
 # Remote fetch + parse
 # --------------------------------------------------------------------------- #
@@ -310,6 +318,40 @@ async def _fetch_teacher_schedule(
 # --------------------------------------------------------------------------- #
 # Teaching-class enrichment (best-effort, from the check-in schedule sync)
 # --------------------------------------------------------------------------- #
+
+
+def _load_academic_class_mappings(conn, teacher_id: int) -> dict[Any, str]:
+    """教务系统同步的 教学班代号 → 行政班组成 精确对照。
+
+    教务课程同步（teacher_academic_course_sync_items）自带 jxbmc（教学班
+    名称，如"计算机网络实验-0002"）与"教学班组成"（行政班名单，如
+    "软件工程2302班"），是把智慧课堂教学班代号换成真实行政班名的权威来源。
+    键：(course_code, teaching_class_name) 优先，教学班名单键兜底。
+    """
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT course_code, course_name, teaching_class_name, class_composition
+            FROM teacher_academic_course_sync_items
+            WHERE teacher_id = ?
+              AND COALESCE(teaching_class_name, '') <> ''
+              AND COALESCE(class_composition, '') <> ''
+            """,
+            (int(teacher_id),),
+        ).fetchall()
+    except Exception:  # noqa: BLE001 — 教务同步表不存在时跳过
+        return {}
+    mappings: dict[Any, str] = {}
+    for row in rows:
+        row_dict = dict(row)
+        composition = _clean_text(row_dict.get("class_composition"))
+        tcn = _clean_text(row_dict.get("teaching_class_name"))
+        code = _clean_text(row_dict.get("course_code"))
+        if not composition or not tcn:
+            continue
+        mappings.setdefault((code, tcn), composition)
+        mappings.setdefault(tcn, composition)
+    return mappings
 
 
 def _load_teaching_class_candidates(conn, teacher_id: int) -> list[dict[str, Any]]:
@@ -507,6 +549,7 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
         with get_db_connection() as conn:
             ensure_course_schedule_schema(conn)
             candidates = _load_teaching_class_candidates(conn, int(teacher_id))
+            academic_map = _load_academic_class_mappings(conn, int(teacher_id))
             for year, term in term_keys:
                 conn.execute(
                     """
@@ -518,6 +561,15 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
                 )
             for item in items:
                 class_match = _match_teaching_class(item, candidates)
+                # 教务系统的"教学班组成"是行政班名的权威对照，优先于
+                # 点名同步推导的本地班级名。
+                teaching_class_name = class_match["teaching_class_name"]
+                if teaching_class_name:
+                    composition = academic_map.get(
+                        (item["course_code"], teaching_class_name)
+                    ) or academic_map.get(teaching_class_name)
+                    if composition:
+                        class_match["local_class_name"] = composition
                 if class_match["teaching_class_name"] or class_match["local_class_name"]:
                     matched_class_count += 1
                 if class_match["class_offering_id"]:
@@ -707,6 +759,7 @@ def _serialize_item(row: Any) -> dict[str, Any]:
         "course_name": str(row_dict.get("course_name") or ""),
         "course_code": str(row_dict.get("course_code") or ""),
         "classroom": str(row_dict.get("classroom") or ""),
+        "classroom_short": _short_classroom(row_dict.get("classroom")),
         "teaching_class_name": class_name,
         "local_class_name": local_class_name,
         "class_offering_id": class_offering_id,
@@ -792,7 +845,9 @@ def _build_week_deck(
     max_week: int,
     cur_week: int,
     week1_monday: date | None = None,
+    session_no_map: dict[tuple[int, int], tuple[int, int]] | None = None,
 ) -> list[dict[str, Any]]:
+    session_no_map = session_no_map or {}
     highest_item_week = max((max(item["weeks"]) for item in items if item["weeks"]), default=0)
     deck_max = max(max_week, highest_item_week)
     if deck_max <= 0:
@@ -809,10 +864,14 @@ def _build_week_deck(
                 "course_name": item["course_name"],
                 "course_code": item["course_code"],
                 "classroom": item["classroom"],
+                "classroom_short": item["classroom_short"],
                 "class_label": item["class_label"],
                 "class_is_fallback": item["class_is_fallback"],
                 "class_offering_id": item["class_offering_id"],
                 "classroom_url": item["classroom_url"],
+                "create_url": item.get("create_url", ""),
+                "session_no": session_no_map.get((item["id"], week_index), (0, 0))[0],
+                "session_total": session_no_map.get((item["id"], week_index), (0, 0))[1],
                 "single_or_double": item["single_or_double"],
                 "single_or_double_label": item["single_or_double_label"],
                 "student_count": item["student_count"],
@@ -841,6 +900,111 @@ def _build_week_deck(
             }
         )
     return weeks
+
+
+def _build_session_no_map(items: list[dict[str, Any]]) -> dict[tuple[int, int], tuple[int, int]]:
+    """(item_id, week_index) → (本学期第 N 次课, 总次数)。
+
+    分组键 = 课程 + 教学班：同一门课同一个班的所有上课时点（周、星期、
+    起始节）按时间排序后编号，由周次推算出"第几次课"。
+    """
+    groups: dict[tuple[str, str], list[tuple[int, int, int, int]]] = {}
+    for item in items:
+        group_key = (
+            item["course_code"] or item["course_name"],
+            item["teaching_class_name"] or item["class_label"],
+        )
+        first_section = item["sections"][0] if item["sections"] else 0
+        for week in item["weeks"]:
+            groups.setdefault(group_key, []).append(
+                (week, item["weekday"], first_section, item["id"])
+            )
+    session_map: dict[tuple[int, int], tuple[int, int]] = {}
+    for occurrences in groups.values():
+        occurrences.sort()
+        total = len(occurrences)
+        for index, (week, _weekday, _section, item_id) in enumerate(occurrences, start=1):
+            session_map[(item_id, week)] = (index, total)
+    return session_map
+
+
+def _load_local_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
+    """本教师的平台课堂（含课程名/班级名/学期），用于课表→课堂宽松匹配。"""
+    try:
+        rows = conn.execute(
+            """
+            SELECT o.id, o.semester, o.semester_id,
+                   c.name AS course_name, cl.name AS class_name,
+                   COALESCE(sem.name, '') AS semester_name
+            FROM class_offerings o
+            JOIN courses c ON c.id = o.course_id
+            JOIN classes cl ON cl.id = o.class_id
+            LEFT JOIN academic_semesters sem ON sem.id = o.semester_id
+            WHERE o.teacher_id = ?
+            """,
+            (int(teacher_id),),
+        ).fetchall()
+    except Exception:  # noqa: BLE001
+        return []
+    return [dict(row) for row in rows]
+
+
+def _offering_term_key(offering: dict[str, Any]) -> tuple[str, str] | None:
+    for source in (offering.get("semester_name"), offering.get("semester")):
+        key = _parse_platform_semester_name(source)
+        if key is not None:
+            return key
+    return None
+
+
+def _text_overlaps(left: Any, right: Any) -> bool:
+    left_text, right_text = _clean_text(left), _clean_text(right)
+    if not left_text or not right_text:
+        return False
+    return left_text == right_text or left_text in right_text or right_text in left_text
+
+
+def _match_local_offering(
+    item: dict[str, Any],
+    offerings: list[dict[str, Any]],
+    term_key: tuple[str, str] | None,
+) -> int | None:
+    """宽松匹配平台课堂：课程名互含 + 班级名互含 + 学期兼容，且唯一。
+
+    学期兼容 = 双方都能解析出 (学年, 学期) 时必须一致；任一方解析不出
+    则不作为否决条件（避免硬匹配漏掉信息）。多个候选 → 不链接（宁缺勿错）。
+    """
+    matched_ids: set[int] = set()
+    for offering in offerings:
+        if not _text_overlaps(offering.get("course_name"), item["course_name"]):
+            continue
+        class_name = _clean_text(offering.get("class_name"))
+        if not (
+            _text_overlaps(class_name, item["local_class_name"])
+            or _text_overlaps(class_name, item["teaching_class_name"])
+        ):
+            continue
+        offering_key = _offering_term_key(offering)
+        if offering_key is not None and term_key is not None and offering_key != term_key:
+            continue
+        matched_ids.add(int(offering["id"]))
+    return matched_ids.pop() if len(matched_ids) == 1 else None
+
+
+def _offering_create_url(item: dict[str, Any], year: str, term: str) -> str:
+    """无对应课堂时的"新建课堂"深链，自动带入课表信息供开课页预填。"""
+    from urllib.parse import urlencode
+
+    params = {
+        "prefill": "smart_schedule",
+        "course": item["course_name"],
+        "class_name": item["local_class_name"] or item["teaching_class_name"],
+        "year": year,
+        "term": term,
+    }
+    return "/manage/teaching/offerings?" + urlencode(
+        {key: value for key, value in params.items() if value}
+    )
 
 
 def _resolve_term_anchor(
@@ -976,6 +1140,26 @@ def build_teacher_course_schedule_overview(
     ).fetchall()
     all_items = [_serialize_item(row) for row in rows]
 
+    # 课表 → 平台课堂：同步时的严格匹配优先；未命中的再按
+    # 课程名+班级名+学期宽松匹配；仍无对应 → 提供预填的新建课堂链接。
+    local_offerings = _load_local_offerings(conn, int(teacher_id))
+    selected_term_key = (
+        (selected["year"], selected["term"]) if selected["year"] and selected["term"] else None
+    )
+    for item in all_items:
+        if not item["class_offering_id"]:
+            matched_offering_id = _match_local_offering(item, local_offerings, selected_term_key)
+            if matched_offering_id:
+                item["class_offering_id"] = matched_offering_id
+                item["classroom_url"] = f"/classroom/{matched_offering_id}"
+        item["create_url"] = (
+            ""
+            if item["class_offering_id"]
+            else _offering_create_url(item, selected["year"], selected["term"])
+        )
+    # 第 N 次课编号基于全量条目（不受课程/班级筛选影响，编号稳定）。
+    session_no_map = _build_session_no_map(all_items)
+
     course_options = sorted({item["course_name"] for item in all_items if item["course_name"]})
     class_options = sorted({item["class_label"] for item in all_items if item["class_label"]})
 
@@ -1006,6 +1190,7 @@ def build_teacher_course_schedule_overview(
         max_week=selected["max_week"],
         cur_week=live_cur_week,
         week1_monday=anchor["week1_monday"],
+        session_no_map=session_no_map,
     )
     if status == "ended":
         focus_week = len(weeks)

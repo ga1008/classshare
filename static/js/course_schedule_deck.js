@@ -202,6 +202,12 @@ a.cs-lesson:hover, a.cs-lesson:focus-visible {
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4), 0 8px 18px rgba(15, 23, 42, 0.28);
 }
 .cs-lesson__link-hint { font-weight: 800; opacity: 0.85; }
+/* 尚无对应课堂：虚线描边提示可创建 */
+a.cs-lesson--create {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55);
+    background-image: linear-gradient(rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.12));
+}
+a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; text-underline-offset: 3px; }
 .cs-grid--expanded .cs-lesson strong { font-size: 1.02rem; }
 .cs-grid--expanded .cs-lesson span { font-size: 0.8rem; white-space: normal; }
 .cs-grid--expanded .cs-grid__corner,
@@ -401,21 +407,32 @@ export function createScheduleDeck(container, options = {}) {
         const rowSpan = Math.max(1, end - start + 1);
         const column = Math.min(7, Math.max(1, lesson.weekday || 1)) + columnBase - 1;
         const accent = courseAccentFor(state.overview, lesson.course_name);
-        const href = String(lesson.classroom_url || '');
+        const classroomHref = String(lesson.classroom_url || '');
+        const createHref = String(lesson.create_url || '');
+        const href = classroomHref || createHref;
         const linkable = Boolean(expanded && href);
+        const isCreate = linkable && !classroomHref;
         const sdLabel = lesson.single_or_double_label ? ` · ${escapeHtml(lesson.single_or_double_label)}` : '';
+        const roomText = escapeHtml(lesson.classroom_short || lesson.classroom || '教室待定');
+        const sessionText = lesson.session_no
+            ? `第${lesson.session_no}次课${expanded && lesson.session_total ? `（共${lesson.session_total}次）` : ''}`
+            : '';
+        // 节次不再写进卡片文字（网格行位置已表达）；显示 课程/教室简称/班级/第N次课。
         const detailLines = expanded
-            ? `<span>${escapeHtml(lesson.section_label)}${sdLabel} · ${escapeHtml(lesson.classroom || '教室待定')}</span>
-               <span>${escapeHtml(lesson.class_label || '')}${lesson.student_count ? ` · ${lesson.student_count}人` : ''}</span>`
-              + (linkable ? '<span class="cs-lesson__link-hint">点击进入课堂 →</span>' : '')
-            : `<span>${escapeHtml(lesson.classroom || '')}</span>
-               <span>${escapeHtml(lesson.class_label || '')}</span>`;
+            ? `<span>${roomText}${sdLabel}</span>
+               <span>${escapeHtml(lesson.class_label || '')}${sessionText ? ` · ${escapeHtml(sessionText)}` : ''}</span>`
+              + (linkable
+                  ? `<span class="cs-lesson__link-hint">${isCreate ? '尚无对应课堂 · 点击创建 +' : '点击进入课堂 →'}</span>`
+                  : '')
+            : `<span>${roomText}</span>
+               <span>${escapeHtml(lesson.class_label || '')}${lesson.session_no ? ` · 第${lesson.session_no}次` : ''}</span>`;
         const titleText = `${lesson.course_name} ${lesson.section_label} ${lesson.classroom || ''} ${lesson.class_label || ''}`
-            + (linkable ? ' · 点击进入课堂' : '');
+            + (sessionText ? ` · ${sessionText}` : '')
+            + (linkable ? (isCreate ? ' · 点击创建课堂' : ' · 点击进入课堂') : '');
         const tag = linkable ? 'a' : 'div';
         const hrefAttr = linkable ? ` href="${escapeHtml(href)}"` : '';
         return `
-        <${tag} class="cs-lesson"${hrefAttr} style="--cs-accent:${accent};grid-column:${column};grid-row:${rowStart} / span ${rowSpan};"
+        <${tag} class="cs-lesson${isCreate ? ' cs-lesson--create' : ''}"${hrefAttr} style="--cs-accent:${accent};grid-column:${column};grid-row:${rowStart} / span ${rowSpan};"
              title="${escapeHtml(titleText)}">
             <strong>${escapeHtml(lesson.course_name)}</strong>
             ${detailLines}

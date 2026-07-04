@@ -1204,6 +1204,13 @@ def _build_teacher_dashboard_context(
     attention_count = 0
     recent_count = 0
 
+    # 学年学期筛选：每个课堂规范化出 semester_key/label，供顶部筛选使用。
+    semester_rows = load_teacher_semester_rows(conn, teacher_id)
+    semester_name_by_id = {
+        int(row["id"]): str(row.get("name") or "") for row in semester_rows if row.get("id")
+    }
+    semester_option_map: dict[str, dict[str, Any]] = {}
+
     for offering in offerings:
         offering_id = int(offering["id"])
         course_id = int(offering["course_id"])
@@ -1289,6 +1296,17 @@ def _build_teacher_dashboard_context(
             summary = f"当前共配置 {assignment_count} 项课堂任务，课堂结构已经成型。"
         else:
             summary = "建议优先补充任务与资料，让学生进入课堂后立即可用。"
+
+        semester_key, semester_label = _dashboard_semester_key(
+            semester_name_by_id.get(_dashboard_int(offering.get("semester_id"))),
+            offering.get("semester"),
+        )
+        offering["semester_key"] = semester_key
+        offering["semester_label"] = semester_label
+        option_entry = semester_option_map.setdefault(
+            semester_key, {"key": semester_key, "label": semester_label, "count": 0}
+        )
+        option_entry["count"] += 1
 
         offering["summary"] = summary
         offering["description"] = description
@@ -1503,9 +1521,31 @@ def _build_teacher_dashboard_context(
         filter_value=selected_filter,
         search_query=search_query,
     )
-    semester_calendar = build_semester_calendar_payload(
-        load_teacher_semester_rows(conn, teacher_id),
+    # 学期筛选选项：可解析的学期按时间倒序，无法解析的原文排后，"未设学期"最后。
+    all_options = list(semester_option_map.values())
+    parseable = sorted(
+        (
+            entry
+            for entry in all_options
+            if entry["key"] and entry["key"] != "none" and not entry["key"].startswith("raw:")
+        ),
+        key=lambda entry: entry["key"],
+        reverse=True,
     )
+    raw_entries = sorted(
+        (entry for entry in all_options if entry["key"].startswith("raw:")),
+        key=lambda entry: entry["label"],
+    )
+    unset_entries = [entry for entry in all_options if entry["key"] == "none"]
+    semester_options = parseable + raw_entries + unset_entries
+    current_semester_key = _dashboard_current_semester_key(semester_rows)
+    if current_semester_key and all(
+        entry["key"] != current_semester_key for entry in semester_options
+    ):
+        # 当前学期尚无课堂：默认退回"全部学期"，避免打开就是一片空白。
+        current_semester_key = ""
+
+    semester_calendar = build_semester_calendar_payload(semester_rows)
     _attach_dashboard_todos_to_semester_calendar(
         conn,
         semester_calendar,
@@ -1557,6 +1597,8 @@ def _build_teacher_dashboard_context(
         "dashboard_initial_visible_count": initial_visible_count,
         "dashboard_initial_results_summary": initial_results_summary,
         "dashboard_default_group_mode": "department",
+        "dashboard_semester_options": semester_options,
+        "dashboard_current_semester_key": current_semester_key,
         "dashboard_recent_activity_days": RECENT_ACTIVITY_DAYS,
         "dashboard_empty_state": {
             "title": ui_copy["empty_title"],
@@ -2696,6 +2738,46 @@ def _build_student_dashboard_context(
         "student_security_summary": student_security_summary,
         "cultivation_profile": cultivation_profile,
     }
+
+
+# 学年学期规范化：课堂的 semester_id → academic_semesters.name 优先，
+# 其次课堂的 semester 文本。能解析出 (学年, 学期) 的用规范 key
+# "2025-2026|2"，保证同一学期不同写法（第二学期/第2学期）归并到一起。
+_DASHBOARD_SEMESTER_RE = re.compile(r"(\d{4})\s*[-–—~]\s*(\d{4}).*?([一二12])\s*学期")
+_DASHBOARD_TERM_DIGITS = {"一": "1", "1": "1", "二": "2", "2": "2"}
+
+
+def _dashboard_semester_key(*sources: Any) -> tuple[str, str]:
+    """→ (规范 key, 展示标签)；全部为空 → ("", "未设学期")。"""
+    for source in sources:
+        text = str(source or "").strip()
+        if not text:
+            continue
+        matched = _DASHBOARD_SEMESTER_RE.search(text)
+        if matched:
+            term = _DASHBOARD_TERM_DIGITS.get(matched.group(3), "")
+            if term:
+                years = f"{matched.group(1)}-{matched.group(2)}"
+                return (f"{years}|{term}", f"{years}学年 第{term}学期")
+    for source in sources:
+        text = str(source or "").strip()
+        if text:
+            return (f"raw:{text}", text)
+    # "none" 而非空串：空串保留给筛选下拉的"全部学期"。
+    return ("none", "未设学期")
+
+
+def _dashboard_current_semester_key(semester_rows: list[dict[str, Any]]) -> str:
+    """今天所在的平台学期 → 规范 key（找不到返回 ""）。"""
+    today = china_today()
+    for row in semester_rows:
+        start = parse_date_input(row.get("start_date"))
+        end = parse_date_input(row.get("end_date"))
+        if start and end and start <= today <= end:
+            key, _label = _dashboard_semester_key(row.get("name"))
+            if key and not key.startswith("raw:"):
+                return key
+    return ""
 
 
 def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:

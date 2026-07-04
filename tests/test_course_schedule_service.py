@@ -245,6 +245,85 @@ class TeachingClassMatchTests(unittest.TestCase):
         self.assertIsNone(match["class_offering_id"])
 
 
+class AcademicClassMappingTests(unittest.TestCase):
+    """教务系统 教学班代号 → 行政班组成 对照。"""
+
+    def test_mapping_loaded_with_code_and_name_keys(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE teacher_academic_course_sync_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER, course_code TEXT, course_name TEXT,
+                teaching_class_name TEXT, class_composition TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO teacher_academic_course_sync_items "
+            "(teacher_id, course_code, course_name, teaching_class_name, class_composition) "
+            "VALUES (1, 'E020056B6', '计算机网络实验', '计算机网络实验-0002', '软工2302班')"
+        )
+        mappings = svc._load_academic_class_mappings(conn, 1)
+        self.assertEqual(mappings[("E020056B6", "计算机网络实验-0002")], "软工2302班")
+        self.assertEqual(mappings["计算机网络实验-0002"], "软工2302班")
+        conn.close()
+
+    def test_missing_table_returns_empty(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        self.assertEqual(svc._load_academic_class_mappings(conn, 1), {})
+        conn.close()
+
+
+class LocalOfferingMatchTests(unittest.TestCase):
+    """课表 → 平台课堂 宽松匹配（课程名/班级名互含 + 学期兼容 + 唯一）。"""
+
+    def _item(self, **overrides):
+        base = {
+            "course_name": "计算机网络",
+            "local_class_name": "软件工程2302班",
+            "teaching_class_name": "计算机网络-0002",
+        }
+        base.update(overrides)
+        return base
+
+    def test_match_by_names_with_unparseable_semester(self):
+        offerings = [
+            {"id": 9, "course_name": "计算机网络", "class_name": "软件工程2302班",
+             "semester": "P03-2026", "semester_name": ""},
+        ]
+        self.assertEqual(
+            svc._match_local_offering(self._item(), offerings, ("2025-2026", "2")), 9
+        )
+
+    def test_semester_mismatch_rejects(self):
+        offerings = [
+            {"id": 9, "course_name": "计算机网络", "class_name": "软件工程2302班",
+             "semester": "", "semester_name": "2024-2025第二学期"},
+        ]
+        self.assertIsNone(
+            svc._match_local_offering(self._item(), offerings, ("2025-2026", "2"))
+        )
+
+    def test_ambiguous_matches_reject(self):
+        offerings = [
+            {"id": 9, "course_name": "计算机网络", "class_name": "软件工程2302班",
+             "semester": "", "semester_name": ""},
+            {"id": 10, "course_name": "计算机网络", "class_name": "软件工程2302班",
+             "semester": "", "semester_name": ""},
+        ]
+        self.assertIsNone(
+            svc._match_local_offering(self._item(), offerings, ("2025-2026", "2"))
+        )
+
+    def test_short_classroom(self):
+        self.assertEqual(svc._short_classroom("（知新楼B414）网络渗透实验室"), "知新楼B414")
+        self.assertEqual(svc._short_classroom("知新楼B414"), "知新楼B414")
+        self.assertEqual(svc._short_classroom(""), "")
+
+
 class SchemaMigrationTests(unittest.TestCase):
     def test_extension_columns_added_to_legacy_table(self):
         schema_mod._SCHEMA_READY = False
