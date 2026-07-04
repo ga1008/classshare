@@ -193,16 +193,14 @@ const DECK_CSS = `
     padding: 6px 8px;
     color: #fff;
     background: var(--cs-accent, #6366f1);
-    display: grid;
-    align-content: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     gap: 2px;
     overflow: hidden;
-    /* grid 子项默认 min-height:auto 会按内容撑高所在行，挤压相邻行/造成
-       文字看似"叠加"；显式清零后行高完全由 grid-template-rows 决定，
-       超出部分由上面的 overflow:hidden 裁切，不会外溢到相邻单元格。 */
     min-height: 0;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
     min-width: 0;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
     text-decoration: none;
 }
 .cs-lesson strong {
@@ -210,31 +208,59 @@ const DECK_CSS = `
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .cs-lesson span { font-size: 0.64rem; opacity: 0.94; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-a.cs-lesson { cursor: pointer; transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease; }
-a.cs-lesson:hover, a.cs-lesson:focus-visible {
-    filter: brightness(1.08);
-    transform: translateY(-1px);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4), 0 8px 18px rgba(15, 23, 42, 0.28);
+.cs-lesson__link-hint { font-weight: 800; opacity: 0.92; }
+
+/* 形式一：3D 缩略卡片（网格定位，最简、无悬停交互）。 */
+.cs-lesson--mini { /* 仅用基础 .cs-lesson 样式，行内 grid 定位 */ }
+
+/* 放大视图：网格允许悬停放大的卡片溢出格子显示（其它情况仍裁切）。 */
+.cs-grid--expanded { overflow: visible; }
+.cs-grid--expanded .cs-grid__corner,
+.cs-grid--expanded .cs-grid__day,
+.cs-grid--expanded .cs-grid__section { font-size: 0.84rem; }
+
+/* 形式二：放大课表内的卡片。cs-lesson-slot 才是网格定位、作为**尺寸恒定
+   的稳定悬停锚点**；内层卡片绝对定位填满槽（基态占满格子）。卡片放大缩小
+   都不改变锚点尺寸，故悬停命中区不抖动，杜绝"抽风箱"来回放缩闪烁。 */
+.cs-lesson-slot { position: relative; }
+.cs-lesson--cell {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    transition: top 0.2s cubic-bezier(0.22, 0.8, 0.3, 1),
+                left 0.2s cubic-bezier(0.22, 0.8, 0.3, 1),
+                width 0.2s cubic-bezier(0.22, 0.8, 0.3, 1),
+                height 0.2s cubic-bezier(0.22, 0.8, 0.3, 1),
+                box-shadow 0.2s ease;
+    will-change: width, height, top, left;
+    z-index: 1;
 }
-.cs-lesson__link-hint { font-weight: 800; opacity: 0.85; }
+.cs-lesson--cell strong { font-size: 0.9rem; }
+.cs-lesson__base { font-size: 0.74rem; }
+.cs-lesson__more { display: none; flex-direction: column; gap: 3px; }
+.cs-lesson__more span { font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+a.cs-lesson--cell { cursor: pointer; }
 /* 尚无对应课堂：虚线描边提示可创建 */
 a.cs-lesson--create {
     box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55);
     background-image: linear-gradient(rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.12));
 }
 a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; text-underline-offset: 3px; }
-.cs-grid--expanded .cs-lesson strong { font-size: 1.02rem; white-space: normal; }
-.cs-grid--expanded .cs-lesson span {
-    font-size: 0.8rem;
-    white-space: normal;
-    /* 单节课行高有限时，兜底裁到 2 行省略，绝不让文字挤出/叠加。 */
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+
+/* 形式三：悬停放大。卡片向格子中心滑动放大、阴影跟随大小，露出完整信息；
+   字体颜色始终不变（无 filter/brightness）。移开时平滑缩回格子内。 */
+.cs-lesson-slot:hover { z-index: 60; }
+.cs-lesson-slot:hover .cs-lesson--cell {
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: max(100%, 210px);
+    height: max(100%, 172px);
+    z-index: 60;
+    overflow: visible;
+    box-shadow: 0 22px 46px rgba(15, 23, 42, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.32);
 }
-.cs-grid--expanded .cs-grid__corner,
-.cs-grid--expanded .cs-grid__day,
-.cs-grid--expanded .cs-grid__section { font-size: 0.84rem; }
+.cs-lesson-slot:hover .cs-lesson--cell strong { white-space: normal; }
+.cs-lesson-slot:hover .cs-lesson__base { display: none; }
+.cs-lesson-slot:hover .cs-lesson__more { display: flex; }
 
 /* ---- 放大视图 ---- */
 .cs-expand {
@@ -421,6 +447,17 @@ export function createScheduleDeck(container, options = {}) {
 
     /* ---------------- 课表网格 ---------------- */
 
+    /**
+     * 课程卡片三态：
+     * - 3D 缩略（!expanded）：最简内容（课程/教室/班级·第N次），无交互，
+     *   直接以网格定位的单个 div 呈现。
+     * - 放大课表内（expanded 基态）：卡片绝对定位**填满**格子槽（cs-lesson-slot
+     *   才是网格定位并作为稳定的悬停锚点；卡片尺寸变化不影响锚点，杜绝
+     *   反复放大缩小的"抽风箱"闪烁）。内容含更多行，超出用逐行省略号。
+     * - 悬停放大（expanded 悬停）：卡片向格子中心滑动放大、阴影跟随，露出
+     *   最全内容（教室/班级·人数/第N次·单双周/跳转提示），可点击跳课堂或
+     *   新建课堂。移开时平滑缩回格子内。字体颜色始终不变。
+     */
     function lessonHtml(lesson, { expanded, minSection, maxSection, columnBase }) {
         const sections = lesson.sections || [];
         const start = Math.max(minSection, sections[0] || minSection);
@@ -429,49 +466,63 @@ export function createScheduleDeck(container, options = {}) {
         const rowSpan = Math.max(1, end - start + 1);
         const column = Math.min(7, Math.max(1, lesson.weekday || 1)) + columnBase - 1;
         const accent = courseAccentFor(state.overview, lesson.course_name);
+        const gridPos = `grid-column:${column};grid-row:${rowStart} / span ${rowSpan};`;
+        const roomText = escapeHtml(lesson.classroom_short || lesson.classroom || '教室待定');
+
+        if (!expanded) {
+            // 形式一：3D 缩略卡片（最简、无交互）。
+            return `
+            <div class="cs-lesson cs-lesson--mini" style="--cs-accent:${accent};${gridPos}"
+                 title="${escapeHtml(`${lesson.course_name} ${roomText} ${lesson.class_label || ''}`)}">
+                <strong>${escapeHtml(lesson.course_name)}</strong>
+                <span>${roomText}</span>
+                <span>${escapeHtml(lesson.class_label || '')}${lesson.session_no ? ` · 第${lesson.session_no}次` : ''}</span>
+            </div>`;
+        }
+
+        // 形式二/三：放大课表内的卡片 + 悬停放大。
         const classroomHref = String(lesson.classroom_url || '');
         const createHref = String(lesson.create_url || '');
         const href = classroomHref || createHref;
-        const linkable = Boolean(expanded && href);
-        const isCreate = linkable && !classroomHref;
+        const isCreate = Boolean(href) && !classroomHref;
         const sdLabel = lesson.single_or_double_label ? ` · ${escapeHtml(lesson.single_or_double_label)}` : '';
-        const roomText = escapeHtml(lesson.classroom_short || lesson.classroom || '教室待定');
+        const studentText = lesson.student_count ? ` · ${lesson.student_count}人` : '';
         const sessionText = lesson.session_no
-            ? `第${lesson.session_no}次课${expanded && lesson.session_total ? `（共${lesson.session_total}次）` : ''}`
+            ? `第${lesson.session_no}次课${lesson.session_total ? `（共${lesson.session_total}次）` : ''}`
             : '';
-        // 节次不再写进卡片文字（网格行位置已表达）；显示 课程/教室简称/班级/第N次课。
-        const detailLines = expanded
-            ? `<span>${roomText}${sdLabel}</span>
-               <span>${escapeHtml(lesson.class_label || '')}${sessionText ? ` · ${escapeHtml(sessionText)}` : ''}</span>`
-              + (linkable
-                  ? `<span class="cs-lesson__link-hint">${isCreate ? '尚无对应课堂 · 点击创建 +' : '点击进入课堂 →'}</span>`
-                  : '')
-            : `<span>${roomText}</span>
-               <span>${escapeHtml(lesson.class_label || '')}${lesson.session_no ? ` · 第${lesson.session_no}次` : ''}</span>`;
+        const hintText = href ? (isCreate ? '尚无对应课堂 · 点击创建 +' : '点击进入课堂 →') : '';
         const titleText = `${lesson.course_name} ${lesson.section_label} ${lesson.classroom || ''} ${lesson.class_label || ''}`
             + (sessionText ? ` · ${sessionText}` : '')
-            + (linkable ? (isCreate ? ' · 点击创建课堂' : ' · 点击进入课堂') : '');
-        const tag = linkable ? 'a' : 'div';
-        const hrefAttr = linkable ? ` href="${escapeHtml(href)}"` : '';
+            + (href ? (isCreate ? ' · 点击创建课堂' : ' · 点击进入课堂') : '');
+        const tag = href ? 'a' : 'div';
+        const hrefAttr = href ? ` href="${escapeHtml(href)}"` : '';
+        // 卡片内含基态精简行 + 悬停展开的完整信息行；overflow 裁切 + 逐行省略号。
         return `
-        <${tag} class="cs-lesson${isCreate ? ' cs-lesson--create' : ''}"${hrefAttr} style="--cs-accent:${accent};grid-column:${column};grid-row:${rowStart} / span ${rowSpan};"
-             title="${escapeHtml(titleText)}">
-            <strong>${escapeHtml(lesson.course_name)}</strong>
-            ${detailLines}
-        </${tag}>`;
+        <div class="cs-lesson-slot" style="${gridPos}">
+            <${tag} class="cs-lesson cs-lesson--cell${isCreate ? ' cs-lesson--create' : ''}"${hrefAttr}
+                 style="--cs-accent:${accent};" title="${escapeHtml(titleText)}">
+                <strong>${escapeHtml(lesson.course_name)}</strong>
+                <span class="cs-lesson__base">${roomText} · ${escapeHtml(lesson.class_label || '')}${lesson.session_no ? ` · 第${lesson.session_no}次` : ''}</span>
+                <div class="cs-lesson__more">
+                    <span>教室 ${roomText}</span>
+                    <span>班级 ${escapeHtml(lesson.class_label || '')}${studentText}</span>
+                    ${sessionText ? `<span>${escapeHtml(sessionText)}${sdLabel}</span>` : ''}
+                    ${hintText ? `<span class="cs-lesson__link-hint">${hintText}</span>` : ''}
+                </div>
+            </${tag}>
+        </div>`;
     }
 
     /**
-     * 纵轴节次行高自适应：没课的节压缩到仅够显示节次序号的最小高度，
-     * 让出的空间分给有课的节，课表整体高度不变。
+     * 纵轴节次行高自适应（课表整体高度固定）：
+     * - 每一行（1-11 节）都可见，都有最小高度，确保行内说明可读；
+     * - 有课行给足权重（fr）分摊剩余空间，尽量展示卡片内容；
+     * - 空堂行压到很小（仅够显示节次序号）让位给有课行。
      *
-     * 关键：有课行用 minmax(0, Nfr) —— **不设 px 下限**。容器（放大卡片）
-     * 是固定高度 + overflow:hidden，若给有课行设较大 px 下限（如 64px），
-     * 密集周（如 8 行有课）下限累加 8×64=512px 就会超出容器把底部裁掉
-     * （用户反馈"挤压的下面都看不见了"就是这个原因）。纯 fr 权重让所有
-     * 有课行按比例分摊"扣除空堂行后剩余"的全部高度，无论多少节有课都
-     * 恰好铺满、永不溢出；空堂行保留很小的 px 下限，仅保证节次序号可读。
-     * 单节课与多节课都按其跨越的行数计权，多节课自然更高。
+     * 放大视图给有课行一个真实 px 下限（34px，≈课程名 + 一行说明）：因为
+     * 网格已改为绝对定位、拿到确定高度，即便 11 行全有课，11×34 + 表头 +
+     * 间隙 ≈ 440px 仍小于容器，不会溢出（不再有历史上"下面看不见了"的
+     * 问题）。迷你 3D 卡很小，有课行仍用 0 下限避免撑破 380px 卡片。
      */
     function buildRowSizes(week, { minSection, maxSection, expanded }) {
         const sectionCount = maxSection - minSection + 1;
@@ -485,11 +536,10 @@ export function createScheduleDeck(container, options = {}) {
                 hasLesson[section - minSection] = true;
             }
         });
-        const emptyRow = expanded ? 'minmax(18px, 0.4fr)' : 'minmax(12px, 0.35fr)';
-        // 有课行给足权重（放大 3fr、迷你 2.4fr），但下限为 0 → 永不溢出。
-        const lessonWeight = expanded ? 3 : 2.4;
+        const emptyRow = expanded ? 'minmax(20px, 0.45fr)' : 'minmax(12px, 0.35fr)';
+        const lessonRow = expanded ? 'minmax(34px, 3fr)' : 'minmax(0, 2.4fr)';
         return hasLesson
-            .map((occupied) => (occupied ? `minmax(0, ${lessonWeight}fr)` : emptyRow))
+            .map((occupied) => (occupied ? lessonRow : emptyRow))
             .join(' ');
     }
 
