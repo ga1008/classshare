@@ -245,29 +245,50 @@ class TeachingClassMatchTests(unittest.TestCase):
         self.assertIsNone(match["class_offering_id"])
 
 
+def _make_roster_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE classes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
+    conn.execute(
+        """
+        CREATE TABLE teacher_academic_roster_memberships (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER, course_code TEXT, teaching_class_name TEXT,
+            class_id INTEGER
+        )
+        """
+    )
+    return conn
+
+
 class AcademicClassMappingTests(unittest.TestCase):
-    """教务系统 教学班代号 → 行政班组成 对照。"""
+    """教务"班级与学生名单"同步（教学班↔行政班关系）对照。"""
 
     def test_mapping_loaded_with_code_and_name_keys(self):
-        conn = sqlite3.connect(":memory:")
-        conn.row_factory = sqlite3.Row
+        conn = _make_roster_conn()
+        conn.execute("INSERT INTO classes (id, name) VALUES (9, '软工2302班')")
         conn.execute(
-            """
-            CREATE TABLE teacher_academic_course_sync_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                teacher_id INTEGER, course_code TEXT, course_name TEXT,
-                teaching_class_name TEXT, class_composition TEXT
-            )
-            """
-        )
-        conn.execute(
-            "INSERT INTO teacher_academic_course_sync_items "
-            "(teacher_id, course_code, course_name, teaching_class_name, class_composition) "
-            "VALUES (1, 'E020056B6', '计算机网络实验', '计算机网络实验-0002', '软工2302班')"
+            "INSERT INTO teacher_academic_roster_memberships "
+            "(teacher_id, course_code, teaching_class_name, class_id) "
+            "VALUES (1, 'E020056B6', '计算机网络实验-0002', 9)"
         )
         mappings = svc._load_academic_class_mappings(conn, 1)
         self.assertEqual(mappings[("E020056B6", "计算机网络实验-0002")], "软工2302班")
         self.assertEqual(mappings["计算机网络实验-0002"], "软工2302班")
+        conn.close()
+
+    def test_ambiguous_teaching_class_is_not_mapped(self):
+        # 同一教学班代号对应多个不同 class_id（合并班）→ 宁缺勿错，不采信。
+        conn = _make_roster_conn()
+        conn.execute("INSERT INTO classes (id, name) VALUES (9, '软工2302班'), (10, '软工2303班')")
+        conn.executemany(
+            "INSERT INTO teacher_academic_roster_memberships "
+            "(teacher_id, course_code, teaching_class_name, class_id) VALUES (1, 'E020056B6', '合班-0009', ?)",
+            [(9,), (10,)],
+        )
+        mappings = svc._load_academic_class_mappings(conn, 1)
+        self.assertNotIn(("E020056B6", "合班-0009"), mappings)
+        self.assertNotIn("合班-0009", mappings)
         conn.close()
 
     def test_missing_table_returns_empty(self):

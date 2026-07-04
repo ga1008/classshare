@@ -189,11 +189,18 @@ const DECK_CSS = `
     align-content: center;
     gap: 2px;
     overflow: hidden;
+    /* grid 子项默认 min-height:auto 会按内容撑高所在行，挤压相邻行/造成
+       文字看似"叠加"；显式清零后行高完全由 grid-template-rows 决定，
+       超出部分由上面的 overflow:hidden 裁切，不会外溢到相邻单元格。 */
+    min-height: 0;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
     min-width: 0;
     text-decoration: none;
 }
-.cs-lesson strong { font-size: 0.76rem; line-height: 1.25; font-weight: 900; }
+.cs-lesson strong {
+    font-size: 0.76rem; line-height: 1.25; font-weight: 900;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .cs-lesson span { font-size: 0.64rem; opacity: 0.94; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 a.cs-lesson { cursor: pointer; transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease; }
 a.cs-lesson:hover, a.cs-lesson:focus-visible {
@@ -208,8 +215,15 @@ a.cs-lesson--create {
     background-image: linear-gradient(rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.12));
 }
 a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; text-underline-offset: 3px; }
-.cs-grid--expanded .cs-lesson strong { font-size: 1.02rem; }
-.cs-grid--expanded .cs-lesson span { font-size: 0.8rem; white-space: normal; }
+.cs-grid--expanded .cs-lesson strong { font-size: 1.02rem; white-space: normal; }
+.cs-grid--expanded .cs-lesson span {
+    font-size: 0.8rem;
+    white-space: normal;
+    /* 单节课行高有限时，兜底裁到 2 行省略，绝不让文字挤出/叠加。 */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
 .cs-grid--expanded .cs-grid__corner,
 .cs-grid--expanded .cs-grid__day,
 .cs-grid--expanded .cs-grid__section { font-size: 0.84rem; }
@@ -439,11 +453,35 @@ export function createScheduleDeck(container, options = {}) {
         </${tag}>`;
     }
 
+    /**
+     * 纵轴节次行高自适应：没课的节压缩到仅够显示节次序号的最小高度，
+     * 让出的空间分给有课的节，容器总高度不变（父级固定高度 + fr 单位
+     * 按权重分配剩余空间）。一条课程占用的每一行（span 覆盖的所有行，
+     * 不仅是起始行）都按"有课"计权，确保多节课与单节课都有足够展示空间。
+     */
+    function buildRowSizes(week, { minSection, maxSection, expanded }) {
+        const sectionCount = maxSection - minSection + 1;
+        const hasLesson = new Array(sectionCount).fill(false);
+        (week?.lessons || []).forEach((lesson) => {
+            const sections = lesson.sections || [];
+            if (!sections.length) return;
+            const start = Math.max(minSection, sections[0]);
+            const end = Math.min(maxSection, sections[sections.length - 1]);
+            for (let section = start; section <= end; section += 1) {
+                hasLesson[section - minSection] = true;
+            }
+        });
+        const emptyRow = expanded ? 'minmax(20px, 0.45fr)' : 'minmax(13px, 0.4fr)';
+        const lessonRow = expanded ? 'minmax(64px, 3fr)' : 'minmax(32px, 2.2fr)';
+        return hasLesson.map((occupied) => (occupied ? lessonRow : emptyRow)).join(' ');
+    }
+
     function renderWeekGrid(week, { expanded = false } = {}) {
         const range = state.overview?.section_range || { min: 1, max: 11 };
         const minSection = Math.max(1, Number(range.min) || 1);
         const maxSection = Math.max(minSection, Number(range.max) || 11);
         const sectionCount = maxSection - minSection + 1;
+        const rowSizes = buildRowSizes(week, { minSection, maxSection, expanded });
         const headerRow = expanded ? '34px' : '24px';
         const labelCol = expanded ? '54px' : '30px';
         // 放大视图额外加一列时段（早读/上午/下午/晚上）纵向标签。
@@ -507,7 +545,7 @@ export function createScheduleDeck(container, options = {}) {
 
         return `
         <div class="cs-grid ${expanded ? 'cs-grid--expanded' : ''}"
-             style="grid-template-columns:${columnsTemplate};grid-template-rows:${headerRow} repeat(${sectionCount}, 1fr);">
+             style="grid-template-columns:${columnsTemplate};grid-template-rows:${headerRow} ${rowSizes};">
             ${corner}
             ${dayHeads}
             ${bandBlocks}

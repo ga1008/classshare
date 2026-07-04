@@ -1,6 +1,6 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
 import { initSemesterCalendar } from '/static/js/semester_calendar.js?v=dashboard-todo-axis-20260507';
-import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260704';
+import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260704c';
 
 const root = document.querySelector('[data-dashboard-root]');
 
@@ -558,6 +558,23 @@ if (root) {
         applyFilters();
     });
 
+    /* ---------------- 3D课表归纳方式 ----------------
+     * 复用可移植的 course_schedule_deck 模块，仅提供学年学期切换，
+     * 不显示课时统计页的课程/班级筛选与归集信息。面板与 deck 实例
+     * 跨 applyFilters 重渲染持久存在，DOM 节点被移动而非重建。
+     *
+     * 这些 let 声明必须排在下面的 applyFilters({syncUrl:false}) 首次调用之前：
+     * 若上次访问时归纳方式记忆为 schedule3d，首次调用就会同步触发
+     * renderOfferingList → getScheduleDeckPanel，在声明语句执行前引用
+     * 会命中暂时性死区（TDZ）抛 ReferenceError，导致整个模块脚本中断
+     * 执行——3D课表面板、归纳方式按钮、搜索等全部失效（一度表现为
+     * "从新建课堂页面返回后 3D 课表一片空白"）。 */
+    let scheduleDeckPanel = null;
+    let scheduleDeck = null;
+    let scheduleDeckStatus = null;
+    let scheduleDeckLoaded = false;
+    let scheduleDeckLoading = false;
+
     syncSearchForm();
     updateFilterUi();
     updateGroupModeUi();
@@ -569,16 +586,6 @@ if (root) {
         showTodos: true,
         onMessage: (message, tone) => showMessage(message, tone || 'info'),
     });
-
-    /* ---------------- 3D课表归纳方式 ----------------
-     * 复用可移植的 course_schedule_deck 模块，仅提供学年学期切换，
-     * 不显示课时统计页的课程/班级筛选与归集信息。面板与 deck 实例
-     * 跨 applyFilters 重渲染持久存在，DOM 节点被移动而非重建。 */
-    let scheduleDeckPanel = null;
-    let scheduleDeck = null;
-    let scheduleDeckStatus = null;
-    let scheduleDeckLoaded = false;
-    let scheduleDeckLoading = false;
 
     function getScheduleDeckPanel() {
         if (!scheduleDeckPanel) {

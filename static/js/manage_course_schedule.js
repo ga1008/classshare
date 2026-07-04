@@ -7,7 +7,7 @@
  * - 顶栏「同步智慧课堂」立即拉取 teacherSchedule/list 并替换本地学期数据。
  */
 
-import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260704';
+import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260704c';
 
 const bootElement = document.getElementById('course-schedule-boot');
 const boot = bootElement ? JSON.parse(bootElement.textContent || '{}') : {};

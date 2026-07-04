@@ -321,36 +321,54 @@ async def _fetch_teacher_schedule(
 
 
 def _load_academic_class_mappings(conn, teacher_id: int) -> dict[Any, str]:
-    """教务系统同步的 教学班代号 → 行政班组成 精确对照。
+    """教务系统"教学班代号 → 真实行政班名"的精确对照。
 
-    教务课程同步（teacher_academic_course_sync_items）自带 jxbmc（教学班
-    名称，如"计算机网络实验-0002"）与"教学班组成"（行政班名单，如
-    "软件工程2302班"），是把智慧课堂教学班代号换成真实行政班名的权威来源。
-    键：(course_code, teaching_class_name) 优先，教学班名单键兜底。
+    权威来源是"班级与学生名单"同步落地的
+    ``teacher_academic_roster_memberships``：该同步按教学班逐个拉取学生
+    名单，每条记录把学生的真实行政班（``class_id``，直接外键到本平台
+    ``classes`` 表）与其所在教学班（``teaching_class_name``，即 jxbmc/
+    "计算机网络实验-0002" 这类代号）关联起来——写入 ``classes.name`` 用的
+    正是同一个字符串，因此按 class_id 取名保证与本平台班级表完全同名，
+    不需要模糊匹配。按 (course_code, teaching_class_name) 分组，仅当组内
+    学生的 class_id 全部一致（教学班未被拆分/合并多个行政班）才采信，
+    宁缺勿错。
+
+    注：之前一度使用教务"课程与课次"同步
+    （teacher_academic_course_sync_items.class_composition）作对照源，
+    但该字段在部分接口响应缺少"教学班组成"时会被兜底填充成 jxbmc 本身
+    （等价于教学班代号无变化），导致班级名一直显示代号、真实课堂也匹配
+    不上——因此改用本函数这个更可靠的名单关系表。
     """
     try:
         rows = conn.execute(
             """
-            SELECT DISTINCT course_code, course_name, teaching_class_name, class_composition
-            FROM teacher_academic_course_sync_items
-            WHERE teacher_id = ?
-              AND COALESCE(teaching_class_name, '') <> ''
-              AND COALESCE(class_composition, '') <> ''
+            SELECT DISTINCT m.course_code, m.teaching_class_name, m.class_id, c.name AS class_name
+            FROM teacher_academic_roster_memberships m
+            JOIN classes c ON c.id = m.class_id
+            WHERE m.teacher_id = ?
+              AND COALESCE(m.teaching_class_name, '') <> ''
             """,
             (int(teacher_id),),
         ).fetchall()
-    except Exception:  # noqa: BLE001 — 教务同步表不存在时跳过
+    except Exception:  # noqa: BLE001 — 教务名单同步表不存在时跳过
         return {}
-    mappings: dict[Any, str] = {}
+    groups: dict[Any, set[tuple[int, str]]] = {}
     for row in rows:
         row_dict = dict(row)
-        composition = _clean_text(row_dict.get("class_composition"))
         tcn = _clean_text(row_dict.get("teaching_class_name"))
         code = _clean_text(row_dict.get("course_code"))
-        if not composition or not tcn:
+        class_name = _clean_text(row_dict.get("class_name"))
+        raw_class_id = row_dict.get("class_id")
+        if not tcn or not class_name or not raw_class_id:
             continue
-        mappings.setdefault((code, tcn), composition)
-        mappings.setdefault(tcn, composition)
+        pair = (int(raw_class_id), class_name)
+        groups.setdefault((code, tcn), set()).add(pair)
+        groups.setdefault(tcn, set()).add(pair)
+    mappings: dict[Any, str] = {}
+    for key, pairs in groups.items():
+        distinct_class_ids = {class_id for class_id, _name in pairs}
+        if len(distinct_class_ids) == 1:
+            mappings[key] = next(iter(pairs))[1]
     return mappings
 
 
