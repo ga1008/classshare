@@ -131,7 +131,7 @@ IMPORT_OUTPUT_SCHEMA = {
         "class_name": "授课班级",
         "textbook": "使用教材名称",
         "publisher": "出版社",
-        "semester_label": "学期(如 2025—2026学年第一学期)",
+        "semester_label": "学期(平台规范格式，如 2025-2026第一学期)",
         "school_name": "学校名称",
     },
     "sessions": [
