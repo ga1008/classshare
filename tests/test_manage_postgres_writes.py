@@ -24,6 +24,9 @@ class FakeCursor:
     def fetchone(self):
         return self._row
 
+    def fetchall(self):
+        return [self._row] if self._row is not None else []
+
 
 class FakeConnection:
     def __init__(self, execute_rows=None):

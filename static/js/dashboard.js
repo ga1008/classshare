@@ -172,7 +172,8 @@ if (root) {
     }
 
     function semesterKeyToTerm(key) {
-        const matched = /^(\d{4}-\d{4})\|([12])$/.exec(String(key || ''));
+        // 规范学期 key = identity.code，如 "2025-2026-2"（学年区间 + 学期号）。
+        const matched = /^(\d{4}-\d{4})-([12])$/.exec(String(key || ''));
         return matched ? { year: matched[1], term: matched[2] } : null;
     }
 

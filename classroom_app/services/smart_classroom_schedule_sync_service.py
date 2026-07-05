@@ -254,20 +254,13 @@ async def _fetch_academic_history_items(
     return items, synced_keys, meta
 
 
-# 平台学期名（academic_semesters.name，如 "2025-2026第二学期" / "2025-2026学年第2学期"）
-# → 智慧课堂 (year, term)。
-_SEMESTER_NAME_RE = re.compile(r"(\d{4})\s*[-–—~]\s*(\d{4}).*?([一二12])\s*学期")
-_TERM_DIGITS = {"一": "1", "1": "1", "二": "2", "2": "2"}
-
-
+# 平台学期名（academic_semesters.name）→ 智慧课堂 (year, term)。统一委托给
+# 规范学期模块，吃下所有历史写法（第二学期/第2学期/2025-2026-2 …）。
 def _parse_platform_semester_name(name: Any) -> tuple[str, str] | None:
-    matched = _SEMESTER_NAME_RE.search(str(name or ""))
-    if not matched:
-        return None
-    term = _TERM_DIGITS.get(matched.group(3), "")
-    if not term:
-        return None
-    return (f"{matched.group(1)}-{matched.group(2)}", term)
+    from .semester_identity_service import parse_semester_identity
+
+    identity = parse_semester_identity(name)
+    return identity.as_year_term() if identity is not None else None
 
 
 def _load_platform_semester_anchors(conn, teacher_id: int) -> dict[tuple[str, str], dict[str, Any]]:
@@ -372,9 +365,15 @@ def _weekday_label(weekday: int) -> str:
 
 
 def _term_label(year: str, term: str) -> str:
+    """(学年区间, 学期号) → 平台规范学期名（2025-2026第二学期）。"""
+    from .semester_identity_service import identity_from_year_term
+
+    identity = identity_from_year_term(year, term)
+    if identity is not None:
+        return identity.canonical_name
     year_text = year or "未知学年"
     term_text = f"第{term}学期" if term else "未知学期"
-    return f"{year_text}学年 {term_text}"
+    return f"{year_text} {term_text}"
 
 
 def _display_datetime(value: Any) -> str:

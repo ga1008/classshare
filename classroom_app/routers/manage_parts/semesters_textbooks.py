@@ -1,8 +1,37 @@
 from .common import *
 from ...services.base_resource_modes_service import build_textbook_delete_blockers, raise_if_delete_blocked
+from ...services.semester_identity_service import (
+    infer_identity_from_dates,
+    normalize_semester_text,
+    parse_semester_identity,
+)
 
 
 router = APIRouter()
+
+
+def _find_school_semester_by_identity(conn, *, school_code: str, identity, exclude_id=None):
+    """同校内按规范 identity 查已存在学期行（学校共享：不区分创建教师）。
+
+    命中即复用，避免同一真实学期被不同教师、不同写法各建一条。
+    """
+    if identity is None:
+        return None
+    rows = conn.execute(
+        """
+        SELECT id, name, teacher_id, calendar_sync_status
+        FROM academic_semesters
+        WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
+        ORDER BY id ASC
+        """,
+        (school_code, school_code),
+    ).fetchall()
+    for row in rows:
+        if exclude_id is not None and int(row["id"]) == int(exclude_id):
+            continue
+        if parse_semester_identity(row["name"]) == identity:
+            return row
+    return None
 
 
 @router.post("/semesters/save", response_class=JSONResponse)
@@ -21,7 +50,14 @@ async def api_save_semester(
         if not start_date_value or not end_date_value:
             raise HTTPException(400, "请完整填写学期起止日期")
         week_count = compute_semester_week_count(start_date_value, end_date_value)
-        semester_name = str(name or "").strip() or infer_semester_name(start_date_value)
+        # 学期名一律归一化为平台规范格式（2025-2026第二学期）；用户留空则按起始
+        # 日期推断。identity 用于同校去重，杜绝同一学期不同写法各建一条。
+        raw_name = str(name or "").strip()
+        fallback_name = raw_name or infer_semester_name(start_date_value)
+        semester_name = normalize_semester_text(
+            raw_name, start_date_value.isoformat() if not raw_name else "", fallback=fallback_name
+        )
+        semester_identity = infer_identity_from_dates(start_date_value, name=raw_name or semester_name)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -61,30 +97,38 @@ async def api_save_semester(
                 action_text = "更新"
                 should_sync_calendar = True
             else:
-                existing_row = conn.execute(
-                    """
-                    SELECT id, teacher_id, calendar_sync_status
-                    FROM academic_semesters
-                    WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
-                      AND (
-                          lower(TRIM(name)) = lower(TRIM(?))
-                          OR (start_date = ? AND end_date = ?)
-                      )
-                    ORDER BY
-                        CASE WHEN lower(TRIM(name)) = lower(TRIM(?)) THEN 0 ELSE 1 END,
-                        updated_at DESC,
-                        id DESC
-                    LIMIT 1
-                    """,
-                    (
-                        teacher_scope["school_code"],
-                        teacher_scope["school_code"],
-                        semester_name,
-                        start_date_value.isoformat(),
-                        end_date_value.isoformat(),
-                        semester_name,
-                    ),
-                ).fetchone()
+                # 优先按规范 identity 在同校去重（学校共享）：同一真实学期无论
+                # 谁建、写法如何，都复用同一行。退回按名称/日期的旧去重。
+                existing_row = _find_school_semester_by_identity(
+                    conn,
+                    school_code=teacher_scope["school_code"],
+                    identity=semester_identity,
+                )
+                if existing_row is None:
+                    existing_row = conn.execute(
+                        """
+                        SELECT id, teacher_id, calendar_sync_status
+                        FROM academic_semesters
+                        WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
+                          AND (
+                              lower(TRIM(name)) = lower(TRIM(?))
+                              OR (start_date = ? AND end_date = ?)
+                          )
+                        ORDER BY
+                            CASE WHEN lower(TRIM(name)) = lower(TRIM(?)) THEN 0 ELSE 1 END,
+                            updated_at DESC,
+                            id DESC
+                        LIMIT 1
+                        """,
+                        (
+                            teacher_scope["school_code"],
+                            teacher_scope["school_code"],
+                            semester_name,
+                            start_date_value.isoformat(),
+                            end_date_value.isoformat(),
+                            semester_name,
+                        ),
+                    ).fetchone()
                 if existing_row:
                     saved_semester_id = int(existing_row["id"])
                     action_text = "复用"

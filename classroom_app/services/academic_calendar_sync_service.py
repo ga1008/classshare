@@ -27,6 +27,7 @@ from .academic_service import (
     parse_date_input,
 )
 from .organization_scope_service import load_teacher_org_scope
+from .semester_identity_service import identity_from_year_term, normalize_semester_text
 
 
 SYNC_STATUS_PENDING = "pending"
@@ -224,11 +225,17 @@ def _parse_academic_calendar_alignment(page_html: str, *, source_url: str) -> li
             end_date = parse_date_input(end)
             if not start_date or not end_date or end_date < start_date:
                 continue
-            name = _normalize_space(match.group("name"))
-            if "第" not in name and "学期" in name:
-                term = _term_number(match.groupdict().get("term") or "")
-                if term in {"1", "2"}:
-                    name = f"{match.group('start_year')}-{match.group('end_year')}学年第{term}学期"
+            raw_name = _normalize_space(match.group("name"))
+            # 学期名一律归一化为平台规范格式（2025-2026第二学期），避免同一学期
+            # 被教务页面的不同写法各建一条。解析不出时保留原文。
+            name = normalize_semester_text(
+                raw_name,
+                identity_from_year_term(
+                    f"{match.group('start_year')}-{match.group('end_year')}",
+                    match.groupdict().get("term") or "",
+                ),
+                fallback=raw_name,
+            )
             candidates.append(
                 CalendarAlignment(
                     name=name,

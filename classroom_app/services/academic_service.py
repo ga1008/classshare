@@ -145,20 +145,15 @@ def parse_date_input(value: str | date | datetime | None, field_name: str = "日
 
 
 def infer_semester_name(reference_date: date | datetime | None = None) -> str:
+    """今天（或参考日）所在学年学期的平台规范名（如 2025-2026第二学期）。
+
+    统一委托给 :mod:`semester_identity_service`，避免各处各自推断学期造成
+    命名/口径漂移。
+    """
+    from .semester_identity_service import current_identity
+
     current_date = parse_date_input(reference_date) or china_today()
-    month = current_date.month
-
-    if month >= 8:
-        start_year = current_date.year
-        term_label = "第一学期"
-    elif month <= 1:
-        start_year = current_date.year - 1
-        term_label = "第一学期"
-    else:
-        start_year = current_date.year - 1
-        term_label = "第二学期"
-
-    return f"{start_year}-{start_year + 1}{term_label}"
+    return current_identity(current_date).canonical_name
 
 
 def build_semester_defaults(reference_date: date | datetime | None = None) -> dict[str, str]:

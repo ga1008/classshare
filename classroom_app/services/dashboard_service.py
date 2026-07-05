@@ -405,8 +405,15 @@ def _match_semester_for_offering(
 
     semester_name = str(offering.get("semester") or "").strip()
     if semester_name:
+        from .semester_identity_service import parse_semester_identity
+
+        target = parse_semester_identity(semester_name)
         for semester in semesters:
-            if str(semester.get("name") or "").strip() == semester_name:
+            name = str(semester.get("name") or "").strip()
+            if name == semester_name:
+                return semester
+            # 兼容历史文本写法差异：按规范 identity 匹配（第二学期/第2学期/…）。
+            if target is not None and parse_semester_identity(name) == target:
                 return semester
         return None
 
@@ -2740,31 +2747,16 @@ def _build_student_dashboard_context(
     }
 
 
-# 学年学期规范化：课堂的 semester_id → academic_semesters.name 优先，
-# 其次课堂的 semester 文本。能解析出 (学年, 学期) 的用规范 key
-# "2025-2026|2"，保证同一学期不同写法（第二学期/第2学期）归并到一起。
-_DASHBOARD_SEMESTER_RE = re.compile(r"(\d{4})\s*[-–—~]\s*(\d{4}).*?([一二12])\s*学期")
-_DASHBOARD_TERM_DIGITS = {"一": "1", "1": "1", "二": "2", "2": "2"}
+# 学年学期规范化：课堂的 semester_id → academic_semesters.name 优先，其次课堂
+# 的 semester 文本。统一委托给 semester_identity_service（单一真源），保证同一
+# 学期不同写法（第二学期/第2学期/2025-2026-1）归并到同一 key、同一规范标签。
 
 
 def _dashboard_semester_key(*sources: Any) -> tuple[str, str]:
-    """→ (规范 key, 展示标签)；全部为空 → ("", "未设学期")。"""
-    for source in sources:
-        text = str(source or "").strip()
-        if not text:
-            continue
-        matched = _DASHBOARD_SEMESTER_RE.search(text)
-        if matched:
-            term = _DASHBOARD_TERM_DIGITS.get(matched.group(3), "")
-            if term:
-                years = f"{matched.group(1)}-{matched.group(2)}"
-                return (f"{years}|{term}", f"{years}学年 第{term}学期")
-    for source in sources:
-        text = str(source or "").strip()
-        if text:
-            return (f"raw:{text}", text)
-    # "none" 而非空串：空串保留给筛选下拉的"全部学期"。
-    return ("none", "未设学期")
+    """→ (规范 key, 展示标签)；全部为空 → ("none", "未设学期")。"""
+    from .semester_identity_service import semester_group
+
+    return semester_group(*sources)
 
 
 def _dashboard_current_semester_key(semester_rows: list[dict[str, Any]]) -> str:
@@ -2775,7 +2767,7 @@ def _dashboard_current_semester_key(semester_rows: list[dict[str, Any]]) -> str:
         end = parse_date_input(row.get("end_date"))
         if start and end and start <= today <= end:
             key, _label = _dashboard_semester_key(row.get("name"))
-            if key and not key.startswith("raw:"):
+            if key and not key.startswith("raw:") and key != "none":
                 return key
     return ""
 

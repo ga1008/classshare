@@ -630,28 +630,22 @@ def _parse_schedule_response(
     return [], "empty"
 
 
+def _semester_identity(semester: dict[str, Any]):
+    """学期 dict（name/start_date）→ 规范 SemesterIdentity（统一口径）。"""
+    from .semester_identity_service import current_identity, infer_identity_from_dates
+
+    identity = infer_identity_from_dates(
+        semester.get("start_date"), name=semester.get("name")
+    )
+    return identity or current_identity(china_now().date())
+
+
 def _semester_year_start(semester: dict[str, Any]) -> int:
-    name = str(semester.get("name") or "")
-    match = re.search(r"(20\d{2})\s*[-—]\s*(20\d{2})", name)
-    if match:
-        return int(match.group(1))
-    start_date = parse_date_input(semester.get("start_date"))
-    if start_date:
-        return start_date.year if start_date.month >= 8 else start_date.year - 1
-    today = china_now().date()
-    return today.year if today.month >= 8 else today.year - 1
+    return _semester_identity(semester).start_year
 
 
 def _semester_term_number(semester: dict[str, Any]) -> int:
-    name = str(semester.get("name") or "")
-    if re.search(r"(第?\s*2|第二|二)\s*学期", name):
-        return 2
-    if re.search(r"(第?\s*1|第一|一)\s*学期", name):
-        return 1
-    start_date = parse_date_input(semester.get("start_date"))
-    if start_date and 2 <= start_date.month <= 7:
-        return 2
-    return 1
+    return _semester_identity(semester).term
 
 
 def _term_param_candidates(semester: dict[str, Any]) -> list[dict[str, str]]:
