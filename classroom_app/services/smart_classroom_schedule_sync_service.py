@@ -110,6 +110,150 @@ def _history_term_keys(year: str, term: str, count: int = HISTORY_TERM_LOOKBACK)
     return keys
 
 
+# --------------------------------------------------------------------------- #
+# Historical terms from the ZF academic system (教务系统)
+#
+# The smart-classroom endpoint ``teacherSchedule/list`` always returns the
+# *current* term and ignores every year/semester parameter (verified against
+# the live server: no parameter combination changes the response). The ZF
+# academic timetable, however, honours ``xnm``/``xqm`` term parameters and
+# returns full historical schedules, so historical terms are sourced from
+# there and written into the same schedule tables the 3D deck reads.
+# --------------------------------------------------------------------------- #
+
+# 从当前学期往前逐学期回溯的历史学期数量（ZF 在教师入职前的学期返回空，
+# 连续为空即停止，不会无谓地打接口）。
+HISTORY_TERM_LOOKBACK_ACADEMIC = 8
+# 连续多少个空学期后停止回溯（时间严格递减，通常一遇空即到头，容忍偶发空档）。
+_HISTORY_EMPTY_STOP = 2
+
+
+def _academic_term_to_zf_params(year: str, term: str) -> dict[str, str] | None:
+    """('2024-2025','2') → {'xnm':'2024','xqm':'12'}。ZF: xqm 3=一学期,12=二学期。"""
+    matched = re.match(r"(\d{4})", str(year or "").strip())
+    term_text = str(term or "").strip()
+    if not matched or term_text not in ("1", "2"):
+        return None
+    return {"xnm": matched.group(1), "xqm": "12" if term_text == "2" else "3"}
+
+
+def _sections_from_text(section_text: Any, acs: Any) -> list[int]:
+    start, end, _count = acs._parse_section_range(section_text)
+    if start <= 0:
+        return []
+    if end < start:
+        end = start
+    return list(range(start, end + 1))
+
+
+def _zf_item_to_schedule_item(zf_item: Any, year: str, term: str, acs: Any) -> dict[str, Any] | None:
+    """把 ZF ``AcademicCourseScheduleItem`` 归一化成课表 item（与
+    ``_parse_schedule_payload`` 的 item 同形），无法定位到网格的条目返回 None。
+    """
+    weekday = zf_item.weekday  # ZF: 0=周一 ... 6=周日
+    if weekday is None:
+        return None
+    sections = _sections_from_text(zf_item.section_text, acs)
+    weeks = acs._parse_week_numbers(zf_item.weeks_text)
+    course_name = _clean_text(zf_item.course_name)
+    if not course_name or not sections or not weeks:
+        return None
+    teaching_class_name = _clean_text(zf_item.teaching_class_name) or _clean_text(zf_item.class_composition)
+    fingerprint = _json_dumps(
+        [year, term, zf_item.course_code, course_name, weekday, sections, weeks, zf_item.location]
+    )
+    remote_id = "zf-" + hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:24]
+    return {
+        "remote_id": remote_id,
+        "course_name": course_name,
+        "course_code": _clean_text(zf_item.course_code),
+        "classroom": _clean_text(zf_item.location),
+        "teacher_name": _clean_text(zf_item.teacher_name),
+        "teacher_no": "",
+        "academic_year": year,
+        "academic_term": term,
+        "weekday": int(weekday) + 1,
+        "sections": sections,
+        "weeks": weeks,
+        "week_text": _clean_text(zf_item.weeks_text),
+        "single_or_double": "NONE",
+        "student_count": _coerce_int(zf_item.student_count) or _coerce_int(zf_item.teaching_class_student_count),
+        "raw": {"source": "academic_zf", "zf": zf_item.raw_json or {}},
+        "source": "academic",
+        "teaching_class_name": teaching_class_name,
+    }
+
+
+async def _fetch_academic_history_items(
+    teacher_id: int,
+    current_key: tuple[str, str],
+    warnings: list[str],
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]], dict[tuple[str, str], dict[str, int]]]:
+    """从 ZF 教务系统拉取历史学期课表（当前学期由智慧课堂负责，此处只取更早的）。
+
+    返回 (归一化 items, 有数据的学期 keys, 每学期 meta{max_week})。教务凭据缺失
+    或登录失败时静默降级（附 warning），不影响当前学期同步。
+    """
+    from .academic_integration_service import (
+        load_teacher_academic_access_method,
+        open_authenticated_academic_client,
+    )
+    from . import academic_course_sync_service as acs
+
+    with get_db_connection() as conn:
+        access_payload = load_teacher_academic_access_method(conn, int(teacher_id), school_code="gxufl")
+    if not access_payload:
+        return [], [], {}
+
+    history_keys = _history_term_keys(*current_key, count=HISTORY_TERM_LOOKBACK_ACADEMIC)
+    if not history_keys:
+        return [], [], {}
+
+    items: list[dict[str, Any]] = []
+    synced_keys: list[tuple[str, str]] = []
+    meta: dict[tuple[str, str], dict[str, int]] = {}
+    try:
+        async with open_authenticated_academic_client(access_payload) as (client, _profile, _login):
+            field_keys = await acs._fetch_timetable_field_keys(client, [])
+            empty_streak = 0
+            for year, term in history_keys:
+                zf_params = _academic_term_to_zf_params(year, term)
+                if zf_params is None:
+                    continue
+                try:
+                    form = acs._build_timetable_form(zf_params, field_keys)
+                    response = await client.post(
+                        acs.ZF_TEACHER_TIMETABLE_QUERY_PATH,
+                        data=form,
+                        headers=acs._ajax_headers(client),
+                    )
+                    zf_items, _parser = acs._parse_schedule_response(
+                        response, source_url=str(response.url)
+                    )
+                except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
+                    warnings.append(f"{year} 第{term}学期历史课表拉取失败：{str(exc)[:80]}")
+                    continue
+                term_items = [
+                    normalized
+                    for zf_item in zf_items
+                    if (normalized := _zf_item_to_schedule_item(zf_item, year, term, acs)) is not None
+                ]
+                if not term_items:
+                    empty_streak += 1
+                    if empty_streak >= _HISTORY_EMPTY_STOP:
+                        break
+                    continue
+                empty_streak = 0
+                synced_keys.append((year, term))
+                items.extend(term_items)
+                highest_week = max((max(item["weeks"]) for item in term_items if item["weeks"]), default=0)
+                meta[(year, term)] = {"max_week": highest_week}
+    except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
+        warnings.append(f"教务系统历史课表同步失败：{str(exc)[:120]}")
+        return [], [], {}
+    return items, synced_keys, meta
+
+
 # 平台学期名（academic_semesters.name，如 "2025-2026第二学期" / "2025-2026学年第2学期"）
 # → 智慧课堂 (year, term)。
 _SEMESTER_NAME_RE = re.compile(r"(\d{4})\s*[-–—~]\s*(\d{4}).*?([一二12])\s*学期")
@@ -509,41 +653,10 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
                 "warnings": [],
             }
 
-        history_synced: list[tuple[str, str]] = []
         history_warnings: list[str] = []
-        history_items: list[dict[str, Any]] = []
-        history_meta: dict[tuple[str, str], dict[str, int]] = {}
         try:
             async with open_authenticated_smart_classroom_client(access_payload) as (client, _profile, _login):
                 parsed = await _fetch_teacher_schedule(client)
-                current_key = (parsed["year"], parsed["semester"])
-                # 历史学期：从当前学期逐学期回溯请求。严格过滤——只保留
-                # academic_year/term 与请求学期完全一致的条目；远端不支持
-                # 参数时会原样返回当前学期，过滤后为空 → 跳过且不动本地。
-                if current_key[0] and current_key[1]:
-                    for hist_year, hist_term in _history_term_keys(*current_key):
-                        try:
-                            hist = await _fetch_teacher_schedule(
-                                client, year=hist_year, semester=hist_term
-                            )
-                        except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
-                            history_warnings.append(
-                                f"{hist_year} 第{hist_term}学期历史课表拉取失败：{str(exc)[:80]}"
-                            )
-                            continue
-                        hist_items = [
-                            item
-                            for item in hist["items"]
-                            if (item["academic_year"], item["academic_term"]) == (hist_year, hist_term)
-                        ]
-                        if not hist_items:
-                            continue
-                        history_synced.append((hist_year, hist_term))
-                        history_items.extend(hist_items)
-                        highest_week = max(max(item["weeks"]) for item in hist_items)
-                        history_meta[(hist_year, hist_term)] = {
-                            "max_week": max(hist["max_week"], highest_week),
-                        }
         except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
             return {
                 "status": "failed",
@@ -551,6 +664,18 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
                 "counts": {},
                 "warnings": [str(exc)[:180]],
             }
+
+        # 历史学期：智慧课堂 teacherSchedule/list 只返回当前学期、忽略所有
+        # 年份/学期参数（已在线实测确认），因此历史学期改从 ZF 教务系统拉取
+        # （xnm/xqm 支持历史学期查询），写入同一套课表表供 3D 课表读取。
+        current_key = (parsed["year"], parsed["semester"])
+        history_items: list[dict[str, Any]] = []
+        history_synced: list[tuple[str, str]] = []
+        history_meta: dict[tuple[str, str], dict[str, int]] = {}
+        if current_key[0] and current_key[1]:
+            history_items, history_synced, history_meta = await _fetch_academic_history_items(
+                int(teacher_id), current_key, history_warnings
+            )
 
         synced_at = _now_iso()
         current_items = parsed["items"]
@@ -578,7 +703,16 @@ async def sync_teacher_course_schedule(teacher_id: int) -> dict[str, Any]:
                     (int(teacher_id), SMART_PLATFORM_CODE, year, term),
                 )
             for item in items:
-                class_match = _match_teaching_class(item, candidates)
+                if item.get("source") == "academic":
+                    # ZF 历史条目自带教学班名（jxbmc），且点名候选是当前学期、
+                    # 与历史学期不同源，做交叉匹配只会误配，故直接采用 ZF 名。
+                    class_match = {
+                        "teaching_class_name": item.get("teaching_class_name") or "",
+                        "local_class_name": "",
+                        "class_offering_id": None,
+                    }
+                else:
+                    class_match = _match_teaching_class(item, candidates)
                 # 教务系统的"教学班组成"是行政班名的权威对照，优先于
                 # 点名同步推导的本地班级名。
                 teaching_class_name = class_match["teaching_class_name"]
@@ -1345,8 +1479,8 @@ def build_course_schedule_capability(conn, teacher_id: int) -> dict[str, Any]:
     return {
         "key": "course_schedule",
         "label": "教师课程表与课时统计",
-        "description": "从智慧课堂读取教师本人本学期全部排课（课程、教室、节次、周次），按周展示课表并统计课程课时和学期课时。",
-        "scope": "教师已保存账号下本学期的全部排课",
+        "description": "从智慧课堂读取本学期全部排课（课程、教室、节次、周次），并从教务系统回溯历史学期课表，按周展示课表并统计课程课时和学期课时。",
+        "scope": "本学期排课（智慧课堂）+ 历史学期排课（教务系统）",
         "endpoint": "/api/manage/teaching/course-schedule/sync",
         "method": "POST",
         "parameters": [

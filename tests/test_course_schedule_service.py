@@ -581,6 +581,59 @@ class TermDerivationTests(unittest.TestCase):
         self.assertEqual(svc._history_term_keys("", "", 4), [])
 
 
+class AcademicHistoryConversionTests(unittest.TestCase):
+    """ZF 教务历史课表 → 课表 item 的归一化（历史学期数据源）。"""
+
+    def test_academic_term_to_zf_params(self):
+        self.assertEqual(svc._academic_term_to_zf_params("2024-2025", "2"), {"xnm": "2024", "xqm": "12"})
+        self.assertEqual(svc._academic_term_to_zf_params("2024-2025", "1"), {"xnm": "2024", "xqm": "3"})
+        self.assertIsNone(svc._academic_term_to_zf_params("bad", "2"))
+        self.assertIsNone(svc._academic_term_to_zf_params("2024-2025", "3"))
+
+    def test_sections_from_text(self):
+        from classroom_app.services import academic_course_sync_service as acs
+
+        self.assertEqual(svc._sections_from_text("2-3", acs), [2, 3])
+        self.assertEqual(svc._sections_from_text("5", acs), [5])
+        self.assertEqual(svc._sections_from_text("", acs), [])
+
+    def test_zf_item_to_schedule_item(self):
+        from classroom_app.services import academic_course_sync_service as acs
+
+        zf_item = acs.AcademicCourseScheduleItem(
+            course_name="动态Web程序设计",
+            course_code="E020141B4",
+            teaching_class_name="动态Web-0001",
+            weekday=4,  # ZF 周五 (0-based)
+            section_text="2-3",
+            weeks_text="1-2周,4-5周,7周",
+            location="（知新楼B418）实验室",
+            teacher_name="张海林",
+            student_count=36,
+        )
+        item = svc._zf_item_to_schedule_item(zf_item, "2024-2025", "2", acs)
+        self.assertIsNotNone(item)
+        self.assertEqual(item["source"], "academic")
+        self.assertEqual(item["weekday"], 5)  # 1-based: 周五
+        self.assertEqual(item["sections"], [2, 3])
+        self.assertEqual(item["weeks"], [1, 2, 4, 5, 7])
+        self.assertEqual(item["academic_year"], "2024-2025")
+        self.assertEqual(item["academic_term"], "2")
+        self.assertEqual(item["teaching_class_name"], "动态Web-0001")
+        self.assertTrue(item["remote_id"].startswith("zf-"))
+
+    def test_zf_item_without_weekday_is_dropped(self):
+        from classroom_app.services import academic_course_sync_service as acs
+
+        zf_item = acs.AcademicCourseScheduleItem(
+            course_name="动态Web程序设计",
+            weekday=None,
+            section_text="2-3",
+            weeks_text="1-2周",
+        )
+        self.assertIsNone(svc._zf_item_to_schedule_item(zf_item, "2024-2025", "2", acs))
+
+
 class WeekAnchorTests(unittest.TestCase):
     def test_derive_week1_monday(self):
         # 2026-07-03 是周五（所在周周一 2026-06-29），第 17 周 → 第 1 周周一 2026-03-09
