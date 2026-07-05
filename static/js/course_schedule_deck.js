@@ -208,10 +208,15 @@ const DECK_CSS = `
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .cs-lesson span { font-size: 0.64rem; opacity: 0.94; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cs-lesson__link-hint { font-weight: 800; opacity: 0.92; }
+.cs-lesson__link-hint { font-weight: 800; opacity: 0.95; }
+/* 卡片文字始终白色：cs-lesson--cell 是 a 标签，全局 a:link/:visited/:hover
+   的默认色（蓝/紫）特异性高于 .cs-lesson 的 color，会让悬停时文字变蓝，
+   这里用足够高特异性的选择器覆盖，任何状态都保持白字。 */
+a.cs-lesson, a.cs-lesson:link, a.cs-lesson:visited, a.cs-lesson:hover, a.cs-lesson:focus,
+a.cs-lesson strong, a.cs-lesson span { color: #fff; }
 
 /* 形式一：3D 缩略卡片（网格定位，最简、无悬停交互）。 */
-.cs-lesson--mini { /* 仅用基础 .cs-lesson 样式，行内 grid 定位 */ }
+.cs-lesson--mini { justify-content: center; }
 
 /* 放大视图：网格允许悬停放大的卡片溢出格子显示（其它情况仍裁切）。 */
 .cs-grid--expanded { overflow: visible; }
@@ -221,23 +226,23 @@ const DECK_CSS = `
 
 /* 形式二：放大课表内的卡片。cs-lesson-slot 才是网格定位、作为**尺寸恒定
    的稳定悬停锚点**；内层卡片绝对定位填满槽（基态占满格子）。卡片放大缩小
-   都不改变锚点尺寸，故悬停命中区不抖动，杜绝"抽风箱"来回放缩闪烁。 */
+   都不改变锚点尺寸。内容顶对齐、始终完整渲染，放不下才逐行省略。 */
 .cs-lesson-slot { position: relative; }
 .cs-lesson--cell {
     position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    transition: top 0.2s cubic-bezier(0.22, 0.8, 0.3, 1),
-                left 0.2s cubic-bezier(0.22, 0.8, 0.3, 1),
-                width 0.2s cubic-bezier(0.22, 0.8, 0.3, 1),
-                height 0.2s cubic-bezier(0.22, 0.8, 0.3, 1),
-                box-shadow 0.2s ease;
-    will-change: width, height, top, left;
+    top: 50%; left: 50%;
+    width: 100%; height: 100%;
+    transform: translate(-50%, -50%);
+    justify-content: flex-start;
+    padding: 6px 9px;
+    transition: width 0.18s cubic-bezier(0.22, 0.8, 0.3, 1),
+                height 0.18s cubic-bezier(0.22, 0.8, 0.3, 1),
+                box-shadow 0.18s ease, padding 0.18s ease, gap 0.18s ease;
+    will-change: width, height;
     z-index: 1;
 }
-.cs-lesson--cell strong { font-size: 0.9rem; }
-.cs-lesson__base { font-size: 0.74rem; }
-.cs-lesson__more { display: none; flex-direction: column; gap: 3px; }
-.cs-lesson__more span { font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-lesson--cell strong { font-size: 0.86rem; margin-bottom: 1px; }
+.cs-lesson--cell span { font-size: 0.72rem; }
 a.cs-lesson--cell { cursor: pointer; }
 /* 尚无对应课堂：虚线描边提示可创建 */
 a.cs-lesson--create {
@@ -246,21 +251,25 @@ a.cs-lesson--create {
 }
 a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; text-underline-offset: 3px; }
 
-/* 形式三：悬停放大。卡片向格子中心滑动放大、阴影跟随大小，露出完整信息；
-   字体颜色始终不变（无 filter/brightness）。移开时平滑缩回格子内。 */
+/* 形式三：悬停放大（原地，居中于自身格子）。放大态由 slot:hover 与
+   cell:hover 共同维持（自维持）——鼠标在格子或放大后的卡片上都保持放大，
+   放大卡超出格子后在圆角/边角处也不会掉出悬停区，彻底消除抽风闪烁。
+   只改字号/行距/内边距/尺寸，颜色不变。 */
 .cs-lesson-slot:hover { z-index: 60; }
-.cs-lesson-slot:hover .cs-lesson--cell {
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: max(100%, 210px);
-    height: max(100%, 172px);
+.cs-lesson-slot:hover .cs-lesson--cell,
+.cs-lesson--cell:hover {
+    width: max(100%, 208px);
+    height: max(100%, 176px);
+    padding: 11px 13px;
+    gap: 4px;
     z-index: 60;
     overflow: visible;
     box-shadow: 0 22px 46px rgba(15, 23, 42, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.32);
 }
-.cs-lesson-slot:hover .cs-lesson--cell strong { white-space: normal; }
-.cs-lesson-slot:hover .cs-lesson__base { display: none; }
-.cs-lesson-slot:hover .cs-lesson__more { display: flex; }
+.cs-lesson-slot:hover .cs-lesson--cell strong,
+.cs-lesson--cell:hover strong { font-size: 1.02rem; line-height: 1.3; white-space: normal; margin-bottom: 3px; }
+.cs-lesson-slot:hover .cs-lesson--cell span,
+.cs-lesson--cell:hover span { font-size: 0.86rem; line-height: 1.55; white-space: normal; }
 
 /* ---- 放大视图 ---- */
 .cs-expand {
@@ -453,10 +462,13 @@ export function createScheduleDeck(container, options = {}) {
      *   直接以网格定位的单个 div 呈现。
      * - 放大课表内（expanded 基态）：卡片绝对定位**填满**格子槽（cs-lesson-slot
      *   才是网格定位并作为稳定的悬停锚点；卡片尺寸变化不影响锚点，杜绝
-     *   反复放大缩小的"抽风箱"闪烁）。内容含更多行，超出用逐行省略号。
-     * - 悬停放大（expanded 悬停）：卡片向格子中心滑动放大、阴影跟随，露出
-     *   最全内容（教室/班级·人数/第N次·单双周/跳转提示），可点击跳课堂或
-     *   新建课堂。移开时平滑缩回格子内。字体颜色始终不变。
+     *   反复放大缩小的"抽风箱"闪烁）。内容**始终完整渲染**、顶对齐，格子
+     *   放得下就全部显示，放不下才逐行省略号——不再无谓隐藏内容。
+     * - 悬停放大（expanded 悬停）：卡片**原地**放大（居中于自身格子、不滑向
+     *   别处）、阴影跟随，字号/行距/内边距加大以适配放大版面，露出被裁的
+     *   全部内容；可点击跳课堂或新建课堂。字体颜色始终为白（不变蓝）。
+     *   放大态由 `slot:hover` 与 `cell:hover` 共同维持（自维持），消除放大
+     *   卡超出格子后在圆角/边角处的悬停死区造成的抽风闪烁。
      */
     function lessonHtml(lesson, { expanded, minSection, maxSection, columnBase }) {
         const sections = lesson.sections || [];
@@ -496,19 +508,20 @@ export function createScheduleDeck(container, options = {}) {
             + (href ? (isCreate ? ' · 点击创建课堂' : ' · 点击进入课堂') : '');
         const tag = href ? 'a' : 'div';
         const hrefAttr = href ? ` href="${escapeHtml(href)}"` : '';
-        // 卡片内含基态精简行 + 悬停展开的完整信息行；overflow 裁切 + 逐行省略号。
+        // 始终渲染完整内容行，顶对齐；格子放得下就全显示，放不下由 overflow
+        // 裁切 + 逐行省略号；悬停时卡片原地放大、字号加大即可看全。
+        const detailLines = [
+            `<span>教室 ${roomText}</span>`,
+            `<span>班级 ${escapeHtml(lesson.class_label || '')}${studentText}</span>`,
+            sessionText ? `<span>${escapeHtml(sessionText)}${sdLabel}</span>` : '',
+            hintText ? `<span class="cs-lesson__link-hint">${hintText}</span>` : '',
+        ].filter(Boolean).join('');
         return `
         <div class="cs-lesson-slot" style="${gridPos}">
             <${tag} class="cs-lesson cs-lesson--cell${isCreate ? ' cs-lesson--create' : ''}"${hrefAttr}
                  style="--cs-accent:${accent};" title="${escapeHtml(titleText)}">
                 <strong>${escapeHtml(lesson.course_name)}</strong>
-                <span class="cs-lesson__base">${roomText} · ${escapeHtml(lesson.class_label || '')}${lesson.session_no ? ` · 第${lesson.session_no}次` : ''}</span>
-                <div class="cs-lesson__more">
-                    <span>教室 ${roomText}</span>
-                    <span>班级 ${escapeHtml(lesson.class_label || '')}${studentText}</span>
-                    ${sessionText ? `<span>${escapeHtml(sessionText)}${sdLabel}</span>` : ''}
-                    ${hintText ? `<span class="cs-lesson__link-hint">${hintText}</span>` : ''}
-                </div>
+                ${detailLines}
             </${tag}>
         </div>`;
     }
