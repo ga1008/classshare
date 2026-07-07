@@ -16,6 +16,7 @@ from .material_final_document_service import (
 )
 from .ordinary_grade_record_service import ORDINARY_GRADE_RECORD_TYPE, build_ordinary_grade_record_xlsx
 from .exam_grade_record_service import EXAM_GRADE_RECORD_TYPE, build_exam_grade_record_xlsx
+from .teacher_evaluation_text_service import split_analysis_blocks
 
 
 @dataclass(frozen=True)
@@ -1717,6 +1718,31 @@ def _set_eval_cell(
             _set_run_songti(para.add_run(line), size, bold=bold)
 
 
+def _set_eval_analysis_cell(cell: Any, text: Any, *, size: float = 10.5) -> None:
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    cell.text = ""
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+    _set_cell_margins(cell, top=52, bottom=44, left=80, right=80)
+    blocks = split_analysis_blocks(text)
+    if not blocks:
+        blocks = [""]
+    for index, block in enumerate(blocks):
+        para = cell.paragraphs[0] if index == 0 else cell.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        para.paragraph_format.space_before = _pt(0)
+        para.paragraph_format.space_after = _pt(3 if index < len(blocks) - 1 else 0)
+        para.paragraph_format.line_spacing = 1.12
+        if re.match(r"^(?:[1-9]\d{0,1}[\.．、]|[（(][1-9]\d{0,1}[）)]|[一二三四五六七八九十]+[、\.．])", block):
+            para.paragraph_format.left_indent = _cm(0.42)
+            para.paragraph_format.first_line_indent = _cm(-0.28)
+        elif index > 0:
+            para.paragraph_format.first_line_indent = _cm(0.74)
+        if block:
+            _set_run_songti(para.add_run(block), size)
+
+
 def _add_evaluation_table(
     document: Any,
     fields: dict[str, Any],
@@ -1746,7 +1772,11 @@ def _add_evaluation_table(
             if end - 1 > start:
                 cell = row.cells[start].merge(row.cells[end - 1])
             _set_cell_width_twips(cell, sum(_EVAL_GRID_TWIPS[start:end]))
-            _set_eval_cell(cell, text, **opts)
+            cell_opts = dict(opts)
+            if cell_opts.pop("analysis", False):
+                _set_eval_analysis_cell(cell, text, **cell_opts)
+            else:
+                _set_eval_cell(cell, text, **cell_opts)
 
     label = dict(center=True)
     value = dict(center=True)
@@ -1800,7 +1830,7 @@ def _add_evaluation_table(
         (12, 15, "较差", dict(center=True)), (15, 16, _rating_mark(rating, "较差"), dict(center=True, bold=True)),
     ])
     fill(15, 420, [(0, 16, "对学生学习情况的分析和今后教学改革建议：", dict())])
-    fill(16, 2300, [(0, 16, analysis, dict(top=True))])
+    fill(16, 2300, [(0, 16, analysis, dict(analysis=True))])
 
 
 def _indicator_text(indicators: list[Any], index: int) -> str:

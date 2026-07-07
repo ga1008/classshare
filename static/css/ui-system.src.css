@@ -47421,11 +47421,42 @@ body.agenda-todo-open { overflow: hidden; }
 .te-rating__badge { font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: #eef2ff; color: #4f46e5; }
 .te-rating__badge.is-ok { background: #ecfdf5; color: #047857; }
 .te-rating__badge.is-warn { background: #fef3c7; color: #92400e; }
-.te-analysis { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; font-size: 14px; font-family: inherit; line-height: 1.6; resize: vertical; }
+.te-analysis-actions { display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; margin: 2px 0 10px; color: #64748b; font-size: 12px; }
+.te-ai-rewrite-btn { border-color: rgba(20, 184, 166, 0.26); color: #0f766e; background: linear-gradient(135deg, rgba(240, 253, 250, 0.96), rgba(238, 242, 255, 0.92)); box-shadow: 0 10px 22px -18px rgba(15, 118, 110, 0.65); }
+.te-ai-rewrite-btn:hover { color: #0f172a; border-color: rgba(20, 184, 166, 0.42); transform: translateY(-1px); }
+.te-analysis-box { position: relative; }
+.te-analysis { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; font-size: 14px; font-family: inherit; line-height: 1.6; resize: vertical; min-height: 168px; transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast); }
+.te-analysis:focus { border-color: rgba(20, 184, 166, 0.52); box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.12); outline: none; }
+.te-analysis-box.is-loading .te-analysis { color: transparent; caret-color: transparent; background: #f8fafc; }
+.te-analysis__loading { position: absolute; inset: 1px; display: flex; align-items: center; justify-content: center; gap: 12px; border-radius: 8px; background: rgba(248, 250, 252, 0.86); color: #0f766e; backdrop-filter: blur(5px); pointer-events: none; }
+.te-analysis__loading[hidden] { display: none; }
+.te-analysis__loading strong { font-size: 14px; letter-spacing: 0; }
+.te-spinner { width: 22px; height: 22px; border: 3px solid rgba(20, 184, 166, 0.18); border-top-color: #0f766e; border-radius: 999px; animation: te-spin 0.82s linear infinite; }
 .te-analysis__count { text-align: right; font-size: 12px; color: #94a3b8; padding: 4px 2px 0; }
 .te-analysis__count.is-warn { color: #b91c1c; }
+.te-ai-modal-backdrop { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15, 23, 42, 0.46); opacity: 0; transition: opacity var(--transition-fast); }
+.te-ai-modal-backdrop[hidden] { display: none; }
+.te-ai-modal-backdrop.is-open { opacity: 1; }
+.te-ai-modal { width: min(620px, 96vw); max-height: min(720px, 92vh); display: flex; flex-direction: column; overflow: hidden; border: 1px solid rgba(203, 213, 225, 0.82); border-radius: 16px; background: rgba(255, 255, 255, 0.98); box-shadow: 0 34px 90px -44px rgba(15, 23, 42, 0.72), 0 18px 44px -30px rgba(15, 23, 42, 0.48); transform: translateY(10px) scale(0.98); transition: transform var(--transition-fast); }
+.te-ai-modal-backdrop.is-open .te-ai-modal { transform: translateY(0) scale(1); }
+.te-ai-modal__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 16px; border-bottom: 1px solid rgba(226, 232, 240, 0.9); background: linear-gradient(135deg, rgba(240, 253, 250, 0.96), rgba(255, 255, 255, 0.96) 52%, rgba(238, 242, 255, 0.82)); }
+.te-ai-modal__header p { margin: 0 0 4px; color: #0f766e; font-size: 12px; font-weight: 700; }
+.te-ai-modal__header h3 { margin: 0; color: #0f172a; font-size: 20px; line-height: 1.25; }
+.te-ai-modal__close { width: 34px; height: 34px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.78); color: #64748b; font-size: 24px; line-height: 1; cursor: pointer; transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast); }
+.te-ai-modal__close:hover { background: #fff; color: #0f172a; transform: rotate(90deg); }
+.te-ai-modal__field { display: flex; flex-direction: column; gap: 9px; padding: 20px 24px 22px; min-height: 0; }
+.te-ai-modal__field span { color: #334155; font-size: 13px; font-weight: 700; }
+.te-ai-modal__field textarea { width: 100%; min-height: 180px; max-height: 360px; padding: 13px 14px; border: 1px solid rgba(203, 213, 225, 0.9); border-radius: 10px; background: #fff; color: #0f172a; font-size: 14px; line-height: 1.65; resize: vertical; }
+.te-ai-modal__field textarea:focus { border-color: rgba(20, 184, 166, 0.58); box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.12); outline: none; }
+.te-ai-modal__footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px 20px; border-top: 1px solid rgba(226, 232, 240, 0.9); background: #f8fafc; }
+@keyframes te-spin { to { transform: rotate(360deg); } }
 @media (max-width: 720px) {
     .te-item-row { grid-template-columns: 1fr 48px 64px; }
+    .te-analysis-actions { align-items: flex-start; }
+    .te-ai-modal { width: 100%; border-radius: 14px; }
+    .te-ai-modal__header, .te-ai-modal__field, .te-ai-modal__footer { padding-left: 18px; padding-right: 18px; }
+    .te-ai-modal__footer { flex-direction: column-reverse; }
+    .te-ai-modal__footer .lp-btn { width: 100%; justify-content: center; }
 }
 
 /* ==== 材料库节点管理（2026-07-02）：hidden 属性必须压过 .btn 的 display 规则 ==== */

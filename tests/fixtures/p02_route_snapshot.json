@@ -4232,6 +4232,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/teacher-evaluations/{evaluation_id}/rewrite-analysis",
+    "methods": [
+      "POST"
+    ],
+    "name": "rewrite_analysis",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/teacher-evaluations/{evaluation_id}/tags",
     "methods": [
       "PUT"

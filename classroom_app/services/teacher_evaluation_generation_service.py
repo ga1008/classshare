@@ -54,7 +54,7 @@ _PUBLIC_ANALYSIS_REWRITES: tuple[tuple[str, str], ...] = (
 
 _PUBLIC_ANALYSIS_FORBIDDEN_RE = re.compile(
     r"LanShare|课堂互动平台|本平台|该平台|平台|本系统|系统|后台|看板|数据大屏|"
-    r"教学辅助系统|智能助教|AI\s*助教|AI|大模型|自动生成|自动统计|同步|线上|在线|功能|模块"
+    r"教学辅助系统|智能助教|AI\s*助教|AI|大模型|模型|自动生成|自动统计|同步|线上|在线|功能|模块"
 )
 
 
@@ -266,6 +266,103 @@ def _user_prompt(
     )
 
 
+def _rewrite_analysis_system_prompt() -> str:
+    return (
+        "你是一名任课教师，正在重新撰写《教师评学表》中“对学生学习情况的分析和今后教学改革建议”这一栏。"
+        "你的任务只有一个：根据课程、班级、已填写的基础信息、10项评分、总分、综合评价和班级学习情况，"
+        "重新写出正式材料口径的 analysis 文本。不得修改、重算或评论分数。"
+        "必须严格返回 JSON 对象，不要 Markdown 代码块，也不要解释；JSON 只包含一个键 analysis。"
+        "analysis 可分段、可分 1. 2. 3. 点，也可写成连贯段落，但不要出现任何 Markdown 记号（如 #、*、-、代码块）。"
+        "教师在浮窗中补充的额外要求优先级最高；如果额外要求指定字数、详略、侧重点或表达风格，必须覆盖默认要求。"
+        "若无额外要求，控制在约 300 字；若额外要求更多字数，可以写得更充分，但仍要简洁，最多约 1500 字。"
+        "内容必须像任课教师基于真实课堂观察和教学记录写给纸质/Word材料的文字。"
+        "不得出现“平台”“系统”“后台”“看板”“同步”“线上”“在线”“功能”“模块”“AI”“大模型”“自动生成”等字样。"
+        "如果依据中出现平台表现，要改写成平时课堂表现；平台互动改写成课堂互动或课堂参与；"
+        "同步出勤改写成实际出勤；平台作业、线上作业、平台考试、线上测验改写成平时作业、课程考试或课堂测验。"
+        "不要提及本项目、工具来源、统计方式、模型或自动化流程。"
+    )
+
+
+def build_analysis_rewrite_context(conn: Any, evaluation: dict[str, Any], teacher_id: int) -> dict[str, Any]:
+    """Collect a read-only snapshot for rewriting only the analysis text."""
+    class_offering_id = evaluation.get("class_offering_id")
+    performance: dict[str, Any] = {}
+    classroom_context: dict[str, Any] = {}
+    if class_offering_id:
+        performance = build_class_performance_summary(conn, int(class_offering_id))
+        classroom_context = _classroom_context(conn, int(class_offering_id))
+    items = evaluation.get("items") or []
+    score_rows = []
+    for index, item in enumerate(items[:10], start=1):
+        row = item if isinstance(item, dict) else {}
+        score_rows.append(
+            {
+                "index": index,
+                "group": row.get("group") or "",
+                "indicator": row.get("indicator") or "",
+                "max_score": row.get("max_score") or te.MAX_INDICATOR_SCORE,
+                "score": row.get("score") or "",
+            }
+        )
+    return {
+        "evaluation_id": evaluation.get("id"),
+        "teacher_id": int(teacher_id),
+        "fields": dict(evaluation.get("fields") or {}),
+        "score_rows": score_rows,
+        "score_total": evaluation.get("score_total"),
+        "rating": evaluation.get("rating"),
+        "current_analysis": evaluation.get("analysis") or "",
+        "performance": performance,
+        "performance_summary": performance.get("performance_summary") or "",
+        "classroom_summary": (classroom_context.get("classroom_summary") or "")[:2200],
+        "import_preview": evaluation.get("import_preview") or {},
+    }
+
+
+def _rewrite_analysis_user_prompt(context: dict[str, Any], extra_prompt: str) -> str:
+    public_context = {
+        "basic_info": context.get("fields") or {},
+        "score_total": context.get("score_total"),
+        "rating": context.get("rating"),
+        "score_rows": context.get("score_rows") or [],
+        "current_analysis": context.get("current_analysis") or "",
+        "performance_summary": context.get("performance_summary") or "",
+        "structured_performance": {
+            k: v for k, v in (context.get("performance") or {}).items() if k != "performance_summary"
+        },
+        "classroom_and_material_context": context.get("classroom_summary") or "",
+        "generation_preview": context.get("import_preview") or {},
+    }
+    return "\n\n".join(
+        [
+            "请重新撰写《教师评学表》中的“对学生学习情况的分析和今后教学改革建议”。",
+            "必须仅输出 JSON：{\"analysis\":\"...\"}。不要改动评分，不要输出 scores，不要输出 Markdown。",
+            "下面是班级课程、当前评分和已有评语的完整上下文：\n"
+            + json.dumps(public_context, ensure_ascii=False, indent=2),
+            "教师浮窗补充要求（最高优先级，可覆盖默认字数/详略/侧重点）：\n"
+            + (extra_prompt.strip() or "无"),
+        ]
+    )
+
+
+async def rewrite_analysis_with_ai(context: dict[str, Any], extra_prompt: str = "") -> str:
+    raw = await _chat_json(
+        _rewrite_analysis_system_prompt(),
+        _rewrite_analysis_user_prompt(context, extra_prompt),
+        model_capability="thinking",
+        task_type="deep_text_reasoning",
+        task_label="teacher-evaluation:rewrite-analysis",
+        timeout=240.0,
+        retry_timeout=180.0,
+    )
+    if not raw:
+        raise RuntimeError("AI 未返回有效 JSON")
+    analysis = _clean_analysis(raw.get("analysis"), limit=1800)
+    if not analysis:
+        raise RuntimeError("AI 未返回有效分析建议")
+    return analysis
+
+
 # ---------------------------------------------------------------------------
 # JSON extraction
 # ---------------------------------------------------------------------------
@@ -304,25 +401,34 @@ def _json_from_payload(data: Any) -> dict[str, Any] | None:
     return _loads_ai_json(data.get("response_text"))
 
 
-async def _chat_json(system_prompt: str, user_message: str) -> dict[str, Any] | None:
+async def _chat_json(
+    system_prompt: str,
+    user_message: str,
+    *,
+    model_capability: str = "standard",
+    task_type: str = "fast_text_response",
+    task_label: str = "teacher-evaluation:generate",
+    timeout: float = _AI_TIMEOUT,
+    retry_timeout: float = _AI_RETRY_TIMEOUT,
+) -> dict[str, Any] | None:
     payload = {
         "system_prompt": system_prompt,
         "messages": [],
         "new_message": user_message,
         "file_texts": [],
-        "model_capability": "standard",
-        "task_type": "fast_text_response",
+        "model_capability": model_capability,
+        "task_type": task_type,
         "response_format": "json",
         "web_search_enabled": False,
         "task_priority": "background",
-        "task_label": "teacher-evaluation:generate",
+        "task_label": task_label,
     }
     try:
-        response = await ai_client.post("/api/ai/chat", json=payload, timeout=_AI_TIMEOUT)
+        response = await ai_client.post("/api/ai/chat", json=payload, timeout=timeout)
         response.raise_for_status()
     except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError):
-        retry = {**payload, "task_label": "teacher-evaluation:generate:retry"}
-        response = await ai_client.post("/api/ai/chat", json=retry, timeout=_AI_RETRY_TIMEOUT)
+        retry = {**payload, "task_label": f"{task_label}:retry"}
+        response = await ai_client.post("/api/ai/chat", json=retry, timeout=retry_timeout)
         response.raise_for_status()
     return _json_from_payload(response.json())
 
@@ -418,11 +524,12 @@ def _merge_fields(offering_fields: dict[str, Any], ai_fields: dict[str, Any]) ->
     return merged
 
 
-def _clean_analysis(text: Any) -> str:
+def _clean_analysis(text: Any, *, limit: int = 300) -> str:
     raw = str(text or "").strip()
     # Strip markdown noise and make the public-facing text read like teacher-written
     # classroom evidence, even when the model saw internal platform statistics.
     raw = re.sub(r"[#*`>]+", "", raw)
+    raw = re.sub(r"(?m)^\s*[-+]\s*", "", raw)
     for pattern, replacement in _PUBLIC_ANALYSIS_REWRITES:
         raw = re.sub(pattern, replacement, raw, flags=re.IGNORECASE)
     raw = _PUBLIC_ANALYSIS_FORBIDDEN_RE.sub("", raw)
@@ -437,7 +544,10 @@ def _clean_analysis(text: Any) -> str:
     raw = re.sub(r"由$", "", raw)
     raw = re.sub(r"[ \t]+", "", raw)
     raw = re.sub(r"\n{3,}", "\n\n", raw)
-    return raw.strip()[:300]
+    cleaned = raw.strip()
+    if limit and limit > 0:
+        return cleaned[: int(limit)]
+    return cleaned
 
 
 # ---------------------------------------------------------------------------

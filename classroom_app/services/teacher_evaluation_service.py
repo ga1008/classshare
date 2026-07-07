@@ -642,6 +642,25 @@ def update_content(
     return normalized
 
 
+def update_analysis_only(
+    conn: sqlite3.Connection,
+    evaluation_id: str,
+    *,
+    analysis: Any,
+    status: str | None = None,
+) -> dict[str, Any] | None:
+    """Update only the free-text analysis, preserving fields and scores."""
+    ensure_teacher_evaluation_schema(conn)
+    set_fields = ["analysis = ?", "updated_at = ?"]
+    params: list[Any] = [_text(analysis), _now()]
+    if status is not None:
+        set_fields.append("status = ?")
+        params.append(status)
+    params.append(str(evaluation_id))
+    conn.execute(f"UPDATE teacher_evaluations SET {', '.join(set_fields)} WHERE id = ?", params)
+    return get_evaluation(conn, evaluation_id)
+
+
 def update_attributes(
     conn: sqlite3.Connection,
     evaluation_id: str,

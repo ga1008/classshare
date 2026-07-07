@@ -7,8 +7,10 @@ template, completeness/missing-field logic, CRUD & visibility, score-band
 coercion in the generator, and the pixel-faithful docx export.
 """
 
+import io
 import sqlite3
 import unittest
+import zipfile
 from unittest.mock import patch
 
 from classroom_app.routers import teacher_evaluations as router_mod
@@ -17,6 +19,7 @@ import classroom_app.db.schema_teacher_evaluations as schema_mod
 from classroom_app.services.class_label_service import build_academic_class_label
 from classroom_app.services import teacher_evaluation_service as svc
 from classroom_app.services import teacher_evaluation_generation_service as gen
+from classroom_app.services.teacher_evaluation_text_service import split_analysis_blocks
 
 
 def _make_conn() -> sqlite3.Connection:
@@ -284,6 +287,20 @@ class GeneratorBandTests(unittest.TestCase):
         self.assertIn("平时作业完成率", out)
         self.assertIn("课程考试", out)
 
+    def test_rewrite_clean_analysis_can_exceed_default_300_limit(self):
+        text = "该班学习状态稳定。" + "后续建议加强项目实践。" * 60
+        self.assertEqual(len(gen._clean_analysis(text, limit=1200)), len(text))
+
+
+class AnalysisTextTests(unittest.TestCase):
+    def test_split_analysis_blocks_detects_inline_numbered_points(self):
+        blocks = split_analysis_blocks("整体表现良好。1.课堂参与积极。2.建议增加项目实践。")
+        self.assertEqual(blocks, ["整体表现良好。", "1.课堂参与积极。", "2.建议增加项目实践。"])
+
+    def test_split_analysis_blocks_detects_inline_chinese_numbered_points(self):
+        blocks = split_analysis_blocks("整体表现良好。一、课堂参与积极。二、建议增加项目实践。")
+        self.assertEqual(blocks, ["整体表现良好。", "一、课堂参与积极。", "二、建议增加项目实践。"])
+
 
 class GenerateRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_generate_route_applies_modal_field_overrides(self):
@@ -356,6 +373,75 @@ class GenerateRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(scheduled["kwargs"]["field_overrides"]["teacher_title"], "副教授")
         self.assertEqual(scheduled["kwargs"]["field_overrides"]["course_name"], "动态Web程序设计A")
 
+    async def test_rewrite_analysis_route_updates_only_analysis(self):
+        conn = _make_conn()
+        teacher = _add_teacher(conn, 1, "张老师", "信息工程学院", "软件工程系")
+        evaluation_id = svc.create_evaluation(
+            conn,
+            teacher=teacher,
+            title="动态Web程序设计（按班级生成）",
+            fields={
+                "course_name": "动态Web程序设计",
+                "class_name": "网工2502班",
+                "college": "信息工程学院",
+                "teacher_name": "张老师",
+                "evaluate_date": "2026年06月20日",
+            },
+            items=_full_scores([8, 8, 7, 8, 7, 8, 6, 8, 9, 7]),
+            analysis="旧分析。",
+            status="ready",
+        )
+        conn.commit()
+        captured = {}
+
+        async def fake_rewrite(context, prompt):
+            captured["context"] = context
+            captured["prompt"] = prompt
+            return "整体学习态度端正。\n1.课堂参与较好。\n2.后续建议增加项目实践。"
+
+        with patch.object(router_mod, "get_db_connection", return_value=_ConnCtx(conn)), \
+                patch.object(router_mod, "rewrite_analysis_with_ai", new=fake_rewrite):
+            result = await router_mod.rewrite_analysis(
+                evaluation_id,
+                _JsonRequest({"prompt": "写得更详细，约600字"}),
+                user=teacher,
+            )
+
+        evaluation = svc.get_evaluation(conn, evaluation_id)
+        self.assertTrue(result["ok"])
+        self.assertEqual(captured["prompt"], "写得更详细，约600字")
+        self.assertEqual(captured["context"]["score_total"], 76)
+        self.assertEqual([item["score"] for item in evaluation["items"]], ["8", "8", "7", "8", "7", "8", "6", "8", "9", "7"])
+        self.assertEqual(evaluation["fields"]["class_name"], "网工2502班")
+        self.assertIn("课堂参与较好", evaluation["analysis"])
+        self.assertIn("1.课堂参与较好。", result["analysis_blocks"])
+
+    async def test_rewrite_analysis_route_failure_keeps_existing_analysis(self):
+        conn = _make_conn()
+        teacher = _add_teacher(conn, 1, "张老师", "信息工程学院", "软件工程系")
+        evaluation_id = svc.create_evaluation(
+            conn,
+            teacher=teacher,
+            title="动态Web程序设计",
+            fields={"course_name": "动态Web程序设计", "class_name": "网工2502班", "college": "信息工程学院",
+                    "teacher_name": "张老师", "evaluate_date": "2026年06月20日"},
+            items=_full_scores([8] * 10),
+            analysis="保持不变的旧分析。",
+            status="ready",
+        )
+        conn.commit()
+
+        async def failing_rewrite(context, prompt):
+            raise RuntimeError("模型暂时不可用")
+
+        with patch.object(router_mod, "get_db_connection", return_value=_ConnCtx(conn)), \
+                patch.object(router_mod, "rewrite_analysis_with_ai", new=failing_rewrite):
+            with self.assertRaises(router_mod.HTTPException) as raised:
+                await router_mod.rewrite_analysis(evaluation_id, _JsonRequest({"prompt": "重写"}), user=teacher)
+
+        self.assertEqual(raised.exception.status_code, 502)
+        self.assertEqual(svc.get_evaluation(conn, evaluation_id)["analysis"], "保持不变的旧分析。")
+
 
 class ExportTests(unittest.TestCase):
     def test_export_docx_bytes(self):
@@ -373,6 +459,24 @@ class ExportTests(unittest.TestCase):
         self.assertTrue(artifact.filename.endswith(".docx"))
         self.assertGreater(len(artifact.content), 5000)
         self.assertEqual(artifact.content[:2], b"PK")
+
+    def test_export_docx_splits_inline_numbered_analysis_points(self):
+        evaluation = {
+            "id": "x",
+            "title": "动态Web程序设计 教师评学表",
+            "fields": {"course_name": "动态Web程序设计", "class_name": "网工2502班", "college": "信息工程学院",
+                       "teacher_name": "张老师", "teacher_title": "讲师", "evaluate_date": "2026年07月07日",
+                       "academic_year": "2025-2026", "semester": "第二学期"},
+            "items": svc.normalize_evaluation_payload({}, _full_scores([8, 8, 7, 8, 7, 8, 6, 8, 9, 7]), "")["items"],
+            "analysis": "整体表现良好。1.课堂参与积极。2.建议增加项目实践。",
+            "rating": "一般",
+        }
+        artifact = svc.export_evaluation_artifact(evaluation, requested_format="docx")
+        with zipfile.ZipFile(io.BytesIO(artifact.content)) as docx:
+            document_xml = docx.read("word/document.xml").decode("utf-8")
+        self.assertIn("<w:t>整体表现良好。</w:t>", document_xml)
+        self.assertIn("<w:t>1.课堂参与积极。</w:t>", document_xml)
+        self.assertIn("<w:t>2.建议增加项目实践。</w:t>", document_xml)
 
 
 if __name__ == "__main__":

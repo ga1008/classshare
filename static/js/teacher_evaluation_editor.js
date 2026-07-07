@@ -17,6 +17,7 @@ const state = {
     fields: { ...(boot.fields || {}) },
     items: Array.isArray(boot.items) ? boot.items.map((it) => ({ ...it })) : [],
     analysis: boot.analysis || '',
+    analysisRewriting: false,
 };
 
 const FIELD_DEFS = [
@@ -115,8 +116,8 @@ function renderRating() {
 function analysisCount() {
     const el = document.getElementById('te-analysis-count');
     const len = (state.analysis || '').length;
-    el.textContent = `${len} / 300 字`;
-    el.className = `te-analysis__count${len > 300 ? ' is-warn' : ''}`;
+    el.textContent = `${len} 字`;
+    el.className = `te-analysis__count${len > 1500 ? ' is-warn' : ''}`;
 }
 
 function missingFields() {
@@ -212,6 +213,127 @@ async function exportWord() {
 }
 
 // ---------------------------------------------------------------------------
+// AI rewrite modal
+// ---------------------------------------------------------------------------
+function ensureRewriteModal() {
+    let modal = document.getElementById('te-ai-rewrite-modal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'te-ai-rewrite-modal';
+    modal.className = 'te-ai-modal-backdrop';
+    modal.hidden = true;
+    modal.innerHTML = `
+        <section class="te-ai-modal" role="dialog" aria-modal="true" aria-labelledby="te-ai-rewrite-title">
+            <header class="te-ai-modal__header">
+                <div>
+                    <p>分析建议重写</p>
+                    <h3 id="te-ai-rewrite-title">AI重新编写</h3>
+                </div>
+                <button type="button" class="te-ai-modal__close" id="te-ai-rewrite-close" aria-label="关闭">×</button>
+            </header>
+            <label class="te-ai-modal__field">
+                <span>额外提示（可选，优先级更高）</span>
+                <textarea id="te-ai-rewrite-prompt" rows="7"
+                    placeholder="例如：写得更详细一些，分 3 点，每点结合课堂表现、作业考试和后续改革建议，总字数约 600 字。"></textarea>
+            </label>
+            <footer class="te-ai-modal__footer">
+                <button type="button" class="lp-btn lp-btn--ghost" id="te-ai-rewrite-cancel">取消</button>
+                <button type="button" class="lp-btn lp-btn--primary" id="te-ai-rewrite-confirm">确认并重新编写</button>
+            </footer>
+        </section>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) closeRewriteModal();
+    });
+    modal.querySelector('#te-ai-rewrite-close').addEventListener('click', closeRewriteModal);
+    modal.querySelector('#te-ai-rewrite-cancel').addEventListener('click', closeRewriteModal);
+    modal.querySelector('#te-ai-rewrite-confirm').addEventListener('click', submitRewritePrompt);
+    modal.querySelector('#te-ai-rewrite-prompt').addEventListener('keydown', (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+            event.preventDefault();
+            submitRewritePrompt();
+        }
+    });
+    return modal;
+}
+
+function openRewriteModal() {
+    if (state.analysisRewriting) return;
+    const modal = ensureRewriteModal();
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+    requestAnimationFrame(() => {
+        modal.classList.add('is-open');
+        modal.querySelector('#te-ai-rewrite-prompt')?.focus();
+    });
+}
+
+function closeRewriteModal() {
+    const modal = document.getElementById('te-ai-rewrite-modal');
+    if (!modal) return;
+    modal.classList.remove('is-open');
+    document.body.style.overflow = '';
+    setTimeout(() => {
+        if (!modal.classList.contains('is-open')) modal.hidden = true;
+    }, 180);
+}
+
+function setAnalysisRewriteLoading(active) {
+    state.analysisRewriting = Boolean(active);
+    const analysisEl = document.getElementById('te-analysis');
+    const box = document.getElementById('te-analysis-box');
+    const loading = document.getElementById('te-analysis-loading');
+    const rewriteBtn = document.getElementById('te-analysis-rewrite');
+    const saveBtn = document.getElementById('te-save');
+    const exportBtn = document.getElementById('te-export-word');
+    if (analysisEl) analysisEl.disabled = state.analysisRewriting;
+    if (box) box.classList.toggle('is-loading', state.analysisRewriting);
+    if (loading) loading.hidden = !state.analysisRewriting;
+    if (rewriteBtn) rewriteBtn.disabled = state.analysisRewriting;
+    if (saveBtn) saveBtn.disabled = state.analysisRewriting;
+    if (exportBtn) exportBtn.disabled = state.analysisRewriting;
+}
+
+async function submitRewritePrompt() {
+    if (state.analysisRewriting) return;
+    const modal = ensureRewriteModal();
+    const promptEl = modal.querySelector('#te-ai-rewrite-prompt');
+    const confirmBtn = modal.querySelector('#te-ai-rewrite-confirm');
+    const prompt = promptEl?.value?.trim() || '';
+    confirmBtn.disabled = true;
+    closeRewriteModal();
+    try {
+        await rewriteAnalysis(prompt);
+        if (promptEl) promptEl.value = '';
+    } finally {
+        confirmBtn.disabled = false;
+    }
+}
+
+async function rewriteAnalysis(extraPrompt) {
+    const analysisEl = document.getElementById('te-analysis');
+    setAnalysisRewriteLoading(true);
+    try {
+        await persistContent();
+        const res = await apiFetch(`/api/teacher-evaluations/${state.id}/rewrite-analysis`, {
+            method: 'POST',
+            body: { prompt: extraPrompt || '' },
+            silent: true,
+        });
+        state.analysis = res.analysis || '';
+        if (analysisEl) analysisEl.value = state.analysis;
+        analysisCount();
+        renderIncomplete();
+        reloadPreview();
+        showToast('AI已重新编写分析建议', 'success');
+    } catch (err) {
+        showToast(err.message || 'AI重新编写失败，请稍后再试', 'error', 4500);
+    } finally {
+        setAnalysisRewriteLoading(false);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 function bindEvents() {
@@ -251,8 +373,10 @@ function bindEvents() {
     document.getElementById('te-save').addEventListener('click', saveContent);
     document.getElementById('te-refresh-preview').addEventListener('click', reloadPreview);
     document.getElementById('te-export-word').addEventListener('click', exportWord);
+    document.getElementById('te-analysis-rewrite').addEventListener('click', openRewriteModal);
 
     window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeRewriteModal();
         if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveContent(); }
     });
 }

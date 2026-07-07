@@ -23,8 +23,13 @@ from ..database import get_db_connection
 from ..dependencies import get_current_teacher
 from ..services import teacher_evaluation_service as te
 from ..services.resource_access_service import is_super_admin_teacher
-from ..services.teacher_evaluation_generation_service import run_generation_job
+from ..services.teacher_evaluation_generation_service import (
+    build_analysis_rewrite_context,
+    rewrite_analysis_with_ai,
+    run_generation_job,
+)
 from ..services.teacher_evaluation_import_service import run_import_job
+from ..services.teacher_evaluation_text_service import split_analysis_blocks
 
 router = APIRouter(prefix="/api/teacher-evaluations")
 
@@ -335,6 +340,38 @@ async def put_content(evaluation_id: str, request: Request, user: dict = Depends
         "rating": evaluation["rating"],
         "is_complete": evaluation["is_complete"],
         "missing_fields": te.missing_fields(evaluation),
+    }
+
+
+@router.post("/{evaluation_id}/rewrite-analysis", response_class=JSONResponse)
+async def rewrite_analysis(evaluation_id: str, request: Request, user: dict = Depends(get_current_teacher)):
+    body = await _json_body(request)
+    extra_prompt = str(body.get("prompt") or body.get("extra_prompt") or "").strip()[:3000]
+    teacher_id = int(user["id"])
+    with get_db_connection() as conn:
+        evaluation = _load_owned_or_super(conn, evaluation_id, user)
+        context = build_analysis_rewrite_context(conn, evaluation, teacher_id)
+
+    try:
+        analysis = await rewrite_analysis_with_ai(context, extra_prompt)
+    except Exception as exc:  # noqa: BLE001 — front-end needs a concise, user-safe failure.
+        raise HTTPException(502, f"AI重新编写失败：{str(exc)[:180]}") from exc
+
+    with get_db_connection() as conn:
+        _load_owned_or_super(conn, evaluation_id, user)
+        updated = te.update_analysis_only(conn, evaluation_id, analysis=analysis, status="ready")
+        conn.commit()
+        if not updated:
+            raise HTTPException(404, "教师评学表不存在")
+    return {
+        "ok": True,
+        "analysis": updated.get("analysis") or "",
+        "analysis_blocks": split_analysis_blocks(updated.get("analysis") or ""),
+        "card": te.serialize_card(updated),
+        "score_total": updated.get("score_total"),
+        "rating": updated.get("rating"),
+        "is_complete": updated.get("is_complete"),
+        "missing_fields": te.missing_fields(updated),
     }
 
 

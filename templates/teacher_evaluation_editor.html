@@ -32,10 +32,20 @@
                 <div class="te-rating" id="te-rating"></div>
             </details>
 
-            <details class="lp-editor__cover" open>
-                <summary>对学生学习情况的分析和今后教学改革建议（300 字以内）</summary>
-                <textarea id="te-analysis" class="te-analysis" rows="7" maxlength="300"
-                          placeholder="评价这个班级本学期在这门课程上的各项学习表现，纯文本、可分 1、2、3 点，不要使用 Markdown。"></textarea>
+            <details class="lp-editor__cover te-analysis-panel" open>
+                <summary>对学生学习情况的分析和今后教学改革建议</summary>
+                <div class="te-analysis-actions">
+                    <button type="button" class="lp-btn lp-btn--ghost te-ai-rewrite-btn" id="te-analysis-rewrite">AI重新编写</button>
+                    <span>只更新下方分析建议，评价得分保持不变</span>
+                </div>
+                <div class="te-analysis-box" id="te-analysis-box">
+                    <textarea id="te-analysis" class="te-analysis" rows="7"
+                              placeholder="评价这个班级本学期在这门课程上的各项学习表现，纯文本、可分 1、2、3 点，不要使用 Markdown。"></textarea>
+                    <div class="te-analysis__loading" id="te-analysis-loading" hidden>
+                        <span class="te-spinner" aria-hidden="true"></span>
+                        <strong>AI正在重新编写…</strong>
+                    </div>
+                </div>
                 <div class="te-analysis__count" id="te-analysis-count"></div>
             </details>
 
@@ -68,6 +78,6 @@
     }
     </script>
     <script type="module" src="{{ asset_url('js/auth.js') }}"></script>
-    <script type="module" src="{{ asset_url('js/teacher_evaluation_editor.js') }}?v=20260707"></script>
+    <script type="module" src="{{ asset_url('js/teacher_evaluation_editor.js') }}?v=20260707-3"></script>
 </body>
 </html>
