@@ -27,6 +27,7 @@ from typing import Any
 from ..db.connection import get_configured_db_engine
 from ..db.schema_teacher_evaluations import ensure_teacher_evaluation_schema
 from . import material_scope_service as scope_core
+from .class_label_service import build_academic_class_label
 from .material_export_template_service import build_material_export_artifact
 from .organization_scope_service import load_teacher_org_scope
 from .resource_access_service import is_super_admin_teacher
@@ -352,12 +353,20 @@ def build_fields_from_offering(
                o.academic_teaching_class_name AS academic_teaching_class_name,
                co.name AS course_name,
                co.college AS course_college,
+               co.department AS course_department,
                co.school_name AS course_school_name,
                cl.name AS class_name,
-               cl.academic_class_name AS academic_class_name
+               cl.academic_class_name AS academic_class_name,
+               cl.academic_major AS class_academic_major,
+               cl.major AS class_major,
+               cl.department AS class_department,
+               cl.description AS description,
+               cl.academic_metadata_json AS academic_metadata_json,
+               t.department AS teacher_department
         FROM class_offerings o
         LEFT JOIN courses co ON co.id = o.course_id
         LEFT JOIN classes cl ON cl.id = o.class_id
+        LEFT JOIN teachers t ON t.id = o.teacher_id
         WHERE o.id = ?
         LIMIT 1
         """,
@@ -367,9 +376,10 @@ def build_fields_from_offering(
         row = dict(row)
         fields["course_name"] = _text(row.get("course_name"))
         fields["class_name"] = (
-            _text(row.get("academic_teaching_class_name"))
+            build_academic_class_label(row)
             or _text(row.get("academic_class_name"))
             or _text(row.get("class_name"))
+            or _text(row.get("academic_teaching_class_name"))
         )
         if row.get("course_college"):
             fields["college"] = _text(row.get("course_college")) or fields["college"]

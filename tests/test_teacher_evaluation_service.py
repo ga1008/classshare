@@ -14,6 +14,7 @@ from unittest.mock import patch
 from classroom_app.routers import teacher_evaluations as router_mod
 from classroom_app.db.schema_teacher_evaluations import ensure_teacher_evaluation_schema
 import classroom_app.db.schema_teacher_evaluations as schema_mod
+from classroom_app.services.class_label_service import build_academic_class_label
 from classroom_app.services import teacher_evaluation_service as svc
 from classroom_app.services import teacher_evaluation_generation_service as gen
 
@@ -78,6 +79,7 @@ def _add_offering_context(conn, *, offering_id=10, teacher_id=1):
             id INTEGER PRIMARY KEY,
             name TEXT,
             college TEXT,
+            department TEXT,
             school_name TEXT
         )
         """
@@ -87,7 +89,12 @@ def _add_offering_context(conn, *, offering_id=10, teacher_id=1):
         CREATE TABLE classes (
             id INTEGER PRIMARY KEY,
             name TEXT,
-            academic_class_name TEXT
+            academic_class_name TEXT,
+            academic_major TEXT,
+            major TEXT,
+            department TEXT,
+            description TEXT,
+            academic_metadata_json TEXT
         )
         """
     )
@@ -104,9 +111,13 @@ def _add_offering_context(conn, *, offering_id=10, teacher_id=1):
         """
     )
     conn.execute(
-        "INSERT INTO courses (id, name, college, school_name) VALUES (1, '动态Web程序设计', '信息工程学院', '广西外国语学院')"
+        "INSERT INTO courses (id, name, college, department, school_name) "
+        "VALUES (1, '动态Web程序设计', '信息工程学院', '网络工程系', '广西外国语学院')"
     )
-    conn.execute("INSERT INTO classes (id, name, academic_class_name) VALUES (1, '网工2502班', '网络工程2502班')")
+    conn.execute(
+        "INSERT INTO classes (id, name, academic_class_name, academic_major, major, department, description, academic_metadata_json) "
+        "VALUES (1, '2502班', '2502班', '网络工程', '网络工程', '网络工程系', '', '{}')"
+    )
     conn.execute(
         "INSERT INTO class_offerings (id, class_id, course_id, teacher_id, semester, academic_teaching_class_name) "
         "VALUES (?, 1, 1, ?, '2025-2026-2', '动态Web程序设计·网工2502班')",
@@ -173,6 +184,24 @@ class CompletenessTests(unittest.TestCase):
         self.assertTrue(any("评价得分" in m for m in missing))
         self.assertIn("学习情况分析与教学改革建议", missing)
         self.assertFalse(evaluation["is_complete"])
+
+    def test_prefill_uses_administrative_class_label_not_teaching_code(self):
+        conn = _make_conn()
+        teacher = _add_teacher(conn, 1, "张老师", "信息工程学院", "软件工程系")
+        _add_offering_context(conn, offering_id=10, teacher_id=1)
+        fields = svc.build_fields_from_offering(conn, 10, teacher=teacher)
+        self.assertEqual(fields["class_name"], "网工2502班")
+        self.assertNotIn("动态Web程序设计", fields["class_name"])
+
+    def test_class_label_adds_suffix_for_numeric_admin_fragment(self):
+        label = build_academic_class_label(
+            {
+                "class_department": "软件工程系",
+                "academic_class_name": "2401",
+                "course_name": "动态Web程序设计",
+            }
+        )
+        self.assertEqual(label, "软工2401班")
 
     def test_complete_when_all_present(self):
         conn = _make_conn()

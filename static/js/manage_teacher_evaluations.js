@@ -236,9 +236,13 @@ function offeringOptionsHtml(includeBlank) {
     return blank
         .concat(state.offerings.map((o) => {
             const sem = o.semester_label ? ` · ${escapeHtml(o.semester_label)}` : '';
-            return `<option value="${o.id}">${escapeHtml(o.course_name)} · ${escapeHtml(o.display_class_name || o.class_name)}${sem}</option>`;
+            return `<option value="${o.id}">${escapeHtml(o.course_name)} · ${escapeHtml(classDisplayName(o))}${sem}</option>`;
         }))
         .join('');
+}
+
+function classDisplayName(offering) {
+    return offering.display_class_name || offering.academic_class_name || offering.class_name || '未命名班级';
 }
 
 function openCreateBlankModal() {
@@ -318,12 +322,9 @@ function buildOfferingTree() {
                 badge: `${offerings.length} 个班级`,
                 children: offerings
                     .slice()
-                    .sort((a, b) => (a.display_class_name || a.class_name || '').localeCompare(
-                        b.display_class_name || b.class_name || '',
-                        'zh',
-                    ))
+                    .sort((a, b) => classDisplayName(a).localeCompare(classDisplayName(b), 'zh'))
                     .map((offering) => ({
-                        label: offering.display_class_name || offering.class_name || '未命名班级',
+                        label: classDisplayName(offering),
                         leaf: true,
                         data: offering,
                     })),
@@ -340,7 +341,7 @@ async function offeringPanelDescriptor(offering) {
     const semesterText = [fields.academic_year, fields.semester].filter(Boolean).join(' ')
         || offering.semester_label || '—';
     const courseName = fields.course_name || offering.course_name || '';
-    const className = fields.class_name || offering.display_class_name || offering.class_name || '';
+    const className = fields.class_name || classDisplayName(offering);
     return {
         title: '生成配置',
         baseInfo: [
@@ -381,6 +382,7 @@ function openGenerateModal() {
         tree: buildOfferingTree(),
         treeTitle: '学年学期 / 课程 / 班级',
         treeHint: '按最新学期排序',
+        levelLabels: ['学期', '课程', '班级'],
         placeholderTitle: '请选择班级',
         placeholderText: '请在左侧选择「学年学期 → 课程 → 班级」，选中班级后在此配置并生成。',
         emptyText: '你还没有可用的教学班级。',

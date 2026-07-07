@@ -157,7 +157,7 @@ class OfferingFieldTests(unittest.TestCase):
     def test_prefill_uses_department_class_label_and_last_course_day(self):
         fields = svc.build_fields_from_offering(self.conn, 30, teacher=self.teacher)
         self.assertEqual(fields["course_name"], "动态 web 程序设计")
-        self.assertEqual(fields["class_name"], "软工 2401班（专升本）")
+        self.assertEqual(fields["class_name"], "软工2401班（专升本）")
         self.assertNotIn("动态 web 程序设计-0001", fields["class_name"])
         self.assertEqual(fields["date"], "2026年06月26日")
 

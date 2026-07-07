@@ -51,6 +51,7 @@ export function openTreeSelectFormModal(config) {
         fieldsTitle = '可配置选项',
         baseInfoTitle = '基础信息',
         autoExpandDepth = 2,
+        levelLabels = [],
     } = config || {};
 
     const overlay = document.createElement('div');
@@ -146,22 +147,27 @@ export function openTreeSelectFormModal(config) {
             const path = prefix ? `${prefix}.${index}` : String(index);
             const badge = node.badge ? `<span class="tsf-node__badge">${escapeHtml(node.badge)}</span>` : '';
             const label = escapeHtml(node.label || '');
+            const levelClass = ` tsf-level-${Math.min(level, 3)}`;
+            const kindLabel = levelLabels[level - 1]
+                ? `<span class="tsf-node__kind">${escapeHtml(levelLabels[level - 1])}</span>`
+                : '';
+            const mainLabel = `<span class="tsf-node__main">${kindLabel}<span class="tsf-node__label">${label}</span></span>`;
             if (node.leaf) {
                 const active = state.selectedPath === path ? ' is-active' : '';
                 return `
-                    <button type="button" class="tsf-leaf${active}" data-tsf-leaf="${path}" style="--tsf-indent:${(level - 1) * 14}px">
+                    <button type="button" class="tsf-leaf${levelClass}${active}" data-tsf-leaf="${path}" style="--tsf-indent:${(level - 1) * 14}px">
                         <span class="tsf-leaf__dot"></span>
-                        <span class="tsf-leaf__label">${label}</span>
+                        ${mainLabel}
                         ${badge}
                     </button>`;
             }
             const isOpen = expanded.has(path);
             const childHtml = isOpen ? renderTreeNodes(node.children, path, level + 1) : '';
             return `
-                <div class="tsf-node${isOpen ? ' is-open' : ''}" data-tsf-node="${path}" style="--tsf-indent:${(level - 1) * 14}px">
-                    <button type="button" class="tsf-node__head" data-tsf-toggle="${path}" aria-expanded="${isOpen ? 'true' : 'false'}">
+                <div class="tsf-node${levelClass}${isOpen ? ' is-open' : ''}" data-tsf-node="${path}" style="--tsf-indent:${(level - 1) * 14}px">
+                    <button type="button" class="tsf-node__head${levelClass}" data-tsf-toggle="${path}" aria-expanded="${isOpen ? 'true' : 'false'}">
                         <span class="tsf-node__chevron">${isOpen ? '▾' : '▸'}</span>
-                        <span class="tsf-node__label">${label}</span>
+                        ${mainLabel}
                         ${badge}
                     </button>
                     <div class="tsf-node__children">${childHtml}</div>

@@ -27,6 +27,7 @@ from ..db.connection import get_configured_db_engine
 from ..db.schema_assessment_plans import ensure_assessment_plan_schema
 from . import material_scope_service as scope_core
 from . import signature_service
+from .class_label_service import build_academic_class_label
 from .material_export_template_service import build_material_export_artifact
 from .material_final_document_service import (
     ASSESSMENT_PLAN_NOTES,
@@ -77,20 +78,6 @@ FIELD_KEYS = (
     "assessment_mode_label",
     "total_score",
 )
-
-DEPARTMENT_SHORT_NAMES = {
-    "软件工程": "软工",
-    "网络工程": "网工",
-    "计算机科学与技术": "计科",
-    "计算机科学": "计科",
-    "人工智能": "人工",
-    "数据科学与大数据技术": "大数据",
-    "大数据": "大数据",
-    "数字媒体技术": "数媒",
-    "数字媒体": "数媒",
-    "信息管理与信息系统": "信管",
-}
-
 
 def normalize_scope_level(value: Any, *, default: str = SCOPE_PRIVATE) -> str:
     candidate = str(value or "").strip().lower()
@@ -248,80 +235,8 @@ def _score_text(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else str(value)
 
 
-def _department_short_name(*values: Any) -> str:
-    text = " ".join(_text(value) for value in values if _text(value))
-    compact = re.sub(r"[\s（）()系部学院]+", "", text)
-    for keyword, short in DEPARTMENT_SHORT_NAMES.items():
-        if keyword in compact:
-            return short
-    match = re.search(r"([\u4e00-\u9fff]{2,8})(?:工程|科学|技术|智能|媒体|管理)", compact)
-    if match:
-        return match.group(1)[:2]
-    return ""
-
-
-def _looks_like_course_teaching_class(value: str, course_name: str) -> bool:
-    text = _text(value)
-    if not text:
-        return True
-    if "班" in text:
-        return False
-    if course_name and course_name.replace(" ", "") in text.replace(" ", ""):
-        return True
-    return bool(re.search(r"[-_]\d{3,}$", text))
-
-
-def _normalize_class_fragment(value: Any, *, department_short: str = "", course_name: str = "") -> str:
-    text = _text(value)
-    if not text or _looks_like_course_teaching_class(text, course_name):
-        return ""
-    text = re.sub(r"\s+", " ", text).strip()
-    text = text.replace(",", "、").replace("，", "、")
-    for suffix in ("软件工程系", "网络工程系", "计算机科学与技术系", "人工智能系"):
-        text = text.replace(suffix, department_short or "")
-    if department_short and text.startswith(department_short):
-        return text
-    number_match = re.search(r"(\d{2,4}(?:\s*[、/]\s*\d{2,4})*\s*班)", text)
-    if department_short and number_match:
-        return f"{department_short} {number_match.group(1).replace(' ', '')}"
-    return text
-
-
-def _is_upgrade_program(row: dict[str, Any], *extra_values: Any) -> bool:
-    sources = [*extra_values]
-    sources.extend(row.get(key) for key in ("class_name", "academic_class_name", "academic_major", "major", "description"))
-    raw_meta = _text(row.get("academic_metadata_json"))
-    if raw_meta:
-        sources.append(raw_meta)
-    return "专升本" in " ".join(_text(value) for value in sources if value is not None)
-
-
 def _assessment_class_label(row: dict[str, Any]) -> str:
-    course_name = _text(row.get("course_name"))
-    department_short = _department_short_name(
-        row.get("class_department"),
-        row.get("class_academic_major"),
-        row.get("class_major"),
-        row.get("course_department"),
-        row.get("teacher_department"),
-    )
-    candidates = [
-        row.get("academic_teaching_class_name"),
-        row.get("academic_class_name"),
-        row.get("class_name"),
-    ]
-    label = ""
-    for candidate in candidates:
-        label = _normalize_class_fragment(candidate, department_short=department_short, course_name=course_name)
-        if label:
-            break
-    if not label and department_short:
-        label = department_short
-    if department_short and label and not label.startswith(department_short) and re.search(r"\d{2,4}", label):
-        label = f"{department_short} {label}"
-    if _is_upgrade_program(row, label) and "专升本" not in label:
-        label = f"{label}（专升本）" if label else "（专升本）"
-    return label
+    return build_academic_class_label(row)
 
 
 def _format_cn_date(value: Any) -> str:

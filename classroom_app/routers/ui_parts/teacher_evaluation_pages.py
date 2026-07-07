@@ -7,6 +7,7 @@ list is grouped by semester so the create/generate modals can default to the cur
 
 from .common import *
 
+from ...services.class_label_service import build_academic_class_label
 from ...services import teacher_evaluation_service as te
 
 
@@ -16,20 +17,42 @@ router = APIRouter()
 def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT o.id, c.name AS class_name, co.name AS course_name,
-               COALESCE(NULLIF(o.academic_teaching_class_name, ''), c.academic_class_name, c.name) AS display_class_name,
+        SELECT o.id,
+               c.name AS class_name,
+               c.academic_class_name AS academic_class_name,
+               c.academic_major AS class_academic_major,
+               c.major AS class_major,
+               c.department AS class_department,
+               c.description AS description,
+               c.academic_metadata_json AS academic_metadata_json,
+               co.name AS course_name,
+               co.department AS course_department,
+               o.academic_teaching_class_name AS academic_teaching_class_name,
+               t.department AS teacher_department,
                COALESCE(NULLIF(sem.name, ''), NULLIF(o.semester, ''), '') AS semester_label,
                sem.start_date AS semester_start_date
         FROM class_offerings o
         JOIN classes c ON o.class_id = c.id
         JOIN courses co ON o.course_id = co.id
+        LEFT JOIN teachers t ON t.id = o.teacher_id
         LEFT JOIN academic_semesters sem ON sem.id = o.semester_id
         WHERE o.teacher_id = ?
         ORDER BY sem.start_date DESC, co.name, c.name
         """,
         (int(teacher_id),),
     ).fetchall()
-    return [dict(row) for row in rows]
+    offerings = []
+    for row in rows:
+        item = dict(row)
+        item["display_class_name"] = (
+            build_academic_class_label(item)
+            or item.get("academic_class_name")
+            or item.get("class_name")
+            or item.get("academic_teaching_class_name")
+            or ""
+        )
+        offerings.append(item)
+    return offerings
 
 
 @router.get("/manage/teaching/teacher-evaluations", response_class=HTMLResponse)
