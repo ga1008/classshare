@@ -4128,6 +4128,126 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/teacher-evaluations",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_teacher_evaluations",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_evaluation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/classroom/{class_offering_id}/prefill",
+    "methods": [
+      "GET"
+    ],
+    "name": "classroom_prefill",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "generate_from_classroom",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/import",
+    "methods": [
+      "POST"
+    ],
+    "name": "import_evaluation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/{evaluation_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_evaluation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/{evaluation_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_evaluation_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/{evaluation_id}/attributes",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/{evaluation_id}/attributes",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "patch_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/{evaluation_id}/content",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/{evaluation_id}/export",
+    "methods": [
+      "GET"
+    ],
+    "name": "export_evaluation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/{evaluation_id}/inherit",
+    "methods": [
+      "POST"
+    ],
+    "name": "inherit_evaluation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/{evaluation_id}/retry",
+    "methods": [
+      "POST"
+    ],
+    "name": "retry_evaluation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/{evaluation_id}/tags",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_tags",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/teacher-evaluations/{evaluation_id}/task",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_task_status",
+    "include_in_schema": true
+  },
+  {
     "path": "/assessment-plan/{plan_id}/edit",
     "methods": [
       "GET"
@@ -4720,6 +4840,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/teacher-evaluations",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_teacher_evaluations_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/teaching",
     "methods": [
       "GET"
@@ -4845,6 +4973,14 @@
       "GET"
     ],
     "name": "get_manage_system_smart_classroom_integrations_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/teacher-evaluations",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_teacher_evaluations_page",
     "include_in_schema": true
   },
   {
@@ -5013,6 +5149,22 @@
       "GET"
     ],
     "name": "download_submission_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/teacher-evaluation/{evaluation_id}/edit",
+    "methods": [
+      "GET"
+    ],
+    "name": "teacher_evaluation_editor_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/teacher-evaluation/{evaluation_id}/preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "teacher_evaluation_preview_page",
     "include_in_schema": true
   },
   {

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="lanshare">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>编辑教师评学表 · {{ evaluation.title }}</title>
+    {% include "partials/ui_system_assets.html" %}
+</head>
+<body class="lp-editor-body">
+    <header class="lp-editor__header">
+        <a class="lp-btn lp-btn--ghost" href="/manage/teaching/teacher-evaluations">← 返回教师评学表库</a>
+        <strong class="lp-editor__title" id="te-editor-title">{{ evaluation.title }}</strong>
+        <div class="lp-editor__header-actions">
+            <span class="ap-score-pill" id="te-score-pill">总分 — · 综合评价 —</span>
+            <a class="lp-btn lp-btn--ghost" href="/teacher-evaluation/{{ evaluation.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
+            <button type="button" class="lp-btn lp-btn--primary" id="te-save">保存</button>
+        </div>
+    </header>
+
+    <main class="lp-editor">
+        <section class="lp-editor__form" id="te-editor-form">
+            <div class="te-incomplete" id="te-incomplete" hidden></div>
+
+            <details class="lp-editor__cover" open>
+                <summary>基础信息</summary>
+                <div class="ap-field-grid" id="te-field-grid"></div>
+            </details>
+
+            <details class="lp-editor__cover" open>
+                <summary>评价指标打分（每项满分 10，合计 100）</summary>
+                <div class="te-items" id="te-items"></div>
+                <div class="te-rating" id="te-rating"></div>
+            </details>
+
+            <details class="lp-editor__cover" open>
+                <summary>对学生学习情况的分析和今后教学改革建议（300 字以内）</summary>
+                <textarea id="te-analysis" class="te-analysis" rows="7" maxlength="300"
+                          placeholder="评价这个班级本学期在这门课程上的各项学习表现，纯文本、可分 1、2、3 点，不要使用 Markdown。"></textarea>
+                <div class="te-analysis__count" id="te-analysis-count"></div>
+            </details>
+
+            <details class="lp-editor__cover" id="te-import-details" hidden>
+                <summary>生成 / 导入详情</summary>
+                <div class="ap-import" id="te-import"></div>
+            </details>
+        </section>
+
+        <section class="lp-editor__preview">
+            <div class="lp-editor__preview-bar">
+                <span>实时预览</span>
+                <button type="button" class="lp-btn lp-btn--ghost" id="te-refresh-preview">刷新预览</button>
+                <button type="button" class="lp-btn lp-btn--ghost" id="te-export-word">导出 Word</button>
+            </div>
+            <iframe id="te-preview-frame" class="lp-editor__frame" src="/teacher-evaluation/{{ evaluation.id }}/preview" title="教师评学表预览"></iframe>
+        </section>
+    </main>
+
+    <script id="te-editor-boot" type="application/json">
+    {
+        "id": {{ evaluation['id'] | tojson }},
+        "title": {{ evaluation['title'] | tojson }},
+        "fields": {{ evaluation['fields'] | tojson }},
+        "items": {{ evaluation['items'] | tojson }},
+        "analysis": {{ evaluation['analysis'] | tojson }},
+        "score_total": {{ evaluation['score_total'] | tojson }},
+        "rating": {{ evaluation['rating'] | tojson }},
+        "import_preview": {{ evaluation['import_preview'] | tojson }}
+    }
+    </script>
+    <script type="module" src="{{ asset_url('js/auth.js') }}"></script>
+    <script type="module" src="{{ asset_url('js/teacher_evaluation_editor.js') }}?v=20260707"></script>
+</body>
+</html>

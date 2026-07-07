@@ -1,0 +1,62 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}教师评学表{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('空白新建', '过程材料', 'plus', variant='primary', tone='indigo', attrs='data-te-create-blank') }}
+{{ topbar_action('按班级生成', '过程材料', 'robot', variant='soft', tone='indigo', attrs='data-te-generate-open') }}
+{{ topbar_action('导入解析', '过程材料', 'upload', variant='soft', tone='slate', attrs='data-te-import-open') }}
+{% endblock %}
+
+{% block content %}
+<section class="manage-lp" data-te-root>
+    <div class="manage-lp__intro">
+        <div>
+            <h2>教师评学表库</h2>
+            <p>过程材料 · 每门课每个教学班级一份《广西外国语学院教师评学表》。可空白新建并用完整表单填写（可按课堂自动带入）、按教学班级用<strong>快速 AI</strong> 归集全学期表现自动为 10 项指标打分并撰写学习情况分析、或导入文件由 AI 解析。10 项指标合计 100，总分自动计算综合评价（优秀/良好/一般/较差）。支持渲染预览、导出与原版一致的 Word、系部/院级/校级公开与一键继承。</p>
+        </div>
+        <div class="manage-lp__summary" data-te-summary></div>
+    </div>
+
+    <div class="manage-lp__toolbar">
+        <div class="manage-lp__search">
+            <input type="search" data-te-search placeholder="搜索课程 / 标题 / 班级 / 标签…" />
+        </div>
+        <div class="manage-lp__filters">
+            <select data-te-filter-scope>
+                <option value="">全部范围</option>
+                <option value="mine">我的</option>
+                <option value="shared">他人公开</option>
+                <option value="private">私有</option>
+                <option value="department">本系部公开</option>
+                <option value="college">本院级公开</option>
+                <option value="school">全校公开</option>
+            </select>
+            <select data-te-sort>
+                <option value="updated_desc">最近更新</option>
+                <option value="updated_asc">最早更新</option>
+                <option value="title_asc">标题 A→Z</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="manage-lp__loading" data-te-loading>正在加载教师评学表…</div>
+    <div class="manage-lp__grid" data-te-grid hidden></div>
+    <div class="manage-lp__empty" data-te-empty hidden>
+        <strong>还没有教师评学表</strong>
+        <p>点击右上角「空白新建」「按班级生成」或「导入解析」开始。</p>
+    </div>
+</section>
+
+<script id="teacher-evaluation-boot" type="application/json">
+{
+    "offerings": {{ teacher_evaluation_offerings | tojson }},
+    "scope_options": {{ teacher_evaluation_scope_options | tojson }}
+}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_teacher_evaluations.js') }}?v=20260707"></script>
+{% endblock %}

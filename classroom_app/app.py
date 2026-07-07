@@ -78,6 +78,7 @@ from .routers import career_path
 from .routers import polls
 from .routers import lesson_plans
 from .routers import assessment_plans
+from .routers import teacher_evaluations
 from .routers import resume_console
 
 
@@ -563,6 +564,7 @@ app.include_router(classroom_interactions.router)
 app.include_router(polls.router)
 app.include_router(lesson_plans.router)
 app.include_router(assessment_plans.router)
+app.include_router(teacher_evaluations.router)
 app.include_router(smart_classroom.router)
 app.include_router(signatures.router)
 app.include_router(manage_router.router)

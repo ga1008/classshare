@@ -217,6 +217,16 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         ai_hint="考核登分表：集中管理由课堂考试生成或从 Excel 导入解析的期末考核登分表，按大题列与总分校验保存，支持导出 Excel 和开放范围。",
     ),
     ManageNavItem(
+        key="teacher_evaluations",
+        domain="teaching",
+        group="过程材料",
+        label="教师评学表",
+        icon="clipboard-list",
+        href="/manage/teaching/teacher-evaluations",
+        search_text="教师评学表 评学表 学生评价 综合评价 过程材料 归档 teacher evaluation",
+        ai_hint="教师评学表：空白新建 / 完整表单填写（可按课堂自动带入）/ 按教学班级用快速 AI 归集全学期表现自动评分并撰写学习情况分析 / 导入文件解析，10 项指标合计 100、总分自动计算综合评价，支持渲染预览、导出与原版一致的 Word、系部院校级公开与一键继承。",
+    ),
+    ManageNavItem(
         key="course_schedule",
         domain="teaching",
         group="课堂工具",

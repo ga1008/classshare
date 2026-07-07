@@ -152,6 +152,8 @@ def _build_docx_export(payload: dict[str, Any], *, title: str) -> bytes:
         raise RuntimeError(f"缺少 DOCX 导出依赖 python-docx: {exc}") from exc
 
     template_key = str(_as_dict(payload.get("export_payload")).get("template_key") or payload.get("document_type") or "")
+    if template_key == "evaluation_sheet":
+        return _build_evaluation_sheet_docx_export(payload)
     if template_key in FINAL_MATERIAL_TYPES:
         return _build_final_material_docx_export(payload, title=title, template_key=template_key)
 
@@ -1572,6 +1574,247 @@ def _add_exam_paper_footer(section: Any) -> None:
     right = table.cell(0, 2).paragraphs[0]
     right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     _set_run_songti(right.add_run("考试过程中不得将试卷拆开"), 9, color="000000")
+
+
+# ---------------------------------------------------------------------------
+# 教师评学表 (evaluation_sheet) — pixel-faithful reproduction of the official .doc
+# ---------------------------------------------------------------------------
+# 16-column shared grid (twips, sums to 9600 ≈ 16.93 cm) whose boundaries carry
+# every distinct vertical line of the form: the 6-cell meta rows, the 4-column
+# indicator table, the 8-cell 综合评价 row, and the full-width analysis block. Each
+# row expresses its cells as spans over these grid columns.
+_EVAL_GRID_TWIPS = [1400, 500, 1200, 300, 425, 975, 225, 725, 750, 300, 150, 725, 225, 200, 775, 725]
+_EVAL_TABLE_WIDTH_TWIPS = 9600
+_EVAL_RATINGS = ("优秀", "良好", "一般", "较差")
+
+
+def _build_evaluation_sheet_docx_export(payload: dict[str, Any]) -> bytes:
+    try:
+        from docx import Document
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.oxml.ns import qn
+        from docx.shared import Cm, Pt
+    except ImportError as exc:
+        raise RuntimeError(f"缺少 DOCX 导出依赖 python-docx: {exc}") from exc
+
+    export_payload = _as_dict(payload.get("export_payload"))
+    fields = _as_dict(export_payload.get("fields"))
+    structured = _as_dict(export_payload.get("structured"))
+    indicators = structured.get("indicators") if isinstance(structured.get("indicators"), list) else []
+    notes = structured.get("notes") if isinstance(structured.get("notes"), list) else []
+    analysis = str(structured.get("analysis") or "")
+    rating = str(structured.get("rating") or "")
+    total_text = str(structured.get("score_total") or "")
+
+    document = Document()
+    section = document.sections[0]
+    section.page_width = Cm(21)
+    section.page_height = Cm(29.7)
+    section.top_margin = Cm(1.4)
+    section.bottom_margin = Cm(1.2)
+    section.left_margin = Cm(2.0)
+    section.right_margin = Cm(2.0)
+
+    styles = document.styles
+    normal = styles["Normal"]
+    normal.font.name = "宋体"
+    normal.font.size = Pt(10.5)
+    normal._element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
+    normal.paragraph_format.space_before = Pt(0)
+    normal.paragraph_format.space_after = Pt(0)
+    normal.paragraph_format.line_spacing = 1
+
+    title_p = document.add_paragraph()
+    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_p.paragraph_format.space_before = Pt(4)
+    title_p.paragraph_format.space_after = Pt(2)
+    _set_run_songti(title_p.add_run("广西外国语学院教师评学表"), 20, bold=True)
+
+    period_p = document.add_paragraph()
+    period_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    period_p.paragraph_format.space_after = Pt(6)
+    _set_run_songti(period_p.add_run(_evaluation_period_text(fields)), 14, bold=True)
+
+    _add_evaluation_table(document, fields, indicators, total_text, rating, analysis)
+
+    for line in notes or []:
+        p = document.add_paragraph()
+        p.paragraph_format.space_before = Pt(2)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.line_spacing = 1.15
+        _set_run_songti(p.add_run(str(line)), 10.5)
+
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def _evaluation_period_text(fields: dict[str, Any]) -> str:
+    year = str(_field(fields, "academic_year") or "").strip()
+    match = re.search(r"(20\d{2}).*?(20\d{2})", year)
+    start = match.group(1) if match else "20__"
+    end = match.group(2) if match else "20__"
+    semester = str(_field(fields, "semester") or "").strip()
+    if "一" in semester or semester == "1":
+        sem = "一"
+    elif "二" in semester or semester == "2":
+        sem = "二"
+    else:
+        sem = semester.replace("第", "").replace("学期", "").strip() or "__"
+    return f"（{start}-{end}学年第{sem}学期）"
+
+
+def _set_eval_table_geometry(table: Any) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tbl_pr = table._tbl.tblPr
+    tbl_w = tbl_pr.first_child_found_in("w:tblW")
+    if tbl_w is None:
+        tbl_w = OxmlElement("w:tblW")
+        tbl_pr.insert(0, tbl_w)
+    tbl_w.set(qn("w:w"), str(_EVAL_TABLE_WIDTH_TWIPS))
+    tbl_w.set(qn("w:type"), "dxa")
+
+    tbl_layout = tbl_pr.first_child_found_in("w:tblLayout")
+    if tbl_layout is None:
+        tbl_layout = OxmlElement("w:tblLayout")
+        tbl_pr.append(tbl_layout)
+    tbl_layout.set(qn("w:type"), "fixed")
+
+    tbl_grid = table._tbl.tblGrid
+    for child in list(tbl_grid):
+        tbl_grid.remove(child)
+    for width in _EVAL_GRID_TWIPS:
+        col = OxmlElement("w:gridCol")
+        col.set(qn("w:w"), str(int(width)))
+        tbl_grid.append(col)
+
+
+def _set_eval_cell(
+    cell: Any,
+    text: Any,
+    *,
+    bold: bool = False,
+    center: bool = False,
+    top: bool = False,
+    size: float = 10.5,
+) -> None:
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    cell.text = ""
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP if top else WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    _set_cell_margins(cell, top=28, bottom=28, left=72, right=72)
+    lines = str(_stringify(text)).replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    for index, line in enumerate(lines):
+        para = cell.paragraphs[0] if index == 0 else cell.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER if center else WD_ALIGN_PARAGRAPH.LEFT
+        para.paragraph_format.space_before = _pt(0)
+        para.paragraph_format.space_after = _pt(0)
+        para.paragraph_format.line_spacing = 1.05
+        if line.strip():
+            _set_run_songti(para.add_run(line), size, bold=bold)
+
+
+def _add_evaluation_table(
+    document: Any,
+    fields: dict[str, Any],
+    indicators: list[Any],
+    total_text: str,
+    rating: str,
+    analysis: str,
+) -> None:
+    scores: list[str] = []
+    for item in indicators:
+        scores.append(str((item or {}).get("score") or "") if isinstance(item, dict) else "")
+    while len(scores) < 10:
+        scores.append("")
+
+    row_count = 17  # 2 meta + 1 header + 10 indicators + 合计 + 综合 + 分析标题 + 分析正文
+    table = document.add_table(rows=row_count, cols=len(_EVAL_GRID_TWIPS))
+    table.autofit = False
+    table.alignment = 1
+    _set_eval_table_geometry(table)
+    _set_table_borders(table, color="000000", size=4)
+
+    def fill(row_index: int, height: int, spans: list[tuple[int, int, Any, dict[str, Any]]]) -> None:
+        row = table.rows[row_index]
+        _set_row_height_twips(row, height)
+        for start, end, text, opts in spans:
+            cell = row.cells[start]
+            if end - 1 > start:
+                cell = row.cells[start].merge(row.cells[end - 1])
+            _set_cell_width_twips(cell, sum(_EVAL_GRID_TWIPS[start:end]))
+            _set_eval_cell(cell, text, **opts)
+
+    label = dict(center=True)
+    value = dict(center=True)
+
+    # Meta rows (课程名称 / 授课班级 / 所在二级学院 · 任课教师 / 教师职称 / 评价时间)
+    fill(0, 620, [
+        (0, 1, "课程名称", label), (1, 4, _field(fields, "course_name"), value),
+        (4, 6, "授课班级", label), (6, 9, _field(fields, "class_name"), value),
+        (9, 14, "所在二级学院", label), (14, 16, _field(fields, "college"), value),
+    ])
+    fill(1, 540, [
+        (0, 1, "任课教师", label), (1, 4, _field(fields, "teacher_name"), value),
+        (4, 6, "教师职称", label), (6, 9, _field(fields, "teacher_title"), value),
+        (9, 14, "评价时间", label), (14, 16, _field(fields, "evaluate_date"), value),
+    ])
+
+    # Indicator table header
+    header = dict(center=True, bold=True)
+    fill(2, 660, [
+        (0, 1, "评价\n项目", header), (1, 10, "评价指标", header),
+        (10, 13, "总分\n值", header), (13, 16, "评价得分", header),
+    ])
+
+    # 10 fixed indicator rows
+    group_first = {0: "学习\n态度", 2: "学习\n过程", 7: "学习\n效果\n（结合试卷、作业分析）"}
+    for i in range(10):
+        r = 3 + i
+        group_text = group_first.get(i, "")
+        fill(r, 510, [
+            (0, 1, group_text, dict(center=True)),
+            (1, 10, _indicator_text(indicators, i), dict()),
+            (10, 13, "10", dict(center=True)),
+            (13, 16, scores[i], dict(center=True)),
+        ])
+    # Vertical-merge the group label column within each group.
+    table.cell(3, 0).merge(table.cell(4, 0))
+    table.cell(5, 0).merge(table.cell(9, 0))
+    table.cell(10, 0).merge(table.cell(12, 0))
+
+    # 合计 / 综合评价 / 分析
+    fill(13, 580, [
+        (0, 10, "合计", dict(center=True, bold=True)),
+        (10, 13, "100", dict(center=True, bold=True)),
+        (13, 16, total_text, dict(center=True, bold=True)),
+    ])
+    fill(14, 520, [
+        (0, 2, "综合评价（√）", dict(center=True)),
+        (2, 3, "优秀", dict(center=True)), (3, 5, _rating_mark(rating, "优秀"), dict(center=True, bold=True)),
+        (5, 7, "良好", dict(center=True)), (7, 8, _rating_mark(rating, "良好"), dict(center=True, bold=True)),
+        (8, 11, "一般", dict(center=True)), (11, 12, _rating_mark(rating, "一般"), dict(center=True, bold=True)),
+        (12, 15, "较差", dict(center=True)), (15, 16, _rating_mark(rating, "较差"), dict(center=True, bold=True)),
+    ])
+    fill(15, 420, [(0, 16, "对学生学习情况的分析和今后教学改革建议：", dict())])
+    fill(16, 2300, [(0, 16, analysis, dict(top=True))])
+
+
+def _indicator_text(indicators: list[Any], index: int) -> str:
+    if index < len(indicators) and isinstance(indicators[index], dict):
+        text = str(indicators[index].get("indicator") or "").strip()
+        if text:
+            return text
+    from .teacher_evaluation_service import EVALUATION_INDICATORS
+
+    return EVALUATION_INDICATORS[index][1] if index < len(EVALUATION_INDICATORS) else ""
+
+
+def _rating_mark(rating: str, bucket: str) -> str:
+    return "√" if str(rating or "").strip() == bucket else ""
 
 
 def _build_xlsx_export(payload: dict[str, Any], *, title: str) -> bytes:
