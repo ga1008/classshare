@@ -199,6 +199,7 @@ const state = {
     },
     aiGenerate: {
         busy: false,
+        blockedReason: '',
         files: [],
         selectedMaterials: new Map(),
         selectedAssignments: new Map(),
@@ -251,7 +252,14 @@ const state = {
     },
 };
 
-const config = window.MATERIALS_MANAGE_CONFIG || { offerings: [], canAssign: false, materialAiImportRegistry: [], initialAiGenerate: {}, initialLibraryFilter: {} };
+const config = window.MATERIALS_MANAGE_CONFIG || {
+    offerings: [],
+    canAssign: false,
+    materialAiImportRegistry: [],
+    initialAiGenerate: {},
+    initialAiImport: {},
+    initialLibraryFilter: {},
+};
 
 const refs = {
     listBody: document.getElementById('materials-list-body'),
@@ -438,11 +446,48 @@ function getInitialAiGeneratePreset() {
         document_type: documentType,
         prompt: normalizeKeyword(params.get('prompt') || initial.prompt || ''),
         status: normalizeKeyword(initial.status || ''),
+        blocked: Boolean(initial.blocked),
+    };
+}
+
+function getInitialAiImportPreset() {
+    const params = new URLSearchParams(window.location.search);
+    const initial = config.initialAiImport && typeof config.initialAiImport === 'object'
+        ? config.initialAiImport
+        : {};
+    const openValue = String(params.get('open') || params.get('action') || '').trim();
+    const shouldOpen = Boolean(initial.open)
+        || openValue === 'ai-import'
+        || openValue === 'import'
+        || params.get('ai_import') === '1';
+    const documentGroup = normalizeKeyword(
+        params.get('import_document_group')
+        || params.get('document_group')
+        || params.get('group')
+        || initial.document_group
+        || initial.group
+    );
+    const documentType = normalizeKeyword(
+        params.get('import_document_type')
+        || params.get('document_type')
+        || params.get('type')
+        || initial.document_type
+        || initial.type
+    );
+    if (!shouldOpen && !documentGroup && !documentType && !initial.status) {
+        return null;
+    }
+    return {
+        open: shouldOpen,
+        document_group: documentGroup,
+        document_type: documentType,
+        status: normalizeKeyword(initial.status || ''),
     };
 }
 
 function applyAiGeneratePreset(preset) {
     if (!preset || !refs.aiGenerateGroup || !refs.aiGenerateType) return;
+    state.aiGenerate.blockedReason = '';
     const desiredGroup = String(preset.document_group || preset.group || '').trim();
     const desiredType = String(preset.document_type || preset.type || '').trim();
     const groupOption = desiredGroup
@@ -452,6 +497,7 @@ function applyAiGeneratePreset(preset) {
         refs.aiGenerateGroup.value = desiredGroup;
     }
     updateAiGenerateTypeOptions();
+    let typeApplied = false;
     if (desiredType) {
         const typeOption = Array.from(refs.aiGenerateType.options || []).find((option) => (
             option.value === desiredType
@@ -462,13 +508,18 @@ function applyAiGeneratePreset(preset) {
         if (typeOption) {
             refs.aiGenerateType.value = desiredType;
             updateAiGeneratePromptPlaceholder();
+            typeApplied = true;
         }
     }
     const prompt = String(preset.prompt || '').trim();
     if (prompt && refs.aiGeneratePrompt) {
         refs.aiGeneratePrompt.value = prompt;
     }
-    if (preset.status) {
+    if (preset.blocked && desiredType && !typeApplied) {
+        state.aiGenerate.blockedReason = preset.status || '当前材料类型不能在材料库中泛化生成。';
+        setAiGenerateStatus(state.aiGenerate.blockedReason, 'warning');
+        updateAiGenerateSubmitState();
+    } else if (preset.status) {
         setAiGenerateStatus(preset.status, 'info');
     }
 }
@@ -1533,6 +1584,26 @@ function renderAiImportTypes() {
     )).join('');
 }
 
+function applyAiImportPreset(preset) {
+    if (!preset || !refs.aiImportGroup || !refs.aiImportType) return;
+    const desiredGroup = String(preset.document_group || preset.group || '').trim();
+    const desiredType = String(preset.document_type || preset.type || '').trim();
+    if (desiredGroup) {
+        const groupOption = Array.from(refs.aiImportGroup.options || [])
+            .find((option) => option.value === desiredGroup);
+        if (groupOption) {
+            refs.aiImportGroup.value = desiredGroup;
+            renderAiImportTypes();
+        }
+    }
+    if (desiredType) {
+        const typeOption = Array.from(refs.aiImportType.options || [])
+            .find((option) => option.value === desiredType);
+        if (typeOption) refs.aiImportType.value = desiredType;
+    }
+    if (preset.status) setAiImportStatus(preset.status, 'info');
+}
+
 function updateAiImportFileLabel() {
     if (!refs.aiImportFileName) return;
     refs.aiImportFileName.textContent = state.aiImport.file ? state.aiImport.file.name : '未选择文件';
@@ -1801,7 +1872,7 @@ function startAiImportPolling() {
     }, AI_IMPORT_POLL_INTERVAL_MS);
 }
 
-function openAiImportModal() {
+function openAiImportModal(preset = getInitialAiImportPreset()) {
     if (!getAiImportRegistry().length) {
         showToast('材料解析类型暂未加载', 'error');
         return;
@@ -1809,8 +1880,9 @@ function openAiImportModal() {
     state.aiImport.file = null;
     if (refs.aiImportFileInput) refs.aiImportFileInput.value = '';
     renderAiImportGroups();
+    applyAiImportPreset(preset);
     updateAiImportFileLabel();
-    setAiImportStatus('', 'info');
+    if (!preset?.status) setAiImportStatus('', 'info');
     setAiImportBusy(false);
     openModal('materials-ai-import-modal');
 }
@@ -1878,12 +1950,16 @@ function setAiGenerateStatus(message = '', type = 'info') {
     refs.aiGenerateStatus.textContent = normalizedMessage;
 }
 
+function updateAiGenerateSubmitState() {
+    if (!refs.aiGenerateSubmitBtn) return;
+    const blocked = Boolean(state.aiGenerate.blockedReason);
+    refs.aiGenerateSubmitBtn.disabled = state.aiGenerate.busy || blocked;
+    refs.aiGenerateSubmitBtn.textContent = state.aiGenerate.busy ? '深度思考中...' : '生成并保存';
+}
+
 function setAiGenerateBusy(busy) {
     state.aiGenerate.busy = busy;
-    if (refs.aiGenerateSubmitBtn) {
-        refs.aiGenerateSubmitBtn.disabled = busy;
-        refs.aiGenerateSubmitBtn.textContent = busy ? '深度思考中...' : '生成并保存';
-    }
+    updateAiGenerateSubmitState();
     [
         refs.aiGeneratePrompt,
         refs.aiGenerateUploadBtn,
@@ -1895,6 +1971,7 @@ function setAiGenerateBusy(busy) {
 }
 
 function resetAiGenerateState() {
+    state.aiGenerate.blockedReason = '';
     state.aiGenerate.files = [];
     state.aiGenerate.selectedMaterials = new Map();
     state.aiGenerate.selectedAssignments = new Map();
@@ -2136,6 +2213,10 @@ function openAiGenerateModal(preset = null) {
 
 async function submitAiGenerate() {
     if (state.aiGenerate.busy) return;
+    if (state.aiGenerate.blockedReason) {
+        showToast(state.aiGenerate.blockedReason, 'warning');
+        return;
+    }
     const count = getAiGenerateAttachmentCount();
     const prompt = refs.aiGeneratePrompt?.value?.trim() || '';
     if (!prompt && count <= 0) {
@@ -3645,11 +3726,17 @@ function bindEvents() {
     refs.aiGenerateAssignmentQuery?.addEventListener('input', () => triggerAiGenerateCandidateSearch('assignment'));
 
     refs.aiGenerateGroup?.addEventListener('change', () => {
+        state.aiGenerate.blockedReason = '';
+        setAiGenerateStatus('', 'info');
         updateAiGenerateTypeOptions();
+        updateAiGenerateSubmitState();
     });
 
     refs.aiGenerateType?.addEventListener('change', () => {
+        state.aiGenerate.blockedReason = '';
+        setAiGenerateStatus('', 'info');
         updateAiGeneratePromptPlaceholder();
+        updateAiGenerateSubmitState();
     });
 
     refs.aiGenerateSubmitBtn?.addEventListener('click', () => {
@@ -3888,4 +3975,9 @@ loadLibrary(state.currentParentId, false).catch(async (error) => {
 const initialAiGeneratePreset = getInitialAiGeneratePreset();
 if (initialAiGeneratePreset?.open) {
     window.setTimeout(() => openAiGenerateModal(initialAiGeneratePreset), 0);
+}
+
+const initialAiImportPreset = getInitialAiImportPreset();
+if (initialAiImportPreset?.open) {
+    window.setTimeout(() => openAiImportModal(initialAiImportPreset), 0);
 }

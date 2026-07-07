@@ -113,6 +113,36 @@ def _build_material_type_registry() -> list[dict[str, Any]]:
     return type_registry
 
 
+GRADE_RECORD_IMPORT_PRESETS: dict[str, dict[str, Any]] = {
+    "ordinary_grade_record": {
+        "document_group": "final_material",
+        "document_type": "ordinary_grade_record",
+        "status": "可上传平时成绩记录表 Excel 进行结构化解析；如需从课堂数据生成，请进入具体课堂的“课程材料”，选择 3 份作业和 1 份测评后生成。",
+    },
+    "exam_grade_record": {
+        "document_group": "final_material",
+        "document_type": "exam_grade_record",
+        "status": "可上传考核登分表 Excel 进行结构化解析；如需从课堂考试成绩生成，请进入具体课堂的“课程材料”，选择已绑定试卷的考试后生成。",
+    },
+}
+
+
+GRADE_RECORD_GENERATE_BLOCKERS: dict[str, dict[str, Any]] = {
+    "ordinary_grade_record": {
+        "document_group": "final_material",
+        "document_type": "ordinary_grade_record",
+        "blocked": True,
+        "status": "平时成绩表必须基于真实课堂考勤、3 份作业和 1 份测评生成，不能在材料库中泛化生成；本页支持上传 Excel 后解析入库并导出 Excel。",
+    },
+    "exam_grade_record": {
+        "document_group": "final_material",
+        "document_type": "exam_grade_record",
+        "blocked": True,
+        "status": "考核登分表必须基于具体课堂考试成绩生成，不能在材料库中泛化生成；本页支持上传 Excel 后解析入库并导出 Excel。",
+    },
+}
+
+
 def _render_manage_materials_page(
     request: Request,
     user: dict,
@@ -122,6 +152,7 @@ def _render_manage_materials_page(
     page_heading: str = "课程资料与 Git 教学仓库",
     page_lead: str = "批量上传、目录浏览、模糊搜索与排序，保留课堂分配、AI 解析与仓库同步。",
     initial_ai_generate: dict[str, Any] | None = None,
+    initial_ai_import: dict[str, Any] | None = None,
     initial_library_filter: dict[str, Any] | None = None,
 ):
     with get_db_connection() as conn:
@@ -158,6 +189,7 @@ def _render_manage_materials_page(
                 "materials_page_heading": page_heading,
                 "materials_page_lead": page_lead,
                 "initial_ai_generate": initial_ai_generate or {},
+                "initial_ai_import": initial_ai_import or {},
                 "initial_library_filter": initial_library_filter or {},
             },
         ),
@@ -199,6 +231,8 @@ async def manage_ordinary_grade_records_page(request: Request, user: dict = Depe
         page_heading="平时成绩表",
         page_lead="管理由课堂考勤、作业与测评生成，或从 Excel 导入解析的学生平时成绩记录表；可设置私有、系部、院级、校级公开并导出 Excel。",
         initial_library_filter={"document_type": "ordinary_grade_record"},
+        initial_ai_import=GRADE_RECORD_IMPORT_PRESETS["ordinary_grade_record"],
+        initial_ai_generate=GRADE_RECORD_GENERATE_BLOCKERS["ordinary_grade_record"],
     )
 
 
@@ -212,6 +246,8 @@ async def manage_exam_grade_records_page(request: Request, user: dict = Depends(
         page_heading="考核登分表",
         page_lead="管理由课堂考试生成，或从 Excel 导入解析的期末考核登分表；保留大题列、总分校验、开放范围与 Excel 导出。",
         initial_library_filter={"document_type": "exam_grade_record"},
+        initial_ai_import=GRADE_RECORD_IMPORT_PRESETS["exam_grade_record"],
+        initial_ai_generate=GRADE_RECORD_GENERATE_BLOCKERS["exam_grade_record"],
     )
 
 

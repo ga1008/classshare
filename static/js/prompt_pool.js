@@ -3,6 +3,7 @@ import { escapeHtml } from './ui.js';
 
 const DEFAULT_LIMIT = 20;
 const CACHE_TTL_MS = 45000;
+const MAX_HIGHLIGHT_TERMS = 5;
 const CONTROLLER_KEY = '__lansharePromptPool';
 const debounceTimers = new WeakMap();
 const suggestionCache = new Map();
@@ -16,8 +17,58 @@ function normalizePrompt(value) {
     return String(value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
 }
 
+function queryTerms(query) {
+    const text = normalizePrompt(query).slice(0, 200);
+    if (!text) return [];
+    const parts = text.split(/\s+/).filter(Boolean);
+    return (parts.length ? parts : [text])
+        .slice(0, MAX_HIGHLIGHT_TERMS)
+        .map((term) => term.toLocaleLowerCase())
+        .filter(Boolean);
+}
+
 function labelText(input) {
     return input?.dataset?.promptPoolLabel || '分享到全局提示词池';
+}
+
+function highlightPrompt(prompt, query) {
+    const text = normalizePrompt(prompt);
+    const terms = queryTerms(query);
+    if (!text || !terms.length) return escapeHtml(text);
+
+    const lowerText = text.toLocaleLowerCase();
+    const ranges = [];
+    terms.forEach((term) => {
+        let from = 0;
+        while (term && from < lowerText.length) {
+            const index = lowerText.indexOf(term, from);
+            if (index < 0) break;
+            ranges.push([index, index + term.length]);
+            from = index + Math.max(term.length, 1);
+        }
+    });
+    if (!ranges.length) return escapeHtml(text);
+
+    ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+    const merged = [];
+    ranges.forEach(([start, end]) => {
+        const last = merged[merged.length - 1];
+        if (!last || start > last[1]) {
+            merged.push([start, end]);
+        } else if (end > last[1]) {
+            last[1] = end;
+        }
+    });
+
+    let cursor = 0;
+    let html = '';
+    merged.forEach(([start, end]) => {
+        if (start > cursor) html += escapeHtml(text.slice(cursor, start));
+        html += `<mark>${escapeHtml(text.slice(start, end))}</mark>`;
+        cursor = end;
+    });
+    if (cursor < text.length) html += escapeHtml(text.slice(cursor));
+    return html;
 }
 
 function cacheKey(featureKey, query) {
@@ -50,12 +101,17 @@ function invalidateFeatureCache(featureKey) {
 }
 
 function ensurePanel(input, featureKey) {
+    const shareId = `prompt-pool-share-${++panelIdSeed}`;
     const shareRow = document.createElement('label');
     shareRow.className = 'prompt-pool-share';
+    shareRow.setAttribute('for', shareId);
+    shareRow.title = '取消勾选后，本次输入只用于当前生成，不进入共享提示词池。';
     shareRow.innerHTML = `
-        <input type="checkbox" data-prompt-pool-share checked>
+        <input id="${shareId}" type="checkbox" data-prompt-pool-share checked>
         <span>${escapeHtml(labelText(input))}</span>
+        <small>取消则不记录</small>
     `;
+    const checkbox = shareRow.querySelector('[data-prompt-pool-share]');
 
     const panel = document.createElement('div');
     panel.className = 'prompt-pool-panel';
@@ -69,9 +125,10 @@ function ensurePanel(input, featureKey) {
     input.insertAdjacentElement('afterend', shareRow);
     input.setAttribute('autocomplete', 'off');
     input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-haspopup', 'listbox');
     input.setAttribute('aria-expanded', 'false');
     input.setAttribute('aria-controls', panel.id);
-    return { shareRow, panel };
+    return { shareRow, panel, checkbox };
 }
 
 function renderPanel(panel, items, { loading = false, query = '', activeIndex = -1 } = {}) {
@@ -79,12 +136,20 @@ function renderPanel(panel, items, { loading = false, query = '', activeIndex = 
     panel.__promptPoolItems = [];
     if (loading) {
         panel.hidden = false;
-        panel.innerHTML = '<div class="prompt-pool-empty">正在读取共享提示词...</div>';
+        panel.innerHTML = `
+            <div class="prompt-pool-empty prompt-pool-empty--loading" role="status">
+                <span class="prompt-pool-spinner"></span>
+                <span>正在读取共享提示词...</span>
+            </div>`;
         return;
     }
     if (!safeItems.length) {
         panel.hidden = false;
-        panel.innerHTML = `<div class="prompt-pool-empty">${query ? '没有匹配的共享提示词' : '当前功能还没有共享提示词'}</div>`;
+        panel.innerHTML = `
+            <div class="prompt-pool-empty" role="status">
+                <strong>${query ? '没有匹配的共享提示词' : '当前功能还没有共享提示词'}</strong>
+                <span>${query ? '换个关键词试试，或直接输入新的提示。' : '输入并生成成功后，可选择分享到这里。'}</span>
+            </div>`;
         return;
     }
     const title = query ? '匹配的共享提示词' : '常用共享提示词';
@@ -93,21 +158,28 @@ function renderPanel(panel, items, { loading = false, query = '', activeIndex = 
     panel.innerHTML = `
         <div class="prompt-pool-panel__head">
             <strong>${title}</strong>
-            <span>按使用次数排序</span>
+            <span>${safeItems.length} 条 · 按使用次数排序</span>
         </div>
         <div class="prompt-pool-list">
             ${safeItems.map((item, index) => {
                 const isActive = index === activeIndex;
+                const optionId = `${panel.id}-option-${index}`;
+                const prompt = normalizePrompt(item.prompt);
                 return `
                     <button
                         type="button"
+                        id="${optionId}"
                         class="prompt-pool-item${isActive ? ' is-active' : ''}"
                         data-prompt-pool-use-index="${index}"
                         role="option"
                         aria-selected="${isActive ? 'true' : 'false'}"
+                        title="${escapeHtml(prompt)}"
                     >
-                        <span>${escapeHtml(item.prompt)}</span>
-                        <em>${Number(item.use_count || 0)} 次</em>
+                        <span class="prompt-pool-item__text">${highlightPrompt(prompt, query)}</span>
+                        <span class="prompt-pool-item__meta">
+                            <em>${Number(item.use_count || 0)} 次</em>
+                            <b>点击套用</b>
+                        </span>
                     </button>
                 `;
             }).join('')}
@@ -117,6 +189,22 @@ function renderPanel(panel, items, { loading = false, query = '', activeIndex = 
 
 function setPanelExpanded(controller, expanded) {
     controller.input.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    if (!expanded) {
+        controller.input.removeAttribute('aria-activedescendant');
+    }
+}
+
+function syncActiveDescendant(controller) {
+    if (!controller || controller.activeIndex < 0) {
+        controller?.input?.removeAttribute('aria-activedescendant');
+        return;
+    }
+    const active = controller.panel.querySelector(`[data-prompt-pool-use-index="${controller.activeIndex}"]`);
+    if (active?.id) {
+        controller.input.setAttribute('aria-activedescendant', active.id);
+    } else {
+        controller.input.removeAttribute('aria-activedescendant');
+    }
 }
 
 function visibleSuggestionButtons(controller) {
@@ -132,6 +220,7 @@ function applySuggestions(controller, items, query, activeIndex = -1) {
     controller.activeIndex = activeIndex;
     renderPanel(controller.panel, controller.items, { query, activeIndex });
     setPanelExpanded(controller, true);
+    syncActiveDescendant(controller);
 }
 
 async function fetchSuggestions(controller, query = '') {
@@ -176,6 +265,7 @@ function hidePanel(controller) {
     controller.panel.hidden = true;
     controller.activeIndex = -1;
     setPanelExpanded(controller, false);
+    syncActiveDescendant(controller);
 }
 
 function moveActive(controller, direction) {
@@ -190,11 +280,14 @@ function moveActive(controller, direction) {
         query: controller.lastQuery,
         activeIndex: next,
     });
+    syncActiveDescendant(controller);
     visibleSuggestionButtons(controller)[next]?.scrollIntoView({ block: 'nearest' });
 }
 
 function selectSuggestion(controller, index) {
-    const value = Number.isInteger(index) ? (controller.panel.__promptPoolItems?.[index] || '') : '';
+    const value = Number.isInteger(index)
+        ? normalizePrompt(controller.items?.[index]?.prompt || controller.panel.__promptPoolItems?.[index] || '')
+        : '';
     if (!value) return;
     controller.input.value = value;
     controller.suppressNextInputSuggestions = true;
@@ -209,13 +302,12 @@ export function enhancePromptPoolInput(input, options = {}) {
     const featureKey = normalizeFeatureKey(options.featureKey || input.dataset.promptPoolKey);
     if (!featureKey) return null;
     input.dataset.promptPoolKey = featureKey;
-    const { panel } = ensurePanel(input, featureKey);
-    const checkbox = input.parentElement?.querySelector('[data-prompt-pool-share]')
-        || panel.parentElement?.querySelector('[data-prompt-pool-share]');
+    const { shareRow, panel, checkbox } = ensurePanel(input, featureKey);
     const controller = {
         input,
         featureKey,
         panel,
+        shareRow,
         checkbox,
         items: [],
         activeIndex: -1,
@@ -228,6 +320,7 @@ export function enhancePromptPoolInput(input, options = {}) {
             hidePanel(controller);
         },
         show() {
+            if (input.disabled) return;
             fetchSuggestions(controller, input.value || '');
         },
         record(prompt = input.value) {
@@ -264,10 +357,23 @@ export function enhancePromptPoolInput(input, options = {}) {
     });
     input.addEventListener('blur', () => {
         window.setTimeout(() => {
-            if (!panel.matches(':hover') && document.activeElement !== input) {
+            if (!panel.matches(':hover') && !shareRow.matches(':hover') && document.activeElement !== input) {
                 controller.hide();
             }
         }, 150);
+    });
+    checkbox?.addEventListener('change', () => {
+        shareRow.classList.toggle('is-off', !checkbox.checked);
+    });
+    document.addEventListener('pointerdown', (event) => {
+        if (
+            event.target === input
+            || panel.contains(event.target)
+            || shareRow.contains(event.target)
+        ) {
+            return;
+        }
+        controller.hide();
     });
     panel.addEventListener('mousedown', (event) => {
         if (event.target.closest('[data-prompt-pool-use-index]')) event.preventDefault();
@@ -297,7 +403,7 @@ export async function recordPromptForInput(input, prompt = input?.value) {
     try {
         const result = await apiFetch('/api/prompt-pool/record', {
             method: 'POST',
-            body: { feature_key: controller.featureKey, prompt: text },
+            body: { feature_key: controller.featureKey, prompt: text, share: controller.getShareEnabled() },
             silent: true,
         });
         invalidateFeatureCache(controller.featureKey);
@@ -324,6 +430,7 @@ export function isPromptShareEnabled(input) {
 window.PromptPool = {
     enhancePromptPoolInput,
     enhancePromptPoolInputs,
+    getPromptPoolController,
     recordPromptForInput,
     recordPromptPoolInputs,
     isPromptShareEnabled,

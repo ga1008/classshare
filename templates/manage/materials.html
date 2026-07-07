@@ -271,7 +271,6 @@
                             <option value="assessment_plan" data-group="final_material">课程考核计划表</option>
                             <option value="exam_paper" data-group="final_material">课程考核试卷</option>
                             <option value="grading_rubric" data-group="final_material">评分细则</option>
-                            <option value="exam_grade_record" data-group="final_material">考核登分表</option>
                         </select>
                     </label>
                 </div>
@@ -748,6 +747,7 @@
         userIdentityHints: {{ [(user_info.name | default('', true)), (user_info.email | default('', true))] | tojson }},
         materialAiImportRegistry: {{ material_ai_import_registry | tojson }},
         initialAiGenerate: {{ initial_ai_generate | default({}) | tojson }},
+        initialAiImport: {{ initial_ai_import | default({}) | tojson }},
         initialLibraryFilter: {{ initial_library_filter | default({}) | tojson }}
     };
 </script>

@@ -46,7 +46,8 @@ async def record_prompt(request: Request, user: dict = Depends(get_current_user)
     body = await _json_body(request)
     try:
         with get_db_connection() as conn:
-            prompt = pool.record_prompt(conn, body.get("feature_key"), body.get("prompt"))
+            share = body.get("share", body.get("share_prompt", True))
+            prompt = pool.record_prompt_if_shared(conn, body.get("feature_key"), body.get("prompt"), share)
             conn.commit()
     except ValueError as exc:
         raise HTTPException(400, "提示词功能范围不正确") from exc

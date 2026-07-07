@@ -14,6 +14,16 @@ _MAX_QUERY_CHARS = 200
 _MAX_SEARCH_TERMS = 5
 _MAX_SEARCH_TERM_CHARS = 80
 _LIKE_ESCAPE = "/"
+_SHARE_DISABLED_VALUES = {"0", "false", "no", "off", "unchecked", "disabled", "不", "否"}
+_SENSITIVE_PROMPT_PATTERNS = (
+    re.compile(r"(?i)-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----"),
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{16,}"),
+    re.compile(r"(?i)\b(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})\b"),
+    re.compile(
+        r"(?i)\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|passwd|cookie|sessionid|private[_-]?key)\b\s*[:=]\s*\S+"
+    ),
+    re.compile(r"(?:密码|口令|令牌|密钥|私钥|会话|cookie)\s*[:：=]\s*\S+"),
+)
 
 
 def normalize_feature_key(value: Any) -> str:
@@ -32,6 +42,21 @@ def normalize_prompt_text(value: Any) -> str:
 
 def prompt_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def prompt_looks_sensitive(text: str) -> bool:
+    """Return True when a shared prompt appears to contain credentials."""
+    return any(pattern.search(text or "") for pattern in _SENSITIVE_PROMPT_PATTERNS)
+
+
+def share_enabled(value: Any = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() not in _SHARE_DISABLED_VALUES
+    return True
 
 
 def search_terms(value: Any) -> list[str]:
@@ -70,6 +95,8 @@ def record_prompt(conn: Any, feature_key: Any, prompt: Any) -> dict[str, Any] | 
     text = normalize_prompt_text(prompt)
     if not text:
         return None
+    if prompt_looks_sensitive(text):
+        return None
     digest = prompt_hash(text)
     conn.execute(
         """
@@ -92,9 +119,7 @@ def record_prompt(conn: Any, feature_key: Any, prompt: Any) -> dict[str, Any] | 
 
 
 def record_prompt_if_shared(conn: Any, feature_key: Any, prompt: Any, share: Any = True) -> dict[str, Any] | None:
-    if share is False:
-        return None
-    if isinstance(share, str) and share.strip().lower() in {"0", "false", "no", "off", "unchecked"}:
+    if not share_enabled(share):
         return None
     return record_prompt(conn, feature_key, prompt)
 
