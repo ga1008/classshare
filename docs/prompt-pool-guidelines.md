@@ -20,9 +20,12 @@ pool.
   a second row.
 - Suggestions show the top 20 prompts for the current feature, ordered by
   `use_count DESC, created_at DESC`. Empty input shows the top 20; typing uses
-  fuzzy `LIKE` search within the same feature.
+  multi-term fuzzy `LIKE` search within the same feature.
 - Suggestions must render below the input and share checkbox, not as an overlay
   that covers the text area.
+- Suggestions must be usable by mouse and keyboard. `ArrowUp` / `ArrowDown`
+  move through visible suggestions, `Enter` applies the active suggestion, and
+  `Escape` closes the panel.
 
 ## Backend Contract
 
@@ -35,6 +38,11 @@ pool.
 Use `record_prompt_if_shared(conn, feature_key, prompt, share)` when a backend
 AI endpoint already receives the share flag. For frontend-only recording, record
 after the relevant business request succeeds.
+
+Schema creation belongs to application startup through `init_database()`. Do
+not call schema initialization in high-frequency prompt-pool read/write paths;
+tests that use an in-memory database should initialize the prompt-pool schema
+explicitly.
 
 ## Frontend Contract
 
@@ -64,3 +72,7 @@ rendering. For reusable menu + form modals, prefer `tree_select_form_modal.js`
 and pass `promptPoolKey`.
 
 Do not record on failed AI calls, validation failures, or canceled dialogs.
+
+`prompt_pool.js` keeps a short client-side suggestion cache per feature/query
+so repeated focus events do not flood the API. Successful recording invalidates
+the current feature cache so updated usage counts appear on the next open.

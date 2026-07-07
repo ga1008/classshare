@@ -5,6 +5,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from classroom_app.app import app
+from classroom_app.db.schema_prompt_pool import ensure_prompt_pool_schema
 from classroom_app.dependencies import get_current_user
 from classroom_app.routers import prompt_pool as router_mod
 from classroom_app.services import prompt_pool_service as svc
@@ -18,7 +19,13 @@ class PromptPoolServiceTests(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
+    def _ensure_schema(self):
+        ensure_prompt_pool_schema(self.conn)
+        self.conn.commit()
+
     def test_record_deduplicates_prompt_and_increments_use_count(self):
+        self._ensure_schema()
+
         first = svc.record_prompt(self.conn, "teacher_evaluation.rewrite_analysis", "make it more detailed")
         second = svc.record_prompt(self.conn, "teacher_evaluation.rewrite_analysis", "make it more detailed")
 
@@ -28,6 +35,8 @@ class PromptPoolServiceTests(unittest.TestCase):
         self.assertEqual(rows["count"], 1)
 
     def test_feature_key_isolation_and_search_order(self):
+        self._ensure_schema()
+
         svc.record_prompt(self.conn, "materials.ai_generate", "review outline")
         svc.record_prompt(self.conn, "materials.ai_generate", "review outline")
         svc.record_prompt(self.conn, "materials.ai_generate", "classroom drill")
@@ -37,6 +46,32 @@ class PromptPoolServiceTests(unittest.TestCase):
 
         self.assertEqual([item["prompt"] for item in prompts], ["review outline"])
         self.assertEqual([item["use_count"] for item in prompts], [2])
+
+    def test_multi_term_fuzzy_search_requires_all_terms_and_keeps_hot_order(self):
+        self._ensure_schema()
+
+        svc.record_prompt(self.conn, "materials.ai_generate", "homework exam evidence")
+        svc.record_prompt(self.conn, "materials.ai_generate", "homework exam evidence")
+        svc.record_prompt(self.conn, "materials.ai_generate", "exam homework evidence with examples")
+        svc.record_prompt(self.conn, "materials.ai_generate", "homework classroom participation")
+
+        prompts = svc.search_prompts(self.conn, "materials.ai_generate", "homework exam", limit=20)
+
+        self.assertEqual(
+            [item["prompt"] for item in prompts],
+            ["homework exam evidence", "exam homework evidence with examples"],
+        )
+        self.assertEqual([item["use_count"] for item in prompts], [2, 1])
+
+    def test_search_treats_like_wildcards_as_plain_text(self):
+        self._ensure_schema()
+
+        svc.record_prompt(self.conn, "materials.ai_generate", "100% homework review")
+        svc.record_prompt(self.conn, "materials.ai_generate", "100 point homework review")
+
+        prompts = svc.search_prompts(self.conn, "materials.ai_generate", "100%", limit=20)
+
+        self.assertEqual([item["prompt"] for item in prompts], ["100% homework review"])
 
     def test_record_prompt_if_shared_respects_opt_out_and_empty_prompt(self):
         self.assertIsNone(svc.record_prompt_if_shared(self.conn, "materials.ai_generate", "private prompt", False))
@@ -57,6 +92,8 @@ class PromptPoolApiTests(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:", check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        ensure_prompt_pool_schema(self.conn)
+        self.conn.commit()
         self.client = TestClient(app)
         self.previous_override = app.dependency_overrides.get(get_current_user)
         app.dependency_overrides[get_current_user] = lambda: {"id": 1, "role": "teacher"}

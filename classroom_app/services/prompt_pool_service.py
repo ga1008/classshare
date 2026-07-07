@@ -7,10 +7,13 @@ import re
 from typing import Any
 
 from ..db.row import row_to_mapping, rows_to_mappings
-from ..db.schema_prompt_pool import ensure_prompt_pool_schema
 
 _FEATURE_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{1,96}$")
 _MAX_PROMPT_CHARS = 3000
+_MAX_QUERY_CHARS = 200
+_MAX_SEARCH_TERMS = 5
+_MAX_SEARCH_TERM_CHARS = 80
+_LIKE_ESCAPE = "/"
 
 
 def normalize_feature_key(value: Any) -> str:
@@ -31,6 +34,25 @@ def prompt_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def search_terms(value: Any) -> list[str]:
+    query = normalize_prompt_text(value)[:_MAX_QUERY_CHARS]
+    if not query:
+        return []
+    parts = [part for part in re.split(r"\s+", query) if part]
+    if len(parts) <= 1:
+        return [query[:_MAX_SEARCH_TERM_CHARS]]
+    return [part[:_MAX_SEARCH_TERM_CHARS] for part in parts[:_MAX_SEARCH_TERMS]]
+
+
+def like_contains_pattern(term: str) -> str:
+    escaped = (
+        term.replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
+        .replace("%", f"{_LIKE_ESCAPE}%")
+        .replace("_", f"{_LIKE_ESCAPE}_")
+    )
+    return f"%{escaped}%"
+
+
 def serialize_prompt(row: dict[str, Any] | None) -> dict[str, Any] | None:
     if not row:
         return None
@@ -49,7 +71,6 @@ def record_prompt(conn: Any, feature_key: Any, prompt: Any) -> dict[str, Any] | 
     if not text:
         return None
     digest = prompt_hash(text)
-    ensure_prompt_pool_schema(conn)
     conn.execute(
         """
         INSERT INTO ai_prompt_pool (feature_key, prompt_hash, prompt_text, use_count, created_at)
@@ -80,19 +101,19 @@ def record_prompt_if_shared(conn: Any, feature_key: Any, prompt: Any, share: Any
 
 def search_prompts(conn: Any, feature_key: Any, query: Any = "", *, limit: int = 20) -> list[dict[str, Any]]:
     key = normalize_feature_key(feature_key)
-    q = str(query or "").strip()
+    terms = search_terms(query)
     limit = max(1, min(int(limit or 20), 20))
-    ensure_prompt_pool_schema(conn)
-    if q:
+    if terms:
+        filters = " AND ".join(f"LOWER(prompt_text) LIKE LOWER(?) ESCAPE '{_LIKE_ESCAPE}'" for _ in terms)
         rows = conn.execute(
-            """
+            f"""
             SELECT feature_key, prompt_text, use_count, created_at
             FROM ai_prompt_pool
-            WHERE feature_key = ? AND LOWER(prompt_text) LIKE LOWER(?)
+            WHERE feature_key = ? AND {filters}
             ORDER BY use_count DESC, created_at DESC
             LIMIT ?
             """,
-            (key, f"%{q}%", limit),
+            (key, *[like_contains_pattern(term) for term in terms], limit),
         ).fetchall()
     else:
         rows = conn.execute(

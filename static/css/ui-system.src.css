@@ -47430,7 +47430,9 @@ body.agenda-todo-open { overflow: hidden; }
 .prompt-pool-panel__head span { color: #64748b; font-size: 12px; }
 .prompt-pool-list { max-height: 238px; overflow: auto; padding: 7px; display: grid; gap: 6px; }
 .prompt-pool-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: #1e293b; text-align: left; cursor: pointer; transition: background-color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast); }
-.prompt-pool-item:hover { background: #f8fafc; border-color: rgba(20, 184, 166, 0.22); transform: translateY(-1px); }
+.prompt-pool-item:hover,
+.prompt-pool-item.is-active,
+.prompt-pool-item:focus-visible { background: #f8fafc; border-color: rgba(20, 184, 166, 0.34); box-shadow: 0 10px 24px -22px rgba(15, 118, 110, 0.55); transform: translateY(-1px); outline: none; }
 .prompt-pool-item span { min-width: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; line-height: 1.55; }
 .prompt-pool-item em { padding: 3px 7px; border-radius: 999px; background: #ecfeff; color: #0e7490; font-style: normal; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .prompt-pool-empty { padding: 12px 14px; color: #64748b; font-size: 13px; background: #f8fafc; }
