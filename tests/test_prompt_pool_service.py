@@ -86,6 +86,25 @@ class PromptPoolServiceTests(unittest.TestCase):
         ).fetchall()
         self.assertEqual(len(rows), 0)
 
+    def test_record_prompt_creates_missing_schema_without_breaking_submit_flow(self):
+        result = svc.record_prompt(self.conn, "teacher_evaluation.rewrite_analysis", "写得更具体")
+
+        self.assertEqual(result["prompt"], "写得更具体")
+        row = self.conn.execute(
+            "SELECT use_count FROM ai_prompt_pool WHERE feature_key = ?",
+            ("teacher_evaluation.rewrite_analysis",),
+        ).fetchone()
+        self.assertEqual(row["use_count"], 1)
+
+    def test_search_missing_schema_returns_empty_without_running_schema_write(self):
+        prompts = svc.search_prompts(self.conn, "materials.ai_generate", "anything")
+
+        self.assertEqual(prompts, [])
+        rows = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ai_prompt_pool'"
+        ).fetchall()
+        self.assertEqual(len(rows), 0)
+
     def test_sensitive_prompt_text_is_not_recorded(self):
         self._ensure_schema()
 

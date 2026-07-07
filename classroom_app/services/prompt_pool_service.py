@@ -6,6 +6,7 @@ import hashlib
 import re
 from typing import Any
 
+from ..db.schema_prompt_pool import ensure_prompt_pool_schema
 from ..db.row import row_to_mapping, rows_to_mappings
 
 _FEATURE_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{1,96}$")
@@ -24,6 +25,16 @@ _SENSITIVE_PROMPT_PATTERNS = (
     ),
     re.compile(r"(?:密码|口令|令牌|密钥|私钥|会话|cookie)\s*[:：=]\s*\S+"),
 )
+
+
+def _is_missing_prompt_pool_table_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    error_name = type(exc).__name__.lower()
+    return "ai_prompt_pool" in message and (
+        "no such table" in message
+        or "does not exist" in message
+        or "undefinedtable" in error_name
+    )
 
 
 def normalize_feature_key(value: Any) -> str:
@@ -98,6 +109,7 @@ def record_prompt(conn: Any, feature_key: Any, prompt: Any) -> dict[str, Any] | 
     if prompt_looks_sensitive(text):
         return None
     digest = prompt_hash(text)
+    ensure_prompt_pool_schema(conn)
     conn.execute(
         """
         INSERT INTO ai_prompt_pool (feature_key, prompt_hash, prompt_text, use_count, created_at)
@@ -128,27 +140,32 @@ def search_prompts(conn: Any, feature_key: Any, query: Any = "", *, limit: int =
     key = normalize_feature_key(feature_key)
     terms = search_terms(query)
     limit = max(1, min(int(limit or 20), 20))
-    if terms:
-        filters = " AND ".join(f"LOWER(prompt_text) LIKE LOWER(?) ESCAPE '{_LIKE_ESCAPE}'" for _ in terms)
-        rows = conn.execute(
-            f"""
-            SELECT feature_key, prompt_text, use_count, created_at
-            FROM ai_prompt_pool
-            WHERE feature_key = ? AND {filters}
-            ORDER BY use_count DESC, created_at DESC
-            LIMIT ?
-            """,
-            (key, *[like_contains_pattern(term) for term in terms], limit),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT feature_key, prompt_text, use_count, created_at
-            FROM ai_prompt_pool
-            WHERE feature_key = ?
-            ORDER BY use_count DESC, created_at DESC
-            LIMIT ?
-            """,
-            (key, limit),
-        ).fetchall()
+    try:
+        if terms:
+            filters = " AND ".join(f"LOWER(prompt_text) LIKE LOWER(?) ESCAPE '{_LIKE_ESCAPE}'" for _ in terms)
+            rows = conn.execute(
+                f"""
+                SELECT feature_key, prompt_text, use_count, created_at
+                FROM ai_prompt_pool
+                WHERE feature_key = ? AND {filters}
+                ORDER BY use_count DESC, created_at DESC
+                LIMIT ?
+                """,
+                (key, *[like_contains_pattern(term) for term in terms], limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT feature_key, prompt_text, use_count, created_at
+                FROM ai_prompt_pool
+                WHERE feature_key = ?
+                ORDER BY use_count DESC, created_at DESC
+                LIMIT ?
+                """,
+                (key, limit),
+            ).fetchall()
+    except Exception as exc:
+        if _is_missing_prompt_pool_table_error(exc):
+            return []
+        raise
     return [item for row in rows_to_mappings(rows) if (item := serialize_prompt(row))]

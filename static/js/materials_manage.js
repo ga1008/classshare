@@ -3377,7 +3377,7 @@ function bindEvents() {
         openAiImportModal();
     });
     refs.aiGenerateOpenBtn?.addEventListener('click', () => {
-        openAiGenerateModal();
+        openAiGenerateModal(initialAiGeneratePreset);
     });
     refs.folderBtn?.addEventListener('click', () => refs.folderInput?.click());
 
@@ -3954,6 +3954,9 @@ function bindEvents() {
     });
 }
 
+const initialAiGeneratePreset = getInitialAiGeneratePreset();
+const initialAiImportPreset = getInitialAiImportPreset();
+
 bindEvents();
 enhancePromptPoolInputs(document);
 updateFilterControls();
@@ -3972,12 +3975,10 @@ loadLibrary(state.currentParentId, false).catch(async (error) => {
     refs.listBody.innerHTML = `<div class="materials-empty">加载材料失败：${escapeHtml(error.message || '未知错误')}</div>`;
 });
 
-const initialAiGeneratePreset = getInitialAiGeneratePreset();
 if (initialAiGeneratePreset?.open) {
     window.setTimeout(() => openAiGenerateModal(initialAiGeneratePreset), 0);
 }
 
-const initialAiImportPreset = getInitialAiImportPreset();
 if (initialAiImportPreset?.open) {
     window.setTimeout(() => openAiImportModal(initialAiImportPreset), 0);
 }
