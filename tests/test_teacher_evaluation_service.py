@@ -265,6 +265,25 @@ class GeneratorBandTests(unittest.TestCase):
         self.assertNotIn("*", out)
         self.assertNotIn("教学辅助系统", out)
 
+    def test_prompts_require_public_classroom_voice(self):
+        self.assertIn("真实课堂", gen._system_prompt())
+        prompt = gen._user_prompt({}, {}, {}, "")
+        self.assertIn("不得在 analysis 中说", prompt)
+        self.assertIn("平台、系统、同步", prompt)
+
+    def test_clean_analysis_rewrites_platform_evidence_as_classroom_evidence(self):
+        out = gen._clean_analysis(
+            "学生在平台上的表现较好，平台互动记录偏少，平台同步的出勤情况稳定；"
+            "线上作业提交率较高，系统考试成绩较好，建议使用平台功能持续跟踪。由 AI 助教自动生成。"
+        )
+        for forbidden in ("平台", "系统", "同步", "线上", "在线", "功能", "AI", "助教", "自动生成"):
+            self.assertNotIn(forbidden, out)
+        self.assertIn("学生平时表现", out)
+        self.assertIn("课堂互动", out)
+        self.assertIn("实际出勤情况", out)
+        self.assertIn("平时作业完成率", out)
+        self.assertIn("课程考试", out)
+
 
 class GenerateRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_generate_route_applies_modal_field_overrides(self):

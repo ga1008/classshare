@@ -33,6 +33,30 @@ _AI_RETRY_TIMEOUT = 90.0
 _MIN_TOTAL = 60
 _MAX_TOTAL = 95
 
+_PUBLIC_ANALYSIS_REWRITES: tuple[tuple[str, str], ...] = (
+    (r"(?:学生)?在(?:本?平台|该平台|课堂互动平台|LanShare|本?系统)(?:上|中|内)?的?学习表现", "学生平时学习表现"),
+    (r"(?:学生)?在(?:本?平台|该平台|课堂互动平台|LanShare|本?系统)(?:上|中|内)?的?表现", "学生平时表现"),
+    (r"(?:本?平台|该平台|课堂互动平台|LanShare|本?系统)(?:上|中|内)?的?互动(?:记录|情况|数据)?", "课堂互动"),
+    (r"(?:线上|在线|平台|系统)互动(?:记录|情况|数据)?", "课堂互动"),
+    (r"(?:平台|系统|线上|在线)(?:提问|问答)(?:记录|情况|数据)?", "课堂提问情况"),
+    (r"(?:无|暂无)(?:平台|系统|线上|在线)?提问记录", "课堂主动提问较少"),
+    (r"(?:平台|系统|线上|在线)?提问记录", "课堂提问情况"),
+    (r"(?:平台|系统|智慧课堂)?同步(?:的)?出勤(?:情况|数据|记录)?", "实际出勤情况"),
+    (r"(?:平台|系统|智慧课堂)?签到(?:情况|数据|记录)?", "实际出勤情况"),
+    (r"(?:线上|在线|平台|系统)作业", "平时作业"),
+    (r"(?:线上|在线|平台|系统)考试", "课程考试"),
+    (r"(?:线上|在线|平台|系统)测验", "课堂测验"),
+    (r"(?:线上|在线|平台|系统)提交(?:率|情况)", "作业完成情况"),
+    (r"提交率", "作业完成率"),
+    (r"(?:平台|系统|后台|看板)(?:记录|统计|数据|显示|呈现|归集|生成|提供)(?:的)?", ""),
+    (r"使用(?:本?平台|该平台|系统|相关功能|平台功能)[^，。；;]*", "持续关注学生学习变化"),
+)
+
+_PUBLIC_ANALYSIS_FORBIDDEN_RE = re.compile(
+    r"LanShare|课堂互动平台|本平台|该平台|平台|本系统|系统|后台|看板|数据大屏|"
+    r"教学辅助系统|智能助教|AI\s*助教|AI|大模型|自动生成|自动统计|同步|线上|在线|功能|模块"
+)
+
 
 # ---------------------------------------------------------------------------
 # Class performance aggregation (the data handed to the AI for a fair judgement)
@@ -211,7 +235,12 @@ def _system_prompt() -> str:
         "10 项分值之和（总分）必须落在 60 到 95 之间，表现越好总分越高。"
         "analysis 是纯文本字符串，不超过 300 字，评价这个班级本学期在这门课程上的各项学习表现，"
         "要说人话、具体、客观、公平，可以分 1、2、3 点，但不要出现任何 Markdown 记号（如 # * - 等），"
-        "不要出现“教学辅助系统”“AI”“系统”等字样，就当作是任课教师本人写的评语。"
+        "必须写成正式教学材料口径：只描述学生在真实课堂、平时作业、实际出勤、课程考试和课堂互动中的表现，"
+        "不能透露这些判断来自平台、系统、线上记录、同步数据、功能模块、AI 或自动统计。"
+        "如果依据中提到平台表现，要改写成平时课堂表现；平台互动改写成课堂互动或课堂参与；"
+        "同步出勤改写成实际出勤；平台作业、线上作业、平台考试改写成平时作业和课程考试。"
+        "最终 analysis 中不得出现“平台”“系统”“同步”“线上”“在线”“功能”“模块”“AI”“自动生成”等字样，"
+        "就当作是任课教师本人基于课堂观察和教学记录写的评语。"
     )
 
 
@@ -225,6 +254,9 @@ def _user_prompt(
             "请根据以下某个教学班级本学期在这门课程上的真实表现，为《教师评学表》的 10 项指标打分并撰写评语。",
             "10 项评价指标（学习态度 1-2、学习过程 3-7、学习效果 8-10）依次是：\n" + _indicator_lines(),
             "评分要求：每项 1-10 的整数，越符合该指标描述分越高；10 项之和须在 60-95 之间；请结合下面的量化表现数据公平打分。",
+            "材料口径要求：下面的归集数据只是内部依据，不得在 analysis 中说“平台、系统、同步、线上、在线、功能、模块、AI、自动生成”。"
+            "请把所有平台侧证据转换成现实教学语言：平台表现=平时课堂表现，平台互动=课堂互动/课堂参与，同步出勤=实际出勤，"
+            "平台作业/线上作业=平时作业，平台考试/线上测验=课程考试或课堂测验。analysis 要像老师写在正式纸质材料中的评价。",
             f"课程 / 班级基本信息：\n{json.dumps(identity, ensure_ascii=False, indent=2)}",
             f"班级本学期表现归集：\n{performance.get('performance_summary') or '暂无'}",
             f"结构化表现数据：\n{json.dumps(structured, ensure_ascii=False)}",
@@ -388,9 +420,21 @@ def _merge_fields(offering_fields: dict[str, Any], ai_fields: dict[str, Any]) ->
 
 def _clean_analysis(text: Any) -> str:
     raw = str(text or "").strip()
-    # Strip markdown noise and forbidden system references.
+    # Strip markdown noise and make the public-facing text read like teacher-written
+    # classroom evidence, even when the model saw internal platform statistics.
     raw = re.sub(r"[#*`>]+", "", raw)
-    raw = re.sub(r"教学辅助系统|智能助教|AI\s*助教|本系统", "", raw)
+    for pattern, replacement in _PUBLIC_ANALYSIS_REWRITES:
+        raw = re.sub(pattern, replacement, raw, flags=re.IGNORECASE)
+    raw = _PUBLIC_ANALYSIS_FORBIDDEN_RE.sub("", raw)
+    raw = re.sub(r"(?:在|于)(?:上|中|内)", "", raw)
+    raw = re.sub(r"(?:根据|基于|通过)(?:记录|统计|数据|情况)(?:显示|来看|可见|表明)?", "", raw)
+    raw = raw.replace("数据", "情况").replace("记录", "情况")
+    raw = re.sub(r"情况情况+", "情况", raw)
+    raw = re.sub(r"学生平时表现表现", "学生平时表现", raw)
+    raw = re.sub(r"课堂互动互动", "课堂互动", raw)
+    raw = re.sub(r"平时作业作业完成率", "平时作业完成率", raw)
+    raw = re.sub(r"由\s*([。；;，,])", r"\1", raw)
+    raw = re.sub(r"由$", "", raw)
     raw = re.sub(r"[ \t]+", "", raw)
     raw = re.sub(r"\n{3,}", "\n\n", raw)
     return raw.strip()[:300]
