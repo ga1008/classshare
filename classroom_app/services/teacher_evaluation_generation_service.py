@@ -400,7 +400,11 @@ def _clean_analysis(text: Any) -> str:
 # Background job
 # ---------------------------------------------------------------------------
 async def run_generation_job(
-    evaluation_id: str, class_offering_id: int, teacher_id: int, prompt: str = ""
+    evaluation_id: str,
+    class_offering_id: int,
+    teacher_id: int,
+    prompt: str = "",
+    field_overrides: dict[str, Any] | None = None,
 ) -> None:
     try:
         _set_status(
@@ -417,6 +421,10 @@ async def run_generation_job(
             ).fetchone()
             teacher = dict(teacher_row) if teacher_row else {"id": teacher_id, "name": "", "username": ""}
             offering_fields = te.build_fields_from_offering(conn, int(class_offering_id), teacher=teacher)
+            # Teacher-supplied overrides from the generate modal win over auto-fill.
+            for key, value in (field_overrides or {}).items():
+                if str(value or "").strip():
+                    offering_fields[key] = value
             performance = build_class_performance_summary(conn, int(class_offering_id))
             classroom_context = _classroom_context(conn, int(class_offering_id))
 

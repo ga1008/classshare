@@ -31,6 +31,7 @@ router = APIRouter(prefix="/api/teacher-evaluations")
 _MAX_IMPORT_FILES = 8
 _MAX_IMPORT_BYTES = 30 * 1024 * 1024
 _ALLOWED_IMPORT_EXT = {".doc", ".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".md", ".txt"}
+_GENERATE_FIELD_KEYS = set(te.FIELD_KEYS)
 
 
 async def _json_body(request: Request) -> dict[str, Any]:
@@ -77,6 +78,20 @@ def _ensure_offering_access(conn, class_offering_id: int, user: dict) -> None:
     ).fetchone()
     if not owns and not is_super_admin_teacher(conn, int(user["id"])):
         raise HTTPException(403, "无权访问该课堂")
+
+
+def _clean_generate_field_overrides(raw_fields: Any) -> dict[str, str]:
+    if not isinstance(raw_fields, dict):
+        return {}
+    cleaned: dict[str, str] = {}
+    for key, value in raw_fields.items():
+        field_key = str(key or "").strip()
+        if field_key not in _GENERATE_FIELD_KEYS:
+            continue
+        text = str(value or "").strip()
+        if text:
+            cleaned[field_key] = text[:240]
+    return cleaned
 
 
 # ---------------------------------------------------------------------------
@@ -179,9 +194,11 @@ async def generate_from_classroom(request: Request, user: dict = Depends(get_cur
     if not class_offering_id:
         raise HTTPException(400, "请选择要生成评学表的教学班级")
     prompt = str(body.get("prompt") or "").strip()
+    field_overrides = _clean_generate_field_overrides(body.get("fields"))
     with get_db_connection() as conn:
         _ensure_offering_access(conn, int(class_offering_id), user)
         fields = te.build_fields_from_offering(conn, int(class_offering_id), teacher=user)
+        fields.update(field_overrides)
         title = (fields.get("course_name") or "教师评学表") + "（按班级生成）"
         evaluation_id = te.create_evaluation(
             conn,
@@ -198,7 +215,15 @@ async def generate_from_classroom(request: Request, user: dict = Depends(get_cur
         te.set_generation_status(conn, evaluation_id, task_id=evaluation_id)
         conn.commit()
         evaluation = te.get_evaluation(conn, evaluation_id)
-    asyncio.create_task(run_generation_job(evaluation_id, int(class_offering_id), int(user["id"]), prompt))
+    asyncio.create_task(
+        run_generation_job(
+            evaluation_id,
+            int(class_offering_id),
+            int(user["id"]),
+            prompt,
+            field_overrides=field_overrides,
+        )
+    )
     return {"id": evaluation_id, "card": te.serialize_card(evaluation)}
 
 
@@ -253,11 +278,13 @@ async def import_evaluation(
 
 @router.post("/{evaluation_id}/retry", response_class=JSONResponse)
 async def retry_evaluation(evaluation_id: str, user: dict = Depends(get_current_teacher)):
+    field_overrides: dict[str, str] = {}
     with get_db_connection() as conn:
         evaluation = _load_owned_or_super(conn, evaluation_id, user)
         source_type = evaluation.get("source_type")
         class_offering_id = evaluation.get("class_offering_id")
         if source_type == "classroom" and class_offering_id:
+            field_overrides = _clean_generate_field_overrides(evaluation.get("fields"))
             te.set_generation_status(
                 conn,
                 evaluation_id,
@@ -272,7 +299,14 @@ async def retry_evaluation(evaluation_id: str, user: dict = Depends(get_current_
         else:
             raise HTTPException(400, "该评学表不支持重试。")
     if source_type == "classroom" and class_offering_id:
-        asyncio.create_task(run_generation_job(evaluation_id, int(class_offering_id), int(user["id"])))
+        asyncio.create_task(
+            run_generation_job(
+                evaluation_id,
+                int(class_offering_id),
+                int(user["id"]),
+                field_overrides=field_overrides,
+            )
+        )
     return {"ok": True}
 
 

@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
+import { openTreeSelectFormModal } from './tree_select_form_modal.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -269,39 +270,142 @@ function openCreateBlankModal() {
     });
 }
 
+function semesterSortValue(label, startDate) {
+    if (startDate) {
+        const timestamp = Date.parse(startDate);
+        if (!Number.isNaN(timestamp)) return timestamp;
+    }
+    const text = String(label || '');
+    const yearMatch = text.match(/(20\d{2})\D+(20\d{2})/);
+    const endYear = yearMatch ? Number(yearMatch[2]) : 0;
+    const singleYear = !yearMatch && text.match(/20\d{2}/) ? Number(text.match(/20\d{2}/)[0]) : 0;
+    const year = endYear || singleYear;
+    let term = 0;
+    if (/第二|下|春|2/.test(text)) term = 2;
+    else if (/第一|上|秋|1/.test(text)) term = 1;
+    return year ? year * 10 + term : 0;
+}
+
+// Group the teacher's offerings into a 学年学期 → 课程 → 班级 tree, semesters newest first.
+function buildOfferingTree() {
+    const bySemester = new Map();
+    for (const offering of state.offerings) {
+        const semesterKey = offering.semester_label || '未分配学期';
+        if (!bySemester.has(semesterKey)) {
+            bySemester.set(semesterKey, {
+                label: semesterKey,
+                sortKey: semesterSortValue(semesterKey, offering.semester_start_date),
+                courses: new Map(),
+            });
+        }
+        const semester = bySemester.get(semesterKey);
+        const nextSort = semesterSortValue(semesterKey, offering.semester_start_date);
+        if (nextSort > semester.sortKey) semester.sortKey = nextSort;
+        const courseKey = offering.course_name || '未命名课程';
+        if (!semester.courses.has(courseKey)) semester.courses.set(courseKey, []);
+        semester.courses.get(courseKey).push(offering);
+    }
+    const semesters = [...bySemester.values()].sort(
+        (a, b) => (b.sortKey - a.sortKey) || b.label.localeCompare(a.label, 'zh')
+    );
+    return semesters.map((semester) => ({
+        label: semester.label,
+        badge: `${semester.courses.size} 门课程`,
+        children: [...semester.courses.entries()]
+            .sort((a, b) => a[0].localeCompare(b[0], 'zh'))
+            .map(([courseName, offerings]) => ({
+                label: courseName,
+                badge: `${offerings.length} 个班级`,
+                children: offerings
+                    .slice()
+                    .sort((a, b) => (a.display_class_name || a.class_name || '').localeCompare(
+                        b.display_class_name || b.class_name || '',
+                        'zh',
+                    ))
+                    .map((offering) => ({
+                        label: offering.display_class_name || offering.class_name || '未命名班级',
+                        leaf: true,
+                        data: offering,
+                    })),
+            })),
+    }));
+}
+
+async function offeringPanelDescriptor(offering) {
+    let fields = {};
+    try {
+        const res = await apiFetch(`/api/teacher-evaluations/classroom/${offering.id}/prefill`);
+        fields = res.fields || {};
+    } catch (_) { fields = {}; }
+    const semesterText = [fields.academic_year, fields.semester].filter(Boolean).join(' ')
+        || offering.semester_label || '—';
+    const courseName = fields.course_name || offering.course_name || '';
+    const className = fields.class_name || offering.display_class_name || offering.class_name || '';
+    return {
+        title: '生成配置',
+        baseInfo: [
+            { label: '学年学期', value: semesterText },
+            { label: '课程名称', value: courseName },
+            { label: '授课班级', value: className },
+            { label: '课堂编号', value: offering.id },
+        ],
+        note: '基础信息由所选教学班级自动带入；下方字段会写入评学表，可按实际纸质表要求微调。',
+        fields: [
+            { key: 'school', label: '学校', value: fields.school || '广西外国语学院' },
+            { key: 'academic_year', label: '学年', value: fields.academic_year || '', placeholder: '如：2025-2026' },
+            {
+                key: 'semester',
+                label: '学期',
+                type: 'select',
+                value: fields.semester || '',
+                options: ['第一学期', '第二学期', '第三学期'],
+            },
+            { key: 'course_name', label: '课程名称', value: courseName, placeholder: '如：动态Web程序设计' },
+            { key: 'class_name', label: '授课班级', value: className, placeholder: '如：网工2502班' },
+            { key: 'college', label: '所在二级学院', value: fields.college || '', placeholder: '如：信息工程学院' },
+            { key: 'teacher_name', label: '任课教师', value: fields.teacher_name || '' },
+            { key: 'teacher_title', label: '教师职称', value: fields.teacher_title || '', placeholder: '如：讲师 / 副教授' },
+            { key: 'evaluate_date', label: '评价时间', value: fields.evaluate_date || '', placeholder: '如：2026年06月20日' },
+        ],
+    };
+}
+
 function openGenerateModal() {
     if (!state.offerings.length) {
         showToast('你还没有可用的教学班级，请先在「开设课堂」创建。', 'error');
         return;
     }
-    const body = `
-        <form data-te-form-generate class="lp-form">
-            <label>选择教学班级（默认本学年学期在教的班级，可下拉选其他学期）
-                <select name="class_offering_id" required>${offeringOptionsHtml(false)}</select>
-            </label>
-            <label>给 AI 的补充要求（可选）
-                <textarea name="prompt" rows="3" placeholder="如：该班整体学习积极性较高，作业完成度好，请客观评分。"></textarea>
-            </label>
-            <p class="lp-form__hint">系统将<strong>归集该班级本学期在这门课的全部表现</strong>（作业/考试成绩、课堂互动、修炼等级等），用<strong>快速 AI</strong> 为 10 项指标公平打分（总分 60-95），自动计算综合评价并撰写学习情况分析。可关闭窗口，列表以占位卡显示进度。</p>
-        </form>`;
-    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-te-submit>开始生成</button>`;
-    openModal('按班级生成教师评学表', body, {
-        footerHtml: footer,
-        onMount: (overlay, close) => {
-            overlay.querySelector('[data-te-submit]').addEventListener('click', async () => {
-                const fd = new FormData(overlay.querySelector('[data-te-form-generate]'));
-                const offeringId = fd.get('class_offering_id');
-                if (!offeringId) { showToast('请选择教学班级', 'error'); return; }
-                try {
-                    await apiFetch('/api/teacher-evaluations/generate', {
-                        method: 'POST',
-                        body: { class_offering_id: Number(offeringId), prompt: (fd.get('prompt') || '').trim() },
-                    });
-                    close();
-                    showToast('已开始生成，列表中将显示进度。', 'success');
-                    loadEvaluations();
-                } catch (err) { showToast(err.message || '启动生成失败', 'error'); }
-            });
+    openTreeSelectFormModal({
+        title: '按班级生成教师评学表',
+        subtitle: '先定位学年学期，再定位课程和班级',
+        tree: buildOfferingTree(),
+        treeTitle: '学年学期 / 课程 / 班级',
+        treeHint: '按最新学期排序',
+        placeholderTitle: '请选择班级',
+        placeholderText: '请在左侧选择「学年学期 → 课程 → 班级」，选中班级后在此配置并生成。',
+        emptyText: '你还没有可用的教学班级。',
+        promptLabel: '给 AI 的补充要求（可选）',
+        promptPlaceholder: '如：该班整体学习积极性较高，作业完成度好，请客观评分。',
+        confirmLabel: '确定并生成',
+        hintHtml: '系统将<strong>归集该班级本学期在这门课的全部表现</strong>（作业/考试成绩、课堂互动、修炼等级等），用<strong>快速 AI</strong> 为 10 项指标公平打分（总分 60-95），自动计算综合评价并撰写学习情况分析。可关闭窗口，列表以占位卡显示进度。',
+        onSelect: (offering) => offeringPanelDescriptor(offering),
+        onConfirm: async ({ data, fieldValues, prompt }) => {
+            try {
+                await apiFetch('/api/teacher-evaluations/generate', {
+                    method: 'POST',
+                    body: {
+                        class_offering_id: Number(data.id),
+                        prompt: (prompt || '').trim(),
+                        fields: fieldValues || {},
+                    },
+                });
+                showToast('已开始生成，列表中将显示进度。', 'success');
+                loadEvaluations();
+                return true;
+            } catch (err) {
+                showToast(err.message || '启动生成失败', 'error');
+                return false;
+            }
         },
     });
 }

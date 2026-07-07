@@ -9,7 +9,9 @@ coercion in the generator, and the pixel-faithful docx export.
 
 import sqlite3
 import unittest
+from unittest.mock import patch
 
+from classroom_app.routers import teacher_evaluations as router_mod
 from classroom_app.db.schema_teacher_evaluations import ensure_teacher_evaluation_schema
 import classroom_app.db.schema_teacher_evaluations as schema_mod
 from classroom_app.services import teacher_evaluation_service as svc
@@ -48,6 +50,68 @@ def _add_teacher(conn, tid, name, college, department, *, super_admin=0):
         (tid, name, name, f"{name}@x.cn", super_admin, college, department),
     )
     return {"id": tid, "name": name, "username": name}
+
+
+class _ConnCtx:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __enter__(self):
+        return self.conn
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _JsonRequest:
+    def __init__(self, payload):
+        self.payload = payload
+
+    async def json(self):
+        return self.payload
+
+
+def _add_offering_context(conn, *, offering_id=10, teacher_id=1):
+    conn.execute(
+        """
+        CREATE TABLE courses (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            college TEXT,
+            school_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE classes (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            academic_class_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE class_offerings (
+            id INTEGER PRIMARY KEY,
+            class_id INTEGER,
+            course_id INTEGER,
+            teacher_id INTEGER,
+            semester TEXT,
+            academic_teaching_class_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO courses (id, name, college, school_name) VALUES (1, '动态Web程序设计', '信息工程学院', '广西外国语学院')"
+    )
+    conn.execute("INSERT INTO classes (id, name, academic_class_name) VALUES (1, '网工2502班', '网络工程2502班')")
+    conn.execute(
+        "INSERT INTO class_offerings (id, class_id, course_id, teacher_id, semester, academic_teaching_class_name) "
+        "VALUES (?, 1, 1, ?, '2025-2026-2', '动态Web程序设计·网工2502班')",
+        (offering_id, teacher_id),
+    )
 
 
 def _full_scores(scores):
@@ -171,6 +235,78 @@ class GeneratorBandTests(unittest.TestCase):
         self.assertNotIn("#", out)
         self.assertNotIn("*", out)
         self.assertNotIn("教学辅助系统", out)
+
+
+class GenerateRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_generate_route_applies_modal_field_overrides(self):
+        conn = _make_conn()
+        teacher = _add_teacher(conn, 1, "张老师", "信息工程学院", "软件工程系")
+        _add_offering_context(conn, offering_id=10, teacher_id=1)
+        payload = {
+            "class_offering_id": 10,
+            "prompt": "该班作业完成度较好。",
+            "fields": {
+                "college": "人工智能学院",
+                "teacher_title": "副教授",
+                "course_name": "动态Web程序设计A",
+                "class_name": "网工2502班",
+                "ignored": "不会写入",
+            },
+        }
+
+        def fake_generation_job(*args, **kwargs):
+            return {"args": args, "kwargs": kwargs}
+
+        with patch.object(router_mod, "get_db_connection", return_value=_ConnCtx(conn)), \
+                patch.object(router_mod, "run_generation_job", new=fake_generation_job), \
+                patch.object(router_mod.asyncio, "create_task") as create_task:
+            result = await router_mod.generate_from_classroom(_JsonRequest(payload), user=teacher)
+
+        evaluation = svc.get_evaluation(conn, result["id"])
+        self.assertEqual(evaluation["fields"]["college"], "人工智能学院")
+        self.assertEqual(evaluation["fields"]["teacher_title"], "副教授")
+        self.assertEqual(evaluation["fields"]["course_name"], "动态Web程序设计A")
+        self.assertEqual(evaluation["fields"]["class_name"], "网工2502班")
+        self.assertNotIn("ignored", evaluation["fields"])
+        scheduled = create_task.call_args.args[0]
+        self.assertEqual(scheduled["kwargs"]["field_overrides"]["college"], "人工智能学院")
+        self.assertEqual(scheduled["kwargs"]["field_overrides"]["teacher_title"], "副教授")
+
+    async def test_retry_route_reuses_existing_generation_fields(self):
+        conn = _make_conn()
+        teacher = _add_teacher(conn, 1, "张老师", "信息工程学院", "软件工程系")
+        _add_offering_context(conn, offering_id=10, teacher_id=1)
+        evaluation_id = svc.create_evaluation(
+            conn,
+            teacher=teacher,
+            title="动态Web程序设计A（按班级生成）",
+            fields={
+                "course_name": "动态Web程序设计A",
+                "class_name": "网工2502班",
+                "college": "人工智能学院",
+                "teacher_name": "张老师",
+                "teacher_title": "副教授",
+            },
+            items=[],
+            class_offering_id=10,
+            source_type="classroom",
+            status="failed",
+        )
+        conn.commit()
+
+        def fake_generation_job(*args, **kwargs):
+            return {"args": args, "kwargs": kwargs}
+
+        with patch.object(router_mod, "get_db_connection", return_value=_ConnCtx(conn)), \
+                patch.object(router_mod, "run_generation_job", new=fake_generation_job), \
+                patch.object(router_mod.asyncio, "create_task") as create_task:
+            result = await router_mod.retry_evaluation(evaluation_id, user=teacher)
+
+        self.assertTrue(result["ok"])
+        scheduled = create_task.call_args.args[0]
+        self.assertEqual(scheduled["kwargs"]["field_overrides"]["college"], "人工智能学院")
+        self.assertEqual(scheduled["kwargs"]["field_overrides"]["teacher_title"], "副教授")
+        self.assertEqual(scheduled["kwargs"]["field_overrides"]["course_name"], "动态Web程序设计A")
 
 
 class ExportTests(unittest.TestCase):
