@@ -21,6 +21,7 @@
  */
 
 import { escapeHtml } from './ui.js';
+import { enhancePromptPoolInput, recordPromptForInput, isPromptShareEnabled } from './prompt_pool.js';
 
 function safeText(value, fallback = '') {
     const text = value == null ? '' : String(value);
@@ -43,6 +44,7 @@ export function openTreeSelectFormModal(config) {
         confirmLabel = '确定',
         promptLabel = '',
         promptPlaceholder = '',
+        promptPoolKey = '',
         hint = '',
         hintHtml = '',
         emptyText = '暂无可选项',
@@ -247,7 +249,7 @@ export function openTreeSelectFormModal(config) {
         const promptHtml = (promptLabel || promptPlaceholder)
             ? `<label class="tsf-field tsf-field--full">
                     <span class="tsf-field__label">${escapeHtml(promptLabel || '补充说明')}</span>
-                    <textarea data-tsf-prompt rows="4" placeholder="${htmlAttr(promptPlaceholder)}">${escapeHtml(state.prompt)}</textarea>
+                    <textarea data-tsf-prompt rows="4"${promptPoolKey ? ` data-prompt-pool-key="${htmlAttr(promptPoolKey)}"` : ''} placeholder="${htmlAttr(promptPlaceholder)}">${escapeHtml(state.prompt)}</textarea>
                </label>`
             : '';
         const hintContent = hintHtml || (hint ? escapeHtml(hint) : '');
@@ -274,6 +276,8 @@ export function openTreeSelectFormModal(config) {
             <div class="tsf-panel__foot">
                 <button type="button" class="tsf-btn tsf-btn--primary" data-tsf-confirm>${escapeHtml(confirmLabel)}</button>
             </div>`;
+        const promptInput = panelEl.querySelector('[data-tsf-prompt][data-prompt-pool-key]');
+        if (promptInput) enhancePromptPoolInput(promptInput);
     }
 
     async function selectLeaf(path, node) {
@@ -299,13 +303,16 @@ export function openTreeSelectFormModal(config) {
         const original = btn.textContent;
         btn.textContent = '处理中…';
         try {
+            const promptInput = panelEl.querySelector('[data-tsf-prompt]');
             const ok = onConfirm ? await onConfirm({
                 node: state.selectedNode,
                 data: state.selectedNode.data,
                 fieldValues: { ...state.fieldValues },
                 prompt: state.prompt,
+                sharePrompt: isPromptShareEnabled(promptInput),
             }) : true;
             if (ok !== false) {
+                await recordPromptForInput(promptInput, state.prompt);
                 close();
                 return;
             }

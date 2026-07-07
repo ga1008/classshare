@@ -1,5 +1,6 @@
 import { apiFetch } from '/static/js/api.js';
 import { closeModal, formatSize, openModal, showToast } from '/static/js/ui.js';
+import { enhancePromptPoolInput, recordPromptForInput } from '/static/js/prompt_pool.js';
 
 const MODAL_ID = 'sessionMaterialAiModal';
 const POLL_INTERVAL_MS = 4500;
@@ -296,6 +297,9 @@ export function initSessionMaterialAiAssistant({
         }
 
         setSubmitting(true);
+        const dom = refs();
+        const promptInput = mode === 'guided' ? dom.guidedRequirementText : dom.autoRequirementText;
+        const promptText = promptInput?.value || '';
         try {
             const result = await apiFetch(
                 `/api/classrooms/${classOfferingId}/sessions/${session.id}/ai-material-task`,
@@ -308,6 +312,7 @@ export function initSessionMaterialAiAssistant({
             if (result?.session) {
                 onSessionPatch(result.session);
             }
+            await recordPromptForInput(promptInput, promptText);
             closeAssistantModal();
             showToast(
                 mode === 'auto'
@@ -384,6 +389,8 @@ export function initSessionMaterialAiAssistant({
         state.initialized = true;
         const dom = refs();
         if (!dom.modal) return;
+        enhancePromptPoolInput(dom.guidedRequirementText);
+        enhancePromptPoolInput(dom.autoRequirementText);
 
         dom.closeBtn?.addEventListener('click', closeAssistantModal);
         dom.cancelBtn?.addEventListener('click', closeAssistantModal);

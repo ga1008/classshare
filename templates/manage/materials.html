@@ -277,7 +277,7 @@
                 </div>
                 <label class="materials-form-field materials-ai-generate-prompt-field">
                     <span>提示话语</span>
-                    <textarea id="materials-ai-generate-prompt" class="form-control" rows="5" placeholder="例如：根据这些作业题目生成一份期末复习提纲，包含知识点、易错点和课堂练习安排。"></textarea>
+                    <textarea id="materials-ai-generate-prompt" class="form-control" data-prompt-pool-key="materials.ai_generate" rows="5" placeholder="例如：根据这些作业题目生成一份期末复习提纲，包含知识点、易错点和课堂练习安排。"></textarea>
                 </label>
 
                 <div class="materials-ai-generate-selected-panel">
@@ -356,7 +356,7 @@
                 </label>
                 <label class="materials-form-field">
                     <span>调整提示语</span>
-                    <textarea id="materials-ai-rewrite-prompt" class="form-control" rows="5" placeholder="例如：更适合软件工程专业学生；增加表格；减少铺垫，突出课堂可执行步骤。"></textarea>
+                    <textarea id="materials-ai-rewrite-prompt" class="form-control" data-prompt-pool-key="materials.ai_rewrite" rows="5" placeholder="例如：更适合软件工程专业学生；增加表格；减少铺垫，突出课堂可执行步骤。"></textarea>
                 </label>
                 <div class="materials-ai-import-status" id="materials-ai-rewrite-status" hidden></div>
             </div>
@@ -729,7 +729,7 @@
                 </div>
                 <label class="materials-form-field">
                     <span>补充提示（可选）</span>
-                    <textarea id="materials-ai-expand-prompt" class="form-control" rows="4" placeholder="例如：根据前三次课的材料和目录文档，生成第四次课的课程材料。留空则由 AI 自动判断。"></textarea>
+                    <textarea id="materials-ai-expand-prompt" class="form-control" data-prompt-pool-key="materials.ai_expand" rows="4" placeholder="例如：根据前三次课的材料和目录文档，生成第四次课的课程材料。留空则由 AI 自动判断。"></textarea>
                 </label>
                 <div class="materials-ai-import-status" id="materials-ai-expand-status" hidden></div>
             </div>

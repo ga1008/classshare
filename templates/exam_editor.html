@@ -1285,7 +1285,7 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">出题范围</label>
-                            <textarea id="ai-exam-scope" class="form-control" rows="4" placeholder="例如：计算机网络基础、TCP/IP协议栈、HTTP协议等。上传参考文件时可填写补充要求。"></textarea>
+                            <textarea id="ai-exam-scope" class="form-control" data-prompt-pool-key="exam.generate_scope" rows="4" placeholder="例如：计算机网络基础、TCP/IP协议栈、HTTP协议等。上传参考文件时可填写补充要求。"></textarea>
                             <div class="text-xs text-muted mt-1">未上传参考文件时需要填写出题范围。</div>
                         </div>
                         <div class="source-lane">
@@ -1461,6 +1461,7 @@
         import { showToast } from '/static/js/ui.js';
         import { renderMarkdownHtml } from '/static/js/grading_feedback.js?v=20260517';
         import { renderExamPaperPreview } from '{{ asset_url("js/exam_paper_preview.js") }}';
+        import { enhancePromptPoolInput, recordPromptForInput } from '{{ asset_url("js/prompt_pool.js") }}';
 
         // Expose to window for inline onclick handlers
         window.showToast = showToast;
@@ -1476,6 +1477,8 @@
         const selectedExamSourceMaterials = new Map();
         let scoringSaveAfterApply = false;
         let activeScoringIndex = 0;
+        const aiExamScopeInput = document.getElementById('ai-exam-scope');
+        enhancePromptPoolInput(aiExamScopeInput);
 
         try {
             examConfig = typeof EXAM_CONFIG_RAW === 'string'
@@ -2990,6 +2993,7 @@
                 const data = await response.json();
                 if (response.ok) {
                     showToast('AI出题任务已提交，正在跳转到试卷库...', 'success');
+                    await recordPromptForInput(aiExamScopeInput, scope);
                     // Short delay to let user see the toast, then redirect
                     setTimeout(() => {
                         window.location.href = '/manage/teaching/exams';

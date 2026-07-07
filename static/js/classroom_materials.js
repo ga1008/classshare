@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { escapeHtml, formatSize, getFileIcon, showToast } from './ui.js';
+import { enhancePromptPoolInput, enhancePromptPoolInputs, recordPromptForInput } from './prompt_pool.js';
 import {
     getLearningDocumentUrl,
     getMaterialPrimaryAction,
@@ -428,7 +429,7 @@ function renderDetailContent(material, preview = null) {
                 <span>AI优化</span>
                 <strong>字段、内容与导出结构</strong>
             </div>
-            <textarea class="classroom-material-ai-prompt" data-role="final-material-optimize-prompt" rows="4" placeholder="例如：补齐审核人、考试时间，细化评分细则，保持总分100分。"></textarea>
+            <textarea class="classroom-material-ai-prompt" data-role="final-material-optimize-prompt" data-prompt-pool-key="classroom.final_material_optimize" rows="4" placeholder="例如：补齐审核人、考试时间，细化评分细则，保持总分100分。"></textarea>
             <div class="classroom-material-inline-actions">
                 <button type="button" class="btn btn-primary btn-sm" data-action="optimize-final-material">AI优化并保存</button>
             </div>
@@ -516,6 +517,7 @@ async function openMaterialDetail(materialId) {
         dom.detailKicker.textContent = material.ai_import_record?.document_type_label || (material.node_type === 'folder' ? '材料文件夹' : '课程材料');
         dom.detailPath.textContent = material.material_path || '';
         dom.detailContent.innerHTML = renderDetailContent(material, preview);
+        enhancePromptPoolInputs(dom.detailContent);
         dom.detailLoading.hidden = true;
         dom.detailContent.hidden = false;
         if (dom.detailOpenBtn) dom.detailOpenBtn.textContent = material.node_type === 'folder' ? '打开文件夹' : '打开';
@@ -782,6 +784,7 @@ async function submitFinalMaterialGeneration() {
             },
         });
         showToast(data.message || '期末材料已生成', 'success');
+        await recordPromptForInput(dom.finalMaterialPrompt, prompt);
         closeModal(dom.finalMaterialModal);
         await loadMaterials(state.currentParentId, false);
     } catch (error) {
@@ -857,6 +860,7 @@ export function init(appConfig) {
     config = appConfig;
     const dom = refs();
     if (!dom.list) return;
+    enhancePromptPoolInput(dom.finalMaterialPrompt);
 
     dom.refreshBtn?.addEventListener('click', () => {
         loadMaterials(state.currentParentId).catch((error) => {
@@ -962,7 +966,8 @@ export function init(appConfig) {
     dom.detailContent?.addEventListener('click', async (event) => {
         const button = event.target.closest('[data-action="optimize-final-material"]');
         if (!button || !state.detailItem) return;
-        const prompt = dom.detailContent.querySelector('[data-role="final-material-optimize-prompt"]')?.value || '';
+        const promptInput = dom.detailContent.querySelector('[data-role="final-material-optimize-prompt"]');
+        const prompt = promptInput?.value || '';
         button.disabled = true;
         button.textContent = '优化中...';
         try {
@@ -974,6 +979,7 @@ export function init(appConfig) {
                 },
             });
             showToast('期末材料已优化', 'success');
+            await recordPromptForInput(promptInput, prompt);
             await openMaterialDetail(state.detailItem.id);
             await loadMaterials(state.currentParentId, false);
         } catch (error) {

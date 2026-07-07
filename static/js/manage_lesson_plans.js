@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
+import { enhancePromptPoolInput, enhancePromptPoolInputs, recordPromptForInput, recordPromptPoolInputs } from './prompt_pool.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -334,7 +335,7 @@ function renderPlannerSessionCard(session, index) {
                     <textarea data-field="material_summary" rows="3" placeholder="课堂页绑定材料会自动带出摘要，可在此微调">${escapeHtml(session.material_summary || '')}</textarea>
                 </label>
                 <label class="lp-form__full">给 AI 的课次提示
-                    <textarea data-field="prompt_hint" rows="2" placeholder="例如：强调组件通信、课堂演示、分层练习">${escapeHtml(session.prompt_hint || '')}</textarea>
+                    <textarea data-field="prompt_hint" data-prompt-pool-key="lesson_plan.session_prompt_hint" rows="2" placeholder="例如：强调组件通信、课堂演示、分层练习">${escapeHtml(session.prompt_hint || '')}</textarea>
                 </label>
             </div>
             ${materials ? `<div class="lp-gen-session__materials">${materials}</div>` : ''}
@@ -389,7 +390,7 @@ function renderPlannerDetail(plan, offering, loading = false) {
                     <select data-gen-insert-index>${insertOptions}</select>
                 </label>
                 <label class="lp-form__full">新增课次提示
-                    <textarea data-gen-new-prompt rows="2" placeholder="输入本次课主要内容，AI 会结合前后课次润色成可生成的课次卡片"></textarea>
+                    <textarea data-gen-new-prompt data-prompt-pool-key="lesson_plan.session_draft" rows="2" placeholder="输入本次课主要内容，AI 会结合前后课次润色成可生成的课次卡片"></textarea>
                 </label>
                 <button type="button" class="lp-btn" data-action="draft-session">新增课次</button>
             </div>
@@ -435,6 +436,7 @@ function openGeneratePlannerModal() {
             currentOffering(),
             Number(planner.loadingId) === Number(planner.selectedId),
         );
+        enhancePromptPoolInputs(main);
         const canSubmit = Boolean(currentPlan()?.sessions?.length);
         if (submit) submit.disabled = !canSubmit || Number(planner.loadingId) === Number(planner.selectedId);
     }
@@ -566,6 +568,7 @@ function openGeneratePlannerModal() {
                         draft.source_type = 'manual';
                         draft.source_session_id = 0;
                         plan.sessions.splice(insertIndex, 0, draft);
+                        await recordPromptForInput(promptEl, prompt);
                         if (promptEl) promptEl.value = '';
                         render(overlay);
                     } catch (err) {
@@ -628,6 +631,7 @@ function openGeneratePlannerModal() {
                             sessions: payloadSessions(plan),
                         },
                     });
+                    await recordPromptPoolInputs(overlay);
                     close();
                     showToast('已开始分课次生成，列表中会显示进度。', 'success');
                     loadPlans();
@@ -686,7 +690,7 @@ function openImportModal() {
             </div>
             <ul class="lp-filelist" data-lp-filelist></ul>
             <label class="lp-form__full">给 AI 的额外提示（可选）
-                <textarea data-lp-extra rows="3" placeholder="如：这是 Linux 课程教案，请重点保留每节课的 PBL 表格与作业分层。"></textarea>
+                <textarea data-lp-extra data-prompt-pool-key="lesson_plan.import" rows="3" placeholder="如：这是 Linux 课程教案，请重点保留每节课的 PBL 表格与作业分层。"></textarea>
             </label>
             <p class="lp-form__hint">点击导入后将调用<strong>思考 + 多模态 AI</strong>解析，可能需要几分钟。窗口会关闭并在列表中以占位卡显示「解析中」，完成后自动出现。</p>
         </div>`;
@@ -696,6 +700,8 @@ function openImportModal() {
         onMount: (overlay, close) => {
             const picked = [];
             const input = overlay.querySelector('[data-lp-file]');
+            const promptInput = overlay.querySelector('[data-lp-extra]');
+            enhancePromptPoolInput(promptInput);
             const listEl = overlay.querySelector('[data-lp-filelist]');
             const dz = overlay.querySelector('[data-lp-dropzone]');
             const renderFiles = () => {
@@ -726,6 +732,7 @@ function openImportModal() {
                 fd.append('extra_prompt', overlay.querySelector('[data-lp-extra]').value || '');
                 try {
                     await apiFetch('/api/lesson-plans/import', { method: 'POST', body: fd });
+                    await recordPromptForInput(promptInput);
                     close();
                     showToast('已开始解析，列表中将显示进度。', 'success');
                     loadPlans();

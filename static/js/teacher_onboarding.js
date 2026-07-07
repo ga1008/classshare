@@ -1,5 +1,6 @@
 import { apiFetch } from '/static/js/api.js';
 import { showToast } from '/static/js/ui.js';
+import { enhancePromptPoolInput, recordPromptForInput } from '/static/js/prompt_pool.js';
 
 const modal = document.querySelector('[data-teacher-onboarding-modal]');
 const openButtons = Array.from(document.querySelectorAll('[data-teacher-onboarding-open]'));
@@ -1081,7 +1082,7 @@ if (modal) {
             <div class="onboarding-field-grid">
                 <div class="onboarding-field full-span">
                     <label for="onboardingAiPromptInput">系统提示词</label>
-                    <textarea id="onboardingAiPromptInput" rows="8">${escapeHtml(state.selected.aiSystemPrompt)}</textarea>
+                    <textarea id="onboardingAiPromptInput" data-prompt-pool-key="teacher_onboarding.system_prompt" rows="8">${escapeHtml(state.selected.aiSystemPrompt)}</textarea>
                 </div>
                 <div class="onboarding-field full-span">
                     <label for="onboardingAiSyllabusInput">课堂知识依据</label>
@@ -1089,7 +1090,9 @@ if (modal) {
                 </div>
             </div>
         `);
-        container.querySelector('#onboardingAiPromptInput')?.addEventListener('input', (event) => {
+        const promptInput = container.querySelector('#onboardingAiPromptInput');
+        enhancePromptPoolInput(promptInput);
+        promptInput?.addEventListener('input', (event) => {
             state.selected.aiSystemPrompt = event.target.value;
         });
         container.querySelector('#onboardingAiSyllabusInput')?.addEventListener('input', (event) => {
@@ -1466,6 +1469,7 @@ if (modal) {
 
     async function completeOnboarding() {
         if (state.completing) return;
+        const promptInput = modal.querySelector('#onboardingAiPromptInput');
         state.completing = true;
         updateFooter();
         try {
@@ -1476,6 +1480,7 @@ if (modal) {
             });
             state.selected.classroomUrl = result.classroom_url || '';
             if (result.course_id && !state.selected.courseId) state.selected.courseId = Number(result.course_id);
+            await recordPromptForInput(promptInput, state.selected.aiSystemPrompt);
             showToast(result.message || '课堂开设成功', 'success');
             await loadState({ silent: true });
             state.completing = false;

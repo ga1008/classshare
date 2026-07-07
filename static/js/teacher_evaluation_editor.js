@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml } from './ui.js';
+import { enhancePromptPoolInput, isPromptShareEnabled } from './prompt_pool.js';
 
 // ---------------------------------------------------------------------------
 // Boot state
@@ -233,7 +234,7 @@ function ensureRewriteModal() {
             </header>
             <label class="te-ai-modal__field">
                 <span>额外提示（可选，优先级更高）</span>
-                <textarea id="te-ai-rewrite-prompt" rows="7"
+                <textarea id="te-ai-rewrite-prompt" rows="7" data-prompt-pool-key="teacher_evaluation.rewrite_analysis"
                     placeholder="例如：写得更详细一些，分 3 点，每点结合课堂表现、作业考试和后续改革建议，总字数约 600 字。"></textarea>
             </label>
             <footer class="te-ai-modal__footer">
@@ -248,7 +249,9 @@ function ensureRewriteModal() {
     modal.querySelector('#te-ai-rewrite-close').addEventListener('click', closeRewriteModal);
     modal.querySelector('#te-ai-rewrite-cancel').addEventListener('click', closeRewriteModal);
     modal.querySelector('#te-ai-rewrite-confirm').addEventListener('click', submitRewritePrompt);
-    modal.querySelector('#te-ai-rewrite-prompt').addEventListener('keydown', (event) => {
+    const promptInput = modal.querySelector('#te-ai-rewrite-prompt');
+    enhancePromptPoolInput(promptInput);
+    promptInput.addEventListener('keydown', (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
             event.preventDefault();
             submitRewritePrompt();
@@ -300,24 +303,25 @@ async function submitRewritePrompt() {
     const promptEl = modal.querySelector('#te-ai-rewrite-prompt');
     const confirmBtn = modal.querySelector('#te-ai-rewrite-confirm');
     const prompt = promptEl?.value?.trim() || '';
+    const sharePrompt = isPromptShareEnabled(promptEl);
     confirmBtn.disabled = true;
     closeRewriteModal();
     try {
-        await rewriteAnalysis(prompt);
+        await rewriteAnalysis(prompt, { sharePrompt });
         if (promptEl) promptEl.value = '';
     } finally {
         confirmBtn.disabled = false;
     }
 }
 
-async function rewriteAnalysis(extraPrompt) {
+async function rewriteAnalysis(extraPrompt, { sharePrompt = true } = {}) {
     const analysisEl = document.getElementById('te-analysis');
     setAnalysisRewriteLoading(true);
     try {
         await persistContent();
         const res = await apiFetch(`/api/teacher-evaluations/${state.id}/rewrite-analysis`, {
             method: 'POST',
-            body: { prompt: extraPrompt || '' },
+            body: { prompt: extraPrompt || '', share_prompt: sharePrompt },
             silent: true,
         });
         state.analysis = res.analysis || '';

@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse, Response
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher
 from ..services import teacher_evaluation_service as te
+from ..services import prompt_pool_service as prompt_pool
 from ..services.resource_access_service import is_super_admin_teacher
 from ..services.teacher_evaluation_generation_service import (
     build_analysis_rewrite_context,
@@ -347,6 +348,7 @@ async def put_content(evaluation_id: str, request: Request, user: dict = Depends
 async def rewrite_analysis(evaluation_id: str, request: Request, user: dict = Depends(get_current_teacher)):
     body = await _json_body(request)
     extra_prompt = str(body.get("prompt") or body.get("extra_prompt") or "").strip()[:3000]
+    share_prompt = body.get("share_prompt", True)
     teacher_id = int(user["id"])
     with get_db_connection() as conn:
         evaluation = _load_owned_or_super(conn, evaluation_id, user)
@@ -360,6 +362,12 @@ async def rewrite_analysis(evaluation_id: str, request: Request, user: dict = De
     with get_db_connection() as conn:
         _load_owned_or_super(conn, evaluation_id, user)
         updated = te.update_analysis_only(conn, evaluation_id, analysis=analysis, status="ready")
+        prompt_pool.record_prompt_if_shared(
+            conn,
+            "teacher_evaluation.rewrite_analysis",
+            extra_prompt,
+            share_prompt,
+        )
         conn.commit()
         if not updated:
             raise HTTPException(404, "教师评学表不存在")

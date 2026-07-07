@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { closeModal, escapeHtml, formatDate, formatSize, getFileIcon, openModal, renderMarkdown, showToast } from './ui.js';
+import { enhancePromptPoolInputs, recordPromptForInput } from './prompt_pool.js';
 import {
     getLearningDocumentUrl,
     getMaterialPreviewUrl,
@@ -2162,6 +2163,7 @@ async function submitAiGenerate() {
             method: 'POST',
             body: formData,
         });
+        await recordPromptForInput(refs.aiGeneratePrompt, prompt);
         closeModal('materials-ai-generate-modal');
         showToast(result.message || 'AI 材料已生成', 'success', 5200);
         await loadLibrary(state.currentParentId, false);
@@ -2281,6 +2283,7 @@ function submitAiRewrite() {
         silent: true,
     }).then(async (result) => {
         finishAiPendingTask(pendingKey, { success: true });
+        await recordPromptForInput(refs.aiRewritePrompt, prompt);
         showToast(result.message || 'AI 处理完成', 'success', 5200);
         await loadLibrary(state.currentParentId, false);
         if (result.viewer_url) {
@@ -3182,6 +3185,7 @@ function submitAiExpand() {
         silent: true,
     }).then(async (result) => {
         finishAiPendingTask(pendingKey, { success: true });
+        await recordPromptForInput(refs.aiExpandPrompt, prompt);
         showToast(result.message || 'AI 续写完成', 'success', 5200);
         await loadLibrary(state.currentParentId, false);
         if (result.viewer_url) {
@@ -3864,6 +3868,7 @@ function bindEvents() {
 }
 
 bindEvents();
+enhancePromptPoolInputs(document);
 updateFilterControls();
 
 loadLibrary(state.currentParentId, false).catch(async (error) => {

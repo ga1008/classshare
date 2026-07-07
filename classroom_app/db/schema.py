@@ -14,6 +14,7 @@ from .schema_learning_blog import ensure_learning_blog_signature_schema
 from .schema_lesson_plans import ensure_lesson_plan_schema
 from .schema_assessment_plans import ensure_assessment_plan_schema
 from .schema_teacher_evaluations import ensure_teacher_evaluation_schema
+from .schema_prompt_pool import ensure_prompt_pool_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
 from .schema_polls import ensure_poll_schema
 from .schema_resume import ensure_resume_schema
@@ -178,6 +179,16 @@ def init_database():
             print("[DB] PostgreSQL resume console tables ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL resume console schema step skipped: {exc}")
+        try:
+            prompt_pool_conn = get_db_connection()
+            try:
+                ensure_prompt_pool_schema(prompt_pool_conn)
+                prompt_pool_conn.commit()
+            finally:
+                prompt_pool_conn.close()
+            print("[DB] PostgreSQL prompt-pool table ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL prompt-pool schema step skipped: {exc}")
         print(
             "[DB] PostgreSQL schema verified: "
             f"{report['present_required_table_count']}/{report['required_table_count']} required tables"
@@ -202,6 +213,7 @@ def init_database():
             ensure_assessment_plan_schema(conn)
             ensure_teacher_evaluation_schema(conn)
             ensure_resume_schema(conn)
+            ensure_prompt_pool_schema(conn)
             conn.commit()
         except Exception:
             conn.rollback()

@@ -3648,6 +3648,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/prompt-pool",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_prompt_pool",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/prompt-pool/record",
+    "methods": [
+      "POST"
+    ],
+    "name": "record_prompt",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/resume/attachments",
     "methods": [
       "POST"

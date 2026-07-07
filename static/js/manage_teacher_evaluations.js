@@ -1,6 +1,7 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
 import { openTreeSelectFormModal } from './tree_select_form_modal.js';
+import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -388,6 +389,7 @@ function openGenerateModal() {
         emptyText: '你还没有可用的教学班级。',
         promptLabel: '给 AI 的补充要求（可选）',
         promptPlaceholder: '如：该班整体学习积极性较高，作业完成度好，请客观评分。',
+        promptPoolKey: 'teacher_evaluation.generate_from_classroom',
         confirmLabel: '确定并生成',
         hintHtml: '系统将<strong>归集该班级本学期在这门课的全部表现</strong>（作业/考试成绩、课堂互动、修炼等级等），用<strong>快速 AI</strong> 为 10 项指标公平打分（总分 60-95），自动计算综合评价并撰写学习情况分析。可关闭窗口，列表以占位卡显示进度。',
         onSelect: (offering) => offeringPanelDescriptor(offering),
@@ -423,7 +425,7 @@ function openImportModal() {
             </div>
             <ul class="lp-filelist" data-te-filelist></ul>
             <label class="lp-form__full">给 AI 的额外提示（可选）
-                <textarea data-te-extra rows="3" placeholder="如：这是《服务器配置与管理》软工231班的教师评学表，请忠实还原各项得分与评语。"></textarea>
+                <textarea data-te-extra data-prompt-pool-key="teacher_evaluation.import" rows="3" placeholder="如：这是《服务器配置与管理》软工231班的教师评学表，请忠实还原各项得分与评语。"></textarea>
             </label>
             <p class="lp-form__hint">点击导入后将调用<strong>思考 + 多模态 AI</strong>解析字段、10 项得分与评语。窗口会关闭并在列表中以占位卡显示「解析中」。</p>
         </div>`;
@@ -433,6 +435,8 @@ function openImportModal() {
         onMount: (overlay, close) => {
             const picked = [];
             const input = overlay.querySelector('[data-te-file]');
+            const promptInput = overlay.querySelector('[data-te-extra]');
+            enhancePromptPoolInput(promptInput);
             const listEl = overlay.querySelector('[data-te-filelist]');
             const dz = overlay.querySelector('[data-te-dropzone]');
             const renderFiles = () => {
@@ -463,6 +467,7 @@ function openImportModal() {
                 fd.append('extra_prompt', overlay.querySelector('[data-te-extra]').value || '');
                 try {
                     await apiFetch('/api/teacher-evaluations/import', { method: 'POST', body: fd });
+                    await recordPromptForInput(promptInput);
                     close();
                     showToast('已开始解析，列表中将显示进度。', 'success');
                     loadEvaluations();

@@ -1860,7 +1860,7 @@
         <div class="modal-body">
             <div class="exam-reverse-field">
                 <label for="material-reverse-prompt">额外提示</label>
-                <textarea id="material-reverse-prompt" maxlength="1200" placeholder="可补充课程性质、考核形式、评分侧重点、特殊扣分规则；留空则严格依据所选试卷反推。"></textarea>
+                <textarea id="material-reverse-prompt" data-prompt-pool-key="exam.material_reverse" maxlength="1200" placeholder="可补充课程性质、考核形式、评分侧重点、特殊扣分规则；留空则严格依据所选试卷反推。"></textarea>
             </div>
             <div class="exam-reverse-list-title" id="materialReverseListTitle">选择试卷</div>
             <div class="exam-reverse-list" id="materialReversePaperList"></div>
@@ -2925,6 +2925,10 @@
                 })
             });
             window.showMessage?.(result.message || '已开始生成', 'success');
+            await window.PromptPool?.recordPromptForInput(
+                document.getElementById('material-reverse-prompt'),
+                document.getElementById('material-reverse-prompt')?.value || ''
+            );
             const redirectUrl = result.redirect_url || '/manage/teaching/materials';
             setTimeout(() => {
                 window.location.href = redirectUrl;
@@ -3389,8 +3393,10 @@
     import { apiFetch } from '{{ asset_url("js/api.js") }}';
     import { showMessage } from '{{ asset_url("js/ui.js") }}';
     import { renderExamPaperPreview } from '{{ asset_url("js/exam_paper_preview.js") }}';
+    import { enhancePromptPoolInput } from '{{ asset_url("js/prompt_pool.js") }}';
 
     const paperPreviewCache = new Map();
+    enhancePromptPoolInput(document.getElementById('material-reverse-prompt'));
 
     function setPaperPreviewOpen(isOpen) {
         const modal = document.getElementById('paperPreviewModal');

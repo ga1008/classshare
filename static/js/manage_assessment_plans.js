@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
+import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -276,7 +277,7 @@ function openGenerateModal() {
                 <select name="class_offering_id" required>${offeringOptionsHtml(false)}</select>
             </label>
             <label>给 AI 的补充要求（可选）
-                <textarea name="prompt" rows="3" placeholder="如：以机试为主，重点考核 Linux 与数据库部署，分值合计 100。"></textarea>
+                <textarea name="prompt" data-prompt-pool-key="assessment_plan.generate_from_classroom" rows="3" placeholder="如：以机试为主，重点考核 Linux 与数据库部署，分值合计 100。"></textarea>
             </label>
             <p class="lp-form__hint">系统将整合课堂内容、绑定文档、教材与教务考核形式，<strong>用思考型 AI 生成</strong>考核计划表（注意分值合计 100、命题教师签名将自动带入本人签名）。可关闭窗口，列表以占位卡显示进度。</p>
         </form>`;
@@ -284,6 +285,8 @@ function openGenerateModal() {
     openModal('按课堂生成考核计划表', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
+            const promptInput = overlay.querySelector('[name="prompt"]');
+            enhancePromptPoolInput(promptInput);
             overlay.querySelector('[data-ap-submit]').addEventListener('click', async () => {
                 const fd = new FormData(overlay.querySelector('[data-ap-form-generate]'));
                 const offeringId = fd.get('class_offering_id');
@@ -293,6 +296,7 @@ function openGenerateModal() {
                         method: 'POST',
                         body: { class_offering_id: Number(offeringId), prompt: (fd.get('prompt') || '').trim() },
                     });
+                    await recordPromptForInput(promptInput, fd.get('prompt') || '');
                     close();
                     showToast('已开始生成，列表中将显示进度。', 'success');
                     loadPlans();
@@ -313,7 +317,7 @@ function openImportModal() {
             </div>
             <ul class="lp-filelist" data-ap-filelist></ul>
             <label class="lp-form__full">给 AI 的额外提示（可选）
-                <textarea data-ap-extra rows="3" placeholder="如：这是《服务器配置与管理》机试考核计划表，请忠实还原考核项与分值。"></textarea>
+                <textarea data-ap-extra data-prompt-pool-key="assessment_plan.import" rows="3" placeholder="如：这是《服务器配置与管理》机试考核计划表，请忠实还原考核项与分值。"></textarea>
             </label>
             <p class="lp-form__hint">点击导入后将调用<strong>思考 + 多模态 AI</strong>解析，并自动归集签名图片。窗口会关闭并在列表中以占位卡显示「解析中」。</p>
         </div>`;
@@ -323,6 +327,8 @@ function openImportModal() {
         onMount: (overlay, close) => {
             const picked = [];
             const input = overlay.querySelector('[data-ap-file]');
+            const promptInput = overlay.querySelector('[data-ap-extra]');
+            enhancePromptPoolInput(promptInput);
             const listEl = overlay.querySelector('[data-ap-filelist]');
             const dz = overlay.querySelector('[data-ap-dropzone]');
             const renderFiles = () => {
@@ -353,6 +359,7 @@ function openImportModal() {
                 fd.append('extra_prompt', overlay.querySelector('[data-ap-extra]').value || '');
                 try {
                     await apiFetch('/api/assessment-plans/import', { method: 'POST', body: fd });
+                    await recordPromptForInput(promptInput);
                     close();
                     showToast('已开始解析，列表中将显示进度。', 'success');
                     loadPlans();
