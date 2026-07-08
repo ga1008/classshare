@@ -138,6 +138,7 @@ async def preview_ai_import_record_export(
         document_render_service.render_preview_html(
             job,
             title=title,
+            user=user,
             eyebrow="期末材料 · 导出一致预览",
             download_label="下载文件",
         )

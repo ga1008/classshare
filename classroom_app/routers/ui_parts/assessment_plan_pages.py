@@ -91,5 +91,5 @@ async def assessment_plan_preview_page(request: Request, plan_id: str, user: dic
     """考核计划表 HTML 预览（与导出 Word 同版式，可用于查看效果/截图）。"""
     with get_db_connection() as conn:
         plan = _load_plan_for_viewer(conn, plan_id, user)
-        html = ap.render_preview_html(conn, plan)
+        html = ap.render_preview_html(conn, plan, user=user)
     return HTMLResponse(html)

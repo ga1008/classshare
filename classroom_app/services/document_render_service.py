@@ -18,6 +18,7 @@ import os
 import shutil
 import threading
 import time
+import base64
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,7 +36,9 @@ PDF_MEDIA_TYPE = "application/pdf"
 PNG_MEDIA_TYPE = "image/png"
 
 SUPPORTED_FORMATS = {"doc", "docx", "xls", "xlsx", "pdf"}
-RENDER_VERSION = "document-renderer-v1"
+RENDER_VERSION = "document-renderer-v2"
+RENDER_TOKEN_PREFIX = "dr1."
+DEFAULT_TOKEN_TTL_SECONDS = 2 * 60 * 60
 
 
 class DocumentRenderError(RuntimeError):
@@ -113,24 +116,92 @@ def _media_type_for_format(source_format: str, filename: str | None = None) -> s
     return guessed or "application/octet-stream"
 
 
-def _content_key(content: bytes, source_format: str) -> str:
+def _content_key(content: bytes, source_format: str, render_profile: str = "") -> str:
     digest = hashlib.sha256()
     digest.update(RENDER_VERSION.encode("utf-8"))
     digest.update(b"\0")
     digest.update(str(source_format or "").lower().encode("utf-8"))
     digest.update(b"\0")
+    digest.update(str(render_profile or "").encode("utf-8"))
+    digest.update(b"\0")
     digest.update(content)
     return digest.hexdigest()
 
 
+def _secret_key_bytes() -> bytes:
+    return hashlib.sha256(str(SECRET_KEY or "lanshare-document-renderer").encode("utf-8")).digest()
+
+
+def _b64encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _b64decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _render_user_scope(user: dict[str, Any] | None) -> dict[str, str]:
+    raw = user or {}
+    user_id = raw.get("id") or raw.get("user_id") or raw.get("pk") or ""
+    role = raw.get("role") or raw.get("user_role") or ""
+    return {"id": str(user_id), "role": str(role or "")}
+
+
+def is_valid_render_key(key: str) -> bool:
+    text = str(key or "")
+    return len(text) == 64 and all(ch in "0123456789abcdef" for ch in text.lower())
+
+
+def issue_render_token(key: str, *, user: dict[str, Any], ttl_seconds: int | None = None) -> str:
+    if not is_valid_render_key(key):
+        raise DocumentRenderError("预览缓存标识无效，请重新生成预览。")
+    scope = _render_user_scope(user)
+    if not scope["id"] or not scope["role"]:
+        raise DocumentRenderError("预览需要有效的登录用户上下文。")
+    ttl = max(60, min(int(ttl_seconds or DEFAULT_TOKEN_TTL_SECONDS), 24 * 60 * 60))
+    payload = {
+        "v": 1,
+        "key": key,
+        "scope": scope,
+        "exp": int(time.time()) + ttl,
+    }
+    payload_b64 = _b64encode(_canonical_json(payload).encode("utf-8"))
+    signature = hmac.new(_secret_key_bytes(), payload_b64.encode("ascii"), hashlib.sha256).digest()
+    return RENDER_TOKEN_PREFIX + payload_b64 + "." + _b64encode(signature)
+
+
 def sign_render_key(key: str) -> str:
+    """Legacy helper kept for imports; new preview pages use issue_render_token."""
     payload = f"document-render:{key}".encode("utf-8")
-    return hmac.new(str(SECRET_KEY).encode("utf-8"), payload, hashlib.sha256).hexdigest()
+    return hmac.new(_secret_key_bytes(), payload, hashlib.sha256).hexdigest()
 
 
-def verify_render_token(key: str, token: str | None) -> bool:
-    expected = sign_render_key(key)
-    return hmac.compare_digest(expected, str(token or ""))
+def verify_render_token(key: str, token: str | None, *, user: dict[str, Any] | None = None) -> bool:
+    raw = str(token or "").strip()
+    if not is_valid_render_key(key) or not raw.startswith(RENDER_TOKEN_PREFIX):
+        return False
+    try:
+        body = raw[len(RENDER_TOKEN_PREFIX) :]
+        payload_b64, signature_b64 = body.split(".", 1)
+        expected = hmac.new(_secret_key_bytes(), payload_b64.encode("ascii"), hashlib.sha256).digest()
+        actual = _b64decode(signature_b64)
+        if not hmac.compare_digest(expected, actual):
+            return False
+        payload = json.loads(_b64decode(payload_b64).decode("utf-8"))
+    except Exception:
+        return False
+    if payload.get("key") != key:
+        return False
+    if int(payload.get("exp") or 0) < int(time.time()):
+        return False
+    if _render_user_scope(user) != dict(payload.get("scope") or {}):
+        return False
+    return True
 
 
 class DocumentRenderService:
@@ -139,10 +210,12 @@ class DocumentRenderService:
         self.max_concurrent = _env_int("LANSHARE_DOCUMENT_RENDER_MAX_CONCURRENCY", 1)
         self.queue_timeout_seconds = _env_int("LANSHARE_DOCUMENT_RENDER_QUEUE_TIMEOUT_SECONDS", 45)
         self.ttl_seconds = _env_int("LANSHARE_DOCUMENT_RENDER_TTL_SECONDS", 60 * 60 * 24)
+        self.token_ttl_seconds = _env_int("LANSHARE_DOCUMENT_RENDER_TOKEN_TTL_SECONDS", DEFAULT_TOKEN_TTL_SECONDS)
         self.max_pages = _env_int("LANSHARE_DOCUMENT_RENDER_MAX_PAGES", 80)
         self.medium_zoom = float(os.getenv("LANSHARE_DOCUMENT_RENDER_MEDIUM_ZOOM", "1.45") or 1.45)
         self.large_zoom = float(os.getenv("LANSHARE_DOCUMENT_RENDER_LARGE_ZOOM", "2.35") or 2.35)
         self._semaphore = threading.BoundedSemaphore(self.max_concurrent)
+        self._locks_root = self.root / "_locks"
         self._locks_guard = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
         self._cleanup_lock = threading.Lock()
@@ -163,7 +236,7 @@ class DocumentRenderService:
             raise DocumentRenderError(f"暂不支持 {normalized_format or '未知'} 文档预览。")
 
         self.cleanup_expired_maybe()
-        key = _content_key(content, normalized_format)
+        key = _content_key(content, normalized_format, self._render_profile_key())
         job_root = self._job_root(key)
         lock = self._key_lock(key)
         with lock:
@@ -171,20 +244,26 @@ class DocumentRenderService:
             if cached:
                 return cached
 
-            with self._renderer_slot():
+            with self._job_file_lock(key):
                 cached = self._load_ready_job(key)
                 if cached:
                     return cached
-                return self._build_job(
-                    key,
-                    content,
-                    filename=_safe_filename(filename),
-                    media_type=media_type or _media_type_for_format(normalized_format, filename),
-                    source_format=normalized_format,
-                    job_root=job_root,
-                )
+                with self._renderer_slot():
+                    cached = self._load_ready_job(key)
+                    if cached:
+                        return cached
+                    return self._build_job(
+                        key,
+                        content,
+                        filename=_safe_filename(filename),
+                        media_type=media_type or _media_type_for_format(normalized_format, filename),
+                        source_format=normalized_format,
+                        job_root=job_root,
+                    )
 
     def get_job(self, key: str) -> RenderedDocumentJob:
+        if not is_valid_render_key(key):
+            raise DocumentRenderNotFound("预览缓存标识无效，请刷新预览页面重新生成。")
         job = self._load_ready_job(key)
         if not job:
             raise DocumentRenderNotFound("预览缓存已过期，请刷新预览页面重新生成。")
@@ -217,24 +296,29 @@ class DocumentRenderService:
                 return page_path
             if normalized_size != "large":
                 raise DocumentRenderNotFound("预览页缓存已过期，请刷新预览页面。")
-            with self._renderer_slot():
-                pdf_file = str(job.manifest.get("pdf_file") or "document.pdf")
-                pdf_path = job.root / pdf_file
-                if not pdf_path.exists():
-                    raise DocumentRenderNotFound("PDF 中间文件缓存已过期，请刷新预览页面。")
-                self._render_pdf_pages(pdf_path, job.root, zoom=self.large_zoom, size_name="large", page_number=page_number)
-                self._touch_manifest(job)
-                return page_path
+            with self._job_file_lock(key):
+                if page_path.exists():
+                    self._touch_manifest(job)
+                    return page_path
+                with self._renderer_slot():
+                    pdf_file = str(job.manifest.get("pdf_file") or "document.pdf")
+                    pdf_path = job.root / pdf_file
+                    if not pdf_path.exists():
+                        raise DocumentRenderNotFound("PDF 中间文件缓存已过期，请刷新预览页面。")
+                    self._render_pdf_pages(pdf_path, job.root, zoom=self.large_zoom, size_name="large", page_number=page_number)
+                    self._touch_manifest(job)
+                    return page_path
 
     def render_preview_html(
         self,
         job: RenderedDocumentJob,
         *,
         title: str,
+        user: dict[str, Any],
         eyebrow: str = "文档真实预览",
         download_label: str = "下载文件",
     ) -> str:
-        token = sign_render_key(job.key)
+        token = issue_render_token(job.key, user=user, ttl_seconds=self.token_ttl_seconds)
         page_payload = []
         for page_number in range(1, job.page_count + 1):
             base = f"/api/document-renderer/jobs/{quote(job.key)}/pages/{page_number}?token={quote(token)}"
@@ -422,6 +506,11 @@ class DocumentRenderService:
     border-radius: 8px;
     background: #fff;
     box-shadow: var(--shadow);
+    transition: filter 160ms ease, opacity 160ms ease;
+  }}
+  .doc-preview-large-image.is-loading-large {{
+    filter: saturate(0.72);
+    opacity: 0.82;
   }}
   .doc-preview-loading {{
     position: absolute;
@@ -435,6 +524,19 @@ class DocumentRenderService:
     box-shadow: 0 18px 50px rgba(15, 23, 42, 0.20);
   }}
   .doc-preview-loading[hidden] {{ display: none; }}
+  .doc-preview-loading.is-error .doc-preview-spinner {{ display: none; }}
+  .doc-preview-loading__actions {{ display: flex; gap: 8px; align-items: center; }}
+  .doc-preview-loading__actions[hidden] {{ display: none; }}
+  .doc-preview-retry {{
+    min-height: 32px;
+    border: 1px solid rgba(14, 165, 233, 0.24);
+    border-radius: 999px;
+    background: #fff;
+    color: #075985;
+    padding: 0 12px;
+    font-weight: 750;
+    cursor: pointer;
+  }}
   .doc-preview-spinner {{
     width: 26px;
     height: 26px;
@@ -481,7 +583,10 @@ class DocumentRenderService:
     <img class="doc-preview-large-image" data-large-image alt="高清页面预览">
     <div class="doc-preview-loading" data-loading>
       <span class="doc-preview-spinner"></span>
-      <strong>正在生成高清预览...</strong>
+      <strong data-loading-text>正在生成高清预览...</strong>
+      <div class="doc-preview-loading__actions" data-loading-actions hidden>
+        <button class="doc-preview-retry" type="button" data-retry-large>重试高清图</button>
+      </div>
     </div>
   </div>
 </div>
@@ -491,8 +596,11 @@ class DocumentRenderService:
   const lightbox = document.querySelector('[data-lightbox]');
   const image = document.querySelector('[data-large-image]');
   const loading = document.querySelector('[data-loading]');
+  const loadingText = document.querySelector('[data-loading-text]');
+  const loadingActions = document.querySelector('[data-loading-actions]');
   const counter = document.querySelector('[data-lightbox-count]');
   let activeIndex = 0;
+  let latestRequestId = 0;
 
   function clampIndex(index) {{
     if (!pages.length) return 0;
@@ -503,17 +611,28 @@ class DocumentRenderService:
     activeIndex = clampIndex(index);
     const page = pages[activeIndex];
     if (!page) return;
+    const requestId = ++latestRequestId;
     lightbox.hidden = false;
     loading.hidden = false;
-    image.removeAttribute('src');
+    loading.classList.remove('is-error');
+    loadingText.textContent = '正在生成高清预览...';
+    loadingActions.hidden = true;
+    image.classList.add('is-loading-large');
+    image.src = page.mediumUrl;
     counter.textContent = page.number + ' / ' + pages.length;
     const loader = new Image();
     loader.onload = () => {{
+      if (requestId !== latestRequestId) return;
       image.src = loader.src;
+      image.classList.remove('is-loading-large');
       loading.hidden = true;
     }};
     loader.onerror = () => {{
-      loading.querySelector('strong').textContent = '高清预览生成失败，请稍后重试';
+      if (requestId !== latestRequestId) return;
+      image.classList.remove('is-loading-large');
+      loading.classList.add('is-error');
+      loadingText.textContent = '高清预览生成失败，已保留清晰中图';
+      loadingActions.hidden = false;
     }};
     loader.src = page.largeUrl;
   }}
@@ -524,6 +643,10 @@ class DocumentRenderService:
   document.querySelector('[data-close]').addEventListener('click', () => {{ lightbox.hidden = true; }});
   document.querySelector('[data-prev]').addEventListener('click', () => openPage(activeIndex - 1));
   document.querySelector('[data-next]').addEventListener('click', () => openPage(activeIndex + 1));
+  document.querySelector('[data-retry-large]').addEventListener('click', (event) => {{
+    event.stopPropagation();
+    openPage(activeIndex);
+  }});
   lightbox.addEventListener('click', (event) => {{
     if (event.target === lightbox) lightbox.hidden = true;
   }});
@@ -564,7 +687,7 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
         current = now or time.time()
         if not self.root.exists():
             return
-        for manifest_path in self.root.glob("*/*/manifest.json"):
+        for manifest_path in self._iter_manifest_paths():
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 last_access = float(manifest.get("last_access_at") or manifest.get("updated_at") or 0)
@@ -572,11 +695,69 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
                 last_access = 0
             if current - last_access <= self.ttl_seconds:
                 continue
+            key = str(manifest.get("key") or manifest_path.parent.name)
+            if is_valid_render_key(key):
+                try:
+                    with self._job_file_lock(key, timeout_seconds=0):
+                        shutil.rmtree(manifest_path.parent, ignore_errors=True)
+                except DocumentRenderQueueBusy:
+                    continue
+                continue
             job_root = manifest_path.parent
             try:
                 shutil.rmtree(job_root, ignore_errors=True)
             except OSError:
                 pass
+
+    def cache_stats(self) -> dict[str, Any]:
+        stats: dict[str, Any] = {
+            "root": str(self.root),
+            "max_concurrent": self.max_concurrent,
+            "queue_timeout_seconds": self.queue_timeout_seconds,
+            "ttl_seconds": self.ttl_seconds,
+            "token_ttl_seconds": self.token_ttl_seconds,
+            "max_pages": self.max_pages,
+            "medium_zoom": self.medium_zoom,
+            "large_zoom": self.large_zoom,
+            "job_count": 0,
+            "total_bytes": 0,
+            "medium_pages": 0,
+            "large_pages": 0,
+        }
+        if not self.root.exists():
+            return stats
+        now = time.time()
+        oldest_access: float | None = None
+        newest_access: float | None = None
+        for manifest_path in self._iter_manifest_paths():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            stats["job_count"] += 1
+            last_access = float(manifest.get("last_access_at") or manifest.get("updated_at") or 0)
+            if last_access:
+                oldest_access = last_access if oldest_access is None else min(oldest_access, last_access)
+                newest_access = last_access if newest_access is None else max(newest_access, last_access)
+            try:
+                children = list(manifest_path.parent.iterdir())
+            except OSError:
+                continue
+            for child in children:
+                if not child.is_file():
+                    continue
+                try:
+                    stats["total_bytes"] += child.stat().st_size
+                except OSError:
+                    continue
+                name = child.name
+                if name.endswith(".medium.png"):
+                    stats["medium_pages"] += 1
+                elif name.endswith(".large.png"):
+                    stats["large_pages"] += 1
+        stats["oldest_access_age_seconds"] = int(now - oldest_access) if oldest_access else None
+        stats["newest_access_age_seconds"] = int(now - newest_access) if newest_access else None
+        return stats
 
     def _build_job(
         self,
@@ -607,6 +788,7 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
         now = time.time()
         manifest = {
             "version": RENDER_VERSION,
+            "render_profile": self._render_profile(),
             "key": key,
             "filename": filename,
             "media_type": media_type,
@@ -648,12 +830,14 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
                 page = doc.load_page(current_page - 1)
                 pix = page.get_pixmap(matrix=matrix, alpha=False)
                 page_path = self._page_path(job_root, current_page, size_name)
-                pix.save(page_path)
+                self._atomic_write_bytes(page_path, pix.tobytes("png"))
             return page_count
         finally:
             doc.close()
 
     def _load_ready_job(self, key: str) -> RenderedDocumentJob | None:
+        if not is_valid_render_key(key):
+            return None
         job_root = self._job_root(key)
         manifest_path = job_root / "manifest.json"
         if not manifest_path.exists():
@@ -663,6 +847,8 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
         except (OSError, ValueError):
             return None
         if manifest.get("version") != RENDER_VERSION or manifest.get("key") != key:
+            return None
+        if manifest.get("render_profile") != self._render_profile():
             return None
         page_count = int(manifest.get("page_count") or 0)
         if page_count <= 0:
@@ -693,6 +879,39 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
         tmp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp_path.replace(final_path)
 
+    def _atomic_write_bytes(self, final_path: Path, content: bytes) -> None:
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = final_path.with_name(f"{final_path.name}.{threading.get_ident()}.tmp")
+        tmp_path.write_bytes(content)
+        tmp_path.replace(final_path)
+
+    def _render_profile(self) -> dict[str, Any]:
+        return {
+            "medium_zoom": round(float(self.medium_zoom), 4),
+            "large_zoom": round(float(self.large_zoom), 4),
+            "max_pages": int(self.max_pages),
+        }
+
+    def _render_profile_key(self) -> str:
+        return _canonical_json(self._render_profile())
+
+    def _iter_manifest_paths(self):
+        if not self.root.exists():
+            return
+        try:
+            prefix_roots = list(self.root.iterdir())
+        except OSError:
+            return
+        for prefix_root in prefix_roots:
+            if not prefix_root.is_dir() or prefix_root.name.startswith("_"):
+                continue
+            try:
+                manifest_paths = list(prefix_root.glob("*/manifest.json"))
+            except OSError:
+                continue
+            for manifest_path in manifest_paths:
+                yield manifest_path
+
     def _job_root(self, key: str) -> Path:
         return self.root / key[:2] / key
 
@@ -707,13 +926,112 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
                 self._locks[key] = lock
             return lock
 
+    def _lock_path_for_key(self, key: str) -> Path:
+        return self._locks_root / f"job-{key}.lock"
+
+    def _prepare_lock_handle(self, handle) -> None:
+        handle.seek(0)
+        handle.write(b"0")
+        handle.flush()
+        handle.seek(0)
+
+    def _try_lock_handle(self, handle) -> None:
+        self._prepare_lock_handle(handle)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock_handle(self, handle) -> None:
+        try:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+
+    @contextmanager
+    def _file_lock(self, lock_path: Path, *, timeout_seconds: int | float, busy_message: str):
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+        handle = lock_path.open("a+b")
+        acquired = False
+        try:
+            while True:
+                try:
+                    self._try_lock_handle(handle)
+                    acquired = True
+                    break
+                except OSError as exc:
+                    if time.monotonic() >= deadline:
+                        raise DocumentRenderQueueBusy(busy_message) from exc
+                    time.sleep(0.08)
+            yield
+        finally:
+            if acquired:
+                self._unlock_handle(handle)
+            handle.close()
+
+    @contextmanager
+    def _job_file_lock(self, key: str, *, timeout_seconds: int | float | None = None):
+        timeout = self.queue_timeout_seconds if timeout_seconds is None else timeout_seconds
+        with self._file_lock(
+            self._lock_path_for_key(key),
+            timeout_seconds=timeout,
+            busy_message="同一文档正在生成预览，请稍后刷新。",
+        ):
+            yield
+
+    @contextmanager
+    def _global_renderer_slot(self):
+        self._locks_root.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + float(self.queue_timeout_seconds)
+        handle = None
+        acquired = False
+        try:
+            while True:
+                for index in range(max(1, self.max_concurrent)):
+                    candidate = self._locks_root / f"slot-{index}.lock"
+                    candidate.parent.mkdir(parents=True, exist_ok=True)
+                    current = candidate.open("a+b")
+                    try:
+                        self._try_lock_handle(current)
+                    except OSError:
+                        current.close()
+                        continue
+                    handle = current
+                    acquired = True
+                    break
+                if acquired:
+                    break
+                if time.monotonic() >= deadline:
+                    raise DocumentRenderQueueBusy("文档渲染任务较多，请稍后重试。")
+                time.sleep(0.08)
+            yield
+        finally:
+            if handle is not None:
+                if acquired:
+                    self._unlock_handle(handle)
+                handle.close()
+
     @contextmanager
     def _renderer_slot(self):
         acquired = self._semaphore.acquire(timeout=self.queue_timeout_seconds)
         if not acquired:
             raise DocumentRenderQueueBusy("文档渲染任务较多，请稍后重试。")
         try:
-            yield
+            with self._global_renderer_slot():
+                yield
         finally:
             self._semaphore.release()
 

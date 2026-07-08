@@ -4,7 +4,7 @@ from pathlib import Path
 
 from classroom_app.services.document_render_service import (
     DocumentRenderService,
-    sign_render_key,
+    issue_render_token,
     verify_render_token,
 )
 
@@ -56,13 +56,44 @@ class DocumentRenderServiceTests(unittest.TestCase):
 
     def test_render_key_token_is_required(self):
         key = "a" * 64
-        token = sign_render_key(key)
+        owner = {"id": 7, "role": "teacher"}
+        other_user = {"id": 8, "role": "teacher"}
+        token = issue_render_token(key, user=owner)
 
-        self.assertTrue(verify_render_token(key, token))
+        self.assertTrue(verify_render_token(key, token, user=owner))
+        self.assertFalse(verify_render_token(key, token, user=other_user))
+        self.assertFalse(verify_render_token(key, token, user=None))
         self.assertFalse(verify_render_token(key, "wrong-token"))
-        self.assertFalse(verify_render_token("b" * 64, token))
+        self.assertFalse(verify_render_token("b" * 64, token, user=owner))
+
+    def test_cache_stats_reports_jobs_and_render_profile_separates_keys(self):
+        with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
+            root = Path(temp_dir)
+            pdf_bytes = _build_pdf_bytes(page_count=1)
+            first_service = DocumentRenderService(root=root)
+            first = first_service.render_artifact(
+                pdf_bytes,
+                filename="sample.pdf",
+                media_type="application/pdf",
+                source_format="pdf",
+            )
+
+            second_service = DocumentRenderService(root=root)
+            second_service.medium_zoom = first_service.medium_zoom + 0.1
+            second = second_service.render_artifact(
+                pdf_bytes,
+                filename="sample.pdf",
+                media_type="application/pdf",
+                source_format="pdf",
+            )
+
+            stats = second_service.cache_stats()
+            self.assertNotEqual(first.key, second.key)
+            self.assertEqual(2, stats["job_count"])
+            self.assertGreater(stats["total_bytes"], len(pdf_bytes))
+            self.assertEqual(2, stats["medium_pages"])
+            self.assertEqual(0, stats["large_pages"])
 
 
 if __name__ == "__main__":
     unittest.main()
-

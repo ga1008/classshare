@@ -1544,6 +1544,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/document-renderer/jobs/{key}/metadata",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_rendered_document_metadata",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/document-renderer/jobs/{key}/pages/{page_number}",
     "methods": [
       "GET"

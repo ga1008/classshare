@@ -102,4 +102,4 @@ async def lesson_plan_preview_page(request: Request, plan_id: str, user: dict = 
     """教案 HTML 预览（与导出 Word 同版式，可用于查看效果/截图）。"""
     with get_db_connection() as conn:
         plan = _load_plan_for_viewer(conn, plan_id, user)
-    return HTMLResponse(render_plan_html(plan))
+    return HTMLResponse(render_plan_html(plan, user=user))

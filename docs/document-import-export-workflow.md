@@ -62,10 +62,14 @@ flow is:
    PyMuPDF.
 4. The preview page uses `document_render_service.render_preview_html(...)` to
    show one 3D page card per rendered page. Clicking a page requests a cached or
-   lazily rendered large PNG for that page.
+   lazily rendered large PNG for that page. The medium image remains visible as
+   a fallback while the large image is being prepared; failed large-image loads
+   show a retry action instead of leaving a blank preview.
 5. The preview download button returns the already-rendered final document via
    `/api/document-renderer/jobs/{key}/download`, so preview-page export does not
    regenerate the document.
+6. `/api/document-renderer/jobs/{key}/metadata` exposes lightweight job metadata
+   for diagnostics or future UI enhancements.
 
 The current first-class consumers are:
 
@@ -77,26 +81,35 @@ The current first-class consumers are:
 
 Concurrency and caching:
 
-- The renderer key is a SHA-256 hash over renderer version, source format, and
-  final document bytes. Identical exports reuse the same cached document, PDF,
-  and page PNGs.
+- The renderer key is a SHA-256 hash over renderer version, source format,
+  render profile (page-image zooms and page cap), and final document bytes.
+  Identical exports reuse the same cached document, PDF, and page PNGs.
 - Per-key locks deduplicate concurrent requests for the same document.
-- A process-local semaphore limits expensive LibreOffice/PyMuPDF work. Configure
-  with `LANSHARE_DOCUMENT_RENDER_MAX_CONCURRENCY` (default `1`) and
+- A process-local semaphore plus filesystem slot locks limit expensive
+  LibreOffice/PyMuPDF work across app workers on the same host. Configure with
+  `LANSHARE_DOCUMENT_RENDER_MAX_CONCURRENCY` (default `1`) and
   `LANSHARE_DOCUMENT_RENDER_QUEUE_TIMEOUT_SECONDS` (default `45`).
+- Page images are written to temporary files and atomically replaced, so readers
+  do not observe partially written PNGs.
 - Cached artifacts are touched on access and removed opportunistically after
   `LANSHARE_DOCUMENT_RENDER_TTL_SECONDS` (default `86400`). The cleanup runs at
   most once every ten minutes per process.
 - `LANSHARE_DOCUMENT_RENDER_MAX_PAGES` (default `80`) protects the small server
   from very large documents. Increase it only after considering CPU, memory, and
   storage pressure.
+- `/api/internal/health` includes a `document_renderer` block with root path,
+  concurrency/TTL settings, cached job count, cached byte count, and rendered
+  medium/large page counts.
 
 Security and access:
 
 - Business routes must still perform normal permission checks before building
-  an artifact. The generic image/download routes also require a logged-in user
-  and a signed render token generated from `SECRET_KEY`; the token is embedded
-  only in preview HTML returned after the business permission check.
+  an artifact. The generic image/download/metadata routes also require a
+  logged-in user and a short-lived signed render token generated from
+  `SECRET_KEY`. The token is bound to the current user id + role and embedded
+  only in preview HTML returned after the business permission check. Configure
+  the token life with `LANSHARE_DOCUMENT_RENDER_TOKEN_TTL_SECONDS` (default
+  `7200`, capped at 24 hours).
 - The renderer cache is temporary runtime data. Do not commit generated
   documents, PDFs, PNGs, or `.codex-temp/` QA screenshots.
 

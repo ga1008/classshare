@@ -893,7 +893,7 @@ def export_plan_artifact(conn: sqlite3.Connection, plan: dict[str, Any], *, requ
     )
 
 
-def render_preview_html(conn: sqlite3.Connection, plan: dict[str, Any]) -> str:
+def render_preview_html(conn: sqlite3.Connection, plan: dict[str, Any], *, user: dict[str, Any]) -> str:
     """Image-backed preview generated from the same DOCX used for export."""
     title = _text(plan.get("title")) or "课程考核计划表"
     try:
@@ -909,6 +909,7 @@ def render_preview_html(conn: sqlite3.Connection, plan: dict[str, Any]) -> str:
     return document_render_service.render_preview_html(
         job,
         title=title,
+        user=user,
         eyebrow="课程考核计划表 · 导出一致预览",
         download_label="下载 Word",
     )

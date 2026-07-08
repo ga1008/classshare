@@ -838,7 +838,7 @@ def export_evaluation_artifact(evaluation: dict[str, Any], *, requested_format: 
     )
 
 
-def render_preview_html(evaluation: dict[str, Any]) -> str:
+def render_preview_html(evaluation: dict[str, Any], *, user: dict[str, Any]) -> str:
     """Image-backed preview generated from the same DOCX used for export."""
     title = _text(evaluation.get("title")) or "教师评学表"
     try:
@@ -854,6 +854,7 @@ def render_preview_html(evaluation: dict[str, Any]) -> str:
     return document_render_service.render_preview_html(
         job,
         title=title,
+        user=user,
         eyebrow="教师评学表 · 导出一致预览",
         download_label="下载 Word",
     )

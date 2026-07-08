@@ -12,7 +12,7 @@ from .document_render_service import DocumentRenderError, document_render_servic
 from .lesson_plan_docx_service import build_lesson_plan_docx
 
 
-def render_plan_html(plan: dict[str, Any]) -> str:
+def render_plan_html(plan: dict[str, Any], *, user: dict[str, Any]) -> str:
     """A standalone preview page backed by rendered final DOCX page images."""
     title_text = (plan.get("cover") or {}).get("course_name") or plan.get("title") or "教案预览"
     base_title = str(plan.get("title") or title_text or "教案").replace("/", "_").replace("\\", "_")
@@ -29,6 +29,7 @@ def render_plan_html(plan: dict[str, Any]) -> str:
     return document_render_service.render_preview_html(
         job,
         title=title_text,
+        user=user,
         eyebrow="教案 · 导出一致预览",
         download_label="下载 Word",
     )

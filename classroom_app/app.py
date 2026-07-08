@@ -46,6 +46,7 @@ from .services.behavior_tracking_service import (
 )
 from .services.background_task_ledger_service import build_background_task_health_summary
 from .services.discussion_mood_service import stop_discussion_mood_refresh_tasks
+from .services.document_render_service import document_render_service
 from .services.email_notification_service import email_worker_health_snapshot
 from .services.message_center_service import schedule_pending_private_ai_reply_jobs
 from .services.runtime_metrics_service import begin_http_request, finish_http_request, get_runtime_metrics_snapshot
@@ -280,6 +281,7 @@ async def internal_health():
         "behavior_write_queue_capacity": behavior_stats["queue_capacity"],
         "email_worker": email_worker_health_snapshot(),
         "background_tasks": build_background_task_health_summary(),
+        "document_renderer": document_render_service.cache_stats(),
     }
 
 

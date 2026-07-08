@@ -122,5 +122,5 @@ async def teacher_evaluation_preview_page(request: Request, evaluation_id: str, 
     """教师评学表 HTML 预览（与导出 Word 同版式，可用于查看效果/截图）。"""
     with get_db_connection() as conn:
         evaluation = _load_evaluation_for_viewer(conn, evaluation_id, user)
-        html = te.render_preview_html(evaluation)
+        html = te.render_preview_html(evaluation, user=user)
     return HTMLResponse(html)
