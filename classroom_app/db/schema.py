@@ -4,7 +4,12 @@ import sys
 from .. import config
 from .connection import get_db_connection
 from .postgres_indexes import ensure_postgres_performance_indexes
-from .postgres_schema import ensure_postgres_runtime_columns, ensure_postgres_runtime_constraints, validate_postgres_schema
+from .postgres_schema import (
+    ensure_postgres_runtime_columns,
+    ensure_postgres_runtime_constraints,
+    ensure_postgres_runtime_tables,
+    validate_postgres_schema,
+)
 from .schema_agent_ext import ensure_agent_task_extension_schema
 from .schema_assignments import ensure_assignment_schema
 from .schema_classroom_activity import ensure_classroom_activity_schema
@@ -33,14 +38,17 @@ def init_database():
         conn = get_db_connection()
         try:
             ensure_cultivation_progress_schema(conn, engine="postgres")
+            runtime_table_report = ensure_postgres_runtime_tables(conn)
             runtime_column_report = ensure_postgres_runtime_columns(conn)
             runtime_constraint_report = ensure_postgres_runtime_constraints(conn)
             conn.commit()
             report = validate_postgres_schema(conn)
+            report["runtime_tables"] = runtime_table_report
             report["runtime_columns"] = runtime_column_report
             report["runtime_constraints"] = runtime_constraint_report
             report["schema_writes_executed"] = bool(
-                runtime_column_report["schema_writes_executed"]
+                runtime_table_report["schema_writes_executed"]
+                or runtime_column_report["schema_writes_executed"]
                 or runtime_constraint_report["schema_writes_executed"]
             )
         except Exception:

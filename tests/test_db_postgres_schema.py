@@ -7,12 +7,14 @@ from classroom_app import config, database
 from classroom_app.db.errors import DatabaseProgrammingError
 from classroom_app.db.postgres_schema import (
     POSTGRES_RUNTIME_COLUMN_DEFINITIONS,
+    POSTGRES_RUNTIME_TABLE_DEFINITIONS,
     POSTGRES_RUNTIME_UNIQUE_INDEXES,
     REQUIRED_POSTGRES_COLUMNS,
     REQUIRED_POSTGRES_TABLES,
     build_postgres_schema_report,
     ensure_postgres_runtime_constraints,
     ensure_postgres_runtime_columns,
+    ensure_postgres_runtime_tables,
     validate_postgres_schema,
 )
 
@@ -61,6 +63,11 @@ class FakePostgresConnection:
         if "pg_indexes" in normalized:
             return FakeCursor([])
         if "HAVING COUNT(*) > 1" in normalized:
+            return FakeCursor([])
+        if normalized.startswith("CREATE TABLE IF NOT EXISTS"):
+            match = re.search(r"CREATE TABLE IF NOT EXISTS ([A-Za-z_][A-Za-z0-9_]*)", normalized)
+            if match:
+                self.missing_tables.discard(match.group(1))
             return FakeCursor([])
         if normalized.startswith("CREATE UNIQUE INDEX IF NOT EXISTS"):
             return FakeCursor([])
@@ -159,6 +166,16 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         self.assertIn('ALTER TABLE "learning_certificates" ADD COLUMN IF NOT EXISTS "revealed_at"', executed_sql)
         self.assertIn("UPDATE learning_material_progress", executed_sql)
 
+    def test_ensure_runtime_tables_creates_mapping_table(self):
+        conn = FakePostgresConnection(missing_tables=POSTGRES_RUNTIME_TABLE_DEFINITIONS.keys())
+
+        report = ensure_postgres_runtime_tables(conn)
+
+        self.assertTrue(report["schema_writes_executed"])
+        self.assertIn("teacher_academic_teaching_class_mappings", report["created_tables"])
+        executed_sql = "\n".join(str(sql) for sql, _ in conn.executed_sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS teacher_academic_teaching_class_mappings", executed_sql)
+
     def test_runtime_constraints_cover_integration_upsert_targets(self):
         runtime_index_names = {index_name for index_name, _table, _columns in POSTGRES_RUNTIME_UNIQUE_INDEXES}
         expected = {
@@ -167,6 +184,7 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "idx_teacher_academic_course_occurrences_unique_session",
             "idx_teacher_academic_roster_items_unique_teaching_class",
             "idx_teacher_academic_roster_memberships_unique_student",
+            "idx_teacher_academic_class_mappings_unique_teaching_class",
             "idx_teacher_academic_invigilation_items_unique_key",
             "idx_teacher_academic_course_exam_items_unique_key",
             "idx_teacher_academic_exam_roster_items_unique_course",

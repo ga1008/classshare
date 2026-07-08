@@ -14,6 +14,7 @@ import httpx
 from ..database import get_db_connection
 from ..db.connection import execute_insert_returning_id
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
+from .academic_class_mapping_service import resolve_teaching_class_display_name
 from .academic_location_service import (
     compose_exam_location,
     enrich_campus_building,
@@ -539,16 +540,41 @@ def _full_location(item: AcademicInvigilationItem) -> str:
     return compose_exam_location(item.campus, item.building, item.location)
 
 
-def _event_notes(item: AcademicInvigilationItem) -> str:
+def _resolve_class_display_name(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    item: AcademicInvigilationItem,
+) -> str:
+    return resolve_teaching_class_display_name(
+        conn,
+        teacher_id=int(teacher_id),
+        teaching_class_name=item.teaching_class_name,
+        course_code=item.course_code,
+        academic_year=item.academic_year,
+        academic_term=item.academic_term,
+        default=item.class_composition or item.teaching_class_name,
+    )
+
+
+def _event_notes(item: AcademicInvigilationItem, *, class_display_name: str = "") -> str:
     parts = [
         item.exam_time_text,
         _full_location(item),
-        item.teaching_class_name,
+        class_display_name or item.teaching_class_name,
         item.class_composition,
         f"{item.exam_student_count} 人" if item.exam_student_count else "",
         item.invigilation_role,
     ]
-    return " | ".join(part for part in parts if part)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        text = str(part or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        deduped.append(text)
+    return " | ".join(deduped)
 
 
 def _upsert_calendar_event(
@@ -572,6 +598,7 @@ def _upsert_calendar_event(
         """,
         (int(teacher_id), TEACHER_CALENDAR_SOURCE_INVIGILATION, source_key),
     ).fetchone()
+    class_display_name = _resolve_class_display_name(conn, teacher_id=teacher_id, item=item)
     metadata = {
         "academic_source": ACADEMIC_INVIGILATION_SOURCE,
         "invigilation_item_id": item_id,
@@ -581,7 +608,9 @@ def _upsert_calendar_event(
         "exam_paper_code": item.exam_paper_code,
         "course_code": item.course_code,
         "course_name": item.course_name,
-        "teaching_class_name": item.teaching_class_name,
+        "teaching_class_name": class_display_name or item.teaching_class_name,
+        "academic_teaching_class_name": item.teaching_class_name,
+        "class_display_name": class_display_name,
         "student_count": item.exam_student_count,
         "exam_time_text": item.exam_time_text,
         "role": item.invigilation_role,
@@ -593,7 +622,7 @@ def _upsert_calendar_event(
     }
     title = _event_title(item)
     subtitle = item.exam_name or "教务系统监考"
-    notes = _event_notes(item)
+    notes = _event_notes(item, class_display_name=class_display_name)
     full_location = _full_location(item)
     starts_at = item.starts_at or None
     ends_at = item.ends_at or item.starts_at or None
@@ -707,7 +736,10 @@ def _maybe_create_invigilation_notification(
         recipient_role="teacher",
         recipient_user_pk=int(teacher_id),
         title=f"教务系统{change_label}监考：{item.course_name or item.exam_name or '考试'}",
-        body_preview=_event_notes(item),
+        body_preview=_event_notes(
+            item,
+            class_display_name=_resolve_class_display_name(conn, teacher_id=teacher_id, item=item),
+        ),
         link_url="/dashboard#dashboard-semester",
         ref_id=ref_id,
         actor_role="",

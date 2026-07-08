@@ -14,6 +14,7 @@ import httpx
 from ..database import get_db_connection
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
+from .academic_class_mapping_service import refresh_teaching_class_mappings_from_roster
 from .academic_integration_service import (
     load_teacher_academic_access_method,
     open_authenticated_academic_client,
@@ -1081,6 +1082,12 @@ def _persist_rosters(
         )
 
     stats["stale_students"] = _mark_stale_students(conn, class_ids=touched_class_ids, synced_at=synced_at)
+    mapping_result = refresh_teaching_class_mappings_from_roster(
+        conn,
+        teacher_id=int(teacher_id),
+        semester_id=int(semester["id"]),
+        synced_at=synced_at,
+    )
     if stats["contact_conflicts"]:
         warnings.append("部分学生联系方式与本地人工维护值不同，系统保留了本地值，并把教务原始值写入元数据以便复核。")
     if stats["stale_students"]:
@@ -1092,6 +1099,7 @@ def _persist_rosters(
         "teaching_class_count": len(rosters),
         "roster_student_count": sum(len(roster.students) for roster in rosters),
         "touched_class_count": len(touched_class_ids),
+        "class_mapping_count": int(mapping_result.get("mapping_count") or 0),
         "rosters": roster_results,
         "warnings": warnings,
     }
@@ -1180,6 +1188,7 @@ async def sync_current_teacher_rosters_from_academic_system(teacher_id: int) -> 
         "message": (
             f"已从教务系统同步 {result['teaching_class_count']} 个教学班、"
             f"{result['touched_class_count']} 个本平台班级、{result['roster_student_count']} 条学生名单关系。"
+            f"已更新 {result['class_mapping_count']} 条教学班名称转换关系。"
             "系统已自动创建或更新班级与学生，未自动删除本地名单。"
         ),
         "semester_id": int(semester["id"]),
@@ -1195,6 +1204,7 @@ async def sync_current_teacher_rosters_from_academic_system(teacher_id: int) -> 
         "course_count": result["course_count"],
         "roster_student_count": result["roster_student_count"],
         "touched_class_count": result["touched_class_count"],
+        "class_mapping_count": result["class_mapping_count"],
         "class_conflicts": result["class_conflicts"],
         "student_conflicts": result["student_conflicts"],
         "contact_conflicts": result["contact_conflicts"],

@@ -15,6 +15,7 @@ from ..database import get_db_connection
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from ..db.errors import DatabaseProgrammingError
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
+from .academic_class_mapping_service import load_teaching_class_display_mappings, resolve_teaching_class_display_name
 from .academic_location_service import (
     compose_exam_location,
     enrich_campus_building,
@@ -756,16 +757,41 @@ def _full_location(item: AcademicCourseExamItem) -> str:
     return compose_exam_location(item.campus, item.building, item.location)
 
 
-def _event_notes(item: AcademicCourseExamItem) -> str:
+def _resolve_class_display_name(
+    conn: sqlite3.Connection,
+    *,
+    teacher_id: int,
+    item: AcademicCourseExamItem,
+) -> str:
+    return resolve_teaching_class_display_name(
+        conn,
+        teacher_id=int(teacher_id),
+        teaching_class_name=item.teaching_class_name,
+        course_code=item.course_code,
+        academic_year=item.academic_year,
+        academic_term=item.academic_term,
+        default=item.class_composition or item.teaching_class_name,
+    )
+
+
+def _event_notes(item: AcademicCourseExamItem, *, class_display_name: str = "") -> str:
     parts = [
         item.exam_time_text,
         _full_location(item),
-        item.teaching_class_name,
+        class_display_name or item.teaching_class_name,
         item.class_composition,
         f"{item.exam_student_count} 人" if item.exam_student_count else "",
         item.exam_name,
     ]
-    return " | ".join(part for part in parts if part)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        text = str(part or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        deduped.append(text)
+    return " | ".join(deduped)
 
 
 def _signature(item: AcademicCourseExamItem) -> str:
@@ -802,6 +828,7 @@ def _upsert_calendar_event(
         """,
         (int(teacher_id), TEACHER_CALENDAR_SOURCE_COURSE_EXAM, source_key),
     ).fetchone()
+    class_display_name = _resolve_class_display_name(conn, teacher_id=teacher_id, item=item)
     metadata = {
         "academic_source": ACADEMIC_COURSE_EXAM_SOURCE,
         "course_exam_item_id": item_id,
@@ -811,7 +838,9 @@ def _upsert_calendar_event(
         "exam_paper_code": item.exam_paper_code,
         "course_code": item.course_code,
         "course_name": item.course_name,
-        "teaching_class_name": item.teaching_class_name,
+        "teaching_class_name": class_display_name or item.teaching_class_name,
+        "academic_teaching_class_name": item.teaching_class_name,
+        "class_display_name": class_display_name,
         "student_count": item.exam_student_count,
         "exam_time_text": item.exam_time_text,
         "class_offering_id": item.class_offering_id,
@@ -825,7 +854,7 @@ def _upsert_calendar_event(
     }
     title = _event_title(item)
     subtitle = item.exam_name or "教务系统任课考试"
-    notes = _event_notes(item)
+    notes = _event_notes(item, class_display_name=class_display_name)
     full_location = _full_location(item)
     starts_at = item.starts_at or None
     ends_at = item.ends_at or item.starts_at or None
@@ -937,6 +966,7 @@ def _student_rows_for_offering(conn: sqlite3.Connection, class_offering_id: int)
 def _maybe_notify_students(
     conn: sqlite3.Connection,
     *,
+    teacher_id: int,
     item: AcademicCourseExamItem,
     is_created: bool,
     is_changed: bool,
@@ -953,7 +983,10 @@ def _maybe_notify_students(
     change_label = "新增" if is_created else "更新"
     ref_id = f"academic-course-exam:{_source_key(item)}:{_signature(item)}"
     title = f"教务系统{change_label}考试：{item.course_name or item.exam_name or '课程考试'}"
-    body_preview = _event_notes(item)
+    body_preview = _event_notes(
+        item,
+        class_display_name=_resolve_class_display_name(conn, teacher_id=int(teacher_id), item=item),
+    )
     count = 0
     for student in _student_rows_for_offering(conn, int(item.class_offering_id)):
         count += create_academic_exam_notification(
@@ -1274,6 +1307,7 @@ def _persist_course_exams(
         event_updated_count += 1 if event_changed else 0
         student_notification_count += _maybe_notify_students(
             conn,
+            teacher_id=int(teacher_id),
             item=item,
             is_created=is_created or event_created,
             is_changed=is_changed or event_changed,
@@ -1323,6 +1357,7 @@ def _serialize_course_exam_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, A
 
     return {
         "id": int(item.get("id") or 0),
+        "teacher_id": _optional_int(item.get("teacher_id")),
         "semester_id": _optional_int(item.get("semester_id")),
         "class_offering_id": _optional_int(item.get("class_offering_id")),
         "course_id": _optional_int(item.get("course_id")),
@@ -1441,6 +1476,27 @@ def _serialize_related_invigilation(row: sqlite3.Row | dict[str, Any]) -> dict[s
     }
 
 
+def _apply_class_display_names(conn: sqlite3.Connection, *, teacher_id: int, items: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+    mappings = load_teaching_class_display_mappings(conn, int(teacher_id))
+    if not mappings:
+        return
+    for item in items:
+        teaching_class_name = str(item.get("teaching_class_name") or "").strip()
+        if not teaching_class_name:
+            continue
+        display_name = (
+            mappings.get((str(item.get("course_code") or "").strip(), teaching_class_name))
+            or mappings.get(teaching_class_name)
+        )
+        if not display_name:
+            continue
+        item["academic_teaching_class_name"] = teaching_class_name
+        item["class_display_name"] = display_name
+        item["teaching_class_name"] = display_name
+
+
 def _attach_related_invigilations(
     conn: sqlite3.Connection,
     *,
@@ -1481,6 +1537,7 @@ def _attach_related_invigilations(
         return
 
     invigilations = [_serialize_related_invigilation(row) for row in rows]
+    _apply_class_display_names(conn, teacher_id=int(teacher_id), items=invigilations)
     for item in items:
         related = [
             invigilation
@@ -1510,6 +1567,7 @@ def load_classroom_course_exam_status(
             (int(teacher_id), int(class_offering_id)),
         ).fetchall()
         items = [_serialize_course_exam_row(row) for row in rows]
+        _apply_class_display_names(conn, teacher_id=int(teacher_id), items=items)
         _attach_related_invigilations(conn, teacher_id=int(teacher_id), items=items)
     return {
         "status": "success",
@@ -1549,7 +1607,16 @@ def load_classroom_course_exam_status_for_user(
     ).fetchall()
     items = [_serialize_course_exam_row(row) for row in rows]
     if role == "teacher":
+        _apply_class_display_names(conn, teacher_id=int(user["id"]), items=items)
         _attach_related_invigilations(conn, teacher_id=int(user["id"]), items=items)
+    else:
+        teacher_ids = sorted({int(item["teacher_id"]) for item in items if item.get("teacher_id")})
+        for teacher_id in teacher_ids:
+            _apply_class_display_names(
+                conn,
+                teacher_id=int(teacher_id),
+                items=[item for item in items if int(item.get("teacher_id") or 0) == int(teacher_id)],
+            )
     return {
         "status": "success",
         "class_offering_id": int(class_offering_id),

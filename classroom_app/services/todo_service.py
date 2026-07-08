@@ -7,6 +7,7 @@ from typing import Any
 
 from ..db.connection import execute_insert_returning_id
 from .academic_service import china_now, parse_date_input
+from .academic_class_mapping_service import resolve_teaching_class_display_name
 from .academic_course_exam_sync_service import ensure_course_exam_schema
 from .assignment_lifecycle_service import submission_effective_status, submission_resubmission_accepts
 from .course_planning_service import weekday_label
@@ -649,7 +650,11 @@ def _academic_exam_items(
     rows = conn.execute(
         """
         SELECT id,
+               teacher_id,
                exam_name,
+               academic_year,
+               academic_term,
+               course_code,
                course_name,
                teaching_class_name,
                class_composition,
@@ -678,6 +683,15 @@ def _academic_exam_items(
         if due_at is None or due_at < start_at:
             due_at = start_at
         title = str(row["course_name"] or row["exam_name"] or "教务考试").strip()
+        class_display_name = resolve_teaching_class_display_name(
+            conn,
+            teacher_id=int(row["teacher_id"] or 0),
+            teaching_class_name=str(row["teaching_class_name"] or ""),
+            course_code=str(row["course_code"] or ""),
+            academic_year=str(row["academic_year"] or ""),
+            academic_term=str(row["academic_term"] or ""),
+            default=str(row["class_composition"] or row["teaching_class_name"] or ""),
+        )
         status = "upcoming"
         status_label = "待考试"
         if due_at < now:
@@ -691,7 +705,7 @@ def _academic_exam_items(
             for part in [
                 str(row["exam_time_text"] or ""),
                 str(row["location"] or ""),
-                str(row["teaching_class_name"] or row["class_composition"] or ""),
+                class_display_name,
                 f"座位 {int(row['seat_count'] or 0)}" if row["seat_count"] else "",
             ]
             if part
@@ -715,6 +729,8 @@ def _academic_exam_items(
                 "exam_name": row["exam_name"],
                 "location": row["location"],
                 "exam_time_text": row["exam_time_text"],
+                "teaching_class_name": class_display_name,
+                "academic_teaching_class_name": row["teaching_class_name"],
             },
             now=now,
         )

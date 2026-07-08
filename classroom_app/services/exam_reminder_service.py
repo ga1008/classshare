@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ..database import get_db_connection
+from .academic_class_mapping_service import resolve_teaching_class_display_name
 from .scheduled_task_handlers import TASK_KIND_EXAM_EMAIL_REMINDER
 from .scheduled_task_service import (
     cancel_tasks_by_dedupe,
@@ -117,6 +118,29 @@ def _role_for_teacher(invigilators: str, teacher_name: str, fallback: str) -> st
     return fallback or ("监考" if invigilators else "")
 
 
+def _teaching_class_display(event: dict[str, Any], metadata: dict[str, Any], conn) -> str:
+    display_name = _text(metadata.get("class_display_name"))
+    if display_name:
+        return display_name
+    raw_name = (
+        _text(metadata.get("academic_teaching_class_name"))
+        or _text(metadata.get("teaching_class_source_name"))
+        or _text(metadata.get("teaching_class_name"))
+    )
+    if not raw_name or conn is None:
+        return raw_name
+    teacher_id = _text(event.get("teacher_id"))
+    if not teacher_id:
+        return raw_name
+    return resolve_teaching_class_display_name(
+        conn,
+        teacher_id=int(teacher_id),
+        teaching_class_name=raw_name,
+        course_code=_text(metadata.get("course_code")),
+        default=raw_name,
+    )
+
+
 def build_event_reminder_detail(
     event: dict[str, Any],
     *,
@@ -178,7 +202,7 @@ def build_event_reminder_detail(
         "when_text": when_text,
         "campus": campus,
         "classroom": classroom,
-        "teaching_class": _text(metadata.get("teaching_class_name")),
+        "teaching_class": _teaching_class_display(event, metadata, conn),
         "invigilators": invigilators,
         "role": role,
         "start_at": start_dt.isoformat(timespec="minutes") if start_dt else "",

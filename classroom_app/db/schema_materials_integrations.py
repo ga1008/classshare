@@ -648,6 +648,15 @@ def ensure_materials_integrations_schema(conn: sqlite3.Connection) -> None:
         "ON teacher_academic_roster_memberships (teacher_id, student_id, academic_year, academic_term)"
     )
     conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_teacher_academic_class_mappings_lookup "
+        "ON teacher_academic_teaching_class_mappings ("
+        "teacher_id, school_code, academic_year, academic_term, course_code COLLATE NOCASE, teaching_class_name COLLATE NOCASE)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_teacher_academic_class_mappings_name "
+        "ON teacher_academic_teaching_class_mappings (teacher_id, school_code, teaching_class_name COLLATE NOCASE)"
+    )
+    conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_teacher_academic_invigilation_items_teacher_semester "
         "ON teacher_academic_invigilation_items (teacher_id, semester_id, starts_at)"
     )

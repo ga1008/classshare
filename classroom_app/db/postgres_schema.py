@@ -58,6 +58,19 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
         ),
     ),
     (
+        "idx_teacher_academic_class_mappings_unique_teaching_class",
+        "teacher_academic_teaching_class_mappings",
+        (
+            "teacher_id",
+            "school_code",
+            "academic_year",
+            "academic_term",
+            "course_code",
+            "teaching_class_id",
+            "teaching_class_name",
+        ),
+    ),
+    (
         "idx_teacher_academic_invigilation_items_unique_key",
         "teacher_academic_invigilation_items",
         ("teacher_id", "school_code", "academic_year", "academic_term", "invigilation_key"),
@@ -298,6 +311,44 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
     "learning_certificates": {
         "revealed_at": "TEXT",
     },
+    "teacher_academic_teaching_class_mappings": {
+        "teaching_class_aliases_json": "TEXT NOT NULL DEFAULT '[]'",
+        "admin_class_aliases_json": "TEXT NOT NULL DEFAULT '[]'",
+    },
+}
+
+
+POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
+    "teacher_academic_teaching_class_mappings": """
+        CREATE TABLE IF NOT EXISTS teacher_academic_teaching_class_mappings (
+            id SERIAL PRIMARY KEY,
+            teacher_id INTEGER NOT NULL,
+            semester_id INTEGER,
+            school_code TEXT NOT NULL DEFAULT 'gxufl',
+            academic_year TEXT NOT NULL DEFAULT '',
+            academic_term TEXT NOT NULL DEFAULT '',
+            course_code TEXT NOT NULL DEFAULT '',
+            course_name TEXT NOT NULL DEFAULT '',
+            teaching_class_id TEXT NOT NULL DEFAULT '',
+            teaching_class_name TEXT NOT NULL DEFAULT '',
+            teaching_class_aliases_json TEXT NOT NULL DEFAULT '[]',
+            admin_class_id INTEGER,
+            admin_class_code TEXT NOT NULL DEFAULT '',
+            admin_class_name TEXT NOT NULL DEFAULT '',
+            admin_class_ids_json TEXT NOT NULL DEFAULT '[]',
+            admin_class_codes_json TEXT NOT NULL DEFAULT '[]',
+            admin_class_names_json TEXT NOT NULL DEFAULT '[]',
+            admin_class_aliases_json TEXT NOT NULL DEFAULT '[]',
+            admin_class_count INTEGER NOT NULL DEFAULT 0,
+            student_count INTEGER NOT NULL DEFAULT 0,
+            mapping_status TEXT NOT NULL DEFAULT 'active',
+            source_sync_item_ids_json TEXT NOT NULL DEFAULT '[]',
+            source_updated_at TEXT,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
 }
 
 
@@ -329,6 +380,7 @@ REQUIRED_POSTGRES_TABLES = (
     "teacher_academic_course_session_occurrences",
     "teacher_academic_roster_sync_items",
     "teacher_academic_roster_memberships",
+    "teacher_academic_teaching_class_mappings",
     "teacher_academic_invigilation_items",
     "teacher_academic_course_exam_items",
     "teacher_academic_exam_roster_items",
@@ -807,6 +859,34 @@ REQUIRED_POSTGRES_COLUMNS = {
         "teaching_class_id",
         "student_number",
         "synced_at",
+        "updated_at",
+    ),
+    "teacher_academic_teaching_class_mappings": (
+        "id",
+        "teacher_id",
+        "semester_id",
+        "school_code",
+        "academic_year",
+        "academic_term",
+        "course_code",
+        "course_name",
+        "teaching_class_id",
+        "teaching_class_name",
+        "teaching_class_aliases_json",
+        "admin_class_id",
+        "admin_class_code",
+        "admin_class_name",
+        "admin_class_ids_json",
+        "admin_class_codes_json",
+        "admin_class_names_json",
+        "admin_class_aliases_json",
+        "admin_class_count",
+        "student_count",
+        "mapping_status",
+        "source_sync_item_ids_json",
+        "source_updated_at",
+        "synced_at",
+        "created_at",
         "updated_at",
     ),
     "teacher_academic_invigilation_items": (
@@ -2576,6 +2656,20 @@ def _duplicate_unique_key_rows(conn: Any, table: str, columns: Sequence[str]) ->
         """
     ).fetchall()
     return rows_to_mappings(rows, (*columns, "row_count"))
+
+
+def ensure_postgres_runtime_tables(conn: Any) -> dict[str, Any]:
+    table_names = _public_tables(conn)
+    created_tables: list[str] = []
+    for table, sql in POSTGRES_RUNTIME_TABLE_DEFINITIONS.items():
+        if table in table_names:
+            continue
+        conn.execute(sql)
+        created_tables.append(table)
+    return {
+        "created_tables": created_tables,
+        "schema_writes_executed": bool(created_tables),
+    }
 
 
 def ensure_postgres_runtime_constraints(conn: Any) -> dict[str, Any]:

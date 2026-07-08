@@ -8,6 +8,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from ..db.connection import get_configured_db_engine
+from .academic_class_mapping_service import resolve_teaching_class_display_name
 from .message_center_service import CATEGORY_LABELS, get_message_center_summary
 from .academic_service import (
     build_semester_calendar_payload,
@@ -163,7 +164,7 @@ def _dashboard_safe_json(raw_value: Any) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _teacher_calendar_event_todo(row: Any, *, now: datetime) -> dict[str, Any] | None:
+def _teacher_calendar_event_todo(row: Any, *, now: datetime, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
     item = dict(row)
     source_type = str(item.get("source_type") or "academic_invigilation")
     is_course_exam = source_type == "academic_course_exam"
@@ -181,6 +182,22 @@ def _teacher_calendar_event_todo(row: Any, *, now: datetime) -> dict[str, Any] |
     event_label = "考试" if is_course_exam else "监考"
     status_label = _dashboard_relative_event_label(starts_at, now, label=event_label)
     is_completed = bool(ends_at < now)
+    raw_teaching_class_name = str(
+        metadata.get("academic_teaching_class_name")
+        or metadata.get("teaching_class_name")
+        or ""
+    )
+    class_name = str(metadata.get("class_display_name") or "").strip()
+    if not class_name and conn is not None and raw_teaching_class_name:
+        class_name = resolve_teaching_class_display_name(
+            conn,
+            teacher_id=_dashboard_int(item.get("teacher_id")),
+            teaching_class_name=raw_teaching_class_name,
+            course_code=str(metadata.get("course_code") or ""),
+            default=raw_teaching_class_name,
+        )
+    if not class_name:
+        class_name = raw_teaching_class_name
     duration_label = (
         f"{_dashboard_datetime_label(starts_at)} - {ends_at.hour:02d}:{ends_at.minute:02d}"
         if starts_at.date() == ends_at.date() and starts_at.time() != ends_at.time()
@@ -215,7 +232,7 @@ def _teacher_calendar_event_todo(row: Any, *, now: datetime) -> dict[str, Any] |
         "due_time_label": f"{starts_at.hour:02d}:{starts_at.minute:02d}",
         "offering_label": "教务考试" if is_course_exam else "教务监考",
         "course_name": str(metadata.get("course_name") or ""),
-        "class_name": str(metadata.get("teaching_class_name") or ""),
+        "class_name": class_name,
         "location": str(item.get("location") or ""),
         "metadata": metadata,
     }
@@ -315,7 +332,7 @@ def _load_teacher_academic_focus_items(
     todos = [
         todo
         for row in rows
-        if (todo := _teacher_calendar_event_todo(row, now=now_dt))
+        if (todo := _teacher_calendar_event_todo(row, now=now_dt, conn=conn))
     ]
     return _dashboard_academic_focus_items(todos, now=now_dt, limit=limit)
 
@@ -358,7 +375,7 @@ def _attach_teacher_calendar_events_to_buckets(
         semester = semesters_by_id.get(semester_id)
         if not bucket or not semester:
             continue
-        todo = _teacher_calendar_event_todo(row, now=now_dt)
+        todo = _teacher_calendar_event_todo(row, now=now_dt, conn=conn)
         if not todo:
             continue
         bucket["items"].append(todo)

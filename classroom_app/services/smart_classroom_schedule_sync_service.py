@@ -28,6 +28,7 @@ import httpx
 from ..database import get_db_connection
 from ..db.schema_smart_schedule import ensure_course_schedule_schema
 from ..time_utils import format_display_datetime, local_iso
+from .academic_class_mapping_service import load_teaching_class_display_mappings
 from .smart_classroom_integration_service import (
     load_teacher_smart_classroom_access_method,
     open_authenticated_smart_classroom_client,
@@ -466,53 +467,11 @@ async def _fetch_teacher_schedule(
 def _load_academic_class_mappings(conn, teacher_id: int) -> dict[Any, str]:
     """教务系统"教学班代号 → 真实行政班名"的精确对照。
 
-    权威来源是"班级与学生名单"同步落地的
-    ``teacher_academic_roster_memberships``：该同步按教学班逐个拉取学生
-    名单，每条记录把学生的真实行政班（``class_id``，直接外键到本平台
-    ``classes`` 表）与其所在教学班（``teaching_class_name``，即 jxbmc/
-    "计算机网络实验-0002" 这类代号）关联起来——写入 ``classes.name`` 用的
-    正是同一个字符串，因此按 class_id 取名保证与本平台班级表完全同名，
-    不需要模糊匹配。按 (course_code, teaching_class_name) 分组，仅当组内
-    学生的 class_id 全部一致（教学班未被拆分/合并多个行政班）才采信，
-    宁缺勿错。
-
-    注：之前一度使用教务"课程与课次"同步
-    （teacher_academic_course_sync_items.class_composition）作对照源，
-    但该字段在部分接口响应缺少"教学班组成"时会被兜底填充成 jxbmc 本身
-    （等价于教学班代号无变化），导致班级名一直显示代号、真实课堂也匹配
-    不上——因此改用本函数这个更可靠的名单关系表。
+    共享转换表由"班级与学生名单"同步维护，来源仍是名单同步落地的
+    ``teacher_academic_roster_memberships``。智慧课堂这里用于课堂匹配，
+    继续要求单一行政班才采信，避免合班名称误连到某一个课堂。
     """
-    try:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT m.course_code, m.teaching_class_name, m.class_id, c.name AS class_name
-            FROM teacher_academic_roster_memberships m
-            JOIN classes c ON c.id = m.class_id
-            WHERE m.teacher_id = ?
-              AND COALESCE(m.teaching_class_name, '') <> ''
-            """,
-            (int(teacher_id),),
-        ).fetchall()
-    except Exception:  # noqa: BLE001 — 教务名单同步表不存在时跳过
-        return {}
-    groups: dict[Any, set[tuple[int, str]]] = {}
-    for row in rows:
-        row_dict = dict(row)
-        tcn = _clean_text(row_dict.get("teaching_class_name"))
-        code = _clean_text(row_dict.get("course_code"))
-        class_name = _clean_text(row_dict.get("class_name"))
-        raw_class_id = row_dict.get("class_id")
-        if not tcn or not class_name or not raw_class_id:
-            continue
-        pair = (int(raw_class_id), class_name)
-        groups.setdefault((code, tcn), set()).add(pair)
-        groups.setdefault(tcn, set()).add(pair)
-    mappings: dict[Any, str] = {}
-    for key, pairs in groups.items():
-        distinct_class_ids = {class_id for class_id, _name in pairs}
-        if len(distinct_class_ids) == 1:
-            mappings[key] = next(iter(pairs))[1]
-    return mappings
+    return load_teaching_class_display_mappings(conn, int(teacher_id), single_only=True)
 
 
 def _load_teaching_class_candidates(conn, teacher_id: int) -> list[dict[str, Any]]:

@@ -786,6 +786,47 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
 
     conn.execute(
         '''
+        CREATE TABLE IF NOT EXISTS teacher_academic_teaching_class_mappings
+        (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER NOT NULL,
+            semester_id INTEGER,
+            school_code TEXT NOT NULL DEFAULT 'gxufl',
+            academic_year TEXT NOT NULL DEFAULT '',
+            academic_term TEXT NOT NULL DEFAULT '',
+            course_code TEXT NOT NULL DEFAULT '',
+            course_name TEXT NOT NULL DEFAULT '',
+            teaching_class_id TEXT NOT NULL DEFAULT '',
+            teaching_class_name TEXT NOT NULL DEFAULT '',
+            teaching_class_aliases_json TEXT NOT NULL DEFAULT '[]',
+            admin_class_id INTEGER,
+            admin_class_code TEXT NOT NULL DEFAULT '',
+            admin_class_name TEXT NOT NULL DEFAULT '',
+            admin_class_ids_json TEXT NOT NULL DEFAULT '[]',
+            admin_class_codes_json TEXT NOT NULL DEFAULT '[]',
+            admin_class_names_json TEXT NOT NULL DEFAULT '[]',
+            admin_class_aliases_json TEXT NOT NULL DEFAULT '[]',
+            admin_class_count INTEGER NOT NULL DEFAULT 0,
+            student_count INTEGER NOT NULL DEFAULT 0,
+            mapping_status TEXT NOT NULL DEFAULT 'active',
+            source_sync_item_ids_json TEXT NOT NULL DEFAULT '[]',
+            source_updated_at TEXT,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+            FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE SET NULL,
+            FOREIGN KEY (admin_class_id) REFERENCES classes (id) ON DELETE SET NULL,
+            UNIQUE (
+                teacher_id, school_code, academic_year, academic_term,
+                course_code, teaching_class_id, teaching_class_name
+            )
+        )
+        '''
+    )
+
+    conn.execute(
+        '''
         CREATE TABLE IF NOT EXISTS teacher_academic_invigilation_items
         (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
