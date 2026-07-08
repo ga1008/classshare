@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ..database import get_db_connection
-from .academic_class_mapping_service import resolve_teaching_class_display_name
+from .academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 from .scheduled_task_handlers import TASK_KIND_EXAM_EMAIL_REMINDER
 from .scheduled_task_service import (
     cancel_tasks_by_dedupe,
@@ -120,24 +120,31 @@ def _role_for_teacher(invigilators: str, teacher_name: str, fallback: str) -> st
 
 def _teaching_class_display(event: dict[str, Any], metadata: dict[str, Any], conn) -> str:
     display_name = _text(metadata.get("class_display_name"))
-    if display_name:
-        return display_name
-    raw_name = (
-        _text(metadata.get("academic_teaching_class_name"))
-        or _text(metadata.get("teaching_class_source_name"))
-        or _text(metadata.get("teaching_class_name"))
-    )
-    if not raw_name or conn is None:
-        return raw_name
+    raw_candidates = [
+        _text(metadata.get("academic_teaching_class_name")),
+        _text(metadata.get("teaching_class_source_name")),
+        _text(metadata.get("teaching_class_name")),
+        display_name,
+        _text(metadata.get("class_composition")),
+    ]
+    fallback = next((name for name in raw_candidates if name), "")
+    if not fallback or conn is None:
+        return display_name or fallback
     teacher_id = _text(event.get("teacher_id"))
     if not teacher_id:
-        return raw_name
-    return resolve_teaching_class_display_name(
+        return display_name or fallback
+    try:
+        teacher_id_int = int(teacher_id)
+    except (TypeError, ValueError):
+        return display_name or fallback
+    return resolve_teaching_class_display_name_from_candidates(
         conn,
-        teacher_id=int(teacher_id),
-        teaching_class_name=raw_name,
+        teacher_id=teacher_id_int,
+        teaching_class_names=raw_candidates,
         course_code=_text(metadata.get("course_code")),
-        default=raw_name,
+        academic_year=_text(metadata.get("academic_year")),
+        academic_term=_text(metadata.get("academic_term")),
+        default=display_name or fallback,
     )
 
 
@@ -319,8 +326,12 @@ def get_exam_email_reminder_state(*, teacher_id: int, calendar_event_id: int) ->
         task = get_owner_task_by_dedupe(conn, _reminder_dedupe_key(teacher_id, calendar_event_id))
     if not task or str(task.get("status")) not in {"pending", "running"}:
         return {"has_reminder": False}
+    payload = _safe_metadata(task.get("payload_json"))
     return {
         "has_reminder": True,
         "run_at": str(task.get("run_at") or ""),
         "status": str(task.get("status") or ""),
+        "lead_label": _text(payload.get("lead_label")),
+        "subject": _text(payload.get("subject")),
+        "start_at": _text(payload.get("start_at")),
     }

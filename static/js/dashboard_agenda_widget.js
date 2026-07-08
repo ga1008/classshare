@@ -154,6 +154,8 @@ function initAgendaWidget() {
   const remindForm = pop.querySelector('[data-pop-remind-form]');
   const remindValue = pop.querySelector('[data-remind-value]');
   const remindUnit = pop.querySelector('[data-remind-unit]');
+  const remindRow = pop.querySelector('.agenda-popover__remind-row');
+  const remindSubmit = pop.querySelector('[data-remind-submit]');
   const remindCancel = pop.querySelector('[data-remind-cancel]');
   const remindStatus = pop.querySelector('[data-remind-status]');
   const manageEl = pop.querySelector('[data-pop-manage]');
@@ -168,6 +170,42 @@ function initAgendaWidget() {
   const setStatus = (message, tone) => {
     remindStatus.textContent = message || '';
     remindStatus.dataset.tone = tone || '';
+  };
+
+  const formatReminderRunAt = (value) => {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const date = new Date(text.replace(' ', 'T'));
+    if (!Number.isNaN(date.getTime())) {
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      const hour = String(date.getHours()).padStart(2, '0');
+      const minute = String(date.getMinutes()).padStart(2, '0');
+      return `${month}月${day}日 ${hour}:${minute}`;
+    }
+    return text.replace('T', ' ').slice(0, 16);
+  };
+
+  const reminderSummaryText = (payload = {}) => {
+    const parts = [];
+    if (payload.lead_label) parts.push(`开始前 ${payload.lead_label}`);
+    const runAt = formatReminderRunAt(payload.run_at);
+    if (runAt) parts.push(`预计 ${runAt} 发送`);
+    return parts.join('，') || '已设置邮件提醒';
+  };
+
+  const showReminderEditor = (message = '', tone = '') => {
+    if (remindRow) remindRow.hidden = false;
+    if (remindSubmit) remindSubmit.hidden = false;
+    remindCancel.hidden = true;
+    setStatus(message, tone);
+  };
+
+  const showReminderSummary = (payload = {}) => {
+    if (remindRow) remindRow.hidden = true;
+    if (remindSubmit) remindSubmit.hidden = true;
+    remindCancel.hidden = false;
+    setStatus(`已设置邮件提醒：${reminderSummaryText(payload)}。取消后可重新设置。`, 'success');
   };
 
   const collapseForm = () => {
@@ -209,8 +247,7 @@ function initAgendaWidget() {
     activeEventId = data.eventId || '';
     const canRemind = Boolean(data.canReminder === '1' && activeEventId && activeEndpoint);
 
-    setStatus('', '');
-    remindCancel.hidden = true;
+    showReminderEditor('', '');
     // Invigilation/exam: show the email-reminder form inline (the only action) —
     // no extra toggle button, no dead-end "前往学期日历" link. Other kinds keep
     // their jump link.
@@ -249,9 +286,10 @@ function initAgendaWidget() {
       });
       const payload = await response.json().catch(() => ({}));
       if (payload.has_reminder) {
-        remindCancel.hidden = false;
-        setStatus('已设置提醒，提交将更新提醒时间。', 'info');
+        showReminderSummary(payload);
+        return;
       }
+      showReminderEditor('', '');
     } catch {
       /* prefill is best-effort */
     }
@@ -278,6 +316,7 @@ function initAgendaWidget() {
       if (response.ok && payload.status === 'success') {
         setStatus(payload.message || '邮件提醒已设置。', 'success');
         remindCancel.hidden = false;
+        showReminderSummary(payload);
         notify(payload.message || '邮件提醒已设置。', 'success');
       } else {
         setStatus(payload.message || '设置失败，请稍后重试。', 'error');
@@ -301,6 +340,7 @@ function initAgendaWidget() {
       const payload = await response.json().catch(() => ({}));
       setStatus(payload.message || '已取消提醒。', payload.cancelled_count ? 'success' : 'info');
       if (payload.cancelled_count) remindCancel.hidden = true;
+      if (payload.cancelled_count) showReminderEditor(payload.message || '已取消提醒，可以重新设置。', 'success');
     } catch {
       setStatus('网络异常，取消失败。', 'error');
     }

@@ -192,12 +192,14 @@ function updateScheduleMode({ preserveSelection = true } = {}) {
         elements.academicClassSelect.innerHTML = '<option value="">自动匹配或请选择教学班</option>';
         academicClasses.forEach((item) => {
             const option = document.createElement('option');
+            const displayName = item.class_display_name || item.display_teaching_class_name || item.teaching_class_name || '';
             option.value = item.teaching_class_name || '';
             option.textContent = [
                 item.teaching_class_name || '未命名教学班',
                 `${item.session_count || 0} 次`,
                 item.first_session_date && item.last_session_date ? `${item.first_session_date} 至 ${item.last_session_date}` : '',
             ].filter(Boolean).join(' · ');
+            option.textContent = option.textContent.replace(item.teaching_class_name || '', displayName || item.teaching_class_name || '');
             elements.academicClassSelect.appendChild(option);
         });
         if (previousAcademicClass && academicClasses.some((item) => item.teaching_class_name === previousAcademicClass)) {
@@ -250,6 +252,13 @@ function renderCourseSummary() {
     const academicClasses = getAcademicClassesForSelectedCourse();
     const academicSessionCount = academicClasses.reduce((sum, item) => sum + Number(item.session_count || 0), 0);
     const academicClassNames = academicClasses.map((item) => item.teaching_class_name || item.class_composition).filter(Boolean);
+    academicClassNames.splice(
+        0,
+        academicClassNames.length,
+        ...academicClasses
+            .map((item) => item.class_display_name || item.display_teaching_class_name || item.class_composition || item.teaching_class_name)
+            .filter(Boolean),
+    );
     const lessonListHtml = lessons.length
         ? lessons.slice(0, 4).map((lesson) => `
             <div class="offering-course-lesson-item">
@@ -321,6 +330,11 @@ function renderPreview(previewResponse) {
     const preview = previewResponse?.preview || {};
     const sessions = Array.isArray(preview.sessions) ? preview.sessions : [];
     const warnings = Array.isArray(preview.warnings) ? preview.warnings : [];
+    const previewAcademicClassName = preview.academic_teaching_class_display_name
+        || previewResponse.academic_teaching_class_display_name
+        || preview.academic_teaching_class_name
+        || '';
+    if (previewAcademicClassName) preview.academic_teaching_class_name = previewAcademicClassName;
 
     if (elements.previewMeta) {
         elements.previewMeta.innerHTML = `

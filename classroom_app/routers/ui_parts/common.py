@@ -67,6 +67,10 @@ from ...services.academic_course_sync_service import (
     build_academic_course_metadata,
     summarize_academic_course_sync_item,
 )
+from ...services.academic_class_mapping_service import (
+    resolve_offering_display_class_name,
+    resolve_teaching_class_display_name_from_candidates,
+)
 from ...services.course_planning_service import (
     decorate_offering_sessions,
     load_course_lessons_by_course_id,
@@ -786,6 +790,9 @@ def _load_teacher_academic_course_occurrence_summaries(
         f"""
         SELECT course_id,
                semester_id,
+               academic_year,
+               academic_term,
+               course_code,
                teaching_class_name,
                class_composition,
                COUNT(*) AS session_count,
@@ -796,7 +803,7 @@ def _load_teacher_academic_course_occurrence_summaries(
         FROM teacher_academic_course_session_occurrences
         WHERE teacher_id = ?
           AND course_id IN ({placeholders})
-        GROUP BY course_id, semester_id, teaching_class_name, class_composition
+        GROUP BY course_id, semester_id, academic_year, academic_term, course_code, teaching_class_name, class_composition
         ORDER BY COALESCE(semester_id, 0) DESC, teaching_class_name
         """,
         [int(teacher_id), *normalized_ids],
@@ -804,6 +811,17 @@ def _load_teacher_academic_course_occurrence_summaries(
     grouped: dict[int, list[dict]] = {course_id: [] for course_id in normalized_ids}
     for row in rows:
         course_id = int(row["course_id"])
+        teaching_class_name = str(row["teaching_class_name"] or "").strip()
+        class_composition = str(row["class_composition"] or "").strip()
+        class_display_name = resolve_teaching_class_display_name_from_candidates(
+            conn,
+            teacher_id=int(teacher_id),
+            teaching_class_names=[teaching_class_name, class_composition],
+            course_code=str(row["course_code"] or ""),
+            academic_year=str(row["academic_year"] or ""),
+            academic_term=str(row["academic_term"] or ""),
+            default=class_composition or teaching_class_name,
+        )
         locations = [
             value.strip()
             for value in str(row["locations"] or "").split(",")
@@ -813,8 +831,10 @@ def _load_teacher_academic_course_occurrence_summaries(
             {
                 "course_id": course_id,
                 "semester_id": int(row["semester_id"]) if row["semester_id"] else None,
-                "teaching_class_name": str(row["teaching_class_name"] or "").strip(),
-                "class_composition": str(row["class_composition"] or "").strip(),
+                "teaching_class_name": teaching_class_name,
+                "class_display_name": class_display_name,
+                "display_teaching_class_name": class_display_name,
+                "class_composition": class_composition,
                 "session_count": int(row["session_count"] or 0),
                 "first_session_date": str(row["first_session_date"] or ""),
                 "last_session_date": str(row["last_session_date"] or ""),
@@ -1040,8 +1060,10 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                o.academic_schedule_sync_message,
                COALESCE(s.name, o.semester) AS semester,
                c.name AS class_name,
+               c.academic_class_name AS academic_class_name,
                c.department AS class_department,
                co.name AS course_name,
+               '' AS academic_course_code,
                co.department AS course_department,
                co.sect_name AS course_sect_name,
                co.description,
@@ -1075,6 +1097,7 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                  s.start_date,
                  o.created_at,
                  c.name,
+                 c.academic_class_name,
                  c.department,
                  co.name,
                  co.department,
@@ -1096,6 +1119,15 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
         item["schedule_source"] = str(item.get("schedule_source") or "fixed_cycle")
         item["schedule_source_label"] = "教务实际排课" if item["schedule_source"] == "academic_sync" else "固定周循环"
         item["academic_teaching_class_name"] = str(item.get("academic_teaching_class_name") or "")
+        item["academic_teaching_class_display_name"] = (
+            resolve_offering_display_class_name(
+                conn,
+                teacher_id=int(teacher_id),
+                row=item,
+            )
+            if item["academic_teaching_class_name"]
+            else ""
+        )
         item["academic_schedule_sync_at"] = str(item.get("academic_schedule_sync_at") or "")
         item["academic_schedule_sync_message"] = str(item.get("academic_schedule_sync_message") or "")
         offerings.append(item)

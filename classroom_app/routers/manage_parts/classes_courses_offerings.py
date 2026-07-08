@@ -37,6 +37,7 @@ async def api_preview_class_offering(
         "course_total_hours": int(payload["course_row"]["total_hours"] or 0),
         "schedule_source": payload["schedule_source"],
         "academic_teaching_class_name": payload["academic_teaching_class_name"],
+        "academic_teaching_class_display_name": payload["academic_teaching_class_display_name"],
         "academic_teaching_class_options": payload["academic_teaching_class_options"],
     }
 

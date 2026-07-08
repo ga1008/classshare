@@ -15,7 +15,10 @@ from ..database import get_db_connection
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from ..db.errors import DatabaseProgrammingError
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
-from .academic_class_mapping_service import load_teaching_class_display_mappings, resolve_teaching_class_display_name
+from .academic_class_mapping_service import (
+    resolve_teaching_class_display_name,
+    resolve_teaching_class_display_name_from_candidates,
+)
 from .academic_location_service import (
     compose_exam_location,
     enrich_campus_building,
@@ -1479,16 +1482,22 @@ def _serialize_related_invigilation(row: sqlite3.Row | dict[str, Any]) -> dict[s
 def _apply_class_display_names(conn: sqlite3.Connection, *, teacher_id: int, items: list[dict[str, Any]]) -> None:
     if not items:
         return
-    mappings = load_teaching_class_display_mappings(conn, int(teacher_id))
-    if not mappings:
-        return
     for item in items:
         teaching_class_name = str(item.get("teaching_class_name") or "").strip()
         if not teaching_class_name:
             continue
-        display_name = (
-            mappings.get((str(item.get("course_code") or "").strip(), teaching_class_name))
-            or mappings.get(teaching_class_name)
+        display_name = resolve_teaching_class_display_name_from_candidates(
+            conn,
+            teacher_id=int(teacher_id),
+            teaching_class_names=[
+                teaching_class_name,
+                item.get("class_display_name"),
+                item.get("class_composition"),
+            ],
+            course_code=str(item.get("course_code") or "").strip(),
+            academic_year=str(item.get("academic_year") or "").strip(),
+            academic_term=str(item.get("academic_term") or "").strip(),
+            default=str(item.get("class_composition") or teaching_class_name),
         )
         if not display_name:
             continue

@@ -9,6 +9,7 @@ from heapq import heappop, heappush
 from typing import Any, Iterable
 
 from .academic_service import china_today, parse_date_input, truncate_text
+from .academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 from .learning_progress_service import normalize_course_sect_name
 
 
@@ -668,7 +669,10 @@ def summarize_academic_teaching_classes(
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT teaching_class_name,
+        SELECT academic_year,
+               academic_term,
+               course_code,
+               teaching_class_name,
                class_composition,
                COUNT(*) AS session_count,
                MIN(session_date) AS first_session_date,
@@ -676,22 +680,37 @@ def summarize_academic_teaching_classes(
                SUM(CASE WHEN COALESCE(is_non_periodic, 0) <> 0 THEN 1 ELSE 0 END) AS non_periodic_count
         FROM teacher_academic_course_session_occurrences
         WHERE teacher_id = ? AND semester_id = ? AND course_id = ?
-        GROUP BY teaching_class_name, class_composition
+        GROUP BY academic_year, academic_term, course_code, teaching_class_name, class_composition
         ORDER BY session_count DESC, teaching_class_name
         """,
         (int(teacher_id), int(semester_id), int(course_id)),
     ).fetchall()
-    return [
-        {
-            "teaching_class_name": str(row["teaching_class_name"] or "").strip(),
-            "class_composition": str(row["class_composition"] or "").strip(),
-            "session_count": _coerce_int(row["session_count"]),
-            "first_session_date": str(row["first_session_date"] or ""),
-            "last_session_date": str(row["last_session_date"] or ""),
-            "non_periodic_count": _coerce_int(row["non_periodic_count"]),
-        }
-        for row in rows
-    ]
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        teaching_class_name = str(row["teaching_class_name"] or "").strip()
+        class_composition = str(row["class_composition"] or "").strip()
+        class_display_name = resolve_teaching_class_display_name_from_candidates(
+            conn,
+            teacher_id=int(teacher_id),
+            teaching_class_names=[teaching_class_name, class_composition],
+            course_code=str(row["course_code"] or ""),
+            academic_year=str(row["academic_year"] or ""),
+            academic_term=str(row["academic_term"] or ""),
+            default=class_composition or teaching_class_name,
+        )
+        results.append(
+            {
+                "teaching_class_name": teaching_class_name,
+                "class_display_name": class_display_name,
+                "display_teaching_class_name": class_display_name,
+                "class_composition": class_composition,
+                "session_count": _coerce_int(row["session_count"]),
+                "first_session_date": str(row["first_session_date"] or ""),
+                "last_session_date": str(row["last_session_date"] or ""),
+                "non_periodic_count": _coerce_int(row["non_periodic_count"]),
+            }
+        )
+    return results
 
 
 def select_academic_teaching_class_for_offering(

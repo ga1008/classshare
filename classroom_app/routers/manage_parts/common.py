@@ -27,6 +27,7 @@ from ...services.academic_service import (
     parse_json_list_field,
     serialize_textbook_row,
 )
+from ...services.academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 from ...services.course_planning_service import (
     CoursePlanningError,
     SCHEDULE_SOURCE_ACADEMIC_SYNC,
@@ -514,6 +515,21 @@ def _prepare_offering_payload(
             preferred_teaching_class_name=preferred_teaching_class_name,
         )
     )
+    class_data = dict(class_row)
+    course_data = dict(course_row)
+    academic_teaching_class_display_name = ""
+    if academic_teaching_class_name:
+        academic_teaching_class_display_name = resolve_teaching_class_display_name_from_candidates(
+            conn,
+            teacher_id=int(teacher_id),
+            teaching_class_names=[
+                academic_teaching_class_name,
+                class_data.get("academic_class_name"),
+                class_data.get("name"),
+            ],
+            course_code=str(course_data.get("academic_course_code") or ""),
+            default=str(class_data.get("academic_class_name") or class_data.get("name") or academic_teaching_class_name),
+        )
     use_academic_schedule = requested_schedule_source == SCHEDULE_SOURCE_ACADEMIC_SYNC or (
         not requested_schedule_source and bool(academic_class_options)
     )
@@ -544,7 +560,7 @@ def _prepare_offering_payload(
             academic_occurrences=academic_occurrences,
             semester_start_date=semester_start_date,
             course_name=str(course_row["name"] or ""),
-            teaching_class_name=academic_teaching_class_name,
+            teaching_class_name=academic_teaching_class_display_name or academic_teaching_class_name,
         )
         first_class_date_value = parse_date_input(plan.get("first_class_date"), "第一次上课日期")
         weekly_schedule = []
@@ -578,6 +594,7 @@ def _prepare_offering_payload(
             "academic_teaching_class_options": academic_class_options,
         }
     plan["academic_teaching_class_options"] = academic_class_options
+    plan["academic_teaching_class_display_name"] = academic_teaching_class_display_name
 
     return {
         "offering_id": offering_id,
@@ -594,6 +611,7 @@ def _prepare_offering_payload(
         "weekly_schedule_json": json.dumps(weekly_schedule, ensure_ascii=False),
         "schedule_source": SCHEDULE_SOURCE_ACADEMIC_SYNC if use_academic_schedule else SCHEDULE_SOURCE_FIXED_CYCLE,
         "academic_teaching_class_name": academic_teaching_class_name,
+        "academic_teaching_class_display_name": academic_teaching_class_display_name,
         "academic_teaching_class_options": academic_class_options,
         "course_lessons": course_lessons,
         "plan": plan,

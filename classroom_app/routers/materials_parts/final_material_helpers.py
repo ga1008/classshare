@@ -2,6 +2,31 @@ from .common import *
 from .generation_helpers import *
 from .ai_import_helpers import *
 from ...db.connection import execute_insert_returning_id, get_configured_db_engine
+from ...services.academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
+
+
+def _material_table_columns(conn, table_name: str) -> set[str]:
+    try:
+        if get_configured_db_engine() == "postgres":
+            rows = conn.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = ? AND table_name = ?
+                """,
+                ("public", table_name),
+            ).fetchall()
+            return {
+                str((row["column_name"] if hasattr(row, "keys") and "column_name" in row.keys() else row[0]) or "")
+                for row in rows
+            }
+        rows = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+        return {
+            str((row["name"] if hasattr(row, "keys") and "name" in row.keys() else row[1]) or "")
+            for row in rows
+        }
+    except Exception:
+        return set()
 
 
 def _insert_completed_material_ai_import_record(
@@ -340,8 +365,10 @@ async def _create_generated_markdown_material(
 
 def _load_final_material_classroom_context(conn, class_offering_id: int, user: dict) -> dict[str, Any]:
     ensure_classroom_access(conn, class_offering_id, user)
+    course_cols = _material_table_columns(conn, "courses")
+    academic_course_code_expr = "co.academic_course_code" if "academic_course_code" in course_cols else "''"
     row = conn.execute(
-        """
+        f"""
         SELECT o.id AS class_offering_id,
                o.semester,
                o.schedule_info,
@@ -353,12 +380,13 @@ def _load_final_material_classroom_context(conn, class_offering_id: int, user: d
                co.name AS course_name,
                co.description AS course_description,
                co.sect_name AS course_section,
-               co.academic_course_code,
+               {academic_course_code_expr} AS academic_course_code,
                co.school_code AS course_school_code,
                co.school_name AS course_school_name,
                co.college AS course_college,
                co.department AS course_department,
                cl.name AS class_name,
+               cl.academic_class_name AS academic_class_name,
                cl.school_code AS class_school_code,
                cl.school_name AS class_school_name,
                cl.college AS class_college,
@@ -426,6 +454,24 @@ def _load_final_material_classroom_context(conn, class_offering_id: int, user: d
         ),
     ).fetchone()
     academic_course_data = dict(academic_course) if academic_course else {}
+    academic_teaching_class_source_name = (
+        data.get("academic_teaching_class_name")
+        or academic_course_data.get("teaching_class_name")
+        or ""
+    )
+    academic_teaching_class_display_name = resolve_teaching_class_display_name_from_candidates(
+        conn,
+        teacher_id=int(data["teacher_id"]),
+        teaching_class_names=[
+            academic_teaching_class_source_name,
+            academic_course_data.get("teaching_class_name"),
+            academic_course_data.get("class_composition"),
+            data.get("academic_class_name"),
+            data.get("class_name"),
+        ],
+        course_code=str(data.get("academic_course_code") or ""),
+        default=str(data.get("academic_class_name") or data.get("class_name") or academic_teaching_class_source_name),
+    )
     return {
         "class_offering_id": int(data["class_offering_id"]),
         "course_id": int(data["course_id"]),
@@ -438,7 +484,8 @@ def _load_final_material_classroom_context(conn, class_offering_id: int, user: d
         "academic_year": academic_year,
         "semester": semester_label,
         "raw_semester": semester_text,
-        "academic_teaching_class_name": data.get("academic_teaching_class_name") or "",
+        "academic_teaching_class_name": academic_teaching_class_display_name,
+        "academic_teaching_class_source_name": academic_teaching_class_source_name,
         "school_code": data.get("course_school_code") or data.get("class_school_code") or data.get("teacher_school_code") or "gxufl",
         "school_name": data.get("course_school_name") or data.get("class_school_name") or data.get("teacher_school_name") or "广西外国语学院",
         "college": data.get("course_college") or data.get("class_college") or data.get("teacher_college") or "",

@@ -8,6 +8,7 @@ list is grouped by semester so the create/generate modals can default to the cur
 from .common import *
 
 from ...services.class_label_service import build_academic_class_label
+from ...services.academic_class_mapping_service import resolve_offering_display_class_name
 from ...services import teacher_evaluation_service as te
 
 
@@ -26,6 +27,7 @@ def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
                c.description AS description,
                c.academic_metadata_json AS academic_metadata_json,
                co.name AS course_name,
+               '' AS academic_course_code,
                co.department AS course_department,
                o.academic_teaching_class_name AS academic_teaching_class_name,
                t.department AS teacher_department,
@@ -44,12 +46,13 @@ def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
     offerings = []
     for row in rows:
         item = dict(row)
-        item["display_class_name"] = (
-            build_academic_class_label(item)
-            or item.get("academic_class_name")
-            or item.get("class_name")
-            or item.get("academic_teaching_class_name")
-            or ""
+        item["display_class_name"] = resolve_offering_display_class_name(
+            conn,
+            teacher_id=int(teacher_id),
+            row={
+                **item,
+                "display_class_name": build_academic_class_label(item),
+            },
         )
         offerings.append(item)
     return offerings

@@ -5,6 +5,7 @@ from classroom_app.services.academic_class_mapping_service import (
     load_teaching_class_display_mappings,
     refresh_teaching_class_mappings_from_roster,
     resolve_teaching_class_display_name,
+    resolve_teaching_class_display_name_from_candidates,
 )
 
 
@@ -225,6 +226,41 @@ class AcademicClassMappingServiceTests(unittest.TestCase):
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(teacher_academic_teaching_class_mappings)")}
         self.assertIn("teaching_class_aliases_json", columns)
         self.assertIn("admin_class_aliases_json", columns)
+        conn.close()
+
+    def test_candidate_resolver_ignores_stale_raw_display_name(self):
+        conn = _make_conn()
+        conn.execute(
+            """
+            INSERT INTO teacher_academic_roster_sync_items (
+                id, teacher_id, semester_id, class_id, school_code,
+                academic_year, academic_term, course_code, course_name,
+                teaching_class_id, teaching_class_name, class_composition, synced_at
+            )
+            VALUES (88, 1, 3, NULL, 'gxufl', '2025', '12', 'NET201', '计算机网络原理',
+                    'TC-NET-6', '计算机网络原理-0006', '网工2303班（专升本）', '2026-07-08T10:00:00')
+            """
+        )
+        refresh_teaching_class_mappings_from_roster(
+            conn,
+            teacher_id=1,
+            semester_id=3,
+            synced_at="2026-07-08T10:30:00",
+        )
+
+        self.assertEqual(
+            "网工2303班（专升本）",
+            resolve_teaching_class_display_name_from_candidates(
+                conn,
+                teacher_id=1,
+                teaching_class_names=[
+                    "计算机网络原理-0006",
+                    "计算机网络原理-0006",
+                ],
+                course_code="NET201",
+                default="计算机网络原理-0006",
+            ),
+        )
         conn.close()
 
 

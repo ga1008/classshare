@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import json
 import re
 import sqlite3
@@ -65,6 +66,21 @@ def _alias_lookup_key(value: Any) -> str:
 def _trailing_teaching_class_suffix(value: Any) -> str:
     match = re.search(r"(?:[-_－—–]\s*)?([0-9]{3,4})$", _text(value))
     return match.group(1) if match else ""
+
+
+def looks_like_teaching_class_alias(value: Any) -> bool:
+    """Heuristic for raw JWXT teaching-class labels such as ``课程名-0006``."""
+    text = _text(value)
+    if not text:
+        return False
+    if re.search(r"[·/|｜]", text) and re.search(r"\d{2,4}.*班", text):
+        return True
+    if re.search(r"(?:班|专升本|本科|高职)", text):
+        return False
+    if re.search(r"[-_\uFF0D\u2010-\u2015]\s*[0-9]{3,4}$", text):
+        return True
+    suffix = _trailing_teaching_class_suffix(text)
+    return bool(suffix and len(text) > len(suffix) + 4 and re.search(r"[\u4e00-\u9fff]", text))
 
 
 def _without_teaching_class_suffix(value: Any, suffix: str) -> str:
@@ -726,3 +742,84 @@ def resolve_teaching_class_display_name(
     if not resolved and normalized:
         resolved = mappings.get(("__normalized__", normalized))
     return resolved or _text(default) or raw_name
+
+
+def resolve_teaching_class_display_name_from_candidates(
+    conn: Any,
+    *,
+    teacher_id: int,
+    teaching_class_names: Iterable[Any],
+    course_code: str = "",
+    academic_year: str = "",
+    academic_term: str = "",
+    default: str = "",
+) -> str:
+    """Resolve old/new display candidates to a reusable administrative class name.
+
+    Historical calendar or todo metadata may already have copied a raw JWXT alias
+    into ``class_display_name``. Try every available candidate through the mapping
+    table first, prefer a value that actually resolves to an admin class, and only
+    then fall back to the first non-raw-looking label.
+    """
+    candidates = _unique_aliases([*list(teaching_class_names or []), default])
+    if not candidates:
+        return _text(default)
+
+    same_value_resolutions: list[tuple[str, str]] = []
+    for candidate in candidates:
+        resolved = resolve_teaching_class_display_name(
+            conn,
+            teacher_id=int(teacher_id),
+            teaching_class_name=candidate,
+            course_code=course_code,
+            academic_year=academic_year,
+            academic_term=academic_term,
+            default="",
+        )
+        if not resolved:
+            continue
+        if resolved != candidate:
+            return resolved
+        same_value_resolutions.append((candidate, resolved))
+        if not looks_like_teaching_class_alias(candidate):
+            return resolved
+
+    for candidate, resolved in same_value_resolutions:
+        if resolved and not looks_like_teaching_class_alias(candidate):
+            return resolved
+    for candidate in candidates:
+        if not looks_like_teaching_class_alias(candidate):
+            return candidate
+    return _text(default) or candidates[0]
+
+
+def resolve_offering_display_class_name(
+    conn: Any,
+    *,
+    teacher_id: int,
+    row: dict[str, Any],
+    default: str = "",
+) -> str:
+    """Resolve a class_offerings row to the platform's preferred class label."""
+    display_default = (
+        _text(default)
+        or _text(row.get("display_class_name"))
+        or _text(row.get("academic_class_name"))
+        or _text(row.get("class_name"))
+        or _text(row.get("academic_teaching_class_name"))
+    )
+    return resolve_teaching_class_display_name_from_candidates(
+        conn,
+        teacher_id=int(teacher_id),
+        teaching_class_names=[
+            row.get("academic_teaching_class_name"),
+            row.get("teaching_class_name"),
+            row.get("display_class_name"),
+            row.get("academic_class_name"),
+            row.get("class_name"),
+        ],
+        course_code=_text(row.get("academic_course_code") or row.get("course_code")),
+        academic_year=_text(row.get("academic_year")),
+        academic_term=_text(row.get("academic_term")),
+        default=display_default,
+    )

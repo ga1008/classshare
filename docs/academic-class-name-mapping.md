@@ -57,9 +57,12 @@ sync_current_teacher_rosters_from_academic_system()
 ```python
 from classroom_app.services.academic_class_mapping_service import (
     load_teaching_class_display_mappings,
+    resolve_teaching_class_display_name_from_candidates,
     resolve_teaching_class_display_name,
 )
 ```
+
+读取历史日程、待办、邮件提醒、开课设置等带有多个候选名称的记录时，使用 `resolve_teaching_class_display_name_from_candidates()`，不要直接信任旧数据里的 `class_display_name`；早期同步可能已经把 `计算机网络原理-0006` 这类教务代号写进展示字段。
 
 显示单个教学班名称时使用 `resolve_teaching_class_display_name()`；批量处理时使用 `load_teaching_class_display_mappings()`。
 

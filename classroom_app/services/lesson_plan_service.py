@@ -24,6 +24,7 @@ from typing import Any
 from ..db.connection import get_configured_db_engine
 from ..db.schema_lesson_plans import ensure_lesson_plan_schema
 from . import material_scope_service as scope_core
+from .academic_class_mapping_service import resolve_offering_display_class_name
 from .organization_scope_service import load_teacher_org_scope
 from .resource_access_service import is_super_admin_teacher
 
@@ -339,10 +340,17 @@ def build_cover_from_offering(
     cover["school_name"] = _text(org.get("school_name"))
     cover["teaching_unit"] = _text(org.get("college") or org.get("department"))
 
+    offering_cols = _table_columns(conn, "class_offerings")
+    course_cols = _table_columns(conn, "courses")
+    academic_teaching_class_expr = (
+        "o.academic_teaching_class_name" if "academic_teaching_class_name" in offering_cols else "''"
+    )
+    academic_course_code_expr = "co.academic_course_code" if "academic_course_code" in course_cols else "''"
     row = conn.execute(
-        """
+        f"""
         SELECT o.id AS offering_id, o.course_id AS course_id, o.semester AS semester,
-               co.name AS course_name, co.credits AS credits,
+               {academic_teaching_class_expr} AS academic_teaching_class_name,
+               co.name AS course_name, {academic_course_code_expr} AS academic_course_code, co.credits AS credits,
                co.total_hours AS total_hours, co.college AS course_college,
                co.department AS course_department, co.school_name AS course_school_name,
                cl.name AS class_name, cl.academic_class_name AS academic_class_name,
@@ -362,7 +370,11 @@ def build_cover_from_offering(
         cover["credits"] = "" if credits in (None, "") else _text(credits)
         hours = row.get("total_hours")
         cover["total_hours"] = "" if hours in (None, "", 0) else _text(hours)
-        cover["class_name"] = _text(row.get("academic_class_name") or row.get("class_name"))
+        cover["class_name"] = resolve_offering_display_class_name(
+            conn,
+            teacher_id=int(teacher["id"]),
+            row=row,
+        )
         cover["semester_label"] = _text(row.get("semester"))
         cover["textbook"] = _text(row.get("textbook_title")) or cover["textbook"]
         cover["publisher"] = _text(row.get("textbook_publisher")) or cover["publisher"]

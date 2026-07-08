@@ -1,6 +1,7 @@
 from .common import *
 
 from ...services import assessment_plan_service as ap
+from ...services.academic_class_mapping_service import resolve_offering_display_class_name
 
 
 router = APIRouter()
@@ -9,8 +10,10 @@ router = APIRouter()
 def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT o.id, c.name AS class_name, co.name AS course_name,
-               COALESCE(NULLIF(o.academic_teaching_class_name, ''), c.academic_class_name, c.name) AS display_class_name,
+        SELECT o.id, c.name AS class_name, c.academic_class_name AS academic_class_name,
+               o.academic_teaching_class_name AS academic_teaching_class_name,
+               co.name AS course_name, '' AS academic_course_code,
+               COALESCE(NULLIF(c.academic_class_name, ''), c.name, NULLIF(o.academic_teaching_class_name, '')) AS display_class_name,
                COALESCE(NULLIF(sem.name, ''), NULLIF(o.semester, ''), '') AS semester_label
         FROM class_offerings o
         JOIN classes c ON o.class_id = c.id
@@ -21,7 +24,16 @@ def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
         """,
         (int(teacher_id),),
     ).fetchall()
-    return [dict(row) for row in rows]
+    offerings = []
+    for row in rows:
+        item = dict(row)
+        item["display_class_name"] = resolve_offering_display_class_name(
+            conn,
+            teacher_id=int(teacher_id),
+            row=item,
+        )
+        offerings.append(item)
+    return offerings
 
 
 @router.get("/manage/teaching/assessment-plans", response_class=HTMLResponse)

@@ -25,6 +25,7 @@ from ..db.connection import execute_insert_returning_id, get_configured_db_engin
 from ..db.schema_materials_integrations import ensure_materials_integrations_schema
 from . import assessment_plan_service as ap
 from .assessment_plan_generation_service import find_teacher_own_signature_id
+from .academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 from .exam_json_service import normalize_exam_scoring_payload
 from .file_service import global_file_write_path
 from .material_ai_import_service import (
@@ -601,6 +602,7 @@ def _latest_assignment_context(conn: Any, paper_id: str, teacher_id: int) -> dic
         ),
         _select_if_present("c", course_cols, "id", "course_id", join_enabled=join_course),
         _select_if_present("c", course_cols, "name", "course_name", join_enabled=join_course),
+        _select_if_present("c", course_cols, "academic_course_code", "academic_course_code", join_enabled=join_course),
         _select_if_present("c", course_cols, "school_name", "course_school_name", join_enabled=join_course),
         _select_if_present("c", course_cols, "college", "course_college", join_enabled=join_course),
         _select_if_present("c", course_cols, "department", "course_department", join_enabled=join_course),
@@ -676,7 +678,10 @@ def _build_reverse_fields(
             "college": _text(fields.get("college") or assignment_context.get("course_college") or org.get("college")),
             "department": _text(fields.get("department") or assignment_context.get("course_department") or org.get("department")),
             "course_name": course_name or _text(paper.get("title")) or "课程",
-            "class_name": _text(fields.get("class_name") or _class_label_from_assignment(assignment_context)),
+            "class_name": _text(
+                fields.get("class_name")
+                or _class_label_from_assignment(conn, assignment_context, teacher_id=int(teacher["id"]))
+            ),
             "teacher_name": _text(fields.get("teacher_name") or teacher_name),
             "examiner_name": _text(fields.get("examiner_name") or teacher_name),
             "reviewer_name": _text(fields.get("reviewer_name")),
@@ -700,12 +705,18 @@ def _build_reverse_fields(
     return fields
 
 
-def _class_label_from_assignment(row: dict[str, Any]) -> str:
-    for key in ("academic_teaching_class_name", "academic_class_name", "class_name"):
-        value = _text(row.get(key))
-        if value:
-            return value
-    return ""
+def _class_label_from_assignment(conn: Any, row: dict[str, Any], *, teacher_id: int) -> str:
+    return resolve_teaching_class_display_name_from_candidates(
+        conn,
+        teacher_id=int(teacher_id),
+        teaching_class_names=[
+            row.get("academic_teaching_class_name"),
+            row.get("academic_class_name"),
+            row.get("class_name"),
+        ],
+        course_code=_text(row.get("academic_course_code")),
+        default=_text(row.get("academic_class_name") or row.get("class_name") or row.get("academic_teaching_class_name")),
+    )
 
 
 def _academic_period_from_semester(value: Any) -> tuple[str, str]:

@@ -681,7 +681,9 @@
                             <span class="academic-badge {% if offering.schedule_source == 'academic_sync' %}is-success{% else %}is-muted{% endif %}">
                                 {{ offering.schedule_source_label }}
                             </span>
-                            {% if offering.academic_teaching_class_name %}<span class="academic-badge">{{ offering.academic_teaching_class_name }}</span>{% endif %}
+                            {% if offering.academic_teaching_class_display_name or offering.academic_teaching_class_name %}
+                                <span class="academic-badge">{{ offering.academic_teaching_class_display_name or offering.academic_teaching_class_name }}</span>
+                            {% endif %}
                             {% if offering.first_class_date %}<span class="academic-badge">{{ offering.first_class_date }}</span>{% endif %}
                             <span class="academic-badge {% if offering.scheduled_session_count %}is-accent{% else %}is-muted{% endif %}">
                                 {{ offering.scheduled_session_count }} 次课

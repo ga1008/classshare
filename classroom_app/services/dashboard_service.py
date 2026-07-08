@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from ..db.connection import get_configured_db_engine
-from .academic_class_mapping_service import resolve_teaching_class_display_name
+from .academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 from .message_center_service import CATEGORY_LABELS, get_message_center_summary
 from .academic_service import (
     build_semester_calendar_payload,
@@ -182,19 +182,24 @@ def _teacher_calendar_event_todo(row: Any, *, now: datetime, conn: sqlite3.Conne
     event_label = "考试" if is_course_exam else "监考"
     status_label = _dashboard_relative_event_label(starts_at, now, label=event_label)
     is_completed = bool(ends_at < now)
-    raw_teaching_class_name = str(
-        metadata.get("academic_teaching_class_name")
-        or metadata.get("teaching_class_name")
-        or ""
-    )
     class_name = str(metadata.get("class_display_name") or "").strip()
-    if not class_name and conn is not None and raw_teaching_class_name:
-        class_name = resolve_teaching_class_display_name(
+    teaching_class_candidates = [
+        metadata.get("academic_teaching_class_name"),
+        metadata.get("teaching_class_source_name"),
+        metadata.get("teaching_class_name"),
+        class_name,
+        metadata.get("class_composition"),
+    ]
+    raw_teaching_class_name = next((str(name or "").strip() for name in teaching_class_candidates if str(name or "").strip()), "")
+    if conn is not None and raw_teaching_class_name:
+        class_name = resolve_teaching_class_display_name_from_candidates(
             conn,
             teacher_id=_dashboard_int(item.get("teacher_id")),
-            teaching_class_name=raw_teaching_class_name,
+            teaching_class_names=teaching_class_candidates,
             course_code=str(metadata.get("course_code") or ""),
-            default=raw_teaching_class_name,
+            academic_year=str(metadata.get("academic_year") or ""),
+            academic_term=str(metadata.get("academic_term") or ""),
+            default=class_name or raw_teaching_class_name,
         )
     if not class_name:
         class_name = raw_teaching_class_name

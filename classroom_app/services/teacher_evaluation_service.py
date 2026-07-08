@@ -27,6 +27,7 @@ from typing import Any
 from ..db.connection import get_configured_db_engine
 from ..db.schema_teacher_evaluations import ensure_teacher_evaluation_schema
 from . import material_scope_service as scope_core
+from .academic_class_mapping_service import resolve_offering_display_class_name
 from .class_label_service import build_academic_class_label
 from .material_export_template_service import build_material_export_artifact
 from .document_render_service import DocumentRenderError, document_render_service
@@ -348,11 +349,18 @@ def build_fields_from_offering(
         "teacher_name": _text(teacher.get("name") or teacher.get("username")),
         "evaluate_date": datetime.now().strftime("%Y年%m月%d日"),
     }
+    offering_cols = _table_columns(conn, "class_offerings")
+    course_cols = _table_columns(conn, "courses")
+    academic_teaching_class_expr = (
+        "o.academic_teaching_class_name" if "academic_teaching_class_name" in offering_cols else "''"
+    )
+    academic_course_code_expr = "co.academic_course_code" if "academic_course_code" in course_cols else "''"
     row = conn.execute(
-        """
+        f"""
         SELECT o.semester AS semester,
-               o.academic_teaching_class_name AS academic_teaching_class_name,
+               {academic_teaching_class_expr} AS academic_teaching_class_name,
                co.name AS course_name,
+               {academic_course_code_expr} AS academic_course_code,
                co.college AS course_college,
                co.department AS course_department,
                co.school_name AS course_school_name,
@@ -376,11 +384,13 @@ def build_fields_from_offering(
     if row:
         row = dict(row)
         fields["course_name"] = _text(row.get("course_name"))
-        fields["class_name"] = (
-            build_academic_class_label(row)
-            or _text(row.get("academic_class_name"))
-            or _text(row.get("class_name"))
-            or _text(row.get("academic_teaching_class_name"))
+        fields["class_name"] = resolve_offering_display_class_name(
+            conn,
+            teacher_id=int(teacher["id"]),
+            row={
+                **row,
+                "display_class_name": build_academic_class_label(row),
+            },
         )
         if row.get("course_college"):
             fields["college"] = _text(row.get("course_college")) or fields["college"]
