@@ -88,7 +88,16 @@ async def get_rendered_document_metadata(
         job = document_render_service.get_job(key)
     except DocumentRenderError as exc:
         raise _map_render_error(exc) from exc
+    medium_pages = sum(1 for path in job.root.glob("page-*.medium.png") if path.is_file())
     large_pages = sum(1 for path in job.root.glob("page-*.large.png") if path.is_file())
+    pages = [
+        {
+            "number": page_number,
+            "medium_cached": (job.root / f"page-{page_number:03d}.medium.png").is_file(),
+            "large_cached": (job.root / f"page-{page_number:03d}.large.png").is_file(),
+        }
+        for page_number in range(1, job.page_count + 1)
+    ]
     return JSONResponse(
         {
             "key": job.key,
@@ -96,7 +105,9 @@ async def get_rendered_document_metadata(
             "media_type": job.media_type,
             "source_format": job.manifest.get("source_format") or "",
             "page_count": job.page_count,
+            "medium_pages_cached": medium_pages,
             "large_pages_cached": large_pages,
+            "pages": pages,
             "created_at": job.manifest.get("created_at"),
             "updated_at": job.manifest.get("updated_at"),
             "last_access_at": job.manifest.get("last_access_at"),

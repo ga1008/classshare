@@ -58,23 +58,27 @@ flow is:
 2. Pass those exact bytes to `document_render_service.render_artifact(...)`.
 3. The renderer stores the final document in
    `DATA_ROOT/tmp/document_renderer/<hash>/`, converts Office files to PDF with
-   the shared LibreOffice wrapper when needed, and renders page PNGs with
-   PyMuPDF.
+   the shared LibreOffice wrapper when needed, and records the PDF page count.
+   Page PNGs are rendered lazily, one page at a time, when the preview UI asks
+   for that page.
 4. The preview page uses `document_render_service.render_preview_html(...)` to
    show the rendered pages as a 3D stacked deck. Mouse wheel, arrow keys, and
    the small previous/next controls move the front page through the deck.
-   Clicking a side page first brings it to the front; clicking the front page
-   requests a cached or lazily rendered large PNG for that page. The medium
-   image remains visible as a fallback while the large image is being prepared;
-   failed large-image loads show a retry action instead of leaving a blank
-   preview. In the large preview, users can zoom with the +/- buttons or the
-   mouse wheel while hovering the page image, reset to 100%, and drag the
-   zoomed page with the left mouse button.
+   Each card starts as a rendering placeholder; visible cards request their
+   medium PNGs asynchronously and swap in as each page finishes. Clicking a
+   side page first brings it to the front; clicking the front page requests a
+   cached or lazily rendered large PNG for that page. The medium image remains
+   visible as a fallback while the large image is being prepared; failed
+   large-image loads show a retry action instead of leaving a blank preview. In
+   the large preview, users can zoom with the +/- buttons or the mouse wheel
+   while hovering the page image, reset to 100%, and drag the zoomed page with
+   the left mouse button.
 5. The preview download button returns the already-rendered final document via
    `/api/document-renderer/jobs/{key}/download`, so preview-page export does not
    regenerate the document.
 6. `/api/document-renderer/jobs/{key}/metadata` exposes lightweight job metadata
-   for diagnostics or future UI enhancements.
+   plus per-page medium/large cache status for diagnostics, future polling UIs,
+   or renderer health panels.
 
 The current first-class consumers are:
 
@@ -94,14 +98,17 @@ Concurrency and caching:
   LibreOffice/PyMuPDF work across app workers on the same host. Configure with
   `LANSHARE_DOCUMENT_RENDER_MAX_CONCURRENCY` (default `1`) and
   `LANSHARE_DOCUMENT_RENDER_QUEUE_TIMEOUT_SECONDS` (default `45`).
-- Page images are written to temporary files and atomically replaced, so readers
-  do not observe partially written PNGs.
+- Medium and large page images are rendered on demand and written to temporary
+  files before atomic replacement, so readers do not observe partially written
+  PNGs and long documents do not render every page up front.
 - Cached artifacts are touched on access and removed opportunistically after
   `LANSHARE_DOCUMENT_RENDER_TTL_SECONDS` (default `86400`). The cleanup runs at
   most once every ten minutes per process.
-- `LANSHARE_DOCUMENT_RENDER_MAX_PAGES` (default `80`) protects the small server
-  from very large documents. Increase it only after considering CPU, memory, and
-  storage pressure.
+- `LANSHARE_DOCUMENT_RENDER_MAX_PAGES` (default `200`) protects the small server
+  from very large documents. The default is higher than the original eager
+  renderer because preview images are now page-lazy and cached per page, but it
+  should still be increased only after considering CPU, memory, and storage
+  pressure.
 - `/api/internal/health` includes a `document_renderer` block with root path,
   concurrency/TTL settings, cached job count, cached byte count, and rendered
   medium/large page counts.

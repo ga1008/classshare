@@ -211,7 +211,7 @@ class DocumentRenderService:
         self.queue_timeout_seconds = _env_int("LANSHARE_DOCUMENT_RENDER_QUEUE_TIMEOUT_SECONDS", 45)
         self.ttl_seconds = _env_int("LANSHARE_DOCUMENT_RENDER_TTL_SECONDS", 60 * 60 * 24)
         self.token_ttl_seconds = _env_int("LANSHARE_DOCUMENT_RENDER_TOKEN_TTL_SECONDS", DEFAULT_TOKEN_TTL_SECONDS)
-        self.max_pages = _env_int("LANSHARE_DOCUMENT_RENDER_MAX_PAGES", 80)
+        self.max_pages = _env_int("LANSHARE_DOCUMENT_RENDER_MAX_PAGES", 200)
         self.medium_zoom = float(os.getenv("LANSHARE_DOCUMENT_RENDER_MEDIUM_ZOOM", "1.45") or 1.45)
         self.large_zoom = float(os.getenv("LANSHARE_DOCUMENT_RENDER_LARGE_ZOOM", "2.35") or 2.35)
         self._semaphore = threading.BoundedSemaphore(self.max_concurrent)
@@ -294,8 +294,6 @@ class DocumentRenderService:
             if page_path.exists():
                 self._touch_manifest(job)
                 return page_path
-            if normalized_size != "large":
-                raise DocumentRenderNotFound("预览页缓存已过期，请刷新预览页面。")
             with self._job_file_lock(key):
                 if page_path.exists():
                     self._touch_manifest(job)
@@ -305,7 +303,14 @@ class DocumentRenderService:
                     pdf_path = job.root / pdf_file
                     if not pdf_path.exists():
                         raise DocumentRenderNotFound("PDF 中间文件缓存已过期，请刷新预览页面。")
-                    self._render_pdf_pages(pdf_path, job.root, zoom=self.large_zoom, size_name="large", page_number=page_number)
+                    zoom = self.large_zoom if normalized_size == "large" else self.medium_zoom
+                    self._render_pdf_pages(
+                        pdf_path,
+                        job.root,
+                        zoom=zoom,
+                        size_name=normalized_size,
+                        page_number=page_number,
+                    )
                     self._touch_manifest(job)
                     return page_path
 
@@ -336,10 +341,15 @@ class DocumentRenderService:
         pages_json = json.dumps(page_payload, ensure_ascii=False)
         page_cards = "\n".join(
             (
-                f"<button class=\"doc-preview-card\" type=\"button\" data-page-index=\"{page['number'] - 1}\" "
+                f"<button class=\"doc-preview-card is-page-pending\" type=\"button\" "
+                f"data-page-index=\"{page['number'] - 1}\" data-page-status=\"idle\" "
                 f"aria-label=\"查看第 {page['number']} 页大图\">"
-                f"<span class=\"doc-preview-card__paper\"><img src=\"{html.escape(page['mediumUrl'])}\" "
-                f"alt=\"第 {page['number']} 页预览图\" loading=\"lazy\"></span>"
+                f"<span class=\"doc-preview-card__paper\">"
+                f"<img data-page-image alt=\"第 {page['number']} 页预览图\" decoding=\"async\" hidden>"
+                f"<span class=\"doc-preview-card__placeholder\" data-page-placeholder>"
+                f"<span class=\"doc-preview-page-spinner\"></span>"
+                f"<strong>正在渲染</strong><em>第 {page['number']} / {job.page_count} 页</em>"
+                f"</span></span>"
                 f"<span class=\"doc-preview-card__meta\"><strong>{page['number']}</strong><em>/ {job.page_count}</em></span>"
                 "</button>"
             )
@@ -466,6 +476,7 @@ class DocumentRenderService:
       0 34px 84px rgba(22, 32, 51, 0.22);
   }}
   .doc-preview-card__paper {{
+    position: relative;
     height: 100%;
     display: grid;
     place-items: center;
@@ -487,6 +498,52 @@ class DocumentRenderService:
     height: 100%;
     object-fit: contain;
     background: #fff;
+    opacity: 0;
+    transition: opacity 180ms ease;
+  }}
+  .doc-preview-card.is-page-ready img {{ opacity: 1; }}
+  .doc-preview-card__placeholder {{
+    position: absolute;
+    inset: 0;
+    display: grid;
+    gap: 8px;
+    place-content: center;
+    justify-items: center;
+    padding: 24px;
+    color: #475569;
+    background:
+      linear-gradient(135deg, rgba(14, 165, 233, 0.10), rgba(15, 118, 110, 0.08)),
+      #ffffff;
+    text-align: center;
+    transition: opacity 180ms ease;
+  }}
+  .doc-preview-card__placeholder strong {{
+    font-size: 0.95rem;
+    font-weight: 850;
+  }}
+  .doc-preview-card__placeholder em {{
+    font-style: normal;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }}
+  .doc-preview-card.is-page-ready .doc-preview-card__placeholder {{
+    opacity: 0;
+    pointer-events: none;
+  }}
+  .doc-preview-card.is-page-error .doc-preview-card__placeholder {{
+    color: #92400e;
+    background:
+      linear-gradient(135deg, rgba(251, 191, 36, 0.14), rgba(14, 165, 233, 0.08)),
+      #fff7ed;
+  }}
+  .doc-preview-card.is-page-error .doc-preview-page-spinner {{ display: none; }}
+  .doc-preview-page-spinner {{
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 3px solid rgba(14, 165, 233, 0.18);
+    border-top-color: var(--sky);
+    animation: docPreviewSpin 0.9s linear infinite;
   }}
   .doc-preview-card__meta {{
     position: absolute;
@@ -776,6 +833,7 @@ class DocumentRenderService:
   const deckPrev = document.querySelector('[data-deck-prev]');
   const deckNext = document.querySelector('[data-deck-next]');
   const deckCounter = document.querySelector('[data-deck-count]');
+  const pageStates = pages.map(() => 'idle');
   let activeIndex = 0;
   let deckIndex = 0;
   let latestRequestId = 0;
@@ -819,6 +877,56 @@ class DocumentRenderService:
       + 'rotateX(' + rotateX + 'deg) rotateY(' + rotateY + 'deg) scale(' + scale + ')';
   }}
 
+  function getPageCard(index) {{
+    return deckCards[index] || null;
+  }}
+
+  function setPageState(index, status) {{
+    pageStates[index] = status;
+    const card = getPageCard(index);
+    const page = pages[index];
+    if (!card || !page) return;
+    card.dataset.pageStatus = status;
+    card.classList.toggle('is-page-loading', status === 'loading');
+    card.classList.toggle('is-page-ready', status === 'ready');
+    card.classList.toggle('is-page-error', status === 'error');
+    card.classList.toggle('is-page-pending', status === 'idle' || status === 'loading');
+    const placeholder = card.querySelector('[data-page-placeholder]');
+    if (!placeholder) return;
+    const label = placeholder.querySelector('strong');
+    const hint = placeholder.querySelector('em');
+    if (label) label.textContent = status === 'error' ? '渲染失败' : '正在渲染';
+    if (hint) hint.textContent = status === 'error'
+      ? '点击重试第 ' + page.number + ' 页'
+      : '第 ' + page.number + ' / ' + pages.length + ' 页';
+  }}
+
+  function loadMediumPage(index, options = {{}}) {{
+    const page = pages[index];
+    const card = getPageCard(index);
+    if (!page || !card) return;
+    if (!options.force && (pageStates[index] === 'loading' || pageStates[index] === 'ready')) return;
+    const imageEl = card.querySelector('[data-page-image]');
+    if (!imageEl) return;
+    setPageState(index, 'loading');
+    const loader = new Image();
+    loader.onload = () => {{
+      imageEl.src = loader.src;
+      imageEl.hidden = false;
+      setPageState(index, 'ready');
+    }};
+    loader.onerror = () => {{
+      setPageState(index, 'error');
+    }};
+    loader.src = page.mediumUrl;
+  }}
+
+  function requestVisiblePages() {{
+    deckCards.forEach((card, index) => {{
+      if (card.classList.contains('is-visible')) loadMediumPage(index);
+    }});
+  }}
+
   function updateDeck(options = {{}}) {{
     if (!deckCards.length) return;
     deckCards.forEach((card, index) => {{
@@ -844,6 +952,7 @@ class DocumentRenderService:
     const current = pages[deckIndex];
     if (deckCounter && current) deckCounter.textContent = current.number + ' / ' + pages.length;
     if (options.focus && deckCards[deckIndex]) deckCards[deckIndex].focus({{ preventScroll: true }});
+    requestVisiblePages();
   }}
 
   function goToDeck(index, options = {{}}) {{
@@ -955,6 +1064,10 @@ class DocumentRenderService:
   deckCards.forEach((card) => {{
     card.addEventListener('click', () => {{
       const index = Number(card.dataset.pageIndex || 0);
+      if (pageStates[index] === 'error') {{
+        loadMediumPage(index, {{ force: true }});
+        return;
+      }}
       if (index === deckIndex) {{
         openPage(index);
       }} else {{
@@ -1185,7 +1298,7 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
             conversion = convert_office_file(document_path, "pdf", timeout=120)
             pdf_path.write_bytes(conversion.output_bytes)
 
-        page_count = self._render_pdf_pages(pdf_path, job_root, zoom=self.medium_zoom, size_name="medium")
+        page_count = self._inspect_pdf_page_count(pdf_path)
         now = time.time()
         manifest = {
             "version": RENDER_VERSION,
@@ -1203,6 +1316,23 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
         }
         self._write_manifest(job_root, manifest)
         return RenderedDocumentJob(key=key, manifest=manifest, root=job_root)
+
+    def _inspect_pdf_page_count(self, pdf_path: Path) -> int:
+        try:
+            import fitz
+        except ImportError as exc:  # pragma: no cover - dependency guard
+            raise DocumentRenderError(f"缺少 PDF 渲染依赖 PyMuPDF: {exc}") from exc
+
+        doc = fitz.open(pdf_path)
+        try:
+            page_count = int(doc.page_count)
+            if page_count <= 0:
+                raise DocumentRenderError("PDF 没有可渲染页面。")
+            if page_count > self.max_pages:
+                raise DocumentRenderError(f"文档共有 {page_count} 页，超过当前预览上限 {self.max_pages} 页。")
+            return page_count
+        finally:
+            doc.close()
 
     def _render_pdf_pages(
         self,
@@ -1260,9 +1390,6 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
             return None
         if not pdf_file or not (job_root / pdf_file).exists():
             return None
-        for page_number in range(1, page_count + 1):
-            if not self._page_path(job_root, page_number, "medium").exists():
-                return None
         job = RenderedDocumentJob(key=key, manifest=manifest, root=job_root)
         self._touch_manifest(job)
         return job
@@ -1275,14 +1402,14 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
         job.manifest.update(manifest)
 
     def _write_manifest(self, job_root: Path, manifest: dict[str, Any]) -> None:
-        tmp_path = job_root / f"manifest.{threading.get_ident()}.json.tmp"
+        tmp_path = job_root / f"manifest.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}.json.tmp"
         final_path = job_root / "manifest.json"
         tmp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp_path.replace(final_path)
 
     def _atomic_write_bytes(self, final_path: Path, content: bytes) -> None:
         final_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = final_path.with_name(f"{final_path.name}.{threading.get_ident()}.tmp")
+        tmp_path = final_path.with_name(f"{final_path.name}.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}.tmp")
         tmp_path.write_bytes(content)
         tmp_path.replace(final_path)
 

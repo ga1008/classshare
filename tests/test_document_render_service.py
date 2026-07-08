@@ -1,7 +1,10 @@
+import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
+from classroom_app.routers import document_renderer as document_renderer_router
 from classroom_app.services.document_render_service import (
     DocumentRenderService,
     issue_render_token,
@@ -43,6 +46,7 @@ class DocumentRenderServiceTests(unittest.TestCase):
 
             self.assertEqual(first.key, second.key)
             self.assertEqual(2, first.page_count)
+            self.assertEqual(0, service.cache_stats()["medium_pages"])
             medium_page = service.get_page_image_path(first.key, 1, size="medium")
             large_page = service.get_page_image_path(first.key, 1, size="large")
             document_path, filename, media_type = service.get_download_path(first.key)
@@ -91,6 +95,10 @@ class DocumentRenderServiceTests(unittest.TestCase):
             self.assertIn("data-zoom-reset", preview_html)
             self.assertIn("data-zoom-in", preview_html)
             self.assertIn("draggable=\"false\"", preview_html)
+            self.assertIn("doc-preview-card__placeholder", preview_html)
+            self.assertIn("data-page-image", preview_html)
+            self.assertIn("loadMediumPage", preview_html)
+            self.assertIn("requestVisiblePages", preview_html)
             self.assertIn("stage.addEventListener('wheel'", preview_html)
             self.assertIn("image.addEventListener('wheel'", preview_html)
             self.assertIn("image.addEventListener('pointerdown'", preview_html)
@@ -98,7 +106,82 @@ class DocumentRenderServiceTests(unittest.TestCase):
             self.assertIn("stepDeck(wheelAccumulator > 0 ? 1 : -1)", preview_html)
             self.assertIn("setZoom(zoomScale * factor", preview_html)
             self.assertIn("doc-preview-card.is-active", preview_html)
+            self.assertNotIn("<img src=\"/api/document-renderer", preview_html)
             self.assertNotIn("repeat(auto-fit", preview_html)
+
+    def test_medium_pages_are_lazy_and_rendered_per_page(self):
+        with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
+            service = DocumentRenderService(root=Path(temp_dir))
+            job = service.render_artifact(
+                _build_pdf_bytes(page_count=3),
+                filename="sample.pdf",
+                media_type="application/pdf",
+                source_format="pdf",
+            )
+
+            self.assertFalse((job.root / "page-001.medium.png").exists())
+            self.assertFalse((job.root / "page-002.medium.png").exists())
+
+            page_2 = service.get_page_image_path(job.key, 2, size="medium")
+
+            self.assertTrue(page_2.exists())
+            self.assertFalse((job.root / "page-001.medium.png").exists())
+            self.assertFalse((job.root / "page-003.medium.png").exists())
+            self.assertEqual(1, service.cache_stats()["medium_pages"])
+
+    def test_large_documents_use_lazy_page_rendering_under_default_cap(self):
+        with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
+            service = DocumentRenderService(root=Path(temp_dir))
+            job = service.render_artifact(
+                _build_pdf_bytes(page_count=93),
+                filename="long.pdf",
+                media_type="application/pdf",
+                source_format="pdf",
+            )
+
+            self.assertEqual(93, job.page_count)
+            self.assertEqual(0, service.cache_stats()["medium_pages"])
+            page_93 = service.get_page_image_path(job.key, 93, size="medium")
+
+            self.assertTrue(page_93.exists())
+            self.assertEqual(1, service.cache_stats()["medium_pages"])
+
+    def test_metadata_route_reports_per_page_cache_state(self):
+        with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
+            service = DocumentRenderService(root=Path(temp_dir))
+            job = service.render_artifact(
+                _build_pdf_bytes(page_count=3),
+                filename="sample.pdf",
+                media_type="application/pdf",
+                source_format="pdf",
+            )
+            service.get_page_image_path(job.key, 2, size="medium")
+            token = issue_render_token(job.key, user={"id": 7, "role": "teacher"})
+            original_service = document_renderer_router.document_render_service
+            document_renderer_router.document_render_service = service
+            try:
+                response = asyncio.run(
+                    document_renderer_router.get_rendered_document_metadata(
+                        job.key,
+                        token=token,
+                        user={"id": 7, "role": "teacher"},
+                    )
+                )
+            finally:
+                document_renderer_router.document_render_service = original_service
+
+            payload = json.loads(response.body.decode("utf-8"))
+            self.assertEqual(3, payload["page_count"])
+            self.assertEqual(1, payload["medium_pages_cached"])
+            self.assertEqual(0, payload["large_pages_cached"])
+            self.assertEqual(
+                [
+                    {"number": 1, "medium_cached": False, "large_cached": False},
+                    {"number": 2, "medium_cached": True, "large_cached": False},
+                    {"number": 3, "medium_cached": False, "large_cached": False},
+                ],
+                payload["pages"],
+            )
 
     def test_cache_stats_reports_jobs_and_render_profile_separates_keys(self):
         with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
@@ -125,7 +208,7 @@ class DocumentRenderServiceTests(unittest.TestCase):
             self.assertNotEqual(first.key, second.key)
             self.assertEqual(2, stats["job_count"])
             self.assertGreater(stats["total_bytes"], len(pdf_bytes))
-            self.assertEqual(2, stats["medium_pages"])
+            self.assertEqual(0, stats["medium_pages"])
             self.assertEqual(0, stats["large_pages"])
 
 
