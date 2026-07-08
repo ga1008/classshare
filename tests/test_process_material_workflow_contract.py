@@ -53,6 +53,17 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("const initialAiGeneratePreset = getInitialAiGeneratePreset();", script)
         self.assertIn("openAiGenerateModal(initialAiGeneratePreset);", script)
 
+    def test_grading_rubric_menu_does_not_auto_open_generate_modal(self):
+        source = Path("classroom_app/routers/materials_parts/library.py").read_text(encoding="utf-8")
+        match = re.search(
+            r"manage_grading_rubrics_page[\s\S]+?initial_ai_generate=\{(?P<preset>[\s\S]+?)\}\s*,\s*\)",
+            source,
+        )
+        self.assertIsNotNone(match)
+        preset = match.group("preset")
+        self.assertIn('"document_type": "grading_rubric"', preset)
+        self.assertNotIn('"open": True', preset)
+
     def test_grading_rubric_manage_context_requires_exam_questions(self):
         weak_context = _build_manage_final_material_context(
             document_type="grading_rubric",

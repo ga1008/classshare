@@ -947,6 +947,7 @@ function renderWorkspaceTopbar(detail) {
     const optimizedUrl = detail.has_optimized_version ? `/materials/view/${detail.id}?variant=optimized` : '';
     const exportUrl = detail.ai_import_record?.export_url || '';
     const exportPdfUrl = detail.ai_import_record?.export_pdf_url || '';
+    const renderPreviewUrl = detail.ai_import_record?.render_preview_url || '';
     const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(detail.ai_import_record?.document_type) ? '导出Excel' : '导出Word';
     const canManage = detail.can_manage !== false;
     const isFolder = detail.node_type === 'folder';
@@ -960,6 +961,7 @@ function renderWorkspaceTopbar(detail) {
                 ${previewUrl ? `<a href="${escapeHtml(previewUrl)}" class="btn btn-primary btn-sm" target="_blank" rel="noopener">全屏预览</a>` : ''}
                 ${isRenderable(detail) ? `<a href="${escapeHtml(getRenderUrl(detail))}" class="btn btn-primary btn-sm" target="_blank" rel="noopener">${escapeHtml(getRenderLabel(detail))}</a>` : ''}
                 ${optimizedUrl ? `<a href="${escapeHtml(optimizedUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">查看优化稿</a>` : ''}
+                ${renderPreviewUrl ? `<a href="${escapeHtml(renderPreviewUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
                 ${exportUrl ? `<a href="${escapeHtml(exportUrl)}" class="btn btn-outline btn-sm">${exportLabel}</a>` : ''}
                 ${exportPdfUrl ? `<a href="${escapeHtml(exportPdfUrl)}" class="btn btn-outline btn-sm">导出PDF</a>` : ''}
                 ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline btn-sm">下载</a>` : ''}

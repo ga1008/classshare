@@ -7,9 +7,44 @@ from .final_material_helpers import *
 from .rewrite_helpers import *
 from ...services.learning_progress_service import get_material_mastery_check_context
 from ...services.material_render_service import attach_render_metadata, resolve_render_file, resolve_render_target
+from ...services.document_render_service import DocumentRenderError, document_render_service
 
 
 router = APIRouter()
+
+
+def _load_ai_import_record_preview_payload(conn, record_id: int, user: dict):
+    row = conn.execute(
+        """
+        SELECT *
+        FROM material_ai_import_records
+        WHERE id = ?
+        """,
+        (record_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "未找到可预览的解析记录")
+    material_ids = [
+        row["package_material_id"],
+        row["parsed_material_id"],
+        row["source_material_id"],
+        row["parent_material_id"],
+    ]
+    has_access = False
+    for material_id in material_ids:
+        if not material_id:
+            continue
+        try:
+            ensure_user_material_access(conn, int(material_id), user)
+            has_access = True
+            break
+        except HTTPException:
+            continue
+    if not has_access:
+        raise HTTPException(404, "未找到可预览的解析记录")
+    payload = _build_ai_import_payload_from_record(row)
+    fallback_filename = row["source_file_name"] or f"材料解析-{record_id}"
+    return row, payload, fallback_filename
 
 
 @router.get("/api/materials/ai-import-records/{record_id}/export", response_class=FileResponse)
@@ -64,6 +99,48 @@ async def export_ai_import_record(
         media_type=artifact.media_type,
         filename=artifact.filename,
         background=BackgroundTask(_cleanup_temp_file, temp_path),
+    )
+
+
+@router.get("/api/materials/ai-import-records/{record_id}/render-preview", response_class=HTMLResponse)
+async def preview_ai_import_record_export(
+    record_id: int,
+    format: str = Query(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        row, payload, fallback_filename = _load_ai_import_record_preview_payload(conn, record_id, user)
+
+    preferred_format = "xlsx" if row["document_type"] in {"ordinary_grade_record", "exam_grade_record"} else "docx"
+    requested_format = (format or preferred_format).strip().lower()
+    if requested_format == "pdf":
+        requested_format = preferred_format
+    artifact = build_material_export_artifact(
+        payload,
+        fallback_filename=fallback_filename,
+        requested_format=requested_format,
+    )
+    source_format = (Path(artifact.filename).suffix or f".{requested_format}").lstrip(".").lower()
+    title = row["document_type_label"] or Path(artifact.filename).stem or "材料导出预览"
+    try:
+        job = document_render_service.render_artifact(
+            artifact.content,
+            filename=artifact.filename,
+            media_type=artifact.media_type,
+            source_format=source_format,
+        )
+    except (RuntimeError, DocumentRenderError) as exc:
+        return HTMLResponse(
+            document_render_service.render_error_html(title=title, message=str(exc)),
+            status_code=503,
+        )
+    return HTMLResponse(
+        document_render_service.render_preview_html(
+            job,
+            title=title,
+            eyebrow="期末材料 · 导出一致预览",
+            download_label="下载文件",
+        )
     )
 
 

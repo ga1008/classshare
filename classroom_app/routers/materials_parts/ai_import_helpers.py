@@ -542,6 +542,7 @@ def _build_ai_import_preview(record, *, content_limit: int = 8000) -> dict:
         "content_truncated": len(content_markdown) > content_limit,
         "export_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format={export_format}",
         "export_pdf_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format=pdf" if record["document_type"] == "exam_paper" else "",
+        "render_preview_url": f"/api/materials/ai-import-records/{int(record['id'])}/render-preview?format={export_format}",
     }
 
 

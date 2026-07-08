@@ -396,6 +396,10 @@ function renderStructuredSummary(preview) {
 
 function renderDetailContent(material, preview = null) {
     const aiRecord = material.ai_import_record || null;
+    const renderPreviewUrl = preview?.render_preview_url || aiRecord?.render_preview_url || '';
+    const renderPreviewAction = renderPreviewUrl
+        ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(renderPreviewUrl)}" target="_blank" rel="noopener">渲染预览</a>`
+        : '';
     const metaRows = [
         ['类型', getMaterialTypeLabel(material)],
         ['大小', getMetaText(material)],
@@ -407,6 +411,7 @@ function renderDetailContent(material, preview = null) {
             <div class="classroom-material-detail-section-head">
                 <span>导出预览</span>
                 <strong>${escapeHtml(preview.document_type_label || '期末材料')}</strong>
+                ${renderPreviewAction}
             </div>
             ${renderFields(preview.fields || {})}
             ${renderStructuredSummary(preview)}

@@ -213,7 +213,6 @@ async def manage_grading_rubrics_page(request: Request, user: dict = Depends(get
         page_lead="关联具体试卷或题目附件，按试题顺序生成评分标准、扣分项、例外情况和截图/提交物要求。",
         initial_library_filter={"document_type": "grading_rubric"},
         initial_ai_generate={
-            "open": True,
             "document_group": "final_material",
             "document_type": "grading_rubric",
             "status": "请关联具体试卷或上传试卷题目后生成评分细则，系统会按试题逐项拆分给分点和扣分项。",
@@ -395,6 +394,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
                 "completed_at": task["completed_at"],
                 "export_url": f"/api/materials/ai-import-records/{task['id']}/export?format={export_format}",
                 "export_pdf_url": f"/api/materials/ai-import-records/{task['id']}/export?format=pdf" if task["document_type"] == "exam_paper" else "",
+                "render_preview_url": f"/api/materials/ai-import-records/{task['id']}/render-preview?format={export_format}",
                 "preview_url": f"/api/materials/{material_id}/ai-import/preview",
             }
         else:

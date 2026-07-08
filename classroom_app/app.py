@@ -79,6 +79,7 @@ from .routers import polls
 from .routers import lesson_plans
 from .routers import assessment_plans
 from .routers import teacher_evaluations
+from .routers import document_renderer
 from .routers import resume_console
 from .routers import prompt_pool
 
@@ -566,6 +567,7 @@ app.include_router(polls.router)
 app.include_router(lesson_plans.router)
 app.include_router(assessment_plans.router)
 app.include_router(teacher_evaluations.router)
+app.include_router(document_renderer.router)
 app.include_router(prompt_pool.router)
 app.include_router(smart_classroom.router)
 app.include_router(signatures.router)

@@ -1536,6 +1536,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/document-renderer/jobs/{key}/download",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_rendered_document",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/document-renderer/jobs/{key}/pages/{page_number}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_rendered_document_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/exam-papers",
     "methods": [
       "GET"
@@ -3085,6 +3101,14 @@
       "GET"
     ],
     "name": "export_ai_import_record",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/ai-import-records/{record_id}/render-preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "preview_ai_import_record_export",
     "include_in_schema": true
   },
   {

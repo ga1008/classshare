@@ -29,6 +29,7 @@ from ..db.schema_teacher_evaluations import ensure_teacher_evaluation_schema
 from . import material_scope_service as scope_core
 from .class_label_service import build_academic_class_label
 from .material_export_template_service import build_material_export_artifact
+from .document_render_service import DocumentRenderError, document_render_service
 from .organization_scope_service import load_teacher_org_scope
 from .resource_access_service import is_super_admin_teacher
 
@@ -838,34 +839,21 @@ def export_evaluation_artifact(evaluation: dict[str, Any], *, requested_format: 
 
 
 def render_preview_html(evaluation: dict[str, Any]) -> str:
-    """PDF-backed preview shell: same template path as the actual export."""
-    evaluation_id = _text(evaluation.get("id"))
+    """Image-backed preview generated from the same DOCX used for export."""
     title = _text(evaluation.get("title")) or "教师评学表"
-
-    def esc(value: Any) -> str:
-        return (
-            str(value or "")
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
+    try:
+        artifact = export_evaluation_artifact(evaluation, requested_format="docx")
+        job = document_render_service.render_artifact(
+            artifact.content,
+            filename=artifact.filename,
+            media_type=artifact.media_type,
+            source_format="docx",
         )
-
-    return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
-<title>{esc(title)} · 预览</title>
-<style>
-  html,body{{height:100%;margin:0;background:#eef1f5;color:#111;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}}
-  .te-preview{{height:100%;display:flex;flex-direction:column;}}
-  .te-preview__bar{{display:flex;gap:8px;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid #d8dee8;}}
-  .te-preview__bar strong{{font-size:14px;margin-right:auto;}}
-  .te-preview__bar a{{font-size:13px;text-decoration:none;color:#0f766e;border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;background:#fff;}}
-  iframe{{flex:1;width:100%;border:0;background:#eef1f5;}}
-</style></head><body>
-<div class="te-preview">
-  <div class="te-preview__bar">
-    <strong>{esc(title)}</strong>
-    <a href="/api/teacher-evaluations/{esc(evaluation_id)}/export?fmt=docx">Word</a>
-    <a href="/api/teacher-evaluations/{esc(evaluation_id)}/export?fmt=pdf&inline=1" target="_blank" rel="noopener">PDF</a>
-  </div>
-  <iframe src="/api/teacher-evaluations/{esc(evaluation_id)}/export?fmt=pdf&inline=1" title="教师评学表 PDF 预览"></iframe>
-</div>
-</body></html>"""
+    except (RuntimeError, DocumentRenderError) as exc:
+        return document_render_service.render_error_html(title=title, message=str(exc))
+    return document_render_service.render_preview_html(
+        job,
+        title=title,
+        eyebrow="教师评学表 · 导出一致预览",
+        download_label="下载 Word",
+    )

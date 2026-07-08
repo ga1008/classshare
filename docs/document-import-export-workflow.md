@@ -47,6 +47,66 @@ academic field mapping, and the required QA checklist, start with
   - Verifies page setup, cover shape, absence of extra session captions, outer
     table grids, nested activity table grids, and required labels.
 
+## Shared Document Renderer
+
+`classroom_app/services/document_render_service.py` is the canonical preview
+renderer for Word/Excel/PDF exports. A preview must no longer be a hand-written
+HTML mock or a browser PDF iframe when the user expects print fidelity. The
+flow is:
+
+1. Build the final downloadable artifact first (`.docx`, `.xlsx`, or `.pdf`).
+2. Pass those exact bytes to `document_render_service.render_artifact(...)`.
+3. The renderer stores the final document in
+   `DATA_ROOT/tmp/document_renderer/<hash>/`, converts Office files to PDF with
+   the shared LibreOffice wrapper when needed, and renders page PNGs with
+   PyMuPDF.
+4. The preview page uses `document_render_service.render_preview_html(...)` to
+   show one 3D page card per rendered page. Clicking a page requests a cached or
+   lazily rendered large PNG for that page.
+5. The preview download button returns the already-rendered final document via
+   `/api/document-renderer/jobs/{key}/download`, so preview-page export does not
+   regenerate the document.
+
+The current first-class consumers are:
+
+- `assessment_plan_service.render_preview_html(...)`
+- `teacher_evaluation_service.render_preview_html(...)`
+- `lesson_plan_render_service.render_plan_html(...)`
+- `GET /api/materials/ai-import-records/{record_id}/render-preview` for
+  final-material AI import exports, including Excel grade-record sheets.
+
+Concurrency and caching:
+
+- The renderer key is a SHA-256 hash over renderer version, source format, and
+  final document bytes. Identical exports reuse the same cached document, PDF,
+  and page PNGs.
+- Per-key locks deduplicate concurrent requests for the same document.
+- A process-local semaphore limits expensive LibreOffice/PyMuPDF work. Configure
+  with `LANSHARE_DOCUMENT_RENDER_MAX_CONCURRENCY` (default `1`) and
+  `LANSHARE_DOCUMENT_RENDER_QUEUE_TIMEOUT_SECONDS` (default `45`).
+- Cached artifacts are touched on access and removed opportunistically after
+  `LANSHARE_DOCUMENT_RENDER_TTL_SECONDS` (default `86400`). The cleanup runs at
+  most once every ten minutes per process.
+- `LANSHARE_DOCUMENT_RENDER_MAX_PAGES` (default `80`) protects the small server
+  from very large documents. Increase it only after considering CPU, memory, and
+  storage pressure.
+
+Security and access:
+
+- Business routes must still perform normal permission checks before building
+  an artifact. The generic image/download routes also require a logged-in user
+  and a signed render token generated from `SECRET_KEY`; the token is embedded
+  only in preview HTML returned after the business permission check.
+- The renderer cache is temporary runtime data. Do not commit generated
+  documents, PDFs, PNGs, or `.codex-temp/` QA screenshots.
+
+Extension rule:
+
+- For a new document-export feature, expose preview by building the same final
+  artifact used for download and then calling the shared renderer. Avoid adding
+  a feature-specific HTML/PDF iframe preview unless the output is not a
+  print-layout document.
+
 ## Import Parsing Pattern
 
 1. Save uploads to a temp directory with safe file names and limits.
