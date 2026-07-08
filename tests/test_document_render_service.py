@@ -66,6 +66,40 @@ class DocumentRenderServiceTests(unittest.TestCase):
         self.assertFalse(verify_render_token(key, "wrong-token"))
         self.assertFalse(verify_render_token("b" * 64, token, user=owner))
 
+    def test_preview_html_uses_3d_deck_and_wheel_navigation(self):
+        with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
+            service = DocumentRenderService(root=Path(temp_dir))
+            job = service.render_artifact(
+                _build_pdf_bytes(page_count=3),
+                filename="sample.pdf",
+                media_type="application/pdf",
+                source_format="pdf",
+            )
+
+            preview_html = service.render_preview_html(
+                job,
+                title="Sample Preview",
+                user={"id": 7, "role": "teacher"},
+            )
+
+            self.assertIn('class="doc-preview-deck-shell"', preview_html)
+            self.assertIn("data-page-deck", preview_html)
+            self.assertIn("data-deck-count", preview_html)
+            self.assertIn("data-deck-prev", preview_html)
+            self.assertIn("data-deck-next", preview_html)
+            self.assertIn("data-zoom-out", preview_html)
+            self.assertIn("data-zoom-reset", preview_html)
+            self.assertIn("data-zoom-in", preview_html)
+            self.assertIn("draggable=\"false\"", preview_html)
+            self.assertIn("stage.addEventListener('wheel'", preview_html)
+            self.assertIn("image.addEventListener('wheel'", preview_html)
+            self.assertIn("image.addEventListener('pointerdown'", preview_html)
+            self.assertIn("image.addEventListener('pointermove'", preview_html)
+            self.assertIn("stepDeck(wheelAccumulator > 0 ? 1 : -1)", preview_html)
+            self.assertIn("setZoom(zoomScale * factor", preview_html)
+            self.assertIn("doc-preview-card.is-active", preview_html)
+            self.assertNotIn("repeat(auto-fit", preview_html)
+
     def test_cache_stats_reports_jobs_and_render_profile_separates_keys(self):
         with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
             root = Path(temp_dir)

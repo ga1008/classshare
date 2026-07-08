@@ -407,48 +407,92 @@ class DocumentRenderService:
   .doc-preview-download {{ border: 1px solid transparent; color: #fff; background: linear-gradient(135deg, var(--teal), #115e59); }}
   .doc-preview-stage {{
     flex: 1;
-    width: min(1380px, calc(100vw - 28px));
+    width: min(1180px, calc(100vw - 28px));
     margin: 0 auto;
-    padding: clamp(18px, 3vw, 34px) 0 42px;
+    padding: clamp(18px, 3vw, 34px) 0 34px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }}
+  .doc-preview-deck-shell {{
+    position: relative;
+    width: 100%;
+    height: min(920px, calc(100vh - 132px));
+    min-height: 430px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: clamp(10px, 2vw, 20px);
   }}
   .doc-preview-pages {{
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: clamp(16px, 2.5vw, 26px);
-    perspective: 1600px;
+    position: relative;
+    width: min(700px, 82vw);
+    height: 100%;
+    min-height: 430px;
+    margin: 0 auto;
+    outline: none;
+    perspective: 1800px;
+    perspective-origin: 50% 42%;
+    transform-style: preserve-3d;
+    touch-action: pan-y;
   }}
   .doc-preview-card {{
-    position: relative;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     min-width: 0;
+    margin: 0;
     padding: 0;
     border: 0;
     background: transparent;
-    cursor: zoom-in;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
     transform-style: preserve-3d;
+    will-change: transform, opacity, filter;
+    transition:
+      transform 360ms cubic-bezier(0.22, 0.8, 0.3, 1),
+      opacity 220ms ease,
+      filter 220ms ease;
+  }}
+  .doc-preview-card.is-visible {{ pointer-events: auto; }}
+  .doc-preview-card.is-active {{ cursor: zoom-in; }}
+  .doc-preview-card:focus-visible {{ outline: none; }}
+  .doc-preview-card:focus-visible .doc-preview-card__paper {{
+    border-color: rgba(14, 165, 233, 0.52);
+    box-shadow:
+      0 0 0 4px rgba(14, 165, 233, 0.16),
+      0 34px 84px rgba(22, 32, 51, 0.22);
   }}
   .doc-preview-card__paper {{
-    display: block;
+    height: 100%;
+    display: grid;
+    place-items: center;
     overflow: hidden;
     border-radius: 8px;
     border: 1px solid rgba(117, 129, 149, 0.22);
-    background: #fff;
-    box-shadow: 0 18px 38px rgba(22, 32, 51, 0.14);
-    transform: perspective(1400px) rotateX(2.2deg) rotateY(-1.8deg) translateY(0);
-    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    box-shadow: 0 22px 54px rgba(22, 32, 51, 0.18);
+    transition: box-shadow 180ms ease, border-color 180ms ease;
   }}
-  .doc-preview-card:hover .doc-preview-card__paper,
-  .doc-preview-card:focus-visible .doc-preview-card__paper {{
-    transform: perspective(1400px) rotateX(0.8deg) rotateY(0deg) translateY(-5px);
+  .doc-preview-card.is-active:hover .doc-preview-card__paper,
+  .doc-preview-card.is-side:hover .doc-preview-card__paper {{
     border-color: rgba(14, 165, 233, 0.35);
-    box-shadow: 0 28px 64px rgba(22, 32, 51, 0.20);
+    box-shadow: 0 32px 76px rgba(22, 32, 51, 0.22);
   }}
-  .doc-preview-card:focus-visible {{ outline: none; }}
-  .doc-preview-card img {{ display: block; width: 100%; height: auto; background: #fff; }}
+  .doc-preview-card img {{
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #fff;
+  }}
   .doc-preview-card__meta {{
     position: absolute;
     left: 14px;
     bottom: 14px;
-    display: inline-flex;
+    display: none;
     align-items: baseline;
     gap: 4px;
     min-height: 30px;
@@ -461,6 +505,47 @@ class DocumentRenderService:
   }}
   .doc-preview-card__meta strong {{ font-size: 0.96rem; }}
   .doc-preview-card__meta em {{ font-style: normal; font-size: 0.76rem; opacity: 0.78; }}
+  .doc-preview-deck-btn {{
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(117, 129, 149, 0.24);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.88);
+    color: var(--ink);
+    cursor: pointer;
+    font-size: 1.45rem;
+    line-height: 1;
+    box-shadow: 0 18px 42px rgba(22, 32, 51, 0.10);
+    transition: transform 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  }}
+  .doc-preview-deck-btn:hover,
+  .doc-preview-deck-btn:focus-visible {{
+    color: #075985;
+    border-color: rgba(14, 165, 233, 0.34);
+    box-shadow: 0 22px 54px rgba(22, 32, 51, 0.14);
+    transform: translateY(-1px);
+    outline: none;
+  }}
+  .doc-preview-deck-status {{
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    z-index: 130;
+    min-height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    border: 1px solid rgba(117, 129, 149, 0.18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.86);
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 800;
+    box-shadow: 0 16px 38px rgba(22, 32, 51, 0.10);
+    transform: translateX(-50%);
+    pointer-events: none;
+  }}
   .doc-preview-lightbox[hidden] {{ display: none; }}
   .doc-preview-lightbox {{
     position: fixed;
@@ -480,7 +565,16 @@ class DocumentRenderService:
     color: #fff;
   }}
   .doc-preview-lightbox__bar strong {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .doc-preview-lightbox__controls {{ display: flex; gap: 8px; align-items: center; }}
+  .doc-preview-lightbox__controls {{ display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }}
+  .doc-preview-zoom-group {{
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.10);
+  }}
   .doc-preview-icon-btn {{
     width: 38px;
     height: 38px;
@@ -491,26 +585,54 @@ class DocumentRenderService:
     cursor: pointer;
     font-size: 1.15rem;
   }}
+  .doc-preview-icon-btn:disabled {{
+    cursor: default;
+    opacity: 0.42;
+  }}
+  .doc-preview-zoom-reset {{
+    min-width: 56px;
+    padding: 0 10px;
+    font-size: 0.78rem;
+    font-weight: 800;
+  }}
   .doc-preview-lightbox__body {{
     position: relative;
     min-height: 0;
     display: grid;
     place-items: center;
     padding: 0 clamp(12px, 3vw, 30px) clamp(18px, 4vw, 34px);
+    overflow: hidden;
+    touch-action: none;
+  }}
+  .doc-preview-large-frame {{
+    display: grid;
+    place-items: center;
+    max-width: min(1180px, 96vw);
+    max-height: calc(100vh - 108px);
+    overflow: visible;
   }}
   .doc-preview-large-image {{
-    max-width: min(1180px, 96vw);
+    max-width: 100%;
     max-height: calc(100vh - 108px);
     width: auto;
     height: auto;
     border-radius: 8px;
     background: #fff;
     box-shadow: var(--shadow);
-    transition: filter 160ms ease, opacity 160ms ease;
+    cursor: grab;
+    user-select: none;
+    transform-origin: center center;
+    will-change: transform;
+    transition: filter 160ms ease, opacity 160ms ease, transform 120ms ease;
   }}
   .doc-preview-large-image.is-loading-large {{
     filter: saturate(0.72);
     opacity: 0.82;
+  }}
+  .doc-preview-large-image.is-zoomed {{ cursor: grab; }}
+  .doc-preview-large-image.is-panning {{
+    cursor: grabbing;
+    transition: filter 160ms ease, opacity 160ms ease;
   }}
   .doc-preview-loading {{
     position: absolute;
@@ -549,7 +671,39 @@ class DocumentRenderService:
   @media (max-width: 720px) {{
     .doc-preview-topbar {{ grid-template-columns: 1fr; }}
     .doc-preview-actions {{ justify-content: space-between; }}
-    .doc-preview-pages {{ grid-template-columns: 1fr; }}
+    .doc-preview-stage {{ width: min(100vw - 20px, 560px); padding-bottom: 28px; }}
+    .doc-preview-deck-shell {{
+      height: calc(100vh - 158px);
+      min-height: 400px;
+      grid-template-columns: 1fr;
+      gap: 0;
+    }}
+    .doc-preview-pages {{
+      width: min(78vw, 420px);
+      min-height: 360px;
+    }}
+    .doc-preview-deck-btn {{
+      position: absolute;
+      top: 50%;
+      z-index: 150;
+      transform: translateY(-50%);
+    }}
+    .doc-preview-deck-btn:hover,
+    .doc-preview-deck-btn:focus-visible {{ transform: translateY(-50%); }}
+    .doc-preview-deck-btn[data-deck-prev] {{ left: 4px; }}
+    .doc-preview-deck-btn[data-deck-next] {{ right: 4px; }}
+    .doc-preview-deck-status {{ bottom: 4px; }}
+    .doc-preview-lightbox__bar {{ align-items: flex-start; flex-wrap: wrap; }}
+    .doc-preview-lightbox__controls {{ gap: 6px; }}
+    .doc-preview-zoom-group {{ order: 2; }}
+    .doc-preview-icon-btn {{ width: 36px; height: 36px; }}
+    .doc-preview-zoom-reset {{ min-width: 52px; }}
+  }}
+  @media (prefers-reduced-motion: reduce) {{
+    .doc-preview-card,
+    .doc-preview-card__paper,
+    .doc-preview-deck-btn,
+    .doc-preview-large-image {{ transition: none; }}
   }}
 </style>
 </head>
@@ -566,13 +720,23 @@ class DocumentRenderService:
     </div>
   </header>
   <section class="doc-preview-stage">
-    <div class="doc-preview-pages">{page_cards}</div>
+    <div class="doc-preview-deck-shell">
+      <button class="doc-preview-deck-btn" type="button" data-deck-prev aria-label="上一页">‹</button>
+      <div class="doc-preview-pages" data-page-deck tabindex="0" aria-label="文档页面，使用鼠标滚轮或方向键切换页面">{page_cards}</div>
+      <button class="doc-preview-deck-btn" type="button" data-deck-next aria-label="下一页">›</button>
+      <div class="doc-preview-deck-status" data-deck-count aria-live="polite">1 / {job.page_count}</div>
+    </div>
   </section>
 </main>
 <div class="doc-preview-lightbox" data-lightbox hidden>
   <div class="doc-preview-lightbox__bar">
     <strong data-lightbox-title>{escaped_title}</strong>
     <div class="doc-preview-lightbox__controls">
+      <div class="doc-preview-zoom-group" aria-label="页面缩放">
+        <button class="doc-preview-icon-btn" type="button" data-zoom-out aria-label="缩小">−</button>
+        <button class="doc-preview-icon-btn doc-preview-zoom-reset" type="button" data-zoom-reset aria-label="还原缩放">100%</button>
+        <button class="doc-preview-icon-btn" type="button" data-zoom-in aria-label="放大">+</button>
+      </div>
       <button class="doc-preview-icon-btn" type="button" data-prev aria-label="上一页">‹</button>
       <span data-lightbox-count>1 / {job.page_count}</span>
       <button class="doc-preview-icon-btn" type="button" data-next aria-label="下一页">›</button>
@@ -580,7 +744,9 @@ class DocumentRenderService:
     </div>
   </div>
   <div class="doc-preview-lightbox__body">
-    <img class="doc-preview-large-image" data-large-image alt="高清页面预览">
+    <div class="doc-preview-large-frame" data-large-frame>
+      <img class="doc-preview-large-image" data-large-image alt="高清页面预览" draggable="false">
+    </div>
     <div class="doc-preview-loading" data-loading>
       <span class="doc-preview-spinner"></span>
       <strong data-loading-text>正在生成高清预览...</strong>
@@ -599,19 +765,162 @@ class DocumentRenderService:
   const loadingText = document.querySelector('[data-loading-text]');
   const loadingActions = document.querySelector('[data-loading-actions]');
   const counter = document.querySelector('[data-lightbox-count]');
+  const lightboxBody = document.querySelector('.doc-preview-lightbox__body');
+  const imageFrame = document.querySelector('[data-large-frame]');
+  const zoomOut = document.querySelector('[data-zoom-out]');
+  const zoomReset = document.querySelector('[data-zoom-reset]');
+  const zoomIn = document.querySelector('[data-zoom-in]');
+  const stage = document.querySelector('.doc-preview-stage');
+  const deck = document.querySelector('[data-page-deck]');
+  const deckCards = Array.from(document.querySelectorAll('[data-page-index]'));
+  const deckPrev = document.querySelector('[data-deck-prev]');
+  const deckNext = document.querySelector('[data-deck-next]');
+  const deckCounter = document.querySelector('[data-deck-count]');
   let activeIndex = 0;
+  let deckIndex = 0;
   let latestRequestId = 0;
+  let wheelAccumulator = 0;
+  let wheelLockUntil = 0;
+  let zoomScale = 1;
+  let panX = 0;
+  let panY = 0;
+  let panState = null;
+  const minZoom = 0.6;
+  const maxZoom = 4;
 
   function clampIndex(index) {{
     if (!pages.length) return 0;
     return (index + pages.length) % pages.length;
   }}
 
+  function clampValue(value, min, max) {{
+    return Math.min(max, Math.max(min, value));
+  }}
+
+  function signedOffset(index, base) {{
+    let offset = index - base;
+    if (pages.length > 2) {{
+      const half = pages.length / 2;
+      if (offset > half) offset -= pages.length;
+      if (offset < -half) offset += pages.length;
+    }}
+    return offset;
+  }}
+
+  function cardTransform(offset, distance) {{
+    const clamped = Math.min(distance, 4);
+    const lateral = offset * 54;
+    const vertical = clamped * 16;
+    const depth = 64 - clamped * 132;
+    const rotateY = offset * -6;
+    const rotateX = clamped ? 3.4 : 0;
+    const scale = 1 - clamped * 0.055;
+    return 'translate3d(' + lateral + 'px, ' + vertical + 'px, ' + depth + 'px) '
+      + 'rotateX(' + rotateX + 'deg) rotateY(' + rotateY + 'deg) scale(' + scale + ')';
+  }}
+
+  function updateDeck(options = {{}}) {{
+    if (!deckCards.length) return;
+    deckCards.forEach((card, index) => {{
+      const offset = signedOffset(index, deckIndex);
+      const distance = Math.abs(offset);
+      const visible = distance <= 3 || pages.length <= 4;
+      const hiddenOffset = offset === 0 ? 4 : Math.sign(offset) * 4;
+      const opacity = visible ? Math.max(0.14, 1 - distance * 0.24) : 0;
+      const saturation = Math.max(0.72, 1 - distance * 0.08);
+      const brightness = Math.max(0.84, 1 - distance * 0.035);
+
+      card.classList.toggle('is-active', index === deckIndex);
+      card.classList.toggle('is-side', index !== deckIndex && visible);
+      card.classList.toggle('is-visible', visible);
+      card.style.transform = visible ? cardTransform(offset, distance) : cardTransform(hiddenOffset, 4);
+      card.style.opacity = String(opacity);
+      card.style.filter = visible && distance ? 'saturate(' + saturation + ') brightness(' + brightness + ')' : 'none';
+      card.style.zIndex = String(120 - distance * 9 - (offset > 0 ? 1 : 0));
+      card.tabIndex = index === deckIndex ? 0 : -1;
+      card.setAttribute('aria-current', index === deckIndex ? 'page' : 'false');
+      card.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    }});
+    const current = pages[deckIndex];
+    if (deckCounter && current) deckCounter.textContent = current.number + ' / ' + pages.length;
+    if (options.focus && deckCards[deckIndex]) deckCards[deckIndex].focus({{ preventScroll: true }});
+  }}
+
+  function goToDeck(index, options = {{}}) {{
+    if (!pages.length) return;
+    deckIndex = clampIndex(index);
+    updateDeck(options);
+  }}
+
+  function stepDeck(delta, options = {{}}) {{
+    goToDeck(deckIndex + delta, options);
+  }}
+
+  function clampPan() {{
+    if (!image || !lightboxBody) return;
+    if (zoomScale <= 1.01) {{
+      panX = 0;
+      panY = 0;
+      return;
+    }}
+    const frameRect = lightboxBody.getBoundingClientRect();
+    const renderedWidth = (image.offsetWidth || frameRect.width) * zoomScale;
+    const renderedHeight = (image.offsetHeight || frameRect.height) * zoomScale;
+    const maxX = Math.max(0, (renderedWidth - frameRect.width) / 2 + 80);
+    const maxY = Math.max(0, (renderedHeight - frameRect.height) / 2 + 80);
+    panX = clampValue(panX, -maxX, maxX);
+    panY = clampValue(panY, -maxY, maxY);
+  }}
+
+  function applyZoomState() {{
+    clampPan();
+    image.style.transform = 'translate3d(' + panX + 'px, ' + panY + 'px, 0) scale(' + zoomScale + ')';
+    image.classList.toggle('is-zoomed', zoomScale > 1.01);
+    if (zoomReset) zoomReset.textContent = Math.round(zoomScale * 100) + '%';
+    if (zoomOut) zoomOut.disabled = zoomScale <= minZoom + 0.01;
+    if (zoomIn) zoomIn.disabled = zoomScale >= maxZoom - 0.01;
+  }}
+
+  function setZoom(nextScale, options = {{}}) {{
+    const previousScale = zoomScale;
+    zoomScale = clampValue(nextScale, minZoom, maxZoom);
+    if (options.anchor && previousScale > 0) {{
+      const rect = image.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const ratio = zoomScale / previousScale;
+      panX -= (options.anchor.x - centerX) * (ratio - 1);
+      panY -= (options.anchor.y - centerY) * (ratio - 1);
+    }}
+    if (options.resetPan || zoomScale <= 1.01) {{
+      panX = 0;
+      panY = 0;
+    }}
+    applyZoomState();
+  }}
+
+  function resetZoom() {{
+    zoomScale = 1;
+    panX = 0;
+    panY = 0;
+    applyZoomState();
+  }}
+
+  function stopPan() {{
+    if (!panState) return;
+    panState = null;
+    image.classList.remove('is-panning');
+  }}
+
   function openPage(index) {{
     activeIndex = clampIndex(index);
+    deckIndex = activeIndex;
+    updateDeck();
     const page = pages[activeIndex];
     if (!page) return;
     const requestId = ++latestRequestId;
+    stopPan();
+    resetZoom();
     lightbox.hidden = false;
     loading.hidden = false;
     loading.classList.remove('is-error');
@@ -637,10 +946,87 @@ class DocumentRenderService:
     loader.src = page.largeUrl;
   }}
 
-  document.querySelectorAll('[data-page-index]').forEach((card) => {{
-    card.addEventListener('click', () => openPage(Number(card.dataset.pageIndex || 0)));
+  function closeLightbox() {{
+    stopPan();
+    lightbox.hidden = true;
+    updateDeck({{ focus: true }});
+  }}
+
+  deckCards.forEach((card) => {{
+    card.addEventListener('click', () => {{
+      const index = Number(card.dataset.pageIndex || 0);
+      if (index === deckIndex) {{
+        openPage(index);
+      }} else {{
+        goToDeck(index, {{ focus: true }});
+      }}
+    }});
   }});
-  document.querySelector('[data-close]').addEventListener('click', () => {{ lightbox.hidden = true; }});
+  deckPrev.addEventListener('click', () => stepDeck(-1, {{ focus: true }}));
+  deckNext.addEventListener('click', () => stepDeck(1, {{ focus: true }}));
+  deck.addEventListener('keydown', (event) => {{
+    if (!lightbox.hidden) return;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {{
+      event.preventDefault();
+      stepDeck(1, {{ focus: true }});
+    }} else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {{
+      event.preventDefault();
+      stepDeck(-1, {{ focus: true }});
+    }} else if (event.key === 'Enter' || event.key === ' ') {{
+      event.preventDefault();
+      openPage(deckIndex);
+    }}
+  }});
+  stage.addEventListener('wheel', (event) => {{
+    if (!lightbox.hidden || !pages.length) return;
+    if (Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+    event.preventDefault();
+    const now = Date.now();
+    wheelAccumulator += event.deltaY;
+    if (now < wheelLockUntil) return;
+    if (Math.abs(wheelAccumulator) < 32) return;
+    stepDeck(wheelAccumulator > 0 ? 1 : -1);
+    wheelAccumulator = 0;
+    wheelLockUntil = now + 220;
+  }}, {{ passive: false }});
+  zoomOut.addEventListener('click', () => setZoom(zoomScale * 0.86));
+  zoomIn.addEventListener('click', () => setZoom(zoomScale * 1.16));
+  zoomReset.addEventListener('click', () => resetZoom());
+  image.addEventListener('wheel', (event) => {{
+    event.preventDefault();
+    event.stopPropagation();
+    const factor = event.deltaY < 0 ? 1.14 : 0.88;
+    setZoom(zoomScale * factor, {{ anchor: {{ x: event.clientX, y: event.clientY }} }});
+  }}, {{ passive: false }});
+  image.addEventListener('pointerdown', (event) => {{
+    if (event.button !== 0 || zoomScale <= 1.01) return;
+    event.preventDefault();
+    panState = {{
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      panX,
+      panY,
+    }};
+    image.classList.add('is-panning');
+    try {{
+      image.setPointerCapture(event.pointerId);
+    }} catch {{
+      /* Pointer capture is optional. */
+    }}
+  }});
+  image.addEventListener('pointermove', (event) => {{
+    if (!panState || event.pointerId !== panState.pointerId) return;
+    event.preventDefault();
+    panX = panState.panX + event.clientX - panState.startX;
+    panY = panState.panY + event.clientY - panState.startY;
+    applyZoomState();
+  }});
+  image.addEventListener('pointerup', stopPan);
+  image.addEventListener('pointercancel', stopPan);
+  image.addEventListener('lostpointercapture', stopPan);
+  image.addEventListener('dragstart', (event) => event.preventDefault());
+  document.querySelector('[data-close]').addEventListener('click', closeLightbox);
   document.querySelector('[data-prev]').addEventListener('click', () => openPage(activeIndex - 1));
   document.querySelector('[data-next]').addEventListener('click', () => openPage(activeIndex + 1));
   document.querySelector('[data-retry-large]').addEventListener('click', (event) => {{
@@ -648,14 +1034,29 @@ class DocumentRenderService:
     openPage(activeIndex);
   }});
   lightbox.addEventListener('click', (event) => {{
-    if (event.target === lightbox) lightbox.hidden = true;
+    if (event.target === lightbox) closeLightbox();
   }});
   window.addEventListener('keydown', (event) => {{
     if (lightbox.hidden) return;
-    if (event.key === 'Escape') lightbox.hidden = true;
+    if (event.key === 'Escape') closeLightbox();
     if (event.key === 'ArrowLeft') openPage(activeIndex - 1);
     if (event.key === 'ArrowRight') openPage(activeIndex + 1);
+    if (event.key === '+' || event.key === '=') {{
+      event.preventDefault();
+      setZoom(zoomScale * 1.16);
+    }}
+    if (event.key === '-' || event.key === '_') {{
+      event.preventDefault();
+      setZoom(zoomScale * 0.86);
+    }}
+    if (event.key === '0') {{
+      event.preventDefault();
+      resetZoom();
+    }}
   }});
+  window.addEventListener('resize', () => applyZoomState());
+  updateDeck();
+  applyZoomState();
 }})();
 </script>
 </body>

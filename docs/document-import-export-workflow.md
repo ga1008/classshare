@@ -61,10 +61,15 @@ flow is:
    the shared LibreOffice wrapper when needed, and renders page PNGs with
    PyMuPDF.
 4. The preview page uses `document_render_service.render_preview_html(...)` to
-   show one 3D page card per rendered page. Clicking a page requests a cached or
-   lazily rendered large PNG for that page. The medium image remains visible as
-   a fallback while the large image is being prepared; failed large-image loads
-   show a retry action instead of leaving a blank preview.
+   show the rendered pages as a 3D stacked deck. Mouse wheel, arrow keys, and
+   the small previous/next controls move the front page through the deck.
+   Clicking a side page first brings it to the front; clicking the front page
+   requests a cached or lazily rendered large PNG for that page. The medium
+   image remains visible as a fallback while the large image is being prepared;
+   failed large-image loads show a retry action instead of leaving a blank
+   preview. In the large preview, users can zoom with the +/- buttons or the
+   mouse wheel while hovering the page image, reset to 100%, and drag the
+   zoomed page with the left mouse button.
 5. The preview download button returns the already-rendered final document via
    `/api/document-renderer/jobs/{key}/download`, so preview-page export does not
    regenerate the document.
