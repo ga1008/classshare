@@ -13,33 +13,74 @@
 <section class="manage-lp" data-ap-root>
     <div class="manage-lp__intro">
         <div>
-            <h2>考核计划表库</h2>
-            <p>过程材料 · 每学期每门课一份《课程考核计划表》。可空白新建并用完整表单填写（可按课堂自动带入）、按课堂用深度思考 AI 生成、或导入文件由 AI 解析；导入时会把签名图片自动归集到签名库（自动去重）。支持渲染预览、导出 Word、系部/院级/校级公开与一键继承。</p>
+            <div class="manage-lp__title-row">
+                <h2>考核计划表库</h2>
+                <button type="button" class="manage-lp__hint-trigger" aria-label="考核计划表使用提示">?</button>
+                <div class="manage-lp__floating-hint" role="tooltip">
+                    每学期每门课一份考核计划表。可空白新建、按课堂生成或导入解析，完成后可预览、导出 Word 与设置公开范围。
+                </div>
+            </div>
         </div>
         <div class="manage-lp__summary" data-ap-summary></div>
     </div>
 
     <div class="manage-lp__toolbar">
-        <div class="manage-lp__search">
+        <div class="manage-lp__search" data-lp-tip="搜索会匹配标题、课程、班级、学院和标签。">
             <input type="search" data-ap-search placeholder="搜索课程 / 标题 / 班级 / 标签…" />
         </div>
         <div class="manage-lp__filters">
-            <select data-ap-filter-scope>
-                <option value="">全部范围</option>
-                <option value="mine">我的</option>
-                <option value="shared">他人公开</option>
-                <option value="private">私有</option>
-                <option value="department">本系部公开</option>
-                <option value="college">本院级公开</option>
-                <option value="school">全校公开</option>
-            </select>
-            <select data-ap-sort>
-                <option value="updated_desc">最近更新</option>
-                <option value="updated_asc">最早更新</option>
-                <option value="title_asc">标题 A→Z</option>
-            </select>
+            <label data-lp-tip="按资源归属和公开范围收窄列表。">
+                <span>范围</span>
+                <select data-ap-filter-scope>
+                    <option value="">全部范围</option>
+                    <option value="mine">我的</option>
+                    <option value="shared">他人公开</option>
+                    <option value="private">私有</option>
+                    <option value="department">本系部公开</option>
+                    <option value="college">本院级公开</option>
+                    <option value="school">全校公开</option>
+                </select>
+            </label>
+            <label data-lp-tip="只显示指定学校的考核计划表。">
+                <span>学校</span>
+                <select data-ap-filter-school>
+                    <option value="">全部学校</option>
+                </select>
+            </label>
+            <label data-lp-tip="按学院快速定位过程材料。">
+                <span>学院</span>
+                <select data-ap-filter-college>
+                    <option value="">全部学院</option>
+                </select>
+            </label>
+            <label data-lp-tip="按课程快速筛选。">
+                <span>课程</span>
+                <select data-ap-filter-course>
+                    <option value="">全部课程</option>
+                </select>
+            </label>
+            <label data-lp-tip="按教学班级快速筛选。">
+                <span>班级</span>
+                <select data-ap-filter-class>
+                    <option value="">全部班级</option>
+                </select>
+            </label>
+            <label data-lp-tip="支持按分值合计、更新时间和名称排序。">
+                <span>排序</span>
+                <select data-ap-sort>
+                    <option value="updated_desc">最近更新</option>
+                    <option value="updated_asc">最早更新</option>
+                    <option value="score_desc">分数高到低</option>
+                    <option value="score_asc">分数低到高</option>
+                    <option value="title_asc">名称 A→Z</option>
+                    <option value="title_desc">名称 Z→A</option>
+                </select>
+            </label>
+            <button type="button" class="lp-btn lp-btn--ghost manage-lp__clear" data-ap-clear-filters hidden>清空</button>
         </div>
     </div>
+    <div class="manage-lp__quick-tags" data-ap-tags hidden></div>
+    <div class="manage-lp__active-filters" data-ap-active-filters hidden></div>
 
     <div class="manage-lp__loading" data-ap-loading>正在加载考核计划表…</div>
     <div class="manage-lp__grid" data-ap-grid hidden></div>
@@ -58,5 +99,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="{{ asset_url('js/manage_assessment_plans.js') }}?v=20260627"></script>
+<script type="module" src="{{ asset_url('js/manage_assessment_plans.js') }}?v=20260709-filters"></script>
 {% endblock %}

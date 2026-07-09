@@ -81,8 +81,13 @@
     <div class="manage-pagehead__intro">
         <div>
             <div class="academic-eyebrow">Material Library</div>
-            <h2>{{ materials_page_heading | default('课程资料与 Git 教学仓库') }}</h2>
-            <p class="manage-pagehead__lead">{{ materials_page_lead | default('批量上传、目录浏览、模糊搜索与排序，保留课堂分配、AI 解析与仓库同步。') }}</p>
+            <div class="manage-pagehead__title-row">
+                <h2>{{ materials_page_heading | default('课程资料与 Git 教学仓库') }}</h2>
+                <button type="button" class="manage-lp__hint-trigger" aria-label="材料库使用提示">?</button>
+                <div class="manage-lp__floating-hint" role="tooltip">
+                    {{ materials_page_lead | default('批量上传、目录浏览、模糊搜索与排序，保留课堂分配、AI 解析与仓库同步。') }}
+                </div>
+            </div>
         </div>
     </div>
     <div hidden aria-hidden="true">
@@ -169,6 +174,24 @@
                     <span>系部</span>
                     <select id="materials-department-filter" class="form-control">
                         <option value="">全部系部</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>学院</span>
+                    <select id="materials-college-filter" class="form-control">
+                        <option value="">全部学院</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>课程</span>
+                    <select id="materials-course-filter" class="form-control">
+                        <option value="">全部课程</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>班级</span>
+                    <select id="materials-class-filter" class="form-control">
+                        <option value="">全部班级</option>
                     </select>
                 </label>
                 <label class="materials-inline-field">

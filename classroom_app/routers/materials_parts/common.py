@@ -435,6 +435,9 @@ def _build_material_filter_facets(rows, teacher_id: int) -> dict[str, Any]:
     scopes: dict[str, int] = {}
     schools: dict[str, str] = {}
     departments: dict[str, str] = {}
+    colleges: dict[str, str] = {}
+    courses: dict[str, str] = {}
+    classes: dict[str, str] = {}
     for row in rows:
         row_dict = dict(row)
         scope = str(row_dict.get("scope_level") or "private").strip().lower() or "private"
@@ -445,17 +448,44 @@ def _build_material_filter_facets(rows, teacher_id: int) -> dict[str, Any]:
         department_label = str(row_dict.get("department") or "").strip()
         if department_label:
             departments.setdefault(department_label.lower(), department_label)
+        college_label = str(row_dict.get("college") or "").strip()
+        if college_label:
+            colleges.setdefault(college_label.lower(), college_label)
+        for course_label in row_dict.get("assigned_course_names") or []:
+            course_text = str(course_label or "").strip()
+            if course_text:
+                courses.setdefault(course_text.lower(), course_text)
+        for class_label in row_dict.get("assigned_class_names") or []:
+            class_text = str(class_label or "").strip()
+            if class_text:
+                classes.setdefault(class_text.lower(), class_text)
     return {
         "scopes": scopes,
         "schools": sorted(schools.values(), key=lambda item: item.lower()),
         "departments": sorted(departments.values(), key=lambda item: item.lower()),
+        "colleges": sorted(colleges.values(), key=lambda item: item.lower()),
+        "courses": sorted(courses.values(), key=lambda item: item.lower()),
+        "classes": sorted(classes.values(), key=lambda item: item.lower()),
     }
 
 
-def _apply_material_library_filters(rows, *, teacher_id: int, scope_filter: str, school: str, department: str) -> list:
+def _apply_material_library_filters(
+    rows,
+    *,
+    teacher_id: int,
+    scope_filter: str,
+    school: str,
+    department: str,
+    college: str = "",
+    course: str = "",
+    class_name: str = "",
+) -> list:
     scope_filter = _normalize_material_scope_filter(scope_filter)
     school_filter = _normalize_material_org_filter(school).lower()
     department_filter = _normalize_material_org_filter(department).lower()
+    college_filter = _normalize_material_org_filter(college).lower()
+    course_filter = _normalize_material_org_filter(course).lower()
+    class_filter = _normalize_material_org_filter(class_name).lower()
     filtered = []
     for row in rows:
         row_scope = str(row["scope_level"] or "private").strip().lower() or "private"
@@ -471,6 +501,15 @@ def _apply_material_library_filters(rows, *, teacher_id: int, scope_filter: str,
             continue
         row_department = str(row["department"] or "").strip().lower()
         if department_filter and row_department != department_filter:
+            continue
+        row_college = str(row["college"] or "").strip().lower()
+        if college_filter and row_college != college_filter:
+            continue
+        row_courses = {str(item or "").strip().lower() for item in (row.get("assigned_course_names") or [])}
+        if course_filter and course_filter not in row_courses:
+            continue
+        row_classes = {str(item or "").strip().lower() for item in (row.get("assigned_class_names") or [])}
+        if class_filter and class_filter not in row_classes:
             continue
         filtered.append(row)
     return filtered
@@ -494,6 +533,58 @@ def _build_material_order_clause(sort_by: str, sort_order: str) -> str:
         "CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END, "
         f"m.name COLLATE NOCASE {direction}, m.updated_at DESC, m.id DESC"
     )
+
+
+def _attach_material_assignment_facets(conn, rows) -> list[dict[str, Any]]:
+    material_rows = [dict(row) for row in rows if not is_git_internal_material_path(row["material_path"])]
+    material_ids = [int(row["id"]) for row in material_rows if row.get("id")]
+    if not material_ids:
+        return material_rows
+
+    placeholders = ", ".join("?" for _ in material_ids)
+    assignment_rows = conn.execute(
+        f"""
+        SELECT a.material_id,
+               c.name AS class_name,
+               co.name AS course_name,
+               COALESCE(NULLIF(sem.name, ''), NULLIF(o.semester, ''), '') AS semester_label
+        FROM course_material_assignments a
+        JOIN class_offerings o ON o.id = a.class_offering_id
+        JOIN classes c ON c.id = o.class_id
+        JOIN courses co ON co.id = o.course_id
+        LEFT JOIN academic_semesters sem ON sem.id = o.semester_id
+        WHERE a.material_id IN ({placeholders})
+        ORDER BY co.name, c.name
+        """,
+        material_ids,
+    ).fetchall()
+    by_material: dict[int, dict[str, set[str]]] = {
+        material_id: {"courses": set(), "classes": set(), "offerings": set()}
+        for material_id in material_ids
+    }
+    for row in assignment_rows:
+        material_id = int(row["material_id"])
+        course_name = str(row["course_name"] or "").strip()
+        class_name = str(row["class_name"] or "").strip()
+        semester_label = str(row["semester_label"] or "").strip()
+        bucket = by_material.setdefault(
+            material_id,
+            {"courses": set(), "classes": set(), "offerings": set()},
+        )
+        if course_name:
+            bucket["courses"].add(course_name)
+        if class_name:
+            bucket["classes"].add(class_name)
+        label_parts = [part for part in (course_name, class_name, semester_label) if part]
+        if label_parts:
+            bucket["offerings"].add(" / ".join(label_parts))
+
+    for item in material_rows:
+        labels = by_material.get(int(item.get("id") or 0), {"courses": set(), "classes": set(), "offerings": set()})
+        item["assigned_course_names"] = sorted(labels["courses"], key=lambda value: value.lower())
+        item["assigned_class_names"] = sorted(labels["classes"], key=lambda value: value.lower())
+        item["assigned_offering_labels"] = sorted(labels["offerings"], key=lambda value: value.lower())
+    return material_rows
 
 
 def _material_visibility_condition(conn, teacher_id: int) -> tuple[str, list[object]]:
@@ -700,7 +791,7 @@ def _list_material_rows_for_parent(
         ORDER BY {order_clause}
     """
     rows = conn.execute(query, params).fetchall()
-    return [row for row in rows if not is_git_internal_material_path(row["material_path"])]
+    return _attach_material_assignment_facets(conn, rows)
 
 
 def _get_teacher_material_stats(conn, teacher_id: int) -> dict:

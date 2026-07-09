@@ -1,6 +1,19 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
+import {
+    collectTagCounts,
+    compareDate,
+    compareNumber,
+    compareText,
+    hasMatchingSelectedTag,
+    normalizeFacetValue,
+    normalizeSearchText,
+    renderActiveFilterPills,
+    renderFacetOptions,
+    renderTagButtons,
+    uniqueFacetValues,
+} from './process_material_filters.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -10,7 +23,14 @@ const state = {
     offerings: [],
     scopeOptions: [],
     search: '',
-    scopeFilter: '',
+    filters: {
+        scope: '',
+        school: '',
+        college: '',
+        course: '',
+        className: '',
+    },
+    selectedTags: new Set(),
     sort: 'updated_desc',
     polling: null,
 };
@@ -77,26 +97,112 @@ function renderSummary() {
         .join('');
 }
 
+function facetText(value) {
+    return normalizeSearchText(value);
+}
+
+function renderFilterControls() {
+    renderFacetOptions(
+        root.querySelector('[data-ap-filter-school]'),
+        uniqueFacetValues(state.plans, (item) => item.school || item.school_name),
+        state.filters.school,
+        '全部学校'
+    );
+    renderFacetOptions(
+        root.querySelector('[data-ap-filter-college]'),
+        uniqueFacetValues(state.plans, (item) => item.college),
+        state.filters.college,
+        '全部学院'
+    );
+    renderFacetOptions(
+        root.querySelector('[data-ap-filter-course]'),
+        uniqueFacetValues(state.plans, (item) => item.course_name),
+        state.filters.course,
+        '全部课程'
+    );
+    renderFacetOptions(
+        root.querySelector('[data-ap-filter-class]'),
+        uniqueFacetValues(state.plans, (item) => item.class_name),
+        state.filters.className,
+        '全部班级'
+    );
+}
+
+function hasAnyFilter() {
+    return Boolean(
+        state.search.trim()
+        || state.filters.scope
+        || state.filters.school
+        || state.filters.college
+        || state.filters.course
+        || state.filters.className
+        || state.selectedTags.size
+        || state.sort !== 'updated_desc'
+    );
+}
+
+function renderFilterState() {
+    renderFilterControls();
+    renderTagButtons({
+        container: root.querySelector('[data-ap-tags]'),
+        tags: collectTagCounts(state.plans),
+        selectedTags: state.selectedTags,
+        dataAttr: 'data-ap-tag-filter',
+    });
+    renderActiveFilterPills({
+        container: root.querySelector('[data-ap-active-filters]'),
+        entries: [
+            { label: '搜索', value: state.search },
+            { label: '范围', value: root.querySelector('[data-ap-filter-scope]')?.selectedOptions?.[0]?.textContent || '' },
+            { label: '学校', value: state.filters.school },
+            { label: '学院', value: state.filters.college },
+            { label: '课程', value: state.filters.course },
+            { label: '班级', value: state.filters.className },
+            { label: '标签', value: [...state.selectedTags].join(' / ') },
+            { label: '排序', value: state.sort === 'updated_desc' ? '' : root.querySelector('[data-ap-sort]')?.selectedOptions?.[0]?.textContent || '' },
+        ].filter((entry) => entry.label !== '范围' || state.filters.scope),
+    });
+    const clearBtn = root.querySelector('[data-ap-clear-filters]');
+    if (clearBtn) clearBtn.hidden = !hasAnyFilter();
+}
+
 function matchesFilters(plan) {
     const q = state.search.trim().toLowerCase();
     if (q) {
-        const hay = [plan.title, plan.course_name, plan.class_name, (plan.tags || []).join(' ')]
+        const hay = [
+            plan.title,
+            plan.course_name,
+            plan.class_name,
+            plan.college,
+            plan.school,
+            plan.school_name,
+            plan.semester_label,
+            plan.assessment_type,
+            (plan.tags || []).join(' '),
+        ]
             .join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
     }
-    const f = state.scopeFilter;
-    if (!f) return true;
-    if (f === 'mine') return plan.is_owned;
-    if (f === 'shared') return !plan.is_owned;
-    return plan.scope_level === f;
+    const f = state.filters.scope;
+    if (f === 'mine' && !plan.is_owned) return false;
+    else if (f === 'shared' && plan.is_owned) return false;
+    else if (f && !['mine', 'shared'].includes(f) && plan.scope_level !== f) return false;
+    if (state.filters.school && facetText(plan.school || plan.school_name) !== facetText(state.filters.school)) return false;
+    if (state.filters.college && facetText(plan.college) !== facetText(state.filters.college)) return false;
+    if (state.filters.course && facetText(plan.course_name) !== facetText(state.filters.course)) return false;
+    if (state.filters.className && facetText(plan.class_name) !== facetText(state.filters.className)) return false;
+    return hasMatchingSelectedTag(plan.tags, state.selectedTags);
 }
 
 function sortPlans(plans) {
     const copy = [...plans];
     switch (state.sort) {
-        case 'updated_asc': return copy.sort((a, b) => (a.updated_at || '').localeCompare(b.updated_at || ''));
-        case 'title_asc': return copy.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'zh'));
-        default: return copy.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+        case 'updated_asc': return copy.sort((a, b) => compareDate(a.updated_at, b.updated_at, 'asc'));
+        case 'score_desc': return copy.sort((a, b) => compareNumber(a.score_total, b.score_total, 'desc') || compareDate(a.updated_at, b.updated_at, 'desc'));
+        case 'score_asc': return copy.sort((a, b) => compareNumber(a.score_total, b.score_total, 'asc') || compareDate(a.updated_at, b.updated_at, 'desc'));
+        case 'title_asc': return copy.sort((a, b) => compareText(a.title, b.title, 'asc'));
+        case 'title_desc': return copy.sort((a, b) => compareText(a.title, b.title, 'desc'));
+        default: return copy.sort((a, b) => compareDate(a.updated_at, b.updated_at, 'desc'));
     }
 }
 
@@ -186,6 +292,7 @@ function renderCard(plan) {
 
 function render() {
     renderSummary();
+    renderFilterState();
     const grid = root.querySelector('[data-ap-grid]');
     const loading = root.querySelector('[data-ap-loading]');
     const empty = root.querySelector('[data-ap-empty]');
@@ -201,6 +308,20 @@ function render() {
     grid.innerHTML = visible.length
         ? visible.map(renderCard).join('')
         : `<div class="manage-lp__empty" style="grid-column:1/-1">没有符合筛选条件的考核计划表。</div>`;
+}
+
+function clearFilters() {
+    state.search = '';
+    state.filters = { scope: '', school: '', college: '', course: '', className: '' };
+    state.selectedTags.clear();
+    state.sort = 'updated_desc';
+    const search = root.querySelector('[data-ap-search]');
+    if (search) search.value = '';
+    const scope = root.querySelector('[data-ap-filter-scope]');
+    if (scope) scope.value = '';
+    const sort = root.querySelector('[data-ap-sort]');
+    if (sort) sort.value = state.sort;
+    render();
 }
 
 // ---------------------------------------------------------------------------
@@ -484,8 +605,22 @@ function bindEvents() {
 
     const search = root.querySelector('[data-ap-search]');
     search.addEventListener('input', () => { state.search = search.value; render(); });
-    root.querySelector('[data-ap-filter-scope]').addEventListener('change', (e) => { state.scopeFilter = e.target.value; render(); });
+    root.querySelector('[data-ap-filter-scope]').addEventListener('change', (e) => { state.filters.scope = e.target.value; render(); });
+    root.querySelector('[data-ap-filter-school]').addEventListener('change', (e) => { state.filters.school = normalizeFacetValue(e.target.value); render(); });
+    root.querySelector('[data-ap-filter-college]').addEventListener('change', (e) => { state.filters.college = normalizeFacetValue(e.target.value); render(); });
+    root.querySelector('[data-ap-filter-course]').addEventListener('change', (e) => { state.filters.course = normalizeFacetValue(e.target.value); render(); });
+    root.querySelector('[data-ap-filter-class]').addEventListener('change', (e) => { state.filters.className = normalizeFacetValue(e.target.value); render(); });
     root.querySelector('[data-ap-sort]').addEventListener('change', (e) => { state.sort = e.target.value; render(); });
+    root.querySelector('[data-ap-clear-filters]').addEventListener('click', clearFilters);
+    root.querySelector('[data-ap-tags]').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-ap-tag-filter]');
+        if (!btn) return;
+        const tag = normalizeFacetValue(btn.dataset.apTagFilter);
+        if (!tag) return;
+        if (state.selectedTags.has(tag)) state.selectedTags.delete(tag);
+        else state.selectedTags.add(tag);
+        render();
+    });
 
     root.querySelector('[data-ap-grid]').addEventListener('click', (e) => {
         const btn = e.target.closest('[data-action]');

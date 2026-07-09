@@ -263,6 +263,9 @@ async def get_teacher_material_library(
     scope_level: str = Query(default="all"),
     school: str = Query(default=""),
     department: str = Query(default=""),
+    college: str = Query(default=""),
+    course: str = Query(default=""),
+    class_name: str = Query(default=""),
     sort_by: str = Query(default=MATERIAL_LIBRARY_DEFAULT_SORT_BY),
     sort_order: str = Query(default=MATERIAL_LIBRARY_DEFAULT_SORT_ORDER),
     user: dict = Depends(get_current_teacher),
@@ -272,6 +275,9 @@ async def get_teacher_material_library(
     normalized_scope_filter = _normalize_material_scope_filter(scope_level)
     normalized_school_filter = _normalize_material_org_filter(school)
     normalized_department_filter = _normalize_material_org_filter(department)
+    normalized_college_filter = _normalize_material_org_filter(college)
+    normalized_course_filter = _normalize_material_org_filter(course)
+    normalized_class_filter = _normalize_material_org_filter(class_name)
     normalized_sort_by, normalized_sort_order = _normalize_material_sort(sort_by, sort_order)
 
     with get_db_connection() as conn:
@@ -299,6 +305,9 @@ async def get_teacher_material_library(
             scope_filter=normalized_scope_filter,
             school=normalized_school_filter,
             department=normalized_department_filter,
+            college=normalized_college_filter,
+            course=normalized_course_filter,
+            class_name=normalized_class_filter,
         )
         items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, rows, user=user)]
         current_folder_item = None
@@ -329,6 +338,9 @@ async def get_teacher_material_library(
             "scope_level": normalized_scope_filter,
             "school": normalized_school_filter,
             "department": normalized_department_filter,
+            "college": normalized_college_filter,
+            "course": normalized_course_filter,
+            "class_name": normalized_class_filter,
             "sort_by": normalized_sort_by,
             "sort_order": normalized_sort_order,
         },

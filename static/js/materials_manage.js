@@ -113,6 +113,9 @@ function getInitialLibraryState() {
         scopeLevel: normalizeScopeFilter(params.get('scope_level')),
         school: normalizeKeyword(params.get('school')),
         department: normalizeKeyword(params.get('department')),
+        college: normalizeKeyword(params.get('college')),
+        course: normalizeKeyword(params.get('course')),
+        className: normalizeKeyword(params.get('class_name')),
         sortBy,
         sortOrder: normalizeSortOrder(params.get('sort_order'), sortBy),
     };
@@ -180,6 +183,9 @@ const state = {
         scopeLevel: initialLibraryState.scopeLevel,
         school: initialLibraryState.school,
         department: initialLibraryState.department,
+        college: initialLibraryState.college,
+        course: initialLibraryState.course,
+        className: initialLibraryState.className,
         sortBy: initialLibraryState.sortBy,
         sortOrder: initialLibraryState.sortOrder,
     },
@@ -352,6 +358,9 @@ const refs = {
     scopeFilter: document.getElementById('materials-scope-filter'),
     schoolFilter: document.getElementById('materials-school-filter'),
     departmentFilter: document.getElementById('materials-department-filter'),
+    collegeFilter: document.getElementById('materials-college-filter'),
+    courseFilter: document.getElementById('materials-course-filter'),
+    classFilter: document.getElementById('materials-class-filter'),
     sortBy: document.getElementById('materials-sort-by'),
     sortOrder: document.getElementById('materials-sort-order'),
     scopeName: document.getElementById('materials-scope-name'),
@@ -554,6 +563,9 @@ function updateFilterControls() {
     if (refs.scopeFilter) refs.scopeFilter.value = state.filters.scopeLevel;
     renderMaterialFacetOptions(refs.schoolFilter, state.facets?.schools || [], state.filters.school, '全部学校');
     renderMaterialFacetOptions(refs.departmentFilter, state.facets?.departments || [], state.filters.department, '全部系部');
+    renderMaterialFacetOptions(refs.collegeFilter, state.facets?.colleges || [], state.filters.college, '全部学院');
+    renderMaterialFacetOptions(refs.courseFilter, state.facets?.courses || [], state.filters.course, '全部课程');
+    renderMaterialFacetOptions(refs.classFilter, state.facets?.classes || [], state.filters.className, '全部班级');
     refs.sortBy.value = state.filters.sortBy;
     refs.sortOrder.value = state.filters.sortOrder;
 }
@@ -606,9 +618,19 @@ function renderLibraryOverview() {
         refs.documentTypeSummary.textContent = '';
     }
 
-    if (overview.search_active) {
+    const filterLabels = [];
+    if (state.filters.school) filterLabels.push(`学校：${state.filters.school}`);
+    if (state.filters.department) filterLabels.push(`系部：${state.filters.department}`);
+    if (state.filters.college) filterLabels.push(`学院：${state.filters.college}`);
+    if (state.filters.course) filterLabels.push(`课程：${state.filters.course}`);
+    if (state.filters.className) filterLabels.push(`班级：${state.filters.className}`);
+
+    if (overview.search_active || filterLabels.length) {
         refs.searchSummary.hidden = false;
-        refs.searchSummary.textContent = `搜索：${overview.search_keyword || state.filters.keyword}`;
+        refs.searchSummary.textContent = [
+            overview.search_active ? `搜索：${overview.search_keyword || state.filters.keyword}` : '',
+            ...filterLabels,
+        ].filter(Boolean).join(' · ');
     } else {
         refs.searchSummary.hidden = true;
         refs.searchSummary.textContent = '';
@@ -746,6 +768,16 @@ function renderList() {
         const repositoryBadge = visualMeta.badge
             ? `<span class="materials-repo-badge" style="--repo-color:${visualMeta.color};">${escapeHtml(visualMeta.badge)}</span>`
             : '';
+        const assignedCourses = Array.isArray(item.assigned_course_names) ? item.assigned_course_names.filter(Boolean) : [];
+        const assignedClasses = Array.isArray(item.assigned_class_names) ? item.assigned_class_names.filter(Boolean) : [];
+        const assignmentMeta = [
+            assignedCourses.length
+                ? `<span class="materials-meta-item">课程 ${escapeHtml(assignedCourses.slice(0, 2).join(' / '))}${assignedCourses.length > 2 ? ` +${assignedCourses.length - 2}` : ''}</span>`
+                : '',
+            assignedClasses.length
+                ? `<span class="materials-meta-item">班级 ${escapeHtml(assignedClasses.slice(0, 2).join(' / '))}${assignedClasses.length > 2 ? ` +${assignedClasses.length - 2}` : ''}</span>`
+                : '',
+        ].join('');
 
         return `
             <div class="materials-row materials-manage-row ${activeClass} ${selectedClass}" data-id="${item.id}">
@@ -765,6 +797,7 @@ function renderList() {
                         <span class="materials-type-pill">${escapeHtml(getMaterialTypeLabel(item))}</span>
                         <span class="materials-meta-item">${escapeHtml(getMetaText(item))}</span>
                         ${item.assignment_count ? `<span class="materials-meta-item">已分配 ${escapeHtml(String(item.assignment_count))} 次</span>` : ''}
+                        ${assignmentMeta}
                         ${scopeBadge}
                         ${sharedBadge}
                         ${aiStatus}
@@ -1379,6 +1412,15 @@ function buildLibraryQuery(parentId) {
     if (state.filters.department) {
         params.set('department', state.filters.department);
     }
+    if (state.filters.college) {
+        params.set('college', state.filters.college);
+    }
+    if (state.filters.course) {
+        params.set('course', state.filters.course);
+    }
+    if (state.filters.className) {
+        params.set('class_name', state.filters.className);
+    }
     params.set('sort_by', state.filters.sortBy);
     params.set('sort_order', state.filters.sortOrder);
     return params.toString();
@@ -1410,6 +1452,9 @@ async function loadLibrary(parentId = null, trackHistory = false) {
     state.filters.scopeLevel = normalizeScopeFilter(data.filters?.scope_level ?? state.filters.scopeLevel);
     state.filters.school = normalizeKeyword(data.filters?.school ?? state.filters.school);
     state.filters.department = normalizeKeyword(data.filters?.department ?? state.filters.department);
+    state.filters.college = normalizeKeyword(data.filters?.college ?? state.filters.college);
+    state.filters.course = normalizeKeyword(data.filters?.course ?? state.filters.course);
+    state.filters.className = normalizeKeyword(data.filters?.class_name ?? state.filters.className);
     state.filters.sortBy = normalizeSortBy(data.filters?.sort_by ?? state.filters.sortBy);
     state.filters.sortOrder = normalizeSortOrder(data.filters?.sort_order ?? state.filters.sortOrder, state.filters.sortBy);
     state.overview = data.overview || null;
@@ -3503,6 +3548,21 @@ function bindEvents() {
 
     refs.departmentFilter?.addEventListener('change', () => {
         state.filters.department = normalizeKeyword(refs.departmentFilter.value);
+        reloadForLibraryFilter('筛选材料失败');
+    });
+
+    refs.collegeFilter?.addEventListener('change', () => {
+        state.filters.college = normalizeKeyword(refs.collegeFilter.value);
+        reloadForLibraryFilter('筛选材料失败');
+    });
+
+    refs.courseFilter?.addEventListener('change', () => {
+        state.filters.course = normalizeKeyword(refs.courseFilter.value);
+        reloadForLibraryFilter('筛选材料失败');
+    });
+
+    refs.classFilter?.addEventListener('change', () => {
+        state.filters.className = normalizeKeyword(refs.classFilter.value);
         reloadForLibraryFilter('筛选材料失败');
     });
 

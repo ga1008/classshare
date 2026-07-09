@@ -571,8 +571,12 @@ def serialize_card(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
         "title": row.get("title") or "课程考核计划表",
+        "school": fields.get("school") or row.get("school_name") or "",
+        "school_name": row.get("school_name") or fields.get("school") or "",
         "course_name": fields.get("course_name") or "",
         "class_name": fields.get("class_name") or "",
+        "college": fields.get("college") or row.get("college") or "",
+        "department": row.get("department") or "",
         "semester_label": " ".join(
             p for p in (fields.get("academic_year") or "", fields.get("semester") or "") if p
         ).strip(),
