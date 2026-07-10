@@ -29,7 +29,30 @@ from __future__ import annotations
 
 from typing import Any
 
+from .connection import get_configured_db_engine
+
 _SCHEMA_READY = False
+
+
+def _ensure_runtime_columns(conn: Any) -> None:
+    engine = get_configured_db_engine()
+    if engine == "postgres":
+        conn.execute(
+            "ALTER TABLE lesson_plans "
+            "ADD COLUMN IF NOT EXISTS import_preview_json TEXT NOT NULL DEFAULT '{}'"
+        )
+        return
+
+    try:
+        rows = conn.execute('PRAGMA table_info("lesson_plans")').fetchall()
+    except AttributeError:
+        return
+    existing = {str(row[1]) for row in rows}
+    if "import_preview_json" not in existing:
+        conn.execute(
+            "ALTER TABLE lesson_plans "
+            "ADD COLUMN import_preview_json TEXT NOT NULL DEFAULT '{}'"
+        )
 
 
 def ensure_lesson_plan_schema(conn: Any) -> None:
@@ -58,6 +81,7 @@ def ensure_lesson_plan_schema(conn: Any) -> None:
             ai_gen_status TEXT,
             ai_gen_error TEXT,
             ai_gen_progress TEXT NOT NULL DEFAULT '{}',
+            import_preview_json TEXT NOT NULL DEFAULT '{}',
             inherited_from TEXT,
             school_code TEXT NOT NULL DEFAULT '',
             school_name TEXT NOT NULL DEFAULT '',
@@ -68,6 +92,7 @@ def ensure_lesson_plan_schema(conn: Any) -> None:
         )
         """
     )
+    _ensure_runtime_columns(conn)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_lesson_plans_owner "
         "ON lesson_plans (teacher_id, status, updated_at DESC)"

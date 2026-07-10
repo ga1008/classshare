@@ -2983,7 +2983,14 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
     behavior_event_by_student: dict[int, dict[str, Any]] = {}
     chat_count_by_student: dict[int, int] = {}
     shared_note_student_ids: set[int] = set()
-    alert_context: dict[str, Any] = {"alerts_by_student": {}, "total_count": 0, "student_count": 0, "counts": {}}
+    alert_context: dict[str, Any] = {
+        "alerts_by_student": {},
+        "total_count": 0,
+        "student_count": 0,
+        "counts": {"L1": 0, "L2": 0, "L3": 0},
+        "highest_severity": "",
+        "items": [],
+    }
     if student_ids:
         from .cultivation_alert_service import build_class_cultivation_alert_context
 

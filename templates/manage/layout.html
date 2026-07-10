@@ -170,14 +170,13 @@
         .manage-nav-item {
             position: relative;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 11px;
             padding: 9px 11px;
             color: var(--text-secondary);
             text-decoration: none;
             font-weight: 600;
             font-size: 0.9rem;
-            white-space: nowrap;
             border-radius: 10px;
             transition: background var(--transition-fast), color var(--transition-fast);
         }
@@ -195,7 +194,51 @@
             transition: background var(--transition-fast), color var(--transition-fast);
         }
 
-        .manage-nav-item__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+        .manage-nav-item__copy {
+            min-width: 0;
+            flex: 1;
+            display: grid;
+            gap: 2px;
+        }
+
+        .manage-nav-item__label-row {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .manage-nav-item__label {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .manage-nav-item__badge {
+            flex: 0 0 auto;
+            max-width: 82px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.11);
+            color: var(--manage-domain-accent-dark, var(--primary-color));
+            font-size: 0.66rem;
+            font-weight: 800;
+        }
+
+        .manage-nav-item__note {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            line-height: 1.35;
+            font-weight: 560;
+        }
 
         .manage-nav-item:hover {
             background-color: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.08);
@@ -304,7 +347,7 @@
         .manage-sidebar.is-collapsed .manage-brand__copy,
         .manage-sidebar.is-collapsed .manage-nav-search,
         .manage-sidebar.is-collapsed .manage-nav-section-title,
-        .manage-sidebar.is-collapsed .manage-nav-item__label,
+        .manage-sidebar.is-collapsed .manage-nav-item__copy,
         .manage-sidebar.is-collapsed .manage-user-info,
         .manage-sidebar.is-collapsed .manage-user .btn,
         .manage-sidebar.is-collapsed .manage-nav-empty { display: none; }
@@ -644,10 +687,16 @@
                             class="manage-nav-item{% if item.active %} active{% endif %}"
                             data-nav-text="{{ item.search_text }}"
                             data-nav-domain="{{ item.domain }}"
-                            title="{{ item.label }}"
+                            title="{{ item.ai_hint or item.label }}"
                         >
                             <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
-                            <span class="manage-nav-item__label">{{ item.label }}</span>
+                            <span class="manage-nav-item__copy">
+                                <span class="manage-nav-item__label-row">
+                                    <span class="manage-nav-item__label">{{ item.label }}</span>
+                                    {% if item.nav_badge %}<span class="manage-nav-item__badge">{{ item.nav_badge }}</span>{% endif %}
+                                </span>
+                                {% if item.nav_note %}<span class="manage-nav-item__note">{{ item.nav_note }}</span>{% endif %}
+                            </span>
                         </a>
                         {% endfor %}
                     </div>
@@ -666,10 +715,16 @@
                             class="manage-nav-item{% if item.active %} active{% endif %}"
                             data-nav-text="{{ item.search_text }}"
                             data-nav-domain="{{ item.domain }}"
-                            title="{{ item.label }}"
+                            title="{{ item.ai_hint or item.label }}"
                         >
                             <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
-                            <span class="manage-nav-item__label">{{ item.label }}</span>
+                            <span class="manage-nav-item__copy">
+                                <span class="manage-nav-item__label-row">
+                                    <span class="manage-nav-item__label">{{ item.label }}</span>
+                                    {% if item.nav_badge %}<span class="manage-nav-item__badge">{{ item.nav_badge }}</span>{% endif %}
+                                </span>
+                                {% if item.nav_note %}<span class="manage-nav-item__note">{{ item.nav_note }}</span>{% endif %}
+                            </span>
                         </a>
                         {% endfor %}
                     </div>

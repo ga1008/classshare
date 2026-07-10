@@ -3,7 +3,7 @@ from .common import *
 from ...services import lesson_plan_service as lp
 from ...services.academic_class_mapping_service import resolve_offering_display_class_name
 from ...services.lesson_plan_recovery_service import expire_stale_lesson_plan_tasks
-from ...services.lesson_plan_render_service import render_plan_html
+from ...services.lesson_plan_render_service import render_preview_html
 
 
 router = APIRouter()
@@ -48,7 +48,7 @@ async def manage_lesson_plans_page(request: Request, user: dict = Depends(get_cu
     """教案库管理页面（内容资产 → 教案）。"""
     with get_db_connection() as conn:
         try:
-            expire_stale_lesson_plan_tasks(conn)
+            expire_stale_lesson_plan_tasks(conn, teacher_id=int(user["id"]))
             conn.commit()
         except Exception as exc:  # pragma: no cover - best-effort recovery
             print(f"[LESSON_PLAN] stale task recovery skipped: {exc}")
@@ -114,4 +114,4 @@ async def lesson_plan_preview_page(request: Request, plan_id: str, user: dict = 
     """教案 HTML 预览（与导出 Word 同版式，可用于查看效果/截图）。"""
     with get_db_connection() as conn:
         plan = _load_plan_for_viewer(conn, plan_id, user)
-    return HTMLResponse(render_plan_html(plan, user=user))
+    return HTMLResponse(render_preview_html(plan, user=user))

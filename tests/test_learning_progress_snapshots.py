@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from classroom_app.db.schema_cultivation_progress import ensure_cultivation_progress_schema
@@ -216,6 +217,41 @@ class LearningProgressSnapshotTests(unittest.TestCase):
         self.assertEqual("assignment", opportunities[0]["type"])
         self.assertTrue(opportunities[0]["action_url"].endswith("/20"))
         self.assertTrue(all("estimated_delta" in item for item in opportunities))
+
+    def test_class_learning_overview_keeps_empty_alert_items_template_safe(self):
+        self.conn.executescript(
+            """
+            CREATE TABLE teachers (
+                id INTEGER PRIMARY KEY,
+                name TEXT
+            );
+            CREATE TABLE classes (
+                id INTEGER PRIMARY KEY,
+                name TEXT
+            );
+            CREATE TABLE courses (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                sect_name TEXT,
+                description TEXT,
+                credits REAL
+            );
+            """
+        )
+        self.conn.execute("INSERT INTO teachers (id, name) VALUES (30, 'Teacher')")
+        self.conn.execute("INSERT INTO classes (id, name) VALUES (10, 'Class')")
+        self.conn.execute("INSERT INTO courses (id, name, sect_name) VALUES (20, 'Course', 'Course Sect')")
+        self.conn.execute(
+            "INSERT INTO class_offerings (id, class_id, course_id, teacher_id, course_name) VALUES (1, 10, 20, 30, 'Course')"
+        )
+
+        overview = service.build_class_learning_overview(self.conn, 1)
+
+        self.assertEqual([], overview["alert_summary"]["items"])
+        self.assertEqual({"L1": 0, "L2": 0, "L3": 0}, overview["alert_summary"]["counts"])
+        template = Path("templates/classroom_main_v4.html").read_text(encoding="utf-8")
+        self.assertIn("alert_items = alerts.get('items', [])", template)
+        self.assertNotIn("alerts['items']", template)
 
     def test_certificate_reveal_state_is_server_tracked_and_idempotent(self):
         metrics = _metrics(24, material=18, task=4, interaction=1, consistency=1)

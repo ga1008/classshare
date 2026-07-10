@@ -7,7 +7,7 @@ const LEGACY_MODULES = {
   chat: '/static/js/chat.js?v=p12-classroom-page-20260604',
   privateMessages: '/static/js/classroom_private_messages.js?v=group-pm-deeplink-20260616',
   files: '/static/js/app_files.js',
-  materials: '/static/js/classroom_materials.js?v=html-render-20260617',
+  materials: '/static/js/classroom_materials.js?v=process-material-summary-20260710',
   exams: '/static/js/app_exams.js',
   classroomPage: '/static/js/classroom_page.js?v=activity-scroll-isolation-20260624',
   learningProgress: '/static/js/learning_progress.js?v=cultivation-certificate-20260612',

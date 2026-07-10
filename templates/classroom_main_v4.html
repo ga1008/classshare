@@ -1164,6 +1164,7 @@
             {% endif %}
             {% set alerts = lo.alert_summary if lo.alert_summary is defined else none %}
             {% if alerts %}
+            {% set alert_items = alerts.get('items', []) if alerts.get is defined else [] %}
             <div class="learning-alert-inbox" data-cultivation-alert-inbox data-class-offering-id="{{ classroom.id }}" aria-label="班级修为预警收件箱">
                 <div class="learning-alert-inbox__head">
                     <div>
@@ -1177,9 +1178,9 @@
                         <span class="is-l1">L1 {{ alerts.counts.L1 or 0 }}</span>
                     </div>
                 </div>
-                {% if alerts['items'] %}
+                {% if alert_items %}
                 <div class="learning-alert-list" data-cultivation-alert-list>
-                    {% for alert in alerts['items'] %}
+                    {% for alert in alert_items %}
                     <article class="learning-alert-item is-{{ (alert.severity or 'L1') | lower }}" data-cultivation-alert-item data-alert-id="{{ alert.id }}">
                         <div class="learning-alert-item__main">
                             <span>{{ alert.severity_label }} · {{ alert.student_name or ('学生 ' ~ alert.student_id) }}</span>

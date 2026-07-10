@@ -26,6 +26,7 @@ from ..db.schema_lesson_plans import ensure_lesson_plan_schema
 from . import material_scope_service as scope_core
 from .academic_class_mapping_service import resolve_offering_display_class_name
 from .organization_scope_service import load_teacher_org_scope
+from .process_material_import_summary_service import build_process_import_summary
 from .resource_access_service import is_super_admin_teacher
 
 # ---------------------------------------------------------------------------
@@ -691,6 +692,7 @@ def _hydrate(row: dict[str, Any]) -> dict[str, Any]:
     row["sessions"] = normalize_sessions(_load(row.get("sessions_json"), []))
     row["tags"] = _normalize_tags(_load(row.get("tags_json"), []))
     row["ai_gen_progress_data"] = _load(row.get("ai_gen_progress"), {})
+    row["import_preview"] = _load(row.get("import_preview_json"), {})
     row["scope_level"] = normalize_scope_level(row.get("scope_level"))
     row["scope_label"] = scope_label(row["scope_level"])
     row["session_count"] = len(row["sessions"])
@@ -727,6 +729,7 @@ def _serialize_card(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
         "title": row.get("title") or "教案",
+        "class_offering_id": row.get("class_offering_id"),
         "course_name": cover.get("course_name") or "",
         "class_name": cover.get("class_name") or "",
         "semester_label": cover.get("semester_label") or "",
@@ -739,6 +742,7 @@ def _serialize_card(row: dict[str, Any]) -> dict[str, Any]:
         "ai_gen_status": row.get("ai_gen_status") or "",
         "ai_gen_error": row.get("ai_gen_error") or "",
         "ai_gen_progress": row.get("ai_gen_progress_data") or {},
+        "import_summary": build_process_import_summary(row),
         "is_owned": bool(row.get("is_owned")),
         "can_manage": bool(row.get("can_manage")),
         "owner_teacher_name": row.get("owner_teacher_name") or "",
@@ -823,6 +827,7 @@ def set_generation_status(
     ai_gen_error: str | None = None,
     progress: Any = None,
     task_id: str | None = None,
+    import_preview: Any = None,
 ) -> None:
     ensure_lesson_plan_schema(conn)
     fields: list[str] = []
@@ -842,6 +847,9 @@ def set_generation_status(
     if task_id is not None:
         fields.append("ai_gen_task_id = ?")
         params.append(task_id)
+    if import_preview is not None:
+        fields.append("import_preview_json = ?")
+        params.append(_dump(import_preview))
     if not fields:
         return
     fields.append("updated_at = ?")

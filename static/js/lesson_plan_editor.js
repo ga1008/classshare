@@ -1,5 +1,14 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml } from './ui.js';
+import {
+    closePendingPreviewWindow,
+    isPreviewLinkBusy,
+    movePendingPreviewWindow,
+    openPendingPreviewWindow,
+    setPreviewLinkBusy,
+    startProcessMaterialExportDownload,
+} from './process_material_editor_preview.js';
+import { openProcessMaterialConfirm } from './process_material_modal.js';
 
 const boot = (() => {
     try { return JSON.parse(document.getElementById('lp-editor-boot').textContent); }
@@ -10,6 +19,8 @@ const planId = boot.id;
 const state = {
     cover: boot.cover || {},
     sessions: Array.isArray(boot.sessions) ? boot.sessions : [],
+    dirty: false,
+    saving: false,
 };
 
 const COVER_FIELDS = [
@@ -31,6 +42,33 @@ const SESSION_FIELDS = [
     ['post_notes', '教学后记', 'textarea'],
 ];
 
+function setSaveState(kind, text) {
+    const el = document.getElementById('lp-save-state');
+    if (!el) return;
+    el.classList.remove('is-clean', 'is-dirty', 'is-saving');
+    el.classList.add(kind);
+    el.textContent = text;
+}
+
+function markDirty() {
+    state.dirty = true;
+    setSaveState('is-dirty', '未保存');
+}
+
+function markClean() {
+    state.dirty = false;
+    setSaveState('is-clean', '已保存');
+}
+
+function restoreSaveState() {
+    if (state.dirty) {
+        setSaveState('is-dirty', '未保存');
+    } else {
+        setSaveState('is-clean', '已保存');
+    }
+}
+
+
 function renderCover() {
     const grid = document.getElementById('lp-cover-grid');
     grid.innerHTML = COVER_FIELDS.map(([key, label]) => `
@@ -38,7 +76,11 @@ function renderCover() {
             <input data-cover="${key}" value="${escapeHtml(state.cover[key] || '')}">
         </label>`).join('');
     grid.querySelectorAll('[data-cover]').forEach((el) => {
-        el.addEventListener('input', () => { state.cover[el.dataset.cover] = el.value; });
+        el.addEventListener('input', () => {
+            if (state.saving) return;
+            state.cover[el.dataset.cover] = el.value;
+            markDirty();
+        });
     });
 }
 
@@ -81,6 +123,7 @@ function renderSessions() {
 
     wrap.querySelectorAll('[data-k]').forEach((el) => {
         el.addEventListener('input', () => {
+            if (state.saving) return;
             const i = Number(el.dataset.s);
             const key = el.dataset.k;
             if (key === '__schedule_text') {
@@ -88,21 +131,52 @@ function renderSessions() {
             } else {
                 state.sessions[i][key] = el.value;
             }
+            markDirty();
         });
     });
     wrap.querySelectorAll('[data-remove]').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             e.preventDefault();
+            if (state.saving) return;
             const i = Number(btn.dataset.remove);
-            if (!confirm(`删除第 ${i + 1} 次课？`)) return;
+            const confirmed = await openProcessMaterialConfirm({
+                title: '删除课次',
+                message: `删除第 ${i + 1} 次课？`,
+                detail: '该课次的主要内容、教学方法、安排和作业会从当前教案中移除。',
+                confirmText: '删除',
+                tone: 'danger',
+            });
+            if (!confirmed) return;
             state.sessions.splice(i, 1);
+            markDirty();
             renderSessions();
         });
     });
 }
 
+function renderImportDetails() {
+    const preview = boot.import_preview;
+    if (!preview || !Object.keys(preview).length) return;
+    const wrap = document.getElementById('lp-import');
+    const details = document.getElementById('lp-import-details');
+    if (!wrap || !details) return;
+    details.hidden = false;
+    details.open = Boolean((preview.warnings || []).length);
+    const warnings = (preview.warnings || []).map((w) => `<li class="is-warn">${escapeHtml(w)}</li>`).join('');
+    const sourceFiles = (preview.source_files || []).map(escapeHtml).join('、') || '—';
+    const sessionCount = Number(preview.session_count ?? state.sessions.length ?? 0);
+    const cover = preview.cover || {};
+    const courseName = cover.course_name || state.cover.course_name || '';
+    wrap.innerHTML = `
+        <div class="ap-import__block"><strong>来源文件</strong><div>${sourceFiles}</div></div>
+        <div class="ap-import__block"><strong>解析结果</strong><div>${courseName ? `${escapeHtml(courseName)} · ` : ''}${sessionCount} 次课</div></div>
+        ${warnings ? `<div class="ap-import__block"><strong>提示</strong><ul class="ap-import__list">${warnings}</ul></div>` : ''}`;
+}
+
 function addSession() {
+    if (state.saving) return;
     state.sessions.push({ index: state.sessions.length + 1, schedule: {}, chapter: '', process: '' });
+    markDirty();
     renderSessions();
     const items = document.querySelectorAll('.lp-editor__session');
     if (items.length) items[items.length - 1].setAttribute('open', '');
@@ -113,31 +187,151 @@ function refreshPreview() {
     if (frame) frame.src = `/lesson-plan/${planId}/preview?t=${Date.now()}`;
 }
 
-async function save() {
+function setActionButtons({ busy = false } = {}) {
+    const buttons = [
+        document.getElementById('lp-add-session'),
+        document.getElementById('lp-save'),
+        document.getElementById('lp-refresh-preview'),
+        document.getElementById('lp-export-word'),
+        document.getElementById('lp-export-pdf'),
+        document.getElementById('lp-export-png'),
+    ].filter(Boolean);
+    buttons.forEach((button) => {
+        button.disabled = busy;
+        button.classList.toggle('lp-btn--disabled', busy);
+        if (busy) {
+            button.setAttribute('aria-disabled', 'true');
+        } else {
+            button.removeAttribute('aria-disabled');
+        }
+    });
+}
+
+function setEditorBusy(busy) {
+    state.saving = Boolean(busy);
+    const form = document.getElementById('lp-editor-form');
+    form?.classList.toggle('is-saving', state.saving);
+    form?.querySelectorAll('input, select, textarea, button').forEach((control) => {
+        control.disabled = state.saving;
+    });
+    setPreviewLinkBusy(document.getElementById('lp-open-preview'), state.saving);
+    setActionButtons({ busy: state.saving });
+}
+
+async function persistContent() {
+    return await apiFetch(`/api/lesson-plans/${planId}/content`, {
+        method: 'PUT',
+        body: { cover: state.cover, sessions: state.sessions },
+    });
+}
+
+async function save({ refresh = true } = {}) {
+    if (state.saving) return;
     const btn = document.getElementById('lp-save');
-    btn.disabled = true;
-    btn.textContent = '保存中…';
+    const oldText = btn?.textContent || '保存';
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
+    if (btn) btn.textContent = '保存中…';
     try {
-        await apiFetch(`/api/lesson-plans/${planId}/content`, {
-            method: 'PUT',
-            body: { cover: state.cover, sessions: state.sessions },
-        });
+        await persistContent();
+        markClean();
         showToast('已保存', 'success');
-        refreshPreview();
+        if (refresh) refreshPreview();
     } catch (err) {
         showToast(err.message || '保存失败', 'error');
     } finally {
-        btn.disabled = false;
-        btn.textContent = '保存';
+        if (btn) btn.textContent = oldText;
+        setEditorBusy(false);
+        restoreSaveState();
+    }
+}
+
+async function saveAndRefreshPreview() {
+    if (state.saving) return;
+    const btn = document.getElementById('lp-refresh-preview');
+    const oldText = btn?.textContent || '保存并刷新预览';
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
+    if (btn) btn.textContent = '刷新中…';
+    try {
+        await persistContent();
+        markClean();
+        refreshPreview();
+        showToast('已保存并刷新预览', 'success');
+    } catch (err) {
+        showToast(err.message || '保存失败，无法刷新预览', 'error');
+    } finally {
+        if (btn) btn.textContent = oldText;
+        setEditorBusy(false);
+        restoreSaveState();
+    }
+}
+
+async function exportLessonPlan(format = 'docx') {
+    if (state.saving) return;
+    const normalized = ['docx', 'pdf', 'png'].includes(format) ? format : 'docx';
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
+    try {
+        await persistContent();
+        markClean();
+        setEditorBusy(false);
+        restoreSaveState();
+        startProcessMaterialExportDownload(
+            `/api/lesson-plans/${planId}/export?fmt=${normalized}`,
+            showToast,
+            normalized === 'pdf' ? 'PDF' : (normalized === 'png' ? 'PNG' : 'Word'),
+        );
+    } catch (err) {
+        showToast(err.message || '保存失败，无法导出', 'error');
+        setEditorBusy(false);
+        restoreSaveState();
+    }
+}
+
+async function openSavedPreview(event) {
+    const link = event.currentTarget;
+    if (state.saving || isPreviewLinkBusy(link)) {
+        event.preventDefault();
+        return;
+    }
+    if (!state.dirty) return;
+    event.preventDefault();
+    const previewWindow = openPendingPreviewWindow(showToast);
+    if (!previewWindow) return;
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
+    try {
+        await persistContent();
+        markClean();
+        refreshPreview();
+        movePendingPreviewWindow(previewWindow, link.href);
+        showToast('已保存并打开预览', 'success');
+    } catch (err) {
+        closePendingPreviewWindow(previewWindow);
+        showToast(err.message || '保存失败，无法打开预览', 'error');
+    } finally {
+        setEditorBusy(false);
+        restoreSaveState();
     }
 }
 
 function init() {
     renderCover();
     renderSessions();
-    document.getElementById('lp-save').addEventListener('click', save);
+    renderImportDetails();
+    document.getElementById('lp-save').addEventListener('click', () => save());
     document.getElementById('lp-add-session').addEventListener('click', addSession);
-    document.getElementById('lp-refresh-preview').addEventListener('click', refreshPreview);
+    document.getElementById('lp-open-preview').addEventListener('click', openSavedPreview);
+    document.getElementById('lp-refresh-preview').addEventListener('click', saveAndRefreshPreview);
+    document.getElementById('lp-export-word').addEventListener('click', () => exportLessonPlan('docx'));
+    document.getElementById('lp-export-pdf').addEventListener('click', () => exportLessonPlan('pdf'));
+    document.getElementById('lp-export-png').addEventListener('click', () => exportLessonPlan('png'));
+    window.addEventListener('beforeunload', (event) => {
+        if (!state.dirty) return;
+        event.preventDefault();
+        event.returnValue = '';
+    });
 }
 
 init();

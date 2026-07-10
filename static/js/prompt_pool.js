@@ -268,6 +268,12 @@ function hidePanel(controller) {
     syncActiveDescendant(controller);
 }
 
+function shouldDeferPromptPoolHide(event) {
+    const target = event?.target;
+    if (!target?.closest) return false;
+    return Boolean(target.closest('button, a, input, select, textarea, [role="button"]'));
+}
+
 function moveActive(controller, direction) {
     const buttons = visibleSuggestionButtons(controller);
     if (!buttons.length) return;
@@ -371,6 +377,10 @@ export function enhancePromptPoolInput(input, options = {}) {
             || panel.contains(event.target)
             || shareRow.contains(event.target)
         ) {
+            return;
+        }
+        if (shouldDeferPromptPoolHide(event)) {
+            window.setTimeout(() => controller.hide(), 0);
             return;
         }
         controller.hide();

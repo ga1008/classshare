@@ -393,22 +393,8 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
         detail = _decorate_material_download_policy(detail)
         ai_import_record = _find_material_ai_import_record(conn, material_id, material["teacher_id"])
         if ai_import_record:
-            task = _serialize_material_ai_import_task(conn, ai_import_record, user)
-            export_format = "xlsx" if task["document_type"] in {"ordinary_grade_record", "exam_grade_record"} else "docx"
-            detail["ai_import_record"] = {
-                "id": task["id"],
-                "document_group": task["document_group"],
-                "document_type": task["document_type"],
-                "document_type_label": task["document_type_label"],
-                "parse_status": task["parse_status"],
-                "parse_mode": task["parse_mode"],
-                "updated_at": task["updated_at"],
-                "completed_at": task["completed_at"],
-                "export_url": f"/api/materials/ai-import-records/{task['id']}/export?format={export_format}",
-                "export_pdf_url": f"/api/materials/ai-import-records/{task['id']}/export?format=pdf" if task["document_type"] == "exam_paper" else "",
-                "render_preview_url": f"/api/materials/ai-import-records/{task['id']}/render-preview?format={export_format}",
-                "preview_url": f"/api/materials/{material_id}/ai-import/preview",
-            }
+            detail["ai_import_record"] = _build_ai_import_record_detail_payload(ai_import_record)
+            detail["ai_import_record"]["preview_url"] = f"/api/materials/{material_id}/ai-import/preview"
         else:
             detail["ai_import_record"] = None
 

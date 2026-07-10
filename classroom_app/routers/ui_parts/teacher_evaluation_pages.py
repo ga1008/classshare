@@ -10,6 +10,7 @@ from .common import *
 from ...services.class_label_service import build_academic_class_label
 from ...services.academic_class_mapping_service import resolve_offering_display_class_name
 from ...services import teacher_evaluation_service as te
+from ...services.process_material_recovery_service import expire_stale_teacher_evaluation_tasks
 
 
 router = APIRouter()
@@ -63,6 +64,11 @@ def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
 async def manage_teacher_evaluations_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教师评学表库管理页面（过程材料 → 教师评学表）。"""
     with get_db_connection() as conn:
+        try:
+            expire_stale_teacher_evaluation_tasks(conn, teacher_id=int(user["id"]))
+            conn.commit()
+        except Exception as exc:  # pragma: no cover - best-effort recovery
+            print(f"[TEACHER_EVALUATION] stale task recovery skipped: {exc}")
         evaluations = te.list_evaluations(conn, teacher=user)
         offerings = _list_teacher_offerings(conn, int(user["id"]))
 

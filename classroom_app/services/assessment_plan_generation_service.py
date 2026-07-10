@@ -184,6 +184,20 @@ def _merge_fields(offering_fields: dict[str, Any], ai_fields: dict[str, Any]) ->
     return merged
 
 
+def _clean_field_overrides(raw_fields: Any) -> dict[str, str]:
+    if not isinstance(raw_fields, dict):
+        return {}
+    cleaned: dict[str, str] = {}
+    for key, value in raw_fields.items():
+        field_key = str(key or "").strip()
+        if field_key not in ap.FIELD_KEYS:
+            continue
+        text = str(value or "").strip()
+        if text:
+            cleaned[field_key] = text[:240]
+    return cleaned
+
+
 def _score_total(items: list[Any]) -> float:
     total = 0.0
     for item in items:
@@ -241,7 +255,12 @@ def _final_exam_items_or_seed(
 # Background job
 # ---------------------------------------------------------------------------
 async def run_generation_job(
-    plan_id: str, class_offering_id: int, teacher_id: int, prompt: str = ""
+    plan_id: str,
+    class_offering_id: int,
+    teacher_id: int,
+    prompt: str = "",
+    *,
+    field_overrides: dict[str, Any] | None = None,
 ) -> None:
     try:
         _set_status(
@@ -258,6 +277,7 @@ async def run_generation_job(
             ).fetchone()
             teacher = dict(teacher_row) if teacher_row else {"id": teacher_id, "name": "", "username": ""}
             offering_fields = ap.build_fields_from_offering(conn, int(class_offering_id), teacher=teacher)
+            offering_fields.update(_clean_field_overrides(field_overrides))
             classroom_context = _classroom_context(conn, int(class_offering_id))
             own_signature_id = find_teacher_own_signature_id(conn, int(teacher_id))
 

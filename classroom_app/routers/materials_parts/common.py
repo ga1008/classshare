@@ -41,6 +41,7 @@ from ...services.material_ai_import_service import (
     normalize_ai_parse_result,
     parse_material_document,
     resolve_material_ai_import_type,
+    validate_material_ai_import_filename,
 )
 from ...services.material_export_template_service import build_material_export_artifact
 from ...services.material_final_document_service import (

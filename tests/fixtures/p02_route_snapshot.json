@@ -1000,6 +1000,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/final-materials/prerequisites",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_final_material_prerequisites",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/learning-home-material",
     "methods": [
       "PUT"

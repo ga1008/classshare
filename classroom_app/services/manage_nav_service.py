@@ -49,6 +49,8 @@ class ManageNavItem:
     href: str
     search_text: str
     ai_hint: str
+    nav_note: str = ""
+    nav_badge: str = ""
     required_flag: str = ""
     legacy_hrefs: tuple[str, ...] = ()
 
@@ -184,6 +186,8 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         href="/manage/teaching/assessment-plans",
         search_text="考核计划表 过程材料 命题 考核 评分 归档 assessment plan",
         ai_hint="考核计划表：空白新建 / 完整表单填写（可按课堂自动带入）/ 按课堂深度思考生成 / 导入解析（自动归集签名到签名库并去重），支持渲染预览、导出 Word、系部院校级公开与一键继承。",
+        nav_note="可空白/课堂生成/导入，导出 Word/PDF",
+        nav_badge="100分校验",
         legacy_hrefs=("/manage/assessment-plans",),
     ),
     ManageNavItem(
@@ -195,6 +199,8 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         href="/manage/teaching/grading-rubrics",
         search_text="评分细则 评分标准 课程考核评分细则 过程材料 命题 归档 rubric",
         ai_hint="评分细则：从材料库入口关联具体试卷或题目附件生成，逐题给出评分标准、扣分项、例外情况和截图/提交物要求，导出为官方模板 Word。",
+        nav_note="依赖具体试卷或题目来源，导出 Word/PDF",
+        nav_badge="需试卷",
     ),
     ManageNavItem(
         key="ordinary_grade_records",
@@ -205,6 +211,8 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         href="/manage/teaching/ordinary-grade-records",
         search_text="平时成绩表 平时成绩记录表 学生平时成绩记录表 过程材料 归档 Excel XLSX ordinary grade record",
         ai_hint="平时成绩表：集中管理由课堂考勤、作业与测评生成或从 Excel 导入解析的学生平时成绩记录表，支持导出 Excel、开放范围与课堂材料归档。",
+        nav_note="从课堂数据生成，或导入学校模板 Excel",
+        nav_badge="Excel",
     ),
     ManageNavItem(
         key="exam_grade_records",
@@ -215,6 +223,8 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         href="/manage/teaching/exam-grade-records",
         search_text="考核登分表 期末考试登分表 机试作品设计 过程材料 归档 Excel XLSX exam grade record",
         ai_hint="考核登分表：集中管理由课堂考试生成或从 Excel 导入解析的期末考核登分表，按大题列与总分校验保存，支持导出 Excel 和开放范围。",
+        nav_note="从已绑定试卷的考试生成，或导入 Excel",
+        nav_badge="Excel",
     ),
     ManageNavItem(
         key="teacher_evaluations",
@@ -225,6 +235,8 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         href="/manage/teaching/teacher-evaluations",
         search_text="教师评学表 评学表 学生评价 综合评价 过程材料 归档 teacher evaluation",
         ai_hint="教师评学表：空白新建 / 完整表单填写（可按课堂自动带入）/ 按教学班级用快速 AI 归集全学期表现自动评分并撰写学习情况分析 / 导入文件解析，10 项指标合计 100、总分自动计算综合评价，支持渲染预览、导出与原版一致的 Word、系部院校级公开与一键继承。",
+        nav_note="按班级生成/导入解析，补全后导出 Word/PDF",
+        nav_badge="10项评分",
     ),
     ManageNavItem(
         key="course_schedule",
@@ -451,6 +463,11 @@ def _can_view_item(item: ManageNavItem, *, is_super_admin: bool) -> bool:
 
 def _item_to_template_dict(item: ManageNavItem, *, active_key: str) -> dict[str, Any]:
     meta = MANAGE_DOMAIN_META[item.domain]
+    search_text = " ".join(
+        part.strip()
+        for part in (item.search_text, item.nav_note, item.nav_badge)
+        if str(part or "").strip()
+    )
     return {
         "key": item.key,
         "domain": item.domain,
@@ -459,8 +476,10 @@ def _item_to_template_dict(item: ManageNavItem, *, active_key: str) -> dict[str,
         "label": item.label,
         "icon": item.icon,
         "href": item.href,
-        "search_text": item.search_text,
+        "search_text": search_text,
         "ai_hint": item.ai_hint,
+        "nav_note": item.nav_note,
+        "nav_badge": item.nav_badge,
         "required_flag": item.required_flag,
         "legacy_hrefs": list(item.legacy_hrefs),
         "active": item.key == active_key,

@@ -26,7 +26,6 @@
   },
   "tailwind_app": {
     "path": "css/tailwind-app.css",
-    "version": "material-workspace-20260702b",
     "type": "style"
   }
 }

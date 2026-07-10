@@ -3,10 +3,73 @@
 {% block title %}课程材料{% endblock %}
 
 {% block extra_head %}
+<style>
+    .materials-process-guide {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin: -2px 0 18px;
+        padding: 16px 18px;
+        border: 1px solid rgba(99, 102, 241, 0.18);
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(238, 242, 255, 0.74), rgba(240, 253, 250, 0.72));
+        box-shadow: 0 18px 40px -34px rgba(15, 23, 42, 0.42);
+    }
+    .materials-process-guide__eyebrow {
+        display: inline-flex;
+        margin-bottom: 5px;
+        color: #0f766e;
+        font-size: 12px;
+        font-weight: 800;
+    }
+    .materials-process-guide h3 {
+        margin: 0;
+        color: #0f172a;
+        font-size: 15px;
+        line-height: 1.45;
+    }
+    .materials-process-guide p {
+        margin: 5px 0 0;
+        color: #64748b;
+        font-size: 13px;
+        line-height: 1.55;
+    }
+    .materials-process-guide__actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 0 0 auto;
+    }
+    .materials-modal-options a.materials-modal-option {
+        justify-content: space-between;
+        color: inherit;
+        text-decoration: none;
+    }
+    .materials-modal-options a.materials-modal-option > span {
+        color: #4f46e5;
+        font-size: 13px;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    @media (max-width: 720px) {
+        .materials-process-guide {
+            align-items: stretch;
+            flex-direction: column;
+        }
+        .materials-process-guide__actions {
+            justify-content: stretch;
+        }
+        .materials-process-guide__actions .btn {
+            flex: 1 1 0;
+        }
+    }
+</style>
 {% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import app_topbar_icon, topbar_action %}
+{% set process_generate_blocked = initial_ai_generate and initial_ai_generate.get('blocked') %}
 <div class="materials-toolbar-group materials-header-actions">
     <div class="materials-upload-menu" id="materials-create-menu">
         <button
@@ -35,7 +98,12 @@
             </button>
         </div>
     </div>
-    {{ topbar_action('AI生成材料', '提示与附件', 'robot', button_id='materials-ai-generate-open-btn', variant='solid', tone='teal') }}
+    {% if process_generate_blocked %}
+        {{ topbar_action('课堂生成', '真实数据', 'list', button_id='materials-classroom-generate-open-btn', variant='solid', tone='indigo') }}
+        {{ topbar_action('导入解析', 'Excel 表格', 'upload', button_id='materials-ai-import-shortcut-btn', variant='solid', tone='teal') }}
+    {% else %}
+        {{ topbar_action('AI生成材料', '提示与附件', 'robot', button_id='materials-ai-generate-open-btn', variant='solid', tone='teal') }}
+    {% endif %}
     {{ topbar_action('上传文件夹', '批量资料', 'folder-up', button_id='materials-upload-folder-btn', variant='solid', tone='cyan') }}
     <div class="materials-upload-menu" id="materials-upload-menu">
         <button
@@ -69,6 +137,7 @@
 {% endblock %}
 
 {% block content %}
+{% set process_generate_blocked = initial_ai_generate and initial_ai_generate.get('blocked') %}
 {% from "macros/manage_insights.html" import insight_ring, insight_meter %}
 <div
     data-materials-manage-page-app
@@ -117,6 +186,20 @@
         </div>
     </div>
 </section>
+
+{% if process_generate_blocked %}
+<section class="materials-process-guide" data-process-material-guide>
+    <div>
+        <span class="materials-process-guide__eyebrow">过程材料工作流</span>
+        <h3>{{ initial_ai_generate.status or '该表需要从真实课堂数据生成，不能在材料库中泛化生成。' }}</h3>
+        <p>建议先进入对应课堂检查作业、测评或考试数据；若已有学校模板 Excel，可直接导入解析并归档。</p>
+    </div>
+    <div class="materials-process-guide__actions">
+        <button type="button" class="btn btn-primary btn-sm" data-process-classroom-generate>从课堂生成</button>
+        <button type="button" class="btn btn-outline btn-sm" data-process-ai-import>导入 Excel 解析</button>
+    </div>
+</section>
+{% endif %}
 
 <div class="materials-shell materials-shell--single">
     <section class="materials-card materials-library-card materials-library-card--expanded">
@@ -268,6 +351,27 @@
     accept=".doc,.docx,.xls,.xlsx,.pdf,.txt,.md,.markdown,.csv,.json,.png,.jpg,.jpeg,.webp,.bmp,.gif,.ppt,.pptx"
 >
 
+<div id="materials-classroom-generate-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title" id="materials-classroom-generate-title">从课堂数据生成</h3>
+                    <p class="modal-subtitle" id="materials-classroom-generate-subtitle">选择课堂后进入课程材料区，系统会自动打开期末材料生成面板。</p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="materials-section" id="materials-classroom-generate-status"></div>
+                <div class="materials-modal-options" id="materials-classroom-generate-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="materials-ai-generate-modal" class="modal-backdrop" style="display:none;">
     <div class="modal-dialog modal-dialog-scrollable modal-xl materials-ai-generate-dialog">
         <div class="modal-content materials-ai-generate-content">
@@ -297,6 +401,7 @@
                         </select>
                     </label>
                 </div>
+                <div class="materials-ai-import-status materials-ai-generate-status" id="materials-ai-generate-status" hidden></div>
                 <label class="materials-form-field materials-ai-generate-prompt-field">
                     <span>提示话语</span>
                     <textarea id="materials-ai-generate-prompt" class="form-control" data-prompt-pool-key="materials.ai_generate" rows="5" placeholder="例如：根据这些作业题目生成一份期末复习提纲，包含知识点、易错点和课堂练习安排。"></textarea>
@@ -341,7 +446,6 @@
                     </section>
                 </div>
 
-                <div class="materials-ai-import-status" id="materials-ai-generate-status" hidden></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
@@ -415,6 +519,7 @@
                     <div>
                         <div class="text-muted text-sm">待解析文件</div>
                         <strong id="materials-ai-import-file-name">未选择文件</strong>
+                        <div class="materials-ai-import-format-hint" id="materials-ai-import-format-hint">选择材料类型后会显示支持的文件格式。</div>
                     </div>
                     <button type="button" class="btn btn-outline" id="materials-ai-import-choose-file-btn">选择文件</button>
                 </div>
@@ -767,7 +872,9 @@
     window.MATERIALS_MANAGE_CONFIG = {
         offerings: {{ offerings | tojson }},
         canAssign: {{ 'true' if offerings else 'false' }},
+        userId: {{ user_info.id | tojson }},
         userIdentityHints: {{ [(user_info.name | default('', true)), (user_info.email | default('', true))] | tojson }},
+        aiImportDismissStorageKey: "lanshare:materials:ai-import:dismissed:{{ user_info.id }}",
         materialAiImportRegistry: {{ material_ai_import_registry | tojson }},
         initialAiGenerate: {{ initial_ai_generate | default({}) | tojson }},
         initialAiImport: {{ initial_ai_import | default({}) | tojson }},
@@ -778,5 +885,8 @@
 
 {% block scripts %}
 <script type="module" src="{{ asset_url('js/base_resource_modes.js') }}"></script>
+<script type="module">
+    window.__LANSHARE_MATERIALS_MANAGE_PAGE_CONTROLLER__ ||= import({{ asset_url('js/materials_manage.js') | tojson }});
+</script>
 {{ vite_entry_tags('frontend/src/islands/materials-manage-page.tsx') }}
 {% endblock %}

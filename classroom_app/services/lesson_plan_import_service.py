@@ -149,14 +149,22 @@ async def run_import_job(
             return
         cover = payload["cover"]
         title = cover.get("course_name") or "导入教案"
+        warnings = list(extracted.get("warnings") or [])
+        import_preview = {
+            "cover": cover,
+            "session_count": len(payload["sessions"]),
+            "warnings": warnings[:10],
+            "source_files": [item.get("name") for item in files],
+        }
         with get_db_connection() as conn:
             lp.update_content(conn, plan_id, cover=cover, sessions=payload["sessions"], status="ready")
             lp.update_attributes(conn, plan_id, title=f"{title}（导入）")
             lp.set_generation_status(
                 conn,
                 plan_id,
-                ai_gen_status="completed",
-                ai_gen_error="",
+                ai_gen_status="completed_with_fallback" if warnings else "completed",
+                ai_gen_error="；".join(str(item) for item in warnings)[:800] if warnings else "",
+                import_preview=import_preview,
                 progress={
                     "done": len(payload["sessions"]),
                     "total": len(payload["sessions"]),

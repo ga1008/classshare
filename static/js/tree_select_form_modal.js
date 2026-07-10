@@ -91,9 +91,11 @@ export function openTreeSelectFormModal(config) {
         fieldValues: {},
         prompt: '',
         token: 0,
+        submitting: false,
     };
 
-    const close = () => {
+    const close = ({ force = false } = {}) => {
+        if (state.submitting && !force) return;
         overlay.remove();
         document.removeEventListener('keydown', onKey);
     };
@@ -280,6 +282,25 @@ export function openTreeSelectFormModal(config) {
         if (promptInput) enhancePromptPoolInput(promptInput);
     }
 
+    function setSubmitting(submitting, btn) {
+        state.submitting = Boolean(submitting);
+        overlay.classList.toggle('is-submitting', state.submitting);
+        overlay.setAttribute('aria-busy', state.submitting ? 'true' : 'false');
+        closeBtn.disabled = state.submitting;
+        treeEl.querySelectorAll('button').forEach((button) => { button.disabled = state.submitting; });
+        panelEl.querySelectorAll('input, select, textarea, button').forEach((control) => {
+            control.disabled = state.submitting;
+        });
+        if (!btn) return;
+        if (state.submitting) {
+            btn.dataset.originalText = btn.textContent || '';
+            btn.textContent = '处理中…';
+        } else {
+            btn.textContent = btn.dataset.originalText || confirmLabel;
+            delete btn.dataset.originalText;
+        }
+    }
+
     async function selectLeaf(path, node) {
         if (!node) return;
         state.selectedPath = path;
@@ -298,10 +319,8 @@ export function openTreeSelectFormModal(config) {
     }
 
     async function handleConfirm(btn) {
-        if (!state.selectedNode || btn.disabled) return;
-        btn.disabled = true;
-        const original = btn.textContent;
-        btn.textContent = '处理中…';
+        if (!state.selectedNode || btn.disabled || state.submitting) return;
+        setSubmitting(true, btn);
         try {
             const promptInput = panelEl.querySelector('[data-tsf-prompt]');
             const ok = onConfirm ? await onConfirm({
@@ -312,18 +331,18 @@ export function openTreeSelectFormModal(config) {
                 sharePrompt: isPromptShareEnabled(promptInput),
             }) : true;
             if (ok !== false) {
-                await recordPromptForInput(promptInput, state.prompt);
-                close();
+                try { await recordPromptForInput(promptInput, state.prompt); } catch (_) { /* prompt pool recording is best effort */ }
+                close({ force: true });
                 return;
             }
         } catch (_) {
             // onConfirm should surface its own toast. Keep the modal open.
         }
-        btn.disabled = false;
-        btn.textContent = original;
+        setSubmitting(false, btn);
     }
 
     treeEl.addEventListener('click', (e) => {
+        if (state.submitting) return;
         const toggle = e.target.closest('[data-tsf-toggle]');
         if (toggle) {
             const path = toggle.dataset.tsfToggle;
@@ -336,6 +355,7 @@ export function openTreeSelectFormModal(config) {
     });
 
     panelEl.addEventListener('input', (e) => {
+        if (state.submitting) return;
         const field = e.target.closest('[data-tsf-field]');
         if (field) {
             state.fieldValues[field.dataset.tsfField] = field.value;
@@ -345,10 +365,12 @@ export function openTreeSelectFormModal(config) {
         if (prompt) state.prompt = prompt.value;
     });
     panelEl.addEventListener('change', (e) => {
+        if (state.submitting) return;
         const field = e.target.closest('[data-tsf-field]');
         if (field) state.fieldValues[field.dataset.tsfField] = field.value;
     });
     panelEl.addEventListener('click', (e) => {
+        if (state.submitting && !e.target.closest('[data-tsf-confirm]')) return;
         const confirmBtn = e.target.closest('[data-tsf-confirm]');
         if (confirmBtn) handleConfirm(confirmBtn);
     });

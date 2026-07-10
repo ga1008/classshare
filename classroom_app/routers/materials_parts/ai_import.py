@@ -11,6 +11,68 @@ from ...services.material_mastery_check_service import build_material_mastery_ch
 router = APIRouter()
 
 
+def _attach_ai_generation_document_source(conn, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach the latest completed final-material parse type for generation candidates."""
+    material_ids = [int(item["id"]) for item in items if item.get("id")]
+    if not material_ids:
+        return items
+    columns = _material_table_columns(conn, "material_ai_import_records")
+    required = {"package_material_id", "source_material_id", "parsed_material_id", "document_type", "parse_status"}
+    if not required.issubset(columns):
+        return items
+    label_expr = "r.document_type_label" if "document_type_label" in columns else "''"
+    updated_expr = "r.updated_at" if "updated_at" in columns else "''"
+    placeholders = ", ".join("?" for _ in material_ids)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT r.package_material_id,
+                   r.source_material_id,
+                   r.parsed_material_id,
+                   r.document_type,
+                   {label_expr} AS document_type_label,
+                   {updated_expr} AS updated_at
+            FROM material_ai_import_records r
+            WHERE COALESCE(r.parse_status, '') = 'completed'
+              AND (
+                    r.package_material_id IN ({placeholders})
+                    OR r.source_material_id IN ({placeholders})
+                    OR r.parsed_material_id IN ({placeholders})
+              )
+            ORDER BY {updated_expr} DESC, r.id DESC
+            """,
+            [*material_ids, *material_ids, *material_ids],
+        ).fetchall()
+    except Exception:
+        return items
+
+    by_material: dict[int, dict[str, str]] = {}
+    material_set = set(material_ids)
+    for row in rows:
+        row_dict = dict(row)
+        source = {
+            "document_type": str(row_dict.get("document_type") or "").strip(),
+            "document_type_label": str(row_dict.get("document_type_label") or "").strip(),
+            "updated_at": str(row_dict.get("updated_at") or "").strip(),
+        }
+        if not source["document_type"]:
+            continue
+        for key in ("package_material_id", "source_material_id", "parsed_material_id"):
+            material_id = int(row_dict.get(key) or 0)
+            if material_id in material_set and material_id not in by_material:
+                by_material[material_id] = source
+
+    for item in items:
+        material_id = int(item.get("id") or 0)
+        source = by_material.get(material_id)
+        if not source:
+            continue
+        item["ai_generation_document_type"] = source["document_type"]
+        item["ai_generation_document_type_label"] = source["document_type_label"]
+        item["ai_generation_source_updated_at"] = source["updated_at"]
+    return items
+
+
 def _insert_material_ai_import_record(
     conn,
     *,
@@ -90,6 +152,7 @@ async def list_material_ai_generation_candidates(
             _decorate_learning_document_item(item)
             for item in _serialize_material_items(conn, rows, user=user)
         ]
+        items = _attach_ai_generation_document_source(conn, items)
     return {"status": "success", "items": items}
 
 
@@ -309,6 +372,7 @@ async def ai_import_material(
 ):
     original_name = _normalize_uploaded_filename(file.filename)
     type_meta = resolve_material_ai_import_type(document_group, document_type)
+    validate_material_ai_import_filename(type_meta, original_name)
 
     if parent_id is not None:
         with get_db_connection() as conn:

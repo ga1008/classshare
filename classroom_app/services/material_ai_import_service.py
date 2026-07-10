@@ -51,6 +51,66 @@ MIN_USABLE_TEXT_CHARS = 40
 
 MaterialAiChat = Callable[..., Awaitable[Any]]
 
+DEFAULT_MATERIAL_AI_IMPORT_EXTENSIONS = [
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".pdf",
+    ".txt",
+    ".md",
+    ".markdown",
+    ".csv",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp",
+    ".gif",
+]
+GRADE_RECORD_MATERIAL_AI_IMPORT_EXTENSIONS = [".xls", ".xlsx"]
+WORD_FORM_MATERIAL_AI_IMPORT_RECOMMENDED_EXTENSIONS = [".doc", ".docx", ".pdf"]
+DEFAULT_MATERIAL_AI_IMPORT_FORMAT_LABEL = "Word、Excel、PDF、Markdown、CSV、TXT 或图片"
+WORD_FORM_MATERIAL_AI_IMPORT_HINT = (
+    "推荐上传学校原表 Word/PDF；如来源是表格、图片或 Markdown，也可解析后再预览核对。"
+)
+GRADE_RECORD_MATERIAL_AI_IMPORT_HINT = (
+    "仅支持学校模板 Excel（.xls/.xlsx）；系统会保留学生行、公式和分值校验。"
+)
+
+MATERIAL_AI_IMPORT_TYPE_FORMATS: dict[str, dict[str, Any]] = {
+    "syllabus": {
+        "recommended_extensions": WORD_FORM_MATERIAL_AI_IMPORT_RECOMMENDED_EXTENSIONS,
+        "format_hint": WORD_FORM_MATERIAL_AI_IMPORT_HINT,
+    },
+    "assessment_plan": {
+        "recommended_extensions": WORD_FORM_MATERIAL_AI_IMPORT_RECOMMENDED_EXTENSIONS,
+        "format_hint": WORD_FORM_MATERIAL_AI_IMPORT_HINT,
+    },
+    "grading_rubric": {
+        "recommended_extensions": WORD_FORM_MATERIAL_AI_IMPORT_RECOMMENDED_EXTENSIONS,
+        "format_hint": WORD_FORM_MATERIAL_AI_IMPORT_HINT,
+    },
+    "exam_paper": {
+        "recommended_extensions": WORD_FORM_MATERIAL_AI_IMPORT_RECOMMENDED_EXTENSIONS,
+        "format_hint": "推荐上传试卷 Word/PDF；图片或扫描件可解析，但生成评分细则前请重点核对题号和分值。",
+    },
+    "final_teaching_summary": {
+        "recommended_extensions": WORD_FORM_MATERIAL_AI_IMPORT_RECOMMENDED_EXTENSIONS,
+        "format_hint": WORD_FORM_MATERIAL_AI_IMPORT_HINT,
+    },
+    ORDINARY_GRADE_RECORD_TYPE: {
+        "accepted_extensions": GRADE_RECORD_MATERIAL_AI_IMPORT_EXTENSIONS,
+        "accepted_format_label": "Excel（.xls/.xlsx）",
+        "format_hint": GRADE_RECORD_MATERIAL_AI_IMPORT_HINT,
+    },
+    EXAM_GRADE_RECORD_TYPE: {
+        "accepted_extensions": GRADE_RECORD_MATERIAL_AI_IMPORT_EXTENSIONS,
+        "accepted_format_label": "Excel（.xls/.xlsx）",
+        "format_hint": GRADE_RECORD_MATERIAL_AI_IMPORT_HINT,
+    },
+}
+
 
 MATERIAL_AI_IMPORT_GROUPS: list[dict[str, Any]] = [
     {
@@ -141,11 +201,51 @@ MATERIAL_AI_IMPORT_GROUPS: list[dict[str, Any]] = [
     },
 ]
 
+
+def _normalize_material_ai_import_extensions(extensions: Any) -> list[str]:
+    normalized: list[str] = []
+    if not isinstance(extensions, (list, tuple)):
+        return normalized
+    for item in extensions:
+        extension = str(item or "").strip().lower()
+        if not extension:
+            continue
+        if not extension.startswith("."):
+            extension = f".{extension}"
+        if extension not in normalized:
+            normalized.append(extension)
+    return normalized
+
+
+def _build_material_ai_import_format_meta(doc_type: dict[str, Any]) -> dict[str, Any]:
+    type_key = str(doc_type.get("key") or "").strip()
+    format_meta = MATERIAL_AI_IMPORT_TYPE_FORMATS.get(type_key, {})
+    accepted_extensions = _normalize_material_ai_import_extensions(
+        format_meta.get("accepted_extensions") or DEFAULT_MATERIAL_AI_IMPORT_EXTENSIONS
+    )
+    recommended_extensions = _normalize_material_ai_import_extensions(format_meta.get("recommended_extensions"))
+    accepted_format_label = str(
+        format_meta.get("accepted_format_label") or DEFAULT_MATERIAL_AI_IMPORT_FORMAT_LABEL
+    ).strip()
+    format_hint = str(
+        format_meta.get("format_hint")
+        or "支持 Word、Excel、PDF、Markdown、CSV、TXT 和常见图片；解析完成后请通过预览核对关键字段。"
+    ).strip()
+    return {
+        "accepted_extensions": accepted_extensions,
+        "recommended_extensions": recommended_extensions,
+        "accept": ",".join(accepted_extensions),
+        "accepted_format_label": accepted_format_label,
+        "format_hint": format_hint,
+    }
+
+
 _TYPE_INDEX: dict[tuple[str, str], dict[str, Any]] = {}
 for _group in MATERIAL_AI_IMPORT_GROUPS:
     for _doc_type in _group["types"]:
         _TYPE_INDEX[(_group["key"], _doc_type["key"])] = {
             **_doc_type,
+            **_build_material_ai_import_format_meta(_doc_type),
             "group_key": _group["key"],
             "group_label": _group["label"],
         }
@@ -191,6 +291,7 @@ def get_material_ai_import_registry() -> list[dict[str, Any]]:
                     "label": doc_type["label"],
                     "template_key": doc_type.get("template_key", ""),
                     "aliases": list(doc_type.get("aliases", [])),
+                    **_build_material_ai_import_format_meta(doc_type),
                 }
                 for doc_type in group["types"]
             ],
@@ -206,6 +307,18 @@ def resolve_material_ai_import_type(document_group: str, document_type: str) -> 
     if not type_meta:
         raise HTTPException(400, "材料解析类型不受支持")
     return type_meta.copy()
+
+
+def validate_material_ai_import_filename(type_meta: dict[str, Any], original_name: str) -> None:
+    accepted_extensions = _normalize_material_ai_import_extensions(type_meta.get("accepted_extensions"))
+    if not accepted_extensions:
+        return
+    suffix = Path(original_name or "").suffix.lower()
+    if suffix in accepted_extensions:
+        return
+    label = str(type_meta.get("label") or "该材料").strip()
+    accepted_label = str(type_meta.get("accepted_format_label") or "、".join(accepted_extensions)).strip()
+    raise HTTPException(415, f"{label}仅支持{accepted_label}文件，请重新选择。")
 
 
 async def parse_material_document(

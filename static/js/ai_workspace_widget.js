@@ -16,6 +16,7 @@ const AGENT_ATTACHMENT_ALLOWED_TYPES_LABEL = 'txt/md/csv/json/docx/pdf/xlsx/pptx
 let chatComponent = null;
 let taskBootstrapLoaded = false;
 let taskBootstrapPromise = null;
+let agentRuntimeConfigured = null;
 let runtimeWarningShown = false;
 let taskPollTimer = null;
 let selectedTaskId = null;
@@ -54,6 +55,14 @@ function notify(message, type = 'info') {
     } else {
         console[type === 'error' ? 'error' : 'log'](message);
     }
+}
+
+function showRuntimeUnavailableWarning() {
+    if (agentRuntimeConfigured !== false || runtimeWarningShown) {
+        return;
+    }
+    runtimeWarningShown = true;
+    notify('Agent 运行时未配置，任务会先进入队列等待独立服务。', 'warning');
 }
 
 function escapeHtml(value) {
@@ -1754,7 +1763,7 @@ function prefillSupplementFollowUp(button) {
     if (!text) {
         return;
     }
-    setAgentMode(true);
+    setAgentMode(true, { showRuntimeWarning: true });
     const input = currentChatSurface().textarea;
     if (!input) {
         notify('可在底部输入框继续补充。', 'info');
@@ -1826,16 +1835,24 @@ async function refreshTasks({ silent = false } = {}) {
     }
 }
 
-async function loadBootstrap() {
+async function loadBootstrap({ showRuntimeWarning = false } = {}) {
     if (!CONFIG.taskCenterEnabled || taskBootstrapLoaded) {
+        if (showRuntimeWarning) {
+            showRuntimeUnavailableWarning();
+        }
         return;
     }
     if (taskBootstrapPromise) {
-        return taskBootstrapPromise;
+        await taskBootstrapPromise;
+        if (showRuntimeWarning) {
+            showRuntimeUnavailableWarning();
+        }
+        return;
     }
     taskBootstrapPromise = (async () => {
         const data = await apiJson('/api/agent-tasks/bootstrap');
         taskBootstrapLoaded = true;
+        agentRuntimeConfigured = Boolean(data.runtime_configured);
         workflowCatalog = Array.isArray(data.workflow_catalog) ? data.workflow_catalog : [];
         taskTypesCatalog = Array.isArray(data.task_types) ? data.task_types : [];
         setQueueState(data.queue_state || {}, data.counts || {});
@@ -1843,13 +1860,12 @@ async function loadBootstrap() {
         refreshAgentComposerChrome();
         renderAgentStarters();
         loadAgentSubscriptions({ silent: true });
-        if (!data.runtime_configured && !runtimeWarningShown) {
-            runtimeWarningShown = true;
-            notify('Agent 运行时未配置，任务会先进入队列等待独立服务。', 'warning');
-        }
     })();
     try {
         await taskBootstrapPromise;
+        if (showRuntimeWarning) {
+            showRuntimeUnavailableWarning();
+        }
     } finally {
         taskBootstrapPromise = null;
     }
@@ -1922,7 +1938,7 @@ function refreshAgentComposerChrome() {
     }
 }
 
-function setAgentMode(enabled, { persist = true } = {}) {
+function setAgentMode(enabled, { persist = true, showRuntimeWarning = false } = {}) {
     if (!CONFIG.taskCenterEnabled) {
         return;
     }
@@ -1960,7 +1976,7 @@ function setAgentMode(enabled, { persist = true } = {}) {
         }
     }
     if (agentMode) {
-        loadBootstrap().then(() => refreshTasks({ silent: true })).catch((error) => notify(error.message || 'Agent 加载失败', 'error'));
+        loadBootstrap({ showRuntimeWarning }).then(() => refreshTasks({ silent: true })).catch((error) => notify(error.message || 'Agent 加载失败', 'error'));
         startTaskPolling();
     } else {
         updateComposerPresence(false).catch(() => {});
@@ -1972,7 +1988,7 @@ function prefillAgentTaskFromChat(instruction) {
     if (!text) {
         return;
     }
-    setAgentMode(true);
+    setAgentMode(true, { showRuntimeWarning: true });
     const surface = currentChatSurface();
     if (surface.textarea) {
         surface.textarea.value = text;
@@ -2213,10 +2229,10 @@ function bindTaskCenter() {
         selectedAgentWorkflowKey = '';
         prefillAgentTaskFromChat(event.detail?.instruction || '');
     });
-    $('#ai-agent-mode-toggle')?.addEventListener('click', () => setAgentMode(!agentMode));
+    $('#ai-agent-mode-toggle')?.addEventListener('click', () => setAgentMode(!agentMode, { showRuntimeWarning: true }));
     $all('[data-ai-mode-select]').forEach((button) => {
         button.addEventListener('click', () => {
-            setAgentMode(button.dataset.aiModeSelect === 'agent');
+            setAgentMode(button.dataset.aiModeSelect === 'agent', { showRuntimeWarning: true });
         });
     });
     $('#ai-agent-history-toggle')?.addEventListener('click', () => {
@@ -2446,9 +2462,9 @@ function bindTaskCenter() {
     } catch {
         // Ignore storage restrictions.
     }
-    setAgentMode(preferredAgentMode, { persist: false });
+    setAgentMode(preferredAgentMode, { persist: false, showRuntimeWarning: false });
     if (!preferredAgentMode) {
-        loadBootstrap().then(() => refreshTasks({ silent: true })).catch((error) => notify(error.message || 'Agent 加载失败', 'error'));
+        loadBootstrap({ showRuntimeWarning: false }).then(() => refreshTasks({ silent: true })).catch((error) => notify(error.message || 'Agent 加载失败', 'error'));
     }
     startTaskPolling();
     startTaskEventPolling();

@@ -24,13 +24,17 @@ from ..services import assessment_plan_service as ap
 from ..services import signature_service
 from ..services.assessment_plan_generation_service import run_generation_job
 from ..services.assessment_plan_import_service import run_import_job
+from ..services.process_material_import_policy import (
+    normalize_process_import_filename,
+    validate_process_document_import_file_bytes,
+    validate_process_document_import_file_count,
+    validate_process_document_import_filename,
+)
+from ..services.process_material_recovery_service import expire_stale_assessment_plan_tasks
 from ..services.resource_access_service import is_super_admin_teacher
 
 router = APIRouter(prefix="/api/assessment-plans")
-
-_MAX_IMPORT_FILES = 8
-_MAX_IMPORT_BYTES = 30 * 1024 * 1024
-_ALLOWED_IMPORT_EXT = {".doc", ".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".md", ".txt"}
+_GENERATE_FIELD_KEYS = set(ap.FIELD_KEYS)
 
 
 async def _json_body(request: Request) -> dict[str, Any]:
@@ -79,12 +83,28 @@ def _ensure_offering_access(conn, class_offering_id: int, user: dict) -> None:
         raise HTTPException(403, "无权访问该课堂")
 
 
+def _clean_generate_field_overrides(raw_fields: Any) -> dict[str, str]:
+    if not isinstance(raw_fields, dict):
+        return {}
+    cleaned: dict[str, str] = {}
+    for key, value in raw_fields.items():
+        field_key = str(key or "").strip()
+        if field_key not in _GENERATE_FIELD_KEYS:
+            continue
+        text = str(value or "").strip()
+        if text:
+            cleaned[field_key] = text[:240]
+    return cleaned
+
+
 # ---------------------------------------------------------------------------
 # List / read
 # ---------------------------------------------------------------------------
 @router.get("", response_class=JSONResponse)
 async def list_plans(user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        expire_stale_assessment_plan_tasks(conn, teacher_id=int(user["id"]))
+        conn.commit()
         plans = ap.list_assessment_plans(conn, teacher=user)
     return {"assessment_plans": plans}
 
@@ -128,6 +148,8 @@ async def get_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
 @router.get("/{plan_id}/task", response_class=JSONResponse)
 async def get_task_status(plan_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        expire_stale_assessment_plan_tasks(conn, teacher_id=int(user["id"]))
+        conn.commit()
         plan = _load_viewable(conn, plan_id, user)
         is_owned = int(plan.get("teacher_id") or 0) == int(user["id"])
         can_manage = is_owned or is_super_admin_teacher(conn, int(user["id"]))
@@ -180,9 +202,11 @@ async def generate_from_classroom(request: Request, user: dict = Depends(get_cur
     if not class_offering_id:
         raise HTTPException(400, "请选择要生成考核计划表的课堂")
     prompt = str(body.get("prompt") or "").strip()
+    field_overrides = _clean_generate_field_overrides(body.get("fields"))
     with get_db_connection() as conn:
         _ensure_offering_access(conn, int(class_offering_id), user)
         fields = ap.build_fields_from_offering(conn, int(class_offering_id), teacher=user)
+        fields.update(field_overrides)
         title = (fields.get("course_name") or "课程考核计划表") + "（按课堂生成）"
         plan_id = ap.create_assessment_plan(
             conn,
@@ -196,10 +220,23 @@ async def generate_from_classroom(request: Request, user: dict = Depends(get_cur
             ai_gen_status="pending",
             ai_gen_progress={"done": 0, "total": 1, "current_label": "排队中"},
         )
-        ap.set_generation_status(conn, plan_id, task_id=plan_id)
+        ap.set_generation_status(
+            conn,
+            plan_id,
+            task_id=plan_id,
+            import_preview={"source_files": [], "warnings": []},
+        )
         conn.commit()
         plan = ap.get_assessment_plan(conn, plan_id)
-    asyncio.create_task(run_generation_job(plan_id, int(class_offering_id), int(user["id"]), prompt))
+    asyncio.create_task(
+        run_generation_job(
+            plan_id,
+            int(class_offering_id),
+            int(user["id"]),
+            prompt,
+            field_overrides=field_overrides,
+        )
+    )
     return {"id": plan_id, "card": ap.serialize_card(plan)}
 
 
@@ -209,28 +246,25 @@ async def import_plan(
     extra_prompt: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
-    if not files:
-        raise HTTPException(400, "请至少选择一个文件")
-    if len(files) > _MAX_IMPORT_FILES:
-        raise HTTPException(400, f"最多一次导入 {_MAX_IMPORT_FILES} 个文件")
+    validate_process_document_import_file_count(files)
+    staged: list[dict[str, Any]] = []
+    for index, upload in enumerate(files):
+        name = normalize_process_import_filename(upload.filename, fallback=f"file_{index}")
+        validate_process_document_import_filename(name, document_label="考核计划表")
+        data = await upload.read()
+        validate_process_document_import_file_bytes(data, filename=name)
+        staged.append({"name": name, "data": data})
+    if not staged:
+        raise HTTPException(400, "上传的文件均为空")
+
     temp_dir = tempfile.mkdtemp(prefix="lanshare-assessplan-import-")
     saved: list[dict[str, str]] = []
-    for index, upload in enumerate(files):
-        name = os.path.basename(upload.filename or f"file_{index}")
-        ext = os.path.splitext(name)[1].lower()
-        if ext and ext not in _ALLOWED_IMPORT_EXT:
-            raise HTTPException(400, f"不支持的文件格式：{ext}")
-        data = await upload.read()
-        if not data:
-            continue
-        if len(data) > _MAX_IMPORT_BYTES:
-            raise HTTPException(400, f"《{name}》超过单文件大小上限")
+    for index, item in enumerate(staged):
+        name = str(item["name"])
         dest = os.path.join(temp_dir, f"{index}_{name}")
         with open(dest, "wb") as fh:
-            fh.write(data)
+            fh.write(item["data"])
         saved.append({"path": dest, "name": name})
-    if not saved:
-        raise HTTPException(400, "上传的文件均为空")
 
     with get_db_connection() as conn:
         first_name = os.path.splitext(saved[0]["name"])[0]
@@ -254,11 +288,13 @@ async def import_plan(
 
 @router.post("/{plan_id}/retry", response_class=JSONResponse)
 async def retry_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
+    field_overrides: dict[str, str] = {}
     with get_db_connection() as conn:
         plan = _load_owned_or_super(conn, plan_id, user)
         source_type = plan.get("source_type")
         class_offering_id = plan.get("class_offering_id")
         if source_type == "classroom" and class_offering_id:
+            field_overrides = _clean_generate_field_overrides(plan.get("fields"))
             ap.set_generation_status(
                 conn,
                 plan_id,
@@ -273,7 +309,14 @@ async def retry_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
         else:
             raise HTTPException(400, "该考核计划表不支持重试。")
     if source_type == "classroom" and class_offering_id:
-        asyncio.create_task(run_generation_job(plan_id, int(class_offering_id), int(user["id"])))
+        asyncio.create_task(
+            run_generation_job(
+                plan_id,
+                int(class_offering_id),
+                int(user["id"]),
+                field_overrides=field_overrides,
+            )
+        )
     return {"ok": True}
 
 
@@ -411,6 +454,8 @@ async def export_plan(
         plan = _load_viewable(conn, plan_id, user)
         try:
             artifact = ap.export_plan_artifact(conn, plan, requested_format=fmt)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
     disposition_type = "inline" if inline else "attachment"

@@ -18,6 +18,19 @@ from ...services.exam_grade_record_service import (
 router = APIRouter()
 
 
+def _final_material_source_summary(record) -> dict[str, Any] | None:
+    if not record:
+        return None
+    context = _final_material_record_context(record)
+    return {
+        "record_id": context.get("record_id"),
+        "document_type": context.get("document_type") or "",
+        "document_type_label": context.get("document_type_label") or "",
+        "title": context.get("title") or "",
+        "updated_at": context.get("updated_at") or "",
+    }
+
+
 @router.get("/api/classrooms/{class_offering_id}/ordinary-grade-record/candidates", response_class=JSONResponse)
 async def list_classroom_ordinary_grade_record_candidates(
     class_offering_id: int,
@@ -46,6 +59,49 @@ async def list_classroom_exam_grade_record_candidates(
             teacher_id=user["id"],
         )
     return {"status": "success", "items": items}
+
+
+@router.get("/api/classrooms/{class_offering_id}/final-materials/prerequisites", response_class=JSONResponse)
+async def get_classroom_final_material_prerequisites(
+    class_offering_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        ensure_classroom_access(conn, class_offering_id, user)
+        assessment_plan_record = _load_latest_final_material_record_for_classroom(
+            conn,
+            class_offering_id=class_offering_id,
+            teacher_id=user["id"],
+            document_type="assessment_plan",
+        )
+        exam_paper_record = _load_latest_final_material_record_for_classroom(
+            conn,
+            class_offering_id=class_offering_id,
+            teacher_id=user["id"],
+            document_type="exam_paper",
+        )
+
+    assessment_plan_source = _final_material_source_summary(assessment_plan_record)
+    exam_paper_source = _final_material_source_summary(exam_paper_record)
+    return {
+        "status": "success",
+        "prerequisites": {
+            "exam_paper": {
+                "ready": bool(assessment_plan_source),
+                "source_type": "assessment_plan",
+                "source_label": "课程考核计划表",
+                "source_record": assessment_plan_source,
+                "message": "" if assessment_plan_source else "请先在本课堂导入或生成“课程考核计划表”，再根据计划表生成课程考核试卷。",
+            },
+            "grading_rubric": {
+                "ready": bool(exam_paper_source),
+                "source_type": "exam_paper",
+                "source_label": "课程考核试卷",
+                "source_record": exam_paper_source,
+                "message": "" if exam_paper_source else "请先在本课堂导入或生成“课程考核试卷”，再根据具体试题生成评分细则。",
+            },
+        },
+    }
 
 
 @router.post("/api/classrooms/{class_offering_id}/final-materials/generate", response_class=JSONResponse)

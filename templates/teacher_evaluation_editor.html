@@ -11,8 +11,9 @@
         <a class="lp-btn lp-btn--ghost" href="/manage/teaching/teacher-evaluations">← 返回教师评学表库</a>
         <strong class="lp-editor__title" id="te-editor-title">{{ evaluation.title }}</strong>
         <div class="lp-editor__header-actions">
+            <span class="lp-editor__save-state is-clean" id="te-save-state" aria-live="polite">已保存</span>
             <span class="ap-score-pill" id="te-score-pill">总分 — · 综合评价 —</span>
-            <a class="lp-btn lp-btn--ghost" href="/teacher-evaluation/{{ evaluation.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
+            <a class="lp-btn lp-btn--ghost" id="te-open-preview" href="/teacher-evaluation/{{ evaluation.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
             <button type="button" class="lp-btn lp-btn--primary" id="te-save">保存</button>
         </div>
     </header>
@@ -57,10 +58,12 @@
 
         <section class="lp-editor__preview">
             <div class="lp-editor__preview-bar">
-                <span>实时预览</span>
-                <button type="button" class="lp-btn lp-btn--ghost" id="te-refresh-preview">刷新预览</button>
+                <span>当前保存版预览</span>
+                <button type="button" class="lp-btn lp-btn--ghost" id="te-refresh-preview">保存并刷新预览</button>
                 <button type="button" class="lp-btn lp-btn--ghost" id="te-export-word">导出 Word</button>
+                <button type="button" class="lp-btn lp-btn--ghost" id="te-export-pdf">导出 PDF</button>
             </div>
+            <div class="lp-editor__export-gate" id="te-export-gate" hidden></div>
             <iframe id="te-preview-frame" class="lp-editor__frame" src="/teacher-evaluation/{{ evaluation.id }}/preview" title="教师评学表预览"></iframe>
         </section>
     </main>
@@ -78,6 +81,6 @@
     }
     </script>
     <script type="module" src="{{ asset_url('js/auth.js') }}"></script>
-    <script type="module" src="{{ asset_url('js/teacher_evaluation_editor.js') }}?v=20260707-3"></script>
+    <script type="module" src="{{ asset_url('js/teacher_evaluation_editor.js') }}"></script>
 </body>
 </html>

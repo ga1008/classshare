@@ -52,7 +52,85 @@
             <div class="materials-section-header">
                 <h3>AI 解析</h3>
             </div>
-            {% if material.ai_parse_result %}
+            {% if material.ai_import_record %}
+            {% set ai_record = material.ai_import_record %}
+            {% set ai_summary = ai_record.summary or {} %}
+            <div class="materials-ai-import-summary materials-viewer-ai-import">
+                <div class="materials-ai-import-summary-head">
+                    <div>
+                        <span>过程材料解析结果</span>
+                        <strong>{{ ai_summary.document_type_label or ai_record.document_type_label or '过程材料' }}</strong>
+                    </div>
+                    <em class="{{ 'is-warning' if ai_summary.warning_count else 'is-ok' }}">
+                        {{ ai_summary.warning_count ~ ' 项提醒' if ai_summary.warning_count else '可导出' }}
+                    </em>
+                </div>
+                <div class="materials-ai-import-summary-meta">
+                    <div>
+                        <span>来源</span>
+                        <strong>
+                            {{ ai_summary.parse_mode_label or '导入解析' }}{% if ai_summary.source_file_name %} · {{ ai_summary.source_file_name }}{% endif %}
+                        </strong>
+                    </div>
+                    <div>
+                        <span>格式</span>
+                        <strong>{{ (ai_summary.export_formats or []) | join(' / ') or '已生成' }}</strong>
+                    </div>
+                    <div>
+                        <span>质量</span>
+                        <strong>{{ ai_summary.content_quality_label or '未校验' }}</strong>
+                    </div>
+                    {% if ai_summary.updated_at %}
+                    <div>
+                        <span>完成时间</span>
+                        <strong>{{ ai_summary.updated_at }}</strong>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if ai_summary.field_items %}
+                <div class="materials-ai-import-summary-fields">
+                    {% for item in ai_summary.field_items[:6] %}
+                    <div>
+                        <span>{{ item.label }}</span>
+                        <strong>{{ item.value }}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if ai_summary.warnings %}
+                <details class="materials-ai-import-summary-detail">
+                    <summary>查看解析提醒</summary>
+                    <ul class="materials-ai-import-summary-warnings">
+                        {% for warning in ai_summary.warnings %}
+                        <li>{{ warning }}</li>
+                        {% endfor %}
+                        {% if ai_summary.has_more_warnings %}
+                        <li>还有更多提醒，请在材料详情中复核。</li>
+                        {% endif %}
+                    </ul>
+                </details>
+                {% endif %}
+                <div class="materials-ai-import-summary-actions">
+                    {% if ai_record.render_preview_url %}
+                    <a href="{{ ai_record.render_preview_url }}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>
+                    {% endif %}
+                    {% if ai_record.export_url %}
+                    <button type="button"
+                            class="btn btn-primary btn-sm"
+                            data-process-export-url="{{ ai_record.export_url }}"
+                            data-process-export-label="{{ 'Excel' if ai_record.document_type in ['ordinary_grade_record', 'exam_grade_record'] else 'Word' }}">
+                        {{ '导出 Excel' if ai_record.document_type in ['ordinary_grade_record', 'exam_grade_record'] else '导出 Word' }}
+                    </button>
+                    {% endif %}
+                    {% if ai_record.export_pdf_url %}
+                    <button type="button"
+                            class="btn btn-outline btn-sm"
+                            data-process-export-url="{{ ai_record.export_pdf_url }}"
+                            data-process-export-label="PDF">导出 PDF</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% elif material.ai_parse_result %}
             <div class="text-muted text-sm mb-2">{{ material.ai_parse_result.summary or '暂无摘要。' }}</div>
             {% if material.ai_parse_result.keywords %}
             <div class="text-muted text-sm">关键词：{{ material.ai_parse_result.keywords | join('、') }}</div>
@@ -84,7 +162,26 @@
                     {{ '查看原稿' if material.preview_variant == 'optimized' else '查看优化稿' }}
                 </a>
                 {% endif %}
+                {% if material.ai_import_record and material.ai_import_record.render_preview_url %}
+                <a href="{{ material.ai_import_record.render_preview_url }}" class="btn btn-outline" target="_blank" rel="noopener">渲染预览</a>
+                {% endif %}
+                {% if material.ai_import_record and material.ai_import_record.export_url %}
+                <button type="button"
+                        class="btn btn-primary"
+                        data-process-export-url="{{ material.ai_import_record.export_url }}"
+                        data-process-export-label="{{ 'Excel' if material.ai_import_record.document_type in ['ordinary_grade_record', 'exam_grade_record'] else 'Word' }}">
+                    {{ '导出 Excel' if material.ai_import_record.document_type in ['ordinary_grade_record', 'exam_grade_record'] else '导出 Word' }}
+                </button>
+                {% endif %}
+                {% if material.ai_import_record and material.ai_import_record.export_pdf_url %}
+                <button type="button"
+                        class="btn btn-outline"
+                        data-process-export-url="{{ material.ai_import_record.export_pdf_url }}"
+                        data-process-export-label="PDF">导出 PDF</button>
+                {% endif %}
+                {% if material.node_type == 'file' %}
                 <a href="{{ material.download_url }}" class="btn btn-primary">下载材料</a>
+                {% endif %}
             </div>
         </div>
 

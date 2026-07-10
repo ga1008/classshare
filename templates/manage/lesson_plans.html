@@ -20,27 +20,62 @@
     </div>
 
     <div class="manage-lp__toolbar">
-        <div class="manage-lp__search">
+        <div class="manage-lp__search" data-lp-tip="搜索会匹配标题、课程、班级、学院和标签。">
             <input type="search" data-lp-search placeholder="搜索课程 / 标题 / 班级 / 标签…" />
         </div>
         <div class="manage-lp__filters">
-            <select data-lp-filter-scope>
-                <option value="">全部范围</option>
-                <option value="mine">我的教案</option>
-                <option value="shared">他人公开</option>
-                <option value="private">私有</option>
-                <option value="department">本系部公开</option>
-                <option value="college">本院级公开</option>
-                <option value="school">全校公开</option>
-            </select>
-            <select data-lp-sort>
-                <option value="updated_desc">最近更新</option>
-                <option value="updated_asc">最早更新</option>
-                <option value="title_asc">标题 A→Z</option>
-                <option value="sessions_desc">课次最多</option>
-            </select>
+            <label data-lp-tip="按资源归属和公开范围收窄列表。">
+                <span>范围</span>
+                <select data-lp-filter-scope>
+                    <option value="">全部范围</option>
+                    <option value="mine">我的教案</option>
+                    <option value="shared">他人公开</option>
+                    <option value="private">私有</option>
+                    <option value="department">本系部公开</option>
+                    <option value="college">本院级公开</option>
+                    <option value="school">全校公开</option>
+                </select>
+            </label>
+            <label data-lp-tip="只显示指定学校的教案。">
+                <span>学校</span>
+                <select data-lp-filter-school>
+                    <option value="">全部学校</option>
+                </select>
+            </label>
+            <label data-lp-tip="按学院快速定位过程材料。">
+                <span>学院</span>
+                <select data-lp-filter-college>
+                    <option value="">全部学院</option>
+                </select>
+            </label>
+            <label data-lp-tip="按课程快速筛选。">
+                <span>课程</span>
+                <select data-lp-filter-course>
+                    <option value="">全部课程</option>
+                </select>
+            </label>
+            <label data-lp-tip="按教学班级快速筛选。">
+                <span>班级</span>
+                <select data-lp-filter-class>
+                    <option value="">全部班级</option>
+                </select>
+            </label>
+            <label data-lp-tip="支持按更新时间、名称和课次数排序。">
+                <span>排序</span>
+                <select data-lp-sort>
+                    <option value="updated_desc">最近更新</option>
+                    <option value="updated_asc">最早更新</option>
+                    <option value="title_asc">名称 A→Z</option>
+                    <option value="title_desc">名称 Z→A</option>
+                    <option value="sessions_desc">课次多到少</option>
+                    <option value="sessions_asc">课次少到多</option>
+                </select>
+            </label>
+            <button type="button" class="lp-btn lp-btn--ghost manage-lp__clear" data-lp-clear-filters hidden>清空</button>
         </div>
     </div>
+    <div class="manage-lp__quick-tags" data-lp-tags hidden></div>
+    <div class="manage-lp__active-filters" data-lp-active-filters hidden></div>
 
     <div class="manage-lp__loading" data-lp-loading>正在加载教案…</div>
     <div class="manage-lp__grid" data-lp-grid hidden></div>

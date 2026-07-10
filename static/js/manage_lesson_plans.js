@@ -1,6 +1,28 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
 import { enhancePromptPoolInput, enhancePromptPoolInputs, recordPromptForInput, recordPromptPoolInputs } from './prompt_pool.js';
+import { refreshProcessMaterialActionList, setActionButtonBusy, setProcessMaterialModalFormBusy } from './process_material_action_state.js';
+import { openProcessMaterialModal as openModal, openProcessMaterialConfirm } from './process_material_modal.js';
+import {
+    PROCESS_DOCUMENT_IMPORT_ACCEPT,
+    PROCESS_DOCUMENT_IMPORT_FORMAT_HINT,
+} from './process_material_import_policy.js';
+import { setupProcessMaterialImportPicker, setProcessMaterialImportBusyState } from './process_material_file_picker.js';
+import { renderProcessImportSummary } from './process_material_import_summary.js';
+import { bindProcessMaterialExportDownloadActions } from './process_material_editor_preview.js';
+import {
+    collectTagCounts,
+    compareDate,
+    compareNumber,
+    compareText,
+    hasMatchingSelectedTag,
+    normalizeFacetValue,
+    normalizeSearchText,
+    renderActiveFilterPills,
+    renderFacetOptions,
+    renderTagButtons,
+    uniqueFacetValues,
+} from './process_material_filters.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -10,7 +32,14 @@ const state = {
     offerings: [],
     scopeOptions: [],
     search: '',
-    scopeFilter: '',
+    filters: {
+        scope: '',
+        school: '',
+        college: '',
+        course: '',
+        className: '',
+    },
+    selectedTags: new Set(),
     sort: 'updated_desc',
     polling: null,
 };
@@ -35,31 +64,8 @@ function isBusy(plan) {
     return plan.status === 'generating' || plan.status === 'parsing';
 }
 
-// ---------------------------------------------------------------------------
-// Lightweight modal helper
-// ---------------------------------------------------------------------------
-function openModal(title, bodyHtml, { footerHtml = '', onMount, wide = false } = {}) {
-    const overlay = document.createElement('div');
-    overlay.className = 'lp-modal-overlay';
-    overlay.innerHTML = `
-        <div class="lp-modal${wide ? ' lp-modal--wide' : ''}" role="dialog" aria-modal="true">
-            <header class="lp-modal__head">
-                <h3>${escapeHtml(title)}</h3>
-                <button type="button" class="lp-modal__close" data-lp-close aria-label="关闭">×</button>
-            </header>
-            <div class="lp-modal__body">${bodyHtml}</div>
-            <footer class="lp-modal__foot">${footerHtml}</footer>
-        </div>`;
-    document.body.appendChild(overlay);
-    const close = () => overlay.remove();
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay || e.target.closest('[data-lp-close]')) close();
-    });
-    document.addEventListener('keydown', function onEsc(e) {
-        if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
-    });
-    if (onMount) onMount(overlay, close);
-    return { overlay, close };
+function showListRefreshWarning(err) {
+    showToast(err?.message || '操作已完成，但列表刷新失败，请手动刷新页面确认最新状态。', 'warning');
 }
 
 // ---------------------------------------------------------------------------
@@ -77,27 +83,110 @@ function renderSummary() {
         .join('');
 }
 
+function facetText(value) {
+    return normalizeSearchText(value);
+}
+
+function renderFilterControls() {
+    renderFacetOptions(
+        root.querySelector('[data-lp-filter-school]'),
+        uniqueFacetValues(state.plans, (item) => item.school || item.school_name),
+        state.filters.school,
+        '全部学校'
+    );
+    renderFacetOptions(
+        root.querySelector('[data-lp-filter-college]'),
+        uniqueFacetValues(state.plans, (item) => item.college),
+        state.filters.college,
+        '全部学院'
+    );
+    renderFacetOptions(
+        root.querySelector('[data-lp-filter-course]'),
+        uniqueFacetValues(state.plans, (item) => item.course_name),
+        state.filters.course,
+        '全部课程'
+    );
+    renderFacetOptions(
+        root.querySelector('[data-lp-filter-class]'),
+        uniqueFacetValues(state.plans, (item) => item.class_name),
+        state.filters.className,
+        '全部班级'
+    );
+}
+
+function hasAnyFilter() {
+    return Boolean(
+        state.search.trim()
+        || state.filters.scope
+        || state.filters.school
+        || state.filters.college
+        || state.filters.course
+        || state.filters.className
+        || state.selectedTags.size
+        || state.sort !== 'updated_desc'
+    );
+}
+
+function renderFilterState() {
+    renderFilterControls();
+    renderTagButtons({
+        container: root.querySelector('[data-lp-tags]'),
+        tags: collectTagCounts(state.plans),
+        selectedTags: state.selectedTags,
+        dataAttr: 'data-lp-tag-filter',
+    });
+    renderActiveFilterPills({
+        container: root.querySelector('[data-lp-active-filters]'),
+        entries: [
+            { label: '搜索', value: state.search },
+            { label: '范围', value: root.querySelector('[data-lp-filter-scope]')?.selectedOptions?.[0]?.textContent || '' },
+            { label: '学校', value: state.filters.school },
+            { label: '学院', value: state.filters.college },
+            { label: '课程', value: state.filters.course },
+            { label: '班级', value: state.filters.className },
+            { label: '标签', value: [...state.selectedTags].join(' / ') },
+            { label: '排序', value: state.sort === 'updated_desc' ? '' : root.querySelector('[data-lp-sort]')?.selectedOptions?.[0]?.textContent || '' },
+        ].filter((entry) => entry.label !== '范围' || state.filters.scope),
+    });
+    const clearBtn = root.querySelector('[data-lp-clear-filters]');
+    if (clearBtn) clearBtn.hidden = !hasAnyFilter();
+}
+
 function matchesFilters(plan) {
-    const q = state.search.trim().toLowerCase();
+    const q = normalizeSearchText(state.search);
     if (q) {
-        const hay = [plan.title, plan.course_name, plan.class_name, (plan.tags || []).join(' ')]
-            .join(' ').toLowerCase();
+        const hay = normalizeSearchText([
+            plan.title,
+            plan.course_name,
+            plan.class_name,
+            plan.college,
+            plan.school,
+            plan.school_name,
+            plan.semester_label,
+            (plan.tags || []).join(' '),
+        ].join(' '));
         if (!hay.includes(q)) return false;
     }
-    const f = state.scopeFilter;
-    if (!f) return true;
-    if (f === 'mine') return plan.is_owned;
-    if (f === 'shared') return !plan.is_owned;
-    return plan.scope_level === f;
+    const f = state.filters.scope;
+    if (f === 'mine' && !plan.is_owned) return false;
+    else if (f === 'shared' && plan.is_owned) return false;
+    else if (f && !['mine', 'shared'].includes(f) && plan.scope_level !== f) return false;
+    if (state.filters.school && facetText(plan.school || plan.school_name) !== facetText(state.filters.school)) return false;
+    if (state.filters.college && facetText(plan.college) !== facetText(state.filters.college)) return false;
+    if (state.filters.course && facetText(plan.course_name) !== facetText(state.filters.course)) return false;
+    if (state.filters.className && facetText(plan.class_name) !== facetText(state.filters.className)) return false;
+    return hasMatchingSelectedTag(plan.tags, state.selectedTags);
 }
 
 function sortPlans(plans) {
     const copy = [...plans];
     switch (state.sort) {
-        case 'updated_asc': return copy.sort((a, b) => (a.updated_at || '').localeCompare(b.updated_at || ''));
-        case 'title_asc': return copy.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'zh'));
-        case 'sessions_desc': return copy.sort((a, b) => (b.session_count || 0) - (a.session_count || 0));
-        default: return copy.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+        case 'updated_asc': return copy.sort((a, b) => compareDate(a.updated_at, b.updated_at, 'asc'));
+        case 'title_asc': return copy.sort((a, b) => compareText(a.title, b.title, 'asc'));
+        case 'title_desc': return copy.sort((a, b) => compareText(a.title, b.title, 'desc'));
+        case 'sessions_desc': return copy.sort((a, b) => compareNumber(a.session_count, b.session_count, 'desc') || compareDate(a.updated_at, b.updated_at, 'desc'));
+        case 'sessions_asc': return copy.sort((a, b) => compareNumber(a.session_count, b.session_count, 'asc') || compareDate(a.updated_at, b.updated_at, 'desc'));
+        default: return copy.sort((a, b) => compareDate(a.updated_at, b.updated_at, 'desc'));
     }
 }
 
@@ -107,7 +196,16 @@ function progressText(plan) {
     const done = Number(p.done || 0);
     const label = p.current_label ? `：${escapeHtml(p.current_label)}` : '';
     if (total > 0) return `第 ${done}/${total} 次课${label}`;
-    return plan.status === 'parsing' ? 'AI 正在解析文件…' : 'AI 正在准备…';
+    if (plan.status === 'parsing') return 'AI 正在解析导入文件…';
+    if (plan.source_type === 'classroom') return 'AI 正在按课次生成教案…';
+    return 'AI 正在生成教案…';
+}
+
+function renderFailedActions(plan) {
+    if (!plan.can_manage) {
+        return `<small>来源教师需处理该失败记录</small>`;
+    }
+    return `<button type="button" class="lp-btn lp-btn--danger" data-action="delete" data-id="${plan.id}">删除</button>`;
 }
 
 function renderCard(plan) {
@@ -115,6 +213,7 @@ function renderCard(plan) {
     const tags = (plan.tags || []).map((t) => `<span class="lp-tag">${escapeHtml(t)}</span>`).join('');
     const sourceBadge = `<span class="lp-source">${SOURCE_LABEL[plan.source_type] || '教案'}</span>`;
     const scopeBadge = `<span class="lp-scope">${escapeHtml(plan.scope_label || '私有')}</span>`;
+    const importSummary = renderProcessImportSummary(plan);
 
     if (isBusy(plan)) {
         const p = plan.ai_gen_progress || {};
@@ -125,6 +224,7 @@ function renderCard(plan) {
             <strong class="lp-card__title">${escapeHtml(plan.title)}</strong>
             <div class="lp-progress"><div class="lp-progress__bar" style="width:${pct}%"></div></div>
             <p class="lp-card__busy">${progressText(plan)}</p>
+            ${importSummary}
             <div class="lp-card__foot">
                 <small>请稍候，可能需要几分钟…</small>
                 <button type="button" class="lp-btn lp-btn--ghost" data-action="delete" data-id="${plan.id}">取消并删除</button>
@@ -138,9 +238,9 @@ function renderCard(plan) {
             <div class="lp-card__top"><span class="lp-status is-failed">失败</span>${sourceBadge}</div>
             <strong class="lp-card__title">${escapeHtml(plan.title)}</strong>
             <p class="lp-card__error">${escapeHtml(plan.ai_gen_error || '生成/解析失败')}</p>
+            ${importSummary}
             <div class="lp-card__foot">
-                <button type="button" class="lp-btn" data-action="retry" data-id="${plan.id}">一键重试</button>
-                <button type="button" class="lp-btn lp-btn--danger" data-action="delete" data-id="${plan.id}">删除</button>
+                ${renderFailedActions(plan)}
             </div>
         </article>`;
     }
@@ -166,6 +266,7 @@ function renderCard(plan) {
                 ${plan.class_name ? `<span>${escapeHtml(plan.class_name)}</span>` : ''}
                 <span>${plan.session_count || 0} 次课</span>
             </div>
+            ${importSummary}
             ${tags ? `<div class="lp-card__tags">${tags}</div>` : ''}
             <div class="lp-card__foot">
                 <small>${owner || ('更新于 ' + escapeHtml(formatDate(plan.updated_at)))}</small>
@@ -176,12 +277,14 @@ function renderCard(plan) {
 
 function render() {
     renderSummary();
+    renderFilterState();
     const grid = root.querySelector('[data-lp-grid]');
     const loading = root.querySelector('[data-lp-loading]');
     const empty = root.querySelector('[data-lp-empty]');
     loading.hidden = true;
     const visible = sortPlans(state.plans.filter(matchesFilters));
     if (!state.plans.length) {
+        grid.innerHTML = '';
         grid.hidden = true;
         empty.hidden = false;
         return;
@@ -191,6 +294,20 @@ function render() {
     grid.innerHTML = visible.length
         ? visible.map(renderCard).join('')
         : `<div class="manage-lp__empty" style="grid-column:1/-1">没有符合筛选条件的教案。</div>`;
+}
+
+function clearFilters() {
+    state.search = '';
+    state.filters = { scope: '', school: '', college: '', course: '', className: '' };
+    state.selectedTags.clear();
+    state.sort = 'updated_desc';
+    const search = root.querySelector('[data-lp-search]');
+    if (search) search.value = '';
+    const scope = root.querySelector('[data-lp-filter-scope]');
+    if (scope) scope.value = '';
+    const sort = root.querySelector('[data-lp-sort]');
+    if (sort) sort.value = state.sort;
+    render();
 }
 
 // ---------------------------------------------------------------------------
@@ -235,10 +352,17 @@ function openCreateBlankModal() {
             <p class="lp-form__hint">创建后进入编辑器逐项填写；也可改用「按课堂生成」让 AI 自动生成整学期内容。</p>
         </form>`;
     const footer = `<button type="button" class="lp-btn lp-btn--primary" data-lp-submit>创建并编辑</button>`;
+    let createBusy = false;
+    const setCreateBusy = (overlay, busy) => {
+        createBusy = Boolean(busy);
+        setProcessMaterialModalFormBusy(overlay, createBusy);
+    };
     openModal('空白新建教案', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            overlay.querySelector('[data-lp-submit]').addEventListener('click', async () => {
+            const submit = overlay.querySelector('[data-lp-submit]');
+            submit.addEventListener('click', async () => {
+                if (createBusy || submit.disabled) return;
                 const form = overlay.querySelector('[data-lp-form-blank]');
                 const fd = new FormData(form);
                 const payload = {
@@ -247,13 +371,20 @@ function openCreateBlankModal() {
                     session_count: Number(fd.get('session_count') || 0),
                 };
                 if (!payload.title) { showToast('请填写教案标题', 'error'); return; }
+                setActionButtonBusy(submit, true, '正在创建…');
+                setCreateBusy(overlay, true);
                 try {
                     const res = await apiFetch('/api/lesson-plans', { method: 'POST', body: payload });
-                    close();
+                    close({ force: true });
                     window.location.href = `/lesson-plan/${res.id}/edit`;
-                } catch (err) { showToast(err.message || '创建失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '创建失败', 'error');
+                    setCreateBusy(overlay, false);
+                    setActionButtonBusy(submit, false);
+                }
             });
         },
+        canClose: () => !createBusy,
     });
 }
 
@@ -408,6 +539,7 @@ function openGeneratePlannerModal() {
         loadingId: null,
         plans: new Map(),
         draggingKey: '',
+        submitting: false,
     };
     const body = `
         <div class="lp-gen-planner">
@@ -426,10 +558,32 @@ function openGeneratePlannerModal() {
         return planner.plans.get(String(planner.selectedId));
     }
 
+    function applyPlannerInteractiveState(overlay, canSubmit) {
+        const loadingCurrent = Number(planner.loadingId) === Number(planner.selectedId);
+        const plannerRoot = overlay.querySelector('.lp-gen-planner');
+        plannerRoot?.classList.toggle('is-submitting', planner.submitting);
+        plannerRoot?.setAttribute('aria-busy', planner.submitting ? 'true' : 'false');
+
+        overlay.querySelectorAll('[data-lp-close], [data-pm-close]').forEach((button) => {
+            button.disabled = planner.submitting;
+        });
+        overlay.querySelectorAll('[data-gen-course-list] button').forEach((button) => {
+            button.disabled = planner.submitting;
+        });
+        overlay.querySelectorAll('[data-gen-main] input, [data-gen-main] select, [data-gen-main] textarea, [data-gen-main] button').forEach((control) => {
+            if (planner.submitting) control.disabled = true;
+        });
+        overlay.querySelectorAll('[data-session-key]').forEach((card) => {
+            card.draggable = !planner.submitting;
+        });
+
+        const submit = overlay.querySelector('[data-gen-submit]');
+        if (submit) submit.disabled = planner.submitting || !canSubmit || loadingCurrent;
+    }
+
     function render(overlay) {
         const courseList = overlay.querySelector('[data-gen-course-list]');
         const main = overlay.querySelector('[data-gen-main]');
-        const submit = overlay.querySelector('[data-gen-submit]');
         courseList.innerHTML = offerings.map((offering) => renderPlannerCourseCard(offering, planner.selectedId)).join('');
         main.innerHTML = renderPlannerDetail(
             currentPlan(),
@@ -438,10 +592,11 @@ function openGeneratePlannerModal() {
         );
         enhancePromptPoolInputs(main);
         const canSubmit = Boolean(currentPlan()?.sessions?.length);
-        if (submit) submit.disabled = !canSubmit || Number(planner.loadingId) === Number(planner.selectedId);
+        applyPlannerInteractiveState(overlay, canSubmit);
     }
 
     async function loadPlan(overlay, offeringId, { force = false } = {}) {
+        if (planner.submitting) return;
         planner.selectedId = Number(offeringId);
         if (!force && planner.plans.has(String(offeringId))) {
             render(overlay);
@@ -518,6 +673,7 @@ function openGeneratePlannerModal() {
             loadPlan(overlay, planner.selectedId);
 
             overlay.addEventListener('click', async (e) => {
+                if (planner.submitting) return;
                 const offeringBtn = e.target.closest('[data-offering-id]');
                 if (offeringBtn) {
                     await loadPlan(overlay, Number(offeringBtn.dataset.offeringId));
@@ -543,6 +699,7 @@ function openGeneratePlannerModal() {
                     return;
                 }
                 if (action === 'draft-session') {
+                    if (actionBtn.disabled) return;
                     const plan = currentPlan();
                     const promptEl = overlay.querySelector('[data-gen-new-prompt]');
                     const prompt = (promptEl?.value || '').trim();
@@ -554,7 +711,7 @@ function openGeneratePlannerModal() {
                         plan.sessions.length,
                         Math.max(0, Number(overlay.querySelector('[data-gen-insert-index]')?.value || plan.sessions.length)),
                     );
-                    actionBtn.disabled = true;
+                    setActionButtonBusy(actionBtn, true, '正在新增…');
                     try {
                         const data = await apiFetch(`/api/lesson-plans/classroom/${planner.selectedId}/session-draft`, {
                             method: 'POST',
@@ -568,25 +725,31 @@ function openGeneratePlannerModal() {
                         draft.source_type = 'manual';
                         draft.source_session_id = 0;
                         plan.sessions.splice(insertIndex, 0, draft);
-                        await recordPromptForInput(promptEl, prompt);
+                        try { await recordPromptForInput(promptEl, prompt); } catch (_) { /* prompt pool recording is best effort */ }
                         if (promptEl) promptEl.value = '';
                         render(overlay);
                     } catch (err) {
                         showToast(err.message || '新增课次失败', 'error');
                     } finally {
-                        actionBtn.disabled = false;
+                        setActionButtonBusy(actionBtn, false);
                     }
                     return;
                 }
             });
 
             overlay.addEventListener('input', (e) => {
+                if (planner.submitting) return;
                 if (e.target.matches('[data-field]')) updateSessionField(e.target);
             });
             overlay.addEventListener('change', (e) => {
+                if (planner.submitting) return;
                 if (e.target.matches('[data-field]')) updateSessionField(e.target);
             });
             overlay.addEventListener('dragstart', (e) => {
+                if (planner.submitting) {
+                    e.preventDefault();
+                    return;
+                }
                 const card = e.target.closest('[data-session-key]');
                 if (!card) return;
                 planner.draggingKey = card.dataset.sessionKey;
@@ -594,9 +757,11 @@ function openGeneratePlannerModal() {
                 e.dataTransfer.effectAllowed = 'move';
             });
             overlay.addEventListener('dragover', (e) => {
+                if (planner.submitting) return;
                 if (planner.draggingKey && e.target.closest('[data-session-key]')) e.preventDefault();
             });
             overlay.addEventListener('drop', (e) => {
+                if (planner.submitting) return;
                 const target = e.target.closest('[data-session-key]');
                 const plan = currentPlan();
                 if (!target || !plan || !planner.draggingKey || target.dataset.sessionKey === planner.draggingKey) return;
@@ -614,6 +779,7 @@ function openGeneratePlannerModal() {
                 overlay.querySelectorAll('.is-dragging').forEach((item) => item.classList.remove('is-dragging'));
             });
             overlay.querySelector('[data-gen-submit]').addEventListener('click', async () => {
+                if (planner.submitting) return;
                 const plan = currentPlan();
                 if (!plan || !plan.sessions.length) {
                     showToast('请至少保留 1 次课。', 'error');
@@ -621,7 +787,10 @@ function openGeneratePlannerModal() {
                 }
                 const title = (overlay.querySelector('[data-gen-title]')?.value || '').trim();
                 const submit = overlay.querySelector('[data-gen-submit]');
-                submit.disabled = true;
+                if (submit.disabled) return;
+                planner.submitting = true;
+                render(overlay);
+                setActionButtonBusy(submit, true, '正在生成…');
                 try {
                     await apiFetch('/api/lesson-plans/generate', {
                         method: 'POST',
@@ -631,114 +800,112 @@ function openGeneratePlannerModal() {
                             sessions: payloadSessions(plan),
                         },
                     });
-                    await recordPromptPoolInputs(overlay);
-                    close();
+                    try { await recordPromptPoolInputs(overlay); } catch (_) { /* prompt pool recording is best effort */ }
+                    close({ force: true });
                     showToast('已开始分课次生成，列表中会显示进度。', 'success');
                     loadPlans();
                 } catch (err) {
                     showToast(err.message || '启动生成失败', 'error');
-                    submit.disabled = false;
+                    setActionButtonBusy(submit, false);
+                    planner.submitting = false;
+                    render(overlay);
                 }
             });
         },
+        canClose: () => !planner.submitting,
     });
 }
 
-function openGenerateModal() {
-    const offerings = state.offerings;
-    if (!offerings.length) {
-        showToast('你还没有可用课堂，请先在「开设课堂」创建并安排课次。', 'error');
-        return;
-    }
-    const options = offerings
-        .map((o) => `<option value="${o.id}">${escapeHtml(o.course_name)} · ${escapeHtml(o.class_name)}（${o.session_count || 0} 次课）</option>`)
-        .join('');
-    const body = `
-        <form data-lp-form-generate class="lp-form">
-            <label>选择课堂
-                <select name="class_offering_id" required>${options}</select>
-            </label>
-            <p class="lp-form__hint">系统将读取该课堂的课次安排与绑定教学文档，<strong>逐课次用思考型 AI 生成</strong>完整教案（导入/讲授 PBL 表格/小结/作业）。缺少文档的课次会先由 AI 依据前后课补全。整学期生成可能需要几分钟，可关闭此窗口，列表会以占位卡显示进度。</p>
-        </form>`;
-    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-lp-submit>开始生成</button>`;
-    openModal('按课堂生成整学期教案', body, {
-        footerHtml: footer,
-        onMount: (overlay, close) => {
-            overlay.querySelector('[data-lp-submit]').addEventListener('click', async () => {
-                const form = overlay.querySelector('[data-lp-form-generate]');
-                const offeringId = new FormData(form).get('class_offering_id');
-                if (!offeringId) { showToast('请选择课堂', 'error'); return; }
-                try {
-                    await apiFetch('/api/lesson-plans/generate', { method: 'POST', body: { class_offering_id: Number(offeringId) } });
-                    close();
-                    showToast('已开始生成，列表中将显示进度。', 'success');
-                    loadPlans();
-                } catch (err) { showToast(err.message || '启动生成失败', 'error'); }
-            });
-        },
-    });
+function renderImportRetryNote(id) {
+    if (!id) return '';
+    const plan = state.plans.find((item) => String(item.id) === String(id));
+    const sourceTitle = plan?.import_summary?.source_file_title || plan?.title || '这条失败记录';
+    return `
+        <div class="lp-import-retry-note" role="note">
+            <strong>重新上传模式</strong>
+            <span>本次会新建一条解析任务，不会覆盖「${escapeHtml(sourceTitle)}」；新任务成功后，可返回列表删除旧失败记录。</span>
+        </div>`;
 }
 
-function openImportModal() {
+function openImportModal({ retryingFailedId = null } = {}) {
+    const retryNote = renderImportRetryNote(retryingFailedId);
     const body = `
         <div class="lp-import">
+            ${retryNote}
             <div class="lp-dropzone" data-lp-dropzone>
                 <p>拖拽文件到此处，或<button type="button" class="lp-link" data-lp-pick>点击选择文件</button></p>
-                <small>支持 doc / docx / pdf / png / jpg 等，可多选；单文件 ≤ 30MB，最多 8 个。</small>
+                <small>${escapeHtml(PROCESS_DOCUMENT_IMPORT_FORMAT_HINT)} 单文件 ≤ 30MB，最多 8 个。</small>
                 <input type="file" data-lp-file multiple hidden
-                       accept=".doc,.docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif,.md,.txt">
+                       accept="${PROCESS_DOCUMENT_IMPORT_ACCEPT}">
+            </div>
+            <div class="lp-import-policy" data-lp-import-policy>
+                <strong>解析后保留</strong>
+                <span>课次安排、讲授/PBL 表格、小结与作业会进入结构化教案，便于继续预览和导出。</span>
             </div>
             <ul class="lp-filelist" data-lp-filelist></ul>
+            <div class="lp-import-selection" id="lp-import-selection-status" data-lp-import-selection>
+                <span id="lp-import-selection-message" class="lp-import-selection__message" data-selection-message role="status" aria-live="polite">尚未选择文件，请先选择要导入解析的文件。</span>
+            </div>
             <label class="lp-form__full">给 AI 的额外提示（可选）
                 <textarea data-lp-extra data-prompt-pool-key="lesson_plan.import" rows="3" placeholder="如：这是 Linux 课程教案，请重点保留每节课的 PBL 表格与作业分层。"></textarea>
             </label>
             <p class="lp-form__hint">点击导入后将调用<strong>思考 + 多模态 AI</strong>解析，可能需要几分钟。窗口会关闭并在列表中以占位卡显示「解析中」，完成后自动出现。</p>
         </div>`;
-    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-lp-submit>开始导入解析</button>`;
-    openModal('导入教案文件', body, {
+    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-lp-submit aria-describedby="lp-import-selection-message">开始导入解析</button>`;
+    let importBusy = false;
+    const setImportBusy = (overlay, busy) => {
+        importBusy = Boolean(busy);
+        setProcessMaterialImportBusyState(overlay, importBusy);
+    };
+    openModal(retryingFailedId ? '重新上传教案文件' : '导入教案文件', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            const picked = [];
-            const input = overlay.querySelector('[data-lp-file]');
             const promptInput = overlay.querySelector('[data-lp-extra]');
             enhancePromptPoolInput(promptInput);
-            const listEl = overlay.querySelector('[data-lp-filelist]');
-            const dz = overlay.querySelector('[data-lp-dropzone]');
-            const renderFiles = () => {
-                listEl.innerHTML = picked.map((f, i) => `
-                    <li><span>${escapeHtml(f.name)}</span>
-                    <button type="button" class="lp-link" data-rm="${i}">移除</button></li>`).join('');
-            };
-            const addFiles = (files) => {
-                for (const f of files) {
-                    if (picked.length >= 8) { showToast('最多 8 个文件', 'error'); break; }
-                    picked.push(f);
-                }
-                renderFiles();
-            };
-            overlay.querySelector('[data-lp-pick]').addEventListener('click', () => input.click());
-            input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
-            listEl.addEventListener('click', (e) => {
-                const rm = e.target.closest('[data-rm]');
-                if (rm) { picked.splice(Number(rm.dataset.rm), 1); renderFiles(); }
+            const submit = overlay.querySelector('[data-lp-submit]');
+            const filePicker = setupProcessMaterialImportPicker({
+                overlay,
+                inputSelector: '[data-lp-file]',
+                pickSelector: '[data-lp-pick]',
+                listSelector: '[data-lp-filelist]',
+                dropzoneSelector: '[data-lp-dropzone]',
+                selectionSelector: '[data-lp-import-selection]',
+                submitSelector: '[data-lp-submit]',
+                showToast,
             });
-            ['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('is-over'); }));
-            ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('is-over'); }));
-            dz.addEventListener('drop', (e) => { if (e.dataTransfer?.files) addFiles(e.dataTransfer.files); });
-            overlay.querySelector('[data-lp-submit]').addEventListener('click', async () => {
-                if (!picked.length) { showToast('请先选择文件', 'error'); return; }
+            submit.addEventListener('click', async () => {
+                if (submit.disabled) return;
+                if (!filePicker.hasFiles()) {
+                    showToast('请先选择文件', 'error');
+                    filePicker.updateSubmitState();
+                    return;
+                }
                 const fd = new FormData();
-                picked.forEach((f) => fd.append('files', f));
+                filePicker.getFiles().forEach((f) => fd.append('files', f));
                 fd.append('extra_prompt', overlay.querySelector('[data-lp-extra]').value || '');
+                setImportBusy(overlay, true);
+                setActionButtonBusy(submit, true, '正在解析…');
+                filePicker.updateSubmitState();
                 try {
                     await apiFetch('/api/lesson-plans/import', { method: 'POST', body: fd });
-                    await recordPromptForInput(promptInput);
-                    close();
-                    showToast('已开始解析，列表中将显示进度。', 'success');
+                    try { await recordPromptForInput(promptInput); } catch (_) { /* prompt pool recording is best effort */ }
+                    close({ force: true });
+                    showToast(
+                        retryingFailedId
+                            ? '已重新上传并开始解析，原失败记录仍保留，可稍后删除。'
+                            : '已开始解析，列表中将显示进度。',
+                        'success',
+                    );
                     loadPlans();
-                } catch (err) { showToast(err.message || '导入失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '导入失败', 'error');
+                    setActionButtonBusy(submit, false);
+                    setImportBusy(overlay, false);
+                    filePicker.updateSubmitState();
+                }
             });
         },
+        canClose: () => !importBusy,
     });
 }
 
@@ -758,22 +925,36 @@ async function openAttributesModal(id) {
             <p class="lp-form__hint">教案默认私有；可设为本系部 / 本院级 / 全校公开，公开后其他老师可在自己的教案库看到并一键继承。</p>
         </form>`;
     const footer = `<button type="button" class="lp-btn lp-btn--primary" data-lp-submit>保存</button>`;
+    let modalBusy = false;
+    const setModalBusy = (overlay, busy) => {
+        modalBusy = Boolean(busy);
+        setProcessMaterialModalFormBusy(overlay, modalBusy);
+    };
     openModal('教案属性', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            overlay.querySelector('[data-lp-submit]').addEventListener('click', async () => {
+            const submit = overlay.querySelector('[data-lp-submit]');
+            submit.addEventListener('click', async () => {
+                if (modalBusy || submit.disabled) return;
                 const fd = new FormData(overlay.querySelector('[data-lp-form-attr]'));
+                setActionButtonBusy(submit, true, '正在保存…');
+                setModalBusy(overlay, true);
                 try {
                     await apiFetch(`/api/lesson-plans/${id}/attributes`, {
                         method: 'PATCH',
                         body: { title: (fd.get('title') || '').trim(), scope_level: fd.get('scope_level') },
                     });
-                    close();
+                    close({ force: true });
                     showToast('已保存', 'success');
                     loadPlans();
-                } catch (err) { showToast(err.message || '保存失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '保存失败', 'error');
+                    setModalBusy(overlay, false);
+                    setActionButtonBusy(submit, false);
+                }
             });
         },
+        canClose: () => !modalBusy,
     });
 }
 
@@ -787,20 +968,34 @@ async function openTagsModal(id) {
             </label>
         </form>`;
     const footer = `<button type="button" class="lp-btn lp-btn--primary" data-lp-submit>保存标签</button>`;
+    let modalBusy = false;
+    const setModalBusy = (overlay, busy) => {
+        modalBusy = Boolean(busy);
+        setProcessMaterialModalFormBusy(overlay, modalBusy);
+    };
     openModal('设置标签', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            overlay.querySelector('[data-lp-submit]').addEventListener('click', async () => {
+            const submit = overlay.querySelector('[data-lp-submit]');
+            submit.addEventListener('click', async () => {
+                if (modalBusy || submit.disabled) return;
                 const raw = new FormData(overlay.querySelector('[data-lp-form-tags]')).get('tags') || '';
                 const tags = raw.split(/[、,，\s]+/).map((t) => t.trim()).filter(Boolean);
+                setActionButtonBusy(submit, true, '正在保存…');
+                setModalBusy(overlay, true);
                 try {
                     await apiFetch(`/api/lesson-plans/${id}/tags`, { method: 'PUT', body: { tags } });
-                    close();
+                    close({ force: true });
                     showToast('标签已更新', 'success');
                     loadPlans();
-                } catch (err) { showToast(err.message || '保存失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '保存失败', 'error');
+                    setModalBusy(overlay, false);
+                    setActionButtonBusy(submit, false);
+                }
             });
         },
+        canClose: () => !modalBusy,
     });
 }
 
@@ -811,40 +1006,71 @@ function openPreviewModal(id) {
         <div class="lp-preview">
             <div class="lp-preview__bar">
                 <span>导出：</span>
-                <a class="lp-btn" href="/api/lesson-plans/${id}/export?fmt=docx">Word (.docx)</a>
-                <a class="lp-btn" href="/api/lesson-plans/${id}/export?fmt=pdf" target="_blank" rel="noopener">PDF</a>
-                <a class="lp-btn" href="/api/lesson-plans/${id}/export?fmt=png" target="_blank" rel="noopener">PNG</a>
+                <button type="button" class="lp-btn" data-process-export-url="/api/lesson-plans/${id}/export?fmt=docx" data-process-export-label="Word">Word (.docx)</button>
+                <button type="button" class="lp-btn" data-process-export-url="/api/lesson-plans/${id}/export?fmt=pdf" data-process-export-label="PDF">PDF</button>
+                <button type="button" class="lp-btn" data-process-export-url="/api/lesson-plans/${id}/export?fmt=png" data-process-export-label="PNG">PNG</button>
                 <a class="lp-btn lp-btn--ghost" href="/lesson-plan/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>
             </div>
             <iframe class="lp-preview__frame" src="/lesson-plan/${id}/preview" title="教案预览"></iframe>
         </div>`;
-    openModal(`${title} · 渲染预览`, body, { wide: true });
+    openModal(`${title} · 渲染预览`, body, {
+        wide: true,
+        onMount: (overlay) => bindProcessMaterialExportDownloadActions(overlay, showToast, { saved: false }),
+    });
 }
 
-async function inheritPlan(id) {
-    if (!confirm('将这份公开教案继承为你自己的私有教案？继承后封面会替换为你的信息，内容可自行调整。')) return;
+async function inheritPlan(id, trigger) {
+    if (trigger?.disabled) return;
+    const confirmed = await openProcessMaterialConfirm({
+        title: '继承公开教案',
+        message: '将这份公开教案继承为你的私有教案？',
+        detail: '继承后封面会替换为你的信息，内容可继续自行调整。',
+        confirmText: '确认继承',
+    });
+    if (!confirmed) return;
+    setActionButtonBusy(trigger, true, '正在继承…');
     try {
         const res = await apiFetch(`/api/lesson-plans/${id}/inherit`, { method: 'POST' });
         showToast('已继承到你的教案库', 'success');
         window.location.href = `/lesson-plan/${res.id}/edit`;
-    } catch (err) { showToast(err.message || '继承失败', 'error'); }
+    } catch (err) {
+        showToast(err.message || '继承失败', 'error');
+        setActionButtonBusy(trigger, false);
+    }
 }
 
-async function retryPlan(id) {
+async function retryPlan(id, trigger) {
+    if (trigger?.disabled) return;
+    setActionButtonBusy(trigger, true, '正在重试…');
     try {
         await apiFetch(`/api/lesson-plans/${id}/retry`, { method: 'POST' });
         showToast('已重新开始', 'success');
-        loadPlans();
-    } catch (err) { showToast(err.message || '重试失败', 'error'); }
+        await refreshProcessMaterialActionList(trigger, loadPlans, showListRefreshWarning);
+    } catch (err) {
+        showToast(err.message || '重试失败', 'error');
+        setActionButtonBusy(trigger, false);
+    }
 }
 
-async function deletePlan(id) {
-    if (!confirm('确定删除该教案？此操作不可恢复。')) return;
+async function deletePlan(id, trigger) {
+    if (trigger?.disabled) return;
+    const confirmed = await openProcessMaterialConfirm({
+        title: '删除教案',
+        message: '确定删除该教案？',
+        detail: '删除后无法恢复，已生成的预览和导出入口也会一并失效。',
+        confirmText: '删除',
+        tone: 'danger',
+    });
+    if (!confirmed) return;
+    setActionButtonBusy(trigger, true, '正在删除…');
     try {
         await apiFetch(`/api/lesson-plans/${id}`, { method: 'DELETE' });
         showToast('已删除', 'success');
-        loadPlans();
-    } catch (err) { showToast(err.message || '删除失败', 'error'); }
+        await refreshProcessMaterialActionList(trigger, loadPlans, showListRefreshWarning);
+    } catch (err) {
+        showToast(err.message || '删除失败', 'error');
+        setActionButtonBusy(trigger, false);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -870,8 +1096,22 @@ function bindEvents() {
 
     const search = root.querySelector('[data-lp-search]');
     search.addEventListener('input', () => { state.search = search.value; render(); });
-    root.querySelector('[data-lp-filter-scope]').addEventListener('change', (e) => { state.scopeFilter = e.target.value; render(); });
+    root.querySelector('[data-lp-filter-scope]').addEventListener('change', (e) => { state.filters.scope = e.target.value; render(); });
+    root.querySelector('[data-lp-filter-school]').addEventListener('change', (e) => { state.filters.school = normalizeFacetValue(e.target.value); render(); });
+    root.querySelector('[data-lp-filter-college]').addEventListener('change', (e) => { state.filters.college = normalizeFacetValue(e.target.value); render(); });
+    root.querySelector('[data-lp-filter-course]').addEventListener('change', (e) => { state.filters.course = normalizeFacetValue(e.target.value); render(); });
+    root.querySelector('[data-lp-filter-class]').addEventListener('change', (e) => { state.filters.className = normalizeFacetValue(e.target.value); render(); });
     root.querySelector('[data-lp-sort]').addEventListener('change', (e) => { state.sort = e.target.value; render(); });
+    root.querySelector('[data-lp-clear-filters]').addEventListener('click', clearFilters);
+    root.querySelector('[data-lp-tags]').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-lp-tag-filter]');
+        if (!btn) return;
+        const tag = normalizeFacetValue(btn.dataset.lpTagFilter);
+        if (!tag) return;
+        if (state.selectedTags.has(tag)) state.selectedTags.delete(tag);
+        else state.selectedTags.add(tag);
+        render();
+    });
 
     root.querySelector('[data-lp-grid]').addEventListener('click', (e) => {
         const btn = e.target.closest('[data-action]');
@@ -882,9 +1122,10 @@ function bindEvents() {
             case 'preview': openPreviewModal(id); break;
             case 'attributes': openAttributesModal(id); break;
             case 'tags': openTagsModal(id); break;
-            case 'delete': deletePlan(id); break;
-            case 'retry': retryPlan(id); break;
-            case 'inherit': inheritPlan(id); break;
+            case 'delete': deletePlan(id, btn); break;
+            case 'retry': retryPlan(id, btn); break;
+            case 'import-again': openImportModal({ retryingFailedId: id }); break;
+            case 'inherit': inheritPlan(id, btn); break;
         }
     });
 }

@@ -2,6 +2,10 @@ import { apiFetch } from './api.js';
 import { escapeHtml, formatSize, getFileIcon, showToast } from './ui.js';
 import { enhancePromptPoolInput, enhancePromptPoolInputs, recordPromptForInput } from './prompt_pool.js';
 import {
+    bindProcessMaterialExportDownloadActions,
+    startProcessMaterialExportDownloadFromTrigger,
+} from './process_material_editor_preview.js';
+import {
     getLearningDocumentUrl,
     getMaterialPrimaryAction,
     getMaterialTypeLabel,
@@ -27,8 +31,17 @@ const state = {
     detailExportPdfUrl: '',
     ordinaryGradeCandidates: [],
     ordinaryGradeCandidatesLoaded: false,
+    ordinaryGradeCandidatesLoading: false,
+    ordinaryGradeCandidatesError: '',
     examGradeCandidates: [],
     examGradeCandidatesLoaded: false,
+    examGradeCandidatesLoading: false,
+    examGradeCandidatesError: '',
+    finalMaterialPrerequisites: {},
+    finalMaterialPrerequisitesLoaded: false,
+    finalMaterialPrerequisitesLoading: false,
+    finalMaterialPrerequisitesError: '',
+    finalMaterialBusy: false,
 };
 
 function withClassroomLearningContext(urlText) {
@@ -250,6 +263,12 @@ function compactValue(value) {
     return String(value);
 }
 
+function compactDateTime(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    return text.replace('T', ' ').slice(0, 16);
+}
+
 function getOpenUrl(item) {
     if (!item) return '';
     if (item.node_type === 'folder') return '';
@@ -394,6 +413,77 @@ function renderStructuredSummary(preview) {
     return '<p class="text-muted text-sm">这份材料暂未绑定期末材料模板。</p>';
 }
 
+function renderClassroomAiImportSummary(material, preview = null) {
+    const record = material?.ai_import_record || null;
+    const summary = record?.summary || null;
+    if (!record || !summary) return '';
+    const fieldItems = Array.isArray(summary.field_items) ? summary.field_items : [];
+    const previewWarnings = Array.isArray(preview?.warnings) ? preview.warnings : [];
+    const summaryWarnings = Array.isArray(summary.warnings) ? summary.warnings : [];
+    const warnings = summaryWarnings.length ? summaryWarnings : previewWarnings.slice(0, 3);
+    const warningCount = Number(summary.warning_count || previewWarnings.length || warnings.length || 0);
+    const qualityStatus = String(summary.content_quality_status || '').toLowerCase();
+    const warningTone = warningCount > 0 || ['failed', 'suspect', 'empty', 'too_short'].includes(qualityStatus) ? 'is-warning' : 'is-ok';
+    const exportFormats = Array.isArray(summary.export_formats) && summary.export_formats.length
+        ? summary.export_formats.join(' / ')
+        : (isExcelFinalMaterial(material, preview) ? 'Excel' : (record.export_pdf_url ? 'Word / PDF' : 'Word'));
+    const sourceLabel = [summary.parse_mode_label || record.parse_mode || '导入解析', summary.source_file_name || '']
+        .filter(Boolean)
+        .join(' · ');
+    const updatedAt = compactDateTime(summary.updated_at || record.completed_at || record.updated_at);
+    const renderPreviewUrl = preview?.render_preview_url || record.render_preview_url || '';
+    const exportUrl = preview?.export_url || record.export_url || '';
+    const exportPdfUrl = preview?.export_pdf_url || record.export_pdf_url || '';
+    const exportLabel = isExcelFinalMaterial(material, preview) ? '导出 Excel' : '导出 Word';
+    const exportDownloadLabel = isExcelFinalMaterial(material, preview) ? 'Excel' : 'Word';
+    const fieldsHtml = fieldItems.length
+        ? fieldItems.map((item) => `
+            <div>
+                <span>${escapeHtml(item.label || item.key || '字段')}</span>
+                <strong title="${escapeHtml(item.value || '')}">${escapeHtml(item.value || '-')}</strong>
+            </div>
+        `).join('')
+        : '<p class="materials-ai-import-summary-empty">暂无可展示的关键字段。</p>';
+    const warningsHtml = warningCount > 0
+        ? `
+            <ul class="materials-ai-import-summary-warnings">
+                ${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+                ${summary.has_more_warnings || warningCount > warnings.length ? '<li>还有更多警告，请打开渲染预览或导出文档核对。</li>' : ''}
+            </ul>
+        `
+        : '<p class="materials-ai-import-summary-empty">未记录解析警告。</p>';
+
+    return `
+        <section class="materials-ai-import-summary classroom-material-ai-import-summary">
+            <div class="materials-ai-import-summary-head">
+                <div>
+                    <span>过程材料解析结果</span>
+                    <strong>${escapeHtml(summary.document_type_label || record.document_type_label || '过程材料')}</strong>
+                </div>
+                <em class="${warningTone}">${warningCount > 0 ? `${escapeHtml(String(warningCount))} 条警告` : '可导出'}</em>
+            </div>
+            <div class="materials-ai-import-summary-meta">
+                <div><span>来源</span><strong>${escapeHtml(sourceLabel)}</strong></div>
+                <div><span>格式</span><strong>${escapeHtml(exportFormats)}</strong></div>
+                <div><span>质量</span><strong>${escapeHtml(summary.content_quality_label || '未校验')}</strong></div>
+                <div><span>完成</span><strong>${escapeHtml(updatedAt || '--')}</strong></div>
+            </div>
+            <div class="materials-ai-import-summary-fields">
+                ${fieldsHtml}
+            </div>
+            <details class="materials-ai-import-summary-detail" ${warningCount > 0 ? 'open' : ''}>
+                <summary>解析警告与核对点</summary>
+                ${warningsHtml}
+            </details>
+            <div class="materials-ai-import-summary-actions">
+                ${renderPreviewUrl ? `<a href="${escapeHtml(renderPreviewUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
+                ${exportUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
+                ${exportPdfUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出 PDF</button>` : ''}
+            </div>
+        </section>
+    `;
+}
+
 function renderDetailContent(material, preview = null) {
     const aiRecord = material.ai_import_record || null;
     const renderPreviewUrl = preview?.render_preview_url || aiRecord?.render_preview_url || '';
@@ -440,6 +530,7 @@ function renderDetailContent(material, preview = null) {
             </div>
         </section>
     ` : '';
+    const aiSummaryBlock = renderClassroomAiImportSummary(material, preview);
 
     return `
         <section class="classroom-material-detail-section">
@@ -452,6 +543,7 @@ function renderDetailContent(material, preview = null) {
                 `).join('')}
             </div>
         </section>
+        ${aiSummaryBlock}
         ${aiBlock}
         ${optimizeBlock}
     `;
@@ -466,6 +558,20 @@ function setDetailExportButtons(material = null, preview = null) {
     const dom = refs();
     if (dom.detailExportBtn) {
         dom.detailExportBtn.textContent = isExcelFinalMaterial(material, preview) ? '导出Excel' : '导出Word';
+        dom.detailExportBtn.dataset.processExportLabel = isExcelFinalMaterial(material, preview) ? 'Excel' : 'Word';
+        if (state.detailExportUrl) {
+            dom.detailExportBtn.dataset.processExportUrl = state.detailExportUrl;
+        } else {
+            delete dom.detailExportBtn.dataset.processExportUrl;
+        }
+    }
+    if (dom.detailExportPdfBtn) {
+        dom.detailExportPdfBtn.dataset.processExportLabel = 'PDF';
+        if (state.detailExportPdfUrl) {
+            dom.detailExportPdfBtn.dataset.processExportUrl = state.detailExportPdfUrl;
+        } else {
+            delete dom.detailExportPdfBtn.dataset.processExportUrl;
+        }
     }
 }
 
@@ -545,28 +651,91 @@ function ordinaryCandidateLabel(item) {
     return `${title}（${kind}，已评分 ${stats}${average}）`;
 }
 
+function isOrdinaryAssessmentCandidate(item) {
+    const title = String(item?.title || '');
+    return item?.kind === 'exam' || /测评|测试|考试|考核|阶段/.test(title);
+}
+
+function ordinaryGradeCandidateBuckets() {
+    const candidates = Array.isArray(state.ordinaryGradeCandidates) ? state.ordinaryGradeCandidates : [];
+    const assessment = candidates.filter(isOrdinaryAssessmentCandidate);
+    const homework = candidates.filter((item) => !isOrdinaryAssessmentCandidate(item));
+    return { homework, assessment };
+}
+
+function ordinaryOptionsHtml(items, placeholder = '请选择') {
+    return [
+        `<option value="">${escapeHtml(placeholder)}</option>`,
+        ...items.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(ordinaryCandidateLabel(item))}</option>`),
+    ].join('');
+}
+
+function getOrdinaryGradeReadiness() {
+    const dom = refs();
+    if (state.ordinaryGradeCandidatesLoading) {
+        return { ready: false, message: '正在读取当前课堂的作业和测评...' };
+    }
+    if (state.ordinaryGradeCandidatesError) {
+        return { ready: false, message: state.ordinaryGradeCandidatesError };
+    }
+    if (!state.ordinaryGradeCandidatesLoaded) {
+        return { ready: false, message: '请等待系统读取当前课堂的作业和测评。' };
+    }
+    const buckets = ordinaryGradeCandidateBuckets();
+    if (buckets.homework.length < 3 || buckets.assessment.length < 1) {
+        return {
+            ready: false,
+            message: `当前课堂还缺少可用来源：需要 3 份作业和 1 份测评，目前识别到 ${buckets.homework.length} 份作业、${buckets.assessment.length} 份测评。`,
+        };
+    }
+    const homeworkIds = (dom.ordinaryHomeworkSelects || [])
+        .map((select) => Number(select?.value || 0))
+        .filter((value) => value > 0);
+    const assessmentId = Number(dom.ordinaryAssessmentSelect?.value || 0);
+    if (homeworkIds.length !== 3 || assessmentId <= 0) {
+        return { ready: false, message: '请选择 3 份平时作业和 1 份测评。' };
+    }
+    if (new Set([...homeworkIds, assessmentId]).size !== 4) {
+        return { ready: false, message: '三次作业和一次测评不能重复。' };
+    }
+    return { ready: true, message: '' };
+}
+
+function refreshOrdinaryGradeAvailabilityStatus() {
+    const dom = refs();
+    const readiness = getOrdinaryGradeReadiness();
+    if (dom.ordinaryGradeStatus) {
+        dom.ordinaryGradeStatus.hidden = readiness.ready || !readiness.message;
+        dom.ordinaryGradeStatus.textContent = readiness.message || '';
+    }
+    updateFinalMaterialSubmitState();
+    return readiness;
+}
+
 function populateOrdinaryGradeSelects() {
     const dom = refs();
-    const selects = [...(dom.ordinaryHomeworkSelects || []), dom.ordinaryAssessmentSelect].filter(Boolean);
-    const options = [
-        '<option value="">请选择</option>',
-        ...state.ordinaryGradeCandidates.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(ordinaryCandidateLabel(item))}</option>`),
-    ].join('');
-    selects.forEach((select) => {
+    const buckets = ordinaryGradeCandidateBuckets();
+    const homeworkOptions = ordinaryOptionsHtml(buckets.homework, buckets.homework.length ? '请选择作业' : '暂无可用作业');
+    const assessmentOptions = ordinaryOptionsHtml(buckets.assessment, buckets.assessment.length ? '请选择测评' : '暂无可用测评');
+    dom.ordinaryHomeworkSelects?.forEach((select, index) => {
+        if (!select) return;
         const previous = select.value;
-        select.innerHTML = options;
-        if (previous && state.ordinaryGradeCandidates.some((item) => String(item.id) === String(previous))) {
+        select.innerHTML = homeworkOptions;
+        select.disabled = buckets.homework.length === 0;
+        if (previous && buckets.homework.some((item) => String(item.id) === String(previous))) {
             select.value = previous;
+        } else if (buckets.homework[index]) {
+            select.value = String(buckets.homework[index].id);
         }
     });
-    if (state.ordinaryGradeCandidates.length >= 4) {
-        dom.ordinaryHomeworkSelects?.forEach((select, index) => {
-            if (select && !select.value && state.ordinaryGradeCandidates[index]) {
-                select.value = String(state.ordinaryGradeCandidates[index].id);
-            }
-        });
-        if (dom.ordinaryAssessmentSelect && !dom.ordinaryAssessmentSelect.value && state.ordinaryGradeCandidates[3]) {
-            dom.ordinaryAssessmentSelect.value = String(state.ordinaryGradeCandidates[3].id);
+    if (dom.ordinaryAssessmentSelect) {
+        const previous = dom.ordinaryAssessmentSelect.value;
+        dom.ordinaryAssessmentSelect.innerHTML = assessmentOptions;
+        dom.ordinaryAssessmentSelect.disabled = buckets.assessment.length === 0;
+        if (previous && buckets.assessment.some((item) => String(item.id) === String(previous))) {
+            dom.ordinaryAssessmentSelect.value = previous;
+        } else if (buckets.assessment[0]) {
+            dom.ordinaryAssessmentSelect.value = String(buckets.assessment[0].id);
         }
     }
 }
@@ -575,31 +744,31 @@ async function loadOrdinaryGradeCandidates() {
     const dom = refs();
     if (state.ordinaryGradeCandidatesLoaded) {
         populateOrdinaryGradeSelects();
+        refreshOrdinaryGradeAvailabilityStatus();
         return;
     }
+    if (state.ordinaryGradeCandidatesLoading) {
+        refreshOrdinaryGradeAvailabilityStatus();
+        return;
+    }
+    state.ordinaryGradeCandidatesLoading = true;
+    state.ordinaryGradeCandidatesError = '';
     if (dom.ordinaryGradeStatus) {
         dom.ordinaryGradeStatus.hidden = false;
         dom.ordinaryGradeStatus.textContent = '正在读取当前课堂的作业和测评...';
     }
+    updateFinalMaterialSubmitState();
     try {
         const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/ordinary-grade-record/candidates`, { silent: true });
         state.ordinaryGradeCandidates = Array.isArray(data.items) ? data.items : [];
         state.ordinaryGradeCandidatesLoaded = true;
+        state.ordinaryGradeCandidatesError = '';
         populateOrdinaryGradeSelects();
-        if (dom.ordinaryGradeStatus) {
-            if (state.ordinaryGradeCandidates.length < 4) {
-                dom.ordinaryGradeStatus.hidden = false;
-                dom.ordinaryGradeStatus.textContent = '当前课堂至少需要 4 份已发布或可评分的作业/测评记录。';
-            } else {
-                dom.ordinaryGradeStatus.hidden = true;
-                dom.ordinaryGradeStatus.textContent = '';
-            }
-        }
     } catch (error) {
-        if (dom.ordinaryGradeStatus) {
-            dom.ordinaryGradeStatus.hidden = false;
-            dom.ordinaryGradeStatus.textContent = error.message || '读取作业候选失败';
-        }
+        state.ordinaryGradeCandidatesError = error.message || '读取作业候选失败';
+    } finally {
+        state.ordinaryGradeCandidatesLoading = false;
+        refreshOrdinaryGradeAvailabilityStatus();
     }
 }
 
@@ -641,35 +810,66 @@ function populateExamGradeSelect() {
     }
 }
 
+function getExamGradeReadiness() {
+    const dom = refs();
+    if (state.examGradeCandidatesLoading) {
+        return { ready: false, message: '正在读取当前课堂的考试成绩...' };
+    }
+    if (state.examGradeCandidatesError) {
+        return { ready: false, message: state.examGradeCandidatesError };
+    }
+    if (!state.examGradeCandidatesLoaded) {
+        return { ready: false, message: '请等待系统读取当前课堂的考试成绩。' };
+    }
+    if (!state.examGradeCandidates.length) {
+        return { ready: false, message: '当前课堂还没有可用于生成登分表的考试记录。' };
+    }
+    if (Number(dom.examGradeSelect?.value || 0) <= 0) {
+        return { ready: false, message: '请选择一个用于生成考核登分表的考试。' };
+    }
+    return { ready: true, message: '' };
+}
+
+function refreshExamGradeAvailabilityStatus() {
+    const dom = refs();
+    const readiness = getExamGradeReadiness();
+    if (dom.examGradeStatus) {
+        dom.examGradeStatus.hidden = readiness.ready || !readiness.message;
+        dom.examGradeStatus.textContent = readiness.message || '';
+    }
+    updateFinalMaterialSubmitState();
+    return readiness;
+}
+
 async function loadExamGradeCandidates() {
     const dom = refs();
     if (state.examGradeCandidatesLoaded) {
         populateExamGradeSelect();
+        refreshExamGradeAvailabilityStatus();
         return;
     }
+    if (state.examGradeCandidatesLoading) {
+        refreshExamGradeAvailabilityStatus();
+        return;
+    }
+    state.examGradeCandidatesLoading = true;
+    state.examGradeCandidatesError = '';
     if (dom.examGradeStatus) {
         dom.examGradeStatus.hidden = false;
         dom.examGradeStatus.textContent = '正在读取当前课堂的考试成绩...';
     }
+    updateFinalMaterialSubmitState();
     try {
         const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/exam-grade-record/candidates`, { silent: true });
         state.examGradeCandidates = Array.isArray(data.items) ? data.items : [];
         state.examGradeCandidatesLoaded = true;
+        state.examGradeCandidatesError = '';
         populateExamGradeSelect();
-        if (dom.examGradeStatus) {
-            if (!state.examGradeCandidates.length) {
-                dom.examGradeStatus.hidden = false;
-                dom.examGradeStatus.textContent = '当前课堂还没有可用于生成登分表的考试记录。';
-            } else {
-                dom.examGradeStatus.hidden = true;
-                dom.examGradeStatus.textContent = '';
-            }
-        }
     } catch (error) {
-        if (dom.examGradeStatus) {
-            dom.examGradeStatus.hidden = false;
-            dom.examGradeStatus.textContent = error.message || '读取考试候选失败';
-        }
+        state.examGradeCandidatesError = error.message || '读取考试候选失败';
+    } finally {
+        state.examGradeCandidatesLoading = false;
+        refreshExamGradeAvailabilityStatus();
     }
 }
 
@@ -680,6 +880,107 @@ function collectExamGradeSelection() {
         throw new Error('请选择一个用于生成考核登分表的考试。');
     }
     return { examAssignmentId };
+}
+
+function setFinalMaterialStatus(message = '', kind = '') {
+    const statusEl = refs().finalMaterialStatus;
+    if (!statusEl) return;
+    const text = String(message || '').trim();
+    statusEl.hidden = !text;
+    statusEl.textContent = text;
+    if (kind) {
+        statusEl.dataset.statusKind = kind;
+    } else {
+        delete statusEl.dataset.statusKind;
+    }
+}
+
+function needsFinalMaterialPrerequisites(documentType) {
+    return documentType === 'exam_paper' || documentType === 'grading_rubric';
+}
+
+function getFinalMaterialSourceReadiness(documentType) {
+    if (!needsFinalMaterialPrerequisites(documentType)) {
+        return { ready: true, message: '', sourceMessage: '' };
+    }
+    if (state.finalMaterialPrerequisitesLoading) {
+        return { ready: false, message: '正在确认当前课堂的前置材料...' };
+    }
+    if (state.finalMaterialPrerequisitesError) {
+        return { ready: false, message: state.finalMaterialPrerequisitesError };
+    }
+    if (!state.finalMaterialPrerequisitesLoaded) {
+        return { ready: false, message: '请等待系统确认当前课堂是否已有前置材料。' };
+    }
+    const prerequisite = state.finalMaterialPrerequisites?.[documentType] || {};
+    if (!prerequisite.ready) {
+        return {
+            ready: false,
+            message: prerequisite.message || (
+                documentType === 'grading_rubric'
+                    ? '请先在本课堂导入或生成课程考核试卷，再生成评分细则。'
+                    : '请先在本课堂导入或生成课程考核计划表，再生成课程考核试卷。'
+            ),
+        };
+    }
+    const source = prerequisite.source_record || {};
+    const sourceLabel = prerequisite.source_label || source.document_type_label || (
+        documentType === 'grading_rubric' ? '课程考核试卷' : '课程考核计划表'
+    );
+    const title = compactValue(source.title || sourceLabel);
+    const updatedAt = compactDateTime(source.updated_at);
+    const action = documentType === 'grading_rubric'
+        ? '生成评分细则时会按这份试卷逐题拆分给分点、扣分项和截图/提交要求。'
+        : '生成试卷时会继承这份计划表的考核形式、分值分布和课程字段。';
+    const updatedPart = updatedAt ? `（更新于 ${updatedAt}）` : '';
+    return {
+        ready: true,
+        message: '',
+        sourceMessage: `已关联${sourceLabel}：《${title}》${updatedPart}。${action}`,
+    };
+}
+
+function refreshFinalMaterialBlockingStatus(blockingMessage = getFinalMaterialBlockingMessage()) {
+    const statusEl = refs().finalMaterialStatus;
+    if (!statusEl || state.finalMaterialBusy) return;
+    if (blockingMessage) {
+        setFinalMaterialStatus(blockingMessage, 'blocking');
+        return;
+    }
+    const documentType = refs().finalMaterialType?.value || '';
+    const readiness = getFinalMaterialSourceReadiness(documentType);
+    if (readiness.ready && readiness.sourceMessage) {
+        setFinalMaterialStatus(readiness.sourceMessage, 'success');
+        return;
+    }
+    if (statusEl.dataset.statusKind === 'blocking' || statusEl.dataset.statusKind === 'success') {
+        setFinalMaterialStatus('', '');
+    }
+}
+
+async function loadFinalMaterialPrerequisites({ force = false } = {}) {
+    if (state.finalMaterialPrerequisitesLoaded && !force) {
+        updateFinalMaterialSubmitState();
+        return;
+    }
+    if (state.finalMaterialPrerequisitesLoading) {
+        updateFinalMaterialSubmitState();
+        return;
+    }
+    state.finalMaterialPrerequisitesLoading = true;
+    state.finalMaterialPrerequisitesError = '';
+    updateFinalMaterialSubmitState();
+    try {
+        const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/final-materials/prerequisites`, { silent: true });
+        state.finalMaterialPrerequisites = data.prerequisites || {};
+        state.finalMaterialPrerequisitesLoaded = true;
+        state.finalMaterialPrerequisitesError = '';
+    } catch (error) {
+        state.finalMaterialPrerequisitesError = error.message || '读取期末材料前置来源失败';
+    } finally {
+        state.finalMaterialPrerequisitesLoading = false;
+        updateFinalMaterialSubmitState();
+    }
 }
 
 function updateFinalMaterialTemplateOptions() {
@@ -711,6 +1012,9 @@ function updateFinalMaterialTemplateOptions() {
     if (isExamGrade) {
         loadExamGradeCandidates();
     }
+    if (isExamPaper || isGradingRubric) {
+        loadFinalMaterialPrerequisites();
+    }
     if (isAssessmentPlan && dom.finalMaterialAssessmentMethod && !dom.finalMaterialAssessmentMethod.value.trim()) {
         dom.finalMaterialAssessmentMethod.value = dom.finalMaterialAssessmentMode?.value === 'written' ? '闭卷笔试' : '机试';
     }
@@ -727,6 +1031,35 @@ function updateFinalMaterialTemplateOptions() {
             dom.finalMaterialPrompt.placeholder = '例如：根据本课堂最新考核计划表，围绕 Linux 服务部署、数据库授权、脚本备份设计机试任务，写清截图编号、提交物和考试时长。';
         }
     }
+    updateFinalMaterialSubmitState();
+}
+
+function getFinalMaterialBlockingMessage() {
+    const dom = refs();
+    const documentType = dom.finalMaterialType?.value || '';
+    if (documentType === 'ordinary_grade_record') {
+        return getOrdinaryGradeReadiness().message;
+    }
+    if (documentType === 'exam_grade_record') {
+        return getExamGradeReadiness().message;
+    }
+    if (needsFinalMaterialPrerequisites(documentType)) {
+        return getFinalMaterialSourceReadiness(documentType).message;
+    }
+    return '';
+}
+
+function updateFinalMaterialSubmitState() {
+    const dom = refs();
+    if (!dom.finalMaterialSubmitBtn) return;
+    const blockingMessage = getFinalMaterialBlockingMessage();
+    const disabled = state.finalMaterialBusy || Boolean(blockingMessage);
+    dom.finalMaterialSubmitBtn.disabled = disabled;
+    dom.finalMaterialSubmitBtn.textContent = state.finalMaterialBusy
+        ? '生成中...'
+        : (blockingMessage ? '请先补齐来源' : '生成并保存');
+    dom.finalMaterialSubmitBtn.title = blockingMessage || '';
+    refreshFinalMaterialBlockingStatus(blockingMessage);
 }
 
 function updateAssessmentMethodDefault() {
@@ -742,17 +1075,20 @@ async function submitFinalMaterialGeneration() {
     if (!dom.finalMaterialSubmitBtn) return;
     const documentType = dom.finalMaterialType?.value || 'exam_paper';
     const prompt = dom.finalMaterialPrompt?.value || '';
-    const statusEl = dom.finalMaterialStatus;
+    const blockingMessage = getFinalMaterialBlockingMessage();
+    if (blockingMessage) {
+        setFinalMaterialStatus(blockingMessage, 'blocking');
+        showToast(blockingMessage, 'warning');
+        updateFinalMaterialSubmitState();
+        return;
+    }
     let ordinarySelection = null;
     let examGradeSelection = null;
     if (documentType === 'ordinary_grade_record') {
         try {
             ordinarySelection = collectOrdinaryGradeSelection();
         } catch (error) {
-            if (statusEl) {
-                statusEl.hidden = false;
-                statusEl.textContent = error.message || '请选择成绩来源';
-            }
+            setFinalMaterialStatus(error.message || '请选择成绩来源', 'blocking');
             showToast(error.message || '请选择成绩来源', 'warning');
             return;
         }
@@ -761,19 +1097,14 @@ async function submitFinalMaterialGeneration() {
         try {
             examGradeSelection = collectExamGradeSelection();
         } catch (error) {
-            if (statusEl) {
-                statusEl.hidden = false;
-                statusEl.textContent = error.message || '请选择考试';
-            }
+            setFinalMaterialStatus(error.message || '请选择考试', 'blocking');
             showToast(error.message || '请选择考试', 'warning');
             return;
         }
     }
-    dom.finalMaterialSubmitBtn.disabled = true;
-    if (statusEl) {
-        statusEl.hidden = false;
-        statusEl.textContent = '正在生成并保存材料...';
-    }
+    state.finalMaterialBusy = true;
+    updateFinalMaterialSubmitState();
+    setFinalMaterialStatus('正在生成并保存材料...', 'progress');
     try {
         const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/final-materials/generate`, {
             method: 'POST',
@@ -791,12 +1122,15 @@ async function submitFinalMaterialGeneration() {
         showToast(data.message || '期末材料已生成', 'success');
         await recordPromptForInput(dom.finalMaterialPrompt, prompt);
         closeModal(dom.finalMaterialModal);
+        state.finalMaterialPrerequisitesLoaded = false;
+        state.finalMaterialPrerequisites = {};
         await loadMaterials(state.currentParentId, false);
     } catch (error) {
-        if (statusEl) statusEl.textContent = error.message || '生成失败';
+        setFinalMaterialStatus(error.message || '生成失败', 'error');
         showToast(error.message || '生成失败', 'error');
     } finally {
-        dom.finalMaterialSubmitBtn.disabled = false;
+        state.finalMaterialBusy = false;
+        updateFinalMaterialSubmitState();
     }
 }
 
@@ -861,11 +1195,43 @@ async function downloadSelected(ids) {
     URL.revokeObjectURL(url);
 }
 
+const FINAL_MATERIAL_TYPES = new Set([
+    'exam_paper',
+    'assessment_plan',
+    'grading_rubric',
+    'ordinary_grade_record',
+    'exam_grade_record',
+]);
+
+function openFinalMaterialModal(dom, documentType = '') {
+    if (!dom.finalMaterialModal) return;
+    const normalizedType = String(documentType || '').trim();
+    if (normalizedType && FINAL_MATERIAL_TYPES.has(normalizedType) && dom.finalMaterialType) {
+        const option = Array.from(dom.finalMaterialType.options || []).find((item) => item.value === normalizedType);
+        if (option) dom.finalMaterialType.value = normalizedType;
+    }
+    setFinalMaterialStatus('', '');
+    if (needsFinalMaterialPrerequisites(dom.finalMaterialType?.value || '')) {
+        loadFinalMaterialPrerequisites({ force: true });
+    }
+    updateFinalMaterialTemplateOptions();
+    openModal(dom.finalMaterialModal);
+    updateFinalMaterialSubmitState();
+}
+
+function openInitialFinalMaterialModalIfRequested(dom) {
+    const params = new URLSearchParams(window.location.search || '');
+    if (params.get('open_final_material') !== '1') return;
+    const documentType = params.get('final_material_type') || '';
+    window.setTimeout(() => openFinalMaterialModal(dom, documentType), 180);
+}
+
 export function init(appConfig) {
     config = appConfig;
     const dom = refs();
     if (!dom.list) return;
     enhancePromptPoolInput(dom.finalMaterialPrompt);
+    bindProcessMaterialExportDownloadActions(dom.detailContent, showToast, { saved: false });
 
     dom.refreshBtn?.addEventListener('click', () => {
         loadMaterials(state.currentParentId).catch((error) => {
@@ -896,17 +1262,16 @@ export function init(appConfig) {
     });
 
     dom.generateBtn?.addEventListener('click', () => {
-        if (!dom.finalMaterialModal) return;
-        if (dom.finalMaterialStatus) {
-            dom.finalMaterialStatus.hidden = true;
-            dom.finalMaterialStatus.textContent = '';
-        }
-        updateFinalMaterialTemplateOptions();
-        openModal(dom.finalMaterialModal);
+        openFinalMaterialModal(dom);
     });
 
     dom.finalMaterialType?.addEventListener('change', updateFinalMaterialTemplateOptions);
     dom.finalMaterialAssessmentMode?.addEventListener('change', updateAssessmentMethodDefault);
+    dom.ordinaryHomeworkSelects?.forEach((select) => {
+        select?.addEventListener('change', refreshOrdinaryGradeAvailabilityStatus);
+    });
+    dom.ordinaryAssessmentSelect?.addEventListener('change', refreshOrdinaryGradeAvailabilityStatus);
+    dom.examGradeSelect?.addEventListener('change', refreshExamGradeAvailabilityStatus);
 
     dom.finalMaterialSubmitBtn?.addEventListener('click', () => {
         submitFinalMaterialGeneration();
@@ -957,7 +1322,7 @@ export function init(appConfig) {
             showToast('这份材料暂时没有可导出的期末材料模板', 'warning');
             return;
         }
-        window.location.href = state.detailExportUrl;
+        startProcessMaterialExportDownloadFromTrigger(dom.detailExportBtn, showToast, { saved: false });
     });
 
     dom.detailExportPdfBtn?.addEventListener('click', () => {
@@ -965,7 +1330,7 @@ export function init(appConfig) {
             showToast('这份材料暂时没有可导出的 PDF 模板', 'warning');
             return;
         }
-        window.location.href = state.detailExportPdfUrl;
+        startProcessMaterialExportDownloadFromTrigger(dom.detailExportPdfBtn, showToast, { saved: false });
     });
 
     dom.detailContent?.addEventListener('click', async (event) => {
@@ -1072,6 +1437,7 @@ export function init(appConfig) {
         console.error(error);
         dom.list.innerHTML = `<div class="materials-empty">加载材料失败：${escapeHtml(error.message || '未知错误')}</div>`;
     });
+    openInitialFinalMaterialModalIfRequested(dom);
 }
 
 export async function refresh() {

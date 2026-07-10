@@ -2,6 +2,7 @@ from .common import *
 
 from ...services import assessment_plan_service as ap
 from ...services.academic_class_mapping_service import resolve_offering_display_class_name
+from ...services.process_material_recovery_service import expire_stale_assessment_plan_tasks
 
 
 router = APIRouter()
@@ -14,13 +15,14 @@ def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
                o.academic_teaching_class_name AS academic_teaching_class_name,
                co.name AS course_name, '' AS academic_course_code,
                COALESCE(NULLIF(c.academic_class_name, ''), c.name, NULLIF(o.academic_teaching_class_name, '')) AS display_class_name,
-               COALESCE(NULLIF(sem.name, ''), NULLIF(o.semester, ''), '') AS semester_label
+               COALESCE(NULLIF(sem.name, ''), NULLIF(o.semester, ''), '') AS semester_label,
+               sem.start_date AS semester_start_date
         FROM class_offerings o
         JOIN classes c ON o.class_id = c.id
         JOIN courses co ON o.course_id = co.id
         LEFT JOIN academic_semesters sem ON sem.id = o.semester_id
         WHERE o.teacher_id = ?
-        ORDER BY co.name, c.name
+        ORDER BY sem.start_date DESC, co.name, c.name
         """,
         (int(teacher_id),),
     ).fetchall()
@@ -41,6 +43,11 @@ def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
 async def manage_assessment_plans_page(request: Request, user: dict = Depends(get_current_teacher)):
     """考核计划表库管理页面（过程材料 → 考核计划表）。"""
     with get_db_connection() as conn:
+        try:
+            expire_stale_assessment_plan_tasks(conn, teacher_id=int(user["id"]))
+            conn.commit()
+        except Exception as exc:  # pragma: no cover - best-effort recovery
+            print(f"[ASSESSMENT_PLAN] stale task recovery skipped: {exc}")
         plans = ap.list_assessment_plans(conn, teacher=user)
         offerings = _list_teacher_offerings(conn, int(user["id"]))
 

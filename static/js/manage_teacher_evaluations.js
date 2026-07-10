@@ -2,6 +2,20 @@ import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
 import { openTreeSelectFormModal } from './tree_select_form_modal.js';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
+import { refreshProcessMaterialActionList, setActionButtonBusy, setProcessMaterialModalFormBusy } from './process_material_action_state.js';
+import { openProcessMaterialModal as openModal, openProcessMaterialConfirm } from './process_material_modal.js';
+import {
+    PROCESS_DOCUMENT_IMPORT_ACCEPT,
+    PROCESS_DOCUMENT_IMPORT_FORMAT_HINT,
+} from './process_material_import_policy.js';
+import { setupProcessMaterialImportPicker, setProcessMaterialImportBusyState } from './process_material_file_picker.js';
+import { renderProcessImportSummary } from './process_material_import_summary.js';
+import { bindProcessMaterialExportDownloadActions } from './process_material_editor_preview.js';
+import {
+    buildProcessMaterialOfferingTree,
+    formatProcessMaterialOfferingOptionLabel,
+    getProcessMaterialClassDisplayName,
+} from './process_material_offering_tree.js';
 import {
     collectTagCounts,
     compareDate,
@@ -57,31 +71,8 @@ function isBusy(evaluation) {
     return evaluation.status === 'generating' || evaluation.status === 'parsing';
 }
 
-// ---------------------------------------------------------------------------
-// Modal helper (reuses .lp-modal* styling)
-// ---------------------------------------------------------------------------
-function openModal(title, bodyHtml, { footerHtml = '', onMount, wide = false } = {}) {
-    const overlay = document.createElement('div');
-    overlay.className = 'lp-modal-overlay';
-    overlay.innerHTML = `
-        <div class="lp-modal${wide ? ' lp-modal--wide' : ''}" role="dialog" aria-modal="true">
-            <header class="lp-modal__head">
-                <h3>${escapeHtml(title)}</h3>
-                <button type="button" class="lp-modal__close" data-te-close aria-label="关闭">×</button>
-            </header>
-            <div class="lp-modal__body">${bodyHtml}</div>
-            <footer class="lp-modal__foot">${footerHtml}</footer>
-        </div>`;
-    document.body.appendChild(overlay);
-    const close = () => overlay.remove();
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay || e.target.closest('[data-te-close]')) close();
-    });
-    document.addEventListener('keydown', function onEsc(e) {
-        if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
-    });
-    if (onMount) onMount(overlay, close);
-    return { overlay, close };
+function showListRefreshWarning(err) {
+    showToast(err?.message || '操作已完成，但列表刷新失败，请手动刷新页面确认最新状态。', 'warning');
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +202,9 @@ function progressText(evaluation) {
     const p = evaluation.ai_gen_progress || {};
     const label = p.current_label ? escapeHtml(p.current_label) : '';
     if (label) return label;
-    return evaluation.status === 'parsing' ? 'AI 正在解析文件…' : 'AI 正在归集班级表现…';
+    if (evaluation.status === 'parsing') return 'AI 正在解析导入文件…';
+    if (evaluation.source_type === 'classroom') return 'AI 正在根据课堂资料生成教师评学表…';
+    return 'AI 正在生成教师评学表…';
 }
 
 function ratingBadge(evaluation) {
@@ -226,11 +219,19 @@ function ratingBadge(evaluation) {
     return '';
 }
 
+function renderFailedActions(evaluation) {
+    if (!evaluation.can_manage) {
+        return `<small>来源教师需处理该失败记录</small>`;
+    }
+    return `<button type="button" class="lp-btn lp-btn--danger" data-action="delete" data-id="${evaluation.id}">删除</button>`;
+}
+
 function renderCard(evaluation) {
     const meta = statusMeta(evaluation.status);
     const tags = (evaluation.tags || []).map((t) => `<span class="lp-tag">${escapeHtml(t)}</span>`).join('');
     const sourceBadge = `<span class="lp-source">${SOURCE_LABEL[evaluation.source_type] || '评学表'}</span>`;
     const scopeBadge = `<span class="lp-scope">${escapeHtml(evaluation.scope_label || '私有')}</span>`;
+    const importSummary = renderProcessImportSummary(evaluation);
 
     if (isBusy(evaluation)) {
         const p = evaluation.ai_gen_progress || {};
@@ -241,6 +242,7 @@ function renderCard(evaluation) {
             <strong class="lp-card__title">${escapeHtml(evaluation.title)}</strong>
             <div class="lp-progress"><div class="lp-progress__bar" style="width:${pct}%"></div></div>
             <p class="lp-card__busy">${progressText(evaluation)}</p>
+            ${importSummary}
             <div class="lp-card__foot">
                 <small>请稍候，可能需要一会儿…</small>
                 <button type="button" class="lp-btn lp-btn--ghost" data-action="delete" data-id="${evaluation.id}">取消并删除</button>
@@ -254,9 +256,9 @@ function renderCard(evaluation) {
             <div class="lp-card__top"><span class="lp-status is-failed">失败</span>${sourceBadge}</div>
             <strong class="lp-card__title">${escapeHtml(evaluation.title)}</strong>
             <p class="lp-card__error">${escapeHtml(evaluation.ai_gen_error || '生成/解析失败')}</p>
+            ${importSummary}
             <div class="lp-card__foot">
-                <button type="button" class="lp-btn" data-action="retry" data-id="${evaluation.id}">一键重试</button>
-                <button type="button" class="lp-btn lp-btn--danger" data-action="delete" data-id="${evaluation.id}">删除</button>
+                ${renderFailedActions(evaluation)}
             </div>
         </article>`;
     }
@@ -283,6 +285,7 @@ function renderCard(evaluation) {
                 ${evaluation.college ? `<span>${escapeHtml(evaluation.college)}</span>` : ''}
                 ${evaluation.semester_label ? `<span>${escapeHtml(evaluation.semester_label)}</span>` : ''}
             </div>
+            ${importSummary}
             ${tags ? `<div class="lp-card__tags">${tags}</div>` : ''}
             <div class="lp-card__foot">
                 <small>${owner || ('更新于 ' + escapeHtml(formatDate(evaluation.updated_at)))}</small>
@@ -300,6 +303,7 @@ function render() {
     loading.hidden = true;
     const visible = sortEvaluations(state.evaluations.filter(matchesFilters));
     if (!state.evaluations.length) {
+        grid.innerHTML = '';
         grid.hidden = true;
         empty.hidden = false;
         return;
@@ -356,14 +360,10 @@ function offeringOptionsHtml(includeBlank) {
     const blank = includeBlank ? ['<option value="">不绑定课堂（手动填写）</option>'] : [];
     return blank
         .concat(state.offerings.map((o) => {
-            const sem = o.semester_label ? ` · ${escapeHtml(o.semester_label)}` : '';
-            return `<option value="${o.id}">${escapeHtml(o.course_name)} · ${escapeHtml(classDisplayName(o))}${sem}</option>`;
+            const label = formatProcessMaterialOfferingOptionLabel(o, { includeSemester: true });
+            return `<option value="${o.id}">${escapeHtml(label)}</option>`;
         }))
         .join('');
-}
-
-function classDisplayName(offering) {
-    return offering.display_class_name || offering.academic_class_name || offering.class_name || '未命名班级';
 }
 
 function openCreateBlankModal() {
@@ -376,81 +376,37 @@ function openCreateBlankModal() {
             <p class="lp-form__hint">创建后进入编辑器，用完整表单填写基础信息、为 10 项指标打分并撰写学习情况分析。</p>
         </form>`;
     const footer = `<button type="button" class="lp-btn lp-btn--primary" data-te-submit>创建并编辑</button>`;
+    let createBusy = false;
+    const setCreateBusy = (overlay, busy) => {
+        createBusy = Boolean(busy);
+        setProcessMaterialModalFormBusy(overlay, createBusy);
+    };
     openModal('空白新建教师评学表', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            overlay.querySelector('[data-te-submit]').addEventListener('click', async () => {
+            const submit = overlay.querySelector('[data-te-submit]');
+            submit.addEventListener('click', async () => {
+                if (createBusy || submit.disabled) return;
                 const fd = new FormData(overlay.querySelector('[data-te-form-blank]'));
                 const payload = {
                     title: (fd.get('title') || '').trim(),
                     class_offering_id: fd.get('class_offering_id') || null,
                 };
+                setActionButtonBusy(submit, true, '正在创建…');
+                setCreateBusy(overlay, true);
                 try {
                     const res = await apiFetch('/api/teacher-evaluations', { method: 'POST', body: payload });
-                    close();
+                    close({ force: true });
                     window.location.href = `/teacher-evaluation/${res.id}/edit`;
-                } catch (err) { showToast(err.message || '创建失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '创建失败', 'error');
+                    setCreateBusy(overlay, false);
+                    setActionButtonBusy(submit, false);
+                }
             });
         },
+        canClose: () => !createBusy,
     });
-}
-
-function semesterSortValue(label, startDate) {
-    if (startDate) {
-        const timestamp = Date.parse(startDate);
-        if (!Number.isNaN(timestamp)) return timestamp;
-    }
-    const text = String(label || '');
-    const yearMatch = text.match(/(20\d{2})\D+(20\d{2})/);
-    const endYear = yearMatch ? Number(yearMatch[2]) : 0;
-    const singleYear = !yearMatch && text.match(/20\d{2}/) ? Number(text.match(/20\d{2}/)[0]) : 0;
-    const year = endYear || singleYear;
-    let term = 0;
-    if (/第二|下|春|2/.test(text)) term = 2;
-    else if (/第一|上|秋|1/.test(text)) term = 1;
-    return year ? year * 10 + term : 0;
-}
-
-// Group the teacher's offerings into a 学年学期 → 课程 → 班级 tree, semesters newest first.
-function buildOfferingTree() {
-    const bySemester = new Map();
-    for (const offering of state.offerings) {
-        const semesterKey = offering.semester_label || '未分配学期';
-        if (!bySemester.has(semesterKey)) {
-            bySemester.set(semesterKey, {
-                label: semesterKey,
-                sortKey: semesterSortValue(semesterKey, offering.semester_start_date),
-                courses: new Map(),
-            });
-        }
-        const semester = bySemester.get(semesterKey);
-        const nextSort = semesterSortValue(semesterKey, offering.semester_start_date);
-        if (nextSort > semester.sortKey) semester.sortKey = nextSort;
-        const courseKey = offering.course_name || '未命名课程';
-        if (!semester.courses.has(courseKey)) semester.courses.set(courseKey, []);
-        semester.courses.get(courseKey).push(offering);
-    }
-    const semesters = [...bySemester.values()].sort(
-        (a, b) => (b.sortKey - a.sortKey) || b.label.localeCompare(a.label, 'zh')
-    );
-    return semesters.map((semester) => ({
-        label: semester.label,
-        badge: `${semester.courses.size} 门课程`,
-        children: [...semester.courses.entries()]
-            .sort((a, b) => a[0].localeCompare(b[0], 'zh'))
-            .map(([courseName, offerings]) => ({
-                label: courseName,
-                badge: `${offerings.length} 个班级`,
-                children: offerings
-                    .slice()
-                    .sort((a, b) => classDisplayName(a).localeCompare(classDisplayName(b), 'zh'))
-                    .map((offering) => ({
-                        label: classDisplayName(offering),
-                        leaf: true,
-                        data: offering,
-                    })),
-            })),
-    }));
 }
 
 async function offeringPanelDescriptor(offering) {
@@ -462,7 +418,7 @@ async function offeringPanelDescriptor(offering) {
     const semesterText = [fields.academic_year, fields.semester].filter(Boolean).join(' ')
         || offering.semester_label || '—';
     const courseName = fields.course_name || offering.course_name || '';
-    const className = fields.class_name || classDisplayName(offering);
+    const className = fields.class_name || getProcessMaterialClassDisplayName(offering);
     return {
         title: '生成配置',
         baseInfo: [
@@ -500,7 +456,7 @@ function openGenerateModal() {
     openTreeSelectFormModal({
         title: '按班级生成教师评学表',
         subtitle: '先定位学年学期，再定位课程和班级',
-        tree: buildOfferingTree(),
+        tree: buildProcessMaterialOfferingTree(state.offerings),
         treeTitle: '学年学期 / 课程 / 班级',
         treeHint: '按最新学期排序',
         levelLabels: ['学期', '课程', '班级'],
@@ -534,66 +490,96 @@ function openGenerateModal() {
     });
 }
 
-function openImportModal() {
+function renderImportRetryNote(id) {
+    if (!id) return '';
+    const evaluation = state.evaluations.find((item) => String(item.id) === String(id));
+    const sourceTitle = evaluation?.import_summary?.source_file_title || evaluation?.title || '这条失败记录';
+    return `
+        <div class="lp-import-retry-note" role="note">
+            <strong>重新上传模式</strong>
+            <span>本次会新建一条解析任务，不会覆盖「${escapeHtml(sourceTitle)}」；新任务成功后，可返回列表删除旧失败记录。</span>
+        </div>`;
+}
+
+function openImportModal({ retryingFailedId = null } = {}) {
+    const retryNote = renderImportRetryNote(retryingFailedId);
     const body = `
         <div class="lp-import">
+            ${retryNote}
             <div class="lp-dropzone" data-te-dropzone>
                 <p>拖拽文件到此处，或<button type="button" class="lp-link" data-te-pick>点击选择文件</button></p>
-                <small>支持 doc / docx / pdf / png / jpg 等，可多选；单文件 ≤ 30MB，最多 8 个。</small>
+                <small>${escapeHtml(PROCESS_DOCUMENT_IMPORT_FORMAT_HINT)} 单文件 ≤ 30MB，最多 8 个。</small>
                 <input type="file" data-te-file multiple hidden
-                       accept=".doc,.docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif,.md,.txt">
+                       accept="${PROCESS_DOCUMENT_IMPORT_ACCEPT}">
+            </div>
+            <div class="lp-import-policy" data-te-import-policy>
+                <strong>解析后校验</strong>
+                <span>系统会检查 10 项评分与评语，缺项需补全后才能下载 Word/PDF。</span>
             </div>
             <ul class="lp-filelist" data-te-filelist></ul>
+            <div class="lp-import-selection" id="te-import-selection-status" data-te-import-selection>
+                <span id="te-import-selection-message" class="lp-import-selection__message" data-selection-message role="status" aria-live="polite">尚未选择文件，请先选择要导入解析的文件。</span>
+            </div>
             <label class="lp-form__full">给 AI 的额外提示（可选）
                 <textarea data-te-extra data-prompt-pool-key="teacher_evaluation.import" rows="3" placeholder="如：这是《服务器配置与管理》软工231班的教师评学表，请忠实还原各项得分与评语。"></textarea>
             </label>
             <p class="lp-form__hint">点击导入后将调用<strong>思考 + 多模态 AI</strong>解析字段、10 项得分与评语。窗口会关闭并在列表中以占位卡显示「解析中」。</p>
         </div>`;
-    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-te-submit>开始导入解析</button>`;
-    openModal('导入教师评学表文件', body, {
+    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-te-submit aria-describedby="te-import-selection-message">开始导入解析</button>`;
+    let importBusy = false;
+    const setImportBusy = (overlay, busy) => {
+        importBusy = Boolean(busy);
+        setProcessMaterialImportBusyState(overlay, importBusy);
+    };
+    openModal(retryingFailedId ? '重新上传教师评学表文件' : '导入教师评学表文件', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            const picked = [];
-            const input = overlay.querySelector('[data-te-file]');
             const promptInput = overlay.querySelector('[data-te-extra]');
             enhancePromptPoolInput(promptInput);
-            const listEl = overlay.querySelector('[data-te-filelist]');
-            const dz = overlay.querySelector('[data-te-dropzone]');
-            const renderFiles = () => {
-                listEl.innerHTML = picked.map((f, i) => `
-                    <li><span>${escapeHtml(f.name)}</span>
-                    <button type="button" class="lp-link" data-rm="${i}">移除</button></li>`).join('');
-            };
-            const addFiles = (files) => {
-                for (const f of files) {
-                    if (picked.length >= 8) { showToast('最多 8 个文件', 'error'); break; }
-                    picked.push(f);
-                }
-                renderFiles();
-            };
-            overlay.querySelector('[data-te-pick]').addEventListener('click', () => input.click());
-            input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
-            listEl.addEventListener('click', (e) => {
-                const rm = e.target.closest('[data-rm]');
-                if (rm) { picked.splice(Number(rm.dataset.rm), 1); renderFiles(); }
+            const submit = overlay.querySelector('[data-te-submit]');
+            const filePicker = setupProcessMaterialImportPicker({
+                overlay,
+                inputSelector: '[data-te-file]',
+                pickSelector: '[data-te-pick]',
+                listSelector: '[data-te-filelist]',
+                dropzoneSelector: '[data-te-dropzone]',
+                selectionSelector: '[data-te-import-selection]',
+                submitSelector: '[data-te-submit]',
+                showToast,
             });
-            ['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('is-over'); }));
-            ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('is-over'); }));
-            dz.addEventListener('drop', (e) => { if (e.dataTransfer?.files) addFiles(e.dataTransfer.files); });
-            overlay.querySelector('[data-te-submit]').addEventListener('click', async () => {
-                if (!picked.length) { showToast('请先选择文件', 'error'); return; }
+            submit.addEventListener('click', async () => {
+                if (submit.disabled) return;
+                if (!filePicker.hasFiles()) {
+                    showToast('请先选择文件', 'error');
+                    filePicker.updateSubmitState();
+                    return;
+                }
                 const fd = new FormData();
-                picked.forEach((f) => fd.append('files', f));
+                filePicker.getFiles().forEach((f) => fd.append('files', f));
                 fd.append('extra_prompt', overlay.querySelector('[data-te-extra]').value || '');
+                setImportBusy(overlay, true);
+                setActionButtonBusy(submit, true, '正在解析…');
+                filePicker.updateSubmitState();
                 try {
                     await apiFetch('/api/teacher-evaluations/import', { method: 'POST', body: fd });
-                    await recordPromptForInput(promptInput);
-                    close();
-                    showToast('已开始解析，列表中将显示进度。', 'success');
+                    try { await recordPromptForInput(promptInput); } catch (_) { /* prompt pool recording is best effort */ }
+                    close({ force: true });
+                    showToast(
+                        retryingFailedId
+                            ? '已重新上传并开始解析，原失败记录仍保留，可稍后删除。'
+                            : '已开始解析，列表中将显示进度。',
+                        'success',
+                    );
                     loadEvaluations();
-                } catch (err) { showToast(err.message || '导入失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '导入失败', 'error');
+                    setActionButtonBusy(submit, false);
+                    setImportBusy(overlay, false);
+                    filePicker.updateSubmitState();
+                }
             });
         },
+        canClose: () => !importBusy,
     });
 }
 
@@ -613,22 +599,36 @@ async function openAttributesModal(id) {
             <p class="lp-form__hint">默认私有；可设为本系部 / 本院级 / 全校公开，公开后其他老师可一键继承。</p>
         </form>`;
     const footer = `<button type="button" class="lp-btn lp-btn--primary" data-te-submit>保存</button>`;
+    let modalBusy = false;
+    const setModalBusy = (overlay, busy) => {
+        modalBusy = Boolean(busy);
+        setProcessMaterialModalFormBusy(overlay, modalBusy);
+    };
     openModal('教师评学表属性', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            overlay.querySelector('[data-te-submit]').addEventListener('click', async () => {
+            const submit = overlay.querySelector('[data-te-submit]');
+            submit.addEventListener('click', async () => {
+                if (modalBusy || submit.disabled) return;
                 const fd = new FormData(overlay.querySelector('[data-te-form-attr]'));
+                setActionButtonBusy(submit, true, '正在保存…');
+                setModalBusy(overlay, true);
                 try {
                     await apiFetch(`/api/teacher-evaluations/${id}/attributes`, {
                         method: 'PATCH',
                         body: { title: (fd.get('title') || '').trim(), scope_level: fd.get('scope_level') },
                     });
-                    close();
+                    close({ force: true });
                     showToast('已保存', 'success');
                     loadEvaluations();
-                } catch (err) { showToast(err.message || '保存失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '保存失败', 'error');
+                    setModalBusy(overlay, false);
+                    setActionButtonBusy(submit, false);
+                }
             });
         },
+        canClose: () => !modalBusy,
     });
 }
 
@@ -642,68 +642,143 @@ async function openTagsModal(id) {
             </label>
         </form>`;
     const footer = `<button type="button" class="lp-btn lp-btn--primary" data-te-submit>保存标签</button>`;
+    let modalBusy = false;
+    const setModalBusy = (overlay, busy) => {
+        modalBusy = Boolean(busy);
+        setProcessMaterialModalFormBusy(overlay, modalBusy);
+    };
     openModal('设置标签', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            overlay.querySelector('[data-te-submit]').addEventListener('click', async () => {
+            const submit = overlay.querySelector('[data-te-submit]');
+            submit.addEventListener('click', async () => {
+                if (modalBusy || submit.disabled) return;
                 const raw = new FormData(overlay.querySelector('[data-te-form-tags]')).get('tags') || '';
                 const tags = raw.split(/[、,，\s]+/).map((t) => t.trim()).filter(Boolean);
+                setActionButtonBusy(submit, true, '正在保存…');
+                setModalBusy(overlay, true);
                 try {
                     await apiFetch(`/api/teacher-evaluations/${id}/tags`, { method: 'PUT', body: { tags } });
-                    close();
+                    close({ force: true });
                     showToast('标签已更新', 'success');
                     loadEvaluations();
-                } catch (err) { showToast(err.message || '保存失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '保存失败', 'error');
+                    setModalBusy(overlay, false);
+                    setActionButtonBusy(submit, false);
+                }
             });
         },
+        canClose: () => !modalBusy,
     });
 }
 
 function openPreviewModal(id) {
     const evaluation = state.evaluations.find((p) => p.id === id);
     const title = evaluation ? evaluation.title : '教师评学表预览';
+    const exportActions = renderEvaluationPreviewExportActions(evaluation, id);
     const body = `
         <div class="lp-preview">
             <div class="lp-preview__bar">
-                <span>导出：</span>
-                <a class="lp-btn" href="/api/teacher-evaluations/${id}/export?fmt=docx">Word (.docx)</a>
-                <a class="lp-btn lp-btn--ghost" href="/teacher-evaluation/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>
+                ${exportActions}
             </div>
             <iframe class="lp-preview__frame" src="/teacher-evaluation/${id}/preview" title="教师评学表预览"></iframe>
         </div>`;
-    openModal(`${title} · 渲染预览`, body, { wide: true });
+    openModal(`${title} · 渲染预览`, body, {
+        wide: true,
+        onMount: (overlay) => bindProcessMaterialExportDownloadActions(overlay, showToast, { saved: false }),
+    });
 }
 
-async function inheritEvaluation(id) {
-    if (!confirm('将这份公开评学表继承为你自己的私有副本？继承后任课教师会替换为你的信息。')) return;
+function renderEvaluationPreviewExportActions(evaluation, id) {
+    if (evaluation?.is_complete === false) {
+        const reason = '评学表尚未填写完整，请补齐必填信息、评价得分和分析建议后再导出。';
+        return `
+            <span>导出：</span>
+            <button type="button" class="lp-btn lp-btn--disabled" disabled title="${escapeHtml(reason)}">Word (.docx)</button>
+            <button type="button" class="lp-btn lp-btn--disabled" disabled title="${escapeHtml(reason)}">PDF (.pdf)</button>
+            <span class="lp-preview__notice">${escapeHtml(reason)}</span>
+            <a class="lp-btn lp-btn--ghost" href="/teacher-evaluation/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>`;
+    }
+    return `
+        <span>导出：</span>
+        <button type="button" class="lp-btn" data-process-export-url="/api/teacher-evaluations/${id}/export?fmt=docx" data-process-export-label="Word">Word (.docx)</button>
+        <button type="button" class="lp-btn" data-process-export-url="/api/teacher-evaluations/${id}/export?fmt=pdf" data-process-export-label="PDF">PDF (.pdf)</button>
+        <a class="lp-btn lp-btn--ghost" href="/teacher-evaluation/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>`;
+}
+
+async function inheritEvaluation(id, trigger) {
+    if (trigger?.disabled) return;
+    const confirmed = await openProcessMaterialConfirm({
+        title: '继承公开评学表',
+        message: '将这份公开评学表继承为你的私有副本？',
+        detail: '继承后任课教师会替换为你的信息，内容可继续调整。',
+        confirmText: '确认继承',
+    });
+    if (!confirmed) return;
+    setActionButtonBusy(trigger, true, '正在继承…');
     try {
         const res = await apiFetch(`/api/teacher-evaluations/${id}/inherit`, { method: 'POST' });
         showToast('已继承到你的库', 'success');
         window.location.href = `/teacher-evaluation/${res.id}/edit`;
-    } catch (err) { showToast(err.message || '继承失败', 'error'); }
+    } catch (err) {
+        showToast(err.message || '继承失败', 'error');
+        setActionButtonBusy(trigger, false);
+    }
 }
 
-async function retryEvaluation(id) {
+async function retryEvaluation(id, trigger) {
+    if (trigger?.disabled) return;
+    setActionButtonBusy(trigger, true, '正在重试…');
     try {
         await apiFetch(`/api/teacher-evaluations/${id}/retry`, { method: 'POST' });
         showToast('已重新开始', 'success');
-        loadEvaluations();
-    } catch (err) { showToast(err.message || '重试失败', 'error'); }
+        await refreshProcessMaterialActionList(trigger, loadEvaluations, showListRefreshWarning);
+    } catch (err) {
+        showToast(err.message || '重试失败', 'error');
+        setActionButtonBusy(trigger, false);
+    }
 }
 
-async function deleteEvaluation(id) {
-    if (!confirm('确定删除该教师评学表？此操作不可恢复。')) return;
+async function deleteEvaluation(id, trigger) {
+    if (trigger?.disabled) return;
+    const confirmed = await openProcessMaterialConfirm({
+        title: '删除教师评学表',
+        message: '确定删除该教师评学表？',
+        detail: '删除后无法恢复，已生成的预览和导出入口也会一并失效。',
+        confirmText: '删除',
+        tone: 'danger',
+    });
+    if (!confirmed) return;
+    setActionButtonBusy(trigger, true, '正在删除…');
     try {
         await apiFetch(`/api/teacher-evaluations/${id}`, { method: 'DELETE' });
         showToast('已删除', 'success');
-        loadEvaluations();
-    } catch (err) { showToast(err.message || '删除失败', 'error'); }
+        await refreshProcessMaterialActionList(trigger, loadEvaluations, showListRefreshWarning);
+    } catch (err) {
+        showToast(err.message || '删除失败', 'error');
+        setActionButtonBusy(trigger, false);
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 function bindEvents() {
+    [
+        ['[data-te-create-blank]', openCreateBlankModal],
+        ['[data-te-generate-open]', openGenerateModal],
+        ['[data-te-import-open]', openImportModal],
+    ].forEach(([selector, handler]) => {
+        document.querySelectorAll(selector).forEach((button) => {
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handler();
+            }, true);
+        });
+    });
+
     document.addEventListener('click', (e) => {
         if (e.target.closest('[data-te-create-blank]')) { e.preventDefault(); openCreateBlankModal(); return; }
         if (e.target.closest('[data-te-generate-open]')) { e.preventDefault(); openGenerateModal(); return; }
@@ -738,9 +813,10 @@ function bindEvents() {
             case 'preview': openPreviewModal(id); break;
             case 'attributes': openAttributesModal(id); break;
             case 'tags': openTagsModal(id); break;
-            case 'delete': deleteEvaluation(id); break;
-            case 'retry': retryEvaluation(id); break;
-            case 'inherit': inheritEvaluation(id); break;
+            case 'delete': deleteEvaluation(id, btn); break;
+            case 'retry': retryEvaluation(id, btn); break;
+            case 'import-again': openImportModal({ retryingFailedId: id }); break;
+            case 'inherit': inheritEvaluation(id, btn); break;
         }
     });
 }

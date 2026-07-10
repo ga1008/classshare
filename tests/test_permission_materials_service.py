@@ -42,11 +42,25 @@ class MaterialPermissionServiceTests(unittest.TestCase):
                 department TEXT,
                 enrollment_status TEXT DEFAULT 'active'
             );
+            CREATE TABLE classes (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL
+            );
+            CREATE TABLE courses (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL
+            );
+            CREATE TABLE academic_semesters (
+                id INTEGER PRIMARY KEY,
+                name TEXT
+            );
             CREATE TABLE class_offerings (
                 id INTEGER PRIMARY KEY,
                 class_id INTEGER NOT NULL,
                 course_id INTEGER NOT NULL,
-                teacher_id INTEGER NOT NULL
+                teacher_id INTEGER NOT NULL,
+                semester_id INTEGER,
+                semester TEXT
             );
             CREATE TABLE course_materials (
                 id INTEGER PRIMARY KEY,
@@ -126,6 +140,8 @@ class MaterialPermissionServiceTests(unittest.TestCase):
                 (3001, 10, 501, 2),
             ],
         )
+        self.conn.executemany("INSERT INTO classes (id, name) VALUES (?, ?)", [(10, "A班"), (20, "B班")])
+        self.conn.executemany("INSERT INTO courses (id, name) VALUES (?, ?)", [(501, "过程材料测试课")])
         self.conn.executemany(
             """
             INSERT INTO course_materials (

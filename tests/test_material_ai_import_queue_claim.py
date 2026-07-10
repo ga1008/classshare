@@ -250,6 +250,20 @@ class MaterialAIImportQueueClaimTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_recovered_queued_import_status_surfaces_requeue_notice(self):
+        message = helpers._material_ai_import_status_message(
+            {
+                "parse_status": "queued",
+                "parse_mode": "ai",
+                "source_file_name": "过程材料.docx",
+                "error_message": "上次解析进程中断，系统已重新排队。",
+            },
+            queue_position=3,
+        )
+
+        self.assertIn("上次解析进程中断，系统已重新排队", message)
+        self.assertIn("《过程材料.docx》已进入 AI 解析队列，当前约第 3 位", message)
+
 
 if __name__ == "__main__":
     unittest.main()

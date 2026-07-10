@@ -21,11 +21,6 @@ from fastapi.responses import JSONResponse, Response
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher
 from ..services import lesson_plan_service as lp
-from ..services.lesson_plan_docx_service import (
-    build_lesson_plan_docx,
-    convert_docx_to_pdf,
-    convert_docx_to_png,
-)
 from ..services.lesson_plan_generation_service import (
     build_generation_plan_preview,
     draft_manual_session,
@@ -33,13 +28,17 @@ from ..services.lesson_plan_generation_service import (
     run_generation_job,
 )
 from ..services.lesson_plan_import_service import run_import_job
+from ..services.lesson_plan_recovery_service import expire_stale_lesson_plan_tasks
+from ..services.lesson_plan_render_service import SUPPORTED_EXPORT_FORMATS, export_plan_artifact
+from ..services.process_material_import_policy import (
+    normalize_process_import_filename,
+    validate_process_document_import_file_bytes,
+    validate_process_document_import_file_count,
+    validate_process_document_import_filename,
+)
 from ..services.resource_access_service import is_super_admin_teacher
 
 router = APIRouter(prefix="/api/lesson-plans")
-
-_MAX_IMPORT_FILES = 8
-_MAX_IMPORT_BYTES = 30 * 1024 * 1024  # 30MB per file
-_ALLOWED_IMPORT_EXT = {".doc", ".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".md", ".txt"}
 
 
 async def _json_body(request: Request) -> dict[str, Any]:
@@ -85,6 +84,8 @@ def _load_viewable(conn, plan_id: str, user: dict) -> dict:
 @router.get("", response_class=JSONResponse)
 async def list_plans(user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        expire_stale_lesson_plan_tasks(conn, teacher_id=int(user["id"]))
+        conn.commit()
         plans = lp.list_lesson_plans(conn, teacher=user)
     return {"lesson_plans": plans}
 
@@ -150,6 +151,8 @@ async def get_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
 @router.get("/{plan_id}/task", response_class=JSONResponse)
 async def get_task_status(plan_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        expire_stale_lesson_plan_tasks(conn, teacher_id=int(user["id"]))
+        conn.commit()
         plan = _load_viewable(conn, plan_id, user)
     return {
         "id": plan["id"],
@@ -228,7 +231,12 @@ async def generate_from_classroom(request: Request, user: dict = Depends(get_cur
             ai_gen_status="pending",
             ai_gen_progress={"done": 0, "total": 0, "current_label": "排队中"},
         )
-        lp.set_generation_status(conn, plan_id, task_id=plan_id)
+        lp.set_generation_status(
+            conn,
+            plan_id,
+            task_id=plan_id,
+            import_preview={"source_files": [], "warnings": []},
+        )
         conn.commit()
         plan = lp.get_lesson_plan(conn, plan_id)
     asyncio.create_task(
@@ -248,28 +256,25 @@ async def import_plan(
     extra_prompt: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
-    if not files:
-        raise HTTPException(400, "请至少选择一个文件")
-    if len(files) > _MAX_IMPORT_FILES:
-        raise HTTPException(400, f"最多一次导入 {_MAX_IMPORT_FILES} 个文件")
+    validate_process_document_import_file_count(files)
+    staged: list[dict[str, Any]] = []
+    for index, upload in enumerate(files):
+        name = normalize_process_import_filename(upload.filename, fallback=f"file_{index}")
+        validate_process_document_import_filename(name, document_label="教案")
+        data = await upload.read()
+        validate_process_document_import_file_bytes(data, filename=name)
+        staged.append({"name": name, "data": data})
+    if not staged:
+        raise HTTPException(400, "上传的文件均为空")
+
     temp_dir = tempfile.mkdtemp(prefix="lanshare-lessonplan-import-")
     saved: list[dict[str, str]] = []
-    for index, upload in enumerate(files):
-        name = os.path.basename(upload.filename or f"file_{index}")
-        ext = os.path.splitext(name)[1].lower()
-        if ext and ext not in _ALLOWED_IMPORT_EXT:
-            raise HTTPException(400, f"不支持的文件格式：{ext}")
-        data = await upload.read()
-        if not data:
-            continue
-        if len(data) > _MAX_IMPORT_BYTES:
-            raise HTTPException(400, f"《{name}》超过单文件大小上限")
+    for index, item in enumerate(staged):
+        name = str(item["name"])
         dest = os.path.join(temp_dir, f"{index}_{name}")
         with open(dest, "wb") as fh:
-            fh.write(data)
+            fh.write(item["data"])
         saved.append({"path": dest, "name": name})
-    if not saved:
-        raise HTTPException(400, "上传的文件均为空")
 
     with get_db_connection() as conn:
         first_name = os.path.splitext(saved[0]["name"])[0]
@@ -284,7 +289,15 @@ async def import_plan(
             ai_gen_status="pending",
             ai_gen_progress={"done": 0, "total": 0, "current_label": "排队解析中"},
         )
-        lp.set_generation_status(conn, plan_id, task_id=plan_id)
+        lp.set_generation_status(
+            conn,
+            plan_id,
+            task_id=plan_id,
+            import_preview={
+                "source_files": [item.get("name") for item in saved],
+                "warnings": [],
+            },
+        )
         conn.commit()
         plan = lp.get_lesson_plan(conn, plan_id)
     asyncio.create_task(run_import_job(plan_id, saved, extra_prompt or "", int(user["id"])))
@@ -404,15 +417,6 @@ async def inherit_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
 
 
 # ---------------------------------------------------------------------------
-# Export (docx / pdf / png)
-# ---------------------------------------------------------------------------
-_EXPORT_MEDIA = {
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "pdf": "application/pdf",
-    "png": "image/png",
-}
-
-
 @router.get("/{plan_id}/export")
 async def export_plan(
     plan_id: str,
@@ -421,26 +425,20 @@ async def export_plan(
     user: dict = Depends(get_current_teacher),
 ):
     fmt = (fmt or "docx").lower()
-    if fmt not in _EXPORT_MEDIA:
-        raise HTTPException(400, "不支持的导出格式")
+    if fmt not in SUPPORTED_EXPORT_FORMATS:
+        raise HTTPException(400, "教案当前支持导出 Word(.docx)、PDF 和 PNG")
     with get_db_connection() as conn:
         plan = _load_viewable(conn, plan_id, user)
-    base_title = (plan.get("title") or "教案").replace("/", "_").replace("\\", "_")
-    docx_bytes = build_lesson_plan_docx(plan)
     try:
-        if fmt == "docx":
-            content = docx_bytes
-        elif fmt == "pdf":
-            content = convert_docx_to_pdf(docx_bytes, base_name=base_title)
-        else:
-            content = convert_docx_to_png(docx_bytes, base_name=base_title)
+        artifact = export_plan_artifact(plan, requested_format=fmt)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
-    filename = f"{base_title}.{fmt}"
     disposition_type = "inline" if inline else "attachment"
-    disposition = f"{disposition_type}; filename*=UTF-8''{quote(filename)}"
+    disposition = f"{disposition_type}; filename*=UTF-8''{quote(artifact.filename)}"
     return Response(
-        content=content,
-        media_type=_EXPORT_MEDIA[fmt],
+        content=artifact.content,
+        media_type=artifact.media_type,
         headers={"Content-Disposition": disposition},
     )

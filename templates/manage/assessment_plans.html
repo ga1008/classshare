@@ -17,7 +17,7 @@
                 <h2>考核计划表库</h2>
                 <button type="button" class="manage-lp__hint-trigger" aria-label="考核计划表使用提示">?</button>
                 <div class="manage-lp__floating-hint" role="tooltip">
-                    每学期每门课一份考核计划表。可空白新建、按课堂生成或导入解析，完成后可预览、导出 Word 与设置公开范围。
+                    每学期每门课一份考核计划表。可空白新建、按课堂生成或导入解析，完成后可预览、导出 Word/PDF 与设置公开范围。
                 </div>
             </div>
         </div>
@@ -99,5 +99,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="{{ asset_url('js/manage_assessment_plans.js') }}?v=20260709-filters"></script>
+<script type="module" src="{{ asset_url('js/manage_assessment_plans.js') }}"></script>
 {% endblock %}

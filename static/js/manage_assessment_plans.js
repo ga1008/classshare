@@ -1,6 +1,21 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
+import { openTreeSelectFormModal } from './tree_select_form_modal.js';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
+import { refreshProcessMaterialActionList, setActionButtonBusy, setProcessMaterialModalFormBusy } from './process_material_action_state.js';
+import { openProcessMaterialModal as openModal, openProcessMaterialConfirm } from './process_material_modal.js';
+import {
+    PROCESS_DOCUMENT_IMPORT_ACCEPT,
+    PROCESS_DOCUMENT_IMPORT_FORMAT_HINT,
+} from './process_material_import_policy.js';
+import { setupProcessMaterialImportPicker, setProcessMaterialImportBusyState } from './process_material_file_picker.js';
+import { renderProcessImportSummary } from './process_material_import_summary.js';
+import { bindProcessMaterialExportDownloadActions } from './process_material_editor_preview.js';
+import {
+    buildProcessMaterialOfferingTree,
+    formatProcessMaterialOfferingOptionLabel,
+    getProcessMaterialClassDisplayName,
+} from './process_material_offering_tree.js';
 import {
     collectTagCounts,
     compareDate,
@@ -55,31 +70,14 @@ function isBusy(plan) {
     return plan.status === 'generating' || plan.status === 'parsing';
 }
 
-// ---------------------------------------------------------------------------
-// Modal helper (reuses .lp-modal* styling)
-// ---------------------------------------------------------------------------
-function openModal(title, bodyHtml, { footerHtml = '', onMount, wide = false } = {}) {
-    const overlay = document.createElement('div');
-    overlay.className = 'lp-modal-overlay';
-    overlay.innerHTML = `
-        <div class="lp-modal${wide ? ' lp-modal--wide' : ''}" role="dialog" aria-modal="true">
-            <header class="lp-modal__head">
-                <h3>${escapeHtml(title)}</h3>
-                <button type="button" class="lp-modal__close" data-ap-close aria-label="关闭">×</button>
-            </header>
-            <div class="lp-modal__body">${bodyHtml}</div>
-            <footer class="lp-modal__foot">${footerHtml}</footer>
-        </div>`;
-    document.body.appendChild(overlay);
-    const close = () => overlay.remove();
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay || e.target.closest('[data-ap-close]')) close();
-    });
-    document.addEventListener('keydown', function onEsc(e) {
-        if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
-    });
-    if (onMount) onMount(overlay, close);
-    return { overlay, close };
+function showListRefreshWarning(err) {
+    showToast(err?.message || '操作已完成，但列表刷新失败，请手动刷新页面确认最新状态。', 'warning');
+}
+
+function formatScoreValue(value) {
+    const number = Number(value || 0);
+    if (!Number.isFinite(number)) return '0';
+    return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, '');
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +208,10 @@ function progressText(plan) {
     const p = plan.ai_gen_progress || {};
     const label = p.current_label ? escapeHtml(p.current_label) : '';
     if (label) return label;
-    return plan.status === 'parsing' ? 'AI 正在解析文件…' : 'AI 正在准备…';
+    if (plan.status === 'parsing') return 'AI 正在解析导入文件…';
+    if (plan.source_type === 'classroom') return 'AI 正在根据课堂资料生成考核计划表…';
+    if (plan.source_type === 'exam_reverse') return 'AI 正在根据试卷反推考核计划表…';
+    return 'AI 正在生成考核计划表…';
 }
 
 function scoreBadge(plan) {
@@ -221,11 +222,19 @@ function scoreBadge(plan) {
     return `<span class="lp-status ${tone}" title="考核项分值合计">${text}</span>`;
 }
 
+function renderFailedActions(plan) {
+    if (!plan.can_manage) {
+        return `<small>来源教师需处理该失败记录</small>`;
+    }
+    return `<button type="button" class="lp-btn lp-btn--danger" data-action="delete" data-id="${plan.id}">删除</button>`;
+}
+
 function renderCard(plan) {
     const meta = statusMeta(plan.status);
     const tags = (plan.tags || []).map((t) => `<span class="lp-tag">${escapeHtml(t)}</span>`).join('');
     const sourceBadge = `<span class="lp-source">${SOURCE_LABEL[plan.source_type] || '考核计划表'}</span>`;
     const scopeBadge = `<span class="lp-scope">${escapeHtml(plan.scope_label || '私有')}</span>`;
+    const importSummary = renderProcessImportSummary(plan);
 
     if (isBusy(plan)) {
         const p = plan.ai_gen_progress || {};
@@ -236,6 +245,7 @@ function renderCard(plan) {
             <strong class="lp-card__title">${escapeHtml(plan.title)}</strong>
             <div class="lp-progress"><div class="lp-progress__bar" style="width:${pct}%"></div></div>
             <p class="lp-card__busy">${progressText(plan)}</p>
+            ${importSummary}
             <div class="lp-card__foot">
                 <small>请稍候，可能需要几分钟…</small>
                 <button type="button" class="lp-btn lp-btn--ghost" data-action="delete" data-id="${plan.id}">取消并删除</button>
@@ -249,9 +259,9 @@ function renderCard(plan) {
             <div class="lp-card__top"><span class="lp-status is-failed">失败</span>${sourceBadge}</div>
             <strong class="lp-card__title">${escapeHtml(plan.title)}</strong>
             <p class="lp-card__error">${escapeHtml(plan.ai_gen_error || '生成/解析失败')}</p>
+            ${importSummary}
             <div class="lp-card__foot">
-                <button type="button" class="lp-btn" data-action="retry" data-id="${plan.id}">一键重试</button>
-                <button type="button" class="lp-btn lp-btn--danger" data-action="delete" data-id="${plan.id}">删除</button>
+                ${renderFailedActions(plan)}
             </div>
         </article>`;
     }
@@ -282,6 +292,7 @@ function renderCard(plan) {
                 ${plan.assessment_type ? `<span>${escapeHtml(plan.assessment_type)}</span>` : ''}
                 <span>${plan.item_count || 0} 考核项</span>
             </div>
+            ${importSummary}
             ${(tags || sigBadge) ? `<div class="lp-card__tags">${tags}${sigBadge}</div>` : ''}
             <div class="lp-card__foot">
                 <small>${owner || ('更新于 ' + escapeHtml(formatDate(plan.updated_at)))}</small>
@@ -299,6 +310,7 @@ function render() {
     loading.hidden = true;
     const visible = sortPlans(state.plans.filter(matchesFilters));
     if (!state.plans.length) {
+        grid.innerHTML = '';
         grid.hidden = true;
         empty.hidden = false;
         return;
@@ -354,7 +366,10 @@ function managePolling() {
 function offeringOptionsHtml(includeBlank) {
     const blank = includeBlank ? ['<option value="">不绑定课堂（手动填写）</option>'] : [];
     return blank
-        .concat(state.offerings.map((o) => `<option value="${o.id}">${escapeHtml(o.course_name)} · ${escapeHtml(o.display_class_name || o.class_name)}</option>`))
+        .concat(state.offerings.map((o) => {
+            const label = formatProcessMaterialOfferingOptionLabel(o);
+            return `<option value="${o.id}">${escapeHtml(label)}</option>`;
+        }))
         .join('');
 }
 
@@ -368,23 +383,83 @@ function openCreateBlankModal() {
             <p class="lp-form__hint">创建后进入编辑器，用完整表单填写基础信息和考核项目（分值合计须为 100）。</p>
         </form>`;
     const footer = `<button type="button" class="lp-btn lp-btn--primary" data-ap-submit>创建并编辑</button>`;
+    let createBusy = false;
+    const setCreateBusy = (overlay, busy) => {
+        createBusy = Boolean(busy);
+        setProcessMaterialModalFormBusy(overlay, createBusy);
+    };
     openModal('空白新建考核计划表', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            overlay.querySelector('[data-ap-submit]').addEventListener('click', async () => {
+            const submit = overlay.querySelector('[data-ap-submit]');
+            submit.addEventListener('click', async () => {
+                if (createBusy || submit.disabled) return;
                 const fd = new FormData(overlay.querySelector('[data-ap-form-blank]'));
                 const payload = {
                     title: (fd.get('title') || '').trim(),
                     class_offering_id: fd.get('class_offering_id') || null,
                 };
+                setActionButtonBusy(submit, true, '正在创建…');
+                setCreateBusy(overlay, true);
                 try {
                     const res = await apiFetch('/api/assessment-plans', { method: 'POST', body: payload });
-                    close();
+                    close({ force: true });
                     window.location.href = `/assessment-plan/${res.id}/edit`;
-                } catch (err) { showToast(err.message || '创建失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '创建失败', 'error');
+                    setCreateBusy(overlay, false);
+                    setActionButtonBusy(submit, false);
+                }
             });
         },
+        canClose: () => !createBusy,
     });
+}
+
+async function offeringPanelDescriptor(offering) {
+    let fields = {};
+    try {
+        const res = await apiFetch(`/api/assessment-plans/classroom/${offering.id}/prefill`);
+        fields = res.fields || {};
+    } catch (_) { fields = {}; }
+    const semesterText = [fields.academic_year, fields.semester].filter(Boolean).join(' ')
+        || offering.semester_label || '—';
+    const courseName = fields.course_name || offering.course_name || '';
+    const className = fields.class_name || getProcessMaterialClassDisplayName(offering);
+    return {
+        title: '生成配置',
+        baseInfo: [
+            { label: '学年学期', value: semesterText },
+            { label: '课程名称', value: courseName },
+            { label: '授课班级', value: className },
+            { label: '课堂编号', value: offering.id },
+        ],
+        note: '基础信息由所选课堂自动带入；下方字段会写入考核计划表，可按学校纸质表要求微调。',
+        fields: [
+            { key: 'school', label: '学校', value: fields.school || '广西外国语学院' },
+            { key: 'academic_year', label: '学年', value: fields.academic_year || '', placeholder: '如：2025-2026' },
+            {
+                key: 'semester',
+                label: '学期',
+                type: 'select',
+                value: fields.semester || '',
+                options: ['第一学期', '第二学期', '第三学期'],
+            },
+            { key: 'course_name', label: '课程名称', value: courseName, placeholder: '如：服务器配置与管理' },
+            { key: 'class_name', label: '专业年级班级', value: className, placeholder: '如：软工2401班' },
+            {
+                key: 'assessment_type',
+                label: '考核类型',
+                type: 'select',
+                value: fields.assessment_type || '',
+                options: ['考试', '考查'],
+            },
+            { key: 'assessment_method', label: '考核形式', value: fields.assessment_method || '', placeholder: '如：机试 / 闭卷笔试 / 项目实操' },
+            { key: 'examiner_name', label: '命题教师', value: fields.examiner_name || fields.teacher_name || '' },
+            { key: 'reviewer_name', label: '系主任审核签字', value: fields.reviewer_name || '', placeholder: '可留空，线下签字' },
+            { key: 'date', label: '命题日期', value: fields.date || '', placeholder: '如：2026年06月20日' },
+        ],
+    };
 }
 
 function openGenerateModal() {
@@ -392,101 +467,133 @@ function openGenerateModal() {
         showToast('你还没有可用课堂，请先在「开设课堂」创建。', 'error');
         return;
     }
-    const body = `
-        <form data-ap-form-generate class="lp-form">
-            <label>选择课堂
-                <select name="class_offering_id" required>${offeringOptionsHtml(false)}</select>
-            </label>
-            <label>给 AI 的补充要求（可选）
-                <textarea name="prompt" data-prompt-pool-key="assessment_plan.generate_from_classroom" rows="3" placeholder="如：以机试为主，重点考核 Linux 与数据库部署，分值合计 100。"></textarea>
-            </label>
-            <p class="lp-form__hint">系统将整合课堂内容、绑定文档、教材与教务考核形式，<strong>用思考型 AI 生成</strong>考核计划表（注意分值合计 100、命题教师签名将自动带入本人签名）。可关闭窗口，列表以占位卡显示进度。</p>
-        </form>`;
-    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-ap-submit>开始生成</button>`;
-    openModal('按课堂生成考核计划表', body, {
-        footerHtml: footer,
-        onMount: (overlay, close) => {
-            const promptInput = overlay.querySelector('[name="prompt"]');
-            enhancePromptPoolInput(promptInput);
-            overlay.querySelector('[data-ap-submit]').addEventListener('click', async () => {
-                const fd = new FormData(overlay.querySelector('[data-ap-form-generate]'));
-                const offeringId = fd.get('class_offering_id');
-                if (!offeringId) { showToast('请选择课堂', 'error'); return; }
-                try {
-                    await apiFetch('/api/assessment-plans/generate', {
-                        method: 'POST',
-                        body: { class_offering_id: Number(offeringId), prompt: (fd.get('prompt') || '').trim() },
-                    });
-                    await recordPromptForInput(promptInput, fd.get('prompt') || '');
-                    close();
-                    showToast('已开始生成，列表中将显示进度。', 'success');
-                    loadPlans();
-                } catch (err) { showToast(err.message || '启动生成失败', 'error'); }
-            });
+    openTreeSelectFormModal({
+        title: '按课堂生成考核计划表',
+        subtitle: '先定位学年学期，再定位课程和班级',
+        tree: buildProcessMaterialOfferingTree(state.offerings),
+        treeTitle: '学年学期 / 课程 / 班级',
+        treeHint: '按最新学期排序',
+        levelLabels: ['学期', '课程', '班级'],
+        placeholderTitle: '请选择课堂',
+        placeholderText: '请在左侧选择「学年学期 → 课程 → 班级」，选中班级后在此配置并生成。',
+        emptyText: '你还没有可用课堂。',
+        promptLabel: '给 AI 的补充要求（可选）',
+        promptPlaceholder: '如：以机试为主，重点考核 Linux 与数据库部署，分值合计 100。',
+        promptPoolKey: 'assessment_plan.generate_from_classroom',
+        confirmLabel: '确定并生成',
+        hintHtml: '系统将整合课堂内容、绑定文档、教材与教务考核形式，<strong>用思考型 AI</strong>生成考核计划表；生成后仍可在编辑器中调整考核项，导出前分值合计须为 100。',
+        onSelect: (offering) => offeringPanelDescriptor(offering),
+        onConfirm: async ({ data, fieldValues, prompt }) => {
+            try {
+                await apiFetch('/api/assessment-plans/generate', {
+                    method: 'POST',
+                    body: {
+                        class_offering_id: Number(data.id),
+                        prompt: (prompt || '').trim(),
+                        fields: fieldValues || {},
+                    },
+                });
+                showToast('已开始生成，列表中将显示进度。', 'success');
+                loadPlans();
+                return true;
+            } catch (err) {
+                showToast(err.message || '启动生成失败', 'error');
+                return false;
+            }
         },
     });
 }
 
-function openImportModal() {
+function renderImportRetryNote(id) {
+    if (!id) return '';
+    const plan = state.plans.find((item) => String(item.id) === String(id));
+    const sourceTitle = plan?.import_summary?.source_file_title || plan?.title || '这条失败记录';
+    return `
+        <div class="lp-import-retry-note" role="note">
+            <strong>重新上传模式</strong>
+            <span>本次会新建一条解析任务，不会覆盖「${escapeHtml(sourceTitle)}」；新任务成功后，可返回列表删除旧失败记录。</span>
+        </div>`;
+}
+
+function openImportModal({ retryingFailedId = null } = {}) {
+    const retryNote = renderImportRetryNote(retryingFailedId);
     const body = `
         <div class="lp-import">
+            ${retryNote}
             <div class="lp-dropzone" data-ap-dropzone>
                 <p>拖拽文件到此处，或<button type="button" class="lp-link" data-ap-pick>点击选择文件</button></p>
-                <small>支持 doc / docx / pdf / png / jpg 等，可多选；单文件 ≤ 30MB，最多 8 个。docx 中的签名图片会自动入签名库（去重）。</small>
+                <small>${escapeHtml(PROCESS_DOCUMENT_IMPORT_FORMAT_HINT)} 单文件 ≤ 30MB，最多 8 个。docx 中的签名图片会自动入签名库（去重）。</small>
                 <input type="file" data-ap-file multiple hidden
-                       accept=".doc,.docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif,.md,.txt">
+                       accept="${PROCESS_DOCUMENT_IMPORT_ACCEPT}">
+            </div>
+            <div class="lp-import-policy" data-ap-import-policy>
+                <strong>解析后校验</strong>
+                <span>系统会检查考核项分值合计，未达到 100 分会提示补齐并阻止导出。</span>
             </div>
             <ul class="lp-filelist" data-ap-filelist></ul>
+            <div class="lp-import-selection" id="ap-import-selection-status" data-ap-import-selection>
+                <span id="ap-import-selection-message" class="lp-import-selection__message" data-selection-message role="status" aria-live="polite">尚未选择文件，请先选择要导入解析的文件。</span>
+            </div>
             <label class="lp-form__full">给 AI 的额外提示（可选）
                 <textarea data-ap-extra data-prompt-pool-key="assessment_plan.import" rows="3" placeholder="如：这是《服务器配置与管理》机试考核计划表，请忠实还原考核项与分值。"></textarea>
             </label>
             <p class="lp-form__hint">点击导入后将调用<strong>思考 + 多模态 AI</strong>解析，并自动归集签名图片。窗口会关闭并在列表中以占位卡显示「解析中」。</p>
         </div>`;
-    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-ap-submit>开始导入解析</button>`;
-    openModal('导入考核计划表文件', body, {
+    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-ap-submit aria-describedby="ap-import-selection-message">开始导入解析</button>`;
+    let importBusy = false;
+    const setImportBusy = (overlay, busy) => {
+        importBusy = Boolean(busy);
+        setProcessMaterialImportBusyState(overlay, importBusy);
+    };
+    openModal(retryingFailedId ? '重新上传考核计划表文件' : '导入考核计划表文件', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            const picked = [];
-            const input = overlay.querySelector('[data-ap-file]');
             const promptInput = overlay.querySelector('[data-ap-extra]');
             enhancePromptPoolInput(promptInput);
-            const listEl = overlay.querySelector('[data-ap-filelist]');
-            const dz = overlay.querySelector('[data-ap-dropzone]');
-            const renderFiles = () => {
-                listEl.innerHTML = picked.map((f, i) => `
-                    <li><span>${escapeHtml(f.name)}</span>
-                    <button type="button" class="lp-link" data-rm="${i}">移除</button></li>`).join('');
-            };
-            const addFiles = (files) => {
-                for (const f of files) {
-                    if (picked.length >= 8) { showToast('最多 8 个文件', 'error'); break; }
-                    picked.push(f);
-                }
-                renderFiles();
-            };
-            overlay.querySelector('[data-ap-pick]').addEventListener('click', () => input.click());
-            input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
-            listEl.addEventListener('click', (e) => {
-                const rm = e.target.closest('[data-rm]');
-                if (rm) { picked.splice(Number(rm.dataset.rm), 1); renderFiles(); }
+            const submit = overlay.querySelector('[data-ap-submit]');
+            const filePicker = setupProcessMaterialImportPicker({
+                overlay,
+                inputSelector: '[data-ap-file]',
+                pickSelector: '[data-ap-pick]',
+                listSelector: '[data-ap-filelist]',
+                dropzoneSelector: '[data-ap-dropzone]',
+                selectionSelector: '[data-ap-import-selection]',
+                submitSelector: '[data-ap-submit]',
+                showToast,
             });
-            ['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('is-over'); }));
-            ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('is-over'); }));
-            dz.addEventListener('drop', (e) => { if (e.dataTransfer?.files) addFiles(e.dataTransfer.files); });
-            overlay.querySelector('[data-ap-submit]').addEventListener('click', async () => {
-                if (!picked.length) { showToast('请先选择文件', 'error'); return; }
+            submit.addEventListener('click', async () => {
+                if (submit.disabled) return;
+                if (!filePicker.hasFiles()) {
+                    showToast('请先选择文件', 'error');
+                    filePicker.updateSubmitState();
+                    return;
+                }
                 const fd = new FormData();
-                picked.forEach((f) => fd.append('files', f));
+                filePicker.getFiles().forEach((f) => fd.append('files', f));
                 fd.append('extra_prompt', overlay.querySelector('[data-ap-extra]').value || '');
+                setImportBusy(overlay, true);
+                setActionButtonBusy(submit, true, '正在解析…');
+                filePicker.updateSubmitState();
                 try {
                     await apiFetch('/api/assessment-plans/import', { method: 'POST', body: fd });
-                    await recordPromptForInput(promptInput);
-                    close();
-                    showToast('已开始解析，列表中将显示进度。', 'success');
+                    try { await recordPromptForInput(promptInput); } catch (_) { /* prompt pool recording is best effort */ }
+                    close({ force: true });
+                    showToast(
+                        retryingFailedId
+                            ? '已重新上传并开始解析，原失败记录仍保留，可稍后删除。'
+                            : '已开始解析，列表中将显示进度。',
+                        'success',
+                    );
                     loadPlans();
-                } catch (err) { showToast(err.message || '导入失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '导入失败', 'error');
+                    setActionButtonBusy(submit, false);
+                    setImportBusy(overlay, false);
+                    filePicker.updateSubmitState();
+                }
             });
         },
+        canClose: () => !importBusy,
     });
 }
 
@@ -506,22 +613,36 @@ async function openAttributesModal(id) {
             <p class="lp-form__hint">默认私有；可设为本系部 / 本院级 / 全校公开，公开后其他老师可一键继承。</p>
         </form>`;
     const footer = `<button type="button" class="lp-btn lp-btn--primary" data-ap-submit>保存</button>`;
+    let modalBusy = false;
+    const setModalBusy = (overlay, busy) => {
+        modalBusy = Boolean(busy);
+        setProcessMaterialModalFormBusy(overlay, modalBusy);
+    };
     openModal('考核计划表属性', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            overlay.querySelector('[data-ap-submit]').addEventListener('click', async () => {
+            const submit = overlay.querySelector('[data-ap-submit]');
+            submit.addEventListener('click', async () => {
+                if (modalBusy || submit.disabled) return;
                 const fd = new FormData(overlay.querySelector('[data-ap-form-attr]'));
+                setActionButtonBusy(submit, true, '正在保存…');
+                setModalBusy(overlay, true);
                 try {
                     await apiFetch(`/api/assessment-plans/${id}/attributes`, {
                         method: 'PATCH',
                         body: { title: (fd.get('title') || '').trim(), scope_level: fd.get('scope_level') },
                     });
-                    close();
+                    close({ force: true });
                     showToast('已保存', 'success');
                     loadPlans();
-                } catch (err) { showToast(err.message || '保存失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '保存失败', 'error');
+                    setModalBusy(overlay, false);
+                    setActionButtonBusy(submit, false);
+                }
             });
         },
+        canClose: () => !modalBusy,
     });
 }
 
@@ -535,62 +656,123 @@ async function openTagsModal(id) {
             </label>
         </form>`;
     const footer = `<button type="button" class="lp-btn lp-btn--primary" data-ap-submit>保存标签</button>`;
+    let modalBusy = false;
+    const setModalBusy = (overlay, busy) => {
+        modalBusy = Boolean(busy);
+        setProcessMaterialModalFormBusy(overlay, modalBusy);
+    };
     openModal('设置标签', body, {
         footerHtml: footer,
         onMount: (overlay, close) => {
-            overlay.querySelector('[data-ap-submit]').addEventListener('click', async () => {
+            const submit = overlay.querySelector('[data-ap-submit]');
+            submit.addEventListener('click', async () => {
+                if (modalBusy || submit.disabled) return;
                 const raw = new FormData(overlay.querySelector('[data-ap-form-tags]')).get('tags') || '';
                 const tags = raw.split(/[、,，\s]+/).map((t) => t.trim()).filter(Boolean);
+                setActionButtonBusy(submit, true, '正在保存…');
+                setModalBusy(overlay, true);
                 try {
                     await apiFetch(`/api/assessment-plans/${id}/tags`, { method: 'PUT', body: { tags } });
-                    close();
+                    close({ force: true });
                     showToast('标签已更新', 'success');
                     loadPlans();
-                } catch (err) { showToast(err.message || '保存失败', 'error'); }
+                } catch (err) {
+                    showToast(err.message || '保存失败', 'error');
+                    setModalBusy(overlay, false);
+                    setActionButtonBusy(submit, false);
+                }
             });
         },
+        canClose: () => !modalBusy,
     });
 }
 
 function openPreviewModal(id) {
     const plan = state.plans.find((p) => p.id === id);
     const title = plan ? plan.title : '考核计划表预览';
+    const exportActions = renderAssessmentPreviewExportActions(plan, id);
     const body = `
         <div class="lp-preview">
             <div class="lp-preview__bar">
-                <span>导出：</span>
-                <a class="lp-btn" href="/api/assessment-plans/${id}/export?fmt=docx">Word (.docx)</a>
-                <a class="lp-btn lp-btn--ghost" href="/assessment-plan/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>
+                ${exportActions}
             </div>
             <iframe class="lp-preview__frame" src="/assessment-plan/${id}/preview" title="考核计划表预览"></iframe>
         </div>`;
-    openModal(`${title} · 渲染预览`, body, { wide: true });
+    openModal(`${title} · 渲染预览`, body, {
+        wide: true,
+        onMount: (overlay) => bindProcessMaterialExportDownloadActions(overlay, showToast, { saved: false }),
+    });
 }
 
-async function inheritPlan(id) {
-    if (!confirm('将这份公开考核计划表继承为你自己的私有副本？继承后命题信息会替换为你的信息。')) return;
+function renderAssessmentPreviewExportActions(plan, id) {
+    if (plan?.score_balanced === false) {
+        const reason = `考核项分值合计为 ${formatScoreValue(plan.score_total)}，调整到 100 后才能导出。`;
+        return `
+            <span>导出：</span>
+            <button type="button" class="lp-btn lp-btn--disabled" disabled title="${escapeHtml(reason)}">Word (.docx)</button>
+            <button type="button" class="lp-btn lp-btn--disabled" disabled title="${escapeHtml(reason)}">PDF (.pdf)</button>
+            <span class="lp-preview__notice">${escapeHtml(reason)}</span>
+            <a class="lp-btn lp-btn--ghost" href="/assessment-plan/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>`;
+    }
+    return `
+        <span>导出：</span>
+        <button type="button" class="lp-btn" data-process-export-url="/api/assessment-plans/${id}/export?fmt=docx" data-process-export-label="Word">Word (.docx)</button>
+        <button type="button" class="lp-btn" data-process-export-url="/api/assessment-plans/${id}/export?fmt=pdf" data-process-export-label="PDF">PDF (.pdf)</button>
+        <a class="lp-btn lp-btn--ghost" href="/assessment-plan/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>`;
+}
+
+async function inheritPlan(id, trigger) {
+    if (trigger?.disabled) return;
+    const confirmed = await openProcessMaterialConfirm({
+        title: '继承公开考核计划表',
+        message: '将这份公开考核计划表继承为你的私有副本？',
+        detail: '继承后命题信息会替换为你的信息，内容可继续调整。',
+        confirmText: '确认继承',
+    });
+    if (!confirmed) return;
+    setActionButtonBusy(trigger, true, '正在继承…');
     try {
         const res = await apiFetch(`/api/assessment-plans/${id}/inherit`, { method: 'POST' });
         showToast('已继承到你的库', 'success');
         window.location.href = `/assessment-plan/${res.id}/edit`;
-    } catch (err) { showToast(err.message || '继承失败', 'error'); }
+    } catch (err) {
+        showToast(err.message || '继承失败', 'error');
+        setActionButtonBusy(trigger, false);
+    }
 }
 
-async function retryPlan(id) {
+async function retryPlan(id, trigger) {
+    if (trigger?.disabled) return;
+    setActionButtonBusy(trigger, true, '正在重试…');
     try {
         await apiFetch(`/api/assessment-plans/${id}/retry`, { method: 'POST' });
         showToast('已重新开始', 'success');
-        loadPlans();
-    } catch (err) { showToast(err.message || '重试失败', 'error'); }
+        await refreshProcessMaterialActionList(trigger, loadPlans, showListRefreshWarning);
+    } catch (err) {
+        showToast(err.message || '重试失败', 'error');
+        setActionButtonBusy(trigger, false);
+    }
 }
 
-async function deletePlan(id) {
-    if (!confirm('确定删除该考核计划表？此操作不可恢复。')) return;
+async function deletePlan(id, trigger) {
+    if (trigger?.disabled) return;
+    const confirmed = await openProcessMaterialConfirm({
+        title: '删除考核计划表',
+        message: '确定删除该考核计划表？',
+        detail: '删除后无法恢复，已生成的预览和导出入口也会一并失效。',
+        confirmText: '删除',
+        tone: 'danger',
+    });
+    if (!confirmed) return;
+    setActionButtonBusy(trigger, true, '正在删除…');
     try {
         await apiFetch(`/api/assessment-plans/${id}`, { method: 'DELETE' });
         showToast('已删除', 'success');
-        loadPlans();
-    } catch (err) { showToast(err.message || '删除失败', 'error'); }
+        await refreshProcessMaterialActionList(trigger, loadPlans, showListRefreshWarning);
+    } catch (err) {
+        showToast(err.message || '删除失败', 'error');
+        setActionButtonBusy(trigger, false);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -631,9 +813,10 @@ function bindEvents() {
             case 'preview': openPreviewModal(id); break;
             case 'attributes': openAttributesModal(id); break;
             case 'tags': openTagsModal(id); break;
-            case 'delete': deletePlan(id); break;
-            case 'retry': retryPlan(id); break;
-            case 'inherit': inheritPlan(id); break;
+            case 'delete': deletePlan(id, btn); break;
+            case 'retry': retryPlan(id, btn); break;
+            case 'import-again': openImportModal({ retryingFailedId: id }); break;
+            case 'inherit': inheritPlan(id, btn); break;
         }
     });
 }

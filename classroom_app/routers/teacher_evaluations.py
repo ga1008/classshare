@@ -23,6 +23,13 @@ from ..database import get_db_connection
 from ..dependencies import get_current_teacher
 from ..services import teacher_evaluation_service as te
 from ..services import prompt_pool_service as prompt_pool
+from ..services.process_material_import_policy import (
+    normalize_process_import_filename,
+    validate_process_document_import_file_bytes,
+    validate_process_document_import_file_count,
+    validate_process_document_import_filename,
+)
+from ..services.process_material_recovery_service import expire_stale_teacher_evaluation_tasks
 from ..services.resource_access_service import is_super_admin_teacher
 from ..services.teacher_evaluation_generation_service import (
     build_analysis_rewrite_context,
@@ -34,9 +41,6 @@ from ..services.teacher_evaluation_text_service import split_analysis_blocks
 
 router = APIRouter(prefix="/api/teacher-evaluations")
 
-_MAX_IMPORT_FILES = 8
-_MAX_IMPORT_BYTES = 30 * 1024 * 1024
-_ALLOWED_IMPORT_EXT = {".doc", ".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".md", ".txt"}
 _GENERATE_FIELD_KEYS = set(te.FIELD_KEYS)
 
 
@@ -106,6 +110,8 @@ def _clean_generate_field_overrides(raw_fields: Any) -> dict[str, str]:
 @router.get("", response_class=JSONResponse)
 async def list_teacher_evaluations(user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        expire_stale_teacher_evaluation_tasks(conn, teacher_id=int(user["id"]))
+        conn.commit()
         evaluations = te.list_evaluations(conn, teacher=user)
     return {"teacher_evaluations": evaluations}
 
@@ -148,6 +154,8 @@ async def get_evaluation_detail(evaluation_id: str, user: dict = Depends(get_cur
 @router.get("/{evaluation_id}/task", response_class=JSONResponse)
 async def get_task_status(evaluation_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
+        expire_stale_teacher_evaluation_tasks(conn, teacher_id=int(user["id"]))
+        conn.commit()
         evaluation = _load_viewable(conn, evaluation_id, user)
         is_owned = int(evaluation.get("teacher_id") or 0) == int(user["id"])
         can_manage = is_owned or is_super_admin_teacher(conn, int(user["id"]))
@@ -218,7 +226,12 @@ async def generate_from_classroom(request: Request, user: dict = Depends(get_cur
             ai_gen_status="pending",
             ai_gen_progress={"done": 0, "total": 1, "current_label": "排队中"},
         )
-        te.set_generation_status(conn, evaluation_id, task_id=evaluation_id)
+        te.set_generation_status(
+            conn,
+            evaluation_id,
+            task_id=evaluation_id,
+            import_preview={"source_files": [], "warnings": []},
+        )
         conn.commit()
         evaluation = te.get_evaluation(conn, evaluation_id)
     asyncio.create_task(
@@ -239,28 +252,25 @@ async def import_evaluation(
     extra_prompt: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
-    if not files:
-        raise HTTPException(400, "请至少选择一个文件")
-    if len(files) > _MAX_IMPORT_FILES:
-        raise HTTPException(400, f"最多一次导入 {_MAX_IMPORT_FILES} 个文件")
+    validate_process_document_import_file_count(files)
+    staged: list[dict[str, Any]] = []
+    for index, upload in enumerate(files):
+        name = normalize_process_import_filename(upload.filename, fallback=f"file_{index}")
+        validate_process_document_import_filename(name, document_label="教师评学表")
+        data = await upload.read()
+        validate_process_document_import_file_bytes(data, filename=name)
+        staged.append({"name": name, "data": data})
+    if not staged:
+        raise HTTPException(400, "上传的文件均为空")
+
     temp_dir = tempfile.mkdtemp(prefix="lanshare-teacheval-import-")
     saved: list[dict[str, str]] = []
-    for index, upload in enumerate(files):
-        name = os.path.basename(upload.filename or f"file_{index}")
-        ext = os.path.splitext(name)[1].lower()
-        if ext and ext not in _ALLOWED_IMPORT_EXT:
-            raise HTTPException(400, f"不支持的文件格式：{ext}")
-        data = await upload.read()
-        if not data:
-            continue
-        if len(data) > _MAX_IMPORT_BYTES:
-            raise HTTPException(400, f"《{name}》超过单文件大小上限")
+    for index, item in enumerate(staged):
+        name = str(item["name"])
         dest = os.path.join(temp_dir, f"{index}_{name}")
         with open(dest, "wb") as fh:
-            fh.write(data)
+            fh.write(item["data"])
         saved.append({"path": dest, "name": name})
-    if not saved:
-        raise HTTPException(400, "上传的文件均为空")
 
     with get_db_connection() as conn:
         first_name = os.path.splitext(saved[0]["name"])[0]

@@ -187,4 +187,8 @@ shared_files/
 homework_submissions/
 storage/global_files/*
 
-tools/guardianangel.net.cn_nginx/
+tools/guardianangel.net.cn_nginx*/
+
+# 论文关联材料(侧写师论文项目,不入库)
+docs/research/
+experiments/

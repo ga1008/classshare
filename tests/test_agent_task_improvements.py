@@ -1115,6 +1115,22 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertIn("function renderTaskEventsPanel", workspace_js)
         self.assertIn("function userFacingTaskEvent", workspace_js)
 
+    def test_agent_runtime_warning_waits_for_explicit_agent_action(self):
+        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
+        bootstrap_block = workspace_js[
+            workspace_js.index("async function loadBootstrap"):
+            workspace_js.index("function startTaskPolling")
+        ]
+
+        self.assertIn("function showRuntimeUnavailableWarning()", workspace_js)
+        self.assertIn("agentRuntimeConfigured = Boolean(data.runtime_configured)", bootstrap_block)
+        self.assertNotIn("notify('Agent 运行时未配置", bootstrap_block)
+        self.assertIn("setAgentMode(preferredAgentMode, { persist: false, showRuntimeWarning: false })", workspace_js)
+        self.assertIn("loadBootstrap({ showRuntimeWarning: false })", workspace_js)
+        self.assertIn("setAgentMode(!agentMode, { showRuntimeWarning: true })", workspace_js)
+        self.assertIn("setAgentMode(button.dataset.aiModeSelect === 'agent', { showRuntimeWarning: true })", workspace_js)
+        self.assertIn("setAgentMode(true, { showRuntimeWarning: true })", workspace_js)
+
     def test_manual_notification_action_execute_route_audits_without_sending(self):
         conn = self._open_agent_task_conn()
         try:

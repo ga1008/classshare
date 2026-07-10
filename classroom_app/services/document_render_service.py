@@ -322,6 +322,7 @@ class DocumentRenderService:
         user: dict[str, Any],
         eyebrow: str = "文档真实预览",
         download_label: str = "下载文件",
+        download_disabled_reason: str = "",
     ) -> str:
         token = issue_render_token(job.key, user=user, ttl_seconds=self.token_ttl_seconds)
         page_payload = []
@@ -338,6 +339,18 @@ class DocumentRenderService:
         escaped_title = html.escape(title or job.filename)
         escaped_eyebrow = html.escape(eyebrow)
         escaped_download_label = html.escape(download_label)
+        escaped_disabled_reason = html.escape(download_disabled_reason.strip())
+        if escaped_disabled_reason:
+            download_action = (
+                f'<span class="doc-preview-download is-disabled" role="button" '
+                f'aria-disabled="true" title="{escaped_disabled_reason}">{escaped_download_label}</span>'
+                f'<span class="doc-preview-download-note">{escaped_disabled_reason}</span>'
+            )
+        else:
+            download_action = (
+                f'<a class="doc-preview-download" href="{html.escape(download_url)}">'
+                f"{escaped_download_label}</a>"
+            )
         pages_json = json.dumps(page_payload, ensure_ascii=False)
         page_cards = "\n".join(
             (
@@ -400,7 +413,7 @@ class DocumentRenderService:
   .doc-preview-title {{ min-width: 0; display: grid; gap: 4px; }}
   .doc-preview-title span {{ color: var(--teal); font-size: 0.78rem; font-weight: 800; letter-spacing: 0.08em; }}
   .doc-preview-title strong {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1rem; }}
-  .doc-preview-actions {{ display: flex; align-items: center; gap: 8px; }}
+  .doc-preview-actions {{ display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }}
   .doc-preview-pill, .doc-preview-download {{
     min-height: 36px;
     display: inline-flex;
@@ -415,6 +428,8 @@ class DocumentRenderService:
   }}
   .doc-preview-pill {{ border: 1px solid rgba(14, 165, 233, 0.20); color: #075985; background: rgba(240, 249, 255, 0.9); }}
   .doc-preview-download {{ border: 1px solid transparent; color: #fff; background: linear-gradient(135deg, var(--teal), #115e59); }}
+  .doc-preview-download.is-disabled {{ border-color: rgba(251, 146, 60, 0.35); color: #9a3412; background: #fff7ed; cursor: not-allowed; }}
+  .doc-preview-download-note {{ max-width: 380px; color: #9a3412; font-size: 0.78rem; line-height: 1.35; }}
   .doc-preview-stage {{
     flex: 1;
     width: min(1180px, calc(100vw - 28px));
@@ -773,7 +788,7 @@ class DocumentRenderService:
     </div>
     <div class="doc-preview-actions">
       <span class="doc-preview-pill">共 {job.page_count} 页</span>
-      <a class="doc-preview-download" href="{html.escape(download_url)}">{escaped_download_label}</a>
+      {download_action}
     </div>
   </header>
   <section class="doc-preview-stage">
@@ -895,7 +910,7 @@ class DocumentRenderService:
     if (!placeholder) return;
     const label = placeholder.querySelector('strong');
     const hint = placeholder.querySelector('em');
-    if (label) label.textContent = status === 'error' ? '渲染失败' : '正在渲染';
+    if (label) label.textContent = status === 'ready' ? '预览就绪' : (status === 'error' ? '渲染失败' : '正在渲染');
     if (hint) hint.textContent = status === 'error'
       ? '点击重试第 ' + page.number + ' 页'
       : '第 ' + page.number + ' / ' + pages.length + ' 页';

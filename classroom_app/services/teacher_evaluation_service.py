@@ -32,6 +32,7 @@ from .class_label_service import build_academic_class_label
 from .material_export_template_service import build_material_export_artifact
 from .document_render_service import DocumentRenderError, document_render_service
 from .organization_scope_service import load_teacher_org_scope
+from .process_material_import_summary_service import build_process_import_summary
 from .resource_access_service import is_super_admin_teacher
 
 # ---------------------------------------------------------------------------
@@ -600,6 +601,7 @@ def serialize_card(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
         "title": row.get("title") or "教师评学表",
+        "class_offering_id": row.get("class_offering_id"),
         "school": fields.get("school") or row.get("school_name") or "",
         "school_name": row.get("school_name") or fields.get("school") or "",
         "course_name": fields.get("course_name") or "",
@@ -621,6 +623,7 @@ def serialize_card(row: dict[str, Any]) -> dict[str, Any]:
         "ai_gen_status": row.get("ai_gen_status") or "",
         "ai_gen_error": row.get("ai_gen_error") or "",
         "ai_gen_progress": row.get("ai_gen_progress_data") or {},
+        "import_summary": build_process_import_summary(row),
         "is_owned": bool(row.get("is_owned")),
         "can_manage": bool(row.get("can_manage")),
         "owner_teacher_name": row.get("owner_teacher_name") or "",
@@ -854,6 +857,12 @@ def export_evaluation_artifact(evaluation: dict[str, Any], *, requested_format: 
 def render_preview_html(evaluation: dict[str, Any], *, user: dict[str, Any]) -> str:
     """Image-backed preview generated from the same DOCX used for export."""
     title = _text(evaluation.get("title")) or "教师评学表"
+    missing = missing_fields(evaluation)
+    download_disabled_reason = (
+        "评学表尚未填写完整，请先补全后再导出：" + "、".join(missing)
+        if missing
+        else ""
+    )
     try:
         artifact = export_evaluation_artifact(evaluation, requested_format="docx")
         job = document_render_service.render_artifact(
@@ -870,4 +879,5 @@ def render_preview_html(evaluation: dict[str, Any], *, user: dict[str, Any]) -> 
         user=user,
         eyebrow="教师评学表 · 导出一致预览",
         download_label="下载 Word",
+        download_disabled_reason=download_disabled_reason,
     )

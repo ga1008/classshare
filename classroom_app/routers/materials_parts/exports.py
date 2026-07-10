@@ -187,6 +187,16 @@ async def material_viewer_page(
         allowed_rows = _resolve_allowed_scope_rows(conn, material, user)
         preview_variant = "optimized" if variant == "optimized" and material["ai_optimized_markdown"] else "original"
         can_edit_source = user["role"] == "teacher" and is_editable_material(material)
+        ai_import_record = None
+        if user["role"] == "teacher":
+            ai_import_row = _find_material_ai_import_record(
+                conn,
+                material_id,
+                material["teacher_id"],
+                completed_only=True,
+            )
+            if ai_import_row:
+                ai_import_record = _build_ai_import_record_detail_payload(ai_import_row)
 
         mastery_check = None
         if user["role"] == "student" and class_offering_id:
@@ -214,6 +224,7 @@ async def material_viewer_page(
                 "can_edit_source": can_edit_source,
                 "optimized_available": bool(material["ai_optimized_markdown"]),
                 "ai_parse_result": json.loads(material["ai_parse_result_json"]) if material["ai_parse_result_json"] else None,
+                "ai_import_record": ai_import_record,
                 "mastery_check": mastery_check,
             },
         )

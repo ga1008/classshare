@@ -1,5 +1,13 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml } from './ui.js';
+import {
+    closePendingPreviewWindow,
+    isPreviewLinkBusy,
+    movePendingPreviewWindow,
+    openPendingPreviewWindow,
+    setPreviewLinkBusy,
+    startProcessMaterialExportDownload,
+} from './process_material_editor_preview.js';
 
 // ---------------------------------------------------------------------------
 // Boot state
@@ -20,6 +28,8 @@ const state = {
     examinerSignature: boot.examiner_signature || null,
     reviewerSignature: boot.reviewer_signature || null,
     signatureOptions: { mine: [], usable: [] },
+    dirty: false,
+    saving: false,
 };
 
 const FIELD_DEFS = [
@@ -34,6 +44,33 @@ const FIELD_DEFS = [
     { key: 'examiner_name', label: '命题教师', type: 'text' },
     { key: 'reviewer_name', label: '系（教研室）主任审核签字', type: 'text' },
 ];
+
+function setSaveState(kind, text) {
+    const el = document.getElementById('ap-save-state');
+    if (!el) return;
+    el.classList.remove('is-clean', 'is-dirty', 'is-saving');
+    el.classList.add(kind);
+    el.textContent = text;
+}
+
+function markDirty() {
+    state.dirty = true;
+    setSaveState('is-dirty', '未保存');
+}
+
+function markClean() {
+    state.dirty = false;
+    setSaveState('is-clean', '已保存');
+}
+
+function restoreSaveState() {
+    if (state.dirty) {
+        setSaveState('is-dirty', '未保存');
+    } else {
+        setSaveState('is-clean', '已保存');
+    }
+}
+
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -77,15 +114,82 @@ function scoreTotal() {
     }, 0);
 }
 
+function formatScore(total) {
+    return Number.isInteger(total) ? String(total) : total.toFixed(1).replace(/\.0$/, '');
+}
+
+function assessmentExportBlocker() {
+    const total = scoreTotal();
+    if (Math.abs(total - 100) < 1e-6) return '';
+    return `考核项分值合计为 ${formatScore(total)}，调整到 100 后才能导出。`;
+}
+
+function setExportButtons({ busy = false } = {}) {
+    const reason = assessmentExportBlocker();
+    const disabled = busy || state.saving || Boolean(reason);
+    const title = (busy || state.saving) ? '正在保存当前修改，请稍候。' : reason;
+    [
+        document.getElementById('ap-export-word'),
+        document.getElementById('ap-export-pdf'),
+    ].filter(Boolean).forEach((button) => {
+        button.disabled = disabled;
+        button.classList.toggle('lp-btn--disabled', disabled);
+        if (disabled) {
+            button.setAttribute('aria-disabled', 'true');
+            button.title = title;
+        } else {
+            button.removeAttribute('aria-disabled');
+            button.removeAttribute('title');
+        }
+    });
+    const gate = document.getElementById('ap-export-gate');
+    if (!gate) return;
+    if (reason) {
+        gate.hidden = false;
+        gate.innerHTML = `<strong>导出前校验</strong><span>${escapeHtml(reason)}</span>`;
+    } else {
+        gate.hidden = true;
+        gate.textContent = '';
+    }
+}
+
+function setSavePreviewButtonsBusy(busy) {
+    [
+        document.getElementById('ap-save'),
+        document.getElementById('ap-refresh-preview'),
+    ].filter(Boolean).forEach((button) => {
+        button.disabled = busy;
+        button.classList.toggle('lp-btn--disabled', busy);
+        if (busy) {
+            button.setAttribute('aria-disabled', 'true');
+        } else {
+            button.removeAttribute('aria-disabled');
+        }
+    });
+}
+
+function setEditorBusy(busy) {
+    state.saving = Boolean(busy);
+    const form = document.getElementById('ap-editor-form');
+    form?.classList.toggle('is-saving', state.saving);
+    form?.querySelectorAll('input, select, textarea, button').forEach((control) => {
+        control.disabled = state.saving;
+    });
+    setPreviewLinkBusy(document.getElementById('ap-open-preview'), state.saving);
+    setSavePreviewButtonsBusy(state.saving);
+    setExportButtons({ busy: state.saving });
+}
+
 function renderTotal() {
     const total = scoreTotal();
     const ok = Math.abs(total - 100) < 1e-6;
     const totalEl = document.getElementById('ap-items-total');
-    totalEl.textContent = `合计 ${Number.isInteger(total) ? total : total.toFixed(1)} 分`;
+    totalEl.textContent = `合计 ${formatScore(total)} 分`;
     totalEl.className = `ap-items__total ${ok ? 'is-ok' : 'is-warn'}`;
     const pill = document.getElementById('ap-score-pill');
-    pill.textContent = `分值合计 ${Number.isInteger(total) ? total : total.toFixed(1)}${ok ? '' : ' ≠100'}`;
+    pill.textContent = `分值合计 ${formatScore(total)}${ok ? '' : ' ≠100'}`;
     pill.className = `ap-score-pill ${ok ? 'is-ok' : 'is-warn'}`;
+    setExportButtons();
 }
 
 function signatureSubjectName(role) {
@@ -190,10 +294,12 @@ async function persistContent() {
 }
 
 async function saveContent() {
-    const btn = document.getElementById('ap-save');
-    btn.disabled = true;
+    if (state.saving) return;
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
     try {
         const res = await persistContent();
+        markClean();
         if (res && res.score_balanced === false) {
             showToast(`已保存，但考核项分值合计为 ${res.score_total}，未达到 100。`, 'warning');
         } else {
@@ -203,28 +309,125 @@ async function saveContent() {
     } catch (err) {
         showToast(err.message || '保存失败', 'error');
     } finally {
-        btn.disabled = false;
+        setEditorBusy(false);
+        restoreSaveState();
     }
 }
 
-async function bindSignature(role, signatureId) {
+async function refreshPreview() {
+    if (state.saving) return;
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
     try {
-        const res = await apiFetch(`/api/assessment-plans/${state.id}/signature`, {
-            method: 'PUT',
-            body: { role, signature_id: signatureId ? Number(signatureId) : null },
-        });
-        state.examinerSignature = res.examiner_signature || null;
-        state.reviewerSignature = res.reviewer_signature || null;
-        renderSignatures();
+        const res = await persistContent();
+        markClean();
+        if (res && res.score_balanced === false) {
+            showToast(`已保存并刷新预览，但分值合计为 ${res.score_total}，未达到 100。`, 'warning');
+        } else {
+            showToast('已保存并刷新预览', 'success');
+        }
         reloadPreview();
-        showToast('签名已更新', 'success');
+    } catch (err) {
+        showToast(err.message || '保存失败，无法刷新预览', 'error');
+    } finally {
+        setEditorBusy(false);
+        restoreSaveState();
+    }
+}
+
+async function exportAssessmentPlan(format = 'docx') {
+    if (state.saving) return;
+    const normalized = format === 'pdf' ? 'pdf' : 'docx';
+    const blocker = assessmentExportBlocker();
+    if (blocker) {
+        showToast(blocker, 'warning');
+        setExportButtons();
+        return;
+    }
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
+    try {
+        const res = await persistContent();
+        markClean();
+        if (res && res.score_balanced === false) {
+            showToast(`已保存当前修改，但分值合计为 ${res.score_total}，请调整到 100 后再导出。`, 'warning');
+            renderTotal();
+            return;
+        }
+        startProcessMaterialExportDownload(
+            `/api/assessment-plans/${state.id}/export?fmt=${normalized}`,
+            showToast,
+            normalized === 'pdf' ? 'PDF' : 'Word',
+        );
+    } catch (err) {
+        showToast(err.message || '保存失败，无法导出', 'error');
+    } finally {
+        setEditorBusy(false);
+        restoreSaveState();
+    }
+}
+
+async function openSavedPreview(event) {
+    const link = event.currentTarget;
+    if (state.saving || isPreviewLinkBusy(link)) {
+        event.preventDefault();
+        return;
+    }
+    if (!state.dirty) return;
+    event.preventDefault();
+    const previewWindow = openPendingPreviewWindow(showToast);
+    if (!previewWindow) return;
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
+    try {
+        const res = await persistContent();
+        markClean();
+        renderTotal();
+        reloadPreview();
+        movePendingPreviewWindow(previewWindow, link.href);
+        if (res && res.score_balanced === false) {
+            showToast(`已保存并打开预览，但分值合计为 ${res.score_total}，未达到 100。`, 'warning');
+        } else {
+            showToast('已保存并打开预览', 'success');
+        }
+    } catch (err) {
+        closePendingPreviewWindow(previewWindow);
+        showToast(err.message || '保存失败，无法打开预览', 'error');
+    } finally {
+        setEditorBusy(false);
+        restoreSaveState();
+    }
+}
+
+async function applySignatureBinding(role, signatureId) {
+    const res = await apiFetch(`/api/assessment-plans/${state.id}/signature`, {
+        method: 'PUT',
+        body: { role, signature_id: signatureId ? Number(signatureId) : null },
+    });
+    state.examinerSignature = res.examiner_signature || null;
+    state.reviewerSignature = res.reviewer_signature || null;
+    renderSignatures();
+    reloadPreview();
+}
+
+async function bindSignature(role, signatureId) {
+    if (state.saving) return;
+    setEditorBusy(true);
+    setSaveState('is-saving', '更新签名中');
+    try {
+        await applySignatureBinding(role, signatureId);
+        showToast('签名已更新，预览已刷新', 'success');
     } catch (err) {
         showToast(err.message || '绑定签名失败', 'error');
         renderSignatures();
+    } finally {
+        setEditorBusy(false);
+        restoreSaveState();
     }
 }
 
 async function uploadSignature(role) {
+    if (state.saving) return;
     const input = document.querySelector(`[data-signature-file="${role}"]`);
     const file = input && input.files ? input.files[0] : null;
     if (!file) {
@@ -238,8 +441,11 @@ async function uploadSignature(role) {
         if (field) field.focus();
         return;
     }
+    setEditorBusy(true);
+    setSaveState('is-saving', '上传签名中');
     try {
         await persistContent();
+        markClean();
         const formData = new FormData();
         formData.append('file', file);
         formData.append('name', `${subjectName}签名`);
@@ -257,10 +463,13 @@ async function uploadSignature(role) {
         }
         if (input) input.value = '';
         await loadSignatureOptions();
-        await bindSignature(role, signature.id);
-        showToast('签名已上传、入库并绑定。', 'success');
+        await applySignatureBinding(role, signature.id);
+        showToast('签名已上传、入库并绑定，预览已刷新。', 'success');
     } catch (err) {
         showToast(err.message || '上传签名失败', 'error');
+    } finally {
+        setEditorBusy(false);
+        restoreSaveState();
     }
 }
 
@@ -271,9 +480,11 @@ function bindEvents() {
     const form = document.getElementById('ap-editor-form');
 
     form.addEventListener('input', (e) => {
+        if (state.saving) return;
         const fieldEl = e.target.closest('[data-field]');
         if (fieldEl) {
             state.fields[fieldEl.dataset.field] = fieldEl.value;
+            markDirty();
             return;
         }
         const itemEl = e.target.closest('[data-item-field]');
@@ -281,19 +492,22 @@ function bindEvents() {
             const row = Number(itemEl.dataset.row);
             if (state.items[row]) {
                 state.items[row][itemEl.dataset.itemField] = itemEl.value;
+                markDirty();
                 if (itemEl.dataset.itemField === 'score') renderTotal();
             }
         }
     });
 
     form.addEventListener('change', (e) => {
+        if (state.saving) return;
         const fieldEl = e.target.closest('[data-field]');
-        if (fieldEl) { state.fields[fieldEl.dataset.field] = fieldEl.value; return; }
+        if (fieldEl) { state.fields[fieldEl.dataset.field] = fieldEl.value; markDirty(); return; }
         const sigEl = e.target.closest('[data-signature-role]');
         if (sigEl) { bindSignature(sigEl.dataset.signatureRole, sigEl.value); }
     });
 
     form.addEventListener('click', (e) => {
+        if (state.saving) return;
         const uploadBtn = e.target.closest('[data-upload-signature]');
         if (uploadBtn) {
             uploadSignature(uploadBtn.dataset.uploadSignature);
@@ -302,20 +516,31 @@ function bindEvents() {
         const removeBtn = e.target.closest('[data-remove-item]');
         if (removeBtn) {
             state.items.splice(Number(removeBtn.dataset.removeItem), 1);
+            markDirty();
             renderItems();
         }
     });
 
     document.getElementById('ap-add-item').addEventListener('click', () => {
+        if (state.saving) return;
         state.items.push({ assessment_form: state.fields.assessment_method || '机试', content: '', score: '' });
+        markDirty();
         renderItems();
     });
 
     document.getElementById('ap-save').addEventListener('click', saveContent);
-    document.getElementById('ap-refresh-preview').addEventListener('click', reloadPreview);
+    document.getElementById('ap-open-preview').addEventListener('click', openSavedPreview);
+    document.getElementById('ap-refresh-preview').addEventListener('click', refreshPreview);
+    document.getElementById('ap-export-word').addEventListener('click', () => exportAssessmentPlan('docx'));
+    document.getElementById('ap-export-pdf').addEventListener('click', () => exportAssessmentPlan('pdf'));
 
     window.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveContent(); }
+    });
+    window.addEventListener('beforeunload', (e) => {
+        if (!state.dirty) return;
+        e.preventDefault();
+        e.returnValue = '';
     });
 }
 

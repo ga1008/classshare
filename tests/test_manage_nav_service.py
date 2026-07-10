@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from fastapi.routing import APIRoute
 
@@ -37,9 +38,11 @@ class ManageNavServiceTests(unittest.TestCase):
         self.assertIn("grading_rubrics", process_items)
         self.assertIn("ordinary_grade_records", process_items)
         self.assertIn("exam_grade_records", process_items)
+        self.assertIn("teacher_evaluations", process_items)
         self.assertLess(process_items.index("assessment_plans"), process_items.index("grading_rubrics"))
         self.assertLess(process_items.index("grading_rubrics"), process_items.index("ordinary_grade_records"))
         self.assertLess(process_items.index("ordinary_grade_records"), process_items.index("exam_grade_records"))
+        self.assertLess(process_items.index("exam_grade_records"), process_items.index("teacher_evaluations"))
 
         labels = {
             item.key: item.label
@@ -56,6 +59,32 @@ class ManageNavServiceTests(unittest.TestCase):
             labels,
         )
         self.assertEqual({5}, {len(label) for label in labels.values()})
+
+    def test_process_material_nav_surfaces_workflow_notes_and_badges(self):
+        nav = build_manage_nav({"id": 1, "role": "teacher"}, "ordinary_grade_records", is_super_admin=False)
+        process_items = [
+            item
+            for domain in nav["domains"]
+            for group in domain["groups"]
+            if group["label"] == "过程材料"
+            for item in group["items"]
+        ]
+        by_key = {item["key"]: item for item in process_items}
+
+        self.assertEqual("Excel", by_key["ordinary_grade_records"]["nav_badge"])
+        self.assertIn("学校模板 Excel", by_key["ordinary_grade_records"]["nav_note"])
+        self.assertEqual("Excel", by_key["exam_grade_records"]["nav_badge"])
+        self.assertIn("已绑定试卷", by_key["exam_grade_records"]["nav_note"])
+        self.assertEqual("需试卷", by_key["grading_rubrics"]["nav_badge"])
+        self.assertIn("Word/PDF", by_key["assessment_plans"]["nav_note"])
+        self.assertIn("10项评分", by_key["teacher_evaluations"]["nav_badge"])
+        self.assertIn("Excel", by_key["ordinary_grade_records"]["search_text"])
+
+        template = Path("templates/manage/layout.html").read_text(encoding="utf-8")
+        self.assertIn("manage-nav-item__copy", template)
+        self.assertIn("manage-nav-item__note", template)
+        self.assertIn("manage-nav-item__badge", template)
+        self.assertIn("item.ai_hint or item.label", template)
 
     def test_manage_nav_filters_admin_items_and_marks_active_domain(self):
         teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "classrooms", is_super_admin=False)

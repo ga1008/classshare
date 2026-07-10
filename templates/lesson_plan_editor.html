@@ -11,8 +11,9 @@
         <a class="lp-btn lp-btn--ghost" href="/manage/teaching/lesson-plans">← 返回教案库</a>
         <strong class="lp-editor__title" id="lp-editor-title">{{ plan.title }}</strong>
         <div class="lp-editor__header-actions">
+            <span class="lp-editor__save-state is-clean" id="lp-save-state" aria-live="polite">已保存</span>
             <button type="button" class="lp-btn lp-btn--ghost" id="lp-add-session">+ 添加课次</button>
-            <a class="lp-btn lp-btn--ghost" href="/lesson-plan/{{ plan.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
+            <a class="lp-btn lp-btn--ghost" id="lp-open-preview" href="/lesson-plan/{{ plan.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
             <button type="button" class="lp-btn lp-btn--primary" id="lp-save">保存</button>
         </div>
     </header>
@@ -23,12 +24,19 @@
                 <summary>封面信息</summary>
                 <div class="lp-editor__cover-grid" id="lp-cover-grid"></div>
             </details>
+            <details class="lp-editor__cover" id="lp-import-details" hidden>
+                <summary>导入详情（来源文件与解析提示）</summary>
+                <div class="ap-import" id="lp-import"></div>
+            </details>
             <div class="lp-editor__sessions" id="lp-sessions"></div>
         </section>
         <section class="lp-editor__preview">
             <div class="lp-editor__preview-bar">
-                <span>实时预览</span>
-                <button type="button" class="lp-btn lp-btn--ghost" id="lp-refresh-preview">刷新预览</button>
+                <span>当前保存版预览</span>
+                <button type="button" class="lp-btn lp-btn--ghost" id="lp-refresh-preview">保存并刷新预览</button>
+                <button type="button" class="lp-btn lp-btn--ghost" id="lp-export-word">导出 Word</button>
+                <button type="button" class="lp-btn lp-btn--ghost" id="lp-export-pdf">导出 PDF</button>
+                <button type="button" class="lp-btn lp-btn--ghost" id="lp-export-png">导出 PNG</button>
             </div>
             <iframe id="lp-preview-frame" class="lp-editor__frame" src="/lesson-plan/{{ plan.id }}/preview" title="教案预览"></iframe>
         </section>
@@ -39,7 +47,8 @@
         "id": {{ plan.id | tojson }},
         "title": {{ plan.title | tojson }},
         "cover": {{ plan.cover | tojson }},
-        "sessions": {{ plan.sessions | tojson }}
+        "sessions": {{ plan.sessions | tojson }},
+        "import_preview": {{ plan.import_preview | tojson }}
     }
     </script>
     <script type="module" src="{{ asset_url('js/auth.js') }}"></script>

@@ -11,8 +11,9 @@
         <a class="lp-btn lp-btn--ghost" href="/manage/teaching/assessment-plans">← 返回考核计划表库</a>
         <strong class="lp-editor__title" id="ap-editor-title">{{ plan.title }}</strong>
         <div class="lp-editor__header-actions">
+            <span class="lp-editor__save-state is-clean" id="ap-save-state" aria-live="polite">已保存</span>
             <span class="ap-score-pill" id="ap-score-pill">分值合计 —</span>
-            <a class="lp-btn lp-btn--ghost" href="/assessment-plan/{{ plan.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
+            <a class="lp-btn lp-btn--ghost" id="ap-open-preview" href="/assessment-plan/{{ plan.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
             <button type="button" class="lp-btn lp-btn--primary" id="ap-save">保存</button>
         </div>
     </header>
@@ -47,10 +48,12 @@
 
         <section class="lp-editor__preview">
             <div class="lp-editor__preview-bar">
-                <span>实时预览</span>
-                <button type="button" class="lp-btn lp-btn--ghost" id="ap-refresh-preview">刷新预览</button>
-                <a class="lp-btn lp-btn--ghost" href="/api/assessment-plans/{{ plan.id }}/export?fmt=docx">导出 Word</a>
+                <span>当前保存版预览</span>
+                <button type="button" class="lp-btn lp-btn--ghost" id="ap-refresh-preview">保存并刷新预览</button>
+                <button type="button" class="lp-btn lp-btn--ghost" id="ap-export-word">导出 Word</button>
+                <button type="button" class="lp-btn lp-btn--ghost" id="ap-export-pdf">导出 PDF</button>
             </div>
+            <div class="lp-editor__export-gate" id="ap-export-gate" hidden></div>
             <iframe id="ap-preview-frame" class="lp-editor__frame" src="/assessment-plan/{{ plan.id }}/preview" title="考核计划表预览"></iframe>
         </section>
     </main>
@@ -68,6 +71,6 @@
     }
     </script>
     <script type="module" src="{{ asset_url('js/auth.js') }}"></script>
-    <script type="module" src="{{ asset_url('js/assessment_plan_editor.js') }}?v=20260627"></script>
+    <script type="module" src="{{ asset_url('js/assessment_plan_editor.js') }}"></script>
 </body>
 </html>

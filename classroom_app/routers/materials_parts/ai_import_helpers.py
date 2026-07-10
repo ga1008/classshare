@@ -3,6 +3,176 @@ from .generation_helpers import *
 from ...db.connection import get_configured_db_engine
 
 
+FINAL_MATERIAL_SPREADSHEET_TYPES = {"ordinary_grade_record", "exam_grade_record"}
+
+AI_IMPORT_DETAIL_FIELD_LABELS = {
+    "course_name": "课程",
+    "class_name": "班级",
+    "teacher_name": "教师",
+    "semester": "学期",
+    "assessment_mode_label": "考核方式",
+    "assessment_method": "考核形式",
+    "paper_type": "试卷类型",
+    "exam_duration": "考试时长",
+    "total_score": "总分",
+    "student_count": "学生数",
+    "source_assessment_plan_title": "来源计划表",
+    "source_exam_paper_title": "来源试卷",
+}
+
+AI_IMPORT_DETAIL_FIELD_ORDER = (
+    "course_name",
+    "class_name",
+    "semester",
+    "teacher_name",
+    "assessment_mode_label",
+    "assessment_method",
+    "paper_type",
+    "exam_duration",
+    "total_score",
+    "student_count",
+    "source_assessment_plan_title",
+    "source_exam_paper_title",
+)
+
+AI_IMPORT_CONTENT_QUALITY_LABELS = {
+    "ok": "可用",
+    "suspect": "需要复核",
+    "failed": "不足",
+    "empty": "无文本",
+    "too_short": "过短",
+    "unchecked": "未校验",
+}
+
+
+def _material_ai_import_export_format(document_type: str | None) -> str:
+    return "xlsx" if str(document_type or "").strip() in FINAL_MATERIAL_SPREADSHEET_TYPES else "docx"
+
+
+def _material_ai_import_pdf_export_url(record_id: int, document_type: str | None) -> str:
+    document_type_key = str(document_type or "").strip()
+    if document_type_key in FINAL_MATERIAL_TYPES and document_type_key not in FINAL_MATERIAL_SPREADSHEET_TYPES:
+        return f"/api/materials/ai-import-records/{int(record_id)}/export?format=pdf"
+    return ""
+
+
+def _material_ai_import_parse_mode_label(row: dict) -> str:
+    parse_mode = str(row.get("parse_mode") or "").strip().lower()
+    extraction_method = str(row.get("extraction_method") or "").strip().lower()
+    if parse_mode == "ai_generated":
+        return "AI 生成"
+    if parse_mode == "local_fallback":
+        return "本地生成"
+    if extraction_method == "exam_reverse":
+        return "试卷反推"
+    if parse_mode == "ai":
+        return "AI 解析"
+    return "导入解析"
+
+
+def _material_ai_import_quality_label(status: str | None) -> str:
+    status_key = str(status or "unchecked").strip().lower() or "unchecked"
+    return AI_IMPORT_CONTENT_QUALITY_LABELS.get(status_key, status_key.replace("_", " "))
+
+
+def _format_ai_import_detail_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, tuple, set)):
+        parts = [str(item).strip() for item in value if str(item).strip()]
+        return "、".join(parts[:4])
+    return ""
+
+
+def _material_ai_import_detail_fields(fields: dict, metadata: dict, *, max_items: int = 8) -> list[dict[str, str]]:
+    merged = {}
+    if isinstance(metadata, dict):
+        merged.update(metadata)
+    if isinstance(fields, dict):
+        merged.update(fields)
+
+    items: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for key in AI_IMPORT_DETAIL_FIELD_ORDER:
+        value = _format_ai_import_detail_value(merged.get(key))
+        if not value:
+            continue
+        items.append({"key": key, "label": AI_IMPORT_DETAIL_FIELD_LABELS.get(key, key), "value": value[:120]})
+        seen.add(key)
+        if len(items) >= max_items:
+            return items
+
+    for key, raw_value in merged.items():
+        normalized_key = str(key or "").strip()
+        if not normalized_key or normalized_key in seen:
+            continue
+        value = _format_ai_import_detail_value(raw_value)
+        if not value:
+            continue
+        label = AI_IMPORT_DETAIL_FIELD_LABELS.get(normalized_key) or normalized_key.replace("_", " ")
+        items.append({"key": normalized_key, "label": label[:40], "value": value[:120]})
+        if len(items) >= max_items:
+            break
+    return items
+
+
+def _build_ai_import_detail_summary(record) -> dict[str, Any]:
+    item = dict(record)
+    preview = _build_ai_import_preview(record, content_limit=0)
+    document_type = str(preview.get("document_type") or item.get("document_type") or "").strip()
+    export_format = _material_ai_import_export_format(document_type)
+    export_formats = ["Excel"] if export_format == "xlsx" else ["Word"]
+    if _material_ai_import_pdf_export_url(int(item.get("id") or 0), document_type):
+        export_formats.append("PDF")
+
+    warnings = [str(warning).strip() for warning in (preview.get("warnings") or []) if str(warning).strip()]
+    fields = _material_ai_import_detail_fields(
+        preview.get("fields") if isinstance(preview.get("fields"), dict) else {},
+        preview.get("metadata") if isinstance(preview.get("metadata"), dict) else {},
+    )
+    return {
+        "parse_mode_label": _material_ai_import_parse_mode_label(item),
+        "source_file_name": item.get("source_file_name") or "",
+        "content_quality_status": item.get("content_quality_status") or "unchecked",
+        "content_quality_label": _material_ai_import_quality_label(item.get("content_quality_status")),
+        "document_type": document_type,
+        "document_type_label": preview.get("document_type_label") or item.get("document_type_label") or "",
+        "export_formats": export_formats,
+        "field_items": fields,
+        "warning_count": len(warnings),
+        "warnings": warnings[:3],
+        "has_more_warnings": len(warnings) > 3,
+        "updated_at": preview.get("completed_at") or preview.get("updated_at") or item.get("updated_at") or "",
+    }
+
+
+def _build_ai_import_record_detail_payload(record) -> dict[str, Any]:
+    item = dict(record)
+    record_id = int(item.get("id") or 0)
+    document_type = str(item.get("document_type") or "").strip()
+    export_format = _material_ai_import_export_format(document_type)
+    return {
+        "id": record_id,
+        "document_group": item.get("document_group") or "",
+        "document_type": document_type,
+        "document_type_label": item.get("document_type_label") or "",
+        "parse_status": item.get("parse_status") or "",
+        "parse_mode": item.get("parse_mode") or "",
+        "updated_at": item.get("updated_at") or "",
+        "completed_at": item.get("completed_at") or "",
+        "export_url": f"/api/materials/ai-import-records/{record_id}/export?format={export_format}",
+        "export_pdf_url": _material_ai_import_pdf_export_url(record_id, document_type),
+        "render_preview_url": f"/api/materials/ai-import-records/{record_id}/render-preview?format={export_format}",
+        "summary": _build_ai_import_detail_summary(item),
+    }
+
+
 def _is_material_ai_generation_record(row: dict) -> bool:
     parse_mode = str(row.get("parse_mode") or "").strip().lower()
     extraction_method = str(row.get("extraction_method") or "").strip().lower()
@@ -13,12 +183,20 @@ def _material_ai_import_status_message(row: dict, *, queue_position: int | None 
     status = str(row.get("parse_status") or "queued").strip().lower()
     source_name = row.get("source_file_name") or "材料文件"
     is_generation = _is_material_ai_generation_record(row)
+    error_message = str(row.get("error_message") or "").strip()
+    recovery_notice = error_message if status == "queued" and ("重新排队" in error_message or "进程中断" in error_message) else ""
+
+    def with_recovery_notice(message: str) -> str:
+        if not recovery_notice:
+            return message
+        return f"{recovery_notice.rstrip('。')}，{message}"
+
     if status == "queued":
         if is_generation:
-            return f"《{source_name}》已进入 AI 生成队列，系统会按顺序处理。"
+            return with_recovery_notice(f"《{source_name}》已进入 AI 生成队列，系统会按顺序处理。")
         if queue_position and queue_position > 1:
-            return f"《{source_name}》已进入 AI 解析队列，当前约第 {queue_position} 位。"
-        return f"《{source_name}》已进入 AI 解析队列，系统会按顺序处理。"
+            return with_recovery_notice(f"《{source_name}》已进入 AI 解析队列，当前约第 {queue_position} 位。")
+        return with_recovery_notice(f"《{source_name}》已进入 AI 解析队列，系统会按顺序处理。")
     if status == "running":
         if is_generation:
             return f"AI 正在生成《{source_name}》，会根据来源试卷校验结构并保存为规范材料。"
@@ -28,7 +206,6 @@ def _material_ai_import_status_message(row: dict, *, queue_position: int | None 
             return f"《{source_name}》生成完成，已生成材料包和结构化内容。"
         return f"《{source_name}》解析完成，已生成材料包和结构化内容。"
 
-    error_message = str(row.get("error_message") or "").strip()
     if error_message:
         return error_message
     if status == "ai_failed":
@@ -74,10 +251,15 @@ def _serialize_material_ai_import_task(conn, row, user: dict) -> dict:
     package_id = int(item.get("package_material_id") or 0) or None
     source_id = int(item.get("source_material_id") or 0) or None
     parsed_id = int(item.get("parsed_material_id") or 0) or None
+    document_type = item.get("document_type") or ""
+    export_format = _material_ai_import_export_format(document_type)
 
     package_item = _fetch_material_response_item(conn, package_id, user) if package_id else None
     source_item = _fetch_material_response_item(conn, source_id, user) if source_id else None
     parsed_item = _fetch_material_response_item(conn, parsed_id, user) if parsed_id else None
+    export_url = f"/api/materials/ai-import-records/{record_id}/export?format={export_format}"
+    export_pdf_url = _material_ai_import_pdf_export_url(record_id, document_type)
+    render_preview_url = f"/api/materials/ai-import-records/{record_id}/render-preview?format={export_format}"
 
     return {
         "id": record_id,
@@ -87,7 +269,7 @@ def _serialize_material_ai_import_task(conn, row, user: dict) -> dict:
         "source_material_id": source_id,
         "parsed_material_id": parsed_id,
         "document_group": item.get("document_group") or "",
-        "document_type": item.get("document_type") or "",
+        "document_type": document_type,
         "document_type_label": item.get("document_type_label") or "",
         "parse_status": status,
         "status": status,
@@ -100,9 +282,13 @@ def _serialize_material_ai_import_task(conn, row, user: dict) -> dict:
         "source_file_size": int(item.get("source_file_size") or 0),
         "source_mime_type": item.get("source_mime_type") or "",
         "content_quality_status": item.get("content_quality_status") or "unchecked",
+        "content_quality_label": _material_ai_import_quality_label(item.get("content_quality_status")),
         "error_message": item.get("error_message") or "",
         "message": _material_ai_import_status_message(item, queue_position=queue_position),
         "queue_position": queue_position,
+        "export_url": export_url,
+        "export_pdf_url": export_pdf_url,
+        "render_preview_url": render_preview_url,
         "created_at": item.get("created_at") or "",
         "started_at": item.get("started_at") or "",
         "updated_at": item.get("updated_at") or "",
@@ -523,11 +709,13 @@ def _build_ai_import_preview(record, *, content_limit: int = 8000) -> dict:
     structured = _parse_json_object(export_payload.get("structured"))
     content_markdown = str(payload.get("content_markdown") or record["content_markdown"] or "")
     warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else _parse_json_array(record["warnings_json"])
-    export_format = "xlsx" if record["document_type"] in {"ordinary_grade_record", "exam_grade_record"} else "docx"
+    record_id = int(record["id"])
+    document_type = record["document_type"] or ""
+    export_format = _material_ai_import_export_format(document_type)
     return {
-        "id": int(record["id"]),
+        "id": record_id,
         "document_group": record["document_group"] or "",
-        "document_type": record["document_type"] or "",
+        "document_type": document_type,
         "document_type_label": record["document_type_label"] or "",
         "parse_mode": record["parse_mode"] or "",
         "extraction_method": record["extraction_method"] or "",
@@ -540,9 +728,9 @@ def _build_ai_import_preview(record, *, content_limit: int = 8000) -> dict:
         "warnings": warnings,
         "content_markdown": content_markdown[:content_limit],
         "content_truncated": len(content_markdown) > content_limit,
-        "export_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format={export_format}",
-        "export_pdf_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format=pdf" if record["document_type"] == "exam_paper" else "",
-        "render_preview_url": f"/api/materials/ai-import-records/{int(record['id'])}/render-preview?format={export_format}",
+        "export_url": f"/api/materials/ai-import-records/{record_id}/export?format={export_format}",
+        "export_pdf_url": _material_ai_import_pdf_export_url(record_id, document_type),
+        "render_preview_url": f"/api/materials/ai-import-records/{record_id}/render-preview?format={export_format}",
     }
 
 

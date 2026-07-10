@@ -304,6 +304,27 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(fields["reviewer_name"], "【系主任未填写】")
         self.assertIn("签名库", fields["reviewer_missing_notice"])
 
+    def test_unbalanced_score_cannot_be_officially_exported_but_can_preview(self):
+        plan_id = svc.create_assessment_plan(
+            self.conn,
+            teacher=self.teacher,
+            title="课程考核计划表",
+            fields={"course_name": "服务器配置与管理", "class_name": "软工2406班", "examiner_name": "张海林"},
+            items=[{"assessment_form": "机试", "content": "Linux 用户与目录管理", "score": "60"}],
+            status="ready",
+        )
+        plan = svc.get_assessment_plan(self.conn, plan_id)
+        with self.assertRaisesRegex(ValueError, "分值合计必须为 100"):
+            svc.export_plan_artifact(self.conn, plan, requested_format="docx")
+
+        artifact = svc.export_plan_artifact(
+            self.conn,
+            plan,
+            requested_format="docx",
+            enforce_score_balance=False,
+        )
+        self.assertTrue(artifact.content.startswith(b"PK"))
+
 
 class SignatureExtractionTests(unittest.TestCase):
     SAMPLE = (

@@ -36,6 +36,7 @@ from .material_final_document_service import (
     normalize_final_material_payload,
 )
 from .organization_scope_service import load_teacher_org_scope
+from .process_material_import_summary_service import build_process_import_summary
 from .resource_access_service import is_super_admin_teacher
 
 # ---------------------------------------------------------------------------
@@ -571,6 +572,7 @@ def serialize_card(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
         "title": row.get("title") or "课程考核计划表",
+        "class_offering_id": row.get("class_offering_id"),
         "school": fields.get("school") or row.get("school_name") or "",
         "school_name": row.get("school_name") or fields.get("school") or "",
         "course_name": fields.get("course_name") or "",
@@ -593,6 +595,7 @@ def serialize_card(row: dict[str, Any]) -> dict[str, Any]:
         "ai_gen_status": row.get("ai_gen_status") or "",
         "ai_gen_error": row.get("ai_gen_error") or "",
         "ai_gen_progress": row.get("ai_gen_progress_data") or {},
+        "import_summary": build_process_import_summary(row),
         "examiner_signature": row.get("examiner_signature"),
         "reviewer_signature": row.get("reviewer_signature"),
         "is_owned": bool(row.get("is_owned")),
@@ -883,8 +886,29 @@ def export_plan_docx(conn: sqlite3.Connection, plan: dict[str, Any]) -> tuple[by
     return artifact.content, artifact.filename
 
 
-def export_plan_artifact(conn: sqlite3.Connection, plan: dict[str, Any], *, requested_format: str = "docx"):
+def _assert_export_score_balanced(plan: dict[str, Any]) -> None:
+    score_total = plan.get("score_total")
+    if score_total in (None, ""):
+        score_total = _sum_scores(plan.get("items") or [])
+    try:
+        score_value = float(score_total)
+    except (TypeError, ValueError):
+        score_value = 0.0
+    if abs(score_value - TARGET_TOTAL_SCORE) >= 1e-6:
+        display_total = _score_text(score_value)
+        raise ValueError(f"考核项分值合计必须为 100 后才能导出，当前为 {display_total}。")
+
+
+def export_plan_artifact(
+    conn: sqlite3.Connection,
+    plan: dict[str, Any],
+    *,
+    requested_format: str = "docx",
+    enforce_score_balance: bool = True,
+):
     """Render the plan through the canonical assessment-plan export template."""
+    if enforce_score_balance:
+        _assert_export_score_balanced(plan)
     fields = build_export_fields(conn, plan)
     items = plan.get("items") or []
     notes = plan.get("notes") or list(ASSESSMENT_PLAN_NOTES)
@@ -912,8 +936,13 @@ def export_plan_artifact(conn: sqlite3.Connection, plan: dict[str, Any], *, requ
 def render_preview_html(conn: sqlite3.Connection, plan: dict[str, Any], *, user: dict[str, Any]) -> str:
     """Image-backed preview generated from the same DOCX used for export."""
     title = _text(plan.get("title")) or "课程考核计划表"
+    download_disabled_reason = ""
     try:
-        artifact = export_plan_artifact(conn, plan, requested_format="docx")
+        _assert_export_score_balanced(plan)
+    except ValueError as exc:
+        download_disabled_reason = str(exc)
+    try:
+        artifact = export_plan_artifact(conn, plan, requested_format="docx", enforce_score_balance=False)
         job = document_render_service.render_artifact(
             artifact.content,
             filename=artifact.filename,
@@ -928,4 +957,5 @@ def render_preview_html(conn: sqlite3.Connection, plan: dict[str, Any], *, user:
         user=user,
         eyebrow="课程考核计划表 · 导出一致预览",
         download_label="下载 Word",
+        download_disabled_reason=download_disabled_reason,
     )

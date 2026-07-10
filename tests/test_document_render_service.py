@@ -109,6 +109,29 @@ class DocumentRenderServiceTests(unittest.TestCase):
             self.assertNotIn("<img src=\"/api/document-renderer", preview_html)
             self.assertNotIn("repeat(auto-fit", preview_html)
 
+    def test_preview_html_can_disable_cached_download(self):
+        with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
+            service = DocumentRenderService(root=Path(temp_dir))
+            job = service.render_artifact(
+                _build_pdf_bytes(page_count=1),
+                filename="draft.pdf",
+                media_type="application/pdf",
+                source_format="pdf",
+            )
+
+            preview_html = service.render_preview_html(
+                job,
+                title="Draft Preview",
+                user={"id": 7, "role": "teacher"},
+                download_disabled_reason="请先补齐业务字段后再导出。",
+            )
+
+            self.assertIn('class="doc-preview-download is-disabled"', preview_html)
+            self.assertIn('aria-disabled="true"', preview_html)
+            self.assertIn("doc-preview-download-note", preview_html)
+            self.assertIn("请先补齐业务字段后再导出。", preview_html)
+            self.assertNotIn("/api/document-renderer/jobs/" + job.key + "/download", preview_html)
+
     def test_medium_pages_are_lazy_and_rendered_per_page(self):
         with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
             service = DocumentRenderService(root=Path(temp_dir))

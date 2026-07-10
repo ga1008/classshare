@@ -14,10 +14,20 @@ from datetime import datetime, timedelta
 from ..db.schema_lesson_plans import ensure_lesson_plan_schema
 
 
-def expire_stale_lesson_plan_tasks(conn: sqlite3.Connection, *, stale_minutes: int = 30) -> int:
+def expire_stale_lesson_plan_tasks(
+    conn: sqlite3.Connection,
+    *,
+    stale_minutes: int = 30,
+    teacher_id: int | None = None,
+) -> int:
     ensure_lesson_plan_schema(conn)
     now = datetime.now().isoformat()
     cutoff = (datetime.now() - timedelta(minutes=max(10, int(stale_minutes or 30)))).isoformat()
+    teacher_filter = ""
+    params: list[object] = [now, cutoff]
+    if teacher_id is not None:
+        teacher_filter = " AND teacher_id = ?"
+        params.append(int(teacher_id))
     cursor = conn.execute(
         """
         UPDATE lesson_plans
@@ -25,13 +35,18 @@ def expire_stale_lesson_plan_tasks(conn: sqlite3.Connection, *, stale_minutes: i
             ai_gen_status = 'failed',
             ai_gen_error = COALESCE(
                 NULLIF(ai_gen_error, ''),
-                'AI 任务在服务重启或异常中断后未恢复，请重试或删除。'
+                CASE
+                    WHEN source_type = 'import'
+                    THEN 'AI 解析任务在服务重启或异常中断后未恢复，请重新上传文件再解析或删除。'
+                    ELSE 'AI 生成任务在服务重启或异常中断后未恢复，请重试生成或删除。'
+                END
             ),
             updated_at = ?
         WHERE status IN ('generating', 'parsing')
           AND COALESCE(ai_gen_status, '') IN ('pending', 'running', '')
           AND COALESCE(updated_at, created_at) < ?
-        """,
-        (now, cutoff),
+          {teacher_filter}
+        """.format(teacher_filter=teacher_filter),
+        params,
     )
     return int(cursor.rowcount or 0)

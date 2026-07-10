@@ -1,6 +1,7 @@
 import { apiFetch } from './api.js';
 import { showToast } from './ui.js';
 import { renderFilePreview } from './file_preview.js';
+import { bindProcessMaterialExportDownloadActions } from './process_material_editor_preview.js';
 
 const material = window.MATERIAL_VIEWER || {};
 const viewerContext = window.MATERIAL_VIEWER_CONTEXT || {};
@@ -434,11 +435,55 @@ function buildBlockedDownloadButton() {
     `;
 }
 
+function buildAiImportExportActionsHtml() {
+    const record = material.ai_import_record || null;
+    if (!record) return '';
+    const actions = [];
+    const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(record.document_type) ? '导出 Excel' : '导出 Word';
+    const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(record.document_type) ? 'Excel' : 'Word';
+    if (record.render_preview_url) {
+        actions.push(`<a href="${escapeHtml(record.render_preview_url)}" class="btn btn-outline" target="_blank" rel="noopener">渲染预览</a>`);
+    }
+    if (record.export_url) {
+        actions.push(`
+            <button type="button" class="btn btn-primary"
+                    data-process-export-url="${escapeHtml(record.export_url)}"
+                    data-process-export-label="${exportDownloadLabel}">${exportLabel}</button>
+        `);
+    }
+    if (record.export_pdf_url) {
+        actions.push(`
+            <button type="button" class="btn btn-outline"
+                    data-process-export-url="${escapeHtml(record.export_pdf_url)}"
+                    data-process-export-label="PDF">导出 PDF</button>
+        `);
+    }
+    return actions.length ? `<div class="materials-viewer-export-actions">${actions.join('')}</div>` : '';
+}
+
 function buildMaterialDownloadAction(label = '\u4e0b\u8f7d\u539f\u6587\u4ef6') {
+    const aiImportActions = buildAiImportExportActionsHtml();
+    if (material.node_type !== 'file') {
+        return aiImportActions
+            || '<div class="materials-viewer-empty materials-viewer-empty--compact">文件夹材料请打开子文件查看，或回到材料库批量下载。</div>';
+    }
+    const originalAction = material.download_allowed === false
+        ? buildBlockedDownloadButton()
+        : `<a href="${material.download_url}" class="btn btn-primary">${label}</a>`;
+    if (aiImportActions) {
+        return `
+            <div class="materials-viewer-file-actions">
+                ${aiImportActions}
+                <div class="materials-viewer-original-actions">
+                    ${originalAction}
+                </div>
+            </div>
+        `;
+    }
     if (material.download_allowed === false) {
         return buildBlockedDownloadButton();
     }
-    return `<a href="${material.download_url}" class="btn btn-primary">${label}</a>`;
+    return originalAction;
 }
 
 function buildViewerUrlWithLearningContext(materialId, hash = '') {
@@ -1475,6 +1520,7 @@ async function init() {
     if (!contentEl) return;
     bindImageLightbox();
     bindSourceEditor();
+    bindProcessMaterialExportDownloadActions(document, showToast, { saved: false });
     decorateViewerDownloadActions();
     bindBlockedDownloadTips();
     initLearningMaterialProgressTracker();

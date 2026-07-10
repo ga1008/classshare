@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
 
-const LEGACY_MATERIALS_MANAGE_CONTROLLER_URL = '/static/js/materials_manage.js?v=material-workspace-20260709-filters';
+const LEGACY_MATERIALS_MANAGE_CONTROLLER_URL = '/static/js/materials_manage.js?v=process-material-summary-20260710';
 
 function MaterialsManagePageController() {
   useEffect(() => {

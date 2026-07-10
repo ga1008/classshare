@@ -1,6 +1,8 @@
 import { apiFetch } from './api.js';
 import { closeModal, escapeHtml, formatDate, formatSize, getFileIcon, openModal, renderMarkdown, showToast } from './ui.js';
 import { enhancePromptPoolInputs, recordPromptForInput } from './prompt_pool.js';
+import { openProcessMaterialConfirm } from './process_material_modal.js';
+import { bindProcessMaterialExportDownloadActions } from './process_material_editor_preview.js';
 import {
     getLearningDocumentUrl,
     getMaterialPreviewUrl,
@@ -34,10 +36,16 @@ const DOCUMENT_TYPE_LABELS = {
     exam_grade_record: '考核登分表',
 };
 
+const CLASSROOM_GENERATION_HINTS = {
+    ordinary_grade_record: '进入课堂后请选择 3 份平时作业和 1 份测评；系统会读取真实提交、评分与考勤数据生成 Excel。',
+    exam_grade_record: '进入课堂后请选择已绑定试卷且有大题分值的考试；系统会读取考试成绩生成 Excel。',
+};
+
 const SEARCH_DEBOUNCE_MS = 280;
 const AI_IMPORT_POLL_INTERVAL_MS = 3500;
 const AI_IMPORT_ACTIVE_STATUSES = new Set(['queued', 'running']);
 const AI_IMPORT_TERMINAL_STATUSES = new Set(['completed', 'failed', 'ai_failed', 'quality_failed', 'unsupported']);
+const AI_IMPORT_DISMISSED_TASK_LIMIT = 80;
 const AI_GENERATE_MAX_ATTACHMENTS = 10;
 const AI_GENERATE_SEARCH_DEBOUNCE_MS = 260;
 
@@ -46,6 +54,21 @@ function normalizeKeyword(value) {
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 100);
+}
+
+function compactStatusText(value, fallback = '', maxLength = 280) {
+    const text = String(value || fallback || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return maxLength > 0 ? text.slice(0, maxLength) : text;
+}
+
+async function recordMaterialPromptBestEffort(input, prompt) {
+    try {
+        await recordPromptForInput(input, prompt);
+    } catch (_) {
+        /* prompt pool recording is best effort */
+    }
 }
 
 function normalizeSortBy(value) {
@@ -199,6 +222,7 @@ const state = {
         file: null,
         tasks: new Map(),
         dismissedTaskIds: new Set(),
+        dismissedTaskStateKeys: new Map(),
         knownTaskStates: new Map(),
         pollTimer: 0,
         loadRequestId: 0,
@@ -206,6 +230,7 @@ const state = {
     aiGenerate: {
         busy: false,
         blockedReason: '',
+        sourceBlockReason: '',
         files: [],
         selectedMaterials: new Map(),
         selectedAssignments: new Map(),
@@ -261,6 +286,8 @@ const state = {
 const config = window.MATERIALS_MANAGE_CONFIG || {
     offerings: [],
     canAssign: false,
+    userId: '',
+    aiImportDismissStorageKey: '',
     materialAiImportRegistry: [],
     initialAiGenerate: {},
     initialAiImport: {},
@@ -286,6 +313,15 @@ const refs = {
     uploadDropdown: document.getElementById('materials-upload-dropdown'),
     directUploadBtn: document.getElementById('materials-upload-direct-btn'),
     aiImportOpenBtn: document.getElementById('materials-ai-import-open-btn'),
+    aiImportShortcutBtn: document.getElementById('materials-ai-import-shortcut-btn'),
+    classroomGenerateOpenBtn: document.getElementById('materials-classroom-generate-open-btn'),
+    classroomGenerateModal: document.getElementById('materials-classroom-generate-modal'),
+    classroomGenerateTitle: document.getElementById('materials-classroom-generate-title'),
+    classroomGenerateSubtitle: document.getElementById('materials-classroom-generate-subtitle'),
+    classroomGenerateStatus: document.getElementById('materials-classroom-generate-status'),
+    classroomGenerateList: document.getElementById('materials-classroom-generate-list'),
+    processClassroomGenerateBtn: document.querySelector('[data-process-classroom-generate]'),
+    processAiImportBtn: document.querySelector('[data-process-ai-import]'),
     folderBtn: document.getElementById('materials-upload-folder-btn'),
     fileInput: document.getElementById('materials-file-input'),
     folderInput: document.getElementById('materials-folder-input'),
@@ -295,6 +331,7 @@ const refs = {
     aiImportFileInput: document.getElementById('materials-ai-import-file-input'),
     aiImportChooseFileBtn: document.getElementById('materials-ai-import-choose-file-btn'),
     aiImportFileName: document.getElementById('materials-ai-import-file-name'),
+    aiImportFormatHint: document.getElementById('materials-ai-import-format-hint'),
     aiImportStatus: document.getElementById('materials-ai-import-status'),
     aiImportSubmitBtn: document.getElementById('materials-ai-import-submit-btn'),
     aiGenerateOpenBtn: document.getElementById('materials-ai-generate-open-btn'),
@@ -420,6 +457,8 @@ const refs = {
     repositoryCredentialSaveBtn: document.getElementById('materials-repository-credential-save-btn'),
 };
 
+const DEFAULT_AI_IMPORT_ACCEPT = refs.aiImportFileInput?.getAttribute('accept') || '';
+
 if (refs.detail && refs.detailModalBody && refs.detail.parentElement !== refs.detailModalBody) {
     refs.detailModalBody.appendChild(refs.detail);
 }
@@ -494,6 +533,88 @@ function getInitialAiImportPreset() {
     };
 }
 
+function getProcessGeneratePolicy() {
+    const initial = config.initialAiGenerate && typeof config.initialAiGenerate === 'object'
+        ? config.initialAiGenerate
+        : {};
+    if (!initial.blocked) return null;
+    const documentType = normalizeDocumentTypeFilter(initial.document_type || initial.type);
+    return {
+        document_group: normalizeKeyword(initial.document_group || initial.group || 'final_material'),
+        document_type: documentType,
+        label: getDocumentTypeLabel(documentType) || '过程材料',
+        status: compactStatusText(initial.status, '该表需要从真实课堂数据生成，不能在材料库中泛化生成。'),
+    };
+}
+
+function classroomGenerateUrl(offering, documentType) {
+    const id = Number(offering?.id || 0);
+    if (!id) return '#';
+    const params = new URLSearchParams();
+    params.set('open_final_material', '1');
+    if (documentType) params.set('final_material_type', documentType);
+    return `/classroom/${id}?${params.toString()}#materials-panel`;
+}
+
+function offeringLabel(offering) {
+    return [offering?.course_name, offering?.class_name].filter(Boolean).join(' · ') || `课堂 ${offering?.id || ''}`;
+}
+
+function offeringMeta(offering) {
+    return [offering?.semester, offering?.school_name, offering?.college].filter(Boolean).join(' / ');
+}
+
+function renderClassroomGenerateOptions(policy) {
+    if (!refs.classroomGenerateList || !refs.classroomGenerateStatus) return;
+    const offerings = Array.isArray(config.offerings) ? config.offerings : [];
+    refs.classroomGenerateTitle.textContent = `从课堂生成${policy?.label || '过程材料'}`;
+    refs.classroomGenerateSubtitle.textContent = CLASSROOM_GENERATION_HINTS[policy?.document_type]
+        || '进入课堂后在课程材料区生成，会自动带入真实课堂上下文。';
+    refs.classroomGenerateStatus.innerHTML = `
+        <div class="text-muted text-sm">生成规则</div>
+        <strong>${escapeHtml(policy?.status || '该表需要从真实课堂数据生成。')}</strong>
+    `;
+    if (!offerings.length) {
+        refs.classroomGenerateList.innerHTML = '<div class="materials-empty">暂无可用课堂，请先在“开设课堂”中创建或同步教学班级。</div>';
+        return;
+    }
+    refs.classroomGenerateList.innerHTML = offerings.map((offering) => {
+        const href = classroomGenerateUrl(offering, policy?.document_type || '');
+        const label = offeringLabel(offering);
+        const meta = offeringMeta(offering) || '进入课堂材料区继续';
+        return `
+            <a class="materials-modal-option" href="${escapeHtml(href)}">
+                <div>
+                    <strong>${escapeHtml(label)}</strong>
+                    <small>${escapeHtml(meta)}</small>
+                </div>
+                <span>进入生成</span>
+            </a>
+        `;
+    }).join('');
+}
+
+function openClassroomGenerateModal() {
+    const policy = getProcessGeneratePolicy();
+    if (!policy) {
+        showToast('当前页面无需从课堂数据生成。', 'info');
+        return;
+    }
+    renderClassroomGenerateOptions(policy);
+    openModal('materials-classroom-generate-modal');
+}
+
+function applyProcessGenerateBlockIfNeeded() {
+    const policy = getProcessGeneratePolicy();
+    if (!policy) return false;
+    state.aiGenerate.blockedReason = policy.status;
+    if (refs.aiGenerateGroup) refs.aiGenerateGroup.value = policy.document_group || 'final_material';
+    updateAiGenerateTypeOptions();
+    setAiGenerateStatus(`${policy.label}必须从真实课堂数据生成，或上传学校模板 Excel 解析。`, 'warning');
+    updateAiGenerateSubmitState();
+    return true;
+}
+
 function applyAiGeneratePreset(preset) {
     if (!preset || !refs.aiGenerateGroup || !refs.aiGenerateType) return;
     state.aiGenerate.blockedReason = '';
@@ -523,6 +644,9 @@ function applyAiGeneratePreset(preset) {
     const prompt = String(preset.prompt || '').trim();
     if (prompt && refs.aiGeneratePrompt) {
         refs.aiGeneratePrompt.value = prompt;
+    }
+    if (applyProcessGenerateBlockIfNeeded()) {
+        return;
     }
     if (preset.blocked && desiredType && !typeApplied) {
         state.aiGenerate.blockedReason = preset.status || '当前材料类型不能在材料库中泛化生成。';
@@ -982,6 +1106,7 @@ function renderWorkspaceTopbar(detail) {
     const exportPdfUrl = detail.ai_import_record?.export_pdf_url || '';
     const renderPreviewUrl = detail.ai_import_record?.render_preview_url || '';
     const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(detail.ai_import_record?.document_type) ? '导出Excel' : '导出Word';
+    const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(detail.ai_import_record?.document_type) ? 'Excel' : 'Word';
     const canManage = detail.can_manage !== false;
     const isFolder = detail.node_type === 'folder';
     const isBindable = Boolean(detail.is_markdown) || isRenderable(detail);
@@ -995,8 +1120,8 @@ function renderWorkspaceTopbar(detail) {
                 ${isRenderable(detail) ? `<a href="${escapeHtml(getRenderUrl(detail))}" class="btn btn-primary btn-sm" target="_blank" rel="noopener">${escapeHtml(getRenderLabel(detail))}</a>` : ''}
                 ${optimizedUrl ? `<a href="${escapeHtml(optimizedUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">查看优化稿</a>` : ''}
                 ${renderPreviewUrl ? `<a href="${escapeHtml(renderPreviewUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
-                ${exportUrl ? `<a href="${escapeHtml(exportUrl)}" class="btn btn-outline btn-sm">${exportLabel}</a>` : ''}
-                ${exportPdfUrl ? `<a href="${escapeHtml(exportPdfUrl)}" class="btn btn-outline btn-sm">导出PDF</a>` : ''}
+                ${exportUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
+                ${exportPdfUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出PDF</button>` : ''}
                 ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline btn-sm">下载</a>` : ''}
                 ${isGitRepository(detail) && canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="repository">仓库</button>' : ''}
                 <button type="button" class="btn btn-outline btn-sm" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
@@ -1191,6 +1316,70 @@ function renderScopePropertyControl(detail) {
     `;
 }
 
+function renderAiImportDetailSummary(detail) {
+    const record = detail?.ai_import_record || null;
+    const summary = record?.summary || null;
+    if (!record || !summary) return '';
+    const fieldItems = Array.isArray(summary.field_items) ? summary.field_items : [];
+    const warnings = Array.isArray(summary.warnings) ? summary.warnings : [];
+    const exportFormats = Array.isArray(summary.export_formats) ? summary.export_formats.join(' / ') : '';
+    const warningCount = Number(summary.warning_count || warnings.length || 0);
+    const warningTone = warningCount > 0 ? 'is-warning' : 'is-ok';
+    const renderPreviewUrl = record.render_preview_url || '';
+    const exportUrl = record.export_url || '';
+    const exportPdfUrl = record.export_pdf_url || '';
+    const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(record.document_type) ? '导出 Excel' : '导出 Word';
+    const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(record.document_type) ? 'Excel' : 'Word';
+    const sourceLabel = summary.source_file_name
+        ? `${summary.parse_mode_label || record.parse_mode || '导入解析'} · ${summary.source_file_name}`
+        : (summary.parse_mode_label || record.parse_mode || '导入解析');
+    const fieldsHtml = fieldItems.length
+        ? fieldItems.map((item) => `
+            <div>
+                <span>${escapeHtml(item.label || item.key || '字段')}</span>
+                <strong title="${escapeHtml(item.value || '')}">${escapeHtml(item.value || '-')}</strong>
+            </div>
+        `).join('')
+        : '<p class="materials-ai-import-summary-empty">暂无可展示的关键字段。</p>';
+    const warningsHtml = warningCount > 0
+        ? `
+            <ul class="materials-ai-import-summary-warnings">
+                ${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+                ${summary.has_more_warnings ? '<li>还有更多警告，请打开渲染预览或导出文档核对。</li>' : ''}
+            </ul>
+        `
+        : '<p class="materials-ai-import-summary-empty">未记录解析警告。</p>';
+    return `
+        <section class="materials-ai-import-summary">
+            <div class="materials-ai-import-summary-head">
+                <div>
+                    <span>过程材料解析结果</span>
+                    <strong>${escapeHtml(summary.document_type_label || record.document_type_label || '过程材料')}</strong>
+                </div>
+                <em class="${warningTone}">${warningCount > 0 ? `${escapeHtml(String(warningCount))} 条警告` : '可导出'}</em>
+            </div>
+            <div class="materials-ai-import-summary-meta">
+                <div><span>来源</span><strong>${escapeHtml(sourceLabel)}</strong></div>
+                <div><span>格式</span><strong>${escapeHtml(exportFormats || '按材料类型')}</strong></div>
+                <div><span>质量</span><strong>${escapeHtml(summary.content_quality_label || '未校验')}</strong></div>
+                <div><span>完成</span><strong>${escapeHtml(formatDateLabel(summary.updated_at || record.completed_at || record.updated_at))}</strong></div>
+            </div>
+            <div class="materials-ai-import-summary-fields">
+                ${fieldsHtml}
+            </div>
+            <details class="materials-ai-import-summary-detail" ${warningCount > 0 ? 'open' : ''}>
+                <summary>解析警告与核对点</summary>
+                ${warningsHtml}
+            </details>
+            <div class="materials-ai-import-summary-actions">
+                ${renderPreviewUrl ? `<a href="${escapeHtml(renderPreviewUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
+                ${exportUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
+                ${exportPdfUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出 PDF</button>` : ''}
+            </div>
+        </section>
+    `;
+}
+
 function renderWorkspaceProperties(detail) {
     const canManage = detail.can_manage !== false;
     const assignments = Array.isArray(detail.assignments) ? detail.assignments.length : 0;
@@ -1202,6 +1391,7 @@ function renderWorkspaceProperties(detail) {
                 <h3>属性</h3>
                 ${canManage ? '<button type="button" class="btn btn-primary btn-sm" data-detail-action="save-properties">保存</button>' : ''}
             </div>
+            ${renderAiImportDetailSummary(detail)}
             <label class="materials-property-field">
                 <span>名称</span>
                 <input type="text" class="form-control" data-property-name value="${escapeHtml(detail.name || '')}" maxlength="120" ${canManage ? '' : 'disabled'}>
@@ -1622,13 +1812,102 @@ function getSelectedAiImportGroup() {
     return registry.find((group) => group.key === selectedKey) || registry[0] || null;
 }
 
-function renderAiImportTypes() {
+function normalizeAiImportExtension(value) {
+    const extension = String(value || '').trim().toLowerCase();
+    if (!extension) return '';
+    if (extension.startsWith('.')) return extension;
+    if (extension.includes('/')) return '';
+    return `.${extension}`;
+}
+
+function normalizeAiImportExtensions(values) {
+    const source = Array.isArray(values) ? values : String(values || '').split(',');
+    const normalized = [];
+    source.forEach((item) => {
+        const extension = normalizeAiImportExtension(item);
+        if (extension && !normalized.includes(extension)) normalized.push(extension);
+    });
+    return normalized;
+}
+
+function getSelectedAiImportTypeMeta() {
+    const group = getSelectedAiImportGroup();
+    const types = Array.isArray(group?.types) ? group.types : [];
+    const selectedType = refs.aiImportType?.value || types[0]?.key || '';
+    return types.find((docType) => docType.key === selectedType) || types[0] || null;
+}
+
+function getAiImportAcceptedExtensions(typeMeta = getSelectedAiImportTypeMeta()) {
+    const configured = normalizeAiImportExtensions(typeMeta?.accepted_extensions || []);
+    if (configured.length) return configured;
+    return normalizeAiImportExtensions(typeMeta?.accept || DEFAULT_AI_IMPORT_ACCEPT);
+}
+
+function getAiImportAcceptAttribute(typeMeta = getSelectedAiImportTypeMeta()) {
+    const configured = String(typeMeta?.accept || '').trim();
+    if (configured) return configured;
+    const extensions = getAiImportAcceptedExtensions(typeMeta);
+    return extensions.length ? extensions.join(',') : DEFAULT_AI_IMPORT_ACCEPT;
+}
+
+function getAiImportFileExtension(file) {
+    const name = String(file?.name || '').trim();
+    const dotIndex = name.lastIndexOf('.');
+    return dotIndex >= 0 ? name.slice(dotIndex).toLowerCase() : '';
+}
+
+function isAiImportFileAccepted(file, typeMeta = getSelectedAiImportTypeMeta()) {
+    if (!file) return true;
+    const extensions = getAiImportAcceptedExtensions(typeMeta);
+    if (!extensions.length) return true;
+    return extensions.includes(getAiImportFileExtension(file));
+}
+
+function formatAiImportExtensionList(typeMeta = getSelectedAiImportTypeMeta()) {
+    return String(typeMeta?.accepted_format_label || '').trim()
+        || getAiImportAcceptedExtensions(typeMeta).join('、')
+        || '当前支持格式';
+}
+
+function getAiImportFormatMismatchMessage(file, typeMeta = getSelectedAiImportTypeMeta()) {
+    const label = String(typeMeta?.label || '该材料').trim();
+    const fileName = String(file?.name || '当前文件').trim();
+    return `${label}仅支持${formatAiImportExtensionList(typeMeta)}文件，请重新选择。当前文件：${fileName}`;
+}
+
+function clearAiImportSelectedFile() {
+    state.aiImport.file = null;
+    if (refs.aiImportFileInput) refs.aiImportFileInput.value = '';
+    updateAiImportFileLabel();
+}
+
+function updateAiImportFormatGuide({ preserveStatus = true } = {}) {
+    const typeMeta = getSelectedAiImportTypeMeta();
+    if (refs.aiImportFileInput) {
+        refs.aiImportFileInput.setAttribute('accept', getAiImportAcceptAttribute(typeMeta));
+    }
+    if (refs.aiImportFormatHint) {
+        const hint = String(typeMeta?.format_hint || '').trim();
+        const accepted = formatAiImportExtensionList(typeMeta);
+        refs.aiImportFormatHint.textContent = hint || `支持${accepted}文件。`;
+    }
+    if (state.aiImport.file && !isAiImportFileAccepted(state.aiImport.file, typeMeta)) {
+        const message = getAiImportFormatMismatchMessage(state.aiImport.file, typeMeta);
+        clearAiImportSelectedFile();
+        setAiImportStatus(message, 'warning');
+        return;
+    }
+    if (!preserveStatus) setAiImportStatus('', 'info');
+}
+
+function renderAiImportTypes(options = {}) {
     const group = getSelectedAiImportGroup();
     const types = Array.isArray(group?.types) ? group.types : [];
     if (!refs.aiImportType) return;
     refs.aiImportType.innerHTML = types.map((docType) => (
         `<option value="${escapeHtml(docType.key)}">${escapeHtml(docType.label)}</option>`
     )).join('');
+    updateAiImportFormatGuide({ preserveStatus: options.preserveStatus !== false });
 }
 
 function applyAiImportPreset(preset) {
@@ -1648,6 +1927,7 @@ function applyAiImportPreset(preset) {
             .find((option) => option.value === desiredType);
         if (typeOption) refs.aiImportType.value = desiredType;
     }
+    updateAiImportFormatGuide({ preserveStatus: true });
     if (preset.status) setAiImportStatus(preset.status, 'info');
 }
 
@@ -1664,6 +1944,47 @@ function setAiImportStatus(message = '', type = 'info') {
     refs.aiImportStatus.textContent = normalizedMessage;
 }
 
+function setModalDismissDisabled(modal, disabled) {
+    modal?.querySelectorAll('[data-dismiss="modal"]').forEach((button) => {
+        if ('disabled' in button) button.disabled = disabled;
+        button.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    });
+    modal?.classList.toggle('is-busy', Boolean(disabled));
+}
+
+function bindBusyModalCloseGuard(modal, isBusy, setStatus, message) {
+    modal?.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        const isCloseAttempt = event.target === modal || Boolean(target?.closest('[data-dismiss="modal"]'));
+        if (!isCloseAttempt || !isBusy()) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        setStatus(message, 'warning');
+    }, true);
+}
+
+function bindAiWorkModalCloseGuards() {
+    bindBusyModalCloseGuard(
+        refs.aiImportModal,
+        () => state.aiImport.busy,
+        setAiImportStatus,
+        '文件正在上传并加入解析队列，请等待完成。',
+    );
+    bindBusyModalCloseGuard(
+        refs.aiGenerateModal,
+        () => state.aiGenerate.busy,
+        setAiGenerateStatus,
+        'AI 正在生成材料，请等待完成。',
+    );
+    bindBusyModalCloseGuard(
+        document.getElementById('materials-ai-expand-modal'),
+        () => state.aiExpand.busy,
+        (message, type) => setModalStatus(refs.aiExpandStatus, message, type),
+        'AI 正在续写材料，请等待任务提交完成。',
+    );
+}
+
 function setAiImportBusy(busy) {
     state.aiImport.busy = busy;
     if (refs.aiImportSubmitBtn) {
@@ -1673,6 +1994,7 @@ function setAiImportBusy(busy) {
     if (refs.aiImportChooseFileBtn) refs.aiImportChooseFileBtn.disabled = busy;
     if (refs.aiImportGroup) refs.aiImportGroup.disabled = busy;
     if (refs.aiImportType) refs.aiImportType.disabled = busy;
+    setModalDismissDisabled(refs.aiImportModal, busy);
 }
 
 function normalizeAiImportTask(rawTask) {
@@ -1705,6 +2027,83 @@ function getAiImportTaskStateKey(task) {
     return `${task.id}:${task.parse_status}:${task.updated_at || ''}`;
 }
 
+function getAiImportDismissStorageKey() {
+    const configured = String(config.aiImportDismissStorageKey || '').trim();
+    if (configured) return configured;
+    const userKey = String(config.userId || 'anonymous').replace(/[^a-zA-Z0-9_-]/g, '_') || 'anonymous';
+    return `lanshare:materials:ai-import:dismissed:${userKey}`;
+}
+
+function readAiImportDismissalEntries() {
+    try {
+        const raw = window.sessionStorage?.getItem(getAiImportDismissStorageKey());
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((entry) => ({
+                id: Number(entry?.id || 0),
+                stateKey: String(entry?.stateKey || ''),
+            }))
+            .filter((entry) => entry.id > 0 && entry.stateKey)
+            .slice(-AI_IMPORT_DISMISSED_TASK_LIMIT);
+    } catch (_) {
+        return [];
+    }
+}
+
+function persistAiImportDismissals() {
+    try {
+        const entries = Array.from(state.aiImport.dismissedTaskStateKeys.entries())
+            .slice(-AI_IMPORT_DISMISSED_TASK_LIMIT)
+            .map(([id, stateKey]) => ({ id, stateKey }));
+        window.sessionStorage?.setItem(getAiImportDismissStorageKey(), JSON.stringify(entries));
+    } catch (_) {
+        // Session storage is an enhancement; task cards still work without it.
+    }
+}
+
+function hydrateAiImportDismissals() {
+    state.aiImport.dismissedTaskIds.clear();
+    state.aiImport.dismissedTaskStateKeys.clear();
+    readAiImportDismissalEntries().forEach((entry) => {
+        state.aiImport.dismissedTaskIds.add(entry.id);
+        state.aiImport.dismissedTaskStateKeys.set(entry.id, entry.stateKey);
+    });
+}
+
+function rememberAiImportTaskDismissal(task) {
+    if (!task || !isAiImportTaskTerminal(task)) return;
+    const taskId = Number(task.id || 0);
+    if (!taskId) return;
+    const stateKey = getAiImportTaskStateKey(task);
+    state.aiImport.dismissedTaskIds.add(taskId);
+    state.aiImport.dismissedTaskStateKeys.delete(taskId);
+    state.aiImport.dismissedTaskStateKeys.set(taskId, stateKey);
+    while (state.aiImport.dismissedTaskStateKeys.size > AI_IMPORT_DISMISSED_TASK_LIMIT) {
+        const oldestId = state.aiImport.dismissedTaskStateKeys.keys().next().value;
+        state.aiImport.dismissedTaskStateKeys.delete(oldestId);
+        state.aiImport.dismissedTaskIds.delete(oldestId);
+    }
+    persistAiImportDismissals();
+}
+
+function clearMismatchedAiImportDismissal(task) {
+    const taskId = Number(task?.id || 0);
+    if (!taskId || !state.aiImport.dismissedTaskStateKeys.has(taskId)) return;
+    if (state.aiImport.dismissedTaskStateKeys.get(taskId) === getAiImportTaskStateKey(task)) return;
+    state.aiImport.dismissedTaskIds.delete(taskId);
+    state.aiImport.dismissedTaskStateKeys.delete(taskId);
+    persistAiImportDismissals();
+}
+
+function isAiImportTaskDismissed(task) {
+    if (!task || !isAiImportTaskTerminal(task)) return false;
+    const taskId = Number(task.id || 0);
+    const dismissedStateKey = state.aiImport.dismissedTaskStateKeys.get(taskId);
+    return Boolean(dismissedStateKey && dismissedStateKey === getAiImportTaskStateKey(task));
+}
+
 function isAiImportTaskActive(task) {
     return AI_IMPORT_ACTIVE_STATUSES.has(task?.parse_status);
 }
@@ -1725,7 +2124,8 @@ function isAiImportTaskVisible(task) {
 function upsertAiImportTask(rawTask) {
     const task = normalizeAiImportTask(rawTask);
     if (!task) return null;
-    if (state.aiImport.dismissedTaskIds.has(task.id) && isAiImportTaskTerminal(task)) {
+    clearMismatchedAiImportDismissal(task);
+    if (isAiImportTaskDismissed(task)) {
         return task;
     }
     state.aiImport.tasks.set(task.id, task);
@@ -1737,7 +2137,12 @@ function upsertAiImportTask(rawTask) {
 
 function removeAiImportTask(taskId) {
     const normalizedId = Number(taskId);
-    state.aiImport.dismissedTaskIds.add(normalizedId);
+    const task = state.aiImport.tasks.get(normalizedId);
+    if (task) {
+        rememberAiImportTaskDismissal(task);
+    } else {
+        state.aiImport.dismissedTaskIds.add(normalizedId);
+    }
     state.aiImport.tasks.delete(normalizedId);
     state.aiImport.knownTaskStates.delete(normalizedId);
     renderList();
@@ -1798,6 +2203,20 @@ function renderAiImportTaskCards() {
         const tone = getAiImportTaskTone(task);
         const active = isAiImportTaskActive(task);
         const completed = task.parse_status === 'completed';
+        const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(task.document_type) ? '导出 Excel' : '导出 Word';
+        const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(task.document_type) ? 'Excel' : 'Word';
+        const qualityMeta = task.content_quality_label
+            ? `<span>质量 ${escapeHtml(task.content_quality_label)}</span>`
+            : '';
+        const renderPreviewAction = completed && task.render_preview_url
+            ? `<a href="${escapeHtml(task.render_preview_url)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>`
+            : '';
+        const exportAction = completed && task.export_url
+            ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(task.export_url)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>`
+            : '';
+        const exportPdfAction = completed && task.export_pdf_url
+            ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(task.export_pdf_url)}" data-process-export-label="PDF">导出 PDF</button>`
+            : '';
         const packageAction = completed && task.package_material_id
             ? `<button type="button" class="btn btn-primary btn-sm" data-ai-import-action="open-package" data-ai-import-task-id="${task.id}">打开材料包</button>`
             : '';
@@ -1823,10 +2242,14 @@ function renderAiImportTaskCards() {
                     <div class="materials-ai-task-meta">
                         <span>${escapeHtml(task.document_type_label || '材料')}</span>
                         ${queueText}
+                        ${qualityMeta}
                         ${task.updated_at ? `<span>更新 ${escapeHtml(formatDateLabel(task.updated_at))}</span>` : ''}
                     </div>
                 </div>
                 <div class="materials-ai-task-actions">
+                    ${renderPreviewAction}
+                    ${exportAction}
+                    ${exportPdfAction}
                     ${packageAction}
                     ${viewAction}
                     ${dismissAction}
@@ -1947,6 +2370,10 @@ async function submitAiImport() {
         refs.aiImportFileInput?.click();
         return;
     }
+    if (!isAiImportFileAccepted(state.aiImport.file)) {
+        setAiImportStatus(getAiImportFormatMismatchMessage(state.aiImport.file), 'warning');
+        return;
+    }
 
     const formData = new FormData();
     formData.append('file', state.aiImport.file, state.aiImport.file.name);
@@ -1973,7 +2400,6 @@ async function submitAiImport() {
         showToast(result.message || `《${task?.source_file_name || '材料文件'}》已加入 AI 解析队列`, 'success', 4200);
     } catch (error) {
         setAiImportStatus(error.message || 'AI 解析导入失败', 'error');
-        throw error;
     } finally {
         setAiImportBusy(false);
     }
@@ -1993,14 +2419,18 @@ function setAiGenerateStatus(message = '', type = 'info') {
     if (!refs.aiGenerateStatus) return;
     const normalizedMessage = String(message || '').trim();
     refs.aiGenerateStatus.hidden = !normalizedMessage;
-    refs.aiGenerateStatus.className = `materials-ai-import-status materials-ai-import-status--${type}`;
+    refs.aiGenerateStatus.className = `materials-ai-import-status materials-ai-generate-status materials-ai-import-status--${type}`;
     refs.aiGenerateStatus.textContent = normalizedMessage;
 }
 
 function updateAiGenerateSubmitState() {
     if (!refs.aiGenerateSubmitBtn) return;
-    const blocked = Boolean(state.aiGenerate.blockedReason);
-    refs.aiGenerateSubmitBtn.disabled = state.aiGenerate.busy || blocked;
+    const blockedReason = state.aiGenerate.blockedReason || state.aiGenerate.sourceBlockReason || '';
+    const blocked = Boolean(blockedReason);
+    const disabled = state.aiGenerate.busy || blocked;
+    refs.aiGenerateSubmitBtn.disabled = disabled;
+    refs.aiGenerateSubmitBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    refs.aiGenerateSubmitBtn.title = blocked ? blockedReason : '';
     refs.aiGenerateSubmitBtn.textContent = state.aiGenerate.busy ? '深度思考中...' : '生成并保存';
 }
 
@@ -2008,6 +2438,8 @@ function setAiGenerateBusy(busy) {
     state.aiGenerate.busy = busy;
     updateAiGenerateSubmitState();
     [
+        refs.aiGenerateGroup,
+        refs.aiGenerateType,
         refs.aiGeneratePrompt,
         refs.aiGenerateUploadBtn,
         refs.aiGenerateMaterialQuery,
@@ -2015,10 +2447,23 @@ function setAiGenerateBusy(busy) {
     ].forEach((element) => {
         if (element) element.disabled = busy;
     });
+    renderAiGenerateModal();
+    setModalDismissDisabled(refs.aiGenerateModal, busy);
+}
+
+function setAiExpandBusy(busy) {
+    state.aiExpand.busy = busy;
+    if (refs.aiExpandSubmitBtn) {
+        refs.aiExpandSubmitBtn.disabled = busy;
+        refs.aiExpandSubmitBtn.textContent = busy ? '提交中...' : '开始续写';
+    }
+    if (refs.aiExpandPrompt) refs.aiExpandPrompt.disabled = busy;
+    setModalDismissDisabled(document.getElementById('materials-ai-expand-modal'), busy);
 }
 
 function resetAiGenerateState() {
     state.aiGenerate.blockedReason = '';
+    state.aiGenerate.sourceBlockReason = '';
     state.aiGenerate.files = [];
     state.aiGenerate.selectedMaterials = new Map();
     state.aiGenerate.selectedAssignments = new Map();
@@ -2066,6 +2511,94 @@ function updateAiGeneratePromptPlaceholder() {
     }
 }
 
+function getAiGenerateTypeKey() {
+    return refs.aiGenerateType?.value || 'teaching_document';
+}
+
+function getAiGenerateGroupKey() {
+    return refs.aiGenerateGroup?.value || 'teaching_material';
+}
+
+function getAiGenerateCandidateDocumentType(item) {
+    return String(
+        item?.ai_generation_document_type
+        || item?.document_type
+        || item?.ai_import_record?.document_type
+        || ''
+    ).trim();
+}
+
+function textContainsAny(value, patterns) {
+    const text = String(value || '').toLowerCase();
+    return patterns.some((pattern) => text.includes(pattern));
+}
+
+function materialLooksLikeAssessmentPlan(item) {
+    if (getAiGenerateCandidateDocumentType(item) === 'assessment_plan') return true;
+    return textContainsAny(
+        [item?.ai_generation_document_type_label, item?.name, item?.material_path].filter(Boolean).join(' '),
+        ['考核计划表', 'assessment plan', 'assessment_plan']
+    );
+}
+
+function materialLooksLikeExamPaper(item) {
+    if (getAiGenerateCandidateDocumentType(item) === 'exam_paper') return true;
+    const text = [item?.ai_generation_document_type_label, item?.name, item?.material_path].filter(Boolean).join(' ');
+    return textContainsAny(text, ['课程考核试卷', '考核试卷', 'exam paper', 'exam_paper']);
+}
+
+function getAiGenerateSourceState() {
+    const selectedMaterials = Array.from(state.aiGenerate.selectedMaterials.values());
+    const selectedAssignments = Array.from(state.aiGenerate.selectedAssignments.values());
+    const uploadCount = state.aiGenerate.files.length;
+    const attachmentCount = getAiGenerateAttachmentCount();
+    return {
+        attachmentCount,
+        uploadCount,
+        hasAssessmentPlanMaterial: selectedMaterials.some(materialLooksLikeAssessmentPlan),
+        hasExamPaperMaterial: selectedMaterials.some(materialLooksLikeExamPaper),
+        hasQuestionAssignment: selectedAssignments.some((item) => Number(item?.question_count || 0) > 0),
+    };
+}
+
+function refreshAiGenerateSourceGuidance() {
+    state.aiGenerate.sourceBlockReason = '';
+    if (state.aiGenerate.blockedReason) {
+        updateAiGenerateSubmitState();
+        return;
+    }
+    if (getAiGenerateGroupKey() !== 'final_material') {
+        setAiGenerateStatus('', 'info');
+        updateAiGenerateSubmitState();
+        return;
+    }
+    const type = getAiGenerateTypeKey();
+    const source = getAiGenerateSourceState();
+    if (type === 'exam_paper') {
+        if (source.attachmentCount <= 0) {
+            state.aiGenerate.sourceBlockReason = '生成课程考核试卷前，请先关联考核计划表、课程材料或上传参考附件。';
+            setAiGenerateStatus(state.aiGenerate.sourceBlockReason, 'warning');
+        } else if (source.hasAssessmentPlanMaterial) {
+            setAiGenerateStatus('已关联考核计划表，生成试卷时会优先继承考核项目、分值分布和考试约束。', 'success');
+        } else {
+            setAiGenerateStatus('未识别到考核计划表。可以继续生成，但请在生成后重点核对分值分布、考试形式和命题信息。', 'warning');
+        }
+    } else if (type === 'grading_rubric') {
+        const hasConcreteSource = source.hasExamPaperMaterial || source.hasQuestionAssignment || source.uploadCount > 0;
+        if (!hasConcreteSource) {
+            state.aiGenerate.sourceBlockReason = '生成评分细则前，请先关联课程考核试卷、带题目的作业，或上传试卷文件。';
+            setAiGenerateStatus(state.aiGenerate.sourceBlockReason, 'warning');
+        } else if (source.hasExamPaperMaterial || source.hasQuestionAssignment) {
+            setAiGenerateStatus('已关联具体试卷或题目来源，评分细则会按题目逐项生成给分点。', 'success');
+        } else {
+            setAiGenerateStatus('将从上传附件中识别试卷题目；若附件不是具体试卷，系统会拒绝生成评分细则。', 'info');
+        }
+    } else {
+        setAiGenerateStatus('', 'info');
+    }
+    updateAiGenerateSubmitState();
+}
+
 function renderAiGenerateSelected() {
     const count = getAiGenerateAttachmentCount();
     if (refs.aiGenerateCount) {
@@ -2083,7 +2616,7 @@ function renderAiGenerateSelected() {
             kind: 'material',
             id: item.id,
             title: item.name,
-            meta: item.material_path || '站内材料',
+            meta: [item.ai_generation_document_type_label, item.material_path || '站内材料'].filter(Boolean).join(' · '),
         })),
         ...Array.from(state.aiGenerate.selectedAssignments.values()).map((item) => ({
             kind: 'assignment',
@@ -2096,11 +2629,12 @@ function renderAiGenerateSelected() {
         refs.aiGenerateSelected.innerHTML = '<div class="materials-empty materials-empty--compact">还没有关联附件。</div>';
         return;
     }
+    const removeDisabledAttr = state.aiGenerate.busy ? ' disabled aria-disabled="true"' : '';
     refs.aiGenerateSelected.innerHTML = selected.map((item) => `
         <span class="materials-ai-generate-chip" title="${escapeHtml(item.meta)}">
             <strong>${escapeHtml(item.kind === 'file' ? '上传' : (item.kind === 'assignment' ? '作业' : '材料'))}</strong>
             <span>${escapeHtml(item.title)}</span>
-            <button type="button" data-ai-generate-remove="${escapeHtml(item.kind)}" data-id="${escapeHtml(String(item.id))}" aria-label="移除 ${escapeHtml(item.title)}">&times;</button>
+            <button type="button" data-ai-generate-remove="${escapeHtml(item.kind)}" data-id="${escapeHtml(String(item.id))}" aria-label="移除 ${escapeHtml(item.title)}"${removeDisabledAttr}>&times;</button>
         </span>
     `).join('');
 }
@@ -2111,13 +2645,14 @@ function renderAiGenerateUploadList() {
         refs.aiGenerateUploadList.innerHTML = '<div class="materials-ai-generate-empty">未选择新文件。</div>';
         return;
     }
+    const removeDisabledAttr = state.aiGenerate.busy ? ' disabled aria-disabled="true"' : '';
     refs.aiGenerateUploadList.innerHTML = state.aiGenerate.files.map((entry) => `
         <div class="materials-ai-generate-candidate is-selected">
             <div>
                 <strong title="${escapeHtml(entry.file.name)}">${escapeHtml(entry.file.name)}</strong>
                 <span>${escapeHtml(formatSize(entry.file.size || 0))}</span>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm" data-ai-generate-remove="file" data-id="${escapeHtml(entry.id)}">移除</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-ai-generate-remove="file" data-id="${escapeHtml(entry.id)}"${removeDisabledAttr}>移除</button>
         </div>
     `).join('');
 }
@@ -2133,21 +2668,23 @@ function renderAiGenerateCandidateList(kind) {
         return;
     }
     const reachedLimit = !canAddAiGenerateAttachment();
+    const locked = state.aiGenerate.busy;
     listEl.innerHTML = items.map((item) => {
         const selected = selectedMap.has(Number(item.id));
         const title = isMaterial ? item.name : item.title;
         const subtitle = isMaterial
             ? (item.material_path || getMaterialTypeLabel(item))
             : ([item.course_name, item.class_name].filter(Boolean).join(' / ') || item.question_excerpt || '作业题目');
+        const materialTypeLabel = item.ai_generation_document_type_label || getMaterialTypeLabel(item);
         const meta = isMaterial
-            ? [getMaterialTypeLabel(item), item.node_type === 'folder' ? `${item.child_count || 0} 项` : formatSize(item.file_size || 0)].filter(Boolean).join(' · ')
+            ? [materialTypeLabel, item.node_type === 'folder' ? `${item.child_count || 0} 项` : formatSize(item.file_size || 0)].filter(Boolean).join(' · ')
             : [`${item.question_count || 0} 题`, item.status || ''].filter(Boolean).join(' · ');
         return `
             <button type="button"
                 class="materials-ai-generate-candidate ${selected ? 'is-selected' : ''}"
                 data-ai-generate-add="${escapeHtml(kind)}"
                 data-id="${escapeHtml(String(item.id))}"
-                ${selected || reachedLimit ? 'disabled' : ''}
+                ${selected || reachedLimit || locked ? 'disabled' : ''}
             >
                 <div>
                     <strong title="${escapeHtml(title)}">${escapeHtml(title)}</strong>
@@ -2167,6 +2704,7 @@ function renderAiGenerateModal() {
 }
 
 function addAiGenerateFiles(fileList) {
+    if (state.aiGenerate.busy) return;
     if (!fileList || !fileList.length) return;
     const files = Array.from(fileList);
     for (const file of files) {
@@ -2184,9 +2722,11 @@ function addAiGenerateFiles(fileList) {
         });
     }
     renderAiGenerateModal();
+    refreshAiGenerateSourceGuidance();
 }
 
 function removeAiGenerateAttachment(kind, idValue) {
+    if (state.aiGenerate.busy) return;
     if (kind === 'file') {
         state.aiGenerate.files = state.aiGenerate.files.filter((entry) => entry.id !== idValue);
     } else if (kind === 'material') {
@@ -2195,6 +2735,7 @@ function removeAiGenerateAttachment(kind, idValue) {
         state.aiGenerate.selectedAssignments.delete(Number(idValue));
     }
     renderAiGenerateModal();
+    refreshAiGenerateSourceGuidance();
 }
 
 async function loadAiGenerateCandidates(kind, query = '') {
@@ -2228,6 +2769,7 @@ function triggerAiGenerateCandidateSearch(kind) {
 }
 
 function selectAiGenerateCandidate(kind, idValue) {
+    if (state.aiGenerate.busy) return;
     if (!canAddAiGenerateAttachment()) {
         showToast(`关联附件最多支持 ${AI_GENERATE_MAX_ATTACHMENTS} 份`, 'warning');
         return;
@@ -2241,6 +2783,7 @@ function selectAiGenerateCandidate(kind, idValue) {
         if (item) state.aiGenerate.selectedAssignments.set(id, item);
     }
     renderAiGenerateModal();
+    refreshAiGenerateSourceGuidance();
 }
 
 function openAiGenerateModal(preset = null) {
@@ -2248,6 +2791,7 @@ function openAiGenerateModal(preset = null) {
     applyAiGeneratePreset(preset);
     setAiGenerateBusy(false);
     renderAiGenerateModal();
+    refreshAiGenerateSourceGuidance();
     openModal('materials-ai-generate-modal');
     Promise.all([
         loadAiGenerateCandidates('material', ''),
@@ -2260,8 +2804,13 @@ function openAiGenerateModal(preset = null) {
 
 async function submitAiGenerate() {
     if (state.aiGenerate.busy) return;
+    refreshAiGenerateSourceGuidance();
     if (state.aiGenerate.blockedReason) {
         showToast(state.aiGenerate.blockedReason, 'warning');
+        return;
+    }
+    if (state.aiGenerate.sourceBlockReason) {
+        showToast(state.aiGenerate.sourceBlockReason, 'warning');
         return;
     }
     const count = getAiGenerateAttachmentCount();
@@ -2291,7 +2840,7 @@ async function submitAiGenerate() {
             method: 'POST',
             body: formData,
         });
-        await recordPromptForInput(refs.aiGeneratePrompt, prompt);
+        await recordMaterialPromptBestEffort(refs.aiGeneratePrompt, prompt);
         closeModal('materials-ai-generate-modal');
         showToast(result.message || 'AI 材料已生成', 'success', 5200);
         await loadLibrary(state.currentParentId, false);
@@ -2304,7 +2853,6 @@ async function submitAiGenerate() {
         }
     } catch (error) {
         setAiGenerateStatus(error.message || 'AI 材料生成失败', 'error');
-        throw error;
     } finally {
         setAiGenerateBusy(false);
     }
@@ -2381,7 +2929,7 @@ function openAiRewriteModal(mode = 'regenerate') {
 }
 
 function submitAiRewrite() {
-    if (state.aiRewrite.busy || !state.aiRewrite.materialId) return;
+    if (state.aiRewrite.busy || !state.aiRewrite.materialId) return Promise.resolve();
     const materialId = state.aiRewrite.materialId;
     const materialName = state.aiRewrite.materialName || '材料';
     const mode = state.aiRewrite.mode || 'regenerate';
@@ -2400,7 +2948,7 @@ function submitAiRewrite() {
         'AI 正在深度思考处理材料，期间可继续其他操作，完成后会自动刷新列表。',
     );
 
-    apiFetch(`/api/materials/${materialId}/ai-rewrite`, {
+    return apiFetch(`/api/materials/${materialId}/ai-rewrite`, {
         method: 'POST',
         body: {
             mode,
@@ -2411,7 +2959,7 @@ function submitAiRewrite() {
         silent: true,
     }).then(async (result) => {
         finishAiPendingTask(pendingKey, { success: true });
-        await recordPromptForInput(refs.aiRewritePrompt, prompt);
+        await recordMaterialPromptBestEffort(refs.aiRewritePrompt, prompt);
         showToast(result.message || 'AI 处理完成', 'success', 5200);
         await loadLibrary(state.currentParentId, false);
         if (result.viewer_url) {
@@ -2644,7 +3192,14 @@ async function saveActiveMaterialContent() {
 
 async function deleteActiveMaterial() {
     if (!state.activeDetail) return;
-    if (!window.confirm(`确定删除材料“${state.activeDetail.name}”吗？`)) return;
+    const confirmed = await openProcessMaterialConfirm({
+        title: '删除材料',
+        message: `确定删除材料“${state.activeDetail.name || '未命名材料'}”吗？`,
+        detail: '删除后无法恢复，关联的过程材料预览、导出入口和课堂分配也会一并失效。',
+        confirmText: '删除',
+        tone: 'danger',
+    });
+    if (!confirmed) return;
     const result = await apiFetch(`/api/materials/${state.activeDetail.id}`, { method: 'DELETE' });
     showToast(result.message || '材料已删除', 'success');
     state.detailRequestId += 1;
@@ -3277,6 +3832,10 @@ async function submitBindTargets() {
 }
 
 function openAiExpandModal() {
+    if (state.aiExpand.busy) {
+        showToast('AI 正在续写材料，请等待当前任务提交完成。', 'warning');
+        return;
+    }
     if (!state.currentFolder) {
         showToast('请先进入一个文件夹，AI 会基于该文件夹的材料续写', 'warning');
         return;
@@ -3284,21 +3843,19 @@ function openAiExpandModal() {
     if (refs.aiExpandFolder) refs.aiExpandFolder.textContent = state.currentFolder.name || '-';
     if (refs.aiExpandFolderPath) refs.aiExpandFolderPath.textContent = state.currentFolder.material_path || '-';
     if (refs.aiExpandPrompt) refs.aiExpandPrompt.value = '';
-    if (refs.aiExpandSubmitBtn) {
-        refs.aiExpandSubmitBtn.disabled = false;
-        refs.aiExpandSubmitBtn.textContent = '开始续写';
-    }
+    setAiExpandBusy(false);
     setModalStatus(refs.aiExpandStatus, '', 'info');
     openModal('materials-ai-expand-modal');
     window.setTimeout(() => refs.aiExpandPrompt?.focus(), 50);
 }
 
 function submitAiExpand() {
-    if (state.aiExpand.busy || !state.currentFolder) return;
+    if (state.aiExpand.busy || !state.currentFolder) return Promise.resolve();
     const folderId = Number(state.currentFolder.id);
     const folderName = state.currentFolder.name || '当前文件夹';
     const prompt = refs.aiExpandPrompt?.value || '';
 
+    setAiExpandBusy(true);
     closeModal('materials-ai-expand-modal');
     const pendingKey = `expand:${folderId}:${Date.now()}`;
     addAiPendingTask(
@@ -3307,13 +3864,13 @@ function submitAiExpand() {
         'AI 正在阅读文件夹内已有材料并深度思考续写，完成后新材料会自动出现在列表。',
     );
 
-    apiFetch('/api/materials/ai-expand', {
+    return apiFetch('/api/materials/ai-expand', {
         method: 'POST',
         body: { parent_id: folderId, prompt },
         silent: true,
     }).then(async (result) => {
         finishAiPendingTask(pendingKey, { success: true });
-        await recordPromptForInput(refs.aiExpandPrompt, prompt);
+        await recordMaterialPromptBestEffort(refs.aiExpandPrompt, prompt);
         showToast(result.message || 'AI 续写完成', 'success', 5200);
         await loadLibrary(state.currentParentId, false);
         if (result.viewer_url) {
@@ -3325,11 +3882,60 @@ function submitAiExpand() {
             label: `《${folderName}》AI 续写失败`,
             message: error.message || 'AI 续写失败，请稍后重试。',
         });
+    }).finally(() => {
+        setAiExpandBusy(false);
     });
 }
 
 function bindEvents() {
+    bindAiWorkModalCloseGuards();
+    bindProcessMaterialExportDownloadActions(document, showToast, { saved: false });
+
     document.addEventListener('click', (event) => {
+        const aiExpandSubmit = event.target.closest('#materials-ai-expand-submit-btn');
+        if (aiExpandSubmit) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (aiExpandSubmit.disabled) return;
+            submitAiExpand().catch((error) => {
+                setModalStatus(refs.aiExpandStatus, error.message || 'AI 续写失败', 'error');
+            });
+            return;
+        }
+
+        const aiImportSubmit = event.target.closest('#materials-ai-import-submit-btn');
+        if (aiImportSubmit) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (aiImportSubmit.disabled) return;
+            submitAiImport().catch((error) => {
+                setAiImportStatus(error.message || 'AI 解析导入失败', 'error');
+            });
+            return;
+        }
+
+        const aiGenerateSubmit = event.target.closest('#materials-ai-generate-submit-btn');
+        if (aiGenerateSubmit) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (aiGenerateSubmit.disabled) return;
+            submitAiGenerate().catch((error) => {
+                setAiGenerateStatus(error.message || 'AI 材料生成失败', 'error');
+            });
+            return;
+        }
+
+        const aiRewriteSubmit = event.target.closest('#materials-ai-rewrite-submit-btn');
+        if (aiRewriteSubmit) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (aiRewriteSubmit.disabled) return;
+            submitAiRewrite().catch((error) => {
+                showToast(error.message || 'AI 材料处理失败', 'error');
+            });
+            return;
+        }
+
         const createTrigger = event.target.closest('#materials-create-menu-btn');
         if (createTrigger) {
             event.preventDefault();
@@ -3378,7 +3984,29 @@ function bindEvents() {
             event.preventDefault();
             event.stopPropagation();
             setUploadMenuOpen(false);
-            openAiImportModal();
+            setCreateMenuOpen(false);
+            openAiImportModal(getProcessGeneratePolicy() ? initialAiImportPreset : undefined);
+            return;
+        }
+
+        const aiImportShortcut = event.target.closest('#materials-ai-import-shortcut-btn, [data-process-ai-import]');
+        if (aiImportShortcut) {
+            event.preventDefault();
+            event.stopPropagation();
+            setUploadMenuOpen(false);
+            setCreateMenuOpen(false);
+            openAiImportModal(initialAiImportPreset);
+            return;
+        }
+
+        const classroomGenerate = event.target.closest('#materials-classroom-generate-open-btn, [data-process-classroom-generate]');
+        if (classroomGenerate) {
+            event.preventDefault();
+            event.stopPropagation();
+            setUploadMenuOpen(false);
+            setCreateMenuOpen(false);
+            openClassroomGenerateModal();
+            return;
         }
     }, true);
 
@@ -3421,7 +4049,28 @@ function bindEvents() {
     });
     refs.aiImportOpenBtn?.addEventListener('click', () => {
         setUploadMenuOpen(false);
-        openAiImportModal();
+        setCreateMenuOpen(false);
+        openAiImportModal(getProcessGeneratePolicy() ? initialAiImportPreset : undefined);
+    });
+    refs.aiImportShortcutBtn?.addEventListener('click', () => {
+        setUploadMenuOpen(false);
+        setCreateMenuOpen(false);
+        openAiImportModal(initialAiImportPreset);
+    });
+    refs.processAiImportBtn?.addEventListener('click', () => {
+        setUploadMenuOpen(false);
+        setCreateMenuOpen(false);
+        openAiImportModal(initialAiImportPreset);
+    });
+    refs.classroomGenerateOpenBtn?.addEventListener('click', () => {
+        setUploadMenuOpen(false);
+        setCreateMenuOpen(false);
+        openClassroomGenerateModal();
+    });
+    refs.processClassroomGenerateBtn?.addEventListener('click', () => {
+        setUploadMenuOpen(false);
+        setCreateMenuOpen(false);
+        openClassroomGenerateModal();
     });
     refs.aiGenerateOpenBtn?.addEventListener('click', () => {
         openAiGenerateModal(initialAiGeneratePreset);
@@ -3481,9 +4130,6 @@ function bindEvents() {
 
     refs.aiExpandBtn?.addEventListener('click', () => {
         openAiExpandModal();
-    });
-    refs.aiExpandSubmitBtn?.addEventListener('click', () => {
-        submitAiExpand();
     });
 
     refs.fileInput?.addEventListener('change', async () => {
@@ -3730,7 +4376,11 @@ function bindEvents() {
     });
 
     refs.aiImportGroup?.addEventListener('change', () => {
-        renderAiImportTypes();
+        renderAiImportTypes({ preserveStatus: false });
+    });
+
+    refs.aiImportType?.addEventListener('change', () => {
+        updateAiImportFormatGuide({ preserveStatus: false });
     });
 
     refs.aiImportChooseFileBtn?.addEventListener('click', () => {
@@ -3740,15 +4390,17 @@ function bindEvents() {
     });
 
     refs.aiImportFileInput?.addEventListener('change', () => {
-        state.aiImport.file = refs.aiImportFileInput.files?.[0] || null;
+        const selectedFile = refs.aiImportFileInput.files?.[0] || null;
+        if (selectedFile && !isAiImportFileAccepted(selectedFile)) {
+            state.aiImport.file = null;
+            refs.aiImportFileInput.value = '';
+            updateAiImportFileLabel();
+            setAiImportStatus(getAiImportFormatMismatchMessage(selectedFile), 'warning');
+            return;
+        }
+        state.aiImport.file = selectedFile;
         updateAiImportFileLabel();
         setAiImportStatus('', 'info');
-    });
-
-    refs.aiImportSubmitBtn?.addEventListener('click', () => {
-        submitAiImport().catch((error) => {
-            showToast(error.message || 'AI 解析导入失败', 'error');
-        });
     });
 
     refs.aiGenerateUploadBtn?.addEventListener('click', () => {
@@ -3756,6 +4408,10 @@ function bindEvents() {
     });
 
     refs.aiGenerateFileInput?.addEventListener('change', () => {
+        if (state.aiGenerate.busy) {
+            refs.aiGenerateFileInput.value = '';
+            return;
+        }
         addAiGenerateFiles(refs.aiGenerateFileInput.files);
         refs.aiGenerateFileInput.value = '';
     });
@@ -3789,28 +4445,22 @@ function bindEvents() {
 
     refs.aiGenerateGroup?.addEventListener('change', () => {
         state.aiGenerate.blockedReason = '';
+        state.aiGenerate.sourceBlockReason = '';
         setAiGenerateStatus('', 'info');
         updateAiGenerateTypeOptions();
-        updateAiGenerateSubmitState();
+        if (!applyProcessGenerateBlockIfNeeded()) {
+            refreshAiGenerateSourceGuidance();
+        }
     });
 
     refs.aiGenerateType?.addEventListener('change', () => {
         state.aiGenerate.blockedReason = '';
+        state.aiGenerate.sourceBlockReason = '';
         setAiGenerateStatus('', 'info');
         updateAiGeneratePromptPlaceholder();
-        updateAiGenerateSubmitState();
-    });
-
-    refs.aiGenerateSubmitBtn?.addEventListener('click', () => {
-        submitAiGenerate().catch((error) => {
-            showToast(error.message || 'AI 材料生成失败', 'error');
-        });
-    });
-
-    refs.aiRewriteSubmitBtn?.addEventListener('click', () => {
-        submitAiRewrite().catch((error) => {
-            showToast(error.message || 'AI 材料处理失败', 'error');
-        });
+        if (!applyProcessGenerateBlockIfNeeded()) {
+            refreshAiGenerateSourceGuidance();
+        }
     });
 
     refs.detail?.addEventListener('input', (event) => {
@@ -4019,6 +4669,7 @@ function bindEvents() {
 const initialAiGeneratePreset = getInitialAiGeneratePreset();
 const initialAiImportPreset = getInitialAiImportPreset();
 
+hydrateAiImportDismissals();
 bindEvents();
 enhancePromptPoolInputs(document);
 updateFilterControls();

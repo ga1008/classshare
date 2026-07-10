@@ -1,6 +1,14 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml } from './ui.js';
 import { enhancePromptPoolInput, isPromptShareEnabled } from './prompt_pool.js';
+import {
+    closePendingPreviewWindow,
+    isPreviewLinkBusy,
+    movePendingPreviewWindow,
+    openPendingPreviewWindow,
+    setPreviewLinkBusy,
+    startProcessMaterialExportDownload,
+} from './process_material_editor_preview.js';
 
 // ---------------------------------------------------------------------------
 // Boot state
@@ -19,6 +27,8 @@ const state = {
     items: Array.isArray(boot.items) ? boot.items.map((it) => ({ ...it })) : [],
     analysis: boot.analysis || '',
     analysisRewriting: false,
+    dirty: false,
+    saving: false,
 };
 
 const FIELD_DEFS = [
@@ -34,6 +44,33 @@ const FIELD_DEFS = [
 
 const GROUP_LABELS = { 学习态度: '学习态度', 学习过程: '学习过程', 学习效果: '学习效果（结合试卷、作业分析）' };
 const RATING_TONE = { 优秀: 'is-ok', 良好: 'is-ok', 一般: 'is-warn', 较差: 'is-warn' };
+
+function setSaveState(kind, text) {
+    const el = document.getElementById('te-save-state');
+    if (!el) return;
+    el.classList.remove('is-clean', 'is-dirty', 'is-saving');
+    el.classList.add(kind);
+    el.textContent = text;
+}
+
+function markDirty() {
+    state.dirty = true;
+    setSaveState('is-dirty', '未保存');
+}
+
+function markClean() {
+    state.dirty = false;
+    setSaveState('is-clean', '已保存');
+}
+
+function restoreSaveState() {
+    if (state.dirty) {
+        setSaveState('is-dirty', '未保存');
+    } else {
+        setSaveState('is-clean', '已保存');
+    }
+}
+
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -132,15 +169,76 @@ function missingFields() {
     return missing;
 }
 
+function setExportButtons({ busy = false } = {}) {
+    const missing = missingFields();
+    const reason = missing.length ? `评学表尚未填写完整，请先补全：${missing.join('、')}` : '';
+    const disabled = busy || state.saving || Boolean(reason) || state.analysisRewriting;
+    const title = state.analysisRewriting ? 'AI 正在重新编写分析建议，请稍候。' : ((busy || state.saving) ? '正在保存当前修改，请稍候。' : reason);
+    [
+        document.getElementById('te-export-word'),
+        document.getElementById('te-export-pdf'),
+    ].filter(Boolean).forEach((button) => {
+        button.disabled = disabled;
+        button.classList.toggle('lp-btn--disabled', disabled);
+        if (disabled) {
+            button.setAttribute('aria-disabled', 'true');
+            button.title = title;
+        } else {
+            button.removeAttribute('aria-disabled');
+            button.removeAttribute('title');
+        }
+    });
+    const gate = document.getElementById('te-export-gate');
+    if (!gate) return;
+    if (reason) {
+        gate.hidden = false;
+        gate.innerHTML = `<strong>导出前校验</strong><span>${escapeHtml(reason)}</span>`;
+    } else {
+        gate.hidden = true;
+        gate.textContent = '';
+    }
+}
+
+function setSavePreviewButtonsBusy(busy) {
+    [
+        document.getElementById('te-save'),
+        document.getElementById('te-refresh-preview'),
+    ].filter(Boolean).forEach((button) => {
+        button.disabled = busy;
+        button.classList.toggle('lp-btn--disabled', busy);
+        if (busy) {
+            button.setAttribute('aria-disabled', 'true');
+        } else {
+            button.removeAttribute('aria-disabled');
+        }
+    });
+    const rewriteBtn = document.getElementById('te-analysis-rewrite');
+    if (rewriteBtn) rewriteBtn.disabled = busy || state.analysisRewriting;
+}
+
+function setEditorBusy(busy) {
+    state.saving = Boolean(busy);
+    const form = document.getElementById('te-editor-form');
+    form?.classList.toggle('is-saving', state.saving);
+    form?.querySelectorAll('input, select, textarea, button').forEach((control) => {
+        control.disabled = state.saving;
+    });
+    setPreviewLinkBusy(document.getElementById('te-open-preview'), state.saving);
+    setSavePreviewButtonsBusy(state.saving);
+    setExportButtons({ busy: state.saving });
+}
+
 function renderIncomplete() {
     const el = document.getElementById('te-incomplete');
     const missing = missingFields();
     if (!missing.length) {
         el.hidden = true;
+        setExportButtons();
         return;
     }
     el.hidden = false;
     el.innerHTML = `⚠ 导出前请补全：${missing.map(escapeHtml).join('、')}`;
+    setExportButtons();
 }
 
 function renderImportDetails() {
@@ -179,10 +277,12 @@ async function persistContent() {
 }
 
 async function saveContent() {
-    const btn = document.getElementById('te-save');
-    btn.disabled = true;
+    if (state.saving) return;
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
     try {
         const res = await persistContent();
+        markClean();
         renderIncomplete();
         if (res && res.is_complete === false) {
             showToast('已保存。' + (res.missing_fields?.length ? '仍需补全：' + res.missing_fields.join('、') : ''), 'warning');
@@ -193,24 +293,91 @@ async function saveContent() {
     } catch (err) {
         showToast(err.message || '保存失败', 'error');
     } finally {
-        btn.disabled = false;
+        setEditorBusy(false);
+        restoreSaveState();
     }
 }
 
-async function exportWord() {
+async function refreshPreview() {
+    if (state.saving) return;
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
+    try {
+        const res = await persistContent();
+        markClean();
+        renderIncomplete();
+        if (res && res.is_complete === false) {
+            showToast('已保存并刷新预览。' + (res.missing_fields?.length ? '仍需补全：' + res.missing_fields.join('、') : ''), 'warning');
+        } else {
+            showToast('已保存并刷新预览', 'success');
+        }
+        reloadPreview();
+    } catch (err) {
+        showToast(err.message || '保存失败，无法刷新预览', 'error');
+    } finally {
+        setEditorBusy(false);
+        restoreSaveState();
+    }
+}
+
+async function exportEvaluation(format = 'docx') {
+    if (state.saving) return;
     const missing = missingFields();
     if (missing.length) {
         showToast('请先补全后再导出：' + missing.join('、'), 'warning');
         renderIncomplete();
         return;
     }
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
     try {
         await persistContent();
+        markClean();
     } catch (err) {
         showToast(err.message || '保存失败，无法导出', 'error');
         return;
+    } finally {
+        setEditorBusy(false);
+        restoreSaveState();
     }
-    window.location.href = `/api/teacher-evaluations/${state.id}/export?fmt=docx`;
+    const normalized = format === 'pdf' ? 'pdf' : 'docx';
+    startProcessMaterialExportDownload(
+        `/api/teacher-evaluations/${state.id}/export?fmt=${normalized}`,
+        showToast,
+        normalized === 'pdf' ? 'PDF' : 'Word',
+    );
+}
+
+async function openSavedPreview(event) {
+    const link = event.currentTarget;
+    if (state.saving || isPreviewLinkBusy(link)) {
+        event.preventDefault();
+        return;
+    }
+    if (!state.dirty) return;
+    event.preventDefault();
+    const previewWindow = openPendingPreviewWindow(showToast);
+    if (!previewWindow) return;
+    setEditorBusy(true);
+    setSaveState('is-saving', '保存中');
+    try {
+        const res = await persistContent();
+        markClean();
+        renderIncomplete();
+        reloadPreview();
+        movePendingPreviewWindow(previewWindow, link.href);
+        if (res && res.is_complete === false) {
+            showToast('已保存并打开预览。' + (res.missing_fields?.length ? '仍需补全：' + res.missing_fields.join('、') : ''), 'warning');
+        } else {
+            showToast('已保存并打开预览', 'success');
+        }
+    } catch (err) {
+        closePendingPreviewWindow(previewWindow);
+        showToast(err.message || '保存失败，无法打开预览', 'error');
+    } finally {
+        setEditorBusy(false);
+        restoreSaveState();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +428,7 @@ function ensureRewriteModal() {
 }
 
 function openRewriteModal() {
-    if (state.analysisRewriting) return;
+    if (state.saving || state.analysisRewriting) return;
     const modal = ensureRewriteModal();
     modal.hidden = false;
     document.body.style.overflow = 'hidden';
@@ -272,6 +439,7 @@ function openRewriteModal() {
 }
 
 function closeRewriteModal() {
+    if (state.analysisRewriting) return;
     const modal = document.getElementById('te-ai-rewrite-modal');
     if (!modal) return;
     modal.classList.remove('is-open');
@@ -287,30 +455,40 @@ function setAnalysisRewriteLoading(active) {
     const box = document.getElementById('te-analysis-box');
     const loading = document.getElementById('te-analysis-loading');
     const rewriteBtn = document.getElementById('te-analysis-rewrite');
+    const closeBtn = document.getElementById('te-ai-rewrite-close');
+    const cancelBtn = document.getElementById('te-ai-rewrite-cancel');
     const saveBtn = document.getElementById('te-save');
-    const exportBtn = document.getElementById('te-export-word');
-    if (analysisEl) analysisEl.disabled = state.analysisRewriting;
+    const refreshBtn = document.getElementById('te-refresh-preview');
+    if (analysisEl) analysisEl.disabled = state.analysisRewriting || state.saving;
     if (box) box.classList.toggle('is-loading', state.analysisRewriting);
     if (loading) loading.hidden = !state.analysisRewriting;
-    if (rewriteBtn) rewriteBtn.disabled = state.analysisRewriting;
-    if (saveBtn) saveBtn.disabled = state.analysisRewriting;
-    if (exportBtn) exportBtn.disabled = state.analysisRewriting;
+    if (rewriteBtn) rewriteBtn.disabled = state.analysisRewriting || state.saving;
+    if (closeBtn) closeBtn.disabled = state.analysisRewriting;
+    if (cancelBtn) cancelBtn.disabled = state.analysisRewriting;
+    if (saveBtn) saveBtn.disabled = state.analysisRewriting || state.saving;
+    if (refreshBtn) refreshBtn.disabled = state.analysisRewriting || state.saving;
+    setExportButtons();
 }
 
 async function submitRewritePrompt() {
-    if (state.analysisRewriting) return;
+    if (state.saving || state.analysisRewriting) return;
     const modal = ensureRewriteModal();
     const promptEl = modal.querySelector('#te-ai-rewrite-prompt');
     const confirmBtn = modal.querySelector('#te-ai-rewrite-confirm');
     const prompt = promptEl?.value?.trim() || '';
     const sharePrompt = isPromptShareEnabled(promptEl);
+    const originalText = confirmBtn?.textContent || '确认并重新编写';
     confirmBtn.disabled = true;
-    closeRewriteModal();
+    confirmBtn.textContent = '正在编写…';
     try {
-        await rewriteAnalysis(prompt, { sharePrompt });
-        if (promptEl) promptEl.value = '';
+        const ok = await rewriteAnalysis(prompt, { sharePrompt });
+        if (ok) {
+            if (promptEl) promptEl.value = '';
+            closeRewriteModal();
+        }
     } finally {
         confirmBtn.disabled = false;
+        confirmBtn.textContent = originalText;
     }
 }
 
@@ -319,6 +497,7 @@ async function rewriteAnalysis(extraPrompt, { sharePrompt = true } = {}) {
     setAnalysisRewriteLoading(true);
     try {
         await persistContent();
+        markClean();
         const res = await apiFetch(`/api/teacher-evaluations/${state.id}/rewrite-analysis`, {
             method: 'POST',
             body: { prompt: extraPrompt || '', share_prompt: sharePrompt },
@@ -326,12 +505,15 @@ async function rewriteAnalysis(extraPrompt, { sharePrompt = true } = {}) {
         });
         state.analysis = res.analysis || '';
         if (analysisEl) analysisEl.value = state.analysis;
+        markClean();
         analysisCount();
         renderIncomplete();
         reloadPreview();
         showToast('AI已重新编写分析建议', 'success');
+        return true;
     } catch (err) {
         showToast(err.message || 'AI重新编写失败，请稍后再试', 'error', 4500);
+        return false;
     } finally {
         setAnalysisRewriteLoading(false);
     }
@@ -344,9 +526,11 @@ function bindEvents() {
     const form = document.getElementById('te-editor-form');
 
     form.addEventListener('input', (e) => {
+        if (state.saving) return;
         const fieldEl = e.target.closest('[data-field]');
         if (fieldEl) {
             state.fields[fieldEl.dataset.field] = fieldEl.value;
+            markDirty();
             renderIncomplete();
             return;
         }
@@ -355,6 +539,7 @@ function bindEvents() {
             const row = Number(scoreEl.dataset.itemScore);
             if (state.items[row]) {
                 state.items[row].score = scoreEl.value;
+                markDirty();
                 renderRating();
                 renderIncomplete();
             }
@@ -362,26 +547,36 @@ function bindEvents() {
     });
 
     form.addEventListener('change', (e) => {
+        if (state.saving) return;
         const fieldEl = e.target.closest('[data-field]');
-        if (fieldEl) { state.fields[fieldEl.dataset.field] = fieldEl.value; renderIncomplete(); }
+        if (fieldEl) { state.fields[fieldEl.dataset.field] = fieldEl.value; markDirty(); renderIncomplete(); }
     });
 
     const analysisEl = document.getElementById('te-analysis');
     analysisEl.value = state.analysis || '';
     analysisEl.addEventListener('input', () => {
+        if (state.saving) return;
         state.analysis = analysisEl.value;
+        markDirty();
         analysisCount();
         renderIncomplete();
     });
 
     document.getElementById('te-save').addEventListener('click', saveContent);
-    document.getElementById('te-refresh-preview').addEventListener('click', reloadPreview);
-    document.getElementById('te-export-word').addEventListener('click', exportWord);
+    document.getElementById('te-open-preview').addEventListener('click', openSavedPreview);
+    document.getElementById('te-refresh-preview').addEventListener('click', refreshPreview);
+    document.getElementById('te-export-word').addEventListener('click', () => exportEvaluation('docx'));
+    document.getElementById('te-export-pdf').addEventListener('click', () => exportEvaluation('pdf'));
     document.getElementById('te-analysis-rewrite').addEventListener('click', openRewriteModal);
 
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeRewriteModal();
         if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveContent(); }
+    });
+    window.addEventListener('beforeunload', (e) => {
+        if (!state.dirty) return;
+        e.preventDefault();
+        e.returnValue = '';
     });
 }
 
