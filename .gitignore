@@ -189,6 +189,22 @@ storage/global_files/*
 
 tools/guardianangel.net.cn_nginx*/
 
+# Local production data exports are recovery artifacts, never application source.
+# Keeping this tree ignored also prevents deployment packaging from uploading PII.
+/doc/online-data-backups/
+
 # 论文关联材料(侧写师论文项目,不入库)
 docs/research/
 experiments/
+tests/test_profiler_paper_*.py
+tools/export_student_data_snapshot.py
+
+# 本地环境残留/含敏感信息的文件(服务器IP、默认口令、生产日志、IDE配置)
+config.json
+settings.zip
+env说明.txt
+学生更新密码报错.txt
+test-results/
+deployment/deploy_remote.ps1
+tools/deploy/postflight.ps1
+target/target01/P21/deploy-check-productization.md
