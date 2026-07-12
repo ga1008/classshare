@@ -13,6 +13,7 @@ from .assignment_lifecycle_service import submission_effective_status, submissio
 from .course_planning_service import weekday_label
 from .learning_progress_service import get_learning_level, personal_stage_assignment_filter_sql, public_level_payload
 from .message_center_service import create_todo_notification
+from .email_notification_service import get_teacher_email_reminder_readiness
 from .scheduled_task_service import cancel_tasks_by_dedupe, schedule_task
 
 
@@ -54,7 +55,13 @@ def _todo_reminder_dedupe_key(owner_role: str, owner_user_pk: int, todo_id: int)
     return f"todo-reminder:{str(owner_role or '').strip().lower()}:{int(owner_user_pk)}:{int(todo_id)}"
 
 
-def normalize_reminder(payload: dict[str, Any], *, has_deadline: bool, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+def normalize_reminder(
+    payload: dict[str, Any],
+    *,
+    has_deadline: bool,
+    existing: dict[str, Any] | None = None,
+    allow_email: bool = False,
+) -> dict[str, Any]:
     """Resolve the {enabled, lead_minutes} reminder setting from a payload.
 
     Missing keys fall back to ``existing`` (for partial PATCH updates), then to
@@ -62,15 +69,23 @@ def normalize_reminder(payload: dict[str, Any], *, has_deadline: bool, existing:
     """
     base = dict(existing or {})
     enabled = base.get("enabled", False)
+    email_enabled = base.get("email_enabled", False) if allow_email else False
     lead = _safe_int(base.get("lead_minutes"), TODO_REMINDER_DEFAULT_LEAD_MINUTES)
     if "reminder_enabled" in payload:
         enabled = bool(payload.get("reminder_enabled"))
+    if allow_email and "email_reminder_enabled" in payload:
+        email_enabled = bool(payload.get("email_reminder_enabled"))
     if "reminder_lead_minutes" in payload and payload.get("reminder_lead_minutes") not in (None, ""):
         lead = _safe_int(payload.get("reminder_lead_minutes"), lead)
     lead = max(TODO_REMINDER_MIN_LEAD_MINUTES, min(int(lead), TODO_REMINDER_MAX_LEAD_MINUTES))
     if not has_deadline:
         enabled = False
-    return {"enabled": bool(enabled), "lead_minutes": lead}
+        email_enabled = False
+    return {
+        "enabled": bool(enabled),
+        "email_enabled": bool(email_enabled),
+        "lead_minutes": lead,
+    }
 
 
 def _sync_todo_reminder(
@@ -92,7 +107,7 @@ def _sync_todo_reminder(
     dedupe_key = _todo_reminder_dedupe_key(owner_role, owner_user_pk, todo_id)
     now = china_now().replace(tzinfo=None)
     try:
-        if reminder.get("enabled") and due_at is not None and due_at > now:
+        if (reminder.get("enabled") or reminder.get("email_enabled")) and due_at is not None and due_at > now:
             lead = int(reminder.get("lead_minutes") or TODO_REMINDER_DEFAULT_LEAD_MINUTES)
             run_at = due_at - timedelta(minutes=lead)
             if run_at <= now:
@@ -434,6 +449,32 @@ def _load_manual_todos(conn: sqlite3.Connection, *, class_offering_id: int, user
     return [dict(row) for row in rows]
 
 
+def list_manual_todo_items(
+    conn: sqlite3.Connection,
+    *,
+    class_offering_ids: list[int],
+    user: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Load one user's manual to-dos across accessible offerings in one query."""
+    offering_ids = sorted({int(item) for item in class_offering_ids if int(item) > 0})
+    if not offering_ids:
+        return []
+    placeholders = ",".join("?" for _ in offering_ids)
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM classroom_todos
+        WHERE class_offering_id IN ({placeholders})
+          AND owner_role = ?
+          AND owner_user_pk = ?
+          AND deleted_at IS NULL
+        ORDER BY COALESCE(due_at, start_at, created_at), id
+        """,
+        (*offering_ids, str(user.get("role") or ""), int(user["id"])),
+    ).fetchall()
+    return _manual_items([dict(row) for row in rows], china_now().replace(tzinfo=None))
+
+
 def _load_assignment_rows(conn: sqlite3.Connection, *, class_offering_id: int, user: dict[str, Any]) -> list[dict[str, Any]]:
     role = str(user.get("role") or "").strip().lower()
     if role == "teacher":
@@ -756,7 +797,12 @@ def _manual_items(rows: list[dict[str, Any]], now: datetime) -> list[dict[str, A
         status_label = "已完成" if completed_at else ("临近截止" if due_at and due_at >= now else "自定义")
         stored_meta = _load_todo_metadata(row.get("metadata_json"))
         priority = normalize_priority(stored_meta.get("priority"))
-        reminder = normalize_reminder({}, has_deadline=due_at is not None, existing=stored_meta.get("reminder") or {})
+        reminder = normalize_reminder(
+            {},
+            has_deadline=due_at is not None,
+            existing=stored_meta.get("reminder") or {},
+            allow_email=True,
+        )
         item = _normalize_item(
             source_type=TODO_SOURCE_MANUAL,
             source_id=row["id"],
@@ -777,7 +823,9 @@ def _manual_items(rows: list[dict[str, Any]], now: datetime) -> list[dict[str, A
             now=now,
         )
         item["reminder_enabled"] = bool(reminder["enabled"])
+        item["email_reminder_enabled"] = bool(reminder["email_enabled"])
         item["reminder_lead_minutes"] = int(reminder["lead_minutes"])
+        item["class_offering_id"] = _safe_int(row.get("class_offering_id"))
         items.append(item)
     return items
 
@@ -910,7 +958,7 @@ def build_classroom_todo_overview(
             "no_deadline_count": sum(1 for item in items if item.get("no_deadline")),
         },
         "role_policy": {
-            "can_create_manual": str(user.get("role") or "").strip().lower() == "student",
+            "can_create_manual": str(user.get("role") or "").strip().lower() in {"student", "teacher"},
             "show_student_stage_exams": str(user.get("role") or "").strip().lower() == "student",
             "description": (
                 "学生端显示课程安排、待提交任务、个人试炼和自定义待办。"
@@ -929,8 +977,8 @@ def create_manual_todo(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     role = str(user.get("role") or "").strip().lower()
-    if role != "student":
-        raise PermissionError("当前仅学生可以添加自己的待办事项")
+    if role not in {"student", "teacher"}:
+        raise PermissionError("当前账号不能添加个人待办事项")
 
     title = _clean_text(payload.get("title"), max_length=TODO_MAX_TITLE_LENGTH, field_name="待办名称", required=True)
     notes = _clean_text(payload.get("notes"), max_length=TODO_MAX_NOTES_LENGTH, field_name="备注")
@@ -939,7 +987,15 @@ def create_manual_todo(
     if start_at and due_at and due_at < start_at:
         raise TodoValidationError("截止时间不能早于开始时间")
     priority = normalize_priority(payload.get("priority"))
-    reminder = normalize_reminder(payload, has_deadline=due_at is not None)
+    reminder = normalize_reminder(
+        payload,
+        has_deadline=due_at is not None,
+        allow_email=role == "teacher",
+    )
+    if reminder["email_enabled"]:
+        readiness = get_teacher_email_reminder_readiness(conn, int(user["id"]))
+        if not readiness.get("available"):
+            raise TodoValidationError(str(readiness.get("reason") or "邮件提醒暂不可用"))
     metadata_json = json.dumps({"priority": priority, "reminder": reminder}, ensure_ascii=False)
 
     timestamp = _now_iso()
@@ -977,7 +1033,7 @@ def create_manual_todo(
             ref_id=f"manual-todo:{todo_id}:created",
             actor_role=role,
             actor_user_pk=int(user["id"]),
-            actor_display_name=str(user.get("name") or "学生"),
+            actor_display_name=str(user.get("name") or ("老师" if role == "teacher" else "学生")),
             metadata={"todo_id": todo_id, "due_at": due_at.isoformat(timespec="minutes")},
         )
     _sync_todo_reminder(
@@ -1042,7 +1098,17 @@ def update_manual_todo(
         metadata["priority"] = normalize_priority(payload.get("priority"))
     elif "priority" not in metadata:
         metadata["priority"] = TODO_PRIORITY_DEFAULT
-    reminder = normalize_reminder(payload, has_deadline=due_at is not None, existing=metadata.get("reminder") or {})
+    role = str(user.get("role") or "").strip().lower()
+    reminder = normalize_reminder(
+        payload,
+        has_deadline=due_at is not None,
+        existing=metadata.get("reminder") or {},
+        allow_email=role == "teacher",
+    )
+    if reminder["email_enabled"] and not completed_at:
+        readiness = get_teacher_email_reminder_readiness(conn, int(user["id"]))
+        if not readiness.get("available"):
+            raise TodoValidationError(str(readiness.get("reason") or "邮件提醒暂不可用"))
     metadata["reminder"] = reminder
     metadata_json = json.dumps(metadata, ensure_ascii=False)
 

@@ -26,7 +26,8 @@ from .learning_progress_service import (
     build_student_global_cultivation_profile,
     serialize_student_learning_progress,
 )
-from .todo_service import build_classroom_todo_overview
+from .todo_service import build_classroom_todo_overview, list_manual_todo_items
+from .email_notification_service import get_teacher_email_reminder_readiness
 from .feedback_review_service import build_feedback_review_summary
 from .manage_nav_service import build_dashboard_domain_cards, canonical_manage_href
 
@@ -498,7 +499,8 @@ def _attach_dashboard_todos_to_semester_calendar(
     if not semesters:
         return
 
-    can_create_manual = str(user.get("role") or "").strip().lower() == "student"
+    role = str(user.get("role") or "").strip().lower()
+    can_create_manual = role in {"student", "teacher"}
     buckets: dict[int, dict[str, Any]] = {}
     for semester in semesters:
         semester_id = _dashboard_int(semester.get("id"))
@@ -506,11 +508,11 @@ def _attach_dashboard_todos_to_semester_calendar(
             continue
         role_policy = {
             "can_create_manual": can_create_manual,
-            "show_student_stage_exams": can_create_manual,
+            "show_student_stage_exams": role == "student",
             "description": (
                 "学生端显示课程安排、待提交任务、个人试炼和自定义待办。"
-                if can_create_manual
-                else "教师端显示课程安排和课堂任务截止，不展示学生个人试炼与学生自定义待办。"
+                if role == "student"
+                else "教师端显示课程安排、课堂任务截止和教师自己的待办。"
             ),
         }
         bucket = {
@@ -1582,6 +1584,55 @@ def _build_teacher_dashboard_context(
         user,
     )
 
+    todo_create_options = sorted(
+        (_dashboard_todo_option(offering) for offering in enriched_offerings),
+        key=lambda item: str(item.get("label") or ""),
+    )
+    default_todo_offering_id = _dashboard_int(
+        todo_create_options[0]["class_offering_id"] if todo_create_options else 0
+    )
+    offering_by_id = {
+        _dashboard_int(offering.get("id")): offering
+        for offering in enriched_offerings
+        if _dashboard_int(offering.get("id"))
+    }
+    teacher_manual_todos = []
+    try:
+        teacher_manual_todos = [
+            _enrich_dashboard_todo(item, offering_by_id[_dashboard_int(item.get("class_offering_id"))])
+            for item in list_manual_todo_items(
+                conn,
+                class_offering_ids=list(offering_by_id),
+                user=user,
+            )
+            if _dashboard_int(item.get("class_offering_id")) in offering_by_id
+        ]
+    except Exception:
+        teacher_manual_todos = []
+    agenda_now = china_now().replace(tzinfo=None)
+    agenda_today = china_today()
+    teacher_agenda_events = _build_teacher_calendar_agenda_events(
+        conn,
+        teacher_id=teacher_id,
+        today=agenda_today,
+        now=agenda_now,
+    )
+    teacher_agenda_events.extend(
+        _build_agenda_events_from_todos(
+            teacher_manual_todos,
+            today=agenda_today,
+            now=agenda_now,
+        )
+    )
+    try:
+        email_reminder_readiness = get_teacher_email_reminder_readiness(conn, teacher_id)
+    except Exception:
+        email_reminder_readiness = {
+            "available": False,
+            "reason": "邮件配置暂时无法读取，请稍后重试。",
+            "settings_url": "/profile?section=email",
+        }
+
     return {
         "dashboard_theme": "teacher",
         "dashboard_hero": {
@@ -1637,12 +1688,12 @@ def _build_teacher_dashboard_context(
         },
         "class_offerings": enriched_offerings,
         "dashboard_semester_calendar": semester_calendar,
-        "dashboard_agenda_events": _build_teacher_calendar_agenda_events(
-            conn,
-            teacher_id=teacher_id,
-            today=china_today(),
-            now=china_now().replace(tzinfo=None),
-        ),
+        "dashboard_can_create_todo": bool(todo_create_options),
+        "dashboard_todo_create_options": todo_create_options,
+        "dashboard_default_todo_offering_id": default_todo_offering_id,
+        "dashboard_todo_actor_role": "teacher",
+        "dashboard_todo_email_reminder": email_reminder_readiness,
+        "dashboard_agenda_events": teacher_agenda_events,
         "dashboard_student_cockpit": None,
         "student_security_summary": None,
     }

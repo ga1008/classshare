@@ -71,6 +71,7 @@ class ManualTodoPayload(BaseModel):
     due_at: Optional[str] = None
     priority: Optional[str] = None
     reminder_enabled: Optional[bool] = None
+    email_reminder_enabled: Optional[bool] = None
     reminder_lead_minutes: Optional[int] = None
     completed: Optional[bool] = None
 

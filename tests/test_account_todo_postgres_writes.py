@@ -196,6 +196,38 @@ class AccountTodoPostgresWriteTests(unittest.TestCase):
         # An unknown priority falls back to the default rather than raising.
         self.assertEqual("normal", todo_service.normalize_priority("bogus"))
 
+    def test_teacher_can_create_manual_todo(self):
+        conn = FakeConnection()
+
+        with patch.object(todo_service, "execute_insert_returning_id", return_value=447) as insert_helper:
+            result = todo_service.create_manual_todo(
+                conn,
+                class_offering_id=20,
+                user={"id": 3, "role": "teacher", "name": "Teacher"},
+                payload={"title": "准备教研材料"},
+            )
+
+        self.assertEqual(447, result["id"])
+        params = insert_helper.call_args.args[2]
+        self.assertIn("teacher", params)
+
+    def test_teacher_email_reminder_requires_ready_email_pipeline(self):
+        from datetime import timedelta
+        from classroom_app.services.academic_service import china_now
+
+        conn = FakeConnection()
+        due = (china_now().replace(tzinfo=None) + timedelta(days=2)).isoformat(timespec="minutes")
+        with patch.object(todo_service, "get_teacher_email_reminder_readiness", return_value={
+            "available": False,
+            "reason": "请先配置并启用默认发信邮箱。",
+        }), self.assertRaises(todo_service.TodoValidationError):
+            todo_service.create_manual_todo(
+                conn,
+                class_offering_id=20,
+                user={"id": 3, "role": "teacher", "name": "Teacher"},
+                payload={"title": "准备教研材料", "due_at": due, "email_reminder_enabled": True},
+            )
+
     def test_manual_items_surface_priority_fields(self):
         from datetime import datetime
 
@@ -227,6 +259,18 @@ class AccountTodoPostgresWriteTests(unittest.TestCase):
         )
         self.assertTrue(clamped["enabled"])
         self.assertEqual(todo_service.TODO_REMINDER_MAX_LEAD_MINUTES, clamped["lead_minutes"])
+        teacher_email = todo_service.normalize_reminder(
+            {"email_reminder_enabled": True},
+            has_deadline=True,
+            allow_email=True,
+        )
+        self.assertTrue(teacher_email["email_enabled"])
+        student_email = todo_service.normalize_reminder(
+            {"email_reminder_enabled": True},
+            has_deadline=True,
+            allow_email=False,
+        )
+        self.assertFalse(student_email["email_enabled"])
 
     def test_create_manual_todo_schedules_due_reminder(self):
         from datetime import timedelta
@@ -332,6 +376,41 @@ class AccountTodoPostgresWriteTests(unittest.TestCase):
 
         note.assert_not_called()
         self.assertIn("completed", result)
+
+    def test_handle_teacher_todo_due_reminder_queues_email(self):
+        import contextlib
+
+        from classroom_app.services import message_center_service, scheduled_task_handlers
+
+        fake = FakeConnection(
+            row=FakeRow({
+                "title": "提交课程总结",
+                "notes": "附上数据表",
+                "due_at": "2999-01-01T08:00",
+                "completed_at": None,
+                "deleted_at": None,
+                "metadata_json": '{"reminder":{"enabled":true,"email_enabled":true,"lead_minutes":1440}}',
+            })
+        )
+
+        @contextlib.contextmanager
+        def fake_conn():
+            yield fake
+
+        with patch.object(scheduled_task_handlers, "get_db_connection", fake_conn), patch.object(
+            message_center_service, "create_todo_notification", return_value=1,
+        ), patch.object(
+            scheduled_task_handlers,
+            "queue_custom_teacher_email",
+            return_value={"job_id": 88},
+        ) as queue_email:
+            result = scheduled_task_handlers.handle_todo_due_reminder(
+                {"payload": {"todo_id": 9, "class_offering_id": 20, "owner_role": "teacher", "owner_user_pk": 3}}
+            )
+
+        queue_email.assert_called_once()
+        self.assertEqual("teacher", queue_email.call_args.kwargs["recipient_role"])
+        self.assertIn("email_job=88", result)
 
     def test_postgres_smart_attendance_daily_task_uses_conflict_returning(self):
         conn = FakeConnection(row=FakeRow({"id": 555}))

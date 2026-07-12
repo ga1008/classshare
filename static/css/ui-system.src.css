@@ -46745,6 +46745,30 @@ body.agenda-todo-open { overflow: hidden; }
     cursor: inherit;
 }
 
+.agenda-todo-reminder__toggle--email {
+    padding-top: 9px;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.agenda-todo-reminder__toggle--email[hidden] { display: none; }
+
+.agenda-todo-reminder__toggle--email.is-unavailable {
+    color: var(--text-muted, #94a3b8);
+    cursor: not-allowed;
+}
+
+.agenda-todo-reminder__mail-badge {
+    margin-left: auto;
+    padding: 3px 7px;
+    border: 1px solid rgba(14, 116, 144, 0.2);
+    border-radius: 999px;
+    background: rgba(6, 182, 212, 0.08);
+    color: #0e7490;
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
 .agenda-todo-reminder__lead {
     display: none;
     align-items: center;
@@ -46785,6 +46809,20 @@ body.agenda-todo-open { overflow: hidden; }
 }
 
 .agenda-todo-reminder__hint[hidden] { display: none; }
+
+.agenda-todo-reminder__email-hint {
+    padding-left: 27px;
+    color: #64748b;
+}
+
+.agenda-todo-reminder__email-hint a {
+    margin-left: 4px;
+    color: var(--dashboard-accent, #4f46e5);
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.agenda-todo-reminder__email-hint a:hover { text-decoration: underline; }
 
 /* ==========================================================================
    Group assignment — teacher config modal + student peer-evaluation modal

@@ -409,6 +409,9 @@ function initAgendaWidget() {
       priority: data.priority || 'normal',
       dueAt: data.dueAt || '',
       startAt: data.startAt || '',
+      reminderEnabled: data.reminderEnabled || '0',
+      emailReminderEnabled: data.emailReminderEnabled || '0',
+      reminderLead: data.reminderLead || '1440',
     };
     const triggerEl = activeItem;
     close();
@@ -500,9 +503,16 @@ function readTodoOptions() {
   try {
     const parsed = JSON.parse(holder.textContent || '{}');
     const options = Array.isArray(parsed.options) ? parsed.options : [];
-    return { options, defaultOfferingId: Number(parsed.default_offering_id || 0) };
+    return {
+      options,
+      defaultOfferingId: Number(parsed.default_offering_id || 0),
+      actorRole: String(parsed.actor_role || 'student'),
+      emailReminder: parsed.email_reminder && typeof parsed.email_reminder === 'object'
+        ? parsed.email_reminder
+        : { available: false, reason: '', settings_url: '/profile?section=email' },
+    };
   } catch {
-    return { options: [], defaultOfferingId: 0 };
+    return { options: [], defaultOfferingId: 0, actorRole: 'student', emailReminder: {} };
   }
 }
 
@@ -580,6 +590,11 @@ function buildTodoModalDom() {
             <input type="checkbox" name="reminder_enabled" data-reminder-toggle>
             <span>到期前在站内提醒我</span>
           </label>
+          <label class="agenda-todo-reminder__toggle agenda-todo-reminder__toggle--email" data-email-reminder-channel>
+            <input type="checkbox" name="email_reminder_enabled" data-email-reminder-toggle>
+            <span>同时发送邮件提醒</span>
+            <span class="agenda-todo-reminder__mail-badge">邮件</span>
+          </label>
           <div class="agenda-todo-reminder__lead" data-reminder-lead>
             <span>提前</span>
             <input type="number" name="reminder_lead_value" min="1" max="60" value="1" inputmode="numeric" aria-label="提前数值">
@@ -590,6 +605,7 @@ function buildTodoModalDom() {
             </select>
           </div>
           <p class="agenda-todo-reminder__hint" data-reminder-hint>设置截止日期后可开启到期提醒。</p>
+          <p class="agenda-todo-reminder__hint agenda-todo-reminder__email-hint" data-email-reminder-hint hidden></p>
         </div>
         <details class="agenda-todo-more">
           <summary>更多选项（开始时间、备注）</summary>
@@ -618,13 +634,13 @@ let sharedTodoModal = null;
 
 function getTodoModalController() {
   if (sharedTodoModal) return sharedTodoModal;
-  const { options, defaultOfferingId } = readTodoOptions();
+  const { options, defaultOfferingId, actorRole, emailReminder } = readTodoOptions();
   if (!options.length) return null;
-  sharedTodoModal = createTodoModalController(options, defaultOfferingId);
+  sharedTodoModal = createTodoModalController(options, defaultOfferingId, { actorRole, emailReminder });
   return sharedTodoModal;
 }
 
-function createTodoModalController(options, defaultOfferingId) {
+function createTodoModalController(options, defaultOfferingId, settings = {}) {
   const modal = buildTodoModalDom();
   const card = modal.querySelector('.agenda-todo-modal__card');
   const form = modal.querySelector('[data-todo-form]');
@@ -637,6 +653,9 @@ function createTodoModalController(options, defaultOfferingId) {
   const priorityGroup = modal.querySelector('[data-todo-priority]');
   const reminderWrap = modal.querySelector('[data-todo-reminder]');
   const reminderToggle = form.elements.reminder_enabled;
+  const emailReminderToggle = form.elements.email_reminder_enabled;
+  const emailReminderChannel = modal.querySelector('[data-email-reminder-channel]');
+  const emailReminderHint = modal.querySelector('[data-email-reminder-hint]');
   const reminderLeadValue = form.elements.reminder_lead_value;
   const reminderLeadUnit = form.elements.reminder_lead_unit;
   const reminderHint = modal.querySelector('[data-reminder-hint]');
@@ -645,6 +664,22 @@ function createTodoModalController(options, defaultOfferingId) {
   let editingId = 0;
   let lastFocus = null;
   let reminderTouched = false;
+  const actorRole = String(settings.actorRole || 'student');
+  const emailReminder = settings.emailReminder || {};
+  const emailAvailable = actorRole === 'teacher' && Boolean(emailReminder.available);
+
+  if (actorRole !== 'teacher') {
+    emailReminderChannel.hidden = true;
+  } else {
+    emailReminderToggle.disabled = !emailAvailable;
+    if (!emailAvailable) {
+      const reason = String(emailReminder.reason || '邮件提醒暂不可用。');
+      const settingsUrl = String(emailReminder.settings_url || '/profile?section=email');
+      emailReminderHint.innerHTML = `${escapeHtml(reason)} <a href="${escapeHtml(settingsUrl)}">去完善设置</a>`;
+      emailReminderHint.hidden = false;
+      emailReminderChannel.classList.add('is-unavailable');
+    }
+  }
 
   courseSelect.innerHTML = options
     .map((opt) => `<option value="${Number(opt.class_offering_id)}">${escapeHtml(opt.label || `${opt.course_name || ''} · ${opt.class_name || ''}`)}</option>`)
@@ -695,7 +730,9 @@ function createTodoModalController(options, defaultOfferingId) {
     const due = hasDeadline();
     reminderToggle.disabled = !due;
     if (!due) reminderToggle.checked = false;
-    const leadOn = due && reminderToggle.checked;
+    emailReminderToggle.disabled = !due || !emailAvailable;
+    if (!due || !emailAvailable) emailReminderToggle.checked = false;
+    const leadOn = due && (reminderToggle.checked || emailReminderToggle.checked);
     reminderLeadValue.disabled = !leadOn;
     reminderLeadUnit.disabled = !leadOn;
     reminderWrap.classList.toggle('is-disabled', !due);
@@ -725,12 +762,13 @@ function createTodoModalController(options, defaultOfferingId) {
     form.reset();
     setPriority('normal');
     setStatus('', '');
-    eyebrowEl.textContent = '我的待办';
+    eyebrowEl.textContent = actorRole === 'teacher' ? '教师待办' : '我的待办';
     headingEl.textContent = '新增待办';
     submitBtn.textContent = '保存待办';
     courseSelect.disabled = false;
     applyDefaultCourse();
     reminderTouched = false;
+    emailReminderToggle.checked = false;
     setReminderLeadFromMinutes(1440);
     syncReminderAvailability();
     reveal();
@@ -764,6 +802,7 @@ function createTodoModalController(options, defaultOfferingId) {
     reminderTouched = true; // respect the stored setting; don't auto-flip
     setReminderLeadFromMinutes(data.reminderLead || 1440);
     reminderToggle.checked = data.reminderEnabled === '1';
+    emailReminderToggle.checked = emailAvailable && data.emailReminderEnabled === '1';
     syncReminderAvailability();
     reveal();
   };
@@ -786,6 +825,7 @@ function createTodoModalController(options, defaultOfferingId) {
       start_at: dateTime(form.elements.start_date?.value, form.elements.start_time?.value, '00:00'),
       due_at: dateTime(form.elements.due_date?.value, form.elements.due_time?.value, '23:59'),
       reminder_enabled: Boolean(hasDeadline() && reminderToggle.checked),
+      email_reminder_enabled: Boolean(hasDeadline() && emailAvailable && emailReminderToggle.checked),
       reminder_lead_minutes: reminderLeadMinutes(),
     };
     if (body.start_at && body.due_at && body.due_at < body.start_at) {
@@ -835,6 +875,10 @@ function createTodoModalController(options, defaultOfferingId) {
     syncReminderAvailability();
   });
   reminderToggle.addEventListener('change', () => {
+    reminderTouched = true;
+    syncReminderAvailability();
+  });
+  emailReminderToggle.addEventListener('change', () => {
     reminderTouched = true;
     syncReminderAvailability();
   });

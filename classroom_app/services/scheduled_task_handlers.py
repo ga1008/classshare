@@ -188,8 +188,7 @@ def _todo_due_labels(due_at_text: str) -> tuple[str, str]:
 
 
 def handle_todo_due_reminder(task: dict[str, Any]) -> str:
-    """Fire an in-app reminder for a student's manual to-do approaching its due
-    time. Skips silently if the to-do was completed/deleted or lost its deadline."""
+    """Deliver the selected in-app/email channels for a manual to-do."""
     payload = task.get("payload") or {}
     todo_id = int(payload.get("todo_id") or 0)
     class_offering_id = int(payload.get("class_offering_id") or 0)
@@ -203,7 +202,7 @@ def handle_todo_due_reminder(task: dict[str, Any]) -> str:
     with get_db_connection() as conn:
         row = conn.execute(
             """
-            SELECT title, due_at, completed_at, deleted_at
+            SELECT title, notes, due_at, completed_at, deleted_at, metadata_json
             FROM classroom_todos
             WHERE id = ? AND class_offering_id = ? AND owner_role = ? AND owner_user_pk = ?
             LIMIT 1
@@ -220,23 +219,93 @@ def handle_todo_due_reminder(task: dict[str, Any]) -> str:
         if not due_at_text:
             return "skipped: no deadline"
 
-        title = _text(row["title"]) or "待办"
+        row_data = dict(row)
+        title = _text(row_data.get("title")) or "待办"
+        notes = _text(row_data.get("notes"))
+        try:
+            import json
+
+            metadata = json.loads(str(row_data.get("metadata_json") or "{}"))
+        except (KeyError, TypeError, ValueError):
+            metadata = {}
+        reminder = metadata.get("reminder") if isinstance(metadata, dict) else {}
+        reminder = reminder if isinstance(reminder, dict) else {}
+        # Older scheduled tasks predate channel metadata and were always
+        # in-app reminders, so keep that behaviour for compatibility.
+        in_app_enabled = bool(reminder.get("enabled", True))
+        email_enabled = bool(reminder.get("email_enabled", False)) and role == "teacher"
         when_label, relative = _todo_due_labels(due_at_text)
         body = f"{relative}（{when_label} 截止）" if relative else f"{when_label} 截止"
-        created = create_todo_notification(
-            conn,
-            recipient_role=role,
-            recipient_user_pk=user_pk,
-            title=f"待办即将到期：{title}",
-            body_preview=body,
-            link_url="/dashboard#dashboard-class-list",
-            class_offering_id=class_offering_id or None,
-            ref_id=f"todo-due:{todo_id}:{due_at_text}",
-            actor_role="system",
-            actor_display_name="到期提醒",
-        )
+        created = 0
+        if in_app_enabled:
+            created = create_todo_notification(
+                conn,
+                recipient_role=role,
+                recipient_user_pk=user_pk,
+                title=f"待办即将到期：{title}",
+                body_preview=body,
+                link_url="/dashboard#dashboard-class-list",
+                class_offering_id=class_offering_id or None,
+                ref_id=f"todo-due:{todo_id}:{due_at_text}",
+                actor_role="system",
+                actor_display_name="到期提醒",
+            )
+        email_job_id = None
+        email_error: Exception | None = None
+        if email_enabled:
+            action_url = _absolute_link("/dashboard")
+            safe_title = html.escape(title)
+            safe_when = html.escape(when_label)
+            safe_notes = html.escape(notes)
+            safe_action_url = html.escape(action_url, quote=True)
+            note_html = (
+                f'<div style="margin:16px 0;padding:12px 14px;border-radius:10px;background:#f8fafc;'
+                f'color:#475569;line-height:1.7;">{safe_notes}</div>'
+                if safe_notes
+                else ""
+            )
+            try:
+                email_result = queue_custom_teacher_email(
+                    conn,
+                    teacher_id=user_pk,
+                    subject=f"【{SITE_DISPLAY_NAME}】待办提醒：{title}",
+                    body_text=(
+                        f"老师，你好：\n\n待办“{title}”{body}。"
+                        + (f"\n\n备注：{notes}" if notes else "")
+                        + f"\n\n打开教师工作台：{action_url}"
+                    ),
+                    body_html=f"""<!doctype html>
+<html lang="zh-CN"><body style="margin:0;background:#eef2f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;color:#0f172a;">
+<div style="max-width:620px;margin:0 auto;padding:32px 18px;"><div style="padding:28px;border:1px solid #dbe3ef;border-radius:20px;background:#fff;box-shadow:0 18px 45px -32px rgba(15,23,42,.5);">
+<div style="font-size:12px;font-weight:800;color:#0f766e;letter-spacing:.08em;">{html.escape(str(SITE_DISPLAY_NAME))} · 待办提醒</div>
+<h1 style="margin:14px 0 8px;font-size:23px;line-height:1.4;">{safe_title}</h1>
+<p style="margin:0;color:#64748b;font-size:15px;line-height:1.8;">截止时间：{safe_when}</p>{note_html}
+<a href="{safe_action_url}" style="display:inline-block;margin-top:18px;padding:12px 18px;border-radius:11px;background:#0f766e;color:#fff;text-decoration:none;font-size:14px;font-weight:800;">打开教师工作台</a>
+</div></div></body></html>""",
+                    dedupe_key=f"todo-reminder-email:{user_pk}:{todo_id}:{due_at_text}",
+                    category="todo",
+                    recipient_role="teacher",
+                    recipient_user_pk=user_pk,
+                )
+                email_job_id = email_result.get("job_id")
+            except Exception as exc:  # Scheduler will retry; keep an in-app fallback visible.
+                email_error = exc
+                create_todo_notification(
+                    conn,
+                    recipient_role="teacher",
+                    recipient_user_pk=user_pk,
+                    title=f"待办邮件提醒发送失败：{title}",
+                    body_preview="系统会自动重试；请检查账号邮箱与默认发信配置。",
+                    link_url="/profile?section=email",
+                    class_offering_id=class_offering_id or None,
+                    ref_id=f"todo-email-retry:{todo_id}:{due_at_text}",
+                    actor_role="system",
+                    actor_display_name="邮件提醒",
+                )
         conn.commit()
-    return f"todo due reminder notified={created}"
+    if email_error is not None:
+        raise RuntimeError("todo email reminder queue failed; retry scheduled") from email_error
+    return f"todo due reminder notified={created} email_job={email_job_id or 0}"
 
 
 register_task_handler(TASK_KIND_TODO_DUE_REMINDER, handle_todo_due_reminder)

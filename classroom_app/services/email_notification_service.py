@@ -863,6 +863,41 @@ def _load_default_email_config(conn, teacher_id: int):
     ).fetchone()
 
 
+def get_teacher_email_reminder_readiness(conn, teacher_id: int | str) -> dict[str, Any]:
+    """Return the minimum account state needed for a teacher self-reminder.
+
+    The dashboard uses this to explain why the email channel is unavailable,
+    while the write service calls it again to prevent a stale browser from
+    arming a reminder that can never be delivered.
+    """
+    teacher_id_int = _safe_int(teacher_id)
+    if not teacher_id_int:
+        return {
+            "available": False,
+            "reason": "教师身份无效，暂时无法设置邮件提醒。",
+            "settings_url": "/profile?section=email",
+        }
+    recipient = _load_recipient_email(conn, role="teacher", user_pk=teacher_id_int)
+    if not recipient:
+        return {
+            "available": False,
+            "reason": "请先在账号资料中填写有效邮箱。",
+            "settings_url": "/profile?section=settings",
+        }
+    config = _load_default_email_config(conn, teacher_id_int)
+    if not config:
+        return {
+            "available": False,
+            "reason": "请先配置并启用默认发信邮箱。",
+            "settings_url": "/profile?section=email",
+        }
+    return {
+        "available": True,
+        "reason": "邮件将通过你的默认发信配置发送到账号邮箱。",
+        "settings_url": "/profile?section=email",
+    }
+
+
 def _absolute_link(link_url: Any) -> str:
     raw = str(link_url or "").strip()
     if not raw:

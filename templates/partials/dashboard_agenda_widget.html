@@ -55,7 +55,12 @@
         </div>
     </header>
     {% if dashboard_can_create_todo %}
-    <script type="application/json" data-agenda-todo-options>{{ {"options": dashboard_todo_create_options | default([]), "default_offering_id": dashboard_default_todo_offering_id | default(0)} | tojson }}</script>
+    <script type="application/json" data-agenda-todo-options>{{ {
+        "options": dashboard_todo_create_options | default([]),
+        "default_offering_id": dashboard_default_todo_offering_id | default(0),
+        "actor_role": dashboard_todo_actor_role | default('student'),
+        "email_reminder": dashboard_todo_email_reminder | default({"available": false, "reason": "仅教师待办支持邮件提醒。", "settings_url": "/profile?section=email"})
+    } | tojson }}</script>
     {% endif %}
 
     {% if _reminders %}
@@ -84,6 +89,7 @@
             data-due-at="{{ ev.due_at_raw }}"
             data-start-at="{{ ev.start_at_raw }}"
             data-reminder-enabled="{{ '1' if ev.reminder_enabled else '0' }}"
+            data-email-reminder-enabled="{{ '1' if ev.email_reminder_enabled else '0' }}"
             data-reminder-lead="{{ ev.reminder_lead_minutes }}"
             {% endif %}
             {% if ev.detail %}
@@ -113,7 +119,7 @@
     {% else %}
     <div class="agenda-reminder__empty">
         <strong>这会儿没有临近的安排</strong>
-        <p>监考、考试、作业截止等提醒会自动出现在这里，最紧要的排在最前面。</p>
+        <p>监考、考试、作业截止和你新建的待办都会出现在这里，最紧要的排在最前面。</p>
     </div>
     {% endif %}
 </section>
