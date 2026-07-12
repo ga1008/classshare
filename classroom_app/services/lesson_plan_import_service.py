@@ -64,7 +64,7 @@ async def _parse_with_ai(extracted: dict[str, Any], extra_prompt: str) -> dict[s
         "file_texts": file_texts,
         "base64_urls": images,
         "model_capability": capability,
-        "task_type": "deep_multimodal_reasoning" if images else "deep_text_reasoning",
+        "task_type": "document_multimodal_understanding" if images else "deep_text_reasoning",
         "response_format": "json",
         "web_search_enabled": False,
         "task_priority": "background",
@@ -115,7 +115,12 @@ def _payload_is_empty(payload: dict[str, Any]) -> bool:
 
 
 async def run_import_job(
-    plan_id: str, files: list[dict[str, str]], extra_prompt: str, teacher_id: int
+    plan_id: str,
+    files: list[dict[str, str]],
+    extra_prompt: str,
+    teacher_id: int,
+    *,
+    cleanup_files: bool = True,
 ) -> None:
     """Background coroutine: extract → AI parse → persist → ready/failed."""
     try:
@@ -181,4 +186,5 @@ async def run_import_job(
             ai_gen_error=f"解析失败：{exc}"[:800],
         )
     finally:
-        _cleanup(files)
+        if cleanup_files:
+            _cleanup(files)

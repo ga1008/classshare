@@ -1602,6 +1602,7 @@
             <input type="text" class="filter-input" id="submission-filter" placeholder="搜索学生姓名 / 学号 / 附件后缀..." oninput="filterSubmissions()">
             <button class="filter-btn active" data-filter="all" onclick="setFilter('all', this)">全部</button>
             <button class="filter-btn" data-filter="submitted" onclick="setFilter('submitted', this)">待批改</button>
+            <button class="filter-btn" data-filter="grading_review" onclick="setFilter('grading_review', this)">待人工复核</button>
             <button class="filter-btn" data-filter="returned" onclick="setFilter('returned', this)">待重交</button>
             <button class="filter-btn" data-filter="graded" onclick="setFilter('graded', this)">已批改</button>
             <button class="filter-btn" data-filter="unsubmitted" onclick="setFilter('unsubmitted', this)">未提交</button>
@@ -2610,6 +2611,7 @@
             const statusMap = {
                 'submitted': { cls: 'badge-primary', text: '已提交' },
                 'grading': { cls: 'badge-warning', text: '批改中' },
+                'grading_review': { cls: 'badge-warning', text: '待人工复核' },
                 'graded': { cls: 'badge-success', text: '已批改' },
                 'unsubmitted': { cls: 'badge-secondary', text: '未提交' },
             };
@@ -3695,7 +3697,7 @@
     }
 
     function getStatusText(status) {
-        return { 'new': '草稿', 'published': '进行中', 'closed': '已截止', 'submitted': '已提交', 'grading': '批改中', 'graded': '已批改', 'unsubmitted': '未提交' }[status] || status;
+        return { 'new': '草稿', 'published': '进行中', 'closed': '已截止', 'submitted': '已提交', 'grading': '批改中', 'grading_review': '待人工复核', 'graded': '已批改', 'unsubmitted': '未提交' }[status] || status;
     }
 </script>
 {% endblock %}

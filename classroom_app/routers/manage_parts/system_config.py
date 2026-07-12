@@ -1,5 +1,6 @@
 from .common import *
 from ...services.background_task_ledger_service import build_background_task_ledger_snapshot
+from ...services.ai_durable_job_service import cancel_ai_job_by_id, requeue_ai_job
 from ...services.ai_usage_budget_service import (
     AIUsageBudgetError,
     build_ai_usage_dashboard,
@@ -17,6 +18,30 @@ async def api_get_background_tasks(user: dict = Depends(get_current_teacher)):
         _require_current_super_admin(conn, user)
         snapshot = build_background_task_ledger_snapshot(conn)
     return {"status": "success", **snapshot}
+
+
+@router.post("/system/ai-jobs/{job_id:int}/requeue", response_class=JSONResponse)
+async def api_requeue_ai_job(job_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            job = requeue_ai_job(conn, job_id, reason=f"manual_requeue_by_teacher:{int(user['id'])}")
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "任务已重新排队。", "job": job}
+
+
+@router.post("/system/ai-jobs/{job_id:int}/cancel", response_class=JSONResponse)
+async def api_cancel_ai_job(job_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            job = cancel_ai_job_by_id(conn, job_id, reason=f"cancelled_by_teacher:{int(user['id'])}")
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", "message": "任务已取消；迟到结果不会被应用。", "job": job}
 
 
 @router.get("/system/ai-usage", response_class=JSONResponse)

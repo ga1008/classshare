@@ -262,6 +262,54 @@ def _material_import_runtime_snapshot() -> dict[str, Any]:
 
 
 def _build_ai_grading_item(conn: sqlite3.Connection, definition: BackgroundTaskDefinition) -> dict[str, Any]:
+    if _table_exists(conn, "ai_jobs"):
+        item = _base_item(definition)
+        task_filter = "task_type = 'ai_grading'"
+        def count_grading(statuses: tuple[str, ...]) -> int:
+            placeholders = ",".join("?" for _ in statuses)
+            row = conn.execute(
+                f"SELECT COUNT(*) AS row_count FROM ai_jobs WHERE {task_filter} AND status IN ({placeholders})",
+                statuses,
+            ).fetchone()
+            return int(_row_scalar(row, "row_count", 0) or 0)
+
+        item["queue_depth"] = count_grading(("queued", "retry_wait", "result_ready"))
+        item["running_count"] = count_grading(("running",))
+        item["failed_count"] = count_grading(("review_required", "dead_letter"))
+        stale_row = conn.execute(
+            f"""
+            SELECT COUNT(*) AS row_count
+            FROM ai_jobs
+            WHERE {task_filter}
+              AND status = 'running'
+              AND (lease_expires_at IS NULL OR lease_expires_at < ?)
+            """,
+            (_now_iso(),),
+        ).fetchone()
+        item["stale_count"] = int(_row_scalar(stale_row, "row_count", 0) or 0)
+        oldest = conn.execute(
+            f"""
+            SELECT MIN(created_at) AS oldest_value
+            FROM ai_jobs
+            WHERE {task_filter}
+              AND status IN ('queued', 'retry_wait', 'result_ready')
+            """
+        ).fetchone()
+        item["oldest_queued_at"] = str(_row_scalar(oldest, "oldest_value", "") or "")
+        error_row = conn.execute(
+            f"""
+            SELECT last_error, updated_at
+            FROM ai_jobs
+            WHERE {task_filter}
+              AND status IN ('retry_wait', 'review_required', 'dead_letter')
+              AND TRIM(COALESCE(last_error, '')) <> ''
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        item["last_error_at"] = str(_row_scalar(error_row, "updated_at", "") or "")
+        item["last_error"] = _sanitize_text(_row_scalar(error_row, "last_error", ""))
+        return item
     if not _table_exists(conn, "submissions"):
         return _missing_source_item(definition, "submissions")
     item = _base_item(definition)
@@ -685,6 +733,31 @@ def build_background_task_ledger_snapshot(
         }
         if include_internal_details:
             snapshot["definitions"] = [definition.to_dict() for definition in BACKGROUND_TASK_DEFINITIONS]
+            if _table_exists(active_conn, "ai_jobs"):
+                recent_rows = active_conn.execute(
+                    """
+                    SELECT id, task_type, status, source_ref, attempt_count, max_attempts,
+                           locked_by, last_error_code, last_error, updated_at
+                    FROM ai_jobs
+                    WHERE status IN (
+                        'queued', 'running', 'retry_wait', 'result_ready',
+                        'review_required', 'dead_letter'
+                    )
+                    ORDER BY
+                        CASE status
+                            WHEN 'review_required' THEN 0
+                            WHEN 'dead_letter' THEN 1
+                            WHEN 'retry_wait' THEN 2
+                            WHEN 'running' THEN 3
+                            ELSE 4
+                        END,
+                        updated_at DESC, id DESC
+                    LIMIT 30
+                    """
+                ).fetchall()
+                snapshot["recent_ai_jobs"] = [dict(row) for row in recent_rows]
+            else:
+                snapshot["recent_ai_jobs"] = []
         return snapshot
     finally:
         if owns_connection:

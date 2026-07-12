@@ -5,6 +5,11 @@ from typing import Any, Sequence
 from .errors import DatabaseProgrammingError
 from .row import rows_to_mappings
 from .sql import quote_identifier
+from .schema_ai_jobs import (
+    AI_JOB_POSTGRES_RUNTIME_COLUMNS,
+    AI_JOB_POSTGRES_RUNTIME_TABLES,
+    AI_JOB_REQUIRED_POSTGRES_COLUMNS,
+)
 
 
 POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
@@ -273,6 +278,7 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
 )
 
 POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
+    **AI_JOB_POSTGRES_RUNTIME_COLUMNS,
     "assignment_wrong_summary_jobs": {
         # Added to the CREATE TABLE later without an ALTER migration, so a
         # PostgreSQL provisioned from an older schema lacks it. Auto-add here.
@@ -319,6 +325,7 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
 
 
 POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
+    **AI_JOB_POSTGRES_RUNTIME_TABLES,
     "teacher_academic_teaching_class_mappings": """
         CREATE TABLE IF NOT EXISTS teacher_academic_teaching_class_mappings (
             id SERIAL PRIMARY KEY,
@@ -477,6 +484,7 @@ REQUIRED_POSTGRES_TABLES = (
     "cultivation_weekly_snapshots",
     "cultivation_alerts",
     "ai_usage_log",
+    *AI_JOB_REQUIRED_POSTGRES_COLUMNS,
     "learning_stage_status",
     "learning_stage_exam_attempts",
     "learning_certificates",
@@ -657,6 +665,9 @@ REQUIRED_POSTGRES_COLUMNS = {
         "resubmission_allowed",
         "grading_started_at",
         "grading_attempt_fingerprint",
+        "grading_revision_hash",
+        "grading_job_id",
+        "active_grade_revision_id",
         "score_before_late_penalty",
         "late_penalty_points",
         "late_score_cap_applied",
@@ -2471,6 +2482,7 @@ REQUIRED_POSTGRES_COLUMNS = {
         "metadata_json",
         "created_at",
     ),
+    **AI_JOB_REQUIRED_POSTGRES_COLUMNS,
     "learning_stage_status": (
         "id",
         "class_offering_id",

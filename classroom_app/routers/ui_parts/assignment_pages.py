@@ -312,14 +312,14 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
 
     can_manage_submission_files = bool(
         user.get("role") == "teacher"
-        and submission.get("status") != "grading"
+        and submission.get("status") not in {"grading", "grading_review"}
         and (
             submission.get("status") != "graded"
             or int(submission.get("resubmission_allowed") or 0)
         )
     )
     attachment_locked_reason = ""
-    if user.get("role") == "teacher" and submission.get("status") == "grading":
+    if user.get("role") == "teacher" and submission.get("status") in {"grading", "grading_review"}:
         attachment_locked_reason = "AI 正在批改中，附件暂不可修改。"
     elif (
         user.get("role") == "teacher"

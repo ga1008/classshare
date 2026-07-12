@@ -558,10 +558,11 @@ def _assignment_items(conn: sqlite3.Connection, *, class_offering_id: int, user:
             status_label = {
                 "submitted": "已提交",
                 "grading": "批改中",
+                "grading_review": "待教师复核",
                 "graded": "已评分",
                 "returned": "待重交",
             }.get(submission_status, "待提交")
-            is_completed = submission_status in {"submitted", "grading", "graded"} and not can_resubmit
+            is_completed = submission_status in {"submitted", "grading", "grading_review", "graded"} and not can_resubmit
         else:
             due_at = assignment_due_at
             status = str(row.get("status") or "")

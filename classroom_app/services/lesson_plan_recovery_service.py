@@ -1,9 +1,7 @@
 """Recover stale lesson-plan AI jobs.
 
-Generation/import run as in-process asyncio tasks; if the process restarts or a
-task dies, the row can be left stuck in ``generating``/``parsing``. The list
-page calls this on load to flip long-stale rows to ``failed`` (so the placeholder
-card offers retry/delete) — mirroring ``exam_generation_recovery_service``.
+Legacy jobs may be interrupted by a restart. Active durable-ledger jobs are
+excluded so their lease/retry state remains authoritative.
 """
 
 from __future__ import annotations
@@ -24,10 +22,22 @@ def expire_stale_lesson_plan_tasks(
     now = datetime.now().isoformat()
     cutoff = (datetime.now() - timedelta(minutes=max(10, int(stale_minutes or 30)))).isoformat()
     teacher_filter = ""
+    durable_filter = ""
     params: list[object] = [now, cutoff]
     if teacher_id is not None:
         teacher_filter = " AND teacher_id = ?"
         params.append(int(teacher_id))
+    try:
+        conn.execute("SELECT 1 FROM ai_jobs LIMIT 1")
+        durable_filter = """
+          AND NOT EXISTS (
+              SELECT 1 FROM ai_jobs j
+              WHERE j.source_ref = 'lesson_plan:' || lesson_plans.id
+                AND j.status IN ('queued', 'running', 'retry_wait', 'result_ready')
+          )
+        """
+    except Exception:
+        durable_filter = ""
     cursor = conn.execute(
         """
         UPDATE lesson_plans
@@ -46,7 +56,8 @@ def expire_stale_lesson_plan_tasks(
           AND COALESCE(ai_gen_status, '') IN ('pending', 'running', '')
           AND COALESCE(updated_at, created_at) < ?
           {teacher_filter}
-        """.format(teacher_filter=teacher_filter),
+          {durable_filter}
+        """.format(teacher_filter=teacher_filter, durable_filter=durable_filter),
         params,
     )
     return int(cursor.rowcount or 0)

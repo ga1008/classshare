@@ -4,6 +4,7 @@ import json
 import sqlite3
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from classroom_app.services.ai_usage_budget_service import (
     AIUsageBudgetError,
@@ -150,7 +151,17 @@ class AIUsageBudgetServiceTests(unittest.TestCase):
         self._insert_usage(task_type="stage_exam_generation", student_id=13)
         self._insert_usage(task_type="behavior_profile", created_at=datetime.now() - timedelta(days=7))
 
-        dashboard = build_ai_usage_dashboard(self.conn)
+        provider_snapshot = {
+            "available": True,
+            "summary": {"calls": 1, "estimated_cost_cny": 0.25},
+            "model_items": [{"provider": "qwen", "model": "qwen3.7-plus"}],
+            "task_items": [],
+        }
+        with patch(
+            "classroom_app.services.ai_usage_budget_service.build_provider_usage_snapshot",
+            return_value=provider_snapshot,
+        ):
+            dashboard = build_ai_usage_dashboard(self.conn)
 
         self.assertEqual(4, dashboard["summary"]["count"])
         task_counts = {item["key"]: item["count"] for item in dashboard["task_items"]}
@@ -160,6 +171,7 @@ class AIUsageBudgetServiceTests(unittest.TestCase):
         self.assertEqual(3, offering["stage_exam_generation_this_week"])
         self.assertEqual(2, offering["stage_exam_generation_budget"])
         self.assertTrue(offering["over_stage_exam_budget"])
+        self.assertEqual(provider_snapshot, dashboard["provider_usage"])
 
     def test_stage_exam_generation_quota_counts_deleted_attempt_logs(self):
         now = datetime.now().replace(microsecond=0)

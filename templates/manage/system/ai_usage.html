@@ -15,6 +15,9 @@
 {% set offering_items = dashboard.offering_items or [] %}
 {% set anomalies = dashboard.anomalies or [] %}
 {% set max_week_count = dashboard.max_week_count or 1 %}
+{% set provider_usage = dashboard.provider_usage or {} %}
+{% set provider_summary = provider_usage.summary or {} %}
+{% set provider_model_items = provider_usage.model_items or [] %}
 
 {% block extra_head %}
 <style>
@@ -25,7 +28,7 @@
 
     .ai-usage-overview {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         gap: 0.72rem;
     }
 
@@ -56,6 +59,14 @@
         font-size: 1.28rem;
         line-height: 1.15;
         overflow-wrap: anywhere;
+    }
+
+    .ai-usage-metric small {
+        display: block;
+        margin-top: 0.28rem;
+        color: var(--text-muted);
+        font-size: 0.7rem;
+        line-height: 1.45;
     }
 
     .ai-usage-panel {
@@ -318,6 +329,11 @@
             <span>平均耗时</span>
             <strong>{{ summary.avg_duration_ms or 0 }} ms</strong>
         </div>
+        <div class="ai-usage-metric">
+            <span>供应商估算费用</span>
+            <strong>¥{{ (provider_summary.estimated_cost_cny or 0) | round(4) }}</strong>
+            <small>{{ provider_summary.cost_known_calls or 0 }}/{{ provider_summary.calls or 0 }} 次有实际 Token 计价</small>
+        </div>
     </section>
 
     <section class="ai-usage-grid">
@@ -401,6 +417,55 @@
             </article>
         </div>
     </section>
+
+    <article class="ai-usage-panel">
+        <div class="ai-usage-panel-head">
+            <div>
+                <h2>供应商与模型实际用量</h2>
+                <p class="ai-usage-note">聚合最近 {{ provider_usage.window_days or 56 }} 天共享调用日志；Token 来自供应商响应，费用按当前配置单价估算。日志采用有界尾读，页面访问不会扫描整份历史文件。</p>
+            </div>
+            <span class="ai-usage-badge">{{ provider_usage.events_read or 0 }} 条调用</span>
+        </div>
+        {% if provider_model_items %}
+        <div class="ai-usage-table-wrap">
+            <table class="ai-usage-table">
+                <thead>
+                    <tr>
+                        <th>供应商 / 模型</th>
+                        <th>调用</th>
+                        <th>成功率</th>
+                        <th>实际 Token</th>
+                        <th>平均耗时</th>
+                        <th>估算费用</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in provider_model_items %}
+                    <tr>
+                        <td>
+                            <span class="ai-usage-primary">{{ item.provider }}</span>
+                            <span class="ai-usage-subtle">{{ item.model }}</span>
+                        </td>
+                        <td>{{ item.calls }}</td>
+                        <td>{{ item.success_rate }}%</td>
+                        <td>
+                            {{ item.total_tokens }}
+                            <span class="ai-usage-subtle">输入 {{ item.prompt_tokens }} / 输出 {{ item.completion_tokens }}</span>
+                        </td>
+                        <td>{{ item.avg_duration_ms }} ms</td>
+                        <td>
+                            <span class="ai-usage-primary">¥{{ (item.estimated_cost_cny or 0) | round(4) }}</span>
+                            <span class="ai-usage-subtle">{{ item.cost_known_calls }}/{{ item.calls }} 次可计价</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="ai-usage-empty">尚无供应商 Token 日志。新调用完成后会自动汇总到这里。</div>
+        {% endif %}
+    </article>
 
     <article class="ai-usage-panel">
         <div class="ai-usage-panel-head">

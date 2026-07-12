@@ -1,9 +1,7 @@
 """Recover stale process-material AI jobs.
 
-Process-material generation/import jobs run as in-process asyncio tasks. If the
-server restarts or a task dies, rows can remain stuck in ``generating`` or
-``parsing`` forever. List pages call these helpers before rendering so teachers
-get a failed card with the correct next action instead of an endless spinner.
+Legacy jobs can be interrupted by a restart. Durable-ledger jobs are excluded
+while queued, running, retrying, or waiting for result finalization.
 """
 
 from __future__ import annotations
@@ -34,10 +32,23 @@ def _expire_stale_tasks(
     now = datetime.now().isoformat()
     cutoff = (datetime.now() - timedelta(minutes=max(10, int(stale_minutes or 30)))).isoformat()
     teacher_filter = ""
+    durable_filter = ""
     params: list[Any] = [now, cutoff]
     if teacher_id is not None:
         teacher_filter = " AND teacher_id = ?"
         params.append(int(teacher_id))
+    try:
+        conn.execute("SELECT 1 FROM ai_jobs LIMIT 1")
+        target_type = "assessment_plan" if table_name == "assessment_plans" else "teacher_evaluation"
+        durable_filter = f"""
+          AND NOT EXISTS (
+              SELECT 1 FROM ai_jobs j
+              WHERE j.source_ref = '{target_type}:' || {table_name}.id
+                AND j.status IN ('queued', 'running', 'retry_wait', 'result_ready')
+          )
+        """
+    except Exception:
+        durable_filter = ""
     cursor = conn.execute(
         f"""
         UPDATE {table_name}
@@ -56,6 +67,7 @@ def _expire_stale_tasks(
           AND COALESCE(ai_gen_status, '') IN ('pending', 'running', '')
           AND COALESCE(updated_at, created_at) < ?
           {teacher_filter}
+          {durable_filter}
         """,
         params,
     )

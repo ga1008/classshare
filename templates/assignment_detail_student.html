@@ -685,6 +685,14 @@
                         </div>
                         <p class="text-muted">AI 正在批改您的作业，请稍后刷新查看结果。</p>
                     </div>
+                {% elif submission.status == 'grading_review' %}
+                    <div class="status-card warning card-body rounded-lg mb-lg">
+                        <div class="status-card-header" style="color: var(--warning-color);">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+                            等待教师复核
+                        </div>
+                        <p class="text-muted">AI 未能给出足够可靠的结果，您的提交内容和已有成绩均已保留，教师会进行人工复核。</p>
+                    </div>
                 {% elif submission.status == 'grading_failed' %}
                     <div class="status-card warning card-body rounded-lg mb-lg">
                         <div class="status-card-header" style="color: var(--warning-color);">

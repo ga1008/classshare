@@ -2,9 +2,8 @@
 
 Mirrors the assessment-plan API surface (minus signatures): list / create(blank·
 form) / generate-from-classroom / import / content get·put / attributes get·patch /
-tags / delete / retry / inherit / export(docx·pdf) / task(poll). Long AI jobs run as
-in-process ``asyncio`` background tasks; the list page shows a placeholder card that
-polls ``/{id}/task``. A real (attachment) export first checks the sheet is complete
+tags / delete / retry / inherit / export(docx·pdf) / task(poll). Long AI jobs use the
+durable ledger when enabled; the list page polls ``/{id}/task``. A real export first checks the sheet is complete
 and refuses (409) with the missing fields listed; inline PDF preview always renders.
 """
 
@@ -13,16 +12,24 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+import uuid
 from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+from ..config import AI_DURABLE_JOBS_ENABLED
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher
 from ..services import teacher_evaluation_service as te
 from ..services import prompt_pool_service as prompt_pool
+from ..services.ai_durable_job_service import cleanup_ai_job_input_files
+from ..services.durable_process_job_service import (
+    enqueue_process_generation,
+    enqueue_process_import,
+    stage_process_import_inputs,
+)
 from ..services.process_material_import_policy import (
     normalize_process_import_filename,
     validate_process_document_import_file_bytes,
@@ -232,17 +239,29 @@ async def generate_from_classroom(request: Request, user: dict = Depends(get_cur
             task_id=evaluation_id,
             import_preview={"source_files": [], "warnings": []},
         )
+        if AI_DURABLE_JOBS_ENABLED:
+            enqueue_process_generation(
+                conn,
+                target_type="teacher_evaluation",
+                target_id=evaluation_id,
+                task_token=evaluation_id,
+                class_offering_id=int(class_offering_id),
+                teacher_id=int(user["id"]),
+                prompt=prompt,
+                field_overrides=field_overrides,
+            )
         conn.commit()
         evaluation = te.get_evaluation(conn, evaluation_id)
-    asyncio.create_task(
-        run_generation_job(
-            evaluation_id,
-            int(class_offering_id),
-            int(user["id"]),
-            prompt,
-            field_overrides=field_overrides,
+    if not AI_DURABLE_JOBS_ENABLED:
+        asyncio.create_task(
+            run_generation_job(
+                evaluation_id,
+                int(class_offering_id),
+                int(user["id"]),
+                prompt,
+                field_overrides=field_overrides,
+            )
         )
-    )
     return {"id": evaluation_id, "card": te.serialize_card(evaluation)}
 
 
@@ -263,38 +282,58 @@ async def import_evaluation(
     if not staged:
         raise HTTPException(400, "上传的文件均为空")
 
-    temp_dir = tempfile.mkdtemp(prefix="lanshare-teacheval-import-")
+    input_refs: list[dict[str, Any]] = []
     saved: list[dict[str, str]] = []
-    for index, item in enumerate(staged):
-        name = str(item["name"])
-        dest = os.path.join(temp_dir, f"{index}_{name}")
-        with open(dest, "wb") as fh:
-            fh.write(item["data"])
-        saved.append({"path": dest, "name": name})
+    if AI_DURABLE_JOBS_ENABLED:
+        input_refs = stage_process_import_inputs(staged)
+    else:
+        temp_dir = tempfile.mkdtemp(prefix="lanshare-teacheval-import-")
+        for index, item in enumerate(staged):
+            name = str(item["name"])
+            dest = os.path.join(temp_dir, f"{index}_{name}")
+            with open(dest, "wb") as fh:
+                fh.write(item["data"])
+            saved.append({"path": dest, "name": name})
 
-    with get_db_connection() as conn:
-        first_name = os.path.splitext(saved[0]["name"])[0]
-        evaluation_id = te.create_evaluation(
-            conn,
-            teacher=user,
-            title=f"{first_name}（导入解析中）",
-            fields={},
-            items=[],
-            source_type="import",
-            status="parsing",
-            ai_gen_status="pending",
-            ai_gen_progress={"done": 0, "total": 1, "current_label": "排队解析中"},
-        )
-        te.set_generation_status(conn, evaluation_id, task_id=evaluation_id)
-        conn.commit()
-        evaluation = te.get_evaluation(conn, evaluation_id)
-    asyncio.create_task(run_import_job(evaluation_id, saved, extra_prompt or "", int(user["id"])))
+    try:
+        with get_db_connection() as conn:
+            first_name = os.path.splitext(str(staged[0]["name"]))[0]
+            evaluation_id = te.create_evaluation(
+                conn,
+                teacher=user,
+                title=f"{first_name}（导入解析中）",
+                fields={},
+                items=[],
+                source_type="import",
+                status="parsing",
+                ai_gen_status="pending",
+                ai_gen_progress={"done": 0, "total": 1, "current_label": "排队解析中"},
+            )
+            te.set_generation_status(conn, evaluation_id, task_id=evaluation_id)
+            if AI_DURABLE_JOBS_ENABLED:
+                enqueue_process_import(
+                    conn,
+                    target_type="teacher_evaluation",
+                    target_id=evaluation_id,
+                    teacher_id=int(user["id"]),
+                    input_files=input_refs,
+                    extra_prompt=extra_prompt or "",
+                )
+            conn.commit()
+            evaluation = te.get_evaluation(conn, evaluation_id)
+    except Exception:
+        if input_refs:
+            cleanup_ai_job_input_files(input_refs)
+        raise
+    if not AI_DURABLE_JOBS_ENABLED:
+        asyncio.create_task(run_import_job(evaluation_id, saved, extra_prompt or "", int(user["id"])))
     return {"id": evaluation_id, "card": te.serialize_card(evaluation)}
 
 
 @router.post("/{evaluation_id}/retry", response_class=JSONResponse)
 async def retry_evaluation(evaluation_id: str, user: dict = Depends(get_current_teacher)):
     field_overrides: dict[str, str] = {}
+    retry_token = uuid.uuid4().hex if AI_DURABLE_JOBS_ENABLED else evaluation_id
     with get_db_connection() as conn:
         evaluation = _load_owned_or_super(conn, evaluation_id, user)
         source_type = evaluation.get("source_type")
@@ -308,13 +347,24 @@ async def retry_evaluation(evaluation_id: str, user: dict = Depends(get_current_
                 ai_gen_status="pending",
                 ai_gen_error="",
                 progress={"done": 0, "total": 1, "current_label": "重新排队中"},
+                task_id=retry_token,
             )
+            if AI_DURABLE_JOBS_ENABLED:
+                enqueue_process_generation(
+                    conn,
+                    target_type="teacher_evaluation",
+                    target_id=evaluation_id,
+                    task_token=retry_token,
+                    class_offering_id=int(class_offering_id),
+                    teacher_id=int(user["id"]),
+                    field_overrides=field_overrides,
+                )
             conn.commit()
         elif source_type == "import":
             raise HTTPException(400, "导入解析失败的评学表需重新上传文件再解析；如不再需要可直接删除。")
         else:
             raise HTTPException(400, "该评学表不支持重试。")
-    if source_type == "classroom" and class_offering_id:
+    if source_type == "classroom" and class_offering_id and not AI_DURABLE_JOBS_ENABLED:
         asyncio.create_task(
             run_generation_job(
                 evaluation_id,

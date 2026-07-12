@@ -251,7 +251,7 @@ async def _ocr_captcha(image_bytes: bytes, content_type: str) -> str:
         "image_inputs": [{"url": data_url, "label": "验证码图片"}],
         "file_texts": [],
         "model_capability": "vision",
-        "task_type": "vision_light",
+        "task_type": "vision_ocr",
         "response_format": "json",
         "task_priority": "interactive",
         "task_label": "gongwen_captcha_ocr",

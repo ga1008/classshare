@@ -115,7 +115,7 @@ async def _ocr_images_with_ai(images: list[dict[str, str]], hint: str) -> str:
         "image_inputs": [{"url": img["data_url"], "label": img.get("filename", "")} for img in usable],
         "file_texts": [],
         "model_capability": "vision",
-        "task_type": "vision",
+        "task_type": "vision_ocr",
         "response_format": "text",
         "task_priority": "interactive",
         "task_label": "gongwen_ocr",

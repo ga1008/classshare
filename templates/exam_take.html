@@ -3625,6 +3625,14 @@
                     <p>提交内容已保存，系统没有得到可用的 AI 批改结果，请等待教师复核或稍后重试批改。</p>
                 </div>
             `;
+        } else if (SUBMISSION_STATUS === 'grading_review') {
+            html += `
+                <div class="result-banner warning">
+                    <div class="result-icon">!</div>
+                    <h3>等待教师复核</h3>
+                    <p>AI 未能给出足够可靠的结果，您的答卷和已有成绩均已保留，教师会进行人工复核。</p>
+                </div>
+            `;
         } else {
             html += `
                 <div class="result-banner success">

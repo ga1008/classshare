@@ -2568,6 +2568,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/system/ai-jobs/{job_id:int}/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_cancel_ai_job",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/ai-jobs/{job_id:int}/requeue",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_requeue_ai_job",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/system/ai-usage",
     "methods": [
       "GET"

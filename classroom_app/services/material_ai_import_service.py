@@ -451,7 +451,7 @@ async def parse_material_document(
                     capability="vision",
                     response_format="json",
                     base64_urls=[item["data_url"] for item in image_inputs if item.get("data_url")],
-                    task_type="deep_multimodal_reasoning",
+                    task_type="document_multimodal_understanding",
                     task_priority="background",
                     task_label="material_ai_import:vision",
                     # 多模态单次响应可能较慢，放宽到 600s 匹配 AI 端深度超时。

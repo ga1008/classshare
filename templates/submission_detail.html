@@ -865,12 +865,14 @@
                             {% if submission.resubmission_allowed %}badge-warning
                             {% elif submission.status == 'graded' %}badge-success
                             {% elif submission.status == 'grading' %}badge-warning
+                            {% elif submission.status == 'grading_review' %}badge-warning
                             {% elif submission.status == 'grading_failed' %}badge-warning
                             {% elif submission.status == 'submitted' %}badge-primary
                             {% else %}badge-secondary{% endif %}" data-testid="p03-submission-status">
                             {% if submission.resubmission_allowed %}待重交
                             {% elif submission.status == 'graded' %}已批改
                             {% elif submission.status == 'grading' %}批改中
+                            {% elif submission.status == 'grading_review' %}等待教师复核
                             {% elif submission.status == 'grading_failed' %}AI批改失败
                             {% elif submission.status == 'submitted' %}已提交
                             {% else %}{{ submission.status }}{% endif %}

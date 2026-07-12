@@ -73,6 +73,38 @@ def _row(conn: sqlite3.Connection, table_name: str, item_id: str) -> dict:
 
 
 class ProcessMaterialRecoveryTests(unittest.TestCase):
+    def test_active_durable_job_is_not_expired_by_legacy_recovery(self):
+        conn = _make_conn()
+        try:
+            plan_id = lesson_service.create_lesson_plan(
+                conn,
+                teacher=_teacher(),
+                title="持久任务中的教案",
+                source_type="classroom",
+                status="generating",
+                ai_gen_status="running",
+                class_offering_id=18,
+            )
+            _set_stale_timestamp(conn, "lesson_plans", plan_id)
+            conn.execute(
+                """
+                CREATE TABLE ai_jobs (
+                    id INTEGER PRIMARY KEY,
+                    source_ref TEXT,
+                    status TEXT
+                )
+                """
+            )
+            conn.execute(
+                "INSERT INTO ai_jobs (source_ref, status) VALUES (?, 'retry_wait')",
+                (f"lesson_plan:{plan_id}",),
+            )
+
+            self.assertEqual(0, expire_stale_lesson_plan_tasks(conn, stale_minutes=30, teacher_id=1))
+            self.assertEqual("generating", _row(conn, "lesson_plans", plan_id)["status"])
+        finally:
+            conn.close()
+
     def test_stale_assessment_import_becomes_failed_upload_action(self):
         conn = _make_conn()
         try:

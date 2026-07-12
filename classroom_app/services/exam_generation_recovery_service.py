@@ -9,11 +9,23 @@ def expire_stale_exam_generation_tasks(
     *,
     stale_minutes: int = 180,
 ) -> int:
-    """Mark AI exam-generation records as failed when their in-memory task is gone."""
+    """Mark abandoned legacy generation records failed, excluding durable jobs."""
     now = datetime.now().isoformat()
     cutoff = (datetime.now() - timedelta(minutes=max(15, int(stale_minutes or 180)))).isoformat()
-    cursor = conn.execute(
+    durable_filter = ""
+    try:
+        conn.execute("SELECT 1 FROM ai_jobs LIMIT 1")
+        durable_filter = """
+          AND NOT EXISTS (
+              SELECT 1 FROM ai_jobs j
+              WHERE j.source_ref = 'exam_paper:' || exam_papers.id
+                AND j.status IN ('queued', 'running', 'retry_wait', 'result_ready')
+          )
         """
+    except Exception:
+        durable_filter = ""
+    cursor = conn.execute(
+        f"""
         UPDATE exam_papers
         SET ai_gen_status = 'failed',
             ai_gen_error = COALESCE(
@@ -24,6 +36,7 @@ def expire_stale_exam_generation_tasks(
         WHERE status = 'generating'
           AND COALESCE(ai_gen_status, '') IN ('pending', 'running')
           AND COALESCE(updated_at, created_at) < ?
+          {durable_filter}
         """,
         (now, cutoff),
     )

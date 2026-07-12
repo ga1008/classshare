@@ -64,9 +64,9 @@ services:
       MAIN_PORT: "8000"
       AI_ASSISTANT_URL: http://ai:8001
       MAIN_APP_CALLBACK_URL: http://app:8000/api/internal/grading-complete
-      # Web app serves the request fan-out, so it gets the large DB pool;
-      # worker services keep the small POSTGRES_POOL_MAX from docker.env.
-      POSTGRES_POOL_MAX: "32"
+      # Bound DB fan-out on the shared 2c/4G host. HTTP concurrency is much
+      # larger than DB concurrency; requests wait briefly for a pooled slot.
+      POSTGRES_POOL_MAX: "12"
     expose:
       - "8000"
     healthcheck:

@@ -230,6 +230,26 @@
         gap: var(--spacing-md);
     }
 
+    .dg-job-list {
+        display: grid;
+        gap: 8px;
+        margin-top: var(--spacing-md);
+    }
+
+    .dg-job-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: #fff;
+        font-size: 0.8rem;
+    }
+
+    .dg-job-row small { color: var(--text-muted); }
+
     .dg-task-item {
         border: 1px solid var(--border-color);
         border-radius: var(--radius-lg);
@@ -390,6 +410,7 @@
         </div>
     </div>
     <div class="dg-task-grid" id="dg-task-grid"></div>
+    <div class="dg-job-list" id="dg-ai-job-list"></div>
 </section>
 
 <section class="dg-command-card">
@@ -524,7 +545,42 @@
                     </article>
                 `;
             }).join('');
+
+            const jobs = data.recent_ai_jobs || [];
+            const jobList = document.getElementById('dg-ai-job-list');
+            jobList.innerHTML = jobs.length ? jobs.map((job) => {
+                const terminal = ['review_required', 'dead_letter'].includes(job.status);
+                const active = ['queued', 'running', 'retry_wait', 'result_ready'].includes(job.status);
+                const error = job.last_error ? `<small>${escapeHtml(job.last_error)}</small>` : '<small>暂无错误</small>';
+                return `<div class="dg-job-row">
+                    <div><strong>#${job.id} ${escapeHtml(job.task_type)}</strong><br>${error}</div>
+                    <div>${escapeHtml(job.source_ref || '-')}<br><small>${escapeHtml(job.status)} · ${job.attempt_count}/${job.max_attempts}</small></div>
+                    <div class="dg-actions">
+                        ${terminal ? `<button class="btn btn-outline btn-sm" data-job-action="requeue" data-job-id="${job.id}">重试</button>` : ''}
+                        ${active ? `<button class="btn btn-outline btn-sm" data-job-action="cancel" data-job-id="${job.id}">取消</button>` : ''}
+                    </div>
+                </div>`;
+            }).join('') : '<p class="dg-card__desc">当前没有排队、运行、待复核或死信 AI 任务。</p>';
         }
+
+        document.getElementById('dg-ai-job-list').addEventListener('click', async (event) => {
+            const button = event.target.closest('[data-job-action]');
+            if (!button) return;
+            const action = button.dataset.jobAction;
+            const jobId = button.dataset.jobId;
+            if (action === 'cancel' && !window.confirm(`确认取消任务 #${jobId}？迟到结果不会被应用。`)) return;
+            button.disabled = true;
+            try {
+                const res = await fetch(`/api/manage/system/ai-jobs/${jobId}/${action}`, {method: 'POST'});
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+                showMessage(data.message || '操作成功。', 'success');
+                await fetchTaskLedger();
+            } catch (error) {
+                showMessage(error.message || '操作失败。', 'error');
+                button.disabled = false;
+            }
+        });
 
         async function fetchTaskLedger() {
             try {

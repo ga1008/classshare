@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from urllib.parse import parse_qs
 import anyio.to_thread
@@ -47,6 +48,11 @@ from .services.behavior_tracking_service import (
 from .services.background_task_ledger_service import build_background_task_health_summary
 from .services.discussion_mood_service import stop_discussion_mood_refresh_tasks
 from .services.document_render_service import document_render_service
+from .services.ai_durable_job_service import cleanup_terminal_ai_job_files
+from .services.durable_process_job_worker import (
+    start_durable_process_job_workers,
+    stop_durable_process_job_workers,
+)
 from .services.email_notification_service import email_worker_health_snapshot
 from .services.message_center_service import schedule_pending_private_ai_reply_jobs
 from .services.runtime_metrics_service import begin_http_request, finish_http_request, get_runtime_metrics_snapshot
@@ -152,8 +158,7 @@ async def startup_event():
     # 确保静态目录存在
     STATIC_DIR.mkdir(exist_ok=True)
     thread_limiter = anyio.to_thread.current_default_thread_limiter()
-    if thread_limiter.total_tokens < MAIN_THREADPOOL_TOKENS:
-        thread_limiter.total_tokens = MAIN_THREADPOOL_TOKENS
+    thread_limiter.total_tokens = MAIN_THREADPOOL_TOKENS
     print(f"[SERVER] 默认线程池容量: {thread_limiter.total_tokens}")
     await ai_client.__aenter__()  # 启动 HTTP 客户端
     resumed_private_ai_jobs = schedule_pending_private_ai_reply_jobs()
@@ -162,6 +167,17 @@ async def startup_event():
     resumed_attendance_advice_jobs = start_smart_attendance_advice_worker()
     if resumed_attendance_advice_jobs:
         print(f"[SMART_ATTENDANCE_ADVICE] 恢复 {resumed_attendance_advice_jobs} 个待处理的学生出勤建议任务")
+    durable_process_workers = start_durable_process_job_workers()
+    if durable_process_workers:
+        print(f"[DURABLE PROCESS WORKER] 启动 {durable_process_workers} 个本地持久任务 worker")
+    try:
+        cleaned_ai_job_files = cleanup_terminal_ai_job_files(
+            retention_days=int(os.getenv("AI_JOB_FILE_RETENTION_DAYS", "7"))
+        )
+        if cleaned_ai_job_files:
+            print(f"[AI JOB STORAGE] 清理 {cleaned_ai_job_files} 个过期任务文件")
+    except Exception as exc:
+        print(f"[AI JOB STORAGE] cleanup failed (non-fatal): {exc}")
     start_behavior_write_pipeline()
     start_behavior_profile_scheduler()
 
@@ -219,6 +235,7 @@ async def shutdown_event():
     """应用关闭时执行"""
     await stop_discussion_mood_refresh_tasks()
     await stop_smart_attendance_advice_worker()
+    await stop_durable_process_job_workers()
     await stop_behavior_profile_scheduler()
     stop_behavior_write_pipeline()
     await ai_client.__aexit__(None, None, None)  # 关闭 HTTP 客户端

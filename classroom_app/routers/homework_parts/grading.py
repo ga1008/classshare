@@ -1,4 +1,7 @@
 from .common import *
+import uuid
+
+from ...services.grading_revision_service import activate_submission_grade_revision
 
 
 router = APIRouter()
@@ -204,6 +207,17 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
         )
         final_score = adjustment.get("final_score")
         feedback_md = append_late_policy_feedback(data.get("feedback_md"), adjustment)
+        active_ai_job_id = submission.get("grading_job_id")
+        if active_ai_job_id:
+            conn.execute(
+                """
+                UPDATE ai_jobs
+                SET status = 'superseded', lease_token = '', lease_expires_at = NULL,
+                    locked_at = NULL, locked_by = '', updated_at = ?, finished_at = ?
+                WHERE id = ? AND status IN ('queued', 'retry_wait', 'running', 'result_ready')
+                """,
+                (datetime.now().isoformat(timespec="seconds"), datetime.now().isoformat(timespec="seconds"), int(active_ai_job_id)),
+            )
         conn.execute(
             """
             UPDATE submissions
@@ -215,6 +229,8 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
                 late_score_cap_applied = ?,
                 grading_started_at = NULL,
                 grading_attempt_fingerprint = NULL,
+                grading_revision_hash = NULL,
+                grading_job_id = NULL,
                 resubmission_allowed = 0,
                 resubmission_due_at = NULL,
                 returned_at = NULL,
@@ -230,6 +246,19 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
                 1 if adjustment.get("score_cap_applied") else 0,
                 submission_id,
             ),
+        )
+        activate_submission_grade_revision(
+            conn,
+            submission={**submission, "grading_job_id": None},
+            data={
+                "grading_revision_hash": f"manual:{submission_id}:{uuid.uuid4().hex}",
+                "source": "manual",
+                "actor_role": "teacher",
+                "actor_user_pk": int(user["id"]),
+                "quality_audit": {"manual_grade": True},
+            },
+            score=final_score,
+            feedback_md=feedback_md,
         )
         try:
             create_student_grading_notification(

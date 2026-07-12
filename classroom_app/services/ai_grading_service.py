@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import sqlite3
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -9,10 +10,12 @@ from typing import Any
 
 import httpx
 
+from ..config import AI_DURABLE_JOBS_ENABLED, AI_JOB_POLICY_VERSION
 from ..core import ai_client
 from ..database import get_db_connection
 from ..db.connection import get_configured_db_engine
 from .ai_gateway_service import ai_gateway_post
+from .ai_durable_job_service import create_ai_job
 from .ai_grading_attachments import ensure_ai_grading_attachments_supported
 from .exam_json_service import build_exam_rubric_md
 from .psych_profile_service import load_latest_hidden_profile
@@ -56,6 +59,27 @@ def expire_stale_ai_grading_submissions(
         select_assignment_filter = f" AND s.assignment_id IN ({placeholders})"
         update_assignment_filter = f" AND assignment_id IN ({placeholders})"
         assignment_params = tuple(scoped_assignment_ids)
+    durable_select_filter = ""
+    durable_update_filter = ""
+    if get_configured_db_engine() == "postgres":
+        durable_columns_available = True
+    else:
+        durable_columns_available = any(
+            str(row["name"] if isinstance(row, sqlite3.Row) else row[1]) == "grading_job_id"
+            for row in conn.execute("PRAGMA table_info(submissions)").fetchall()
+        )
+    if durable_columns_available:
+        active_statuses = "'queued','retry_wait','running','result_ready'"
+        durable_select_filter = (
+            " AND (s.grading_job_id IS NULL OR NOT EXISTS ("
+            "SELECT 1 FROM ai_jobs jobs WHERE jobs.id = s.grading_job_id "
+            f"AND jobs.status IN ({active_statuses})))"
+        )
+        durable_update_filter = (
+            " AND (grading_job_id IS NULL OR NOT EXISTS ("
+            "SELECT 1 FROM ai_jobs jobs WHERE jobs.id = submissions.grading_job_id "
+            f"AND jobs.status IN ({active_statuses})))"
+        )
     stale_rows = [
         dict(row)
         for row in conn.execute(
@@ -73,6 +97,7 @@ def expire_stale_ai_grading_submissions(
                   AND lsea.status = 'grading'
             WHERE s.status = 'grading'
               AND COALESCE(s.grading_started_at, s.submitted_at) < ?
+              {durable_select_filter}
               {select_assignment_filter}
             """,
             (cutoff, *assignment_params),
@@ -87,6 +112,7 @@ def expire_stale_ai_grading_submissions(
             grading_attempt_fingerprint = NULL
         WHERE status = 'grading'
           AND COALESCE(grading_started_at, submitted_at) < ?
+          {durable_update_filter}
           {update_assignment_filter}
         """,
         (STALE_GRADING_MESSAGE, cutoff, *assignment_params),
@@ -320,8 +346,14 @@ def _resolve_grading_files(submission_files: list[dict[str, Any]]) -> list[dict[
 def build_submission_grading_fingerprint(
     submission: dict[str, Any],
     submission_files: list[dict[str, Any]],
+    *,
+    rubric_md: str | None = None,
 ) -> str:
-    """Build a stable version token for an AI grading job."""
+    """Build the immutable input revision for an AI grading job.
+
+    The rubric and policy snapshot are part of the version: a result produced
+    against an older marking scheme must never be accepted for a newer one.
+    """
     files_payload = []
     for item in sorted(
         submission_files,
@@ -342,8 +374,14 @@ def build_submission_grading_fingerprint(
         )
     payload = {
         "submission_id": submission.get("id"),
+        "assignment_id": submission.get("assignment_id"),
         "submitted_at": submission.get("submitted_at"),
         "answers_json": submission.get("answers_json"),
+        "requirements_md": submission.get("requirements_md"),
+        "rubric_md": rubric_md if rubric_md is not None else submission.get("rubric_md"),
+        "exam_questions_json": submission.get("exam_questions_json"),
+        "late_policy_snapshot_json": submission.get("late_policy_snapshot_json"),
+        "grading_contract_version": "2026-07-durable-v1",
         "files": files_payload,
     }
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -657,7 +695,12 @@ async def submit_submission_for_ai_grading(
             return {"status": "already_graded"}
 
         submission_files = _load_submission_files_for_grading(conn, submission_id)
-        content_fingerprint = build_submission_grading_fingerprint(submission, submission_files)
+        rubric_md = _resolve_grading_rubric(submission)
+        content_fingerprint = build_submission_grading_fingerprint(
+            submission,
+            submission_files,
+            rubric_md=rubric_md,
+        )
         resolved_files, has_files, has_answers = _prepare_grading_inputs(submission, submission_files)
 
         # 同一连接内二次确认指纹，消除 TOCTOU 窗口
@@ -669,15 +712,51 @@ async def submit_submission_for_ai_grading(
         if not allow_graded and current["status"] == "graded":
             return {"status": "already_graded"}
         current_files = _load_submission_files_for_grading(conn, submission_id)
-        current_fingerprint = build_submission_grading_fingerprint(current, current_files)
+        current_rubric_md = _resolve_grading_rubric(current)
+        current_fingerprint = build_submission_grading_fingerprint(
+            current,
+            current_files,
+            rubric_md=current_rubric_md,
+        )
         if current_fingerprint != content_fingerprint:
             submission = current
             submission_files = current_files
             content_fingerprint = current_fingerprint
+            rubric_md = current_rubric_md
             resolved_files, has_files, has_answers = _prepare_grading_inputs(submission, submission_files)
 
-        rubric_md = _resolve_grading_rubric(submission)
         attempt_token = _build_grading_attempt_token(content_fingerprint)
+        student_profile_context = _build_hidden_student_profile_context(conn, current)
+        job_data = {
+            "submission_id": submission_id,
+            "rubric_md": rubric_md,
+            "requirements_md": submission["requirements_md"] or "",
+            "allowed_file_types_json": submission["allowed_file_types_json"],
+            "files": [
+                {
+                    "stored_path": item["resolved_path"],
+                    "original_filename": item.get("original_filename"),
+                    "relative_path": item.get("relative_path") or item.get("original_filename"),
+                    "mime_type": item.get("mime_type"),
+                    "file_size": item.get("file_size"),
+                    "file_ext": item.get("file_ext"),
+                    "file_hash": item.get("file_hash"),
+                }
+                for item in resolved_files
+            ] if has_files else [],
+            "file_paths": [item["resolved_path"] for item in resolved_files] if has_files else [],
+            "answers_json": submission["answers_json"] if has_answers else None,
+            "exam_scoring_json": (
+                submission.get("exam_questions_json")
+                if submission.get("exam_paper_id")
+                else None
+            ),
+            "student_profile_context": student_profile_context,
+            "submitted_at": submission.get("submitted_at"),
+            "submission_fingerprint": attempt_token,
+            "grading_revision_hash": content_fingerprint,
+            "grading_contract_version": "2026-07-durable-v1",
+        }
         marked_grading = _mark_submission_grading_with_connection(
             conn,
             submission_id=submission_id,
@@ -687,32 +766,37 @@ async def submit_submission_for_ai_grading(
         )
         if not marked_grading:
             raise AIGradingQueueError(409, "该提交状态刚刚发生变化，请刷新后重试")
-        conn.commit()
-        student_profile_context = _build_hidden_student_profile_context(conn, current)
-
-    job_data = {
-        "submission_id": submission_id,
-        "rubric_md": rubric_md,
-        "requirements_md": submission["requirements_md"] or "",
-        "allowed_file_types_json": submission["allowed_file_types_json"],
-        "files": [
-            {
-                "stored_path": item["resolved_path"],
-                "original_filename": item.get("original_filename"),
-                "relative_path": item.get("relative_path") or item.get("original_filename"),
-                "mime_type": item.get("mime_type"),
-                "file_size": item.get("file_size"),
-                "file_ext": item.get("file_ext"),
-                "file_hash": item.get("file_hash"),
+        durable_job_response: dict[str, Any] | None = None
+        if AI_DURABLE_JOBS_ENABLED:
+            job_row, created = create_ai_job(
+                conn,
+                task_type="ai_grading",
+                dedupe_key=f"ai-grading:{attempt_token}",
+                payload=job_data,
+                scope_type="class_offering",
+                scope_id=str(submission.get("class_offering_id") or ""),
+                owner_role="teacher",
+                owner_user_pk=teacher_id or submission.get("offering_teacher_id") or submission.get("created_by_teacher_id"),
+                source_ref=f"submission:{submission_id}",
+                policy_version=AI_JOB_POLICY_VERSION,
+            )
+            conn.execute(
+                """
+                UPDATE submissions
+                SET grading_revision_hash = ?, grading_job_id = ?
+                WHERE id = ? AND status = 'grading' AND grading_attempt_fingerprint = ?
+                """,
+                (content_fingerprint, int(job_row["id"]), submission_id, attempt_token),
+            )
+            durable_job_response = {
+                "status": "queued" if created else str(job_row.get("status") or "queued"),
+                "submission_id": submission_id,
+                "job_id": int(job_row["id"]),
+                "durable": True,
             }
-            for item in resolved_files
-        ] if has_files else [],
-        "file_paths": [item["resolved_path"] for item in resolved_files] if has_files else [],
-        "answers_json": submission["answers_json"] if has_answers else None,
-        "student_profile_context": student_profile_context,
-        "submitted_at": submission.get("submitted_at"),
-        "submission_fingerprint": attempt_token,
-    }
+        conn.commit()
+    if durable_job_response is not None:
+        return durable_job_response
     usage_class_offering_id = submission.get("class_offering_id")
     usage_teacher_id = teacher_id or submission.get("offering_teacher_id") or submission.get("created_by_teacher_id")
 

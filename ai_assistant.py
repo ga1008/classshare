@@ -5,6 +5,7 @@ import asyncio
 import base64
 import copy
 import heapq
+import hashlib
 import json
 import mimetypes
 import os
@@ -40,6 +41,46 @@ from ai_assistant_doc_extract import (
     render_pdf_pages_to_data_urls as _render_pdf_pages,
 )
 from classroom_app.services.ai_grading_attachments import classify_ai_grading_attachment
+from classroom_app.services.ai_model_policy import (
+    AI_TASK_DEEP_MULTIMODAL,
+    AI_TASK_DEEP_TEXT,
+    AI_TASK_DOCUMENT_MULTIMODAL,
+    AI_TASK_FAST_TEXT,
+    AI_TASK_LIGHT_MULTIMODAL,
+    AI_TASK_MULTIMODAL_ADJUDICATION,
+    AI_TASK_MULTIMODAL_GRADING,
+    AI_TASK_TYPES,
+    AI_TASK_VISION_INTERACTIVE,
+    AI_TASK_VISION_OCR,
+    MULTIMODAL_TASK_TYPES,
+    TEXT_TASK_TYPES,
+    capability_for_task_type as _policy_capability_for_task_type,
+    configured_provider_order,
+    normalize_ai_task_type as _policy_normalize_ai_task_type,
+    provider_order_for_task,
+    public_policy_snapshot,
+)
+from classroom_app.services.deterministic_exam_grading import (
+    apply_deterministic_grading_result,
+    build_deterministic_grading_evidence,
+    format_deterministic_evidence_prompt,
+)
+from classroom_app.services.ai_durable_job_service import (
+    ai_durable_job_health_snapshot,
+    claim_due_ai_jobs,
+    claim_result_ready_ai_jobs,
+    load_ai_job_payload,
+    load_ai_job_result,
+    load_ai_job_artifact,
+    cleanup_ai_job_artifact,
+    mark_ai_job_succeeded,
+    record_ai_job_attempt_started,
+    renew_ai_job_lease,
+    reschedule_ai_job,
+    reschedule_ai_job_delivery,
+    store_ai_job_result,
+)
+from classroom_app.database import get_db_connection
 from classroom_app.services.exam_json_service import normalize_exam_scoring_payload
 from classroom_app.services.grading_feedback_service import normalize_grading_result, validate_ai_grading_result
 
@@ -108,7 +149,6 @@ AI_PROVIDER_QUEUE_MAX_PENDING = max(
     _read_int_env("AI_PROVIDER_QUEUE_MAX_PENDING", "AI_QUEUE_MAX_PENDING", default=AI_QUEUE_MAX_PENDING),
 )
 MAIN_APP_CALLBACK_URL = os.getenv("MAIN_APP_CALLBACK_URL")
-PLATFORM_PRIORITY = [p.strip() for p in os.getenv("AI_PLATFORM_PRIORITY", "deepseek,volcengine").split(',')]
 VOLCENGINE_OPENAI_BASE_URL = os.getenv("VOLCENGINE_OPENAI_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
 AI_TEXT_SPILLOVER_ENABLED = _read_bool_env("AI_TEXT_SPILLOVER_ENABLED", True)
 AI_NONSTREAM_USE_PROVIDER_STREAM = _read_bool_env("AI_NONSTREAM_USE_PROVIDER_STREAM", True)
@@ -123,15 +163,21 @@ DEEPSEEK_TEXT_SPILLOVER_THRESHOLD = max(
 DEEPSEEK_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("DEEPSEEK_MAX_CONCURRENT_REQUESTS", default=8))
 SILICONFLOW_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("SILICONFLOW_MAX_CONCURRENT_REQUESTS", default=0))
 VOLCENGINE_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("VOLCENGINE_MAX_CONCURRENT_REQUESTS", default=4))
+QIANWEN_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("QIANWEN_MAX_CONCURRENT_REQUESTS", default=8))
+ZHIPU_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("ZHIPU_MAX_CONCURRENT_REQUESTS", default=2))
 AI_GRADING_MAX_FILE_COUNT = int(os.getenv("AI_GRADING_MAX_FILE_COUNT", 50))
 AI_GRADING_MAX_TOTAL_FILE_MB = float(os.getenv("AI_GRADING_MAX_TOTAL_FILE_MB", 20))
 AI_GRADING_MAX_TOTAL_FILE_BYTES = int(AI_GRADING_MAX_TOTAL_FILE_MB * 1024 * 1024)
 AI_GRADING_MAX_RAW_TEXT_FILE_MB = float(os.getenv("AI_GRADING_MAX_RAW_TEXT_FILE_MB", 2))
 AI_GRADING_MAX_RAW_TEXT_FILE_BYTES = int(AI_GRADING_MAX_RAW_TEXT_FILE_MB * 1024 * 1024)
-VOLCENGINE_DOCUMENT_MAX_MB = float(os.getenv("VOLCENGINE_DOCUMENT_MAX_MB", 5))
-VOLCENGINE_DOCUMENT_MAX_BYTES = int(VOLCENGINE_DOCUMENT_MAX_MB * 1024 * 1024)
-VOLCENGINE_IMAGE_MAX_MB = float(os.getenv("VOLCENGINE_IMAGE_MAX_MB", 10))
-VOLCENGINE_IMAGE_MAX_BYTES = int(VOLCENGINE_IMAGE_MAX_MB * 1024 * 1024)
+AI_GRADING_PDF_MAX_MB = float(
+    os.getenv("AI_GRADING_PDF_MAX_MB", os.getenv("VOLCENGINE_DOCUMENT_MAX_MB", 20))
+)
+AI_GRADING_PDF_MAX_BYTES = int(AI_GRADING_PDF_MAX_MB * 1024 * 1024)
+AI_GRADING_IMAGE_MAX_MB = float(
+    os.getenv("AI_GRADING_IMAGE_MAX_MB", os.getenv("VOLCENGINE_IMAGE_MAX_MB", 10))
+)
+AI_GRADING_IMAGE_MAX_BYTES = int(AI_GRADING_IMAGE_MAX_MB * 1024 * 1024)
 AI_GRADING_MAX_CONCURRENT_JOBS = max(1, _read_int_env("AI_GRADING_MAX_CONCURRENT_JOBS", default=4))
 AI_GRADING_MAX_PENDING_JOBS = max(
     0,
@@ -158,6 +204,27 @@ AI_PROVIDER_HTTP_RETRY_MAX_SECONDS = max(
     _read_float_env("AI_PROVIDER_HTTP_RETRY_MAX_SECONDS", 90.0),
 )
 AI_PROVIDER_HTTP_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+AI_GRADING_ADJUDICATION_ENABLED = _read_bool_env("AI_GRADING_ADJUDICATION_ENABLED", True)
+AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD = min(
+    1.0,
+    max(0.0, _read_float_env("AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD", 0.65)),
+)
+AI_DURABLE_JOBS_ENABLED = _read_bool_env("AI_DURABLE_JOBS_ENABLED", False)
+AI_JOB_WORKER_CONCURRENCY = max(1, min(_read_int_env("AI_JOB_WORKER_CONCURRENCY", default=2), 4))
+AI_JOB_WORKER_POLL_SECONDS = max(1.0, _read_float_env("AI_JOB_WORKER_POLL_SECONDS", 2.0))
+AI_JOB_WORKER_LEASE_SECONDS = max(120, _read_int_env("AI_JOB_WORKER_LEASE_SECONDS", default=900))
+AI_GRADING_PROMPT_VERSION = str(os.getenv("AI_GRADING_PROMPT_VERSION") or "grading-2026-07-v1").strip()
+AI_DETERMINISTIC_GRADING_VERSION = str(
+    os.getenv("AI_DETERMINISTIC_GRADING_VERSION") or "deterministic-2026-07-v1"
+).strip()
+AI_GRADING_ADJUDICATION_SCORE_DELTA = max(
+    1.0,
+    _read_float_env("AI_GRADING_ADJUDICATION_SCORE_DELTA", 10.0),
+)
+AI_GRADING_MAX_RENDERED_PDF_PAGES = max(
+    1,
+    _read_int_env("AI_GRADING_MAX_RENDERED_PDF_PAGES", default=20),
+)
 
 # 多模态批改走火山方舟 Responses API：图片多时（8~21 张）单次响应常超过默认 180s，
 # 导致首个尝试超时→重试，单题耗时成倍放大并堵塞批改队列。提升超时让首次尝试即可成功。
@@ -177,52 +244,7 @@ AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS = max(
     min(_read_int_env("AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS", default=2), AI_PROVIDER_HTTP_MAX_ATTEMPTS),
 )
 
-AI_TASK_LIGHT_MULTIMODAL = "light_multimodal_understanding"
-AI_TASK_DEEP_MULTIMODAL = "deep_multimodal_reasoning"
-AI_TASK_FAST_TEXT = "fast_text_response"
-AI_TASK_DEEP_TEXT = "deep_text_reasoning"
-AI_TASK_TYPES = {
-    AI_TASK_LIGHT_MULTIMODAL,
-    AI_TASK_DEEP_MULTIMODAL,
-    AI_TASK_FAST_TEXT,
-    AI_TASK_DEEP_TEXT,
-}
-TEXT_TASK_TYPES = {AI_TASK_FAST_TEXT, AI_TASK_DEEP_TEXT}
-MULTIMODAL_TASK_TYPES = {AI_TASK_LIGHT_MULTIMODAL, AI_TASK_DEEP_MULTIMODAL}
-LEGACY_CAPABILITY_TASK_TYPE = {
-    "standard": AI_TASK_FAST_TEXT,
-    "thinking": AI_TASK_DEEP_TEXT,
-    "vision": AI_TASK_DEEP_MULTIMODAL,
-}
-TASK_TYPE_CAPABILITY = {
-    AI_TASK_FAST_TEXT: "standard",
-    AI_TASK_DEEP_TEXT: "thinking",
-    AI_TASK_LIGHT_MULTIMODAL: "vision",
-    AI_TASK_DEEP_MULTIMODAL: "vision",
-}
-AI_TASK_TYPE_ALIASES = {
-    "standard": AI_TASK_FAST_TEXT,
-    "thinking": AI_TASK_DEEP_TEXT,
-    "vision": AI_TASK_DEEP_MULTIMODAL,
-    "text": AI_TASK_FAST_TEXT,
-    "fast_text": AI_TASK_FAST_TEXT,
-    "quick_text": AI_TASK_FAST_TEXT,
-    "deep_text": AI_TASK_DEEP_TEXT,
-    "reasoning_text": AI_TASK_DEEP_TEXT,
-    "exam_generation": AI_TASK_DEEP_TEXT,
-    "assignment_generation": AI_TASK_DEEP_TEXT,
-    "text_grading": AI_TASK_DEEP_TEXT,
-    "multimodal_grading": AI_TASK_DEEP_MULTIMODAL,
-    "multimodal": AI_TASK_LIGHT_MULTIMODAL,
-    "vision_light": AI_TASK_LIGHT_MULTIMODAL,
-    "vision_deep": AI_TASK_DEEP_MULTIMODAL,
-    "light_vision": AI_TASK_LIGHT_MULTIMODAL,
-    "deep_vision": AI_TASK_DEEP_MULTIMODAL,
-    "light_multimodal": AI_TASK_LIGHT_MULTIMODAL,
-    "deep_multimodal": AI_TASK_DEEP_MULTIMODAL,
-}
-
-# --- 平台详细配置 (保持不变) ---
+# --- 供应商能力与任务模型注册 ---
 PLATFORMS_CONFIG = {
     "deepseek": {
         "enabled": os.getenv("DEEPSEEK_ENABLED", "False").lower() == "true",
@@ -282,14 +304,110 @@ PLATFORMS_CONFIG = {
             AI_TASK_DEEP_TEXT: os.getenv("VOLCENGINE_MODEL_TEXT_DEEP") or os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-seed-2-0-pro-260215"),
             AI_TASK_LIGHT_MULTIMODAL: os.getenv("VOLCENGINE_MODEL_MULTIMODAL_LIGHT") or os.getenv("VOLCENGINE_MODEL_STANDARD", "doubao-seed-2-0-lite-260428"),
             AI_TASK_DEEP_MULTIMODAL: os.getenv("VOLCENGINE_MODEL_MULTIMODAL_DEEP") or os.getenv("VOLCENGINE_MODEL_VISION") or os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-seed-2-0-pro-260215"),
+            AI_TASK_VISION_OCR: os.getenv("VOLCENGINE_MODEL_MULTIMODAL_LIGHT") or os.getenv("VOLCENGINE_MODEL_STANDARD", "doubao-seed-2-0-lite-260428"),
+            AI_TASK_VISION_INTERACTIVE: os.getenv("VOLCENGINE_MODEL_MULTIMODAL_LIGHT") or os.getenv("VOLCENGINE_MODEL_STANDARD", "doubao-seed-2-0-lite-260428"),
+            AI_TASK_DOCUMENT_MULTIMODAL: os.getenv("VOLCENGINE_MODEL_MULTIMODAL_DEEP") or os.getenv("VOLCENGINE_MODEL_VISION") or os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-seed-2-0-pro-260215"),
+            AI_TASK_MULTIMODAL_GRADING: os.getenv("VOLCENGINE_MODEL_MULTIMODAL_DEEP") or os.getenv("VOLCENGINE_MODEL_VISION") or os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-seed-2-0-pro-260215"),
+            AI_TASK_MULTIMODAL_ADJUDICATION: os.getenv("VOLCENGINE_MODEL_MULTIMODAL_DEEP") or os.getenv("VOLCENGINE_MODEL_VISION") or os.getenv("VOLCENGINE_MODEL_THINKING", "doubao-seed-2-0-pro-260215"),
         },
         "can_force_json": {
             "standard": False, "thinking": False, "vision": False
         },
         "type": "volcengine",
+        "supports": {
+            "images": True,
+            "native_pdf": True,
+            "structured_json": True,
+            "authoritative_grading": True,
+        },
+        "pricing_cny_per_million": {
+            "light": (3.0, 15.0),
+            "deep": (6.0, 30.0),
+        },
+    },
+    "qwen": {
+        "enabled": _read_bool_env("QIANWEN_ENABLED", bool(os.getenv("QIANWEN_API_KEY"))),
+        "api_key": os.getenv("QIANWEN_API_KEY"),
+        "base_url": os.getenv(
+            "QIANWEN_OPENAI_BASE_URL",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        ),
+        "max_concurrency": QIANWEN_MAX_CONCURRENT_REQUESTS,
+        "concurrency_limit_name": "QIANWEN_MAX_CONCURRENT_REQUESTS",
+        "models": {
+            "standard": None,
+            "thinking": os.getenv("QIANWEN_MODEL_MULTIMODAL_DEEP", "qwen3.7-plus"),
+            "vision": os.getenv("QIANWEN_MODEL_MULTIMODAL_DEEP", "qwen3.7-plus"),
+        },
+        "task_models": {
+            AI_TASK_LIGHT_MULTIMODAL: os.getenv("QIANWEN_MODEL_MULTIMODAL_LIGHT", "qwen3.6-flash"),
+            AI_TASK_DEEP_MULTIMODAL: os.getenv("QIANWEN_MODEL_MULTIMODAL_DEEP", "qwen3.7-plus"),
+            AI_TASK_VISION_OCR: os.getenv("QIANWEN_MODEL_MULTIMODAL_LIGHT", "qwen3.6-flash"),
+            AI_TASK_VISION_INTERACTIVE: os.getenv("QIANWEN_MODEL_MULTIMODAL_LIGHT", "qwen3.6-flash"),
+            AI_TASK_DOCUMENT_MULTIMODAL: os.getenv("QIANWEN_MODEL_MULTIMODAL_DEEP", "qwen3.7-plus"),
+            AI_TASK_MULTIMODAL_GRADING: os.getenv("QIANWEN_MODEL_MULTIMODAL_DEEP", "qwen3.7-plus"),
+            AI_TASK_MULTIMODAL_ADJUDICATION: os.getenv("QIANWEN_MODEL_MULTIMODAL_DEEP", "qwen3.7-plus"),
+        },
+        "can_force_json": {
+            "standard": False,
+            "thinking": True,
+            "vision": True,
+        },
+        "type": "openai",
+        "supports": {
+            "images": True,
+            "native_pdf": False,
+            "structured_json": True,
+            "authoritative_grading": True,
+        },
+        "pricing_cny_per_million": {
+            "light": (1.2, 7.2),
+            "deep": (1.6, 6.4),
+        },
+    },
+    "zhipu": {
+        "enabled": _read_bool_env("ZHIPU_ENABLED", bool(os.getenv("ZHIPU_API_KEY"))),
+        "api_key": os.getenv("ZHIPU_API_KEY"),
+        "base_url": os.getenv("ZHIPU_OPENAI_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"),
+        "max_concurrency": ZHIPU_MAX_CONCURRENT_REQUESTS,
+        "concurrency_limit_name": "ZHIPU_MAX_CONCURRENT_REQUESTS",
+        "models": {
+            "standard": None,
+            "thinking": os.getenv("ZHIPU_MODEL_MULTIMODAL_DEEP", "glm-4.6v"),
+            "vision": os.getenv("ZHIPU_MODEL_MULTIMODAL_DEEP", "glm-4.6v"),
+        },
+        "task_models": {
+            AI_TASK_LIGHT_MULTIMODAL: os.getenv("ZHIPU_MODEL_MULTIMODAL_LIGHT", "glm-4.6v-flash"),
+            AI_TASK_DEEP_MULTIMODAL: os.getenv("ZHIPU_MODEL_MULTIMODAL_DEEP", "glm-4.6v"),
+            AI_TASK_VISION_OCR: os.getenv("ZHIPU_MODEL_MULTIMODAL_LIGHT", "glm-4.6v-flash"),
+            AI_TASK_VISION_INTERACTIVE: os.getenv("ZHIPU_MODEL_MULTIMODAL_LIGHT", "glm-4.6v-flash"),
+            AI_TASK_DOCUMENT_MULTIMODAL: os.getenv("ZHIPU_MODEL_MULTIMODAL_DEEP", "glm-4.6v"),
+        },
+        "can_force_json": {
+            "standard": False,
+            "thinking": True,
+            "vision": True,
+        },
+        "type": "openai",
+        "supports": {
+            "images": True,
+            "native_pdf": False,
+            "structured_json": True,
+            "authoritative_grading": False,
+        },
+        "pricing_cny_per_million": {
+            "light": (0.0, 0.0),
+            "deep": (1.0, 3.0),
+        },
     }
 }
-ENABLED_PLATFORMS = [p for p in PLATFORM_PRIORITY if p in PLATFORMS_CONFIG and PLATFORMS_CONFIG[p]["enabled"]]
+ENABLED_PLATFORMS = [
+    provider
+    for provider in configured_provider_order()
+    if provider in PLATFORMS_CONFIG
+    and PLATFORMS_CONFIG[provider].get("enabled")
+    and PLATFORMS_CONFIG[provider].get("api_key")
+]
 
 # --- 全局队列调度和HTTP客户端 ---
 TASK_PRIORITY_ORDER = {
@@ -319,19 +437,14 @@ def _normalize_ai_task_type(
     task_type: Optional[str],
     capability: Literal["standard", "thinking", "vision"] = "standard",
 ) -> str:
-    normalized = str(task_type or "").strip().lower()
-    if normalized in AI_TASK_TYPES:
-        return normalized
-    if normalized in AI_TASK_TYPE_ALIASES:
-        return AI_TASK_TYPE_ALIASES[normalized]
-    return LEGACY_CAPABILITY_TASK_TYPE.get(capability, AI_TASK_FAST_TEXT)
+    return _policy_normalize_ai_task_type(task_type, capability)
 
 
 def _capability_for_task_type(
     task_type: str,
     fallback: Literal["standard", "thinking", "vision"] = "standard",
 ) -> Literal["standard", "thinking", "vision"]:
-    capability = TASK_TYPE_CAPABILITY.get(task_type, fallback)
+    capability = _policy_capability_for_task_type(task_type, fallback)
     return capability if capability in {"standard", "thinking", "vision"} else fallback
 
 
@@ -357,7 +470,11 @@ def _build_model_routes(
 ) -> list[AIModelRoute]:
     normalized_task_type = _normalize_ai_task_type(task_type, capability)
     effective_capability = _capability_for_task_type(normalized_task_type, capability)
-    platform_order = [preferred_platform] if preferred_platform else ENABLED_PLATFORMS
+    platform_order = (
+        [preferred_platform]
+        if preferred_platform
+        else provider_order_for_task(normalized_task_type, effective_capability)
+    )
     routes: list[AIModelRoute] = []
 
     for platform_name in platform_order:
@@ -369,9 +486,7 @@ def _build_model_routes(
         model_name = _get_platform_task_model(config, normalized_task_type, effective_capability)
         if not model_name:
             continue
-        if normalized_task_type in MULTIMODAL_TASK_TYPES and platform_name != "volcengine":
-            continue
-        if normalized_task_type in MULTIMODAL_TASK_TYPES and not config.get("models", {}).get("vision"):
+        if normalized_task_type in MULTIMODAL_TASK_TYPES and not (config.get("supports") or {}).get("images"):
             continue
         routes.append(
             AIModelRoute(
@@ -396,6 +511,14 @@ AI_CRITICAL_TASK_HINTS = (
     "wrong_question",
     "material_final",
 )
+
+DEEP_REASONING_TASK_TYPES = {
+    AI_TASK_DEEP_TEXT,
+    AI_TASK_DEEP_MULTIMODAL,
+    AI_TASK_DOCUMENT_MULTIMODAL,
+    AI_TASK_MULTIMODAL_GRADING,
+    AI_TASK_MULTIMODAL_ADJUDICATION,
+}
 
 
 def _is_critical_task(task_type: Optional[str], task_label: Optional[str] = None) -> bool:
@@ -441,15 +564,25 @@ def _apply_openai_provider_options(
     *,
     effort: str = "high",
 ) -> None:
-    if route.platform_name != "deepseek":
+    if route.platform_name == "deepseek":
+        extra_body = dict(kwargs.get("extra_body") or {})
+        if route.task_type == AI_TASK_FAST_TEXT:
+            extra_body["thinking"] = {"type": "disabled"}
+        elif route.task_type in DEEP_REASONING_TASK_TYPES:
+            extra_body["thinking"] = {"type": "enabled"}
+            kwargs["reasoning_effort"] = effort
+        if extra_body:
+            kwargs["extra_body"] = extra_body
         return
 
     extra_body = dict(kwargs.get("extra_body") or {})
-    if route.task_type == AI_TASK_FAST_TEXT:
-        extra_body["thinking"] = {"type": "disabled"}
-    elif route.task_type in (AI_TASK_DEEP_TEXT, AI_TASK_DEEP_MULTIMODAL):
-        extra_body["thinking"] = {"type": "enabled"}
-        kwargs["reasoning_effort"] = effort
+    deep_reasoning = route.task_type in DEEP_REASONING_TASK_TYPES
+    if route.platform_name == "qwen":
+        extra_body["enable_thinking"] = deep_reasoning
+    elif route.platform_name == "zhipu":
+        extra_body["thinking"] = {"type": "enabled" if deep_reasoning else "disabled"}
+    else:
+        return
 
     if extra_body:
         kwargs["extra_body"] = extra_body
@@ -460,7 +593,7 @@ def _apply_volcengine_thinking(kwargs: dict[str, Any], route: AIModelRoute) -> N
 
     仅对深度任务显式开启思考；快速/轻量任务保留模型默认值，避免在 lite 模型上触发参数报错。
     """
-    if route.task_type in (AI_TASK_DEEP_TEXT, AI_TASK_DEEP_MULTIMODAL):
+    if route.task_type in DEEP_REASONING_TASK_TYPES:
         extra_body = dict(kwargs.get("extra_body") or {})
         extra_body.setdefault("thinking", {"type": "enabled"})
         kwargs["extra_body"] = extra_body
@@ -473,7 +606,7 @@ def _provider_timeout_for_task(
     """按任务类型选厂商客户端超时：深度任务（批改/出题/教案/多模态）用长超时，交互式用短超时。"""
     if str(task_priority or "").strip().lower() == "interactive":
         return AI_HTTP_TIMEOUT_INTERACTIVE
-    if task_type in (AI_TASK_DEEP_TEXT, AI_TASK_DEEP_MULTIMODAL):
+    if task_type in DEEP_REASONING_TASK_TYPES:
         return AI_HTTP_TIMEOUT_DEEP
     return AI_HTTP_TIMEOUT_INTERACTIVE
 
@@ -926,6 +1059,40 @@ def _extract_provider_usage(response_obj: Any) -> dict[str, Any] | None:
     return _usage_to_dict(getattr(response_obj, "usage", None))
 
 
+def _estimate_provider_cost_cny(
+    platform_name: str,
+    provider_usage: dict[str, Any] | None,
+    *,
+    task_type: str | None = None,
+) -> dict[str, Any] | None:
+    if not provider_usage:
+        return None
+    config = PLATFORMS_CONFIG.get(platform_name) or {}
+    pricing = config.get("pricing_cny_per_million") or {}
+    tier = "deep" if task_type in DEEP_REASONING_TASK_TYPES else "light"
+    prices = pricing.get(tier)
+    if not prices:
+        return None
+    try:
+        input_price, output_price = float(prices[0]), float(prices[1])
+        prompt_tokens = int(provider_usage.get("prompt_tokens") or provider_usage.get("input_tokens") or 0)
+        completion_tokens = int(provider_usage.get("completion_tokens") or provider_usage.get("output_tokens") or 0)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if platform_name == "zhipu" and tier == "deep" and prompt_tokens > 32_000:
+        input_price, output_price = 2.0, 6.0
+    estimated_cost = (prompt_tokens * input_price + completion_tokens * output_price) / 1_000_000
+    return {
+        "currency": "CNY",
+        "estimated_cost": round(estimated_cost, 8),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "input_price_per_million": input_price,
+        "output_price_per_million": output_price,
+        "price_tier": tier,
+    }
+
+
 def _extract_reasoning_text(obj: Any) -> str:
     for attr_name in ("reasoning_content", "reasoning", "thinking"):
         candidate = _coerce_stream_text(getattr(obj, attr_name, None))
@@ -1015,6 +1182,7 @@ def _log_ai_usage(
     error: Any = None,
     extra: dict[str, Any] | None = None,
 ) -> None:
+    task_type = str((extra or {}).get("task_type") or "").strip() or None
     event = {
         "event": "ai_usage",
         "call_id": call_id,
@@ -1037,6 +1205,13 @@ def _log_ai_usage(
         ),
         "provider_usage": provider_usage,
     }
+    cost_estimate = _estimate_provider_cost_cny(
+        platform_name,
+        provider_usage,
+        task_type=task_type,
+    )
+    if cost_estimate:
+        event["cost_estimate"] = cost_estimate
     if error:
         event["error"] = _truncate_for_log(error)
     if extra:
@@ -1084,10 +1259,13 @@ class GradingJob(BaseModel):
     files: List[GradingFile] = Field(default_factory=list)
     file_paths: List[str] = Field(default_factory=list)
     answers_json: Optional[str] = None
+    exam_scoring_json: Optional[str] = None
     allowed_file_types_json: Optional[str] = None
     student_profile_context: Optional[str] = None
     submitted_at: Optional[str] = None
     submission_fingerprint: Optional[str] = None
+    grading_revision_hash: Optional[str] = None
+    grading_contract_version: str = "2026-07-durable-v1"
     # model_type 将在 run_grading_job 中动态决定，这里不再需要
 
 
@@ -1113,6 +1291,9 @@ GRADING_SYSTEM_PROMPT = """
 {
   "score": <总分，整数，0-100>,
   "summary": "<总评，120字以内；结合学生当前状态给出有针对性的鼓励和下一步建议>",
+  "confidence": <评分置信度，0到1之间的小数>,
+  "needs_review": <发现证据冲突、附件不足或无法可靠判断时为 true，否则为 false>,
+  "evidence_conflicts": ["<跨文件、答案与截图或变量不一致；没有则为空数组>"],
   "questions": [
     {
       "question_no": <题号，整数，从1开始>,
@@ -1131,10 +1312,15 @@ GRADING_SYSTEM_PROMPT = """
 4. evaluation 必须 20 字以内，语气可结合学生状态更稳、更鼓励或更直接。
 5. 如果看到“无法直接识别的附件（仅属性）”，说明学生已经上传该附件，但平台没有传入附件本体或解压内容。请只根据题目要求、文件名、文件大小、创建/修改时间等属性判断是否满足提交条件，不要臆测压缩包或二进制文件内部内容。
 6. 如果输入中包含【内部个性化支持参考】，它只用于调整评语语气、详略和鼓励方式，不是评分依据。严禁在 summary、deduction_points、evaluation 或任何字段中提到后台来源、内部个性化参考、隐藏处理过程或相关信息，也不要让学生感觉自己被后台分析。
+7. 必须核对正文、代码、截图和不同附件之间的变量、角色、IP、计算结果与完成状态；发现矛盾时写入 evidence_conflicts，并将 needs_review 设为 true。不得因为文件数量多或页面看起来完整就直接给高分。
+8. confidence 反映“证据是否足以支持当前分数”，不是对学生能力的评价；证据缺失、模糊或冲突时必须低于 0.65。
 例如:
 {
   "score": 85,
   "summary": "整体思路稳定，下一步先补齐边界和证明材料，进步会更明显。",
+  "confidence": 0.88,
+  "needs_review": false,
+  "evidence_conflicts": [],
   "questions": [
     {"question_no": 1, "question_id": "q1", "score": 10, "max_score": 10, "deduction_points": "无", "evaluation": "表达很稳，保持"},
     {"question_no": 2, "question_id": "q2", "score": 6, "max_score": 10, "deduction_points": "缺少边界条件说明", "evaluation": "先补关键步骤"}
@@ -1250,8 +1436,331 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
 """
 
 # --- Lifespan (替换旧的 Startup/Shutdown) ---
+durable_ai_worker_tasks: list[asyncio.Task] = []
+durable_ai_worker_stop: asyncio.Event | None = None
+
+
+def _record_durable_attempt_start(job: dict[str, Any]) -> None:
+    with get_db_connection() as conn:
+        record_ai_job_attempt_started(conn, job)
+        conn.commit()
+
+
+async def _durable_lease_heartbeat(job: dict[str, Any], stop_event: asyncio.Event) -> None:
+    interval = max(30.0, AI_JOB_WORKER_LEASE_SECONDS / 3)
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            break
+        except asyncio.TimeoutError:
+            renewed = await asyncio.to_thread(
+                renew_ai_job_lease,
+                int(job["id"]),
+                str(job.get("lease_token") or ""),
+                lease_seconds=AI_JOB_WORKER_LEASE_SECONDS,
+            )
+            if not renewed:
+                break
+
+
+def _apply_durable_exam_result(job: dict[str, Any], result_row: dict[str, Any]) -> bool:
+    payload = result_row.get("result") if isinstance(result_row.get("result"), dict) else {}
+    paper_id = str(payload.get("paper_id") or "").strip()
+    task_id = str(payload.get("task_id") or "").strip()
+    exam_data = payload.get("exam_data")
+    if not paper_id or not task_id or not isinstance(exam_data, dict):
+        raise ValueError("durable exam result is incomplete")
+    normalized = normalize_exam_scoring_payload(exam_data, require_complete=True)
+    if not isinstance(normalized.get("pages"), list) or not normalized["pages"]:
+        raise ValueError("durable exam result has no usable questions")
+    now = datetime.now().isoformat(timespec="seconds")
+    questions_json = json.dumps(normalized, ensure_ascii=False)
+    description = str(normalized.get("description") or "AI生成的试卷")
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE exam_papers
+            SET questions_json = ?, description = ?, status = 'ready',
+                ai_gen_status = 'completed', ai_gen_error = NULL, updated_at = ?
+            WHERE id = ? AND ai_gen_task_id = ?
+              AND ai_gen_status IN ('pending', 'running')
+            """,
+            (questions_json, description, now, paper_id, task_id),
+        )
+        if cursor.rowcount != 1:
+            current = conn.execute(
+                "SELECT ai_gen_status FROM exam_papers WHERE id = ? AND ai_gen_task_id = ?",
+                (paper_id, task_id),
+            ).fetchone()
+            if not current or str(current["ai_gen_status"] or "") != "completed":
+                conn.rollback()
+                return False
+        conn.commit()
+    return True
+
+
+async def _deliver_durable_job_result(job: dict[str, Any]) -> bool:
+    result_row = await asyncio.to_thread(load_ai_job_result, job)
+    callback_data = result_row.get("result") if isinstance(result_row.get("result"), dict) else {}
+    if not callback_data:
+        await asyncio.to_thread(
+            reschedule_ai_job_delivery,
+            job,
+            error_message="durable result row is missing callback payload",
+        )
+        return False
+    if str(job.get("task_type") or "") == "exam_generation":
+        try:
+            applied = await asyncio.to_thread(_apply_durable_exam_result, job, result_row)
+            if not applied:
+                raise RuntimeError("exam paper changed before durable result apply")
+        except Exception as exc:
+            await asyncio.to_thread(reschedule_ai_job_delivery, job, error_message=str(exc))
+            return False
+    else:
+        try:
+            await _post_grading_callback_with_retry(callback_data, int(callback_data.get("submission_id") or 0))
+        except Exception as exc:
+            await asyncio.to_thread(reschedule_ai_job_delivery, job, error_message=str(exc))
+            return False
+    marked = await asyncio.to_thread(
+        mark_ai_job_succeeded,
+        int(job["id"]),
+        int(result_row["id"]),
+        review_required=bool(callback_data.get("review_required")),
+        lease_token=str(job.get("lease_token") or ""),
+    )
+    if marked and str(job.get("task_type") or "") == "exam_generation":
+        await asyncio.to_thread(
+            cleanup_ai_job_artifact,
+            load_ai_job_payload(job).get("artifact_ref") or {},
+        )
+    return marked
+
+
+async def _execute_durable_ai_job(job: dict[str, Any]) -> None:
+    task_type = str(job.get("task_type") or "")
+    if task_type not in {"ai_grading", "exam_generation"}:
+        await asyncio.to_thread(
+            reschedule_ai_job,
+            job,
+            error_code="unsupported_task_type",
+            error_message=f"No durable handler for task_type={job.get('task_type')!r}",
+        )
+        return
+    await asyncio.to_thread(_record_durable_attempt_start, job)
+    heartbeat_stop = asyncio.Event()
+    heartbeat_task = asyncio.create_task(_durable_lease_heartbeat(job, heartbeat_stop))
+    payload = load_ai_job_payload(job)
+    try:
+        if task_type == "exam_generation":
+            with get_db_connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE exam_papers
+                    SET ai_gen_status = 'running', ai_gen_error = NULL, updated_at = ?
+                    WHERE id = ? AND ai_gen_task_id = ? AND ai_gen_status = 'pending'
+                    """,
+                    (
+                        datetime.now().isoformat(timespec="seconds"),
+                        str(payload.get("paper_id") or ""),
+                        str(payload.get("task_id") or ""),
+                    ),
+                )
+                conn.commit()
+            artifact = await asyncio.to_thread(load_ai_job_artifact, payload.get("artifact_ref") or {})
+            request = ExamGenerationRequest(
+                prompt=str(payload.get("prompt") or ""),
+                model_type="vision" if artifact.get("image_inputs") else "thinking",
+                task_type="deep_multimodal_reasoning" if artifact.get("image_inputs") else "deep_text_reasoning",
+                teacher_id=payload.get("teacher_id"),
+                class_offering_id=payload.get("class_offering_id"),
+                source_type=payload.get("source_type") or "manual",
+                force_platform=payload.get("force_platform"),
+                image_inputs=artifact.get("image_inputs") or [],
+            )
+            generated = await generate_exam_task(request)
+            durable_result = {
+                "paper_id": str(payload.get("paper_id") or ""),
+                "task_id": str(payload.get("task_id") or ""),
+                "exam_data": generated.get("exam_data") or {},
+            }
+            result_row = await asyncio.to_thread(
+                store_ai_job_result,
+                job,
+                durable_result,
+                prompt_version="exam-generation-2026-07-v1",
+                policy_version=str(job.get("policy_version") or ""),
+            )
+            delivery_job = {**job, "result_id": int(result_row["id"])}
+            if await asyncio.to_thread(_apply_durable_exam_result, delivery_job, {**result_row, "result": durable_result}):
+                await asyncio.to_thread(
+                    mark_ai_job_succeeded,
+                    int(job["id"]),
+                    int(result_row["id"]),
+                    lease_token=str(job.get("lease_token") or ""),
+                )
+                await asyncio.to_thread(cleanup_ai_job_artifact, payload.get("artifact_ref") or {})
+            else:
+                await asyncio.to_thread(
+                    reschedule_ai_job_delivery,
+                    delivery_job,
+                    error_message="exam paper changed before durable result apply",
+                )
+            return
+        grading_job = GradingJob(**payload)
+        callback_data = await _build_grading_callback_data(grading_job, raise_on_failure=True)
+        callback_data["ai_job_id"] = int(job["id"])
+        result_row = await asyncio.to_thread(
+            store_ai_job_result,
+            job,
+            callback_data,
+            provider=str(callback_data.get("requested_provider") or ""),
+            model=str(callback_data.get("requested_model") or ""),
+            prompt_version=AI_GRADING_PROMPT_VERSION,
+            rubric_hash=hashlib.sha256(grading_job.rubric_md.encode("utf-8")).hexdigest(),
+            policy_version=str(job.get("policy_version") or ""),
+            deterministic_version=AI_DETERMINISTIC_GRADING_VERSION,
+            confidence=callback_data.get("ai_confidence"),
+            review_required=bool(callback_data.get("review_required")),
+            quality_audit=callback_data.get("quality_audit") or {},
+        )
+        delivery_job = {**job, "result_id": int(result_row["id"])}
+        try:
+            await _post_grading_callback_with_retry(callback_data, grading_job.submission_id)
+        except Exception as exc:
+            await asyncio.to_thread(reschedule_ai_job_delivery, delivery_job, error_message=str(exc))
+            return
+        await asyncio.to_thread(
+            mark_ai_job_succeeded,
+            int(job["id"]),
+            int(result_row["id"]),
+            review_required=bool(callback_data.get("review_required")),
+            lease_token=str(job.get("lease_token") or ""),
+        )
+    except Exception as exc:
+        if task_type == "exam_generation":
+            terminal_status = await asyncio.to_thread(
+                reschedule_ai_job,
+                job,
+                error_code=exc.__class__.__name__,
+                error_message=str(exc),
+            )
+            if terminal_status == "review_required":
+                with get_db_connection() as conn:
+                    conn.execute(
+                        """
+                        UPDATE exam_papers
+                        SET ai_gen_status = 'review_required', ai_gen_error = ?, updated_at = ?
+                        WHERE id = ? AND ai_gen_task_id = ?
+                          AND ai_gen_status IN ('pending', 'running')
+                        """,
+                        (
+                            "AI 多次自动重试后仍未能可靠生成试卷，请教师检查材料后重新生成。",
+                            datetime.now().isoformat(timespec="seconds"),
+                            str(payload.get("paper_id") or ""),
+                            str(payload.get("task_id") or ""),
+                        ),
+                    )
+                    conn.commit()
+                await asyncio.to_thread(cleanup_ai_job_artifact, payload.get("artifact_ref") or {})
+            return
+        if int(job.get("attempt_count") or 1) >= int(job.get("max_attempts") or 8):
+            terminal_callback = {
+                "submission_id": int(payload.get("submission_id") or 0),
+                "status": "grading_review_required",
+                "score": None,
+                "feedback_md": "AI 批改在多次自动重试后仍未能可靠完成，提交内容和原成绩均已保留，请教师人工复核。",
+                "review_required": True,
+                "review_reason_codes": ["durable_attempts_exhausted"],
+                "submission_fingerprint": payload.get("submission_fingerprint") or "",
+                "grading_revision_hash": payload.get("grading_revision_hash") or "",
+                "grading_contract_version": payload.get("grading_contract_version") or "",
+                "ai_job_id": int(job["id"]),
+            }
+            result_row = await asyncio.to_thread(
+                store_ai_job_result,
+                job,
+                terminal_callback,
+                prompt_version=AI_GRADING_PROMPT_VERSION,
+                policy_version=str(job.get("policy_version") or ""),
+                deterministic_version=AI_DETERMINISTIC_GRADING_VERSION,
+                review_required=True,
+                quality_audit={"terminal_error": _provider_error_summary(exc, limit=500)},
+                attempt_status="error",
+                attempt_error_code=exc.__class__.__name__,
+                attempt_error_message=str(exc),
+            )
+            delivery_job = {**job, "result_id": int(result_row["id"])}
+            try:
+                await _post_grading_callback_with_retry(
+                    terminal_callback,
+                    int(terminal_callback["submission_id"]),
+                )
+            except Exception as delivery_exc:
+                await asyncio.to_thread(
+                    reschedule_ai_job_delivery,
+                    delivery_job,
+                    error_message=str(delivery_exc),
+                )
+            else:
+                await asyncio.to_thread(
+                    mark_ai_job_succeeded,
+                    int(job["id"]),
+                    int(result_row["id"]),
+                    review_required=True,
+                    lease_token=str(job.get("lease_token") or ""),
+                )
+        else:
+            await asyncio.to_thread(
+                reschedule_ai_job,
+                job,
+                error_code=exc.__class__.__name__,
+                error_message=str(exc),
+            )
+    finally:
+        heartbeat_stop.set()
+        with suppress(asyncio.CancelledError):
+            await heartbeat_task
+
+
+async def _durable_ai_worker_loop(worker_index: int, stop_event: asyncio.Event) -> None:
+    worker_id = f"{os.getenv('AI_JOB_WORKER_ID') or 'ai-embedded'}:{worker_index}"
+    while not stop_event.is_set():
+        try:
+            delivery_jobs = await asyncio.to_thread(
+                claim_result_ready_ai_jobs,
+                limit=1,
+                worker_id=worker_id,
+                lease_seconds=300,
+                task_types=("ai_grading", "exam_generation"),
+            )
+            if delivery_jobs:
+                await _deliver_durable_job_result(delivery_jobs[0])
+                continue
+            claimed = await asyncio.to_thread(
+                claim_due_ai_jobs,
+                limit=1,
+                worker_id=worker_id,
+                lease_seconds=AI_JOB_WORKER_LEASE_SECONDS,
+                task_types=("ai_grading", "exam_generation"),
+            )
+            if claimed:
+                await _execute_durable_ai_job(claimed[0])
+                continue
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[AI DURABLE WORKER] loop error worker={worker_id}: {_provider_error_summary(exc)}")
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=AI_JOB_WORKER_POLL_SECONDS)
+        except asyncio.TimeoutError:
+            pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global durable_ai_worker_stop, durable_ai_worker_tasks
     # --- Startup ---
     if not MAIN_APP_CALLBACK_URL: print("[WARNING] 'MAIN_APP_CALLBACK_URL' 未设置，AI批改结果无法回调主程序。")
     print(f"[AI SERVER] AI 助手服务启动于 http://{AI_HOST}:{AI_PORT}")
@@ -1273,12 +1782,34 @@ async def lifespan(app: FastAPI):
         f"max_delay={AI_PROVIDER_HTTP_RETRY_MAX_SECONDS:g}s"
     )
     await callback_client.__aenter__()
+    if AI_DURABLE_JOBS_ENABLED:
+        # Complete idempotent DDL once before multiple worker loops can race on
+        # their first claim. This also makes startup fail visibly if the durable
+        # ledger itself is unavailable instead of emitting repeated deadlocks.
+        await asyncio.to_thread(ai_durable_job_health_snapshot)
+        durable_ai_worker_stop = asyncio.Event()
+        durable_ai_worker_tasks = [
+            asyncio.create_task(_durable_ai_worker_loop(index + 1, durable_ai_worker_stop))
+            for index in range(AI_JOB_WORKER_CONCURRENCY)
+        ]
+        print(
+            "[AI DURABLE WORKER] started "
+            f"concurrency={AI_JOB_WORKER_CONCURRENCY}, poll={AI_JOB_WORKER_POLL_SECONDS:g}s, "
+            f"lease={AI_JOB_WORKER_LEASE_SECONDS}s"
+        )
 
     print("[AI SERVER] Lifespan: Startup complete.")
     yield  # 服务在此运行
 
     # --- Shutdown ---
     print("[AI SERVER] Lifespan: Shutting down...")
+    if durable_ai_worker_stop is not None:
+        durable_ai_worker_stop.set()
+    for task in durable_ai_worker_tasks:
+        task.cancel()
+    if durable_ai_worker_tasks:
+        await asyncio.gather(*durable_ai_worker_tasks, return_exceptions=True)
+    durable_ai_worker_tasks = []
     await callback_client.__aexit__(None, None, None)
     print("[AI SERVER] Lifespan: Shutdown complete.")
 
@@ -1297,6 +1828,12 @@ THINK_TAG_CLOSE = "</think>"
 
 @app.get("/api/internal/health")
 async def internal_health():
+    durable_snapshot: dict[str, Any] = {"enabled": AI_DURABLE_JOBS_ENABLED}
+    if AI_DURABLE_JOBS_ENABLED:
+        try:
+            durable_snapshot.update(await asyncio.to_thread(ai_durable_job_health_snapshot))
+        except Exception as exc:
+            durable_snapshot.update({"ok": False, "error": _provider_error_summary(exc, limit=240)})
     return {
         "status": "ok",
         "service": "ai",
@@ -1308,6 +1845,18 @@ async def internal_health():
             "pending": grading_job_pending_count,
             "max_pending": AI_GRADING_MAX_PENDING_JOBS,
             "max_concurrent": AI_GRADING_MAX_CONCURRENT_JOBS,
+        },
+        "durable_jobs": durable_snapshot,
+        "model_routing": {
+            "policies": public_policy_snapshot(),
+            "providers": {
+                provider: {
+                    "max_concurrency": PLATFORMS_CONFIG[provider].get("max_concurrency") or 0,
+                    "supports": PLATFORMS_CONFIG[provider].get("supports") or {},
+                    "task_models": PLATFORMS_CONFIG[provider].get("task_models") or {},
+                }
+                for provider in ENABLED_PLATFORMS
+            },
         },
     }
 
@@ -1895,6 +2444,7 @@ def _validate_grading_file_limits(grading_files: list[dict[str, Any]]) -> None:
         int(file_info.get("size") or 0)
         for file_info in grading_files
         if file_info.get("category") != "metadata_only"
+        and not file_info.get("_embedded_data_url")
     )
     if total_bytes > AI_GRADING_MAX_TOTAL_FILE_BYTES:
         raise ValueError(f"附件总大小超过 AI 批改上限 {_human_size(AI_GRADING_MAX_TOTAL_FILE_BYTES)}")
@@ -1905,96 +2455,32 @@ def _validate_grading_file_limits(grading_files: list[dict[str, Any]]) -> None:
         display_name = file_info.get("display_name") or file_info["path"].name
         if category == "metadata_only":
             continue
-        if category == "document_native" and file_size > VOLCENGINE_DOCUMENT_MAX_BYTES:
-            raise ValueError(f"PDF文档 '{display_name}' 超过火山方舟文档上限 {_human_size(VOLCENGINE_DOCUMENT_MAX_BYTES)}")
-        if category == "image" and file_size > VOLCENGINE_IMAGE_MAX_BYTES:
-            raise ValueError(f"图片 '{display_name}' 超过火山方舟图片上限 {_human_size(VOLCENGINE_IMAGE_MAX_BYTES)}")
+        if category == "document_native" and file_size > AI_GRADING_PDF_MAX_BYTES:
+            raise ValueError(f"PDF文档 '{display_name}' 超过 AI 批改上限 {_human_size(AI_GRADING_PDF_MAX_BYTES)}")
+        if category == "image" and file_size > AI_GRADING_IMAGE_MAX_BYTES:
+            raise ValueError(f"图片 '{display_name}' 超过 AI 批改上限 {_human_size(AI_GRADING_IMAGE_MAX_BYTES)}")
 
 
 def _select_grading_execution(grading_files: list[dict[str, Any]]) -> dict[str, Any]:
     has_native_documents = any(file_info["category"] == "document_native" for file_info in grading_files)
-    has_extractable_documents = any(file_info["category"] == "document_extractable" for file_info in grading_files)
     has_images = any(file_info["category"] == "image" for file_info in grading_files)
-    has_binary = any(file_info["category"] == "binary" for file_info in grading_files)
-
-    # 原生文档 (PDF) 优先使用火山方舟 Responses API
-    if has_native_documents:
-        for platform_name in ENABLED_PLATFORMS:
-            if platform_name != "volcengine":
-                continue
-            config = PLATFORMS_CONFIG[platform_name]
-            return {
-                "platform_name": platform_name,
-                "platform_config": {"name": platform_name, **config},
-                "capability": "vision" if has_images else "thinking",
-                "mode": "volcengine_responses",
-            }
-        # 火山引擎不可用: PDF 会被 _pre_extract_documents 降级为提取模式，
-        # 走 document_extractable 或 image 路径，此处不再硬性报错
-
-    # 可提取文档 + 图片：需要支持多模态的平台
-    if has_extractable_documents and has_images:
-        for platform_name in ENABLED_PLATFORMS:
-            if platform_name == "volcengine":
-                config = PLATFORMS_CONFIG[platform_name]
-                return {
-                    "platform_name": platform_name,
-                    "platform_config": {"name": platform_name, **config},
-                    "capability": "vision",
-                    "mode": "volcengine_responses",
-                }
-        raise ValueError("当前启用的 AI 平台不支持图片附件识别，请启用支持视觉能力的模型。")
-
-    # 仅可提取文档 (无 PDF、无图片)：文本提取后可使用任意平台
-    if has_extractable_documents:
-        for platform_name in ENABLED_PLATFORMS:
-            config = PLATFORMS_CONFIG[platform_name]
-            if config["models"].get("thinking"):
-                return {
-                    "platform_name": platform_name,
-                    "platform_config": {"name": platform_name, **config},
-                    "capability": "thinking",
-                    "mode": "text_messages",
-                }
-            if config["models"].get("standard"):
-                return {
-                    "platform_name": platform_name,
-                    "platform_config": {"name": platform_name, **config},
-                    "capability": "standard",
-                    "mode": "text_messages",
-                }
-        raise ValueError("没有可用于批改的 AI 平台配置")
-
-    if has_images:
-        for platform_name in ENABLED_PLATFORMS:
-            config = PLATFORMS_CONFIG[platform_name]
-            if platform_name == "volcengine":
-                return {
-                    "platform_name": platform_name,
-                    "platform_config": {"name": platform_name, **config},
-                    "capability": "vision",
-                    "mode": "volcengine_responses",
-                }
-        raise ValueError("当前启用的 AI 平台不支持图片附件识别，请启用支持视觉能力的模型。")
-
-    for platform_name in ENABLED_PLATFORMS:
-        config = PLATFORMS_CONFIG[platform_name]
-        if config["models"].get("thinking"):
-            return {
-                "platform_name": platform_name,
-                "platform_config": {"name": platform_name, **config},
-                "capability": "thinking",
-                "mode": "text_messages",
-            }
-        if config["models"].get("standard"):
-            return {
-                "platform_name": platform_name,
-                "platform_config": {"name": platform_name, **config},
-                "capability": "standard",
-                "mode": "text_messages",
-            }
-
-    raise ValueError("没有可用于批改的 AI 平台配置")
+    task_type = AI_TASK_MULTIMODAL_GRADING if (has_native_documents or has_images) else AI_TASK_DEEP_TEXT
+    capability: Literal["standard", "thinking", "vision"] = (
+        "vision" if task_type == AI_TASK_MULTIMODAL_GRADING else "thinking"
+    )
+    routes = _build_model_routes(capability, task_type=task_type)
+    if not routes:
+        if capability == "vision":
+            raise ValueError("当前没有已启用且支持图片批改的 AI 模型。")
+        raise ValueError("没有可用于文本批改的 AI 模型配置。")
+    selected = routes[0]
+    return {
+        "platform_name": selected.platform_name,
+        "platform_config": selected.platform_config,
+        "capability": capability,
+        "task_type": task_type,
+        "mode": "vision_messages" if capability == "vision" else "text_messages",
+    }
 
 
 def _read_text_file_excerpt(file_path: Path, max_bytes: int = AI_GRADING_MAX_RAW_TEXT_FILE_BYTES) -> tuple[str, bool]:
@@ -2489,6 +2975,7 @@ def _build_text_grading_message(
     requirements_md: str = "",
     answers_json: str | None = None,
     student_profile_context: str | None = None,
+    deterministic_evidence_prompt: str = "",
 ) -> list[dict[str, Any]]:
     answers_text = _extract_answers_text(answers_json)
     profile_prompt = _build_hidden_grading_profile_prompt(student_profile_context)
@@ -2499,6 +2986,8 @@ def _build_text_grading_message(
     if requirements_md:
         text_content += f"【作业要求】\n{requirements_md}\n\n"
     text_content += f"【评分标准】\n{rubric_md}\n\n"
+    if deterministic_evidence_prompt:
+        text_content += deterministic_evidence_prompt + "\n\n"
     if answers_text:
         text_content += answers_text + "\n\n"
 
@@ -2553,6 +3042,7 @@ def _build_volcengine_responses_input(
     requirements_md: str = "",
     answers_json: str | None = None,
     student_profile_context: str | None = None,
+    deterministic_evidence_prompt: str = "",
 ) -> list[dict[str, Any]]:
     prompt_lines = []
     profile_prompt = _build_hidden_grading_profile_prompt(student_profile_context)
@@ -2561,6 +3051,8 @@ def _build_volcengine_responses_input(
     if requirements_md:
         prompt_lines.append(f"【作业要求】\n{requirements_md}")
     prompt_lines.append(f"【评分标准】\n{rubric_md}")
+    if deterministic_evidence_prompt:
+        prompt_lines.append(deterministic_evidence_prompt)
     answers_text = _extract_answers_text(answers_json)
     if answers_text:
         prompt_lines.append(answers_text)
@@ -2826,7 +3318,8 @@ async def _call_volcengine_responses_api(
 
 def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
                           requirements_md: str = "", answers_json: str = None,
-                          student_profile_context: str | None = None) -> List[Dict[str, Any]]:
+                          student_profile_context: str | None = None,
+                          deterministic_evidence_prompt: str = "") -> List[Dict[str, Any]]:
     """构建视觉消息 (支持文件 + JSON 答案混合)"""
     answers_text = _extract_answers_text(answers_json)
     profile_prompt = _build_hidden_grading_profile_prompt(student_profile_context)
@@ -2858,6 +3351,8 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
         if requirements_md:
             text_content += f"【作业要求】\n{requirements_md}\n\n"
         text_content += f"【评分标准】\n{rubric}\n\n"
+        if deterministic_evidence_prompt:
+            text_content += deterministic_evidence_prompt + "\n\n"
         if answers_text:
             text_content += answers_text + "\n"
         text_content += "【学生提交文件】\n"
@@ -2890,6 +3385,8 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
         if requirements_md:
             header_text += f"【作业要求】\n{requirements_md}\n\n"
         header_text += f"【评分标准】\n{rubric}\n\n"
+        if deterministic_evidence_prompt:
+            header_text += deterministic_evidence_prompt + "\n\n"
         if answers_text:
             header_text += answers_text + "\n"
         header_text += "【学生提交文件】\n请根据以上内容进行评分:"
@@ -2922,22 +3419,12 @@ def _get_selected_platform_config(
         capability: Literal["standard", "thinking", "vision"],
         preferred_platform: Optional[str] = None,
 ) -> Optional[Dict]:
-    if preferred_platform:
-        config = PLATFORMS_CONFIG.get(preferred_platform)
-        if (
-            config
-            and config["enabled"]
-            and preferred_platform in ENABLED_PLATFORMS
-            and config["models"].get(capability)
-        ):
-            return {"name": preferred_platform, **config}
-        return None
-
-    for platform_name in ENABLED_PLATFORMS:
-        config = PLATFORMS_CONFIG[platform_name]
-        if config["models"].get(capability):
-            return {"name": platform_name, **config}
-    return None
+    routes = _build_model_routes(
+        capability,
+        task_type=_normalize_ai_task_type(None, capability),
+        preferred_platform=preferred_platform,
+    )
+    return routes[0].platform_config if routes else None
 
 
 async def _do_provider_call(
@@ -2997,7 +3484,11 @@ async def _do_provider_call(
                     if tool_choice is not None:
                         volc_kwargs["tool_choice"] = tool_choice
                 _apply_volcengine_thinking(volc_kwargs, selected_route)
-                use_stream = AI_NONSTREAM_USE_PROVIDER_STREAM and not safe_tools
+                # Ark streaming chunks do not reliably expose usage. Non-streaming
+                # background/API calls already have a task-tier timeout and return
+                # authoritative token accounting, so reserve streaming for the
+                # actual user-facing stream endpoint.
+                use_stream = False
 
                 async def _volc_attempt() -> None:
                     nonlocal response_content, response_thinking, provider_usage
@@ -3073,6 +3564,8 @@ async def _do_provider_call(
                         api_style = "chat_completions_stream_collect"
                         stream_kwargs = dict(kwargs)
                         stream_kwargs["stream"] = True
+                        if platform_name in {"qwen", "zhipu"}:
+                            stream_kwargs["stream_options"] = {"include_usage": True}
                         request_payload = dict(stream_kwargs)
                         stream = await client.chat.completions.create(**stream_kwargs)
                         answer_parts: list[str] = []
@@ -3245,16 +3738,21 @@ async def _call_ai_platform(
 ) -> Any:
     normalized_task_type = _normalize_ai_task_type(task_type, capability)
 
-    # 安全网：纯文本任务里检测到图片/视频内容时，升级为多模态并强制走火山引擎
-    # （DeepSeek 无视觉能力）。符合“检测到图片/视频则降级到火山引擎”的要求。
+    # 安全网：纯文本任务里检测到图片/视频内容时升级为相应多模态任务。
+    # 路由策略会把它送往支持视觉的千问主模型，并保留豆包跨厂商回退。
     if normalized_task_type in TEXT_TASK_TYPES and _messages_contain_visual(messages):
+        upgraded_task_type = (
+            AI_TASK_DEEP_MULTIMODAL
+            if normalized_task_type == AI_TASK_DEEP_TEXT
+            else AI_TASK_VISION_INTERACTIVE
+        )
         print(
             f"[AI ROUTER] detected visual content on text task '{normalized_task_type}'; "
-            "upgrading to multimodal and routing to volcengine."
+            f"upgrading to '{upgraded_task_type}'."
         )
-        task_type = AI_TASK_DEEP_MULTIMODAL
+        task_type = upgraded_task_type
         capability = "vision"
-        normalized_task_type = AI_TASK_DEEP_MULTIMODAL
+        normalized_task_type = upgraded_task_type
 
     # 候选路由：preferred 平台优先，其后补齐其余启用平台用于跨平台降级。
     primary_routes = _build_model_routes(
@@ -3359,6 +3857,7 @@ async def _call_ai_platform_chat_stream_generator(
     request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages, "stream": True}
     call_id, started_at, start_perf = _new_ai_usage_context()
     stream_error: Any = None
+    provider_usage: dict[str, Any] | None = None
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream:{capability}"):
         print(
@@ -3496,6 +3995,7 @@ async def _call_ai_platform_chat_stream_events(
         task_priority: str = "interactive",
         task_label: Optional[str] = None,
         task_type: Optional[str] = None,
+        _excluded_platforms: frozenset[str] = frozenset(),
 ) -> AsyncGenerator[str, None]:
     thinking_content = ""
     final_answer = ""
@@ -3505,7 +4005,11 @@ async def _call_ai_platform_chat_stream_events(
         *messages
     ]
 
-    routes = _build_model_routes(capability, task_type=task_type)
+    routes = [
+        route
+        for route in _build_model_routes(capability, task_type=task_type)
+        if route.platform_name not in _excluded_platforms
+    ]
     if not routes:
         normalized_task_type = _normalize_ai_task_type(task_type, capability)
         error_msg = f"没有找到支持 '{normalized_task_type}' 任务的已启用AI平台。"
@@ -3552,19 +4056,21 @@ async def _call_ai_platform_chat_stream_events(
     model_name = selected_route.model_name
     api_key = selected_platform_config["api_key"]
     platform_type = selected_platform_config["type"]
-    thinking_supported = selected_route.task_type in {AI_TASK_DEEP_TEXT, AI_TASK_DEEP_MULTIMODAL}
+    thinking_supported = selected_route.task_type in DEEP_REASONING_TASK_TYPES
     think_tag_parser = ThinkTagStreamParser() if thinking_supported else None
     prepared_messages = _prepare_chat_messages_for_platform(final_messages, capability=capability)
     request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages, "stream": True}
     call_id, started_at, start_perf = _new_ai_usage_context()
     stream_error: Any = None
+    provider_usage: dict[str, Any] | None = None
+    fallback_requested = False
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream_events:{selected_route.task_type}"):
         print(
-            f"[AI WORKER] 寮€濮嬪鐞嗙粨鏋勫寲娴佸紡鑱婂ぉ (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
+            f"[AI WORKER] 开始处理结构化流式聊天 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
 
         if not api_key:
-            error_msg = f"鏈厤缃?{platform_name} 鐨?API_KEY"
+            error_msg = f"未配置 {platform_name} 的 API_KEY"
             print(f"[ERROR] {error_msg}")
             _log_ai_usage(
                 call_id=call_id,
@@ -3622,7 +4128,7 @@ async def _call_ai_platform_chat_stream_events(
         try:
             if platform_type == "volcengine":
                 if not AsyncArk:
-                    raise ImportError("volcenginesdkarkruntime 鏈畨瑁?")
+                    raise ImportError("volcenginesdkarkruntime 未安装")
                 client = AsyncArk(
                     api_key=api_key,
                     base_url=selected_platform_config.get("base_url") or VOLCENGINE_OPENAI_BASE_URL,
@@ -3638,7 +4144,7 @@ async def _call_ai_platform_chat_stream_events(
                 stream = await client.chat.completions.create(**volc_kwargs)
             elif platform_type == "openai":
                 if not AsyncOpenAI:
-                    raise ImportError("openai 搴撴湭瀹夎")
+                    raise ImportError("openai 库未安装")
                 base_url = selected_platform_config["base_url"]
                 client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
                 kwargs = {
@@ -3646,6 +4152,8 @@ async def _call_ai_platform_chat_stream_events(
                     "messages": prepared_messages,
                     "stream": True,
                 }
+                if platform_name in {"qwen", "zhipu"}:
+                    kwargs["stream_options"] = {"include_usage": True}
                 if "DeepSeek-R1" in model_name:
                     kwargs["extra_body"] = {"thinking_budget": 1024}
                 _apply_openai_provider_options(
@@ -3654,9 +4162,10 @@ async def _call_ai_platform_chat_stream_events(
                 request_payload = dict(kwargs)
                 stream = await client.chat.completions.create(**kwargs)
             else:
-                raise HTTPException(500, f"涓嶆敮鎸佺殑骞冲彴绫诲瀷: {platform_type}")
+                raise HTTPException(500, f"不支持的平台类型: {platform_type}")
 
             async for chunk in stream:
+                provider_usage = _extract_provider_usage(chunk) or provider_usage
                 if not chunk.choices or not chunk.choices[0].delta:
                     continue
 
@@ -3676,29 +4185,45 @@ async def _call_ai_platform_chat_stream_events(
                         for event in forward_segment(segment_type, segment_text):
                             yield event
 
+            if not final_answer and not thinking_content:
+                raise RuntimeError("AI 流式响应为空")
+
         except Exception as e:
-            print(f"[ERROR] {platform_name} 缁撴瀯鍖栨祦寮忚亰澶╄皟鐢ㄥけ璐? {e}")
+            print(f"[ERROR] {platform_name} 结构化流式聊天调用失败: {e}")
             print(traceback.format_exc())
             stream_error = e
-            yield _encode_stream_event(
-                "error",
-                message=f"AI鍔╂墜鍐呴儴閿欒: {platform_name} 璋冪敤澶辫触: {e}",
-            )
+            remaining_routes = [
+                route
+                for route in _build_model_routes(capability, task_type=task_type)
+                if route.platform_name not in {*_excluded_platforms, platform_name}
+            ]
+            if not final_answer and not thinking_content and remaining_routes and _should_fallback_to_next_platform(e):
+                fallback_requested = True
+                print(
+                    f"[AI ROUTER] stream failed before first token on {platform_name}; "
+                    f"falling back to {remaining_routes[0].platform_name}."
+                )
+            else:
+                yield _encode_stream_event(
+                    "error",
+                    message=f"AI助手内部错误: {platform_name} 调用失败: {e}",
+                )
         finally:
-            if think_tag_parser:
+            if think_tag_parser and not fallback_requested:
                 for segment_type, segment_text in think_tag_parser.flush():
                     for event in forward_segment(segment_type, segment_text):
                         yield event
 
-            if thinking_content and not thinking_end_sent:
+            if thinking_content and not thinking_end_sent and not fallback_requested:
                 yield _encode_stream_event("thinking_end")
 
-            yield _encode_stream_event(
-                "done",
-                has_thinking=bool(thinking_content.strip()),
-                answer_chars=len(final_answer),
-                thinking_chars=len(thinking_content),
-            )
+            if not fallback_requested:
+                yield _encode_stream_event(
+                    "done",
+                    has_thinking=bool(thinking_content.strip()),
+                    answer_chars=len(final_answer),
+                    thinking_chars=len(thinking_content),
+                )
             _log_ai_usage(
                 call_id=call_id,
                 started_at=started_at,
@@ -3712,7 +4237,7 @@ async def _call_ai_platform_chat_stream_events(
                 request_payload=request_payload,
                 response_text=final_answer,
                 thinking_text=thinking_content,
-                provider_usage=None,
+                provider_usage=provider_usage,
                 status="error" if stream_error else "success",
                 stream=True,
                 error=stream_error,
@@ -3723,6 +4248,18 @@ async def _call_ai_platform_chat_stream_events(
                 },
             )
             await ai_model_router.release(selected_route, route_reservation)
+
+    if fallback_requested:
+        async for event in _call_ai_platform_chat_stream_events(
+            system_prompt,
+            messages,
+            capability=capability,
+            task_priority=task_priority,
+            task_label=task_label,
+            task_type=task_type,
+            _excluded_platforms=frozenset({*_excluded_platforms, platform_name}),
+        ):
+            yield event
 
 
 async def _call_ai_platform_chat(
@@ -4128,14 +4665,35 @@ async def _post_grading_callback_with_retry(callback_data: dict[str, Any], submi
 
 
 def _pre_extract_documents(grading_files: list[dict[str, Any]]) -> None:
-    """预提取可提取文档的文本和嵌入图片。
+    """Build a provider-neutral text/image evidence bundle for documents.
 
-    - 将提取结果缓存到 file_info["_extract_result"] 中，供后续构建输入时复用。
-    - 如果发现嵌入图片，将其作为新的 "image" 条目追加到 grading_files 末尾，
-      使得 _select_grading_execution() 能据此选择支持视觉的模式。
-    - 当火山引擎不可用时，将 PDF 降级为提取模式。
+    Native PDF upload used to lock grading to Volcengine Responses. The new
+    route extracts text and bounded page images once, so Qwen, Doubao and other
+    OpenAI-compatible vision providers see the same evidence and can safely
+    cross-provider fallback without rebuilding the submission.
     """
-    volcengine_available = "volcengine" in ENABLED_PLATFORMS
+
+    def append_virtual_image(
+        source: dict[str, Any],
+        *,
+        filename: str,
+        data_url: str,
+        mime_type: str,
+    ) -> None:
+        grading_files.append(
+            {
+                "path": source["path"],
+                "display_name": f"{source['display_name']} -> {filename}",
+                "original_filename": filename,
+                "relative_path": f"{source.get('relative_path', '')}/{filename}",
+                "mime_type": mime_type,
+                "size": len(data_url),
+                "ext": Path(filename).suffix.lower(),
+                "hash": None,
+                "category": "image",
+                "_embedded_data_url": data_url,
+            }
+        )
 
     for file_info in list(grading_files):  # list() 以允许迭代中追加
         category = file_info.get("category")
@@ -4150,63 +4708,152 @@ def _pre_extract_documents(grading_files: list[dict[str, Any]]) -> None:
                 img_count = len(result.images)
                 print(f"[AI WORKER] 从 {file_info['display_name']} 中提取到 {img_count} 张嵌入图片")
                 for img in result.images:
-                    grading_files.append({
-                        "path": file_path,
-                        "display_name": f"{file_info['display_name']} -> {img['filename']}",
-                        "original_filename": img["filename"],
-                        "relative_path": f"{file_info.get('relative_path', '')}/{img['filename']}",
-                        "mime_type": img["data_url"].split(";")[0].split(":")[1] if ":" in img["data_url"] else "image/png",
-                        "size": len(img["data_url"]),
-                        "ext": Path(img["filename"]).suffix.lower(),
-                        "hash": None,
-                        "category": "image",
-                        "_embedded_data_url": img["data_url"],
-                    })
+                    append_virtual_image(
+                        file_info,
+                        filename=img["filename"],
+                        data_url=img["data_url"],
+                        mime_type=(
+                            img["data_url"].split(";")[0].split(":")[1]
+                            if ":" in img["data_url"]
+                            else "image/png"
+                        ),
+                    )
 
-        elif category == "document_native" and not volcengine_available:
-            # 火山引擎不可用: 降级提取 PDF 文本+图片
+        elif category == "document_native":
             file_path = file_info["path"]
             result = _extract_doc_text(file_path, ".pdf", AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)
             file_info["_extract_result"] = result
-            # 重新分类为 document_extractable，使下游文本路径能处理
-            file_info["category"] = "document_extractable"
+            print(f"[AI WORKER] 将 PDF 渲染为跨厂商页面证据: {file_info['display_name']}")
+            rendered_pages = _render_pdf_pages(file_path)
+            if len(rendered_pages) > AI_GRADING_MAX_RENDERED_PDF_PAGES:
+                print(
+                    f"[AI WORKER] PDF 页面证据按上限截断: total={len(rendered_pages)}, "
+                    f"limit={AI_GRADING_MAX_RENDERED_PDF_PAGES}"
+                )
+            for page_img in rendered_pages[:AI_GRADING_MAX_RENDERED_PDF_PAGES]:
+                append_virtual_image(
+                    file_info,
+                    filename=page_img["filename"],
+                    data_url=page_img["data_url"],
+                    mime_type="image/png",
+                )
 
-            if result.has_images:
-                for img in result.images:
-                    grading_files.append({
-                        "path": file_path,
-                        "display_name": f"{file_info['display_name']} -> {img['filename']}",
-                        "original_filename": img["filename"],
-                        "relative_path": f"{file_info.get('relative_path', '')}/{img['filename']}",
-                        "mime_type": img["data_url"].split(";")[0].split(":")[1] if ":" in img["data_url"] else "image/png",
-                        "size": len(img["data_url"]),
-                        "ext": Path(img["filename"]).suffix.lower(),
-                        "hash": None,
-                        "category": "image",
-                        "_embedded_data_url": img["data_url"],
-                    })
 
-            # 如果文本提取内容太少，渲染 PDF 页面为图片
-            if not result.text.strip() or len(result.text.strip()) < 50:
-                print(f"[AI WORKER] PDF文本提取不足，尝试渲染页面为图片: {file_info['display_name']}")
-                rendered_pages = _render_pdf_pages(file_path)
-                for page_img in rendered_pages:
-                    grading_files.append({
-                        "path": file_path,
-                        "display_name": f"{file_info['display_name']} -> {page_img['filename']}",
-                        "original_filename": page_img["filename"],
-                        "relative_path": f"{file_info.get('relative_path', '')}/{page_img['filename']}",
-                        "mime_type": "image/png",
-                        "size": len(page_img["data_url"]),
-                        "ext": ".png",
-                        "hash": None,
-                        "category": "image",
-                        "_embedded_data_url": page_img["data_url"],
-                    })
+GRADING_ADJUDICATION_PROMPT = """
+你正在执行高风险作业评分仲裁。前一个模型的候选结果只供你定位争议，不能直接照抄。
+请重新核对作业要求、评分标准、服务端确定性证据、正文以及每一份图片/附件：
+1. 优先解决候选结果中标出的低置信度、空答、变量、角色、IP、计算值和跨文件冲突。
+2. 固定客观题得分不可改动；主观题必须说明实际扣分证据。
+3. 如果证据仍不足，needs_review 必须为 true，confidence 必须低于 0.65。
+4. 仍按原 JSON 协议输出，不要提及“前一个模型”“仲裁”或内部处理过程。
+"""
+
+
+def _build_grading_chat_messages(
+    *,
+    job: GradingJob,
+    grading_files: list[dict[str, Any]],
+    execution_mode: str,
+    platform_type: str,
+    deterministic_evidence_prompt: str,
+    validation_error: str = "",
+    system_prompt: str = GRADING_SYSTEM_PROMPT,
+    candidate_result: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+    if execution_mode == "vision_messages" and grading_files:
+        messages.extend(
+            build_vision_messages(
+                job.rubric_md,
+                grading_files,
+                platform_type,
+                job.requirements_md,
+                job.answers_json,
+                job.student_profile_context,
+                deterministic_evidence_prompt,
+            )
+        )
+    else:
+        messages.extend(
+            _build_text_grading_message(
+                job.rubric_md,
+                grading_files,
+                job.requirements_md,
+                job.answers_json,
+                job.student_profile_context,
+                deterministic_evidence_prompt,
+            )
+        )
+    if candidate_result:
+        public_candidate = {
+            key: value
+            for key, value in candidate_result.items()
+            if not str(key).startswith("_") and key != "feedback_md"
+        }
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "【待复核候选评分】\n"
+                    + json.dumps(public_candidate, ensure_ascii=False)
+                    + "\n请独立复核所有原始证据后重新评分。"
+                ),
+            }
+        )
+    if validation_error:
+        messages.append({"role": "user", "content": _build_grading_repair_instruction(validation_error)})
+    return messages
+
+
+def _grading_adjudication_reasons(
+    result: dict[str, Any],
+    *,
+    image_count: int,
+    format_repair_required: bool,
+) -> list[str]:
+    reasons: list[str] = []
+    confidence = result.get("confidence")
+    try:
+        confidence_value = float(confidence) if confidence not in (None, "") else None
+    except (TypeError, ValueError):
+        confidence_value = None
+    if confidence_value is not None and confidence_value < AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD:
+        reasons.append(f"low_confidence={confidence_value:.3f}")
+    if bool(result.get("needs_review")):
+        reasons.append("model_requested_review")
+    conflicts = result.get("evidence_conflicts")
+    if isinstance(conflicts, list) and any(str(item or "").strip() for item in conflicts):
+        reasons.append("evidence_conflict")
+    audit = result.get("_quality_audit") if isinstance(result.get("_quality_audit"), dict) else {}
+    score_delta = float(audit.get("score_sum_delta") or 0)
+    if score_delta > AI_GRADING_ADJUDICATION_SCORE_DELTA:
+        reasons.append(f"score_consistency_delta={score_delta:g}")
+    if image_count >= 8 and confidence_value is None:
+        reasons.append("many_images_without_confidence")
+    if format_repair_required:
+        reasons.append("format_repair_required")
+    return reasons
+
+
+def _grading_review_metadata(result: dict[str, Any]) -> tuple[bool, list[str], float | None]:
+    try:
+        confidence = float(result.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = None
+    reason_codes: list[str] = []
+    if bool(result.get("needs_review")):
+        reason_codes.append("model_requested_review")
+    if confidence is not None and confidence < AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD:
+        reason_codes.append("low_confidence")
+    return bool(reason_codes), reason_codes, confidence
 
 
 # --- 后台任务 (更新: 支持文件 + JSON 答案 + 文档内嵌图片) ---
-async def run_grading_job(job: GradingJob):
+async def _build_grading_callback_data(
+    job: GradingJob,
+    *,
+    raise_on_failure: bool = False,
+) -> dict[str, Any]:
     callback_data = {}
     try:
         grading_files = _normalize_grading_files(job)
@@ -4251,89 +4898,56 @@ async def run_grading_job(job: GradingJob):
         selected_capability: Literal["standard", "thinking", "vision"] = execution["capability"]
         selected_platform = execution["platform_config"]
         selected_task_type = execution.get("task_type") or (
-            AI_TASK_DEEP_MULTIMODAL
-            if selected_capability == "vision" or execution["mode"] == "volcengine_responses"
-            else AI_TASK_DEEP_TEXT
+            AI_TASK_MULTIMODAL_GRADING if selected_capability == "vision" else AI_TASK_DEEP_TEXT
         )
         print(
             f"[AI WORKER] 将使用平台 {execution['platform_name']} / 能力 {selected_capability} / 任务 {selected_task_type} / 模式 {execution['mode']}"
         )
+        deterministic_evidence = build_deterministic_grading_evidence(
+            job.exam_scoring_json,
+            job.answers_json,
+        )
+        deterministic_evidence_prompt = format_deterministic_evidence_prompt(deterministic_evidence)
+        if deterministic_evidence.get("available"):
+            print(
+                "[AI WORKER] 已生成确定性评分证据 "
+                f"questions={len(deterministic_evidence.get('questions') or [])}, "
+                f"fixed={len(deterministic_evidence.get('fixed_scores') or {})}"
+            )
 
         result: dict[str, Any] | None = None
         validation_error = ""
+        format_repair_required = False
         for attempt in range(1, GRADING_RESULT_MAX_ATTEMPTS + 1):
             try:
-                if execution["mode"] == "volcengine_responses":
-                    model_name = (
-                        selected_platform.get("task_models", {}).get(selected_task_type)
-                        or selected_platform["models"][selected_capability]
-                    )
-                    api_key = selected_platform["api_key"]
-                    if not api_key:
-                        raise ValueError("火山方舟 API Key 未配置")
-                    input_payload = _build_volcengine_responses_input(
-                        job.rubric_md,
-                        grading_files,
-                        job.requirements_md,
-                        job.answers_json,
-                        job.student_profile_context,
-                    )
-                    if validation_error:
-                        input_payload = _append_grading_repair_to_responses_input(input_payload, validation_error)
-                    raw_result = await _call_volcengine_responses_api(
-                        model_name=model_name,
-                        api_key=api_key,
-                        input_payload=input_payload,
-                        capability=selected_capability,
-                        task_type=selected_task_type,
-                        task_priority="default",
-                        task_label=f"grading:{job.submission_id}:attempt:{attempt}",
-                    )
-                else:
-                    messages = [{"role": "system", "content": GRADING_SYSTEM_PROMPT}]
-                    if execution["mode"] == "vision_messages" and has_files:
-                        messages.extend(
-                            build_vision_messages(
-                                job.rubric_md,
-                                grading_files,
-                                selected_platform["type"],
-                                job.requirements_md,
-                                job.answers_json,
-                                job.student_profile_context,
-                            )
-                        )
-                    else:
-                        messages.extend(
-                            _build_text_grading_message(
-                                job.rubric_md,
-                                grading_files,
-                                job.requirements_md,
-                                job.answers_json,
-                                job.student_profile_context,
-                            )
-                        )
-                    if validation_error:
-                        messages.append({"role": "user", "content": _build_grading_repair_instruction(validation_error)})
-
-                    # 批改任务总是要求 JSON 输出
-                    raw_result = await _call_ai_platform(
-                        messages,
-                        capability=selected_capability,
-                        require_json_output=True,
-                        task_priority="default",
-                        task_label=f"grading:{job.submission_id}:attempt:{attempt}",
-                        preferred_platform=execution["platform_name"],
-                        task_type=selected_task_type,
-                    )
+                messages = _build_grading_chat_messages(
+                    job=job,
+                    grading_files=grading_files,
+                    execution_mode=execution["mode"],
+                    platform_type=selected_platform["type"],
+                    deterministic_evidence_prompt=deterministic_evidence_prompt,
+                    validation_error=validation_error,
+                )
+                raw_result = await _call_ai_platform(
+                    messages,
+                    capability=selected_capability,
+                    require_json_output=True,
+                    task_priority="default",
+                    task_label=f"grading:{job.submission_id}:attempt:{attempt}",
+                    preferred_platform=execution["platform_name"],
+                    task_type=selected_task_type,
+                )
 
                 if not isinstance(raw_result, dict):
                     raise ValueError(f"AI 返回的批改结果不是 JSON 对象：{str(raw_result)[:200]}")
                 result = validate_ai_grading_result(raw_result, answers_json=job.answers_json)
+                result = apply_deterministic_grading_result(result, deterministic_evidence)
                 break
             except Exception as exc:
                 if not _is_grading_result_format_error(exc) or attempt >= GRADING_RESULT_MAX_ATTEMPTS:
                     raise
                 validation_error = str(getattr(exc, "detail", None) or exc)
+                format_repair_required = True
                 print(
                     f"[AI WORKER] 批改结果结构校验失败，将重试 {attempt + 1}/{GRADING_RESULT_MAX_ATTEMPTS}: "
                     f"{validation_error}"
@@ -4341,16 +4955,85 @@ async def run_grading_job(job: GradingJob):
 
         if result is None:
             raise ValueError("AI 批改未返回可用结果")
+
+        image_count = sum(1 for item in grading_files if item.get("category") == "image")
+        adjudication_reasons = _grading_adjudication_reasons(
+            result,
+            image_count=image_count,
+            format_repair_required=format_repair_required,
+        )
+        if (
+            AI_GRADING_ADJUDICATION_ENABLED
+            and selected_task_type == AI_TASK_MULTIMODAL_GRADING
+            and execution["platform_name"] != "volcengine"
+            and adjudication_reasons
+            and _build_model_routes("vision", task_type=AI_TASK_MULTIMODAL_ADJUDICATION)
+        ):
+            print(
+                "[AI WORKER] 评分触发高质量仲裁 "
+                f"submission={job.submission_id}, reasons={adjudication_reasons}"
+            )
+            try:
+                adjudication_messages = _build_grading_chat_messages(
+                    job=job,
+                    grading_files=grading_files,
+                    execution_mode="vision_messages",
+                    platform_type="volcengine",
+                    deterministic_evidence_prompt=deterministic_evidence_prompt,
+                    system_prompt=GRADING_SYSTEM_PROMPT + "\n" + GRADING_ADJUDICATION_PROMPT,
+                    candidate_result=result,
+                )
+                adjudicated_raw = await _call_ai_platform(
+                    adjudication_messages,
+                    capability="vision",
+                    require_json_output=True,
+                    task_priority="background",
+                    task_label=f"grading:{job.submission_id}:adjudication",
+                    preferred_platform="volcengine",
+                    task_type=AI_TASK_MULTIMODAL_ADJUDICATION,
+                )
+                if not isinstance(adjudicated_raw, dict):
+                    raise ValueError("仲裁模型返回的结果不是 JSON 对象")
+                adjudicated = validate_ai_grading_result(adjudicated_raw, answers_json=job.answers_json)
+                adjudicated = apply_deterministic_grading_result(adjudicated, deterministic_evidence)
+                audit = dict(adjudicated.get("_quality_audit") or {})
+                audit["adjudication"] = {
+                    "triggered": True,
+                    "reasons": adjudication_reasons,
+                    "primary_score": result.get("score"),
+                    "adjudicated_score": adjudicated.get("score"),
+                }
+                adjudicated["_quality_audit"] = audit
+                result = adjudicated
+            except Exception as adjudication_exc:
+                print(
+                    "[AI WORKER] 仲裁失败，保留已通过确定性校验的主评分: "
+                    f"{_provider_error_summary(adjudication_exc)}"
+                )
         result = normalize_grading_result(result, answers_json=job.answers_json)
         if result.get("score") is None:
             raise ValueError(f"AI 返回的批改分数无效：{str(result)[:200]}")
 
+        review_required, review_reason_codes, ai_confidence = _grading_review_metadata(result)
+
         callback_data = {
             "submission_id": job.submission_id, "status": "graded",
-            "score": result.get("score"), "feedback_md": result.get("feedback_md")
+            "score": result.get("score"), "feedback_md": result.get("feedback_md"),
+            "review_required": review_required,
+            "review_reason_codes": review_reason_codes,
+            "ai_confidence": ai_confidence,
+            "quality_audit": result.get("_quality_audit") or {},
+            "requested_provider": execution.get("platform_name") or "",
+            "requested_model": selected_platform.get("task_models", {}).get(selected_task_type)
+            or selected_platform.get("models", {}).get(selected_capability)
+            or "",
+            "grading_revision_hash": job.grading_revision_hash or "",
+            "grading_contract_version": job.grading_contract_version,
         }
     except Exception as e:
         print(f"[ERROR] 批改任务 {job.submission_id} 失败: {e}")
+        if raise_on_failure:
+            raise
         callback_data = {
             "submission_id": job.submission_id, "status": "grading_failed",
             "score": None, "feedback_md": f"AI 批改失败: {e}"
@@ -4361,6 +5044,12 @@ async def run_grading_job(job: GradingJob):
             callback_data["submitted_at"] = job.submitted_at
         if job.submission_fingerprint:
             callback_data["submission_fingerprint"] = job.submission_fingerprint
+
+    return callback_data
+
+
+async def run_grading_job(job: GradingJob):
+    callback_data = await _build_grading_callback_data(job)
 
     # --- 回调 main.py (保持不变) ---
     if not MAIN_APP_CALLBACK_URL:

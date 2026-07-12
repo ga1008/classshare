@@ -2,9 +2,8 @@
 
 Mirrors the exam-paper API surface: list / create(blank) / generate-from-classroom
 / import / content get·put / attributes get·patch / tags / delete / retry /
-inherit / export(docx·pdf·png) / task(poll). Long AI jobs (generate / import)
-run as in-process ``asyncio`` background tasks; the list page shows a placeholder
-card that polls ``/{id}/task``.
+inherit / export(docx·pdf·png) / task(poll). Long AI jobs use the durable job
+ledger when enabled; the list page shows a placeholder card that polls ``/{id}/task``.
 """
 
 from __future__ import annotations
@@ -12,12 +11,14 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+import uuid
 from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+from ..config import AI_DURABLE_JOBS_ENABLED
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher
 from ..services import lesson_plan_service as lp
@@ -30,6 +31,12 @@ from ..services.lesson_plan_generation_service import (
 from ..services.lesson_plan_import_service import run_import_job
 from ..services.lesson_plan_recovery_service import expire_stale_lesson_plan_tasks
 from ..services.lesson_plan_render_service import SUPPORTED_EXPORT_FORMATS, export_plan_artifact
+from ..services.ai_durable_job_service import cleanup_ai_job_input_files
+from ..services.durable_process_job_service import (
+    enqueue_process_generation,
+    enqueue_process_import,
+    stage_process_import_inputs,
+)
 from ..services.process_material_import_policy import (
     normalize_process_import_filename,
     validate_process_document_import_file_bytes,
@@ -237,16 +244,27 @@ async def generate_from_classroom(request: Request, user: dict = Depends(get_cur
             task_id=plan_id,
             import_preview={"source_files": [], "warnings": []},
         )
+        if AI_DURABLE_JOBS_ENABLED:
+            enqueue_process_generation(
+                conn,
+                target_type="lesson_plan",
+                target_id=plan_id,
+                task_token=plan_id,
+                class_offering_id=int(class_offering_id),
+                teacher_id=int(user["id"]),
+                session_plan=requested_sessions,
+            )
         conn.commit()
         plan = lp.get_lesson_plan(conn, plan_id)
-    asyncio.create_task(
-        run_generation_job(
-            plan_id,
-            int(class_offering_id),
-            int(user["id"]),
-            session_plan=requested_sessions,
+    if not AI_DURABLE_JOBS_ENABLED:
+        asyncio.create_task(
+            run_generation_job(
+                plan_id,
+                int(class_offering_id),
+                int(user["id"]),
+                session_plan=requested_sessions,
+            )
         )
-    )
     return {"id": plan_id, "card": lp.serialize_card(plan)}
 
 
@@ -267,45 +285,69 @@ async def import_plan(
     if not staged:
         raise HTTPException(400, "上传的文件均为空")
 
-    temp_dir = tempfile.mkdtemp(prefix="lanshare-lessonplan-import-")
+    input_refs: list[dict[str, Any]] = []
     saved: list[dict[str, str]] = []
-    for index, item in enumerate(staged):
-        name = str(item["name"])
-        dest = os.path.join(temp_dir, f"{index}_{name}")
-        with open(dest, "wb") as fh:
-            fh.write(item["data"])
-        saved.append({"path": dest, "name": name})
+    if AI_DURABLE_JOBS_ENABLED:
+        input_refs = stage_process_import_inputs(staged)
+        saved = [
+            {"path": str(item.get("relative_path") or ""), "name": str(item.get("name") or "")}
+            for item in input_refs
+        ]
+    else:
+        temp_dir = tempfile.mkdtemp(prefix="lanshare-lessonplan-import-")
+        for index, item in enumerate(staged):
+            name = str(item["name"])
+            dest = os.path.join(temp_dir, f"{index}_{name}")
+            with open(dest, "wb") as fh:
+                fh.write(item["data"])
+            saved.append({"path": dest, "name": name})
 
-    with get_db_connection() as conn:
-        first_name = os.path.splitext(saved[0]["name"])[0]
-        plan_id = lp.create_lesson_plan(
-            conn,
-            teacher=user,
-            title=f"{first_name}（导入解析中）",
-            cover={},
-            sessions=[],
-            source_type="import",
-            status="parsing",
-            ai_gen_status="pending",
-            ai_gen_progress={"done": 0, "total": 0, "current_label": "排队解析中"},
-        )
-        lp.set_generation_status(
-            conn,
-            plan_id,
-            task_id=plan_id,
-            import_preview={
-                "source_files": [item.get("name") for item in saved],
-                "warnings": [],
-            },
-        )
-        conn.commit()
-        plan = lp.get_lesson_plan(conn, plan_id)
-    asyncio.create_task(run_import_job(plan_id, saved, extra_prompt or "", int(user["id"])))
+    try:
+        with get_db_connection() as conn:
+            first_name = os.path.splitext(str(staged[0]["name"]))[0]
+            plan_id = lp.create_lesson_plan(
+                conn,
+                teacher=user,
+                title=f"{first_name}（导入解析中）",
+                cover={},
+                sessions=[],
+                source_type="import",
+                status="parsing",
+                ai_gen_status="pending",
+                ai_gen_progress={"done": 0, "total": 0, "current_label": "排队解析中"},
+            )
+            lp.set_generation_status(
+                conn,
+                plan_id,
+                task_id=plan_id,
+                import_preview={
+                    "source_files": [item.get("name") for item in saved],
+                    "warnings": [],
+                },
+            )
+            if AI_DURABLE_JOBS_ENABLED:
+                enqueue_process_import(
+                    conn,
+                    target_type="lesson_plan",
+                    target_id=plan_id,
+                    teacher_id=int(user["id"]),
+                    input_files=input_refs,
+                    extra_prompt=extra_prompt or "",
+                )
+            conn.commit()
+            plan = lp.get_lesson_plan(conn, plan_id)
+    except Exception:
+        if input_refs:
+            cleanup_ai_job_input_files(input_refs)
+        raise
+    if not AI_DURABLE_JOBS_ENABLED:
+        asyncio.create_task(run_import_job(plan_id, saved, extra_prompt or "", int(user["id"])))
     return {"id": plan_id, "card": lp.serialize_card(plan)}
 
 
 @router.post("/{plan_id}/retry", response_class=JSONResponse)
 async def retry_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
+    retry_token = uuid.uuid4().hex if AI_DURABLE_JOBS_ENABLED else plan_id
     with get_db_connection() as conn:
         plan = _load_owned_or_super(conn, plan_id, user)
         source_type = plan.get("source_type")
@@ -318,7 +360,17 @@ async def retry_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
                 ai_gen_status="pending",
                 ai_gen_error="",
                 progress={"done": 0, "total": 0, "current_label": "重新排队中"},
+                task_id=retry_token,
             )
+            if AI_DURABLE_JOBS_ENABLED:
+                enqueue_process_generation(
+                    conn,
+                    target_type="lesson_plan",
+                    target_id=plan_id,
+                    task_token=retry_token,
+                    class_offering_id=int(class_offering_id),
+                    teacher_id=int(user["id"]),
+                )
             conn.commit()
         elif source_type == "import":
             raise HTTPException(
@@ -326,7 +378,7 @@ async def retry_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
             )
         else:
             raise HTTPException(400, "该教案不支持重试。")
-    if source_type == "classroom" and class_offering_id:
+    if source_type == "classroom" and class_offering_id and not AI_DURABLE_JOBS_ENABLED:
         asyncio.create_task(run_generation_job(plan_id, int(class_offering_id), int(user["id"])))
     return {"ok": True}
 

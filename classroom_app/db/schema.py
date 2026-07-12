@@ -11,6 +11,7 @@ from .postgres_schema import (
     validate_postgres_schema,
 )
 from .schema_agent_ext import ensure_agent_task_extension_schema
+from .schema_ai_jobs import ensure_ai_job_schema
 from .schema_assignments import ensure_assignment_schema
 from .schema_classroom_activity import ensure_classroom_activity_schema
 from .schema_cultivation_progress import ensure_cultivation_progress_schema
@@ -209,6 +210,7 @@ def init_database():
         try:
             ensure_foundation_schema(conn)
             ensure_assignment_schema(conn)
+            ensure_ai_job_schema(conn, engine="sqlite")
             ensure_classroom_activity_schema(conn)
             ensure_study_group_scheme_schema(conn)
             ensure_poll_schema(conn)

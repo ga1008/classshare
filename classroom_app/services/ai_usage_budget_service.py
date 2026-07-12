@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from .ai_provider_usage_service import build_provider_usage_snapshot
 from .message_center_service import (
     MESSAGE_CATEGORY_AI_FEEDBACK,
     _build_notification_payload,
@@ -271,7 +272,20 @@ def _task_bucket() -> dict[str, Any]:
 
 
 def build_ai_usage_dashboard(conn, *, weeks: int = 8) -> dict[str, Any]:
-    rows = _load_recent_ai_usage_rows(conn, days=max(7, int(weeks or 8) * 7), limit=10000)
+    usage_days = max(7, int(weeks or 8) * 7)
+    rows = _load_recent_ai_usage_rows(conn, days=usage_days, limit=10000)
+    try:
+        provider_usage = build_provider_usage_snapshot(days=usage_days)
+    except (OSError, ValueError):
+        provider_usage = {
+            "available": False,
+            "path_exists": False,
+            "window_days": usage_days,
+            "events_read": 0,
+            "summary": {},
+            "model_items": [],
+            "task_items": [],
+        }
     today = _now().date()
     current_week = _week_start(today)
     by_task: dict[str, dict[str, Any]] = defaultdict(_task_bucket)
@@ -376,6 +390,7 @@ def build_ai_usage_dashboard(conn, *, weeks: int = 8) -> dict[str, Any]:
         "max_week_count": max(1, max_week_count),
         "offering_items": offering_items[:50],
         "anomalies": anomalies[:12],
+        "provider_usage": provider_usage,
         "default_weekly_budget": dict(DEFAULT_AI_WEEKLY_BUDGETS),
         "stage_exam_daily_limit": STAGE_EXAM_DAILY_LIMIT,
     }

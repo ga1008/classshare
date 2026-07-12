@@ -20,7 +20,12 @@ import httpx
 from fastapi import APIRouter, Request, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import JSONResponse
 
-from ..config import MAX_UPLOAD_SIZE_MB, MAX_UPLOAD_SIZE_BYTES
+from ..config import (
+    AI_DURABLE_JOBS_ENABLED,
+    AI_JOB_POLICY_VERSION,
+    MAX_UPLOAD_SIZE_MB,
+    MAX_UPLOAD_SIZE_BYTES,
+)
 from ..core import ai_client
 from ..database import get_db_connection
 from ..db.connection import execute_insert_returning_id
@@ -51,7 +56,13 @@ from ..services.ai_grading_service import (
     stop_submission_ai_grading,
 )
 from ..services.ai_gateway_service import ai_gateway_post
+from ..services.ai_durable_job_service import (
+    cancel_ai_jobs_for_source,
+    create_ai_job,
+    persist_ai_job_artifact,
+)
 from ..services.grading_feedback_service import normalize_grading_result, sanitize_student_feedback_text
+from ..services.grading_revision_service import activate_submission_grade_revision
 from ..services.late_submission_policy import append_late_policy_feedback, apply_late_policy_to_score
 from ..services.learning_progress_service import (
     build_student_global_cultivation_profile,
@@ -88,6 +99,7 @@ class ExamGenTaskStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
+    REVIEW_REQUIRED = "review_required"
     FAILED = "failed"
     CANCELLED = "cancelled"
 
@@ -106,7 +118,12 @@ def _exam_task_payload_from_paper(paper: dict[str, Any]) -> dict[str, Any]:
         "title": paper.get("title") or "",
         "created_at": paper.get("created_at"),
         "started_at": None,
-        "completed_at": paper.get("updated_at") if status in {ExamGenTaskStatus.COMPLETED, ExamGenTaskStatus.FAILED} else None,
+        "completed_at": paper.get("updated_at") if status in {
+            ExamGenTaskStatus.COMPLETED,
+            ExamGenTaskStatus.REVIEW_REQUIRED,
+            ExamGenTaskStatus.FAILED,
+            ExamGenTaskStatus.CANCELLED,
+        } else None,
         "error": paper.get("ai_gen_error"),
     }
     if status == ExamGenTaskStatus.COMPLETED:
@@ -315,6 +332,59 @@ async def ai_stop_grading_submission(submission_id: int, user: dict = Depends(ge
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
+def _notify_teacher_if_ai_review_required(conn, submission_id: int, data: dict[str, Any]) -> bool:
+    if not bool(data.get("review_required")):
+        return False
+    reason_codes = data.get("review_reason_codes")
+    if not isinstance(reason_codes, list):
+        reason_codes = []
+    create_teacher_grading_issue_notification(
+        conn,
+        submission_id,
+        issue_detail=(
+            "AI 已完成评分，但高质量仲裁后仍存在低置信度或证据不确定性，"
+            "建议教师复核后再作为最终评价。"
+            + (f" 风险标记：{', '.join(str(item) for item in reason_codes[:4])}" if reason_codes else "")
+        ),
+        ref_suffix="grading_review_required",
+    )
+    return True
+
+
+def _preserve_previous_grade_on_failed_regrade(
+    submission: dict[str, Any],
+    *,
+    incoming_status: str,
+    incoming_score: Any,
+    incoming_feedback: Any,
+) -> tuple[str, Any, Any, bool]:
+    """A failed regrade may report an issue, but must not erase a valid grade."""
+
+    if str(incoming_status or "").strip().lower() != "grading_failed":
+        return incoming_status, incoming_score, incoming_feedback, False
+    previous_score = submission.get("score")
+    if previous_score is None:
+        return incoming_status, incoming_score, incoming_feedback, False
+    return "graded", previous_score, submission.get("feedback_md"), True
+
+
+def _activate_submission_grade_revision(
+    conn,
+    *,
+    submission: dict[str, Any],
+    data: dict[str, Any],
+    score: Any,
+    feedback_md: Any,
+) -> int:
+    return activate_submission_grade_revision(
+        conn,
+        submission=submission,
+        data=data,
+        score=score,
+        feedback_md=feedback_md,
+    )
+
+
 @router.post("/internal/grading-complete", response_class=JSONResponse, include_in_schema=False)
 async def handle_ai_grading_callback(request: Request):
     """(内部接口) 接收来自 AI 助手的批改结果"""
@@ -329,6 +399,7 @@ async def handle_ai_grading_callback(request: Request):
             if not submission:
                 conn.commit()
                 return {"status": "ignored_missing_submission"}
+            submission_dict = dict(submission)
             if submission and int(submission["resubmission_allowed"] or 0):
                 conn.commit()
                 return {"status": "ignored_returned_submission"}
@@ -338,6 +409,11 @@ async def handle_ai_grading_callback(request: Request):
                 return {"status": "ignored_non_grading_submission", "current_status": current_status}
             stored_attempt_fingerprint = str(submission["grading_attempt_fingerprint"] or "").strip()
             expected_fingerprint = str(data.get("submission_fingerprint") or "").strip()
+            callback_job_id = data.get("ai_job_id")
+            stored_job_id = submission_dict.get("grading_job_id")
+            if callback_job_id and stored_job_id and int(callback_job_id) != int(stored_job_id):
+                conn.commit()
+                return {"status": "ignored_stale_grading_result"}
             if expected_fingerprint:
                 current_fingerprint = stored_attempt_fingerprint
                 if not current_fingerprint:
@@ -360,6 +436,27 @@ async def handle_ai_grading_callback(request: Request):
             status = str(data.get("status") or "").strip().lower()
             score = data.get("score")
             feedback_md = data.get("feedback_md")
+            incoming_failure_detail = feedback_md
+            status, score, feedback_md, preserved_previous_grade = _preserve_previous_grade_on_failed_regrade(
+                dict(submission),
+                incoming_status=status,
+                incoming_score=score,
+                incoming_feedback=feedback_md,
+            )
+            terminal_review_required = status == "grading_review_required"
+            if terminal_review_required:
+                if submission_dict.get("score") is not None:
+                    status = "graded"
+                    score = submission_dict.get("score")
+                    feedback_md = submission_dict.get("feedback_md")
+                    preserved_previous_grade = True
+                else:
+                    status = "grading_review"
+                    score = None
+                    feedback_md = sanitize_student_feedback_text(
+                        feedback_md
+                        or "AI 批改未能可靠完成，提交内容已保留并等待教师人工复核。"
+                    )
             assignment_for_progress = None
             late_adjustment = {
                 "applied": False,
@@ -402,7 +499,9 @@ async def handle_ai_grading_callback(request: Request):
                     late_penalty_points = ?,
                     late_score_cap_applied = ?,
                     grading_started_at = NULL,
-                    grading_attempt_fingerprint = NULL
+                    grading_attempt_fingerprint = NULL,
+                    grading_revision_hash = NULL,
+                    grading_job_id = NULL
                 WHERE id = ?
                   AND status = 'grading'
                   AND COALESCE(resubmission_allowed, 0) = 0
@@ -431,7 +530,19 @@ async def handle_ai_grading_callback(request: Request):
             if cursor.rowcount != 1:
                 conn.commit()
                 return {"status": "ignored_stale_grading_result"}
-            if status == 'graded':
+            if status == "graded" and not preserved_previous_grade:
+                _activate_submission_grade_revision(
+                    conn,
+                    submission=submission_dict,
+                    data=data,
+                    score=score,
+                    feedback_md=feedback_md,
+                )
+            if status == 'graded' and not preserved_previous_grade:
+                try:
+                    _notify_teacher_if_ai_review_required(conn, int(submission_id), data)
+                except Exception as exc:
+                    print(f"[MESSAGE_CENTER] AI grading review notify failed: {exc}")
                 try:
                     create_student_grading_notification(
                         conn,
@@ -465,13 +576,24 @@ async def handle_ai_grading_callback(request: Request):
                         )
                     except Exception as exc:
                         print(f"[LEARNING_PROGRESS] AI grading snapshot refresh failed: {exc}")
-            elif status == "grading_failed":
+            elif status in {"grading_failed", "grading_review"} or preserved_previous_grade:
                 try:
                     create_teacher_grading_issue_notification(
                         conn,
                         submission_id,
-                        issue_detail=feedback_md or "AI 批改未能完成，需要教师查看并手动处理。",
-                        ref_suffix="grading_failed",
+                        issue_detail=(
+                            incoming_failure_detail
+                            or "AI 重新批改未能完成，系统已保留此前有效成绩。"
+                            if preserved_previous_grade
+                            else feedback_md or "AI 批改未能完成，需要教师查看并手动处理。"
+                        ),
+                        ref_suffix=(
+                            "grading_regrade_failed_preserved"
+                            if preserved_previous_grade
+                            else "grading_review_required"
+                            if status == "grading_review"
+                            else "grading_failed"
+                        ),
                     )
                 except Exception as exc:
                     print(f"[MESSAGE_CENTER] AI grading failure notify failed: {exc}")
@@ -538,6 +660,7 @@ _DOCUMENT_EXTENSIONS = {".docx", ".pptx", ".xlsx", ".xls", ".doc", ".ppt", ".pdf
 _EXAM_SOURCE_EXTENSIONS = _TEXT_EXTENSIONS | _DOCUMENT_EXTENSIONS | _IMAGE_EXTENSIONS
 _EXAM_SOURCE_MAX_FILES = 10
 _EXAM_SOURCE_MAX_FILE_BYTES = 20 * 1024 * 1024
+_EXAM_SOURCE_MAX_TOTAL_BYTES = 32 * 1024 * 1024
 _EXAM_SOURCE_MAX_EXTRACT_BYTES = 2 * 1024 * 1024
 _EXAM_SOURCE_MAX_TOTAL_CHARS = 80000
 _EXAM_SOURCE_MAX_IMAGES = 10
@@ -762,6 +885,7 @@ async def _extract_exam_source_items(
 
     extracted_items: list[dict[str, Any]] = []
     total_chars = 0
+    total_bytes = 0
 
     for file in source_files:
         filename = Path(str(file.filename or "source")).name
@@ -769,6 +893,9 @@ async def _extract_exam_source_items(
         contents = await file.read()
         if not contents:
             continue
+        total_bytes += len(contents)
+        if total_bytes > _EXAM_SOURCE_MAX_TOTAL_BYTES:
+            raise HTTPException(status_code=413, detail="出题参考文件总大小不能超过 32MB")
         item = _extract_exam_source_blob(
             name=filename,
             ext=ext,
@@ -806,6 +933,10 @@ async def _extract_exam_source_items(
                 source_path = resolve_global_file_path(str(row["file_hash"] or "").strip())
                 if source_path is None:
                     raise HTTPException(status_code=404, detail=f"材料文件 {row['name']} 不存在或尚未完成存储")
+                source_size = source_path.stat().st_size
+                total_bytes += source_size
+                if total_bytes > _EXAM_SOURCE_MAX_TOTAL_BYTES:
+                    raise HTTPException(status_code=413, detail="出题参考文件总大小不能超过 32MB")
                 material_blobs.append((material_id, row, source_path.read_bytes()))
 
         for material_id, row, contents in material_blobs:
@@ -2001,7 +2132,7 @@ async def handle_ai_workspace_chat(
             model_capability = "thinking"
 
     if base64_urls:
-        ai_task_type = "deep_multimodal_reasoning" if deep_thinking else "light_multimodal_understanding"
+        ai_task_type = "deep_multimodal_reasoning" if deep_thinking else "vision_interactive"
     elif model_capability == "thinking":
         ai_task_type = "deep_text_reasoning"
     else:
@@ -2246,7 +2377,7 @@ async def handle_ai_chat(
     elif deep_thinking:
         model_capability = "thinking"
     if base64_urls:
-        ai_task_type = "deep_multimodal_reasoning" if deep_thinking else "light_multimodal_understanding"
+        ai_task_type = "deep_multimodal_reasoning" if deep_thinking else "vision_interactive"
     elif model_capability == "thinking":
         ai_task_type = "deep_text_reasoning"
     else:
@@ -2635,6 +2766,76 @@ def get_course_context_for_offering(class_offering_id: int, teacher_id: int) -> 
             "textbook_summary": classroom_context.get("textbook_summary") or "",
             "textbook": classroom_context.get("textbook") or None,
         }
+
+
+def _compose_exam_generation_prompt(
+    *,
+    title: str,
+    difficulty: str,
+    scope: str,
+    total_questions: int | None,
+    question_types: dict[str, int],
+    source_files: list[dict[str, Any]],
+    class_offering_id: int | None,
+    teacher_id: int,
+) -> str:
+    has_source_files = bool(source_files)
+    prompt_parts = [f"请生成一份试卷，标题：{title}", f"难度：{difficulty}"]
+    if scope:
+        prompt_parts.append(f"教师补充出题要求/范围：{scope}")
+    elif has_source_files:
+        prompt_parts.append("出题范围：请从上传文档中自动识别。")
+    prompt_parts.append(
+        f"总题数：{total_questions}"
+        if total_questions is not None
+        else "总题数：教师未指定，请根据上传文档内容、难度和题型要求合理决定。"
+    )
+    if question_types:
+        labels = {"radio": "单选题", "checkbox": "多选题", "text": "填空题", "textarea": "问答题"}
+        descriptions = [f"{labels.get(kind, kind)}: {count}题" for kind, count in question_types.items() if int(count) > 0]
+        if descriptions:
+            prompt_parts.append(f"题型分布：{', '.join(descriptions)}")
+    else:
+        prompt_parts.append("题型分布：教师未指定，请根据文档内容和难度自动分配单选、多选、填空、问答题。")
+    if has_source_files:
+        prompt_parts.append(_build_exam_source_context(source_files))
+    if class_offering_id:
+        try:
+            context = get_course_context_for_offering(int(class_offering_id), teacher_id)
+            prompt_parts.append("\n课程背景信息：")
+            prompt_parts.append(f"课程名称：{context['course_name']}")
+            if context.get("semester_name"):
+                prompt_parts.append(f"所属学期：{context['semester_name']}")
+            if context.get("classroom_summary"):
+                prompt_parts.append(f"课堂概览：{context['classroom_summary'][:400]}...")
+            if context.get("course_description"):
+                prompt_parts.append(f"课程描述：{context['course_description'][:200]}...")
+            if context.get("syllabus"):
+                prompt_parts.append(f"教学大纲要点：{context['syllabus'][:300]}...")
+            if context.get("textbook_summary"):
+                prompt_parts.append(f"教材信息：{context['textbook_summary'][:400]}...")
+            if context.get("recent_material_names"):
+                prompt_parts.append(f"最近使用材料：{', '.join(context['recent_material_names'][:6])}")
+        except Exception as exc:
+            print(f"[WARN] 获取课程上下文失败: {exc}")
+    prompt = "\n".join(prompt_parts)
+    prompt += "\n\n请生成完整的试卷题目，具体要求如下："
+    prompt += "\n1. 题目类型说明：radio=单选题，checkbox=多选题，text=填空题，textarea=问答题"
+    prompt += "\n2. 每道题必须包含：id（唯一标识，如q1,q2）、type（题型）、text（题目内容）"
+    prompt += "\n3. 选择题必须提供options数组（至少2个选项），并指定answer（单选题为单个选项字母如'A'，多选题为数组如['A','B']）"
+    prompt += "\n4. 填空题和问答题可以提供placeholder作为提示文本，answer为字符串答案"
+    prompt += "\n5. 每道题必须包含explanation（解析），说明为什么答案正确或其他选项为什么错误"
+    prompt += "\n6. 试卷可以分多个部分（pages），每个部分有name和questions数组"
+    prompt += "\n7. 根据难度要求调整题目难度：简单=基础知识点，中等=需要一定思考，困难=综合应用或分析"
+    prompt += "\n8. 确保题目覆盖出题范围的所有主要知识点"
+    prompt += "\n9. 返回格式必须为JSON，包含pages数组，每个page对象包含name和questions数组"
+    prompt += "\n10. 不要包含任何额外的解释或代码块标记，只返回JSON数据"
+    prompt += "\n11. 必须同时生成统一评分标准：根字段 grading.total_score、grading.description、grading.style；style 只能为 strict、medium、loose、rescue（严格、中等、宽松、捞一捞），默认 medium"
+    prompt += "\n12. 每道题必须包含 answer、points、grading_guidance、deduction_points；points 合计必须等于 grading.total_score；评分指导只写得分点和失分点，保持简明"
+    if has_source_files:
+        prompt += "\n13. 如果上传文档本身是题库，请优先解析并整理其中已有题目，必要时补全答案、解析和评分标准；如果文档是知识点、章节、大纲或复习范围，请据此原创生成题目。"
+        prompt += "\n14. 文档模式必须以上传文档为主要依据，不要脱离文档主题随意扩展。"
+    return prompt
 
 
 async def generate_exam_questions_async(
@@ -3100,6 +3301,24 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
         # 创建试卷ID和任务ID
         paper_id = str(uuid.uuid4())
         task_id = str(uuid.uuid4())
+        prompt = _compose_exam_generation_prompt(
+            title=title,
+            difficulty=difficulty,
+            scope=scope,
+            total_questions=total_questions,
+            question_types=question_types,
+            source_files=source_files,
+            class_offering_id=class_offering_id,
+            teacher_id=int(user["id"]),
+        )
+        artifact_ref = (
+            persist_ai_job_artifact(
+                f"exam-{task_id}",
+                {"image_inputs": source_image_inputs},
+            )
+            if AI_DURABLE_JOBS_ENABLED and source_image_inputs
+            else {}
+        )
 
         # 先在数据库中创建试卷记录，状态为generating
         now = datetime.now().isoformat()
@@ -3140,9 +3359,43 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
                  teacher_scope["school_name"],
                  teacher_scope["college"],
                  teacher_scope["department"],
-                 now, now)
+                  now, now)
             )
+            durable_job_row = None
+            if AI_DURABLE_JOBS_ENABLED:
+                durable_job_row, _ = create_ai_job(
+                    conn,
+                    task_type="exam_generation",
+                    dedupe_key=f"exam-generation:{task_id}",
+                    payload={
+                        "paper_id": paper_id,
+                        "task_id": task_id,
+                        "prompt": prompt,
+                        "teacher_id": int(user["id"]),
+                        "class_offering_id": class_offering_id,
+                        "source_type": "document" if has_source_files else "manual",
+                        "force_platform": "volcengine" if has_source_images else None,
+                        "artifact_ref": artifact_ref,
+                    },
+                    scope_type="class_offering" if class_offering_id else "teacher",
+                    scope_id=str(class_offering_id or user["id"]),
+                    owner_role="teacher",
+                    owner_user_pk=int(user["id"]),
+                    source_ref=f"exam_paper:{paper_id}",
+                    policy_version=AI_JOB_POLICY_VERSION,
+                )
             conn.commit()
+
+        if AI_DURABLE_JOBS_ENABLED:
+            return {
+                "status": "success",
+                "task_id": task_id,
+                "paper_id": paper_id,
+                "job_id": int(durable_job_row["id"]),
+                "durable": True,
+                "message": "试卷生成任务已进入可靠队列，服务重启后会自动恢复。",
+                "estimated_time": "根据队列负载动态处理",
+            }
 
         # 初始化任务状态
         async with _exam_gen_tasks_lock:
@@ -3167,76 +3420,6 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
                 'started_at': None,
                 'completed_at': None
             }
-
-        # 构建生成提示词
-        prompt_parts = [
-            f"请生成一份试卷，标题：{title}",
-            f"难度：{difficulty}",
-        ]
-        if scope:
-            prompt_parts.append(f"教师补充出题要求/范围：{scope}")
-        elif has_source_files:
-            prompt_parts.append("出题范围：请从上传文档中自动识别。")
-
-        if total_questions is not None:
-            prompt_parts.append(f"总题数：{total_questions}")
-        else:
-            prompt_parts.append("总题数：教师未指定，请根据上传文档内容、难度和题型要求合理决定。")
-
-        # 添加题型分布
-        if question_types:
-            type_desc = []
-            for qtype, count in question_types.items():
-                if int(count) > 0:
-                    type_labels = {'radio': '单选题', 'checkbox': '多选题', 'text': '填空题', 'textarea': '问答题'}
-                    type_desc.append(f"{type_labels.get(qtype, qtype)}: {count}题")
-            if type_desc:
-                prompt_parts.append(f"题型分布：{', '.join(type_desc)}")
-        else:
-            prompt_parts.append("题型分布：教师未指定，请根据文档内容和难度自动分配单选、多选、填空、问答题。")
-
-        if has_source_files:
-            prompt_parts.append(_build_exam_source_context(source_files))
-
-        # 添加课程上下文（如果有课堂）
-        if class_offering_id:
-            try:
-                context = get_course_context_for_offering(int(class_offering_id), user['id'])
-                prompt_parts.append(f"\n课程背景信息：")
-                prompt_parts.append(f"课程名称：{context['course_name']}")
-                if context.get('semester_name'):
-                    prompt_parts.append(f"所属学期：{context['semester_name']}")
-                if context.get('classroom_summary'):
-                    prompt_parts.append(f"课堂概览：{context['classroom_summary'][:400]}...")
-                if context['course_description']:
-                    prompt_parts.append(f"课程描述：{context['course_description'][:200]}...")
-                if context['syllabus']:
-                    prompt_parts.append(f"教学大纲要点：{context['syllabus'][:300]}...")
-                if context.get('textbook_summary'):
-                    prompt_parts.append(f"教材信息：{context['textbook_summary'][:400]}...")
-                if context.get('recent_material_names'):
-                    prompt_parts.append(f"最近使用材料：{', '.join(context['recent_material_names'][:6])}")
-            except Exception as e:
-                print(f"[WARN] 获取课程上下文失败: {e}")
-                pass  # 忽略上下文获取失败
-
-        prompt = "\n".join(prompt_parts)
-        prompt += "\n\n请生成完整的试卷题目，具体要求如下："
-        prompt += "\n1. 题目类型说明：radio=单选题，checkbox=多选题，text=填空题，textarea=问答题"
-        prompt += "\n2. 每道题必须包含：id（唯一标识，如q1,q2）、type（题型）、text（题目内容）"
-        prompt += "\n3. 选择题必须提供options数组（至少2个选项），并指定answer（单选题为单个选项字母如'A'，多选题为数组如['A','B']）"
-        prompt += "\n4. 填空题和问答题可以提供placeholder作为提示文本，answer为字符串答案"
-        prompt += "\n5. 每道题必须包含explanation（解析），说明为什么答案正确或其他选项为什么错误"
-        prompt += "\n6. 试卷可以分多个部分（pages），每个部分有name和questions数组"
-        prompt += "\n7. 根据难度要求调整题目难度：简单=基础知识点，中等=需要一定思考，困难=综合应用或分析"
-        prompt += "\n8. 确保题目覆盖出题范围的所有主要知识点"
-        prompt += "\n9. 返回格式必须为JSON，包含pages数组，每个page对象包含name和questions数组"
-        prompt += "\n10. 不要包含任何额外的解释或代码块标记，只返回JSON数据"
-        prompt += "\n11. 必须同时生成统一评分标准：根字段 grading.total_score、grading.description、grading.style；style 只能为 strict、medium、loose、rescue（严格、中等、宽松、捞一捞），默认 medium"
-        prompt += "\n12. 每道题必须包含 answer、points、grading_guidance、deduction_points；points 合计必须等于 grading.total_score；评分指导只写得分点和失分点，保持简明"
-        if has_source_files:
-            prompt += "\n13. 如果上传文档本身是题库，请优先解析并整理其中已有题目，必要时补全答案、解析和评分标准；如果文档是知识点、章节、大纲或复习范围，请据此原创生成题目。"
-            prompt += "\n14. 文档模式必须以上传文档为主要依据，不要脱离文档主题随意扩展。"
 
         # 在后台启动生成任务
         background_tasks.add_task(
@@ -3328,9 +3511,18 @@ async def cancel_exam_gen_task(task_id: str, user: dict = Depends(get_current_te
             return {"status": "success", "message": "任务已完成，无法取消"}
         if task_from_db["status"] == ExamGenTaskStatus.FAILED:
             return {"status": "success", "message": "任务已失败，无法取消"}
+        if task_from_db["status"] == ExamGenTaskStatus.REVIEW_REQUIRED:
+            return {"status": "success", "message": "任务已停止自动重试，请检查材料后重新生成"}
         paper_id = task_from_db.get("paper_id")
         if paper_id:
             with get_db_connection() as conn:
+                if AI_DURABLE_JOBS_ENABLED:
+                    cancel_ai_jobs_for_source(
+                        conn,
+                        task_type="exam_generation",
+                        source_ref=f"exam_paper:{paper_id}",
+                        owner_user_pk=int(user["id"]),
+                    )
                 _delete_generated_exam_paper_if_unreferenced(conn, paper_id, int(user["id"]))
                 conn.commit()
         return {"status": "success", "message": "任务已取消", "paper_id": paper_id}

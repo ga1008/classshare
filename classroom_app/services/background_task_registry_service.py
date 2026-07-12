@@ -28,9 +28,9 @@ BACKGROUND_TASK_DEFINITIONS: tuple[BackgroundTaskDefinition, ...] = (
     BackgroundTaskDefinition(
         task_type="ai_grading",
         display_name="AI 批改",
-        source="submissions.status / ai_assistant callback",
+        source="ai_jobs durable ledger + immutable grading results",
         recoverable=True,
-        recovery_action="startup reclaim stale grading tasks; teacher can requeue failed submissions",
+        recovery_action="lease expiry reclaims running jobs; result delivery retries independently; terminal uncertainty becomes review_required",
         owner="homework",
     ),
     BackgroundTaskDefinition(

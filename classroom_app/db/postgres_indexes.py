@@ -37,6 +37,7 @@ def _build_in_memory_sqlite_schema() -> sqlite3.Connection:
     from .schema_foundation import ensure_foundation_schema
     from .schema_learning_blog import ensure_learning_blog_signature_schema
     from .schema_materials_integrations import ensure_materials_integrations_schema
+    from .schema_ai_jobs import ensure_ai_job_schema
 
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
@@ -49,6 +50,7 @@ def _build_in_memory_sqlite_schema() -> sqlite3.Connection:
     ):
         builder(conn)
     ensure_cultivation_progress_schema(conn, engine="sqlite")
+    ensure_ai_job_schema(conn, engine="sqlite")
     return conn
 
 

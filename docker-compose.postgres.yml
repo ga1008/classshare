@@ -26,9 +26,9 @@ services:
       - -c
       - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-1GB}
       - -c
-      - work_mem=${POSTGRES_WORK_MEM:-8MB}
+      - work_mem=${POSTGRES_WORK_MEM:-4MB}
       - -c
-      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-64MB}
       - -c
       - random_page_cost=${POSTGRES_RANDOM_PAGE_COST:-1.1}
       - -c
@@ -36,7 +36,7 @@ services:
       - -c
       - wal_compression=${POSTGRES_WAL_COMPRESSION:-on}
       - -c
-      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-50}
       # Log any statement slower than this (ms) so slow queries surface under real
       # multi-user load. Set to -1 to disable. Pure observability, no behavior change.
       - -c
@@ -58,6 +58,11 @@ services:
       start_period: 30s
 
   app:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ai:
     depends_on:
       postgres:
         condition: service_healthy

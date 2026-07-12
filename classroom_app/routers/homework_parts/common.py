@@ -1006,7 +1006,7 @@ def _resolve_grading_status(assignment: dict[str, Any], auto_scheduled: bool) ->
 def _ensure_submission_files_manageable(submission: dict[str, Any]) -> None:
     if int(submission.get("is_absence_score") or 0):
         raise HTTPException(400, "缺交记 0 记录没有可管理的学生附件")
-    if str(submission.get("status") or "").lower() == "grading":
+    if str(submission.get("status") or "").lower() in {"grading", "grading_review"}:
         raise HTTPException(409, "该提交正在 AI 批改中，不能修改附件")
     if str(submission.get("status") or "").lower() == "graded" and not int(submission.get("resubmission_allowed") or 0):
         raise HTTPException(409, "该提交已批改成功，请先撤回后再修改附件")

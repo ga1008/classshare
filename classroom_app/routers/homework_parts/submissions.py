@@ -173,6 +173,7 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
             and not int(s.get("is_absence_score") or 0)
         ]),
         "grading_count": len([s for s in submitted_entries if s['status'] == 'grading']),
+        "grading_review_count": len([s for s in submitted_entries if s['status'] == 'grading_review']),
         "returned_count": len(returned_entries),
         "late_submission_count": len([s for s in submitted_entries if int(s.get("is_late_submission") or 0)]),
         "average_score": round(sum(scores) / len(scores), 1) if scores else 0,
@@ -795,7 +796,7 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
             raise HTTPException(400, "教师已撤回该提交，请直接重新提交，旧提交将保留到新版本提交成功")
         if submission['status'] == 'graded':
             raise HTTPException(400, "已批改的作业无法撤回")
-        if submission['status'] == 'grading':
+        if submission['status'] in {'grading', 'grading_review'}:
             raise HTTPException(400, "正在批改中的作业无法撤回")
 
         conn.execute("DELETE FROM submission_files WHERE submission_id = ?", (submission['id'],))
