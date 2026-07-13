@@ -2684,10 +2684,89 @@ def ensure_postgres_runtime_tables(conn: Any) -> dict[str, Any]:
     }
 
 
+def _ensure_postgres_classroom_todo_optional_scope(conn: Any, table_names: set[str]) -> bool:
+    if "classroom_todos" not in table_names:
+        return False
+
+    # Multiple app containers can start together during a deploy. Serialize
+    # this one-time constraint repair inside their existing transactions.
+    conn.execute(
+        "SELECT pg_advisory_xact_lock(hashtext(?))",
+        ("lanshare:classroom_todos:optional-scope",),
+    )
+    nullable_rows = _fetch_mappings(
+        conn,
+        """
+        SELECT is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = ?
+          AND table_name = ?
+          AND column_name = ?
+        """,
+        ("public", "classroom_todos", "class_offering_id"),
+        columns=("is_nullable",),
+    )
+    foreign_keys = _fetch_mappings(
+        conn,
+        """
+        SELECT tc.constraint_name, rc.delete_rule
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON kcu.constraint_schema = tc.constraint_schema
+         AND kcu.constraint_name = tc.constraint_name
+        JOIN information_schema.referential_constraints rc
+          ON rc.constraint_schema = tc.constraint_schema
+         AND rc.constraint_name = tc.constraint_name
+        WHERE tc.table_schema = ?
+          AND tc.table_name = ?
+          AND tc.constraint_type = 'FOREIGN KEY'
+          AND kcu.column_name = ?
+        """,
+        ("public", "classroom_todos", "class_offering_id"),
+        columns=("constraint_name", "delete_rule"),
+    )
+
+    changed = False
+    if nullable_rows and str(nullable_rows[0].get("is_nullable") or "").upper() != "YES":
+        conn.execute(
+            'ALTER TABLE "classroom_todos" '
+            'ALTER COLUMN "class_offering_id" DROP NOT NULL'
+        )
+        changed = True
+
+    correct_foreign_keys = [
+        row for row in foreign_keys if str(row.get("delete_rule") or "").upper() == "SET NULL"
+    ]
+    for row in foreign_keys:
+        if str(row.get("delete_rule") or "").upper() == "SET NULL":
+            continue
+        constraint_name = str(row.get("constraint_name") or "").strip()
+        if constraint_name:
+            conn.execute(
+                f'ALTER TABLE "classroom_todos" DROP CONSTRAINT IF EXISTS '
+                f'{quote_identifier(constraint_name)}'
+            )
+            changed = True
+
+    if not correct_foreign_keys:
+        conn.execute(
+            'ALTER TABLE "classroom_todos" '
+            'ADD CONSTRAINT "fk_classroom_todos_optional_offering" '
+            'FOREIGN KEY ("class_offering_id") REFERENCES "class_offerings" ("id") '
+            'ON DELETE SET NULL'
+        )
+        changed = True
+    return changed
+
+
 def ensure_postgres_runtime_constraints(conn: Any) -> dict[str, Any]:
     created_indexes: list[str] = []
     skipped_indexes: list[str] = []
     table_names = _public_tables(conn)
+    classroom_todo_scope_repaired = _ensure_postgres_classroom_todo_optional_scope(
+        conn,
+        table_names,
+    )
     for index_name, table, columns in POSTGRES_RUNTIME_UNIQUE_INDEXES:
         if table not in table_names:
             skipped_indexes.append(index_name)
@@ -2709,7 +2788,8 @@ def ensure_postgres_runtime_constraints(conn: Any) -> dict[str, Any]:
     return {
         "created_indexes": created_indexes,
         "skipped_indexes": skipped_indexes,
-        "schema_writes_executed": bool(created_indexes),
+        "classroom_todo_scope_repaired": classroom_todo_scope_repaired,
+        "schema_writes_executed": bool(created_indexes or classroom_todo_scope_repaired),
     }
 
 

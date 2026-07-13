@@ -365,7 +365,7 @@ function initAgendaWidget() {
 
   completeBtn?.addEventListener('click', async () => {
     const { classOfferingId, todoId } = activeTodoIds();
-    if (!classOfferingId || !todoId) return;
+    if (!todoId || (!isTeacherTodoActor() && !classOfferingId)) return;
     completeBtn.disabled = true;
     setManageStatus('正在更新…', 'info');
     const { ok, payload } = await todoLifecycleRequest('PATCH', classOfferingId, todoId, { completed: true });
@@ -381,7 +381,7 @@ function initAgendaWidget() {
 
   deleteBtn?.addEventListener('click', async () => {
     const { classOfferingId, todoId } = activeTodoIds();
-    if (!classOfferingId || !todoId) return;
+    if (!todoId || (!isTeacherTodoActor() && !classOfferingId)) return;
     if (!window.confirm('确定删除这条待办吗？删除后不可恢复。')) return;
     deleteBtn.disabled = true;
     setManageStatus('正在删除…', 'info');
@@ -489,13 +489,15 @@ function initAgendaReminderSync() {
 
 // ---------------------------------------------------------------------------
 // Manual to-do lifecycle from the agenda widget: a + button opens a medium
-// modal to CREATE a course-scoped to-do, and clicking an existing manual to-do
+// modal to CREATE a private-by-default to-do, and clicking an existing manual to-do
 // opens a popover with 完成 / 编辑 / 删除. Everything reuses the existing
-// /api/classrooms/{id}/todos REST API; the new/changed item flows into the
+// classroom REST API for students and account-level /api/todos API for teachers;
+// the new/changed item flows into the
 // agenda feed, cockpit next-steps, classroom overview and semester calendar —
 // so on success we reload to reflect it everywhere.
 // ---------------------------------------------------------------------------
 const TODO_ENDPOINT_BASE = '/api/classrooms';
+const ACCOUNT_TODO_ENDPOINT_BASE = '/api/todos';
 
 function readTodoOptions() {
   const holder = document.querySelector('[data-agenda-todo-options]');
@@ -536,12 +538,47 @@ async function todoLifecycleRequest(method, classOfferingId, todoId, body) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
   }
-  const response = await fetch(`${TODO_ENDPOINT_BASE}/${classOfferingId}/todos/${todoId}`, opts);
+  const teacherAccountTodo = isTeacherTodoActor();
+  const endpoint = teacherAccountTodo
+    ? `${ACCOUNT_TODO_ENDPOINT_BASE}/${todoId}`
+    : `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos/${todoId}`;
+  const response = await fetch(endpoint, opts);
   const payload = await response.json().catch(() => ({}));
   return { ok: response.ok && payload.status === 'success', payload };
 }
 
-function buildTodoModalDom() {
+function isTeacherTodoActor() {
+  return readTodoOptions().actorRole === 'teacher';
+}
+
+function buildTodoModalDom({ actorRole = 'student' } = {}) {
+  const isTeacher = actorRole === 'teacher';
+  const classroomField = isTeacher
+    ? `
+        <details class="agenda-todo-scope" data-todo-scope>
+          <summary>
+            <span class="agenda-todo-scope__icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </span>
+            <span class="agenda-todo-scope__copy">
+              <strong data-todo-scope-title>私人待办</strong>
+              <small data-todo-scope-copy>不关联课堂 · 仅自己可见</small>
+            </span>
+            <span class="agenda-todo-scope__action">设置归属</span>
+          </summary>
+          <div class="agenda-todo-scope__panel">
+            <label class="agenda-todo-field">
+              <span>关联课堂（可选）</span>
+              <select name="class_offering_id" data-todo-course aria-label="关联课堂（可选）"></select>
+            </label>
+            <p>关联只用于分类和快速回到课堂，不会把这条待办展示给学生。</p>
+          </div>
+        </details>`
+    : `
+        <label class="agenda-todo-field agenda-todo-field--classroom">
+          <span>所属课堂</span>
+          <select name="class_offering_id" data-todo-course required></select>
+        </label>`;
   const modal = document.createElement('div');
   modal.className = 'agenda-todo-modal';
   modal.hidden = true;
@@ -552,19 +589,17 @@ function buildTodoModalDom() {
         <div>
           <span class="agenda-todo-modal__eyebrow" data-todo-eyebrow>我的待办</span>
           <h3 id="agendaTodoTitle" data-todo-heading>新增待办</h3>
+          <p class="agenda-todo-modal__intro" data-todo-intro ${isTeacher ? '' : 'hidden'}>默认不关联课堂，只保存在你的个人待办中。</p>
         </div>
         <button type="button" class="agenda-todo-modal__close" data-todo-close aria-label="关闭">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
       <form id="agendaTodoForm" class="agenda-todo-modal__form" data-todo-form novalidate>
-        <label class="agenda-todo-field">
-          <span>所属课堂</span>
-          <select name="class_offering_id" data-todo-course required></select>
-        </label>
-        <label class="agenda-todo-field">
+        ${isTeacher ? '' : classroomField}
+        <label class="agenda-todo-field agenda-todo-field--title">
           <span>待办名称</span>
-          <input type="text" name="title" maxlength="120" required placeholder="例如：完成第二章实验报告" autocomplete="off">
+          <input type="text" name="title" maxlength="120" required placeholder="${isTeacher ? '例如：准备下周的教研分享' : '例如：完成第二章实验报告'}" autocomplete="off">
         </label>
         <div class="agenda-todo-field">
           <span>优先级</span>
@@ -618,6 +653,7 @@ function buildTodoModalDom() {
             <textarea name="notes" maxlength="1200" rows="3" placeholder="任务要求、材料位置，或提醒自己的话"></textarea>
           </label>
         </details>
+        ${isTeacher ? classroomField : ''}
         <p class="agenda-todo-status" data-todo-status role="status"></p>
       </form>
       <div class="agenda-todo-actions">
@@ -635,13 +671,15 @@ let sharedTodoModal = null;
 function getTodoModalController() {
   if (sharedTodoModal) return sharedTodoModal;
   const { options, defaultOfferingId, actorRole, emailReminder } = readTodoOptions();
-  if (!options.length) return null;
+  if (!options.length && actorRole !== 'teacher') return null;
   sharedTodoModal = createTodoModalController(options, defaultOfferingId, { actorRole, emailReminder });
   return sharedTodoModal;
 }
 
 function createTodoModalController(options, defaultOfferingId, settings = {}) {
-  const modal = buildTodoModalDom();
+  const actorRole = String(settings.actorRole || 'student');
+  const isTeacher = actorRole === 'teacher';
+  const modal = buildTodoModalDom({ actorRole });
   const card = modal.querySelector('.agenda-todo-modal__card');
   const form = modal.querySelector('[data-todo-form]');
   const courseSelect = modal.querySelector('[data-todo-course]');
@@ -650,6 +688,10 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   const submitBtn = modal.querySelector('[data-todo-submit]');
   const headingEl = modal.querySelector('[data-todo-heading]');
   const eyebrowEl = modal.querySelector('[data-todo-eyebrow]');
+  const introEl = modal.querySelector('[data-todo-intro]');
+  const scopeDetails = modal.querySelector('[data-todo-scope]');
+  const scopeTitle = modal.querySelector('[data-todo-scope-title]');
+  const scopeCopy = modal.querySelector('[data-todo-scope-copy]');
   const priorityGroup = modal.querySelector('[data-todo-priority]');
   const reminderWrap = modal.querySelector('[data-todo-reminder]');
   const reminderToggle = form.elements.reminder_enabled;
@@ -664,7 +706,6 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   let editingId = 0;
   let lastFocus = null;
   let reminderTouched = false;
-  const actorRole = String(settings.actorRole || 'student');
   const emailReminder = settings.emailReminder || {};
   const emailAvailable = actorRole === 'teacher' && Boolean(emailReminder.available);
 
@@ -681,14 +722,31 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
     }
   }
 
-  courseSelect.innerHTML = options
-    .map((opt) => `<option value="${Number(opt.class_offering_id)}">${escapeHtml(opt.label || `${opt.course_name || ''} · ${opt.class_name || ''}`)}</option>`)
-    .join('');
+  courseSelect.innerHTML = [
+    isTeacher ? '<option value="">不关联课堂（私人待办）</option>' : '',
+    ...options.map((opt) => `<option value="${Number(opt.class_offering_id)}">${escapeHtml(opt.label || `${opt.course_name || ''} · ${opt.class_name || ''}`)}</option>`),
+  ].join('');
+
+  const syncScopeSummary = () => {
+    if (!scopeTitle || !scopeCopy) return;
+    const selectedId = Number(courseSelect.value || 0);
+    const selected = options.find((opt) => Number(opt.class_offering_id) === selectedId);
+    if (selectedId && selected) {
+      scopeTitle.textContent = selected.label || `${selected.course_name || ''} · ${selected.class_name || ''}`;
+      scopeCopy.textContent = '已关联课堂 · 仍仅你可见';
+    } else {
+      scopeTitle.textContent = '私人待办';
+      scopeCopy.textContent = '不关联课堂 · 仅自己可见';
+    }
+  };
 
   const applyDefaultCourse = () => {
-    if (defaultOfferingId && options.some((opt) => Number(opt.class_offering_id) === defaultOfferingId)) {
+    if (isTeacher) {
+      courseSelect.value = '';
+    } else if (defaultOfferingId && options.some((opt) => Number(opt.class_offering_id) === defaultOfferingId)) {
       courseSelect.value = String(defaultOfferingId);
     }
+    syncScopeSummary();
   };
 
   const setStatus = (message, tone) => {
@@ -773,9 +831,11 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
     setPriority('normal');
     setStatus('', '');
     eyebrowEl.textContent = actorRole === 'teacher' ? '教师待办' : '我的待办';
-    headingEl.textContent = '新增待办';
+    headingEl.textContent = isTeacher ? '记一件待办' : '新增待办';
+    if (introEl) introEl.textContent = '默认不关联课堂，只保存在你的个人待办中。';
     submitBtn.textContent = '保存待办';
     courseSelect.disabled = false;
+    if (scopeDetails) scopeDetails.open = false;
     applyDefaultCourse();
     reminderTouched = false;
     emailReminderToggle.checked = false;
@@ -792,10 +852,12 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
     setStatus('', '');
     eyebrowEl.textContent = '编辑待办';
     headingEl.textContent = '编辑待办';
+    if (introEl) introEl.textContent = '课堂归属只用于整理，这条待办仍然仅你可见。';
     submitBtn.textContent = '保存修改';
-    // The course can't be moved for an existing to-do — show it, locked.
-    courseSelect.value = String(Number(data.classOfferingId || 0));
-    courseSelect.disabled = true;
+    courseSelect.value = String(Number(data.classOfferingId || 0) || '');
+    courseSelect.disabled = !isTeacher;
+    if (scopeDetails) scopeDetails.open = false;
+    syncScopeSummary();
     titleInput.value = data.title || '';
     if (form.elements.notes) form.elements.notes.value = data.notes || '';
     setPriority(data.priority || 'normal');
@@ -825,7 +887,7 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
     event.preventDefault();
     const classOfferingId = Number(courseSelect.value || 0);
     const title = (titleInput.value || '').trim();
-    if (!classOfferingId) { setStatus('请选择所属课堂。', 'error'); return; }
+    if (!isTeacher && !classOfferingId) { setStatus('请选择所属课堂。', 'error'); return; }
     if (!title) { setStatus('请填写待办名称。', 'error'); titleInput.focus(); return; }
 
     const body = {
@@ -838,6 +900,7 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
       email_reminder_enabled: Boolean(hasDeadline() && emailAvailable && emailReminderToggle.checked),
       reminder_lead_minutes: reminderLeadMinutes(),
     };
+    if (isTeacher) body.class_offering_id = classOfferingId || null;
     if (body.start_at && body.due_at && body.due_at < body.start_at) {
       setStatus('截止时间不能早于开始时间。', 'error');
       return;
@@ -847,9 +910,11 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
     setStatus('正在保存…', 'info');
     try {
       const isEdit = mode === 'edit' && editingId;
-      const url = isEdit
-        ? `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos/${editingId}`
-        : `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos`;
+      const url = isTeacher
+        ? (isEdit ? `${ACCOUNT_TODO_ENDPOINT_BASE}/${editingId}` : ACCOUNT_TODO_ENDPOINT_BASE)
+        : (isEdit
+          ? `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos/${editingId}`
+          : `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos`);
       const response = await fetch(url, {
         method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -875,6 +940,16 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   priorityGroup.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-priority-value]');
     if (btn) setPriority(btn.dataset.priorityValue);
+  });
+  courseSelect.addEventListener('change', syncScopeSummary);
+  scopeDetails?.addEventListener('toggle', () => {
+    if (!scopeDetails.open) return;
+    window.requestAnimationFrame(() => {
+      form.scrollTo({
+        top: form.scrollHeight,
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      });
+    });
   });
   form.elements.due_date?.addEventListener('change', () => {
     // First time a deadline is set (and the user hasn't touched the toggle),

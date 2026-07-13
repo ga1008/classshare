@@ -65,6 +65,7 @@ class CultivationWeightPayload(BaseModel):
 
 
 class ManualTodoPayload(BaseModel):
+    class_offering_id: Optional[int] = None
     title: Optional[str] = None
     notes: Optional[str] = None
     start_at: Optional[str] = None
@@ -91,6 +92,24 @@ def _payload_to_dict(payload: BaseModel) -> dict:
 
 def _ensure_classroom_access(conn, class_offering_id: int, user: dict) -> dict:
     return dict(ensure_scoped_classroom_access(conn, class_offering_id, user))
+
+
+def _teacher_todo_scope(payload: dict) -> int | None:
+    raw_value = payload.get("class_offering_id")
+    if raw_value in (None, "", 0, "0"):
+        return None
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "课堂归属无效") from exc
+    if value <= 0:
+        raise HTTPException(400, "课堂归属无效")
+    return value
+
+
+def _ensure_teacher_account_todo(user: dict) -> None:
+    if str(user.get("role") or "").strip().lower() != "teacher":
+        raise HTTPException(403, "仅教师可使用账户级私人待办")
 
 
 def _ensure_material_in_classroom(conn, class_offering_id: int, material_id: int, user: dict) -> None:
@@ -311,6 +330,84 @@ async def update_learning_alert(
         }
 
 
+@router.post("/todos", response_class=JSONResponse)
+async def create_account_todo(
+    payload: ManualTodoPayload,
+    user: dict = Depends(get_current_user),
+):
+    _ensure_teacher_account_todo(user)
+    payload_data = _payload_to_dict(payload)
+    class_offering_id = _teacher_todo_scope(payload_data)
+    with get_db_connection() as conn:
+        if class_offering_id:
+            _ensure_classroom_access(conn, class_offering_id, user)
+        try:
+            result = create_manual_todo(
+                conn,
+                class_offering_id=class_offering_id,
+                user=user,
+                payload=payload_data,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except TodoValidationError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        conn.commit()
+        return {"status": "success", **result}
+
+
+@router.patch("/todos/{todo_id}", response_class=JSONResponse)
+async def update_account_todo(
+    todo_id: int,
+    payload: ManualTodoPayload,
+    user: dict = Depends(get_current_user),
+):
+    _ensure_teacher_account_todo(user)
+    payload_data = _payload_to_dict(payload)
+    class_offering_id = None
+    if "class_offering_id" in payload_data:
+        class_offering_id = _teacher_todo_scope(payload_data)
+    with get_db_connection() as conn:
+        if class_offering_id:
+            _ensure_classroom_access(conn, class_offering_id, user)
+        try:
+            result = update_manual_todo(
+                conn,
+                class_offering_id=None,
+                todo_id=todo_id,
+                user=user,
+                payload=payload_data,
+                enforce_classroom_scope=False,
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except TodoValidationError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        conn.commit()
+        return {"status": "success", **result}
+
+
+@router.delete("/todos/{todo_id}", response_class=JSONResponse)
+async def delete_account_todo(
+    todo_id: int,
+    user: dict = Depends(get_current_user),
+):
+    _ensure_teacher_account_todo(user)
+    with get_db_connection() as conn:
+        try:
+            result = delete_manual_todo(
+                conn,
+                class_offering_id=None,
+                todo_id=todo_id,
+                user=user,
+                enforce_classroom_scope=False,
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        conn.commit()
+        return {"status": "success", **result}
+
+
 @router.get("/classrooms/{class_offering_id}/todos", response_class=JSONResponse)
 async def get_classroom_todos(class_offering_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
@@ -331,12 +428,14 @@ async def create_classroom_todo(
 ):
     with get_db_connection() as conn:
         _ensure_classroom_access(conn, class_offering_id, user)
+        payload_data = _payload_to_dict(payload)
+        payload_data.pop("class_offering_id", None)
         try:
             result = create_manual_todo(
                 conn,
                 class_offering_id=class_offering_id,
                 user=user,
-                payload=_payload_to_dict(payload),
+                payload=payload_data,
             )
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
@@ -360,13 +459,15 @@ async def update_classroom_todo(
 ):
     with get_db_connection() as conn:
         _ensure_classroom_access(conn, class_offering_id, user)
+        payload_data = _payload_to_dict(payload)
+        payload_data.pop("class_offering_id", None)
         try:
             result = update_manual_todo(
                 conn,
                 class_offering_id=class_offering_id,
                 todo_id=todo_id,
                 user=user,
-                payload=_payload_to_dict(payload),
+                payload=payload_data,
             )
         except LookupError as exc:
             raise HTTPException(404, str(exc)) from exc

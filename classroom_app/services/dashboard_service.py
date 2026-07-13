@@ -470,8 +470,18 @@ def _dashboard_todo_option(offering: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _enrich_dashboard_todo(item: dict[str, Any], offering: dict[str, Any]) -> dict[str, Any]:
+def _enrich_dashboard_todo(
+    item: dict[str, Any],
+    offering: dict[str, Any] | None,
+) -> dict[str, Any]:
     enriched = dict(item)
+    if not offering:
+        enriched["class_offering_id"] = 0
+        enriched["course_name"] = ""
+        enriched["class_name"] = ""
+        enriched["offering_label"] = ""
+        enriched["link_url"] = ""
+        return enriched
     option = _dashboard_todo_option(offering)
     class_offering_id = option["class_offering_id"]
     enriched["class_offering_id"] = class_offering_id
@@ -1104,7 +1114,7 @@ def _build_agenda_events_from_todos(
                 return event
             event["is_manual"] = True
             event["todo_id"] = item.get("source_id")
-            event["class_offering_id"] = item.get("class_offering_id")
+            event["class_offering_id"] = _dashboard_int(item.get("class_offering_id"))
             event["priority"] = str(item.get("priority") or "normal")
             event["is_high_priority"] = bool(item.get("is_high_priority"))
             event["priority_label"] = str(item.get("priority_label") or "")
@@ -1112,6 +1122,7 @@ def _build_agenda_events_from_todos(
             event["due_at_raw"] = str(item.get("due_at") or "")
             event["start_at_raw"] = str(item.get("start_at") or "")
             event["reminder_enabled"] = bool(item.get("reminder_enabled"))
+            event["email_reminder_enabled"] = bool(item.get("email_reminder_enabled"))
             event["reminder_lead_minutes"] = int(item.get("reminder_lead_minutes") or 1440)
             return event
 
@@ -1588,9 +1599,10 @@ def _build_teacher_dashboard_context(
         (_dashboard_todo_option(offering) for offering in enriched_offerings),
         key=lambda item: str(item.get("label") or ""),
     )
-    default_todo_offering_id = _dashboard_int(
-        todo_create_options[0]["class_offering_id"] if todo_create_options else 0
-    )
+    # Teacher-created todos are private by default. Classroom association is
+    # optional metadata and must never be preselected merely because a class
+    # happens to sort first.
+    default_todo_offering_id = 0
     offering_by_id = {
         _dashboard_int(offering.get("id")): offering
         for offering in enriched_offerings
@@ -1599,13 +1611,17 @@ def _build_teacher_dashboard_context(
     teacher_manual_todos = []
     try:
         teacher_manual_todos = [
-            _enrich_dashboard_todo(item, offering_by_id[_dashboard_int(item.get("class_offering_id"))])
+            _enrich_dashboard_todo(
+                item,
+                offering_by_id.get(_dashboard_int(item.get("class_offering_id"))),
+            )
             for item in list_manual_todo_items(
                 conn,
                 class_offering_ids=list(offering_by_id),
                 user=user,
+                include_unscoped=True,
+                account_wide=True,
             )
-            if _dashboard_int(item.get("class_offering_id")) in offering_by_id
         ]
     except Exception:
         teacher_manual_todos = []
@@ -1688,7 +1704,7 @@ def _build_teacher_dashboard_context(
         },
         "class_offerings": enriched_offerings,
         "dashboard_semester_calendar": semester_calendar,
-        "dashboard_can_create_todo": bool(todo_create_options),
+        "dashboard_can_create_todo": True,
         "dashboard_todo_create_options": todo_create_options,
         "dashboard_default_todo_offering_id": default_todo_offering_id,
         "dashboard_todo_actor_role": "teacher",

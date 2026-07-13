@@ -1,6 +1,90 @@
 import sqlite3
 
 
+def _create_classroom_todos_table(conn: sqlite3.Connection, table_name: str = "classroom_todos") -> None:
+    conn.execute(
+        f'''
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_offering_id INTEGER,
+            owner_role TEXT NOT NULL,
+            owner_user_pk INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            notes TEXT DEFAULT '',
+            start_at TEXT,
+            due_at TEXT,
+            completed_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT,
+            metadata_json TEXT DEFAULT '{{}}',
+            FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE SET NULL
+        )
+        '''
+    )
+
+
+def _ensure_optional_classroom_todo_scope(conn: sqlite3.Connection) -> None:
+    """Allow account-owned todos to exist without a classroom.
+
+    Older SQLite databases created ``class_offering_id`` as NOT NULL with
+    ``ON DELETE CASCADE``. Rebuild the small table once so personal todos are
+    first-class records and deleting a classroom only detaches linked todos.
+    """
+    _create_classroom_todos_table(conn)
+    columns = conn.execute("PRAGMA table_info(classroom_todos)").fetchall()
+    class_column = next(
+        (
+            row
+            for row in columns
+            if str(row["name"] if hasattr(row, "keys") else row[1]) == "class_offering_id"
+        ),
+        None,
+    )
+    is_not_null = bool(
+        class_column is not None
+        and int(class_column["notnull"] if hasattr(class_column, "keys") else class_column[3])
+    )
+    foreign_keys = conn.execute("PRAGMA foreign_key_list(classroom_todos)").fetchall()
+    has_set_null_fk = any(
+        str(row["from"] if hasattr(row, "keys") else row[3]) == "class_offering_id"
+        and str(row["on_delete"] if hasattr(row, "keys") else row[6]).upper() == "SET NULL"
+        for row in foreign_keys
+    )
+    if is_not_null or not has_set_null_fk:
+        migration_table = "classroom_todos_optional_scope_migration"
+        conn.execute(f"DROP TABLE IF EXISTS {migration_table}")
+        _create_classroom_todos_table(conn, migration_table)
+        conn.execute(
+            f"""
+            INSERT INTO {migration_table} (
+                id, class_offering_id, owner_role, owner_user_pk, title, notes,
+                start_at, due_at, completed_at, created_at, updated_at, deleted_at,
+                metadata_json
+            )
+            SELECT id, class_offering_id, owner_role, owner_user_pk, title, notes,
+                   start_at, due_at, completed_at, created_at, updated_at, deleted_at,
+                   metadata_json
+            FROM classroom_todos
+            """
+        )
+        conn.execute("DROP TABLE classroom_todos")
+        conn.execute(f"ALTER TABLE {migration_table} RENAME TO classroom_todos")
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_classroom_todos_owner "
+        "ON classroom_todos (class_offering_id, owner_role, owner_user_pk, deleted_at, due_at, start_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_classroom_todos_account "
+        "ON classroom_todos (owner_role, owner_user_pk, deleted_at, class_offering_id, due_at, start_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_classroom_todos_due "
+        "ON classroom_todos (due_at, completed_at, deleted_at)"
+    )
+
+
 def ensure_assignment_schema(conn: sqlite3.Connection) -> None:
     conn.execute('''
                 CREATE TABLE IF NOT EXISTS course_files (
@@ -162,32 +246,7 @@ def ensure_assignment_schema(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # 列已存在
 
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS classroom_todos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            class_offering_id INTEGER NOT NULL,
-            owner_role TEXT NOT NULL,
-            owner_user_pk INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            notes TEXT DEFAULT '',
-            start_at TEXT,
-            due_at TEXT,
-            completed_at TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            deleted_at TEXT,
-            metadata_json TEXT DEFAULT '{}',
-            FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE
-        )
-    ''')
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_classroom_todos_owner "
-        "ON classroom_todos (class_offering_id, owner_role, owner_user_pk, deleted_at, due_at, start_at)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_classroom_todos_due "
-        "ON classroom_todos (due_at, completed_at, deleted_at)"
-    )
+    _ensure_optional_classroom_todo_scope(conn)
 
     # 分块上传跟踪表
     conn.execute('''

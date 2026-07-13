@@ -191,7 +191,12 @@ def handle_todo_due_reminder(task: dict[str, Any]) -> str:
     """Deliver the selected in-app/email channels for a manual to-do."""
     payload = task.get("payload") or {}
     todo_id = int(payload.get("todo_id") or 0)
-    class_offering_id = int(payload.get("class_offering_id") or 0)
+    raw_class_offering_id = payload.get("class_offering_id")
+    class_offering_id = (
+        int(raw_class_offering_id)
+        if raw_class_offering_id not in (None, "", 0, "0")
+        else None
+    )
     role = _text(payload.get("owner_role")).lower()
     user_pk = int(payload.get("owner_user_pk") or 0)
     if not (todo_id and user_pk and role):
@@ -204,10 +209,13 @@ def handle_todo_due_reminder(task: dict[str, Any]) -> str:
             """
             SELECT title, notes, due_at, completed_at, deleted_at, metadata_json
             FROM classroom_todos
-            WHERE id = ? AND class_offering_id = ? AND owner_role = ? AND owner_user_pk = ?
+            WHERE id = ?
+              AND (class_offering_id = ? OR (class_offering_id IS NULL AND ? IS NULL))
+              AND owner_role = ?
+              AND owner_user_pk = ?
             LIMIT 1
             """,
-            (todo_id, class_offering_id, role, user_pk),
+            (todo_id, class_offering_id, class_offering_id, role, user_pk),
         ).fetchone()
         if row is None:
             return "skipped: todo missing"

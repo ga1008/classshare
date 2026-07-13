@@ -211,6 +211,21 @@ class AccountTodoPostgresWriteTests(unittest.TestCase):
         params = insert_helper.call_args.args[2]
         self.assertIn("teacher", params)
 
+    def test_teacher_personal_todo_persists_without_classroom(self):
+        conn = FakeConnection()
+
+        with patch.object(todo_service, "execute_insert_returning_id", return_value=448) as insert_helper:
+            result = todo_service.create_manual_todo(
+                conn,
+                class_offering_id=None,
+                user={"id": 3, "role": "teacher", "name": "Teacher"},
+                payload={"title": "Prepare annual review"},
+            )
+
+        self.assertEqual(448, result["id"])
+        params = insert_helper.call_args.args[2]
+        self.assertIsNone(params[0])
+
     def test_teacher_email_reminder_requires_ready_email_pipeline(self):
         from datetime import timedelta
         from classroom_app.services.academic_service import china_now
@@ -297,6 +312,25 @@ class AccountTodoPostgresWriteTests(unittest.TestCase):
         self.assertEqual(todo_service.TODO_DUE_REMINDER_TASK_KIND, kwargs["task_kind"])
         self.assertEqual("todo-reminder:student:10:501", kwargs["dedupe_key"])
 
+    def test_personal_todo_reminder_keeps_null_classroom_scope(self):
+        from datetime import timedelta
+        from classroom_app.services.academic_service import china_now
+
+        conn = FakeConnection()
+        due = (china_now().replace(tzinfo=None) + timedelta(days=3)).isoformat(timespec="minutes")
+
+        with patch.object(todo_service, "execute_insert_returning_id", return_value=503), patch.object(
+            todo_service, "create_todo_notification", return_value=1,
+        ), patch.object(todo_service, "schedule_task", return_value=10) as sched:
+            todo_service.create_manual_todo(
+                conn,
+                class_offering_id=None,
+                user={"id": 3, "role": "teacher", "name": "Teacher"},
+                payload={"title": "Private deadline", "due_at": due, "reminder_enabled": True},
+            )
+
+        self.assertIsNone(sched.call_args.kwargs["payload"]["class_offering_id"])
+
     def test_create_manual_todo_without_reminder_cancels(self):
         from datetime import timedelta
         from classroom_app.services.academic_service import china_now
@@ -347,6 +381,38 @@ class AccountTodoPostgresWriteTests(unittest.TestCase):
         note.assert_called_once()
         self.assertEqual("student", note.call_args.kwargs["recipient_role"])
         self.assertIn("读完第三章", note.call_args.kwargs["title"])
+        self.assertIn("notified", result)
+
+    def test_handle_personal_todo_due_reminder_matches_null_scope(self):
+        import contextlib
+
+        from classroom_app.services import message_center_service, scheduled_task_handlers
+
+        fake = FakeConnection(
+            row=FakeRow({
+                "title": "Private deadline",
+                "notes": "",
+                "due_at": "2999-01-01T08:00",
+                "completed_at": None,
+                "deleted_at": None,
+                "metadata_json": '{"reminder":{"enabled":true}}',
+            })
+        )
+
+        @contextlib.contextmanager
+        def fake_conn():
+            yield fake
+
+        with patch.object(scheduled_task_handlers, "get_db_connection", fake_conn), patch.object(
+            message_center_service, "create_todo_notification", return_value=1,
+        ) as note:
+            result = scheduled_task_handlers.handle_todo_due_reminder(
+                {"payload": {"todo_id": 2, "class_offering_id": None, "owner_role": "teacher", "owner_user_pk": 3}}
+            )
+
+        self.assertIn("class_offering_id IS NULL", fake.execute_calls[0][0])
+        self.assertEqual((2, None, None, "teacher", 3), fake.execute_calls[0][1])
+        self.assertIsNone(note.call_args.kwargs["class_offering_id"])
         self.assertIn("notified", result)
 
     def test_handle_todo_due_reminder_skips_completed(self):

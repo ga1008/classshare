@@ -92,7 +92,7 @@ def _sync_todo_reminder(
     conn: sqlite3.Connection,
     *,
     todo_id: int,
-    class_offering_id: int,
+    class_offering_id: int | None,
     owner_role: str,
     owner_user_pk: int,
     title: str,
@@ -118,7 +118,7 @@ def _sync_todo_reminder(
                 run_at=run_at,
                 payload={
                     "todo_id": int(todo_id),
-                    "class_offering_id": int(class_offering_id),
+                    "class_offering_id": int(class_offering_id) if class_offering_id else None,
                     "owner_role": str(owner_role or "").strip().lower(),
                     "owner_user_pk": int(owner_user_pk),
                 },
@@ -454,23 +454,41 @@ def list_manual_todo_items(
     *,
     class_offering_ids: list[int],
     user: dict[str, Any],
+    include_unscoped: bool = False,
+    account_wide: bool = False,
 ) -> list[dict[str, Any]]:
-    """Load one user's manual to-dos across accessible offerings in one query."""
+    """Load one user's manual to-dos across accessible offerings in one query.
+
+    Teacher dashboards opt into ``account_wide`` because the todo belongs to
+    the teacher account even if a former classroom is no longer accessible.
+    Classroom labels are still enriched only from the caller's accessible
+    offering map, so an inaccessible association cannot leak class metadata.
+    """
     offering_ids = sorted({int(item) for item in class_offering_ids if int(item) > 0})
-    if not offering_ids:
+    scope_conditions: list[str] = []
+    scope_params: list[Any] = []
+    if account_wide:
+        scope_conditions.append("1 = 1")
+    elif offering_ids:
+        placeholders = ",".join("?" for _ in offering_ids)
+        scope_conditions.append(f"class_offering_id IN ({placeholders})")
+        scope_params.extend(offering_ids)
+    if include_unscoped and not account_wide:
+        scope_conditions.append("class_offering_id IS NULL")
+    if not scope_conditions:
         return []
-    placeholders = ",".join("?" for _ in offering_ids)
+    scope_sql = " OR ".join(scope_conditions)
     rows = conn.execute(
         f"""
         SELECT *
         FROM classroom_todos
-        WHERE class_offering_id IN ({placeholders})
+        WHERE ({scope_sql})
           AND owner_role = ?
           AND owner_user_pk = ?
           AND deleted_at IS NULL
         ORDER BY COALESCE(due_at, start_at, created_at), id
         """,
-        (*offering_ids, str(user.get("role") or ""), int(user["id"])),
+        (*scope_params, str(user.get("role") or ""), int(user["id"])),
     ).fetchall()
     return _manual_items([dict(row) for row in rows], china_now().replace(tzinfo=None))
 
@@ -790,6 +808,7 @@ def _academic_exam_items(
 def _manual_items(rows: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
     items = []
     for row in rows:
+        class_offering_id = _safe_int(row.get("class_offering_id")) or None
         start_at = parse_datetime_input(row.get("start_at"), "开始时间")
         due_at = parse_datetime_input(row.get("due_at"), "截止时间")
         created_at = parse_datetime_input(row.get("created_at"), "创建时间")
@@ -807,7 +826,7 @@ def _manual_items(rows: list[dict[str, Any]], now: datetime) -> list[dict[str, A
             source_type=TODO_SOURCE_MANUAL,
             source_id=row["id"],
             title=str(row.get("title") or "自定义待办"),
-            subtitle="我的待办",
+            subtitle="课堂待办" if class_offering_id else "私人待办",
             notes=str(row.get("notes") or ""),
             start_at=start_at,
             due_at=due_at,
@@ -825,7 +844,7 @@ def _manual_items(rows: list[dict[str, Any]], now: datetime) -> list[dict[str, A
         item["reminder_enabled"] = bool(reminder["enabled"])
         item["email_reminder_enabled"] = bool(reminder["email_enabled"])
         item["reminder_lead_minutes"] = int(reminder["lead_minutes"])
-        item["class_offering_id"] = _safe_int(row.get("class_offering_id"))
+        item["class_offering_id"] = class_offering_id
         items.append(item)
     return items
 
@@ -972,7 +991,7 @@ def build_classroom_todo_overview(
 def create_manual_todo(
     conn: sqlite3.Connection,
     *,
-    class_offering_id: int,
+    class_offering_id: int | None,
     user: dict[str, Any],
     payload: dict[str, Any],
 ) -> dict[str, Any]:
@@ -998,6 +1017,7 @@ def create_manual_todo(
             raise TodoValidationError(str(readiness.get("reason") or "邮件提醒暂不可用"))
     metadata_json = json.dumps({"priority": priority, "reminder": reminder}, ensure_ascii=False)
 
+    todo_scope_id = _safe_int(class_offering_id) or None
     timestamp = _now_iso()
     todo_id = execute_insert_returning_id(
         conn,
@@ -1009,7 +1029,7 @@ def create_manual_todo(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            int(class_offering_id),
+            todo_scope_id,
             role,
             int(user["id"]),
             title,
@@ -1028,8 +1048,12 @@ def create_manual_todo(
             recipient_user_pk=int(user["id"]),
             title=f"已加入待办：{title}",
             body_preview=f"{_datetime_label(due_at)} 截止",
-            link_url="/dashboard#dashboard-semester",
-            class_offering_id=int(class_offering_id),
+            link_url=(
+                f"/classroom/{todo_scope_id}#timeline-panel"
+                if todo_scope_id
+                else "/dashboard"
+            ),
+            class_offering_id=todo_scope_id,
             ref_id=f"manual-todo:{todo_id}:created",
             actor_role=role,
             actor_user_pk=int(user["id"]),
@@ -1039,7 +1063,7 @@ def create_manual_todo(
     _sync_todo_reminder(
         conn,
         todo_id=int(todo_id),
-        class_offering_id=int(class_offering_id),
+        class_offering_id=todo_scope_id,
         owner_role=role,
         owner_user_pk=int(user["id"]),
         title=title,
@@ -1052,23 +1076,37 @@ def create_manual_todo(
 def update_manual_todo(
     conn: sqlite3.Connection,
     *,
-    class_offering_id: int,
+    class_offering_id: int | None,
     todo_id: int,
     user: dict[str, Any],
     payload: dict[str, Any],
+    enforce_classroom_scope: bool = True,
 ) -> dict[str, Any]:
+    scope_sql = ""
+    scope_params: tuple[Any, ...] = ()
+    if enforce_classroom_scope:
+        if class_offering_id:
+            scope_sql = "AND class_offering_id = ?"
+            scope_params = (int(class_offering_id),)
+        else:
+            scope_sql = "AND class_offering_id IS NULL"
     row = conn.execute(
-        """
+        f"""
         SELECT *
         FROM classroom_todos
         WHERE id = ?
-          AND class_offering_id = ?
+          {scope_sql}
           AND owner_role = ?
           AND owner_user_pk = ?
           AND deleted_at IS NULL
         LIMIT 1
         """,
-        (int(todo_id), int(class_offering_id), str(user.get("role") or ""), int(user["id"])),
+        (
+            int(todo_id),
+            *scope_params,
+            str(user.get("role") or ""),
+            int(user["id"]),
+        ),
     ).fetchone()
     if not row:
         raise LookupError("待办不存在或无权操作")
@@ -1111,12 +1149,16 @@ def update_manual_todo(
             raise TodoValidationError(str(readiness.get("reason") or "邮件提醒暂不可用"))
     metadata["reminder"] = reminder
     metadata_json = json.dumps(metadata, ensure_ascii=False)
+    target_class_offering_id = _safe_int(current.get("class_offering_id")) or None
+    if not enforce_classroom_scope and "class_offering_id" in payload:
+        target_class_offering_id = _safe_int(payload.get("class_offering_id")) or None
 
     timestamp = _now_iso()
     conn.execute(
         """
         UPDATE classroom_todos
-        SET title = ?,
+        SET class_offering_id = ?,
+            title = ?,
             notes = ?,
             start_at = ?,
             due_at = ?,
@@ -1126,6 +1168,7 @@ def update_manual_todo(
         WHERE id = ?
         """,
         (
+            target_class_offering_id,
             title,
             notes,
             start_at.isoformat(timespec="minutes") if start_at else None,
@@ -1140,7 +1183,7 @@ def update_manual_todo(
     _sync_todo_reminder(
         conn,
         todo_id=int(todo_id),
-        class_offering_id=int(class_offering_id),
+        class_offering_id=target_class_offering_id,
         owner_role=str(user.get("role") or "").strip().lower(),
         owner_user_pk=int(user["id"]),
         title=title,
@@ -1153,23 +1196,39 @@ def update_manual_todo(
 def delete_manual_todo(
     conn: sqlite3.Connection,
     *,
-    class_offering_id: int,
+    class_offering_id: int | None,
     todo_id: int,
     user: dict[str, Any],
+    enforce_classroom_scope: bool = True,
 ) -> dict[str, Any]:
     timestamp = _now_iso()
+    scope_sql = ""
+    scope_params: tuple[Any, ...] = ()
+    if enforce_classroom_scope:
+        if class_offering_id:
+            scope_sql = "AND class_offering_id = ?"
+            scope_params = (int(class_offering_id),)
+        else:
+            scope_sql = "AND class_offering_id IS NULL"
     cursor = conn.execute(
-        """
+        f"""
         UPDATE classroom_todos
         SET deleted_at = ?,
             updated_at = ?
         WHERE id = ?
-          AND class_offering_id = ?
+          {scope_sql}
           AND owner_role = ?
           AND owner_user_pk = ?
           AND deleted_at IS NULL
         """,
-        (timestamp, timestamp, int(todo_id), int(class_offering_id), str(user.get("role") or ""), int(user["id"])),
+        (
+            timestamp,
+            timestamp,
+            int(todo_id),
+            *scope_params,
+            str(user.get("role") or ""),
+            int(user["id"]),
+        ),
     )
     if cursor.rowcount <= 0:
         raise LookupError("待办不存在或无权操作")

@@ -37,4 +37,73 @@ test.describe('teacher dashboard todo modal', () => {
 
     await expectNoBrowserErrors(errors, testInfo);
   });
+
+  test('creates a private todo by default and keeps classroom association optional', async ({ page }, testInfo) => {
+    const fixture = readFixture();
+    const errors = collectBrowserErrors(page);
+    const todoTitle = `P03 private todo ${Date.now()}`;
+
+    await page.setViewportSize({ width: 1180, height: 720 });
+    await loginTeacher(page, fixture);
+
+    const modal = page.locator('.agenda-todo-modal:has([data-todo-form])');
+    await page.locator('[data-agenda-add-todo]').first().click();
+    await expect(modal).toBeVisible();
+    await expect(modal.locator('[data-todo-heading]')).toHaveText('记一件待办');
+
+    const titleField = modal.locator('input[name="title"]');
+    const scope = modal.locator('[data-todo-scope]');
+    const courseSelect = modal.locator('[data-todo-course]');
+    await expect(titleField).toBeVisible();
+    await expect(scope).not.toHaveAttribute('open', '');
+    await expect(modal.locator('[data-todo-scope-title]')).toHaveText('私人待办');
+    await expect(courseSelect).toHaveValue('');
+
+    await scope.locator('summary').click();
+    await expect(courseSelect).toBeVisible();
+    await courseSelect.selectOption(String(fixture.classOfferingId));
+    await expect(courseSelect).toHaveValue(String(fixture.classOfferingId));
+    await expect(modal.locator('[data-todo-scope-copy]')).toContainText('已关联课堂');
+    await courseSelect.selectOption('');
+    await expect(modal.locator('[data-todo-scope-title]')).toHaveText('私人待办');
+
+    await titleField.fill(todoTitle);
+    await modal.locator('[data-todo-submit]').click();
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+
+    let todoItem = page.locator(`[data-agenda-item][data-title="${todoTitle}"]`);
+    await expect(todoItem).toBeVisible();
+    await expect(todoItem).toHaveAttribute('data-class-offering-id', '0');
+
+    // Association remains available as an organizational option while editing.
+    await todoItem.click();
+    await page.locator('.agenda-popover [data-pop-edit]').click();
+    await expect(modal).toBeVisible();
+    await modal.locator('[data-todo-scope] summary').click();
+    await courseSelect.selectOption(String(fixture.classOfferingId));
+    await modal.locator('[data-todo-submit]').click();
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+
+    todoItem = page.locator(`[data-agenda-item][data-title="${todoTitle}"]`);
+    await expect(todoItem).toHaveAttribute('data-class-offering-id', String(fixture.classOfferingId));
+
+    // A linked todo can be detached again without recreating it.
+    await todoItem.click();
+    await page.locator('.agenda-popover [data-pop-edit]').click();
+    await expect(modal).toBeVisible();
+    await modal.locator('[data-todo-scope] summary').click();
+    await courseSelect.selectOption('');
+    await modal.locator('[data-todo-submit]').click();
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+
+    todoItem = page.locator(`[data-agenda-item][data-title="${todoTitle}"]`);
+    await expect(todoItem).toHaveAttribute('data-class-offering-id', '0');
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await todoItem.click();
+    await page.locator('.agenda-popover [data-pop-delete]').click();
+    await expect(todoItem).toHaveCount(0, { timeout: 10_000 });
+
+    await expectNoBrowserErrors(errors, testInfo);
+  });
 });

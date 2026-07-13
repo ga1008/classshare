@@ -39,6 +39,17 @@ class FakePostgresConnection:
     def execute(self, sql, params=()):
         self.executed_sql.append((sql, params))
         normalized = " ".join(str(sql).split())
+        if "pg_advisory_xact_lock" in normalized:
+            return FakeCursor([])
+        if "SELECT is_nullable FROM information_schema.columns" in normalized:
+            return FakeCursor([{"is_nullable": "YES"}])
+        if "information_schema.referential_constraints" in normalized:
+            return FakeCursor([
+                {
+                    "constraint_name": "fk_classroom_todos_optional_offering",
+                    "delete_rule": "SET NULL",
+                }
+            ])
         if "information_schema.tables" in normalized:
             rows = [
                 {"table_name": table}
@@ -94,10 +105,19 @@ class FakePostgresConnection:
 
 
 class FakePostgresConstraintConnection(FakePostgresConnection):
-    def __init__(self, *, existing_indexes=(), duplicate_indexes=()):
+    def __init__(
+        self,
+        *,
+        existing_indexes=(),
+        duplicate_indexes=(),
+        todo_scope_nullable=False,
+        todo_scope_delete_rule="CASCADE",
+    ):
         super().__init__()
         self.existing_indexes = set(existing_indexes)
         self.duplicate_indexes = set(duplicate_indexes)
+        self.todo_scope_nullable = bool(todo_scope_nullable)
+        self.todo_scope_delete_rule = str(todo_scope_delete_rule)
 
     def execute(self, sql, params=()):
         self.executed_sql.append((sql, params))
@@ -105,6 +125,19 @@ class FakePostgresConstraintConnection(FakePostgresConnection):
         if "information_schema.tables" in normalized:
             rows = [{"table_name": table} for table in REQUIRED_POSTGRES_TABLES]
             return FakeCursor(rows)
+        if "SELECT is_nullable FROM information_schema.columns" in normalized:
+            return FakeCursor([{"is_nullable": "YES" if self.todo_scope_nullable else "NO"}])
+        if "information_schema.referential_constraints" in normalized:
+            return FakeCursor([
+                {
+                    "constraint_name": "classroom_todos_class_offering_id_fkey",
+                    "delete_rule": self.todo_scope_delete_rule,
+                }
+            ])
+        if "pg_advisory_xact_lock" in normalized:
+            return FakeCursor([])
+        if normalized.startswith('ALTER TABLE "classroom_todos"'):
+            return FakeCursor([])
         if "pg_indexes" in normalized:
             index_name = params[1]
             return FakeCursor([{"exists_flag": 1}] if index_name in self.existing_indexes else [])
@@ -138,6 +171,34 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         self.assertIn("idx_learning_stage_status_unique_stage", report["created_indexes"])
         created_sql = "\n".join(str(sql) for sql, _ in conn.executed_sql)
         self.assertIn('CREATE UNIQUE INDEX IF NOT EXISTS "idx_learning_stage_status_unique_stage"', created_sql)
+
+    def test_ensure_runtime_constraints_makes_todo_classroom_scope_optional(self):
+        conn = FakePostgresConstraintConnection(
+            todo_scope_nullable=False,
+            todo_scope_delete_rule="CASCADE",
+        )
+
+        report = ensure_postgres_runtime_constraints(conn)
+
+        self.assertTrue(report["classroom_todo_scope_repaired"])
+        executed_sql = "\n".join(str(sql) for sql, _ in conn.executed_sql)
+        self.assertIn('ALTER COLUMN "class_offering_id" DROP NOT NULL', executed_sql)
+        self.assertIn('DROP CONSTRAINT IF EXISTS "classroom_todos_class_offering_id_fkey"', executed_sql)
+        self.assertIn("ON DELETE SET NULL", executed_sql)
+
+    def test_optional_todo_scope_constraint_is_idempotent(self):
+        conn = FakePostgresConstraintConnection(
+            existing_indexes={name for name, _table, _columns in POSTGRES_RUNTIME_UNIQUE_INDEXES},
+            todo_scope_nullable=True,
+            todo_scope_delete_rule="SET NULL",
+        )
+
+        report = ensure_postgres_runtime_constraints(conn)
+
+        self.assertFalse(report["classroom_todo_scope_repaired"])
+        self.assertFalse(report["schema_writes_executed"])
+        executed_sql = "\n".join(str(sql) for sql, _ in conn.executed_sql)
+        self.assertNotIn('ALTER TABLE "classroom_todos"', executed_sql)
 
     def test_ensure_runtime_constraints_refuses_duplicate_keys(self):
         conn = FakePostgresConstraintConnection(
