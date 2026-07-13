@@ -557,7 +557,7 @@ function buildTodoModalDom() {
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
-      <form class="agenda-todo-modal__form" data-todo-form novalidate>
+      <form id="agendaTodoForm" class="agenda-todo-modal__form" data-todo-form novalidate>
         <label class="agenda-todo-field">
           <span>所属课堂</span>
           <select name="class_offering_id" data-todo-course required></select>
@@ -619,11 +619,11 @@ function buildTodoModalDom() {
           </label>
         </details>
         <p class="agenda-todo-status" data-todo-status role="status"></p>
-        <div class="agenda-todo-actions">
-          <button type="button" class="agenda-todo-btn agenda-todo-btn--ghost" data-todo-close>取消</button>
-          <button type="submit" class="agenda-todo-btn agenda-todo-btn--primary" data-todo-submit>保存待办</button>
-        </div>
       </form>
+      <div class="agenda-todo-actions">
+        <button type="button" class="agenda-todo-btn agenda-todo-btn--ghost" data-todo-close>取消</button>
+        <button type="submit" form="agendaTodoForm" class="agenda-todo-btn agenda-todo-btn--primary" data-todo-submit>保存待办</button>
+      </div>
     </div>
   `;
   document.body.appendChild(modal);
@@ -712,6 +712,16 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
     document.body.classList.remove('agenda-todo-open');
     if (lastFocus && typeof lastFocus.focus === 'function') lastFocus.focus({ preventScroll: true });
   };
+
+  // The backdrop, header close button and footer cancel button all share the
+  // same dismiss contract. Bind them directly because clicks inside the card
+  // are intentionally stopped from bubbling to the modal shell.
+  modal.querySelectorAll('[data-todo-close]').forEach((control) => {
+    control.addEventListener('click', (event) => {
+      event.preventDefault();
+      close();
+    });
+  });
 
   const reveal = () => {
     modal.hidden = false;
