@@ -9,6 +9,11 @@ from urllib.parse import quote
 
 from ..db.connection import execute_insert_returning_id
 from .academic_service import china_today
+from .blog_section_service import (
+    DEFAULT_BLOG_SECTION_KEY,
+    list_blog_sections as list_blog_section_catalog,
+    resolve_blog_section_key,
+)
 from .learning_progress_service import build_student_public_cultivation_badge
 
 
@@ -280,6 +285,44 @@ def _build_post_visibility_sql(
         """.strip(),
         [viewer_identity, viewer_user_pk, f'%"{viewer_identity}"%'],
     )
+
+
+def get_blog_sections(conn, user: dict) -> list[dict[str, Any]]:
+    """Return the data-driven section catalog with visibility-safe post counts."""
+    user_pk, _role, identity = _ensure_identity(user)
+    sections = list_blog_section_catalog(conn)
+    visibility_sql, params = _build_post_visibility_sql(
+        user,
+        viewer_identity=identity,
+        viewer_user_pk=user_pk,
+    )
+    rows = conn.execute(
+        f"""
+        SELECT section_key, COUNT(*) AS post_count
+        FROM blog_posts
+        WHERE ({visibility_sql})
+          AND status = ?
+        GROUP BY section_key
+        """,
+        [*params, POST_STATUS_PUBLISHED],
+    ).fetchall()
+    count_map = {
+        str(row["section_key"] or DEFAULT_BLOG_SECTION_KEY): int(row["post_count"] or 0)
+        for row in rows
+    }
+    return [
+        {
+            **section,
+            "post_count": count_map.get(str(section["section_key"]), 0),
+        }
+        for section in sections
+    ]
+
+
+def _resolve_optional_blog_section(conn, value: Any) -> str | None:
+    if not str(value or "").strip():
+        return None
+    return resolve_blog_section_key(conn, value, fallback=None)
 
 
 def _load_user_avatar_hash(conn, role: str, user_pk: int) -> str:
@@ -586,6 +629,7 @@ def create_post(
     *,
     title: str,
     content_md: str,
+    section_key: str = DEFAULT_BLOG_SECTION_KEY,
     author_display_mode: str = AUTHOR_DISPLAY_REAL,
     visibility: str = VISIBILITY_PUBLIC,
     visible_class_id: Optional[int] = None,
@@ -610,6 +654,11 @@ def create_post(
         visible_user_identities=visible_user_identities,
     )
     normalized_tags = _normalize_tags(tags or [])
+    normalized_section_key = resolve_blog_section_key(
+        conn,
+        section_key,
+        require_user_posts=role != "assistant",
+    )
     normalized_status = status if status in {POST_STATUS_DRAFT, POST_STATUS_PUBLISHED} else POST_STATUS_PUBLISHED
     media_assets = _resolve_post_media_assets(
         conn,
@@ -625,10 +674,10 @@ def create_post(
         INSERT INTO blog_posts (
             author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
             author_avatar_hash, author_avatar_mime,
-            title, content_md, summary, cover_image_hash,
+            section_key, title, content_md, summary, cover_image_hash,
             status, visibility, visible_class_id, visible_user_identities_json,
             allow_comments, system_tags_json, tags_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             author_snapshot["identity"],
@@ -638,6 +687,7 @@ def create_post(
             author_snapshot["display_mode"],
             author_snapshot["avatar_hash"],
             author_snapshot["avatar_mime"],
+            normalized_section_key,
             normalized_title,
             normalized_content,
             _generate_summary(normalized_content),
@@ -664,6 +714,7 @@ def update_post(
     *,
     title: Optional[str] = None,
     content_md: Optional[str] = None,
+    section_key: Optional[str] = None,
     author_display_mode: Optional[str] = None,
     visibility: Optional[str] = None,
     visible_class_id: Optional[int] = None,
@@ -691,6 +742,16 @@ def update_post(
             raise ValueError("标题不能为空")
         updates.append("title = ?")
         params.append(normalized_title)
+
+    if section_key is not None:
+        updates.append("section_key = ?")
+        params.append(
+            resolve_blog_section_key(
+                conn,
+                section_key,
+                require_user_posts=role != "assistant",
+            )
+        )
 
     if content_md is not None:
         normalized_content = str(content_md or "").strip()[:MAX_CONTENT_LENGTH]
@@ -822,6 +883,7 @@ def list_posts(
     tag: Optional[str] = None,
     query: Optional[str] = None,
     visibility_filter: Optional[str] = None,
+    section_key: Optional[str] = None,
 ) -> dict:
     user_pk, role, identity = _ensure_identity(user)
     offset = max(page - 1, 0) * limit
@@ -832,6 +894,10 @@ def list_posts(
     )
 
     conditions = [visibility_sql]
+    normalized_section_key = _resolve_optional_blog_section(conn, section_key)
+    if normalized_section_key:
+        conditions.append("section_key = ?")
+        params.append(normalized_section_key)
     if author_identity:
         normalized_author_identity = str(author_identity).strip().lower()
         conditions.append("author_identity = ?")
@@ -880,7 +946,7 @@ def list_posts(
         f"""
         SELECT id, author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
                author_avatar_hash, author_avatar_mime,
-               title, summary, cover_image_hash,
+               section_key, title, summary, cover_image_hash,
                status, visibility, allow_comments, is_pinned, is_featured,
                view_count, like_count, comment_count, bookmark_count,
                system_tags_json, tags_json, created_at, edited_at, updated_at,
@@ -923,9 +989,10 @@ def list_posts(
     }
 
 
-def get_blog_topbar_summary(conn, user: dict) -> dict[str, Any]:
+def get_blog_topbar_summary(conn, user: dict, *, section_key: Optional[str] = None) -> dict[str, Any]:
     user_pk, _role, identity = _ensure_identity(user)
     today_iso = china_today().isoformat()
+    normalized_section_key = _resolve_optional_blog_section(conn, section_key)
 
     if _can_override_post_visibility(user):
         visibility_sql = "status = ?"
@@ -937,14 +1004,20 @@ def get_blog_topbar_summary(conn, user: dict) -> dict[str, Any]:
             viewer_user_pk=user_pk,
         )
 
+    section_sql = " AND section_key = ?" if normalized_section_key else ""
+    query_params = [*params]
+    if normalized_section_key:
+        query_params.append(normalized_section_key)
+    query_params.append(today_iso)
     row = conn.execute(
         f"""
         SELECT COUNT(*) AS today_new_count
         FROM blog_posts
         WHERE ({visibility_sql})
+          {section_sql}
           AND substr(created_at, 1, 10) = ?
         """,
-        [*params, today_iso],
+        query_params,
     ).fetchone()
     today_new_count = int(row["today_new_count"] or 0) if row else 0
     return {
@@ -953,8 +1026,9 @@ def get_blog_topbar_summary(conn, user: dict) -> dict[str, Any]:
     }
 
 
-def get_blog_discovery(conn, user: dict) -> dict[str, Any]:
+def get_blog_discovery(conn, user: dict, *, section_key: Optional[str] = None) -> dict[str, Any]:
     user_pk, _role, identity = _ensure_identity(user)
+    normalized_section_key = _resolve_optional_blog_section(conn, section_key)
     visibility_sql, visibility_params = _build_post_visibility_sql(
         user,
         viewer_identity=identity,
@@ -962,8 +1036,11 @@ def get_blog_discovery(conn, user: dict) -> dict[str, Any]:
     )
     published_where = f"({visibility_sql}) AND status = ?"
     published_params = [*visibility_params, POST_STATUS_PUBLISHED]
+    if normalized_section_key:
+        published_where += " AND section_key = ?"
+        published_params.append(normalized_section_key)
 
-    summary = get_blog_topbar_summary(conn, user)
+    summary = get_blog_topbar_summary(conn, user, section_key=normalized_section_key)
     stats_row = conn.execute(
         f"""
         SELECT COUNT(*) AS visible_count,
@@ -979,7 +1056,7 @@ def get_blog_discovery(conn, user: dict) -> dict[str, Any]:
     post_fields = f"""
         id, author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
         author_avatar_hash, author_avatar_mime,
-        title, summary, cover_image_hash,
+        section_key, title, summary, cover_image_hash,
         status, visibility, allow_comments, is_pinned, is_featured,
         view_count, like_count, comment_count, bookmark_count,
         system_tags_json, tags_json, created_at, edited_at, updated_at,
@@ -1123,6 +1200,8 @@ def get_blog_discovery(conn, user: dict) -> dict[str, Any]:
         )
 
     return {
+        "sections": get_blog_sections(conn, user),
+        "active_section": normalized_section_key or "",
         "summary": {
             **summary,
             "visible_count": int(stats_row["visible_count"] or 0) if stats_row else 0,
@@ -1187,7 +1266,7 @@ def get_my_posts(
         f"""
         SELECT id, author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
                author_avatar_hash, author_avatar_mime,
-               title, summary, cover_image_hash,
+               section_key, title, summary, cover_image_hash,
                status, visibility, allow_comments, is_pinned, is_featured,
                view_count, like_count, comment_count, bookmark_count,
                system_tags_json, tags_json, created_at, edited_at, updated_at,
@@ -2279,6 +2358,7 @@ def _serialize_post_summary(
             ),
         },
         "title": str(row.get("title") or ""),
+        "section_key": str(row.get("section_key") or DEFAULT_BLOG_SECTION_KEY),
         "summary": str(row.get("summary") or ""),
         "cover_image_hash": str(row.get("cover_image_hash") or ""),
         "status": str(row.get("status") or POST_STATUS_PUBLISHED),

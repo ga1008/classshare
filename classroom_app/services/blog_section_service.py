@@ -1,0 +1,256 @@
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+from ..db.connection import get_configured_db_engine
+
+
+DEFAULT_BLOG_SECTION_KEY = "general"
+CAREER_BLOG_SECTION_KEY = "career"
+SECTION_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
+
+
+DEFAULT_BLOG_SECTIONS: tuple[dict[str, Any], ...] = (
+    {
+        "section_key": DEFAULT_BLOG_SECTION_KEY,
+        "name": "校园与成长",
+        "short_name": "综合",
+        "description": "课堂之外的灵感、作品、校园观察与成长记录。",
+        "icon": "✦",
+        "accent_color": "#2563eb",
+        "sort_order": 10,
+        "is_career": False,
+        "source_keywords": [],
+        "source_templates": [],
+    },
+    {
+        "section_key": "technology",
+        "name": "科技前沿",
+        "short_name": "科技",
+        "description": "关注改变生活与产业的科学发现、工程创新和新兴技术。",
+        "icon": "⌁",
+        "accent_color": "#0f766e",
+        "sort_order": 20,
+        "is_career": False,
+        "source_keywords": ["科技创新", "新能源与先进制造", "航空航天", "生物科技"],
+        "source_templates": [],
+    },
+    {
+        "section_key": "humanities",
+        "name": "人文视界",
+        "short_name": "人文",
+        "description": "从文学、历史、社会与文化中理解人和我们共同生活的世界。",
+        "icon": "文",
+        "accent_color": "#b45309",
+        "sort_order": 30,
+        "is_career": False,
+        "source_keywords": ["文学与阅读", "历史文化", "社会观察", "语言与传播"],
+        "source_templates": [],
+    },
+    {
+        "section_key": "computer",
+        "name": "计算机",
+        "short_name": "计算机",
+        "description": "软件开发、开源生态、网络安全与计算基础设施的新鲜实践。",
+        "icon": "</>",
+        "accent_color": "#4f46e5",
+        "sort_order": 40,
+        "is_career": False,
+        "source_keywords": ["软件开发", "开源技术", "网络安全", "云计算"],
+        "source_templates": [],
+    },
+    {
+        "section_key": "ai",
+        "name": "AI 新知",
+        "short_name": "AI",
+        "description": "追踪人工智能研究、产品、治理与真实应用，保持好奇也保持判断。",
+        "icon": "AI",
+        "accent_color": "#7c3aed",
+        "sort_order": 50,
+        "is_career": False,
+        "source_keywords": ["人工智能", "大语言模型", "机器学习", "生成式AI"],
+        "source_templates": [],
+    },
+    {
+        "section_key": CAREER_BLOG_SECTION_KEY,
+        "name": "毕业新征程",
+        "short_name": "就业",
+        "description": "面向毕业生的岗位、招聘会、基层项目与就业政策，优先覆盖南宁、广西和珠三角。",
+        "icon": "→",
+        "accent_color": "#e11d48",
+        "sort_order": 60,
+        "is_career": True,
+        "source_keywords": [
+            "广西高校毕业生招聘",
+            "南宁应届毕业生招聘",
+            "广西事业单位校园招聘",
+            "广西国企校招",
+            "粤港澳大湾区校园招聘",
+            "广州 深圳 珠海 东莞 佛山 应届生招聘",
+            "广西 三支一扶 西部计划 高校毕业生",
+            "广西 广东 高校毕业生就业政策",
+        ],
+        "source_templates": [
+            {
+                "name": "国家大学生就业服务平台",
+                "url": "https://www.bing.com/news/search?q={{keyword_q}}&format=RSS&setlang=zh-CN&cc=CN&freshness={{bing_freshness}}",
+                "kind": "keyword_rss",
+                "requires_keyword_match": False,
+                "query_suffix": "(site:ncss.cn OR site:mohrss.gov.cn)",
+            },
+            {
+                "name": "广西公共就业与人才服务",
+                "url": "https://www.bing.com/news/search?q={{keyword_q}}&format=RSS&setlang=zh-CN&cc=CN&freshness={{bing_freshness}}",
+                "kind": "keyword_rss",
+                "requires_keyword_match": False,
+                "query_suffix": "(site:gxrc.com OR site:rst.gxzf.gov.cn OR site:nanning.gov.cn OR site:chrm.mohrss.gov.cn)",
+            },
+            {
+                "name": "珠三角公共就业服务",
+                "url": "https://www.bing.com/news/search?q={{keyword_q}}&format=RSS&setlang=zh-CN&cc=CN&freshness={{bing_freshness}}",
+                "kind": "keyword_rss",
+                "requires_keyword_match": False,
+                "query_suffix": "(site:hrss.gd.gov.cn OR site:job.gdedu.gov.cn OR site:ggfw.hrss.gd.gov.cn OR site:sz.gov.cn OR site:gz.gov.cn OR site:dg.gov.cn)",
+            },
+        ],
+    },
+)
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _safe_json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(str(value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def ensure_default_blog_sections(conn) -> None:
+    # Reads are the hot path.  Avoid issuing INSERT OR IGNORE on every blog API
+    # request because even a no-op insert promotes SQLite to a write
+    # transaction and can needlessly contend with posting/comment traffic.
+    existing_keys = {
+        str(row["section_key"])
+        for row in conn.execute("SELECT section_key FROM blog_sections").fetchall()
+    }
+    missing_sections = [
+        section for section in DEFAULT_BLOG_SECTIONS if section["section_key"] not in existing_keys
+    ]
+    if not missing_sections:
+        return
+
+    engine = get_configured_db_engine()
+    insert_sql = """
+        INSERT INTO blog_sections (
+            section_key, name, short_name, description, icon, accent_color,
+            sort_order, is_enabled, is_career, allow_user_posts,
+            source_keywords_json, source_templates_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    """
+    if engine == "postgres":
+        insert_sql = f"{insert_sql} ON CONFLICT (section_key) DO NOTHING"
+    else:
+        insert_sql = insert_sql.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
+
+    for section in missing_sections:
+        conn.execute(
+            insert_sql,
+            (
+                section["section_key"],
+                section["name"],
+                section["short_name"],
+                section["description"],
+                section["icon"],
+                section["accent_color"],
+                int(section["sort_order"]),
+                1 if section.get("is_career") else 0,
+                _json_dumps(section.get("source_keywords") or []),
+                _json_dumps(section.get("source_templates") or []),
+            ),
+        )
+
+
+def list_blog_sections(
+    conn,
+    *,
+    include_disabled: bool = False,
+    include_source_config: bool = False,
+) -> list[dict[str, Any]]:
+    ensure_default_blog_sections(conn)
+    conditions = [] if include_disabled else ["is_enabled = 1"]
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(
+        f"""
+        SELECT section_key, name, short_name, description, icon, accent_color,
+               sort_order, is_enabled, is_career, allow_user_posts,
+               source_keywords_json, source_templates_json, created_at, updated_at
+        FROM blog_sections
+        {where_sql}
+        ORDER BY sort_order ASC, section_key ASC
+        """
+    ).fetchall()
+
+    sections: list[dict[str, Any]] = []
+    for row in rows:
+        data = dict(row)
+        section = {
+            "section_key": str(data.get("section_key") or DEFAULT_BLOG_SECTION_KEY),
+            "name": str(data.get("name") or "未命名板块"),
+            "short_name": str(data.get("short_name") or data.get("name") or "板块"),
+            "description": str(data.get("description") or ""),
+            "icon": str(data.get("icon") or "•"),
+            "accent_color": str(data.get("accent_color") or "#2563eb"),
+            "sort_order": int(data.get("sort_order") or 100),
+            "is_enabled": bool(data.get("is_enabled")),
+            "is_career": bool(data.get("is_career")),
+            "allow_user_posts": bool(data.get("allow_user_posts")),
+        }
+        if include_source_config:
+            section["source_keywords"] = [
+                str(item).strip()
+                for item in _safe_json_list(data.get("source_keywords_json"))
+                if str(item).strip()
+            ]
+            section["source_templates"] = [
+                item for item in _safe_json_list(data.get("source_templates_json")) if isinstance(item, dict)
+            ]
+        sections.append(section)
+    return sections
+
+
+def resolve_blog_section_key(
+    conn,
+    value: Any,
+    *,
+    fallback: str | None = DEFAULT_BLOG_SECTION_KEY,
+    require_user_posts: bool = False,
+) -> str | None:
+    raw_key = str(value or "").strip().lower()
+    if not raw_key:
+        raw_key = str(fallback or "").strip().lower()
+    if not raw_key:
+        return None
+    if not SECTION_KEY_PATTERN.fullmatch(raw_key):
+        raise ValueError("博客板块参数不正确")
+
+    ensure_default_blog_sections(conn)
+    conditions = ["section_key = ?", "is_enabled = 1"]
+    params: list[Any] = [raw_key]
+    if require_user_posts:
+        conditions.append("allow_user_posts = 1")
+    row = conn.execute(
+        f"SELECT section_key FROM blog_sections WHERE {' AND '.join(conditions)} LIMIT 1",
+        params,
+    ).fetchone()
+    if row is None:
+        raise ValueError("博客板块不存在或暂不可用")
+    return str(row["section_key"])

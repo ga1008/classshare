@@ -14,6 +14,7 @@ const elements = {
     publishedCount: document.getElementById('bc-published-count'),
     keywords: document.getElementById('bc-keywords'),
     sources: document.getElementById('bc-sources'),
+    sections: document.getElementById('bc-sections'),
     postList: document.getElementById('bc-post-list'),
     runTable: document.getElementById('bc-run-table'),
 };
@@ -62,8 +63,27 @@ function renderKeywords(items) {
         return;
     }
     elements.keywords.innerHTML = items
-        .map((item) => `<span class="bc-chip">${escapeHtml(item.keyword || '')}</span>`)
+        .map((item) => `<span class="bc-chip">${escapeHtml(item.section_name || '综合')} · ${escapeHtml(item.keyword || '')}</span>`)
         .join('');
+}
+
+function renderSections(items) {
+    if (!elements.sections) return;
+    if (!Array.isArray(items) || items.length === 0) {
+        elements.sections.innerHTML = '<span class="bc-muted">暂无板块配置。</span>';
+        return;
+    }
+    elements.sections.innerHTML = items.map((section) => {
+        const accent = /^#[0-9a-f]{6}$/i.test(String(section.accent_color || '')) ? section.accent_color : '#2563eb';
+        const note = section.is_career ? '就业信息每日优先保留采集与选题名额' : '按板块关键词轮换采集';
+        return `
+            <article class="bc-section-card" style="--section-accent:${accent}">
+                <strong>${escapeHtml(section.icon || '•')} ${escapeHtml(section.name || '')}</strong>
+                <p>${escapeHtml(section.description || '')}</p>
+                <span class="bc-muted">${escapeHtml(note)}</span>
+            </article>
+        `;
+    }).join('');
 }
 
 function renderSources(items) {
@@ -86,7 +106,7 @@ function renderPosts(items) {
     elements.postList.innerHTML = items.map((post) => `
         <article class="bc-post">
             <strong>${escapeHtml(post.post_title || '')}</strong>
-            <div class="bc-muted">${escapeHtml(post.keyword || '')} · ${escapeHtml(post.post_created_at || '')}</div>
+            <div class="bc-muted">${escapeHtml(post.section_key || 'general')} · ${escapeHtml(post.keyword || '')} · ${escapeHtml(post.post_created_at || '')}</div>
             <a href="/blog?post=${encodeURIComponent(post.post_id || '')}" target="_blank" rel="noopener noreferrer">打开博客</a>
         </article>
     `).join('');
@@ -122,6 +142,7 @@ function renderDashboard(dashboard) {
     if (elements.publishedCount) elements.publishedCount.textContent = String(dashboard?.published_count || 0);
     renderKeywords(dashboard?.keywords || []);
     renderSources(dashboard?.sources || []);
+    renderSections(dashboard?.sections || []);
     renderPosts(dashboard?.recent_posts || []);
     renderRuns(dashboard?.recent_runs || []);
 }

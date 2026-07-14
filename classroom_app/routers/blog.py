@@ -23,6 +23,7 @@ from ..services.blog_service import (
     feature_post,
     get_bookmarked_posts,
     get_blog_discovery,
+    get_blog_sections,
     get_blog_topbar_summary,
     get_media_asset_for_user,
     get_my_posts,
@@ -87,12 +88,15 @@ def _build_blog_user_info(conn, user: dict) -> dict:
 async def blog_page(request: Request, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         user_info = _build_blog_user_info(conn, user)
+        blog_sections = get_blog_sections(conn, user)
+        conn.commit()
     return templates.TemplateResponse(
         request,
         "blog.html",
         {
             "request": request,
             "user_info": user_info,
+            "blog_sections": blog_sections,
         },
     )
 
@@ -105,20 +109,25 @@ def api_list_posts(
     author: Optional[str] = Query(default=None),
     tag: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
+    section: Optional[str] = Query(default=None),
     user: dict = Depends(get_current_user),
 ):
     with get_db_connection() as conn:
-        result = list_posts(
-            conn,
-            user,
-            sort=sort,
-            page=page,
-            limit=limit,
-            author_identity=author,
-            tag=tag,
-            query=q,
-        )
-        return {"status": "success", **result}
+        try:
+            result = list_posts(
+                conn,
+                user,
+                sort=sort,
+                page=page,
+                limit=limit,
+                author_identity=author,
+                tag=tag,
+                query=q,
+                section_key=section,
+            )
+            return {"status": "success", **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/blog/summary", response_class=JSONResponse)
@@ -131,9 +140,17 @@ def api_blog_summary(user: dict = Depends(get_current_user)):
 
 
 @router.get("/api/blog/discovery", response_class=JSONResponse)
-def api_blog_discovery(user: dict = Depends(get_current_user)):
+def api_blog_discovery(
+    section: Optional[str] = Query(default=None),
+    user: dict = Depends(get_current_user),
+):
     with get_db_connection() as conn:
-        return {"status": "success", **get_blog_discovery(conn, user)}
+        try:
+            result = get_blog_discovery(conn, user, section_key=section)
+            conn.commit()
+            return {"status": "success", **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/blog/posts/{post_id}", response_class=JSONResponse)
@@ -171,6 +188,7 @@ async def api_create_post(
                 user,
                 title=title,
                 content_md=content_md,
+                section_key=str(data.get("section_key") or "general"),
                 author_display_mode=str(data.get("author_display_mode") or "real_name"),
                 visibility=str(data.get("visibility") or VISIBILITY_PUBLIC),
                 visible_class_id=data.get("visible_class_id"),
@@ -204,6 +222,7 @@ async def api_update_post(
                 post_id,
                 title=data.get("title"),
                 content_md=data.get("content_md"),
+                section_key=data.get("section_key"),
                 author_display_mode=data.get("author_display_mode"),
                 visibility=data.get("visibility"),
                 visible_class_id=data.get("visible_class_id"),

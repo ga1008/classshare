@@ -317,6 +317,12 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
     "learning_certificates": {
         "revealed_at": "TEXT",
     },
+    "blog_posts": {
+        "section_key": "TEXT NOT NULL DEFAULT 'general'",
+    },
+    "blog_news_crawler_items": {
+        "section_key": "TEXT NOT NULL DEFAULT 'general'",
+    },
     "teacher_academic_teaching_class_mappings": {
         "teaching_class_aliases_json": "TEXT NOT NULL DEFAULT '[]'",
         "admin_class_aliases_json": "TEXT NOT NULL DEFAULT '[]'",
@@ -326,6 +332,24 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
 
 POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
     **AI_JOB_POSTGRES_RUNTIME_TABLES,
+    "blog_sections": """
+        CREATE TABLE IF NOT EXISTS blog_sections (
+            section_key TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            short_name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            icon TEXT NOT NULL DEFAULT '•',
+            accent_color TEXT NOT NULL DEFAULT '#2563eb',
+            sort_order INTEGER NOT NULL DEFAULT 100,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            is_career INTEGER NOT NULL DEFAULT 0,
+            allow_user_posts INTEGER NOT NULL DEFAULT 1,
+            source_keywords_json TEXT NOT NULL DEFAULT '[]',
+            source_templates_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
     "teacher_academic_teaching_class_mappings": """
         CREATE TABLE IF NOT EXISTS teacher_academic_teaching_class_mappings (
             id SERIAL PRIMARY KEY,
@@ -433,6 +457,7 @@ REQUIRED_POSTGRES_TABLES = (
     "blog_news_crawler_runs",
     "blog_news_crawler_config",
     "blog_news_crawler_items",
+    "blog_sections",
     "blog_posts",
     "blog_comments",
     "blog_likes",
@@ -1659,6 +1684,7 @@ REQUIRED_POSTGRES_COLUMNS = {
     "blog_news_crawler_items": (
         "id",
         "run_id",
+        "section_key",
         "keyword",
         "course_names_json",
         "source_name",
@@ -1680,6 +1706,22 @@ REQUIRED_POSTGRES_COLUMNS = {
         "created_at",
         "updated_at",
     ),
+    "blog_sections": (
+        "section_key",
+        "name",
+        "short_name",
+        "description",
+        "icon",
+        "accent_color",
+        "sort_order",
+        "is_enabled",
+        "is_career",
+        "allow_user_posts",
+        "source_keywords_json",
+        "source_templates_json",
+        "created_at",
+        "updated_at",
+    ),
     "blog_posts": (
         "id",
         "author_identity",
@@ -1689,6 +1731,7 @@ REQUIRED_POSTGRES_COLUMNS = {
         "author_display_mode",
         "author_avatar_hash",
         "author_avatar_mime",
+        "section_key",
         "title",
         "content_md",
         "summary",

@@ -477,6 +477,7 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "blog_news_crawler_config",
             "blog_news_crawler_runs",
             "blog_news_crawler_items",
+            "blog_sections",
             "blog_posts",
             "blog_comments",
             "blog_likes",
@@ -494,7 +495,9 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_news_crawler_runs"])
         for column in ("url_hash", "duplicate_of_post_id", "raw_json"):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_news_crawler_items"])
-        for column in ("author_identity", "visibility", "system_tags_json", "bookmark_count"):
+        for column in ("section_key", "source_keywords_json", "source_templates_json"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_sections"])
+        for column in ("author_identity", "section_key", "visibility", "system_tags_json", "bookmark_count"):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_posts"])
         for column in ("parent_comment_id", "emoji_payload_json", "attachments_json"):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_comments"])

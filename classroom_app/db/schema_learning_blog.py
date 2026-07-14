@@ -262,6 +262,24 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
 
     # ── 16. 博客中心 ──
     conn.execute('''
+        CREATE TABLE IF NOT EXISTS blog_sections (
+            section_key TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            short_name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            icon TEXT NOT NULL DEFAULT '•',
+            accent_color TEXT NOT NULL DEFAULT '#2563eb',
+            sort_order INTEGER NOT NULL DEFAULT 100,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            is_career INTEGER NOT NULL DEFAULT 0,
+            allow_user_posts INTEGER NOT NULL DEFAULT 1,
+            source_keywords_json TEXT NOT NULL DEFAULT '[]',
+            source_templates_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.execute('''
         CREATE TABLE IF NOT EXISTS blog_posts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             author_identity TEXT NOT NULL,
@@ -271,6 +289,7 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
             author_display_mode TEXT NOT NULL DEFAULT 'real_name',
             author_avatar_hash TEXT DEFAULT '',
             author_avatar_mime TEXT DEFAULT '',
+            section_key TEXT NOT NULL DEFAULT 'general',
             title TEXT NOT NULL,
             content_md TEXT NOT NULL DEFAULT '',
             summary TEXT DEFAULT '',
@@ -374,6 +393,10 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE blog_posts ADD COLUMN system_tags_json TEXT DEFAULT '[]'")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE blog_posts ADD COLUMN section_key TEXT NOT NULL DEFAULT 'general'")
+    except sqlite3.OperationalError:
+        pass
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS blog_media_assets (
@@ -432,6 +455,10 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_blog_posts_status_created "
         "ON blog_posts (status, is_pinned DESC, is_featured DESC, created_at DESC, id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_posts_section_created "
+        "ON blog_posts (section_key, status, is_pinned DESC, created_at DESC, id DESC)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_blog_posts_visibility "
@@ -560,6 +587,7 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS blog_news_crawler_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id INTEGER NOT NULL,
+            section_key TEXT NOT NULL DEFAULT 'general',
             keyword TEXT NOT NULL,
             course_names_json TEXT NOT NULL DEFAULT '[]',
             source_name TEXT DEFAULT '',
@@ -588,6 +616,12 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (post_id) REFERENCES blog_posts (id) ON DELETE SET NULL
         )
     ''')
+    try:
+        conn.execute(
+            "ALTER TABLE blog_news_crawler_items ADD COLUMN section_key TEXT NOT NULL DEFAULT 'general'"
+        )
+    except sqlite3.OperationalError:
+        pass
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_blog_news_crawler_runs_status "
         "ON blog_news_crawler_runs (status, scheduled_for, created_at DESC)"
@@ -599,6 +633,10 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_blog_news_crawler_items_run "
         "ON blog_news_crawler_items (run_id, selected DESC, score DESC, id ASC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_news_crawler_items_section "
+        "ON blog_news_crawler_items (section_key, created_at DESC, id DESC)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_blog_news_crawler_items_post "

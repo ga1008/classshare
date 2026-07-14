@@ -35,6 +35,11 @@ from .blog_service import (
     create_post,
     register_media_asset,
 )
+from .blog_section_service import (
+    CAREER_BLOG_SECTION_KEY,
+    DEFAULT_BLOG_SECTION_KEY,
+    list_blog_sections,
+)
 from .file_service import global_file_write_path, resolve_global_file_path
 
 
@@ -63,6 +68,26 @@ SOURCE_KIND_FIXED_RSS = "fixed_rss"
 MAX_AI_CANDIDATES = 80
 MAX_AI_TEXT_CHARS = 1600
 
+DEFAULT_SOURCE_SECTION_KEYS: dict[str, tuple[str, ...]] = {
+    "Baidu Tech News": ("technology", "computer", "ai"),
+    "Baidu Education News": (DEFAULT_BLOG_SECTION_KEY, "humanities", CAREER_BLOG_SECTION_KEY),
+    "ChinaNews Live": (DEFAULT_BLOG_SECTION_KEY, "technology", "humanities", CAREER_BLOG_SECTION_KEY),
+    "ChinaNews Education": (DEFAULT_BLOG_SECTION_KEY, "humanities", CAREER_BLOG_SECTION_KEY),
+    "IT Home": ("technology", "computer", "ai"),
+    "InfoQ China": ("computer", "ai"),
+    "SegmentFault": ("computer", "ai"),
+    "V2EX Tech": ("computer", "ai"),
+    "SSPai": ("technology", "computer", "ai"),
+    "36Kr": ("technology", "computer", "ai", CAREER_BLOG_SECTION_KEY),
+    "GeekPark": ("technology", "computer", "ai"),
+    "QbitAI": ("technology", "ai"),
+    "Leiphone": ("technology", "computer", "ai"),
+    "TMTPost": ("technology", "computer", "ai", CAREER_BLOG_SECTION_KEY),
+    "Solidot": ("technology", "computer", "ai"),
+    "4hou Security": ("computer",),
+    "SecWiki": ("computer",),
+}
+
 DEFAULT_DOMESTIC_SOURCE_TEMPLATES: tuple[dict[str, Any], ...] = (
     {"name": "Baidu Tech News", "url": "https://news.baidu.com/n?cmd=1&class=technnews&tn=rss", "kind": SOURCE_KIND_FIXED_RSS},
     {"name": "Baidu Education News", "url": "https://news.baidu.com/n?cmd=1&class=edunews&tn=rss", "kind": SOURCE_KIND_FIXED_RSS},
@@ -81,6 +106,13 @@ DEFAULT_DOMESTIC_SOURCE_TEMPLATES: tuple[dict[str, Any], ...] = (
     {"name": "Solidot", "url": "https://www.solidot.org/index.rss", "kind": SOURCE_KIND_FIXED_RSS},
     {"name": "4hou Security", "url": "https://www.4hou.com/feed", "kind": SOURCE_KIND_FIXED_RSS},
     {"name": "SecWiki", "url": "https://www.sec-wiki.com/news/rss", "kind": SOURCE_KIND_FIXED_RSS},
+    {
+        "name": "Bing News 国内分类检索",
+        "url": "https://www.bing.com/news/search?q={{keyword_q}}&format=RSS&setlang=zh-CN&cc=CN&freshness={{bing_freshness}}",
+        "kind": SOURCE_KIND_KEYWORD_RSS,
+        "requires_keyword_match": False,
+        "section_keys": ["technology", "humanities", "computer", "ai", CAREER_BLOG_SECTION_KEY],
+    },
 )
 
 GLOBAL_FALLBACK_SOURCE_TEMPLATES: tuple[dict[str, Any], ...] = (
@@ -312,11 +344,21 @@ def _normalize_source_template(raw_template: Any) -> dict[str, Any] | None:
         requires_keyword_match = False
     else:
         requires_keyword_match = _safe_bool(match_value, default_match)
+    raw_section_keys = raw_template.get("section_keys", DEFAULT_SOURCE_SECTION_KEYS.get(name, ()))
+    if isinstance(raw_section_keys, str):
+        raw_section_keys = re.split(r"[\s,，;；|]+", raw_section_keys)
+    section_keys = []
+    for section_key in raw_section_keys if isinstance(raw_section_keys, (list, tuple)) else []:
+        normalized_section_key = str(section_key or "").strip().lower()
+        if normalized_section_key and normalized_section_key not in section_keys:
+            section_keys.append(normalized_section_key)
     return {
         "name": _truncate(name, 80),
         "url": url[:1000],
         "kind": kind,
         "requires_keyword_match": requires_keyword_match,
+        "section_keys": section_keys,
+        "query_suffix": _truncate(raw_template.get("query_suffix") or "", 500),
     }
 
 
@@ -351,9 +393,15 @@ def _source_templates_to_text(templates: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _effective_source_templates(config: dict[str, Any]) -> list[dict[str, Any]]:
+def _effective_source_templates(
+    config: dict[str, Any],
+    *,
+    section_key: str = "",
+    section_templates: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     templates = [dict(item) for item in DEFAULT_DOMESTIC_SOURCE_TEMPLATES]
     templates.extend(_normalize_source_templates(config.get("custom_source_templates") or []))
+    templates.extend(_normalize_source_templates(section_templates or []))
     if config.get("enable_global_search_sources"):
         templates.extend(dict(item) for item in GLOBAL_FALLBACK_SOURCE_TEMPLATES)
 
@@ -363,7 +411,16 @@ def _effective_source_templates(config: dict[str, Any]) -> list[dict[str, Any]]:
         item = _normalize_source_template(template)
         if not item:
             continue
-        dedupe_key = item["url"]
+        scoped_sections = item.get("section_keys") or []
+        if section_key and scoped_sections and section_key not in scoped_sections:
+            continue
+        dedupe_key = "|".join(
+            [
+                item["url"],
+                str(item.get("query_suffix") or ""),
+                ",".join(item.get("section_keys") or []),
+            ]
+        )
         if dedupe_key in seen_urls:
             continue
         seen_urls.add(dedupe_key)
@@ -458,6 +515,8 @@ class NewsCandidate:
     summary: str
     published_at: str
     fetched_at: str
+    section_key: str = DEFAULT_BLOG_SECTION_KEY
+    section_name: str = ""
     media: list[dict[str, str]] = field(default_factory=list)
     page_excerpt: str = ""
     score: float = 0.0
@@ -473,6 +532,8 @@ class NewsCandidate:
     def as_raw_payload(self) -> dict[str, Any]:
         return {
             "keyword": self.keyword,
+            "section_key": self.section_key,
+            "section_name": self.section_name,
             "course_names": self.course_names,
             "source_name": self.source_name,
             "title": self.title,
@@ -719,7 +780,36 @@ def update_blog_news_crawler_config(conn, payload: dict[str, Any], teacher_id: i
 
 
 def load_course_news_keywords(conn, config: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Build a balanced, section-aware keyword plan for the next crawler run."""
     config = config or load_blog_news_crawler_config(conn)
+    max_keywords = int(config.get("max_keywords") or 8)
+    section_catalog = list_blog_sections(conn, include_source_config=True)
+    day_offset = _now().date().toordinal()
+
+    section_entries: dict[str, list[dict[str, Any]]] = {}
+    section_order: list[str] = []
+    section_names: dict[str, str] = {}
+    for section in section_catalog:
+        section_key = str(section.get("section_key") or DEFAULT_BLOG_SECTION_KEY)
+        section_names[section_key] = str(section.get("name") or section_key)
+        raw_keywords = _split_keywords(section.get("source_keywords") or [])
+        if not raw_keywords:
+            continue
+        offset = day_offset % len(raw_keywords)
+        rotated_keywords = [*raw_keywords[offset:], *raw_keywords[:offset]]
+        section_order.append(section_key)
+        section_entries[section_key] = [
+            {
+                "keyword": keyword,
+                "course_id": None,
+                "course_name": str(section.get("name") or "板块专题"),
+                "section_key": section_key,
+                "section_name": str(section.get("name") or section_key),
+                "source_templates": list(section.get("source_templates") or []),
+            }
+            for keyword in rotated_keywords
+        ]
+
     rows = conn.execute(
         """
         SELECT id, name, sect_name, description
@@ -727,7 +817,7 @@ def load_course_news_keywords(conn, config: dict[str, Any] | None = None) -> lis
         ORDER BY id DESC
         """
     ).fetchall()
-    keywords: list[dict[str, Any]] = []
+    general_entries: list[dict[str, Any]] = []
     seen: set[str] = set()
     for row in rows:
         course_name = str(row["name"] or "").strip()
@@ -743,11 +833,14 @@ def load_course_news_keywords(conn, config: dict[str, Any] | None = None) -> lis
             if lowered in seen:
                 continue
             seen.add(lowered)
-            keywords.append(
+            general_entries.append(
                 {
                     "keyword": normalized,
                     "course_id": int(row["id"]),
                     "course_name": course_name,
+                    "section_key": DEFAULT_BLOG_SECTION_KEY,
+                    "section_name": section_names.get(DEFAULT_BLOG_SECTION_KEY, "校园与成长"),
+                    "source_templates": [],
                 }
             )
     for keyword in _split_keywords(config.get("extra_keywords") or []):
@@ -755,8 +848,54 @@ def load_course_news_keywords(conn, config: dict[str, Any] | None = None) -> lis
         if lowered in seen:
             continue
         seen.add(lowered)
-        keywords.append({"keyword": keyword, "course_id": None, "course_name": "全局补充"})
-    return keywords[: int(config.get("max_keywords") or 8)]
+        general_entries.append(
+            {
+                "keyword": keyword,
+                "course_id": None,
+                "course_name": "全局补充",
+                "section_key": DEFAULT_BLOG_SECTION_KEY,
+                "section_name": section_names.get(DEFAULT_BLOG_SECTION_KEY, "校园与成长"),
+                "source_templates": [],
+            }
+        )
+
+    planned: list[dict[str, Any]] = []
+    planned_keywords: set[str] = set()
+
+    def append_entry(entry: dict[str, Any] | None) -> None:
+        if not entry or len(planned) >= max_keywords:
+            return
+        keyword = str(entry.get("keyword") or "").strip()
+        fingerprint = f"{entry.get('section_key')}:{keyword.casefold()}"
+        if not keyword or fingerprint in planned_keywords:
+            return
+        planned_keywords.add(fingerprint)
+        planned.append(entry)
+
+    # Give every configured information section one search slot before filling
+    # extra capacity. This prevents course keywords from starving new sections.
+    for section_key in section_order:
+        entries = section_entries.get(section_key) or []
+        append_entry(entries[0] if entries else None)
+
+    # Employment is time-sensitive and gets a second daily query whenever the
+    # configured budget permits. One general/course query is kept for backwards
+    # compatibility with the original course-news workflow.
+    career_entries = section_entries.get(CAREER_BLOG_SECTION_KEY) or []
+    append_entry(career_entries[1] if len(career_entries) > 1 else None)
+    append_entry(general_entries[day_offset % len(general_entries)] if general_entries else None)
+
+    for entry_index in range(1, 20):
+        for section_key in section_order:
+            entries = section_entries.get(section_key) or []
+            append_entry(entries[entry_index] if entry_index < len(entries) else None)
+        if len(planned) >= max_keywords:
+            break
+    for entry in general_entries:
+        append_entry(entry)
+        if len(planned) >= max_keywords:
+            break
+    return planned
 
 
 def load_blog_news_crawler_dashboard(conn) -> dict[str, Any]:
@@ -777,7 +916,7 @@ def load_blog_news_crawler_dashboard(conn) -> dict[str, Any]:
         dict(row)
         for row in conn.execute(
             """
-            SELECT i.id, i.keyword, i.title AS source_title, i.source_name,
+            SELECT i.id, i.section_key, i.keyword, i.title AS source_title, i.source_name,
                    i.published_at, i.post_id, p.title AS post_title, p.status AS post_status,
                    p.created_at AS post_created_at
             FROM blog_news_crawler_items i
@@ -812,6 +951,7 @@ def load_blog_news_crawler_dashboard(conn) -> dict[str, Any]:
         worker_stale = (_now() - heartbeat) > timedelta(minutes=5)
     return {
         "config": config,
+        "sections": list_blog_sections(conn),
         "keywords": keywords,
         "sources": config.get("source_templates") or [],
         "recent_runs": recent_runs,
@@ -1140,7 +1280,11 @@ def _serialize_item_row(row: Any) -> dict[str, Any]:
     data["run_id"] = _safe_int(data.get("run_id"), 0)
     data["course_names"] = _safe_json_loads(data.get("course_names_json"), [])
     data["media"] = _safe_json_loads(data.get("media_json"), [])
-    data["raw"] = _safe_json_loads(data.get("raw_json"), {})
+    raw_payload = _safe_json_loads(data.get("raw_json"), {})
+    data["raw"] = raw_payload if isinstance(raw_payload, dict) else {}
+    data["section_key"] = str(
+        data.get("section_key") or data["raw"].get("section_key") or DEFAULT_BLOG_SECTION_KEY
+    )
     data["selected"] = bool(data.get("selected"))
     return data
 
@@ -1297,8 +1441,21 @@ async def _collect_news_candidates(config: dict[str, Any], keywords: list[dict[s
             if not keyword:
                 continue
             course_name = str(keyword_entry.get("course_name") or "").strip()
+            section_key = str(keyword_entry.get("section_key") or DEFAULT_BLOG_SECTION_KEY).strip().lower()
+            section_name = str(keyword_entry.get("section_name") or "").strip()
+            keyword_recent_days = int(config.get("recent_days") or 1)
+            if section_key == CAREER_BLOG_SECTION_KEY:
+                # Job announcements remain actionable for longer than news and
+                # often have application windows spanning several days.
+                keyword_recent_days = max(keyword_recent_days, 7)
             keyword_candidates: list[NewsCandidate] = []
-            for source in _build_search_feed_urls(keyword, int(config.get("recent_days") or 1), config):
+            for source in _build_search_feed_urls(
+                keyword,
+                keyword_recent_days,
+                config,
+                section_key=section_key,
+                section_templates=keyword_entry.get("source_templates") or [],
+            ):
                 if _domain_from_url(source.url) in blocked_domains:
                     continue
                 if source.url in feed_cache:
@@ -1337,10 +1494,12 @@ async def _collect_news_candidates(config: dict[str, Any], keywords: list[dict[s
                         summary=summary,
                         published_at=str(parsed.get("published_at") or ""),
                         fetched_at=_now_iso(),
+                        section_key=section_key,
+                        section_name=section_name,
                         media=_normalize_media(parsed.get("media") or []),
                     )
                     candidate.score = _score_candidate(candidate, config)
-                    if not _is_recent_enough(candidate, int(config.get("recent_days") or 1)):
+                    if not _is_recent_enough(candidate, keyword_recent_days):
                         continue
                     unique_key = f"{candidate.url_hash}:{candidate.content_hash}"
                     if unique_key in seen_hashes:
@@ -1366,18 +1525,31 @@ async def _collect_news_candidates(config: dict[str, Any], keywords: list[dict[s
     return candidates[: int(config.get("max_candidates_total") or 80)]
 
 
-def _build_search_feed_urls(keyword: str, recent_days: int, config: dict[str, Any] | None = None) -> list[NewsFeedSource]:
-    encoded = quote_plus(keyword)
-    replacements = {
-        "{{keyword}}": encoded,
-        "{{keyword_q}}": encoded,
-        "{{keyword_plus}}": encoded,
-        "{{keyword_raw}}": keyword,
-        "{{recent_days}}": str(max(1, recent_days)),
-        "{{bing_freshness}}": "Day" if recent_days <= 1 else "Week",
-    }
+def _build_search_feed_urls(
+    keyword: str,
+    recent_days: int,
+    config: dict[str, Any] | None = None,
+    *,
+    section_key: str = "",
+    section_templates: list[dict[str, Any]] | None = None,
+) -> list[NewsFeedSource]:
     sources: list[NewsFeedSource] = []
-    for template in _effective_source_templates(config or {}):
+    for template in _effective_source_templates(
+        config or {},
+        section_key=section_key,
+        section_templates=section_templates,
+    ):
+        query_suffix = str(template.get("query_suffix") or "").strip()
+        search_query = f"{keyword} {query_suffix}".strip()
+        encoded = quote_plus(search_query)
+        replacements = {
+            "{{keyword}}": encoded,
+            "{{keyword_q}}": encoded,
+            "{{keyword_plus}}": encoded,
+            "{{keyword_raw}}": search_query,
+            "{{recent_days}}": str(max(1, recent_days)),
+            "{{bing_freshness}}": "Day" if recent_days <= 1 else "Week",
+        }
         raw_url = str(template.get("url") or "")
         for token, value in replacements.items():
             raw_url = raw_url.replace(token, value)
@@ -1594,14 +1766,15 @@ def _store_candidates(conn, run_id: int, candidates: list[NewsCandidate]) -> tup
         now = _now_iso()
         insert_sql = """
             INSERT INTO blog_news_crawler_items (
-                run_id, keyword, course_names_json, source_name, title, url, canonical_url,
+                run_id, section_key, keyword, course_names_json, source_name, title, url, canonical_url,
                 url_hash, content_hash, summary, published_at, fetched_at, media_json,
                 score, raw_json, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         insert_params = (
             run_id,
+            candidate.section_key or DEFAULT_BLOG_SECTION_KEY,
             candidate.keyword,
             _json_dumps(candidate.course_names),
             candidate.source_name,
@@ -1651,6 +1824,7 @@ async def _select_candidates_with_ai(
             "\n".join(
                 [
                     f"ID: {item['id']}",
+                    f"板块: {item.get('section_key') or DEFAULT_BLOG_SECTION_KEY}",
                     f"关键词: {item.get('keyword')}",
                     f"标题: {item.get('title')}",
                     f"来源: {item.get('source_name')} / {_domain_from_url(item.get('canonical_url') or item.get('url'))}",
@@ -1661,12 +1835,16 @@ async def _select_candidates_with_ai(
                 ]
             )
         )
-    interest_keywords = "、".join(str(item.get("keyword") or "") for item in keywords[:30])
+    interest_keywords = "、".join(
+        f"[{item.get('section_name') or item.get('section_key') or '综合'}] {item.get('keyword') or ''}"
+        for item in keywords[:30]
+    )
     candidate_text = "\n\n---\n\n".join(candidate_lines)
     system_prompt = (
         "你是高校课堂平台的 AI 博客选题主编，只输出合法 JSON。"
         "请从新闻候选中挑出最适合所有专业学生闲逛博客时阅读的前沿、有趣、有讨论价值的内容。"
         "课程关键词只代表信息检索方向，不要求文章必须点题到某门课程。"
+        "选题要兼顾不同板块；只要存在合格的就业候选，至少选择一条毕业新征程内容。"
         "避免重复、广告软文、空泛资讯、纯商业稿、标题党和不适合课堂公开讨论的内容。"
     )
     user_message = f"""
@@ -1700,7 +1878,59 @@ async def _select_candidates_with_ai(
         if len(selected_ids) >= max_posts:
             break
     item_map = {int(item["id"]): item for item in candidates}
-    return [item_map[item_id] for item_id in selected_ids if item_id in item_map]
+    selected_rows = [item_map[item_id] for item_id in selected_ids if item_id in item_map]
+    return _balance_section_selection(limited, selected_rows, max_posts=max_posts)
+
+
+def _balance_section_selection(
+    candidates: list[dict[str, Any]],
+    selected: list[dict[str, Any]],
+    *,
+    max_posts: int,
+) -> list[dict[str, Any]]:
+    """Keep AI judgement while guaranteeing timely career coverage when possible."""
+    max_posts = max(1, int(max_posts or 1))
+    balanced: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for item in selected:
+        item_id = _safe_int(item.get("id"), 0)
+        if item_id and item_id not in seen_ids:
+            balanced.append(item)
+            seen_ids.add(item_id)
+        if len(balanced) >= max_posts:
+            break
+
+    career_candidate = next(
+        (item for item in candidates if str(item.get("section_key") or "") == CAREER_BLOG_SECTION_KEY),
+        None,
+    )
+    if career_candidate and not any(
+        str(item.get("section_key") or "") == CAREER_BLOG_SECTION_KEY for item in balanced
+    ):
+        career_id = _safe_int(career_candidate.get("id"), 0)
+        if len(balanced) >= max_posts:
+            removed = balanced.pop()
+            seen_ids.discard(_safe_int(removed.get("id"), 0))
+        balanced.insert(0, career_candidate)
+        seen_ids.add(career_id)
+
+    used_sections = {str(item.get("section_key") or DEFAULT_BLOG_SECTION_KEY) for item in balanced}
+    for prefer_new_section in (True, False):
+        for item in candidates:
+            if len(balanced) >= max_posts:
+                break
+            item_id = _safe_int(item.get("id"), 0)
+            section_key = str(item.get("section_key") or DEFAULT_BLOG_SECTION_KEY)
+            if not item_id or item_id in seen_ids:
+                continue
+            if prefer_new_section and section_key in used_sections:
+                continue
+            balanced.append(item)
+            seen_ids.add(item_id)
+            used_sections.add(section_key)
+        if len(balanced) >= max_posts:
+            break
+    return balanced
 
 
 async def _rewrite_candidates_with_ai(
@@ -1722,6 +1952,7 @@ async def _rewrite_candidates_with_ai(
             "\n".join(
                 [
                     f"ID: {item['id']}",
+                    f"板块: {item.get('section_key') or DEFAULT_BLOG_SECTION_KEY}",
                     f"关键词: {item.get('keyword')}",
                     f"标题: {item.get('title')}",
                     f"摘要: {_truncate(item.get('summary'), MAX_AI_TEXT_CHARS)}",
@@ -1752,6 +1983,7 @@ async def _rewrite_candidates_with_ai(
   "posts": [
     {{
       "source_item_ids": [123],
+      "section_key": "career",
       "title": "自然、不标题党的博客标题",
       "content_md": "Markdown 正文，可包含 {{{{image_1}}}} 占位符",
       "tags": ["极客闲聊", "今日科技"]
@@ -1769,6 +2001,8 @@ async def _rewrite_candidates_with_ai(
 - 不要照搬新闻原文，引用只用链接标题。
 - 视频、报告、代码仓库等非图片媒体请作为普通链接处理。
 - 每篇控制在 450-850 字，段落短一点，少用小标题，尽量像聊天。
+- 毕业新征程板块必须优先提取单位/项目、岗位或机会、工作地区、适合对象、报名方式、截止时间和官方入口；原始材料缺少的字段明确写“以官方页面为准”，不得补造。
+- 就业内容要给出可执行的下一步，并提醒核验官方域名、警惕收费内推、押金和索要敏感证件等风险。
 - 不要在正文末尾输出“参考来源”“引用”“来源链接”等列表，系统会统一追加。
 
 新闻材料：
@@ -1849,6 +2083,7 @@ async def _publish_rewritten_posts(
                     ASSISTANT_USER,
                     title=title,
                     content_md=final_content,
+                    section_key=str(primary.get("section_key") or DEFAULT_BLOG_SECTION_KEY),
                     author_display_mode=AUTHOR_DISPLAY_REAL,
                     visibility=VISIBILITY_PUBLIC,
                     allow_comments=True,
@@ -1883,7 +2118,16 @@ async def _publish_rewritten_posts(
 
 def _normalize_post_tags(tags: Any, primary: dict[str, Any]) -> list[str]:
     normalized = _split_keywords(tags if isinstance(tags, list) else str(tags or ""))
-    for tag in ["极客闲聊", "今日科技", str(primary.get("keyword") or "")]:
+    section_key = str(primary.get("section_key") or DEFAULT_BLOG_SECTION_KEY)
+    section_tag_map = {
+        DEFAULT_BLOG_SECTION_KEY: "校园与成长",
+        "technology": "科技前沿",
+        "humanities": "人文视界",
+        "computer": "计算机",
+        "ai": "AI新知",
+        CAREER_BLOG_SECTION_KEY: "毕业新征程",
+    }
+    for tag in [section_tag_map.get(section_key, "博客精选"), str(primary.get("keyword") or "")]:
         if tag and tag.lower() not in {item.lower() for item in normalized}:
             normalized.append(tag)
     return normalized[:5]

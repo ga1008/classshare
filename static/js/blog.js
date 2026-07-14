@@ -130,6 +130,7 @@ class BlogCenter {
         this.userRole = (shell.dataset.currentUserRole || '').trim().toLowerCase();
         this.userName = shell.dataset.currentUserName || '';
         this.userNickname = shell.dataset.currentUserNickname || '';
+        this.initialSection = (shell.dataset.initialSection || '').trim().toLowerCase();
         this.currentAvatarUrl = '/api/profile/avatar';
         this.composeUserMap = new Map();
         this.commentDraft = this.createEmptyCommentDraft();
@@ -140,6 +141,8 @@ class BlogCenter {
             currentView: 'feed',
             currentNav: 'feed',
             currentSort: 'latest',
+            currentSection: this.initialSection,
+            sections: [],
             detailPostId: null,
             detailPost: null,
             posts: [],
@@ -179,6 +182,7 @@ class BlogCenter {
         this.loadDiscovery();
 
         const url = new URL(window.location.href);
+        this.state.currentSection = (url.searchParams.get('section') || this.initialSection || '').trim().toLowerCase();
         const postId = Number(url.searchParams.get('post') || 0);
         if (postId) {
             this.showDetail(postId);
@@ -240,6 +244,12 @@ class BlogCenter {
         const navButton = event.target.closest('[data-blog-nav]');
         if (navButton) {
             this.setNav(navButton.dataset.blogNav || 'feed');
+            return;
+        }
+
+        const sectionButton = event.target.closest('[data-blog-section]');
+        if (sectionButton) {
+            this.setSection(sectionButton.dataset.blogSection || '');
             return;
         }
 
@@ -528,7 +538,7 @@ class BlogCenter {
         case 'back-to-feed':
             this.showCurrentListView();
             this.refreshCurrentList();
-            window.history.replaceState({}, '', '/blog');
+            this.updateListUrl();
             break;
         case 'upload-image':
             $('[data-blog-compose-file-input]', this.shell)?.click();
@@ -578,6 +588,113 @@ class BlogCenter {
         }
     }
 
+    setSection(sectionKey) {
+        const normalizedKey = String(sectionKey || '').trim().toLowerCase();
+        if (normalizedKey && this.state.sections.length && !this.state.sections.some((item) => item.section_key === normalizedKey)) {
+            showToast('这个板块暂不可用', 'warning');
+            return;
+        }
+        this.state.currentSection = normalizedKey;
+        this.state.currentNav = 'feed';
+        this.state.page = 1;
+        this.state.authorFilter = null;
+        this.state.tagFilter = null;
+        const searchInput = $('[data-blog-search]', this.shell);
+        if (searchInput) searchInput.value = '';
+        this.updateNavTabs();
+        this.updateAuthorFilterBanner();
+        this.updateTagFilterBanner();
+        this.showView('feed');
+        this.renderSectionTabs();
+        this.renderSectionIntro();
+        this.updateListUrl();
+        this.loadFeed();
+        this.loadDiscovery();
+    }
+
+    updateListUrl() {
+        const url = new URL('/blog', window.location.origin);
+        if (this.state.currentNav === 'feed' && this.state.currentSection) {
+            url.searchParams.set('section', this.state.currentSection);
+        }
+        window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+    }
+
+    sectionByKey(sectionKey) {
+        const normalizedKey = String(sectionKey || '').trim().toLowerCase();
+        const configured = this.state.sections.find((item) => item.section_key === normalizedKey);
+        if (configured) return configured;
+        const defaults = {
+            general: { section_key: 'general', name: '校园与成长', short_name: '综合', icon: '✦', accent_color: '#2563eb' },
+            technology: { section_key: 'technology', name: '科技前沿', short_name: '科技', icon: '⌁', accent_color: '#0f766e' },
+            humanities: { section_key: 'humanities', name: '人文视界', short_name: '人文', icon: '文', accent_color: '#b45309' },
+            computer: { section_key: 'computer', name: '计算机', short_name: '计算机', icon: '</>', accent_color: '#4f46e5' },
+            ai: { section_key: 'ai', name: 'AI 新知', short_name: 'AI', icon: 'AI', accent_color: '#7c3aed' },
+            career: { section_key: 'career', name: '毕业新征程', short_name: '就业', icon: '→', accent_color: '#e11d48' },
+        };
+        return defaults[normalizedKey] || null;
+    }
+
+    sectionAccent(section) {
+        const value = String(section?.accent_color || '').trim();
+        return /^#[0-9a-f]{6}$/i.test(value) ? value : '#2563eb';
+    }
+
+    renderSectionTabs() {
+        const container = $('[data-blog-section-tabs]', this.shell);
+        if (!container || !this.state.sections.length) return;
+        const total = this.state.sections.reduce((sum, item) => sum + Number(item.post_count || 0), 0);
+        const allActive = !this.state.currentSection;
+        const tabs = [
+            `
+                <button class="blog-section-tab${allActive ? ' is-active' : ''}" data-blog-section="" type="button" role="tab" aria-selected="${allActive ? 'true' : 'false'}" style="--section-accent:#0f172a">
+                    <span class="blog-section-tab__icon">◎</span>
+                    <span class="blog-section-tab__body"><strong>全部</strong><small>发现所有好内容</small></span>
+                    <span class="blog-section-tab__count">${formatCompactNumber(total)}</span>
+                </button>
+            `,
+            ...this.state.sections.map((section) => {
+                const active = section.section_key === this.state.currentSection;
+                return `
+                    <button class="blog-section-tab${active ? ' is-active' : ''}" data-blog-section="${escapeHtml(section.section_key || '')}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" style="--section-accent:${this.sectionAccent(section)}">
+                        <span class="blog-section-tab__icon">${escapeHtml(section.icon || '•')}</span>
+                        <span class="blog-section-tab__body"><strong>${escapeHtml(section.short_name || section.name || '板块')}</strong><small>${escapeHtml(section.name || '')}</small></span>
+                        <span class="blog-section-tab__count">${formatCompactNumber(section.post_count || 0)}</span>
+                    </button>
+                `;
+            }),
+        ];
+        container.innerHTML = tabs.join('');
+        container.querySelector('.blog-section-tab.is-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+
+    renderSectionIntro() {
+        const intro = $('[data-blog-section-intro]', this.shell);
+        if (!intro) return;
+        const section = this.sectionByKey(this.state.currentSection);
+        if (!section) {
+            intro.style.removeProperty('--section-accent');
+            intro.innerHTML = '<span>全站广场</span><p>从不同方向遇见新问题、新知识和下一段旅程。</p>';
+            return;
+        }
+        intro.style.setProperty('--section-accent', this.sectionAccent(section));
+        intro.innerHTML = `<span>${escapeHtml(section.name || '')}</span><p>${escapeHtml(section.description || '')}</p>`;
+    }
+
+    sectionBadgeHtml(sectionKey, className = '') {
+        const section = this.sectionByKey(sectionKey);
+        if (!section) return '';
+        return `<span class="blog-section-badge ${escapeHtml(className)}" style="--section-accent:${this.sectionAccent(section)}"><span>${escapeHtml(section.icon || '•')}</span>${escapeHtml(section.short_name || section.name || '')}</span>`;
+    }
+
+    updateDetailTopbar(post = this.state.detailPost) {
+        const section = this.sectionByKey(post?.section_key);
+        const sectionNode = $('[data-blog-detail-section]', this.shell);
+        const titleNode = $('[data-blog-detail-title]', this.shell);
+        if (sectionNode) sectionNode.textContent = section?.name || '博客中心';
+        if (titleNode) titleNode.textContent = post?.title || '文章详情';
+    }
+
     setMyPostsFilter(filterValue) {
         this.state.myPostsFilter = filterValue === 'all' ? null : filterValue;
         $$('[data-blog-myposts-filter]', this.shell).forEach((button) => {
@@ -592,6 +709,10 @@ class BlogCenter {
             view.hidden = view.dataset.blogView !== viewName;
         });
         this.state.currentView = viewName;
+        const isDetail = viewName === 'detail';
+        this.shell.classList.toggle('is-detail-mode', isDetail);
+        const detailTopbar = $('[data-blog-detail-topbar]', this.shell);
+        if (detailTopbar) detailTopbar.hidden = !isDetail;
     }
 
     showCurrentListView() {
@@ -738,7 +859,9 @@ class BlogCenter {
     async loadDiscovery() {
         this.renderDiscoveryLoading();
         try {
-            const data = await api.get('/api/blog/discovery');
+            const url = new URL('/api/blog/discovery', window.location.origin);
+            if (this.state.currentSection) url.searchParams.set('section', this.state.currentSection);
+            const data = await api.get(`${url.pathname}${url.search}`);
             this.state.discovery = data;
             this.renderDiscovery(data);
         } catch (error) {
@@ -774,6 +897,20 @@ class BlogCenter {
     }
 
     renderDiscovery(data = {}) {
+        if (Array.isArray(data.sections) && data.sections.length) {
+            this.state.sections = data.sections;
+            if (this.state.currentSection && !this.state.sections.some((item) => item.section_key === this.state.currentSection)) {
+                this.state.currentSection = '';
+                this.updateListUrl();
+            }
+            this.renderSectionTabs();
+            this.renderSectionIntro();
+            this.updateDetailTopbar();
+            if (this.state.currentView === 'feed' && this.state.posts.length) {
+                const feed = $('[data-blog-feed]', this.shell);
+                if (feed) feed.innerHTML = this.state.posts.map((post) => this.postCardHtml(post)).join('');
+            }
+        }
         const summary = data.summary || {};
         this.setHeroStat('today', summary.today_new_count);
         this.setHeroStat('visible', summary.visible_count);
@@ -843,6 +980,7 @@ class BlogCenter {
             <button type="button" class="blog-spotlight-card${index === 0 ? ' blog-spotlight-card--lead' : ''}" data-blog-open-post="${post.id}">
                 <div class="blog-spotlight-card__media">${cover}</div>
                 <div class="blog-spotlight-card__body">
+                    ${this.sectionBadgeHtml(post.section_key, 'blog-section-badge--spotlight')}
                     <div class="blog-spotlight-card__meta">
                         <span>${escapeHtml(timeAgo(post.created_at))}</span>
                         <span>${post.reading_minutes || 1} 分钟读完</span>
@@ -899,6 +1037,7 @@ class BlogCenter {
         url.searchParams.set('sort', this.state.currentSort);
         url.searchParams.set('page', String(this.state.page));
         url.searchParams.set('limit', String(POSTS_PAGE_SIZE));
+        if (this.state.currentSection) url.searchParams.set('section', this.state.currentSection);
         if (search) url.searchParams.set('q', search);
         if (this.state.tagFilter) url.searchParams.set('tag', this.state.tagFilter);
         if (this.state.authorFilter?.identity) {
@@ -1009,18 +1148,24 @@ class BlogCenter {
         if (!container || !postId) return;
         this.showView('detail');
         this.state.detailPostId = postId;
+        this.state.detailPost = null;
+        this.updateDetailTopbar();
         container.innerHTML = this.skeletonHtml(1);
 
         try {
             const data = await api.get(`/api/blog/posts/${postId}`);
             const post = data.post;
             this.state.detailPost = post;
+            this.updateDetailTopbar(post);
             this.closeCommentPanels();
             this.resetCommentDraft();
             container.innerHTML = this.detailHtml(post);
             this.renderCommentDraftState();
             this.initCommentComposer();
-            window.history.replaceState({}, '', `/blog?post=${postId}`);
+            const detailUrl = new URL('/blog', window.location.origin);
+            if (this.state.currentSection) detailUrl.searchParams.set('section', this.state.currentSection);
+            detailUrl.searchParams.set('post', String(postId));
+            window.history.replaceState({}, '', `${detailUrl.pathname}${detailUrl.search}`);
         } catch (error) {
             this.state.detailPost = null;
             container.innerHTML = this.emptyHtml(error.message || '帖子详情加载失败');
@@ -1040,6 +1185,12 @@ class BlogCenter {
         const visibility = post?.visibility || 'public';
         const visibilitySelect = $('[data-blog-compose-visibility]', this.shell);
         if (visibilitySelect) visibilitySelect.value = visibility;
+        const sectionSelect = $('[data-blog-compose-section]', this.shell);
+        if (sectionSelect) {
+            const preferredSection = post?.section_key || this.state.currentSection || 'general';
+            const canSelectPreferred = Array.from(sectionSelect.options).some((option) => option.value === preferredSection);
+            sectionSelect.value = canSelectPreferred ? preferredSection : (sectionSelect.options[0]?.value || 'general');
+        }
 
         this.state.editingPostId = post?.id || null;
         this.state.uploadedImages = uniqueMediaItems(post?.attachments || []);
@@ -1104,6 +1255,7 @@ class BlogCenter {
         const title = $('[data-blog-compose-title]', this.shell)?.value?.trim() || '';
         const content = $('[data-blog-compose-content]', this.shell)?.value?.trim() || '';
         const visibility = $('[data-blog-compose-visibility]', this.shell)?.value || 'public';
+        const sectionKey = $('[data-blog-compose-section]', this.shell)?.value || 'general';
         const allowComments = Boolean($('[data-blog-compose-comments]', this.shell)?.checked);
         const classIdValue = $('[data-blog-compose-class]', this.shell)?.value || '';
         const authorDisplayMode = this.getSelectedAuthorMode();
@@ -1124,6 +1276,7 @@ class BlogCenter {
         const payload = {
             title,
             content_md: content,
+            section_key: sectionKey,
             visibility,
             allow_comments: allowComments,
             author_display_mode: authorDisplayMode,
@@ -1274,7 +1427,7 @@ class BlogCenter {
             this.showCurrentListView();
             this.refreshCurrentList();
             this.loadDiscovery();
-            window.history.replaceState({}, '', '/blog');
+            this.updateListUrl();
         } catch (error) {
             showToast(error.message || '删除失败', 'error');
         }
@@ -1800,6 +1953,8 @@ class BlogCenter {
 
     postCardHtml(post, { ownView = false } = {}) {
         const badges = [];
+        const sectionBadge = this.sectionBadgeHtml(post.section_key, 'blog-section-badge--card');
+        if (sectionBadge) badges.push(sectionBadge);
         if (post.is_pinned) badges.push('<span class="blog-badge blog-badge--pin">置顶</span>');
         if (post.is_featured) badges.push('<span class="blog-badge blog-badge--feature">精华</span>');
         if (post.status === 'draft') badges.push('<span class="blog-badge blog-badge--draft">草稿</span>');
@@ -1868,6 +2023,8 @@ class BlogCenter {
     detailHtml(post) {
         const permissions = post.permissions || {};
         const metaBadges = [];
+        const sectionBadge = this.sectionBadgeHtml(post.section_key, 'blog-section-badge--detail');
+        if (sectionBadge) metaBadges.push(sectionBadge);
         if (post.is_pinned) metaBadges.push('<span class="blog-badge blog-badge--pin">置顶</span>');
         if (post.is_featured) metaBadges.push('<span class="blog-badge blog-badge--feature">精华</span>');
         if (post.status === 'draft') metaBadges.push('<span class="blog-badge blog-badge--draft">草稿</span>');

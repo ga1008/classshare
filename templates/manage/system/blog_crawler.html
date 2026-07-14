@@ -213,10 +213,37 @@
         color: var(--text-primary);
     }
 
+    .bc-section-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-sm);
+    }
+
+    .bc-section-card {
+        padding: var(--spacing-md);
+        border: 1px solid color-mix(in srgb, var(--section-accent, #2563eb) 24%, var(--border-color));
+        border-radius: 12px;
+        background: linear-gradient(135deg, color-mix(in srgb, var(--section-accent, #2563eb) 7%, white), #fff);
+    }
+
+    .bc-section-card strong {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--section-accent, #2563eb);
+    }
+
+    .bc-section-card p {
+        margin: 0 0 8px;
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        line-height: 1.55;
+    }
+
     @media (max-width: 960px) {
         .bc-summary,
         .bc-main-grid,
-        .bc-form-grid {
+        .bc-form-grid,
+        .bc-section-grid {
             grid-template-columns: 1fr;
         }
 
@@ -237,7 +264,7 @@
     </div>
     <div class="bc-hero__text">
         <h2>AI博客管家</h2>
-        <p>按课程关键词抓取近日报道，筛选后由 AI 管家改写并发布到博客中心。</p>
+        <p>按板块与课程关键词抓取近日报道，兼顾科技、人文、计算机、AI 与毕业生就业信息，筛选后由 AI 管家改写并归档到对应板块。</p>
     </div>
 </div>
 
@@ -353,6 +380,19 @@
     </section>
 
     <section class="bc-panel">
+        <h3>板块采集计划</h3>
+        <div class="bc-section-grid" id="bc-sections">
+            {% for section in dashboard.sections %}
+            <article class="bc-section-card" style="--section-accent:{{ section.accent_color }}">
+                <strong>{{ section.icon }} {{ section.name }}</strong>
+                <p>{{ section.description }}</p>
+                <span class="bc-muted">{% if section.is_career %}就业信息每日优先保留采集与选题名额{% else %}按板块关键词轮换采集{% endif %}</span>
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="bc-panel">
         <h3>运行记录</h3>
         <div class="bc-table-wrap">
             <table class="bc-table">
@@ -389,10 +429,10 @@
     </div>
 
     <aside class="bc-panel">
-        <h3>课程关键词</h3>
+        <h3>本次板块关键词</h3>
         <div class="bc-keywords" id="bc-keywords">
             {% for item in dashboard.keywords %}
-            <span class="bc-chip">{{ item.keyword }}</span>
+            <span class="bc-chip">{{ item.section_name or '综合' }} · {{ item.keyword }}</span>
             {% endfor %}
             {% if not dashboard.keywords %}
             <span class="bc-muted">暂无课程关键词</span>
@@ -412,7 +452,7 @@
             {% for post in dashboard.recent_posts %}
             <article class="bc-post">
                 <strong>{{ post.post_title }}</strong>
-                <div class="bc-muted">{{ post.keyword }} · {{ post.post_created_at }}</div>
+                <div class="bc-muted">{{ post.section_key or 'general' }} · {{ post.keyword }} · {{ post.post_created_at }}</div>
                 <a href="/blog?post={{ post.post_id }}" target="_blank" rel="noopener noreferrer">打开博客</a>
             </article>
             {% endfor %}

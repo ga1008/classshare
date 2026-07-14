@@ -42,6 +42,10 @@ class BlogPostgresWriteTests(unittest.TestCase):
             return_value=(blog_service.VISIBILITY_PUBLIC, None, []),
         ), patch.object(
             blog_service,
+            "resolve_blog_section_key",
+            return_value="general",
+        ), patch.object(
+            blog_service,
             "_resolve_post_media_assets",
             return_value=[],
         ), patch.object(

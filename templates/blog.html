@@ -12,9 +12,24 @@
      data-current-user-identity="{{ user_info.role }}:{{ user_info.id }}"
      data-current-user-role="{{ user_info.role }}"
      data-current-user-name="{{ user_info.name }}"
-     data-current-user-nickname="{{ user_info.nickname }}">
+     data-current-user-nickname="{{ user_info.nickname }}"
+     data-initial-section="{{ request.query_params.get('section', '') }}">
+    <div class="blog-detail-topbar" data-blog-detail-topbar hidden>
+        <button class="blog-detail-topbar__back" data-blog-action="back-to-feed" type="button">
+            <span class="blog-detail-topbar__back-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>
+            </span>
+            <span><strong>返回博客列表</strong><small>继续浏览刚才的板块</small></span>
+        </button>
+        <div class="blog-detail-topbar__context">
+            <span data-blog-detail-section>博客中心</span>
+            <strong data-blog-detail-title>文章详情</strong>
+        </div>
+        <button class="btn btn-primary btn-sm blog-detail-topbar__compose" data-blog-action="compose" type="button">写帖子</button>
+    </div>
+
     <!-- Header -->
-    <header class="blog-hero">
+    <header class="blog-hero" data-blog-list-chrome>
         <div class="blog-hero__content">
             <div class="blog-shell__title-row">
                 <svg class="blog-shell__title-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -39,11 +54,32 @@
         </div>
     </header>
 
-    <div class="blog-sidebar-nav blog-channel-tabs">
+    <div class="blog-sidebar-nav blog-channel-tabs" data-blog-list-chrome>
         <button class="blog-sidebar-tab is-active" data-blog-nav="feed">全部帖子</button>
         <button class="blog-sidebar-tab" data-blog-nav="my-posts">我的帖子</button>
         <button class="blog-sidebar-tab" data-blog-nav="bookmarks">我的收藏</button>
     </div>
+
+    <section class="blog-section-switcher" data-blog-list-chrome aria-label="博客板块">
+        <div class="blog-section-tabs" data-blog-section-tabs role="tablist">
+            <button class="blog-section-tab is-active" data-blog-section="" type="button" role="tab" aria-selected="true" style="--section-accent:#0f172a">
+                <span class="blog-section-tab__icon">◎</span>
+                <span class="blog-section-tab__body"><strong>全部</strong><small>发现所有好内容</small></span>
+                <span class="blog-section-tab__count">{{ (blog_sections | map(attribute='post_count') | sum) if blog_sections else 0 }}</span>
+            </button>
+            {% for section in blog_sections %}
+            <button class="blog-section-tab" data-blog-section="{{ section.section_key }}" type="button" role="tab" aria-selected="false" style="--section-accent:{{ section.accent_color }}">
+                <span class="blog-section-tab__icon">{{ section.icon }}</span>
+                <span class="blog-section-tab__body"><strong>{{ section.short_name }}</strong><small>{{ section.name }}</small></span>
+                <span class="blog-section-tab__count">{{ section.post_count }}</span>
+            </button>
+            {% endfor %}
+        </div>
+        <div class="blog-section-intro" data-blog-section-intro>
+            <span>全站广场</span>
+            <p>从不同方向遇见新问题、新知识和下一段旅程。</p>
+        </div>
+    </section>
 
     <!-- Feed View -->
     <div data-blog-view="feed">
@@ -110,11 +146,6 @@
 
     <!-- Post Detail View -->
     <div data-blog-view="detail" hidden>
-        <button class="blog-detail__back" data-blog-action="back-to-feed">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-            返回列表
-        </button>
-
         <article class="blog-detail" data-blog-detail-content></article>
     </div>
 
@@ -203,6 +234,14 @@
 
                     <!-- Options -->
                     <div class="blog-composer__options">
+                        <div class="blog-composer__option blog-composer__option--section">
+                            <label>发布到板块</label>
+                            <select class="blog-visibility-select blog-section-select" data-blog-compose-section>
+                                {% for section in blog_sections if section.allow_user_posts %}
+                                <option value="{{ section.section_key }}">{{ section.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                         <div class="blog-composer__option">
                             <label>可见范围</label>
                             <select class="blog-visibility-select" data-blog-compose-visibility>
