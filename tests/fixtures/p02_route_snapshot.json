@@ -8,6 +8,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/achievements",
+    "methods": [
+      "GET"
+    ],
+    "name": "achievements_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/achievements",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_achievements",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-bridge/file",
     "methods": [
       "POST"
@@ -789,6 +805,22 @@
       "GET"
     ],
     "name": "api_users_search",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/calendar-feed",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_calendar_feed_info",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/calendar-feed/reset",
+    "methods": [
+      "POST"
+    ],
+    "name": "reset_calendar_feed",
     "include_in_schema": true
   },
   {
@@ -1797,6 +1829,14 @@
       "PUT"
     ],
     "name": "update_file_metadata",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/global-search",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_global_search",
     "include_in_schema": true
   },
   {
@@ -3488,6 +3528,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/points",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_points",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/points/redeem",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_redeem",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/polls/classrooms/{class_offering_id}/candidates",
     "methods": [
       "GET"
@@ -3717,6 +3773,14 @@
       "POST"
     ],
     "name": "record_prompt",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/report-card",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_report_card",
     "include_in_schema": true
   },
   {
@@ -4328,6 +4392,38 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/todos",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_account_todo",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/todos/{todo_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_account_todo",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/todos/{todo_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "update_account_todo",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/wrong-book",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_wrong_book",
+    "include_in_schema": true
+  },
+  {
     "path": "/assessment-plan/{plan_id}/edit",
     "methods": [
       "GET"
@@ -4373,6 +4469,14 @@
       "GET"
     ],
     "name": "blog_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/calendar/feed/{token}.ics",
+    "methods": [
+      "GET"
+    ],
+    "name": "calendar_feed",
     "include_in_schema": true
   },
   {
@@ -5144,11 +5248,27 @@
     "include_in_schema": true
   },
   {
+    "path": "/points",
+    "methods": [
+      "GET"
+    ],
+    "name": "points_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/profile",
     "methods": [
       "GET"
     ],
     "name": "profile_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/report-card",
+    "methods": [
+      "GET"
+    ],
+    "name": "report_card_page",
     "include_in_schema": true
   },
   {
@@ -5277,6 +5397,14 @@
       "POST"
     ],
     "name": "handle_teacher_register",
+    "include_in_schema": true
+  },
+  {
+    "path": "/wrong-book",
+    "methods": [
+      "GET"
+    ],
+    "name": "wrong_book_page",
     "include_in_schema": true
   }
 ]

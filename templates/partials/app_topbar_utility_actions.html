@@ -1,4 +1,13 @@
 {% from "macros/app_topbar.html" import app_topbar_icon %}
+<button type="button" class="app-topbar-action app-topbar-action--tone-slate" data-global-search-open title="全局搜索（快捷键 /）" aria-label="打开全局搜索">
+    <span class="app-topbar-action__icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    </span>
+    <span class="app-topbar-action__text">
+        <strong>搜索</strong>
+        <small>课堂与材料</small>
+    </span>
+</button>
 <details class="app-topbar-menu app-topbar-menu--learning">
     <summary class="app-topbar-action app-topbar-action--tone-slate" title="{% if user_info.role == 'teacher' %}教学工具{% else %}学习工具{% endif %}" aria-label="{% if user_info.role == 'teacher' %}打开教学工具{% else %}打开学习工具{% endif %}">
         <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('map') }}</span>
@@ -19,9 +28,13 @@
             {{ app_topbar_icon('map') }}
             <span><strong>学习路径</strong><small>个性推进建议</small></span>
         </a>
+        <a href="/wrong-book" class="app-topbar-menu__item" role="menuitem">
+            {{ app_topbar_icon('pen') }}
+            <span><strong>错题本</strong><small>考试失分与薄弱点</small></span>
+        </a>
         <a href="/feedback-review" class="app-topbar-menu__item" role="menuitem">
             {{ app_topbar_icon('pen') }}
-            <span><strong>错题本</strong><small>反馈复盘与再练</small></span>
+            <span><strong>反馈复盘</strong><small>批改反馈与再练</small></span>
         </a>
         {% endif %}
         <a href="/blog" class="app-topbar-menu__item" title="博客" aria-label="打开博客" data-blog-topbar-entry role="menuitem">

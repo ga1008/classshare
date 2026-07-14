@@ -3643,6 +3643,80 @@ def create_assignment_published_notifications(
     return inserted_count
 
 
+def create_assignment_due_reminder_notifications(
+    conn,
+    assignment_id: int | str,
+    *,
+    window_label: str,
+    window_display: str,
+) -> int:
+    """临期提醒：给该课堂尚未提交的在读学生发站内通知。
+    Deduped by (recipient, category, ref_type='assignment_due', ref_id=f"{id}:{window}")
+    so重复调度/重试不会重复打扰同一学生。"""
+    assignment = conn.execute(
+        """
+        SELECT a.id, a.title, a.status, a.due_at, a.exam_paper_id,
+               a.class_offering_id, a.course_id,
+               c.name AS course_name,
+               o.teacher_id AS offering_teacher_id
+        FROM assignments a
+        JOIN courses c ON c.id = a.course_id
+        LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+        WHERE a.id = ?
+        LIMIT 1
+        """,
+        (assignment_id,),
+    ).fetchone()
+    if not assignment:
+        return 0
+    if str(assignment["status"] or "").strip().lower() != "published":
+        return 0
+    class_offering_id = _safe_int(assignment["class_offering_id"])
+    if class_offering_id is None:
+        return 0
+
+    student_rows = conn.execute(
+        """
+        SELECT s.id
+        FROM class_offerings o
+        JOIN students s ON s.class_id = o.class_id
+        WHERE o.id = ?
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
+          AND NOT EXISTS (
+              SELECT 1 FROM submissions sub
+              WHERE sub.assignment_id = ? AND sub.student_pk_id = s.id
+          )
+        ORDER BY s.id
+        """,
+        (class_offering_id, assignment["id"]),
+    ).fetchall()
+
+    kind_label = "考试" if assignment["exam_paper_id"] else "作业"
+    due_text = str(assignment["due_at"] or "").replace("T", " ")[:16]
+    inserted_count = 0
+    for row in student_rows:
+        payload = _build_notification_payload(
+            recipient_role="student",
+            recipient_user_pk=int(row["id"]),
+            category=MESSAGE_CATEGORY_ASSIGNMENT,
+            title=f"{kind_label}{window_display}截止：{assignment['title']}",
+            body_preview=f"{due_text} 截止，你还没有提交，记得及时完成。",
+            actor_role="system",
+            actor_display_name="截止提醒",
+            link_url=f"/assignment/{assignment['id']}",
+            class_offering_id=class_offering_id,
+            ref_type="assignment_due",
+            ref_id=f"{assignment['id']}:{window_label}",
+            metadata={
+                "assignment_id": assignment["id"],
+                "course_id": assignment["course_id"],
+                "window": window_label,
+            },
+        )
+        inserted_count += 1 if _insert_notification_if_allowed(conn, payload) else 0
+    return inserted_count
+
+
 def create_poll_published_notifications(conn, poll_id: int | str) -> int:
     """Notify every eligible voter that a poll has gone live. Deduped by
     (recipient, category, ref_type='poll', ref_id) so re-activating a poll never
@@ -3998,6 +4072,32 @@ def create_todo_notification(
         created_at=timestamp,
     )
     return 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=allow_duplicates) else 0
+
+
+def create_achievement_notification(
+    conn,
+    *,
+    student_id: int,
+    badge_key: str,
+    badge_name: str,
+    badge_description: str = "",
+) -> int:
+    """学生解锁成就徽章的站内通知。按 (recipient, achievement, badge_key) 去重，
+    重复评定绝不重复打扰。"""
+    payload = _build_notification_payload(
+        recipient_role="student",
+        recipient_user_pk=int(student_id),
+        category=MESSAGE_CATEGORY_LEARNING_PROGRESS,
+        title=f"解锁新徽章:{badge_name}",
+        body_preview=_truncate_text(badge_description or "打开成就墙看看你的新徽章。", 140),
+        actor_role="system",
+        actor_display_name="成就系统",
+        link_url="/achievements",
+        ref_type="achievement",
+        ref_id=str(badge_key),
+        metadata={"badge_key": str(badge_key)},
+    )
+    return 1 if _insert_notification_if_allowed(conn, payload) else 0
 
 
 def create_agent_task_notification(

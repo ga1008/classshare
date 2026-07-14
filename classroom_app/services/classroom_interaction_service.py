@@ -312,7 +312,70 @@ def close_activity(
         """,
         (now, now, int(activity_id)),
     )
+    if activity["kind"] == ACTIVITY_KIND_QUIZ:
+        _award_quiz_points(conn, int(activity_id))
     return load_activity_detail(conn, int(activity_id), user)
+
+
+def _load_correct_quiz_responses(conn: sqlite3.Connection, activity_id: int) -> list[dict[str, Any]]:
+    """答对的学生按"答对时刻"升序（改答案以最后一次为准，防先蒙后改占位）。"""
+    rows = conn.execute(
+        """
+        SELECT r.student_id, r.is_anonymous, r.updated_at, s.name AS student_name
+        FROM classroom_live_responses r
+        JOIN classroom_live_options o ON o.id = r.option_id
+        LEFT JOIN students s ON s.id = r.student_id
+        WHERE r.activity_id = ?
+          AND o.is_correct = 1
+        ORDER BY r.updated_at ASC, r.id ASC
+        """,
+        (int(activity_id),),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _award_quiz_points(conn: sqlite3.Connection, activity_id: int) -> None:
+    """随堂测结束发学分币：答对 +15，前三名手速额外 +10。幂等、best-effort。"""
+    try:
+        from .student_points_service import award_points_once
+
+        correct = _load_correct_quiz_responses(conn, activity_id)
+        for index, row in enumerate(correct):
+            student_id = int(row["student_id"])
+            award_points_once(
+                conn,
+                student_id,
+                kind="quiz_correct",
+                ref=str(activity_id),
+                amount=15,
+                note="随堂测答对",
+            )
+            if index < 3:
+                award_points_once(
+                    conn,
+                    student_id,
+                    kind="quiz_fast",
+                    ref=str(activity_id),
+                    amount=10,
+                    note=f"随堂测手速第 {index + 1} 名",
+                )
+    except Exception as exc:
+        print(f"[INTERACTION] quiz points award failed: {exc}")
+
+
+def build_quiz_leaderboard(conn: sqlite3.Connection, activity_id: int, *, limit: int = 3) -> list[dict[str, Any]]:
+    """答对+手速前 N 名（匿名作答显示为"匿名同学"，不暴露身份）。"""
+    leaderboard = []
+    for index, row in enumerate(_load_correct_quiz_responses(conn, activity_id)[: max(1, limit)]):
+        display_name = "匿名同学" if row.get("is_anonymous") else str(row.get("student_name") or "同学")
+        leaderboard.append(
+            {
+                "rank": index + 1,
+                "student_name": display_name,
+                "answered_at": str(row.get("updated_at") or "")[11:19],
+            }
+        )
+    return leaderboard
 
 
 def respond_to_activity(
@@ -887,7 +950,7 @@ def load_activity_detail(conn: sqlite3.Connection, activity_id: int, user: dict[
     totals, counts = _load_response_counts(conn, activity_ids)
     my_responses = _load_my_responses(conn, activity_ids, user)
     questions = _load_questions(conn, activity_ids)
-    return _serialize_activity(
+    detail = _serialize_activity(
         activity,
         user=user,
         options=options.get(int(activity_id), []),
@@ -896,6 +959,10 @@ def load_activity_detail(conn: sqlite3.Connection, activity_id: int, user: dict[
         my_response=my_responses.get(int(activity_id)),
         questions=questions.get(int(activity_id), []),
     )
+    # 抢答排行：只在随堂测结束后揭晓（与结果可见性节奏一致）。
+    if activity["kind"] == ACTIVITY_KIND_QUIZ and activity["status"] != ACTIVITY_STATUS_ACTIVE:
+        detail["leaderboard"] = build_quiz_leaderboard(conn, int(activity_id))
+    return detail
 
 
 def load_question(conn: sqlite3.Connection, question_id: int, user: dict[str, Any]) -> dict[str, Any]:
@@ -925,8 +992,9 @@ def load_interaction_snapshot(
     signals = _load_active_signals(conn, int(class_offering_id))
     my_signal = _load_my_signal(conn, int(class_offering_id), user)
 
-    serialized_activities = [
-        _serialize_activity(
+    serialized_activities = []
+    for activity in activities:
+        serialized = _serialize_activity(
             activity,
             user=user,
             options=options.get(int(activity["id"]), []),
@@ -935,8 +1003,10 @@ def load_interaction_snapshot(
             my_response=my_responses.get(int(activity["id"])),
             questions=questions.get(int(activity["id"]), []),
         )
-        for activity in activities
-    ]
+        # 抢答排行：结束的随堂测在快照里也带上，与 detail 口径一致。
+        if activity["kind"] == ACTIVITY_KIND_QUIZ and activity["status"] != ACTIVITY_STATUS_ACTIVE:
+            serialized["leaderboard"] = build_quiz_leaderboard(conn, int(activity["id"]))
+        serialized_activities.append(serialized)
     active_activities = [item for item in serialized_activities if item["status"] == ACTIVITY_STATUS_ACTIVE]
     recent_activities = [item for item in serialized_activities if item["status"] != ACTIVITY_STATUS_ACTIVE]
     unresolved_question_count = sum(item["open_question_count"] for item in serialized_activities)

@@ -11,7 +11,7 @@ const LEGACY_MODULES = {
   exams: '/static/js/app_exams.js',
   classroomPage: '/static/js/classroom_page.js?v=activity-scroll-isolation-20260624',
   learningProgress: '/static/js/learning_progress.js?v=cultivation-certificate-20260612',
-  interactions: '/static/js/classroom_interactions.js?v=poll-extracted-20260621',
+  interactions: '/static/js/classroom_interactions.js?v=quiz-leaderboard-20260714',
   collaboration: '/static/js/collaboration.js?v=group-remove-redistribute-20260624',
   polls: '/static/js/classroom_polls.js?v=poll-review-20260621b',
 } as const;

@@ -756,6 +756,22 @@ def _record_behavior_batch_in_connection(
             )
         except Exception as exc:
             print(f"[LEARNING_PROGRESS] behavior dirty mark failed: {exc}")
+        try:
+            from .student_streak_service import record_student_activity
+
+            streak_state = record_student_activity(conn, int(user_pk))
+            if streak_state.get("is_new_day"):
+                from .student_points_service import award_points_once
+
+                award_points_once(
+                    conn,
+                    int(user_pk),
+                    kind="daily_active",
+                    ref=str(streak_state.get("last_active_date") or ""),
+                    note="当日首次学习",
+                )
+        except Exception as exc:
+            print(f"[STREAK] student activity streak update failed: {exc}")
     snapshot["logged_event_ids"] = logged_event_ids
     snapshot["accepted_event_count"] = len(logged_event_ids)
     return snapshot

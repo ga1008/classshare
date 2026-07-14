@@ -987,10 +987,125 @@ function initAgendaTodoCreator() {
   triggers.forEach((trigger) => trigger.addEventListener('click', () => controller.openCreate(trigger)));
 }
 
+// ---------------------------------------------------------------------------
+// 订阅到手机日历：拉取本人 iCal 订阅链接，弹窗提供 打开订阅 / 复制链接 / 重置。
+// 复用 agenda-todo-modal 的外观类，保持视觉一致。
+// ---------------------------------------------------------------------------
+let calendarFeedModal = null;
+
+function buildCalendarFeedModal() {
+  const modal = document.createElement('div');
+  modal.className = 'agenda-todo-modal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="agenda-todo-modal__backdrop" data-feed-close></div>
+    <div class="agenda-todo-modal__card" role="dialog" aria-modal="true" aria-labelledby="agendaCalendarFeedTitle">
+      <div class="agenda-todo-modal__head">
+        <div>
+          <span class="agenda-todo-modal__eyebrow">日历订阅</span>
+          <h3 id="agendaCalendarFeedTitle">订阅到手机日历</h3>
+        </div>
+        <button type="button" class="agenda-todo-modal__close" data-feed-close aria-label="关闭">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="agenda-todo-modal__form">
+        <p class="agenda-todo-hint" style="margin-top:0;">
+          用系统日历 App 订阅这个链接后，上课安排、作业/考试截止和你的待办会自动出现在手机日历里，并保持更新。
+          iPhone 可直接点“打开订阅”；安卓/电脑请复制链接后在日历 App 里选择“订阅日历 / 从 URL 添加”。
+        </p>
+        <label class="agenda-todo-field">
+          <span>我的专属订阅链接（请勿分享给他人）</span>
+          <input type="text" readonly data-feed-url value="加载中…" onclick="this.select()">
+        </label>
+        <div class="agenda-todo-modal__actions" style="display:flex;gap:10px;flex-wrap:wrap;">
+          <a class="btn btn-primary btn-sm" data-feed-open href="#" target="_blank" rel="noopener">打开订阅（iPhone/Mac）</a>
+          <button type="button" class="btn btn-secondary btn-sm" data-feed-copy>复制链接</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-feed-reset title="旧链接立即失效并生成新链接">重置链接</button>
+        </div>
+        <p class="agenda-todo-hint" data-feed-status aria-live="polite"></p>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  return modal;
+}
+
+async function fetchCalendarFeed(endpoint, method = 'GET') {
+  const response = await fetch(endpoint, {
+    method,
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
+  if (!response.ok || payload.status !== 'success') {
+    throw new Error(payload.detail || payload.message || '获取订阅链接失败，请稍后重试。');
+  }
+  return payload;
+}
+
+function initAgendaCalendarFeed() {
+  const triggers = Array.from(document.querySelectorAll('[data-agenda-calendar-feed]'));
+  if (!triggers.length) return;
+
+  const applyPayload = (modal, payload) => {
+    modal.querySelector('[data-feed-url]').value = payload.feed_url || '';
+    modal.querySelector('[data-feed-open]').href = payload.webcal_url || payload.feed_url || '#';
+  };
+
+  const openModal = async () => {
+    if (!calendarFeedModal) {
+      calendarFeedModal = buildCalendarFeedModal();
+      const modal = calendarFeedModal;
+      const statusEl = modal.querySelector('[data-feed-status]');
+      const setStatus = (message) => { statusEl.textContent = message || ''; };
+      modal.querySelectorAll('[data-feed-close]').forEach((el) => {
+        el.addEventListener('click', () => { modal.hidden = true; });
+      });
+      modal.querySelector('[data-feed-copy]').addEventListener('click', async () => {
+        const url = modal.querySelector('[data-feed-url]').value;
+        try {
+          await navigator.clipboard.writeText(url);
+          setStatus('链接已复制，去日历 App 里“订阅日历 / 从 URL 添加”即可。');
+        } catch {
+          modal.querySelector('[data-feed-url]').select();
+          setStatus('自动复制失败，链接已选中，请手动复制（Ctrl/Cmd+C）。');
+        }
+      });
+      modal.querySelector('[data-feed-reset]').addEventListener('click', async () => {
+        if (!window.confirm('重置后旧链接立即失效，所有已订阅的日历需要用新链接重新订阅。确定重置吗？')) return;
+        try {
+          const payload = await fetchCalendarFeed('/api/calendar-feed/reset', 'POST');
+          applyPayload(calendarFeedModal, payload);
+          setStatus('已生成新链接，旧链接已失效。');
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : '重置失败，请稍后重试。');
+        }
+      });
+    }
+    calendarFeedModal.hidden = false;
+    const statusEl = calendarFeedModal.querySelector('[data-feed-status]');
+    statusEl.textContent = '';
+    try {
+      const payload = await fetchCalendarFeed('/api/calendar-feed');
+      applyPayload(calendarFeedModal, payload);
+    } catch (error) {
+      statusEl.textContent = error instanceof Error ? error.message : '获取订阅链接失败。';
+    }
+  };
+
+  triggers.forEach((trigger) => trigger.addEventListener('click', openModal));
+}
+
 function initAgendaReminderWidget() {
   initAgendaWidget();
   initAgendaReminderSync();
   initAgendaTodoCreator();
+  initAgendaCalendarFeed();
 }
 
 if (document.readyState === 'loading') {

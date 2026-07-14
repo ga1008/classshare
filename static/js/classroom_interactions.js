@@ -334,11 +334,29 @@ function renderActivityDetail(snapshot, activity) {
     `;
 }
 
+function renderQuizLeaderboard(activity) {
+    const leaderboard = activity.leaderboard || [];
+    if (!leaderboard.length) return '';
+    const medals = ['🥇', '🥈', '🥉'];
+    const rows = leaderboard.map((row, index) => `
+        <span class="interaction-leaderboard__row">
+            ${medals[index] || '🏅'} ${escapeHtml(row.student_name)}
+            <small>${escapeHtml(row.answered_at || '')}</small>
+        </span>
+    `).join('');
+    return `
+        <div class="interaction-leaderboard" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:8px 0 4px;padding:10px 14px;border-radius:12px;background:rgba(202,138,4,0.08);font-size:0.85rem;font-weight:700;color:#a16207;">
+            <span>抢答英雄榜</span>${rows}
+        </div>
+    `;
+}
+
 function renderChoiceActivity(activity, snapshot) {
     const canSubmit = Boolean(activity.can_respond);
     const hasResponded = Boolean(activity.has_responded);
     const optionsHtml = (activity.options || []).map((option) => renderChoiceOption(activity, option, canSubmit)).join('');
     return `
+        ${renderQuizLeaderboard(activity)}
         <form class="interaction-response-form" data-interaction-respond="${activity.id}">
             <div class="interaction-option-grid" role="radiogroup" aria-label="${escapeHtml(activity.title)}">
                 ${optionsHtml}

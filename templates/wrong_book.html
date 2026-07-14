@@ -1,0 +1,264 @@
+{% extends "base_navbar.html" %}
+
+{% block title %}我的错题本 - 课堂平台{% endblock %}
+
+{% block css %}
+{{ super() }}
+<style>
+    .wrongbook-shell { display: grid; gap: 18px; }
+    .wrongbook-hero {
+        display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px;
+        padding: 22px 24px; border-radius: 18px;
+        background: linear-gradient(135deg, #0f766e 0%, #115e59 60%, #134e4a 100%);
+        color: #fff;
+    }
+    .wrongbook-hero h1 { margin: 4px 0 6px; font-size: 1.5rem; }
+    .wrongbook-hero p { margin: 0; opacity: 0.85; font-size: 0.9rem; }
+    .wrongbook-hero__eyebrow { font-size: 0.75rem; font-weight: 800; letter-spacing: 0.08em; opacity: 0.8; }
+    .wrongbook-stats { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .wrongbook-stat {
+        min-width: 108px; padding: 10px 14px; border-radius: 12px;
+        background: rgba(255, 255, 255, 0.12); backdrop-filter: blur(4px);
+    }
+    .wrongbook-stat span { display: block; font-size: 0.72rem; opacity: 0.8; }
+    .wrongbook-stat strong { font-size: 1.3rem; }
+    .wrongbook-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+    @media (max-width: 900px) { .wrongbook-grid { grid-template-columns: 1fr; } }
+    .wrongbook-panel {
+        border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 16px;
+        background: #fff; padding: 18px 20px;
+    }
+    .wrongbook-panel h2 { margin: 0 0 4px; font-size: 1.05rem; }
+    .wrongbook-panel__subtitle { margin: 0 0 14px; color: #64748b; font-size: 0.82rem; }
+    .wrongbook-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .wrongbook-filters select, .wrongbook-filters input[type="search"] {
+        padding: 8px 12px; border: 1px solid rgba(148, 163, 184, 0.4); border-radius: 999px;
+        font-size: 0.85rem; background: #fff;
+    }
+    .wrongbook-filters input[type="search"] { flex: 1 1 180px; min-width: 160px; }
+    .wrongbook-item {
+        border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 14px;
+        padding: 14px 16px; margin-bottom: 12px; background: #fcfdfe;
+    }
+    .wrongbook-item__meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; font-size: 0.75rem; color: #64748b; }
+    .wrongbook-badge {
+        display: inline-block; padding: 2px 10px; border-radius: 999px;
+        font-size: 0.72rem; font-weight: 800;
+        background: rgba(14, 116, 144, 0.1); color: #0e7490;
+    }
+    .wrongbook-badge--course { background: rgba(79, 70, 229, 0.1); color: #4f46e5; }
+    .wrongbook-badge--point { background: rgba(217, 119, 6, 0.12); color: #b45309; }
+    .wrongbook-item__question { margin: 0 0 10px; font-weight: 700; color: #0f172a; line-height: 1.6; white-space: pre-wrap; }
+    .wrongbook-answer-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 640px) { .wrongbook-answer-row { grid-template-columns: 1fr; } }
+    .wrongbook-answer {
+        border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;
+    }
+    .wrongbook-answer--mine { background: rgba(225, 29, 72, 0.07); border: 1px solid rgba(225, 29, 72, 0.2); }
+    .wrongbook-answer--correct { background: rgba(5, 150, 105, 0.07); border: 1px solid rgba(5, 150, 105, 0.2); }
+    .wrongbook-answer span { display: block; font-size: 0.72rem; font-weight: 800; margin-bottom: 4px; }
+    .wrongbook-answer--mine span { color: #be123c; }
+    .wrongbook-answer--correct span { color: #047857; }
+    .wrongbook-item__foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+    .wrongbook-item__score { font-size: 0.8rem; color: #64748b; font-weight: 700; }
+    .wrongbook-mastery-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 0; border-bottom: 1px dashed rgba(148, 163, 184, 0.3); }
+    .wrongbook-mastery-item:last-child { border-bottom: none; }
+    .wrongbook-mastery-item strong { font-size: 0.86rem; color: #0f172a; }
+    .wrongbook-mastery-item small { color: #64748b; }
+    .wrongbook-tier { font-size: 0.72rem; font-weight: 800; padding: 2px 10px; border-radius: 999px; align-self: center; }
+    .wrongbook-tier--solid { background: rgba(5, 150, 105, 0.12); color: #047857; }
+    .wrongbook-tier--good { background: rgba(14, 116, 144, 0.12); color: #0e7490; }
+    .wrongbook-tier--weak { background: rgba(217, 119, 6, 0.14); color: #b45309; }
+    .wrongbook-tier--danger { background: rgba(225, 29, 72, 0.12); color: #be123c; }
+    .wrongbook-empty { text-align: center; padding: 44px 20px; color: #64748b; }
+    .wrongbook-empty strong { display: block; font-size: 1.05rem; color: #0f172a; margin-bottom: 6px; }
+    #wrongbook-radar { width: 100%; height: 260px; }
+</style>
+{% endblock %}
+
+{% block main_content %}
+{% set summary = wrong_book.summary %}
+<section class="wrongbook-shell">
+    <header class="wrongbook-hero">
+        <div>
+            <span class="wrongbook-hero__eyebrow">Wrong Book · 错题本</span>
+            <h1>把每一道错题变成得分点</h1>
+            <p>汇总你所有已批改考试里的失分题，按课程和知识点看清薄弱环节。</p>
+        </div>
+        <div class="wrongbook-stats">
+            <div class="wrongbook-stat"><span>错题总数</span><strong>{{ summary.wrong_total }}</strong></div>
+            <div class="wrongbook-stat"><span>整体正确率</span><strong>{{ summary.correct_percent ~ '%' if summary.correct_percent is not none else '—' }}</strong></div>
+            <div class="wrongbook-stat"><span>覆盖考试</span><strong>{{ summary.exam_count }}</strong></div>
+        </div>
+    </header>
+
+    {% if wrong_book['items'] or wrong_book.knowledge_mastery %}
+    <div class="wrongbook-grid">
+        <section class="wrongbook-panel">
+            <h2>错题清单</h2>
+            <p class="wrongbook-panel__subtitle">
+                共 {{ wrong_book['items']|length }} 道{% if wrong_book.items_truncated %}（仅展示最近 {{ wrong_book['items']|length }} 道）{% endif %}，点“回顾原卷”可回到试卷与批改反馈。
+            </p>
+            <div class="wrongbook-filters">
+                <select data-filter-course aria-label="按课程筛选">
+                    <option value="">全部课程</option>
+                    {% for course in wrong_book.courses %}
+                    <option value="{{ course.course_id }}">{{ course.course_name }}（{{ course.wrong_count }}）</option>
+                    {% endfor %}
+                </select>
+                <select data-filter-point aria-label="按知识点筛选">
+                    <option value="">全部知识点</option>
+                    {% for point in wrong_book.knowledge_mastery %}
+                    <option value="{{ point.name }}">{{ point.name }}（错 {{ point.wrong }}）</option>
+                    {% endfor %}
+                </select>
+                <input type="search" data-filter-search placeholder="搜索题干关键词…" aria-label="搜索题干">
+            </div>
+            <div data-wrongbook-list>
+                {% for item in wrong_book['items'] %}
+                <article
+                    class="wrongbook-item"
+                    data-course-id="{{ item.course_id }}"
+                    data-points="{{ item.knowledge_points|join('|') }}"
+                    data-search="{{ (item.question_text ~ ' ' ~ item.assignment_title)|lower }}"
+                >
+                    <div class="wrongbook-item__meta">
+                        <span class="wrongbook-badge wrongbook-badge--course">{{ item.course_name }}</span>
+                        <span class="wrongbook-badge">{{ item.question_type_label }}</span>
+                        {% for point in item.knowledge_points %}
+                        <span class="wrongbook-badge wrongbook-badge--point">{{ point }}</span>
+                        {% endfor %}
+                        <span>{{ item.assignment_title }} · 第 {{ item.question_ordinal }} 题</span>
+                    </div>
+                    <p class="wrongbook-item__question">{{ item.question_text }}</p>
+                    <div class="wrongbook-answer-row">
+                        <div class="wrongbook-answer wrongbook-answer--mine">
+                            <span>我的作答</span>{{ item.my_answer }}
+                        </div>
+                        <div class="wrongbook-answer wrongbook-answer--correct">
+                            <span>参考答案</span>{{ item.correct_answer or '见原卷批改反馈' }}
+                        </div>
+                    </div>
+                    <div class="wrongbook-item__foot">
+                        <span class="wrongbook-item__score">
+                            {% if item.score is not none and item.max_score is not none %}
+                            得分 {{ item.score|round(1) }} / {{ item.max_score|round(1) }}
+                            {% endif %}
+                        </span>
+                        <a class="btn btn-secondary btn-sm" href="{{ item.link_url }}">回顾原卷</a>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            <div class="wrongbook-empty" data-wrongbook-no-match hidden>
+                <strong>没有匹配的错题</strong>
+                <p>换个筛选条件试试。</p>
+            </div>
+        </section>
+
+        <aside class="wrongbook-panel">
+            <h2>知识点掌握度</h2>
+            <p class="wrongbook-panel__subtitle">按你的历次作答统计，越靠上越需要优先补强。</p>
+            {% if wrong_book.knowledge_mastery %}
+            <div id="wrongbook-radar" aria-hidden="true"></div>
+            <div>
+                {% for point in wrong_book.knowledge_mastery[:12] %}
+                <div class="wrongbook-mastery-item">
+                    <div>
+                        <strong>{{ point.name }}</strong>
+                        <small>答 {{ point.total }} 次 · 错 {{ point.wrong }} 次 · 正确率 {{ point.mastery_percent }}%</small>
+                    </div>
+                    <span class="wrongbook-tier wrongbook-tier--{{ point.tier_tone }}">{{ point.tier_label }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="wrongbook-empty">
+                <strong>暂无知识点数据</strong>
+                <p>老师在试卷中标注知识点后，这里会自动生成你的掌握度画像。</p>
+            </div>
+            {% endif %}
+        </aside>
+    </div>
+    {% else %}
+    <section class="wrongbook-panel">
+        <div class="wrongbook-empty">
+            <strong>太棒了，目前没有错题！</strong>
+            <p>完成并批改考试后，做错的题会自动收进这里，方便你考前复盘。</p>
+            <a class="btn btn-primary" href="/dashboard">回到首页</a>
+        </div>
+    </section>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="application/json" data-wrongbook-radar-data>{{ wrong_book.knowledge_mastery[:8] | tojson }}</script>
+<script src="/static/js/echarts.min.js"></script>
+<script>
+    (() => {
+        // 筛选：课程 + 知识点 + 题干关键词，纯前端过滤。
+        const list = document.querySelector('[data-wrongbook-list]');
+        if (list) {
+            const courseSel = document.querySelector('[data-filter-course]');
+            const pointSel = document.querySelector('[data-filter-point]');
+            const searchInput = document.querySelector('[data-filter-search]');
+            const noMatch = document.querySelector('[data-wrongbook-no-match]');
+            const items = Array.from(list.querySelectorAll('.wrongbook-item'));
+            const applyFilters = () => {
+                const courseId = courseSel.value;
+                const point = pointSel.value;
+                const keyword = searchInput.value.trim().toLowerCase();
+                let visible = 0;
+                items.forEach((item) => {
+                    const matchCourse = !courseId || item.dataset.courseId === courseId;
+                    const matchPoint = !point || (item.dataset.points || '').split('|').includes(point);
+                    const matchSearch = !keyword || (item.dataset.search || '').includes(keyword);
+                    const show = matchCourse && matchPoint && matchSearch;
+                    item.hidden = !show;
+                    if (show) visible += 1;
+                });
+                if (noMatch) noMatch.hidden = visible > 0;
+            };
+            [courseSel, pointSel].forEach((el) => el && el.addEventListener('change', applyFilters));
+            searchInput && searchInput.addEventListener('input', applyFilters);
+        }
+
+        // 知识点雷达：取薄弱优先的前 8 个点。
+        const radarEl = document.getElementById('wrongbook-radar');
+        const dataEl = document.querySelector('[data-wrongbook-radar-data]');
+        if (!radarEl || !dataEl || typeof echarts === 'undefined') return;
+        let points = [];
+        try {
+            points = JSON.parse(dataEl.textContent || '[]');
+        } catch {
+            points = [];
+        }
+        if (!Array.isArray(points) || points.length < 3) {
+            radarEl.hidden = true;
+            return;
+        }
+        const chart = echarts.init(radarEl);
+        chart.setOption({
+            radar: {
+                indicator: points.map((p) => ({ name: p.name, max: 100 })),
+                radius: '62%',
+                axisName: { fontSize: 10, color: '#475569' },
+            },
+            series: [{
+                type: 'radar',
+                data: [{
+                    value: points.map((p) => p.mastery_percent),
+                    name: '掌握度',
+                    areaStyle: { color: 'rgba(15, 118, 110, 0.25)' },
+                    lineStyle: { color: '#0f766e' },
+                    itemStyle: { color: '#0f766e' },
+                }],
+            }],
+            tooltip: {},
+        });
+        window.addEventListener('resize', () => chart.resize(), { passive: true });
+    })();
+</script>
+{% endblock %}

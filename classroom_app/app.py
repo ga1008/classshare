@@ -82,6 +82,12 @@ from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
 from .routers import blog, feedback
 from .routers import career_path
+from .routers import calendar_feed
+from .routers import wrong_book
+from .routers import report_card
+from .routers import achievements
+from .routers import points_shop
+from .routers import global_search
 from .routers import polls
 from .routers import lesson_plans
 from .routers import assessment_plans
@@ -580,6 +586,12 @@ app.include_router(review.router)
 app.include_router(learning_path.router)
 app.include_router(collaboration.router)
 app.include_router(career_path.router)
+app.include_router(calendar_feed.router)
+app.include_router(wrong_book.router)
+app.include_router(report_card.router)
+app.include_router(achievements.router)
+app.include_router(points_shop.router)
+app.include_router(global_search.router)
 app.include_router(resume_console.router)
 app.include_router(classroom_interactions.router)
 app.include_router(polls.router)

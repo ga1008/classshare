@@ -489,3 +489,52 @@ register_task_handler(AGENT_TASK_DISPATCH_KIND, handle_agent_task_dispatch)
 # 职业发展网络 — 按专业生成网络 + 按学生定制推荐/必备知识（深度思考型 AI，异步）。
 # 导入即注册两个 handler（career_major_network_generate / career_personalize_generate）。
 from . import career_path_service  # noqa: E402,F401
+
+# 作业/考试截止临期提醒 — T-24h/T-2h 给该课堂尚未提交的学生发站内通知。
+from .assignment_reminder_service import (  # noqa: E402
+    ASSIGNMENT_DUE_REMINDER_TASK_KIND,
+    parse_due_at as _parse_assignment_due_at,
+    reminder_window_display,
+)
+
+
+def handle_assignment_due_reminder(task: dict[str, Any]) -> str:
+    payload = task.get("payload") or {}
+    assignment_id = int(payload.get("assignment_id") or 0)
+    window_label = _text(payload.get("window")) or "24h"
+    if not assignment_id:
+        return "skipped: missing assignment id"
+
+    from .message_center_service import create_assignment_due_reminder_notifications
+
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT status, due_at, closed_at, class_offering_id FROM assignments WHERE id = ? LIMIT 1",
+            (assignment_id,),
+        ).fetchone()
+        if row is None:
+            return "skipped: assignment missing"
+        if _text(row["status"]).lower() != "published" or row["closed_at"]:
+            return "skipped: not published"
+        due = _parse_assignment_due_at(row["due_at"])
+        if due is None:
+            return "skipped: no deadline"
+        # 截止时间被改过时 sync 会重新布防；万一存在竞态旧任务，这里兜底跳过。
+        payload_due = _parse_assignment_due_at(payload.get("due_at"))
+        if payload_due is not None and payload_due != due:
+            return "skipped: deadline changed"
+        from .academic_service import china_now
+
+        if due <= china_now().replace(tzinfo=None):
+            return "skipped: past due"
+        created = create_assignment_due_reminder_notifications(
+            conn,
+            assignment_id,
+            window_label=window_label,
+            window_display=reminder_window_display(window_label),
+        )
+        conn.commit()
+    return f"assignment due reminder notified={created}"
+
+
+register_task_handler(ASSIGNMENT_DUE_REMINDER_TASK_KIND, handle_assignment_due_reminder)

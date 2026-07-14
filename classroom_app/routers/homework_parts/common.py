@@ -46,6 +46,10 @@ from ...services.message_center_service import (
     create_student_grading_notification,
     create_submission_notification,
 )
+from ...services.assignment_reminder_service import (
+    cancel_assignment_due_reminders,
+    sync_assignment_due_reminders,
+)
 from ...services.assignment_lifecycle_service import (
     assignment_accepts_submissions,
     build_resubmission_due_at,

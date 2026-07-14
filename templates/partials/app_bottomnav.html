@@ -1,0 +1,83 @@
+{#
+  学生端移动底部导航：≤768px 固定在底部，桌面端隐藏。
+  激活态由内联脚本按 location.pathname 前缀匹配设置。
+#}
+<style>
+    .app-bottomnav { display: none; }
+    @media (max-width: 768px) {
+        body.has-bottomnav { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+        .app-bottomnav {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 4000;
+            display: flex;
+            justify-content: space-around;
+            align-items: stretch;
+            padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+            background: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(148, 163, 184, 0.25);
+            box-shadow: 0 -6px 24px -18px rgba(15, 23, 42, 0.5);
+        }
+        .app-bottomnav__item {
+            flex: 1 1 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            min-height: 48px;
+            padding: 4px 2px;
+            border-radius: 12px;
+            color: #64748b;
+            text-decoration: none;
+            font-size: 0.7rem;
+            font-weight: 700;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .app-bottomnav__item svg { flex-shrink: 0; }
+        .app-bottomnav__item.is-active {
+            color: #0f766e;
+            background: rgba(15, 118, 110, 0.08);
+        }
+    }
+</style>
+<nav class="app-bottomnav" aria-label="移动端主导航" data-app-bottomnav>
+    <a href="/dashboard" class="app-bottomnav__item" data-nav-match="/dashboard">
+        <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>首页</span>
+    </a>
+    <a href="/message-center" class="app-bottomnav__item" data-nav-match="/message-center">
+        <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>消息</span>
+    </a>
+    <a href="/learning-path" class="app-bottomnav__item" data-nav-match="/learning-path">
+        <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="m10 13 2 2 4-4"/></svg>
+        <span>学习路</span>
+    </a>
+    <a href="/profile" class="app-bottomnav__item" data-nav-match="/profile">
+        <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>我的</span>
+    </a>
+</nav>
+<script>
+    (() => {
+        const nav = document.querySelector('[data-app-bottomnav]');
+        if (!nav) return;
+        document.body.classList.add('has-bottomnav');
+        const path = window.location.pathname;
+        let best = null;
+        nav.querySelectorAll('[data-nav-match]').forEach((item) => {
+            const prefix = item.getAttribute('data-nav-match');
+            if (path === prefix || path.startsWith(prefix + '/') || (prefix === '/dashboard' && path === '/')) {
+                if (!best || prefix.length > best.getAttribute('data-nav-match').length) best = item;
+            }
+        });
+        if (best) {
+            best.classList.add('is-active');
+            best.setAttribute('aria-current', 'page');
+        }
+    })();
+</script>

@@ -1,0 +1,178 @@
+{% extends "base_navbar.html" %}
+
+{% block title %}我的成绩单 - 课堂平台{% endblock %}
+
+{% block css %}
+{{ super() }}
+<style>
+    .report-shell { display: grid; gap: 18px; }
+    .report-hero {
+        display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px;
+        padding: 22px 24px; border-radius: 18px;
+        background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 60%, #1e3a8a 100%);
+        color: #fff;
+    }
+    .report-hero h1 { margin: 4px 0 6px; font-size: 1.5rem; }
+    .report-hero p { margin: 0; opacity: 0.85; font-size: 0.9rem; }
+    .report-hero__eyebrow { font-size: 0.75rem; font-weight: 800; letter-spacing: 0.08em; opacity: 0.8; }
+    .report-stats { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .report-stat {
+        min-width: 104px; padding: 10px 14px; border-radius: 12px;
+        background: rgba(255, 255, 255, 0.12); backdrop-filter: blur(4px);
+    }
+    .report-stat span { display: block; font-size: 0.72rem; opacity: 0.8; }
+    .report-stat strong { font-size: 1.3rem; }
+    .report-course {
+        border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 16px;
+        background: #fff; padding: 18px 20px;
+    }
+    .report-course__head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+    .report-course__head h2 { margin: 0; font-size: 1.05rem; }
+    .report-course__meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.8rem; color: #64748b; align-items: center; }
+    .report-course__meta strong { color: #0f172a; }
+    .report-chart { width: 100%; height: 220px; }
+    .report-records { margin-top: 8px; }
+    .report-record {
+        display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+        padding: 10px 4px; border-bottom: 1px dashed rgba(148, 163, 184, 0.3);
+        font-size: 0.85rem;
+    }
+    .report-record:last-child { border-bottom: none; }
+    .report-record__title { flex: 1 1 200px; min-width: 160px; font-weight: 700; color: #0f172a; text-decoration: none; }
+    .report-record__title:hover { color: #1d4ed8; }
+    .report-record__title small { display: block; font-weight: 400; color: #94a3b8; font-size: 0.72rem; }
+    .report-badge { padding: 2px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 800; }
+    .report-badge--kind { background: rgba(79, 70, 229, 0.1); color: #4f46e5; }
+    .report-badge--late { background: rgba(217, 119, 6, 0.14); color: #b45309; }
+    .report-badge--top { background: rgba(5, 150, 105, 0.14); color: #047857; }
+    .report-badge--high { background: rgba(14, 116, 144, 0.13); color: #0e7490; }
+    .report-badge--mid { background: rgba(100, 116, 139, 0.14); color: #475569; }
+    .report-badge--low { background: rgba(225, 29, 72, 0.12); color: #be123c; }
+    .report-record__score { font-weight: 800; color: #0f172a; min-width: 64px; }
+    .report-record__avg { color: #64748b; min-width: 92px; }
+    .report-explain {
+        border: 1px dashed rgba(148, 163, 184, 0.45); border-radius: 14px;
+        padding: 14px 18px; color: #475569; font-size: 0.82rem; line-height: 1.8; background: #f8fafc;
+    }
+    .report-explain strong { color: #0f172a; }
+    .report-empty { text-align: center; padding: 44px 20px; color: #64748b; }
+    .report-empty strong { display: block; font-size: 1.05rem; color: #0f172a; margin-bottom: 6px; }
+</style>
+{% endblock %}
+
+{% block main_content %}
+{% set summary = report_card.summary %}
+<section class="report-shell">
+    <header class="report-hero">
+        <div>
+            <span class="report-hero__eyebrow">Report Card · 成绩单</span>
+            <h1>我的成绩，一目了然</h1>
+            <p>每一次作业与考试的得分、班级平均和你的相对位置，全部汇总在这里。</p>
+        </div>
+        <div class="report-stats">
+            <div class="report-stat"><span>已批改记录</span><strong>{{ summary.record_total }}</strong></div>
+            <div class="report-stat"><span>综合均分</span><strong>{{ summary.overall_avg if summary.overall_avg is not none else '—' }}</strong></div>
+            <div class="report-stat"><span>位居前列次数</span><strong>{{ summary.top_band_count }}</strong></div>
+        </div>
+    </header>
+
+    {% if report_card.courses %}
+    {% for course in report_card.courses %}
+    <section class="report-course">
+        <div class="report-course__head">
+            <h2>{{ course.course_name }}</h2>
+            <div class="report-course__meta">
+                <span>共 <strong>{{ course.record_count }}</strong> 次记录</span>
+                <span>课程均分 <strong>{{ course.avg_score if course.avg_score is not none else '—' }}</strong></span>
+                <span>{{ course.trend_label }}</span>
+            </div>
+        </div>
+        {% if course.record_count >= 2 %}
+        <div class="report-chart" data-report-chart="{{ loop.index0 }}" aria-hidden="true"></div>
+        {% endif %}
+        <div class="report-records">
+            {% for record in course.records | reverse %}
+            <div class="report-record">
+                <a class="report-record__title" href="{{ record.link_url }}">
+                    {{ record.title }}
+                    <small>{{ record.date_label }}</small>
+                </a>
+                <span class="report-badge report-badge--kind">{{ record.kind_label }}</span>
+                {% if record.is_late %}<span class="report-badge report-badge--late">迟交</span>{% endif %}
+                <span class="report-record__score">{{ record.my_score }} 分</span>
+                <span class="report-record__avg">
+                    {% if record.class_avg is not none %}班均 {{ record.class_avg }}{% else %}班均 —{% endif %}
+                </span>
+                {% if record.band_label %}
+                <span class="report-badge report-badge--{{ record.band_tone }}">{{ record.band_label }}</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endfor %}
+
+    <aside class="report-explain">
+        <strong>这些数字怎么来的？</strong><br>
+        · 只统计已批改且非缺考计分的记录；班级平均为同一任务全班已批改分数的均值。<br>
+        · “前 10% / 前 25%…” 是你在这次任务里的匿名相对位置，批改人数不足 5 人时不显示，任何人都看不到他人的具体分数。<br>
+        · 小组作业的综合表现分 = 作业得分 × 0.8 + 组内互评均分（互评在全组完成后才计入）。
+    </aside>
+    {% else %}
+    <section class="report-course">
+        <div class="report-empty">
+            <strong>还没有已批改的成绩</strong>
+            <p>完成作业或考试并由老师批改后，成绩会自动汇总到这里。</p>
+            <a class="btn btn-primary" href="/dashboard">回到首页</a>
+        </div>
+    </section>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="application/json" data-report-chart-data>{{ report_card.courses | map(attribute='chart') | list | tojson }}</script>
+<script src="/static/js/echarts.min.js"></script>
+<script>
+    (() => {
+        const dataEl = document.querySelector('[data-report-chart-data]');
+        if (!dataEl || typeof echarts === 'undefined') return;
+        let charts = [];
+        try {
+            charts = JSON.parse(dataEl.textContent || '[]');
+        } catch {
+            charts = [];
+        }
+        const instances = [];
+        document.querySelectorAll('[data-report-chart]').forEach((el) => {
+            const idx = Number(el.getAttribute('data-report-chart'));
+            const data = charts[idx];
+            if (!data || !Array.isArray(data.labels) || data.labels.length < 2) {
+                el.hidden = true;
+                return;
+            }
+            const chart = echarts.init(el);
+            chart.setOption({
+                grid: { left: 36, right: 12, top: 28, bottom: 24 },
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['我的分数', '班级平均'], top: 0, textStyle: { fontSize: 11 } },
+                xAxis: { type: 'category', data: data.labels, axisLabel: { fontSize: 10 } },
+                yAxis: { type: 'value', axisLabel: { fontSize: 10 } },
+                series: [
+                    {
+                        name: '我的分数', type: 'line', data: data.mine, smooth: true,
+                        lineStyle: { color: '#1d4ed8', width: 2.5 }, itemStyle: { color: '#1d4ed8' },
+                    },
+                    {
+                        name: '班级平均', type: 'line', data: data.class_avg, smooth: true,
+                        lineStyle: { color: '#94a3b8', type: 'dashed' }, itemStyle: { color: '#94a3b8' },
+                    },
+                ],
+            });
+            instances.push(chart);
+        });
+        window.addEventListener('resize', () => instances.forEach((c) => c.resize()), { passive: true });
+    })();
+</script>
+{% endblock %}

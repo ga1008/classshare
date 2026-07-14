@@ -91,6 +91,14 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
                 )
             except Exception as exc:
                 print(f"[MESSAGE_CENTER] assignment publish notify failed: {exc}")
+        sync_assignment_due_reminders(
+            conn,
+            new_id,
+            status=schedule_fields["status"],
+            due_at=schedule_fields["due_at"],
+            class_offering_id=class_offering_id,
+            title=str(data.get('title') or ''),
+        )
         conn.commit()
     # 作业文件夹现在按 Course / Assignment 组织
     assignment_dir = _build_assignment_storage_dir(actual_course_id, new_id)
@@ -193,6 +201,14 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
                 )
             except Exception as exc:
                 print(f"[MESSAGE_CENTER] assignment publish notify failed: {exc}")
+        sync_assignment_due_reminders(
+            conn,
+            assignment_id,
+            status=schedule_fields["status"],
+            due_at=schedule_fields["due_at"],
+            class_offering_id=assignment_dict.get("class_offering_id"),
+            title=str(data.get('title') or ''),
+        )
         conn.commit()
     return {
         "status": "success",
@@ -230,6 +246,7 @@ async def delete_assignment(assignment_id: str, user: dict = Depends(get_current
             _hide_personal_stage_asset()
 
         conn.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
+        cancel_assignment_due_reminders(conn, assignment_id)
         conn.commit()
     delete_storage_tree(_build_assignment_storage_dir(assignment['course_id'], assignment_id))
     return {"status": "success", "deleted_assignment_id": assignment_id}

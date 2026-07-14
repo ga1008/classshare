@@ -24,6 +24,7 @@ from .psych_profile_service import (
     load_latest_hidden_profile as load_hidden_profile_snapshot,
     normalize_psych_profile_payload as normalize_profile_payload,
 )
+from .student_ai_tutor_context_service import build_tutor_context_block
 from .student_support_service import build_student_support_signal_prompt
 
 DISCUSSION_AI_ASSISTANT_NAME = "助教"
@@ -379,6 +380,12 @@ async def _build_discussion_ai_chat_payload(
             current_quote=current_quote,
             current_message_attachments=current_message_attachments or [],
         )
+        tutor_context_block = build_tutor_context_block(
+            conn,
+            class_offering_id=class_offering_id,
+            query=original_text,
+            user_role=user_role,
+        )
 
     history_messages = []
     for row in reversed(rows):
@@ -411,6 +418,8 @@ async def _build_discussion_ai_chat_payload(
         f"5. 只有本次请求实际传入图片时，才可以分析图片；历史图片、旧引用图片若未再次传入，只能提到文件名等元数据。\n"
         f"6. 如果模型产生思考内容，只把最终可公开的回答作为输出，不要把思考过程展示给学生。\n"
     )
+    if tutor_context_block:
+        final_system_prompt = f"{final_system_prompt}\n{tutor_context_block}\n"
 
     image_inputs = request_context["image_inputs"]
     return {
@@ -582,6 +591,12 @@ async def generate_discussion_ai_reply(
                 current_quote=current_quote,
                 current_message_attachments=current_message_attachments or [],
             )
+            tutor_context_block = build_tutor_context_block(
+                conn,
+                class_offering_id=class_offering_id,
+                query=original_text,
+                user_role=user_role,
+            )
 
         history_messages = []
         for row in reversed(rows):
@@ -620,6 +635,8 @@ async def generate_discussion_ai_reply(
             f"10. 如果背景信息里给出了用户主动设置的今日心情或个人资料，请据此微调语气、详略和举例方向，但不要暴露来源。\n"
             f"11. 如果回答内容较多，可以适当使用 Markdown 格式（标题、加粗、列表、代码块）让内容更易读，但不要为了格式化而格式化。"
         )
+        if tutor_context_block:
+            final_system_prompt = f"{final_system_prompt}\n{tutor_context_block}\n"
 
         response = await ai_client.post(
             "/api/ai/chat",

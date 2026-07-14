@@ -1,0 +1,89 @@
+{% extends "base_navbar.html" %}
+
+{% block title %}我的成就墙 - 课堂平台{% endblock %}
+
+{% block css %}
+{{ super() }}
+<style>
+    .achv-shell { display: grid; gap: 18px; }
+    .achv-hero {
+        display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px;
+        padding: 22px 24px; border-radius: 18px;
+        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 60%, #5b21b6 100%);
+        color: #fff;
+    }
+    .achv-hero h1 { margin: 4px 0 6px; font-size: 1.5rem; }
+    .achv-hero p { margin: 0; opacity: 0.85; font-size: 0.9rem; }
+    .achv-hero__eyebrow { font-size: 0.75rem; font-weight: 800; letter-spacing: 0.08em; opacity: 0.8; }
+    .achv-hero__count {
+        align-self: center; padding: 12px 18px; border-radius: 14px;
+        background: rgba(255, 255, 255, 0.14); font-weight: 800; font-size: 1.05rem;
+    }
+    .achv-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px;
+    }
+    .achv-card {
+        border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 16px;
+        background: #fff; padding: 18px; text-align: center; position: relative;
+        display: flex; flex-direction: column; gap: 6px; align-items: center;
+    }
+    .achv-card--locked { opacity: 0.62; background: #f8fafc; }
+    .achv-card--locked .achv-card__icon { filter: grayscale(1); }
+    .achv-card__icon { font-size: 2.2rem; line-height: 1; }
+    .achv-card__name { font-weight: 800; color: #0f172a; font-size: 0.95rem; }
+    .achv-card__desc { color: #64748b; font-size: 0.78rem; margin: 0; }
+    .achv-card__hint { font-size: 0.74rem; font-weight: 700; color: #7c3aed; }
+    .achv-card--locked .achv-card__hint { color: #94a3b8; }
+    .achv-tier {
+        position: absolute; top: 10px; right: 10px;
+        font-size: 0.68rem; font-weight: 800; padding: 2px 9px; border-radius: 999px;
+    }
+    .achv-tier--bronze { background: rgba(180, 83, 9, 0.12); color: #b45309; }
+    .achv-tier--silver { background: rgba(100, 116, 139, 0.16); color: #475569; }
+    .achv-tier--gold { background: rgba(202, 138, 4, 0.16); color: #a16207; }
+    .achv-card__date { font-size: 0.7rem; color: #94a3b8; }
+    .achv-new-banner {
+        border: 1px solid rgba(124, 58, 237, 0.35); border-radius: 14px;
+        background: rgba(124, 58, 237, 0.06); padding: 12px 18px;
+        color: #5b21b6; font-weight: 700; font-size: 0.9rem;
+    }
+</style>
+{% endblock %}
+
+{% block main_content %}
+{% set wall = achievement_wall %}
+<section class="achv-shell">
+    <header class="achv-hero">
+        <div>
+            <span class="achv-hero__eyebrow">Achievements · 成就墙</span>
+            <h1>把学习痕迹变成勋章</h1>
+            <p>连续学习、按时提交、拿下高分……每一步都会在这里留下印记。</p>
+        </div>
+        <div class="achv-hero__count">{{ wall.earned_count }} / {{ wall.total_count }} 已点亮</div>
+    </header>
+
+    {% if wall.newly_awarded %}
+    <div class="achv-new-banner">
+        🎉 恭喜！刚刚解锁：
+        {% for badge in wall.newly_awarded %}{{ badge.icon }}《{{ badge.name }}》{% if not loop.last %}、{% endif %}{% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="achv-grid">
+        {% for badge in wall.badges %}
+        <article class="achv-card{% if not badge.earned %} achv-card--locked{% endif %}">
+            <span class="achv-tier achv-tier--{{ badge.tier }}">{{ badge.tier_label }}</span>
+            <span class="achv-card__icon" aria-hidden="true">{{ badge.icon }}</span>
+            <span class="achv-card__name">{{ badge.name }}</span>
+            <p class="achv-card__desc">{{ badge.description }}</p>
+            {% if badge.earned %}
+            <span class="achv-card__hint">已点亮</span>
+            {% if badge.earned_at %}<span class="achv-card__date">{{ badge.earned_at }}</span>{% endif %}
+            {% else %}
+            <span class="achv-card__hint">{{ badge.progress_hint }}</span>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

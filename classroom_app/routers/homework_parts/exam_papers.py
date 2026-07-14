@@ -623,6 +623,14 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
         # 自动将课堂名称添加为试卷标签
         _auto_add_class_name_tag(conn, paper, offering['class_id'])
 
+        sync_assignment_due_reminders(
+            conn,
+            new_assignment_id,
+            status=schedule_fields["status"],
+            due_at=schedule_fields["due_at"],
+            class_offering_id=class_offering_id,
+            title=str(data.get('title') or paper['title'] or ''),
+        )
         conn.commit()
         assignment_dir = _build_assignment_storage_dir(offering['course_id'], new_assignment_id)
         assignment_dir.mkdir(parents=True, exist_ok=True)

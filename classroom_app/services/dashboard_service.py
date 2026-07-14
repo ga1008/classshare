@@ -2239,6 +2239,7 @@ def _build_student_cockpit(
     unread_total: int,
     student_name: str = "",
     now: datetime | None = None,
+    streak_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     now = now or china_now().replace(tzinfo=None)
     best_course = cultivation_profile.get("best_course") or {}
@@ -2308,6 +2309,21 @@ def _build_student_cockpit(
             "tone": "warning" if unread_total else "neutral",
         },
     ]
+    if streak_info is not None:
+        current_streak = int(streak_info.get("current_streak") or 0)
+        longest_streak = int(streak_info.get("longest_streak") or 0)
+        if longest_streak > current_streak:
+            streak_hint = f"最长 {longest_streak} 天"
+        elif current_streak:
+            streak_hint = "今天也来了，继续保持"
+        else:
+            streak_hint = "今天学一点就能点亮"
+        stats.insert(3, {
+            "label": "连续学习",
+            "value": f"{current_streak} 天",
+            "hint": streak_hint,
+            "tone": "success" if current_streak >= 3 else ("primary" if current_streak else "neutral"),
+        })
 
     next_steps: list[dict[str, Any]] = []
     seen_hrefs: set[str] = set()
@@ -2624,6 +2640,12 @@ def _build_student_dashboard_context(
     )
     feedback_review_summary = build_feedback_review_summary(conn, student_id)
     student_display_name = cultivation_profile.get("address_name") or polite_address(user.get("name") or "", "student")
+    try:
+        from .student_streak_service import get_student_streak
+
+        student_streak_info = get_student_streak(conn, student_id)
+    except Exception:
+        student_streak_info = None
     student_cockpit = _build_student_cockpit(
         offerings=enriched_offerings,
         priority_items=priority_items,
@@ -2635,6 +2657,7 @@ def _build_student_dashboard_context(
         submitted_total=submitted_total,
         unread_total=unread_total,
         student_name=student_display_name,
+        streak_info=student_streak_info,
     )
     continue_action = _build_student_continue_action(enriched_offerings)
 
@@ -2694,6 +2717,34 @@ def _build_student_dashboard_context(
             "description": ui_copy["action_priority_description"],
             "href": first_pending_href,
             "badge": pending_total or None,
+        },
+        {
+            "mode": "link",
+            "label": "我的错题本",
+            "description": "汇总失分题与知识点薄弱环节",
+            "href": "/wrong-book",
+            "badge": None,
+        },
+        {
+            "mode": "link",
+            "label": "我的成绩单",
+            "description": "各课成绩时间线与班级相对位置",
+            "href": "/report-card",
+            "badge": None,
+        },
+        {
+            "mode": "link",
+            "label": "成就墙",
+            "description": "连击、提交与高分解锁的徽章",
+            "href": "/achievements",
+            "badge": None,
+        },
+        {
+            "mode": "link",
+            "label": "学分币商店",
+            "description": "学习攒币，兑换补签卡等道具",
+            "href": "/points",
+            "badge": None,
         },
         {
             "mode": "link",

@@ -1,0 +1,150 @@
+{% extends "base_navbar.html" %}
+
+{% block title %}学分币商店 - 课堂平台{% endblock %}
+
+{% block css %}
+{{ super() }}
+<style>
+    .pts-shell { display: grid; gap: 18px; }
+    .pts-hero {
+        display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px;
+        padding: 22px 24px; border-radius: 18px;
+        background: linear-gradient(135deg, #b45309 0%, #92400e 60%, #78350f 100%);
+        color: #fff;
+    }
+    .pts-hero h1 { margin: 4px 0 6px; font-size: 1.5rem; }
+    .pts-hero p { margin: 0; opacity: 0.85; font-size: 0.9rem; }
+    .pts-hero__eyebrow { font-size: 0.75rem; font-weight: 800; letter-spacing: 0.08em; opacity: 0.8; }
+    .pts-balance {
+        align-self: center; padding: 12px 20px; border-radius: 14px;
+        background: rgba(255, 255, 255, 0.14); font-weight: 800; font-size: 1.2rem;
+    }
+    .pts-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+    @media (max-width: 900px) { .pts-grid { grid-template-columns: 1fr; } }
+    .pts-panel {
+        border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 16px;
+        background: #fff; padding: 18px 20px;
+    }
+    .pts-panel h2 { margin: 0 0 4px; font-size: 1.05rem; }
+    .pts-panel__subtitle { margin: 0 0 14px; color: #64748b; font-size: 0.82rem; }
+    .pts-item {
+        display: flex; gap: 14px; align-items: center;
+        border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 14px;
+        padding: 14px 16px; margin-bottom: 12px;
+    }
+    .pts-item__icon { font-size: 2rem; }
+    .pts-item__body { flex: 1; }
+    .pts-item__body strong { display: block; color: #0f172a; }
+    .pts-item__body p { margin: 2px 0 0; color: #64748b; font-size: 0.8rem; }
+    .pts-item__cost { font-weight: 800; color: #b45309; white-space: nowrap; }
+    .pts-earn-rule { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px dashed rgba(148, 163, 184, 0.3); font-size: 0.84rem; }
+    .pts-earn-rule:last-child { border-bottom: none; }
+    .pts-earn-rule strong { color: #b45309; white-space: nowrap; }
+    .pts-ledger-row { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px dashed rgba(148, 163, 184, 0.25); font-size: 0.8rem; color: #475569; }
+    .pts-ledger-row:last-child { border-bottom: none; }
+    .pts-ledger-row .is-earn { color: #047857; font-weight: 800; }
+    .pts-ledger-row .is-spend { color: #be123c; font-weight: 800; }
+    .pts-status { font-size: 0.82rem; font-weight: 700; margin-top: 8px; min-height: 1.2em; }
+    .pts-empty { color: #94a3b8; font-size: 0.82rem; padding: 12px 0; }
+</style>
+{% endblock %}
+
+{% block main_content %}
+{% set home = points_home %}
+<section class="pts-shell">
+    <header class="pts-hero">
+        <div>
+            <span class="pts-hero__eyebrow">Points · 学分币</span>
+            <h1>学习攒币，兑换实用道具</h1>
+            <p>每天学习、解锁徽章都会自动攒学分币；它独立于修为，放心花。</p>
+        </div>
+        <div class="pts-balance">🪙 {{ home.balance }}</div>
+    </header>
+
+    <div class="pts-grid">
+        <section class="pts-panel">
+            <h2>兑换商店</h2>
+            <p class="pts-panel__subtitle">兑换即时生效；条件不满足不会扣币。</p>
+            {% for item in home['items'] %}
+            <div class="pts-item">
+                <span class="pts-item__icon" aria-hidden="true">{{ item.icon }}</span>
+                <div class="pts-item__body">
+                    <strong>{{ item.name }}</strong>
+                    <p>{{ item.description }}</p>
+                </div>
+                <span class="pts-item__cost">🪙 {{ item.cost }}</span>
+                <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    data-redeem-item="{{ item.key }}"
+                    {% if not item.affordable %}disabled title="学分币不足"{% endif %}
+                >兑换</button>
+            </div>
+            {% endfor %}
+            <p class="pts-status" data-redeem-status aria-live="polite"></p>
+        </section>
+
+        <aside style="display:grid;gap:18px;">
+            <section class="pts-panel">
+                <h2>怎么赚学分币</h2>
+                <p class="pts-panel__subtitle">全自动记账，无需手动领取。</p>
+                {% for rule in home.earn_rules %}
+                <div class="pts-earn-rule">
+                    <span>{{ rule.label }}<br><small style="color:#94a3b8;">{{ rule.description }}</small></span>
+                    <strong>+{{ rule.amount }}</strong>
+                </div>
+                {% endfor %}
+            </section>
+            <section class="pts-panel">
+                <h2>最近流水</h2>
+                <p class="pts-panel__subtitle">最近 {{ home.ledger|length }} 条记录。</p>
+                {% if home.ledger %}
+                {% for row in home.ledger %}
+                <div class="pts-ledger-row">
+                    <span>{{ row.kind_label }}{% if row.note %} · {{ row.note }}{% endif %}<br><small style="color:#94a3b8;">{{ row.created_at }}</small></span>
+                    <span class="{{ 'is-earn' if row.delta > 0 else 'is-spend' }}">{{ '+' if row.delta > 0 }}{{ row.delta }}</span>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="pts-empty">还没有流水，今天学习一下就有第一笔进账。</div>
+                {% endif %}
+            </section>
+        </aside>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    (() => {
+        const statusEl = document.querySelector('[data-redeem-status]');
+        document.querySelectorAll('[data-redeem-item]').forEach((button) => {
+            button.addEventListener('click', async () => {
+                if (button.disabled) return;
+                if (!window.confirm('确认兑换该道具吗？')) return;
+                button.disabled = true;
+                try {
+                    const response = await fetch('/api/points/redeem', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ item_key: button.getAttribute('data-redeem-item') }),
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || payload.status !== 'success') {
+                        throw new Error(payload.message || payload.detail || '兑换失败，请稍后重试。');
+                    }
+                    statusEl.textContent = payload.message || '兑换成功。';
+                    statusEl.style.color = '#047857';
+                    window.setTimeout(() => window.location.reload(), 1200);
+                } catch (error) {
+                    statusEl.textContent = error instanceof Error ? error.message : '兑换失败。';
+                    statusEl.style.color = '#be123c';
+                    button.disabled = false;
+                }
+            });
+        });
+    })();
+</script>
+{% endblock %}
