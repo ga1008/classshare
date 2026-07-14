@@ -2659,6 +2659,19 @@ def _build_student_dashboard_context(
         student_name=student_display_name,
         streak_info=student_streak_info,
     )
+    # 间隔复习卡：插到"下一步"里（重试检验优先置顶），总量不超过 4 张。
+    try:
+        from .student_review_queue_service import build_review_next_steps
+
+        review_steps = build_review_next_steps(conn, student_id, limit=2)
+        if review_steps:
+            existing_steps = student_cockpit.get("next_steps") or []
+            merged = [step for step in review_steps if step["tone"] == "danger"]
+            merged.extend(existing_steps)
+            merged.extend(step for step in review_steps if step["tone"] != "danger")
+            student_cockpit["next_steps"] = merged[:4]
+    except Exception as exc:
+        print(f"[REVIEW_QUEUE] cockpit review steps failed: {exc}")
     continue_action = _build_student_continue_action(enriched_offerings)
 
     # Options for the agenda "新增待办" quick-create popup. Manual todos are
