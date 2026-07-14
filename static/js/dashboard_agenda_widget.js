@@ -1064,7 +1064,10 @@ function initAgendaCalendarFeed() {
       const statusEl = modal.querySelector('[data-feed-status]');
       const setStatus = (message) => { statusEl.textContent = message || ''; };
       modal.querySelectorAll('[data-feed-close]').forEach((el) => {
-        el.addEventListener('click', () => { modal.hidden = true; });
+        el.addEventListener('click', () => {
+          modal.classList.remove('is-open');
+          modal.hidden = true;
+        });
       });
       modal.querySelector('[data-feed-copy]').addEventListener('click', async () => {
         const url = modal.querySelector('[data-feed-url]').value;
@@ -1088,6 +1091,7 @@ function initAgendaCalendarFeed() {
       });
     }
     calendarFeedModal.hidden = false;
+    window.requestAnimationFrame(() => calendarFeedModal.classList.add('is-open'));
     const statusEl = calendarFeedModal.querySelector('[data-feed-status]');
     statusEl.textContent = '';
     try {
