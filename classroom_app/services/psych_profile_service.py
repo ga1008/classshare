@@ -52,13 +52,23 @@ def contains_hidden_profile_marker(value: Any) -> bool:
     return any(marker.lower() in lowered for marker in HIDDEN_PROFILE_LEAK_MARKERS)
 
 
+def _replace_hidden_profile_markers(text: str) -> str:
+    """Replace markers without normalizing whitespace.
+
+    Streaming callers concatenate many small chunks, so trimming or collapsing
+    whitespace here would corrupt Markdown at every chunk boundary.
+    """
+    cleaned = text
+    for source, replacement in _HIDDEN_PROFILE_REPLACEMENTS:
+        cleaned = re.sub(re.escape(source), replacement, cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
 def sanitize_hidden_profile_leaks(value: Any, *, fallback: str = "") -> str:
     text = str(value or "")
     if not text:
         return fallback
-    cleaned = text
-    for source, replacement in _HIDDEN_PROFILE_REPLACEMENTS:
-        cleaned = re.sub(re.escape(source), replacement, cleaned, flags=re.IGNORECASE)
+    cleaned = _replace_hidden_profile_markers(text)
     cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     if contains_hidden_profile_marker(cleaned):
@@ -74,22 +84,32 @@ def sanitize_hidden_profile_leaks(value: Any, *, fallback: str = "") -> str:
 class HiddenProfileLeakGuard:
     def __init__(self) -> None:
         self._buffer = ""
-        self._hold_size = max(len(marker) for marker in HIDDEN_PROFILE_LEAK_MARKERS) + 4
+        self._hold_size = max(len(marker) for marker in HIDDEN_PROFILE_LEAK_MARKERS)
+
+    def _consume(self, *, final: bool) -> str:
+        output: list[str] = []
+        while self._buffer and (final or len(self._buffer) > self._hold_size):
+            lowered = self._buffer.lower()
+            matched = False
+            for source, replacement in _HIDDEN_PROFILE_REPLACEMENTS:
+                if lowered.startswith(source.lower()):
+                    output.append(replacement)
+                    self._buffer = self._buffer[len(source):]
+                    matched = True
+                    break
+            if not matched:
+                output.append(self._buffer[0])
+                self._buffer = self._buffer[1:]
+        return "".join(output)
 
     def feed(self, chunk: Any) -> str:
         self._buffer += str(chunk or "")
-        if len(self._buffer) <= self._hold_size:
-            return ""
-        safe_part = self._buffer[:-self._hold_size]
-        self._buffer = self._buffer[-self._hold_size:]
-        return sanitize_hidden_profile_leaks(safe_part)
+        return self._consume(final=False)
 
     def flush(self) -> str:
         if not self._buffer:
             return ""
-        text = sanitize_hidden_profile_leaks(self._buffer)
-        self._buffer = ""
-        return text
+        return self._consume(final=True)
 
 
 def load_ai_class_config(conn, class_offering_id: int) -> dict[str, str]:
