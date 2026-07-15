@@ -2,7 +2,7 @@
 
 {% block css %}
 {{ super() }}
-<link rel="stylesheet" href="{{ asset_url('css/blog-signal-desk.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/blog-cyberdeck.css') }}">
 {% endblock %}
 
 {% block body_class %}page-wrapper{% endblock %}
@@ -19,7 +19,7 @@
     <section class="blog-section-switcher blog-channel-console" data-blog-channel-console aria-label="博客板块调频器">
         <div class="blog-channel-console__header">
             <div class="blog-tuner-brand">
-                <span class="blog-channel-console__kicker">LANSHARE / SIGNAL TUNER 01</span>
+                <span class="blog-channel-console__kicker">LANSHARE // CYBERDECK 01 · NIGHT GRID</span>
                 <div class="blog-tuner-brand__title">
                     <span class="blog-tuner-brand__mark" aria-hidden="true">LS</span>
                     <div>
@@ -59,7 +59,7 @@
                     </button>
                     <button class="blog-channel-step" data-blog-channel-step="1" type="button" aria-label="下一个博客频道">+</button>
                 </div>
-                <span class="blog-channel-dial-stage__label">TUNE / 调谐</span>
+                <span class="blog-channel-dial-stage__label">JACK-IN / 接驳调谐</span>
             </div>
 
             <div class="blog-channel-board">
@@ -70,7 +70,7 @@
                 </div>
                 <div class="blog-section-viewport">
                     <div class="blog-section-tabs" data-blog-section-tabs data-blog-section-drag-surface role="tablist" aria-label="按住并拖动选择博客频道">
-                        <button class="blog-section-tab is-active {{ 'has-content' if blog_total_posts else 'is-empty' }}" data-blog-section="" data-blog-section-count="{{ blog_total_posts }}" type="button" role="tab" aria-selected="true" aria-controls="blog-feed-panel" tabindex="0" style="--section-accent:#0f172a">
+                        <button class="blog-section-tab is-active {{ 'has-content' if blog_total_posts else 'is-empty' }}" data-blog-section="" data-blog-section-count="{{ blog_total_posts }}" type="button" role="tab" aria-selected="true" aria-controls="blog-feed-panel" tabindex="0" style="--section-accent:#22d9ee">
                             <span class="blog-section-tab__led" aria-hidden="true"></span>
                             <span class="blog-section-tab__icon">◎</span>
                             <span class="blog-section-tab__body"><strong>全部</strong><small>全站内容信号</small></span>
@@ -104,7 +104,7 @@
             <div class="blog-player__identity">
                 <span class="blog-player__power" aria-hidden="true"><i></i> POWER</span>
                 <div>
-                    <span>CONTENT PLAYER / 内容播放器</span>
+                    <span>HOLO PLAYER / 全息内容屏</span>
                     <h2 data-blog-player-title>全部频道节目</h2>
                 </div>
             </div>
