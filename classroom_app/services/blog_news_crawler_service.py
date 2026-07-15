@@ -924,7 +924,7 @@ def load_course_news_keywords(conn, config: dict[str, Any] | None = None) -> lis
                     "course_id": int(row["id"]),
                     "course_name": course_name,
                     "section_key": DEFAULT_BLOG_SECTION_KEY,
-                    "section_name": section_names.get(DEFAULT_BLOG_SECTION_KEY, "校园与成长"),
+                    "section_name": section_names.get(DEFAULT_BLOG_SECTION_KEY, "杂谈与故事"),
                     "source_templates": [],
                 }
             )
@@ -939,7 +939,7 @@ def load_course_news_keywords(conn, config: dict[str, Any] | None = None) -> lis
                 "course_id": None,
                 "course_name": "全局补充",
                 "section_key": DEFAULT_BLOG_SECTION_KEY,
-                "section_name": section_names.get(DEFAULT_BLOG_SECTION_KEY, "校园与成长"),
+                "section_name": section_names.get(DEFAULT_BLOG_SECTION_KEY, "杂谈与故事"),
                 "source_templates": [],
             }
         )
@@ -2310,7 +2310,7 @@ def _normalize_post_tags(tags: Any, primary: dict[str, Any]) -> list[str]:
     normalized = _split_keywords(tags if isinstance(tags, list) else str(tags or ""))
     section_key = str(primary.get("section_key") or DEFAULT_BLOG_SECTION_KEY)
     section_tag_map = {
-        DEFAULT_BLOG_SECTION_KEY: "校园与成长",
+        DEFAULT_BLOG_SECTION_KEY: "杂谈与故事",
         "technology": "科技前沿",
         "humanities": "人文视界",
         "computer": "计算机",

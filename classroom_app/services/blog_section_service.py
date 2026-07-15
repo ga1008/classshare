@@ -15,62 +15,14 @@ SECTION_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
 DEFAULT_BLOG_SECTIONS: tuple[dict[str, Any], ...] = (
     {
         "section_key": DEFAULT_BLOG_SECTION_KEY,
-        "name": "校园与成长",
-        "short_name": "综合",
-        "description": "课堂之外的灵感、作品、校园观察与成长记录。",
+        "name": "杂谈与故事",
+        "short_name": "杂谈",
+        "description": "收纳小说、随笔、校园故事、阅读札记与成长片段，让不必被专业标签定义的表达也有自己的频道。",
         "icon": "✦",
         "accent_color": "#2563eb",
-        "sort_order": 10,
-        "is_career": False,
-        "source_keywords": [],
-        "source_templates": [],
-    },
-    {
-        "section_key": "technology",
-        "name": "科技前沿",
-        "short_name": "科技",
-        "description": "关注改变生活与产业的科学发现、工程创新和新兴技术。",
-        "icon": "⌁",
-        "accent_color": "#0f766e",
         "sort_order": 20,
         "is_career": False,
-        "source_keywords": ["科技创新", "新能源与先进制造", "航空航天", "生物科技"],
-        "source_templates": [],
-    },
-    {
-        "section_key": "humanities",
-        "name": "人文视界",
-        "short_name": "人文",
-        "description": "从文学、历史、社会与文化中理解人和我们共同生活的世界。",
-        "icon": "文",
-        "accent_color": "#b45309",
-        "sort_order": 30,
-        "is_career": False,
-        "source_keywords": ["文学与阅读", "历史文化", "社会观察", "语言与传播"],
-        "source_templates": [],
-    },
-    {
-        "section_key": "computer",
-        "name": "计算机",
-        "short_name": "计算机",
-        "description": "软件开发、开源生态、网络安全与计算基础设施的新鲜实践。",
-        "icon": "</>",
-        "accent_color": "#4f46e5",
-        "sort_order": 40,
-        "is_career": False,
-        "source_keywords": ["软件开发", "开源技术", "网络安全", "云计算"],
-        "source_templates": [],
-    },
-    {
-        "section_key": "ai",
-        "name": "AI 新知",
-        "short_name": "AI",
-        "description": "追踪人工智能研究、产品、治理与真实应用，保持好奇也保持判断。",
-        "icon": "AI",
-        "accent_color": "#7c3aed",
-        "sort_order": 50,
-        "is_career": False,
-        "source_keywords": ["人工智能", "大语言模型", "机器学习", "生成式AI"],
+        "source_keywords": ["小说与叙事", "随笔与杂谈", "校园故事与成长", "阅读与创作"],
         "source_templates": [],
     },
     {
@@ -80,7 +32,7 @@ DEFAULT_BLOG_SECTIONS: tuple[dict[str, Any], ...] = (
         "description": "面向毕业生的岗位、招聘会、基层项目与就业政策，优先覆盖南宁、广西和珠三角。",
         "icon": "→",
         "accent_color": "#e11d48",
-        "sort_order": 60,
+        "sort_order": 10,
         "is_career": True,
         "source_keywords": [
             "广西高校毕业生招聘",
@@ -116,7 +68,66 @@ DEFAULT_BLOG_SECTIONS: tuple[dict[str, Any], ...] = (
             },
         ],
     },
+    {
+        "section_key": "technology",
+        "name": "科技前沿",
+        "short_name": "科技",
+        "description": "关注改变生活与产业的科学发现、工程创新和新兴技术。",
+        "icon": "⌁",
+        "accent_color": "#0f766e",
+        "sort_order": 30,
+        "is_career": False,
+        "source_keywords": ["科技创新", "新能源与先进制造", "航空航天", "生物科技"],
+        "source_templates": [],
+    },
+    {
+        "section_key": "humanities",
+        "name": "人文视界",
+        "short_name": "人文",
+        "description": "从文学、历史、社会与文化中理解人和我们共同生活的世界。",
+        "icon": "文",
+        "accent_color": "#b45309",
+        "sort_order": 60,
+        "is_career": False,
+        "source_keywords": ["文学与阅读", "历史文化", "社会观察", "语言与传播"],
+        "source_templates": [],
+    },
+    {
+        "section_key": "computer",
+        "name": "计算机",
+        "short_name": "计算机",
+        "description": "软件开发、开源生态、网络安全与计算基础设施的新鲜实践。",
+        "icon": "</>",
+        "accent_color": "#4f46e5",
+        "sort_order": 40,
+        "is_career": False,
+        "source_keywords": ["软件开发", "开源技术", "网络安全", "云计算"],
+        "source_templates": [],
+    },
+    {
+        "section_key": "ai",
+        "name": "AI 新知",
+        "short_name": "AI",
+        "description": "追踪人工智能研究、产品、治理与真实应用，保持好奇也保持判断。",
+        "icon": "AI",
+        "accent_color": "#7c3aed",
+        "sort_order": 50,
+        "is_career": False,
+        "source_keywords": ["人工智能", "大语言模型", "机器学习", "生成式AI"],
+        "source_templates": [],
+    },
 )
+
+
+# Upgrade only historical system identities.  Labels and ordering identify the
+# old defaults; free-form descriptions and existing source configuration remain
+# administrator-owned and are preserved.
+LEGACY_DEFAULT_SECTION_IDENTITIES: dict[str, tuple[str, str, int]] = {
+    "general": ("校园与成长", "综合", 10),
+    "technology": ("科技前沿", "科技", 20),
+    "humanities": ("人文视界", "人文", 30),
+    "career": ("毕业新征程", "就业", 60),
+}
 
 
 def _json_dumps(value: Any) -> str:
@@ -137,10 +148,63 @@ def ensure_default_blog_sections(conn) -> None:
     # Reads are the hot path.  Avoid issuing INSERT OR IGNORE on every blog API
     # request because even a no-op insert promotes SQLite to a write
     # transaction and can needlessly contend with posting/comment traffic.
-    existing_keys = {
-        str(row["section_key"])
-        for row in conn.execute("SELECT section_key FROM blog_sections").fetchall()
-    }
+    existing_rows = conn.execute(
+        """
+        SELECT section_key, name, short_name, description, sort_order, source_keywords_json
+        FROM blog_sections
+        """
+    ).fetchall()
+    existing_by_key = {str(row["section_key"]): dict(row) for row in existing_rows}
+    existing_keys = set(existing_by_key)
+
+    defaults_by_key = {section["section_key"]: section for section in DEFAULT_BLOG_SECTIONS}
+    for section_key, legacy_identity in LEGACY_DEFAULT_SECTION_IDENTITIES.items():
+        row = existing_by_key.get(section_key)
+        section = defaults_by_key.get(section_key)
+        if not row or not section:
+            continue
+        current_identity = (
+            str(row.get("name") or ""),
+            str(row.get("short_name") or ""),
+            int(row.get("sort_order") or 0),
+        )
+        if current_identity != legacy_identity:
+            continue
+        if section_key == DEFAULT_BLOG_SECTION_KEY:
+            source_keywords_json = str(row.get("source_keywords_json") or "[]")
+            if not _safe_json_list(source_keywords_json):
+                source_keywords_json = _json_dumps(section.get("source_keywords") or [])
+            current_description = str(row.get("description") or "")
+            upgraded_description = (
+                section["description"]
+                if current_description == "课堂之外的灵感、作品、校园观察与成长记录。"
+                else current_description
+            )
+            conn.execute(
+                """
+                UPDATE blog_sections
+                SET name = ?, short_name = ?, description = ?, sort_order = ?,
+                    source_keywords_json = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE section_key = ?
+                """,
+                (
+                    section["name"],
+                    section["short_name"],
+                    upgraded_description,
+                    int(section["sort_order"]),
+                    source_keywords_json,
+                    section_key,
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE blog_sections
+                SET sort_order = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE section_key = ?
+                """,
+                (int(section["sort_order"]), section_key),
+            )
     missing_sections = [
         section for section in DEFAULT_BLOG_SECTIONS if section["section_key"] not in existing_keys
     ]
@@ -278,7 +342,7 @@ def save_blog_section(conn, payload: dict[str, Any], *, section_key: str | None 
     is_career = bool(data.get("is_career", False))
     allow_user_posts = bool(data.get("allow_user_posts", True))
     if normalized_key == DEFAULT_BLOG_SECTION_KEY and not is_enabled:
-        raise ValueError("默认综合板块不能停用")
+        raise ValueError("默认杂谈板块不能停用")
 
     source_keywords = [
         str(item).strip()[:100]

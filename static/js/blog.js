@@ -180,6 +180,10 @@ class BlogCenter {
         this.readingSession = null;
         this.readingProgressTimer = null;
         this.readingScrollTimer = null;
+        this.channelTuningTimer = null;
+        this.channelRevealTimer = null;
+        this.suppressSectionClickUntil = 0;
+        this.channelDrag = null;
 
         this.state = {
             currentView: 'feed',
@@ -312,6 +316,15 @@ class BlogCenter {
     }
 
     handleKeydown(event) {
+        const channelDial = event.target.closest?.('[data-blog-channel-dial]');
+        if (channelDial && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+            event.preventDefault();
+            if (event.key === 'Home') this.selectChannelIndex(0);
+            else if (event.key === 'End') this.selectChannelIndex(this.channelOptions().length - 1);
+            else this.stepChannel(['ArrowRight', 'ArrowUp'].includes(event.key) ? 1 : -1);
+            return;
+        }
+
         const sectionTab = event.target.closest?.('[data-blog-section][role="tab"]');
         if (sectionTab && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
             const tabs = $$('[data-blog-section][role="tab"]', this.shell);
@@ -346,6 +359,7 @@ class BlogCenter {
 
     init() {
         this.bindEvents();
+        this.initChannelControls();
         this.ensureCustomEmojiLibrary();
         this.loadFollows();
 
@@ -445,8 +459,22 @@ class BlogCenter {
             return;
         }
 
+        const channelStep = event.target.closest('[data-blog-channel-step]');
+        if (channelStep) {
+            this.stepChannel(Number(channelStep.dataset.blogChannelStep || 0));
+            return;
+        }
+
+        const channelDial = event.target.closest('[data-blog-channel-dial]');
+        if (channelDial) {
+            if (Date.now() < this.suppressSectionClickUntil) return;
+            this.stepChannel(1);
+            return;
+        }
+
         const sectionButton = event.target.closest('[data-blog-section]');
         if (sectionButton) {
+            if (Date.now() < this.suppressSectionClickUntil) return;
             this.setSection(sectionButton.dataset.blogSection || '');
             return;
         }
@@ -858,12 +886,218 @@ class BlogCenter {
         }
     }
 
+    channelOptions() {
+        const total = this.state.sections.reduce((sum, item) => sum + Number(item.post_count || 0), 0);
+        return [
+            {
+                section_key: '',
+                name: '全部频道',
+                short_name: '全部',
+                description: '从全站内容信号中发现值得继续读下去的文章。',
+                icon: '◎',
+                accent_color: '#0f172a',
+                post_count: total,
+            },
+            ...this.state.sections,
+        ];
+    }
+
+    currentChannelIndex() {
+        const options = this.channelOptions();
+        const index = options.findIndex((item) => item.section_key === this.state.currentSection);
+        return index >= 0 ? index : 0;
+    }
+
+    selectChannelIndex(index) {
+        const options = this.channelOptions();
+        if (!options.length) return;
+        const safeIndex = Math.max(0, Math.min(Number(index) || 0, options.length - 1));
+        this.setSection(options[safeIndex]?.section_key || '');
+    }
+
+    stepChannel(direction) {
+        const options = this.channelOptions();
+        if (options.length < 2 || !direction) return;
+        const currentIndex = this.currentChannelIndex();
+        const nextIndex = (currentIndex + Math.sign(direction) + options.length) % options.length;
+        this.selectChannelIndex(nextIndex);
+    }
+
+    syncChannelConsole({ scrollActive = true, previewIndex = null } = {}) {
+        const consoleNode = $('[data-blog-channel-console]', this.shell);
+        if (!consoleNode) return;
+        const options = this.channelOptions();
+        const selectedIndex = previewIndex === null
+            ? this.currentChannelIndex()
+            : Math.max(0, Math.min(Number(previewIndex) || 0, options.length - 1));
+        const channel = options[selectedIndex] || options[0];
+        if (!channel) return;
+        const accent = this.sectionAccent(channel);
+        const count = Number(channel.post_count || 0);
+        const dialAngle = options.length > 1
+            ? -135 + ((selectedIndex / (options.length - 1)) * 270)
+            : 0;
+        consoleNode.style.setProperty('--channel-accent', accent);
+        consoleNode.classList.toggle('is-channel-no-signal', count === 0);
+
+        const dial = $('[data-blog-channel-dial]', consoleNode);
+        if (dial) {
+            dial.style.setProperty('--dial-angle', `${dialAngle}deg`);
+            dial.setAttribute('aria-label', `当前频道 ${channel.short_name || channel.name}，${count} 篇文章。点击进入下一频道，也可拖动、滚轮或方向键切换`);
+        }
+        const code = $('[data-blog-channel-code]', consoleNode);
+        const name = $('[data-blog-channel-name]', consoleNode);
+        const countNode = $('[data-blog-channel-count]', consoleNode);
+        const status = $('[data-blog-channel-status]', consoleNode);
+        if (code) code.textContent = `CH ${String(selectedIndex).padStart(2, '0')}`;
+        if (name) name.textContent = channel.name || channel.short_name || '全部频道';
+        if (countNode) countNode.textContent = formatCompactNumber(count);
+        if (status) status.textContent = count ? 'LIVE CONTENT' : 'NO SIGNAL / 雪花';
+
+        if (!scrollActive || previewIndex !== null) return;
+        const surface = $('[data-blog-section-drag-surface]', consoleNode);
+        const active = surface?.querySelector('.blog-section-tab.is-active');
+        if (surface && active) {
+            const targetLeft = active.offsetLeft - ((surface.clientWidth - active.offsetWidth) / 2);
+            surface.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+        }
+    }
+
+    startChannelTuning(sectionKey) {
+        const consoleNode = $('[data-blog-channel-console]', this.shell);
+        if (!consoleNode) return;
+        window.clearTimeout(this.channelTuningTimer);
+        consoleNode.classList.remove('is-channel-tuning');
+        void consoleNode.offsetWidth;
+        consoleNode.classList.add('is-channel-tuning');
+        const channel = this.channelOptions().find((item) => item.section_key === sectionKey);
+        consoleNode.classList.toggle('is-channel-no-signal', Number(channel?.post_count || 0) === 0);
+        this.channelTuningTimer = window.setTimeout(() => {
+            consoleNode.classList.remove('is-channel-tuning');
+        }, 620);
+    }
+
+    initChannelControls() {
+        const surface = $('[data-blog-section-drag-surface]', this.shell);
+        if (surface && !surface.dataset.dragReady) {
+            surface.dataset.dragReady = 'true';
+            surface.addEventListener('pointerdown', (event) => {
+                if (event.button !== 0) return;
+                this.channelDrag = {
+                    kind: 'rail',
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    scrollLeft: surface.scrollLeft,
+                    moved: false,
+                };
+                surface.setPointerCapture?.(event.pointerId);
+            });
+            surface.addEventListener('pointermove', (event) => {
+                const drag = this.channelDrag;
+                if (!drag || drag.kind !== 'rail' || drag.pointerId !== event.pointerId) return;
+                const distance = event.clientX - drag.startX;
+                if (Math.abs(distance) > 5) drag.moved = true;
+                if (!drag.moved) return;
+                event.preventDefault();
+                surface.classList.add('is-dragging');
+                surface.scrollLeft = drag.scrollLeft - distance;
+            });
+            const finishRailDrag = (event) => {
+                const drag = this.channelDrag;
+                if (!drag || drag.kind !== 'rail' || drag.pointerId !== event.pointerId) return;
+                if (drag.moved) this.suppressSectionClickUntil = Date.now() + 240;
+                surface.classList.remove('is-dragging');
+                surface.releasePointerCapture?.(event.pointerId);
+                this.channelDrag = null;
+            };
+            surface.addEventListener('pointerup', finishRailDrag);
+            surface.addEventListener('pointercancel', finishRailDrag);
+            surface.addEventListener('wheel', (event) => {
+                if (surface.scrollWidth <= surface.clientWidth) return;
+                const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+                if (!delta) return;
+                event.preventDefault();
+                surface.scrollLeft += delta;
+            }, { passive: false });
+        }
+
+        const dial = $('[data-blog-channel-dial]', this.shell);
+        if (!dial || dial.dataset.dragReady) return;
+        dial.dataset.dragReady = 'true';
+        const angleFromEvent = (event) => {
+            const rect = dial.getBoundingClientRect();
+            return Math.atan2(event.clientY - (rect.top + rect.height / 2), event.clientX - (rect.left + rect.width / 2)) * (180 / Math.PI);
+        };
+        dial.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0) return;
+            this.channelDrag = {
+                kind: 'dial',
+                pointerId: event.pointerId,
+                startAngle: angleFromEvent(event),
+                startIndex: this.currentChannelIndex(),
+                previewIndex: this.currentChannelIndex(),
+                moved: false,
+            };
+            dial.setPointerCapture?.(event.pointerId);
+            dial.classList.add('is-grabbed');
+        });
+        dial.addEventListener('pointermove', (event) => {
+            const drag = this.channelDrag;
+            if (!drag || drag.kind !== 'dial' || drag.pointerId !== event.pointerId) return;
+            let delta = angleFromEvent(event) - drag.startAngle;
+            if (delta > 180) delta -= 360;
+            if (delta < -180) delta += 360;
+            if (Math.abs(delta) > 5) drag.moved = true;
+            if (!drag.moved) return;
+            event.preventDefault();
+            const options = this.channelOptions();
+            const degreesPerChannel = Math.max(24, 270 / Math.max(1, options.length - 1));
+            drag.previewIndex = Math.max(0, Math.min(
+                drag.startIndex + Math.round(delta / degreesPerChannel),
+                options.length - 1,
+            ));
+            this.syncChannelConsole({ scrollActive: false, previewIndex: drag.previewIndex });
+        });
+        const finishDialDrag = (event, { cancelled = false } = {}) => {
+            const drag = this.channelDrag;
+            if (!drag || drag.kind !== 'dial' || drag.pointerId !== event.pointerId) return;
+            dial.classList.remove('is-grabbed');
+            dial.releasePointerCapture?.(event.pointerId);
+            this.channelDrag = null;
+            if (drag.moved && !cancelled) {
+                this.suppressSectionClickUntil = Date.now() + 240;
+                this.selectChannelIndex(drag.previewIndex);
+            } else {
+                this.syncChannelConsole({ scrollActive: false });
+            }
+        };
+        dial.addEventListener('pointerup', finishDialDrag);
+        dial.addEventListener('pointercancel', (event) => finishDialDrag(event, { cancelled: true }));
+        dial.addEventListener('wheel', (event) => {
+            if (!event.deltaY && !event.deltaX) return;
+            event.preventDefault();
+            this.stepChannel((event.deltaY || event.deltaX) > 0 ? 1 : -1);
+        }, { passive: false });
+    }
+
+    animateFeedReveal(container) {
+        if (!container) return;
+        window.clearTimeout(this.channelRevealTimer);
+        container.classList.remove('is-channel-reveal');
+        $$(':scope > .blog-post-card', container).forEach((card, index) => {
+            card.style.setProperty('--channel-card-index', String(Math.min(index, 7)));
+        });
+        window.requestAnimationFrame(() => container.classList.add('is-channel-reveal'));
+        this.channelRevealTimer = window.setTimeout(() => container.classList.remove('is-channel-reveal'), 1100);
+    }
+
     setSection(sectionKey) {
         const normalizedKey = String(sectionKey || '').trim().toLowerCase();
         if (normalizedKey && this.state.sections.length && !this.state.sections.some((item) => item.section_key === normalizedKey)) {
             showToast('这个板块暂不可用', 'warning');
             return;
         }
+        this.startChannelTuning(normalizedKey);
         this.state.currentSection = normalizedKey;
         this.state.currentNav = 'feed';
         this.state.page = 1;
@@ -928,7 +1162,7 @@ class BlogCenter {
         const configured = this.state.sections.find((item) => item.section_key === normalizedKey);
         if (configured) return configured;
         const defaults = {
-            general: { section_key: 'general', name: '校园与成长', short_name: '综合', icon: '✦', accent_color: '#2563eb' },
+            general: { section_key: 'general', name: '杂谈与故事', short_name: '杂谈', description: '小说、随笔、校园故事、阅读札记与成长片段。', icon: '✦', accent_color: '#2563eb' },
             technology: { section_key: 'technology', name: '科技前沿', short_name: '科技', icon: '⌁', accent_color: '#0f766e' },
             humanities: { section_key: 'humanities', name: '人文视界', short_name: '人文', icon: '文', accent_color: '#b45309' },
             computer: { section_key: 'computer', name: '计算机', short_name: '计算机', icon: '</>', accent_color: '#4f46e5' },
@@ -948,27 +1182,29 @@ class BlogCenter {
         if (!container || !this.state.sections.length) return;
         const total = this.state.sections.reduce((sum, item) => sum + Number(item.post_count || 0), 0);
         const allActive = !this.state.currentSection;
+        const allSignalClass = total ? ' has-content' : ' is-empty';
         const tabs = [
             `
-                <button class="blog-section-tab${allActive ? ' is-active' : ''}" data-blog-section="" type="button" role="tab" aria-selected="${allActive ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${allActive ? '0' : '-1'}" style="--section-accent:#0f172a">
+                <button class="blog-section-tab${allActive ? ' is-active' : ''}${allSignalClass}" data-blog-section="" data-blog-section-count="${total}" type="button" role="tab" aria-selected="${allActive ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${allActive ? '0' : '-1'}" style="--section-accent:#0f172a">
                     <span class="blog-section-tab__icon">◎</span>
-                    <span class="blog-section-tab__body"><strong>全部</strong><small>发现所有好内容</small></span>
+                    <span class="blog-section-tab__body"><strong>全部</strong><small>全站内容信号</small></span>
                     <span class="blog-section-tab__count">${formatCompactNumber(total)}</span>
                 </button>
             `,
             ...this.state.sections.map((section) => {
                 const active = section.section_key === this.state.currentSection;
+                const postCount = Number(section.post_count || 0);
                 return `
-                    <button class="blog-section-tab${active ? ' is-active' : ''}" data-blog-section="${escapeHtml(section.section_key || '')}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${active ? '0' : '-1'}" style="--section-accent:${this.sectionAccent(section)}">
+                    <button class="blog-section-tab${active ? ' is-active' : ''}${postCount ? ' has-content' : ' is-empty'}" data-blog-section="${escapeHtml(section.section_key || '')}" data-blog-section-count="${postCount}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${active ? '0' : '-1'}" style="--section-accent:${this.sectionAccent(section)}">
                         <span class="blog-section-tab__icon">${escapeHtml(section.icon || '•')}</span>
                         <span class="blog-section-tab__body"><strong>${escapeHtml(section.short_name || section.name || '板块')}</strong><small>${escapeHtml(section.name || '')}</small></span>
-                        <span class="blog-section-tab__count">${formatCompactNumber(section.post_count || 0)}</span>
+                        <span class="blog-section-tab__count">${formatCompactNumber(postCount)}</span>
                     </button>
                 `;
             }),
         ];
         container.innerHTML = tabs.join('');
-        container.querySelector('.blog-section-tab.is-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        this.syncChannelConsole();
     }
 
     renderSectionIntro() {
@@ -977,7 +1213,7 @@ class BlogCenter {
         const section = this.sectionByKey(this.state.currentSection);
         if (!section) {
             intro.style.removeProperty('--section-accent');
-            intro.innerHTML = '<span>全站广场</span><p>从不同方向遇见新问题、新知识和下一段旅程。</p>';
+            intro.innerHTML = '<span>全频段</span><p>从不同方向遇见新问题、新知识和下一段旅程。</p>';
             return;
         }
         intro.style.setProperty('--section-accent', this.sectionAccent(section));
@@ -1374,6 +1610,11 @@ class BlogCenter {
         const spotlightPosts = data.spotlight_posts || [];
         const spotlight = $('[data-blog-spotlight]', this.shell);
         if (spotlight) {
+            const activeSection = this.sectionByKey(this.state.currentSection);
+            const activeSignalCount = activeSection
+                ? Number(activeSection.post_count || 0)
+                : this.state.sections.reduce((sum, item) => sum + Number(item.post_count || 0), 0);
+            const hasSectionSignal = activeSignalCount > 0;
             spotlight.innerHTML = spotlightPosts.length
                 ? `
                     <div class="blog-spotlight__header">
@@ -1387,7 +1628,9 @@ class BlogCenter {
                         ${spotlightPosts.map((post, index) => this.spotlightPostHtml(post, index)).join('')}
                     </div>
                 `
-                : '<div class="blog-discovery-empty">还没有精选内容，发一篇高质量帖子来点亮这里。</div>';
+                : (hasSectionSignal
+                    ? '<div class="blog-discovery-empty">还没有精选内容，发一篇高质量帖子来点亮这里。</div>'
+                    : this.emptyHtml('当前频道尚无精选信号', { channelStatic: true, compact: true }));
         }
 
         const trending = $('[data-blog-trending-list]', this.shell);
@@ -1523,13 +1766,19 @@ class BlogCenter {
             if (append) {
                 container.insertAdjacentHTML('beforeend', nextPosts.map((post) => this.postCardHtml(post)).join(''));
             } else {
+                const activeCatalogSection = this.sectionByKey(this.state.currentSection);
+                const catalogHasSignal = this.state.currentSection
+                    ? Number(activeCatalogSection?.post_count || 0) > 0
+                    : this.state.sections.some((item) => Number(item.post_count || 0) > 0);
                 container.innerHTML = this.state.posts.length
                     ? this.state.posts.map((post) => this.postCardHtml(post)).join('')
                     : this.emptyHtml(
                         useFollowingFeed
                             ? '关注板块或作者后，新内容会出现在这里'
                             : (useOpportunityFeed ? '暂时没有符合条件且仍可报名的机会' : '还没有可浏览的帖子'),
+                        { channelStatic: !useFollowingFeed && catalogHasSignal },
                     );
+                if (this.state.posts.length) this.animateFeedReveal(container);
             }
             if (append && !nextPosts.length && this.state.page > 1) this.state.page -= 1;
         } catch (error) {
@@ -2971,7 +3220,19 @@ class BlogCenter {
         return Array.from({ length: count }, () => '<div class="blog-skeleton" style="height: 140px; margin-bottom: var(--spacing-md);"></div>').join('');
     }
 
-    emptyHtml(title) {
+    emptyHtml(title, { channelStatic = false, compact = false } = {}) {
+        if (channelStatic) {
+            return `
+                <div class="blog-empty blog-empty--static${compact ? ' blog-empty--static-compact' : ''}">
+                    <div class="blog-empty__static-screen" aria-hidden="true">
+                        <span></span><i></i><b></b>
+                    </div>
+                    <div class="blog-empty__signal">NO SIGNAL / 频道雪花</div>
+                    <div class="blog-empty__title">${escapeHtml(title || '当前频道暂无内容')}</div>
+                    <div class="blog-empty__desc">信号源保持在线，可调整筛选条件、拖动频道带，或发布一篇内容点亮这里。</div>
+                </div>
+            `;
+        }
         return `
             <div class="blog-empty">
                 <svg class="blog-empty__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>

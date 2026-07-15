@@ -94,7 +94,10 @@ class BlogSectionTests(unittest.TestCase):
         sections = blog_section_service.list_blog_sections(self.conn, include_source_config=True)
         keys = [section["section_key"] for section in sections]
 
-        self.assertEqual(["general", "technology", "humanities", "computer", "ai", "career"], keys)
+        self.assertEqual(["career", "general", "technology", "computer", "ai", "humanities"], keys)
+        general = next(section for section in sections if section["section_key"] == "general")
+        self.assertEqual("杂谈", general["short_name"])
+        self.assertIn("小说与叙事", general["source_keywords"])
         career = next(section for section in sections if section["section_key"] == "career")
         self.assertTrue(career["is_career"])
         self.assertGreaterEqual(len(career["source_keywords"]), 6)
@@ -109,6 +112,38 @@ class BlogSectionTests(unittest.TestCase):
         blog_section_service.list_blog_sections(self.conn)
 
         self.assertEqual(before, self.conn.total_changes)
+
+    def test_legacy_default_metadata_upgrades_once_without_overwriting_custom_sections(self):
+        self.conn.execute(
+            """
+            UPDATE blog_sections
+            SET name = '校园与成长', short_name = '综合', description = '旧描述',
+                sort_order = 10, source_keywords_json = '[]'
+            WHERE section_key = 'general'
+            """
+        )
+        self.conn.execute("UPDATE blog_sections SET sort_order = 60 WHERE section_key = 'career'")
+        self.conn.execute("UPDATE blog_sections SET sort_order = 20 WHERE section_key = 'technology'")
+        self.conn.execute("UPDATE blog_sections SET sort_order = 30 WHERE section_key = 'humanities'")
+        self.conn.execute(
+            "UPDATE blog_sections SET name = '我的 AI 频道', sort_order = 50 WHERE section_key = 'ai'"
+        )
+
+        blog_section_service.ensure_default_blog_sections(self.conn)
+        sections = blog_section_service.list_blog_sections(self.conn, include_source_config=True)
+        by_key = {item["section_key"]: item for item in sections}
+
+        self.assertEqual("杂谈与故事", by_key["general"]["name"])
+        self.assertEqual("旧描述", by_key["general"]["description"])
+        self.assertIn("小说与叙事", by_key["general"]["source_keywords"])
+        self.assertEqual(10, by_key["career"]["sort_order"])
+        self.assertEqual(30, by_key["technology"]["sort_order"])
+        self.assertEqual(60, by_key["humanities"]["sort_order"])
+        self.assertEqual("我的 AI 频道", by_key["ai"]["name"])
+
+        after_upgrade = self.conn.total_changes
+        blog_section_service.ensure_default_blog_sections(self.conn)
+        self.assertEqual(after_upgrade, self.conn.total_changes)
 
     def test_keyword_plan_reserves_all_sections_and_extra_career_coverage(self):
         self.conn.execute(
@@ -345,7 +380,7 @@ class BlogSectionTests(unittest.TestCase):
             for item in blog_section_service.list_blog_sections(self.conn, include_source_config=True)
             if item["section_key"] == "general"
         )
-        with self.assertRaisesRegex(ValueError, "默认综合板块不能停用"):
+        with self.assertRaisesRegex(ValueError, "默认杂谈板块不能停用"):
             blog_section_service.save_blog_section(
                 self.conn,
                 {**general, "is_enabled": False},

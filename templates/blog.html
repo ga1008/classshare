@@ -31,13 +31,14 @@
     <!-- Header -->
     <header class="blog-hero" data-blog-list-chrome>
         <div class="blog-hero__content">
+            <div class="blog-hero__eyebrow"><span aria-hidden="true"></span> LANSHARE / FUTURE CHANNEL</div>
             <div class="blog-shell__title-row">
                 <svg class="blog-shell__title-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
                 </svg>
                 <h1>博客中心</h1>
             </div>
-            <p class="blog-hero__lead">把课堂外的灵感、问题、作品和新鲜事放到一起，让好帖子更容易被看见，也让讨论自然长出来。</p>
+            <p class="blog-hero__lead">调到你关心的频道。知识、故事与人生下一站在同一座内容终端汇流，让每一次阅读都有清晰去向。</p>
             <div class="blog-hero__stats" aria-label="博客概览">
                 <span><strong data-blog-stat="today">0</strong>今日新帖</span>
                 <span><strong data-blog-stat="visible">0</strong>可读内容</span>
@@ -46,6 +47,7 @@
             </div>
         </div>
         <div class="blog-shell__actions">
+            <span class="blog-hero__online"><i aria-hidden="true"></i> SIGNAL ONLINE</span>
             <button class="blog-hero__ghost" data-blog-nav="bookmarks" type="button">我的收藏</button>
             <button class="btn btn-primary btn-sm" data-blog-action="compose" title="写帖子">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -61,24 +63,69 @@
         <button class="blog-sidebar-tab" data-blog-nav="bookmarks" type="button">我的收藏</button>
     </div>
 
-    <section class="blog-section-switcher" data-blog-list-chrome aria-label="博客板块">
-        <div class="blog-section-tabs" data-blog-section-tabs role="tablist">
-            <button class="blog-section-tab is-active" data-blog-section="" type="button" role="tab" aria-selected="true" aria-controls="blog-feed-panel" tabindex="0" style="--section-accent:#0f172a">
-                <span class="blog-section-tab__icon">◎</span>
-                <span class="blog-section-tab__body"><strong>全部</strong><small>发现所有好内容</small></span>
-                <span class="blog-section-tab__count">{{ (blog_sections | map(attribute='post_count') | sum) if blog_sections else 0 }}</span>
-            </button>
-            {% for section in blog_sections %}
-            <button class="blog-section-tab" data-blog-section="{{ section.section_key }}" type="button" role="tab" aria-selected="false" aria-controls="blog-feed-panel" tabindex="-1" style="--section-accent:{{ section.accent_color }}">
-                <span class="blog-section-tab__icon">{{ section.icon }}</span>
-                <span class="blog-section-tab__body"><strong>{{ section.short_name }}</strong><small>{{ section.name }}</small></span>
-                <span class="blog-section-tab__count">{{ section.post_count }}</span>
-            </button>
-            {% endfor %}
+    {% set blog_total_posts = (blog_sections | map(attribute='post_count') | sum) if blog_sections else 0 %}
+    <section class="blog-section-switcher blog-channel-console" data-blog-list-chrome data-blog-channel-console aria-label="博客板块频道台">
+        <div class="blog-channel-console__header">
+            <div>
+                <span class="blog-channel-console__kicker">SECTION CONTROL / 频道控制</span>
+                <h2>内容调谐台</h2>
+            </div>
+            <div class="blog-channel-console__signal" aria-live="polite">
+                <span aria-hidden="true"></span>
+                <strong data-blog-channel-status>{{ 'LIVE CONTENT' if blog_total_posts else 'NO SIGNAL' }}</strong>
+            </div>
         </div>
+
+        <div class="blog-channel-console__deck">
+            <div class="blog-channel-dial-stage">
+                <div class="blog-channel-dial-controls">
+                    <button class="blog-channel-step" data-blog-channel-step="-1" type="button" aria-label="上一个博客频道">−</button>
+                    <button class="blog-channel-dial" data-blog-channel-dial type="button" aria-label="频道旋钮，点击进入下一频道，也可拖动、滚轮或方向键切换板块" style="--dial-angle:-135deg">
+                        <span class="blog-channel-dial__ticks" aria-hidden="true"></span>
+                        <span class="blog-channel-dial__face" aria-hidden="true"><i></i></span>
+                    </button>
+                    <button class="blog-channel-step" data-blog-channel-step="1" type="button" aria-label="下一个博客频道">+</button>
+                </div>
+                <span class="blog-channel-dial-stage__label">CHANNEL SELECT</span>
+            </div>
+
+            <div class="blog-channel-board">
+                <div class="blog-channel-readout">
+                    <span class="blog-channel-readout__code" data-blog-channel-code>CH 00</span>
+                    <strong data-blog-channel-name>全部频道</strong>
+                    <span class="blog-channel-readout__count"><b data-blog-channel-count>{{ blog_total_posts }}</b> POSTS</span>
+                </div>
+                <div class="blog-section-viewport">
+                    <div class="blog-section-tabs" data-blog-section-tabs data-blog-section-drag-surface role="tablist" aria-label="按住并拖动选择博客频道">
+                        <button class="blog-section-tab is-active {{ 'has-content' if blog_total_posts else 'is-empty' }}" data-blog-section="" data-blog-section-count="{{ blog_total_posts }}" type="button" role="tab" aria-selected="true" aria-controls="blog-feed-panel" tabindex="0" style="--section-accent:#0f172a">
+                            <span class="blog-section-tab__icon">◎</span>
+                            <span class="blog-section-tab__body"><strong>全部</strong><small>全站内容信号</small></span>
+                            <span class="blog-section-tab__count">{{ blog_total_posts }}</span>
+                        </button>
+                        {% for section in blog_sections %}
+                        <button class="blog-section-tab {{ 'has-content' if section.post_count else 'is-empty' }}" data-blog-section="{{ section.section_key }}" data-blog-section-count="{{ section.post_count }}" type="button" role="tab" aria-selected="false" aria-controls="blog-feed-panel" tabindex="-1" style="--section-accent:{{ section.accent_color }}">
+                            <span class="blog-section-tab__icon">{{ section.icon }}</span>
+                            <span class="blog-section-tab__body"><strong>{{ section.short_name }}</strong><small>{{ section.name }}</small></span>
+                            <span class="blog-section-tab__count">{{ section.post_count }}</span>
+                        </button>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="blog-channel-board__hint">
+                    <span><i aria-hidden="true">↔</i> 按住频道带拖动</span>
+                    <span>旋钮 / 滚轮 / 方向键均可切换</span>
+                </div>
+            </div>
+        </div>
+
         <div class="blog-section-intro" data-blog-section-intro>
             <span>全站广场</span>
             <p>从不同方向遇见新问题、新知识和下一段旅程。</p>
+        </div>
+        <div class="blog-channel-tuning" aria-hidden="true">
+            <span class="blog-channel-tuning__static"></span>
+            <span class="blog-channel-tuning__scan"></span>
+            <strong>SYNCING CHANNEL</strong>
         </div>
     </section>
 
