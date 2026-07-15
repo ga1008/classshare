@@ -177,6 +177,70 @@ class BlogSectionTests(unittest.TestCase):
         self.assertEqual("career", selected[0]["section_key"])
         self.assertEqual(2, len({item["section_key"] for item in selected}))
 
+    def test_career_sources_are_prioritized_before_general_news(self):
+        career_section = next(
+            item
+            for item in blog_section_service.DEFAULT_BLOG_SECTIONS
+            if item["section_key"] == "career"
+        )
+
+        sources = crawler._effective_source_templates(
+            {},
+            section_key="career",
+            section_templates=career_section["source_templates"],
+        )
+
+        self.assertEqual(
+            [item["name"] for item in career_section["source_templates"]],
+            [item["name"] for item in sources[:3]],
+        )
+
+    def test_career_relevance_rejects_news_without_job_intent_or_region(self):
+        self.assertFalse(
+            crawler._career_candidate_is_relevant(
+                keyword="\u7ca4\u6e2f\u6fb3\u5927\u6e7e\u533a\u6821\u56ed\u62db\u8058",
+                title="\u67d0\u79d1\u6280\u516c\u53f8 IPO \u5373\u5c06\u4e0a\u4f1a",
+                summary="\u8d44\u672c\u5e02\u573a\u65b0\u95fb",
+                url="https://example.com/news/1",
+            )
+        )
+        self.assertFalse(
+            crawler._career_candidate_is_relevant(
+                keyword="\u7ca4\u6e2f\u6fb3\u5927\u6e7e\u533a\u6821\u56ed\u62db\u8058",
+                title="\u5317\u4eac\u67d0\u516c\u53f8 2027 \u5c4a\u6821\u62db\u542f\u52a8",
+                summary="\u9762\u5411\u5e94\u5c4a\u6bd5\u4e1a\u751f",
+                url="https://example.com/jobs/2",
+            )
+        )
+        self.assertTrue(
+            crawler._career_candidate_is_relevant(
+                keyword="\u7ca4\u6e2f\u6fb3\u5927\u6e7e\u533a\u6821\u56ed\u62db\u8058",
+                title="\u6df1\u5733\u5e02\u5c5e\u56fd\u4f01 2027 \u5c4a\u6821\u56ed\u62db\u8058",
+                summary="\u5e94\u5c4a\u6bd5\u4e1a\u751f\u53ef\u7f51\u4e0a\u6295\u9012",
+                url="https://gzw.sz.gov.cn/jobs/3",
+            )
+        )
+
+    def test_selection_prefers_regional_official_career_candidate(self):
+        candidates = [
+            {"id": 1, "section_key": "career", "score": 99, "title": "\u5168\u56fd 2027 \u5c4a\u6821\u62db", "url": "https://example.com/1"},
+            {"id": 2, "section_key": "ai", "score": 95},
+            {
+                "id": 3,
+                "section_key": "career",
+                "score": 75,
+                "keyword": "\u7ca4\u6e2f\u6fb3\u5927\u6e7e\u533a\u6821\u56ed\u62db\u8058",
+                "title": "\u6df1\u5733\u5e02\u5c5e\u56fd\u4f01\u6821\u56ed\u62db\u8058",
+                "summary": "\u5c97\u4f4d\u53ef\u5728\u5b98\u7f51\u6295\u9012",
+                "url": "https://gzw.sz.gov.cn/jobs/3",
+            },
+        ]
+
+        selected = crawler._balance_section_selection(candidates, candidates[:2], max_posts=2)
+
+        self.assertEqual(3, selected[0]["id"])
+        self.assertEqual("career", selected[0]["section_key"])
+
     def test_section_management_is_extensible_and_preserves_disabled_sections(self):
         created = blog_section_service.save_blog_section(
             self.conn,

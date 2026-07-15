@@ -73,6 +73,28 @@ SOURCE_KIND_FIXED_RSS = "fixed_rss"
 MAX_AI_CANDIDATES = 80
 MAX_AI_TEXT_CHARS = 1600
 
+CAREER_INTENT_TERMS: tuple[str, ...] = (
+    "\u62db\u8058", "\u6821\u62db", "\u5c97\u4f4d", "\u62db\u52df", "\u5b9e\u4e60", "\u89c1\u4e60", "\u53cc\u9009\u4f1a", "\u5ba3\u8bb2\u4f1a",
+    "\u4eba\u624d", "\u5c31\u4e1a", "\u5e94\u5c4a\u751f", "\u6bd5\u4e1a\u751f", "\u4e09\u652f\u4e00\u6276", "\u897f\u90e8\u8ba1\u5212", "\u9009\u8c03", "\u62db\u8003",
+)
+CAREER_REGION_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]], ...] = (
+    (("\u5357\u5b81",), ("\u5357\u5b81",), ("nanning.gov.cn",)),
+    (
+        ("\u5e7f\u897f", "\u7559\u6842"),
+        ("\u5e7f\u897f", "\u5357\u5b81", "\u67f3\u5dde", "\u6842\u6797", "\u5317\u6d77", "\u7389\u6797", "\u68a7\u5dde", "\u94a6\u5dde", "\u8d35\u6e2f", "\u767e\u8272"),
+        ("gxzf.gov.cn", "gxrc.com", "gxpta.com.cn", "gxbys.com"),
+    ),
+    (
+        ("\u73e0\u4e09\u89d2", "\u7ca4\u6e2f\u6fb3", "\u5927\u6e7e\u533a", "\u5e7f\u5dde", "\u6df1\u5733", "\u73e0\u6d77", "\u4e1c\u839e", "\u4f5b\u5c71"),
+        ("\u5e7f\u4e1c", "\u73e0\u4e09\u89d2", "\u7ca4\u6e2f\u6fb3", "\u5927\u6e7e\u533a", "\u5e7f\u5dde", "\u6df1\u5733", "\u73e0\u6d77", "\u4f5b\u5c71", "\u4e1c\u839e", "\u4e2d\u5c71", "\u60e0\u5dde", "\u8087\u5e86", "\u6c5f\u95e8"),
+        ("gd.gov.cn", "gdedu.gov.cn", "sz.gov.cn", "gz.gov.cn", "dg.gov.cn"),
+    ),
+)
+CAREER_OFFICIAL_DOMAINS: tuple[str, ...] = (
+    "ncss.cn", "mohrss.gov.cn", "chinajob.mohrss.gov.cn", "gxzf.gov.cn", "gxrc.com", "gxpta.com.cn",
+    "gxbys.com", "nanning.gov.cn", "gd.gov.cn", "gdedu.gov.cn", "sz.gov.cn", "gz.gov.cn", "dg.gov.cn",
+)
+
 DEFAULT_SOURCE_SECTION_KEYS: dict[str, tuple[str, ...]] = {
     "Baidu Tech News": ("technology", "computer", "ai"),
     "Baidu Education News": (DEFAULT_BLOG_SECTION_KEY, "humanities", CAREER_BLOG_SECTION_KEY),
@@ -404,9 +426,16 @@ def _effective_source_templates(
     section_key: str = "",
     section_templates: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    templates = [dict(item) for item in DEFAULT_DOMESTIC_SOURCE_TEMPLATES]
-    templates.extend(_normalize_source_templates(config.get("custom_source_templates") or []))
-    templates.extend(_normalize_source_templates(section_templates or []))
+    default_templates = [dict(item) for item in DEFAULT_DOMESTIC_SOURCE_TEMPLATES]
+    custom_templates = _normalize_source_templates(config.get("custom_source_templates") or [])
+    scoped_templates = _normalize_source_templates(section_templates or [])
+    if section_key == CAREER_BLOG_SECTION_KEY:
+        # Employment feeds are action-oriented and time-sensitive. Search the
+        # section's official sources before general news RSS, otherwise a busy
+        # technology feed can exhaust the per-keyword candidate limit.
+        templates = [*scoped_templates, *custom_templates, *default_templates]
+    else:
+        templates = [*default_templates, *custom_templates, *scoped_templates]
     if config.get("enable_global_search_sources"):
         templates.extend(dict(item) for item in GLOBAL_FALLBACK_SOURCE_TEMPLATES)
 
@@ -470,6 +499,57 @@ def _parsed_item_matches_keyword(parsed: dict[str, Any], keyword: str, course_na
         ]
     ).lower()
     return any(term in haystack for term in terms)
+
+
+def _domain_matches_any(domain: str, candidates: tuple[str, ...]) -> bool:
+    normalized = str(domain or "").strip().lower()
+    return bool(normalized) and any(
+        normalized == candidate or normalized.endswith(f".{candidate}")
+        for candidate in candidates
+    )
+
+
+def _career_candidate_is_relevant(
+    *,
+    keyword: str,
+    title: str,
+    summary: str,
+    url: str,
+    source_name: str = "",
+) -> bool:
+    text = _normalize_space(f"{title} {summary} {source_name}").lower()
+    if not any(term.lower() in text for term in CAREER_INTENT_TERMS):
+        return False
+
+    keyword_text = _normalize_space(keyword).lower()
+    domain = _domain_from_url(url)
+    for triggers, region_terms, official_domains in CAREER_REGION_GROUPS:
+        if not any(trigger.lower() in keyword_text for trigger in triggers):
+            continue
+        if any(term.lower() in text for term in region_terms):
+            continue
+        if _domain_matches_any(domain, official_domains):
+            continue
+        return False
+    return True
+
+
+def _career_candidate_priority(item: dict[str, Any]) -> tuple[int, int, int, float]:
+    text = _normalize_space(
+        f"{item.get('title') or ''} {item.get('summary') or ''} {item.get('source_name') or ''}"
+    ).lower()
+    domain = _domain_from_url(str(item.get("canonical_url") or item.get("url") or ""))
+    regional = int(any(
+        any(term.lower() in text for term in region_terms)
+        or _domain_matches_any(domain, official_domains)
+        for _triggers, region_terms, official_domains in CAREER_REGION_GROUPS
+    ))
+    official = int(_domain_matches_any(domain, CAREER_OFFICIAL_DOMAINS))
+    actionable = int(any(
+        term.lower() in text
+        for term in ("\u62a5\u540d", "\u6295\u9012", "\u622a\u6b62", "\u7f51\u7533", "\u5c97\u4f4d")
+    ))
+    return regional, official, actionable, _safe_float(item.get("score"), 0.0)
 
 
 def _content_fingerprint(title: str, summary: str, canonical_url: str) -> str:
@@ -1491,6 +1571,14 @@ async def _collect_news_candidates(config: dict[str, Any], keywords: list[dict[s
                     if not title:
                         continue
                     summary = _truncate(parsed.get("summary") or "", 700)
+                    if section_key == CAREER_BLOG_SECTION_KEY and not _career_candidate_is_relevant(
+                        keyword=keyword,
+                        title=title,
+                        summary=summary,
+                        url=canonical_url,
+                        source_name=str(parsed.get("source") or source.name),
+                    ):
+                        continue
                     candidate = NewsCandidate(
                         keyword=keyword,
                         course_names=[course_name] if course_name else [],
@@ -1916,13 +2004,21 @@ def _balance_section_selection(
         if len(balanced) >= max_posts:
             break
 
-    career_candidate = next(
-        (item for item in candidates if str(item.get("section_key") or "") == CAREER_BLOG_SECTION_KEY),
-        None,
-    )
-    if career_candidate and not any(
-        str(item.get("section_key") or "") == CAREER_BLOG_SECTION_KEY for item in balanced
-    ):
+    career_candidates = [
+        item
+        for item in candidates
+        if str(item.get("section_key") or "") == CAREER_BLOG_SECTION_KEY
+    ]
+    career_candidate = max(career_candidates, key=_career_candidate_priority, default=None)
+    if career_candidate:
+        # The section contract is regional, verified and actionable. Keep the
+        # strongest such candidate even when AI picked a generic national item.
+        balanced = [
+            item
+            for item in balanced
+            if str(item.get("section_key") or "") != CAREER_BLOG_SECTION_KEY
+        ]
+        seen_ids = {_safe_int(item.get("id"), 0) for item in balanced}
         career_id = _safe_int(career_candidate.get("id"), 0)
         if len(balanced) >= max_posts:
             removed = balanced.pop()
