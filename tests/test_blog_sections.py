@@ -241,6 +241,74 @@ class BlogSectionTests(unittest.TestCase):
         self.assertEqual(3, selected[0]["id"])
         self.assertEqual("career", selected[0]["section_key"])
 
+    def test_reused_unpublished_candidate_refreshes_stale_section(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE blog_news_crawler_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                section_key TEXT NOT NULL DEFAULT 'general',
+                keyword TEXT NOT NULL,
+                course_names_json TEXT NOT NULL DEFAULT '[]',
+                source_name TEXT DEFAULT '',
+                title TEXT NOT NULL,
+                url TEXT NOT NULL,
+                canonical_url TEXT DEFAULT '',
+                url_hash TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                summary TEXT DEFAULT '',
+                published_at TEXT DEFAULT '',
+                fetched_at TEXT DEFAULT '',
+                media_json TEXT NOT NULL DEFAULT '[]',
+                score REAL NOT NULL DEFAULT 0,
+                selected INTEGER NOT NULL DEFAULT 0,
+                duplicate_of_item_id INTEGER,
+                duplicate_of_post_id INTEGER,
+                post_id INTEGER,
+                raw_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        candidate = crawler.NewsCandidate(
+            keyword="\u79d1\u6280\u521b\u65b0",
+            course_names=["\u79d1\u6280\u524d\u6cbf"],
+            source_name="Tech News",
+            title="\u673a\u5668\u4eba\u4f01\u4e1a IPO \u8fdb\u5c55",
+            url="https://example.com/ipo",
+            canonical_url="https://example.com/ipo",
+            summary="\u4e0a\u5e02\u5ba1\u6838\u59d4\u5458\u4f1a\u5c06\u5ba1\u8bae\u9996\u53d1\u4e8b\u9879",
+            published_at="2026-07-15T10:00:00",
+            fetched_at="2026-07-15T11:00:00",
+            section_key="technology",
+            score=80,
+        )
+        conn.execute(
+            """
+            INSERT INTO blog_news_crawler_items (
+                run_id, section_key, keyword, source_name, title, url, canonical_url,
+                url_hash, content_hash, summary, published_at, fetched_at, score, raw_json
+            ) VALUES (1, 'career', 'old keyword', 'Old Source', 'Old title', ?, ?, ?, ?,
+                      'Old summary', '', '', 1, '{}')
+            """,
+            (candidate.url, candidate.canonical_url, candidate.url_hash, candidate.content_hash),
+        )
+
+        with patch.object(crawler, "get_configured_db_engine", return_value="sqlite"):
+            stored, duplicate_count = crawler._store_candidates(conn, 2, [candidate])
+
+        self.assertEqual(0, duplicate_count)
+        self.assertEqual(1, len(stored))
+        self.assertEqual("technology", stored[0]["section_key"])
+        row = conn.execute("SELECT section_key, keyword, title FROM blog_news_crawler_items").fetchone()
+        self.assertEqual("technology", row["section_key"])
+        self.assertEqual(candidate.keyword, row["keyword"])
+        self.assertEqual(candidate.title, row["title"])
+        conn.close()
+
     def test_section_management_is_extensible_and_preserves_disabled_sections(self):
         created = blog_section_service.save_blog_section(
             self.conn,

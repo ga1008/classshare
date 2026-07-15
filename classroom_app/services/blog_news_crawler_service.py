@@ -1616,6 +1616,22 @@ async def _collect_news_candidates(config: dict[str, Any], keywords: list[dict[s
                 blocked_domains=blocked_domains,
             )
 
+    # Page enrichment can replace a short feed excerpt with the real article
+    # text. Re-check career relevance after that replacement so a generic IPO
+    # article cannot inherit a regional employment keyword from the feed.
+    candidates = [
+        candidate
+        for candidate in candidates
+        if candidate.section_key != CAREER_BLOG_SECTION_KEY
+        or _career_candidate_is_relevant(
+            keyword=candidate.keyword,
+            title=candidate.title,
+            summary=candidate.summary or candidate.page_excerpt,
+            url=candidate.canonical_url or candidate.url,
+            source_name=candidate.source_name,
+        )
+    ]
+
     candidates.sort(key=lambda item: item.score, reverse=True)
     return candidates[: int(config.get("max_candidates_total") or 80)]
 
@@ -1864,6 +1880,41 @@ def _store_candidates(conn, run_id: int, candidates: list[NewsCandidate]) -> tup
                 continue
             existing_id = int(existing_item.get("id") or 0)
             if existing_id and existing_id not in reusable_ids:
+                # An unpublished URL may be rediscovered through a better
+                # keyword/section on a later run. Refresh its classification
+                # instead of reusing stale section metadata.
+                now = _now_iso()
+                conn.execute(
+                    """
+                    UPDATE blog_news_crawler_items
+                    SET section_key = ?, keyword = ?, course_names_json = ?, source_name = ?,
+                        title = ?, url = ?, canonical_url = ?, summary = ?, published_at = ?,
+                        fetched_at = ?, media_json = ?, score = ?, raw_json = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        candidate.section_key or DEFAULT_BLOG_SECTION_KEY,
+                        candidate.keyword,
+                        _json_dumps(candidate.course_names),
+                        candidate.source_name,
+                        candidate.title,
+                        candidate.url,
+                        candidate.canonical_url,
+                        candidate.summary,
+                        candidate.published_at,
+                        candidate.fetched_at,
+                        _json_dumps(candidate.media),
+                        float(candidate.score or 0.0),
+                        _json_dumps(candidate.as_raw_payload()),
+                        now,
+                        existing_id,
+                    ),
+                )
+                existing = conn.execute(
+                    "SELECT * FROM blog_news_crawler_items WHERE id = ?",
+                    (existing_id,),
+                ).fetchone()
+                existing_item = _serialize_item_row(existing)
                 reusable_ids.add(existing_id)
                 stored.append(existing_item)
             continue
