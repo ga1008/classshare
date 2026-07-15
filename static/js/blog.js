@@ -182,8 +182,13 @@ class BlogCenter {
         this.readingScrollTimer = null;
         this.channelTuningTimer = null;
         this.channelRevealTimer = null;
+        this.channelRailTimer = null;
+        this.channelRailProgrammaticTimer = null;
+        this.tunerScrollFrame = null;
+        this.tunerExpandedTop = null;
         this.suppressSectionClickUntil = 0;
         this.channelDrag = null;
+        this.isChannelRailProgrammatic = false;
 
         this.state = {
             currentView: 'feed',
@@ -360,6 +365,7 @@ class BlogCenter {
     init() {
         this.bindEvents();
         this.initChannelControls();
+        this.updateTunerCompactState();
         this.ensureCustomEmojiLibrary();
         this.loadFollows();
 
@@ -402,7 +408,14 @@ class BlogCenter {
         this.shell.addEventListener('input', (event) => this.handleInput(event));
         this.shell.addEventListener('keydown', (event) => this.handleKeydown(event));
         window.addEventListener('popstate', (event) => this.handlePopState(event));
-        window.addEventListener('scroll', () => this.handleReadingScroll(), { passive: true });
+        window.addEventListener('scroll', () => {
+            this.handleReadingScroll();
+            if (this.tunerScrollFrame) return;
+            this.tunerScrollFrame = window.requestAnimationFrame(() => {
+                this.tunerScrollFrame = null;
+                this.updateTunerCompactState();
+            });
+        }, { passive: true });
         window.addEventListener('pagehide', () => this.stopReadingSession({ useBeacon: true }));
         document.addEventListener('visibilitychange', () => this.handleReadingVisibility());
         $('[data-blog-report-form]', this.shell)?.addEventListener('submit', (event) => this.submitReport(event));
@@ -446,7 +459,6 @@ class BlogCenter {
             this.state.page = 1;
             this.state.currentNav = 'feed';
             this.updateNavTabs();
-            this.updateSortTabs();
             this.showView('feed');
             this.updateListUrl();
             this.loadFeed();
@@ -847,14 +859,19 @@ class BlogCenter {
 
     updateSortTabs() {
         $$('[data-blog-sort]', this.shell).forEach((button) => {
-            button.classList.toggle('is-active', button.dataset.blogSort === this.state.currentSort);
+            button.classList.toggle(
+                'is-active',
+                this.state.currentNav === 'feed' && button.dataset.blogSort === this.state.currentSort,
+            );
         });
+        this.updatePlayerChrome();
     }
 
     updateNavTabs() {
         $$('[data-blog-nav]', this.shell).forEach((button) => {
             button.classList.toggle('is-active', button.dataset.blogNav === this.state.currentNav);
         });
+        this.updateSortTabs();
     }
 
     setNav(nav) {
@@ -884,6 +901,51 @@ class BlogCenter {
             this.state.bmPage = 1;
             this.loadBookmarks();
         }
+    }
+
+    updateTunerCompactState() {
+        const consoleNode = $('[data-blog-channel-console]', this.shell);
+        if (!consoleNode) return;
+        const isDetail = this.state.currentView === 'detail';
+        if (this.tunerExpandedTop === null && !isDetail) {
+            this.tunerExpandedTop = consoleNode.getBoundingClientRect().top + window.scrollY;
+        }
+        const collapseAt = Math.max(96, Number(this.tunerExpandedTop || 0) + 128);
+        const expandAt = Math.max(48, Number(this.tunerExpandedTop || 0) + 36);
+        const wasCompact = consoleNode.classList.contains('is-compact');
+        // Separate thresholds prevent the tuner's own height change from
+        // bouncing the browser back and forth across one cutoff point.
+        const compact = isDetail || (wasCompact ? window.scrollY > expandAt : window.scrollY > collapseAt);
+        consoleNode.classList.toggle('is-compact', compact);
+        consoleNode.classList.toggle('is-detail-compact', isDetail);
+        this.shell.classList.toggle('is-tuner-compact', compact);
+    }
+
+    updatePlayerChrome(channel = null) {
+        const player = $('[data-blog-player]', this.shell);
+        if (!player) return;
+        const activeChannel = channel || this.channelOptions()[this.currentChannelIndex()] || null;
+        const channelName = activeChannel?.name || activeChannel?.short_name || '全部频道';
+        const title = $('[data-blog-player-title]', player);
+        const mode = $('[data-blog-player-mode]', player);
+        const modeLabels = {
+            following: '关注节目',
+            'my-posts': '我的节目',
+            bookmarks: '收藏节目',
+        };
+        const sortLabels = {
+            latest: '最新节目',
+            hot: '最热门',
+            featured: '编辑精选',
+        };
+        if (this.state.currentView === 'detail') {
+            if (title) title.textContent = this.state.detailPost?.title || '文章节目';
+            if (mode) mode.textContent = '正在播放';
+        } else {
+            if (title) title.textContent = `${channelName} · 节目列表`;
+            if (mode) mode.textContent = modeLabels[this.state.currentNav] || sortLabels[this.state.currentSort] || '最新节目';
+        }
+        player.classList.toggle('is-detail-player', this.state.currentView === 'detail');
     }
 
     channelOptions() {
@@ -923,22 +985,37 @@ class BlogCenter {
         this.selectChannelIndex(nextIndex);
     }
 
-    syncChannelConsole({ scrollActive = true, previewIndex = null } = {}) {
+    syncChannelConsole({
+        scrollActive = true,
+        previewIndex = null,
+        previewPosition = null,
+        staticIntensity = null,
+        markPreview = false,
+    } = {}) {
         const consoleNode = $('[data-blog-channel-console]', this.shell);
         if (!consoleNode) return;
         const options = this.channelOptions();
+        const maxIndex = Math.max(0, options.length - 1);
+        const continuousPosition = previewPosition === null
+            ? (previewIndex === null ? this.currentChannelIndex() : Number(previewIndex) || 0)
+            : Number(previewPosition) || 0;
+        const safePosition = Math.max(0, Math.min(continuousPosition, maxIndex));
         const selectedIndex = previewIndex === null
-            ? this.currentChannelIndex()
-            : Math.max(0, Math.min(Number(previewIndex) || 0, options.length - 1));
+            ? Math.round(safePosition)
+            : Math.max(0, Math.min(Math.round(Number(previewIndex) || 0), maxIndex));
         const channel = options[selectedIndex] || options[0];
         if (!channel) return;
         const accent = this.sectionAccent(channel);
         const count = Number(channel.post_count || 0);
         const dialAngle = options.length > 1
-            ? -135 + ((selectedIndex / (options.length - 1)) * 270)
+            ? -135 + ((safePosition / (options.length - 1)) * 270)
             : 0;
         consoleNode.style.setProperty('--channel-accent', accent);
         consoleNode.classList.toggle('is-channel-no-signal', count === 0);
+        const tuningNoise = staticIntensity === null
+            ? 0
+            : Math.max(0, Math.min(Number(staticIntensity) || 0, 1));
+        consoleNode.classList.toggle('is-between-channels', tuningNoise > 0.04);
 
         const dial = $('[data-blog-channel-dial]', consoleNode);
         if (dial) {
@@ -952,29 +1029,129 @@ class BlogCenter {
         if (code) code.textContent = `CH ${String(selectedIndex).padStart(2, '0')}`;
         if (name) name.textContent = channel.name || channel.short_name || '全部频道';
         if (countNode) countNode.textContent = formatCompactNumber(count);
-        if (status) status.textContent = count ? '有内容 · LIVE' : '无信号 · SNOW';
+        if (status) {
+            status.textContent = tuningNoise > 0.04
+                ? `搜台中 · ${Math.round((1 - tuningNoise) * 100)}%`
+                : (count ? '有内容 · LIVE' : '无信号 · SNOW');
+        }
+
+        const player = $('[data-blog-player]', this.shell);
+        if (player) {
+            const detailPlaying = this.state.currentView === 'detail';
+            player.style.setProperty('--tuning-static', tuningNoise.toFixed(3));
+            player.classList.toggle('is-analog-tuning', tuningNoise > 0.04 && !detailPlaying);
+            player.classList.toggle('is-channel-no-signal', count === 0 && !detailPlaying);
+            const signalLabel = $('[data-blog-player-signal-label]', player);
+            if (signalLabel) {
+                signalLabel.textContent = tuningNoise > 0.04
+                    ? 'BETWEEN CHANNELS / 搜台中'
+                    : 'NO SIGNAL / 频道雪花';
+            }
+        }
+
+        if (previewIndex !== null || markPreview) {
+            $$('[data-blog-section][role="tab"]', consoleNode).forEach((tab, index) => {
+                const active = index === selectedIndex;
+                tab.classList.toggle('is-active', active);
+                tab.classList.toggle('is-preview', active && selectedIndex !== this.currentChannelIndex());
+                tab.setAttribute('aria-selected', active ? 'true' : 'false');
+                tab.tabIndex = active ? 0 : -1;
+            });
+        }
+        this.updatePlayerChrome(channel);
 
         if (!scrollActive || previewIndex !== null) return;
         const surface = $('[data-blog-section-drag-surface]', consoleNode);
         const active = surface?.querySelector('.blog-section-tab.is-active');
         if (surface && active) {
-            const targetLeft = active.offsetLeft - ((surface.clientWidth - active.offsetWidth) / 2);
-            surface.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+            window.clearTimeout(this.channelRailProgrammaticTimer);
+            this.isChannelRailProgrammatic = true;
+            const targetLeft = Math.max(0, this.channelCardScrollStart(surface, active) - 8);
+            surface.scrollTo({ left: targetLeft, behavior: 'smooth' });
+            this.channelRailProgrammaticTimer = window.setTimeout(() => {
+                this.isChannelRailProgrammatic = false;
+            }, 520);
         }
     }
 
     startChannelTuning(sectionKey) {
         const consoleNode = $('[data-blog-channel-console]', this.shell);
-        if (!consoleNode) return;
+        const player = $('[data-blog-player]', this.shell);
+        if (!consoleNode || !player) return;
         window.clearTimeout(this.channelTuningTimer);
-        consoleNode.classList.remove('is-channel-tuning');
-        void consoleNode.offsetWidth;
-        consoleNode.classList.add('is-channel-tuning');
+        player.classList.remove('is-channel-tuning', 'is-analog-tuning');
+        player.style.setProperty('--tuning-static', '0');
+        player.style.setProperty('--tune-jump-x', `${Math.round((Math.random() - 0.5) * 20)}px`);
+        player.style.setProperty('--tune-jump-y', `${Math.round((Math.random() - 0.5) * 14)}px`);
+        player.style.setProperty('--tune-skew', `${((Math.random() - 0.5) * 2.6).toFixed(2)}deg`);
+        void player.offsetWidth;
+        player.classList.add('is-channel-tuning');
+        consoleNode.classList.add('is-switching-channel');
         const channel = this.channelOptions().find((item) => item.section_key === sectionKey);
         consoleNode.classList.toggle('is-channel-no-signal', Number(channel?.post_count || 0) === 0);
+        player.classList.toggle(
+            'is-channel-no-signal',
+            Number(channel?.post_count || 0) === 0 && this.state.currentView !== 'detail',
+        );
         this.channelTuningTimer = window.setTimeout(() => {
-            consoleNode.classList.remove('is-channel-tuning');
-        }, 620);
+            player.classList.remove('is-channel-tuning');
+            consoleNode.classList.remove('is-switching-channel');
+        }, 760);
+    }
+
+    channelCardScrollStart(surface, card) {
+        if (!surface || !card) return 0;
+        const surfaceRect = surface.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        return surface.scrollLeft + cardRect.left - surfaceRect.left;
+    }
+
+    firstVisibleChannelIndex(surface) {
+        const cards = $$('.blog-section-tab', surface);
+        if (!cards.length) return 0;
+        const surfaceLeft = surface.getBoundingClientRect().left;
+        const leadingEdge = surfaceLeft + Math.min(42, Math.max(18, cards[0].offsetWidth * 0.24));
+        const index = cards.findIndex((card) => card.getBoundingClientRect().right > leadingEdge);
+        return index >= 0 ? index : cards.length - 1;
+    }
+
+    previewChannelRail(surface) {
+        if (!surface || this.isChannelRailProgrammatic) return this.currentChannelIndex();
+        const index = this.firstVisibleChannelIndex(surface);
+        this.syncChannelConsole({
+            scrollActive: false,
+            previewIndex: index,
+            previewPosition: index,
+            staticIntensity: 0.16,
+            markPreview: true,
+        });
+        return index;
+    }
+
+    settleChannelRail(surface, { delay = 130 } = {}) {
+        if (!surface || this.isChannelRailProgrammatic) return;
+        window.clearTimeout(this.channelRailTimer);
+        const index = this.previewChannelRail(surface);
+        this.channelRailTimer = window.setTimeout(() => {
+            const cards = $$('.blog-section-tab', surface);
+            const card = cards[index];
+            if (!card) return;
+            this.isChannelRailProgrammatic = true;
+            surface.scrollTo({
+                left: Math.max(0, this.channelCardScrollStart(surface, card) - 8),
+                behavior: 'smooth',
+            });
+            window.clearTimeout(this.channelRailProgrammaticTimer);
+            this.channelRailProgrammaticTimer = window.setTimeout(() => {
+                this.isChannelRailProgrammatic = false;
+            }, 460);
+            if (index !== this.currentChannelIndex()) {
+                this.suppressSectionClickUntil = Date.now() + 260;
+                this.selectChannelIndex(index);
+            } else {
+                this.syncChannelConsole({ scrollActive: false });
+            }
+        }, delay);
     }
 
     initChannelControls() {
@@ -983,6 +1160,8 @@ class BlogCenter {
             surface.dataset.dragReady = 'true';
             surface.addEventListener('pointerdown', (event) => {
                 if (event.button !== 0) return;
+                window.clearTimeout(this.channelRailTimer);
+                this.isChannelRailProgrammatic = false;
                 this.channelDrag = {
                     kind: 'rail',
                     pointerId: event.pointerId,
@@ -1001,6 +1180,7 @@ class BlogCenter {
                 event.preventDefault();
                 surface.classList.add('is-dragging');
                 surface.scrollLeft = drag.scrollLeft - distance;
+                this.previewChannelRail(surface);
             });
             const finishRailDrag = (event) => {
                 const drag = this.channelDrag;
@@ -1009,15 +1189,25 @@ class BlogCenter {
                 surface.classList.remove('is-dragging');
                 surface.releasePointerCapture?.(event.pointerId);
                 this.channelDrag = null;
+                this.settleChannelRail(surface, { delay: 70 });
             };
             surface.addEventListener('pointerup', finishRailDrag);
             surface.addEventListener('pointercancel', finishRailDrag);
+            surface.addEventListener('scroll', () => {
+                if (this.isChannelRailProgrammatic || this.channelDrag?.kind === 'dial') return;
+                this.previewChannelRail(surface);
+                if (!this.channelDrag || this.channelDrag.kind !== 'rail') {
+                    this.settleChannelRail(surface);
+                }
+            }, { passive: true });
             surface.addEventListener('wheel', (event) => {
                 if (surface.scrollWidth <= surface.clientWidth) return;
                 const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
                 if (!delta) return;
                 event.preventDefault();
                 surface.scrollLeft += delta;
+                this.previewChannelRail(surface);
+                this.settleChannelRail(surface, { delay: 150 });
             }, { passive: false });
         }
 
@@ -1036,6 +1226,7 @@ class BlogCenter {
                 startAngle: angleFromEvent(event),
                 startIndex: this.currentChannelIndex(),
                 previewIndex: this.currentChannelIndex(),
+                previewPosition: this.currentChannelIndex(),
                 moved: false,
             };
             dial.setPointerCapture?.(event.pointerId);
@@ -1051,12 +1242,21 @@ class BlogCenter {
             if (!drag.moved) return;
             event.preventDefault();
             const options = this.channelOptions();
-            const degreesPerChannel = Math.max(24, 270 / Math.max(1, options.length - 1));
-            drag.previewIndex = Math.max(0, Math.min(
-                drag.startIndex + Math.round(delta / degreesPerChannel),
+            const degreesPerChannel = 270 / Math.max(1, options.length - 1);
+            drag.previewPosition = Math.max(0, Math.min(
+                drag.startIndex + (delta / degreesPerChannel),
                 options.length - 1,
             ));
-            this.syncChannelConsole({ scrollActive: false, previewIndex: drag.previewIndex });
+            drag.previewIndex = Math.round(drag.previewPosition);
+            const distanceFromChannel = Math.abs(drag.previewPosition - drag.previewIndex);
+            const staticIntensity = Math.min(1, distanceFromChannel * 2);
+            this.syncChannelConsole({
+                scrollActive: false,
+                previewIndex: drag.previewIndex,
+                previewPosition: drag.previewPosition,
+                staticIntensity,
+                markPreview: true,
+            });
         });
         const finishDialDrag = (event, { cancelled = false } = {}) => {
             const drag = this.channelDrag;
@@ -1186,6 +1386,7 @@ class BlogCenter {
         const tabs = [
             `
                 <button class="blog-section-tab${allActive ? ' is-active' : ''}${allSignalClass}" data-blog-section="" data-blog-section-count="${total}" type="button" role="tab" aria-selected="${allActive ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${allActive ? '0' : '-1'}" style="--section-accent:#0f172a">
+                    <span class="blog-section-tab__led" aria-hidden="true"></span>
                     <span class="blog-section-tab__icon">◎</span>
                     <span class="blog-section-tab__body"><strong>全部</strong><small>全站内容信号</small></span>
                     <span class="blog-section-tab__count">${formatCompactNumber(total)}</span>
@@ -1196,6 +1397,7 @@ class BlogCenter {
                 const postCount = Number(section.post_count || 0);
                 return `
                     <button class="blog-section-tab${active ? ' is-active' : ''}${postCount ? ' has-content' : ' is-empty'}" data-blog-section="${escapeHtml(section.section_key || '')}" data-blog-section-count="${postCount}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${active ? '0' : '-1'}" style="--section-accent:${this.sectionAccent(section)}">
+                        <span class="blog-section-tab__led" aria-hidden="true"></span>
                         <span class="blog-section-tab__icon">${escapeHtml(section.icon || '•')}</span>
                         <span class="blog-section-tab__body"><strong>${escapeHtml(section.short_name || section.name || '板块')}</strong><small>${escapeHtml(section.name || '')}</small></span>
                         <span class="blog-section-tab__count">${formatCompactNumber(postCount)}</span>
@@ -1398,6 +1600,9 @@ class BlogCenter {
         this.shell.classList.toggle('is-detail-mode', isDetail);
         const detailTopbar = $('[data-blog-detail-topbar]', this.shell);
         if (detailTopbar) detailTopbar.hidden = !isDetail;
+        this.updateTunerCompactState();
+        this.updatePlayerChrome();
+        this.syncChannelConsole({ scrollActive: false });
     }
 
     showCurrentListView() {
@@ -1905,6 +2110,7 @@ class BlogCenter {
             const post = data.post;
             this.state.detailPost = post;
             this.updateDetailTopbar(post);
+            this.updatePlayerChrome();
             this.closeCommentPanels();
             this.resetCommentDraft();
             container.innerHTML = this.detailHtml(post);

@@ -15,65 +15,37 @@
      data-current-user-name="{{ user_info.name }}"
      data-current-user-nickname="{{ user_info.nickname }}"
      data-initial-section="{{ request.query_params.get('section', '') }}">
-    <div class="blog-detail-topbar" data-blog-detail-topbar hidden>
-        <button class="blog-detail-topbar__back" data-blog-action="back-to-feed" type="button" aria-label="返回博客列表并恢复之前的浏览位置">
-            <span class="blog-detail-topbar__back-icon" aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>
-            </span>
-            <span><strong>返回博客列表</strong><small data-blog-detail-back-context>继续浏览刚才的板块</small></span>
-        </button>
-        <div class="blog-detail-topbar__context">
-            <span data-blog-detail-section>博客中心</span>
-            <strong data-blog-detail-title>文章详情</strong>
-        </div>
-        <button class="btn btn-primary btn-sm blog-detail-topbar__compose" data-blog-action="compose" type="button">写帖子</button>
-    </div>
-
-    <!-- Header -->
-    <header class="blog-hero" data-blog-list-chrome>
-        <div class="blog-hero__content">
-            <div class="blog-hero__eyebrow"><span aria-hidden="true"></span> LANSHARE JOURNAL / SIGNAL DESK</div>
-            <div class="blog-shell__title-row">
-                <svg class="blog-shell__title-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
-                </svg>
-                <h1>博客中心</h1>
-            </div>
-            <p class="blog-hero__lead">调到你关心的频道。知识、故事与人生下一站在同一座内容终端汇流，让每一次阅读都有清晰去向。</p>
-            <div class="blog-hero__stats" aria-label="博客概览">
-                <span><strong data-blog-stat="today">0</strong>今日新帖</span>
-                <span><strong data-blog-stat="visible">0</strong>可读内容</span>
-                <span><strong data-blog-stat="comments">0</strong>讨论</span>
-                <span><strong data-blog-stat="likes">0</strong>点赞</span>
-            </div>
-        </div>
-        <div class="blog-shell__actions">
-            <span class="blog-hero__online"><i aria-hidden="true"></i> 频道在线</span>
-            <button class="blog-hero__ghost" data-blog-nav="bookmarks" type="button">我的收藏</button>
-            <button class="btn btn-primary btn-sm" data-blog-action="compose" title="写帖子">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                写帖子
-            </button>
-        </div>
-    </header>
-
-    <div class="blog-sidebar-nav blog-channel-tabs" data-blog-list-chrome>
-        <button class="blog-sidebar-tab is-active" data-blog-nav="feed" type="button">全部帖子</button>
-        <button class="blog-sidebar-tab" data-blog-nav="following" type="button">我的关注</button>
-        <button class="blog-sidebar-tab" data-blog-nav="my-posts" type="button">我的帖子</button>
-        <button class="blog-sidebar-tab" data-blog-nav="bookmarks" type="button">我的收藏</button>
-    </div>
-
     {% set blog_total_posts = (blog_sections | map(attribute='post_count') | sum) if blog_sections else 0 %}
-    <section class="blog-section-switcher blog-channel-console" data-blog-list-chrome data-blog-channel-console aria-label="博客板块频道台">
+    <section class="blog-section-switcher blog-channel-console" data-blog-channel-console aria-label="博客板块调频器">
         <div class="blog-channel-console__header">
-            <div>
-                <span class="blog-channel-console__kicker">CHANNEL SELECTOR / 频道选择</span>
-                <h2>调到你关心的频道</h2>
+            <div class="blog-tuner-brand">
+                <span class="blog-channel-console__kicker">LANSHARE / SIGNAL TUNER 01</span>
+                <div class="blog-tuner-brand__title">
+                    <span class="blog-tuner-brand__mark" aria-hidden="true">LS</span>
+                    <div>
+                        <h1>博客中心</h1>
+                        <p>调到你关心的频道，让知识、故事与人生下一站清晰抵达。</p>
+                    </div>
+                </div>
+                <div class="blog-tuner-meters" aria-label="博客概览">
+                    <span><strong data-blog-stat="today">0</strong>今日</span>
+                    <span><strong data-blog-stat="visible">0</strong>可读</span>
+                    <span><strong data-blog-stat="comments">0</strong>讨论</span>
+                    <span><strong data-blog-stat="likes">0</strong>点赞</span>
+                </div>
             </div>
-            <div class="blog-channel-console__signal" aria-live="polite">
-                <span aria-hidden="true"></span>
-                <strong data-blog-channel-status>{{ '有内容 · LIVE' if blog_total_posts else '无信号 · SNOW' }}</strong>
+            <div class="blog-tuner-toolbar">
+                <div class="blog-channel-console__signal" aria-live="polite">
+                    <span aria-hidden="true"></span>
+                    <strong data-blog-channel-status>{{ '有内容 · LIVE' if blog_total_posts else '无信号 · SNOW' }}</strong>
+                </div>
+                <div class="blog-tuner-actions" role="group" aria-label="播放器内容入口">
+                    <button class="blog-tuner-key is-active" data-blog-nav="feed" type="button" aria-label="节目列表"><i aria-hidden="true"></i><span>节目</span></button>
+                    <button class="blog-tuner-key" data-blog-nav="following" type="button" aria-label="我的关注"><i aria-hidden="true"></i><span>关注</span></button>
+                    <button class="blog-tuner-key" data-blog-nav="my-posts" type="button" aria-label="我的帖子"><i aria-hidden="true"></i><span>我的</span></button>
+                    <button class="blog-tuner-key" data-blog-nav="bookmarks" type="button" aria-label="我的收藏"><i aria-hidden="true"></i><span>收藏</span></button>
+                    <button class="blog-tuner-key blog-tuner-key--record" data-blog-action="compose" type="button" aria-label="写帖子"><i aria-hidden="true"></i><span>写帖子</span></button>
+                </div>
             </div>
         </div>
 
@@ -99,12 +71,14 @@
                 <div class="blog-section-viewport">
                     <div class="blog-section-tabs" data-blog-section-tabs data-blog-section-drag-surface role="tablist" aria-label="按住并拖动选择博客频道">
                         <button class="blog-section-tab is-active {{ 'has-content' if blog_total_posts else 'is-empty' }}" data-blog-section="" data-blog-section-count="{{ blog_total_posts }}" type="button" role="tab" aria-selected="true" aria-controls="blog-feed-panel" tabindex="0" style="--section-accent:#0f172a">
+                            <span class="blog-section-tab__led" aria-hidden="true"></span>
                             <span class="blog-section-tab__icon">◎</span>
                             <span class="blog-section-tab__body"><strong>全部</strong><small>全站内容信号</small></span>
                             <span class="blog-section-tab__count">{{ blog_total_posts }}</span>
                         </button>
                         {% for section in blog_sections %}
                         <button class="blog-section-tab {{ 'has-content' if section.post_count else 'is-empty' }}" data-blog-section="{{ section.section_key }}" data-blog-section-count="{{ section.post_count }}" type="button" role="tab" aria-selected="false" aria-controls="blog-feed-panel" tabindex="-1" style="--section-accent:{{ section.accent_color }}">
+                            <span class="blog-section-tab__led" aria-hidden="true"></span>
                             <span class="blog-section-tab__icon">{{ section.icon }}</span>
                             <span class="blog-section-tab__body"><strong>{{ section.short_name }}</strong><small>{{ section.name }}</small></span>
                             <span class="blog-section-tab__count">{{ section.post_count }}</span>
@@ -123,12 +97,36 @@
             <span>全站广场</span>
             <p>从不同方向遇见新问题、新知识和下一段旅程。</p>
         </div>
-        <div class="blog-channel-tuning" aria-hidden="true">
-            <span class="blog-channel-tuning__static"></span>
-            <span class="blog-channel-tuning__scan"></span>
-            <strong>正在调谐 · TUNING</strong>
-        </div>
     </section>
+
+    <section class="blog-player" data-blog-player aria-label="博客内容播放器">
+        <header class="blog-player__header">
+            <div class="blog-player__identity">
+                <span class="blog-player__power" aria-hidden="true"><i></i> POWER</span>
+                <div>
+                    <span>CONTENT PLAYER / 内容播放器</span>
+                    <h2 data-blog-player-title>全部频道节目</h2>
+                </div>
+            </div>
+            <div class="blog-player__meters" aria-live="polite">
+                <span><i class="is-green" aria-hidden="true"></i> ON AIR</span>
+                <span data-blog-player-mode>最新节目</span>
+            </div>
+        </header>
+        <div class="blog-player__screen" data-blog-player-screen>
+            <div class="blog-detail-topbar" data-blog-detail-topbar hidden>
+                <button class="blog-detail-topbar__back" data-blog-action="back-to-feed" type="button" aria-label="返回博客列表并恢复之前的浏览位置">
+                    <span class="blog-detail-topbar__back-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>
+                    </span>
+                    <span><strong>返回博客列表</strong><small data-blog-detail-back-context>继续浏览刚才的板块</small></span>
+                </button>
+                <div class="blog-detail-topbar__context">
+                    <span data-blog-detail-section>博客中心</span>
+                    <strong data-blog-detail-title>文章详情</strong>
+                </div>
+                <button class="btn btn-primary btn-sm blog-detail-topbar__compose" data-blog-action="compose" type="button">写帖子</button>
+            </div>
 
     <!-- Feed View -->
     <div id="blog-feed-panel" data-blog-view="feed" role="tabpanel" aria-label="博客文章列表">
@@ -140,7 +138,7 @@
                 <div class="blog-sort-bar" data-blog-sort-bar>
                     <button class="blog-sort-tab is-active" data-blog-sort="latest">最新</button>
                     <button class="blog-sort-tab" data-blog-sort="hot">热议</button>
-                    <button class="blog-sort-tab" data-blog-sort="featured">精华</button>
+                    <button class="blog-sort-tab" data-blog-nav="following">我的关注</button>
                     <div class="blog-sort-bar__spacer"></div>
                     <input class="blog-sort-bar__search" type="search" placeholder="搜标题、正文或标签..." data-blog-search aria-label="搜索博客文章">
                 </div>
@@ -269,6 +267,16 @@
             <button class="btn btn-outline btn-sm">加载更多</button>
         </div>
     </div>
+
+            <div class="blog-player__static" data-blog-player-static aria-hidden="true">
+                <span class="blog-player__noise"></span>
+                <span class="blog-player__scanline"></span>
+                <span class="blog-player__roll"></span>
+                <strong data-blog-player-signal-label>NO SIGNAL / 频道雪花</strong>
+                <small>转动旋钮或选择一个有节目的频道</small>
+            </div>
+        </div>
+    </section>
 
     <!-- Composer Modal (inside shell for proper event delegation) -->
     <div class="blog-modal-overlay" data-blog-composer-modal hidden>
