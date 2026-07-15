@@ -323,6 +323,9 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
     "blog_news_crawler_items": {
         "section_key": "TEXT NOT NULL DEFAULT 'general'",
     },
+    "blog_opportunity_user_states": {
+        "deadline_reminder_sent_at": "TEXT",
+    },
     "teacher_academic_teaching_class_mappings": {
         "teaching_class_aliases_json": "TEXT NOT NULL DEFAULT '[]'",
         "admin_class_aliases_json": "TEXT NOT NULL DEFAULT '[]'",
@@ -348,6 +351,98 @@ POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
             source_templates_json TEXT NOT NULL DEFAULT '[]',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+    "blog_post_views": """
+        CREATE TABLE IF NOT EXISTS blog_post_views (
+            id SERIAL PRIMARY KEY,
+            post_id INTEGER NOT NULL REFERENCES blog_posts (id) ON DELETE CASCADE,
+            viewer_identity TEXT NOT NULL,
+            view_bucket TEXT NOT NULL,
+            first_viewed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_viewed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            view_events INTEGER NOT NULL DEFAULT 1,
+            dwell_seconds INTEGER NOT NULL DEFAULT 0,
+            max_scroll_ratio DOUBLE PRECISION NOT NULL DEFAULT 0,
+            completed INTEGER NOT NULL DEFAULT 0,
+            UNIQUE (post_id, viewer_identity, view_bucket)
+        )
+    """,
+    "blog_opportunities": """
+        CREATE TABLE IF NOT EXISTS blog_opportunities (
+            id SERIAL PRIMARY KEY,
+            post_id INTEGER NOT NULL UNIQUE REFERENCES blog_posts (id) ON DELETE CASCADE,
+            employer_name TEXT NOT NULL DEFAULT '',
+            opportunity_type TEXT NOT NULL DEFAULT 'campus_recruitment',
+            positions_text TEXT NOT NULL DEFAULT '',
+            regions_json TEXT NOT NULL DEFAULT '[]',
+            city TEXT NOT NULL DEFAULT '',
+            target_groups_json TEXT NOT NULL DEFAULT '[]',
+            education_text TEXT NOT NULL DEFAULT '',
+            majors_json TEXT NOT NULL DEFAULT '[]',
+            headcount_text TEXT NOT NULL DEFAULT '',
+            compensation_text TEXT NOT NULL DEFAULT '',
+            application_method TEXT NOT NULL DEFAULT '',
+            application_url TEXT NOT NULL DEFAULT '',
+            source_url TEXT NOT NULL DEFAULT '',
+            source_domain TEXT NOT NULL DEFAULT '',
+            source_name TEXT NOT NULL DEFAULT '',
+            source_level TEXT NOT NULL DEFAULT 'C',
+            published_at TEXT,
+            deadline_at TEXT,
+            last_verified_at TEXT,
+            expires_at TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            extraction_confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+            verification_notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+    "blog_opportunity_user_states": """
+        CREATE TABLE IF NOT EXISTS blog_opportunity_user_states (
+            id SERIAL PRIMARY KEY,
+            opportunity_id INTEGER NOT NULL REFERENCES blog_opportunities (id) ON DELETE CASCADE,
+            user_identity TEXT NOT NULL,
+            user_role TEXT NOT NULL,
+            user_pk INTEGER NOT NULL,
+            state TEXT NOT NULL DEFAULT 'saved',
+            reminder_at TEXT,
+            deadline_reminder_sent_at TEXT,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (opportunity_id, user_identity)
+        )
+    """,
+    "blog_follows": """
+        CREATE TABLE IF NOT EXISTS blog_follows (
+            id SERIAL PRIMARY KEY,
+            user_identity TEXT NOT NULL,
+            user_role TEXT NOT NULL,
+            user_pk INTEGER NOT NULL,
+            target_type TEXT NOT NULL,
+            target_key TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (user_identity, target_type, target_key)
+        )
+    """,
+    "blog_reports": """
+        CREATE TABLE IF NOT EXISTS blog_reports (
+            id SERIAL PRIMARY KEY,
+            target_type TEXT NOT NULL,
+            target_id INTEGER NOT NULL,
+            reporter_identity TEXT NOT NULL,
+            reporter_role TEXT NOT NULL,
+            reporter_user_pk INTEGER NOT NULL,
+            reason_code TEXT NOT NULL,
+            details TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            resolved_by_identity TEXT NOT NULL DEFAULT '',
+            resolution_notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (target_type, target_id, reporter_identity, status)
         )
     """,
     "teacher_academic_teaching_class_mappings": """
@@ -462,6 +557,11 @@ REQUIRED_POSTGRES_TABLES = (
     "blog_comments",
     "blog_likes",
     "blog_bookmarks",
+    "blog_post_views",
+    "blog_opportunities",
+    "blog_opportunity_user_states",
+    "blog_follows",
+    "blog_reports",
     "blog_attachments",
     "blog_media_assets",
     "blog_moderation_logs",
@@ -1788,6 +1888,38 @@ REQUIRED_POSTGRES_COLUMNS = {
         "user_role",
         "user_pk",
         "created_at",
+    ),
+    "blog_post_views": (
+        "id",
+        "post_id",
+        "viewer_identity",
+        "view_bucket",
+        "first_viewed_at",
+        "last_viewed_at",
+        "view_events",
+        "dwell_seconds",
+        "max_scroll_ratio",
+        "completed",
+    ),
+    "blog_opportunities": (
+        "id", "post_id", "employer_name", "opportunity_type", "positions_text",
+        "regions_json", "city", "target_groups_json", "education_text", "majors_json",
+        "headcount_text", "compensation_text", "application_method", "application_url",
+        "source_url", "source_domain", "source_name", "source_level", "published_at",
+        "deadline_at", "last_verified_at", "expires_at", "status", "extraction_confidence",
+        "verification_notes", "created_at", "updated_at",
+    ),
+    "blog_opportunity_user_states": (
+        "id", "opportunity_id", "user_identity", "user_role", "user_pk", "state",
+        "reminder_at", "deadline_reminder_sent_at", "notes", "created_at", "updated_at",
+    ),
+    "blog_follows": (
+        "id", "user_identity", "user_role", "user_pk", "target_type", "target_key", "created_at",
+    ),
+    "blog_reports": (
+        "id", "target_type", "target_id", "reporter_identity", "reporter_role",
+        "reporter_user_pk", "reason_code", "details", "status", "resolved_by_identity",
+        "resolution_notes", "created_at", "updated_at",
     ),
     "blog_attachments": (
         "id",

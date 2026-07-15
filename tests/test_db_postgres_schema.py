@@ -486,6 +486,11 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "blog_media_assets",
             "blog_moderation_logs",
             "blog_ai_reply_jobs",
+            "blog_post_views",
+            "blog_opportunities",
+            "blog_opportunity_user_states",
+            "blog_follows",
+            "blog_reports",
         ):
             self.assertIn(table_name, REQUIRED_POSTGRES_TABLES)
             self.assertIn(table_name, REQUIRED_POSTGRES_COLUMNS)
@@ -513,6 +518,16 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_moderation_logs"])
         for column in ("trigger_type", "assistant_comment_id", "error_message"):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_ai_reply_jobs"])
+        for column in ("viewer_identity", "view_bucket", "dwell_seconds", "max_scroll_ratio"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_post_views"])
+        for column in ("opportunity_type", "regions_json", "deadline_at", "source_level", "last_verified_at"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_opportunities"])
+        for column in ("user_identity", "state", "reminder_at", "deadline_reminder_sent_at"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_opportunity_user_states"])
+        for column in ("user_identity", "target_type", "target_key"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_follows"])
+        for column in ("target_type", "reporter_identity", "reason_code", "resolved_by_identity"):
+            self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["blog_reports"])
 
     def test_required_schema_covers_private_message_controls_and_emoji_tables(self):
         for table_name in (

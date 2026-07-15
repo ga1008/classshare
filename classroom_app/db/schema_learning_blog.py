@@ -364,6 +364,110 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
     ''')
 
     conn.execute('''
+        CREATE TABLE IF NOT EXISTS blog_post_views (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id INTEGER NOT NULL,
+            viewer_identity TEXT NOT NULL,
+            view_bucket TEXT NOT NULL,
+            first_viewed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_viewed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            view_events INTEGER NOT NULL DEFAULT 1,
+            dwell_seconds INTEGER NOT NULL DEFAULT 0,
+            max_scroll_ratio REAL NOT NULL DEFAULT 0,
+            completed INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (post_id) REFERENCES blog_posts (id) ON DELETE CASCADE,
+            UNIQUE (post_id, viewer_identity, view_bucket)
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS blog_opportunities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id INTEGER NOT NULL UNIQUE,
+            employer_name TEXT NOT NULL DEFAULT '',
+            opportunity_type TEXT NOT NULL DEFAULT 'campus_recruitment',
+            positions_text TEXT NOT NULL DEFAULT '',
+            regions_json TEXT NOT NULL DEFAULT '[]',
+            city TEXT NOT NULL DEFAULT '',
+            target_groups_json TEXT NOT NULL DEFAULT '[]',
+            education_text TEXT NOT NULL DEFAULT '',
+            majors_json TEXT NOT NULL DEFAULT '[]',
+            headcount_text TEXT NOT NULL DEFAULT '',
+            compensation_text TEXT NOT NULL DEFAULT '',
+            application_method TEXT NOT NULL DEFAULT '',
+            application_url TEXT NOT NULL DEFAULT '',
+            source_url TEXT NOT NULL DEFAULT '',
+            source_domain TEXT NOT NULL DEFAULT '',
+            source_name TEXT NOT NULL DEFAULT '',
+            source_level TEXT NOT NULL DEFAULT 'C',
+            published_at TEXT,
+            deadline_at TEXT,
+            last_verified_at TEXT,
+            expires_at TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            extraction_confidence REAL NOT NULL DEFAULT 0,
+            verification_notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (post_id) REFERENCES blog_posts (id) ON DELETE CASCADE
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS blog_opportunity_user_states (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            opportunity_id INTEGER NOT NULL,
+            user_identity TEXT NOT NULL,
+            user_role TEXT NOT NULL,
+            user_pk INTEGER NOT NULL,
+            state TEXT NOT NULL DEFAULT 'saved',
+            reminder_at TEXT,
+            deadline_reminder_sent_at TEXT,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (opportunity_id, user_identity),
+            FOREIGN KEY (opportunity_id) REFERENCES blog_opportunities (id) ON DELETE CASCADE
+        )
+    ''')
+    try:
+        conn.execute("ALTER TABLE blog_opportunity_user_states ADD COLUMN deadline_reminder_sent_at TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS blog_follows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_identity TEXT NOT NULL,
+            user_role TEXT NOT NULL,
+            user_pk INTEGER NOT NULL,
+            target_type TEXT NOT NULL,
+            target_key TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (user_identity, target_type, target_key)
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS blog_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_type TEXT NOT NULL,
+            target_id INTEGER NOT NULL,
+            reporter_identity TEXT NOT NULL,
+            reporter_role TEXT NOT NULL,
+            reporter_user_pk INTEGER NOT NULL,
+            reason_code TEXT NOT NULL,
+            details TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            resolved_by_identity TEXT NOT NULL DEFAULT '',
+            resolution_notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (target_type, target_id, reporter_identity, status)
+        )
+    ''')
+
+    conn.execute('''
         CREATE TABLE IF NOT EXISTS blog_attachments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             post_id INTEGER NOT NULL,
@@ -492,6 +596,34 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_blog_bookmarks_user "
         "ON blog_bookmarks (user_identity, created_at DESC, id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_post_views_post_time "
+        "ON blog_post_views (post_id, first_viewed_at DESC, id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_post_views_viewer_time "
+        "ON blog_post_views (viewer_identity, first_viewed_at DESC, id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_opportunities_active_deadline "
+        "ON blog_opportunities (status, deadline_at, updated_at DESC, id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_opportunities_region "
+        "ON blog_opportunities (city, status, deadline_at, id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_opportunity_states_user "
+        "ON blog_opportunity_user_states (user_identity, state, updated_at DESC, id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_follows_user "
+        "ON blog_follows (user_identity, target_type, created_at DESC, id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_reports_status "
+        "ON blog_reports (status, created_at ASC, id ASC)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_blog_attachments_post "

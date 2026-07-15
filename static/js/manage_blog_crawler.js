@@ -17,7 +17,15 @@ const elements = {
     sections: document.getElementById('bc-sections'),
     postList: document.getElementById('bc-post-list'),
     runTable: document.getElementById('bc-run-table'),
+    addSectionBtn: document.getElementById('bc-add-section-btn'),
+    cancelSectionBtn: document.getElementById('bc-cancel-section-btn'),
+    sectionForm: document.getElementById('bc-section-form'),
+    reportList: document.getElementById('bc-report-list'),
+    refreshReportsBtn: document.getElementById('bc-refresh-reports-btn'),
 };
+
+let managedSections = [];
+let editingSectionKey = '';
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -75,15 +83,145 @@ function renderSections(items) {
     }
     elements.sections.innerHTML = items.map((section) => {
         const accent = /^#[0-9a-f]{6}$/i.test(String(section.accent_color || '')) ? section.accent_color : '#2563eb';
-        const note = section.is_career ? '就业信息每日优先保留采集与选题名额' : '按板块关键词轮换采集';
+        const note = section.is_career ? '就业信息优先采集' : '按板块关键词轮换采集';
         return `
             <article class="bc-section-card" style="--section-accent:${accent}">
                 <strong>${escapeHtml(section.icon || '•')} ${escapeHtml(section.name || '')}</strong>
                 <p>${escapeHtml(section.description || '')}</p>
-                <span class="bc-muted">${escapeHtml(note)}</span>
+                <div class="bc-section-card__actions">
+                    <span class="bc-muted">${section.is_enabled === false ? '已停用 · ' : ''}${escapeHtml(note)}</span>
+                    ${canManage ? `<button type="button" class="btn btn-ghost btn-sm" data-bc-edit-section="${escapeHtml(section.section_key || '')}">编辑</button>` : ''}
+                </div>
             </article>
         `;
     }).join('');
+}
+
+async function loadManagedSections() {
+    if (!canManage) return;
+    const data = await apiFetch('/api/blog/sections/manage');
+    managedSections = Array.isArray(data.sections) ? data.sections : [];
+    renderSections(managedSections);
+}
+
+function renderReports(items) {
+    if (!elements.reportList) return;
+    if (!Array.isArray(items) || !items.length) {
+        elements.reportList.innerHTML = '<p class="bc-muted">当前没有待处理反馈。</p>';
+        return;
+    }
+    elements.reportList.innerHTML = items.map((item) => `
+        <article class="bc-post">
+            <strong>${escapeHtml(item.target_title || `${item.target_type} #${item.target_id}`)}</strong>
+            <div class="bc-muted">${escapeHtml(item.reason_code || '')} · ${escapeHtml(item.reporter_identity || '')} · ${escapeHtml(item.created_at || '')}</div>
+            ${item.details ? `<p>${escapeHtml(item.details)}</p>` : ''}
+            <div class="flex gap-2">
+                ${item.target_url ? `<a class="btn btn-ghost btn-sm" href="${escapeHtml(item.target_url)}" target="_blank" rel="noopener noreferrer">打开内容核验</a>` : ''}
+                <button type="button" class="btn btn-primary btn-sm" data-bc-resolve-report="${item.id}" data-status="resolved">标记已核验</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-bc-resolve-report="${item.id}" data-status="dismissed">驳回</button>
+            </div>
+        </article>
+    `).join('');
+}
+
+async function loadManagedReports() {
+    if (!canManage) return;
+    const data = await apiFetch('/api/blog/reports/manage');
+    renderReports(data.reports || []);
+}
+
+async function handleReportResolution(button) {
+    button.disabled = true;
+    try {
+        await apiFetch(`/api/blog/reports/${encodeURIComponent(button.dataset.bcResolveReport)}/resolve`, {
+            method: 'POST',
+            body: { status: button.dataset.status || 'resolved' },
+        });
+        showMessage('内容反馈已处理。', 'success');
+        await loadManagedReports();
+    } catch (error) {
+        showMessage(error.message || '反馈处理失败。', 'error');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function openSectionEditor(section = null) {
+    if (!elements.sectionForm) return;
+    editingSectionKey = section?.section_key || '';
+    elements.sectionForm.hidden = false;
+    const field = (name) => elements.sectionForm.elements.namedItem(name);
+    field('section_key').value = section?.section_key || '';
+    field('section_key').readOnly = Boolean(section);
+    field('name').value = section?.name || '';
+    field('short_name').value = section?.short_name || '';
+    field('description').value = section?.description || '';
+    field('icon').value = section?.icon || '•';
+    field('accent_color').value = /^#[0-9a-f]{6}$/i.test(section?.accent_color || '') ? section.accent_color : '#2563eb';
+    field('sort_order').value = section?.sort_order ?? 100;
+    field('source_keywords').value = (section?.source_keywords || []).join('\n');
+    field('source_templates').value = (section?.source_templates || []).length
+        ? JSON.stringify(section.source_templates, null, 2)
+        : '';
+    field('is_enabled').checked = section?.is_enabled ?? true;
+    field('allow_user_posts').checked = section?.allow_user_posts ?? true;
+    field('is_career').checked = Boolean(section?.is_career);
+    elements.sectionForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    field('name').focus();
+}
+
+function closeSectionEditor() {
+    if (!elements.sectionForm) return;
+    elements.sectionForm.hidden = true;
+    editingSectionKey = '';
+    elements.sectionForm.reset();
+}
+
+function sectionFormPayload() {
+    const form = elements.sectionForm;
+    const field = (name) => form.elements.namedItem(name);
+    let sourceTemplates = [];
+    const sourceText = String(field('source_templates').value || '').trim();
+    if (sourceText) {
+        sourceTemplates = JSON.parse(sourceText);
+        if (!Array.isArray(sourceTemplates)) throw new Error('专属信息源必须是 JSON 数组。');
+    }
+    return {
+        section_key: String(field('section_key').value || '').trim(),
+        name: String(field('name').value || '').trim(),
+        short_name: String(field('short_name').value || '').trim(),
+        description: String(field('description').value || '').trim(),
+        icon: String(field('icon').value || '•').trim(),
+        accent_color: field('accent_color').value,
+        sort_order: Number(field('sort_order').value || 100),
+        source_keywords: String(field('source_keywords').value || '').split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+        source_templates: sourceTemplates,
+        is_enabled: field('is_enabled').checked,
+        allow_user_posts: field('allow_user_posts').checked,
+        is_career: field('is_career').checked,
+    };
+}
+
+async function saveSection(event) {
+    event.preventDefault();
+    if (!canManage || !elements.sectionForm) return;
+    const submit = elements.sectionForm.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    try {
+        const payload = sectionFormPayload();
+        const url = editingSectionKey
+            ? `/api/blog/sections/${encodeURIComponent(editingSectionKey)}`
+            : '/api/blog/sections';
+        await apiFetch(url, { method: editingSectionKey ? 'PUT' : 'POST', body: payload });
+        showMessage(editingSectionKey ? '板块配置已更新。' : '新板块已创建。', 'success');
+        closeSectionEditor();
+        await refreshDashboard();
+        await loadManagedSections();
+    } catch (error) {
+        showMessage(error.message || '板块保存失败。', 'error');
+    } finally {
+        if (submit) submit.disabled = false;
+    }
 }
 
 function renderSources(items) {
@@ -206,3 +344,22 @@ elements.refreshBtn?.addEventListener('click', () => {
 });
 elements.runBtn?.addEventListener('click', handleRun);
 elements.cancelBtn?.addEventListener('click', handleCancel);
+elements.addSectionBtn?.addEventListener('click', () => openSectionEditor());
+elements.cancelSectionBtn?.addEventListener('click', closeSectionEditor);
+elements.sectionForm?.addEventListener('submit', saveSection);
+elements.sections?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-bc-edit-section]');
+    if (!button) return;
+    const section = managedSections.find((item) => item.section_key === button.dataset.bcEditSection);
+    if (section) openSectionEditor(section);
+});
+elements.reportList?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-bc-resolve-report]');
+    if (button) handleReportResolution(button);
+});
+elements.refreshReportsBtn?.addEventListener('click', () => {
+    loadManagedReports().catch((error) => showMessage(error.message || '反馈加载失败。', 'error'));
+});
+
+loadManagedSections().catch((error) => showMessage(error.message || '板块配置加载失败。', 'error'));
+loadManagedReports().catch((error) => showMessage(error.message || '反馈加载失败。', 'error'));

@@ -40,6 +40,11 @@ from .blog_section_service import (
     DEFAULT_BLOG_SECTION_KEY,
     list_blog_sections,
 )
+from .blog_opportunity_service import (
+    notify_due_opportunity_deadlines,
+    refresh_opportunity_statuses,
+    upsert_opportunity_for_post,
+)
 from .file_service import global_file_write_path, resolve_global_file_path
 
 
@@ -1115,6 +1120,8 @@ async def run_blog_news_crawler_job(run_id: int, *, worker_id: str = "") -> dict
                 raise RuntimeError(f"crawler run {run_id} not found")
             trigger_source = str(run_row["trigger_source"] or TRIGGER_SCHEDULED)
             config = load_blog_news_crawler_config(conn)
+            refresh_opportunity_statuses(conn)
+            notify_due_opportunity_deadlines(conn)
             keywords = load_course_news_keywords(conn, config)
             now = _now_iso()
             conn.execute(
@@ -1756,6 +1763,15 @@ def _store_candidates(conn, run_id: int, candidates: list[NewsCandidate]) -> tup
         if existing is not None:
             existing_item = _serialize_item_row(existing)
             if existing_item.get("post_id"):
+                if str(existing_item.get("section_key") or "") == CAREER_BLOG_SECTION_KEY:
+                    conn.execute(
+                        """
+                        UPDATE blog_opportunities
+                        SET last_verified_at = ?, updated_at = ?
+                        WHERE post_id = ?
+                        """,
+                        (_now_iso(), _now_iso(), int(existing_item["post_id"])),
+                    )
                 duplicate_count += 1
                 continue
             existing_id = int(existing_item.get("id") or 0)
@@ -1986,7 +2002,24 @@ async def _rewrite_candidates_with_ai(
       "section_key": "career",
       "title": "自然、不标题党的博客标题",
       "content_md": "Markdown 正文，可包含 {{{{image_1}}}} 占位符",
-      "tags": ["极客闲聊", "今日科技"]
+      "tags": ["极客闲聊", "今日科技"],
+      "opportunity": {{
+        "employer_name": "仅就业板块填写，未注明则为空",
+        "opportunity_type": "campus_recruitment|internship|public_institution|civil_service|grassroots_program|career_fair|policy|other",
+        "positions_text": "岗位或机会摘要",
+        "regions": ["广西", "南宁"],
+        "city": "主要城市",
+        "target_groups": ["2026届毕业生"],
+        "education_text": "学历要求，未注明则为空",
+        "majors": ["专业要求，未注明则留空数组"],
+        "headcount_text": "人数，未注明则为空",
+        "compensation_text": "薪酬，未注明则为空",
+        "application_method": "报名方式",
+        "application_url": "必须来自材料中的官方链接，不确定则为空",
+        "deadline_at": "YYYY-MM-DD，不确定则为 null",
+        "extraction_confidence": 0.0,
+        "verification_notes": "缺失或需核验的字段"
+      }}
     }}
   ]
 }}
@@ -2002,6 +2035,7 @@ async def _rewrite_candidates_with_ai(
 - 视频、报告、代码仓库等非图片媒体请作为普通链接处理。
 - 每篇控制在 450-850 字，段落短一点，少用小标题，尽量像聊天。
 - 毕业新征程板块必须优先提取单位/项目、岗位或机会、工作地区、适合对象、报名方式、截止时间和官方入口；原始材料缺少的字段明确写“以官方页面为准”，不得补造。
+- 仅毕业新征程板块填写 opportunity；其他板块不要输出 opportunity。结构化字段只能来自新闻材料，无法确定时必须留空或填 null，并降低 extraction_confidence。
 - 就业内容要给出可执行的下一步，并提醒核验官方域名、警惕收费内推、押金和索要敏感证件等风险。
 - 不要在正文末尾输出“参考来源”“引用”“来源链接”等列表，系统会统一追加。
 
@@ -2091,6 +2125,15 @@ async def _publish_rewritten_posts(
                     status=status,
                 )
                 post_id = int(post["id"])
+                if str(primary.get("section_key") or "") == CAREER_BLOG_SECTION_KEY:
+                    upsert_opportunity_for_post(
+                        conn,
+                        post_id,
+                        payload.get("opportunity") if isinstance(payload.get("opportunity"), dict) else {},
+                        source_url=str(primary.get("canonical_url") or primary.get("url") or ""),
+                        source_name=str(primary.get("source_name") or ""),
+                        published_at=str(primary.get("published_at") or ""),
+                    )
                 if config.get("featured_posts") and status == POST_STATUS_PUBLISHED:
                     now = _now_iso()
                     conn.execute(

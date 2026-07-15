@@ -177,6 +177,49 @@ class BlogSectionTests(unittest.TestCase):
         self.assertEqual("career", selected[0]["section_key"])
         self.assertEqual(2, len({item["section_key"] for item in selected}))
 
+    def test_section_management_is_extensible_and_preserves_disabled_sections(self):
+        created = blog_section_service.save_blog_section(
+            self.conn,
+            {
+                "section_key": "design",
+                "name": "设计与创意",
+                "short_name": "设计",
+                "description": "视觉、产品与服务设计。",
+                "icon": "D",
+                "accent_color": "#db2777",
+                "sort_order": 70,
+                "source_keywords": ["产品设计", "用户体验"],
+                "source_templates": [{"name": "Design RSS", "url": "https://example.com/design.xml", "kind": "fixed_rss"}],
+            },
+        )
+        self.assertEqual("design", created["section_key"])
+        self.assertEqual(["产品设计", "用户体验"], created["source_keywords"])
+
+        disabled = blog_section_service.save_blog_section(
+            self.conn,
+            {**created, "is_enabled": False},
+            section_key="design",
+        )
+        self.assertFalse(disabled["is_enabled"])
+        self.assertNotIn("design", [item["section_key"] for item in blog_section_service.list_blog_sections(self.conn)])
+        self.assertIn(
+            "design",
+            [item["section_key"] for item in blog_section_service.list_blog_sections(self.conn, include_disabled=True)],
+        )
+
+    def test_default_section_cannot_be_disabled(self):
+        general = next(
+            item
+            for item in blog_section_service.list_blog_sections(self.conn, include_source_config=True)
+            if item["section_key"] == "general"
+        )
+        with self.assertRaisesRegex(ValueError, "默认综合板块不能停用"):
+            blog_section_service.save_blog_section(
+                self.conn,
+                {**general, "is_enabled": False},
+                section_key="general",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

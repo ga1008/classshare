@@ -6,6 +6,7 @@ from .message_center_service import _build_notification_payload, _insert_notific
 
 MESSAGE_CATEGORY_BLOG_COMMENT = "blog_comment"
 MESSAGE_CATEGORY_BLOG_HOT = "blog_hot"
+MESSAGE_CATEGORY_BLOG_CAREER = "blog_career"
 
 
 def notify_new_comment(
@@ -141,6 +142,33 @@ def notify_post_hot(
         ref_id=str(post_id),
     )
     _insert_notification(conn, payload)
+
+
+def notify_opportunity_deadline(conn, opportunity: dict[str, Any], user_state: dict[str, Any]) -> bool:
+    recipient_pk = _safe_int_pk(user_state.get("user_pk"))
+    recipient_role = str(user_state.get("user_role") or "")
+    if recipient_pk is None or recipient_role not in {"student", "teacher"}:
+        return False
+    post_id = _safe_int_pk(opportunity.get("post_id"))
+    opportunity_id = _safe_int_pk(opportunity.get("id"))
+    if post_id is None or opportunity_id is None:
+        return False
+    employer = str(opportunity.get("employer_name") or opportunity.get("post_title") or "就业机会")
+    deadline_text = str(opportunity.get("deadline_at") or "")[:10]
+    payload = _build_notification_payload(
+        recipient_role=recipient_role,
+        recipient_user_pk=recipient_pk,
+        category=MESSAGE_CATEGORY_BLOG_CAREER,
+        title="收藏的就业机会即将截止",
+        body_preview=f"{employer} 的报名截止时间为 {deadline_text or '近期'}，请及时核验官方公告并准备材料。",
+        actor_display_name="毕业新征程",
+        link_url=f"/blog?section=career&post={post_id}",
+        ref_type="blog_opportunity_deadline",
+        ref_id=str(opportunity_id),
+        metadata={"opportunity_id": opportunity_id, "deadline_at": opportunity.get("deadline_at")},
+    )
+    _insert_notification(conn, payload)
+    return True
 
 
 def _safe_int_pk(value: Any) -> Optional[int]:

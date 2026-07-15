@@ -254,3 +254,92 @@ def resolve_blog_section_key(
     if row is None:
         raise ValueError("博客板块不存在或暂不可用")
     return str(row["section_key"])
+
+
+def save_blog_section(conn, payload: dict[str, Any], *, section_key: str | None = None) -> dict[str, Any]:
+    data = payload if isinstance(payload, dict) else {}
+    normalized_key = str(section_key or data.get("section_key") or "").strip().lower()
+    if not SECTION_KEY_PATTERN.fullmatch(normalized_key):
+        raise ValueError("板块标识仅支持小写字母、数字、连字符和下划线，且必须以字母开头")
+    name = str(data.get("name") or "").strip()[:60]
+    if not name:
+        raise ValueError("板块名称不能为空")
+    short_name = str(data.get("short_name") or name).strip()[:16]
+    description = str(data.get("description") or "").strip()[:300]
+    icon = str(data.get("icon") or "•").strip()[:12] or "•"
+    accent_color = str(data.get("accent_color") or "#2563eb").strip().lower()
+    if not re.fullmatch(r"#[0-9a-f]{6}", accent_color):
+        raise ValueError("板块主题色必须是六位十六进制颜色")
+    try:
+        sort_order = max(0, min(int(data.get("sort_order") or 100), 9999))
+    except (TypeError, ValueError):
+        sort_order = 100
+    is_enabled = bool(data.get("is_enabled", True))
+    is_career = bool(data.get("is_career", False))
+    allow_user_posts = bool(data.get("allow_user_posts", True))
+    if normalized_key == DEFAULT_BLOG_SECTION_KEY and not is_enabled:
+        raise ValueError("默认综合板块不能停用")
+
+    source_keywords = [
+        str(item).strip()[:100]
+        for item in _safe_json_list(data.get("source_keywords"))
+        if str(item).strip()
+    ][:30]
+    source_templates = []
+    for item in _safe_json_list(data.get("source_templates"))[:20]:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()[:2000]
+        if not url.startswith(("http://", "https://")):
+            continue
+        source_templates.append(
+            {
+                "name": str(item.get("name") or "自定义信息源").strip()[:100],
+                "url": url,
+                "kind": str(item.get("kind") or "keyword_rss").strip()[:30],
+                "requires_keyword_match": bool(item.get("requires_keyword_match", True)),
+                "query_suffix": str(item.get("query_suffix") or "").strip()[:500],
+            }
+        )
+
+    now_sql = "CURRENT_TIMESTAMP"
+    existing = conn.execute(
+        "SELECT section_key FROM blog_sections WHERE section_key = ? LIMIT 1",
+        (normalized_key,),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            f"""
+            UPDATE blog_sections
+            SET name = ?, short_name = ?, description = ?, icon = ?, accent_color = ?,
+                sort_order = ?, is_enabled = ?, is_career = ?, allow_user_posts = ?,
+                source_keywords_json = ?, source_templates_json = ?, updated_at = {now_sql}
+            WHERE section_key = ?
+            """,
+            (
+                name, short_name, description, icon, accent_color, sort_order,
+                1 if is_enabled else 0, 1 if is_career else 0, 1 if allow_user_posts else 0,
+                _json_dumps(source_keywords), _json_dumps(source_templates), normalized_key,
+            ),
+        )
+    else:
+        conn.execute(
+            f"""
+            INSERT INTO blog_sections (
+                section_key, name, short_name, description, icon, accent_color, sort_order,
+                is_enabled, is_career, allow_user_posts, source_keywords_json,
+                source_templates_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, {now_sql}, {now_sql})
+            """,
+            (
+                normalized_key, name, short_name, description, icon, accent_color, sort_order,
+                1 if is_enabled else 0, 1 if is_career else 0, 1 if allow_user_posts else 0,
+                _json_dumps(source_keywords), _json_dumps(source_templates),
+            ),
+        )
+    section = next(
+        item
+        for item in list_blog_sections(conn, include_disabled=True, include_source_config=True)
+        if item["section_key"] == normalized_key
+    )
+    return section

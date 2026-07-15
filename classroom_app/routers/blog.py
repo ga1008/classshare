@@ -11,7 +11,22 @@ from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
 from ..services.blog_ai_service import maybe_reply_to_comment_mention, maybe_reply_to_post_mention
+from ..services.blog_community_service import (
+    create_report,
+    list_following_posts,
+    list_follows,
+    list_pending_reports,
+    resolve_report,
+    set_follow,
+)
 from ..services.blog_notifications import notify_new_comment, notify_post_featured, notify_post_hot
+from ..services.blog_opportunity_service import (
+    get_opportunity_for_post,
+    list_opportunities,
+    set_opportunity_user_state,
+)
+from ..services.blog_section_service import list_blog_sections, save_blog_section
+from ..services.resource_access_service import is_super_admin_teacher
 from ..services.blog_service import (
     POST_STATUS_DRAFT,
     POST_STATUS_PUBLISHED,
@@ -39,6 +54,7 @@ from ..services.blog_service import (
     toggle_comments,
     toggle_like,
     update_post,
+    update_post_reading_progress,
 )
 from ..services.file_service import resolve_global_file_path, save_file_globally
 
@@ -47,6 +63,11 @@ router = APIRouter()
 ALLOWED_BLOG_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 ALLOWED_BLOG_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 MAX_BLOG_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+def _require_blog_super_admin(conn, user: dict) -> None:
+    if str(user.get("role") or "").strip().lower() != "teacher" or not is_super_admin_teacher(conn, user.get("id")):
+        raise HTTPException(status_code=403, detail="只有超管教师可以管理博客板块")
 
 
 def _build_background_user(user: dict) -> dict:
@@ -139,6 +160,40 @@ def api_blog_summary(user: dict = Depends(get_current_user)):
         }
 
 
+@router.get("/api/blog/sections/manage", response_class=JSONResponse)
+def api_manage_blog_sections(user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        _require_blog_super_admin(conn, user)
+        sections = list_blog_sections(conn, include_disabled=True, include_source_config=True)
+        return {"status": "success", "sections": sections}
+
+
+@router.post("/api/blog/sections", response_class=JSONResponse)
+async def api_create_blog_section(request: Request, user: dict = Depends(get_current_user)):
+    data = await request.json()
+    with get_db_connection() as conn:
+        _require_blog_super_admin(conn, user)
+        try:
+            section = save_blog_section(conn, data)
+            conn.commit()
+            return {"status": "success", "section": section}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/api/blog/sections/{section_key}", response_class=JSONResponse)
+async def api_update_blog_section(section_key: str, request: Request, user: dict = Depends(get_current_user)):
+    data = await request.json()
+    with get_db_connection() as conn:
+        _require_blog_super_admin(conn, user)
+        try:
+            section = save_blog_section(conn, data, section_key=section_key)
+            conn.commit()
+            return {"status": "success", "section": section}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/api/blog/discovery", response_class=JSONResponse)
 def api_blog_discovery(
     section: Optional[str] = Query(default=None),
@@ -159,6 +214,11 @@ def api_get_post(post_id: int, user: dict = Depends(get_current_user)):
         try:
             post = get_post_detail(conn, user, post_id)
             post["attachments"] = list_posts_attachments(conn, post_id)
+            post["opportunity"] = get_opportunity_for_post(
+                conn,
+                post_id,
+                user_identity=f"{user.get('role')}:{user.get('id')}",
+            )
             comments_data = list_comments(conn, user, post_id, page=1, limit=100)
             post["_comments"] = comments_data.get("comments", [])
             conn.commit()
@@ -167,6 +227,85 @@ def api_get_post(post_id: int, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/api/blog/posts/{post_id}/reading-progress", response_class=JSONResponse)
+async def api_update_blog_reading_progress(
+    post_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    data = await request.json()
+    with get_db_connection() as conn:
+        try:
+            result = update_post_reading_progress(
+                conn,
+                user,
+                post_id,
+                dwell_seconds=data.get("dwell_seconds"),
+                max_scroll_ratio=data.get("max_scroll_ratio"),
+            )
+            conn.commit()
+            return {"status": "success", **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/api/blog/opportunities", response_class=JSONResponse)
+def api_list_opportunities(
+    sort: str = Query(default="latest"),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=50),
+    region: str = Query(default=""),
+    opportunity_type: str = Query(default=""),
+    deadline_days: Optional[int] = Query(default=None, ge=1, le=90),
+    q: str = Query(default=""),
+    state: str = Query(default=""),
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        try:
+            result = list_opportunities(
+                conn,
+                user,
+                page=page,
+                limit=limit,
+                region=region,
+                opportunity_type=opportunity_type,
+                deadline_days=deadline_days,
+                query=q,
+                user_state=state,
+                sort=sort,
+            )
+            conn.commit()
+            return {"status": "success", **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/blog/opportunities/{opportunity_id}/state", response_class=JSONResponse)
+async def api_set_opportunity_state(
+    opportunity_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    data = await request.json()
+    with get_db_connection() as conn:
+        try:
+            result = set_opportunity_user_state(
+                conn,
+                user,
+                opportunity_id,
+                state=str(data.get("state") or ""),
+                reminder_at=data.get("reminder_at"),
+                notes=data.get("notes"),
+            )
+            conn.commit()
+            return {"status": "success", **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/api/blog/posts", response_class=JSONResponse)
@@ -513,6 +652,86 @@ def api_bookmarks(
     with get_db_connection() as conn:
         result = get_bookmarked_posts(conn, user, page=page, limit=limit)
         return {"status": "success", **result}
+
+
+@router.get("/api/blog/following", response_class=JSONResponse)
+def api_blog_following(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=50),
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        result = list_following_posts(conn, user, page=page, limit=limit)
+        return {"status": "success", **result}
+
+
+@router.get("/api/blog/follows", response_class=JSONResponse)
+def api_blog_follows(user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        return {"status": "success", "follows": list_follows(conn, user)}
+
+
+@router.post("/api/blog/follows", response_class=JSONResponse)
+async def api_set_blog_follow(request: Request, user: dict = Depends(get_current_user)):
+    data = await request.json()
+    with get_db_connection() as conn:
+        try:
+            result = set_follow(
+                conn,
+                user,
+                target_type=data.get("target_type"),
+                target_key=data.get("target_key"),
+                following=data.get("following") if "following" in data else None,
+            )
+            conn.commit()
+            return {"status": "success", **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/blog/reports", response_class=JSONResponse)
+async def api_create_blog_report(request: Request, user: dict = Depends(get_current_user)):
+    data = await request.json()
+    with get_db_connection() as conn:
+        try:
+            report = create_report(
+                conn,
+                user,
+                target_type=data.get("target_type"),
+                target_id=data.get("target_id"),
+                reason_code=data.get("reason_code"),
+                details=data.get("details"),
+            )
+            conn.commit()
+            return {"status": "success", "report": report}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/blog/reports/manage", response_class=JSONResponse)
+def api_manage_blog_reports(user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        _require_blog_super_admin(conn, user)
+        return {"status": "success", "reports": list_pending_reports(conn)}
+
+
+@router.post("/api/blog/reports/{report_id}/resolve", response_class=JSONResponse)
+async def api_resolve_blog_report(report_id: int, request: Request, user: dict = Depends(get_current_user)):
+    data = await request.json()
+    with get_db_connection() as conn:
+        _require_blog_super_admin(conn, user)
+        try:
+            result = resolve_report(
+                conn,
+                user,
+                report_id,
+                status=str(data.get("status") or ""),
+                notes=data.get("notes"),
+            )
+            conn.commit()
+            return {"status": "success", **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/blog/user-classes", response_class=JSONResponse)

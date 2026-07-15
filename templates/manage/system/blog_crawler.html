@@ -213,6 +213,40 @@
         color: var(--text-primary);
     }
 
+    .bc-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+    }
+
+    .bc-panel-header h3 {
+        margin: 0;
+    }
+
+    .bc-section-editor {
+        display: grid;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+        padding: var(--spacing-lg);
+        border: 1px solid rgba(37, 99, 235, 0.18);
+        border-radius: 12px;
+        background: rgba(239, 246, 255, 0.62);
+    }
+
+    .bc-section-editor[hidden] {
+        display: none !important;
+    }
+
+    .bc-section-card__actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
     .bc-section-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -380,15 +414,59 @@
     </section>
 
     <section class="bc-panel">
-        <h3>板块采集计划</h3>
+        <div class="bc-panel-header">
+            <div>
+                <h3>板块采集计划</h3>
+                <p class="bc-muted">板块、视觉和采集关键词都由数据驱动，新增板块无需修改博客页面。</p>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm" id="bc-add-section-btn" {% if not can_manage %}disabled{% endif %}>新增板块</button>
+        </div>
+        <form class="bc-section-editor" id="bc-section-form" hidden>
+            <div class="bc-form-grid">
+                <label class="form-group"><span class="form-label">板块标识</span><input class="form-control" name="section_key" placeholder="例如 design" required></label>
+                <label class="form-group"><span class="form-label">板块名称</span><input class="form-control" name="name" required></label>
+                <label class="form-group"><span class="form-label">短名称</span><input class="form-control" name="short_name" maxlength="16" required></label>
+                <label class="form-group"><span class="form-label">图标</span><input class="form-control" name="icon" maxlength="12" value="•"></label>
+                <label class="form-group"><span class="form-label">主题色</span><input class="form-control" name="accent_color" type="color" value="#2563eb"></label>
+                <label class="form-group"><span class="form-label">排序</span><input class="form-control" name="sort_order" type="number" min="0" max="9999" value="100"></label>
+            </div>
+            <label class="form-group"><span class="form-label">板块说明</span><textarea class="form-control" name="description" rows="2" maxlength="300"></textarea></label>
+            <label class="form-group"><span class="form-label">采集关键词（每行一个）</span><textarea class="form-control" name="source_keywords" rows="4"></textarea></label>
+            <label class="form-group"><span class="form-label">专属信息源 JSON</span><textarea class="form-control" name="source_templates" rows="4" placeholder='[{"name":"官方源","url":"https://example.com/rss","kind":"fixed_rss"}]'></textarea></label>
+            <div class="bc-switch-list">
+                <label class="bc-switch"><span>启用板块</span><input type="checkbox" name="is_enabled" checked></label>
+                <label class="bc-switch"><span>允许用户投稿</span><input type="checkbox" name="allow_user_posts" checked></label>
+                <label class="bc-switch"><span>就业机会板块</span><input type="checkbox" name="is_career"></label>
+            </div>
+            <div class="flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm">保存板块</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="bc-cancel-section-btn">取消</button>
+            </div>
+        </form>
         <div class="bc-section-grid" id="bc-sections">
             {% for section in dashboard.sections %}
             <article class="bc-section-card" style="--section-accent:{{ section.accent_color }}">
                 <strong>{{ section.icon }} {{ section.name }}</strong>
                 <p>{{ section.description }}</p>
-                <span class="bc-muted">{% if section.is_career %}就业信息每日优先保留采集与选题名额{% else %}按板块关键词轮换采集{% endif %}</span>
+                <div class="bc-section-card__actions">
+                    <span class="bc-muted">{% if section.is_career %}就业信息优先采集{% else %}按关键词轮换采集{% endif %}</span>
+                    <button type="button" class="btn btn-ghost btn-sm" data-bc-edit-section="{{ section.section_key }}">编辑</button>
+                </div>
             </article>
             {% endfor %}
+        </div>
+    </section>
+
+    <section class="bc-panel">
+        <div class="bc-panel-header">
+            <div>
+                <h3>内容反馈待办</h3>
+                <p class="bc-muted">核验失效就业信息、招聘风险和普通内容举报。</p>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" id="bc-refresh-reports-btn">刷新</button>
+        </div>
+        <div class="bc-post-list" id="bc-report-list">
+            <p class="bc-muted">正在读取待处理反馈...</p>
         </div>
     </section>
 

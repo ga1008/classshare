@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Optional
 from urllib.parse import quote
 
-from ..db.connection import execute_insert_returning_id
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from .academic_service import china_today
 from .blog_section_service import (
     DEFAULT_BLOG_SECTION_KEY,
@@ -323,6 +323,59 @@ def _resolve_optional_blog_section(conn, value: Any) -> str | None:
     if not str(value or "").strip():
         return None
     return resolve_blog_section_key(conn, value, fallback=None)
+
+
+def _trending_order_expression(table_alias: str = "") -> str:
+    """Return a backend-safe, time-decayed ranking expression.
+
+    Views are capped so a repeatedly opened old post cannot permanently crowd
+    newer discussions out of the discovery surfaces.
+    """
+    prefix = f"{table_alias}." if table_alias else ""
+    base = (
+        f"({prefix}like_count * 3 + {prefix}comment_count * 2 + {prefix}bookmark_count * 2 + "
+        f"CASE WHEN {prefix}view_count > 50 THEN 50 ELSE {prefix}view_count END)"
+    )
+    if get_configured_db_engine() == "postgres":
+        age_weeks = (
+            "GREATEST(COALESCE(EXTRACT(EPOCH FROM "
+            f"(CURRENT_TIMESTAMP - NULLIF({prefix}created_at, '')::timestamp)) / 604800.0, 0), 0)"
+        )
+    else:
+        age_weeks = (
+            f"CASE WHEN julianday('now') > julianday({prefix}created_at) "
+            f"THEN (julianday('now') - julianday({prefix}created_at)) / 7.0 ELSE 0 END"
+        )
+    return f"({base} / (1.0 + {age_weeks}))"
+
+
+def _record_post_view(conn, post_id: int, viewer_identity: str, *, viewed_at: str | None = None) -> bool:
+    """Record one unique view per authenticated identity and clock hour."""
+    now = str(viewed_at or _now_iso())
+    view_bucket = now[:13]
+    insert_sql = """
+        INSERT INTO blog_post_views (
+            post_id, viewer_identity, view_bucket, first_viewed_at, last_viewed_at
+        ) VALUES (?, ?, ?, ?, ?)
+    """
+    if get_configured_db_engine() == "postgres":
+        insert_sql += " ON CONFLICT (post_id, viewer_identity, view_bucket) DO NOTHING"
+    else:
+        insert_sql = insert_sql.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
+    cursor = conn.execute(insert_sql, (post_id, viewer_identity, view_bucket, now, now))
+    inserted = bool(cursor.rowcount)
+    if inserted:
+        conn.execute("UPDATE blog_posts SET view_count = view_count + 1 WHERE id = ?", (post_id,))
+    else:
+        conn.execute(
+            """
+            UPDATE blog_post_views
+            SET last_viewed_at = ?, view_events = view_events + 1
+            WHERE post_id = ? AND viewer_identity = ? AND view_bucket = ?
+            """,
+            (now, post_id, viewer_identity, view_bucket),
+        )
+    return inserted
 
 
 def _load_user_avatar_hash(conn, role: str, user_pk: int) -> str:
@@ -933,7 +986,10 @@ def list_posts(
 
     where_clause = " AND ".join(f"({item})" for item in conditions if item)
     if sort == "hot":
-        order_clause = "is_pinned DESC, is_featured DESC, (like_count * 3 + comment_count * 2 + view_count) DESC, created_at DESC, id DESC"
+        order_clause = (
+            "is_pinned DESC, is_featured DESC, "
+            f"{_trending_order_expression()} DESC, created_at DESC, id DESC"
+        )
     elif sort == "featured":
         order_clause = "is_featured DESC, featured_at DESC, created_at DESC, id DESC"
     else:
@@ -1105,7 +1161,7 @@ def get_blog_discovery(conn, user: dict, *, section_key: Optional[str] = None) -
             FROM blog_posts
             WHERE {published_where}
             ORDER BY is_pinned DESC, is_featured DESC,
-                     (like_count * 3 + comment_count * 2 + view_count) DESC,
+                     {_trending_order_expression()} DESC,
                      created_at DESC, id DESC
             LIMIT ?
             """,
@@ -1127,7 +1183,7 @@ def get_blog_discovery(conn, user: dict, *, section_key: Optional[str] = None) -
         SELECT {post_fields}
         FROM blog_posts
         WHERE {published_where}
-        ORDER BY (like_count * 3 + comment_count * 2 + view_count) DESC,
+        ORDER BY {_trending_order_expression()} DESC,
                  comment_count DESC, like_count DESC, created_at DESC, id DESC
         LIMIT 6
         """,
@@ -1226,9 +1282,8 @@ def get_post_detail(conn, user: dict, post_id: int) -> dict:
     if not _can_view_post(conn, user, post_row):
         raise PermissionError("没有权限查看此帖子")
 
-    new_view_count = int(post_row.get("view_count") or 0) + 1
-    conn.execute("UPDATE blog_posts SET view_count = view_count + 1 WHERE id = ?", (post_id,))
-    post_row["view_count"] = new_view_count
+    if _record_post_view(conn, post_id, identity):
+        post_row["view_count"] = int(post_row.get("view_count") or 0) + 1
 
     cultivation_badge_map = _build_author_cultivation_badge_map(conn, [post_row])
     return _serialize_post_detail(
@@ -1239,6 +1294,61 @@ def get_post_detail(conn, user: dict, post_id: int) -> dict:
         is_bookmarked=_is_bookmarked(conn, identity, post_id),
         cultivation_badge_map=cultivation_badge_map,
     )
+
+
+def update_post_reading_progress(
+    conn,
+    user: dict,
+    post_id: int,
+    *,
+    dwell_seconds: Any = 0,
+    max_scroll_ratio: Any = 0,
+) -> dict[str, Any]:
+    _user_pk, _role, identity = _ensure_identity(user)
+    post = _get_post_raw(conn, post_id)
+    if post is None:
+        raise ValueError("帖子不存在")
+    if not _can_view_post(conn, user, post):
+        raise PermissionError("没有权限查看此帖子")
+    try:
+        normalized_dwell = max(0, min(int(float(dwell_seconds or 0)), 24 * 60 * 60))
+    except (TypeError, ValueError):
+        normalized_dwell = 0
+    try:
+        normalized_ratio = max(0.0, min(float(max_scroll_ratio or 0), 1.0))
+    except (TypeError, ValueError):
+        normalized_ratio = 0.0
+    now = _now_iso()
+    _record_post_view(conn, post_id, identity, viewed_at=now)
+    bucket = now[:13]
+    completed = 1 if normalized_ratio >= 0.9 else 0
+    conn.execute(
+        """
+        UPDATE blog_post_views
+        SET last_viewed_at = ?,
+            dwell_seconds = CASE WHEN dwell_seconds < ? THEN ? ELSE dwell_seconds END,
+            max_scroll_ratio = CASE WHEN max_scroll_ratio < ? THEN ? ELSE max_scroll_ratio END,
+            completed = CASE WHEN completed = 1 OR ? = 1 THEN 1 ELSE 0 END
+        WHERE post_id = ? AND viewer_identity = ? AND view_bucket = ?
+        """,
+        (
+            now,
+            normalized_dwell,
+            normalized_dwell,
+            normalized_ratio,
+            normalized_ratio,
+            completed,
+            post_id,
+            identity,
+            bucket,
+        ),
+    )
+    return {
+        "post_id": post_id,
+        "dwell_seconds": normalized_dwell,
+        "max_scroll_ratio": normalized_ratio,
+        "completed": bool(completed),
+    }
 
 
 def get_my_posts(
@@ -2000,6 +2110,25 @@ def _calculate_hot_score(post: dict) -> int:
     )
 
 
+def _calculate_trending_score(post: dict) -> int:
+    base_score = (
+        int(post.get("like_count") or 0) * 3
+        + int(post.get("comment_count") or 0) * 2
+        + int(post.get("bookmark_count") or 0) * 2
+        + min(int(post.get("view_count") or 0), 50)
+    )
+    created_raw = str(post.get("created_at") or "").strip()
+    if not created_raw:
+        return base_score
+    try:
+        created_at = datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+        now = datetime.now(tz=created_at.tzinfo) if created_at.tzinfo else datetime.now()
+        age_days = max((now - created_at).total_seconds() / 86400.0, 0.0)
+    except (TypeError, ValueError, OverflowError):
+        return base_score
+    return max(0, int(round(base_score / (1.0 + age_days / 7.0))))
+
+
 def _maybe_notify_post_hot(conn, post_id: int, *, notify_callback=None) -> None:
     if notify_callback is None:
         return
@@ -2337,18 +2466,20 @@ def _serialize_post_summary(
     avatar_hash = str(row.get("author_avatar_hash") or "")
     author_display_mode = str(row.get("author_display_mode") or AUTHOR_DISPLAY_REAL)
     author_identity = str(row.get("author_identity") or "")
+    is_anonymous = author_display_mode == AUTHOR_DISPLAY_ANONYMOUS
+    is_author = author_identity == viewer_identity
     cultivation_badge = None
-    if author_display_mode != AUTHOR_DISPLAY_ANONYMOUS:
+    if not is_anonymous:
         cultivation_badge = (cultivation_badge_map or {}).get(author_identity)
     return {
         "id": int(row["id"]),
         "author": {
-            "identity": author_identity,
+            "identity": "" if is_anonymous else author_identity,
             "role": author_role,
-            "user_pk": author_user_pk,
+            "user_pk": None if is_anonymous else author_user_pk,
             "display_name": str(row.get("author_display_name") or ""),
             "display_mode": author_display_mode,
-            "is_anonymous": author_display_mode == AUTHOR_DISPLAY_ANONYMOUS,
+            "is_anonymous": is_anonymous,
             "cultivation_badge": cultivation_badge,
             "avatar_url": _build_post_author_avatar_url(
                 author_role,
@@ -2371,7 +2502,7 @@ def _serialize_post_summary(
         "like_count": int(row.get("like_count") or 0),
         "comment_count": int(row.get("comment_count") or 0),
         "bookmark_count": int(row.get("bookmark_count") or 0),
-        "hot_score": _calculate_hot_score(row),
+        "hot_score": _calculate_trending_score(row),
         "reading_minutes": _estimate_reading_minutes(row),
         "is_liked": bool(row.get("is_liked")),
         "is_bookmarked": bool(row.get("is_bookmarked")),
@@ -2382,7 +2513,7 @@ def _serialize_post_summary(
         "created_at": str(row.get("created_at") or ""),
         "edited_at": str(row.get("edited_at") or "") or None,
         "updated_at": str(row.get("updated_at") or ""),
-        "is_author": author_identity == viewer_identity,
+        "is_author": is_author,
     }
 
 

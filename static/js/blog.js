@@ -11,6 +11,39 @@ const ROLE_LABELS = {
     assistant: 'AI助教',
 };
 
+const OPPORTUNITY_TYPE_LABELS = {
+    campus_recruitment: '校园招聘',
+    internship: '实习机会',
+    public_institution: '事业单位',
+    civil_service: '公务员招录',
+    grassroots_program: '基层项目',
+    career_fair: '招聘会',
+    policy: '就业政策',
+    other: '就业机会',
+};
+
+const OPPORTUNITY_STATE_LABELS = {
+    saved: '已收藏',
+    preparing: '准备材料',
+    applied: '已投递',
+    interview: '笔试/面试',
+    offer: '已获录用',
+    closed: '已结束',
+};
+
+function normalizeCareerFilters(filters = {}) {
+    const region = String(filters.region || '').trim().toLowerCase();
+    const opportunityType = String(filters.opportunityType || '').trim().toLowerCase();
+    const deadlineDays = String(filters.deadlineDays || '').trim();
+    const userState = String(filters.userState || '').trim().toLowerCase();
+    return {
+        region: ['nanning', 'guangxi', 'prd'].includes(region) ? region : '',
+        opportunityType: Object.hasOwn(OPPORTUNITY_TYPE_LABELS, opportunityType) ? opportunityType : '',
+        deadlineDays: ['7', '30', '60'].includes(deadlineDays) ? deadlineDays : '',
+        userState: Object.hasOwn(OPPORTUNITY_STATE_LABELS, userState) ? userState : '',
+    };
+}
+
 const SVG = {
     eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
     heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
@@ -39,8 +72,8 @@ const api = {
         }
         return payload;
     },
-    get(url) {
-        return this.request(url);
+    get(url, options = {}) {
+        return this.request(url, options);
     },
     post(url, body) {
         return this.request(url, {
@@ -136,6 +169,17 @@ class BlogCenter {
         this.commentDraft = this.createEmptyCommentDraft();
         this.searchTimer = null;
         this.userSearchTimer = null;
+        this.composeAutosaveTimer = null;
+        this.composeBaseline = '';
+        this.composerReturnFocus = null;
+        this.detailHasListHistory = false;
+        this.lastListSnapshot = null;
+        this.requestControllers = new Map();
+        this.followKeys = new Set();
+        this.reportTarget = null;
+        this.readingSession = null;
+        this.readingProgressTimer = null;
+        this.readingScrollTimer = null;
 
         this.state = {
             currentView: 'feed',
@@ -163,6 +207,7 @@ class BlogCenter {
             tagFilter: null,
             composeClassesLoaded: false,
             customEmojiLibrary: [],
+            careerFilters: normalizeCareerFilters(),
         };
     }
 
@@ -176,25 +221,177 @@ class BlogCenter {
         };
     }
 
+    beginRequest(key) {
+        this.requestControllers.get(key)?.abort();
+        const controller = new AbortController();
+        this.requestControllers.set(key, controller);
+        return controller;
+    }
+
+    buildListSnapshot() {
+        return {
+            section: this.state.currentSection || '',
+            sort: this.state.currentSort || 'latest',
+            nav: this.state.currentNav || 'feed',
+            query: $('[data-blog-search]', this.shell)?.value?.trim() || '',
+            tag: this.state.tagFilter || '',
+            author: this.state.authorFilter || null,
+            careerFilters: normalizeCareerFilters(this.state.careerFilters),
+            page: this.state.page || 1,
+            scrollY: Math.max(0, Math.round(window.scrollY || 0)),
+        };
+    }
+
+    buildHistoryState(view, postId = null) {
+        return {
+            blog: {
+                view,
+                postId: postId || null,
+                snapshot: view === 'list'
+                    ? this.buildListSnapshot()
+                    : (this.lastListSnapshot || this.buildListSnapshot()),
+            },
+        };
+    }
+
+    restoreListSnapshot(snapshot = {}) {
+        this.state.currentSection = String(snapshot.section || '').trim().toLowerCase();
+        this.state.currentSort = snapshot.sort || 'latest';
+        this.state.currentNav = snapshot.nav || 'feed';
+        this.state.tagFilter = snapshot.tag || null;
+        this.state.authorFilter = snapshot.author || null;
+        this.state.careerFilters = normalizeCareerFilters(snapshot.careerFilters);
+        this.state.page = Math.max(1, Number(snapshot.page || 1));
+        const searchInput = $('[data-blog-search]', this.shell);
+        if (searchInput) searchInput.value = snapshot.query || '';
+        this.updateNavTabs();
+        this.updateSortTabs();
+        this.renderSectionTabs();
+        this.renderSectionIntro();
+        this.updateCareerTools();
+        this.updateAuthorFilterBanner();
+        this.updateTagFilterBanner();
+    }
+
+    async handlePopState(event) {
+        const url = new URL(window.location.href);
+        const postId = Number(url.searchParams.get('post') || 0);
+        if (postId) {
+            this.detailHasListHistory = true;
+            await this.showDetail(postId, { historyMode: 'none', scrollToTop: false });
+            return;
+        }
+
+        const snapshot = event.state?.blog?.snapshot || {
+            section: url.searchParams.get('section') || '',
+            sort: url.searchParams.get('sort') || 'latest',
+            query: url.searchParams.get('q') || '',
+            nav: url.searchParams.get('view') || 'feed',
+            careerFilters: {
+                region: url.searchParams.get('region') || '',
+                opportunityType: url.searchParams.get('type') || '',
+                deadlineDays: url.searchParams.get('deadline') || '',
+                userState: url.searchParams.get('state') || '',
+            },
+            scrollY: 0,
+        };
+        this.detailHasListHistory = false;
+        this.state.detailPostId = null;
+        this.state.detailPost = null;
+        this.restoreListSnapshot(snapshot);
+        this.showCurrentListView();
+        if (this.state.currentNav === 'my-posts') {
+            await this.loadMyPosts();
+        } else if (this.state.currentNav === 'bookmarks') {
+            await this.loadBookmarks();
+        } else {
+            await this.loadFeed();
+        }
+        this.loadDiscovery();
+        window.requestAnimationFrame(() => window.scrollTo({ top: Number(snapshot.scrollY || 0), behavior: 'auto' }));
+    }
+
+    handleKeydown(event) {
+        const sectionTab = event.target.closest?.('[data-blog-section][role="tab"]');
+        if (sectionTab && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+            const tabs = $$('[data-blog-section][role="tab"]', this.shell);
+            const currentIndex = tabs.indexOf(sectionTab);
+            if (currentIndex < 0) return;
+            event.preventDefault();
+            let nextIndex = currentIndex;
+            if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+            if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+            if (event.key === 'Home') nextIndex = 0;
+            if (event.key === 'End') nextIndex = tabs.length - 1;
+            tabs[nextIndex]?.focus();
+            tabs[nextIndex]?.click();
+            return;
+        }
+
+        const modal = $('[data-blog-composer-modal]', this.shell);
+        if (!modal || modal.hidden || event.key !== 'Tab') return;
+        const focusable = $$('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])', modal)
+            .filter((node) => !node.hidden && node.offsetParent !== null);
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
     init() {
         this.bindEvents();
         this.ensureCustomEmojiLibrary();
-        this.loadDiscovery();
+        this.loadFollows();
 
         const url = new URL(window.location.href);
         this.state.currentSection = (url.searchParams.get('section') || this.initialSection || '').trim().toLowerCase();
+        this.state.currentSort = url.searchParams.get('sort') || 'latest';
+        const requestedNav = (url.searchParams.get('view') || 'feed').trim().toLowerCase();
+        this.state.currentNav = ['feed', 'following', 'my-posts', 'bookmarks'].includes(requestedNav)
+            ? requestedNav
+            : 'feed';
+        this.state.careerFilters = normalizeCareerFilters({
+            region: url.searchParams.get('region') || '',
+            opportunityType: url.searchParams.get('type') || '',
+            deadlineDays: url.searchParams.get('deadline') || '',
+            userState: url.searchParams.get('state') || '',
+        });
+        const searchInput = $('[data-blog-search]', this.shell);
+        if (searchInput) searchInput.value = url.searchParams.get('q') || '';
+        this.updateNavTabs();
+        this.updateCareerTools();
+        window.history.replaceState(
+            this.buildHistoryState(url.searchParams.get('post') ? 'detail' : 'list'),
+            '',
+            `${url.pathname}${url.search}`,
+        );
+        this.loadDiscovery();
         const postId = Number(url.searchParams.get('post') || 0);
         if (postId) {
-            this.showDetail(postId);
+            this.showDetail(postId, { historyMode: 'none', scrollToTop: false });
             return;
         }
-        this.loadFeed();
+        this.updateSortTabs();
+        this.showCurrentListView();
+        this.refreshCurrentList();
     }
 
     bindEvents() {
         this.shell.addEventListener('click', (event) => this.handleClick(event));
         this.shell.addEventListener('change', (event) => this.handleChange(event));
         this.shell.addEventListener('input', (event) => this.handleInput(event));
+        this.shell.addEventListener('keydown', (event) => this.handleKeydown(event));
+        window.addEventListener('popstate', (event) => this.handlePopState(event));
+        window.addEventListener('scroll', () => this.handleReadingScroll(), { passive: true });
+        window.addEventListener('pagehide', () => this.stopReadingSession({ useBeacon: true }));
+        document.addEventListener('visibilitychange', () => this.handleReadingVisibility());
+        $('[data-blog-report-form]', this.shell)?.addEventListener('submit', (event) => this.submitReport(event));
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 this.closeComposer();
@@ -237,6 +434,7 @@ class BlogCenter {
             this.updateNavTabs();
             this.updateSortTabs();
             this.showView('feed');
+            this.updateListUrl();
             this.loadFeed();
             return;
         }
@@ -317,6 +515,21 @@ class BlogCenter {
         const toolbarButton = event.target.closest('[data-toolbar]');
         if (toolbarButton) {
             this.insertMarkdown(toolbarButton.dataset.toolbar || '');
+            return;
+        }
+
+        const followButton = event.target.closest('[data-blog-follow-type]');
+        if (followButton) {
+            this.toggleFollow(
+                followButton.dataset.blogFollowType || '',
+                followButton.dataset.blogFollowKey || '',
+            );
+            return;
+        }
+
+        const composeModeButton = event.target.closest('[data-blog-compose-mode]');
+        if (composeModeButton) {
+            this.setComposerMode(composeModeButton.dataset.blogComposeMode || 'edit');
             return;
         }
 
@@ -475,7 +688,30 @@ class BlogCenter {
 
         const openPostButton = event.target.closest('[data-blog-open-post]');
         if (openPostButton) {
+            event.preventDefault();
             this.showDetail(Number(openPostButton.dataset.blogOpenPost));
+            return;
+        }
+
+        const opportunitySaveButton = event.target.closest('[data-blog-opportunity-save]');
+        if (opportunitySaveButton) {
+            const currentState = opportunitySaveButton.dataset.currentState || '';
+            this.setOpportunityState(
+                Number(opportunitySaveButton.dataset.blogOpportunitySave),
+                currentState ? 'none' : 'saved',
+            );
+            return;
+        }
+
+        const reportPostButton = event.target.closest('[data-blog-report-post]');
+        if (reportPostButton) {
+            this.openReport('post', Number(reportPostButton.dataset.blogReportPost));
+            return;
+        }
+
+        if (event.target.closest('[data-blog-report-cancel]')) {
+            $('[data-blog-report-dialog]', this.shell)?.close();
+            this.reportTarget = null;
             return;
         }
 
@@ -486,6 +722,22 @@ class BlogCenter {
     }
 
     handleChange(event) {
+        if (event.target.matches('[data-blog-career-region], [data-blog-career-type], [data-blog-career-deadline], [data-blog-career-state]')) {
+            this.state.careerFilters = normalizeCareerFilters({
+                region: $('[data-blog-career-region]', this.shell)?.value || '',
+                opportunityType: $('[data-blog-career-type]', this.shell)?.value || '',
+                deadlineDays: $('[data-blog-career-deadline]', this.shell)?.value || '',
+                userState: $('[data-blog-career-state]', this.shell)?.value || '',
+            });
+            this.state.page = 1;
+            this.updateListUrl();
+            this.loadFeed();
+            return;
+        }
+        if (event.target.matches('[data-blog-opportunity-state]')) {
+            this.setOpportunityState(Number(event.target.dataset.blogOpportunityState), event.target.value);
+            return;
+        }
         if (event.target.matches('[data-blog-compose-file-input]')) {
             this.handleImageUpload(event.target.files, { context: 'compose' });
             return;
@@ -496,10 +748,16 @@ class BlogCenter {
         }
         if (event.target.matches('[data-blog-compose-visibility]')) {
             this.updateVisibilityOptions(event.target.value);
+            this.scheduleComposerRecovery();
             return;
         }
         if (event.target.matches('[data-blog-compose-author-mode]')) {
             this.updateAuthorModeHint(event.target.value);
+            this.scheduleComposerRecovery();
+            return;
+        }
+        if (event.target.matches('[data-blog-compose-visibility], [data-blog-compose-section], [data-blog-compose-class], [data-blog-compose-comments]')) {
+            this.scheduleComposerRecovery();
         }
     }
 
@@ -508,8 +766,15 @@ class BlogCenter {
             window.clearTimeout(this.searchTimer);
             this.searchTimer = window.setTimeout(() => {
                 this.state.page = 1;
+                this.updateListUrl();
                 this.loadFeed();
             }, 320);
+            return;
+        }
+
+        if (event.target.matches('[data-blog-compose-title], [data-blog-compose-content], [data-blog-compose-tags]')) {
+            this.updateComposerMetrics();
+            this.scheduleComposerRecovery();
             return;
         }
 
@@ -536,9 +801,7 @@ class BlogCenter {
             this.closeComposer();
             break;
         case 'back-to-feed':
-            this.showCurrentListView();
-            this.refreshCurrentList();
-            this.updateListUrl();
+            this.backToList();
             break;
         case 'upload-image':
             $('[data-blog-compose-file-input]', this.shell)?.click();
@@ -569,7 +832,14 @@ class BlogCenter {
     setNav(nav) {
         this.state.currentNav = nav;
         this.updateNavTabs();
+        this.updateListUrl();
         if (nav === 'feed') {
+            this.showView('feed');
+            this.state.page = 1;
+            this.loadFeed();
+            return;
+        }
+        if (nav === 'following') {
             this.showView('feed');
             this.state.page = 1;
             this.loadFeed();
@@ -617,7 +887,40 @@ class BlogCenter {
         if (this.state.currentNav === 'feed' && this.state.currentSection) {
             url.searchParams.set('section', this.state.currentSection);
         }
-        window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+        if (this.state.currentNav !== 'feed') url.searchParams.set('view', this.state.currentNav);
+        if (this.state.currentSort !== 'latest') url.searchParams.set('sort', this.state.currentSort);
+        const query = $('[data-blog-search]', this.shell)?.value?.trim() || '';
+        if (query) url.searchParams.set('q', query);
+        if (this.state.currentNav === 'feed' && this.state.currentSection === 'career') {
+            const filters = normalizeCareerFilters(this.state.careerFilters);
+            if (filters.region) url.searchParams.set('region', filters.region);
+            if (filters.opportunityType) url.searchParams.set('type', filters.opportunityType);
+            if (filters.deadlineDays) url.searchParams.set('deadline', filters.deadlineDays);
+            if (filters.userState) url.searchParams.set('state', filters.userState);
+        }
+        const snapshot = this.buildListSnapshot();
+        this.lastListSnapshot = snapshot;
+        window.history.replaceState(
+            { blog: { view: 'list', postId: null, snapshot } },
+            '',
+            `${url.pathname}${url.search}`,
+        );
+    }
+
+    backToList() {
+        if (this.detailHasListHistory) {
+            window.history.back();
+            return;
+        }
+        const snapshot = this.lastListSnapshot || this.buildListSnapshot();
+        this.state.detailPostId = null;
+        this.state.detailPost = null;
+        this.restoreListSnapshot(snapshot);
+        this.showCurrentListView();
+        this.refreshCurrentList();
+        this.loadDiscovery();
+        this.updateListUrl();
+        window.requestAnimationFrame(() => window.scrollTo({ top: Number(snapshot.scrollY || 0), behavior: 'auto' }));
     }
 
     sectionByKey(sectionKey) {
@@ -647,7 +950,7 @@ class BlogCenter {
         const allActive = !this.state.currentSection;
         const tabs = [
             `
-                <button class="blog-section-tab${allActive ? ' is-active' : ''}" data-blog-section="" type="button" role="tab" aria-selected="${allActive ? 'true' : 'false'}" style="--section-accent:#0f172a">
+                <button class="blog-section-tab${allActive ? ' is-active' : ''}" data-blog-section="" type="button" role="tab" aria-selected="${allActive ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${allActive ? '0' : '-1'}" style="--section-accent:#0f172a">
                     <span class="blog-section-tab__icon">◎</span>
                     <span class="blog-section-tab__body"><strong>全部</strong><small>发现所有好内容</small></span>
                     <span class="blog-section-tab__count">${formatCompactNumber(total)}</span>
@@ -656,7 +959,7 @@ class BlogCenter {
             ...this.state.sections.map((section) => {
                 const active = section.section_key === this.state.currentSection;
                 return `
-                    <button class="blog-section-tab${active ? ' is-active' : ''}" data-blog-section="${escapeHtml(section.section_key || '')}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" style="--section-accent:${this.sectionAccent(section)}">
+                    <button class="blog-section-tab${active ? ' is-active' : ''}" data-blog-section="${escapeHtml(section.section_key || '')}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${active ? '0' : '-1'}" style="--section-accent:${this.sectionAccent(section)}">
                         <span class="blog-section-tab__icon">${escapeHtml(section.icon || '•')}</span>
                         <span class="blog-section-tab__body"><strong>${escapeHtml(section.short_name || section.name || '板块')}</strong><small>${escapeHtml(section.name || '')}</small></span>
                         <span class="blog-section-tab__count">${formatCompactNumber(section.post_count || 0)}</span>
@@ -678,7 +981,72 @@ class BlogCenter {
             return;
         }
         intro.style.setProperty('--section-accent', this.sectionAccent(section));
-        intro.innerHTML = `<span>${escapeHtml(section.name || '')}</span><p>${escapeHtml(section.description || '')}</p>`;
+        const following = this.followKeys.has(`section:${section.section_key}`);
+        intro.innerHTML = `
+            <span>${escapeHtml(section.name || '')}</span>
+            <p>${escapeHtml(section.description || '')}</p>
+            <button type="button" class="blog-section-follow${following ? ' is-following' : ''}" data-blog-follow-type="section" data-blog-follow-key="${escapeHtml(section.section_key)}">${following ? '已关注' : '关注板块'}</button>
+        `;
+    }
+
+    updateCareerTools() {
+        const tools = $('[data-blog-career-filters]', this.shell);
+        const isCareer = this.state.currentSection === 'career';
+        if (tools) tools.hidden = !isCareer;
+        const latestSort = $('[data-blog-sort="latest"]', this.shell);
+        if (latestSort) latestSort.textContent = isCareer ? '优先推荐' : '最新';
+        const searchInput = $('[data-blog-search]', this.shell);
+        if (searchInput) {
+            searchInput.placeholder = isCareer
+                ? '搜单位、岗位、专业或文章...'
+                : '搜标题、正文或标签...';
+        }
+        const filters = normalizeCareerFilters(this.state.careerFilters);
+        this.state.careerFilters = filters;
+        const fieldValues = {
+            '[data-blog-career-region]': filters.region,
+            '[data-blog-career-type]': filters.opportunityType,
+            '[data-blog-career-deadline]': filters.deadlineDays,
+            '[data-blog-career-state]': filters.userState,
+        };
+        Object.entries(fieldValues).forEach(([selector, value]) => {
+            const field = $(selector, this.shell);
+            if (field) field.value = value;
+        });
+    }
+
+    async loadFollows() {
+        try {
+            const data = await api.get('/api/blog/follows');
+            this.followKeys = new Set((data.follows || []).map((item) => `${item.target_type}:${item.target_key}`));
+            this.renderSectionIntro();
+        } catch (error) {
+            this.followKeys = new Set();
+        }
+    }
+
+    async toggleFollow(targetType, targetKey) {
+        const key = `${targetType}:${targetKey}`;
+        const following = !this.followKeys.has(key);
+        try {
+            const data = await api.post('/api/blog/follows', {
+                target_type: targetType,
+                target_key: targetKey,
+                following,
+            });
+            if (data.following) this.followKeys.add(key);
+            else this.followKeys.delete(key);
+            $$(`[data-blog-follow-type="${targetType}"]`, this.shell)
+                .filter((button) => button.dataset.blogFollowKey === targetKey)
+                .forEach((button) => {
+                button.classList.toggle('is-following', Boolean(data.following));
+                button.textContent = data.following ? (targetType === 'section' ? '已关注' : '已关注作者') : (targetType === 'section' ? '关注板块' : '关注作者');
+            });
+            showToast(data.following ? '关注成功，新内容会进入“我的关注”' : '已取消关注', 'success');
+            if (this.state.currentNav === 'following' && !data.following) this.loadFeed();
+        } catch (error) {
+            showToast(error.message || '关注操作失败', 'error');
+        }
     }
 
     sectionBadgeHtml(sectionKey, className = '') {
@@ -687,12 +1055,90 @@ class BlogCenter {
         return `<span class="blog-section-badge ${escapeHtml(className)}" style="--section-accent:${this.sectionAccent(section)}"><span>${escapeHtml(section.icon || '•')}</span>${escapeHtml(section.short_name || section.name || '')}</span>`;
     }
 
+    opportunityDeadlineLabel(opportunity = {}) {
+        const days = Number(opportunity.deadline_days);
+        if (!Number.isFinite(days)) return '截止时间以官方公告为准';
+        if (days < 0) return '已截止';
+        if (days === 0) return '今天截止';
+        if (days <= 3) return `${days} 天后截止`;
+        const date = new Date(opportunity.deadline_at || '');
+        if (Number.isNaN(date.getTime())) return `${days} 天后截止`;
+        return `${date.getMonth() + 1} 月 ${date.getDate()} 日截止`;
+    }
+
+    opportunityCardHtml(opportunity = {}) {
+        if (!opportunity?.id) return '';
+        const regions = [...(opportunity.regions || []), opportunity.city].filter(Boolean).slice(0, 3);
+        const targets = (opportunity.target_groups || []).slice(0, 2);
+        const state = opportunity.user_state || '';
+        const deadlineDays = Number(opportunity.deadline_days);
+        const deadlineClass = Number.isFinite(deadlineDays) && deadlineDays <= 3 ? ' is-urgent' : '';
+        const officialLink = opportunity.application_url || opportunity.source_url || '';
+        return `
+            <section class="blog-opportunity-card" aria-label="就业机会摘要">
+                <div class="blog-opportunity-card__topline">
+                    <span class="blog-opportunity-source is-level-${escapeHtml(String(opportunity.source_level || 'C').toLowerCase())}">${escapeHtml(opportunity.source_level_label || '来源待核验')}</span>
+                    <span class="blog-opportunity-deadline${deadlineClass}">${escapeHtml(this.opportunityDeadlineLabel(opportunity))}</span>
+                </div>
+                <strong class="blog-opportunity-card__employer">${escapeHtml(opportunity.employer_name || '招聘单位以原公告为准')}</strong>
+                <div class="blog-opportunity-card__facts">
+                    <span>${escapeHtml(OPPORTUNITY_TYPE_LABELS[opportunity.opportunity_type] || '就业机会')}</span>
+                    ${regions.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}
+                    ${targets.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}
+                </div>
+                <div class="blog-opportunity-card__actions">
+                    <button type="button" data-blog-opportunity-save="${opportunity.id}" data-current-state="${escapeHtml(state)}">${escapeHtml(state ? OPPORTUNITY_STATE_LABELS[state] || '已跟进' : '收藏机会')}</button>
+                    ${officialLink ? `<a href="${escapeHtml(officialLink)}" target="_blank" rel="noopener noreferrer">查看原公告</a>` : '<span>原公告入口待核验</span>'}
+                </div>
+            </section>
+        `;
+    }
+
+    opportunityDetailHtml(opportunity = {}) {
+        if (!opportunity?.id) return '';
+        const facts = [
+            ['单位/项目', opportunity.employer_name],
+            ['岗位/机会', opportunity.positions_text],
+            ['地区', [...(opportunity.regions || []), opportunity.city].filter(Boolean).join('、')],
+            ['适合对象', (opportunity.target_groups || []).join('、')],
+            ['学历要求', opportunity.education_text],
+            ['专业要求', (opportunity.majors || []).join('、')],
+            ['招聘人数', opportunity.headcount_text],
+            ['薪酬说明', opportunity.compensation_text],
+            ['报名方式', opportunity.application_method],
+        ].filter((item) => item[1]);
+        const officialLink = opportunity.application_url || opportunity.source_url || '';
+        return `
+            <section class="blog-opportunity-detail" aria-label="就业机会关键信息">
+                <div class="blog-opportunity-detail__header">
+                    <div>
+                        <span class="blog-opportunity-source is-level-${escapeHtml(String(opportunity.source_level || 'C').toLowerCase())}">${escapeHtml(opportunity.source_level_label || '来源待核验')}</span>
+                        <h2>${escapeHtml(opportunity.employer_name || '就业机会')}</h2>
+                        <p>${escapeHtml(this.opportunityDeadlineLabel(opportunity))} · 最近核验 ${escapeHtml(timeAgo(opportunity.last_verified_at) || '时间未知')}</p>
+                    </div>
+                    ${officialLink ? `<a class="btn btn-primary btn-sm" href="${escapeHtml(officialLink)}" target="_blank" rel="noopener noreferrer">打开官方公告</a>` : ''}
+                </div>
+                ${facts.length ? `<dl class="blog-opportunity-detail__grid">${facts.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>` : ''}
+                <div class="blog-opportunity-detail__workflow">
+                    <label for="blog-opportunity-state-${opportunity.id}">我的求职进度</label>
+                    <select id="blog-opportunity-state-${opportunity.id}" data-blog-opportunity-state="${opportunity.id}">
+                        <option value=""${!opportunity.user_state ? ' selected' : ''}>尚未跟进</option>
+                        ${Object.entries(OPPORTUNITY_STATE_LABELS).map(([value, label]) => `<option value="${value}"${opportunity.user_state === value ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+                    </select>
+                </div>
+                <p class="blog-opportunity-detail__safety">请以官方域名和原公告为准。任何收费内推、押金、培训贷或提前索要身份证原件、银行卡密码的行为都应警惕。</p>
+            </section>
+        `;
+    }
+
     updateDetailTopbar(post = this.state.detailPost) {
         const section = this.sectionByKey(post?.section_key);
         const sectionNode = $('[data-blog-detail-section]', this.shell);
         const titleNode = $('[data-blog-detail-title]', this.shell);
         if (sectionNode) sectionNode.textContent = section?.name || '博客中心';
         if (titleNode) titleNode.textContent = post?.title || '文章详情';
+        const backContext = $('[data-blog-detail-back-context]', this.shell);
+        if (backContext) backContext.textContent = `返回${section?.name || '博客列表'}并恢复浏览位置`;
     }
 
     setMyPostsFilter(filterValue) {
@@ -705,6 +1151,9 @@ class BlogCenter {
     }
 
     showView(viewName) {
+        if (this.state.currentView === 'detail' && viewName !== 'detail') {
+            this.stopReadingSession();
+        }
         $$('[data-blog-view]', this.shell).forEach((view) => {
             view.hidden = view.dataset.blogView !== viewName;
         });
@@ -832,10 +1281,12 @@ class BlogCenter {
         const popover = $('[data-blog-user-popover]', this.shell);
         if (!popover) return;
         const isSelf = identity === this.userIdentity;
+        const isFollowing = this.followKeys.has(`author:${identity}`);
         popover.innerHTML = `
             <div class="blog-user-popover__name">${escapeHtml(name)}</div>
             <div class="blog-user-popover__actions">
                 <button type="button" class="blog-user-popover__btn" data-blog-author-posts="${escapeHtml(identity)}" data-author-name="${escapeHtml(name)}">ta的帖子</button>
+                ${isSelf ? '' : `<button type="button" class="blog-user-popover__btn${isFollowing ? ' is-following' : ''}" data-blog-follow-type="author" data-blog-follow-key="${escapeHtml(identity)}">${isFollowing ? '已关注作者' : '关注作者'}</button>`}
                 <button type="button" class="blog-user-popover__btn blog-user-popover__btn--primary" data-blog-private-message="${escapeHtml(identity)}" ${isSelf ? 'disabled title="不能给自己发送私信"' : ''}>私信</button>
             </div>
         `;
@@ -857,14 +1308,16 @@ class BlogCenter {
     }
 
     async loadDiscovery() {
+        const controller = this.beginRequest('discovery');
         this.renderDiscoveryLoading();
         try {
             const url = new URL('/api/blog/discovery', window.location.origin);
             if (this.state.currentSection) url.searchParams.set('section', this.state.currentSection);
-            const data = await api.get(`${url.pathname}${url.search}`);
+            const data = await api.get(`${url.pathname}${url.search}`, { signal: controller.signal });
             this.state.discovery = data;
             this.renderDiscovery(data);
         } catch (error) {
+            if (error?.name === 'AbortError') return;
             this.renderDiscoveryError(error.message || '探索内容加载失败');
         }
     }
@@ -905,6 +1358,7 @@ class BlogCenter {
             }
             this.renderSectionTabs();
             this.renderSectionIntro();
+            this.updateCareerTools();
             this.updateDetailTopbar();
             if (this.state.currentView === 'feed' && this.state.posts.length) {
                 const feed = $('[data-blog-feed]', this.shell);
@@ -1029,25 +1483,40 @@ class BlogCenter {
     async loadFeed({ append = false } = {}) {
         const container = $('[data-blog-feed]', this.shell);
         if (!container) return;
+        const controller = this.beginRequest('feed');
         if (!append) {
             container.innerHTML = this.skeletonHtml(3);
         }
         const search = $('[data-blog-search]', this.shell)?.value?.trim() || '';
-        const url = new URL('/api/blog/posts', window.location.origin);
-        url.searchParams.set('sort', this.state.currentSort);
+        const useFollowingFeed = this.state.currentNav === 'following';
+        const useOpportunityFeed = !useFollowingFeed && this.state.currentSection === 'career'
+            && !this.state.tagFilter
+            && !this.state.authorFilter?.identity;
+        const endpoint = useFollowingFeed
+            ? '/api/blog/following'
+            : (useOpportunityFeed ? '/api/blog/opportunities' : '/api/blog/posts');
+        const url = new URL(endpoint, window.location.origin);
+        if (!useFollowingFeed) url.searchParams.set('sort', this.state.currentSort);
         url.searchParams.set('page', String(this.state.page));
         url.searchParams.set('limit', String(POSTS_PAGE_SIZE));
-        if (this.state.currentSection) url.searchParams.set('section', this.state.currentSection);
-        if (search) url.searchParams.set('q', search);
-        if (this.state.tagFilter) url.searchParams.set('tag', this.state.tagFilter);
-        if (this.state.authorFilter?.identity) {
+        if (!useFollowingFeed && !useOpportunityFeed && this.state.currentSection) url.searchParams.set('section', this.state.currentSection);
+        if (!useFollowingFeed && search) url.searchParams.set('q', search);
+        if (!useFollowingFeed && this.state.tagFilter) url.searchParams.set('tag', this.state.tagFilter);
+        if (!useFollowingFeed && this.state.authorFilter?.identity) {
             url.searchParams.set('author', this.state.authorFilter.identity);
+        }
+        if (useOpportunityFeed) {
+            const filters = this.state.careerFilters || {};
+            if (filters.region) url.searchParams.set('region', filters.region);
+            if (filters.opportunityType) url.searchParams.set('opportunity_type', filters.opportunityType);
+            if (filters.deadlineDays) url.searchParams.set('deadline_days', filters.deadlineDays);
+            if (filters.userState) url.searchParams.set('state', filters.userState);
         }
         this.updateAuthorFilterBanner();
         this.updateTagFilterBanner();
 
         try {
-            const data = await api.get(`${url.pathname}${url.search}`);
+            const data = await api.get(`${url.pathname}${url.search}`, { signal: controller.signal });
             const nextPosts = data.posts || [];
             this.state.hasMore = Boolean(data.has_more);
             this.state.posts = append ? [...this.state.posts, ...nextPosts] : nextPosts;
@@ -1056,10 +1525,15 @@ class BlogCenter {
             } else {
                 container.innerHTML = this.state.posts.length
                     ? this.state.posts.map((post) => this.postCardHtml(post)).join('')
-                    : this.emptyHtml('还没有可浏览的帖子');
+                    : this.emptyHtml(
+                        useFollowingFeed
+                            ? '关注板块或作者后，新内容会出现在这里'
+                            : (useOpportunityFeed ? '暂时没有符合条件且仍可报名的机会' : '还没有可浏览的帖子'),
+                    );
             }
             if (append && !nextPosts.length && this.state.page > 1) this.state.page -= 1;
         } catch (error) {
+            if (error?.name === 'AbortError') return;
             if (append) {
                 if (this.state.page > 1) this.state.page -= 1;
                 showToast(error.message || '博客列表加载失败', 'error');
@@ -1143,17 +1617,42 @@ class BlogCenter {
         $('[data-blog-bookmarks-load-more]', this.shell)?.toggleAttribute('hidden', !this.state.bmHasMore);
     }
 
-    async showDetail(postId) {
+    async showDetail(postId, { historyMode = 'push', scrollToTop = true } = {}) {
         const container = $('[data-blog-detail-content]', this.shell);
         if (!container || !postId) return;
+        const refreshingCurrentDetail = this.state.currentView === 'detail' && this.state.detailPostId === postId;
+        if (refreshingCurrentDetail) {
+            historyMode = 'none';
+            scrollToTop = false;
+        }
+        if (historyMode === 'push') {
+            const snapshot = this.buildListSnapshot();
+            this.lastListSnapshot = snapshot;
+            window.history.replaceState(
+                { blog: { view: 'list', postId: null, snapshot } },
+                '',
+                window.location.href,
+            );
+            const detailUrl = new URL('/blog', window.location.origin);
+            if (this.state.currentSection) detailUrl.searchParams.set('section', this.state.currentSection);
+            detailUrl.searchParams.set('post', String(postId));
+            window.history.pushState(
+                { blog: { view: 'detail', postId, snapshot } },
+                '',
+                `${detailUrl.pathname}${detailUrl.search}`,
+            );
+            this.detailHasListHistory = true;
+        }
+        const controller = this.beginRequest('detail');
         this.showView('detail');
         this.state.detailPostId = postId;
         this.state.detailPost = null;
         this.updateDetailTopbar();
         container.innerHTML = this.skeletonHtml(1);
+        if (scrollToTop) window.scrollTo({ top: 0, behavior: 'auto' });
 
         try {
-            const data = await api.get(`/api/blog/posts/${postId}`);
+            const data = await api.get(`/api/blog/posts/${postId}`, { signal: controller.signal });
             const post = data.post;
             this.state.detailPost = post;
             this.updateDetailTopbar(post);
@@ -1162,39 +1661,128 @@ class BlogCenter {
             container.innerHTML = this.detailHtml(post);
             this.renderCommentDraftState();
             this.initCommentComposer();
-            const detailUrl = new URL('/blog', window.location.origin);
-            if (this.state.currentSection) detailUrl.searchParams.set('section', this.state.currentSection);
-            detailUrl.searchParams.set('post', String(postId));
-            window.history.replaceState({}, '', `${detailUrl.pathname}${detailUrl.search}`);
+            this.startReadingSession(postId);
         } catch (error) {
+            if (error?.name === 'AbortError') return;
             this.state.detailPost = null;
             container.innerHTML = this.emptyHtml(error.message || '帖子详情加载失败');
         }
+    }
+
+    currentReadingRatio() {
+        const body = $('.blog-detail__body', this.shell);
+        if (!body) return 0;
+        const rect = body.getBoundingClientRect();
+        const visibleBottom = Math.min(window.innerHeight, rect.bottom);
+        const consumed = visibleBottom - Math.max(0, rect.top);
+        const scrolledPast = Math.max(0, -rect.top);
+        return Math.max(0, Math.min((scrolledPast + Math.max(0, consumed)) / Math.max(body.scrollHeight, 1), 1));
+    }
+
+    startReadingSession(postId) {
+        if (this.readingSession?.postId === postId) return;
+        this.stopReadingSession();
+        const now = Date.now();
+        this.readingSession = {
+            postId,
+            accumulatedMs: 0,
+            visibleSince: document.hidden ? null : now,
+            maxRatio: this.currentReadingRatio(),
+        };
+        window.clearInterval(this.readingProgressTimer);
+        this.readingProgressTimer = window.setInterval(() => this.sendReadingProgress(), 15000);
+    }
+
+    readingDwellSeconds() {
+        const session = this.readingSession;
+        if (!session) return 0;
+        const activeMs = session.accumulatedMs + (session.visibleSince ? Date.now() - session.visibleSince : 0);
+        return Math.max(0, Math.round(activeMs / 1000));
+    }
+
+    handleReadingScroll() {
+        if (!this.readingSession) return;
+        this.readingSession.maxRatio = Math.max(this.readingSession.maxRatio, this.currentReadingRatio());
+        window.clearTimeout(this.readingScrollTimer);
+        this.readingScrollTimer = window.setTimeout(() => this.sendReadingProgress(), 2500);
+    }
+
+    handleReadingVisibility() {
+        const session = this.readingSession;
+        if (!session) return;
+        if (document.hidden) {
+            if (session.visibleSince) session.accumulatedMs += Date.now() - session.visibleSince;
+            session.visibleSince = null;
+            this.sendReadingProgress();
+        } else if (!session.visibleSince) {
+            session.visibleSince = Date.now();
+        }
+    }
+
+    sendReadingProgress({ useBeacon = false } = {}) {
+        const session = this.readingSession;
+        if (!session) return;
+        session.maxRatio = Math.max(session.maxRatio, this.currentReadingRatio());
+        const body = JSON.stringify({
+            dwell_seconds: this.readingDwellSeconds(),
+            max_scroll_ratio: Number(session.maxRatio.toFixed(4)),
+        });
+        const url = `/api/blog/posts/${session.postId}/reading-progress`;
+        if (useBeacon && navigator.sendBeacon) {
+            navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }));
+            return;
+        }
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            keepalive: true,
+        }).catch(() => {});
+    }
+
+    stopReadingSession({ useBeacon = false } = {}) {
+        if (!this.readingSession) return;
+        if (this.readingSession.visibleSince) {
+            this.readingSession.accumulatedMs += Date.now() - this.readingSession.visibleSince;
+            this.readingSession.visibleSince = null;
+        }
+        this.sendReadingProgress({ useBeacon });
+        this.readingSession = null;
+        window.clearInterval(this.readingProgressTimer);
+        window.clearTimeout(this.readingScrollTimer);
+        this.readingProgressTimer = null;
+        this.readingScrollTimer = null;
     }
 
     openComposer(post = null) {
         const modal = $('[data-blog-composer-modal]', this.shell);
         if (!modal) return;
 
-        $('[data-blog-compose-title]', this.shell).value = post?.title || '';
-        $('[data-blog-compose-content]', this.shell).value = post?.content_md || '';
-        $('[data-blog-compose-tags]', this.shell).value = (post?.custom_tags || post?.tags || []).join(', ');
-        $('[data-blog-compose-comments]', this.shell).checked = post?.allow_comments ?? true;
-        this.setSelectedAuthorMode(post?.author_display_mode || post?.author?.display_mode || 'real_name');
+        this.composerReturnFocus = document.activeElement;
+        this.state.editingPostId = post?.id || null;
+        const recovered = this.loadComposerRecovery(this.state.editingPostId);
+        const source = recovered ? { ...(post || {}), ...recovered } : (post || {});
 
-        const visibility = post?.visibility || 'public';
+        $('[data-blog-compose-title]', this.shell).value = source.title || '';
+        $('[data-blog-compose-content]', this.shell).value = source.content_md || '';
+        const sourceTags = source.custom_tags || source.tags || [];
+        $('[data-blog-compose-tags]', this.shell).value = Array.isArray(sourceTags) ? sourceTags.join(', ') : String(sourceTags || '');
+        $('[data-blog-compose-comments]', this.shell).checked = source.allow_comments ?? true;
+        this.setSelectedAuthorMode(source.author_display_mode || source.author?.display_mode || 'real_name');
+
+        const visibility = source.visibility || 'public';
         const visibilitySelect = $('[data-blog-compose-visibility]', this.shell);
         if (visibilitySelect) visibilitySelect.value = visibility;
         const sectionSelect = $('[data-blog-compose-section]', this.shell);
         if (sectionSelect) {
-            const preferredSection = post?.section_key || this.state.currentSection || 'general';
+            const preferredSection = source.section_key || this.state.currentSection || 'general';
             const canSelectPreferred = Array.from(sectionSelect.options).some((option) => option.value === preferredSection);
             sectionSelect.value = canSelectPreferred ? preferredSection : (sectionSelect.options[0]?.value || 'general');
         }
 
-        this.state.editingPostId = post?.id || null;
-        this.state.uploadedImages = uniqueMediaItems(post?.attachments || []);
-        this.state.selectedUsers = (post?.visible_user_identities || []).map((identity) => {
+        this.state.uploadedImages = uniqueMediaItems(source.attachments || source.uploaded_images || []);
+        const recoveredUsers = source.selected_users || [];
+        this.state.selectedUsers = recoveredUsers.length ? recoveredUsers : (source.visible_user_identities || []).map((identity) => {
             const normalizedIdentity = String(identity || '');
             const cached = this.composeUserMap.get(normalizedIdentity);
             return cached || { identity: normalizedIdentity, name: normalizedIdentity };
@@ -1203,15 +1791,29 @@ class BlogCenter {
         $('[data-blog-composer-title]', this.shell).textContent = post ? '编辑帖子' : '写帖子';
         this.renderImagePreviews();
         this.renderSelectedUsers();
-        this.updateVisibilityOptions(visibility, post?.visible_class_id || null);
+        this.updateVisibilityOptions(visibility, source.visible_class_id || null);
         this.updateAuthorModeHint();
+        this.setComposerMode('edit');
+        this.updateComposerMetrics();
 
         modal.hidden = false;
+        document.body.classList.add('blog-composer-open');
+        const currentFingerprint = this.composerFingerprint();
+        this.composeBaseline = recovered ? '' : currentFingerprint;
+        this.updateComposerSaveState(recovered ? '已恢复上次未完成的内容' : '内容会自动保存在此设备');
+        window.requestAnimationFrame(() => $('[data-blog-compose-title]', this.shell)?.focus());
     }
 
-    closeComposer() {
+    closeComposer({ force = false } = {}) {
         const modal = $('[data-blog-composer-modal]', this.shell);
+        if (!modal || modal.hidden) return true;
+        if (!force && this.isComposerDirty() && !window.confirm('还有未发布的修改，确定关闭编辑器吗？内容会保存在此设备。')) {
+            return false;
+        }
+        if (this.isComposerDirty()) this.saveComposerRecovery();
         if (modal) modal.hidden = true;
+        document.body.classList.remove('blog-composer-open');
+        window.clearTimeout(this.composeAutosaveTimer);
         this.state.editingPostId = null;
         this.state.uploadedImages = [];
         this.state.selectedUsers = [];
@@ -1219,6 +1821,109 @@ class BlogCenter {
         this.updateAuthorModeHint();
         this.renderImagePreviews();
         this.renderSelectedUsers();
+        if (this.composerReturnFocus?.isConnected) this.composerReturnFocus.focus();
+        this.composerReturnFocus = null;
+        return true;
+    }
+
+    composerRecoveryKey(editingPostId = this.state.editingPostId) {
+        return `lanshare:blog-composer:${this.userIdentity || 'unknown'}:${editingPostId || 'new'}`;
+    }
+
+    composerSnapshot() {
+        return {
+            title: $('[data-blog-compose-title]', this.shell)?.value || '',
+            content_md: $('[data-blog-compose-content]', this.shell)?.value || '',
+            tags: $('[data-blog-compose-tags]', this.shell)?.value || '',
+            section_key: $('[data-blog-compose-section]', this.shell)?.value || 'general',
+            visibility: $('[data-blog-compose-visibility]', this.shell)?.value || 'public',
+            visible_class_id: $('[data-blog-compose-class]', this.shell)?.value || null,
+            allow_comments: Boolean($('[data-blog-compose-comments]', this.shell)?.checked),
+            author_display_mode: this.getSelectedAuthorMode(),
+            selected_users: this.state.selectedUsers,
+            uploaded_images: this.state.uploadedImages,
+            saved_at: new Date().toISOString(),
+        };
+    }
+
+    composerFingerprint() {
+        const snapshot = this.composerSnapshot();
+        delete snapshot.saved_at;
+        return JSON.stringify(snapshot);
+    }
+
+    isComposerDirty() {
+        return this.composerFingerprint() !== this.composeBaseline;
+    }
+
+    loadComposerRecovery(editingPostId = null) {
+        try {
+            const raw = window.localStorage.getItem(this.composerRecoveryKey(editingPostId));
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') return null;
+            if (!String(parsed.title || '').trim() && !String(parsed.content_md || '').trim()) return null;
+            return parsed;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    saveComposerRecovery() {
+        const modal = $('[data-blog-composer-modal]', this.shell);
+        if (!modal || modal.hidden) return;
+        try {
+            window.localStorage.setItem(this.composerRecoveryKey(), JSON.stringify(this.composerSnapshot()));
+            this.updateComposerSaveState(`已自动保存 ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+        } catch (error) {
+            this.updateComposerSaveState('本地自动保存不可用，请及时保存草稿');
+        }
+    }
+
+    clearComposerRecovery(editingPostId = this.state.editingPostId) {
+        try {
+            window.localStorage.removeItem(this.composerRecoveryKey(editingPostId));
+        } catch (error) {
+            // Storage may be unavailable in a restricted browser context.
+        }
+    }
+
+    scheduleComposerRecovery() {
+        const modal = $('[data-blog-composer-modal]', this.shell);
+        if (!modal || modal.hidden) return;
+        window.clearTimeout(this.composeAutosaveTimer);
+        this.updateComposerSaveState('正在保存...');
+        this.composeAutosaveTimer = window.setTimeout(() => this.saveComposerRecovery(), 700);
+    }
+
+    updateComposerSaveState(text) {
+        const node = $('[data-blog-compose-save-state]', this.shell);
+        if (node) node.textContent = text || '';
+    }
+
+    updateComposerMetrics() {
+        const content = $('[data-blog-compose-content]', this.shell)?.value || '';
+        const characters = content.replace(/\s/g, '').length;
+        const minutes = Math.max(1, Math.ceil(characters / 500));
+        const metrics = $('[data-blog-compose-metrics]', this.shell);
+        if (metrics) metrics.textContent = `${characters} 字 · 约 ${minutes} 分钟阅读`;
+        const preview = $('[data-blog-compose-preview]', this.shell);
+        if (preview && !preview.hidden) preview.innerHTML = renderMarkdownHtml(content);
+    }
+
+    setComposerMode(mode) {
+        const isPreview = mode === 'preview';
+        const content = $('[data-blog-compose-content]', this.shell);
+        const preview = $('[data-blog-compose-preview]', this.shell);
+        if (content) content.hidden = isPreview;
+        if (preview) {
+            preview.hidden = !isPreview;
+            if (isPreview) preview.innerHTML = renderMarkdownHtml(content?.value || '');
+        }
+        $$('[data-blog-compose-mode]', this.shell).forEach((button) => {
+            button.classList.toggle('is-active', button.dataset.blogComposeMode === (isPreview ? 'preview' : 'edit'));
+            button.setAttribute('aria-pressed', button.classList.contains('is-active') ? 'true' : 'false');
+        });
     }
 
     getSelectedAuthorMode() {
@@ -1292,6 +1997,7 @@ class BlogCenter {
         }
 
         try {
+            const editingPostId = this.state.editingPostId;
             if (this.state.editingPostId) {
                 await api.put(`/api/blog/posts/${this.state.editingPostId}`, payload);
                 showToast('帖子已更新', 'success');
@@ -1300,7 +2006,9 @@ class BlogCenter {
                 showToast(status === 'draft' ? '草稿已保存' : '帖子已发布', 'success');
             }
 
-            this.closeComposer();
+            this.clearComposerRecovery(editingPostId);
+            this.composeBaseline = this.composerFingerprint();
+            this.closeComposer({ force: true });
             if (this.state.currentView === 'detail' && this.state.detailPostId) {
                 await this.showDetail(this.state.detailPostId);
             } else {
@@ -1370,6 +2078,65 @@ class BlogCenter {
             this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '收藏失败', 'error');
+        }
+    }
+
+    async setOpportunityState(opportunityId, state) {
+        if (!opportunityId) return;
+        const normalizedState = state || 'none';
+        try {
+            const data = await api.post(`/api/blog/opportunities/${opportunityId}/state`, {
+                state: normalizedState,
+            });
+            const nextState = data.state || '';
+            $$(`[data-blog-opportunity-save="${opportunityId}"]`, this.shell).forEach((button) => {
+                button.dataset.currentState = nextState;
+                button.textContent = nextState ? (OPPORTUNITY_STATE_LABELS[nextState] || '已跟进') : '收藏机会';
+            });
+            $$(`[data-blog-opportunity-state="${opportunityId}"]`, this.shell).forEach((select) => {
+                select.value = nextState;
+            });
+            const updatePost = (post) => {
+                if (post?.opportunity?.id === opportunityId) post.opportunity.user_state = nextState || null;
+            };
+            this.state.posts.forEach(updatePost);
+            updatePost(this.state.detailPost);
+            showToast(nextState ? `求职进度已更新为“${OPPORTUNITY_STATE_LABELS[nextState] || nextState}”` : '已移出求职清单', 'success');
+            if (this.state.careerFilters?.userState) this.loadFeed();
+        } catch (error) {
+            showToast(error.message || '求职进度更新失败', 'error');
+        }
+    }
+
+    openReport(targetType, targetId) {
+        const dialog = $('[data-blog-report-dialog]', this.shell);
+        if (!dialog || !targetId) return;
+        this.reportTarget = { targetType, targetId };
+        const details = $('[data-blog-report-details]', dialog);
+        if (details) details.value = '';
+        if (typeof dialog.showModal === 'function') dialog.showModal();
+    }
+
+    async submitReport(event) {
+        event.preventDefault();
+        if (!this.reportTarget) return;
+        const dialog = $('[data-blog-report-dialog]', this.shell);
+        const submit = event.currentTarget?.querySelector('button[type="submit"]');
+        if (submit) submit.disabled = true;
+        try {
+            await api.post('/api/blog/reports', {
+                target_type: this.reportTarget.targetType,
+                target_id: this.reportTarget.targetId,
+                reason_code: $('[data-blog-report-reason]', dialog)?.value || 'other',
+                details: $('[data-blog-report-details]', dialog)?.value || '',
+            });
+            dialog?.close();
+            this.reportTarget = null;
+            showToast('反馈已提交，内容管理人员会进行核验', 'success');
+        } catch (error) {
+            showToast(error.message || '反馈提交失败', 'error');
+        } finally {
+            if (submit) submit.disabled = false;
         }
     }
 
@@ -1969,17 +2736,21 @@ class BlogCenter {
             : '';
         const likedClass = post.is_liked ? ' is-active--like' : '';
         const bookmarkedClass = post.is_bookmarked ? ' is-active--bookmark' : '';
+        const postUrl = new URL('/blog', window.location.origin);
+        if (post.section_key) postUrl.searchParams.set('section', post.section_key);
+        postUrl.searchParams.set('post', String(post.id));
 
         return `
-            <article class="blog-post-card${cover ? ' blog-post-card--with-cover' : ''}${post.is_pinned ? ' is-pinned' : ''}${post.is_featured ? ' is-featured' : ''}" data-blog-post-id="${post.id}">
+            <article class="blog-post-card${cover ? ' blog-post-card--with-cover' : ''}${post.is_pinned ? ' is-pinned' : ''}${post.is_featured ? ' is-featured' : ''}" data-blog-post-id="${post.id}" aria-labelledby="blog-post-title-${post.id}">
                 <div class="blog-post-card__content">
                     ${badges.length ? `<div class="blog-post-card__badges">${badges.join('')}</div>` : ''}
                     <div class="blog-post-card__signal">
                         <span>${post.reading_minutes || 1} 分钟读完</span>
                         <span>${formatCompactNumber(post.hot_score)} 热度</span>
                     </div>
-                    <h3 class="blog-post-card__title">${escapeHtml(post.title || '')}</h3>
+                    <h3 class="blog-post-card__title" id="blog-post-title-${post.id}"><a href="${escapeHtml(`${postUrl.pathname}${postUrl.search}`)}" data-blog-open-post="${post.id}">${escapeHtml(post.title || '')}</a></h3>
                     <p class="blog-post-card__summary">${escapeHtml(post.summary || '')}</p>
+                    ${this.opportunityCardHtml(post.opportunity)}
                     ${tags ? `<div class="blog-post-card__tags">${tags}</div>` : ''}
                     <div class="blog-post-card__meta">
                         <div class="blog-post-card__author">
@@ -2038,6 +2809,7 @@ class BlogCenter {
             permissions.can_feature ? `<button type="button" class="blog-action-btn blog-action-btn--warning" data-feature-post="${post.id}">${post.is_featured ? '取消精华' : '设为精华'}</button>` : '',
             permissions.can_hide ? `<button type="button" class="blog-action-btn blog-action-btn--warning" data-hide-post="${post.id}">${post.status === 'moderated' ? '恢复可见' : '转为私密'}</button>` : '',
             permissions.can_delete ? `<button type="button" class="blog-action-btn blog-action-btn--danger" data-delete-post="${post.id}">删除</button>` : '',
+            `<button type="button" class="blog-action-btn" data-blog-report-post="${post.id}">反馈问题</button>`,
         ].filter(Boolean).join('');
 
         const tags = (post.tags || []).map((tag) => (
@@ -2054,6 +2826,7 @@ class BlogCenter {
                     <span>${formatCompactNumber(post.comment_count)} 条讨论</span>
                     <span>${formatCompactNumber(post.bookmark_count)} 人收藏</span>
                 </div>
+                ${this.opportunityDetailHtml(post.opportunity)}
                 <div class="blog-detail__author-row">
                     <div class="blog-detail__author">
                         ${this.authorAvatarHtml(post.author, 'blog-detail__avatar')}
