@@ -952,7 +952,7 @@ class BlogCenter {
         if (code) code.textContent = `CH ${String(selectedIndex).padStart(2, '0')}`;
         if (name) name.textContent = channel.name || channel.short_name || '全部频道';
         if (countNode) countNode.textContent = formatCompactNumber(count);
-        if (status) status.textContent = count ? 'LIVE CONTENT' : 'NO SIGNAL / 雪花';
+        if (status) status.textContent = count ? '有内容 · LIVE' : '无信号 · SNOW';
 
         if (!scrollActive || previewIndex !== null) return;
         const surface = $('[data-blog-section-drag-surface]', consoleNode);

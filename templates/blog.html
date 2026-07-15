@@ -2,6 +2,7 @@
 
 {% block css %}
 {{ super() }}
+<link rel="stylesheet" href="{{ asset_url('css/blog-signal-desk.css') }}">
 {% endblock %}
 
 {% block body_class %}page-wrapper{% endblock %}
@@ -31,7 +32,7 @@
     <!-- Header -->
     <header class="blog-hero" data-blog-list-chrome>
         <div class="blog-hero__content">
-            <div class="blog-hero__eyebrow"><span aria-hidden="true"></span> LANSHARE / FUTURE CHANNEL</div>
+            <div class="blog-hero__eyebrow"><span aria-hidden="true"></span> LANSHARE JOURNAL / SIGNAL DESK</div>
             <div class="blog-shell__title-row">
                 <svg class="blog-shell__title-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
@@ -47,7 +48,7 @@
             </div>
         </div>
         <div class="blog-shell__actions">
-            <span class="blog-hero__online"><i aria-hidden="true"></i> SIGNAL ONLINE</span>
+            <span class="blog-hero__online"><i aria-hidden="true"></i> 频道在线</span>
             <button class="blog-hero__ghost" data-blog-nav="bookmarks" type="button">我的收藏</button>
             <button class="btn btn-primary btn-sm" data-blog-action="compose" title="写帖子">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -67,12 +68,12 @@
     <section class="blog-section-switcher blog-channel-console" data-blog-list-chrome data-blog-channel-console aria-label="博客板块频道台">
         <div class="blog-channel-console__header">
             <div>
-                <span class="blog-channel-console__kicker">SECTION CONTROL / 频道控制</span>
-                <h2>内容调谐台</h2>
+                <span class="blog-channel-console__kicker">CHANNEL SELECTOR / 频道选择</span>
+                <h2>调到你关心的频道</h2>
             </div>
             <div class="blog-channel-console__signal" aria-live="polite">
                 <span aria-hidden="true"></span>
-                <strong data-blog-channel-status>{{ 'LIVE CONTENT' if blog_total_posts else 'NO SIGNAL' }}</strong>
+                <strong data-blog-channel-status>{{ '有内容 · LIVE' if blog_total_posts else '无信号 · SNOW' }}</strong>
             </div>
         </div>
 
@@ -86,14 +87,14 @@
                     </button>
                     <button class="blog-channel-step" data-blog-channel-step="1" type="button" aria-label="下一个博客频道">+</button>
                 </div>
-                <span class="blog-channel-dial-stage__label">CHANNEL SELECT</span>
+                <span class="blog-channel-dial-stage__label">TUNE / 调谐</span>
             </div>
 
             <div class="blog-channel-board">
                 <div class="blog-channel-readout">
                     <span class="blog-channel-readout__code" data-blog-channel-code>CH 00</span>
                     <strong data-blog-channel-name>全部频道</strong>
-                    <span class="blog-channel-readout__count"><b data-blog-channel-count>{{ blog_total_posts }}</b> POSTS</span>
+                    <span class="blog-channel-readout__count"><b data-blog-channel-count>{{ blog_total_posts }}</b> 篇内容</span>
                 </div>
                 <div class="blog-section-viewport">
                     <div class="blog-section-tabs" data-blog-section-tabs data-blog-section-drag-surface role="tablist" aria-label="按住并拖动选择博客频道">
@@ -125,7 +126,7 @@
         <div class="blog-channel-tuning" aria-hidden="true">
             <span class="blog-channel-tuning__static"></span>
             <span class="blog-channel-tuning__scan"></span>
-            <strong>SYNCING CHANNEL</strong>
+            <strong>正在调谐 · TUNING</strong>
         </div>
     </section>
 
