@@ -13,6 +13,31 @@ from .schema_ai_jobs import (
 
 
 POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    # The organization catalog and teacher membership writers use UPSERTs with
+    # these conflict targets. SQLite keeps the UNIQUE declarations from
+    # migrations.py, but the SQLite -> PostgreSQL exporter drops table-level
+    # constraints. Without recreating them, saving a teacher's organization
+    # membership fails on the first organization_schools UPSERT.
+    (
+        "idx_organization_schools_unique_code",
+        "organization_schools",
+        ("school_code",),
+    ),
+    (
+        "idx_organization_colleges_unique_name",
+        "organization_colleges",
+        ("school_code", "college_name"),
+    ),
+    (
+        "idx_organization_departments_unique_name",
+        "organization_departments",
+        ("school_code", "college_name", "department_name"),
+    ),
+    (
+        "idx_teacher_org_memberships_one_school",
+        "teacher_organization_memberships",
+        ("teacher_id", "school_code"),
+    ),
     (
         "idx_teacher_academic_system_credentials_unique_auth",
         "teacher_academic_system_credentials",

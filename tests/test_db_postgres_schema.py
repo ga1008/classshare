@@ -240,6 +240,10 @@ class PostgresSchemaValidationTests(unittest.TestCase):
     def test_runtime_constraints_cover_integration_upsert_targets(self):
         runtime_index_names = {index_name for index_name, _table, _columns in POSTGRES_RUNTIME_UNIQUE_INDEXES}
         expected = {
+            "idx_organization_schools_unique_code",
+            "idx_organization_colleges_unique_name",
+            "idx_organization_departments_unique_name",
+            "idx_teacher_org_memberships_one_school",
             "idx_teacher_academic_system_credentials_unique_auth",
             "idx_teacher_academic_course_sync_items_unique_schedule",
             "idx_teacher_academic_course_occurrences_unique_session",
@@ -270,6 +274,26 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         }
 
         self.assertTrue(expected.issubset(runtime_index_names))
+
+    def test_runtime_constraints_cover_teacher_membership_upsert_targets(self):
+        runtime_targets = {
+            (table, columns)
+            for _index_name, table, columns in POSTGRES_RUNTIME_UNIQUE_INDEXES
+        }
+        expected = {
+            ("organization_schools", ("school_code",)),
+            ("organization_colleges", ("school_code", "college_name")),
+            (
+                "organization_departments",
+                ("school_code", "college_name", "department_name"),
+            ),
+            (
+                "teacher_organization_memberships",
+                ("teacher_id", "school_code"),
+            ),
+        }
+
+        self.assertTrue(expected.issubset(runtime_targets))
 
     def test_required_schema_covers_all_static_sqlite_schema_tables(self):
         repo_root = Path(__file__).resolve().parents[1]
