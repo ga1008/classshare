@@ -86,6 +86,10 @@ CAREER_INTENT_TERMS: tuple[str, ...] = (
     "\u62db\u8058", "\u6821\u62db", "\u5c97\u4f4d", "\u62db\u52df", "\u5b9e\u4e60", "\u89c1\u4e60", "\u53cc\u9009\u4f1a", "\u5ba3\u8bb2\u4f1a",
     "\u4eba\u624d", "\u5c31\u4e1a", "\u5e94\u5c4a\u751f", "\u6bd5\u4e1a\u751f", "\u4e09\u652f\u4e00\u6276", "\u897f\u90e8\u8ba1\u5212", "\u9009\u8c03", "\u62db\u8003",
 )
+CAREER_ACTIONABLE_TERMS: tuple[str, ...] = (
+    "招聘", "校招", "岗位", "招募", "实习", "见习", "报名", "双选会", "宣讲会", "招聘会",
+    "应届生", "毕业生就业服务", "就业政策", "三支一扶", "西部计划", "招考", "事业单位", "公务员",
+)
 CAREER_REGION_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]], ...] = (
     (("\u5357\u5b81",), ("\u5357\u5b81",), ("nanning.gov.cn",)),
     (
@@ -2231,7 +2235,12 @@ def _balance_section_selection(
     return balanced
 
 
-def _fallback_editorial_section(item: dict[str, Any], allowed: set[str]) -> str:
+def _fallback_editorial_section(
+    item: dict[str, Any],
+    allowed: set[str],
+    *,
+    allow_career: bool = True,
+) -> str:
     text = f"{item.get('title') or ''} {item.get('summary') or ''}".lower()
     rules = (
         (CAREER_BLOG_SECTION_KEY, ("招聘", "校招", "岗位", "应届", "就业", "实习", "报名", "毕业生")),
@@ -2241,9 +2250,22 @@ def _fallback_editorial_section(item: dict[str, Any], allowed: set[str]) -> str:
         ("humanities", ("文学", "历史", "文化", "社会", "语言", "阅读", "博物馆", "艺术", "心理", "教育")),
     )
     for section_key, terms in rules:
+        if section_key == CAREER_BLOG_SECTION_KEY and not allow_career:
+            continue
         if section_key in allowed and any(term in text for term in terms):
             return section_key
     return DEFAULT_BLOG_SECTION_KEY if DEFAULT_BLOG_SECTION_KEY in allowed else next(iter(allowed))
+
+
+def _has_actionable_career_signal(item: dict[str, Any]) -> bool:
+    text = f"{item.get('title') or ''} {item.get('summary') or ''}"
+    text = re.sub(
+        r"(?:没有|并无|尚无|未(?:见|提供|发布)?|无)(?:明确)?(?:的)?"
+        r"(?:招聘|校招|岗位|报名|招募|实习|见习)(?:信息|计划|入口|安排)?",
+        "",
+        text,
+    )
+    return any(term in text for term in CAREER_ACTIONABLE_TERMS)
 
 
 async def _classify_candidates_with_ai(
@@ -2277,6 +2299,8 @@ async def _classify_candidates_with_ai(
         "AI 产品、模型、治理归 ai；编程、开源、安全、云和基础设施归 computer；"
         "科学发现、硬件、航天、制造和产业技术归 technology；人、历史、社会、文学和文化归 humanities；"
         "招聘与就业政策归 career；校园生活、成长与难归类的故事归 general。"
+        "career 只收有明确岗位、招聘/实习、报名入口或可执行官方就业政策的内容；"
+        "只谈就业影响、公司融资或 IPO、行业前景和‘可能带来岗位’时，不得归 career。"
     )
     user_message = f"""
 可用板块：
@@ -2319,6 +2343,17 @@ async def _classify_candidates_with_ai(
             allowed_sections=allowed,
             fallback_section=fallback_section,
         )
+        if profile["section_key"] == CAREER_BLOG_SECTION_KEY:
+            if not _has_actionable_career_signal(item):
+                profile["section_key"] = _fallback_editorial_section(
+                    item,
+                    allowed,
+                    allow_career=False,
+                )
+                profile["reason"] = (
+                    f"{profile.get('reason') or ''}；未发现明确岗位、报名入口或可执行就业政策，"
+                    "按核心内容移出就业板块"
+                ).strip("；")[:500]
         if not profile["topic"]:
             profile["topic"] = _truncate(item.get("title"), 120)
         if not profile["keywords"] and item.get("keyword"):

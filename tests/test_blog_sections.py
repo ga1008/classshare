@@ -256,6 +256,24 @@ class BlogSectionTests(unittest.TestCase):
             )
         )
 
+    def test_editorial_career_guard_requires_an_actionable_opportunity(self):
+        self.assertFalse(
+            crawler._has_actionable_career_signal(
+                {
+                    "title": "机器人公司准备 IPO，未来也许会创造就业机会",
+                    "summary": "文章主要讨论融资、产业前景和潜在用人需求。",
+                }
+            )
+        )
+        self.assertTrue(
+            crawler._has_actionable_career_signal(
+                {
+                    "title": "大湾区大学生实习计划开放报名",
+                    "summary": "公告给出了实习岗位、报名入口和截止时间。",
+                }
+            )
+        )
+
     def test_selection_prefers_regional_official_career_candidate(self):
         candidates = [
             {"id": 1, "section_key": "career", "score": 99, "title": "\u5168\u56fd 2027 \u5c4a\u6821\u62db", "url": "https://example.com/1"},
