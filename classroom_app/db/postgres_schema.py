@@ -393,6 +393,22 @@ POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
             UNIQUE (post_id, viewer_identity, view_bucket)
         )
     """,
+    "blog_post_editorial_metadata": """
+        CREATE TABLE IF NOT EXISTS blog_post_editorial_metadata (
+            post_id INTEGER PRIMARY KEY REFERENCES blog_posts (id) ON DELETE CASCADE,
+            topic TEXT NOT NULL DEFAULT '',
+            keywords_json TEXT NOT NULL DEFAULT '[]',
+            source_title TEXT NOT NULL DEFAULT '',
+            source_name TEXT NOT NULL DEFAULT '',
+            source_url TEXT NOT NULL DEFAULT '',
+            source_published_at TEXT NOT NULL DEFAULT '',
+            classification_confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+            classification_reason TEXT NOT NULL DEFAULT '',
+            memory_post_ids_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
     "blog_opportunities": """
         CREATE TABLE IF NOT EXISTS blog_opportunities (
             id SERIAL PRIMARY KEY,
@@ -579,6 +595,7 @@ REQUIRED_POSTGRES_TABLES = (
     "blog_news_crawler_items",
     "blog_sections",
     "blog_posts",
+    "blog_post_editorial_metadata",
     "blog_comments",
     "blog_likes",
     "blog_bookmarks",
@@ -1878,6 +1895,20 @@ REQUIRED_POSTGRES_COLUMNS = {
         "system_tags_json",
         "tags_json",
         "edited_at",
+        "created_at",
+        "updated_at",
+    ),
+    "blog_post_editorial_metadata": (
+        "post_id",
+        "topic",
+        "keywords_json",
+        "source_title",
+        "source_name",
+        "source_url",
+        "source_published_at",
+        "classification_confidence",
+        "classification_reason",
+        "memory_post_ids_json",
         "created_at",
         "updated_at",
     ),

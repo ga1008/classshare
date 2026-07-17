@@ -364,6 +364,24 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
     ''')
 
     conn.execute('''
+        CREATE TABLE IF NOT EXISTS blog_post_editorial_metadata (
+            post_id INTEGER PRIMARY KEY,
+            topic TEXT NOT NULL DEFAULT '',
+            keywords_json TEXT NOT NULL DEFAULT '[]',
+            source_title TEXT NOT NULL DEFAULT '',
+            source_name TEXT NOT NULL DEFAULT '',
+            source_url TEXT NOT NULL DEFAULT '',
+            source_published_at TEXT NOT NULL DEFAULT '',
+            classification_confidence REAL NOT NULL DEFAULT 0,
+            classification_reason TEXT NOT NULL DEFAULT '',
+            memory_post_ids_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (post_id) REFERENCES blog_posts (id) ON DELETE CASCADE
+        )
+    ''')
+
+    conn.execute('''
         CREATE TABLE IF NOT EXISTS blog_post_views (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             post_id INTEGER NOT NULL,
@@ -584,6 +602,10 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_blog_comments_post "
         "ON blog_comments (post_id, status, created_at ASC, id ASC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_editorial_topic "
+        "ON blog_post_editorial_metadata (topic, updated_at DESC)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_blog_comments_parent "

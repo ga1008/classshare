@@ -35,6 +35,15 @@ from .blog_service import (
     create_post,
     register_media_asset,
 )
+from .blog_image_policy import is_suitable_news_cover_dimensions
+from .blog_editorial_memory_service import (
+    SECTION_WRITING_GUIDANCE,
+    append_internal_reading_links,
+    find_related_posts,
+    format_memory_for_ai,
+    normalize_editorial_profile,
+    upsert_editorial_metadata,
+)
 from .blog_section_service import (
     CAREER_BLOG_SECTION_KEY,
     DEFAULT_BLOG_SECTION_KEY,
@@ -140,6 +149,54 @@ DEFAULT_DOMESTIC_SOURCE_TEMPLATES: tuple[dict[str, Any], ...] = (
         "requires_keyword_match": False,
         "section_keys": ["technology", "humanities", "computer", "ai", CAREER_BLOG_SECTION_KEY],
     },
+    {
+        "name": "校园与青年官方资讯",
+        "url": "https://www.bing.com/news/search?q={{keyword_q}}&format=RSS&setlang=zh-CN&cc=CN&freshness={{bing_freshness}}",
+        "kind": SOURCE_KIND_KEYWORD_RSS,
+        "requires_keyword_match": False,
+        "query_suffix": "(site:moe.gov.cn OR site:cyol.com OR site:edu.cn)",
+        "section_keys": [DEFAULT_BLOG_SECTION_KEY, "humanities"],
+    },
+    {
+        "name": "国际科技与科学机构",
+        "url": "https://www.bing.com/news/search?q={{keyword_q}}&format=RSS&setlang=zh-CN&cc=CN&freshness={{bing_freshness}}",
+        "kind": SOURCE_KIND_KEYWORD_RSS,
+        "requires_keyword_match": False,
+        "query_suffix": "(site:science.nasa.gov OR site:spectrum.ieee.org OR site:technologyreview.com)",
+        "section_keys": ["technology"],
+    },
+    {
+        "name": "科学网与中国科学院",
+        "url": "https://www.bing.com/news/search?q={{keyword_q}}&format=RSS&setlang=zh-CN&cc=CN&freshness={{bing_freshness}}",
+        "kind": SOURCE_KIND_KEYWORD_RSS,
+        "requires_keyword_match": False,
+        "query_suffix": "(site:sciencenet.cn OR site:cas.cn)",
+        "section_keys": ["technology"],
+    },
+    {
+        "name": "开发者与基础设施官方博客",
+        "url": "https://www.bing.com/news/search?q={{keyword_q}}&format=RSS&setlang=zh-CN&cc=CN&freshness={{bing_freshness}}",
+        "kind": SOURCE_KIND_KEYWORD_RSS,
+        "requires_keyword_match": False,
+        "query_suffix": "(site:github.blog OR site:blog.cloudflare.com OR site:developer.mozilla.org)",
+        "section_keys": ["computer"],
+    },
+    {
+        "name": "全球 AI 实验室与开源社区",
+        "url": "https://www.bing.com/news/search?q={{keyword_q}}&format=RSS&setlang=zh-CN&cc=CN&freshness={{bing_freshness}}",
+        "kind": SOURCE_KIND_KEYWORD_RSS,
+        "requires_keyword_match": False,
+        "query_suffix": "(site:openai.com/news OR site:deepmind.google OR site:huggingface.co/blog)",
+        "section_keys": ["ai"],
+    },
+    {
+        "name": "人文文化权威来源",
+        "url": "https://www.bing.com/news/search?q={{keyword_q}}&format=RSS&setlang=zh-CN&cc=CN&freshness={{bing_freshness}}",
+        "kind": SOURCE_KIND_KEYWORD_RSS,
+        "requires_keyword_match": False,
+        "query_suffix": "(site:chinanews.com.cn/cul OR site:theory.gmw.cn OR site:cssn.cn)",
+        "section_keys": ["humanities"],
+    },
 )
 
 GLOBAL_FALLBACK_SOURCE_TEMPLATES: tuple[dict[str, Any], ...] = (
@@ -164,6 +221,14 @@ IMAGE_MIME_EXTENSIONS = {
     "image/gif": ".gif",
     "image/webp": ".webp",
 }
+
+MAX_NEWS_IMAGE_CANDIDATES = 12
+
+DECORATIVE_IMAGE_HINT_PATTERN = re.compile(
+    r"(?:^|[\W_])(logo|favicon|icon|avatar|profile|portrait|sprite|tracking|tracker|pixel|blank|"
+    r"placeholder|default|copyright|qrcode|qr-code|wechat|weixin|loading)(?:[\W_]|$)",
+    re.IGNORECASE,
+)
 
 KEYWORD_SPLIT_PATTERN = re.compile(r"[\s,，;；、/|#\[\]（）(){}<>《》]+")
 HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
@@ -559,12 +624,35 @@ def _content_fingerprint(title: str, summary: str, canonical_url: str) -> str:
     return _hash_text("|".join([domain, normalized_title, normalized_summary]))
 
 
-def _normalize_media(media_items: list[dict[str, Any]]) -> list[dict[str, str]]:
-    normalized: list[dict[str, str]] = []
+def _is_decorative_image_hint(*values: Any) -> bool:
+    text = " ".join(str(value or "") for value in values).lower()
+    return bool(DECORATIVE_IMAGE_HINT_PATTERN.search(text))
+
+
+def _media_candidate_priority(item: dict[str, Any]) -> tuple[int, int, int]:
+    source = str(item.get("source") or "").strip().lower()
+    source_score = {
+        "page-img-content": 90,
+        "page-meta": 80,
+        "feed": 65,
+        "page-img": 25,
+    }.get(source, 40)
+    width = _safe_int(item.get("width"), 0)
+    height = _safe_int(item.get("height"), 0)
+    dimension_score = 20 if is_suitable_news_cover_dimensions(width, height) else 0
+    area = min(width * height, 10_000_000)
+    return source_score + dimension_score, area, -len(str(item.get("url") or ""))
+
+
+def _normalize_media(media_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in media_items:
         url = _canonicalize_url(str(item.get("url") or ""))
         if not url or url in seen:
+            continue
+        caption = _truncate(item.get("caption") or item.get("title") or "", 120)
+        if _is_decorative_image_hint(urlparse(url).path, caption, item.get("class_name"), item.get("element_id")):
             continue
         seen.add(url)
         media_type = str(item.get("type") or "").strip().lower()
@@ -575,13 +663,14 @@ def _normalize_media(media_items: list[dict[str, Any]]) -> list[dict[str, str]]:
                 "url": url,
                 "type": media_type[:40],
                 "mime_type": str(item.get("mime_type") or "").strip().lower()[:80],
-                "caption": _truncate(item.get("caption") or item.get("title") or "", 120),
+                "caption": caption,
                 "source": _truncate(item.get("source") or "", 120),
+                "width": _safe_int(item.get("width"), 0),
+                "height": _safe_int(item.get("height"), 0),
             }
         )
-        if len(normalized) >= 8:
-            break
-    return normalized
+    normalized.sort(key=_media_candidate_priority, reverse=True)
+    return normalized[:MAX_NEWS_IMAGE_CANDIDATES]
 
 
 def _looks_like_image_url(url: str) -> bool:
@@ -650,10 +739,33 @@ class _NewsPageParser(HTMLParser):
         self.media: list[dict[str, str]] = []
         self._in_paragraph = False
         self._paragraphs: list[str] = []
+        self._content_depth = 0
+        self._excluded_media_depth = 0
+
+    @staticmethod
+    def _best_srcset_url(value: str) -> str:
+        candidates: list[tuple[int, str]] = []
+        for index, chunk in enumerate(str(value or "").split(",")):
+            parts = chunk.strip().split()
+            if not parts:
+                continue
+            score = index
+            if len(parts) > 1:
+                descriptor = parts[-1].lower()
+                try:
+                    score = int(float(descriptor[:-1]) * (1000 if descriptor.endswith("x") else 1))
+                except (TypeError, ValueError):
+                    pass
+            candidates.append((score, parts[0]))
+        return max(candidates, default=(0, ""), key=lambda item: item[0])[1]
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_map = {str(key or "").lower(): str(value or "") for key, value in attrs}
         lowered = tag.lower()
+        if lowered in {"article", "main"}:
+            self._content_depth += 1
+        if lowered in {"header", "nav", "footer", "aside"}:
+            self._excluded_media_depth += 1
         if lowered == "meta":
             name = (attrs_map.get("property") or attrs_map.get("name") or "").strip().lower()
             content = attrs_map.get("content") or ""
@@ -669,22 +781,44 @@ class _NewsPageParser(HTMLParser):
             if "canonical" in rel and href:
                 self.canonical_url = _canonicalize_url(href, self.base_url)
         elif lowered == "img":
-            src = attrs_map.get("src") or attrs_map.get("data-src") or attrs_map.get("data-original") or ""
-            if src:
+            src = (
+                attrs_map.get("data-original")
+                or attrs_map.get("data-actualsrc")
+                or attrs_map.get("data-lazy-src")
+                or attrs_map.get("data-src")
+                or self._best_srcset_url(attrs_map.get("data-srcset") or attrs_map.get("srcset") or "")
+                or attrs_map.get("src")
+                or ""
+            )
+            caption = attrs_map.get("alt") or attrs_map.get("title") or attrs_map.get("aria-label") or ""
+            class_name = attrs_map.get("class") or ""
+            element_id = attrs_map.get("id") or ""
+            if (
+                src
+                and self._excluded_media_depth == 0
+                and not _is_decorative_image_hint(src, caption, class_name, element_id)
+            ):
                 self.media.append(
                     {
                         "type": "image",
                         "url": urljoin(self.base_url, src),
-                        "caption": attrs_map.get("alt", ""),
-                        "source": "page-img",
+                        "caption": caption,
+                        "source": "page-img-content" if self._content_depth > 0 else "page-img",
+                        "width": str(_safe_int(attrs_map.get("width"), 0)),
+                        "height": str(_safe_int(attrs_map.get("height"), 0)),
                     }
                 )
         elif lowered == "p":
             self._in_paragraph = True
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() == "p":
+        lowered = tag.lower()
+        if lowered == "p":
             self._in_paragraph = False
+        if lowered in {"article", "main"}:
+            self._content_depth = max(0, self._content_depth - 1)
+        if lowered in {"header", "nav", "footer", "aside"}:
+            self._excluded_media_depth = max(0, self._excluded_media_depth - 1)
 
     def handle_data(self, data: str) -> None:
         if not self._in_paragraph or len(self._paragraphs) >= 10:
@@ -1287,6 +1421,7 @@ async def run_blog_news_crawler_job(run_id: int, *, worker_id: str = "") -> dict
             )
             return {"status": RUN_STATUS_SUCCESS, "run_id": run_id, "published_count": 0}
 
+        selected_candidates = await _classify_candidates_with_ai(selected_candidates, log)
         post_payloads = await _rewrite_candidates_with_ai(config, selected_candidates, keywords, log)
         published_count, skipped_count = await _publish_rewritten_posts(config, post_payloads, selected_candidates, run_id, log)
         final_status = RUN_STATUS_SUCCESS if published_count > 0 else RUN_STATUS_PARTIAL
@@ -2096,109 +2231,294 @@ def _balance_section_selection(
     return balanced
 
 
+def _fallback_editorial_section(item: dict[str, Any], allowed: set[str]) -> str:
+    text = f"{item.get('title') or ''} {item.get('summary') or ''}".lower()
+    rules = (
+        (CAREER_BLOG_SECTION_KEY, ("招聘", "校招", "岗位", "应届", "就业", "实习", "报名", "毕业生")),
+        ("ai", ("人工智能", "大模型", "生成式ai", "chatgpt", "claude", "gemini", "机器学习", "ai ", "ai，", "ai：")),
+        ("computer", ("开源", "linux", "node.js", "编程", "代码", "开发者", "网络安全", "漏洞", "恶意软件", "服务器", "云计算", "github")),
+        ("technology", ("科技", "芯片", "机器人", "量子", "航天", "新能源", "制造", "生物技术", "硬件", "工程")),
+        ("humanities", ("文学", "历史", "文化", "社会", "语言", "阅读", "博物馆", "艺术", "心理", "教育")),
+    )
+    for section_key, terms in rules:
+        if section_key in allowed and any(term in text for term in terms):
+            return section_key
+    return DEFAULT_BLOG_SECTION_KEY if DEFAULT_BLOG_SECTION_KEY in allowed else next(iter(allowed))
+
+
+async def _classify_candidates_with_ai(
+    candidates: list[dict[str, Any]],
+    log,
+) -> list[dict[str, Any]]:
+    if not candidates:
+        return []
+    with get_db_connection() as conn:
+        sections = list_blog_sections(conn)
+    allowed = {str(section["section_key"]) for section in sections}
+    section_text = "\n".join(
+        f"- {section['section_key']}｜{section['name']}：{section.get('description') or ''}"
+        for section in sections
+    )
+    materials = "\n\n".join(
+        "\n".join(
+            [
+                f"item_id: {item['id']}",
+                f"抓取时初步板块: {item.get('section_key') or DEFAULT_BLOG_SECTION_KEY}",
+                f"标题: {item.get('title') or ''}",
+                f"摘要: {_truncate(item.get('summary'), MAX_AI_TEXT_CHARS)}",
+                f"来源: {item.get('source_name') or ''}",
+            ]
+        )
+        for item in candidates
+    )
+    system_prompt = (
+        "你是博客入库前的快速编辑分类器，只输出合法 JSON。"
+        "判断文章真正主要在告诉学生哪一件事；板块按核心叙事而不是标题里的热词决定。"
+        "AI 产品、模型、治理归 ai；编程、开源、安全、云和基础设施归 computer；"
+        "科学发现、硬件、航天、制造和产业技术归 technology；人、历史、社会、文学和文化归 humanities；"
+        "招聘与就业政策归 career；校园生活、成长与难归类的故事归 general。"
+    )
+    user_message = f"""
+可用板块：
+{section_text}
+
+请逐条输出：
+{{"items":[{{"item_id":1,"topic":"一句话主题","keywords":["3至8个关键词"],"section_key":"ai","confidence":0.9,"reason":"归类依据"}}]}}
+
+材料：
+{materials}
+""".strip()
+    try:
+        payload = await _call_ai_json(
+            system_prompt,
+            user_message,
+            task_label="blog_news_fast_classify",
+            timeout=120.0,
+            model_capability="standard",
+            task_type="fast_text_response",
+        )
+        profiles = payload.get("items") if isinstance(payload, dict) else []
+    except Exception as exc:
+        log("fast editorial classification failed; keeping crawler sections", error=str(exc))
+        profiles = []
+    profile_map = {
+        _safe_int(raw.get("item_id"), 0): raw
+        for raw in profiles if isinstance(raw, dict)
+    }
+    for item in candidates:
+        fallback_section = str(item.get("section_key") or DEFAULT_BLOG_SECTION_KEY)
+        heuristic_section = _fallback_editorial_section(item, allowed)
+        raw = profile_map.get(int(item["id"]), {
+            "topic": item.get("title") or "",
+            "keywords": [item.get("keyword") or ""],
+            "section_key": heuristic_section,
+            "reason": "快速分类不可用，按标题和正文关键词保守归类",
+        })
+        profile = normalize_editorial_profile(
+            raw,
+            allowed_sections=allowed,
+            fallback_section=fallback_section,
+        )
+        if not profile["topic"]:
+            profile["topic"] = _truncate(item.get("title"), 120)
+        if not profile["keywords"] and item.get("keyword"):
+            profile["keywords"] = [str(item["keyword"])]
+        item["editorial_profile"] = profile
+        item["section_key"] = profile["section_key"]
+    return candidates
+
+
+async def reclassify_existing_assistant_posts(
+    *,
+    apply: bool = False,
+    include_already_classified: bool = False,
+    batch_size: int = 12,
+) -> dict[str, Any]:
+    with get_db_connection() as conn:
+        where_extra = "" if include_already_classified else "AND m.post_id IS NULL"
+        rows = conn.execute(
+            f"""
+            SELECT p.id, p.section_key, p.title, p.content_md AS summary,
+                   COALESCE(m.source_name, (
+                       SELECT i.source_name FROM blog_news_crawler_items i
+                       WHERE i.post_id = p.id ORDER BY i.id DESC LIMIT 1
+                   ), '') AS source_name,
+                   COALESCE(m.source_title, (
+                       SELECT i.title FROM blog_news_crawler_items i
+                       WHERE i.post_id = p.id ORDER BY i.id DESC LIMIT 1
+                   ), p.title) AS source_title,
+                   COALESCE(m.source_url, (
+                       SELECT COALESCE(NULLIF(i.canonical_url, ''), i.url)
+                       FROM blog_news_crawler_items i WHERE i.post_id = p.id
+                       ORDER BY i.id DESC LIMIT 1
+                   ), '') AS source_url,
+                   COALESCE(m.source_published_at, (
+                       SELECT i.published_at FROM blog_news_crawler_items i
+                       WHERE i.post_id = p.id ORDER BY i.id DESC LIMIT 1
+                   ), '') AS source_published_at
+            FROM blog_posts p
+            LEFT JOIN blog_post_editorial_metadata m ON m.post_id = p.id
+            WHERE p.author_role = 'assistant' AND p.status = 'published' {where_extra}
+            ORDER BY p.id ASC
+            """
+        ).fetchall()
+    posts = [dict(row) for row in rows]
+    for post in posts:
+        post["_original_section_key"] = str(post.get("section_key") or DEFAULT_BLOG_SECTION_KEY)
+    classified: list[dict[str, Any]] = []
+
+    def quiet_log(*_args, **_kwargs):
+        return None
+
+    for offset in range(0, len(posts), max(1, int(batch_size))):
+        batch = posts[offset : offset + max(1, int(batch_size))]
+        classified.extend(await _classify_candidates_with_ai(batch, quiet_log))
+    changes = [
+        {
+            "post_id": int(post["id"]),
+            "title": str(post.get("title") or ""),
+            "from_section": str(post.get("_original_section_key") or DEFAULT_BLOG_SECTION_KEY),
+            "to_section": str((post.get("editorial_profile") or {}).get("section_key") or DEFAULT_BLOG_SECTION_KEY),
+            "topic": str((post.get("editorial_profile") or {}).get("topic") or ""),
+            "keywords": (post.get("editorial_profile") or {}).get("keywords") or [],
+            "reason": str((post.get("editorial_profile") or {}).get("reason") or ""),
+        }
+        for post in classified
+    ]
+    if apply and classified:
+        with get_db_connection() as conn:
+            for post in classified:
+                profile = post.get("editorial_profile") or {}
+                section_key = str(profile.get("section_key") or DEFAULT_BLOG_SECTION_KEY)
+                post_id = int(post["id"])
+                conn.execute(
+                    "UPDATE blog_posts SET section_key = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (section_key, post_id),
+                )
+                conn.execute(
+                    "UPDATE blog_news_crawler_items SET section_key = ?, updated_at = CURRENT_TIMESTAMP WHERE post_id = ?",
+                    (section_key, post_id),
+                )
+                upsert_editorial_metadata(
+                    conn,
+                    post_id,
+                    profile,
+                    source_title=str(post.get("source_title") or post.get("title") or ""),
+                    source_name=str(post.get("source_name") or ""),
+                    source_url=str(post.get("source_url") or ""),
+                    source_published_at=str(post.get("source_published_at") or ""),
+                )
+            conn.commit()
+    return {
+        "applied": bool(apply),
+        "post_count": len(posts),
+        "changed_section_count": sum(1 for item in changes if item["from_section"] != item["to_section"]),
+        "changes": changes,
+    }
+
+
 async def _rewrite_candidates_with_ai(
     config: dict[str, Any],
     selected_candidates: list[dict[str, Any]],
     keywords: list[dict[str, Any]],
     log,
 ) -> list[dict[str, Any]]:
-    item_blocks = []
+    del keywords
+    results: list[dict[str, Any]] = []
     for item in selected_candidates:
-        media = item.get("media") or []
-        media_lines = []
-        for index, media_item in enumerate(media[:4], start=1):
-            media_lines.append(
-                f"- media_{index}: {media_item.get('type') or 'link'} {media_item.get('url')} "
-                f"{media_item.get('caption') or ''}"
-            )
-        item_blocks.append(
-            "\n".join(
-                [
-                    f"ID: {item['id']}",
-                    f"板块: {item.get('section_key') or DEFAULT_BLOG_SECTION_KEY}",
-                    f"关键词: {item.get('keyword')}",
-                    f"标题: {item.get('title')}",
-                    f"摘要: {_truncate(item.get('summary'), MAX_AI_TEXT_CHARS)}",
-                    f"发布时间: {_format_date_for_humans(item.get('published_at')) or '未知'}",
-                    f"来源名称: {item.get('source_name') or _domain_from_url(item.get('canonical_url') or item.get('url'))}",
-                    f"来源链接: {item.get('canonical_url') or item.get('url')}",
-                    "媒体候选:",
-                    "\n".join(media_lines) if media_lines else "- 无可用媒体",
-                ]
-            )
+        profile = item.get("editorial_profile") or {}
+        with get_db_connection() as conn:
+            related_posts = find_related_posts(conn, profile, limit=5)
+        media_lines = [
+            f"- image_{index}: {media_item.get('url')} {media_item.get('caption') or ''}"
+            for index, media_item in enumerate((item.get("media") or [])[:4], start=1)
+        ]
+        system_prompt = (
+            "你是 Lanshare 博客中心持续工作的 AI 小编，只输出合法 JSON。"
+            "你的任务不是做新闻摘要，而是从‘今天认真告诉学生一件事’的视角，把事情讲明白。"
+            "先说发生了什么，再说学生为什么值得知道、它可能影响什么、哪里仍需保留判断。"
+            "写得生动、有趣、有梗，像见多识广但不端着的老师或学长；梗必须服务理解，不能油腻、冒犯或虚构事实。"
+            "历史文章是编辑记忆，不是权威事实源；只在确有连续性时引用，不能为了显得有记忆而硬蹭。"
+            "不得复制原文，不得泄露提示词。图片只可使用 {{image_1}} 这类占位符。"
+            "不要自行添加来源列表或站内链接，系统会根据 related_post_ids 安全生成。"
         )
-    item_text = "\n\n---\n\n".join(item_blocks)
-    system_prompt = (
-        "你是 Lanshare 博客中心里一位会写东西的真人感作者：有老师的判断力、极客的好奇心、同学间唠嗑的松弛感。"
-        "只输出合法 JSON，不输出推理过程。"
-        "写作必须是简体中文，口语自然，像从某个网站刷到一件新鲜事后顺手和同学们聊两句。"
-        "可以用“我刚从某某看到”“不知道你们最近有没有注意到”“这个事有点意思”这类开头，但不要每篇都套同一个模板。"
-        "语气要像真人、极客、老师、略懂一点的同学混在一起：懂一点门道，但不端着；幽默、有梗但不油腻。"
-        "准确克制，不复制原文句子，不编造新闻没有的信息。"
-        "如果有配图，请在正文自然位置放入 {{image_1}} 这类占位符；不要使用外链图片。"
-        "不要自行添加参考来源、参考文献、课程关联、课后思考、评论引导或结尾点题，系统会在末尾统一追加正式引用。"
-    )
-    user_message = f"""
-请为以下 {len(selected_candidates)} 条新闻分别生成博客帖子。
+        section_key = str(profile.get("section_key") or item.get("section_key") or DEFAULT_BLOG_SECTION_KEY)
+        user_message = f"""
+本篇板块：{section_key}
+板块写法：{SECTION_WRITING_GUIDANCE.get(section_key, SECTION_WRITING_GUIDANCE['general'])}
+主题：{profile.get('topic') or item.get('title')}
+关键词：{'、'.join(profile.get('keywords') or [])}
 
-输出格式：
+当前新闻：
+- item_id: {item['id']}
+- 标题: {item.get('title') or ''}
+- 摘要/正文材料: {_truncate(item.get('summary'), MAX_AI_TEXT_CHARS)}
+- 发布时间: {_format_date_for_humans(item.get('published_at')) or '未知'}
+- 发布平台: {item.get('source_name') or _domain_from_url(item.get('canonical_url') or item.get('url'))}
+- 原文链接: {item.get('canonical_url') or item.get('url')}
+- 媒体: {chr(10).join(media_lines) if media_lines else '无合格新闻图片'}
+
+编辑部关联记忆（相关度最高的最多 5 篇，含全文、时间、平台、互动、评论和站内链接）：
+{format_memory_for_ai(related_posts)}
+
+输出：
 {{
-  "posts": [
-    {{
-      "source_item_ids": [123],
-      "section_key": "career",
-      "title": "自然、不标题党的博客标题",
-      "content_md": "Markdown 正文，可包含 {{{{image_1}}}} 占位符",
-      "tags": ["极客闲聊", "今日科技"],
-      "opportunity": {{
-        "employer_name": "仅就业板块填写，未注明则为空",
-        "opportunity_type": "campus_recruitment|internship|public_institution|civil_service|grassroots_program|career_fair|policy|other",
-        "positions_text": "岗位或机会摘要",
-        "regions": ["广西", "南宁"],
-        "city": "主要城市",
-        "target_groups": ["2026届毕业生"],
-        "education_text": "学历要求，未注明则为空",
-        "majors": ["专业要求，未注明则留空数组"],
-        "headcount_text": "人数，未注明则为空",
-        "compensation_text": "薪酬，未注明则为空",
-        "application_method": "报名方式",
-        "application_url": "必须来自材料中的官方链接，不确定则为空",
-        "deadline_at": "YYYY-MM-DD，不确定则为 null",
-        "extraction_confidence": 0.0,
-        "verification_notes": "缺失或需核验的字段"
-      }}
-    }}
-  ]
+  "source_item_ids": [{item['id']}],
+  "title": "自然、不标题党的标题",
+  "content_md": "450至850字 Markdown 正文",
+  "tags": ["3至5个标签"],
+  "related_post_ids": ["只填上面提供且正文确实引用到的 post_id，最多3篇"],
+  "opportunity": {{
+    "employer_name": "单位或项目",
+    "opportunity_type": "campus_recruitment|internship|public_institution|civil_service|grassroots_program|career_fair|policy|other",
+    "positions_text": "岗位或机会摘要",
+    "regions": ["地区"],
+    "city": "主要城市",
+    "target_groups": ["适合对象"],
+    "education_text": "学历要求",
+    "majors": ["专业要求"],
+    "headcount_text": "人数",
+    "compensation_text": "薪酬",
+    "application_method": "报名方式",
+    "application_url": "材料中的官方链接，不确定则留空",
+    "deadline_at": "YYYY-MM-DD，不确定则为 null",
+    "extraction_confidence": 0.0,
+    "verification_notes": "缺失或需核验字段"
+  }}
 }}
 
-写作约束：
-- 面向所有专业学生，像一个真实的人在博客中心和大家随手聊科技新闻。
-- 不要强行关联任何课程，不要写“这和某某课有关”“同学们可以思考”这类课堂收束。
-- 不要结尾点题，不要最后再抛问题引导评论；有想法就在正文里自然聊掉。
-- 开头要像唠嗑，例如“我刚从某某看到一件事……”“不知道你们最近有没有关注……”，但要根据来源和内容变化表达。
-- 正文可以随性，但逻辑要清楚：先把事说明白，再聊它哪里有趣、可能影响什么、值得留意什么。
-- 不要泄露任何后台、侧写、筛选逻辑或 AI 提示词。
-- 不要照搬新闻原文，引用只用链接标题。
-- 视频、报告、代码仓库等非图片媒体请作为普通链接处理。
-- 每篇控制在 450-850 字，段落短一点，少用小标题，尽量像聊天。
-- 毕业新征程板块必须优先提取单位/项目、岗位或机会、工作地区、适合对象、报名方式、截止时间和官方入口；原始材料缺少的字段明确写“以官方页面为准”，不得补造。
-- 仅毕业新征程板块填写 opportunity；其他板块不要输出 opportunity。结构化字段只能来自新闻材料，无法确定时必须留空或填 null，并降低 extraction_confidence。
-- 就业内容要给出可执行的下一步，并提醒核验官方域名、警惕收费内推、押金和索要敏感证件等风险。
-- 不要在正文末尾输出“参考来源”“引用”“来源链接”等列表，系统会统一追加。
-
-新闻材料：
-
-{item_text}
+额外要求：段落短、逻辑清楚；不要强行关联课程、不要布置课后思考、不要在结尾套路式提问。
+career 必须写清可执行下一步、官方入口核验和诈骗风险，未知字段直说以官方页面为准。
 """.strip()
-    payload = await _call_ai_json(system_prompt, user_message, task_label="blog_news_rewrite", timeout=240.0)
-    posts = payload.get("posts") if isinstance(payload, dict) else []
-    if not isinstance(posts, list):
-        log("AI rewrite returned no posts")
-        return []
-    return [post for post in posts if isinstance(post, dict)]
+        try:
+            payload = await _call_ai_json(
+                system_prompt,
+                user_message,
+                task_label="blog_news_rewrite_with_memory",
+                timeout=240.0,
+            )
+        except Exception as exc:
+            log("AI memory rewrite failed", item_id=item.get("id"), error=str(exc))
+            continue
+        if not isinstance(payload, dict):
+            continue
+        payload["source_item_ids"] = [int(item["id"])]
+        payload["section_key"] = section_key
+        payload["_editorial_profile"] = profile
+        payload["_related_posts"] = related_posts
+        results.append(payload)
+    return results
 
 
-async def _call_ai_json(system_prompt: str, user_message: str, *, task_label: str, timeout: float) -> dict[str, Any]:
+async def _call_ai_json(
+    system_prompt: str,
+    user_message: str,
+    *,
+    task_label: str,
+    timeout: float,
+    model_capability: str = "thinking",
+    task_type: str = "deep_text_reasoning",
+) -> dict[str, Any]:
     async with httpx.AsyncClient(base_url=AI_ASSISTANT_URL, timeout=timeout) as client:
         response = await client.post(
             "/api/ai/chat",
@@ -2206,8 +2526,8 @@ async def _call_ai_json(system_prompt: str, user_message: str, *, task_label: st
                 "system_prompt": system_prompt,
                 "messages": [],
                 "new_message": user_message,
-                "model_capability": "thinking",
-                "task_type": "deep_text_reasoning",
+                "model_capability": model_capability,
+                "task_type": task_type,
                 "response_format": "json",
                 "task_priority": "background",
                 "task_label": task_label,
@@ -2256,15 +2576,30 @@ async def _publish_rewritten_posts(
                 media_slots = await _build_local_image_slots(primary, config, client)
             with get_db_connection() as conn:
                 registered_slots = _register_image_slots(conn, media_slots)
-                final_content = _finalize_post_markdown(content_md, registered_slots, [item_map[item_id] for item_id in source_ids])
+                related_ids = [
+                    _safe_int(item, 0)
+                    for item in (payload.get("related_post_ids") or [])
+                ]
+                content_with_memory, used_memory_ids = append_internal_reading_links(
+                    content_md,
+                    payload.get("_related_posts") or [],
+                    related_ids,
+                )
+                final_content = _finalize_post_markdown(
+                    content_with_memory,
+                    registered_slots,
+                    [item_map[item_id] for item_id in source_ids],
+                )
                 tags = _normalize_post_tags(payload.get("tags"), primary)
                 status = POST_STATUS_PUBLISHED if config.get("auto_publish") else POST_STATUS_DRAFT
+                profile = payload.get("_editorial_profile") or primary.get("editorial_profile") or {}
+                section_key = str(profile.get("section_key") or primary.get("section_key") or DEFAULT_BLOG_SECTION_KEY)
                 post = create_post(
                     conn,
                     ASSISTANT_USER,
                     title=title,
                     content_md=final_content,
-                    section_key=str(primary.get("section_key") or DEFAULT_BLOG_SECTION_KEY),
+                    section_key=section_key,
                     author_display_mode=AUTHOR_DISPLAY_REAL,
                     visibility=VISIBILITY_PUBLIC,
                     allow_comments=True,
@@ -2272,7 +2607,17 @@ async def _publish_rewritten_posts(
                     status=status,
                 )
                 post_id = int(post["id"])
-                if str(primary.get("section_key") or "") == CAREER_BLOG_SECTION_KEY:
+                upsert_editorial_metadata(
+                    conn,
+                    post_id,
+                    profile,
+                    source_title=str(primary.get("title") or ""),
+                    source_name=str(primary.get("source_name") or ""),
+                    source_url=str(primary.get("canonical_url") or primary.get("url") or ""),
+                    source_published_at=str(primary.get("published_at") or ""),
+                    memory_post_ids=used_memory_ids,
+                )
+                if section_key == CAREER_BLOG_SECTION_KEY:
                     upsert_opportunity_for_post(
                         conn,
                         post_id,
@@ -2295,10 +2640,10 @@ async def _publish_rewritten_posts(
                 conn.execute(
                     f"""
                     UPDATE blog_news_crawler_items
-                    SET selected = 1, post_id = ?, updated_at = ?
+                    SET selected = 1, post_id = ?, section_key = ?, updated_at = ?
                     WHERE id IN ({placeholders})
                     """,
-                    (post_id, _now_iso(), *source_ids),
+                    (post_id, section_key, _now_iso(), *source_ids),
                 )
                 conn.commit()
             published_count += 1
@@ -2334,14 +2679,20 @@ async def _build_local_image_slots(
         url = str(item.get("url") or "")
         media_type = str(item.get("type") or "").lower()
         mime_type = str(item.get("mime_type") or "").lower()
-        if media_type == "image" or "image" in mime_type or _looks_like_image_url(url):
+        if (
+            (media_type == "image" or "image" in mime_type or _looks_like_image_url(url))
+            and not _is_decorative_image_hint(urlparse(url).path, item.get("caption"))
+        ):
             if url not in image_urls:
                 image_urls.append(url)
-        if len(image_urls) >= int(config.get("max_images_per_post") or 1):
+        if len(image_urls) >= MAX_NEWS_IMAGE_CANDIDATES:
             break
 
     slots: list[dict[str, Any]] = []
-    for index, url in enumerate(image_urls, start=1):
+    max_images = int(config.get("max_images_per_post") or 1)
+    for url in image_urls:
+        if len(slots) >= max_images:
+            break
         try:
             stored = await _download_and_store_image(
                 client,
@@ -2353,7 +2704,7 @@ async def _build_local_image_slots(
             continue
         stored.update(
             {
-                "token": f"{{{{image_{index}}}}}",
+                "token": f"{{{{image_{len(slots) + 1}}}}}",
                 "source_url": url,
                 "caption": f"{candidate.get('title') or '新闻配图'} 配图",
             }
@@ -2366,6 +2717,8 @@ async def _download_and_store_image(client: httpx.AsyncClient, url: str, *, max_
     canonical_url = _canonicalize_url(url)
     if not canonical_url:
         raise ValueError("invalid image URL")
+    if _is_decorative_image_hint(urlparse(canonical_url).path):
+        raise ValueError("decorative image URL")
     async with client.stream("GET", canonical_url) as response:
         response.raise_for_status()
         content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
@@ -2386,6 +2739,8 @@ async def _download_and_store_image(client: httpx.AsyncClient, url: str, *, max_
             detected_format = (image.format or "").lower()
     except (UnidentifiedImageError, OSError) as exc:
         raise ValueError("invalid image bytes") from exc
+    if not is_suitable_news_cover_dimensions(width, height):
+        raise ValueError(f"image unsuitable for news cover: {width}x{height}")
     if content_type not in IMAGE_MIME_EXTENSIONS:
         content_type = {
             "jpeg": "image/jpeg",

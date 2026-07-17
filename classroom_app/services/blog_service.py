@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from .academic_service import china_today
+from .blog_image_policy import is_suitable_news_cover_dimensions
 from .blog_section_service import (
     DEFAULT_BLOG_SECTION_KEY,
     list_blog_sections as list_blog_section_catalog,
@@ -82,6 +83,78 @@ def _safe_json_loads(raw_value: Any, fallback: Any):
         return json.loads(raw_value)
     except (TypeError, ValueError, json.JSONDecodeError):
         return fallback
+
+
+def _hydrate_cover_media_metadata(conn, rows: list[dict]) -> None:
+    """Attach cover dimensions in one query so list serialization stays N+1 free."""
+    hashes = sorted({str(row.get("cover_image_hash") or "").strip().lower() for row in rows} - {""})
+    if not hashes:
+        return
+    placeholders = ", ".join("?" for _ in hashes)
+    asset_rows = conn.execute(
+        f"""
+        SELECT file_hash, uploader_identity, image_width, image_height
+        FROM blog_media_assets
+        WHERE file_hash IN ({placeholders})
+        ORDER BY updated_at DESC, id DESC
+        """,
+        hashes,
+    ).fetchall()
+    by_owner: dict[tuple[str, str], dict] = {}
+    by_hash: dict[str, dict] = {}
+    for asset_row in asset_rows:
+        asset = dict(asset_row)
+        file_hash = str(asset.get("file_hash") or "").strip().lower()
+        owner = str(asset.get("uploader_identity") or "").strip()
+        by_owner.setdefault((file_hash, owner), asset)
+        by_hash.setdefault(file_hash, asset)
+    for row in rows:
+        file_hash = str(row.get("cover_image_hash") or "").strip().lower()
+        identity = str(row.get("author_identity") or "").strip()
+        asset = by_owner.get((file_hash, identity)) or by_hash.get(file_hash)
+        if not asset:
+            continue
+        row["cover_image_width"] = _safe_int(asset.get("image_width"))
+        row["cover_image_height"] = _safe_int(asset.get("image_height"))
+
+
+def _assistant_cover_is_presentable(row: dict) -> bool:
+    if str(row.get("author_role") or "") != "assistant":
+        return True
+    if not str(row.get("cover_image_hash") or "").strip():
+        return False
+    width = _safe_int(row.get("cover_image_width"))
+    height = _safe_int(row.get("cover_image_height"))
+    # Legacy assets without metadata remain visible; newly crawled assets always
+    # carry dimensions and are evaluated by the shared crawler/display policy.
+    if width is None or height is None:
+        return True
+    return is_suitable_news_cover_dimensions(width, height)
+
+
+def _presentation_cover(row: dict) -> dict[str, Any]:
+    stored_hash = str(row.get("cover_image_hash") or "").strip().lower()
+    presentable_hash = stored_hash if _assistant_cover_is_presentable(row) else ""
+    author_role = str(row.get("author_role") or "")
+    return {
+        "hash": presentable_hash,
+        "kind": "source" if presentable_hash else ("editorial" if author_role == "assistant" else "none"),
+        "width": _safe_int(row.get("cover_image_width")),
+        "height": _safe_int(row.get("cover_image_height")),
+    }
+
+
+def _strip_rejected_assistant_cover_markdown(content_md: str, row: dict) -> str:
+    stored_hash = str(row.get("cover_image_hash") or "").strip().lower()
+    if not stored_hash or _assistant_cover_is_presentable(row):
+        return str(content_md or "")
+    image_pattern = re.compile(
+        rf"!\[[^\]\r\n]*\]\(/api/blog/image/{re.escape(stored_hash)}\)[ \t]*"
+        rf"(?:\r?\n){{1,3}}(?:>[^\r\n]*(?:\r?\n|$))?",
+        re.IGNORECASE,
+    )
+    cleaned = image_pattern.sub("\n", str(content_md or ""), count=1)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
 def _build_identity(role: str, user_pk: int) -> str:
@@ -1027,6 +1100,7 @@ def list_posts(
     ).fetchall()
 
     row_items = [dict(row) for row in rows]
+    _hydrate_cover_media_metadata(conn, row_items)
     cultivation_badge_map = _build_author_cultivation_badge_map(conn, row_items)
     posts = [
         _serialize_post_summary(
@@ -1132,6 +1206,7 @@ def get_blog_discovery(conn, user: dict, *, section_key: Optional[str] = None) -
 
     def serialize_rows(rows) -> list[dict]:
         row_items = [dict(row) for row in rows]
+        _hydrate_cover_media_metadata(conn, row_items)
         badge_map = _build_author_cultivation_badge_map(conn, row_items)
         return [
             _serialize_post_summary(
@@ -1282,6 +1357,8 @@ def get_post_detail(conn, user: dict, post_id: int) -> dict:
     if not _can_view_post(conn, user, post_row):
         raise PermissionError("没有权限查看此帖子")
 
+    _hydrate_cover_media_metadata(conn, [post_row])
+
     if _record_post_view(conn, post_id, identity):
         post_row["view_count"] = int(post_row.get("view_count") or 0) + 1
 
@@ -1400,6 +1477,7 @@ def get_my_posts(
         [identity, identity, *params, limit, offset],
     ).fetchall()
     row_items = [dict(row) for row in rows]
+    _hydrate_cover_media_metadata(conn, row_items)
     cultivation_badge_map = _build_author_cultivation_badge_map(conn, row_items)
     posts = [
         _serialize_post_summary(
@@ -1455,6 +1533,7 @@ def get_bookmarked_posts(conn, user: dict, *, page: int = 1, limit: int = POSTS_
     ).fetchall()
 
     row_items = [dict(row) for row in rows]
+    _hydrate_cover_media_metadata(conn, row_items)
     cultivation_badge_map = _build_author_cultivation_badge_map(conn, row_items)
     posts = []
     for row in row_items:
@@ -2471,6 +2550,7 @@ def _serialize_post_summary(
     cultivation_badge = None
     if not is_anonymous:
         cultivation_badge = (cultivation_badge_map or {}).get(author_identity)
+    presentation_cover = _presentation_cover(row)
     return {
         "id": int(row["id"]),
         "author": {
@@ -2491,7 +2571,10 @@ def _serialize_post_summary(
         "title": str(row.get("title") or ""),
         "section_key": str(row.get("section_key") or DEFAULT_BLOG_SECTION_KEY),
         "summary": str(row.get("summary") or ""),
-        "cover_image_hash": str(row.get("cover_image_hash") or ""),
+        "cover_image_hash": presentation_cover["hash"],
+        "cover_image_kind": presentation_cover["kind"],
+        "cover_image_width": presentation_cover["width"],
+        "cover_image_height": presentation_cover["height"],
         "status": str(row.get("status") or POST_STATUS_PUBLISHED),
         "visibility": str(row.get("visibility") or VISIBILITY_PUBLIC),
         "visibility_label": _visibility_label(str(row.get("visibility") or VISIBILITY_PUBLIC)),
@@ -2539,7 +2622,7 @@ def _serialize_post_detail(
     is_author = result["is_author"]
     result.update(
         {
-            "content_md": str(row.get("content_md") or ""),
+            "content_md": _strip_rejected_assistant_cover_markdown(str(row.get("content_md") or ""), row),
             "is_liked": bool(is_liked),
             "is_bookmarked": bool(is_bookmarked),
             "visible_class_id": _safe_int(row.get("visible_class_id")),

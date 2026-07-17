@@ -115,16 +115,17 @@
         </header>
         <div class="blog-player__screen" data-blog-player-screen>
             <div class="blog-detail-topbar" data-blog-detail-topbar hidden>
-                <button class="blog-detail-topbar__back" data-blog-action="back-to-feed" type="button" aria-label="返回博客列表并恢复之前的浏览位置">
+                <button class="blog-detail-topbar__back" data-blog-action="back-detail-context" type="button" aria-label="返回上一阅读位置">
                     <span class="blog-detail-topbar__back-icon" aria-hidden="true">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>
                     </span>
-                    <span><strong>返回博客列表</strong><small data-blog-detail-back-context>继续浏览刚才的板块</small></span>
+                    <span><strong data-blog-detail-back-label>返回博客列表</strong><small data-blog-detail-back-context>继续浏览刚才的板块</small></span>
                 </button>
                 <div class="blog-detail-topbar__context">
                     <span data-blog-detail-section>博客中心</span>
                     <strong data-blog-detail-title>文章详情</strong>
                 </div>
+                <button class="btn btn-secondary btn-sm blog-detail-topbar__list" data-blog-action="back-to-feed" type="button">博客列表</button>
                 <button class="btn btn-primary btn-sm blog-detail-topbar__compose" data-blog-action="compose" type="button">写帖子</button>
             </div>
 

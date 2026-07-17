@@ -500,7 +500,7 @@ body.page-wrapper:has(.blog-shell) {
 
 .blog-channel-readout {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     align-items: baseline;
     gap: 11px;
     min-height: 38px;
@@ -1049,6 +1049,135 @@ body.page-wrapper:has(.blog-shell) {
     letter-spacing: 0.1em;
     text-shadow: 0 0 9px rgba(34, 217, 238, 0.55);
 }
+
+/* Editorial covers keep image-less news readable without pretending to be a
+   source photograph. The visible label is intentional, not decorative. */
+.blog-cover-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: saturate(1.05) contrast(1.04);
+}
+.blog-cover-art {
+    --cover-accent: var(--neon-cyan);
+    position: relative;
+    isolation: isolate;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    align-content: stretch;
+    width: 100%;
+    height: 100%;
+    min-height: 142px;
+    padding: 13px;
+    overflow: hidden;
+    background-color: #07101b;
+    background:
+        radial-gradient(circle at 78% 24%, color-mix(in srgb, var(--cover-accent) 36%, transparent) 0 7%, transparent 8%),
+        radial-gradient(circle at 72% 34%, color-mix(in srgb, var(--cover-accent) 18%, transparent), transparent 31%),
+        linear-gradient(145deg, color-mix(in srgb, var(--cover-accent) 16%, #07101b) 0%, #07101b 58%, #03070d 100%);
+    color: #f5fbff;
+}
+.blog-cover-art::before,
+.blog-cover-art::after {
+    position: absolute;
+    content: '';
+    pointer-events: none;
+}
+.blog-cover-art::before {
+    z-index: -1;
+    inset: 0;
+    background:
+        linear-gradient(90deg, transparent 49.5%, color-mix(in srgb, var(--cover-accent) 14%, transparent) 50%, transparent 50.5%),
+        linear-gradient(0deg, transparent 49.5%, color-mix(in srgb, var(--cover-accent) 11%, transparent) 50%, transparent 50.5%);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(135deg, #000, transparent 76%);
+}
+.blog-cover-art::after {
+    right: -24%;
+    bottom: -42%;
+    width: 88%;
+    aspect-ratio: 1;
+    border: 1px solid color-mix(in srgb, var(--cover-accent) 58%, transparent);
+    border-radius: 50%;
+    box-shadow:
+        0 0 0 10px color-mix(in srgb, var(--cover-accent) 8%, transparent),
+        0 0 0 24px color-mix(in srgb, var(--cover-accent) 5%, transparent);
+}
+.blog-cover-art__grid {
+    position: absolute;
+    z-index: -1;
+    inset: auto 11% 14% auto;
+    width: 46%;
+    height: 1px;
+    background: var(--cover-accent);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--cover-accent) 65%, transparent);
+    transform: rotate(-36deg);
+    transform-origin: right center;
+}
+.blog-cover-art__eyebrow {
+    position: relative;
+    z-index: 1;
+    justify-self: start;
+    padding: 3px 6px;
+    border: 1px solid color-mix(in srgb, var(--cover-accent) 58%, transparent);
+    background: rgba(2, 7, 13, 0.72);
+    color: color-mix(in srgb, var(--cover-accent) 62%, white);
+    font-family: var(--font-mono);
+    font-size: 0.52rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    line-height: 1.35;
+}
+.blog-cover-art__icon {
+    position: relative;
+    z-index: 1;
+    align-self: center;
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: clamp(2rem, 4vw, 3.8rem);
+    font-weight: 950;
+    letter-spacing: -0.08em;
+    line-height: 1;
+    text-shadow: 0 0 24px color-mix(in srgb, var(--cover-accent) 75%, transparent);
+}
+.blog-cover-art__channel {
+    position: relative;
+    z-index: 1;
+    align-self: end;
+    max-width: 72%;
+    overflow: hidden;
+    font-size: 0.76rem;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.blog-cover-art__signal {
+    position: absolute;
+    z-index: 1;
+    right: 12px;
+    bottom: 12px;
+    color: color-mix(in srgb, var(--cover-accent) 58%, white);
+    font-family: var(--font-mono);
+    font-size: 0.52rem;
+    letter-spacing: 0.08em;
+}
+.blog-cover-art--spotlight {
+    min-height: 100%;
+    padding: 9px;
+}
+.blog-cover-art--spotlight .blog-cover-art__eyebrow {
+    max-width: 100%;
+    padding: 2px 4px;
+    font-size: 0.43rem;
+    line-height: 1.25;
+}
+.blog-cover-art--spotlight .blog-cover-art__icon { font-size: 1.7rem; }
+.blog-cover-art--spotlight .blog-cover-art__channel { font-size: 0.58rem; }
+.blog-cover-art--spotlight .blog-cover-art__signal { right: 8px; bottom: 8px; font-size: 0.44rem; }
 .blog-spotlight-card__body { min-width: 0; padding: 11px; overflow: hidden; }
 .blog-spotlight-card__meta { display: flex; flex-wrap: wrap; gap: 7px; margin: 6px 0; color: var(--holo-muted); font-size: 0.58rem; }
 .blog-spotlight-card h3 {
@@ -1292,6 +1421,7 @@ body.page-wrapper:has(.blog-shell) {
 .blog-post-card--with-cover { grid-template-columns: minmax(0, 1fr) 210px; }
 .blog-post-card__media { min-height: 100%; border-left: 1px solid var(--deck-edge); border-radius: 0; background: #0a0f18; overflow: hidden; }
 .blog-post-card__cover { width: 100%; height: 100%; max-height: none; margin: 0; border-radius: 0; object-fit: cover; display: block; }
+.blog-post-card__media .blog-cover-art { min-height: 100%; }
 
 /* 徽章 / 标签 */
 .blog-tag,
@@ -1473,6 +1603,7 @@ body.page-wrapper:has(.blog-shell) {
 .blog-detail-topbar__back small { color: var(--holo-muted); }
 .blog-detail-topbar__context span { color: var(--neon-cyan); font-family: var(--font-mono); }
 .blog-detail-topbar__context strong { color: #f2f8ff; }
+.blog-detail-topbar__list { white-space: nowrap; }
 
 /* 阅读面板:全息稿纸 */
 .blog-detail {
@@ -1490,6 +1621,23 @@ body.page-wrapper:has(.blog-shell) {
 .blog-detail__author-name { color: var(--holo-ink); }
 .blog-detail__author-meta { color: var(--holo-faint); }
 .blog-detail__avatar { border-color: var(--deck-edge); background: #0a101a; }
+
+.blog-detail__editorial-cover {
+    margin: 6px 0 26px;
+    overflow: hidden;
+    border: 1px solid var(--deck-edge);
+    border-radius: 3px;
+    aspect-ratio: 16 / 6;
+    min-height: 230px;
+    background: #070d15;
+}
+.blog-cover-art--detail {
+    min-height: 100%;
+    padding: clamp(18px, 4vw, 34px);
+}
+.blog-cover-art--detail .blog-cover-art__eyebrow { font-size: 0.64rem; }
+.blog-cover-art--detail .blog-cover-art__channel { font-size: clamp(0.9rem, 2vw, 1.2rem); }
+.blog-cover-art--detail .blog-cover-art__signal { right: 28px; bottom: 26px; font-size: 0.62rem; }
 
 .blog-detail__body {
     color: var(--holo-ink);
@@ -2018,7 +2166,10 @@ body.page-wrapper:has(.blog-shell) {
     .blog-post-card__actions { margin: 9px -14px -10px; padding-inline: 14px; }
     .blog-rail { grid-template-columns: 1fr; }
     .blog-detail { padding: 14px; }
-    .blog-detail-topbar { top: 124px; grid-template-columns: 1fr auto; }
+    .blog-detail__editorial-cover { height: 180px; min-height: 0; aspect-ratio: auto; }
+    .blog-cover-art--detail { padding: 18px; }
+    .blog-cover-art--detail .blog-cover-art__signal { right: 16px; bottom: 15px; }
+    .blog-detail-topbar { top: 124px; grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; }
     .blog-detail-topbar__context { display: none; }
     .blog-comments-section { padding: 12px; }
     .blog-opportunity-detail__grid { grid-template-columns: 1fr; }

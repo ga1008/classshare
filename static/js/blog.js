@@ -173,6 +173,7 @@ class BlogCenter {
         this.composeBaseline = '';
         this.composerReturnFocus = null;
         this.detailHasListHistory = false;
+        this.detailPreviousIsPost = false;
         this.lastListSnapshot = null;
         this.requestControllers = new Map();
         this.followKeys = new Set();
@@ -287,6 +288,7 @@ class BlogCenter {
         const postId = Number(url.searchParams.get('post') || 0);
         if (postId) {
             this.detailHasListHistory = true;
+            this.detailPreviousIsPost = event.state?.blog?.parentView === 'detail';
             await this.showDetail(postId, { historyMode: 'none', scrollToTop: false });
             return;
         }
@@ -305,6 +307,7 @@ class BlogCenter {
             scrollY: 0,
         };
         this.detailHasListHistory = false;
+        this.detailPreviousIsPost = false;
         this.state.detailPostId = null;
         this.state.detailPost = null;
         this.restoreListSnapshot(snapshot);
@@ -733,6 +736,17 @@ class BlogCenter {
             return;
         }
 
+        const internalPostLink = event.target.closest('.blog-detail__body a[href]');
+        if (internalPostLink) {
+            const targetUrl = new URL(internalPostLink.href, window.location.origin);
+            const targetPostId = Number(targetUrl.searchParams.get('post') || 0);
+            if (targetUrl.origin === window.location.origin && targetUrl.pathname === '/blog' && targetPostId) {
+                event.preventDefault();
+                this.showDetail(targetPostId);
+                return;
+            }
+        }
+
         const opportunitySaveButton = event.target.closest('[data-blog-opportunity-save]');
         if (opportunitySaveButton) {
             const currentState = opportunitySaveButton.dataset.currentState || '';
@@ -842,6 +856,9 @@ class BlogCenter {
             break;
         case 'back-to-feed':
             this.backToList();
+            break;
+        case 'back-detail-context':
+            this.backFromDetail();
             break;
         case 'upload-image':
             $('[data-blog-compose-file-input]', this.shell)?.click();
@@ -1342,11 +1359,9 @@ class BlogCenter {
     }
 
     backToList() {
-        if (this.detailHasListHistory) {
-            window.history.back();
-            return;
-        }
         const snapshot = this.lastListSnapshot || this.buildListSnapshot();
+        this.detailHasListHistory = false;
+        this.detailPreviousIsPost = false;
         this.state.detailPostId = null;
         this.state.detailPost = null;
         this.restoreListSnapshot(snapshot);
@@ -1355,6 +1370,14 @@ class BlogCenter {
         this.loadDiscovery();
         this.updateListUrl();
         window.requestAnimationFrame(() => window.scrollTo({ top: Number(snapshot.scrollY || 0), behavior: 'auto' }));
+    }
+
+    backFromDetail() {
+        if (this.detailHasListHistory) {
+            window.history.back();
+            return;
+        }
+        this.backToList();
     }
 
     sectionByKey(sectionKey) {
@@ -1493,6 +1516,31 @@ class BlogCenter {
         return `<span class="blog-section-badge ${escapeHtml(className)}" style="--section-accent:${this.sectionAccent(section)}"><span>${escapeHtml(section.icon || '•')}</span>${escapeHtml(section.short_name || section.name || '')}</span>`;
     }
 
+    postCoverFallbackHtml(post = {}, variant = 'card') {
+        const section = this.sectionByKey(post.section_key) || {};
+        const automatedNews = post.author?.role === 'assistant';
+        const label = automatedNews ? '栏目封面 · 非新闻原图' : '精选内容封面';
+        return `
+            <div class="blog-cover-art blog-cover-art--${escapeHtml(variant)}" style="--cover-accent:${this.sectionAccent(section)}" role="img" aria-label="${escapeHtml(label)}">
+                <span class="blog-cover-art__grid" aria-hidden="true"></span>
+                <span class="blog-cover-art__eyebrow">${escapeHtml(label)}</span>
+                <span class="blog-cover-art__icon" aria-hidden="true">${escapeHtml(section.icon || '✦')}</span>
+                <span class="blog-cover-art__channel">${escapeHtml(section.short_name || section.name || '博客')}</span>
+                <span class="blog-cover-art__signal" aria-hidden="true">LS / ${escapeHtml(String(post.id || '00').padStart(2, '0'))}</span>
+            </div>
+        `;
+    }
+
+    postCoverMediaHtml(post = {}, variant = 'card', { genericFallback = false } = {}) {
+        if (post.cover_image_hash) {
+            return `<img class="blog-cover-image" src="/api/blog/image/${escapeHtml(post.cover_image_hash)}" alt="" loading="lazy" decoding="async">`;
+        }
+        if (post.cover_image_kind === 'editorial' || post.author?.role === 'assistant' || genericFallback) {
+            return this.postCoverFallbackHtml(post, variant);
+        }
+        return '';
+    }
+
     opportunityDeadlineLabel(opportunity = {}) {
         const days = Number(opportunity.deadline_days);
         if (!Number.isFinite(days)) return '截止时间以官方公告为准';
@@ -1576,7 +1624,13 @@ class BlogCenter {
         if (sectionNode) sectionNode.textContent = section?.name || '博客中心';
         if (titleNode) titleNode.textContent = post?.title || '文章详情';
         const backContext = $('[data-blog-detail-back-context]', this.shell);
-        if (backContext) backContext.textContent = `返回${section?.name || '博客列表'}并恢复浏览位置`;
+        const backLabel = $('[data-blog-detail-back-label]', this.shell);
+        if (backLabel) backLabel.textContent = this.detailPreviousIsPost ? '返回上一篇文章' : '返回博客列表';
+        if (backContext) {
+            backContext.textContent = this.detailPreviousIsPost
+                ? '回到刚才读到的文章'
+                : `返回${section?.name || '博客列表'}并恢复浏览位置`;
+        }
     }
 
     setMyPostsFilter(filterValue) {
@@ -1875,9 +1929,7 @@ class BlogCenter {
     }
 
     spotlightPostHtml(post, index) {
-        const cover = post.cover_image_hash
-            ? `<img src="/api/blog/image/${escapeHtml(post.cover_image_hash)}" alt="" loading="lazy" decoding="async">`
-            : `<div class="blog-spotlight-card__fallback">${index === 0 ? '精选' : '热帖'}</div>`;
+        const cover = this.postCoverMediaHtml(post, 'spotlight', { genericFallback: true });
         return `
             <button type="button" class="blog-spotlight-card${index === 0 ? ' blog-spotlight-card--lead' : ''}" data-blog-open-post="${post.id}">
                 <div class="blog-spotlight-card__media">${cover}</div>
@@ -2080,22 +2132,28 @@ class BlogCenter {
             scrollToTop = false;
         }
         if (historyMode === 'push') {
-            const snapshot = this.buildListSnapshot();
+            const fromDetail = this.state.currentView === 'detail' && Number(this.state.detailPostId || 0) > 0;
+            const snapshot = fromDetail
+                ? (this.lastListSnapshot || window.history.state?.blog?.snapshot || this.buildListSnapshot())
+                : this.buildListSnapshot();
             this.lastListSnapshot = snapshot;
-            window.history.replaceState(
-                { blog: { view: 'list', postId: null, snapshot } },
-                '',
-                window.location.href,
-            );
+            if (!fromDetail) {
+                window.history.replaceState(
+                    { blog: { view: 'list', postId: null, snapshot } },
+                    '',
+                    window.location.href,
+                );
+            }
             const detailUrl = new URL('/blog', window.location.origin);
             if (this.state.currentSection) detailUrl.searchParams.set('section', this.state.currentSection);
             detailUrl.searchParams.set('post', String(postId));
             window.history.pushState(
-                { blog: { view: 'detail', postId, snapshot } },
+                { blog: { view: 'detail', postId, snapshot, parentView: fromDetail ? 'detail' : 'list' } },
                 '',
                 `${detailUrl.pathname}${detailUrl.search}`,
             );
             this.detailHasListHistory = true;
+            this.detailPreviousIsPost = fromDetail;
         }
         const controller = this.beginRequest('detail');
         this.showView('detail');
@@ -3186,9 +3244,8 @@ class BlogCenter {
         const tags = (post.tags || []).map((tag) => (
             `<button type="button" class="blog-tag" data-blog-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
         )).join('');
-        const cover = post.cover_image_hash
-            ? `<div class="blog-post-card__media"><img class="blog-post-card__cover" src="/api/blog/image/${escapeHtml(post.cover_image_hash)}" alt="" loading="lazy" decoding="async"></div>`
-            : '';
+        const coverMedia = this.postCoverMediaHtml(post, 'card');
+        const cover = coverMedia ? `<div class="blog-post-card__media">${coverMedia}</div>` : '';
         const likedClass = post.is_liked ? ' is-active--like' : '';
         const bookmarkedClass = post.is_bookmarked ? ' is-active--bookmark' : '';
         const postUrl = new URL('/blog', window.location.origin);
@@ -3270,6 +3327,9 @@ class BlogCenter {
         const tags = (post.tags || []).map((tag) => (
             `<button type="button" class="blog-tag" data-blog-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
         )).join('');
+        const editorialCover = post.cover_image_kind === 'editorial'
+            ? `<div class="blog-detail__editorial-cover">${this.postCoverFallbackHtml(post, 'detail')}</div>`
+            : '';
 
         return `
             <article class="blog-detail">
@@ -3300,6 +3360,7 @@ class BlogCenter {
                     ${actionButtons ? `<div class="blog-detail__actions">${actionButtons}</div>` : ''}
                 </div>
                 ${tags ? `<div class="blog-post-card__tags blog-detail__tags">${tags}</div>` : ''}
+                ${editorialCover}
                 <div class="blog-detail__body">${renderMarkdownHtml(post.content_md || '')}</div>
                 <div class="blog-detail__interactions">
                     <button type="button" class="blog-interact-btn${post.is_liked ? ' is-active--like' : ''}" data-like-post="${post.id}">
