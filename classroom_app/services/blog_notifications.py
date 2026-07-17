@@ -26,15 +26,18 @@ def notify_new_comment(
     link_url = f"/blog?post={post_id}"
 
     if parent_comment_id is None:
-        post_author_pk = _safe_int_pk(post.get("author_user_pk"))
-        post_author_role = str(post.get("author_role") or "")
+        recipient = _resolve_notifiable_user(post.get("author_role"), post.get("author_user_pk"))
         post_author_identity = str(post.get("author_identity") or "")
 
         if post_author_identity == commenter_identity:
             return
 
-        if post_author_pk is None:
+        # Blog crawler/editorial posts are authored by the platform assistant.
+        # That identity has no user inbox and must never be passed to the
+        # student/teacher-only message center identity builder.
+        if recipient is None:
             return
+        post_author_role, post_author_pk = recipient
 
         payload = _build_notification_payload(
             recipient_role=post_author_role,
@@ -62,10 +65,10 @@ def notify_new_comment(
         if parent_identity == commenter_identity:
             return
 
-        parent_pk = _safe_int_pk(parent_row["author_user_pk"])
-        parent_role = str(parent_row["author_role"] or "")
-        if parent_pk is None:
+        recipient = _resolve_notifiable_user(parent_row["author_role"], parent_row["author_user_pk"])
+        if recipient is None:
             return
+        parent_role, parent_pk = recipient
 
         payload = _build_notification_payload(
             recipient_role=parent_role,
@@ -90,10 +93,10 @@ def notify_post_featured(
     moderator_role: str,
     moderator_pk: int,
 ) -> None:
-    author_pk = _safe_int_pk(post.get("author_user_pk"))
-    author_role = str(post.get("author_role") or "")
-    if author_pk is None:
+    recipient = _resolve_notifiable_user(post.get("author_role"), post.get("author_user_pk"))
+    if recipient is None:
         return
+    author_role, author_pk = recipient
 
     post_id = post["id"]
     post_title = post.get("title", "")
@@ -120,10 +123,10 @@ def notify_post_hot(
     *,
     score: int,
 ) -> None:
-    author_pk = _safe_int_pk(post.get("author_user_pk"))
-    author_role = str(post.get("author_role") or "")
-    if author_pk is None:
+    recipient = _resolve_notifiable_user(post.get("author_role"), post.get("author_user_pk"))
+    if recipient is None:
         return
+    author_role, author_pk = recipient
 
     post_id = post["id"]
     post_title = post.get("title", "")
@@ -145,10 +148,10 @@ def notify_post_hot(
 
 
 def notify_opportunity_deadline(conn, opportunity: dict[str, Any], user_state: dict[str, Any]) -> bool:
-    recipient_pk = _safe_int_pk(user_state.get("user_pk"))
-    recipient_role = str(user_state.get("user_role") or "")
-    if recipient_pk is None or recipient_role not in {"student", "teacher"}:
+    recipient = _resolve_notifiable_user(user_state.get("user_role"), user_state.get("user_pk"))
+    if recipient is None:
         return False
+    recipient_role, recipient_pk = recipient
     post_id = _safe_int_pk(opportunity.get("post_id"))
     opportunity_id = _safe_int_pk(opportunity.get("id"))
     if post_id is None or opportunity_id is None:
@@ -178,3 +181,11 @@ def _safe_int_pk(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _resolve_notifiable_user(role: Any, user_pk: Any) -> Optional[tuple[str, int]]:
+    normalized_role = str(role or "").strip().lower()
+    normalized_pk = _safe_int_pk(user_pk)
+    if normalized_role not in {"student", "teacher"} or normalized_pk is None:
+        return None
+    return normalized_role, normalized_pk
