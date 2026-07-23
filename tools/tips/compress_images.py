@@ -45,14 +45,18 @@ SOURCE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 # 文件名前缀 → 提示分类（与 life_tip_seed_data 的 category 对齐）。
 PREFIX_CATEGORIES: dict[str, list[str]] = {
-    "xueye": ["学业规则", "论文写作", "奖学金"],
-    "biye": ["毕业条件", "论文写作"],
-    "kaoyan": ["考研", "学业规则"],
+    "xueye": ["学业规则"],
+    "lunwen": ["论文写作"],
+    "jiangxuejin": ["奖学金"],
+    "biye": ["毕业条件"],
+    "kaoyan": ["考研"],
     "kaogong": ["考公考编"],
-    "shixi": ["实习", "简历面试"],
-    "zhichang": ["合同五险", "职业路径", "简历面试"],
-    "chengshi": ["行业城市", "职业路径"],
-    "rensheng": ["人生大实话"],
+    "shixi": ["实习"],
+    "jianli": ["简历面试"],
+    "hetong": ["合同五险"],
+    "zhichang": ["职业路径", "教学相长", "职称科研"],
+    "chengshi": ["行业城市"],
+    "rensheng": ["人生大实话", "身心权益"],
 }
 
 
