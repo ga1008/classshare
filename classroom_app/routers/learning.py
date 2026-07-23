@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from ..database import get_db_connection
 from ..dependencies import get_current_user
+from ..services.life_tip_service import build_login_tip_payload_for_student
 from ..services.learning_progress_service import (
     CultivationWeightValidationError,
     build_student_global_cultivation_profile,
@@ -143,13 +144,20 @@ def _ensure_material_in_classroom(conn, class_offering_id: int, material_id: int
 
 
 @router.get("/learning/cultivation-profile", response_class=JSONResponse)
-async def get_cultivation_profile(user: dict = Depends(get_current_user)):
+async def get_cultivation_profile(include_tip: int = 0, user: dict = Depends(get_current_user)):
     if user["role"] != "student":
         return {"status": "success", "profile": None}
     with get_db_connection() as conn:
         profile = build_student_global_cultivation_profile(conn, int(user["id"]))
+        # 表单登录走 cookie reveal 时才请求提示语（include_tip=1），
+        # 普通页面加载不带该参数，不产生投放开销。
+        login_tip = (
+            build_login_tip_payload_for_student(conn, int(user["id"]))
+            if include_tip
+            else None
+        )
         conn.commit()
-        return {"status": "success", "profile": profile}
+        return {"status": "success", "profile": profile, "login_tip": login_tip}
 
 
 @router.get("/classrooms/{class_offering_id}/learning/progress", response_class=JSONResponse)

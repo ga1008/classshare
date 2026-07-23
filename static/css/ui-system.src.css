@@ -48867,3 +48867,189 @@ button.lp-import-summary__action:focus-visible { outline: 2px solid rgba(14, 165
 .materials-form-field[hidden] {
     display: none !important;
 }
+
+/* ==== 人生一言登录加载屏（2026-07-24）：小徽章 + 一句话提示 + 背景图，复用 .cultivation-login-reveal 开合逻辑 ==== */
+.cultivation-login-reveal--tip {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: clamp(20px, 5vw, 56px);
+}
+.life-tip-backdrop {
+    position: absolute;
+    inset: -4%;
+    background: radial-gradient(120% 90% at 20% 10%, #1e293b 0%, #0f172a 45%, #020617 100%);
+    background-size: cover;
+    background-position: center;
+    animation: life-tip-kenburns 9s ease-out forwards;
+}
+.life-tip-backdrop.has-image {
+    filter: saturate(0.92) brightness(0.85);
+}
+.life-tip-vignette {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(180deg, rgba(2, 6, 23, 0.72) 0%, rgba(2, 6, 23, 0.28) 30%, rgba(2, 6, 23, 0.3) 62%, rgba(2, 6, 23, 0.85) 100%),
+        radial-gradient(85% 70% at 50% 52%, rgba(2, 6, 23, 0) 40%, rgba(2, 6, 23, 0.55) 100%);
+}
+@keyframes life-tip-kenburns {
+    from { transform: scale(1); }
+    to { transform: scale(1.07); }
+}
+.life-tip-identity {
+    position: absolute;
+    top: clamp(16px, 4vh, 36px);
+    left: clamp(16px, 4vw, 40px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 999px;
+    background: rgba(2, 6, 23, 0.55);
+    backdrop-filter: blur(6px);
+    color: #e2e8f0;
+    opacity: 0;
+    transform: translateY(-8px);
+    transition: opacity 0.5s ease 0.15s, transform 0.5s ease 0.15s;
+}
+.cultivation-login-reveal--tip.is-open .life-tip-identity {
+    opacity: 1;
+    transform: translateY(0);
+}
+.life-tip-identity__sigil {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--cultivation-a, #38bdf8), var(--cultivation-b, #a78bfa));
+    box-shadow: 0 0 12px 2px rgba(56, 189, 248, 0.45);
+}
+.life-tip-identity[data-cultivation-theme="mortal"] { --cultivation-a: #64748b; --cultivation-b: #cbd5e1; }
+.life-tip-identity[data-cultivation-theme="qi_awakening"] { --cultivation-a: #14b8a6; --cultivation-b: #facc15; }
+.life-tip-identity[data-cultivation-theme="qi_refining"] { --cultivation-a: #22c55e; --cultivation-b: #67e8f9; }
+.life-tip-identity[data-cultivation-theme="foundation"] { --cultivation-a: #0ea5e9; --cultivation-b: #f59e0b; }
+.life-tip-identity[data-cultivation-theme="golden_core"] { --cultivation-a: #f59e0b; --cultivation-b: #ef4444; }
+.life-tip-identity[data-cultivation-theme="nascent_soul"] { --cultivation-a: #38bdf8; --cultivation-b: #a78bfa; }
+.life-tip-identity__name {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+.life-tip-identity__level {
+    font-size: 12px;
+    color: #94a3b8;
+}
+.life-tip-identity__bar {
+    width: 72px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.25);
+    overflow: hidden;
+}
+.life-tip-identity__bar i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--cultivation-a, #38bdf8), var(--cultivation-b, #a78bfa));
+}
+.life-tip-stage {
+    position: relative;
+    max-width: min(720px, 88vw);
+    text-align: center;
+    color: #f1f5f9;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.6s ease 0.25s, transform 0.6s ease 0.25s;
+}
+.cultivation-login-reveal--tip.is-open .life-tip-stage {
+    opacity: 1;
+    transform: translateY(0);
+}
+.life-tip-stage__kicker {
+    margin: 0 0 14px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: #7dd3fc;
+}
+.life-tip-stage__kicker::before,
+.life-tip-stage__kicker::after {
+    content: "";
+    display: inline-block;
+    width: 34px;
+    height: 1px;
+    margin: 0 12px;
+    vertical-align: middle;
+    background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.7));
+}
+.life-tip-stage__kicker::after {
+    background: linear-gradient(90deg, rgba(125, 211, 252, 0.7), transparent);
+}
+.life-tip-stage__text {
+    margin: 0;
+    min-height: 3.2em;
+    font-size: clamp(17px, 2.6vw, 24px);
+    font-weight: 600;
+    line-height: 1.75;
+    text-wrap: balance;
+    text-shadow: 0 2px 18px rgba(2, 6, 23, 0.8);
+}
+.life-tip-stage__source {
+    margin: 14px 0 0;
+    font-size: 13px;
+    color: #94a3b8;
+}
+.life-tip-footer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: clamp(18px, 5vh, 42px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: #94a3b8;
+}
+.life-tip-footer__timer {
+    width: min(320px, 60vw);
+    height: 3px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.22);
+    overflow: hidden;
+}
+.life-tip-footer__timer i {
+    display: block;
+    height: 100%;
+    width: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #38bdf8, #a78bfa);
+    transform-origin: left center;
+    animation-name: life-tip-timer;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+}
+@keyframes life-tip-timer {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+}
+.life-tip-footer__skip {
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+    animation: life-tip-skip-pulse 2.2s ease-in-out infinite;
+}
+@keyframes life-tip-skip-pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .life-tip-backdrop { animation: none; }
+    .life-tip-footer__skip { animation: none; }
+}
+@media (max-width: 640px) {
+    .life-tip-identity__bar { display: none; }
+    .life-tip-stage__text { font-size: 16px; }
+}

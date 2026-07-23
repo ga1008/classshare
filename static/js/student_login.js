@@ -1,5 +1,5 @@
 import { apiFetch } from '/static/js/api.js';
-import { playCultivationReveal } from '/static/js/cultivation_identity.js?v=20260512-reveal';
+import { playCultivationReveal } from '/static/js/cultivation_identity.js?v=20260724-lifetip';
 import { closeModal, openModal, showToast } from '/static/js/ui.js';
 
 function setSubmitting(button, submitting, pendingText) {
@@ -30,7 +30,11 @@ function redirectAfterLogin(result) {
     showToast(message, 'success');
     const go = () => window.location.assign(redirectTo);
     if (result.cultivation_profile) {
-        playCultivationReveal(result.cultivation_profile, { durationMs: 3600, onDone: go });
+        playCultivationReveal(result.cultivation_profile, {
+            durationMs: 3600,
+            loginTip: result.login_tip || null,
+            onDone: go,
+        });
         return;
     }
     window.setTimeout(go, 450);

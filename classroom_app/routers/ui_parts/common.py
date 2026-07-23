@@ -80,6 +80,7 @@ from ...services.department_service import collect_department_options, normalize
 from ...services.class_kind_service import class_kind_label, is_custom_class_kind, normalize_class_kind
 from ...services.organization_scope_service import load_teacher_org_memberships, load_teacher_org_scope, normalize_school_code, organization_label
 from ...services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
+from ...services.life_tip_service import build_login_tip_payload_for_student
 from ...services.learning_progress_service import (
     build_class_learning_overview,
     build_student_global_cultivation_profile,
@@ -504,9 +505,14 @@ def _build_student_login_json_response(
     _ensure_student_can_login(student_row)
     access_token, _ = _build_student_login_token(student_row, client_ip)
     cultivation_profile = None
+    login_tip = None
     try:
         with get_db_connection() as profile_conn:
             cultivation_profile = build_student_global_cultivation_profile(
+                profile_conn,
+                int(student_row["id"]),
+            )
+            login_tip = build_login_tip_payload_for_student(
                 profile_conn,
                 int(student_row["id"]),
             )
@@ -519,6 +525,7 @@ def _build_student_login_json_response(
         "redirect_to": safe_next,
         "login_count": login_count,
         "cultivation_profile": cultivation_profile,
+        "login_tip": login_tip,
     })
     apply_access_token_cookie(response, access_token)
     return response

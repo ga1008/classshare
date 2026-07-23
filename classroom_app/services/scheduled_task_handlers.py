@@ -157,6 +157,19 @@ def handle_exam_email_reminder(task: dict[str, Any]) -> str:
 register_task_handler(TASK_KIND_EXAM_EMAIL_REMINDER, handle_exam_email_reminder)
 
 
+TASK_KIND_LIFE_TIP_GONGWEN_REFRESH = "life_tip_gongwen_refresh"
+
+
+async def handle_life_tip_gongwen_refresh(task: dict[str, Any]) -> str:
+    """公文 → 登录"人生一言"提示语挖掘（重逻辑惰性导入，保持 worker 启动轻量）。"""
+    from .life_tip_generation_service import handle_life_tip_generation_task
+
+    return await handle_life_tip_generation_task(task)
+
+
+register_task_handler(TASK_KIND_LIFE_TIP_GONGWEN_REFRESH, handle_life_tip_gongwen_refresh)
+
+
 # Value must match todo_service.TODO_DUE_REMINDER_TASK_KIND (kept as a literal
 # here to avoid importing the heavier todo_service into the worker boot path).
 TASK_KIND_TODO_DUE_REMINDER = "todo_due_reminder"

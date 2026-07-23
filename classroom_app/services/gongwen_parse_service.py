@@ -393,6 +393,11 @@ def schedule_gongwen_parse_worker(conn) -> int:
 
     schedule_gongwen_follow_worker(conn)
 
+    # 提示语挖掘 worker 同链布防：新公文解析后每日增量转化为登录"人生一言"。
+    from .life_tip_generation_service import schedule_life_tip_generation_worker
+
+    schedule_life_tip_generation_worker(conn)
+
     run_at = datetime.now() + timedelta(seconds=45)
     return schedule_task(
         conn,
