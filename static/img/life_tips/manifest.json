@@ -1,7 +1,127 @@
 {
   "images": [
     {
-      "file": "xueye-aurora00-13e21373.webp",
+      "file": "biye-avenue03-63d837d2.webp",
+      "categories": [
+        "毕业条件",
+        "论文写作"
+      ]
+    },
+    {
+      "file": "biye-gown02-da332c7f.webp",
+      "categories": [
+        "毕业条件",
+        "论文写作"
+      ]
+    },
+    {
+      "file": "biye-hall01-a0c31e57.webp",
+      "categories": [
+        "毕业条件",
+        "论文写作"
+      ]
+    },
+    {
+      "file": "chengshi-rooftop03-0cbfebae.webp",
+      "categories": [
+        "行业城市",
+        "职业路径"
+      ]
+    },
+    {
+      "file": "chengshi-skyline01-1956b9f4.webp",
+      "categories": [
+        "行业城市",
+        "职业路径"
+      ]
+    },
+    {
+      "file": "chengshi-station02-be6d0691.webp",
+      "categories": [
+        "行业城市",
+        "职业路径"
+      ]
+    },
+    {
+      "file": "kaogong-building01-540ade3a.webp",
+      "categories": [
+        "考公考编"
+      ]
+    },
+    {
+      "file": "kaogong-exam02-20a87b18.webp",
+      "categories": [
+        "考公考编"
+      ]
+    },
+    {
+      "file": "kaogong-flagline03-298c52d6.webp",
+      "categories": [
+        "考公考编"
+      ]
+    },
+    {
+      "file": "kaoyan-dawn02-b8a88081.webp",
+      "categories": [
+        "考研",
+        "学业规则"
+      ]
+    },
+    {
+      "file": "kaoyan-lamp01-22f7bf69.webp",
+      "categories": [
+        "考研",
+        "学业规则"
+      ]
+    },
+    {
+      "file": "kaoyan-window03-4baf3fda.webp",
+      "categories": [
+        "考研",
+        "学业规则"
+      ]
+    },
+    {
+      "file": "rensheng-road03-f1c7aa52.webp",
+      "categories": [
+        "人生大实话"
+      ]
+    },
+    {
+      "file": "rensheng-sea02-6985b42d.webp",
+      "categories": [
+        "人生大实话"
+      ]
+    },
+    {
+      "file": "rensheng-stars01-14fe7880.webp",
+      "categories": [
+        "人生大实话"
+      ]
+    },
+    {
+      "file": "shixi-lobby03-3b584606.webp",
+      "categories": [
+        "实习",
+        "简历面试"
+      ]
+    },
+    {
+      "file": "shixi-metro02-b9cf5cbe.webp",
+      "categories": [
+        "实习",
+        "简历面试"
+      ]
+    },
+    {
+      "file": "shixi-tower01-0fc7eeea.webp",
+      "categories": [
+        "实习",
+        "简历面试"
+      ]
+    },
+    {
+      "file": "xueye-corridor03-0fef734b.webp",
       "categories": [
         "学业规则",
         "论文写作",
@@ -9,7 +129,7 @@
       ]
     },
     {
-      "file": "xueye-aurora01-6741310e.webp",
+      "file": "xueye-desk02-e3c472e6.webp",
       "categories": [
         "学业规则",
         "论文写作",
@@ -17,61 +137,15 @@
       ]
     },
     {
-      "file": "biye-aurora02-b44d3ed9.webp",
+      "file": "xueye-library01-821070c2.webp",
       "categories": [
-        "毕业条件",
-        "论文写作"
+        "学业规则",
+        "论文写作",
+        "奖学金"
       ]
     },
     {
-      "file": "biye-aurora03-7f44211b.webp",
-      "categories": [
-        "毕业条件",
-        "论文写作"
-      ]
-    },
-    {
-      "file": "kaoyan-aurora04-4be2a5c0.webp",
-      "categories": [
-        "考研",
-        "学业规则"
-      ]
-    },
-    {
-      "file": "kaoyan-aurora05-b524dd95.webp",
-      "categories": [
-        "考研",
-        "学业规则"
-      ]
-    },
-    {
-      "file": "kaogong-aurora06-ff139921.webp",
-      "categories": [
-        "考公考编"
-      ]
-    },
-    {
-      "file": "kaogong-aurora07-9e98e8cb.webp",
-      "categories": [
-        "考公考编"
-      ]
-    },
-    {
-      "file": "shixi-aurora08-b5b1957b.webp",
-      "categories": [
-        "实习",
-        "简历面试"
-      ]
-    },
-    {
-      "file": "shixi-aurora09-8b136b88.webp",
-      "categories": [
-        "实习",
-        "简历面试"
-      ]
-    },
-    {
-      "file": "zhichang-aurora10-40bd5fe1.webp",
+      "file": "zhichang-meeting02-028e7902.webp",
       "categories": [
         "合同五险",
         "职业路径",
@@ -79,7 +153,7 @@
       ]
     },
     {
-      "file": "zhichang-aurora11-cfe9fdb7.webp",
+      "file": "zhichang-office01-089370ff.webp",
       "categories": [
         "合同五险",
         "职业路径",
@@ -87,29 +161,11 @@
       ]
     },
     {
-      "file": "chengshi-aurora12-d942bd70.webp",
+      "file": "zhichang-street03-778bb1e8.webp",
       "categories": [
-        "行业城市",
-        "职业路径"
-      ]
-    },
-    {
-      "file": "chengshi-aurora13-65b45433.webp",
-      "categories": [
-        "行业城市",
-        "职业路径"
-      ]
-    },
-    {
-      "file": "rensheng-aurora14-6ca461a0.webp",
-      "categories": [
-        "人生大实话"
-      ]
-    },
-    {
-      "file": "rensheng-aurora15-27f679ad.webp",
-      "categories": [
-        "人生大实话"
+        "合同五险",
+        "职业路径",
+        "简历面试"
       ]
     }
   ]

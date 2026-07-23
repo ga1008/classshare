@@ -208,3 +208,4 @@ test-results/
 deployment/deploy_remote.ps1
 tools/deploy/postflight.ps1
 target/target01/P21/deploy-check-productization.md
+tools/tips/raw_backgrounds/
