@@ -8,7 +8,11 @@ from pydantic import BaseModel
 
 from ..database import get_db_connection
 from ..dependencies import get_current_user
-from ..services.life_tip_service import build_login_tip_payload_for_student
+from ..services.life_tip_service import (
+    build_login_tip_payload_for_student,
+    build_login_tip_payload_for_teacher,
+    record_tip_feedback,
+)
 from ..services.learning_progress_service import (
     CultivationWeightValidationError,
     build_student_global_cultivation_profile,
@@ -146,6 +150,12 @@ def _ensure_material_in_classroom(conn, class_offering_id: int, material_id: int
 @router.get("/learning/cultivation-profile", response_class=JSONResponse)
 async def get_cultivation_profile(include_tip: int = 0, user: dict = Depends(get_current_user)):
     if user["role"] != "student":
+        # 教师没有修为体系，但登录 reveal 仍可展示教师池的"人生一言"。
+        if user["role"] == "teacher" and include_tip:
+            with get_db_connection() as conn:
+                login_tip = build_login_tip_payload_for_teacher(conn, int(user["id"]))
+                conn.commit()
+            return {"status": "success", "profile": None, "login_tip": login_tip}
         return {"status": "success", "profile": None}
     with get_db_connection() as conn:
         profile = build_student_global_cultivation_profile(conn, int(user["id"]))
@@ -158,6 +168,31 @@ async def get_cultivation_profile(include_tip: int = 0, user: dict = Depends(get
         )
         conn.commit()
         return {"status": "success", "profile": profile, "login_tip": login_tip}
+
+
+class LifeTipFeedbackRequest(BaseModel):
+    tip_id: int
+    verdict: int  # 1 = 有用, -1 = 无感
+
+
+@router.post("/learning/life-tips/feedback", response_class=JSONResponse)
+async def submit_life_tip_feedback(
+    payload: LifeTipFeedbackRequest,
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        try:
+            result = record_tip_feedback(
+                conn,
+                tip_id=int(payload.tip_id),
+                user_role=str(user["role"]),
+                user_pk=int(user["id"]),
+                verdict=int(payload.verdict),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        conn.commit()
+    return {"status": "success", **result}
 
 
 @router.get("/classrooms/{class_offering_id}/learning/progress", response_class=JSONResponse)

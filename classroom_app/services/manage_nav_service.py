@@ -167,6 +167,16 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/polls",),
     ),
     ManageNavItem(
+        key="life_tips",
+        domain="teaching",
+        group="内容资产",
+        label="一言提示",
+        icon="message-circle",
+        href="/manage/teaching/life-tips",
+        search_text="一言 提示 人生提示 登录提示 life tip loading",
+        ai_hint="一言提示：管理学生/教师登录加载屏上的一句话提示——审核 AI 从公文挖掘的条目、手工新增本校/本系提示、下架劣句、查看有用/无感反馈。",
+    ),
+    ManageNavItem(
         key="materials",
         domain="teaching",
         group="内容资产",

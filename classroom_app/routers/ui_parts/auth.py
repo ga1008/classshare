@@ -450,6 +450,8 @@ def handle_teacher_login(
         status_code=status.HTTP_303_SEE_OTHER,
     )
     apply_access_token_cookie(response, access_token)
+    # 教师登录后同样播放"人生一言"加载屏（教师池，无修为徽章）。
+    response.set_cookie("cultivation_reveal", "1", max_age=60, httponly=False, samesite="lax")
     return response
 
 

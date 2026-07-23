@@ -120,15 +120,26 @@ function preloadImage(url, timeoutMs) {
     });
 }
 
-function buildTipReveal(profile, tip, durationMs, hasImage) {
-    const level = profile?.highest_level || {};
+function buildIdentityChip(profile) {
+    const level = profile?.highest_level;
+    if (!level) return '';
     const progress = clampPercent(profile?.progress_percent);
     const theme = String(profile?.avatar_theme || level.theme || 'mortal').replace(/[^a-z0-9_-]/gi, '') || 'mortal';
     const levelText = profile?.breakthrough_ready && profile?.next_stage_name
         ? `可破境 · ${profile.next_stage_name}`
         : (level.level_name || '未入道');
     const name = profile?.address_name || profile?.student_name || '修士';
+    return `
+        <header class="life-tip-identity" data-cultivation-theme="${theme}">
+            <span class="life-tip-identity__sigil" aria-hidden="true"></span>
+            <span class="life-tip-identity__name">${escapeHtml(name)}</span>
+            <span class="life-tip-identity__level">${escapeHtml(levelText)}</span>
+            <span class="life-tip-identity__bar" aria-hidden="true"><i style="width: ${progress}%"></i></span>
+        </header>
+    `;
+}
 
+function buildTipReveal(profile, tip, durationMs, hasImage) {
     const overlay = document.createElement('div');
     overlay.className = 'cultivation-login-reveal cultivation-login-reveal--tip';
     overlay.setAttribute('role', 'status');
@@ -138,12 +149,7 @@ function buildTipReveal(profile, tip, durationMs, hasImage) {
         <div class="life-tip-backdrop${hasImage ? ' has-image' : ''}" aria-hidden="true"
             ${hasImage ? `style="background-image: url('${escapeHtml(tip.image_url)}')"` : ''}></div>
         <div class="life-tip-vignette" aria-hidden="true"></div>
-        <header class="life-tip-identity" data-cultivation-theme="${theme}">
-            <span class="life-tip-identity__sigil" aria-hidden="true"></span>
-            <span class="life-tip-identity__name">${escapeHtml(name)}</span>
-            <span class="life-tip-identity__level">${escapeHtml(levelText)}</span>
-            <span class="life-tip-identity__bar" aria-hidden="true"><i style="width: ${progress}%"></i></span>
-        </header>
+        ${buildIdentityChip(profile)}
         <section class="life-tip-stage">
             <p class="life-tip-stage__kicker">${escapeHtml(tip.category || '人生提示')}</p>
             <p class="life-tip-stage__text" data-life-tip-text aria-label="${escapeHtml(tip.text)}"></p>
@@ -151,10 +157,40 @@ function buildTipReveal(profile, tip, durationMs, hasImage) {
         </section>
         <footer class="life-tip-footer">
             <span class="life-tip-footer__timer" aria-hidden="true"><i style="animation-duration: ${durationMs}ms"></i></span>
-            <span class="life-tip-footer__skip">点击任意处跳过 ›</span>
+            <div class="life-tip-footer__actions">
+                <button type="button" class="life-tip-feedback" data-life-tip-feedback="1">👍 有用</button>
+                <button type="button" class="life-tip-feedback" data-life-tip-feedback="-1">👎 无感</button>
+                <span class="life-tip-footer__skip">点击任意处跳过 ›</span>
+            </div>
         </footer>
     `;
     return overlay;
+}
+
+function wireTipFeedback(overlay, tip) {
+    overlay.querySelectorAll('[data-life-tip-feedback]').forEach((button) => {
+        button.addEventListener('click', async (event) => {
+            // 反馈不算"跳过"：拦住冒泡，让提示继续展示。
+            event.stopPropagation();
+            if (button.disabled) return;
+            const verdict = Number(button.dataset.lifeTipFeedback) || 1;
+            overlay.querySelectorAll('[data-life-tip-feedback]').forEach((peer) => {
+                peer.disabled = true;
+                peer.classList.remove('is-chosen');
+            });
+            button.classList.add('is-chosen');
+            try {
+                await fetch('/api/learning/life-tips/feedback', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tip_id: tip.id, verdict }),
+                });
+            } catch (error) {
+                // 反馈是锦上添花，失败静默。
+            }
+        });
+    });
 }
 
 function typewrite(node, text, durationMs, reducedMotion) {
@@ -207,6 +243,7 @@ function playLifeTipReveal(profile, tip, onDone) {
         window.addEventListener('keydown', onKeydown, true);
         autoTimer = window.setTimeout(finish, durationMs);
 
+        wireTipFeedback(overlay, tip);
         typewrite(overlay.querySelector('[data-life-tip-text]'), tip.text, durationMs, reducedMotion);
     });
 }
@@ -261,14 +298,14 @@ function buildReveal(profile, durationMs) {
 
 export function playCultivationReveal(profile, options = {}) {
     const onDone = typeof options.onDone === 'function' ? options.onDone : null;
-    if (!profile?.highest_level) {
-        window.setTimeout(() => onDone?.(), 450);
-        return;
-    }
-
     const tip = chooseTip(options.loginTip);
+    // 有提示就播加载屏（教师无修为 profile 也能播，只是没有徽章条）。
     if (tip) {
         playLifeTipReveal(profile, tip, onDone);
+        return;
+    }
+    if (!profile?.highest_level) {
+        window.setTimeout(() => onDone?.(), 450);
         return;
     }
 
@@ -313,10 +350,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const wantsReveal = shouldRevealFromCookie();
     const payload = await fetchCultivationProfile(wantsReveal);
     const profile = payload?.profile || null;
-    if (!profile) return;
-    window.CULTIVATION_PROFILE = profile;
-    applyCultivationIdentity(profile);
-    if (wantsReveal) {
+    if (profile) {
+        window.CULTIVATION_PROFILE = profile;
+        applyCultivationIdentity(profile);
+    }
+    // 教师没有修为 profile，但 login_tip 存在时同样播放提示屏。
+    if (wantsReveal && (profile || payload?.login_tip)) {
         clearRevealCookie();
         playCultivationReveal(profile, { durationMs: 3400, loginTip: payload?.login_tip || null });
     }

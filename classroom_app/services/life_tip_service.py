@@ -30,8 +30,8 @@ from typing import Any, Optional
 
 from ..db.connection import get_configured_db_engine
 from ..db.schema_life_tips import ensure_life_tip_schema
-from ..db.sql import insert_ignore_sql
-from .life_tip_seed_data import LIFE_TIP_SEED_PACK
+from ..db.sql import insert_ignore_sql, insert_update_on_conflict_sql
+from .life_tip_seed_data import LIFE_TIP_SEED_PACK, TEACHER_TIP_SEED_PACK
 
 POOL_CACHE_TTL_SECONDS = 600
 TIP_CANDIDATE_COUNT = 3
@@ -85,6 +85,15 @@ def _seed_life_tips(conn: Any) -> None:
             statement.sql,
             (
                 "global", "", "", category, "student",
+                tip_text, "seed", "", "active", 1,
+                tip_content_hash(tip_text),
+            ),
+        )
+    for category, tip_text in TEACHER_TIP_SEED_PACK:
+        conn.execute(
+            statement.sql,
+            (
+                "global", "", "", category, "teacher",
                 tip_text, "seed", "", "active", 1,
                 tip_content_hash(tip_text),
             ),
@@ -147,9 +156,10 @@ def _load_pool_from_db(
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT id, category, tip_text, source_ref
+        SELECT id, category, tip_text, source_ref, weight
         FROM life_tips
         WHERE status = 'active'
+          AND weight > 0
           AND audience IN (?, 'all')
           AND (
                 scope = 'global'
@@ -165,6 +175,7 @@ def _load_pool_from_db(
             "category": row["category"],
             "text": row["tip_text"],
             "source_ref": row["source_ref"] or "",
+            "weight": int(row["weight"] or 1),
         }
         for row in rows
     ]
@@ -252,11 +263,79 @@ def build_login_tip_payload(
         return None
     if not pool:
         return None
-    candidates = random.sample(pool, min(TIP_CANDIDATE_COUNT, len(pool)))
+    candidates = _weighted_sample(pool, min(TIP_CANDIDATE_COUNT, len(pool)))
     tips = []
     for tip in candidates:
-        tips.append({**tip, "image_url": _pick_image_url(tip["category"])})
+        payload_tip = {key: value for key, value in tip.items() if key != "weight"}
+        tips.append({**payload_tip, "image_url": _pick_image_url(tip["category"])})
     return {"tips": tips}
+
+
+def _weighted_sample(pool: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
+    """按 weight 无放回加权抽样（好评句更常出现，weight 0 已在查询层剔除）。"""
+    remaining = list(pool)
+    picked: list[dict[str, Any]] = []
+    while remaining and len(picked) < count:
+        weights = [max(1, int(tip.get("weight") or 1)) for tip in remaining]
+        chosen = random.choices(remaining, weights=weights, k=1)[0]
+        picked.append(chosen)
+        remaining.remove(chosen)
+    return picked
+
+
+FEEDBACK_WEIGHT_BASE = 1
+FEEDBACK_WEIGHT_MIN = 0
+FEEDBACK_WEIGHT_MAX = 5
+
+
+def record_tip_feedback(
+    conn: Any,
+    *,
+    tip_id: int,
+    user_role: str,
+    user_pk: int,
+    verdict: int,
+) -> dict[str, Any]:
+    """记录"有用/无感"投票（每人每句一票，可改票）并回写权重。
+
+    weight = clamp(1 + Σverdict, 0, 5)；跌到 0 的句子从投放池消失，
+    好评句在加权采样里更常被抽中。
+    """
+    ensure_life_tip_runtime(conn)
+    normalized_verdict = 1 if int(verdict) >= 0 else -1
+    row = conn.execute(
+        "SELECT id FROM life_tips WHERE id = ? LIMIT 1",
+        (int(tip_id),),
+    ).fetchone()
+    if not row:
+        raise ValueError("提示不存在")
+
+    engine = get_configured_db_engine()
+    statement = insert_update_on_conflict_sql(
+        engine,
+        "life_tip_feedback",
+        ("tip_id", "user_role", "user_pk", "verdict"),
+        conflict_columns=("tip_id", "user_role", "user_pk"),
+        update_columns=("verdict",),
+    )
+    conn.execute(
+        statement.sql,
+        (int(tip_id), str(user_role or "student"), int(user_pk), normalized_verdict),
+    )
+
+    totals = conn.execute(
+        "SELECT COALESCE(SUM(verdict), 0) AS score, COUNT(*) AS votes "
+        "FROM life_tip_feedback WHERE tip_id = ?",
+        (int(tip_id),),
+    ).fetchone()
+    score = int(totals["score"] or 0)
+    weight = max(FEEDBACK_WEIGHT_MIN, min(FEEDBACK_WEIGHT_MAX, FEEDBACK_WEIGHT_BASE + score))
+    conn.execute(
+        "UPDATE life_tips SET weight = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (weight, int(tip_id)),
+    )
+    invalidate_pool_cache()
+    return {"tip_id": int(tip_id), "weight": weight, "votes": int(totals["votes"] or 0)}
 
 
 def build_login_tip_payload_for_student(conn: Any, student_id: int) -> Optional[dict[str, Any]]:
@@ -276,4 +355,106 @@ def build_login_tip_payload_for_student(conn: Any, student_id: int) -> Optional[
         school_code=row["school_code"] or "",
         department=row["department"] or "",
         role="student",
+    )
+
+
+MANAGE_PAGE_SIZE = 50
+ALLOWED_TIP_STATUSES = ("active", "retired", "draft")
+
+
+def list_life_tips_for_manage(
+    conn: Any,
+    *,
+    scope: str = "",
+    category: str = "",
+    status: str = "",
+    source_kind: str = "",
+    audience: str = "",
+    keyword: str = "",
+    page: int = 1,
+) -> dict[str, Any]:
+    """治理页列表：筛选 + 分页 + 每句反馈计数。"""
+    ensure_life_tip_runtime(conn)
+    conditions: list[str] = []
+    params: list[Any] = []
+    for column, value in (
+        ("scope", scope), ("category", category), ("status", status),
+        ("source_kind", source_kind), ("audience", audience),
+    ):
+        if value:
+            conditions.append(f"t.{column} = ?")
+            params.append(value)
+    if keyword.strip():
+        conditions.append("(t.tip_text LIKE ? OR t.source_ref LIKE ?)")
+        needle = f"%{keyword.strip()}%"
+        params.extend([needle, needle])
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    total = int(conn.execute(
+        f"SELECT COUNT(*) AS c FROM life_tips t {where_sql}",
+        tuple(params),
+    ).fetchone()["c"])
+
+    safe_page = max(1, int(page or 1))
+    offset = (safe_page - 1) * MANAGE_PAGE_SIZE
+    rows = conn.execute(
+        f"""
+        SELECT t.id, t.scope, t.school_code, t.department, t.category, t.audience,
+               t.tip_text, t.source_kind, t.source_ref, t.status, t.weight,
+               t.created_at,
+               COALESCE(f.up_votes, 0) AS up_votes,
+               COALESCE(f.down_votes, 0) AS down_votes
+        FROM life_tips t
+        LEFT JOIN (
+            SELECT tip_id,
+                   SUM(CASE WHEN verdict > 0 THEN 1 ELSE 0 END) AS up_votes,
+                   SUM(CASE WHEN verdict < 0 THEN 1 ELSE 0 END) AS down_votes
+            FROM life_tip_feedback
+            GROUP BY tip_id
+        ) f ON f.tip_id = t.id
+        {where_sql}
+        ORDER BY t.id DESC
+        LIMIT {MANAGE_PAGE_SIZE} OFFSET {offset}
+        """,
+        tuple(params),
+    ).fetchall()
+
+    return {
+        "total": total,
+        "page": safe_page,
+        "page_size": MANAGE_PAGE_SIZE,
+        "items": [dict(row) for row in rows],
+    }
+
+
+def set_life_tip_status(conn: Any, *, tip_id: int, status: str) -> bool:
+    """下架/恢复/转正提示（active | retired | draft）。"""
+    if status not in ALLOWED_TIP_STATUSES:
+        raise ValueError("非法状态")
+    ensure_life_tip_runtime(conn)
+    cursor = conn.execute(
+        "UPDATE life_tips SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (status, int(tip_id)),
+    )
+    invalidate_pool_cache()
+    return (getattr(cursor, "rowcount", 0) or 0) > 0
+
+
+def build_login_tip_payload_for_teacher(conn: Any, teacher_id: int) -> Optional[dict[str, Any]]:
+    """教师登录提示：按教师所属学校/系部取 audience='teacher' 池。"""
+    try:
+        row = conn.execute(
+            "SELECT school_code, department FROM teachers WHERE id = ?",
+            (int(teacher_id),),
+        ).fetchone()
+    except Exception as exc:
+        print(f"[LIFE_TIP] 教师系部信息查询失败: {exc}")
+        return None
+    if not row:
+        return None
+    return build_login_tip_payload(
+        conn,
+        school_code=row["school_code"] or "",
+        department=row["department"] or "",
+        role="teacher",
     )

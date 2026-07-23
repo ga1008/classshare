@@ -5,7 +5,7 @@ import unittest
 
 from classroom_app.services import life_tip_service as service
 from classroom_app.services.life_tip_generation_service import _validated_tips
-from classroom_app.services.life_tip_seed_data import LIFE_TIP_SEED_PACK
+from classroom_app.services.life_tip_seed_data import LIFE_TIP_SEED_PACK, TEACHER_TIP_SEED_PACK
 
 
 def _fresh_conn() -> sqlite3.Connection:
@@ -31,13 +31,14 @@ class LifeTipRuntimeTests(unittest.TestCase):
         service.invalidate_pool_cache()
 
     def test_seed_pack_is_inserted_once_and_idempotent(self) -> None:
+        expected = len(LIFE_TIP_SEED_PACK) + len(TEACHER_TIP_SEED_PACK)
         count = self.conn.execute("SELECT COUNT(*) AS c FROM life_tips").fetchone()["c"]
-        self.assertEqual(count, len(LIFE_TIP_SEED_PACK))
+        self.assertEqual(count, expected)
 
         service._seeded = False
         service.ensure_life_tip_runtime(self.conn)
         recount = self.conn.execute("SELECT COUNT(*) AS c FROM life_tips").fetchone()["c"]
-        self.assertEqual(recount, len(LIFE_TIP_SEED_PACK))
+        self.assertEqual(recount, expected)
 
     def test_insert_life_tip_dedupes_by_normalised_content(self) -> None:
         created = service.insert_life_tip(
@@ -96,11 +97,55 @@ class LifeTipRuntimeTests(unittest.TestCase):
             )
             self.assertTrue(tip["text"])
 
-    def test_payload_is_none_for_audience_without_pool(self) -> None:
+    def test_teacher_audience_gets_teacher_pool(self) -> None:
+        pool = service._load_pool_from_db(
+            self.conn, school_code="gxufl", department="", audience_role="teacher",
+        )
+        self.assertEqual(len(pool), len(TEACHER_TIP_SEED_PACK))
         payload = service.build_login_tip_payload(
             self.conn, school_code="gxufl", department="", role="teacher",
         )
-        self.assertIsNone(payload)
+        self.assertIsNotNone(payload)
+
+    def test_feedback_updates_weight_and_zero_weight_leaves_pool(self) -> None:
+        tip_id = self.conn.execute("SELECT id FROM life_tips LIMIT 1").fetchone()["id"]
+        result = service.record_tip_feedback(
+            self.conn, tip_id=tip_id, user_role="student", user_pk=1, verdict=1,
+        )
+        self.assertEqual(result["weight"], 2)
+        # 同一学生改票 → 覆盖而不是累计
+        result = service.record_tip_feedback(
+            self.conn, tip_id=tip_id, user_role="student", user_pk=1, verdict=-1,
+        )
+        self.assertEqual(result["weight"], 0)
+        self.assertEqual(result["votes"], 1)
+        pool = service._load_pool_from_db(
+            self.conn, school_code="", department="", audience_role="student",
+        )
+        self.assertNotIn(tip_id, [tip["id"] for tip in pool])
+
+    def test_feedback_rejects_unknown_tip(self) -> None:
+        with self.assertRaises(ValueError):
+            service.record_tip_feedback(
+                self.conn, tip_id=999999, user_role="student", user_pk=1, verdict=1,
+            )
+
+    def test_manage_list_filters_and_status_toggle(self) -> None:
+        listing = service.list_life_tips_for_manage(self.conn, audience="teacher")
+        self.assertEqual(listing["total"], len(TEACHER_TIP_SEED_PACK))
+        tip_id = listing["items"][0]["id"]
+
+        self.assertTrue(service.set_life_tip_status(self.conn, tip_id=tip_id, status="retired"))
+        retired = service.list_life_tips_for_manage(self.conn, status="retired")
+        self.assertEqual(retired["total"], 1)
+
+        keyword_hit = service.list_life_tips_for_manage(
+            self.conn, keyword=listing["items"][0]["tip_text"][:8],
+        )
+        self.assertGreaterEqual(keyword_hit["total"], 1)
+
+        with self.assertRaises(ValueError):
+            service.set_life_tip_status(self.conn, tip_id=tip_id, status="bogus")
 
 
 class LifeTipGenerationValidationTests(unittest.TestCase):

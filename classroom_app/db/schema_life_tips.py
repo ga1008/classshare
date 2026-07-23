@@ -87,4 +87,26 @@ def ensure_life_tip_schema(conn: Any) -> None:
         """
     )
 
+    # 反馈闭环：登录提示屏上的"有用/无感"投票（verdict = 1 / -1），
+    # 每人每句一票（可改票）。聚合结果回写 life_tips.weight
+    # （clamp 0-5，0 = 不再投放），让随机采样越用越准。
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS life_tip_feedback (
+            {id_column},
+            tip_id INTEGER NOT NULL,
+            user_role TEXT NOT NULL DEFAULT 'student',
+            user_pk INTEGER NOT NULL,
+            verdict INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (tip_id, user_role, user_pk)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_life_tip_feedback_tip "
+        "ON life_tip_feedback (tip_id)"
+    )
+
     _SCHEMA_READY = True

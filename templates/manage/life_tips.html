@@ -1,0 +1,101 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}一言提示{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('新增提示', '内容资产', 'plus', variant='primary', tone='indigo', attrs='data-life-tip-create-open') }}
+{% endblock %}
+
+{% block content %}
+<section class="manage-life-tips" data-life-tip-root data-categories='{{ life_tip_categories | tojson }}'>
+    <div class="manage-life-tips__intro">
+        <div>
+            <h2>登录一言提示库</h2>
+            <p>学生/教师登录加载屏上的一句话提示：通用池全平台共享，本校/本系池由公文 AI 挖掘与手工录入。下架劣句、查看"有用/无感"反馈，让句库越用越准。</p>
+        </div>
+        <div class="manage-life-tips__summary" data-life-tip-summary></div>
+    </div>
+
+    <form class="manage-life-tips__filters" data-life-tip-filters>
+        <select name="scope">
+            <option value="">全部作用域</option>
+            <option value="global">通用</option>
+            <option value="school">本校</option>
+            <option value="department">系部</option>
+        </select>
+        <select name="status">
+            <option value="">全部状态</option>
+            <option value="active">投放中</option>
+            <option value="draft">草稿</option>
+            <option value="retired">已下架</option>
+        </select>
+        <select name="source_kind">
+            <option value="">全部来源</option>
+            <option value="seed">内置种子</option>
+            <option value="ai_gongwen">公文挖掘</option>
+            <option value="manual">手工录入</option>
+        </select>
+        <select name="audience">
+            <option value="">全部受众</option>
+            <option value="student">学生</option>
+            <option value="teacher">教师</option>
+        </select>
+        <select name="category" data-life-tip-category-filter>
+            <option value="">全部分类</option>
+        </select>
+        <input type="search" name="keyword" placeholder="搜索提示语或来源…">
+        <button type="submit" class="btn btn-secondary">筛选</button>
+    </form>
+
+    <div class="manage-life-tips__loading" data-life-tip-loading>正在加载提示语…</div>
+    <div class="manage-life-tips__content" data-life-tip-content hidden></div>
+    <div class="manage-life-tips__pager" data-life-tip-pager hidden></div>
+</section>
+
+<div class="life-tip-modal-backdrop" id="life-tip-create-modal" hidden>
+    <div class="life-tip-modal">
+        <h3>新增一言提示</h3>
+        <form data-life-tip-create-form>
+            <label class="life-tip-modal__field">
+                <span>提示语（10-150 字，游戏加载屏句式：具体、可执行、带数字/门槛更佳）</span>
+                <textarea name="tip_text" rows="4" required minlength="10" maxlength="150"></textarea>
+            </label>
+            <div class="life-tip-modal__grid">
+                <label class="life-tip-modal__field">
+                    <span>分类</span>
+                    <select name="category" data-life-tip-category-input></select>
+                </label>
+                <label class="life-tip-modal__field">
+                    <span>作用域</span>
+                    <select name="scope" data-life-tip-scope-input>
+                        <option value="school">本校</option>
+                        <option value="department">指定系部</option>
+                        <option value="global">全平台通用</option>
+                    </select>
+                </label>
+                <label class="life-tip-modal__field" data-life-tip-department-field hidden>
+                    <span>系部名称</span>
+                    <input type="text" name="department" placeholder="如：信息工程学院">
+                </label>
+                <label class="life-tip-modal__field">
+                    <span>受众</span>
+                    <select name="audience">
+                        <option value="student">学生</option>
+                        <option value="teacher">教师</option>
+                        <option value="all">全部</option>
+                    </select>
+                </label>
+            </div>
+            <div class="life-tip-modal__actions">
+                <button type="button" class="btn btn-secondary" data-life-tip-create-close>取消</button>
+                <button type="submit" class="btn btn-primary">保存并生效</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_life_tips.js') }}"></script>
+{% endblock %}
