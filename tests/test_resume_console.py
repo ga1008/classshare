@@ -49,11 +49,11 @@ class SchemaTests(unittest.TestCase):
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'resume%'").fetchall()}
         for t in ("resume_personal_info", "resume_self_intros", "resume_certificates",
                   "resume_skills", "resume_experiences", "resume_educations",
-                  "resume_attachments", "resumes"):
+                  "resume_attachments", "resume_job_targets", "resume_applications", "resumes"):
             self.assertIn(t, names)
         resume_columns = {r[1] for r in c.execute("PRAGMA table_info(resumes)").fetchall()}
         for column in ("source_file_hash", "source_filename", "source_mime_type",
-                       "source_file_size", "import_summary_json"):
+                       "source_file_size", "import_summary_json", "source_context_json"):
             self.assertIn(column, resume_columns)
 
 
@@ -68,6 +68,18 @@ class PersonalInfoTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             P.update_personal_info(c, 1, {"name": "张三", "gender": "男", "birthday": "2002-01",
                                           "email": "not-an-email", "expected_position": "后端"})
+
+    def test_phone_can_be_the_only_contact_method(self):
+        c = _conn()
+        info = P.update_personal_info(c, 1, {
+            "name": "张三", "phone": "13800000000", "expected_position": "后端开发工程师",
+        })
+        self.assertEqual(info["phone"], "13800000000")
+
+    def test_contact_method_is_required(self):
+        c = _conn()
+        with self.assertRaisesRegex(ValueError, "联系方式"):
+            P.update_personal_info(c, 1, {"name": "张三", "expected_position": "后端开发工程师"})
 
     def test_create_and_get(self):
         c = _conn()
@@ -101,6 +113,25 @@ class PersonalInfoTests(unittest.TestCase):
         self.assertEqual(options[0]["value"], "后端开发工程师")
         self.assertEqual(len([o for o in options if o["value"] == "后端开发工程师"]), 1)
         self.assertIn("推荐度", options[0]["meta"])
+
+    def test_career_position_options_keep_personalized_order_before_same_tag_nodes(self):
+        state = {
+            "ok": True,
+            "personalized": {"top_paths": [
+                {"tag": "B2", "name": "后端开发工程师", "why": "首选"},
+                {"tag": "B4", "name": "数据分析师", "why": "次选"},
+                {"tag": "C1", "name": "产品经理", "why": "第三选择"},
+            ]},
+            "network": {"nodes": [
+                {"tag": "B2", "name": "项目经理 / 技术管理", "rec": 5, "highlighted": True, "glow": 1},
+                {"tag": "B4", "name": "商业分析师", "rec": 5, "highlighted": True, "glow": 1},
+            ]},
+        }
+        options = P._career_position_options_from_state(state)
+        self.assertEqual(
+            [option["value"] for option in options[:3]],
+            ["后端开发工程师", "数据分析师", "产品经理"],
+        )
 
 
 class SectionCrudTests(unittest.TestCase):
@@ -187,14 +218,17 @@ class DocumentTests(unittest.TestCase):
         rid = D.create_resume(
             c, 1, title="我的简历", template_key="classic",
             target_position="Java 后端开发工程师", layout=self._layout(c),
+            source_context={"source": "career", "career_tag": "A1", "resume_text": "must not persist"},
         )
         got = D.get_resume(c, 1, rid)
         self.assertEqual(got["status"], "rendering")
         self.assertEqual(got["target_position"], "Java 后端开发工程师")
         self.assertEqual(len(got["layout"]["blocks"]), 4)
+        self.assertEqual(got["source_context"], {"source": "career", "career_tag": "A1"})
         listed = D.list_resumes(c, 1)
         self.assertEqual(len(listed), 1)
         self.assertEqual(listed[0]["target_position"], "Java 后端开发工程师")
+        self.assertEqual(listed[0]["source_context"]["career_tag"], "A1")
         D.delete_resume(c, 1, rid)
         with self.assertRaises(ValueError):
             D.get_resume(c, 1, rid)
@@ -338,10 +372,21 @@ class NavTests(unittest.TestCase):
     def test_groups_and_active(self):
         nav = N.build_resume_nav("personal")
         labels = [g["label"] for g in nav["groups"]]
-        self.assertEqual(labels, ["个人资料", "简历管理"])
+        self.assertEqual(labels, ["求职工作台", "个人资料", "简历管理"])
         active = [i for g in nav["groups"] for i in g["items"] if i["active"]]
         self.assertEqual(len(active), 1)
         self.assertEqual(active[0]["key"], "personal")
+
+    def test_home_is_first_navigation_item(self):
+        nav = N.build_resume_nav("home")
+        self.assertEqual(nav["groups"][0]["items"][0]["key"], "home")
+        self.assertTrue(nav["groups"][0]["items"][0]["active"])
+
+    def test_job_analysis_is_in_workbench_group(self):
+        nav = N.build_resume_nav("job_targets")
+        workbench_items = nav["groups"][0]["items"]
+        self.assertEqual([item["key"] for item in workbench_items[:3]], ["home", "job_targets", "applications"])
+        self.assertTrue(workbench_items[1]["active"])
 
 
 class FallbackTests(unittest.TestCase):

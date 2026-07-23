@@ -63,13 +63,18 @@ def build_resume_readiness(conn, student_id: int) -> dict[str, Any]:
     }
     resumes = docs.list_resumes(conn, student_id)
 
-    required_total = len(profile.PERSONAL_REQUIRED)
+    has_contact = any(str(personal.get(key) or "").strip() for key in profile.PERSONAL_CONTACT_FIELDS)
+    required_total = len(profile.PERSONAL_REQUIRED) + 1
     required_filled = sum(1 for key in profile.PERSONAL_REQUIRED if str(personal.get(key) or "").strip())
     required_missing = [
         {"key": key, "label": PERSONAL_LABELS.get(key, key)}
         for key in profile.PERSONAL_REQUIRED
         if not str(personal.get(key) or "").strip()
     ]
+    if has_contact:
+        required_filled += 1
+    else:
+        required_missing.append({"key": "contact", "label": "邮箱或手机号"})
 
     has_target = bool(str(personal.get("expected_position") or "").strip())
     has_intro = bool(sections["self_intro"])
@@ -206,6 +211,12 @@ def validate_resume_build(conn, student_id: int, *, target_position: str, layout
                 "label": PERSONAL_LABELS.get(key, key),
                 "href": "/resume/profile/personal",
             })
+    if not any(str(personal.get(key) or "").strip() for key in profile.PERSONAL_CONTACT_FIELDS):
+        missing.append({
+            "key": "personal.contact",
+            "label": "邮箱或手机号",
+            "href": "/resume/profile/personal",
+        })
 
     blocks = normalized.get("blocks") if isinstance(normalized.get("blocks"), list) else []
     evidence_blocks = [block for block in blocks if block.get("type") != "tech_stack"]

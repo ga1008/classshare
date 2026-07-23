@@ -18,13 +18,16 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
+from ..services.career_engagement_service import record_student_career_event_safely
 from ..services.chat_image_derivatives import CHAT_IMAGE_TYPES
 from ..services.file_service import resolve_global_file_path, save_file_globally
 from ..services.resume import resume_ai_service as ai
+from ..services.resume import resume_application_service as applications
 from ..services.resume import resume_attachment_service as attach
 from ..services.resume import resume_document_service as docs
 from ..services.resume import resume_generation_service as gen
 from ..services.resume import resume_import_service as resume_import
+from ..services.resume import resume_job_target_service as job_targets
 from ..services.resume import resume_profile_service as profile
 from ..services.resume import resume_readiness_service as readiness
 from ..services.resume import resume_render_service as render
@@ -76,11 +79,11 @@ def _page_context(request: Request, user: dict, active_key: str, **extra: Any) -
 # ===========================================================================
 # Pages
 # ===========================================================================
-@router.get("/resume")
-def resume_home(user: dict = Depends(get_current_user)):
+@router.get("/resume", response_class=HTMLResponse)
+def resume_home(request: Request, user: dict = Depends(get_current_user)):
     if not _is_student(user):
         return RedirectResponse("/dashboard", status_code=302)
-    return RedirectResponse("/resume/profile/personal", status_code=302)
+    return templates.TemplateResponse(request, "resume/home.html", _page_context(request, user, "home"))
 
 
 @router.get("/resume/profile/personal", response_class=HTMLResponse)
@@ -92,6 +95,28 @@ def resume_personal_page(request: Request, user: dict = Depends(get_current_user
         profile.seed_personal_info_from_platform(conn, student_id, user)
         conn.commit()
     return templates.TemplateResponse(request, "resume/personal.html", _page_context(request, user, "personal"))
+
+
+@router.get("/resume/job-targets", response_class=HTMLResponse)
+def resume_job_targets_page(request: Request, user: dict = Depends(get_current_user)):
+    if not _is_student(user):
+        return RedirectResponse("/dashboard", status_code=302)
+    return templates.TemplateResponse(
+        request,
+        "resume/job_targets.html",
+        _page_context(request, user, "job_targets"),
+    )
+
+
+@router.get("/resume/applications", response_class=HTMLResponse)
+def resume_applications_page(request: Request, user: dict = Depends(get_current_user)):
+    if not _is_student(user):
+        return RedirectResponse("/dashboard", status_code=302)
+    return templates.TemplateResponse(
+        request,
+        "resume/applications.html",
+        _page_context(request, user, "applications"),
+    )
 
 
 @router.get("/resume/profile/{section}", response_class=HTMLResponse)
@@ -201,6 +226,160 @@ def api_personal_avatar_get(user: dict = Depends(get_current_user)):
     if not path:
         return RedirectResponse("/api/profile/avatar", status_code=302)
     return FileResponse(str(path), media_type=str(info.get("avatar_mime_type") or "image/png"))
+
+
+# ===========================================================================
+# API — job-description analysis
+# ===========================================================================
+@router.get("/api/resume/job-targets", response_class=JSONResponse)
+def api_job_targets_list(user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    with get_db_connection() as conn:
+        items = job_targets.list_job_targets(conn, student_id)
+        conn.commit()
+    return {"ok": True, "items": items}
+
+
+@router.post("/api/resume/job-targets/analyze", response_class=JSONResponse)
+async def api_job_target_analyze(request: Request, user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    payload = await _read_json(request)
+    try:
+        with get_db_connection() as conn:
+            item = job_targets.create_job_target(
+                conn,
+                student_id,
+                target_position=payload.get("target_position"),
+                company_name=payload.get("company_name"),
+                job_description=payload.get("job_description"),
+            )
+            record_student_career_event_safely(
+                conn,
+                student_id,
+                surface="job",
+                event_name="job_description_analyzed",
+                context={
+                    "job_id": item.get("id"),
+                    "target_position": item.get("target_position"),
+                    "status": item.get("status"),
+                },
+            )
+            conn.commit()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "item": item}
+
+
+@router.get("/api/resume/job-targets/{target_id}", response_class=JSONResponse)
+def api_job_target_get(target_id: int, user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    try:
+        with get_db_connection() as conn:
+            item = job_targets.get_job_target(conn, student_id, target_id)
+            conn.commit()
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True, "item": item}
+
+
+@router.delete("/api/resume/job-targets/{target_id}", response_class=JSONResponse)
+def api_job_target_delete(target_id: int, user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    try:
+        with get_db_connection() as conn:
+            job_targets.delete_job_target(conn, student_id, target_id)
+            conn.commit()
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True}
+
+
+@router.get("/api/resume/applications", response_class=JSONResponse)
+def api_resume_applications_list(user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    with get_db_connection() as conn:
+        items = applications.list_applications(conn, student_id)
+        conn.commit()
+    return {
+        "ok": True,
+        "items": items,
+        "statuses": [
+            {"value": status, "label": applications.STATUS_LABELS[status]}
+            for status in applications.APPLICATION_STATUSES
+        ],
+    }
+
+
+@router.post("/api/resume/applications", response_class=JSONResponse)
+async def api_resume_application_create(request: Request, user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    payload = await _read_json(request)
+    try:
+        with get_db_connection() as conn:
+            item = applications.create_application(conn, student_id, payload)
+            record_student_career_event_safely(
+                conn,
+                student_id,
+                surface="job",
+                event_name="application_created",
+                context={
+                    "application_id": item.get("id"),
+                    "job_id": item.get("job_target_id"),
+                    "resume_id": item.get("resume_id"),
+                    "target_position": item.get("target_position"),
+                    "status": item.get("status"),
+                },
+            )
+            conn.commit()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "item": item}
+
+
+@router.put("/api/resume/applications/{application_id}", response_class=JSONResponse)
+async def api_resume_application_update(
+    application_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    student_id = _require_student(user)
+    payload = await _read_json(request)
+    try:
+        with get_db_connection() as conn:
+            item = applications.update_application(conn, student_id, application_id, payload)
+            status_changed = bool(item.pop("_status_changed", False))
+            if status_changed:
+                record_student_career_event_safely(
+                    conn,
+                    student_id,
+                    surface="job",
+                    event_name="application_status_changed",
+                    context={
+                        "application_id": item.get("id"),
+                        "job_id": item.get("job_target_id"),
+                        "resume_id": item.get("resume_id"),
+                        "target_position": item.get("target_position"),
+                        "status": item.get("status"),
+                    },
+                )
+            conn.commit()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True, "item": item}
+
+
+@router.delete("/api/resume/applications/{application_id}", response_class=JSONResponse)
+def api_resume_application_delete(application_id: int, user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    try:
+        with get_db_connection() as conn:
+            applications.delete_application(conn, student_id, application_id)
+            conn.commit()
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True}
 
 
 # ===========================================================================
@@ -444,6 +623,16 @@ async def api_resume_create(request: Request, user: dict = Depends(get_current_u
             target_position=target_position,
             template_key=str(payload.get("template_key") or "classic"),
             layout=payload.get("layout"),
+            source_context=payload.get("source_context"),
+        )
+        record_student_career_event_safely(
+            conn, student_id, surface="resume", event_name="resume_created",
+            context={
+                "resume_id": resume_id,
+                "target_position": target_position,
+                "source": (payload.get("source_context") or {}).get("source", "builder")
+                if isinstance(payload.get("source_context"), dict) else "builder",
+            },
         )
         conn.commit()
     asyncio.create_task(gen.run_resume_render_job(resume_id, student_id))
@@ -472,6 +661,10 @@ async def api_resume_import(user: dict = Depends(get_current_user), file: Upload
             mime_type=meta["mime_type"],
             file_size=int(result.get("size") or 0),
         )
+        record_student_career_event_safely(
+            conn, student_id, surface="resume", event_name="resume_import_started",
+            context={"resume_id": resume_id, "format": meta.get("extension", ""), "source": "upload"},
+        )
         conn.commit()
     asyncio.create_task(resume_import.run_resume_import_parse_job(resume_id, student_id))
     return {"ok": True, "id": resume_id, "status": "parsing"}
@@ -490,6 +683,7 @@ async def api_resume_update(resume_id: int, request: Request, user: dict = Depen
                 student_id,
                 target_position=target_position,
                 layout=payload.get("layout"),
+                source_context=payload.get("source_context"),
             )
             if not validation.get("ok"):
                 labels = "、".join(str(item.get("label") or item.get("key")) for item in validation.get("missing", [])[:4])
@@ -534,6 +728,10 @@ async def api_resume_optimize(resume_id: int, request: Request, user: dict = Dep
                 layout=resume.get("layout"),
             )
             docs.set_status(conn, resume_id, "optimizing")
+            record_student_career_event_safely(
+                conn, student_id, surface="resume", event_name="resume_optimization_started",
+                context={"resume_id": resume_id, "target_position": target_position},
+            )
             conn.commit()
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
@@ -573,6 +771,10 @@ def api_resume_preview(resume_id: int, user: dict = Depends(get_current_user)):
         with get_db_connection() as conn:
             resume = docs.get_resume(conn, student_id, resume_id)
             html = resume.get("render_html") or render.assemble_resume_html(conn, student_id, resume)
+            record_student_career_event_safely(
+                conn, student_id, surface="resume", event_name="resume_previewed",
+                context={"resume_id": resume_id, "target_position": resume.get("target_position", "")},
+            )
             conn.commit()
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
@@ -587,6 +789,10 @@ def api_resume_export(resume_id: int, fmt: str = "pdf", user: dict = Depends(get
         with get_db_connection() as conn:
             resume = docs.get_resume(conn, student_id, resume_id)
             html = resume.get("render_html") or render.assemble_resume_html(conn, student_id, resume)
+            record_student_career_event_safely(
+                conn, student_id, surface="resume", event_name="resume_exported",
+                context={"resume_id": resume_id, "target_position": resume.get("target_position", ""), "format": fmt},
+            )
             conn.commit()
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc

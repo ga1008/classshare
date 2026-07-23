@@ -424,6 +424,23 @@ CAREER_PERSONALITY_QUESTIONS: list[dict[str, Any]] = [
     },
 ]
 
+# Non-technology majors should not be forced to choose among software-only
+# directions.  This question keeps the same RIASEC scoring contract while
+# making the default quick assessment useful to language, business, education,
+# communication and other majors as well.
+CAREER_GENERAL_FOCUS_QUESTION: dict[str, Any] = {
+    "id": "q_focus", "kind": "multi", "max_select": 2,
+    "title": "选 1–2 个你愿意持续投入、做出作品或成果的方向：",
+    "options": [
+        {"value": "language_global", "label": "语言 / 跨文化 / 国际业务", "weights": {"A": 1, "E": 1, "S": 1}},
+        {"value": "research_data", "label": "数据分析 / 研究 / 规划", "weights": {"I": 2, "C": 1}},
+        {"value": "education_service", "label": "教育 / 咨询 / 公共服务", "weights": {"S": 2, "C": 1}},
+        {"value": "content_brand", "label": "内容 / 设计 / 品牌传播", "weights": {"A": 2, "E": 1}},
+        {"value": "operations_management", "label": "运营 / 组织 / 项目管理", "weights": {"E": 2, "C": 1}},
+        {"value": "digital_systems", "label": "数字技术 / 信息系统", "weights": {"I": 1, "R": 1, "C": 1}},
+    ],
+}
+
 # 就业地域偏好 → 给 AI 用的自然语言描述（用于按城市定制推荐与节奏）
 LOCATION_PREF_LABELS = {
     "nanning": "留在南宁 / 广西本地（看重离家近、生活成本低、本地体制内与区域产业机会）",
@@ -464,7 +481,7 @@ def score_personality_answers(answers: list[dict[str, Any]]) -> dict[str, Any]:
     dimension scores (0–100), the top-3 Holland code, and a free-text note.
     """
     scores: dict[str, float] = {k: 0.0 for k in RIASEC_LABELS}
-    by_id = {str(q["id"]): q for q in CAREER_PERSONALITY_QUESTIONS}
+    by_id = {str(q["id"]): q for q in [*CAREER_PERSONALITY_QUESTIONS, CAREER_GENERAL_FOCUS_QUESTION]}
     free_text = ""
     selected_focus: list[str] = []
     location_pref = ""
@@ -492,7 +509,7 @@ def score_personality_answers(answers: list[dict[str, Any]]) -> dict[str, Any]:
                     continue
                 for dim, w in (opt.get("weights") or {}).items():
                     scores[dim] = scores.get(dim, 0.0) + float(w)
-                if qid in ("q8",):
+                if qid in ("q8", "q_focus"):
                     selected_focus.append(str(opt.get("label") or picked))
         elif kind == "scale":
             try:

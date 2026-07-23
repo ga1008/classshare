@@ -70,6 +70,21 @@
     this._bind();
   };
 
+  CareerNetwork.prototype.selectDirection = function (tag, animate) {
+    var id = String(tag || '') + '-0';
+    var ns = this.nodeStages[id];
+    if (!ns) return false;
+    this.selectedId = id;
+    this._applySelection(id);
+    this._fitSelection(id, animate !== false);
+    var st = this._stagesOf(ns.node)[0] || [];
+    this.onSelect(ns.node, {
+      phase: st[0] || '', role: st[1] || ns.node.name,
+      sdesc: st[2] || '', stage: 0
+    });
+    return true;
+  };
+
   CareerNetwork.prototype._index = function () {
     var self = this;
     this.byTag = {}; this.nodeStages = {}; this.adjF = {}; this.adjB = {};

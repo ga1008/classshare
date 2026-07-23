@@ -1,0 +1,55 @@
+{% extends "resume/layout.html" %}
+
+{% block content %}
+<section class="rz-job-hero">
+    <span class="rz-home-eyebrow">先读懂岗位，再改简历</span>
+    <h2>把岗位描述变成一张可执行的简历清单</h2>
+    <p>粘贴职责和任职要求，系统会标出当前资料已有的证据、仍需补充的内容，并逐段提示经历该怎么写得更具体。</p>
+</section>
+
+<div class="rz-job-layout">
+    <section class="rz-card rz-job-form-card">
+        <div class="rz-job-section-head">
+            <div><span>01</span><h3>粘贴岗位描述</h3></div>
+            <small>内容仅用于你的求职分析</small>
+        </div>
+        <form id="rzJobForm" class="rz-job-form">
+            <label>目标岗位 <b>*</b>
+                <input id="rzJobPosition" maxlength="100" placeholder="例如：跨境电商运营实习生" required>
+            </label>
+            <label>公司名称 <em>选填</em>
+                <input id="rzJobCompany" maxlength="100" placeholder="用于区分同名岗位">
+            </label>
+            <label class="rz-job-form__wide">岗位职责与任职要求 <b>*</b>
+                <textarea id="rzJobDescription" maxlength="15000" rows="14"
+                          placeholder="请粘贴招聘信息中的岗位职责、任职要求、优先条件等。信息越完整，分析越有用。" required></textarea>
+                <small><span id="rzJobCount">0</span> / 15000</small>
+            </label>
+            <div class="rz-job-form__wide rz-job-form__actions">
+                <p>系统只判断“当前资料是否有证据”，不会把岗位要求直接写成你已经掌握的能力。</p>
+                <button type="submit" class="rz-btn rz-btn--primary" id="rzJobAnalyze">分析岗位要求</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="rz-card rz-job-result" id="rzJobResult" aria-live="polite">
+        <div class="rz-job-result__empty">
+            <span>02</span>
+            <h3>分析结果会显示在这里</h3>
+            <p>你会看到核心要求、已有证据、真实缺口和每段经历的改进动作。</p>
+        </div>
+    </section>
+</div>
+
+<section class="rz-home-section rz-job-history">
+    <div class="rz-home-section__head">
+        <div><span>历史分析</span><h3>继续准备最近关注的岗位</h3></div>
+    </div>
+    <div id="rzJobHistory" class="rz-job-history__grid"></div>
+</section>
+{% endblock %}
+
+{% block page_script %}
+<script src="/static/js/resume_common.js?v=20260723a"></script>
+<script src="/static/js/resume_job_targets.js?v=20260723a"></script>
+{% endblock %}

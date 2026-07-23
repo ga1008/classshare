@@ -62,6 +62,18 @@
     return data;
   }
 
+  function track(eventName, context, surface) {
+    var eventId = 'evt-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+    fetch('/api/career-tools/events', {
+      method: 'POST', credentials: 'same-origin', keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        surface: surface || 'resume', event_name: eventName,
+        context: context || {}, client_event_id: eventId
+      })
+    }).catch(function () {});
+  }
+
   // Modal: builds an overlay, returns { root, body, foot, close }. The caller fills body.
   function openModal(opts) {
     opts = opts || {};
@@ -371,7 +383,7 @@
     scope.querySelectorAll('[data-rz-month-range]').forEach(renderRangeMonthPicker);
   }
 
-  window.RZ = { esc: esc, md: md, toast: toast, api: api, openModal: openModal,
+  window.RZ = { esc: esc, md: md, toast: toast, api: api, track: track, openModal: openModal,
     confirmDialog: confirmDialog, fmtRange: fmtRange, monthPickerHtml: monthPickerHtml,
     monthRangePickerHtml: monthRangePickerHtml, initMonthPickers: initMonthPickers,
     syncMonthPickers: syncMonthPickers, formatMonthLabel: formatMonthLabel,

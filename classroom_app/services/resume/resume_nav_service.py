@@ -24,6 +24,30 @@ class ResumeNavItem:
 
 RESUME_NAV_ITEMS: tuple[ResumeNavItem, ...] = (
     ResumeNavItem(
+        key="home",
+        group="求职工作台",
+        label="开始求职",
+        icon="home",
+        href="/resume",
+        search_text="求职工作台 开始 导入简历 推荐岗位 career resume home",
+    ),
+    ResumeNavItem(
+        key="job_targets",
+        group="求职工作台",
+        label="岗位分析",
+        icon="target",
+        href="/resume/job-targets",
+        search_text="岗位分析 职位描述 JD 要求 缺口 定向简历 job target analysis",
+    ),
+    ResumeNavItem(
+        key="applications",
+        group="求职工作台",
+        label="投递进展",
+        icon="clipboard",
+        href="/resume/applications",
+        search_text="投递进展 公司 岗位 笔试 面试 offer application tracker",
+    ),
+    ResumeNavItem(
         key="personal",
         group="个人资料",
         label="个人信息",
@@ -89,7 +113,7 @@ RESUME_NAV_ITEMS: tuple[ResumeNavItem, ...] = (
     ),
 )
 
-RESUME_GROUP_ORDER = ("个人资料", "简历管理")
+RESUME_GROUP_ORDER = ("求职工作台", "个人资料", "简历管理")
 
 _ITEMS_BY_KEY = {item.key: item for item in RESUME_NAV_ITEMS}
 

@@ -16,6 +16,8 @@ Tables:
 * ``resume_experiences``    — project / competition experience.
 * ``resume_educations``     — schooling history (high-school / university / training).
 * ``resume_attachments``    — image attachments for cert/skill/experience items.
+* ``resume_job_targets``    — student-owned job descriptions + explainable gap analysis.
+* ``resume_applications``   — private application pipeline and next actions.
 * ``resumes``               — assembled résumés (layout + render html + status).
 """
 
@@ -212,6 +214,55 @@ def ensure_resume_schema(conn: Any) -> None:
         "ON resume_attachments (student_id, owner_kind, owner_id, id)"
     )
 
+    # Student-owned job targets.  The original description stays in this
+    # domain table and is never copied into product analytics events.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS resume_job_targets (
+            {id_column},
+            student_id INTEGER NOT NULL,
+            target_position TEXT NOT NULL DEFAULT '',
+            company_name TEXT NOT NULL DEFAULT '',
+            job_description TEXT NOT NULL DEFAULT '',
+            analysis_json TEXT NOT NULL DEFAULT '{{}}',
+            coverage_score INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'ready',
+            error_text TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_resume_job_targets_student "
+        "ON resume_job_targets (student_id, updated_at DESC, id DESC)"
+    )
+
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS resume_applications (
+            {id_column},
+            student_id INTEGER NOT NULL,
+            job_target_id INTEGER,
+            resume_id INTEGER,
+            company_name TEXT NOT NULL DEFAULT '',
+            target_position TEXT NOT NULL DEFAULT '',
+            channel TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'wishlist',
+            applied_on TEXT NOT NULL DEFAULT '',
+            next_action TEXT NOT NULL DEFAULT '',
+            next_action_at TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_resume_applications_student "
+        "ON resume_applications (student_id, status, next_action_at, updated_at DESC, id DESC)"
+    )
+
     # Assembled résumés.
     conn.execute(
         f"""
@@ -225,6 +276,7 @@ def ensure_resume_schema(conn: Any) -> None:
             tech_stack_json TEXT NOT NULL DEFAULT '[]',
             optimized_summary_md TEXT NOT NULL DEFAULT '',
             optimization_notes_json TEXT NOT NULL DEFAULT '{{}}',
+            source_context_json TEXT NOT NULL DEFAULT '{{}}',
             source_file_hash TEXT NOT NULL DEFAULT '',
             source_filename TEXT NOT NULL DEFAULT '',
             source_mime_type TEXT NOT NULL DEFAULT '',
@@ -250,6 +302,7 @@ def ensure_resume_schema(conn: Any) -> None:
     _add_column(conn, "resumes", "tech_stack_json", "TEXT NOT NULL DEFAULT '[]'", engine=engine)
     _add_column(conn, "resumes", "optimized_summary_md", "TEXT NOT NULL DEFAULT ''", engine=engine)
     _add_column(conn, "resumes", "optimization_notes_json", "TEXT NOT NULL DEFAULT '{}'", engine=engine)
+    _add_column(conn, "resumes", "source_context_json", "TEXT NOT NULL DEFAULT '{}'", engine=engine)
     _add_column(conn, "resumes", "source_file_hash", "TEXT NOT NULL DEFAULT ''", engine=engine)
     _add_column(conn, "resumes", "source_filename", "TEXT NOT NULL DEFAULT ''", engine=engine)
     _add_column(conn, "resumes", "source_mime_type", "TEXT NOT NULL DEFAULT ''", engine=engine)

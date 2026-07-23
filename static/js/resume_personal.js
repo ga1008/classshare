@@ -7,18 +7,17 @@
     { key: 'name', label: '姓名', type: 'text' },
     { key: 'gender', label: '性别', type: 'select', options: ['男', '女', '其他'] },
     { key: 'birthday', label: '生日', type: 'month' },
-    { key: 'phone', label: '手机号', type: 'text' },
-    { key: 'email', label: '邮箱', type: 'email' },
+    { key: 'phone', label: '手机号（与邮箱至少填一项）', type: 'text' },
+    { key: 'email', label: '邮箱（与手机号至少填一项）', type: 'email' },
     { key: 'qq', label: 'QQ', type: 'text' },
     { key: 'wechat', label: '微信', type: 'text' },
     { key: 'expected_position', label: '期望岗位', type: 'position' },
     { key: 'expected_industry', label: '期望行业', type: 'text' },
     { key: 'expected_salary', label: '期望薪资', type: 'text' },
     { key: 'hometown', label: '籍贯', type: 'text' },
-    { key: 'address', label: '现居地址', type: 'text', full: true },
-    { key: 'id_card', label: '身份证号', type: 'text', full: true }
+    { key: 'address', label: '现居地址', type: 'text', full: true }
   ];
-  var REQUIRED = ['name', 'gender', 'birthday', 'email', 'expected_position'];
+  var REQUIRED = ['name', 'expected_position'];
   var POSITION_OPTIONS = [];
 
   function fieldHtml(def) {
@@ -213,6 +212,7 @@
       var payload = collect();
       var missing = REQUIRED.filter(function (k) { return !payload[k]; });
       if (missing.length) { RZ.toast('请填写必填项', 'error'); return; }
+      if (!payload.email && !payload.phone) { RZ.toast('请至少填写邮箱或手机号', 'error'); return; }
       var btn = form.querySelector('button[type="submit"]');
       btn.disabled = true;
       try {

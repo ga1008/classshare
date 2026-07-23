@@ -20,6 +20,10 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
+from ..services.career_engagement_service import (
+    record_student_career_event,
+    record_student_career_event_safely,
+)
 from ..services.career_path_service import (
     build_state,
     generate_keywords_on_demand,
@@ -62,9 +66,18 @@ def career_path_state(user: dict = Depends(get_current_user)):
 
 
 @router.get("/api/career-path/questions", response_class=JSONResponse)
-def career_path_questions(user: dict = Depends(get_current_user)):
-    _require_student(user)
-    return {"ok": True, "questions": get_questions()}
+def career_path_questions(mode: str = "quick", user: dict = Depends(get_current_user)):
+    student_id = _require_student(user)
+    selected_mode = "full" if str(mode or "").strip().lower() == "full" else "quick"
+    with get_db_connection() as conn:
+        ctx = resolve_student_context(conn, student_id) or {}
+    questions = get_questions(mode=selected_mode, major_key=str(ctx.get("major_key") or ""))
+    return {
+        "ok": True,
+        "mode": selected_mode,
+        "estimated_minutes": 3 if selected_mode == "full" else 1,
+        "questions": questions,
+    }
 
 
 @router.post("/api/career-path/answers", response_class=JSONResponse)
@@ -82,6 +95,13 @@ async def career_path_answers(request: Request, user: dict = Depends(get_current
         if not ctx:
             raise HTTPException(404, "未找到你的学籍信息")
         result = save_test_and_generate(conn, ctx, answers)
+        record_student_career_event_safely(
+            conn,
+            student_id,
+            surface="career",
+            event_name="career_quiz_completed",
+            context={"result_count": len(answers), "location_pref": result.get("test_result", {}).get("location_pref", "")},
+        )
         conn.commit()
     return {"ok": True, **result}
 
@@ -130,3 +150,28 @@ def career_path_reset(user: dict = Depends(get_current_user)):
         reset_session(conn, student_id)
         conn.commit()
     return {"ok": True}
+
+
+@router.post("/api/career-tools/events", response_class=JSONResponse)
+async def career_tools_event(request: Request, user: dict = Depends(get_current_user)):
+    """Accept one privacy-minimal funnel event from career/resume pages."""
+    student_id = _require_student(user)
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, "请求 JSON 格式不正确") from exc
+    payload = payload if isinstance(payload, dict) else {}
+    try:
+        with get_db_connection() as conn:
+            inserted = record_student_career_event(
+                conn,
+                student_id,
+                surface=str(payload.get("surface") or ""),
+                event_name=str(payload.get("event_name") or ""),
+                context=payload.get("context"),
+                client_event_id=str(payload.get("client_event_id") or ""),
+            )
+            conn.commit()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "inserted": inserted}

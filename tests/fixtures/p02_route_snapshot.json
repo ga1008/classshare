@@ -656,6 +656,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/blog/following",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_blog_following",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/follows",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_blog_follows",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/follows",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_set_blog_follow",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/blog/image/{file_hash}",
     "methods": [
       "GET"
@@ -669,6 +693,22 @@
       "GET"
     ],
     "name": "api_my_posts",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/opportunities",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_opportunities",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/opportunities/{opportunity_id}/state",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_set_opportunity_state",
     "include_in_schema": true
   },
   {
@@ -776,6 +816,62 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/blog/posts/{post_id}/reading-progress",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_update_blog_reading_progress",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/reports",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_blog_report",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/reports/manage",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_manage_blog_reports",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/reports/{report_id}/resolve",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resolve_blog_report",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/sections",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_blog_section",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/sections/manage",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_manage_blog_sections",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/sections/{section_key}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_update_blog_section",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/blog/summary",
     "methods": [
       "GET"
@@ -869,6 +965,14 @@
       "GET"
     ],
     "name": "career_path_state",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-tools/events",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_tools_event",
     "include_in_schema": true
   },
   {
@@ -3784,6 +3888,38 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/resume/applications",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_resume_applications_list",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/applications",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_application_create",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/applications/{application_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_resume_application_delete",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/applications/{application_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_resume_application_update",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/resume/attachments",
     "methods": [
       "POST"
@@ -3837,6 +3973,38 @@
       "POST"
     ],
     "name": "api_resume_import",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/job-targets",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_job_targets_list",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/job-targets/analyze",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_job_target_analyze",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/job-targets/{target_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_job_target_delete",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/job-targets/{target_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_job_target_get",
     "include_in_schema": true
   },
   {
@@ -5280,11 +5448,27 @@
     "include_in_schema": true
   },
   {
+    "path": "/resume/applications",
+    "methods": [
+      "GET"
+    ],
+    "name": "resume_applications_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/resume/builder",
     "methods": [
       "GET"
     ],
     "name": "resume_builder_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/resume/job-targets",
+    "methods": [
+      "GET"
+    ],
+    "name": "resume_job_targets_page",
     "include_in_schema": true
   },
   {

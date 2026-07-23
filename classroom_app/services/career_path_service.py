@@ -27,6 +27,7 @@ from ..database import get_db_connection
 from ..db.schema_career_path import ensure_career_path_schema
 from . import ai_web_research
 from .career_seed_data import (
+    CAREER_GENERAL_FOCUS_QUESTION,
     CAREER_PERSONALITY_QUESTIONS,
     LOCATION_PREF_LABELS,
     RIASEC_LABELS,
@@ -755,10 +756,40 @@ def _public_personalized(personalized: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def get_questions() -> list[dict[str, Any]]:
-    """Public question bank (without the scoring weights)."""
+def _is_technology_major(major_key: str) -> bool:
+    text = str(major_key or "").strip()
+    if text in SEED_MAJOR_KEYS:
+        return True
+    return any(token in text for token in (
+        "软件", "计算机", "网络", "人工智能", "数据科学", "信息安全", "电子信息", "自动化",
+    ))
+
+
+def get_questions(*, mode: str = "quick", major_key: str = "") -> list[dict[str, Any]]:
+    """Public, major-aware question bank without private scoring weights.
+
+    Quick mode is the student default (seven questions, about one minute).
+    Full mode preserves the original deeper exploration flow for students who
+    want it.  Existing saved answers remain score-compatible by question id.
+    """
+    selected_mode = "full" if str(mode or "").strip().lower() == "full" else "quick"
+    focus_id = "q8" if _is_technology_major(major_key) else "q_focus"
+    focus_question = (
+        next((q for q in CAREER_PERSONALITY_QUESTIONS if q.get("id") == "q8"), CAREER_GENERAL_FOCUS_QUESTION)
+        if focus_id == "q8"
+        else CAREER_GENERAL_FOCUS_QUESTION
+    )
+    if selected_mode == "full":
+        questions = [q for q in CAREER_PERSONALITY_QUESTIONS if q.get("id") != "q8"]
+        insert_at = next((index for index, q in enumerate(questions) if q.get("id") == "q9"), len(questions))
+        questions.insert(insert_at, focus_question)
+    else:
+        quick_ids = {"q1", "q2", "q3", "q5", "q6", "q_loc"}
+        questions = [q for q in CAREER_PERSONALITY_QUESTIONS if q.get("id") in quick_ids]
+        questions.append(focus_question)
+
     public: list[dict[str, Any]] = []
-    for q in CAREER_PERSONALITY_QUESTIONS:
+    for q in questions:
         item = {k: v for k, v in q.items() if k not in ("low_weights", "high_weights")}
         if "options" in item:
             item["options"] = [{"value": o["value"], "label": o["label"]} for o in q["options"]]

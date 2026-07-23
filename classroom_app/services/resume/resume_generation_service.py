@@ -22,6 +22,7 @@ from typing import Any
 import httpx
 
 from ...database import get_db_connection
+from ..career_engagement_service import record_student_career_event_safely
 from . import resume_ai_service as ai
 from . import resume_document_service as docs
 from . import resume_profile_service as profile
@@ -256,6 +257,17 @@ async def run_resume_optimization_job(resume_id: int, student_id: int) -> None:
                 tech_stack=resume["tech_stack"],
                 status="ready",
                 error_text=str(result.get("error") or ""),
+            )
+            record_student_career_event_safely(
+                conn,
+                student_id,
+                surface="resume",
+                event_name="resume_optimized",
+                context={
+                    "resume_id": resume_id,
+                    "status": "ready",
+                    "target_position": resume["target_position"],
+                },
             )
             conn.commit()
     except Exception as exc:  # noqa: BLE001

@@ -49,6 +49,18 @@
   }
   function enc(s) { return encodeURIComponent(String(s == null ? '' : s)); }
 
+  var trackedPage = false;
+  var trackedResult = false;
+  function track(eventName, context) {
+    var eventId = 'evt-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+    fetch('/api/career-tools/events', {
+      method: 'POST', credentials: 'same-origin', keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ surface: 'career', event_name: eventName,
+        context: context || {}, client_event_id: eventId })
+    }).catch(function () {});
+  }
+
   // ---------- 招聘平台直达：注册表 + 地域排序 ----------
   // 只收录口碑可靠的大平台与本地特色平台；URL 直接落到对应关键字的搜索结果页。
   var PLATFORMS = {
@@ -110,6 +122,10 @@
   }
 
   function route(s) {
+    if (!trackedPage) {
+      trackedPage = true;
+      track('career_viewed', { phase: s.phase || '', session_status: s.session_status || '' });
+    }
     if (s.phase === 'intro') { startIntro(s); }
     else if (s.phase === 'personalizing' || s.phase === 'network_generating') { startWaiting(s); }
     else { startNetwork(s); }
@@ -145,7 +161,7 @@
     ];
     var idx = 0;
     function next() {
-      if (idx >= lines.length) { beginQuiz(); return; }
+      if (idx >= lines.length) { showQuizModeChoice(); return; }
       typeLine(lines[idx], function () {
         idx++;
         setTimeout(next, 2400);
@@ -158,13 +174,38 @@
   var QUESTIONS = [];
   var ANSWERS = [];
   var qIndex = 0;
+  var quizMode = 'quick';
 
-  function loadQuestions() {
-    return fetchJSON(QUESTIONS_URL).then(function (r) { QUESTIONS = r.questions || []; });
+  function loadQuestions(mode) {
+    quizMode = mode === 'full' ? 'full' : 'quick';
+    var joiner = QUESTIONS_URL.indexOf('?') >= 0 ? '&' : '?';
+    return fetchJSON(QUESTIONS_URL + joiner + 'mode=' + quizMode).then(function (r) {
+      QUESTIONS = r.questions || [];
+      quizMode = r.mode === 'full' ? 'full' : 'quick';
+      return r;
+    });
   }
 
-  function beginQuiz() {
-    loadQuestions().then(function () {
+  function showQuizModeChoice() {
+    el.typewriter.style.display = 'none';
+    show(el.quiz, true);
+    el.quiz.innerHTML = '<div class="career-quiz-mode">'
+      + '<div class="career-quiz__q">先用多长时间认识你的职业偏好？</div>'
+      + '<p>两种方式都会生成职业方向；快速测评更适合第一次使用，之后随时可以深入探索。</p>'
+      + '<div class="career-quiz-mode__grid">'
+      + '<button type="button" data-quiz-mode="quick"><b>快速测评</b><span>7 题 · 约 1 分钟</span><em>推荐第一次使用</em></button>'
+      + '<button type="button" data-quiz-mode="full"><b>深度探索</b><span>11 题 · 约 3 分钟</span><em>包含工作环境与长期规划</em></button>'
+      + '</div></div>';
+    var buttons = el.quiz.querySelectorAll('[data-quiz-mode]');
+    buttons.forEach(function (button) {
+      button.addEventListener('click', function () { beginQuiz(button.dataset.quizMode); });
+    });
+  }
+
+  function beginQuiz(mode) {
+    var selectedMode = mode === 'full' ? 'full' : 'quick';
+    track('career_quiz_started', { mode: selectedMode });
+    loadQuestions(selectedMode).then(function () {
       ANSWERS = [];
       qIndex = 0;
       el.typewriter.style.display = 'none';
@@ -176,7 +217,13 @@
   }
 
   function resumeQuiz(draft) {
-    loadQuestions().then(function () {
+    loadQuestions('quick').then(function () {
+      var quickIds = {};
+      QUESTIONS.forEach(function (question) { quickIds[question.id] = true; });
+      var needsFull = (draft || []).some(function (answer) { return !quickIds[answer.question_id]; });
+      if (needsFull) return loadQuestions('full');
+      return null;
+    }).then(function () {
       ANSWERS = (draft || []).slice();
       var answered = {};
       ANSWERS.forEach(function (a) { answered[a.question_id] = true; });
@@ -222,7 +269,8 @@
     var pct = Math.round((qIndex / QUESTIONS.length) * 100);
     var h = '';
     h += '<div class="career-quiz__progress"><div class="career-quiz__bar"><i style="width:' + pct + '%"></i></div>'
-      + '<span class="career-quiz__count">' + (qIndex + 1) + ' / ' + QUESTIONS.length + '</span></div>';
+      + '<span class="career-quiz__count">' + (qIndex + 1) + ' / ' + QUESTIONS.length
+      + ' · ' + (quizMode === 'full' ? '深度探索' : '快速测评') + '</span></div>';
     h += '<div class="career-quiz__q">' + esc(q.title) + '</div>';
 
     if (q.kind === 'single' || q.kind === 'multi') {
@@ -473,6 +521,14 @@
       onClear: function () { closePanels(); }
     });
     net.setData(network, s.personalized || {});
+    wireTopPaths(s);
+    if (!trackedResult) {
+      trackedResult = true;
+      track('career_result_viewed', {
+        phase: s.phase || 'ready', session_status: s.session_status || '',
+        result_count: (network.nodes || []).length
+      });
+    }
     el.redo.hidden = false;
   }
 
@@ -492,12 +548,52 @@
 
   function renderBanner(s) {
     var p = s.personalized || {};
-    if (!p.greeting && !p.summary && !p.region_note) { show(el.banner, false); return; }
+    var paths = topPathsFor(s);
+    if (!p.greeting && !p.summary && !p.region_note && !paths.length) { show(el.banner, false); return; }
     var h = '';
     if (p.greeting) h += '<h2>' + esc(p.greeting) + '</h2>';
     if (p.summary) h += '<p>' + esc(p.summary) + '</p>';
     if (p.region_note) h += '<p class="career-banner__region">📍 ' + esc(p.region_note) + '</p>';
+    if (paths.length) {
+      h += '<div class="career-top-paths"><div class="career-top-paths__label">最值得先看的方向</div><div class="career-top-paths__grid">';
+      paths.forEach(function (path, index) {
+        var resumeUrl = '/resume/builder?auto=1&source=career&target=' + enc(path.name) + '&career_tag=' + enc(path.tag);
+        h += '<article class="career-top-path"><span>0' + (index + 1) + '</span><div><b>' + esc(path.name) + '</b>' +
+          (path.why ? '<small>' + esc(path.why) + '</small>' : '') + '</div><footer>' +
+          '<button type="button" data-career-path-tag="' + esc(path.tag) + '">查看方向</button>' +
+          '<a href="' + resumeUrl + '">生成简历 →</a></footer></article>';
+      });
+      h += '</div></div>';
+    }
     el.banner.innerHTML = h; show(el.banner, true);
+  }
+
+  function topPathsFor(s) {
+    var network = s.network || {};
+    var nodes = network.nodes || [];
+    var byTag = {};
+    nodes.forEach(function (node) { if (node && node.tag) byTag[node.tag] = node; });
+    var paths = ((s.personalized || {}).top_paths || []).map(function (path) {
+      var node = byTag[path.tag] || {};
+      return { tag: path.tag || node.tag || '', name: path.name || node.name || '', why: path.why || node.tip || node.reason || '' };
+    }).filter(function (path) { return path.tag && path.name; });
+    if (!paths.length) {
+      paths = nodes.slice().sort(function (a, b) {
+        return Number(b.rec || 0) - Number(a.rec || 0);
+      }).slice(0, 3).map(function (node) {
+        return { tag: node.tag || '', name: node.name || '', why: node.tip || node.reason || node.desc || '' };
+      });
+    }
+    return paths.slice(0, 3);
+  }
+
+  function wireTopPaths(s) {
+    el.banner.querySelectorAll('[data-career-path-tag]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var tag = button.dataset.careerPathTag || '';
+        if (net) net.selectDirection(tag, true);
+      });
+    });
   }
 
   function renderLegend(s) {
@@ -518,6 +614,7 @@
 
   function openDetail(data, stageNode, s) {
     if (!data) return;
+    track('career_direction_opened', { career_tag: data.tag || '', target_position: data.name || '', source: 'network' });
     var cat = catOf(s, data.cat);
     var c1 = cat.c1 || '#6ee7ff';
     var h = '';
@@ -667,6 +764,9 @@
     var loc = tr.location_pref || '';
     var locLabel = tr.location_label || '';
     var order = platformOrderFor(loc);
+    track('career_job_search_opened', {
+      career_tag: data.tag || '', target_position: data.name || '', location_pref: loc, source: 'platform_links'
+    });
 
     var groups = kws.map(function (kw, gi) {
       var btns = order.map(function (pid) {
@@ -690,7 +790,8 @@
       ? '已按你的地域意向（' + esc(locLabel) + '）优先推荐本地特色平台，再按口碑大平台排序。'
       : '点击任意平台直接跳到该关键字的搜索结果页（如需登录，注册后即可查看）。';
 
-    var resumeCta = '<a class="career-modal__resume-cta" href="/resume">'
+    var resumeHref = '/resume/builder?auto=1&source=career&target=' + enc(data.name || '') + '&career_tag=' + enc(data.tag || '');
+    var resumeCta = '<a class="career-modal__resume-cta" href="' + resumeHref + '">'
       + '<span class="career-modal__resume-icon">'
       + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path><path d="M8 13h8M8 17h6"></path></svg></span>'
       + '<span class="career-modal__resume-copy"><b>简历管理与优化</b>'

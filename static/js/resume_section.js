@@ -25,19 +25,20 @@
       ]
     },
     experience: {
-      label: '经验 · 项目 / 比赛',
-      sub: '记录项目、比赛经历，突出你的角色、贡献与成果。',
+      label: '经历 · 不只项目和比赛',
+      sub: '实习、课程作业、社团、志愿服务、兼职和调研都可以成为证据。重点写清你的角色、行动与真实结果。',
       attach: true,
       fields: [
         { key: 'kind', label: '类型', type: 'select', required: true,
-          options: [['project', '项目'], ['competition', '比赛']] },
-        { key: 'title', label: '名称', type: 'text', required: true, full: true },
+          options: [['internship', '实习'], ['project', '项目'], ['course', '课程成果'], ['competition', '比赛'],
+            ['campus', '社团 / 学生工作'], ['volunteer', '志愿服务'], ['part_time', '兼职'], ['research', '调研 / 科研']] },
+        { key: 'title', label: '名称', type: 'text', required: true, full: true, placeholder: '例如：校园消费调研项目' },
         { key: 'start_date', label: '开始时间', type: 'month', required: true },
         { key: 'end_date', label: '结束时间', type: 'month', required: true },
-        { key: 'role', label: '个人角色', type: 'text' },
-        { key: 'content', label: '内容描述', type: 'textarea', full: true },
-        { key: 'contribution', label: '我的贡献', type: 'textarea', full: true },
-        { key: 'achievement', label: '获得成果', type: 'textarea', full: true }
+        { key: 'role', label: '个人角色', type: 'text', placeholder: '例如：组长 / 数据整理 / 活动策划' },
+        { key: 'content', label: '背景与任务', type: 'textarea', full: true, placeholder: '当时要解决什么问题？你的任务是什么？' },
+        { key: 'contribution', label: '我的行动', type: 'textarea', full: true, placeholder: '你亲自做了哪些动作？用了什么方法或工具？' },
+        { key: 'achievement', label: '真实结果', type: 'textarea', full: true, placeholder: '交付了什么？有多少人使用、效率怎样、获得什么反馈？没有数字就写真实结果。' }
       ]
     },
     skill: {
@@ -82,7 +83,10 @@
       return [kind, item.major, RZ.fmtRange(item.start_date, item.end_date)].filter(Boolean).join(' · ');
     }
     if (SECTION === 'experience') {
-      var k = item.kind === 'competition' ? '比赛' : '项目';
+      var k = {
+        internship: '实习', project: '项目', course: '课程成果', competition: '比赛', campus: '社团 / 学生工作',
+        volunteer: '志愿服务', part_time: '兼职', research: '调研 / 科研'
+      }[item.kind] || '经历';
       return [k, RZ.fmtRange(item.start_date, item.end_date)].filter(Boolean).join(' · ');
     }
     if (SECTION === 'skill') return [item.level, RZ.formatMonthLabel(item.acquired_date), item.expiry_date ? '有效期 ' + RZ.formatMonthLabel(item.expiry_date) : ''].filter(Boolean).join(' · ');
@@ -196,11 +200,11 @@
       input = '<select class="rz-select" name="' + f.key + '">' +
         f.options.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === val ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
     } else if (f.type === 'textarea') {
-      input = '<textarea class="rz-textarea" name="' + f.key + '">' + RZ.esc(val) + '</textarea>';
+      input = '<textarea class="rz-textarea" name="' + f.key + '" placeholder="' + RZ.esc(f.placeholder || '') + '">' + RZ.esc(val) + '</textarea>';
     } else if (f.type === 'month') {
       input = RZ.monthPickerHtml(f.key, val, { placeholder: f.required ? '请选择年月' : '可选年月' });
     } else {
-      input = '<input class="rz-input" type="text" name="' + f.key + '" value="' + RZ.esc(val) + '">';
+      input = '<input class="rz-input" type="text" name="' + f.key + '" value="' + RZ.esc(val) + '" placeholder="' + RZ.esc(f.placeholder || '') + '">';
     }
     return '<div class="rz-field' + (f.full ? ' rz-field--full' : '') + '"><label>' + RZ.esc(f.label) + req + '</label>' + input + '</div>';
   }

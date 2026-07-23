@@ -1,0 +1,17 @@
+{% extends "resume/layout.html" %}
+
+{% block content %}
+<section class="rz-app-hero">
+    <div><span class="rz-home-eyebrow">每次投递都有下一步</span><h2>求职投递进展</h2>
+        <p>记录投了什么、用了哪份简历、下一次行动是什么。这里是你的私人进度板，不会向其他学生公开。</p></div>
+    <button type="button" class="rz-btn rz-btn--primary" id="rzAppNew">+ 添加投递</button>
+</section>
+
+<div class="rz-app-stats" id="rzAppStats" aria-live="polite"></div>
+<div class="rz-app-board" id="rzAppBoard"></div>
+{% endblock %}
+
+{% block page_script %}
+<script src="/static/js/resume_common.js?v=20260723a"></script>
+<script src="/static/js/resume_applications.js?v=20260723b"></script>
+{% endblock %}

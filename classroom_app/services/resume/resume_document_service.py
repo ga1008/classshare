@@ -53,7 +53,7 @@ def normalize_layout(layout: Any) -> dict[str, Any]:
 def list_resumes(conn, student_id: int) -> list[dict[str, Any]]:
     ensure_resume_schema(conn)
     rows = conn.execute(
-        "SELECT id, title, target_position, template_key, optimized_summary_md, optimization_notes_json, "
+        "SELECT id, title, target_position, template_key, optimized_summary_md, optimization_notes_json, source_context_json, "
         "source_filename, source_mime_type, source_file_size, import_summary_json, "
         "status, error_text, created_at, updated_at "
         "FROM resumes WHERE student_id = ? ORDER BY created_at DESC, id DESC",
@@ -70,8 +70,13 @@ def list_resumes(conn, student_id: int) -> list[dict[str, Any]]:
             item["import_summary"] = json.loads(item.get("import_summary_json") or "{}")
         except (TypeError, ValueError):
             item["import_summary"] = {}
+        try:
+            item["source_context"] = json.loads(item.get("source_context_json") or "{}")
+        except (TypeError, ValueError):
+            item["source_context"] = {}
         item.pop("optimization_notes_json", None)
         item.pop("import_summary_json", None)
+        item.pop("source_context_json", None)
         items.append(item)
     return items
 
@@ -87,19 +92,33 @@ def get_resume(conn, student_id: int, resume_id: int) -> dict[str, Any]:
     return render.parse_resume_row(dict(row))
 
 
+def _normalize_source_context(value: Any) -> dict[str, Any]:
+    """Keep only provenance needed to reconnect a resume to career/job flows."""
+    if not isinstance(value, dict):
+        return {}
+    safe: dict[str, Any] = {}
+    for key in ("source", "career_tag", "target_position", "job_id"):
+        raw = value.get(key)
+        if isinstance(raw, (str, int)) and str(raw).strip():
+            safe[key] = str(raw).strip()[:120]
+    return safe
+
+
 def create_resume(conn, student_id: int, *, title: str, template_key: str,
-                  layout: Any, target_position: str = "") -> int:
+                  layout: Any, target_position: str = "", source_context: Any = None) -> int:
     ensure_resume_schema(conn)
     now = _now()
     layout_json = json.dumps(_normalize_layout(layout), ensure_ascii=False)
+    source_context_json = json.dumps(_normalize_source_context(source_context), ensure_ascii=False)
     return int(
         execute_insert_returning_id(
             conn,
-            "INSERT INTO resumes (student_id, title, target_position, template_key, layout_json, status, "
-            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'rendering', ?, ?)",
+            "INSERT INTO resumes (student_id, title, target_position, template_key, layout_json, "
+            "source_context_json, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'rendering', ?, ?)",
             (
                 int(student_id), str(title or "我的简历")[:120], str(target_position or "")[:120],
-                str(template_key or "classic")[:40], layout_json, now, now,
+                str(template_key or "classic")[:40], layout_json, source_context_json, now, now,
             ),
         )
     )
@@ -145,16 +164,20 @@ def create_import_resume(
 
 
 def update_resume(conn, student_id: int, resume_id: int, *, title: str, template_key: str,
-                  layout: Any, target_position: str = "") -> None:
-    get_resume(conn, student_id, resume_id)  # ownership
+                  layout: Any, target_position: str = "", source_context: Any = None) -> None:
+    current = get_resume(conn, student_id, resume_id)  # ownership
     layout_json = json.dumps(_normalize_layout(layout), ensure_ascii=False)
+    if source_context is None:
+        source_context = current.get("source_context") or {}
+    source_context_json = json.dumps(_normalize_source_context(source_context), ensure_ascii=False)
     conn.execute(
-        "UPDATE resumes SET title = ?, target_position = ?, template_key = ?, layout_json = ?, "
+        "UPDATE resumes SET title = ?, target_position = ?, template_key = ?, layout_json = ?, source_context_json = ?, "
         "optimized_summary_md = '', optimization_notes_json = '{}', status = 'rendering', "
         "error_text = '', updated_at = ? WHERE id = ? AND student_id = ?",
         (
             str(title or "我的简历")[:120], str(target_position or "")[:120],
-            str(template_key or "classic")[:40], layout_json, _now(), int(resume_id), int(student_id),
+            str(template_key or "classic")[:40], layout_json, source_context_json,
+            _now(), int(resume_id), int(student_id),
         ),
     )
 

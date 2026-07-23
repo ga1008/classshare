@@ -9,9 +9,10 @@
   var POSITION_OPTIONS = [];
   var EDIT_ID = null;
   var lastAutoTitle = '';
+  var sourceContext = {};
   var activeDrag = null;
   var lastAdded = null;
-  var PERSONAL_REQUIRED = ['name', 'gender', 'birthday', 'email', 'expected_position'];
+  var PERSONAL_REQUIRED = ['name', 'expected_position'];
   var PERSONAL_FIELD_ORDER = [
     'name', 'gender', 'birthday', 'email', 'phone', 'qq', 'wechat',
     'expected_position', 'expected_industry', 'expected_salary', 'hometown', 'address'
@@ -36,7 +37,7 @@
     { key: 'personal', label: '个人信息' },
     { key: 'self_intro', label: '个人介绍' },
     { key: 'education', label: '学习经历' },
-    { key: 'experience', label: '项目 / 比赛经验' },
+    { key: 'experience', label: '实习 / 项目 / 校园经历' },
     { key: 'skill_cert', label: '技能与证书' },
     { key: 'tech_stack', label: '技术栈' }
   ];
@@ -101,9 +102,11 @@
 
   function requiredPersonalFilled() {
     var personal = DATA && DATA.personal ? DATA.personal : {};
-    return PERSONAL_REQUIRED.filter(function (key) {
+    var core = PERSONAL_REQUIRED.filter(function (key) {
       return String(personal[key] || '').trim();
     }).length;
+    var contact = String(personal.email || '').trim() || String(personal.phone || '').trim();
+    return core + (contact ? 1 : 0);
   }
 
   function renderBuildProgress() {
@@ -111,7 +114,7 @@
     if (!box || !DATA) return;
     var steps = [
       { key: 'target', label: '目标岗位', done: !!state.target_position.trim() },
-      { key: 'personal', label: '必填信息', done: requiredPersonalFilled() === PERSONAL_REQUIRED.length },
+      { key: 'personal', label: '基本联系信息', done: requiredPersonalFilled() === PERSONAL_REQUIRED.length + 1 },
       { key: 'intro', label: '自我介绍', done: state.self_intro.length > 0 },
       { key: 'experience', label: '经历证明', done: state.education.length > 0 || state.experience.length > 0 },
       { key: 'skill', label: '技能证书', done: state.skill.length > 0 || state.cert.length > 0 },
@@ -222,7 +225,7 @@
       { kind: 'personal_field', label: '个人信息' },
       { kind: 'self_intro', label: '自我介绍' },
       { kind: 'education', label: '学习经历' },
-      { kind: 'experience', label: '项目 / 比赛' },
+      { kind: 'experience', label: '实习 / 项目 / 校园经历' },
       { kind: 'skill', label: '技能' },
       { kind: 'certificate', label: '证书' }
     ];
@@ -478,7 +481,8 @@
       var body = {
         title: document.getElementById('rzResumeTitle').value.trim() || '我的简历',
         target_position: state.target_position.trim(),
-        template_key: state.template, layout: layout
+        template_key: state.template, layout: layout,
+        source_context: sourceContext
       };
       var validation = await RZ.api('/api/resume/builder/validate', { method: 'POST', body: body });
       if (!validation.validation || !validation.validation.ok) {
@@ -499,6 +503,7 @@
     var r = d.resume || {};
     EDIT_ID = id;
     state.target_position = r.target_position || state.target_position;
+    sourceContext = r.source_context || sourceContext;
     var layout = r.layout || {};
     if (Array.isArray(layout.personal_fields) && layout.personal_fields.length) {
       state.fields = PERSONAL_REQUIRED.concat(layout.personal_fields).filter(function (value, index, arr) {
@@ -536,11 +541,41 @@
       TEMPLATES = DATA.templates || [];
       POSITION_OPTIONS = Array.isArray(DATA.position_options) ? DATA.position_options : [];
       var t = (DATA.personal || {});
-      state.target_position = t.expected_position || '';
+      ['email', 'phone'].forEach(function (key) {
+        if (String(t[key] || '').trim() && state.fields.indexOf(key) < 0) state.fields.push(key);
+      });
+      var params = new URLSearchParams(window.location.search);
+      var queryTarget = (params.get('target') || '').trim();
+      var querySource = (params.get('source') || '').trim();
+      var queryCareerTag = (params.get('career_tag') || '').trim();
+      var queryJobId = (params.get('job_id') || '').trim();
+      sourceContext = {
+        source: querySource || 'builder',
+        career_tag: queryCareerTag,
+        target_position: queryTarget,
+        job_id: queryJobId
+      };
+      state.target_position = queryTarget || t.expected_position || '';
       if (targetInput) targetInput.value = state.target_position;
-      var editId = new URLSearchParams(window.location.search).get('edit');
+      var editId = params.get('edit');
       if (editId) {
         try { await prefillFromResume(editId); } catch (e) { RZ.toast('载入简历失败：' + e.message, 'error'); }
+      } else if (params.get('auto') === '1') {
+        state.self_intro = (DATA.self_intro || []).map(function (item) { return Number(item.id); });
+        state.education = (DATA.education || []).map(function (item) { return Number(item.id); });
+        state.experience = (DATA.experience || []).map(function (item) { return Number(item.id); });
+        state.skill = (DATA.skill || []).map(function (item) { return Number(item.id); });
+        state.cert = (DATA.certificate || []).map(function (item) { return Number(item.id); });
+        state.tech_stack = true;
+      }
+      if (querySource === 'career') {
+        RZ.track('career_resume_started', {
+          career_tag: queryCareerTag, target_position: state.target_position, source: 'career'
+        }, 'career');
+      } else if (querySource === 'job_analysis') {
+        RZ.track('job_target_resume_started', {
+          job_id: queryJobId, target_position: state.target_position, source: 'job_analysis'
+        }, 'job');
       }
       renderTargetOptions();
       if (!editId) syncTitleFromTarget(true);

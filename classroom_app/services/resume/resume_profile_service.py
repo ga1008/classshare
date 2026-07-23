@@ -65,7 +65,8 @@ PERSONAL_FIELDS = (
     "name", "gender", "birthday", "phone", "email", "qq", "wechat", "address",
     "hometown", "id_card", "expected_position", "expected_industry", "expected_salary",
 )
-PERSONAL_REQUIRED = ("name", "gender", "birthday", "email", "expected_position")
+PERSONAL_REQUIRED = ("name", "expected_position")
+PERSONAL_CONTACT_FIELDS = ("email", "phone")
 
 _FIELD_LIMIT = 2000
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -132,6 +133,8 @@ def validate_personal_info(payload: dict[str, Any]) -> dict[str, str]:
         }
         names = "、".join(labels.get(field, field) for field in missing)
         raise ValueError(f"请填写必填项：{names}")
+    if not any(cleaned.get(field) for field in PERSONAL_CONTACT_FIELDS):
+        raise ValueError("请至少填写一种联系方式：邮箱或手机号")
     if cleaned.get("email") and not _EMAIL_RE.match(cleaned["email"]):
         raise ValueError("邮箱格式不正确")
     return cleaned
@@ -241,11 +244,6 @@ def _career_position_options_from_state(state: dict[str, Any], *, limit: int = 1
         else []
     )
     top_paths = top_paths if isinstance(top_paths, list) else []
-    top_rank = {
-        str(path.get("tag") or ""): index
-        for index, path in enumerate(top_paths)
-        if isinstance(path, dict) and str(path.get("tag") or "").strip()
-    }
     by_tag = {
         str(node.get("tag") or ""): node
         for node in nodes
@@ -255,7 +253,7 @@ def _career_position_options_from_state(state: dict[str, Any], *, limit: int = 1
     candidates: list[dict[str, Any]] = []
 
     def add(label: Any, *, tag: Any = "", node: dict[str, Any] | None = None,
-            reason: Any = "", order: int = 999) -> None:
+            reason: Any = "", order: int = 999, featured: bool = False) -> None:
         name = _clean(label, limit=80)
         if not name:
             return
@@ -269,14 +267,23 @@ def _career_position_options_from_state(state: dict[str, Any], *, limit: int = 1
             glow = float(node.get("glow") or 0)
         except (TypeError, ValueError):
             glow = 0.0
-        rank = top_rank.get(tag_text, order)
         candidates.append({
             "value": name,
             "label": name,
             "tag": tag_text,
             "meta": f"推荐度 {rec}/5" if rec else "职业推荐",
             "hint": _clean(reason or node.get("tip") or node.get("reason") or "", limit=120),
-            "_sort": (rank, 0 if node.get("highlighted") else 1, -glow, -rec, order, name),
+            # Personalized paths are a ranked list authored for this student.
+            # Keep that exact order before adding broader network alternatives;
+            # several network nodes may intentionally share one career tag.
+            "_sort": (
+                0 if featured else 1,
+                order if featured else 0 if node.get("highlighted") else 1,
+                0 if featured else -glow,
+                0 if featured else -rec,
+                order,
+                name,
+            ),
         })
 
     for index, path in enumerate(top_paths):
@@ -284,7 +291,14 @@ def _career_position_options_from_state(state: dict[str, Any], *, limit: int = 1
             continue
         tag = str(path.get("tag") or "")
         node = by_tag.get(tag, {})
-        add(path.get("name") or node.get("name"), tag=tag, node=node, reason=path.get("why"), order=index)
+        add(
+            path.get("name") or node.get("name"),
+            tag=tag,
+            node=node,
+            reason=path.get("why"),
+            order=index,
+            featured=True,
+        )
 
     for index, node in enumerate(nodes, start=len(candidates)):
         if isinstance(node, dict):

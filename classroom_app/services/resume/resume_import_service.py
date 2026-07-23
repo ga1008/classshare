@@ -22,6 +22,7 @@ from fastapi import HTTPException
 from ...core import ai_client
 from ...database import get_db_connection
 from ...db.connection import execute_insert_returning_id
+from ..career_engagement_service import record_student_career_event_safely
 from ..file_service import resolve_global_file_path
 from ..material_ai_import_service import MAX_VISION_IMAGES, extract_material_content
 from . import resume_ai_service as ai
@@ -108,6 +109,13 @@ async def run_resume_import_parse_job(resume_id: int, student_id: int) -> None:
                 import_summary=resume_doc["import_summary"],
                 status="ready",
                 error_text="",
+            )
+            record_student_career_event_safely(
+                conn,
+                student_id,
+                surface="resume",
+                event_name="resume_import_completed",
+                context={"resume_id": resume_id, "status": "ready"},
             )
             conn.commit()
     except Exception as exc:  # noqa: BLE001
