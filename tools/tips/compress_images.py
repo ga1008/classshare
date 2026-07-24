@@ -70,6 +70,29 @@ def categories_for(stem: str) -> list[str]:
     return PREFIX_CATEGORIES.get(prefix, [])
 
 
+def load_tag_registry(source_dir: Path) -> dict[str, list[str]]:
+    """合并源目录里所有 tags*.json（{"原文件名.png": ["标签", ...]}）。
+
+    标签由出图批次同步登记（codex brief 要求），用于服务端把提示语
+    关键词与图片做模糊匹配。缺失/损坏的登记文件直接跳过。
+    """
+    registry: dict[str, list[str]] = {}
+    for path in sorted(source_dir.glob("tags*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            print(f"标签文件损坏，跳过: {path.name}", file=sys.stderr)
+            continue
+        if not isinstance(payload, dict):
+            continue
+        for file_name, tags in payload.items():
+            if isinstance(tags, list):
+                cleaned = [str(t).strip() for t in tags if str(t).strip()]
+                if cleaned:
+                    registry[str(file_name)] = cleaned[:8]
+    return registry
+
+
 def compress_one(source: Path) -> tuple[bytes, int]:
     with Image.open(source) as image:
         rgb = image.convert("RGB")
@@ -114,6 +137,7 @@ def main() -> int:
         print(f"目录里没有可处理的图片: {args.source_dir}", file=sys.stderr)
         return 1
 
+    tag_registry = load_tag_registry(args.source_dir)
     for source in sources:
         payload, quality = compress_one(source)
         digest = hashlib.sha256(payload).hexdigest()[:8]
@@ -122,7 +146,14 @@ def main() -> int:
         if not target.exists():
             target.write_bytes(payload)
         total_bytes += len(payload)
-        entries.append({"file": file_name, "categories": categories_for(source.stem)})
+        entry: dict[str, object] = {
+            "file": file_name,
+            "categories": categories_for(source.stem),
+        }
+        tags = tag_registry.get(source.name)
+        if tags:
+            entry["tags"] = tags
+        entries.append(entry)
         print(f"{source.name} -> {file_name}  {len(payload) // 1024}KB (q={quality})")
 
     manifest_path = args.out / "manifest.json"

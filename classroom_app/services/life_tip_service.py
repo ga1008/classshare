@@ -106,6 +106,24 @@ def _seed_life_tips(conn: Any) -> None:
             ),
         )
 
+    # 种子同步：文案修订后旧句不再出现在当前包里，自动下架——
+    # 让"改文案"天然等于"换句"，不会新旧并存重复投放。
+    current_hashes = {
+        tip_content_hash(text)
+        for _, text in (*LIFE_TIP_SEED_PACK, *TEACHER_TIP_SEED_PACK)
+    }
+    rows = conn.execute(
+        "SELECT id, content_hash FROM life_tips "
+        "WHERE source_kind = 'seed' AND status = 'active'"
+    ).fetchall()
+    for row in rows:
+        if row["content_hash"] not in current_hashes:
+            conn.execute(
+                "UPDATE life_tips SET status = 'retired', updated_at = CURRENT_TIMESTAMP "
+                "WHERE id = ?",
+                (row["id"],),
+            )
+
 
 def insert_life_tip(
     conn: Any,
@@ -224,12 +242,28 @@ def _load_image_manifest() -> list[dict[str, Any]]:
         return images
 
 
-def _pick_image_url(category: str) -> Optional[str]:
+TAG_HIT_WEIGHT = 8
+
+
+def _pick_image_url(category: str, tip_text: str = "") -> Optional[str]:
+    """分类圈定候选集，再按"图片标签命中提示语文本"加权抽样。
+
+    纯内存操作：manifest 常驻缓存，候选 ~几十张 × 每张 ≤8 个标签的
+    子串检查，微秒级——登录路径零感知。无标签命中时回落均匀随机，
+    旧图（无 tags 字段）天然兼容。
+    """
     images = _load_image_manifest()
     if not images:
         return None
     matched = [item for item in images if category in (item.get("categories") or [])]
-    chosen = random.choice(matched or images)
+    pool = matched or images
+    weights = [
+        1 + TAG_HIT_WEIGHT * sum(
+            1 for tag in (item.get("tags") or []) if tag and tag in tip_text
+        )
+        for item in pool
+    ]
+    chosen = random.choices(pool, weights=weights, k=1)[0]
     return f"{IMAGE_DIR_URL}/{chosen['file']}"
 
 
@@ -263,7 +297,10 @@ def build_login_tip_payload(
     tips = []
     for tip in candidates:
         payload_tip = {key: value for key, value in tip.items() if key != "weight"}
-        tips.append({**payload_tip, "image_url": _pick_image_url(tip["category"])})
+        tips.append({
+            **payload_tip,
+            "image_url": _pick_image_url(tip["category"], tip.get("text") or ""),
+        })
     return {"tips": tips}
 
 

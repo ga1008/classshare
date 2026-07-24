@@ -83,6 +83,45 @@ class LifeTipRuntimeTests(unittest.TestCase):
         self.assertEqual(len(school_pool), base + 1)  # global + school
         self.assertEqual(len(other_school_pool), base)  # global only
 
+    def test_seed_sync_retires_stale_seed_rows(self) -> None:
+        # 模拟一条"旧版本文案"的种子句：不在当前包里 → 重播种时自动下架。
+        self.conn.execute(
+            "INSERT INTO life_tips (scope, category, audience, tip_text, source_kind, status, content_hash) "
+            "VALUES ('global', '学业规则', 'student', '旧版恐吓句-已被修订替换', 'seed', 'active', 'stale-hash-001')"
+        )
+        service._seeded = False
+        service.ensure_life_tip_runtime(self.conn)
+        row = self.conn.execute(
+            "SELECT status FROM life_tips WHERE content_hash = 'stale-hash-001'"
+        ).fetchone()
+        self.assertEqual(row["status"], "retired")
+        # 手工录入的句子（source_kind != seed）不受同步影响。
+        service.insert_life_tip(
+            self.conn, scope="school", school_code="gxufl",
+            category="学业规则", tip_text="手工句不会被种子同步下架的验证语句。",
+        )
+        service._seeded = False
+        service.ensure_life_tip_runtime(self.conn)
+        manual = self.conn.execute(
+            "SELECT status FROM life_tips WHERE source_kind = 'manual'"
+        ).fetchone()
+        self.assertEqual(manual["status"], "active")
+
+    def test_pick_image_prefers_tag_matches(self) -> None:
+        from unittest.mock import patch
+
+        fake_manifest = [
+            {"file": "generic.webp", "categories": ["考研"]},
+            {"file": "library.webp", "categories": ["考研"], "tags": ["图书馆", "书桌"]},
+        ]
+        with patch.object(service, "_load_image_manifest", return_value=fake_manifest):
+            hits = sum(
+                1 for _ in range(200)
+                if service._pick_image_url("考研", "图书馆靠窗的书桌是最好的自习位") == "/static/img/life_tips/library.webp"
+            )
+        # 双标签命中权重 1+8*2=17 vs 1 → 理论命中率 ~94%，取宽松下界断言。
+        self.assertGreater(hits, 150)
+
     def test_payload_contains_candidates_with_expected_keys(self) -> None:
         payload = service.build_login_tip_payload(
             self.conn, school_code="gxufl", department="信息工程学院",

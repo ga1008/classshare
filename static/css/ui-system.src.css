@@ -49306,3 +49306,39 @@ button.lp-import-summary__action:focus-visible { outline: 2px solid rgba(14, 165
 @media (max-width: 640px) {
     .cultivation-login-reveal--tip .life-tip-stage { padding: 24px 22px 20px; border-radius: 24px; }
 }
+
+/* ==== 人生一言第六代微调（2026-07-24）：更透的玻璃 + 字缩10% + 呼吸跳过 ==== */
+.cultivation-login-reveal--tip .life-tip-stage {
+    padding: 32px 46px 28px;
+    backdrop-filter: blur(22px) saturate(1.7);
+    -webkit-backdrop-filter: blur(22px) saturate(1.7);
+}
+.cultivation-login-reveal--tip[data-tip-tone="dark"] .life-tip-stage {
+    background: rgba(8, 14, 30, 0.3);
+}
+.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage {
+    background: rgba(255, 255, 255, 0.38);
+}
+.life-tip-stage__text {
+    font-size: clamp(15px, 2.35vw, 22px);
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+}
+.life-tip-stage__kicker { font-size: 11px; }
+.life-tip-stage__source { font-size: 12px; }
+/* 跳过提示：游戏加载页式轻呼吸 */
+.life-tip-footer__skip {
+    animation: life-tip-skip-breathe 3.6s ease-in-out infinite;
+}
+@keyframes life-tip-skip-breathe {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.85; }
+}
+@media (max-width: 640px) {
+    .cultivation-login-reveal--tip .life-tip-stage { padding: 22px 20px 18px; }
+    .life-tip-stage__text { font-size: 15px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .life-tip-footer__skip { animation: none; opacity: 0.7; }
+}

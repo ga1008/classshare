@@ -61,7 +61,7 @@ const TIP_SEEN_STORAGE_KEY = 'lanshareLifeTipSeen';
 const TIP_SEEN_LIMIT = 20;
 const TIP_BASE_DURATION_MS = 2800;
 const TIP_PER_CHAR_MS = 80;
-const TIP_MIN_DURATION_MS = 3000;
+const TIP_MIN_DURATION_MS = 5000;
 const TIP_MAX_DURATION_MS = 8000;
 const TIP_IMAGE_WAIT_MS = 600;
 
@@ -274,13 +274,13 @@ async function saveTipCard(tip, hasImage) {
     const tone = imageDrawn ? sampleImageTone(canvas) : 'dark';
     const isLight = tone === 'light';
 
-    ctx.font = `500 24px ${SAVE_FONT_STACK}`;
-    const lines = wrapCanvasText(ctx, tip.text, SAVE_CARD_WIDTH * 0.5);
-    const lineHeight = 44;
+    ctx.font = `500 22px ${SAVE_FONT_STACK}`;
+    const lines = wrapCanvasText(ctx, tip.text, SAVE_CARD_WIDTH * 0.46);
+    const lineHeight = 40;
     const category = tip.category || '人生提示';
 
-    const cardWidth = SAVE_CARD_WIDTH * 0.58;
-    const cardHeight = 104 + lines.length * lineHeight + (tip.source_ref ? 40 : 0) + 26;
+    const cardWidth = SAVE_CARD_WIDTH * 0.54;
+    const cardHeight = 96 + lines.length * lineHeight + (tip.source_ref ? 38 : 0) + 24;
     const cardX = (SAVE_CARD_WIDTH - cardWidth) / 2;
     const cardY = (SAVE_CARD_HEIGHT - cardHeight) / 2;
     const radius = 28;
@@ -299,7 +299,7 @@ async function saveTipCard(tip, hasImage) {
         ctx.drawImage(canvas, 0, 0);
         ctx.filter = 'none';
     }
-    ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.55)' : 'rgba(8, 14, 30, 0.5)';
+    ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.4)' : 'rgba(8, 14, 30, 0.34)';
     ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
     ctx.restore();
     roundedPath();
@@ -310,20 +310,20 @@ async function saveTipCard(tip, hasImage) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    ctx.font = `500 15px ${SAVE_FONT_STACK}`;
+    ctx.font = `500 14px ${SAVE_FONT_STACK}`;
     ctx.fillStyle = isLight ? '#0369a1' : '#7dd3fc';
-    ctx.fillText(`—  ${Array.from(category).join(' ')}  —`, SAVE_CARD_WIDTH / 2, cardY + 52);
+    ctx.fillText(`—  ${Array.from(category).join(' ')}  —`, SAVE_CARD_WIDTH / 2, cardY + 48);
 
-    ctx.font = `500 24px ${SAVE_FONT_STACK}`;
+    ctx.font = `500 22px ${SAVE_FONT_STACK}`;
     ctx.fillStyle = isLight ? '#0f172a' : '#f8fafc';
-    const startY = cardY + 104 + lineHeight / 2 - 12;
+    const startY = cardY + 96 + lineHeight / 2 - 12;
     lines.forEach((line, index) => {
         ctx.fillText(line, SAVE_CARD_WIDTH / 2, startY + index * lineHeight);
     });
     if (tip.source_ref) {
-        ctx.font = `400 14px ${SAVE_FONT_STACK}`;
+        ctx.font = `400 13px ${SAVE_FONT_STACK}`;
         ctx.fillStyle = isLight ? '#64748b' : '#94a3b8';
-        ctx.fillText(`—— ${tip.source_ref}`, SAVE_CARD_WIDTH / 2, cardY + cardHeight - 34);
+        ctx.fillText(`—— ${tip.source_ref}`, SAVE_CARD_WIDTH / 2, cardY + cardHeight - 32);
     }
 
     const link = document.createElement('a');
@@ -403,6 +403,10 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates) {
         const onKeydown = () => finish();
 
         overlay.addEventListener('click', finish);
+        // 点玻璃卡不算跳过：想多读几秒、长按选中复制句子都不被打断。
+        overlay.querySelector('.life-tip-stage')?.addEventListener('click', (event) => {
+            event.stopPropagation();
+        });
         window.addEventListener('keydown', onKeydown, true);
         autoTimer = window.setTimeout(finish, durationMs);
 
