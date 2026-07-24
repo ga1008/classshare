@@ -3712,11 +3712,27 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/mp/home",
+    "methods": [
+      "GET"
+    ],
+    "name": "mp_home",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/mp/life-tips/feedback",
     "methods": [
       "POST"
     ],
     "name": "mp_tip_feedback",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/mp/tasks",
+    "methods": [
+      "GET"
+    ],
+    "name": "mp_tasks",
     "include_in_schema": true
   },
   {

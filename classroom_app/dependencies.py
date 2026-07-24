@@ -538,10 +538,43 @@ def get_client_ip(request: Request) -> str:
     return normalize_ip(host_ip) or host_ip
 
 
+def _get_mp_bearer_user(request: Request) -> Optional[dict]:
+    """微信小程序 bearer token → 用户载荷（与 web token payload 同形）。
+
+    mp 会话是独立会话体系（不绑 IP、30 天滑动过期，见
+    services.wechat_mp_service）。挂在这里让小程序能直接复用全部
+    既有 /api 端点，而不必在 /api/mp 下重复业务路由。
+    """
+    header = request.headers.get("authorization") or ""
+    if not header.lower().startswith("bearer "):
+        return None
+    bearer_token = header[7:].strip()
+    if not bearer_token:
+        return None
+    try:
+        from .services import wechat_mp_service
+
+        with get_db_connection() as conn:
+            session = wechat_mp_service.resolve_mp_session(conn, bearer_token)
+            user = wechat_mp_service.load_mp_user(conn, session) if session else None
+            conn.commit()
+    except Exception as exc:
+        print(f"[WECHAT_MP] bearer 会话解析失败: {exc}")
+        return None
+    if not user:
+        return None
+    user["auth_channel"] = "mp"
+    return user
+
+
 def get_active_user_from_request(request: Request) -> Optional[dict]:
     token = request.cookies.get("access_token")
-    client_ip = get_client_ip(request)
-    return verify_token(token, client_ip)
+    if token:
+        client_ip = get_client_ip(request)
+        user = verify_token(token, client_ip)
+        if user:
+            return user
+    return _get_mp_bearer_user(request)
 
 
 def get_current_user_optional(request: Request) -> Optional[dict]:

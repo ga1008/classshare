@@ -18,10 +18,44 @@
 		{
 			"path": "pages/home/index",
 			"style": {
-				"navigationBarTitleText": "LanShare 智慧课堂"
+				"navigationBarTitleText": "今天",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/tasks/index",
+			"style": {
+				"navigationBarTitleText": "作业考试",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/me/index",
+			"style": {
+				"navigationBarTitleText": "我的"
 			}
 		}
 	],
+	"tabBar": {
+		"color": "#94a3b8",
+		"selectedColor": "#16213a",
+		"backgroundColor": "#ffffff",
+		"borderStyle": "white",
+		"list": [
+			{
+				"pagePath": "pages/home/index",
+				"text": "首页"
+			},
+			{
+				"pagePath": "pages/tasks/index",
+				"text": "作业考试"
+			},
+			{
+				"pagePath": "pages/me/index",
+				"text": "我的"
+			}
+		]
+	},
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
 		"navigationBarTitleText": "LanShare 智慧课堂",
