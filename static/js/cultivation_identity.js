@@ -274,16 +274,16 @@ async function saveTipCard(tip, hasImage) {
     const tone = imageDrawn ? sampleImageTone(canvas) : 'dark';
     const isLight = tone === 'light';
 
-    ctx.font = `600 46px ${SAVE_FONT_STACK}`;
-    const lines = wrapCanvasText(ctx, tip.text, SAVE_CARD_WIDTH * 0.66);
-    const lineHeight = 82;
+    ctx.font = `500 24px ${SAVE_FONT_STACK}`;
+    const lines = wrapCanvasText(ctx, tip.text, SAVE_CARD_WIDTH * 0.5);
+    const lineHeight = 44;
     const category = tip.category || '人生提示';
 
-    const cardWidth = SAVE_CARD_WIDTH * 0.76;
-    const cardHeight = 150 + lines.length * lineHeight + (tip.source_ref ? 46 : 0);
+    const cardWidth = SAVE_CARD_WIDTH * 0.58;
+    const cardHeight = 104 + lines.length * lineHeight + (tip.source_ref ? 40 : 0) + 26;
     const cardX = (SAVE_CARD_WIDTH - cardWidth) / 2;
     const cardY = (SAVE_CARD_HEIGHT - cardHeight) / 2;
-    const radius = 44;
+    const radius = 28;
 
     const roundedPath = () => {
         ctx.beginPath();
@@ -303,27 +303,27 @@ async function saveTipCard(tip, hasImage) {
     ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
     ctx.restore();
     roundedPath();
-    ctx.strokeStyle = isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.22)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    ctx.font = `600 28px ${SAVE_FONT_STACK}`;
+    ctx.font = `500 15px ${SAVE_FONT_STACK}`;
     ctx.fillStyle = isLight ? '#0369a1' : '#7dd3fc';
-    ctx.fillText(`—  ${Array.from(category).join(' ')}  —`, SAVE_CARD_WIDTH / 2, cardY + 78);
+    ctx.fillText(`—  ${Array.from(category).join(' ')}  —`, SAVE_CARD_WIDTH / 2, cardY + 52);
 
-    ctx.font = `600 46px ${SAVE_FONT_STACK}`;
+    ctx.font = `500 24px ${SAVE_FONT_STACK}`;
     ctx.fillStyle = isLight ? '#0f172a' : '#f8fafc';
-    const startY = cardY + 150 + lineHeight / 2 - 26;
+    const startY = cardY + 104 + lineHeight / 2 - 12;
     lines.forEach((line, index) => {
         ctx.fillText(line, SAVE_CARD_WIDTH / 2, startY + index * lineHeight);
     });
     if (tip.source_ref) {
-        ctx.font = `400 22px ${SAVE_FONT_STACK}`;
-        ctx.fillStyle = isLight ? '#475569' : '#cbd5e1';
-        ctx.fillText(`—— ${tip.source_ref}`, SAVE_CARD_WIDTH / 2, cardY + cardHeight - 44);
+        ctx.font = `400 14px ${SAVE_FONT_STACK}`;
+        ctx.fillStyle = isLight ? '#64748b' : '#94a3b8';
+        ctx.fillText(`—— ${tip.source_ref}`, SAVE_CARD_WIDTH / 2, cardY + cardHeight - 34);
     }
 
     const link = document.createElement('a');
