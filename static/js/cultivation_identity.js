@@ -247,17 +247,18 @@ async function saveTipCard(tip, hasImage) {
         ctx.fillRect(0, 0, SAVE_CARD_WIDTH, SAVE_CARD_HEIGHT);
     }
 
-    // 轻量全局遮罩 + 文字区域局部暗晕：保住画面明亮感，字照样清晰。
-    ctx.fillStyle = 'rgba(2, 6, 23, 0.22)';
+    // 轻量全局遮罩 + 全宽字幕暗带（上下羽化）：画面保持明亮，字照样清晰。
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.2)';
     ctx.fillRect(0, 0, SAVE_CARD_WIDTH, SAVE_CARD_HEIGHT);
-    const scrim = ctx.createRadialGradient(
-        SAVE_CARD_WIDTH / 2, SAVE_CARD_HEIGHT / 2, 120,
-        SAVE_CARD_WIDTH / 2, SAVE_CARD_HEIGHT / 2, 720,
-    );
-    scrim.addColorStop(0, 'rgba(2, 6, 23, 0.5)');
-    scrim.addColorStop(1, 'rgba(2, 6, 23, 0)');
-    ctx.fillStyle = scrim;
-    ctx.fillRect(0, 0, SAVE_CARD_WIDTH, SAVE_CARD_HEIGHT);
+    const bandTop = SAVE_CARD_HEIGHT / 2 - 250;
+    const bandBottom = SAVE_CARD_HEIGHT / 2 + 250;
+    const band = ctx.createLinearGradient(0, bandTop, 0, bandBottom);
+    band.addColorStop(0, 'rgba(2, 6, 23, 0)');
+    band.addColorStop(0.3, 'rgba(2, 6, 23, 0.42)');
+    band.addColorStop(0.7, 'rgba(2, 6, 23, 0.42)');
+    band.addColorStop(1, 'rgba(2, 6, 23, 0)');
+    ctx.fillStyle = band;
+    ctx.fillRect(0, bandTop, SAVE_CARD_WIDTH, bandBottom - bandTop);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

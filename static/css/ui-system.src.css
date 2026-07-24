@@ -49233,3 +49233,34 @@ button.lp-import-summary__action:focus-visible { outline: 2px solid rgba(14, 165
     .life-tip-feedback { padding: 10px 16px; font-size: 13px; }
     .life-tip-footer__skip { flex-basis: 100%; text-align: center; padding: 6px 0; }
 }
+
+/* ==== 文字底衬改磨砂玻璃（2026-07-24）：径向蒙版渐隐，亮图无硬边 ==== */
+.life-tip-stage::before {
+    inset: -55% -35%;
+    background: rgba(2, 6, 23, 0.16);
+    backdrop-filter: blur(16px) brightness(0.86) saturate(1.02);
+    -webkit-mask-image: radial-gradient(50% 50% at 50% 50%, #000 22%, rgba(0, 0, 0, 0.55) 55%, transparent 82%);
+    mask-image: radial-gradient(50% 50% at 50% 50%, #000 22%, rgba(0, 0, 0, 0.55) 55%, transparent 82%);
+}
+
+/* ==== 文字底衬最终形态（2026-07-24）：全宽字幕暗带，上下羽化无补丁感 ==== */
+.life-tip-stage::before {
+    inset: auto;
+    top: -42%;
+    bottom: -42%;
+    left: 50%;
+    width: 100vw;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(2, 6, 23, 0.4) 30%, rgba(2, 6, 23, 0.44) 70%, rgba(2, 6, 23, 0) 100%);
+    backdrop-filter: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+}
+
+/* ==== 修复：全局 p 规则压过继承色导致提示文字发灰（2026-07-24） ==== */
+.cultivation-login-reveal--tip .life-tip-stage__text {
+    color: #ffffff;
+}
+.cultivation-login-reveal--tip .life-tip-stage__source {
+    color: #cbd5e1;
+}
