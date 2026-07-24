@@ -30,7 +30,6 @@ from typing import Any, Optional
 
 from ..db.connection import get_configured_db_engine
 from ..db.schema_life_tips import ensure_life_tip_schema
-from ..db.sql import insert_ignore_sql, insert_update_on_conflict_sql
 from .life_tip_seed_data import LIFE_TIP_SEED_PACK, TEACHER_TIP_SEED_PACK
 
 POOL_CACHE_TTL_SECONDS = 600
@@ -68,21 +67,29 @@ def ensure_life_tip_runtime(conn: Any) -> None:
         _seeded = True
 
 
-def _seed_life_tips(conn: Any) -> None:
-    engine = get_configured_db_engine()
-    statement = insert_ignore_sql(
-        engine,
-        "life_tips",
-        (
-            "scope", "school_code", "department", "category", "audience",
-            "tip_text", "source_kind", "source_ref", "status", "weight",
-            "content_hash",
-        ),
-        conflict_columns=("content_hash",),
+def _tip_insert_ignore_sql() -> str:
+    """`?` 占位的按引擎 insert-ignore（走连接门面的 qmark→psycopg 转换）。
+
+    注意不要用 ``db.sql.insert_ignore_sql``：它的 postgres 输出是 ``$n``
+    占位，只适配迁移注册表那条原生执行路径，与运行时连接门面不兼容
+    （门面只转换 ``?``，``$n`` 会导致 "0 placeholders" 报错）。
+    """
+    base = (
+        "INSERT INTO life_tips ("
+        "scope, school_code, department, category, audience, "
+        "tip_text, source_kind, source_ref, status, weight, content_hash"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
+    if get_configured_db_engine() == "postgres":
+        return base + " ON CONFLICT (content_hash) DO NOTHING"
+    return base.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
+
+
+def _seed_life_tips(conn: Any) -> None:
+    statement_sql = _tip_insert_ignore_sql()
     for category, tip_text in LIFE_TIP_SEED_PACK:
         conn.execute(
-            statement.sql,
+            statement_sql,
             (
                 "global", "", "", category, "student",
                 tip_text, "seed", "", "active", 1,
@@ -91,7 +98,7 @@ def _seed_life_tips(conn: Any) -> None:
         )
     for category, tip_text in TEACHER_TIP_SEED_PACK:
         conn.execute(
-            statement.sql,
+            statement_sql,
             (
                 "global", "", "", category, "teacher",
                 tip_text, "seed", "", "active", 1,
@@ -118,19 +125,8 @@ def insert_life_tip(
     公文生成管线（scheduler handler）与后台管理共用这一个入口。
     """
     ensure_life_tip_runtime(conn)
-    engine = get_configured_db_engine()
-    statement = insert_ignore_sql(
-        engine,
-        "life_tips",
-        (
-            "scope", "school_code", "department", "category", "audience",
-            "tip_text", "source_kind", "source_ref", "status", "weight",
-            "content_hash",
-        ),
-        conflict_columns=("content_hash",),
-    )
     cursor = conn.execute(
-        statement.sql,
+        _tip_insert_ignore_sql(),
         (
             scope, school_code.strip(), department.strip(), category.strip() or "人生大实话",
             audience, tip_text.strip(), source_kind, source_ref.strip(), status, 1,
@@ -310,16 +306,14 @@ def record_tip_feedback(
     if not row:
         raise ValueError("提示不存在")
 
-    engine = get_configured_db_engine()
-    statement = insert_update_on_conflict_sql(
-        engine,
-        "life_tip_feedback",
-        ("tip_id", "user_role", "user_pk", "verdict"),
-        conflict_columns=("tip_id", "user_role", "user_pk"),
-        update_columns=("verdict",),
-    )
+    # `?` 占位 + 双引擎通用的 ON CONFLICT DO UPDATE（sqlite ≥3.24 同语法）。
     conn.execute(
-        statement.sql,
+        """
+        INSERT INTO life_tip_feedback (tip_id, user_role, user_pk, verdict)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT (tip_id, user_role, user_pk)
+        DO UPDATE SET verdict = excluded.verdict, updated_at = CURRENT_TIMESTAMP
+        """,
         (int(tip_id), str(user_role or "student"), int(user_pk), normalized_verdict),
     )
 

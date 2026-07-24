@@ -106,15 +106,14 @@ def _load_unmined_documents(conn) -> list[dict[str, Any]]:
 
 def _mark_mined(conn, doc_id: int, tips_created: int) -> None:
     from ..db.connection import get_configured_db_engine
-    from ..db.sql import insert_ignore_sql
 
-    statement = insert_ignore_sql(
-        get_configured_db_engine(),
-        "life_tip_source_ledger",
-        ("doc_id", "tips_created"),
-        conflict_columns=("doc_id",),
-    )
-    conn.execute(statement.sql, (int(doc_id), int(tips_created)))
+    # `?` 占位走连接门面转换；db.sql 的 $n 构建器与门面不兼容，勿用。
+    sql = "INSERT INTO life_tip_source_ledger (doc_id, tips_created) VALUES (?, ?)"
+    if get_configured_db_engine() == "postgres":
+        sql += " ON CONFLICT (doc_id) DO NOTHING"
+    else:
+        sql = sql.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
+    conn.execute(sql, (int(doc_id), int(tips_created)))
 
 
 def _validated_tips(payload: Any) -> list[dict[str, str]]:
