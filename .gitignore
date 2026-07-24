@@ -199,6 +199,11 @@ experiments/
 tests/test_profiler_paper_*.py
 tools/export_student_data_snapshot.py
 
+# 微信小程序：上传密钥绝不入库；构建产物与预览二维码本地生成
+private.*.key
+miniapp/dist/
+miniapp/preview-qr.png
+
 # 本地环境残留/含敏感信息的文件(服务器IP、默认口令、生产日志、IDE配置)
 config.json
 settings.zip

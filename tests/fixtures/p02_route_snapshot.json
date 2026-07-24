@@ -3672,6 +3672,54 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/mp/auth/bind/student",
+    "methods": [
+      "POST"
+    ],
+    "name": "mp_bind_student",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/mp/auth/bind/teacher",
+    "methods": [
+      "POST"
+    ],
+    "name": "mp_bind_teacher",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/mp/auth/login",
+    "methods": [
+      "POST"
+    ],
+    "name": "mp_login",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/mp/auth/logout",
+    "methods": [
+      "POST"
+    ],
+    "name": "mp_logout",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/mp/auth/me",
+    "methods": [
+      "GET"
+    ],
+    "name": "mp_me",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/mp/life-tips/feedback",
+    "methods": [
+      "POST"
+    ],
+    "name": "mp_tip_feedback",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/points",
     "methods": [
       "GET"

@@ -78,6 +78,7 @@ from .database import get_db_connection
 # 导入所有 V4.0 路由
 from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center, profile, learning, review, learning_path, collaboration, classroom_interactions, agent_tasks, agent_bridge, smart_classroom, signatures
 from .routers import manage_redirects
+from .routers import mp as mp_router
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
 from .routers import blog, feedback
@@ -607,4 +608,5 @@ app.include_router(blog.router)
 app.include_router(feedback.router)
 
 app.include_router(session_router.router)
+app.include_router(mp_router.router)
 
