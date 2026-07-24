@@ -49187,3 +49187,49 @@ button.lp-import-summary__action:focus-visible { outline: 2px solid rgba(14, 165
 .life-tip-stage__text {
     text-shadow: 0 2px 22px rgba(2, 6, 23, 0.95), 0 0 8px rgba(2, 6, 23, 0.6);
 }
+
+/* ==== 人生一言明亮化（2026-07-24）：全局压暗放轻，文字后局部暗晕 ==== */
+.life-tip-backdrop.has-image {
+    filter: saturate(0.98) brightness(0.8);
+}
+.life-tip-vignette {
+    background:
+        linear-gradient(180deg, rgba(2, 6, 23, 0.5) 0%, rgba(2, 6, 23, 0.12) 30%, rgba(2, 6, 23, 0.14) 62%, rgba(2, 6, 23, 0.62) 100%),
+        radial-gradient(85% 70% at 50% 52%, rgba(2, 6, 23, 0) 45%, rgba(2, 6, 23, 0.4) 100%);
+}
+/* 文字正后方的椭圆暗晕：亮图上撑住白字，暗图上几乎不可察觉 */
+.life-tip-stage::before {
+    content: "";
+    position: absolute;
+    inset: -34% -22%;
+    background: radial-gradient(50% 50% at 50% 50%, rgba(2, 6, 23, 0.52) 0%, rgba(2, 6, 23, 0.3) 55%, rgba(2, 6, 23, 0) 100%);
+    z-index: -1;
+    pointer-events: none;
+}
+.life-tip-stage { position: relative; z-index: 0; }
+
+/* ==== 人生一言移动端适配（2026-07-24） ==== */
+@media (max-width: 640px) {
+    .cultivation-login-reveal--tip { padding: 16px; }
+    .life-tip-identity {
+        top: max(10px, env(safe-area-inset-top));
+        left: 10px;
+        right: 10px;
+        gap: 8px;
+        padding: 7px 12px;
+        justify-content: center;
+    }
+    .life-tip-identity__name { font-size: 12px; }
+    .life-tip-stage { max-width: 94vw; }
+    .life-tip-stage__kicker { letter-spacing: 0.22em; }
+    .life-tip-stage__kicker::before,
+    .life-tip-stage__kicker::after { width: 20px; margin: 0 8px; }
+    .life-tip-stage__text { font-size: 16.5px; line-height: 1.8; }
+    .life-tip-stage__source { font-size: 12px; }
+    .life-tip-footer { bottom: max(14px, env(safe-area-inset-bottom)); gap: 12px; padding: 0 12px; }
+    .life-tip-footer__timer { width: 70vw; }
+    .life-tip-footer__actions { flex-wrap: wrap; justify-content: center; gap: 10px; }
+    /* 触屏目标 ≥40px 高 */
+    .life-tip-feedback { padding: 10px 16px; font-size: 13px; }
+    .life-tip-footer__skip { flex-basis: 100%; text-align: center; padding: 6px 0; }
+}

@@ -247,8 +247,16 @@ async function saveTipCard(tip, hasImage) {
         ctx.fillRect(0, 0, SAVE_CARD_WIDTH, SAVE_CARD_HEIGHT);
     }
 
-    // 与展示层一致的压暗遮罩，保证白字对比度。
-    ctx.fillStyle = 'rgba(2, 6, 23, 0.5)';
+    // 轻量全局遮罩 + 文字区域局部暗晕：保住画面明亮感，字照样清晰。
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.22)';
+    ctx.fillRect(0, 0, SAVE_CARD_WIDTH, SAVE_CARD_HEIGHT);
+    const scrim = ctx.createRadialGradient(
+        SAVE_CARD_WIDTH / 2, SAVE_CARD_HEIGHT / 2, 120,
+        SAVE_CARD_WIDTH / 2, SAVE_CARD_HEIGHT / 2, 720,
+    );
+    scrim.addColorStop(0, 'rgba(2, 6, 23, 0.5)');
+    scrim.addColorStop(1, 'rgba(2, 6, 23, 0)');
+    ctx.fillStyle = scrim;
     ctx.fillRect(0, 0, SAVE_CARD_WIDTH, SAVE_CARD_HEIGHT);
 
     ctx.textAlign = 'center';
