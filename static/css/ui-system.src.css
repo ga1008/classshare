@@ -49264,3 +49264,45 @@ button.lp-import-summary__action:focus-visible { outline: 2px solid rgba(14, 165
 .cultivation-login-reveal--tip .life-tip-stage__source {
     color: #cbd5e1;
 }
+
+/* ==== 人生一言 · 液态玻璃卡（2026-07-24 定稿实验）：色调自适应，替代字幕暗带 ==== */
+.cultivation-login-reveal--tip .life-tip-stage::before { display: none; }
+.cultivation-login-reveal--tip .life-tip-stage {
+    padding: 36px 52px 32px;
+    border-radius: 32px;
+    backdrop-filter: blur(26px) saturate(1.5);
+    -webkit-backdrop-filter: blur(26px) saturate(1.5);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 24px 70px -28px rgba(2, 6, 23, 0.55);
+}
+.cultivation-login-reveal--tip[data-tip-tone="dark"] .life-tip-stage {
+    background: rgba(8, 14, 30, 0.44);
+}
+.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage {
+    background: rgba(255, 255, 255, 0.52);
+    border-color: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 24px 70px -30px rgba(2, 6, 23, 0.32);
+}
+/* 亮图：深色字、图不再压暗；暗图：白字、轻压保持氛围 */
+.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-backdrop.has-image {
+    filter: saturate(1) brightness(0.96);
+}
+.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-vignette { opacity: 0.35; }
+.cultivation-login-reveal--tip[data-tip-tone="dark"] .life-tip-backdrop.has-image {
+    filter: saturate(0.95) brightness(0.85);
+}
+.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage__text {
+    color: #0f172a;
+    text-shadow: none;
+}
+.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage__kicker { color: #0369a1; }
+.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage__kicker::before {
+    background: linear-gradient(90deg, transparent, rgba(3, 105, 161, 0.6));
+}
+.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage__kicker::after {
+    background: linear-gradient(90deg, rgba(3, 105, 161, 0.6), transparent);
+}
+.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage__source { color: #475569; }
+@media (max-width: 640px) {
+    .cultivation-login-reveal--tip .life-tip-stage { padding: 24px 22px 20px; border-radius: 24px; }
+}

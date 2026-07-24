@@ -101,6 +101,7 @@ function tipDurationMs(text) {
 }
 
 function preloadImage(url, timeoutMs) {
+    // 成功时 resolve 加载完的 Image 元素（truthy），供亮度采样复用。
     return new Promise((resolve) => {
         if (!url) {
             resolve(false);
@@ -110,7 +111,7 @@ function preloadImage(url, timeoutMs) {
         const timer = window.setTimeout(() => resolve(false), timeoutMs);
         image.onload = () => {
             window.clearTimeout(timer);
-            resolve(true);
+            resolve(image);
         };
         image.onerror = () => {
             window.clearTimeout(timer);
@@ -118,6 +119,27 @@ function preloadImage(url, timeoutMs) {
         };
         image.src = url;
     });
+}
+
+const TONE_LUMA_THRESHOLD = 148;
+
+function sampleImageTone(image) {
+    // 采样图片中央横带（文字所在区域）的平均亮度：亮 → 深色字，暗 → 白字。
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 48;
+        canvas.height = 27;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0, 48, 27);
+        const data = ctx.getImageData(6, 8, 36, 11).data;
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 4) {
+            sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+        }
+        return sum / (data.length / 4) > TONE_LUMA_THRESHOLD ? 'light' : 'dark';
+    } catch (error) {
+        return 'dark';
+    }
 }
 
 function buildIdentityChip(profile) {
@@ -139,12 +161,13 @@ function buildIdentityChip(profile) {
     `;
 }
 
-function buildTipReveal(profile, tip, durationMs, hasImage) {
+function buildTipReveal(profile, tip, durationMs, hasImage, tone) {
     const overlay = document.createElement('div');
     overlay.className = 'cultivation-login-reveal cultivation-login-reveal--tip';
     overlay.setAttribute('role', 'status');
     overlay.setAttribute('aria-live', 'polite');
     overlay.dataset.tipCategory = tip.category || '';
+    overlay.dataset.tipTone = tone === 'light' ? 'light' : 'dark';
     overlay.innerHTML = `
         <div class="life-tip-backdrop${hasImage ? ' has-image' : ''}" aria-hidden="true"
             ${hasImage ? `style="background-image: url('${escapeHtml(tip.image_url)}')"` : ''}></div>
@@ -247,37 +270,61 @@ async function saveTipCard(tip, hasImage) {
         ctx.fillRect(0, 0, SAVE_CARD_WIDTH, SAVE_CARD_HEIGHT);
     }
 
-    // 轻量全局遮罩 + 全宽字幕暗带（上下羽化）：画面保持明亮，字照样清晰。
-    ctx.fillStyle = 'rgba(2, 6, 23, 0.2)';
-    ctx.fillRect(0, 0, SAVE_CARD_WIDTH, SAVE_CARD_HEIGHT);
-    const bandTop = SAVE_CARD_HEIGHT / 2 - 250;
-    const bandBottom = SAVE_CARD_HEIGHT / 2 + 250;
-    const band = ctx.createLinearGradient(0, bandTop, 0, bandBottom);
-    band.addColorStop(0, 'rgba(2, 6, 23, 0)');
-    band.addColorStop(0.3, 'rgba(2, 6, 23, 0.42)');
-    band.addColorStop(0.7, 'rgba(2, 6, 23, 0.42)');
-    band.addColorStop(1, 'rgba(2, 6, 23, 0)');
-    ctx.fillStyle = band;
-    ctx.fillRect(0, bandTop, SAVE_CARD_WIDTH, bandBottom - bandTop);
+    // 色调自适应液态玻璃卡：亮图 → 白玻璃深字，暗图 → 黑玻璃白字。
+    const tone = imageDrawn ? sampleImageTone(canvas) : 'dark';
+    const isLight = tone === 'light';
+
+    ctx.font = `600 46px ${SAVE_FONT_STACK}`;
+    const lines = wrapCanvasText(ctx, tip.text, SAVE_CARD_WIDTH * 0.66);
+    const lineHeight = 82;
+    const category = tip.category || '人生提示';
+
+    const cardWidth = SAVE_CARD_WIDTH * 0.76;
+    const cardHeight = 150 + lines.length * lineHeight + (tip.source_ref ? 46 : 0);
+    const cardX = (SAVE_CARD_WIDTH - cardWidth) / 2;
+    const cardY = (SAVE_CARD_HEIGHT - cardHeight) / 2;
+    const radius = 44;
+
+    const roundedPath = () => {
+        ctx.beginPath();
+        ctx.roundRect(cardX, cardY, cardWidth, cardHeight, radius);
+    };
+
+    // 玻璃：圆角裁剪内重画一遍模糊背景 + 半透明色调层 + 细描边
+    ctx.save();
+    roundedPath();
+    ctx.clip();
+    if (imageDrawn) {
+        ctx.filter = 'blur(30px)';
+        ctx.drawImage(canvas, 0, 0);
+        ctx.filter = 'none';
+    }
+    ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.55)' : 'rgba(8, 14, 30, 0.5)';
+    ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+    ctx.restore();
+    roundedPath();
+    ctx.strokeStyle = isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.22)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    ctx.font = `600 30px ${SAVE_FONT_STACK}`;
-    ctx.fillStyle = '#7dd3fc';
-    const category = tip.category || '人生提示';
-    ctx.fillText(`—  ${Array.from(category).join(' ')}  —`, SAVE_CARD_WIDTH / 2, 320);
+    ctx.font = `600 28px ${SAVE_FONT_STACK}`;
+    ctx.fillStyle = isLight ? '#0369a1' : '#7dd3fc';
+    ctx.fillText(`—  ${Array.from(category).join(' ')}  —`, SAVE_CARD_WIDTH / 2, cardY + 78);
 
     ctx.font = `600 46px ${SAVE_FONT_STACK}`;
-    const lines = wrapCanvasText(ctx, tip.text, SAVE_CARD_WIDTH * 0.72);
-    const lineHeight = 82;
-    const startY = SAVE_CARD_HEIGHT / 2 - ((lines.length - 1) * lineHeight) / 2 + 20;
-    ctx.fillStyle = '#f8fafc';
-    ctx.shadowColor = 'rgba(2, 6, 23, 0.85)';
-    ctx.shadowBlur = 18;
+    ctx.fillStyle = isLight ? '#0f172a' : '#f8fafc';
+    const startY = cardY + 150 + lineHeight / 2 - 26;
     lines.forEach((line, index) => {
         ctx.fillText(line, SAVE_CARD_WIDTH / 2, startY + index * lineHeight);
     });
+    if (tip.source_ref) {
+        ctx.font = `400 22px ${SAVE_FONT_STACK}`;
+        ctx.fillStyle = isLight ? '#475569' : '#cbd5e1';
+        ctx.fillText(`—— ${tip.source_ref}`, SAVE_CARD_WIDTH / 2, cardY + cardHeight - 44);
+    }
 
     const link = document.createElement('a');
     link.download = `人生一言-${category}-${tip.id || ''}.png`;
@@ -330,7 +377,8 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates) {
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches || false;
 
     preloadImage(tip.image_url, TIP_IMAGE_WAIT_MS).then((hasImage) => {
-        const overlay = buildTipReveal(profile, tip, durationMs, hasImage);
+        const tone = hasImage ? sampleImageTone(hasImage) : 'dark';
+        const overlay = buildTipReveal(profile, tip, durationMs, hasImage, tone);
         document.body.appendChild(overlay);
         document.documentElement.classList.add('has-cultivation-login-reveal');
         document.body.classList.add('has-cultivation-login-reveal');
