@@ -59,9 +59,13 @@ async function loadTasks(): Promise<void> {
 }
 
 function openTask(task: TaskItem): void {
-  // 作答页在 P2 下一批实现；先给出明确提示避免死按钮。
+  if (task.source_type === "assignment") {
+    uni.navigateTo({ url: `/pages/task-detail/index?id=${task.source_id}` });
+    return;
+  }
+  // 破境试炼/教务考试暂在网页端进行。
   uni.showToast({
-    title: `${task.is_exam ? "考试" : "作业"}作答页即将上线`,
+    title: "该类型任务请在网页端完成",
     icon: "none",
   });
 }

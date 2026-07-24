@@ -56,9 +56,13 @@ export function request<T>(options: {
   method?: "GET" | "POST";
   data?: Record<string, unknown>;
   auth?: boolean;
+  /** true → application/x-www-form-urlencoded（对接后端 Form 端点，如草稿/提交） */
+  form?: boolean;
 }): Promise<T> {
-  const { path, method = "GET", data, auth = true } = options;
-  const header: Record<string, string> = { "content-type": "application/json" };
+  const { path, method = "GET", data, auth = true, form = false } = options;
+  const header: Record<string, string> = {
+    "content-type": form ? "application/x-www-form-urlencoded" : "application/json",
+  };
   if (auth) {
     const token = getStoredToken();
     if (token) {

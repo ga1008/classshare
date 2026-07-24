@@ -3736,6 +3736,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/mp/tasks/assignment/{assignment_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "mp_task_detail",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/points",
     "methods": [
       "GET"
