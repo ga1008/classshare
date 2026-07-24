@@ -268,7 +268,9 @@ async def handle_personal_greeting_task(task: dict[str, Any]) -> str:
         )
         response.raise_for_status()
         data = response.json()
-        raw = str(data.get("response") or "")
+        # /api/ai/chat 文本模式的正文字段是 response_text（json 模式才是
+        # response_json）；兼容取值防上游字段演化。
+        raw = str(data.get("response_text") or data.get("response") or "")
         greeting = _normalise_greeting(sanitize_hidden_profile_leaks(raw))
     except Exception as exc:
         print(f"[GREETING] AI 生成失败 {user_role}:{user_pk}: {exc}")
