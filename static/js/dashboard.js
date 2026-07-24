@@ -1391,3 +1391,52 @@ if (root) {
         }
     }
 }
+
+// ── 个性化欢迎语（AI 每日一句，就绪后滚动替换默认问候） ──────────────
+(function initPersonalGreeting() {
+    const node = document.querySelector('[data-personal-greeting]');
+    if (!node) return;
+
+    const RETRY_DELAY_MS = 25000;
+    let retried = false;
+
+    function rollReplace(text) {
+        if (!text || text === node.textContent) return;
+        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+        if (reducedMotion) {
+            node.textContent = text;
+            return;
+        }
+        node.classList.add('personal-greeting-roll-out');
+        window.setTimeout(() => {
+            node.textContent = text;
+            node.classList.remove('personal-greeting-roll-out');
+            node.classList.add('personal-greeting-roll-in');
+            window.setTimeout(() => node.classList.remove('personal-greeting-roll-in'), 700);
+        }, 380);
+    }
+
+    async function fetchGreeting() {
+        try {
+            const response = await fetch('/api/learning/personal-greeting', {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            });
+            if (!response.ok) return;
+            const payload = await response.json();
+            const greeting = payload?.greeting;
+            if (greeting?.status === 'ready' && greeting.text) {
+                rollReplace(greeting.text);
+            } else if (greeting?.status === 'pending' && !retried) {
+                // 后台 AI 正在排队生成；稍后再看一眼，仍没好就保持默认文案。
+                retried = true;
+                window.setTimeout(fetchGreeting, RETRY_DELAY_MS);
+            }
+        } catch (error) {
+            // 欢迎语是点缀，失败静默。
+        }
+    }
+
+    const idle = window.requestIdleCallback || ((fn) => window.setTimeout(fn, 800));
+    idle(fetchGreeting);
+})();

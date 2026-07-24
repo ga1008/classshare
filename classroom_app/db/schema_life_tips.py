@@ -109,4 +109,24 @@ def ensure_life_tip_schema(conn: Any) -> None:
         "ON life_tip_feedback (tip_id)"
     )
 
+    # 个性化欢迎语（提示语体系的姊妹表）：每人每天一条，AI 在 scheduler
+    # 里排队生成（status pending → ready/failed），首页欢迎区就绪后替换
+    # 默认文案。UNIQUE(user_role, user_pk, greet_date) 保证每日只生成一次。
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS personal_greetings (
+            {id_column},
+            user_role TEXT NOT NULL DEFAULT 'student',
+            user_pk INTEGER NOT NULL,
+            greet_date TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            persona TEXT NOT NULL DEFAULT '',
+            greeting_text TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (user_role, user_pk, greet_date)
+        )
+        """
+    )
+
     _SCHEMA_READY = True

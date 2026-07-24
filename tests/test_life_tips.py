@@ -148,6 +148,81 @@ class LifeTipRuntimeTests(unittest.TestCase):
             service.set_life_tip_status(self.conn, tip_id=tip_id, status="bogus")
 
 
+class PersonalGreetingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from classroom_app.services import life_tip_service as tip_service
+        import classroom_app.db.schema_life_tips as schema
+        import classroom_app.db.schema_scheduler as scheduler_schema
+
+        tip_service._seeded = False
+        tip_service.invalidate_pool_cache()
+        schema._SCHEMA_READY = False
+        # scheduler 表的进程级守卫也要复位，否则套件内前序用例
+        # 已置 True 时，本类的新内存库不会建 scheduled_tasks 表。
+        scheduler_schema._SCHEMA_READY = False
+        self.conn = _fresh_conn()
+
+    def tearDown(self) -> None:
+        self.conn.close()
+
+    def test_first_request_registers_pending_and_schedules_task(self) -> None:
+        from classroom_app.services.personal_greeting_service import (
+            get_or_request_personal_greeting,
+        )
+
+        result = get_or_request_personal_greeting(
+            self.conn, user_role="student", user_pk=42, display_name="测试生",
+        )
+        self.assertEqual(result["status"], "pending")
+
+        rows = self.conn.execute(
+            "SELECT status FROM personal_greetings WHERE user_pk = 42"
+        ).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["status"], "pending")
+
+        task = self.conn.execute(
+            "SELECT task_kind, dedupe_key FROM scheduled_tasks "
+            "WHERE task_kind = 'personal_greeting_generate'"
+        ).fetchone()
+        self.assertIsNotNone(task)
+        self.assertIn("personal-greeting:student:42:", task["dedupe_key"])
+
+        # 同日重复请求不新增行、不重复排队。
+        again = get_or_request_personal_greeting(
+            self.conn, user_role="student", user_pk=42,
+        )
+        self.assertEqual(again["status"], "pending")
+        count = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM personal_greetings WHERE user_pk = 42"
+        ).fetchone()["c"]
+        self.assertEqual(count, 1)
+
+    def test_ready_row_returns_text(self) -> None:
+        from classroom_app.services.personal_greeting_service import (
+            get_or_request_personal_greeting,
+        )
+
+        get_or_request_personal_greeting(self.conn, user_role="student", user_pk=7)
+        self.conn.execute(
+            "UPDATE personal_greetings SET status = 'ready', "
+            "greeting_text = '测试生，本座已把今天的三件事排好了。', persona = '霸道总裁' "
+            "WHERE user_pk = 7"
+        )
+        result = get_or_request_personal_greeting(self.conn, user_role="student", user_pk=7)
+        self.assertEqual(result["status"], "ready")
+        self.assertIn("三件事", result["text"])
+        self.assertEqual(result["persona"], "霸道总裁")
+
+    def test_greeting_validation_bounds(self) -> None:
+        from classroom_app.services.personal_greeting_service import is_valid_greeting
+
+        self.assertFalse(is_valid_greeting("太短"))
+        self.assertTrue(is_valid_greeting("今天的任务已经替你排好了，先把最难的那件事做掉。"))
+        self.assertFalse(is_valid_greeting("超" * 80))
+        self.assertTrue(is_valid_greeting('  "带引号和  多余空白的句子也能通过归一化校验。"  '))
+
+
 class LifeTipGenerationValidationTests(unittest.TestCase):
     def test_validated_tips_filters_and_normalises(self) -> None:
         payload = {

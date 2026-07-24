@@ -108,7 +108,7 @@
         <div class="student-cockpit__head">
             <div>
                 <span class="student-cockpit__eyebrow">Daily cockpit</span>
-                <h2 id="student-cockpit-title">{{ student_cockpit.title }}</h2>
+                <h2 id="student-cockpit-title" data-personal-greeting>{{ student_cockpit.title }}</h2>
                 <p>{{ student_cockpit.subtitle }}</p>
             </div>
             <a href="{{ student_cockpit.path.href }}" class="student-cockpit__head-link">
@@ -650,7 +650,7 @@
 </script>
 {% endif %}
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
-<script type="module" src="/static/js/dashboard.js?v=schedule3d-tdz-fix-20260704"></script>
+<script type="module" src="/static/js/dashboard.js?v=personal-greeting-20260724"></script>
 <script type="module" src="/static/js/dashboard_count_up.js?v=student-dashboard-polish-20260612"></script>
 <script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260714-modal-fix-v3"></script>
 {% endblock %}

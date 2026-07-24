@@ -170,6 +170,22 @@ async def get_cultivation_profile(include_tip: int = 0, user: dict = Depends(get
         return {"status": "success", "profile": profile, "login_tip": login_tip}
 
 
+@router.get("/learning/personal-greeting", response_class=JSONResponse)
+async def get_personal_greeting(user: dict = Depends(get_current_user)):
+    """当日个性化欢迎语：ready 返回文案；首次请求登记 pending 并排队 AI 生成。"""
+    from ..services.personal_greeting_service import get_or_request_personal_greeting
+
+    with get_db_connection() as conn:
+        result = get_or_request_personal_greeting(
+            conn,
+            user_role=str(user.get("role") or "student"),
+            user_pk=int(user["id"]),
+            display_name=str(user.get("name") or ""),
+        )
+        conn.commit()
+    return {"status": "success", "greeting": result}
+
+
 class LifeTipFeedbackRequest(BaseModel):
     tip_id: int
     verdict: int  # 1 = 有用, -1 = 无感

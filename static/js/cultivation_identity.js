@@ -193,24 +193,30 @@ function wireTipFeedback(overlay, tip) {
     });
 }
 
-function typewrite(node, text, durationMs, reducedMotion) {
+function revealTipText(node, text, durationMs, reducedMotion) {
     if (!node) return;
-    if (reducedMotion) {
-        node.textContent = text;
-        return;
-    }
-    const chars = Array.from(String(text || ''));
-    // 打字占总时长的前 55%，留足静读时间。
-    const stepMs = Math.max(18, Math.floor((durationMs * 0.55) / Math.max(1, chars.length)));
-    let index = 0;
-    const timer = window.setInterval(() => {
-        index += 1;
-        node.textContent = chars.slice(0, index).join('');
-        if (index >= chars.length) window.clearInterval(timer);
-    }, stepMs);
+    node.textContent = text;
+    if (reducedMotion) return;
+    // 整句渐显（收场时随 overlay 一起渐隐），比逐字打出更从容。
+    node.classList.add('life-tip-stage__text--fade');
+    node.style.setProperty('--life-tip-fade-out-delay', `${Math.max(0, durationMs - 900)}ms`);
 }
 
-function playLifeTipReveal(profile, tip, onDone) {
+function preloadDuringReveal(loginTipCandidates) {
+    // 展示的三四秒里顺手把其余候选背景图拉进缓存：本次跳过后
+    // 或下次登录换句时图片零等待。全部走浏览器缓存，服务器无感。
+    const idle = window.requestIdleCallback || ((fn) => window.setTimeout(fn, 300));
+    idle(() => {
+        (loginTipCandidates || []).forEach((tip) => {
+            if (tip?.image_url) {
+                const img = new Image();
+                img.src = tip.image_url;
+            }
+        });
+    });
+}
+
+function playLifeTipReveal(profile, tip, onDone, otherCandidates) {
     const durationMs = tipDurationMs(tip.text);
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches || false;
 
@@ -244,7 +250,8 @@ function playLifeTipReveal(profile, tip, onDone) {
         autoTimer = window.setTimeout(finish, durationMs);
 
         wireTipFeedback(overlay, tip);
-        typewrite(overlay.querySelector('[data-life-tip-text]'), tip.text, durationMs, reducedMotion);
+        revealTipText(overlay.querySelector('[data-life-tip-text]'), tip.text, durationMs, reducedMotion);
+        preloadDuringReveal(otherCandidates);
     });
 }
 
@@ -301,7 +308,8 @@ export function playCultivationReveal(profile, options = {}) {
     const tip = chooseTip(options.loginTip);
     // 有提示就播加载屏（教师无修为 profile 也能播，只是没有徽章条）。
     if (tip) {
-        playLifeTipReveal(profile, tip, onDone);
+        const others = (options.loginTip?.tips || []).filter((item) => item && item.id !== tip.id);
+        playLifeTipReveal(profile, tip, onDone, others);
         return;
     }
     if (!profile?.highest_level) {

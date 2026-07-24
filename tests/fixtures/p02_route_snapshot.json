@@ -2016,6 +2016,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/learning/personal-greeting",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_personal_greeting",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/lesson-plans",
     "methods": [
       "GET"
