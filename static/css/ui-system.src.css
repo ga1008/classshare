@@ -49174,3 +49174,16 @@ button.lp-import-summary__action:focus-visible { outline: 2px solid rgba(14, 165
     from { opacity: 0; transform: translateY(16px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* ==== 人生一言对比度增强（2026-07-24）：背景压暗一档，白字始终清晰 ==== */
+.life-tip-backdrop.has-image {
+    filter: saturate(0.85) brightness(0.55);
+}
+.life-tip-vignette {
+    background:
+        linear-gradient(180deg, rgba(2, 6, 23, 0.78) 0%, rgba(2, 6, 23, 0.42) 30%, rgba(2, 6, 23, 0.46) 62%, rgba(2, 6, 23, 0.88) 100%),
+        radial-gradient(85% 70% at 50% 52%, rgba(2, 6, 23, 0.18) 30%, rgba(2, 6, 23, 0.66) 100%);
+}
+.life-tip-stage__text {
+    text-shadow: 0 2px 22px rgba(2, 6, 23, 0.95), 0 0 8px rgba(2, 6, 23, 0.6);
+}

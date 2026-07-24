@@ -160,6 +160,7 @@ function buildTipReveal(profile, tip, durationMs, hasImage) {
             <div class="life-tip-footer__actions">
                 <button type="button" class="life-tip-feedback" data-life-tip-feedback="1">👍 有用</button>
                 <button type="button" class="life-tip-feedback" data-life-tip-feedback="-1">👎 无感</button>
+                <button type="button" class="life-tip-feedback" data-life-tip-save>💾 保存</button>
                 <span class="life-tip-footer__skip">点击任意处跳过 ›</span>
             </div>
         </footer>
@@ -190,6 +191,105 @@ function wireTipFeedback(overlay, tip) {
                 // 反馈是锦上添花，失败静默。
             }
         });
+    });
+}
+
+const SAVE_CARD_WIDTH = 1600;
+const SAVE_CARD_HEIGHT = 900;
+const SAVE_FONT_STACK = '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif';
+
+function wrapCanvasText(ctx, text, maxWidth) {
+    const chars = Array.from(String(text || ''));
+    const lines = [];
+    let current = '';
+    chars.forEach((char) => {
+        if (ctx.measureText(current + char).width > maxWidth && current) {
+            lines.push(current);
+            current = char;
+        } else {
+            current += char;
+        }
+    });
+    if (current) lines.push(current);
+    return lines;
+}
+
+async function saveTipCard(tip, hasImage) {
+    const canvas = document.createElement('canvas');
+    canvas.width = SAVE_CARD_WIDTH;
+    canvas.height = SAVE_CARD_HEIGHT;
+    const ctx = canvas.getContext('2d');
+
+    let imageDrawn = false;
+    if (hasImage && tip.image_url) {
+        try {
+            const image = await new Promise((resolve, reject) => {
+                const node = new Image();
+                node.onload = () => resolve(node);
+                node.onerror = reject;
+                node.src = tip.image_url;
+            });
+            const scale = Math.max(SAVE_CARD_WIDTH / image.width, SAVE_CARD_HEIGHT / image.height);
+            const width = image.width * scale;
+            const height = image.height * scale;
+            ctx.drawImage(image, (SAVE_CARD_WIDTH - width) / 2, (SAVE_CARD_HEIGHT - height) / 2, width, height);
+            imageDrawn = true;
+        } catch (error) {
+            // 图片取不到时退回渐变底。
+        }
+    }
+    if (!imageDrawn) {
+        const gradient = ctx.createRadialGradient(320, 90, 100, 800, 450, 1200);
+        gradient.addColorStop(0, '#1e293b');
+        gradient.addColorStop(0.5, '#0f172a');
+        gradient.addColorStop(1, '#020617');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, SAVE_CARD_WIDTH, SAVE_CARD_HEIGHT);
+    }
+
+    // 与展示层一致的压暗遮罩，保证白字对比度。
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.5)';
+    ctx.fillRect(0, 0, SAVE_CARD_WIDTH, SAVE_CARD_HEIGHT);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.font = `600 30px ${SAVE_FONT_STACK}`;
+    ctx.fillStyle = '#7dd3fc';
+    const category = tip.category || '人生提示';
+    ctx.fillText(`—  ${Array.from(category).join(' ')}  —`, SAVE_CARD_WIDTH / 2, 320);
+
+    ctx.font = `600 46px ${SAVE_FONT_STACK}`;
+    const lines = wrapCanvasText(ctx, tip.text, SAVE_CARD_WIDTH * 0.72);
+    const lineHeight = 82;
+    const startY = SAVE_CARD_HEIGHT / 2 - ((lines.length - 1) * lineHeight) / 2 + 20;
+    ctx.fillStyle = '#f8fafc';
+    ctx.shadowColor = 'rgba(2, 6, 23, 0.85)';
+    ctx.shadowBlur = 18;
+    lines.forEach((line, index) => {
+        ctx.fillText(line, SAVE_CARD_WIDTH / 2, startY + index * lineHeight);
+    });
+
+    const link = document.createElement('a');
+    link.download = `人生一言-${category}-${tip.id || ''}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+}
+
+function wireTipSave(overlay, tip, hasImage) {
+    const button = overlay.querySelector('[data-life-tip-save]');
+    if (!button) return;
+    button.addEventListener('click', async (event) => {
+        // 保存不算"跳过"。
+        event.stopPropagation();
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+            await saveTipCard(tip, hasImage);
+            button.textContent = '✅ 已保存';
+        } catch (error) {
+            button.textContent = '保存失败';
+        }
     });
 }
 
@@ -250,6 +350,7 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates) {
         autoTimer = window.setTimeout(finish, durationMs);
 
         wireTipFeedback(overlay, tip);
+        wireTipSave(overlay, tip, hasImage);
         revealTipText(overlay.querySelector('[data-life-tip-text]'), tip.text, durationMs, reducedMotion);
         preloadDuringReveal(otherCandidates);
     });
