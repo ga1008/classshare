@@ -26,10 +26,26 @@ interface TaskItem {
   teacher_name: string;
 }
 
+interface TeacherTask {
+  id: number;
+  title: string;
+  status: string;
+  status_label: string;
+  is_exam: boolean;
+  due_at: string;
+  course_name: string;
+  class_name: string;
+  student_total: number;
+  submitted_count: number;
+  graded_count: number;
+  pending_grade_count: number;
+}
+
 const auth = useAuthStore();
 const segment = ref<"pending" | "completed">("pending");
 const pendingTasks = ref<TaskItem[]>([]);
 const completedTasks = ref<TaskItem[]>([]);
+const teacherTasks = ref<TeacherTask[]>([]);
 const loading = ref(false);
 const failed = ref(false);
 
@@ -38,10 +54,14 @@ const visibleTasks = computed(() =>
 );
 
 async function loadTasks(): Promise<void> {
-  if (auth.isTeacher) return;
   loading.value = true;
   failed.value = false;
   try {
+    if (auth.isTeacher) {
+      const data = await request<{ tasks: TeacherTask[] }>({ path: "/api/mp/teacher/tasks" });
+      teacherTasks.value = data.tasks;
+      return;
+    }
     const data = await request<{ pending: TaskItem[]; completed: TaskItem[] }>({
       path: "/api/mp/tasks",
     });
@@ -56,6 +76,10 @@ async function loadTasks(): Promise<void> {
     loading.value = false;
     uni.stopPullDownRefresh();
   }
+}
+
+function openTeacherTask(task: TeacherTask): void {
+  uni.navigateTo({ url: `/pages/teacher-task/index?id=${task.id}` });
 }
 
 function openTask(task: TaskItem): void {
@@ -81,9 +105,39 @@ onPullDownRefresh(() => {
 
 <template>
   <view class="tasks">
-    <view v-if="auth.isTeacher" class="teacher-note">
-      <text>教师端作业考试大盘将在下一版本上线，敬请期待。</text>
-    </view>
+    <template v-if="auth.isTeacher">
+      <view v-if="loading && !teacherTasks.length" class="empty"><text>加载中…</text></view>
+      <view v-else-if="failed" class="empty" @tap="loadTasks"><text>加载失败，点击重试</text></view>
+      <view v-else-if="!teacherTasks.length" class="empty"><text>暂无绑定课堂的作业/考试</text></view>
+
+      <view
+        v-for="task in teacherTasks"
+        :key="task.id"
+        class="task-card"
+        @tap="openTeacherTask(task)"
+      >
+        <view class="task-card__top">
+          <text class="task-card__badge" :class="task.is_exam ? 'task-card__badge--exam' : ''">
+            {{ task.is_exam ? "考试" : "作业" }}
+          </text>
+          <text class="task-card__status">{{ task.status_label }}</text>
+        </view>
+        <text class="task-card__title">{{ task.title }}</text>
+        <text class="task-card__course">{{ task.course_name }} · {{ task.class_name }}</text>
+        <view class="teacher-progress">
+          <view class="teacher-progress__bar">
+            <view
+              class="teacher-progress__fill"
+              :style="{ width: `${task.student_total ? Math.round((task.submitted_count / task.student_total) * 100) : 0}%` }"
+            />
+          </view>
+          <text class="teacher-progress__text">已交 {{ task.submitted_count }}/{{ task.student_total }}</text>
+          <text v-if="task.pending_grade_count" class="teacher-progress__pending">
+            待批 {{ task.pending_grade_count }}
+          </text>
+        </view>
+      </view>
+    </template>
 
     <template v-else>
       <view class="segment">
@@ -149,13 +203,36 @@ onPullDownRefresh(() => {
   gap: 28rpx;
 }
 
-.teacher-note {
-  background: #ffffff;
-  border-radius: 32rpx;
-  padding: 64rpx 40rpx;
-  text-align: center;
+.teacher-progress {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 8rpx;
+}
+
+.teacher-progress__bar {
+  flex: 1;
+  height: 12rpx;
+  border-radius: 999rpx;
+  background: #eef2f7;
+  overflow: hidden;
+}
+
+.teacher-progress__fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: #4a7dff;
+}
+
+.teacher-progress__text {
+  font-size: 24rpx;
   color: #64748b;
-  font-size: 28rpx;
+}
+
+.teacher-progress__pending {
+  font-size: 24rpx;
+  font-weight: 700;
+  color: #e0662f;
 }
 
 .segment {
