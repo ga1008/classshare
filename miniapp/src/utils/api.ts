@@ -51,6 +51,46 @@ function extractDetail(body: unknown, fallback: string): string {
   return fallback;
 }
 
+/** 上传单个文件到后端 multipart Form 端点（自动带 bearer，解析 JSON 响应）。 */
+export function uploadFile<T>(options: {
+  path: string;
+  filePath: string;
+  name?: string;
+  formData?: Record<string, string>;
+}): Promise<T> {
+  const { path, filePath, name = "files", formData = {} } = options;
+  const header: Record<string, string> = {};
+  const token = getStoredToken();
+  if (token) {
+    header.Authorization = `Bearer ${token}`;
+  }
+  return new Promise<T>((resolve, reject) => {
+    uni.uploadFile({
+      url: `${API_BASE}${path}`,
+      filePath,
+      name,
+      formData,
+      header,
+      timeout: 60000,
+      success: (res) => {
+        const status = res.statusCode ?? 0;
+        let body: unknown = null;
+        try {
+          body = JSON.parse(res.data || "null");
+        } catch {
+          body = null;
+        }
+        if (status < 200 || status >= 300) {
+          reject(new ApiError(extractDetail(body, `上传失败（${status}）`), status));
+          return;
+        }
+        resolve(body as T);
+      },
+      fail: () => reject(new ApiError("上传失败，请检查网络后重试。", 0)),
+    });
+  });
+}
+
 export function request<T>(options: {
   path: string;
   method?: "GET" | "POST";

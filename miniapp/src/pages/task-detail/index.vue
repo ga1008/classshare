@@ -14,7 +14,7 @@
 import { onHide, onLoad, onUnload } from "@dcloudio/uni-app";
 import { computed, reactive, ref } from "vue";
 
-import { request } from "../../utils/api";
+import { request, uploadFile } from "../../utils/api";
 
 interface Question {
   id: string;
@@ -22,6 +22,24 @@ interface Question {
   text: string;
   options?: string[];
   placeholder?: string;
+}
+
+interface DraftFile {
+  id: number;
+  question_id: string;
+  kind: string;
+  file_name: string;
+  relative_path: string;
+  mime_type: string;
+  file_size: number | null;
+  is_image: boolean;
+}
+
+interface DraftResponse {
+  exists?: boolean;
+  answers_json?: string;
+  server_updated_at?: string;
+  files_by_question?: Record<string, DraftFile[]>;
 }
 
 interface DetailData {
@@ -49,6 +67,9 @@ interface DetailData {
 const CHECKBOX_SEP = "|||";
 const DRAFT_INTERVAL_MS = 30_000;
 const PLAIN_QUESTION_LABEL = "作答";
+/** 普通作业附件的固定挂载位（服务器按 question_id 归组） */
+const PLAIN_FILE_QID = "attachment";
+const plainFileQuestion: Question = { id: PLAIN_FILE_QID, type: "attachment", text: "附件" };
 
 const assignmentId = ref("");
 const detail = ref<DetailData | null>(null);
@@ -56,6 +77,10 @@ const loading = ref(true);
 const failed = ref(false);
 const errorMessage = ref("");
 const answers = reactive<Record<string, string>>({});
+const questionFiles = reactive<Record<string, DraftFile[]>>({});
+/** 本会话刚上传文件的本地临时路径（服务器下载需鉴权头，image 组件带不了） */
+const localPreview = reactive<Record<string, string>>({});
+const uploadingQid = ref("");
 const plainAnswer = ref("");
 const submitting = ref(false);
 const remainingSeconds = ref<number | null>(null);
@@ -97,6 +122,10 @@ function isChoice(q: Question): boolean {
   return q.type === "radio" || q.type === "checkbox";
 }
 
+function isAttachmentQuestion(q: Question): boolean {
+  return !["radio", "checkbox", "text", "textarea"].includes(q.type);
+}
+
 function checkboxSelected(q: Question, option: string): boolean {
   return (answers[q.id] || "").split(CHECKBOX_SEP).includes(option);
 }
@@ -123,7 +152,14 @@ function buildAnswersJson(): string {
         question: q.text,
         type: q.type || "",
         answer: answers[q.id] || "",
-        attachments: [],
+        attachments: (questionFiles[q.id] || []).map((file) => ({
+          kind: file.kind || (file.is_image ? "image" : "file"),
+          file_name: file.file_name,
+          relative_path: file.relative_path,
+          mime_type: file.mime_type,
+          file_size: file.file_size || 0,
+          question_id: q.id,
+        })),
       })),
     });
   }
@@ -176,21 +212,134 @@ async function restoreDrafts(): Promise<void> {
     /* ignore */
   }
   try {
-    const draft = await request<{
-      exists?: boolean;
-      answers_json?: string;
-      server_updated_at?: string;
-    }>({ path: `/api/assignments/${assignmentId.value}/draft` });
-    if (draft?.exists && draft.answers_json) {
-      const serverTime = Date.parse(draft.server_updated_at || "") || 0;
-      const localTime = Date.parse(localSavedAt) || 0;
-      if (serverTime >= localTime) {
-        const parsed = JSON.parse(draft.answers_json) as { answers?: [] };
-        restoreFromAnswersList(parsed.answers || []);
+    const draft = await request<DraftResponse>({
+      path: `/api/assignments/${assignmentId.value}/draft`,
+    });
+    if (draft?.exists) {
+      applyQuestionFiles(draft.files_by_question);
+      if (draft.answers_json) {
+        const serverTime = Date.parse(draft.server_updated_at || "") || 0;
+        const localTime = Date.parse(localSavedAt) || 0;
+        if (serverTime >= localTime) {
+          const parsed = JSON.parse(draft.answers_json) as { answers?: [] };
+          restoreFromAnswersList(parsed.answers || []);
+        }
       }
     }
   } catch {
     /* 服务器草稿失败回落本地草稿 */
+  }
+}
+
+function applyQuestionFiles(filesByQuestion?: Record<string, DraftFile[]>): void {
+  if (!filesByQuestion) return;
+  for (const key of Object.keys(questionFiles)) {
+    delete questionFiles[key];
+  }
+  for (const [qid, files] of Object.entries(filesByQuestion)) {
+    questionFiles[qid] = files;
+  }
+}
+
+// ---------- 附件上传（拍照/相册 → 服务器草稿，提交时 use_server_draft 合并） ----------
+
+function chooseImages(count: number): Promise<Array<{ path: string; size: number }>> {
+  return new Promise((resolve) => {
+    uni.chooseImage({
+      count,
+      sizeType: ["compressed"],
+      sourceType: ["album", "camera"],
+      success: (res) => {
+        const sizes = (res.tempFiles as Array<{ size: number }>) || [];
+        resolve(
+          (res.tempFilePaths as string[]).map((path, index) => ({
+            path,
+            size: sizes[index]?.size || 0,
+          })),
+        );
+      },
+      fail: () => resolve([]),
+    });
+  });
+}
+
+async function addPhotos(q: Question): Promise<void> {
+  if (uploadingQid.value) return;
+  const picked = await chooseImages(3);
+  if (!picked.length) return;
+  uploadingQid.value = q.id;
+  try {
+    for (const [index, item] of picked.entries()) {
+      const ext = item.path.split(".").pop() || "jpg";
+      const relativePath = `mp_${q.id}_${Date.now()}_${index}.${ext}`;
+      const manifest = JSON.stringify([
+        {
+          relative_path: relativePath,
+          file_name: relativePath,
+          question_id: q.id,
+          kind: "image",
+          mime_type: `image/${ext === "png" ? "png" : "jpeg"}`,
+          file_size: item.size,
+        },
+      ]);
+      const draft = await uploadFile<DraftResponse>({
+        path: `/api/assignments/${assignmentId.value}/draft`,
+        filePath: item.path,
+        formData: {
+          answers_json: buildAnswersJson(),
+          current_page: "0",
+          manifest,
+        },
+      });
+      applyQuestionFiles(draft.files_by_question);
+      const uploaded = (questionFiles[q.id] || []).find(
+        (file) => file.relative_path === relativePath,
+      );
+      if (uploaded) {
+        localPreview[uploaded.relative_path] = item.path;
+      }
+    }
+    draftSavedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    uni.showToast({ title: "附件已保存到草稿", icon: "success" });
+  } catch (error: unknown) {
+    uni.showModal({
+      title: "上传失败",
+      content: error instanceof Error ? error.message : "网络异常，请重试。",
+      showCancel: false,
+    });
+  } finally {
+    uploadingQid.value = "";
+  }
+}
+
+async function clearFiles(q: Question): Promise<void> {
+  if (!(questionFiles[q.id] || []).length) return;
+  const confirmed = await new Promise<boolean>((resolve) => {
+    uni.showModal({
+      title: "清空附件",
+      content: "删除本题已上传的全部附件？",
+      success: (res) => resolve(Boolean(res.confirm)),
+      fail: () => resolve(false),
+    });
+  });
+  if (!confirmed) return;
+  try {
+    const draft = await request<DraftResponse>({
+      path: `/api/assignments/${assignmentId.value}/draft`,
+      method: "POST",
+      form: true,
+      data: {
+        answers_json: buildAnswersJson(),
+        current_page: 0,
+        replace_question_ids: JSON.stringify([q.id]),
+      },
+    });
+    applyQuestionFiles(draft.files_by_question);
+  } catch (error: unknown) {
+    uni.showToast({
+      title: error instanceof Error ? error.message : "操作失败",
+      icon: "none",
+    });
   }
 }
 
@@ -262,9 +411,10 @@ async function loadDetail(): Promise<void> {
 
 async function submit(): Promise<void> {
   if (submitting.value || !detail.value) return;
+  const hasAnyFiles = Object.values(questionFiles).some((files) => files.length > 0);
   const hasContent = detail.value.paper
-    ? answeredCount.value > 0
-    : Boolean(plainAnswer.value.trim());
+    ? answeredCount.value > 0 || hasAnyFiles
+    : Boolean(plainAnswer.value.trim()) || hasAnyFiles;
   if (!hasContent) {
     uni.showToast({ title: "还没有填写任何作答内容", icon: "none" });
     return;
@@ -288,7 +438,11 @@ async function submit(): Promise<void> {
       path: `/api/assignments/${assignmentId.value}/submit`,
       method: "POST",
       form: true,
-      data: { answers_json: buildAnswersJson(), started_at: startedAt },
+      data: {
+        answers_json: buildAnswersJson(),
+        started_at: startedAt,
+        use_server_draft: "true",
+      },
     });
     try {
       uni.removeStorageSync(localDraftKey.value);
@@ -437,9 +591,39 @@ onUnload(() => {
                 auto-height
                 @input="onTextInput(q.id, $event as never)"
               />
-              <text v-if="q.type !== 'textarea'" class="attach-hint">
-                📎 此题如需上传附件/绘图，请在网页端完成
-              </text>
+
+              <view v-if="isAttachmentQuestion(q)" class="uploads">
+                <view v-if="(questionFiles[q.id] || []).length" class="files-row">
+                  <template v-for="file in questionFiles[q.id]" :key="file.id">
+                    <image
+                      v-if="localPreview[file.relative_path]"
+                      class="file-thumb"
+                      :src="localPreview[file.relative_path]"
+                      mode="aspectFill"
+                    />
+                    <view v-else class="file-chip">
+                      <text class="file-chip__icon">{{ file.is_image ? "🖼️" : "📄" }}</text>
+                      <text class="file-chip__name">{{ file.file_name }}</text>
+                    </view>
+                  </template>
+                </view>
+                <view class="upload-btns">
+                  <view
+                    class="upload-btn"
+                    :class="{ 'upload-btn--busy': uploadingQid === q.id }"
+                    @tap="addPhotos(q)"
+                  >
+                    <text>{{ uploadingQid === q.id ? "上传中…" : "📷 拍照/选图" }}</text>
+                  </view>
+                  <view
+                    v-if="(questionFiles[q.id] || []).length"
+                    class="upload-btn upload-btn--danger"
+                    @tap="clearFiles(q)"
+                  >
+                    <text>清空附件</text>
+                  </view>
+                </view>
+              </view>
             </view>
           </view>
         </view>
@@ -456,7 +640,38 @@ onUnload(() => {
             auto-height
             @input="onPlainInput($event as never)"
           />
-          <text class="attach-hint">📎 如需上传文件附件，请在网页端完成</text>
+          <view class="uploads">
+            <view v-if="(questionFiles[PLAIN_FILE_QID] || []).length" class="files-row">
+              <template v-for="file in questionFiles[PLAIN_FILE_QID]" :key="file.id">
+                <image
+                  v-if="localPreview[file.relative_path]"
+                  class="file-thumb"
+                  :src="localPreview[file.relative_path]"
+                  mode="aspectFill"
+                />
+                <view v-else class="file-chip">
+                  <text class="file-chip__icon">{{ file.is_image ? "🖼️" : "📄" }}</text>
+                  <text class="file-chip__name">{{ file.file_name }}</text>
+                </view>
+              </template>
+            </view>
+            <view class="upload-btns">
+              <view
+                class="upload-btn"
+                :class="{ 'upload-btn--busy': uploadingQid === PLAIN_FILE_QID }"
+                @tap="addPhotos(plainFileQuestion)"
+              >
+                <text>{{ uploadingQid === PLAIN_FILE_QID ? "上传中…" : "📷 拍照/选图" }}</text>
+              </view>
+              <view
+                v-if="(questionFiles[PLAIN_FILE_QID] || []).length"
+                class="upload-btn upload-btn--danger"
+                @tap="clearFiles(plainFileQuestion)"
+              >
+                <text>清空附件</text>
+              </view>
+            </view>
+          </view>
         </view>
       </template>
 
@@ -642,6 +857,74 @@ onUnload(() => {
   margin-top: 12rpx;
   font-size: 22rpx;
   color: #94a3b8;
+}
+
+.uploads {
+  margin-top: 20rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.files-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.file-thumb {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 16rpx;
+  background: #f1f5f9;
+}
+
+.file-chip {
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  background: #f1f5f9;
+  border-radius: 14rpx;
+  padding: 14rpx 20rpx;
+}
+
+.file-chip__icon {
+  font-size: 28rpx;
+}
+
+.file-chip__name {
+  font-size: 22rpx;
+  color: #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 360rpx;
+}
+
+.upload-btns {
+  display: flex;
+  gap: 16rpx;
+}
+
+.upload-btn {
+  min-height: 72rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 30rpx;
+  border-radius: 999rpx;
+  background: rgba(74, 125, 255, 0.1);
+  color: #1d4ed8;
+  font-size: 26rpx;
+}
+
+.upload-btn--busy {
+  opacity: 0.6;
+}
+
+.upload-btn--danger {
+  background: rgba(239, 68, 68, 0.08);
+  color: #dc2626;
 }
 
 .result-card {
