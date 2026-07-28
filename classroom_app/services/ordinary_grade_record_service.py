@@ -18,6 +18,8 @@ ORDINARY_GRADE_RECORD_LABEL = "学生平时成绩记录表"
 ORDINARY_GRADE_RECORD_SCHEMA_VERSION = "gxufl-ordinary-grade-record-v1"
 ORDINARY_GRADE_PAGE_STUDENT_CAPACITY = 25
 ORDINARY_GRADE_LAST_PAGE_MIN_BLANK_ROWS = 2
+_ORDINARY_ASSESSMENT_TITLE_PATTERN = re.compile(r"期末|期中|测评|测试|考试|考核|测验|验收|试炼")
+_ORDINARY_HOMEWORK_TITLE_PATTERN = re.compile(r"作业|练习|实战|实验|项目|实践|任务")
 
 ORDINARY_GRADE_NOTES = [
     "注：",
@@ -119,6 +121,16 @@ def normalize_ordinary_grade_record_payload(
     return base
 
 
+def classify_ordinary_grade_assignment(row: dict[str, Any]) -> str:
+    """Classify the classroom purpose, not merely the underlying authoring format."""
+    title = str(row.get("title") or "").strip()
+    if _ORDINARY_ASSESSMENT_TITLE_PATTERN.search(title):
+        return "exam"
+    if _ORDINARY_HOMEWORK_TITLE_PATTERN.search(title):
+        return "assignment"
+    return "exam" if row.get("exam_paper_id") else "assignment"
+
+
 def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, teacher_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
@@ -134,7 +146,7 @@ def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, t
                AVG(CASE WHEN s.score IS NOT NULL THEN s.score ELSE NULL END) AS average_score
         FROM assignments a
         JOIN class_offerings o ON o.id = a.class_offering_id
-        LEFT JOIN submissions s ON s.assignment_id = CAST(a.id AS TEXT)
+        LEFT JOIN submissions s ON s.assignment_id = a.id
         WHERE a.class_offering_id = ?
           AND o.teacher_id = ?
         GROUP BY a.id, a.title, a.status, a.created_at, a.due_at, a.exam_paper_id, a.grading_mode
@@ -153,7 +165,7 @@ def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, t
                 "status": item.get("status") or "",
                 "created_at": item.get("created_at") or "",
                 "due_at": item.get("due_at") or "",
-                "kind": "exam" if item.get("exam_paper_id") else "assignment",
+                "kind": classify_ordinary_grade_assignment(item),
                 "submission_count": _coerce_int(item.get("submission_count")),
                 "graded_count": _coerce_int(item.get("graded_count")),
                 "average_score": round(float(average_score), 2) if average_score is not None else None,
@@ -170,6 +182,8 @@ def build_ordinary_grade_record_payload(
     homework_assignment_ids: list[int | str],
     assessment_assignment_id: int | str,
     classroom_context: dict[str, Any] | None = None,
+    attendance_sync: dict[str, Any] | None = None,
+    generation_requirements: str = "",
 ) -> dict[str, Any]:
     homework_ids, assessment_id = validate_ordinary_grade_sources(
         homework_assignment_ids=homework_assignment_ids,
@@ -194,20 +208,22 @@ def build_ordinary_grade_record_payload(
     rows: list[dict[str, Any]] = []
     for index, student in enumerate(students, start=1):
         student_id = int(student["student_id"])
-        homework_scores = [_score_or_blank(score_map.get((int(assignment_id), student_id))) for assignment_id in homework_ids]
-        assessment_score = _score_or_blank(score_map.get((int(assessment_id), student_id)))
-        if any(value == "" for value in homework_scores) or assessment_score == "":
-            warnings.append(f"{student.get('student_name') or student.get('student_number')} 存在未批改或缺失的作业/测评成绩。")
+        raw_homework_scores = [score_map.get((int(assignment_id), student_id)) for assignment_id in homework_ids]
+        raw_assessment_score = score_map.get((int(assessment_id), student_id))
+        homework_scores = [_score_or_zero(value) for value in raw_homework_scores]
+        assessment_score = _score_or_zero(raw_assessment_score)
+        if any(value is None for value in raw_homework_scores) or raw_assessment_score is None:
+            warnings.append(f"{student.get('student_name') or student.get('student_number')} 存在未批改或缺失的作业/测评成绩，已按 0 分计入。")
         attendance_score = attendance_scores.get(student_id)
         if attendance_score is None:
-            warnings.append(f"{student.get('student_name') or student.get('student_number')} 暂无智慧课堂签到记录，出勤成绩留空。")
+            warnings.append(f"{student.get('student_name') or student.get('student_number')} 暂无智慧课堂签到记录，出勤成绩已按 0 分计入。")
         rows.append(
             {
                 "index": index,
                 "student_id": student_id,
                 "student_number": student.get("student_number") or "",
                 "student_name": student.get("student_name") or "",
-                "attendance_raw_score": _score_or_blank(attendance_score),
+                "attendance_raw_score": _score_or_zero(attendance_score),
                 "homework_scores": homework_scores,
                 "assessment_score": assessment_score,
             }
@@ -225,6 +241,8 @@ def build_ordinary_grade_record_payload(
         "source_homework_titles": "；".join(item["title"] for item in source_assignments["homework_assignments"]),
         "source_assessment_title": source_assignments["assessment_assignment"]["title"],
     }
+    if str(generation_requirements or "").strip():
+        fields["generation_requirements"] = str(generation_requirements).strip()
     payload = normalize_ordinary_grade_record_payload(
         metadata=fields,
         content_markdown="",
@@ -234,6 +252,8 @@ def build_ordinary_grade_record_payload(
             "structured": {
                 "students": rows,
                 "source_assignments": source_assignments,
+                "attendance_sync": dict(attendance_sync or {}),
+                "generation_requirements": str(generation_requirements or "").strip(),
                 "formula_templates": _formula_templates(),
                 "warnings": _dedupe(warnings),
             },
@@ -480,7 +500,8 @@ def _write_page(ws: Any, fields: dict[str, Any], students: list[dict[str, Any]],
             ws.cell(row_number, 12, f"=I{row_number_text}*0.4+J{row_number_text}*0.3+K{row_number_text}*0.3")
         ws.row_dimensions[row_number].height = 18.0
 
-    for row in range(start_row + 3, data_start + table_row_count):
+    ws.cell(start_row + 3, 1).border = Border(bottom=thin)
+    for row in range(start_row + 4, data_start + table_row_count):
         for col in range(1, 13):
             ws.cell(row, col).border = border
 
@@ -743,7 +764,7 @@ def _load_assignment_scores(conn, *, assignment_ids: list[int]) -> dict[tuple[in
         WHERE assignment_id IN ({placeholders})
           AND score IS NOT NULL
         """,
-        [str(item) for item in assignment_ids],
+        [int(item) for item in assignment_ids],
     ).fetchall()
     result = {}
     for row in rows:
@@ -954,6 +975,8 @@ def _ordinary_grade_queryable_fields(fields: dict[str, Any], structured: dict[st
         "source_assignments": structured.get("source_assignments") or {},
         "student_count": len(structured.get("students") or []),
         "formula_templates": structured.get("formula_templates") or {},
+        "attendance_sync": structured.get("attendance_sync") or {},
+        "generation_requirements": structured.get("generation_requirements") or "",
     }
 
 
@@ -973,6 +996,8 @@ def _build_content_markdown(fields: dict[str, Any], students: list[dict[str, Any
         lines.append(f"- 平时作业来源：{'；'.join(str(item.get('title') or '') for item in homework if isinstance(item, dict))}")
     if isinstance(assessment, dict) and assessment:
         lines.append(f"- 测评来源：{assessment.get('title') or ''}")
+    if str(fields.get("generation_requirements") or "").strip():
+        lines.append(f"- 生成要求：{str(fields.get('generation_requirements')).strip()}")
     lines.extend(["", "| 序号 | 学号 | 姓名 | 出勤 | 作业1 | 作业2 | 作业3 | 测评 |", "| --- | --- | --- | --- | --- | --- | --- | --- |"])
     for student in students[:80]:
         homework_scores = list(student.get("homework_scores") or [])[:3]
@@ -998,7 +1023,7 @@ def _assignment_summary(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": int(row["id"]),
         "title": row.get("title") or f"作业 {row['id']}",
-        "kind": "exam" if row.get("exam_paper_id") else "assignment",
+        "kind": classify_ordinary_grade_assignment(row),
         "status": row.get("status") or "",
         "due_at": row.get("due_at") or "",
     }
@@ -1014,6 +1039,11 @@ def _score_or_blank(value: Any) -> float | str:
     if math.isnan(number) or math.isinf(number):
         return ""
     return round(number, 2)
+
+
+def _score_or_zero(value: Any) -> float:
+    score = _score_or_blank(value)
+    return float(score) if score != "" else 0.0
 
 
 def _number_text(value: Any) -> str:

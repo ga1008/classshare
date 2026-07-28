@@ -13,6 +13,11 @@ from ...services.exam_grade_record_service import (
     build_exam_grade_record_payload,
     list_exam_grade_record_candidates,
 )
+from ...services.smart_classroom_checkin_sync_service import (
+    ORDINARY_GRADE_ATTENDANCE_CACHE_SECONDS,
+    get_classroom_smart_attendance_freshness,
+    sync_teacher_smart_classroom_checkins,
+)
 
 
 router = APIRouter()
@@ -43,7 +48,12 @@ async def list_classroom_ordinary_grade_record_candidates(
             class_offering_id=class_offering_id,
             teacher_id=user["id"],
         )
-    return {"status": "success", "items": items}
+        attendance_sync = get_classroom_smart_attendance_freshness(
+            conn,
+            teacher_id=int(user["id"]),
+            class_offering_id=int(class_offering_id),
+        )
+    return {"status": "success", "items": items, "attendance_sync": attendance_sync}
 
 
 @router.get("/api/classrooms/{class_offering_id}/exam-grade-record/candidates", response_class=JSONResponse)
@@ -115,6 +125,34 @@ async def generate_classroom_final_material(
         raise HTTPException(400, "期末材料类型不受支持")
     type_meta = resolve_material_ai_import_type("final_material", document_type)
 
+    attendance_sync: dict[str, Any] | None = None
+    if document_type == ORDINARY_GRADE_RECORD_TYPE:
+        with get_db_connection() as conn:
+            ensure_classroom_access(conn, class_offering_id, user)
+        attendance_sync = await sync_teacher_smart_classroom_checkins(
+            int(user["id"]),
+            class_offering_id=int(class_offering_id),
+            min_refresh_interval_seconds=ORDINARY_GRADE_ATTENDANCE_CACHE_SECONDS,
+        )
+        sync_status = str(attendance_sync.get("status") or "").strip()
+        if sync_status == "missing_credential":
+            raise HTTPException(
+                409,
+                "生成前需要刷新智慧课堂考勤，但尚未配置可用的智慧课堂账号。请先在系统设置中完成账号验证。",
+            )
+        if sync_status == "failed":
+            raise HTTPException(
+                502,
+                attendance_sync.get("message") or "智慧课堂考勤同步失败，请稍后重试。",
+            )
+        sync_freshness = attendance_sync.get("freshness") if isinstance(attendance_sync.get("freshness"), dict) else {}
+        if sync_status not in {"cached", "success", "partial_success", "empty"} or not sync_freshness.get("is_fresh"):
+            raise HTTPException(
+                409,
+                "智慧课堂同步已完成，但没有找到能与当前课堂可靠对应的最新考勤数据。"
+                "请先核对课堂教学班、课程代码和智慧课堂课表，再重新生成，系统不会用旧数据冒险生成。",
+            )
+
     with get_db_connection() as conn:
         classroom_context = _load_final_material_classroom_context(conn, class_offering_id, user)
         if document_type == "assessment_plan":
@@ -157,6 +195,8 @@ async def generate_classroom_final_material(
                 homework_assignment_ids=payload.homework_assignment_ids,
                 assessment_assignment_id=payload.assessment_assignment_id or 0,
                 classroom_context=classroom_context,
+                attendance_sync=attendance_sync,
+                generation_requirements=payload.prompt,
             )
             raw_result = {
                 "metadata": export_payload.get("fields") or {},
@@ -192,9 +232,14 @@ async def generate_classroom_final_material(
             )
             return {
                 "status": "success",
-                "message": "已根据智慧课堂签到、3 份作业和 1 份测评生成平时成绩记录表，并保存到课程材料。",
+                "message": (
+                    "已使用 30 分钟内的智慧课堂考勤缓存、3 份作业和 1 份测评生成平时成绩记录表，并保存到课程材料。"
+                    if attendance_sync and attendance_sync.get("cache_hit")
+                    else "已在生成前刷新智慧课堂考勤，并根据 3 份作业和 1 份测评生成平时成绩记录表，保存到课程材料。"
+                ),
                 "task": task,
                 "ai_used": False,
+                "attendance_sync": attendance_sync,
             }
         if document_type == EXAM_GRADE_RECORD_TYPE:
             export_payload = build_exam_grade_record_payload(

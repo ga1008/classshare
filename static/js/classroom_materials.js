@@ -33,6 +33,8 @@ const state = {
     ordinaryGradeCandidatesLoaded: false,
     ordinaryGradeCandidatesLoading: false,
     ordinaryGradeCandidatesError: '',
+    ordinaryGradeAttendanceFreshness: {},
+    ordinaryGradeActiveStep: 0,
     examGradeCandidates: [],
     examGradeCandidatesLoaded: false,
     examGradeCandidatesLoading: false,
@@ -86,6 +88,15 @@ function refs() {
         gradingRubricOptions: document.getElementById('classroom-grading-rubric-options'),
         ordinaryGradeOptions: document.getElementById('classroom-ordinary-grade-record-options'),
         ordinaryGradeStatus: document.getElementById('classroom-ordinary-grade-record-status'),
+        ordinaryAttendanceFreshness: document.getElementById('classroom-ordinary-attendance-freshness'),
+        ordinaryGradePicker: document.getElementById('classroom-ordinary-grade-picker'),
+        ordinaryGradePickerKicker: document.getElementById('classroom-ordinary-grade-picker-kicker'),
+        ordinaryGradePickerTitle: document.getElementById('classroom-ordinary-grade-picker-title'),
+        ordinaryGradePickerSearch: document.getElementById('classroom-ordinary-grade-picker-search'),
+        ordinaryGradePickerList: document.getElementById('classroom-ordinary-grade-picker-list'),
+        ordinaryGradeStepCards: Array.from(document.querySelectorAll('[data-ordinary-grade-step-index]')),
+        ordinaryGradeSelectionDetails: Array.from(document.querySelectorAll('[data-ordinary-grade-selection-detail]')),
+        ordinaryGradeProgressSteps: Array.from(document.querySelectorAll('[data-ordinary-progress-step]')),
         examGradeOptions: document.getElementById('classroom-exam-grade-record-options'),
         examGradeSelect: document.getElementById('classroom-exam-grade-record-assignment'),
         examGradeStatus: document.getElementById('classroom-exam-grade-record-status'),
@@ -98,6 +109,9 @@ function refs() {
         finalMaterialAssessmentMode: document.getElementById('classroom-final-material-assessment-mode'),
         finalMaterialAssessmentMethod: document.getElementById('classroom-final-material-assessment-method'),
         finalMaterialPrompt: document.getElementById('classroom-final-material-prompt'),
+        finalMaterialPromptGroup: document.getElementById('classroom-final-material-prompt-group'),
+        finalMaterialPromptStep: document.getElementById('classroom-final-material-prompt-step'),
+        finalMaterialPromptLabel: document.getElementById('classroom-final-material-prompt-label'),
         finalMaterialSubmitBtn: document.getElementById('classroom-final-material-submit-btn'),
         finalMaterialStatus: document.getElementById('classroom-final-material-status'),
     };
@@ -670,6 +684,195 @@ function ordinaryOptionsHtml(items, placeholder = '请选择') {
     ].join('');
 }
 
+function ordinaryFuzzyText(value) {
+    return String(value || '')
+        .normalize('NFKC')
+        .toLocaleLowerCase('zh-CN')
+        .replace(/[\s·•—–_\-/（）()【】[\]，,。.：:；;]+/g, '');
+}
+
+function ordinaryFuzzyMatches(item, keyword) {
+    const needle = ordinaryFuzzyText(keyword);
+    if (!needle) return true;
+    const source = ordinaryFuzzyText([
+        item?.title,
+        item?.kind === 'exam' ? '考试 测评' : '作业',
+        item?.status,
+        item?.graded_count,
+        item?.submission_count,
+        item?.average_score,
+    ].filter((value) => value !== null && value !== undefined).join(' '));
+    if (source.includes(needle)) return true;
+    let cursor = 0;
+    for (const char of source) {
+        if (char === needle[cursor]) cursor += 1;
+        if (cursor >= needle.length) return true;
+    }
+    return false;
+}
+
+function ordinaryGradeStepSelect(dom, stepIndex) {
+    if (stepIndex >= 0 && stepIndex <= 2) return dom.ordinaryHomeworkSelects?.[stepIndex] || null;
+    return stepIndex === 3 ? dom.ordinaryAssessmentSelect : null;
+}
+
+function ordinaryGradeSelectedIds(dom) {
+    return [0, 1, 2, 3].map((stepIndex) => Number(ordinaryGradeStepSelect(dom, stepIndex)?.value || 0));
+}
+
+function ordinaryGradeCandidateById(candidateId) {
+    return state.ordinaryGradeCandidates.find((item) => Number(item?.id || 0) === Number(candidateId || 0)) || null;
+}
+
+function ordinaryGradeStepCandidates(stepIndex) {
+    const buckets = ordinaryGradeCandidateBuckets();
+    return stepIndex === 3 ? buckets.assessment : buckets.homework;
+}
+
+function ordinaryGradeAttendanceLabel() {
+    const freshness = state.ordinaryGradeAttendanceFreshness || {};
+    if (freshness.is_fresh) {
+        return `考勤已同步于 ${freshness.last_synced_at_display || '刚刚'}，生成时使用 30 分钟缓存`;
+    }
+    if (freshness.last_synced_at_display) {
+        return `考勤上次同步于 ${freshness.last_synced_at_display}，生成前将自动刷新`;
+    }
+    return '考勤尚未同步，生成前将自动连接智慧课堂刷新';
+}
+
+function renderOrdinaryGradePicker() {
+    const dom = refs();
+    if (!dom.ordinaryGradePicker || dom.ordinaryGradePicker.hidden) return;
+    const stepIndex = Number(state.ordinaryGradeActiveStep || 0);
+    const keyword = dom.ordinaryGradePickerSearch?.value || '';
+    const selectedIds = ordinaryGradeSelectedIds(dom);
+    const usedByOtherStep = new Map();
+    selectedIds.forEach((candidateId, index) => {
+        if (candidateId > 0 && index !== stepIndex) usedByOtherStep.set(candidateId, index);
+    });
+    const items = ordinaryGradeStepCandidates(stepIndex).filter((item) => ordinaryFuzzyMatches(item, keyword));
+    if (dom.ordinaryGradePickerKicker) dom.ordinaryGradePickerKicker.textContent = `第 ${stepIndex + 1} 步`;
+    if (dom.ordinaryGradePickerTitle) {
+        dom.ordinaryGradePickerTitle.textContent = stepIndex === 3 ? '选择课堂测评' : `选择平时作业 ${stepIndex + 1}`;
+    }
+    if (!dom.ordinaryGradePickerList) return;
+    if (!items.length) {
+        dom.ordinaryGradePickerList.innerHTML = `
+            <div class="ordinary-grade-picker__empty">
+                <strong>没有匹配的${stepIndex === 3 ? '测评' : '作业'}</strong>
+                <span>可以清空关键词重试，或先回课堂创建并发布相应作业。</span>
+            </div>
+        `;
+        return;
+    }
+    dom.ordinaryGradePickerList.innerHTML = items.map((item) => {
+        const candidateId = Number(item?.id || 0);
+        const usedStep = usedByOtherStep.get(candidateId);
+        const isCurrent = selectedIds[stepIndex] === candidateId;
+        const disabled = usedStep !== undefined;
+        const average = item?.average_score === null || item?.average_score === undefined
+            ? '暂无均分'
+            : `均分 ${item.average_score}`;
+        const usage = disabled
+            ? `已用于第 ${usedStep + 1} 步`
+            : (isCurrent ? '当前已选择' : '选择此来源');
+        return `
+            <button
+                type="button"
+                class="ordinary-grade-candidate${isCurrent ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}"
+                data-ordinary-grade-candidate-id="${escapeHtml(String(candidateId))}"
+                ${disabled ? 'disabled' : ''}
+            >
+                <span class="ordinary-grade-candidate__main">
+                    <strong>${escapeHtml(item?.title || `作业 ${candidateId}`)}</strong>
+                    <small>
+                        ${escapeHtml(item?.kind === 'exam' ? '测评 / 考试' : '平时作业')}
+                        · 已评分 ${escapeHtml(String(item?.graded_count || 0))}/${escapeHtml(String(item?.submission_count || 0))}
+                        · ${escapeHtml(average)}
+                    </small>
+                </span>
+                <span class="ordinary-grade-candidate__usage">${escapeHtml(usage)}</span>
+            </button>
+        `;
+    }).join('');
+}
+
+function renderOrdinaryGradeWizard() {
+    const dom = refs();
+    const selectedIds = ordinaryGradeSelectedIds(dom);
+    if (dom.ordinaryAttendanceFreshness) {
+        dom.ordinaryAttendanceFreshness.textContent = ordinaryGradeAttendanceLabel();
+        dom.ordinaryAttendanceFreshness.classList.toggle('is-fresh', Boolean(state.ordinaryGradeAttendanceFreshness?.is_fresh));
+    }
+    dom.ordinaryGradeStepCards?.forEach((card, stepIndex) => {
+        const candidate = ordinaryGradeCandidateById(selectedIds[stepIndex]);
+        const detail = dom.ordinaryGradeSelectionDetails?.[stepIndex];
+        const action = card.querySelector('.ordinary-grade-step-card__action');
+        card.classList.toggle('is-selected', Boolean(candidate));
+        card.classList.toggle('is-active', !dom.ordinaryGradePicker?.hidden && state.ordinaryGradeActiveStep === stepIndex);
+        if (detail) {
+            detail.textContent = candidate
+                ? `${candidate.title} · 已评分 ${candidate.graded_count || 0}/${candidate.submission_count || 0}${candidate.average_score === null || candidate.average_score === undefined ? '' : ` · 均分 ${candidate.average_score}`}`
+                : (stepIndex === 3 ? '尚未选择，将只显示测评、测试或考试' : '尚未选择，点击查看当前课堂作业');
+        }
+        if (action) action.textContent = candidate ? '更换' : '选择';
+    });
+    dom.ordinaryGradeProgressSteps?.forEach((item, stepIndex) => {
+        const complete = stepIndex < 4
+            ? selectedIds[stepIndex] > 0
+            : Boolean(dom.finalMaterialPrompt?.value?.trim());
+        item.classList.toggle('is-complete', complete);
+        item.classList.toggle(
+            'is-active',
+            stepIndex < 4
+                ? (!dom.ordinaryGradePicker?.hidden && state.ordinaryGradeActiveStep === stepIndex)
+                : selectedIds.every((value) => value > 0),
+        );
+    });
+    renderOrdinaryGradePicker();
+}
+
+function openOrdinaryGradePicker(stepIndex) {
+    const dom = refs();
+    if (!dom.ordinaryGradePicker) return;
+    state.ordinaryGradeActiveStep = Math.max(0, Math.min(3, Number(stepIndex || 0)));
+    dom.ordinaryGradePicker.hidden = false;
+    if (dom.ordinaryGradePickerSearch) dom.ordinaryGradePickerSearch.value = '';
+    renderOrdinaryGradeWizard();
+    window.setTimeout(() => dom.ordinaryGradePickerSearch?.focus(), 60);
+}
+
+function closeOrdinaryGradePicker() {
+    const dom = refs();
+    if (dom.ordinaryGradePicker) dom.ordinaryGradePicker.hidden = true;
+    renderOrdinaryGradeWizard();
+}
+
+function selectOrdinaryGradeCandidate(candidateId) {
+    const dom = refs();
+    const stepIndex = Number(state.ordinaryGradeActiveStep || 0);
+    const select = ordinaryGradeStepSelect(dom, stepIndex);
+    const numericId = Number(candidateId || 0);
+    if (!select || numericId <= 0) return;
+    const selectedIds = ordinaryGradeSelectedIds(dom);
+    if (selectedIds.some((value, index) => index !== stepIndex && value === numericId)) {
+        showToast('这份来源已用于其他步骤，请选择另一份作业或测评。', 'warning');
+        return;
+    }
+    select.value = String(numericId);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const nextIncomplete = ordinaryGradeSelectedIds(dom).findIndex((value, index) => index > stepIndex && value <= 0);
+    if (nextIncomplete >= 0) {
+        openOrdinaryGradePicker(nextIncomplete);
+        return;
+    }
+    closeOrdinaryGradePicker();
+    if (stepIndex === 3) {
+        dom.finalMaterialPrompt?.focus();
+        dom.finalMaterialPromptGroup?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
 function getOrdinaryGradeReadiness() {
     const dom = refs();
     if (state.ordinaryGradeCandidatesLoading) {
@@ -708,6 +911,7 @@ function refreshOrdinaryGradeAvailabilityStatus() {
         dom.ordinaryGradeStatus.hidden = readiness.ready || !readiness.message;
         dom.ordinaryGradeStatus.textContent = readiness.message || '';
     }
+    renderOrdinaryGradeWizard();
     updateFinalMaterialSubmitState();
     return readiness;
 }
@@ -724,8 +928,6 @@ function populateOrdinaryGradeSelects() {
         select.disabled = buckets.homework.length === 0;
         if (previous && buckets.homework.some((item) => String(item.id) === String(previous))) {
             select.value = previous;
-        } else if (buckets.homework[index]) {
-            select.value = String(buckets.homework[index].id);
         }
     });
     if (dom.ordinaryAssessmentSelect) {
@@ -734,10 +936,9 @@ function populateOrdinaryGradeSelects() {
         dom.ordinaryAssessmentSelect.disabled = buckets.assessment.length === 0;
         if (previous && buckets.assessment.some((item) => String(item.id) === String(previous))) {
             dom.ordinaryAssessmentSelect.value = previous;
-        } else if (buckets.assessment[0]) {
-            dom.ordinaryAssessmentSelect.value = String(buckets.assessment[0].id);
         }
     }
+    renderOrdinaryGradeWizard();
 }
 
 async function loadOrdinaryGradeCandidates() {
@@ -761,6 +962,7 @@ async function loadOrdinaryGradeCandidates() {
     try {
         const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/ordinary-grade-record/candidates`, { silent: true });
         state.ordinaryGradeCandidates = Array.isArray(data.items) ? data.items : [];
+        state.ordinaryGradeAttendanceFreshness = data.attendance_sync || {};
         state.ordinaryGradeCandidatesLoaded = true;
         state.ordinaryGradeCandidatesError = '';
         populateOrdinaryGradeSelects();
@@ -1006,8 +1208,20 @@ function updateFinalMaterialTemplateOptions() {
     if (dom.examGradeOptions) {
         dom.examGradeOptions.hidden = !isExamGrade;
     }
+    if (dom.finalMaterialPromptGroup) {
+        dom.finalMaterialPromptGroup.classList.toggle('is-ordinary-grade-step', isOrdinary);
+    }
+    if (dom.finalMaterialPromptStep) {
+        dom.finalMaterialPromptStep.hidden = !isOrdinary;
+    }
+    if (dom.finalMaterialPromptLabel) {
+        dom.finalMaterialPromptLabel.textContent = isOrdinary ? '额外的生成要求' : '生成要求';
+    }
     if (isOrdinary) {
         loadOrdinaryGradeCandidates();
+        renderOrdinaryGradeWizard();
+    } else {
+        closeOrdinaryGradePicker();
     }
     if (isExamGrade) {
         loadExamGradeCandidates();
@@ -1024,7 +1238,7 @@ function updateFinalMaterialTemplateOptions() {
         } else if (isAssessmentPlan) {
             dom.finalMaterialPrompt.placeholder = '例如：按机试方式拆分 Linux 服务部署、数据库授权、脚本备份等考核技能，分值合计100。';
         } else if (isOrdinary) {
-            dom.finalMaterialPrompt.placeholder = '例如：需要保留样表版式，按智慧课堂出勤、三次作业和一次测评生成 Excel。';
+            dom.finalMaterialPrompt.placeholder = '可选：例如补充本次归档说明、课程组统一口径或需要教师后续核对的事项。成绩、缺失补零和公式口径始终按学校模板生成。';
         } else if (isExamGrade) {
             dom.finalMaterialPrompt.placeholder = '例如：按考试大题生成“一、二、三”列，迟交和小组互评扣分要整数分摊并核验总分。';
         } else {
@@ -1271,6 +1485,17 @@ export function init(appConfig) {
         select?.addEventListener('change', refreshOrdinaryGradeAvailabilityStatus);
     });
     dom.ordinaryAssessmentSelect?.addEventListener('change', refreshOrdinaryGradeAvailabilityStatus);
+    dom.ordinaryGradeStepCards?.forEach((card) => {
+        card.addEventListener('click', () => openOrdinaryGradePicker(Number(card.dataset.ordinaryGradeStepIndex || 0)));
+    });
+    dom.ordinaryGradePickerSearch?.addEventListener('input', renderOrdinaryGradePicker);
+    dom.ordinaryGradePickerList?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-ordinary-grade-candidate-id]');
+        if (!trigger || trigger.disabled) return;
+        selectOrdinaryGradeCandidate(Number(trigger.dataset.ordinaryGradeCandidateId || 0));
+    });
+    document.querySelector('[data-ordinary-grade-picker-close]')?.addEventListener('click', closeOrdinaryGradePicker);
+    dom.finalMaterialPrompt?.addEventListener('input', renderOrdinaryGradeWizard);
     dom.examGradeSelect?.addEventListener('change', refreshExamGradeAvailabilityStatus);
 
     dom.finalMaterialSubmitBtn?.addEventListener('click', () => {

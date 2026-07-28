@@ -320,6 +320,9 @@ const refs = {
     classroomGenerateSubtitle: document.getElementById('materials-classroom-generate-subtitle'),
     classroomGenerateStatus: document.getElementById('materials-classroom-generate-status'),
     classroomGenerateList: document.getElementById('materials-classroom-generate-list'),
+    classroomGenerateSemesterFilter: document.getElementById('materials-classroom-semester-filter'),
+    classroomGenerateSearch: document.getElementById('materials-classroom-search'),
+    classroomGenerateCount: document.getElementById('materials-classroom-picker-count'),
     processClassroomGenerateBtn: document.querySelector('[data-process-classroom-generate]'),
     processAiImportBtn: document.querySelector('[data-process-ai-import]'),
     folderBtn: document.getElementById('materials-upload-folder-btn'),
@@ -564,9 +567,74 @@ function offeringMeta(offering) {
     return [offering?.semester, offering?.school_name, offering?.college].filter(Boolean).join(' / ');
 }
 
+function offeringSemesterKey(offering) {
+    const semesterId = Number(offering?.semester_id || 0);
+    if (semesterId > 0) return `id:${semesterId}`;
+    const label = normalizeKeyword(offering?.semester || '');
+    return label ? `label:${label}` : 'unset';
+}
+
+function compactFuzzyText(value) {
+    return String(value || '')
+        .normalize('NFKC')
+        .toLocaleLowerCase('zh-CN')
+        .replace(/[\s·•—–_\-/（）()【】[\]，,。.：:；;]+/g, '');
+}
+
+function fuzzyTextMatches(haystack, query) {
+    const source = compactFuzzyText(haystack);
+    const needle = compactFuzzyText(query);
+    if (!needle) return true;
+    if (source.includes(needle)) return true;
+    let cursor = 0;
+    for (const char of source) {
+        if (char === needle[cursor]) cursor += 1;
+        if (cursor >= needle.length) return true;
+    }
+    return false;
+}
+
+function populateClassroomSemesterFilter() {
+    if (!refs.classroomGenerateSemesterFilter) return;
+    const offerings = Array.isArray(config.offerings) ? config.offerings : [];
+    const previous = refs.classroomGenerateSemesterFilter.value;
+    const semesters = [];
+    const seen = new Set();
+    offerings.forEach((offering) => {
+        const key = offeringSemesterKey(offering);
+        if (seen.has(key)) return;
+        seen.add(key);
+        semesters.push({
+            key,
+            label: offering?.semester || '未设置学期',
+            start: offering?.semester_start_date || '',
+        });
+    });
+    semesters.sort((left, right) => String(right.start).localeCompare(String(left.start), 'zh-CN'));
+    refs.classroomGenerateSemesterFilter.innerHTML = [
+        '<option value="">全部学期</option>',
+        ...semesters.map((item) => (
+            `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`
+        )),
+    ].join('');
+    if (previous && seen.has(previous)) refs.classroomGenerateSemesterFilter.value = previous;
+}
+
 function renderClassroomGenerateOptions(policy) {
     if (!refs.classroomGenerateList || !refs.classroomGenerateStatus) return;
     const offerings = Array.isArray(config.offerings) ? config.offerings : [];
+    const semesterKey = refs.classroomGenerateSemesterFilter?.value || '';
+    const keyword = refs.classroomGenerateSearch?.value || '';
+    const filteredOfferings = offerings.filter((offering) => {
+        if (semesterKey && offeringSemesterKey(offering) !== semesterKey) return false;
+        const searchText = [
+            offeringLabel(offering),
+            offeringMeta(offering),
+            offering?.semester_start_date,
+            offering?.semester_end_date,
+        ].filter(Boolean).join(' ');
+        return fuzzyTextMatches(searchText, keyword);
+    });
     refs.classroomGenerateTitle.textContent = `从课堂生成${policy?.label || '过程材料'}`;
     refs.classroomGenerateSubtitle.textContent = CLASSROOM_GENERATION_HINTS[policy?.document_type]
         || '进入课堂后在课程材料区生成，会自动带入真实课堂上下文。';
@@ -576,19 +644,40 @@ function renderClassroomGenerateOptions(policy) {
     `;
     if (!offerings.length) {
         refs.classroomGenerateList.innerHTML = '<div class="materials-empty">暂无可用课堂，请先在“开设课堂”中创建或同步教学班级。</div>';
+        if (refs.classroomGenerateCount) refs.classroomGenerateCount.textContent = '0 个课堂';
         return;
     }
-    refs.classroomGenerateList.innerHTML = offerings.map((offering) => {
+    if (refs.classroomGenerateCount) {
+        refs.classroomGenerateCount.textContent = `显示 ${filteredOfferings.length} / ${offerings.length} 个课堂`;
+    }
+    if (!filteredOfferings.length) {
+        refs.classroomGenerateList.innerHTML = `
+            <div class="materials-empty materials-classroom-picker-empty">
+                <strong>没有匹配的课堂</strong>
+                <span>可以更换学期，或用课程名、班级名的部分文字重新搜索。</span>
+            </div>
+        `;
+        return;
+    }
+    refs.classroomGenerateList.innerHTML = filteredOfferings.map((offering) => {
         const href = classroomGenerateUrl(offering, policy?.document_type || '');
         const label = offeringLabel(offering);
         const meta = offeringMeta(offering) || '进入课堂材料区继续';
+        const isOrdinaryGrade = policy?.document_type === 'ordinary_grade_record';
+        const homeworkCount = Number(offering?.ordinary_homework_count || 0);
+        const assessmentCount = Number(offering?.ordinary_assessment_count || 0);
+        const sourceReady = Boolean(offering?.ordinary_grade_ready);
+        const sourceStatus = sourceReady
+            ? `来源齐全 · ${homeworkCount} 份作业 / ${assessmentCount} 份测评`
+            : `当前 ${homeworkCount} 份作业 / ${assessmentCount} 份测评 · 进入后补齐`;
         return `
-            <a class="materials-modal-option" href="${escapeHtml(href)}">
+            <a class="materials-modal-option${isOrdinaryGrade ? ` ${sourceReady ? 'is-source-ready' : 'is-source-missing'}` : ''}" href="${escapeHtml(href)}">
                 <div>
                     <strong>${escapeHtml(label)}</strong>
                     <small>${escapeHtml(meta)}</small>
+                    ${isOrdinaryGrade ? `<small class="materials-classroom-source-status">${escapeHtml(sourceStatus)}</small>` : ''}
                 </div>
-                <span>进入生成</span>
+                <span>${escapeHtml(isOrdinaryGrade && !sourceReady ? '补齐来源' : '进入生成')}</span>
             </a>
         `;
     }).join('');
@@ -600,8 +689,10 @@ function openClassroomGenerateModal() {
         showToast('当前页面无需从课堂数据生成。', 'info');
         return;
     }
+    populateClassroomSemesterFilter();
     renderClassroomGenerateOptions(policy);
     openModal('materials-classroom-generate-modal');
+    window.setTimeout(() => refs.classroomGenerateSearch?.focus(), 80);
 }
 
 function applyProcessGenerateBlockIfNeeded() {
@@ -4014,6 +4105,13 @@ function bindEvents() {
         loadLibrary(state.currentParentId, false).catch((error) => {
             showToast(error.message || '刷新材料失败', 'error');
         });
+    });
+
+    refs.classroomGenerateSemesterFilter?.addEventListener('change', () => {
+        renderClassroomGenerateOptions(getProcessGeneratePolicy());
+    });
+    refs.classroomGenerateSearch?.addEventListener('input', () => {
+        renderClassroomGenerateOptions(getProcessGeneratePolicy());
     });
 
     refs.backBtn?.addEventListener('click', () => {

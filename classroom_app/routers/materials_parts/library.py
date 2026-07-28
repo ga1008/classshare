@@ -10,6 +10,7 @@ from ...services.base_resource_modes_service import (
     build_mode_permissions,
     raise_if_delete_blocked,
 )
+from ...services.ordinary_grade_record_service import classify_ordinary_grade_assignment
 
 
 router = APIRouter()
@@ -159,7 +160,10 @@ def _render_manage_materials_page(
         offerings = conn.execute(
             """
             SELECT o.id,
+                   o.semester_id,
                    COALESCE(s.name, o.semester) AS semester,
+                   COALESCE(s.start_date, '') AS semester_start_date,
+                   COALESCE(s.end_date, '') AS semester_end_date,
                    c.name AS class_name,
                    co.name AS course_name
             FROM class_offerings o
@@ -167,11 +171,38 @@ def _render_manage_materials_page(
             JOIN courses co ON o.course_id = co.id
             LEFT JOIN academic_semesters s ON s.id = o.semester_id
             WHERE o.teacher_id = ?
-            ORDER BY co.name, c.name
+            ORDER BY COALESCE(s.start_date, o.created_at) DESC, co.name, c.name
+            """,
+            (user["id"],),
+        ).fetchall()
+        ordinary_source_rows = conn.execute(
+            """
+            SELECT a.class_offering_id, a.title, a.exam_paper_id
+            FROM assignments a
+            JOIN class_offerings o ON o.id = a.class_offering_id
+            WHERE o.teacher_id = ?
             """,
             (user["id"],),
         ).fetchall()
         stats = _get_teacher_material_stats(conn, user["id"])
+
+    source_counts: dict[int, dict[str, int]] = {}
+    for row in ordinary_source_rows:
+        item = dict(row)
+        offering_id = int(item["class_offering_id"])
+        bucket = source_counts.setdefault(offering_id, {"assignment": 0, "exam": 0})
+        kind = classify_ordinary_grade_assignment(item)
+        bucket[kind] = bucket.get(kind, 0) + 1
+    offering_items = []
+    for row in offerings:
+        item = dict(row)
+        counts = source_counts.get(int(item["id"]), {"assignment": 0, "exam": 0})
+        item["ordinary_homework_count"] = int(counts.get("assignment") or 0)
+        item["ordinary_assessment_count"] = int(counts.get("exam") or 0)
+        item["ordinary_grade_ready"] = (
+            item["ordinary_homework_count"] >= 3 and item["ordinary_assessment_count"] >= 1
+        )
+        offering_items.append(item)
 
     return templates.TemplateResponse(
         request,
@@ -182,7 +213,7 @@ def _render_manage_materials_page(
             page_title=page_title,
             active_page=active_page,
             extra={
-                "offerings": [dict(row) for row in offerings],
+                "offerings": offering_items,
                 "material_stats": stats,
                 "type_registry": _build_material_type_registry(),
                 "material_ai_import_registry": get_material_ai_import_registry(),

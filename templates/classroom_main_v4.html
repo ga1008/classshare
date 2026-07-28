@@ -1804,24 +1804,75 @@
                         <strong>生成试卷前，请先在本课堂导入或生成课程考核计划表。</strong>
                         <span>系统会继承最新考核计划表中的考核形式、分值分布和课程字段，再结合课堂材料与提示生成题目。</span>
                     </div>
-                    <div class="classroom-final-material-template-options" id="classroom-ordinary-grade-record-options" hidden>
-                        <label class="form-group">
-                            <span>平时作业 1</span>
-                            <select id="classroom-ordinary-homework-1"></select>
-                        </label>
-                        <label class="form-group">
-                            <span>平时作业 2</span>
-                            <select id="classroom-ordinary-homework-2"></select>
-                        </label>
-                        <label class="form-group">
-                            <span>平时作业 3</span>
-                            <select id="classroom-ordinary-homework-3"></select>
-                        </label>
-                        <label class="form-group">
-                            <span>测评</span>
-                            <select id="classroom-ordinary-assessment"></select>
-                        </label>
-                        <div class="classroom-final-material-status" id="classroom-ordinary-grade-record-status" style="grid-column:1 / -1;" hidden></div>
+                    <div class="classroom-final-material-template-options ordinary-grade-wizard" id="classroom-ordinary-grade-record-options" hidden>
+                        <div class="ordinary-grade-wizard__header">
+                            <div>
+                                <span class="ordinary-grade-wizard__eyebrow">真实课堂数据 · 五步生成</span>
+                                <strong>依次确认 3 份作业、1 份测评和生成要求</strong>
+                                <p>每份来源只能使用一次；没有成绩的学生会按 0 分计入，生成前会按 30 分钟规则刷新智慧课堂考勤。</p>
+                            </div>
+                            <span class="ordinary-grade-wizard__attendance" id="classroom-ordinary-attendance-freshness">正在检查考勤缓存…</span>
+                        </div>
+                        <ol class="ordinary-grade-progress" aria-label="平时成绩记录表生成进度">
+                            <li data-ordinary-progress-step="0"><span>1</span><small>作业一</small></li>
+                            <li data-ordinary-progress-step="1"><span>2</span><small>作业二</small></li>
+                            <li data-ordinary-progress-step="2"><span>3</span><small>作业三</small></li>
+                            <li data-ordinary-progress-step="3"><span>4</span><small>测评</small></li>
+                            <li data-ordinary-progress-step="4"><span>5</span><small>要求</small></li>
+                        </ol>
+                        <div class="ordinary-grade-step-list">
+                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="0">
+                                <span class="ordinary-grade-step-card__number">1</span>
+                                <span class="ordinary-grade-step-card__copy">
+                                    <strong>选择平时作业 1</strong>
+                                    <small data-ordinary-grade-selection-detail="0">尚未选择，点击查看当前课堂作业</small>
+                                </span>
+                                <span class="ordinary-grade-step-card__action">选择</span>
+                            </button>
+                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="1">
+                                <span class="ordinary-grade-step-card__number">2</span>
+                                <span class="ordinary-grade-step-card__copy">
+                                    <strong>选择平时作业 2</strong>
+                                    <small data-ordinary-grade-selection-detail="1">尚未选择，完成上一步后继续</small>
+                                </span>
+                                <span class="ordinary-grade-step-card__action">选择</span>
+                            </button>
+                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="2">
+                                <span class="ordinary-grade-step-card__number">3</span>
+                                <span class="ordinary-grade-step-card__copy">
+                                    <strong>选择平时作业 3</strong>
+                                    <small data-ordinary-grade-selection-detail="2">尚未选择，完成上一步后继续</small>
+                                </span>
+                                <span class="ordinary-grade-step-card__action">选择</span>
+                            </button>
+                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="3">
+                                <span class="ordinary-grade-step-card__number">4</span>
+                                <span class="ordinary-grade-step-card__copy">
+                                    <strong>选择课堂测评</strong>
+                                    <small data-ordinary-grade-selection-detail="3">尚未选择，将只显示测评、测试或考试</small>
+                                </span>
+                                <span class="ordinary-grade-step-card__action">选择</span>
+                            </button>
+                        </div>
+                        <div class="ordinary-grade-picker" id="classroom-ordinary-grade-picker" hidden>
+                            <div class="ordinary-grade-picker__head">
+                                <div>
+                                    <span id="classroom-ordinary-grade-picker-kicker">第 1 步</span>
+                                    <strong id="classroom-ordinary-grade-picker-title">选择平时作业 1</strong>
+                                </div>
+                                <button type="button" class="ordinary-grade-picker__close" data-ordinary-grade-picker-close aria-label="收起来源选择">&times;</button>
+                            </div>
+                            <label class="ordinary-grade-picker__search">
+                                <span class="sr-only">搜索当前课堂的作业或测评</span>
+                                <input id="classroom-ordinary-grade-picker-search" type="search" autocomplete="off" placeholder="模糊搜索标题、状态或评分情况">
+                            </label>
+                            <div class="ordinary-grade-picker__list" id="classroom-ordinary-grade-picker-list"></div>
+                        </div>
+                        <select id="classroom-ordinary-homework-1" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+                        <select id="classroom-ordinary-homework-2" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+                        <select id="classroom-ordinary-homework-3" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+                        <select id="classroom-ordinary-assessment" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+                        <div class="classroom-final-material-status" id="classroom-ordinary-grade-record-status" hidden></div>
                     </div>
                     <div class="classroom-final-material-template-options" id="classroom-exam-grade-record-options" hidden>
                         <label class="form-group" style="grid-column:1 / -1;">
@@ -1830,8 +1881,11 @@
                         </label>
                         <div class="classroom-final-material-status" id="classroom-exam-grade-record-status" style="grid-column:1 / -1;" hidden></div>
                     </div>
-                    <label class="form-group">
-                        <span>生成要求</span>
+                    <label class="form-group classroom-final-material-prompt-group" id="classroom-final-material-prompt-group">
+                        <span class="classroom-final-material-prompt-heading">
+                            <small id="classroom-final-material-prompt-step" hidden>第 5 步</small>
+                            <b id="classroom-final-material-prompt-label">生成要求</b>
+                        </span>
                         <textarea id="classroom-final-material-prompt" data-prompt-pool-key="classroom.final_material_generate" rows="6" placeholder="例如：围绕本课堂的 Linux 服务部署、数据库授权、脚本备份设计机试任务，难度适中，适合专升本班级。"></textarea>
                     </label>
                     <div class="classroom-final-material-status" id="classroom-final-material-status" hidden></div>

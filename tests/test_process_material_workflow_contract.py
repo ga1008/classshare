@@ -874,15 +874,42 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
 
     def test_ordinary_grade_record_candidates_split_homework_from_assessment(self):
         script = Path("static/js/classroom_materials.js").read_text(encoding="utf-8")
+        template = Path("templates/classroom_main_v4.html").read_text(encoding="utf-8")
+        island = Path("frontend/src/islands/classroom-page.tsx").read_text(encoding="utf-8")
 
         self.assertIn("function ordinaryGradeCandidateBuckets", script)
         self.assertIn("function isOrdinaryAssessmentCandidate", script)
         self.assertIn("buckets.homework.length < 3 || buckets.assessment.length < 1", script)
         self.assertIn("buckets.homework.length", script)
         self.assertIn("buckets.assessment.length", script)
+        self.assertIn("function openOrdinaryGradePicker", script)
+        self.assertIn("function selectOrdinaryGradeCandidate", script)
+        self.assertIn("usedByOtherStep", script)
+        self.assertIn('data-ordinary-grade-step-index="0"', template)
+        self.assertIn('data-ordinary-grade-step-index="3"', template)
+        self.assertIn('id="classroom-final-material-prompt-step"', template)
+        self.assertIn("第 5 步", template)
+        self.assertIn("ordinary-grade-wizard-20260728", island)
+
+    def test_classroom_generation_picker_supports_semester_filter_and_fuzzy_search(self):
+        script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
+        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        router = Path("classroom_app/routers/materials_parts/library.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="materials-classroom-semester-filter"', template)
+        self.assertIn('id="materials-classroom-search"', template)
+        self.assertIn("function populateClassroomSemesterFilter", script)
+        self.assertIn("function fuzzyTextMatches", script)
+        self.assertIn("offeringSemesterKey(offering)", script)
+        self.assertIn("ordinary_homework_count", script)
+        self.assertIn("ordinary_assessment_count", script)
+        self.assertIn("补齐来源", script)
+        self.assertIn("COALESCE(s.start_date, o.created_at) DESC", router)
+        self.assertIn("classify_ordinary_grade_assignment", router)
 
     def test_classroom_grade_record_generation_disables_submit_until_sources_ready(self):
         script = Path("static/js/classroom_materials.js").read_text(encoding="utf-8")
+        router = Path("classroom_app/routers/materials_parts/final_materials.py").read_text(encoding="utf-8")
 
         self.assertIn("function getOrdinaryGradeReadiness", script)
         self.assertIn("function getExamGradeReadiness", script)
@@ -896,6 +923,9 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("refreshExamGradeAvailabilityStatus", script)
         self.assertIn("select?.addEventListener('change', refreshOrdinaryGradeAvailabilityStatus)", script)
         self.assertIn("dom.examGradeSelect?.addEventListener('change', refreshExamGradeAvailabilityStatus)", script)
+        self.assertIn("min_refresh_interval_seconds=ORDINARY_GRADE_ATTENDANCE_CACHE_SECONDS", router)
+        self.assertIn("get_classroom_smart_attendance_freshness", router)
+        self.assertIn("没有找到能与当前课堂可靠对应的最新考勤数据", router)
 
     def test_classroom_exam_paper_and_rubric_generation_disables_submit_until_sources_ready(self):
         script = Path("static/js/classroom_materials.js").read_text(encoding="utf-8")
@@ -1637,7 +1667,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("summary.source_file_name", script)
         self.assertIn("summary.content_quality_label", script)
         self.assertIn("renderAiImportDetailSummary(detail)", script)
-        self.assertIn("process-material-summary-20260710", island)
+        self.assertIn("ordinary-grade-wizard-20260728", island)
         self.assertIn(".materials-ai-import-summary", styles)
 
     def test_classroom_material_detail_surfaces_ai_import_summary(self):

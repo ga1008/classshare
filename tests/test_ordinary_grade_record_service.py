@@ -17,6 +17,7 @@ from classroom_app.services.ordinary_grade_record_service import (
     ORDINARY_GRADE_RECORD_TYPE,
     build_ordinary_grade_record_payload,
     build_ordinary_grade_record_xlsx,
+    classify_ordinary_grade_assignment,
     list_ordinary_grade_assignment_candidates,
     normalize_ordinary_grade_record_payload,
     parse_ordinary_grade_record_file,
@@ -170,6 +171,8 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
             teacher_id=1,
             homework_assignment_ids=[201, 202, 203],
             assessment_assignment_id=204,
+            attendance_sync={"status": "cached", "cache_hit": True, "synced_at": "2026-07-28T10:00:00"},
+            generation_requirements="课程组归档前复核异常分数。",
         )
 
         self.assertEqual(payload["document_type"], ORDINARY_GRADE_RECORD_TYPE)
@@ -180,7 +183,55 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
         self.assertEqual(students[1]["attendance_raw_score"], 50.0)
         self.assertEqual(students[0]["homework_scores"], [91.0, 92.0, 93.0])
         self.assertEqual(students[0]["assessment_score"], 88.0)
+        self.assertEqual(students[2]["attendance_raw_score"], 0.0)
+        self.assertEqual(students[2]["homework_scores"], [71.0, 0.0, 0.0])
+        self.assertEqual(students[2]["assessment_score"], 0.0)
+        self.assertEqual(payload["structured"]["attendance_sync"]["status"], "cached")
+        self.assertEqual(payload["structured"]["generation_requirements"], "课程组归档前复核异常分数。")
         self.assertTrue(any("学生三" in warning for warning in payload["structured"]["warnings"]))
+        self.assertTrue(any("按 0 分计入" in warning for warning in payload["structured"]["warnings"]))
+
+    def test_candidate_query_keeps_assignment_ids_native_for_postgres(self):
+        class StrictPostgresLikeConnection:
+            def __init__(self):
+                self.sql = ""
+                self.params = ()
+
+            def execute(self, sql, params):
+                self.sql = " ".join(str(sql).split())
+                self.params = tuple(params)
+                if "CAST(a.id AS TEXT)" in self.sql:
+                    raise AssertionError("PostgreSQL bigint assignment ids must not be compared to text")
+                return self
+
+            def fetchall(self):
+                return []
+
+        conn = StrictPostgresLikeConnection()
+        candidates = list_ordinary_grade_assignment_candidates(conn, class_offering_id=30, teacher_id=1)
+        self.assertEqual(candidates, [])
+        self.assertIn("LEFT JOIN submissions s ON s.assignment_id = a.id", conn.sql)
+        self.assertEqual(conn.params, (30, 1))
+
+    def test_linked_exam_paper_can_still_be_a_homework_by_classroom_purpose(self):
+        self.assertEqual(
+            classify_ordinary_grade_assignment(
+                {"title": "动态 Web 作业 2 - 第十讲实战", "exam_paper_id": "paper-2"}
+            ),
+            "assignment",
+        )
+        self.assertEqual(
+            classify_ordinary_grade_assignment(
+                {"title": "期末综合实验验收", "exam_paper_id": "paper-final"}
+            ),
+            "exam",
+        )
+        self.assertEqual(
+            classify_ordinary_grade_assignment(
+                {"title": "阶段测评", "exam_paper_id": None}
+            ),
+            "exam",
+        )
 
     def test_xlsx_export_preserves_pages_headers_notes_and_formulas(self):
         students = []
@@ -222,11 +273,14 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
         self.assertEqual(ws["J7"].value, "=AVERAGE(E7:G7)")
         self.assertEqual(ws["K7"].value, "=H7")
         self.assertEqual(ws["L7"].value, "=I7*0.4+J7*0.3+K7*0.3")
+        self.assertIsNone(getattr(ws["A4"].border.top, "style", None))
+        self.assertEqual(ws["A4"].border.bottom.style, "thin")
         self.assertEqual(ws["I44"].value, "=D44")
         self.assertIn("该表可为电子表格", str(ws["A69"].value))
         self.assertEqual(str(ws.page_setup.paperSize), "9")
         self.assertEqual(ws.page_setup.fitToWidth, 1)
         self.assertEqual(len(ws.row_breaks.brk), 1)
+        self.assertEqual(sum(1 for row in ws.iter_rows() for cell in row if cell.data_type == "f"), 45 * 4)
 
     def test_parser_and_ai_import_path_recognize_excel_formulas_without_ai(self):
         payload = build_ordinary_grade_record_payload(

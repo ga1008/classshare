@@ -20,6 +20,7 @@ from .smart_attendance_advice_service import attach_student_attendance_ai_advice
 
 
 SMART_PLATFORM_CODE = "gxufl_smart_classroom"
+ORDINARY_GRADE_ATTENDANCE_CACHE_SECONDS = 30 * 60
 CHECKIN_SCHEDULE_LIST_PATH = "/teaching/checkinCourse/teacherScheduleList"
 CHECKIN_PAGE_PATH = "/teaching/checkinCourse/page"
 CHECKIN_RECORD_PATH = "/teaching/checkinCourse/checkinRecord"
@@ -58,6 +59,76 @@ class OfferingCandidate:
 
 def _now_iso() -> str:
     return local_iso(timespec="seconds")
+
+
+def get_classroom_smart_attendance_freshness(
+    conn,
+    *,
+    teacher_id: int,
+    class_offering_id: int,
+    max_age_seconds: int = ORDINARY_GRADE_ATTENDANCE_CACHE_SECONDS,
+) -> dict[str, Any]:
+    schedule_row = conn.execute(
+        """
+        SELECT COUNT(*) AS schedule_count,
+               MAX(synced_at) AS last_synced_at
+        FROM smart_classroom_schedule_items
+        WHERE teacher_id = ?
+          AND class_offering_id = ?
+        """,
+        (int(teacher_id), int(class_offering_id)),
+    ).fetchone()
+    checkin_row = conn.execute(
+        """
+        SELECT COUNT(*) AS session_count,
+               MAX(synced_at) AS last_synced_at
+        FROM smart_classroom_checkin_sessions
+        WHERE teacher_id = ?
+          AND class_offering_id = ?
+          AND session_id IS NOT NULL
+        """,
+        (int(teacher_id), int(class_offering_id)),
+    ).fetchone()
+    student_row = conn.execute(
+        """
+        SELECT COUNT(*) AS student_count
+        FROM smart_classroom_checkin_students
+        WHERE teacher_id = ?
+          AND class_offering_id = ?
+          AND student_id IS NOT NULL
+        """,
+        (int(teacher_id), int(class_offering_id)),
+    ).fetchone()
+
+    session_count = int((checkin_row["session_count"] if checkin_row else 0) or 0)
+    # Once attendance sessions exist, their own sync timestamp is the reliable
+    # freshness signal. A separate timetable refresh must not make old
+    # attendance data look current. Timetable freshness is only the fallback
+    # for a successful sync that legitimately returned no attendance sessions.
+    last_synced_at = str(
+        (
+            checkin_row["last_synced_at"]
+            if session_count > 0 and checkin_row
+            else schedule_row["last_synced_at"] if schedule_row else ""
+        )
+        or ""
+    ).strip()
+    parsed = to_local_datetime(last_synced_at)
+    age_seconds = max(0, int((datetime.now() - parsed).total_seconds())) if parsed else None
+    threshold = max(0, int(max_age_seconds or 0))
+    is_fresh = bool(parsed and threshold > 0 and age_seconds is not None and age_seconds < threshold)
+    return {
+        "class_offering_id": int(class_offering_id),
+        "last_synced_at": last_synced_at,
+        "last_synced_at_display": _display_datetime(last_synced_at),
+        "age_seconds": age_seconds,
+        "max_age_seconds": threshold,
+        "is_fresh": is_fresh,
+        "has_data": bool(session_count),
+        "schedule_count": int((schedule_row["schedule_count"] if schedule_row else 0) or 0),
+        "session_count": session_count,
+        "student_count": int((student_row["student_count"] if student_row else 0) or 0),
+    }
 
 
 def _display_datetime(value: Any, *, fallback: str = "") -> str:
@@ -851,10 +922,35 @@ async def sync_teacher_smart_classroom_checkins(
     *,
     class_offering_id: int | None = None,
     session_id: int | None = None,
+    min_refresh_interval_seconds: int = 0,
 ) -> dict[str, Any]:
     lock = _teacher_sync_locks.setdefault(int(teacher_id), asyncio.Lock())
     async with lock:
         with get_db_connection() as conn:
+            if class_offering_id and not session_id and int(min_refresh_interval_seconds or 0) > 0:
+                freshness = get_classroom_smart_attendance_freshness(
+                    conn,
+                    teacher_id=int(teacher_id),
+                    class_offering_id=int(class_offering_id),
+                    max_age_seconds=int(min_refresh_interval_seconds),
+                )
+                if freshness["is_fresh"]:
+                    return {
+                        "status": "cached",
+                        "message": (
+                            f"智慧课堂考勤在 {freshness['last_synced_at_display'] or '刚刚'} 已同步，"
+                            "本次使用 30 分钟缓存，未重复访问智慧课堂。"
+                        ),
+                        "counts": {
+                            "schedule_count": freshness["schedule_count"],
+                            "checkin_count": freshness["session_count"],
+                            "student_count": freshness["student_count"],
+                        },
+                        "warnings": [],
+                        "synced_at": freshness["last_synced_at"],
+                        "cache_hit": True,
+                        "freshness": freshness,
+                    }
             access_payload = load_teacher_smart_classroom_access_method(conn, int(teacher_id))
             candidates = _load_offering_candidates(conn, int(teacher_id))
             target_session_row = None
@@ -1006,6 +1102,19 @@ async def sync_teacher_smart_classroom_checkins(
                 )
                 counts["checkin_count"] += 1
             conn.commit()
+            freshness = (
+                get_classroom_smart_attendance_freshness(
+                    conn,
+                    teacher_id=int(teacher_id),
+                    class_offering_id=int(class_offering_id),
+                    max_age_seconds=max(
+                        ORDINARY_GRADE_ATTENDANCE_CACHE_SECONDS,
+                        int(min_refresh_interval_seconds or 0),
+                    ),
+                )
+                if class_offering_id
+                else {}
+            )
 
         message = (
             f"已从智慧课堂同步 {counts['checkin_count']} 条点名记录、{counts['student_count']} 条学生签到状态。"
@@ -1021,6 +1130,8 @@ async def sync_teacher_smart_classroom_checkins(
             "counts": counts,
             "warnings": list(dict.fromkeys(warnings))[:8],
             "synced_at": synced_at,
+            "cache_hit": False,
+            "freshness": freshness,
         }
 
 

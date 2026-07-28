@@ -363,6 +363,24 @@
             </div>
             <div class="modal-body">
                 <div class="materials-section" id="materials-classroom-generate-status"></div>
+                <div class="materials-classroom-picker-toolbar" id="materials-classroom-picker-toolbar">
+                    <label class="materials-classroom-picker-field">
+                        <span>学期</span>
+                        <select id="materials-classroom-semester-filter" aria-label="按学期筛选课堂">
+                            <option value="">全部学期</option>
+                        </select>
+                    </label>
+                    <label class="materials-classroom-picker-field materials-classroom-picker-field--search">
+                        <span>搜索课堂</span>
+                        <input
+                            id="materials-classroom-search"
+                            type="search"
+                            autocomplete="off"
+                            placeholder="模糊搜索课程、班级或学期"
+                        >
+                    </label>
+                    <div class="materials-classroom-picker-count" id="materials-classroom-picker-count" aria-live="polite"></div>
+                </div>
                 <div class="materials-modal-options" id="materials-classroom-generate-list"></div>
             </div>
             <div class="modal-footer">
