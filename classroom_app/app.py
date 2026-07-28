@@ -1,7 +1,6 @@
 import json
 import os
 from pathlib import Path
-from urllib.parse import parse_qs
 import anyio.to_thread
 from dataclasses import asdict
 from fastapi import FastAPI, Request, HTTPException
@@ -48,6 +47,11 @@ from .services.behavior_tracking_service import (
 from .services.background_task_ledger_service import build_background_task_health_summary
 from .services.discussion_mood_service import stop_discussion_mood_refresh_tasks
 from .services.document_render_service import document_render_service
+from .services.deployment_cache_service import (
+    apply_deployment_cache_headers,
+    get_deployment_release_id,
+    static_asset_cache_control,
+)
 from .services.ai_durable_job_service import cleanup_terminal_ai_job_files
 from .services.durable_process_job_worker import (
     start_durable_process_job_workers,
@@ -99,25 +103,11 @@ from .routers import prompt_pool
 
 
 class CacheControlStaticFiles(StaticFiles):
-    def __init__(
-        self,
-        *args,
-        versioned_max_age: int = 31536000,
-        default_max_age: int = 300,
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        self.versioned_max_age = versioned_max_age
-        self.default_max_age = default_max_age
-
     async def get_response(self, path: str, scope):
         response = await super().get_response(path, scope)
         if response.status_code == 200 and "cache-control" not in response.headers:
-            query_params = parse_qs(scope.get("query_string", b"").decode("latin-1"))
-            if query_params.get("v"):
-                response.headers["Cache-Control"] = f"public, max-age={self.versioned_max_age}, immutable"
-            else:
-                response.headers["Cache-Control"] = f"public, max-age={self.default_max_age}"
+            response.headers["Cache-Control"] = static_asset_cache_control(path)
+            response.headers["X-LanShare-Release"] = get_deployment_release_id()
         return response
 
 
@@ -130,6 +120,13 @@ class StreamingAwareGZipMiddleware(GZipMiddleware):
 
 
 app.add_middleware(StreamingAwareGZipMiddleware, minimum_size=1024)
+
+
+@app.middleware("http")
+async def deployment_cache_middleware(request: Request, call_next):
+    response = await call_next(request)
+    apply_deployment_cache_headers(request, response)
+    return response
 
 
 _FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
@@ -293,6 +290,7 @@ async def internal_health():
     return {
         "status": "ok",
         "service": "main",
+        "release_id": get_deployment_release_id(),
         "ai_assistant_url": AI_ASSISTANT_URL,
         "database_path": str(DB_PATH),
         "database_backend": asdict(database_backend_state()),
