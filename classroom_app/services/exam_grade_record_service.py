@@ -649,7 +649,7 @@ def _load_exam_submissions(conn, *, assignment_id: int) -> dict[int, dict[str, A
                gr.peer_review_count
         FROM submissions s
         LEFT JOIN group_assignment_member_results gr
-               ON gr.assignment_id = s.assignment_id
+               ON gr.assignment_id = CAST(s.assignment_id AS TEXT)
               AND gr.student_pk_id = s.student_pk_id
         WHERE s.assignment_id = ?
         """,

@@ -232,6 +232,7 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
         submissions_conn = StrictPostgresLikeConnection()
         submissions = _load_exam_submissions(submissions_conn, assignment_id=301)
         self.assertEqual(submissions, {})
+        self.assertIn("gr.assignment_id = CAST(s.assignment_id AS TEXT)", submissions_conn.sql)
         self.assertIn("WHERE s.assignment_id = ?", submissions_conn.sql)
         self.assertEqual(submissions_conn.params, (301,))
 
