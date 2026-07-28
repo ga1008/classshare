@@ -329,6 +329,15 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         self.assertIn("smtp_password_encrypted", REQUIRED_POSTGRES_COLUMNS["teacher_email_configs"])
         self.assertIn("queue_depth", REQUIRED_POSTGRES_COLUMNS["email_worker_heartbeats"])
 
+    def test_assignment_schema_covers_ordinary_grade_kind_override_audit(self):
+        expected = {
+            "ordinary_grade_kind_override",
+            "ordinary_grade_kind_updated_at",
+            "ordinary_grade_kind_updated_by_teacher_id",
+        }
+        self.assertTrue(expected.issubset(POSTGRES_RUNTIME_COLUMN_DEFINITIONS["assignments"]))
+        self.assertTrue(expected.issubset(REQUIRED_POSTGRES_COLUMNS["assignments"]))
+
     def test_required_schema_covers_ai_chat_runtime_tables(self):
         for table_name in ("ai_chat_sessions", "ai_chat_messages", "ai_psychology_profiles"):
             self.assertIn(table_name, REQUIRED_POSTGRES_TABLES)

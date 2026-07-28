@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import math
+import random
 import re
 import tempfile
 from dataclasses import dataclass
@@ -18,8 +20,12 @@ ORDINARY_GRADE_RECORD_LABEL = "学生平时成绩记录表"
 ORDINARY_GRADE_RECORD_SCHEMA_VERSION = "gxufl-ordinary-grade-record-v1"
 ORDINARY_GRADE_PAGE_STUDENT_CAPACITY = 25
 ORDINARY_GRADE_LAST_PAGE_MIN_BLANK_ROWS = 2
+ORDINARY_GRADE_ATTENDANCE_ELIGIBILITY_PERCENT = 70.0
+ORDINARY_GRADE_DEFAULT_MINIMUM_SCORE = 60.0
+ORDINARY_GRADE_SCORE_FLOOR_ALGORITHM_VERSION = "balanced-deterministic-v1"
 _ORDINARY_ASSESSMENT_TITLE_PATTERN = re.compile(r"期末|期中|测评|测试|考试|考核|测验|验收|试炼")
 _ORDINARY_HOMEWORK_TITLE_PATTERN = re.compile(r"作业|练习|实战|实验|项目|实践|任务")
+ORDINARY_GRADE_ASSIGNMENT_KINDS = {"assignment", "exam"}
 
 ORDINARY_GRADE_NOTES = [
     "注：",
@@ -121,14 +127,47 @@ def normalize_ordinary_grade_record_payload(
     return base
 
 
-def classify_ordinary_grade_assignment(row: dict[str, Any]) -> str:
-    """Classify the classroom purpose, not merely the underlying authoring format."""
+def infer_ordinary_grade_assignment_kind(row: dict[str, Any]) -> str:
+    """Infer the ordinary-grade purpose without applying a teacher override."""
     title = str(row.get("title") or "").strip()
     if _ORDINARY_ASSESSMENT_TITLE_PATTERN.search(title):
         return "exam"
     if _ORDINARY_HOMEWORK_TITLE_PATTERN.search(title):
         return "assignment"
     return "exam" if row.get("exam_paper_id") else "assignment"
+
+
+def normalize_ordinary_grade_kind_override(value: Any) -> str:
+    """Normalize an API value; an empty value or ``auto`` clears the override."""
+    normalized = str(value or "").strip().lower()
+    if normalized in {"", "auto"}:
+        return ""
+    if normalized not in ORDINARY_GRADE_ASSIGNMENT_KINDS:
+        raise ValueError("平时成绩用途只能设置为“自动识别”“平时作业”或“测验”。")
+    return normalized
+
+
+def ordinary_grade_assignment_kind_info(row: dict[str, Any]) -> dict[str, Any]:
+    auto_kind = infer_ordinary_grade_assignment_kind(row)
+    stored_override = str(row.get("ordinary_grade_kind_override") or "").strip().lower()
+    override = stored_override if stored_override in ORDINARY_GRADE_ASSIGNMENT_KINDS else ""
+    effective_kind = override or auto_kind
+    return {
+        "kind": effective_kind,
+        "ordinary_grade_kind": effective_kind,
+        "ordinary_grade_auto_kind": auto_kind,
+        "ordinary_grade_kind_override": override,
+        "ordinary_grade_kind_source": "manual" if override else "auto",
+        "ordinary_grade_kind_updated_at": row.get("ordinary_grade_kind_updated_at") or "",
+        "ordinary_grade_kind_updated_by_teacher_id": (
+            _coerce_int(row.get("ordinary_grade_kind_updated_by_teacher_id")) or None
+        ),
+    }
+
+
+def classify_ordinary_grade_assignment(row: dict[str, Any]) -> str:
+    """Classify only the ordinary-grade purpose, never the student's task format."""
+    return str(ordinary_grade_assignment_kind_info(row)["kind"])
 
 
 def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, teacher_id: int) -> list[dict[str, Any]]:
@@ -140,6 +179,9 @@ def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, t
                a.created_at,
                a.due_at,
                a.exam_paper_id,
+               a.ordinary_grade_kind_override,
+               a.ordinary_grade_kind_updated_at,
+               a.ordinary_grade_kind_updated_by_teacher_id,
                a.grading_mode,
                COUNT(s.id) AS submission_count,
                SUM(CASE WHEN s.score IS NOT NULL THEN 1 ELSE 0 END) AS graded_count,
@@ -149,7 +191,9 @@ def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, t
         LEFT JOIN submissions s ON s.assignment_id = a.id
         WHERE a.class_offering_id = ?
           AND o.teacher_id = ?
-        GROUP BY a.id, a.title, a.status, a.created_at, a.due_at, a.exam_paper_id, a.grading_mode
+        GROUP BY a.id, a.title, a.status, a.created_at, a.due_at, a.exam_paper_id,
+                 a.ordinary_grade_kind_override, a.ordinary_grade_kind_updated_at,
+                 a.ordinary_grade_kind_updated_by_teacher_id, a.grading_mode
         ORDER BY COALESCE(a.due_at, a.created_at, '') ASC, a.id ASC
         """,
         (int(class_offering_id), int(teacher_id)),
@@ -158,6 +202,7 @@ def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, t
     for row in rows:
         item = dict(row)
         average_score = item.get("average_score")
+        kind_info = ordinary_grade_assignment_kind_info(item)
         candidates.append(
             {
                 "id": int(item["id"]),
@@ -165,7 +210,7 @@ def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, t
                 "status": item.get("status") or "",
                 "created_at": item.get("created_at") or "",
                 "due_at": item.get("due_at") or "",
-                "kind": classify_ordinary_grade_assignment(item),
+                **kind_info,
                 "submission_count": _coerce_int(item.get("submission_count")),
                 "graded_count": _coerce_int(item.get("graded_count")),
                 "average_score": round(float(average_score), 2) if average_score is not None else None,
@@ -184,6 +229,8 @@ def build_ordinary_grade_record_payload(
     classroom_context: dict[str, Any] | None = None,
     attendance_sync: dict[str, Any] | None = None,
     generation_requirements: str = "",
+    minimum_ordinary_score_enabled: bool = True,
+    minimum_ordinary_score: float = ORDINARY_GRADE_DEFAULT_MINIMUM_SCORE,
 ) -> dict[str, Any]:
     homework_ids, assessment_id = validate_ordinary_grade_sources(
         homework_assignment_ids=homework_assignment_ids,
@@ -199,33 +246,101 @@ def build_ordinary_grade_record_payload(
     missing = [str(item) for item in [*homework_ids, assessment_id] if int(item) not in assignments]
     if missing:
         raise HTTPException(400, f"所选作业/测评不属于当前课堂或无权使用：{', '.join(missing)}")
+    mismatched_homework = [
+        assignments[int(assignment_id)].get("title") or str(assignment_id)
+        for assignment_id in homework_ids
+        if classify_ordinary_grade_assignment(assignments[int(assignment_id)]) != "assignment"
+    ]
+    if mismatched_homework:
+        raise HTTPException(
+            400,
+            f"以下来源当前被归类为测验，不能放入平时作业：{'、'.join(mismatched_homework)}。请刷新来源或先修改平时成绩用途。",
+        )
+    assessment = assignments[int(assessment_id)]
+    if classify_ordinary_grade_assignment(assessment) != "exam":
+        raise HTTPException(
+            400,
+            f"“{assessment.get('title') or assessment_id}”当前被归类为平时作业，不能作为测验。请刷新来源或先修改平时成绩用途。",
+        )
 
     students = _load_roster(conn, class_offering_id=int(class_offering_id), context=context)
     attendance_scores = _load_attendance_scores(conn, class_offering_id=int(class_offering_id), teacher_id=int(teacher_id))
     score_map = _load_assignment_scores(conn, assignment_ids=[*homework_ids, assessment_id])
 
+    score_floor = _normalize_score_floor_policy(
+        enabled=minimum_ordinary_score_enabled,
+        minimum_score=minimum_ordinary_score,
+    )
+    score_floor.update(
+        {
+            "algorithm_version": ORDINARY_GRADE_SCORE_FLOOR_ALGORITHM_VERSION,
+            "deterministic": True,
+            "eligible_count": 0,
+            "adjusted_count": 0,
+            "ineligible_count": 0,
+            "already_satisfied_count": 0,
+            "capped_count": 0,
+        }
+    )
     warnings: list[str] = []
     rows: list[dict[str, Any]] = []
     for index, student in enumerate(students, start=1):
         student_id = int(student["student_id"])
         raw_homework_scores = [score_map.get((int(assignment_id), student_id)) for assignment_id in homework_ids]
         raw_assessment_score = score_map.get((int(assessment_id), student_id))
-        homework_scores = [_score_or_zero(value) for value in raw_homework_scores]
-        assessment_score = _score_or_zero(raw_assessment_score)
+        source_homework_scores = [_score_or_zero(value) for value in raw_homework_scores]
+        source_assessment_score = _score_or_zero(raw_assessment_score)
         if any(value is None for value in raw_homework_scores) or raw_assessment_score is None:
-            warnings.append(f"{student.get('student_name') or student.get('student_number')} 存在未批改或缺失的作业/测评成绩，已按 0 分计入。")
+            warnings.append(f"{student.get('student_name') or student.get('student_number')} 存在未批改或缺失的作业/测评成绩，原始成绩已按 0 分计入。")
         attendance_score = attendance_scores.get(student_id)
         if attendance_score is None:
             warnings.append(f"{student.get('student_name') or student.get('student_number')} 暂无智慧课堂签到记录，出勤成绩已按 0 分计入。")
+        attendance_raw_score = _score_or_zero(attendance_score)
+        adjustment = apply_ordinary_grade_score_floor(
+            attendance_score=attendance_raw_score,
+            homework_scores=source_homework_scores,
+            assessment_score=source_assessment_score,
+            enabled=bool(score_floor["enabled"]),
+            minimum_score=float(score_floor["minimum_score"]),
+            seed_parts=(
+                int(class_offering_id),
+                student_id,
+                *homework_ids,
+                assessment_id,
+            ),
+        )
+        if adjustment["eligible"]:
+            score_floor["eligible_count"] += 1
+        else:
+            score_floor["ineligible_count"] += 1
+        if adjustment["applied"]:
+            score_floor["adjusted_count"] += 1
+        elif adjustment["reason"] == "already_at_or_above_floor":
+            score_floor["already_satisfied_count"] += 1
+        if adjustment["capped"]:
+            score_floor["capped_count"] += 1
+            warnings.append(
+                f"{student.get('student_name') or student.get('student_number')} 的出勤成绩为 "
+                f"{_format_score(attendance_raw_score)}，在不调整出勤且作业/测评最高 100 分的前提下，"
+                f"平时成绩最高只能达到 {_format_score(adjustment['achieved_score'])} 分，"
+                f"未达到教师设置的 {_format_score(score_floor['minimum_score'])} 分。"
+            )
         rows.append(
             {
                 "index": index,
                 "student_id": student_id,
                 "student_number": student.get("student_number") or "",
                 "student_name": student.get("student_name") or "",
-                "attendance_raw_score": _score_or_zero(attendance_score),
-                "homework_scores": homework_scores,
-                "assessment_score": assessment_score,
+                "attendance_raw_score": attendance_raw_score,
+                "source_homework_scores": source_homework_scores,
+                "source_assessment_score": source_assessment_score,
+                "source_score_missing": {
+                    "homework": [value is None for value in raw_homework_scores],
+                    "assessment": raw_assessment_score is None,
+                },
+                "homework_scores": adjustment["homework_scores"],
+                "assessment_score": adjustment["assessment_score"],
+                "score_floor_adjustment": adjustment,
             }
         )
 
@@ -240,6 +355,9 @@ def build_ordinary_grade_record_payload(
         "class_size": len(students),
         "source_homework_titles": "；".join(item["title"] for item in source_assignments["homework_assignments"]),
         "source_assessment_title": source_assignments["assessment_assignment"]["title"],
+        "minimum_ordinary_score_enabled": bool(score_floor["enabled"]),
+        "minimum_ordinary_score": score_floor["minimum_score"],
+        "attendance_eligibility_percent": score_floor["attendance_eligibility_percent"],
     }
     if str(generation_requirements or "").strip():
         fields["generation_requirements"] = str(generation_requirements).strip()
@@ -254,6 +372,7 @@ def build_ordinary_grade_record_payload(
                 "source_assignments": source_assignments,
                 "attendance_sync": dict(attendance_sync or {}),
                 "generation_requirements": str(generation_requirements or "").strip(),
+                "score_floor_policy": score_floor,
                 "formula_templates": _formula_templates(),
                 "warnings": _dedupe(warnings),
             },
@@ -358,6 +477,9 @@ def build_ordinary_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
     students = _normalize_student_records(structured.get("students") if isinstance(structured.get("students"), list) else [])
 
     wb = Workbook()
+    wb.calculation.calcMode = "auto"
+    wb.calculation.fullCalcOnLoad = True
+    wb.calculation.forceFullCalc = True
     ws = wb.active
     ws.title = "平时成绩"
     for named_style in wb._named_styles:
@@ -393,9 +515,117 @@ def build_ordinary_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
 
     last_row = _last_used_row_for_pages(pages)
     ws.print_area = f"A1:L{last_row}"
+    score_floor_policy = _as_dict(structured.get("score_floor_policy"))
+    if score_floor_policy:
+        _write_score_floor_audit_sheet(wb, students, score_floor_policy)
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
+
+
+def _write_score_floor_audit_sheet(
+    workbook: Any,
+    students: list[dict[str, Any]],
+    policy: dict[str, Any],
+) -> None:
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    ws = workbook.create_sheet("最低分配平审计")
+    ws.sheet_state = "hidden"
+    headers = [
+        "序号",
+        "学号",
+        "姓名",
+        "出勤率",
+        "达到70%资格",
+        "原始缺失项",
+        "原作业1",
+        "原作业2",
+        "原作业3",
+        "原测评",
+        "原平时分",
+        "调整后作业1",
+        "调整后作业2",
+        "调整后作业3",
+        "调整后测评",
+        "调整后平时分",
+        "教师最低分",
+        "处理结果",
+        "算法版本",
+        "随机种子指纹",
+    ]
+    ws.append(headers)
+    reason_labels = {
+        "disabled": "未启用最低分",
+        "attendance_below_threshold": "出勤率不足70%，不配平",
+        "already_at_or_above_floor": "原平时分已达标",
+        "adjusted_to_floor": "已配平到最低分",
+        "capped_by_attendance": "受真实出勤限制，已配平到可达到的最高分",
+    }
+    for student in students:
+        adjustment = _as_dict(student.get("score_floor_adjustment"))
+        source_homework = list(student.get("source_homework_scores") or student.get("homework_scores") or [])[:3]
+        source_homework += [0.0] * (3 - len(source_homework))
+        adjusted_homework = list(student.get("homework_scores") or [])[:3]
+        adjusted_homework += [0.0] * (3 - len(adjusted_homework))
+        source_assessment = student.get("source_assessment_score", student.get("assessment_score", 0.0))
+        missing = _as_dict(student.get("source_score_missing"))
+        missing_items = [
+            f"作业{index + 1}"
+            for index, is_missing in enumerate(list(missing.get("homework") or [])[:3])
+            if is_missing
+        ]
+        if missing.get("assessment"):
+            missing_items.append("测评")
+        original_score = adjustment.get("original_score")
+        if original_score is None:
+            original_score = calculate_ordinary_grade_score(
+                _score_or_zero(student.get("attendance_raw_score")),
+                [_score_or_zero(value) for value in source_homework],
+                _score_or_zero(source_assessment),
+            )
+        achieved_score = adjustment.get("achieved_score")
+        if achieved_score is None:
+            achieved_score = calculate_ordinary_grade_score(
+                _score_or_zero(student.get("attendance_raw_score")),
+                [_score_or_zero(value) for value in adjusted_homework],
+                _score_or_zero(student.get("assessment_score")),
+            )
+        ws.append(
+            [
+                student.get("index") or "",
+                student.get("student_number") or "",
+                student.get("student_name") or "",
+                student.get("attendance_raw_score", ""),
+                "是" if adjustment.get("eligible") else "否",
+                "、".join(missing_items) or "无",
+                *source_homework,
+                source_assessment,
+                round(float(original_score), 4),
+                *adjusted_homework,
+                student.get("assessment_score", ""),
+                round(float(achieved_score), 4),
+                policy.get("minimum_score", ""),
+                reason_labels.get(str(adjustment.get("reason") or ""), str(adjustment.get("reason") or "")),
+                adjustment.get("algorithm_version") or policy.get("algorithm_version") or "",
+                adjustment.get("seed_fingerprint") or "",
+            ]
+        )
+    header_fill = PatternFill("solid", fgColor="E0E7FF")
+    for cell in ws[1]:
+        cell.font = Font(name="宋体", size=10, bold=True, color="312E81")
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.font = Font(name="宋体", size=10)
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    widths = [7, 16, 12, 10, 14, 18, 10, 10, 10, 10, 11, 12, 12, 12, 12, 13, 12, 34, 28, 20]
+    for index, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(index)].width = width
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:T{max(1, ws.max_row)}"
 
 
 def _write_page(ws: Any, fields: dict[str, Any], students: list[dict[str, Any]], *, start_row: int, page_index: int, total_students: int) -> None:
@@ -674,7 +904,15 @@ def _load_source_assignments(conn, *, class_offering_id: int, teacher_id: int, a
     placeholders = ",".join("?" for _ in assignment_ids)
     rows = conn.execute(
         f"""
-        SELECT a.id, a.title, a.status, a.exam_paper_id, a.created_at, a.due_at
+        SELECT a.id,
+               a.title,
+               a.status,
+               a.exam_paper_id,
+               a.ordinary_grade_kind_override,
+               a.ordinary_grade_kind_updated_at,
+               a.ordinary_grade_kind_updated_by_teacher_id,
+               a.created_at,
+               a.due_at
         FROM assignments a
         JOIN class_offerings o ON o.id = a.class_offering_id
         WHERE a.id IN ({placeholders})
@@ -734,24 +972,25 @@ def _load_attendance_scores(conn, *, class_offering_id: int, teacher_id: int) ->
     placeholders = ",".join("?" for _ in checkin_ids)
     rows = conn.execute(
         f"""
-        SELECT student_id, status
+        SELECT checkin_session_id, student_id, status
         FROM smart_classroom_checkin_students
         WHERE checkin_session_id IN ({placeholders})
           AND student_id IS NOT NULL
         """,
         checkin_ids,
     ).fetchall()
-    buckets: dict[int, list[str]] = {}
+    statuses_by_student: dict[int, dict[int, str]] = {}
     for row in rows:
         student_id = _coerce_int(row["student_id"])
-        if student_id <= 0:
+        checkin_session_id = _coerce_int(row["checkin_session_id"])
+        if student_id <= 0 or checkin_session_id <= 0:
             continue
-        buckets.setdefault(student_id, []).append(str(row["status"] or "").strip().upper())
+        statuses_by_student.setdefault(student_id, {})[checkin_session_id] = str(row["status"] or "").strip().upper()
     scores = {}
-    for student_id, statuses in buckets.items():
-        if statuses:
-            checked = sum(1 for status in statuses if status == "CHECKED")
-            scores[student_id] = round(checked * 100.0 / len(statuses), 2)
+    total_sessions = len(checkin_ids)
+    for student_id, statuses in statuses_by_student.items():
+        checked = sum(1 for status in statuses.values() if status == "CHECKED")
+        scores[student_id] = round(checked * 100.0 / total_sessions, 2)
     return scores
 
 
@@ -959,6 +1198,134 @@ def _formula_templates() -> dict[str, str]:
     }
 
 
+def calculate_ordinary_grade_score(
+    attendance_score: float,
+    homework_scores: list[float],
+    assessment_score: float,
+) -> float:
+    homework = [float(value) for value in list(homework_scores or [])[:3]]
+    homework += [0.0] * (3 - len(homework))
+    return (
+        float(attendance_score) * 0.4
+        + (sum(homework) / 3.0) * 0.3
+        + float(assessment_score) * 0.3
+    )
+
+
+def apply_ordinary_grade_score_floor(
+    *,
+    attendance_score: float,
+    homework_scores: list[float],
+    assessment_score: float,
+    enabled: bool,
+    minimum_score: float,
+    seed_parts: tuple[Any, ...] = (),
+) -> dict[str, Any]:
+    """Adjust task scores only, using a reproducible balanced random distribution."""
+
+    attendance = float(attendance_score)
+    source_homework = [float(value) for value in list(homework_scores or [])[:3]]
+    source_homework += [0.0] * (3 - len(source_homework))
+    source_assessment = float(assessment_score)
+    source_values = [*source_homework, source_assessment]
+    adjusted = list(source_values)
+    requested_floor = float(minimum_score)
+    eligible = attendance + 1e-9 >= ORDINARY_GRADE_ATTENDANCE_ELIGIBILITY_PERCENT
+    original_score = calculate_ordinary_grade_score(attendance, source_homework, source_assessment)
+    max_values = [max(100.0, value) for value in adjusted]
+    max_achievable = calculate_ordinary_grade_score(attendance, max_values[:3], max_values[3])
+    effective_target = min(requested_floor, max_achievable)
+    capped = bool(enabled and eligible and requested_floor > max_achievable + 1e-9)
+    reason = "disabled"
+    applied = False
+
+    seed_text = "|".join(
+        [
+            ORDINARY_GRADE_SCORE_FLOOR_ALGORITHM_VERSION,
+            *(str(part) for part in seed_parts),
+            f"{requested_floor:.4f}",
+        ]
+    )
+    seed_digest = hashlib.sha256(seed_text.encode("utf-8")).digest()
+    seed_fingerprint = seed_digest.hex()[:16]
+
+    if not enabled:
+        reason = "disabled"
+    elif not eligible:
+        reason = "attendance_below_threshold"
+    elif original_score + 1e-9 >= effective_target:
+        reason = "already_at_or_above_floor"
+    else:
+        rng = random.Random(int.from_bytes(seed_digest[:8], "big"))
+        weights = [0.1, 0.1, 0.1, 0.3]
+        for _ in range(800):
+            current_score = calculate_ordinary_grade_score(attendance, adjusted[:3], adjusted[3])
+            if current_score + 1e-9 >= effective_target:
+                break
+            available = [index for index, value in enumerate(adjusted) if value < 100.0 - 1e-9]
+            if not available:
+                break
+            lowest = min(adjusted[index] for index in available)
+            balanced = [index for index in available if adjusted[index] <= lowest + 5.0]
+            chosen = balanced[rng.randrange(len(balanced))]
+            remaining = effective_target - current_score
+            needed_points = max(1, int(math.ceil((remaining - 1e-9) / weights[chosen])))
+            capacity = max(1, int(math.ceil(100.0 - adjusted[chosen])))
+            random_step = rng.randint(1, min(4, capacity))
+            step = min(100.0 - adjusted[chosen], needed_points, random_step)
+            adjusted[chosen] = round(adjusted[chosen] + step, 4)
+        achieved = calculate_ordinary_grade_score(attendance, adjusted[:3], adjusted[3])
+        applied = any(adjusted[index] > source_values[index] + 1e-9 for index in range(4))
+        reason = "capped_by_attendance" if capped and achieved + 1e-9 < requested_floor else "adjusted_to_floor"
+
+    achieved_score = calculate_ordinary_grade_score(attendance, adjusted[:3], adjusted[3])
+    labels = ["homework_1", "homework_2", "homework_3", "assessment"]
+    changes = [
+        {
+            "item": labels[index],
+            "before": round(source_values[index], 4),
+            "after": round(adjusted[index], 4),
+            "delta": round(adjusted[index] - source_values[index], 4),
+        }
+        for index in range(4)
+        if adjusted[index] > source_values[index] + 1e-9
+    ]
+    return {
+        "enabled": bool(enabled),
+        "attendance_threshold": ORDINARY_GRADE_ATTENDANCE_ELIGIBILITY_PERCENT,
+        "eligible": eligible,
+        "applied": applied,
+        "capped": capped,
+        "reason": reason,
+        "requested_minimum_score": round(requested_floor, 4),
+        "effective_target_score": round(effective_target, 4),
+        "original_score": round(original_score, 4),
+        "achieved_score": round(achieved_score, 4),
+        "maximum_achievable_score": round(max_achievable, 4),
+        "homework_scores": [round(value, 4) for value in adjusted[:3]],
+        "assessment_score": round(adjusted[3], 4),
+        "changes": changes,
+        "algorithm_version": ORDINARY_GRADE_SCORE_FLOOR_ALGORITHM_VERSION,
+        "seed_fingerprint": seed_fingerprint,
+    }
+
+
+def _normalize_score_floor_policy(*, enabled: bool, minimum_score: float) -> dict[str, Any]:
+    try:
+        value = float(minimum_score)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "最低平时分必须是 0 到 100 之间的数字。") from exc
+    if not math.isfinite(value) or value < 0 or value > 100:
+        raise HTTPException(400, "最低平时分必须在 0 到 100 之间。")
+    return {
+        "enabled": bool(enabled),
+        "minimum_score": round(value, 2),
+        "attendance_eligibility_percent": ORDINARY_GRADE_ATTENDANCE_ELIGIBILITY_PERCENT,
+        "attendance_is_adjusted": False,
+        "missing_source_scores_default_to_zero": True,
+    }
+
+
 def _formulas_match_expected(row: int, formulas: dict[str, str]) -> bool:
     expected = {key: value.format(row=row) for key, value in _formula_templates().items()}
     return all(str(formulas.get(key) or "").replace("$", "").upper() == expected[key].upper() for key in expected)
@@ -977,6 +1344,7 @@ def _ordinary_grade_queryable_fields(fields: dict[str, Any], structured: dict[st
         "formula_templates": structured.get("formula_templates") or {},
         "attendance_sync": structured.get("attendance_sync") or {},
         "generation_requirements": structured.get("generation_requirements") or "",
+        "score_floor_policy": structured.get("score_floor_policy") or {},
     }
 
 
@@ -998,6 +1366,14 @@ def _build_content_markdown(fields: dict[str, Any], students: list[dict[str, Any
         lines.append(f"- 测评来源：{assessment.get('title') or ''}")
     if str(fields.get("generation_requirements") or "").strip():
         lines.append(f"- 生成要求：{str(fields.get('generation_requirements')).strip()}")
+    score_floor_policy = _as_dict(fields.get("score_floor_policy"))
+    if fields.get("minimum_ordinary_score_enabled") or score_floor_policy.get("enabled"):
+        minimum_score = fields.get("minimum_ordinary_score", score_floor_policy.get("minimum_score", 60))
+        threshold = fields.get(
+            "attendance_eligibility_percent",
+            score_floor_policy.get("attendance_eligibility_percent", ORDINARY_GRADE_ATTENDANCE_ELIGIBILITY_PERCENT),
+        )
+        lines.append(f"- 最低分保护：出勤率达到 {_format_score(threshold)}% 后，最低平时分 {_format_score(minimum_score)} 分；出勤不调整。")
     lines.extend(["", "| 序号 | 学号 | 姓名 | 出勤 | 作业1 | 作业2 | 作业3 | 测评 |", "| --- | --- | --- | --- | --- | --- | --- | --- |"])
     for student in students[:80]:
         homework_scores = list(student.get("homework_scores") or [])[:3]
@@ -1023,7 +1399,7 @@ def _assignment_summary(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": int(row["id"]),
         "title": row.get("title") or f"作业 {row['id']}",
-        "kind": classify_ordinary_grade_assignment(row),
+        **ordinary_grade_assignment_kind_info(row),
         "status": row.get("status") or "",
         "due_at": row.get("due_at") or "",
     }
@@ -1044,6 +1420,11 @@ def _score_or_blank(value: Any) -> float | str:
 def _score_or_zero(value: Any) -> float:
     score = _score_or_blank(value)
     return float(score) if score != "" else 0.0
+
+
+def _format_score(value: Any) -> str:
+    number = _score_or_zero(value)
+    return str(int(number)) if number.is_integer() else f"{number:.2f}".rstrip("0").rstrip(".")
 
 
 def _number_text(value: Any) -> str:

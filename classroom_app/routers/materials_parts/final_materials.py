@@ -197,6 +197,8 @@ async def generate_classroom_final_material(
                 classroom_context=classroom_context,
                 attendance_sync=attendance_sync,
                 generation_requirements=payload.prompt,
+                minimum_ordinary_score_enabled=payload.minimum_ordinary_score_enabled,
+                minimum_ordinary_score=payload.minimum_ordinary_score,
             )
             raw_result = {
                 "metadata": export_payload.get("fields") or {},

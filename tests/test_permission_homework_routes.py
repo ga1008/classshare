@@ -46,7 +46,11 @@ class HomeworkRoutePermissionTests(unittest.TestCase):
                 class_offering_id INTEGER,
                 title TEXT,
                 status TEXT DEFAULT 'published',
-                grading_mode TEXT DEFAULT 'manual'
+                grading_mode TEXT DEFAULT 'manual',
+                exam_paper_id TEXT,
+                ordinary_grade_kind_override TEXT,
+                ordinary_grade_kind_updated_at TEXT,
+                ordinary_grade_kind_updated_by_teacher_id INTEGER
             );
             CREATE TABLE submissions (
                 id INTEGER PRIMARY KEY,
@@ -137,6 +141,47 @@ class HomeworkRoutePermissionTests(unittest.TestCase):
 
         self.assertEqual(403, ctx.exception.status_code)
         enqueue.assert_not_called()
+
+    def test_offering_teacher_can_change_only_the_ordinary_grade_purpose(self):
+        result = self._run_with_patched_db(
+            homework.update_assignment_ordinary_grade_kind(
+                "a-class",
+                JsonRequest({"kind": "exam"}),
+                user={"role": "teacher", "id": 1},
+            )
+        )
+
+        row = self.conn.execute(
+            """
+            SELECT title, ordinary_grade_kind_override,
+                   ordinary_grade_kind_updated_by_teacher_id
+            FROM assignments
+            WHERE id = ?
+            """,
+            ("a-class",),
+        ).fetchone()
+        self.assertEqual("exam", result["ordinary_grade_kind"])
+        self.assertEqual("manual", result["ordinary_grade_kind_source"])
+        self.assertEqual("original", row["title"])
+        self.assertEqual("exam", row["ordinary_grade_kind_override"])
+        self.assertEqual(1, row["ordinary_grade_kind_updated_by_teacher_id"])
+
+    def test_non_offering_teacher_cannot_change_ordinary_grade_purpose(self):
+        with self.assertRaises(HTTPException) as ctx:
+            self._run_with_patched_db(
+                homework.update_assignment_ordinary_grade_kind(
+                    "a-class",
+                    JsonRequest({"kind": "assignment"}),
+                    user={"role": "teacher", "id": 2},
+                )
+            )
+
+        self.assertEqual(403, ctx.exception.status_code)
+        row = self.conn.execute(
+            "SELECT ordinary_grade_kind_override FROM assignments WHERE id = ?",
+            ("a-class",),
+        ).fetchone()
+        self.assertIsNone(row["ordinary_grade_kind_override"])
 
 
 if __name__ == "__main__":

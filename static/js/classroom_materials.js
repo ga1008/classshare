@@ -32,6 +32,7 @@ const state = {
     ordinaryGradeCandidates: [],
     ordinaryGradeCandidatesLoaded: false,
     ordinaryGradeCandidatesLoading: false,
+    ordinaryGradeCandidatesReloadPending: false,
     ordinaryGradeCandidatesError: '',
     ordinaryGradeAttendanceFreshness: {},
     ordinaryGradeActiveStep: 0,
@@ -94,6 +95,9 @@ function refs() {
         ordinaryGradePickerTitle: document.getElementById('classroom-ordinary-grade-picker-title'),
         ordinaryGradePickerSearch: document.getElementById('classroom-ordinary-grade-picker-search'),
         ordinaryGradePickerList: document.getElementById('classroom-ordinary-grade-picker-list'),
+        ordinaryScoreFloorEnabled: document.getElementById('classroom-ordinary-score-floor-enabled'),
+        ordinaryScoreFloorInput: document.getElementById('classroom-ordinary-score-floor'),
+        ordinaryScoreFloorSummary: document.getElementById('classroom-ordinary-score-floor-summary'),
         ordinaryGradeStepCards: Array.from(document.querySelectorAll('[data-ordinary-grade-step-index]')),
         ordinaryGradeSelectionDetails: Array.from(document.querySelectorAll('[data-ordinary-grade-selection-detail]')),
         ordinaryGradeProgressSteps: Array.from(document.querySelectorAll('[data-ordinary-progress-step]')),
@@ -660,14 +664,14 @@ async function openMaterialDetail(materialId) {
 function ordinaryCandidateLabel(item) {
     const title = item?.title || `作业 ${item?.id || ''}`;
     const stats = `${item?.graded_count || 0}/${item?.submission_count || 0}`;
-    const kind = item?.kind === 'exam' ? '考试' : '作业';
+    const kind = item?.kind === 'exam' ? '测验' : '作业';
+    const source = item?.ordinary_grade_kind_source === 'manual' ? '，手动指定' : '';
     const average = item?.average_score === null || item?.average_score === undefined ? '' : `，均分 ${item.average_score}`;
-    return `${title}（${kind}，已评分 ${stats}${average}）`;
+    return `${title}（${kind}${source}，已评分 ${stats}${average}）`;
 }
 
 function isOrdinaryAssessmentCandidate(item) {
-    const title = String(item?.title || '');
-    return item?.kind === 'exam' || /测评|测试|考试|考核|阶段/.test(title);
+    return item?.kind === 'exam';
 }
 
 function ordinaryGradeCandidateBuckets() {
@@ -760,7 +764,7 @@ function renderOrdinaryGradePicker() {
         dom.ordinaryGradePickerList.innerHTML = `
             <div class="ordinary-grade-picker__empty">
                 <strong>没有匹配的${stepIndex === 3 ? '测评' : '作业'}</strong>
-                <span>可以清空关键词重试，或先回课堂创建并发布相应作业。</span>
+                <span>可以清空关键词重试，或在课堂任务卡片中调整“平时成绩用途”。</span>
             </div>
         `;
         return;
@@ -787,6 +791,7 @@ function renderOrdinaryGradePicker() {
                     <strong>${escapeHtml(item?.title || `作业 ${candidateId}`)}</strong>
                     <small>
                         ${escapeHtml(item?.kind === 'exam' ? '测评 / 考试' : '平时作业')}
+                        ${item?.ordinary_grade_kind_source === 'manual' ? ' · 手动指定' : ' · 自动识别'}
                         · 已评分 ${escapeHtml(String(item?.graded_count || 0))}/${escapeHtml(String(item?.submission_count || 0))}
                         · ${escapeHtml(average)}
                     </small>
@@ -800,6 +805,7 @@ function renderOrdinaryGradePicker() {
 function renderOrdinaryGradeWizard() {
     const dom = refs();
     const selectedIds = ordinaryGradeSelectedIds(dom);
+    syncOrdinaryGradeScoreFloorControls(dom);
     if (dom.ordinaryAttendanceFreshness) {
         dom.ordinaryAttendanceFreshness.textContent = ordinaryGradeAttendanceLabel();
         dom.ordinaryAttendanceFreshness.classList.toggle('is-fresh', Boolean(state.ordinaryGradeAttendanceFreshness?.is_fresh));
@@ -830,6 +836,28 @@ function renderOrdinaryGradeWizard() {
         );
     });
     renderOrdinaryGradePicker();
+}
+
+
+function syncOrdinaryGradeScoreFloorControls(dom = refs()) {
+    const enabled = Boolean(dom.ordinaryScoreFloorEnabled?.checked);
+    if (dom.ordinaryScoreFloorInput) {
+        dom.ordinaryScoreFloorInput.disabled = !enabled;
+    }
+    const score = ordinaryGradeMinimumScore(dom);
+    const validScore = Number.isFinite(score) && score >= 0 && score <= 100;
+    if (dom.ordinaryScoreFloorSummary) {
+        dom.ordinaryScoreFloorSummary.textContent = !enabled
+            ? '已关闭最低分保护：所有学生均按真实出勤、作业和测评成绩计算。'
+            : validScore
+                ? `出勤率达到 70% 的学生，若公式平时分低于 ${score} 分，系统只上调所选作业和测评；出勤率保持真实。`
+                : '请输入 0 到 100 之间的最低平时分，填写正确后才能生成。';
+    }
+}
+
+function ordinaryGradeMinimumScore(dom = refs()) {
+    const raw = String(dom.ordinaryScoreFloorInput?.value ?? '').trim();
+    return raw === '' ? Number.NaN : Number(raw);
 }
 
 function openOrdinaryGradePicker(stepIndex) {
@@ -901,6 +929,12 @@ function getOrdinaryGradeReadiness() {
     if (new Set([...homeworkIds, assessmentId]).size !== 4) {
         return { ready: false, message: '三次作业和一次测评不能重复。' };
     }
+    if (dom.ordinaryScoreFloorEnabled?.checked) {
+        const score = ordinaryGradeMinimumScore(dom);
+        if (!Number.isFinite(score) || score < 0 || score > 100) {
+            return { ready: false, message: '最低平时分必须在 0 到 100 之间。' };
+        }
+    }
     return { ready: true, message: '' };
 }
 
@@ -941,8 +975,16 @@ function populateOrdinaryGradeSelects() {
     renderOrdinaryGradeWizard();
 }
 
-async function loadOrdinaryGradeCandidates() {
+async function loadOrdinaryGradeCandidates({ force = false } = {}) {
     const dom = refs();
+    if (force && state.ordinaryGradeCandidatesLoading) {
+        state.ordinaryGradeCandidatesReloadPending = true;
+        return;
+    }
+    if (force) {
+        state.ordinaryGradeCandidatesLoaded = false;
+        state.ordinaryGradeCandidatesError = '';
+    }
     if (state.ordinaryGradeCandidatesLoaded) {
         populateOrdinaryGradeSelects();
         refreshOrdinaryGradeAvailabilityStatus();
@@ -971,8 +1013,18 @@ async function loadOrdinaryGradeCandidates() {
     } finally {
         state.ordinaryGradeCandidatesLoading = false;
         refreshOrdinaryGradeAvailabilityStatus();
+        if (state.ordinaryGradeCandidatesReloadPending) {
+            state.ordinaryGradeCandidatesReloadPending = false;
+            loadOrdinaryGradeCandidates({ force: true });
+        }
     }
 }
+
+window.addEventListener('lanshare:ordinary-grade-kind-updated', (event) => {
+    const updatedOfferingId = Number(event?.detail?.class_offering_id || 0);
+    if (updatedOfferingId > 0 && updatedOfferingId !== Number(config.classOfferingId || 0)) return;
+    loadOrdinaryGradeCandidates({ force: true });
+});
 
 function collectOrdinaryGradeSelection() {
     const dom = refs();
@@ -985,7 +1037,17 @@ function collectOrdinaryGradeSelection() {
     if (unique.size !== 4) {
         throw new Error('三次作业和一次测评不能重合。');
     }
-    return { homeworkIds, assessmentId };
+    const minimumScoreEnabled = Boolean(dom.ordinaryScoreFloorEnabled?.checked);
+    const minimumScore = ordinaryGradeMinimumScore(dom);
+    if (minimumScoreEnabled && (!Number.isFinite(minimumScore) || minimumScore < 0 || minimumScore > 100)) {
+        throw new Error('最低平时分必须在 0 到 100 之间。');
+    }
+    return {
+        homeworkIds,
+        assessmentId,
+        minimumScoreEnabled,
+        minimumScore: Number.isFinite(minimumScore) ? minimumScore : 60,
+    };
 }
 
 function examGradeCandidateLabel(item) {
@@ -1238,7 +1300,7 @@ function updateFinalMaterialTemplateOptions() {
         } else if (isAssessmentPlan) {
             dom.finalMaterialPrompt.placeholder = '例如：按机试方式拆分 Linux 服务部署、数据库授权、脚本备份等考核技能，分值合计100。';
         } else if (isOrdinary) {
-            dom.finalMaterialPrompt.placeholder = '可选：例如补充本次归档说明、课程组统一口径或需要教师后续核对的事项。成绩、缺失补零和公式口径始终按学校模板生成。';
+            dom.finalMaterialPrompt.placeholder = '可选：例如补充本次归档说明、课程组统一口径或需要教师后续核对的事项。成绩保护策略请使用上方开关和最低分设置。';
         } else if (isExamGrade) {
             dom.finalMaterialPrompt.placeholder = '例如：按考试大题生成“一、二、三”列，迟交和小组互评扣分要整数分摊并核验总分。';
         } else {
@@ -1330,6 +1392,8 @@ async function submitFinalMaterialGeneration() {
                 assessment_method: documentType === 'assessment_plan' ? (dom.finalMaterialAssessmentMethod?.value || '') : '',
                 homework_assignment_ids: ordinarySelection?.homeworkIds || [],
                 assessment_assignment_id: ordinarySelection?.assessmentId || null,
+                minimum_ordinary_score_enabled: ordinarySelection?.minimumScoreEnabled ?? true,
+                minimum_ordinary_score: ordinarySelection?.minimumScore ?? 60,
                 exam_assignment_id: examGradeSelection?.examAssignmentId || null,
             },
         });
@@ -1485,6 +1549,8 @@ export function init(appConfig) {
         select?.addEventListener('change', refreshOrdinaryGradeAvailabilityStatus);
     });
     dom.ordinaryAssessmentSelect?.addEventListener('change', refreshOrdinaryGradeAvailabilityStatus);
+    dom.ordinaryScoreFloorEnabled?.addEventListener('change', refreshOrdinaryGradeAvailabilityStatus);
+    dom.ordinaryScoreFloorInput?.addEventListener('input', refreshOrdinaryGradeAvailabilityStatus);
     dom.ordinaryGradeStepCards?.forEach((card) => {
         card.addEventListener('click', () => openOrdinaryGradePicker(Number(card.dataset.ordinaryGradeStepIndex || 0)));
     });

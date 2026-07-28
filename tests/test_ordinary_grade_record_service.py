@@ -15,10 +15,13 @@ from classroom_app.services.material_export_template_service import (
 )
 from classroom_app.services.ordinary_grade_record_service import (
     ORDINARY_GRADE_RECORD_TYPE,
+    apply_ordinary_grade_score_floor,
     build_ordinary_grade_record_payload,
     build_ordinary_grade_record_xlsx,
+    calculate_ordinary_grade_score,
     classify_ordinary_grade_assignment,
     list_ordinary_grade_assignment_candidates,
+    normalize_ordinary_grade_kind_override,
     normalize_ordinary_grade_record_payload,
     parse_ordinary_grade_record_file,
     validate_ordinary_grade_sources,
@@ -80,7 +83,10 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
                 created_at TEXT,
                 due_at TEXT,
                 grading_mode TEXT,
-                class_offering_id INTEGER
+                class_offering_id INTEGER,
+                ordinary_grade_kind_override TEXT,
+                ordinary_grade_kind_updated_at TEXT,
+                ordinary_grade_kind_updated_by_teacher_id INTEGER
             );
             CREATE TABLE submissions (
                 id INTEGER PRIMARY KEY,
@@ -117,12 +123,12 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
         ]
         self.conn.executemany("INSERT INTO students VALUES (?, ?, ?, ?, ?)", students)
         assignments = [
-            (201, "第一次作业", "published", "", "2025-09-01", "2025-09-10", "manual", 30),
-            (202, "第二次作业", "published", "", "2025-09-11", "2025-09-20", "manual", 30),
-            (203, "第三次作业", "published", "", "2025-09-21", "2025-09-30", "manual", 30),
-            (204, "阶段测评", "published", "9", "2025-10-01", "2025-10-10", "manual", 30),
+            (201, "第一次作业", "published", "", "2025-09-01", "2025-09-10", "manual", 30, None, None, None),
+            (202, "第二次作业", "published", "", "2025-09-11", "2025-09-20", "manual", 30, None, None, None),
+            (203, "第三次作业", "published", "", "2025-09-21", "2025-09-30", "manual", 30, None, None, None),
+            (204, "阶段测评", "published", "9", "2025-10-01", "2025-10-10", "manual", 30, None, None, None),
         ]
-        self.conn.executemany("INSERT INTO assignments VALUES (?, ?, ?, ?, ?, ?, ?, ?)", assignments)
+        self.conn.executemany("INSERT INTO assignments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", assignments)
         submissions = [
             (1, "201", 101, 91),
             (2, "202", 101, 92),
@@ -232,6 +238,234 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
             ),
             "exam",
         )
+        self.assertEqual(
+            classify_ordinary_grade_assignment(
+                {
+                    "title": "阶段测评",
+                    "exam_paper_id": "paper-stage",
+                    "ordinary_grade_kind_override": "assignment",
+                }
+            ),
+            "assignment",
+        )
+
+    def test_manual_kind_override_is_visible_and_can_satisfy_three_homework_sources(self):
+        self.conn.execute(
+            """
+            UPDATE assignments
+            SET ordinary_grade_kind_override = 'exam'
+            WHERE id = 203
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE assignments
+            SET ordinary_grade_kind_override = 'assignment',
+                ordinary_grade_kind_updated_at = '2026-07-29T10:00:00',
+                ordinary_grade_kind_updated_by_teacher_id = 1
+            WHERE id = 204
+            """
+        )
+        candidates = list_ordinary_grade_assignment_candidates(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+        )
+        changed = next(item for item in candidates if item["id"] == 204)
+        self.assertEqual("assignment", changed["kind"])
+        self.assertEqual("exam", changed["ordinary_grade_auto_kind"])
+        self.assertEqual("manual", changed["ordinary_grade_kind_source"])
+        self.assertEqual(1, changed["ordinary_grade_kind_updated_by_teacher_id"])
+        self.assertEqual(3, sum(item["kind"] == "assignment" for item in candidates))
+        self.assertEqual(1, sum(item["kind"] == "exam" for item in candidates))
+
+        payload = build_ordinary_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            homework_assignment_ids=[201, 202, 204],
+            assessment_assignment_id=203,
+        )
+        self.assertEqual([201, 202, 204], [
+            item["id"] for item in payload["structured"]["source_assignments"]["homework_assignments"]
+        ])
+        self.assertEqual(
+            203,
+            payload["structured"]["source_assignments"]["assessment_assignment"]["id"],
+        )
+
+        self.assertEqual("", normalize_ordinary_grade_kind_override("auto"))
+        self.assertEqual("assignment", normalize_ordinary_grade_kind_override("assignment"))
+        with self.assertRaises(ValueError):
+            normalize_ordinary_grade_kind_override("quiz")
+
+    def test_generation_revalidates_effective_kind_after_selection(self):
+        self.conn.execute(
+            "UPDATE assignments SET ordinary_grade_kind_override = 'exam' WHERE id = 203"
+        )
+        with self.assertRaises(HTTPException) as ctx:
+            build_ordinary_grade_record_payload(
+                self.conn,
+                class_offering_id=30,
+                teacher_id=1,
+                homework_assignment_ids=[201, 202, 203],
+                assessment_assignment_id=204,
+            )
+        self.assertEqual(400, ctx.exception.status_code)
+        self.assertIn("不能放入平时作业", str(ctx.exception.detail))
+
+    def test_score_floor_is_deterministic_balanced_and_requires_seventy_percent_attendance(self):
+        seed_parts = (30, 103, 201, 202, 203, 204)
+        eligible = apply_ordinary_grade_score_floor(
+            attendance_score=70,
+            homework_scores=[0, 0, 0],
+            assessment_score=0,
+            enabled=True,
+            minimum_score=60,
+            seed_parts=seed_parts,
+        )
+        repeated = apply_ordinary_grade_score_floor(
+            attendance_score=70,
+            homework_scores=[0, 0, 0],
+            assessment_score=0,
+            enabled=True,
+            minimum_score=60,
+            seed_parts=seed_parts,
+        )
+        self.assertEqual(eligible, repeated)
+        self.assertTrue(eligible["eligible"])
+        self.assertTrue(eligible["applied"])
+        self.assertGreaterEqual(eligible["achieved_score"], 60)
+        self.assertLess(eligible["achieved_score"], 60.3)
+        adjusted_values = [*eligible["homework_scores"], eligible["assessment_score"]]
+        self.assertLessEqual(max(adjusted_values) - min(adjusted_values), 10)
+        self.assertEqual(
+            eligible["achieved_score"],
+            round(calculate_ordinary_grade_score(70, eligible["homework_scores"], eligible["assessment_score"]), 4),
+        )
+
+        ineligible = apply_ordinary_grade_score_floor(
+            attendance_score=69.99,
+            homework_scores=[0, 0, 0],
+            assessment_score=0,
+            enabled=True,
+            minimum_score=60,
+            seed_parts=seed_parts,
+        )
+        self.assertFalse(ineligible["eligible"])
+        self.assertFalse(ineligible["applied"])
+        self.assertEqual([0.0, 0.0, 0.0], ineligible["homework_scores"])
+        self.assertEqual(0.0, ineligible["assessment_score"])
+        self.assertEqual("attendance_below_threshold", ineligible["reason"])
+
+    def test_score_floor_never_reduces_real_scores_and_reports_unreachable_target(self):
+        already_high = apply_ordinary_grade_score_floor(
+            attendance_score=100,
+            homework_scores=[90, 80, 95],
+            assessment_score=88,
+            enabled=True,
+            minimum_score=60,
+            seed_parts=(30, 101),
+        )
+        self.assertFalse(already_high["applied"])
+        self.assertEqual([90.0, 80.0, 95.0], already_high["homework_scores"])
+        self.assertEqual(88.0, already_high["assessment_score"])
+
+        capped = apply_ordinary_grade_score_floor(
+            attendance_score=70,
+            homework_scores=[0, 0, 0],
+            assessment_score=0,
+            enabled=True,
+            minimum_score=100,
+            seed_parts=(30, 102),
+        )
+        self.assertTrue(capped["capped"])
+        self.assertEqual("capped_by_attendance", capped["reason"])
+        self.assertEqual(88.0, capped["achieved_score"])
+        self.assertEqual([100.0, 100.0, 100.0], capped["homework_scores"])
+        self.assertEqual(100.0, capped["assessment_score"])
+
+    def test_attendance_denominator_includes_sessions_missing_a_student_row(self):
+        self.conn.execute(
+            "INSERT INTO smart_classroom_checkin_students VALUES (?, ?, ?, ?)",
+            (405, 301, 103, "CHECKED"),
+        )
+        payload = build_ordinary_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            homework_assignment_ids=[201, 202, 203],
+            assessment_assignment_id=204,
+        )
+        student = payload["structured"]["students"][2]
+        self.assertEqual(50.0, student["attendance_raw_score"])
+        self.assertFalse(student["score_floor_adjustment"]["eligible"])
+        self.assertFalse(student["score_floor_adjustment"]["applied"])
+
+    def test_payload_adjusts_only_eligible_task_scores_and_exports_hidden_audit(self):
+        self.conn.executemany(
+            "INSERT INTO smart_classroom_checkin_students VALUES (?, ?, ?, ?)",
+            [
+                (405, 301, 103, "CHECKED"),
+                (406, 302, 103, "CHECKED"),
+            ],
+        )
+        payload = build_ordinary_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            homework_assignment_ids=[201, 202, 203],
+            assessment_assignment_id=204,
+            minimum_ordinary_score_enabled=True,
+            minimum_ordinary_score=60,
+        )
+        student = payload["structured"]["students"][2]
+        self.assertEqual(100.0, student["attendance_raw_score"])
+        self.assertEqual([71.0, 0.0, 0.0], student["source_homework_scores"])
+        self.assertEqual(0.0, student["source_assessment_score"])
+        self.assertTrue(student["score_floor_adjustment"]["applied"])
+        self.assertGreaterEqual(student["score_floor_adjustment"]["achieved_score"], 60)
+        policy = payload["structured"]["score_floor_policy"]
+        self.assertEqual(2, policy["eligible_count"])
+        self.assertEqual(1, policy["adjusted_count"])
+        self.assertEqual(1, policy["ineligible_count"])
+
+        content = build_ordinary_grade_record_xlsx(payload)
+        wb = load_workbook(io.BytesIO(content), data_only=False)
+        self.assertEqual("auto", wb.calculation.calcMode)
+        self.assertTrue(wb.calculation.fullCalcOnLoad)
+        self.assertTrue(wb.calculation.forceFullCalc)
+        self.assertIn("最低分配平审计", wb.sheetnames)
+        audit = wb["最低分配平审计"]
+        self.assertEqual("hidden", audit.sheet_state)
+        self.assertEqual("原始缺失项", audit["F1"].value)
+        self.assertEqual("作业2、作业3、测评", audit["F4"].value)
+        self.assertEqual(71.0, audit["G4"].value)
+        self.assertEqual(0.0, audit["H4"].value)
+        self.assertGreaterEqual(audit["P4"].value, 60)
+        self.assertEqual("=I9*0.4+J9*0.3+K9*0.3", wb.active["L9"].value)
+
+    def test_disabled_score_floor_preserves_zero_filled_source_scores(self):
+        self.conn.executemany(
+            "INSERT INTO smart_classroom_checkin_students VALUES (?, ?, ?, ?)",
+            [
+                (405, 301, 103, "CHECKED"),
+                (406, 302, 103, "CHECKED"),
+            ],
+        )
+        payload = build_ordinary_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            homework_assignment_ids=[201, 202, 203],
+            assessment_assignment_id=204,
+            minimum_ordinary_score_enabled=False,
+            minimum_ordinary_score=60,
+        )
+        student = payload["structured"]["students"][2]
+        self.assertEqual([71.0, 0.0, 0.0], student["homework_scores"])
+        self.assertEqual(0.0, student["assessment_score"])
+        self.assertEqual("disabled", student["score_floor_adjustment"]["reason"])
 
     def test_xlsx_export_preserves_pages_headers_notes_and_formulas(self):
         students = []

@@ -528,6 +528,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/assignments/{assignment_id}/ordinary-grade-kind",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "update_assignment_ordinary_grade_kind",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/assignments/{assignment_id}/peer-eval",
     "methods": [
       "GET"

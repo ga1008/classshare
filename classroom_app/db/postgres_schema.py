@@ -320,6 +320,11 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
         "ai_weekly_budget_json": "TEXT NOT NULL DEFAULT ''",
         "ai_weekly_budget_updated_at": "TEXT",
     },
+    "assignments": {
+        "ordinary_grade_kind_override": "TEXT",
+        "ordinary_grade_kind_updated_at": "TEXT",
+        "ordinary_grade_kind_updated_by_teacher_id": "INTEGER",
+    },
     "course_materials": {
         "check_questions_json": "TEXT DEFAULT ''",
         "check_questions_status": "TEXT NOT NULL DEFAULT 'idle'",
@@ -818,6 +823,9 @@ REQUIRED_POSTGRES_COLUMNS = {
         "requirements_md",
         "rubric_md",
         "exam_paper_id",
+        "ordinary_grade_kind_override",
+        "ordinary_grade_kind_updated_at",
+        "ordinary_grade_kind_updated_by_teacher_id",
         "allowed_file_types_json",
     ),
     "submissions": (

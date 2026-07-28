@@ -28,6 +28,7 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="{{ asset_url('css/exam_paper_preview.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/ordinary_grade_kind_controls.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -1759,6 +1760,54 @@
                 </div>
             </div>
 
+            {% if paper.ordinary_grade_usages %}
+            <details class="ordinary-grade-usage-panel">
+                <summary>
+                    <span>平时成绩用途</span>
+                    <small class="ordinary-grade-usage-panel__count">{{ paper.ordinary_grade_usages|length }} 个课堂任务</small>
+                </summary>
+                <div class="ordinary-grade-usage-panel__body">
+                    {% for usage in paper.ordinary_grade_usages %}
+                    <div
+                        class="ordinary-grade-kind-control ordinary-grade-kind-control--compact{% if usage.ordinary_grade_kind_source == 'manual' %} is-manual{% endif %}"
+                        data-ordinary-grade-kind-control
+                        data-ordinary-grade-kind="{{ usage.ordinary_grade_kind }}"
+                        data-ordinary-grade-kind-source="{{ usage.ordinary_grade_kind_source }}"
+                    >
+                        <span class="ordinary-grade-usage-panel__context" title="{{ usage.course_name }} · {{ usage.class_name }} · {{ usage.assignment_title }}">
+                            <strong>{{ usage.course_name }} · {{ usage.class_name }}</strong>
+                            <span>{{ usage.assignment_title }}{% if usage.semester_display %} · {{ usage.semester_display }}{% endif %}</span>
+                        </span>
+                        <select
+                            class="ordinary-grade-kind-control__select"
+                            data-ordinary-grade-kind-select
+                            data-assignment-id="{{ usage.assignment_id }}"
+                            aria-label="设置 {{ usage.assignment_title }} 的平时成绩用途"
+                        >
+                            <option value="auto"{% if not usage.ordinary_grade_kind_override %} selected{% endif %}>
+                                自动 · {{ '测验' if usage.ordinary_grade_auto_kind == 'exam' else '平时作业' }}
+                            </option>
+                            <option value="assignment"{% if usage.ordinary_grade_kind_override == 'assignment' %} selected{% endif %}>平时作业</option>
+                            <option value="exam"{% if usage.ordinary_grade_kind_override == 'exam' %} selected{% endif %}>测验</option>
+                        </select>
+                        <span
+                            class="ordinary-grade-kind-control__badge"
+                            data-ordinary-grade-kind-badge
+                            data-kind="{{ usage.ordinary_grade_kind }}"
+                        >{{ '测验' if usage.ordinary_grade_kind == 'exam' else '平时作业' }}</span>
+                        <small class="ordinary-grade-kind-control__note" data-ordinary-grade-kind-note>
+                            {% if usage.ordinary_grade_kind_source == 'manual' %}
+                            已手动指定；试卷答题与批改方式不变。
+                            {% else %}
+                            自动识别；可按本课堂统计口径覆盖。
+                            {% endif %}
+                        </small>
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+
             <div class="exam-actions">
                 <button class="btn btn-outline btn-sm" data-resource-attributes data-resource-type="exam_paper" data-resource-id="{{ paper.id }}">
                     属性
@@ -1982,6 +2031,7 @@
 
 {% block scripts %}
 <script type="module" src="{{ asset_url('js/base_resource_modes.js') }}"></script>
+<script type="module" src="{{ asset_url('js/ordinary_grade_kind_controls.js') }}"></script>
 <script>
     // ===== Paper data for client-side filtering =====
     const papersData = [

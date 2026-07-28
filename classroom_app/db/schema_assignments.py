@@ -196,6 +196,16 @@ def ensure_assignment_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE assignments ADD COLUMN closed_at TEXT")
     except sqlite3.OperationalError:
         pass  # 列已存在
+    ordinary_grade_kind_columns = (
+        ("ordinary_grade_kind_override", "TEXT"),
+        ("ordinary_grade_kind_updated_at", "TEXT"),
+        ("ordinary_grade_kind_updated_by_teacher_id", "INTEGER"),
+    )
+    for column_name, column_def in ordinary_grade_kind_columns:
+        try:
+            conn.execute(f"ALTER TABLE assignments ADD COLUMN {column_name} {column_def}")
+        except sqlite3.OperationalError:
+            pass  # 列已存在
     assignment_late_policy_columns = (
         ("late_submission_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("late_submission_until", "TEXT"),
@@ -310,6 +320,12 @@ def ensure_assignment_schema(conn: sqlite3.Connection) -> None:
                      CURRENT_TIMESTAMP,
                      exam_paper_id
                      TEXT,
+                     ordinary_grade_kind_override
+                     TEXT,
+                     ordinary_grade_kind_updated_at
+                     TEXT,
+                     ordinary_grade_kind_updated_by_teacher_id
+                     INTEGER,
                      class_offering_id
                      INTEGER,
                      allowed_file_types_json

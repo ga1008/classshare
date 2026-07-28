@@ -177,7 +177,12 @@ def _render_manage_materials_page(
         ).fetchall()
         ordinary_source_rows = conn.execute(
             """
-            SELECT a.class_offering_id, a.title, a.exam_paper_id
+            SELECT a.class_offering_id,
+                   a.title,
+                   a.exam_paper_id,
+                   a.ordinary_grade_kind_override,
+                   a.ordinary_grade_kind_updated_at,
+                   a.ordinary_grade_kind_updated_by_teacher_id
             FROM assignments a
             JOIN class_offerings o ON o.id = a.class_offering_id
             WHERE o.teacher_id = ?

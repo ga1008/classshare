@@ -889,7 +889,40 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn('data-ordinary-grade-step-index="3"', template)
         self.assertIn('id="classroom-final-material-prompt-step"', template)
         self.assertIn("第 5 步", template)
-        self.assertIn("ordinary-grade-wizard-20260728", island)
+        self.assertIn("ordinary-grade-floor-20260729", island)
+
+    def test_ordinary_grade_floor_policy_is_teacher_controlled_and_auditable(self):
+        script = Path("static/js/classroom_materials.js").read_text(encoding="utf-8")
+        template = Path("templates/classroom_main_v4.html").read_text(encoding="utf-8")
+        request_model = Path("classroom_app/routers/materials_parts/common.py").read_text(encoding="utf-8")
+        router = Path("classroom_app/routers/materials_parts/final_materials.py").read_text(encoding="utf-8")
+        service = Path("classroom_app/services/ordinary_grade_record_service.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="classroom-ordinary-score-floor-enabled"', template)
+        self.assertIn('id="classroom-ordinary-score-floor"', template)
+        self.assertIn("出勤率达到 70%", template)
+        self.assertIn("minimum_ordinary_score_enabled", script)
+        self.assertIn("minimum_ordinary_score", script)
+        self.assertIn("minimum_ordinary_score_enabled: bool = True", request_model)
+        self.assertIn("minimum_ordinary_score=payload.minimum_ordinary_score", router)
+        self.assertIn("ORDINARY_GRADE_ATTENDANCE_ELIGIBILITY_PERCENT = 70.0", service)
+        self.assertIn("balanced-deterministic-v1", service)
+        self.assertIn('workbook.create_sheet("最低分配平审计")', service)
+
+    def test_ordinary_grade_kind_override_is_visible_in_both_teacher_views(self):
+        classroom_template = Path("templates/classroom_main_v4.html").read_text(encoding="utf-8")
+        exam_template = Path("templates/manage/exams.html").read_text(encoding="utf-8")
+        controls = Path("static/js/ordinary_grade_kind_controls.js").read_text(encoding="utf-8")
+        service = Path("classroom_app/services/ordinary_grade_record_service.py").read_text(encoding="utf-8")
+
+        self.assertIn("data-ordinary-grade-kind-select", classroom_template)
+        self.assertIn("平时成绩用途", classroom_template)
+        self.assertIn("paper.ordinary_grade_usages", exam_template)
+        self.assertIn("data-ordinary-grade-kind-select", exam_template)
+        self.assertIn("/ordinary-grade-kind", controls)
+        self.assertIn("lanshare:ordinary-grade-kind-updated", controls)
+        self.assertIn("ordinary_grade_kind_override", service)
+        self.assertIn("不能放入平时作业", service)
 
     def test_classroom_generation_picker_supports_semester_filter_and_fuzzy_search(self):
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")

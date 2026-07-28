@@ -1,7 +1,80 @@
 from .common import *
+from ...services.ordinary_grade_record_service import (
+    normalize_ordinary_grade_kind_override,
+    ordinary_grade_assignment_kind_info,
+)
 
 
 router = APIRouter()
+
+
+@router.patch("/assignments/{assignment_id}/ordinary-grade-kind", response_class=JSONResponse)
+async def update_assignment_ordinary_grade_kind(
+    assignment_id: str,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    """Override only how a classroom task is counted in the ordinary-grade record."""
+    data = await request.json()
+    try:
+        override = normalize_ordinary_grade_kind_override(data.get("kind"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    with get_db_connection() as conn:
+        assignment = conn.execute(
+            """
+            SELECT a.*,
+                   o.teacher_id AS offering_teacher_id
+            FROM assignments a
+            LEFT JOIN class_offerings o ON o.id = a.class_offering_id
+            WHERE a.id = ?
+            """,
+            (assignment_id,),
+        ).fetchone()
+        if not assignment:
+            raise HTTPException(404, "课堂任务不存在")
+        assignment_dict = dict(assignment)
+        if not assignment_dict.get("class_offering_id"):
+            raise HTTPException(400, "只有已经发布到课堂的任务才能设置平时成绩用途")
+        if not _teacher_can_access_assignment(conn, assignment_dict, int(user["id"])):
+            raise HTTPException(403, "无权修改该课堂任务的平时成绩用途")
+        if is_personal_stage_exam_assignment(conn, assignment_id):
+            _hide_personal_stage_asset()
+
+        updated_at = datetime.now().isoformat()
+        conn.execute(
+            """
+            UPDATE assignments
+            SET ordinary_grade_kind_override = ?,
+                ordinary_grade_kind_updated_at = ?,
+                ordinary_grade_kind_updated_by_teacher_id = ?
+            WHERE id = ?
+            """,
+            (override or None, updated_at, int(user["id"]), assignment_id),
+        )
+        assignment_dict.update(
+            {
+                "ordinary_grade_kind_override": override,
+                "ordinary_grade_kind_updated_at": updated_at,
+                "ordinary_grade_kind_updated_by_teacher_id": int(user["id"]),
+            }
+        )
+        kind_info = ordinary_grade_assignment_kind_info(assignment_dict)
+        conn.commit()
+
+    return {
+        "status": "success",
+        "assignment_id": assignment_id,
+        "class_offering_id": int(assignment_dict["class_offering_id"]),
+        "title": assignment_dict.get("title") or "",
+        **kind_info,
+        "message": (
+            f"已将“{assignment_dict.get('title') or '课堂任务'}”在平时成绩表中设为"
+            f"{'平时作业' if kind_info['kind'] == 'assignment' else '测验'}。"
+            + ("学生答题与试卷批改方式保持不变。" if assignment_dict.get("exam_paper_id") else "")
+        ),
+    }
 
 
 @router.post(

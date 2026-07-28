@@ -1,4 +1,5 @@
 from .common import *
+from ...services.ordinary_grade_record_service import ordinary_grade_assignment_kind_info
 
 
 router = APIRouter()
@@ -95,6 +96,38 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
                ORDER BY ep.updated_at DESC""",
             (1 if current_teacher_is_super_admin else 0, user['id'])
         )
+        usage_rows = conn.execute(
+            """
+            SELECT a.id AS assignment_id,
+                   a.exam_paper_id,
+                   a.title AS assignment_title,
+                   a.class_offering_id,
+                   a.ordinary_grade_kind_override,
+                   a.ordinary_grade_kind_updated_at,
+                   a.ordinary_grade_kind_updated_by_teacher_id,
+                   c.name AS course_name,
+                   cl.name AS class_name,
+                   COALESCE(s.name, o.semester) AS semester_display
+            FROM assignments a
+            JOIN class_offerings o ON o.id = a.class_offering_id
+            JOIN courses c ON c.id = o.course_id
+            JOIN classes cl ON cl.id = o.class_id
+            LEFT JOIN academic_semesters s ON s.id = o.semester_id
+            WHERE o.teacher_id = ?
+              AND a.exam_paper_id IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM learning_stage_exam_attempts lsea
+                  WHERE lsea.assignment_id = a.id
+              )
+            ORDER BY COALESCE(s.start_date, o.created_at) DESC, a.created_at DESC, a.id DESC
+            """,
+            (user["id"],),
+        ).fetchall()
+        usages_by_paper: dict[str, list[dict[str, Any]]] = {}
+        for row in usage_rows:
+            usage = dict(row)
+            usage.update(ordinary_grade_assignment_kind_info(usage))
+            usages_by_paper.setdefault(str(usage.get("exam_paper_id") or ""), []).append(usage)
         papers = []
         for row in papers_cursor:
             paper = dict(row)
@@ -122,6 +155,7 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
             metrics = _extract_exam_metrics(paper.get('questions_json'))
             paper.update(metrics)
             paper['source_type'] = _resolve_exam_source(paper)
+            paper["ordinary_grade_usages"] = usages_by_paper.get(str(paper.get("id") or ""), [])
             papers.append(paper)
 
     return templates.TemplateResponse(

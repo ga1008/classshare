@@ -1,4 +1,5 @@
 from .common import *
+from ...services.ordinary_grade_record_service import ordinary_grade_assignment_kind_info
 from ...services.session_learning_materials_service import attach_learning_material_counts
 
 
@@ -146,6 +147,7 @@ def classroom_main(
         assignments = []
         for row in assignments_cursor:
             assignment = _enrich_assignment_upload_config(dict(row))
+            assignment.update(ordinary_grade_assignment_kind_info(assignment))
             if user['role'] == 'student':
                 if not student_can_access_assignment(conn, assignment["id"], int(user["id"])):
                     continue
