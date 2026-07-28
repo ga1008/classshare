@@ -19,6 +19,11 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
     # constraints. Without recreating them, saving a teacher's organization
     # membership fails on the first organization_schools UPSERT.
     (
+        "idx_course_material_assignments_unique_target",
+        "course_material_assignments",
+        ("material_id", "class_offering_id"),
+    ),
+    (
         "idx_organization_schools_unique_code",
         "organization_schools",
         ("school_code",),

@@ -169,8 +169,17 @@ class PostgresSchemaValidationTests(unittest.TestCase):
 
         self.assertTrue(report["schema_writes_executed"])
         self.assertIn("idx_learning_stage_status_unique_stage", report["created_indexes"])
+        self.assertIn(
+            "idx_course_material_assignments_unique_target",
+            report["created_indexes"],
+        )
         created_sql = "\n".join(str(sql) for sql, _ in conn.executed_sql)
         self.assertIn('CREATE UNIQUE INDEX IF NOT EXISTS "idx_learning_stage_status_unique_stage"', created_sql)
+        self.assertIn(
+            'CREATE UNIQUE INDEX IF NOT EXISTS "idx_course_material_assignments_unique_target" '
+            'ON "course_material_assignments" ("material_id", "class_offering_id")',
+            created_sql,
+        )
 
     def test_ensure_runtime_constraints_makes_todo_classroom_scope_optional(self):
         conn = FakePostgresConstraintConnection(
@@ -240,6 +249,7 @@ class PostgresSchemaValidationTests(unittest.TestCase):
     def test_runtime_constraints_cover_integration_upsert_targets(self):
         runtime_index_names = {index_name for index_name, _table, _columns in POSTGRES_RUNTIME_UNIQUE_INDEXES}
         expected = {
+            "idx_course_material_assignments_unique_target",
             "idx_organization_schools_unique_code",
             "idx_organization_colleges_unique_name",
             "idx_organization_departments_unique_name",
@@ -274,6 +284,16 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         }
 
         self.assertTrue(expected.issubset(runtime_index_names))
+        self.assertIn(
+            (
+                "course_material_assignments",
+                ("material_id", "class_offering_id"),
+            ),
+            {
+                (table, columns)
+                for _index_name, table, columns in POSTGRES_RUNTIME_UNIQUE_INDEXES
+            },
+        )
 
     def test_runtime_constraints_cover_teacher_membership_upsert_targets(self):
         runtime_targets = {
