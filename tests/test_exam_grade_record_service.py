@@ -10,6 +10,7 @@ from openpyxl import load_workbook
 
 from classroom_app.services.exam_grade_record_service import (
     EXAM_GRADE_RECORD_TYPE,
+    _load_exam_submissions,
     build_exam_grade_record_payload,
     build_exam_grade_record_xlsx,
     list_exam_grade_record_candidates,
@@ -205,6 +206,34 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
         self.assertEqual(sum(students[1]["section_scores"]), 82)
         self.assertIn("小组互评折算扣", students[1]["score_adjustment_reason"])
         self.assertTrue(any("学生三" in warning for warning in payload["structured"]["warnings"]))
+
+    def test_postgres_queries_keep_assignment_ids_native(self):
+        class StrictPostgresLikeConnection:
+            def __init__(self):
+                self.sql = ""
+                self.params = ()
+
+            def execute(self, sql, params):
+                self.sql = " ".join(str(sql).split())
+                self.params = tuple(params)
+                if "CAST(a.id AS TEXT)" in self.sql:
+                    raise AssertionError("PostgreSQL bigint assignment ids must not be compared to text")
+                return self
+
+            def fetchall(self):
+                return []
+
+        candidates_conn = StrictPostgresLikeConnection()
+        candidates = list_exam_grade_record_candidates(candidates_conn, class_offering_id=30, teacher_id=1)
+        self.assertEqual(candidates, [])
+        self.assertIn("LEFT JOIN submissions s ON s.assignment_id = a.id", candidates_conn.sql)
+        self.assertEqual(candidates_conn.params, (30, 1))
+
+        submissions_conn = StrictPostgresLikeConnection()
+        submissions = _load_exam_submissions(submissions_conn, assignment_id=301)
+        self.assertEqual(submissions, {})
+        self.assertIn("WHERE s.assignment_id = ?", submissions_conn.sql)
+        self.assertEqual(submissions_conn.params, (301,))
 
     def test_xlsx_export_uses_a4_sample_headers_widths_and_formulas(self):
         payload = build_exam_grade_record_payload(

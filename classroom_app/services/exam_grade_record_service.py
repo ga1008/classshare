@@ -177,7 +177,7 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
         FROM assignments a
         JOIN class_offerings o ON o.id = a.class_offering_id
         JOIN exam_papers ep ON ep.id = a.exam_paper_id
-        LEFT JOIN submissions s ON s.assignment_id = CAST(a.id AS TEXT)
+        LEFT JOIN submissions s ON s.assignment_id = a.id
         WHERE a.class_offering_id = ?
           AND o.teacher_id = ?
           AND COALESCE(a.exam_paper_id, '') != ''
@@ -653,7 +653,7 @@ def _load_exam_submissions(conn, *, assignment_id: int) -> dict[int, dict[str, A
               AND gr.student_pk_id = s.student_pk_id
         WHERE s.assignment_id = ?
         """,
-        (str(assignment_id),),
+        (int(assignment_id),),
     ).fetchall()
     result: dict[int, dict[str, Any]] = {}
     for row in rows:
