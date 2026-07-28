@@ -8586,6 +8586,43 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     grid-template-columns: 52px minmax(0, 2fr) minmax(200px, 0.9fr) minmax(250px, 1.05fr);
 }
 
+.materials-manage-row.is-generated-highlight {
+    position: relative;
+    border-color: rgba(79, 70, 229, 0.5);
+    background:
+        radial-gradient(circle at top right, rgba(45, 212, 191, 0.14), transparent 32%),
+        linear-gradient(135deg, rgba(238, 242, 255, 0.96), rgba(255, 255, 255, 0.98));
+    box-shadow:
+        0 0 0 4px rgba(99, 102, 241, 0.1),
+        0 22px 42px -30px rgba(79, 70, 229, 0.7);
+    animation: materials-generated-arrival 720ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.materials-generated-badge {
+    display: inline-flex !important;
+    width: fit-content;
+    align-items: center;
+    padding: 0.24rem 0.48rem;
+    border: 1px solid rgba(79, 70, 229, 0.18);
+    border-radius: 999px;
+    background: rgba(238, 242, 255, 0.96);
+    color: #4338ca !important;
+    font-size: 0.7rem !important;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+}
+
+@keyframes materials-generated-arrival {
+    from {
+        opacity: 0.25;
+        transform: translateY(12px) scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
 .materials-row-check {
     display: flex;
     align-items: flex-start;
@@ -9761,6 +9798,15 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     max-width: 46rem;
 }
 
+#materials-classroom-generate-modal .modal-dialog.is-wizard {
+    width: min(72rem, calc(100vw - 2rem));
+    max-width: 72rem;
+}
+
+#materials-classroom-generate-modal .modal-body {
+    overflow-x: hidden;
+}
+
 .materials-classroom-picker-toolbar {
     display: grid;
     grid-template-columns: minmax(140px, 0.72fr) minmax(0, 1.28fr);
@@ -9809,6 +9855,7 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 }
 
 #materials-classroom-generate-list .materials-modal-option {
+    width: 100%;
     align-items: center;
     justify-content: space-between;
     min-height: 72px;
@@ -9817,7 +9864,10 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     border-radius: 13px;
     background: #fff;
     color: #0f172a;
+    font: inherit;
+    text-align: left;
     text-decoration: none;
+    cursor: pointer;
     transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
@@ -9875,6 +9925,51 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     text-align: center;
 }
 
+.materials-ordinary-grade-wizard {
+    border: 1px solid rgba(79, 70, 229, 0.18);
+}
+
+.materials-ordinary-grade-prompt {
+    display: grid;
+    gap: 0.55rem;
+    margin: 0 1.15rem 1.15rem;
+}
+
+.materials-ordinary-grade-prompt > span {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: #0f172a;
+}
+
+.materials-ordinary-grade-prompt > span small {
+    padding: 0.25rem 0.48rem;
+    border-radius: 999px;
+    background: #4f46e5;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 900;
+}
+
+.materials-ordinary-grade-prompt textarea {
+    width: 100%;
+    min-height: 110px;
+    resize: vertical;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 13px;
+    background: rgba(255, 255, 255, 0.96);
+    padding: 0.85rem 0.95rem;
+    color: #0f172a;
+    font: inherit;
+    line-height: 1.6;
+}
+
+.materials-ordinary-grade-prompt textarea:focus {
+    border-color: rgba(79, 70, 229, 0.5);
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+    outline: none;
+}
+
 @media (max-width: 720px) {
     .materials-classroom-picker-toolbar {
         grid-template-columns: 1fr;
@@ -9883,6 +9978,17 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     .materials-classroom-picker-count {
         padding: 0;
         text-align: left;
+    }
+
+    #materials-classroom-generate-modal .modal-dialog.is-wizard {
+        width: calc(100vw - 1rem);
+        max-width: calc(100vw - 1rem);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .materials-manage-row.is-generated-highlight {
+        animation: none;
     }
 }
 
@@ -16281,6 +16387,10 @@ body.has-chat-image-preview-open {
     background:
         radial-gradient(circle at top right, rgba(45, 212, 191, 0.14), transparent 36%),
         linear-gradient(145deg, rgba(238, 242, 255, 0.96), rgba(248, 250, 252, 0.98));
+}
+
+.ordinary-grade-wizard[hidden] {
+    display: none;
 }
 
 .ordinary-grade-wizard > * {

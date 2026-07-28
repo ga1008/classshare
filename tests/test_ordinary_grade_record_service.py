@@ -16,6 +16,7 @@ from classroom_app.services.material_export_template_service import (
 from classroom_app.services.ordinary_grade_record_service import (
     ORDINARY_GRADE_RECORD_TYPE,
     apply_ordinary_grade_score_floor,
+    build_ordinary_grade_record_export_filename,
     build_ordinary_grade_record_payload,
     build_ordinary_grade_record_xlsx,
     calculate_ordinary_grade_score,
@@ -502,19 +503,66 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
 
         self.assertEqual(ws["A1"].value, "广西外国语学院学生平时成绩记录表")
         self.assertEqual(ws["A38"].value, "广西外国语学院学生平时成绩记录表")
+        self.assertEqual(wb._fonts[0].name, "宋体")
+        self.assertEqual(wb._fonts[0].sz, 12)
         self.assertIn("A1:L1", [str(item) for item in ws.merged_cells.ranges])
         self.assertEqual(ws["I7"].value, "=D7")
         self.assertEqual(ws["J7"].value, "=AVERAGE(E7:G7)")
         self.assertEqual(ws["K7"].value, "=H7")
         self.assertEqual(ws["L7"].value, "=I7*0.4+J7*0.3+K7*0.3")
+        self.assertEqual(ws["H7"].number_format, '0_);[RED]\\(0\\)')
         self.assertIsNone(getattr(ws["A4"].border.top, "style", None))
         self.assertEqual(ws["A4"].border.bottom.style, "thin")
         self.assertEqual(ws["I44"].value, "=D44")
         self.assertIn("该表可为电子表格", str(ws["A69"].value))
         self.assertEqual(str(ws.page_setup.paperSize), "9")
+        self.assertEqual(ws.page_setup.orientation, "portrait")
+        self.assertEqual(ws.page_setup.scale, 100)
         self.assertEqual(ws.page_setup.fitToWidth, 1)
+        self.assertEqual(ws.page_setup.fitToHeight, 1)
+        self.assertFalse(ws.sheet_properties.pageSetUpPr.fitToPage)
+        self.assertAlmostEqual(ws.page_margins.left, 0.3541666667)
+        self.assertAlmostEqual(ws.page_margins.right, 0.1576388889)
+        self.assertAlmostEqual(ws.page_margins.top, 0.1965277778)
+        self.assertAlmostEqual(ws.page_margins.bottom, 0.0)
+        self.assertAlmostEqual(ws.page_margins.footer, 0.1181102362)
+        self.assertEqual(ws.column_dimensions["E"].width, 5.49)
+        self.assertEqual(ws.column_dimensions["F"].width, 5.49)
+        self.assertEqual(ws.column_dimensions["G"].width, 5.49)
+        self.assertEqual(ws.column_dimensions["H"].width, 5.49)
+        self.assertEqual(ws.row_dimensions[36].height, 53.5)
+        self.assertEqual(ws.row_dimensions[37].height, 40.0)
         self.assertEqual(len(ws.row_breaks.brk), 1)
+        self.assertEqual(ws.row_breaks.brk[0].id, 36)
         self.assertEqual(sum(1 for row in ws.iter_rows() for cell in row if cell.data_type == "f"), 45 * 4)
+
+    def test_export_filename_uses_period_course_class_and_xlsx_format(self):
+        filename = build_ordinary_grade_record_export_filename(
+            {
+                "academic_year": "2025-2026",
+                "semester": "第一学期",
+                "course_name": "服务器配置与管理",
+                "class_name": "软工2406班（专升本）",
+            }
+        )
+        self.assertEqual(
+            filename,
+            "7. 2025-2026-1《服务器配置与管理》学生平时成绩记录表-软工2406班（专升本）.xlsx",
+        )
+        self.assertNotIn(".xls.xlsx", filename)
+
+    def test_export_filename_does_not_mistake_unrelated_digits_for_semester(self):
+        filename = build_ordinary_grade_record_export_filename(
+            {
+                "semester": "P03-2026",
+                "course_name": "服务器配置与管理",
+                "class_name": "软工2406班",
+            }
+        )
+        self.assertEqual(
+            filename,
+            "7. 未设置学年《服务器配置与管理》学生平时成绩记录表-软工2406班.xlsx",
+        )
 
     def test_parser_and_ai_import_path_recognize_excel_formulas_without_ai(self):
         payload = build_ordinary_grade_record_payload(
@@ -561,7 +609,10 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
         )
         artifact = build_material_export_artifact(payload, fallback_filename="ordinary", requested_format="docx")
         self.assertEqual(artifact.media_type, XLSX_MEDIA_TYPE)
-        self.assertTrue(artifact.filename.endswith(".xlsx"))
+        self.assertEqual(
+            artifact.filename,
+            "7. 2025-2026-1《服务器配置与管理》学生平时成绩记录表-软工2406班（专升本）.xlsx",
+        )
         self.assertGreater(len(artifact.content), 6000)
 
 

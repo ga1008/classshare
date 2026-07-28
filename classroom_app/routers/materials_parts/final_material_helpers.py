@@ -5,6 +5,48 @@ from ...db.connection import execute_insert_returning_id, get_configured_db_engi
 from ...services.academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 
 
+def _generated_final_material_package_base_name(parse_result, course_name: str) -> str:
+    export_payload = parse_result.export_payload if isinstance(parse_result.export_payload, dict) else {}
+    fields = export_payload.get("fields") if isinstance(export_payload.get("fields"), dict) else {}
+    export_filename = str(fields.get("export_filename") or "").strip()
+    if export_filename:
+        filename_stem = Path(export_filename).stem.strip()
+        if filename_stem:
+            return filename_stem
+    return f"AI生成-{parse_result.document_type_label}-{course_name or '期末材料'}"
+
+
+def _academic_year_from_values(*values: Any) -> str:
+    for value in values:
+        raw = str(value or "").strip()
+        if not raw:
+            continue
+        year_range = re.search(r"(20\d{2})\D+(20\d{2})", raw)
+        if year_range:
+            return f"{year_range.group(1)}-{year_range.group(2)}"
+        start_year = re.search(r"(20\d{2})", raw)
+        if start_year:
+            year = int(start_year.group(1))
+            return f"{year}-{year + 1}"
+    return ""
+
+
+def _semester_label_from_value(value: Any, *, academic_term_code: bool = False) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if re.search(r"(?:第\s*)?(?:一|1)\s*学期", raw) or re.search(r"(?:^|[-_])1(?:$|[-_])", raw):
+        return "第一学期"
+    if re.search(r"(?:第\s*)?(?:二|2)\s*学期", raw) or re.search(r"(?:^|[-_])2(?:$|[-_])", raw):
+        return "第二学期"
+    if academic_term_code:
+        if raw == "3":
+            return "第一学期"
+        if raw == "12":
+            return "第二学期"
+    return ""
+
+
 def _material_table_columns(conn, table_name: str) -> set[str]:
     try:
         if get_configured_db_engine() == "postgres":
@@ -409,18 +451,12 @@ def _load_final_material_classroom_context(conn, class_offering_id: int, user: d
         raise HTTPException(404, "课堂不存在")
     data = dict(row)
     semester_text = str(data.get("semester") or "")
-    academic_year = ""
-    semester_label = semester_text
-    year_match = re.search(r"(20\d{2})\s*[-—－]\s*(20\d{2})", semester_text)
-    if year_match:
-        academic_year = f"{year_match.group(1)}-{year_match.group(2)}"
-    if re.search(r"(?:^|[-_])1(?:$|[-_])|第一|一", semester_text):
-        semester_label = "第一学期"
-    elif re.search(r"(?:^|[-_])2(?:$|[-_])|第二|二", semester_text):
-        semester_label = "第二学期"
+    academic_year = _academic_year_from_values(semester_text)
+    semester_label = _semester_label_from_value(semester_text) or semester_text
     academic_course = conn.execute(
         """
-        SELECT course_nature, exam_method, exam_mode, teaching_class_name, class_composition, synced_at
+        SELECT course_nature, exam_method, exam_mode, teaching_class_name, class_composition,
+               academic_year, academic_year_name, academic_term, academic_term_name, synced_at
         FROM teacher_academic_course_sync_items
         WHERE teacher_id = ?
           AND (? IS NULL OR semester_id = ? OR semester_id IS NULL)
@@ -454,6 +490,19 @@ def _load_final_material_classroom_context(conn, class_offering_id: int, user: d
         ),
     ).fetchone()
     academic_course_data = dict(academic_course) if academic_course else {}
+    academic_year = academic_year or _academic_year_from_values(
+        academic_course_data.get("academic_year_name"),
+        academic_course_data.get("academic_year"),
+    )
+    if not _semester_label_from_value(semester_label):
+        semester_label = (
+            _semester_label_from_value(academic_course_data.get("academic_term_name"))
+            or _semester_label_from_value(
+                academic_course_data.get("academic_term"),
+                academic_term_code=True,
+            )
+            or semester_label
+        )
     academic_teaching_class_source_name = (
         data.get("academic_teaching_class_name")
         or academic_course_data.get("teaching_class_name")
@@ -858,7 +907,7 @@ async def _create_generated_final_material_package(
         owner_scope = load_teacher_org_scope(conn, user["id"])
         now = datetime.now().isoformat()
         course_name = str(classroom_context.get("course_name") or "").strip()
-        package_base_name = f"AI生成-{parse_result.document_type_label}-{course_name or '期末材料'}"
+        package_base_name = _generated_final_material_package_base_name(parse_result, course_name)
         package_name = make_unique_material_name(conn, user["id"], parent_id, package_base_name)
         package_path = normalize_material_path(f"{base_prefix}/{package_name}" if base_prefix else package_name)
         package_id, package_root_id = _insert_material_folder_row(
@@ -965,7 +1014,7 @@ async def _create_generated_final_material_library_package(
         owner_scope = load_teacher_org_scope(conn, user["id"])
         now = datetime.now().isoformat()
         course_name = str(parse_result.metadata.get("course_name") or "").strip()
-        package_base_name = f"AI生成-{parse_result.document_type_label}-{course_name or '期末材料'}"
+        package_base_name = _generated_final_material_package_base_name(parse_result, course_name)
         package_name = make_unique_material_name(conn, user["id"], parent_id, package_base_name)
         package_path = normalize_material_path(f"{base_prefix}/{package_name}" if base_prefix else package_name)
         package_id, package_root_id = _insert_material_folder_row(

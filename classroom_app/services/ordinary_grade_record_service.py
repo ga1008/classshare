@@ -18,6 +18,7 @@ from .libreoffice_service import convert_office_file
 ORDINARY_GRADE_RECORD_TYPE = "ordinary_grade_record"
 ORDINARY_GRADE_RECORD_LABEL = "学生平时成绩记录表"
 ORDINARY_GRADE_RECORD_SCHEMA_VERSION = "gxufl-ordinary-grade-record-v1"
+ORDINARY_GRADE_RECORD_FILE_SEQUENCE = 7
 ORDINARY_GRADE_PAGE_STUDENT_CAPACITY = 25
 ORDINARY_GRADE_LAST_PAGE_MIN_BLANK_ROWS = 2
 ORDINARY_GRADE_ATTENDANCE_ELIGIBILITY_PERCENT = 70.0
@@ -39,8 +40,11 @@ ORDINARY_GRADE_LAYOUT = {
     "students_per_page": ORDINARY_GRADE_PAGE_STUDENT_CAPACITY,
     "last_page_min_blank_rows": ORDINARY_GRADE_LAST_PAGE_MIN_BLANK_ROWS,
     "columns": ["序号", "学号", "姓名", "“翻转校园”记录", "作业1", "作业2", "作业3", "测评1", "出勤成绩", "作业成绩", "测评成绩", "平时成绩"],
-    "column_widths": [5.49, 14.07, 9.66, 8.49, 5.49, 13.0, 13.0, 5.49, 6.83, 5.41, 5.57, 10.74],
-    "margins_in": {"left": 0.3541666667, "right": 0.1576388889, "top": 0.1965277778, "bottom": 0.0, "header": 0.5118110236, "footer": 0.5118110236},
+    "column_widths": [5.49, 14.07, 9.66, 8.49, 5.49, 5.49, 5.49, 5.49, 6.83, 5.41, 5.57, 10.74],
+    "margins_in": {"left": 0.3541666667, "right": 0.1576388889, "top": 0.1965277778, "bottom": 0.0, "header": 0.5118110236, "footer": 0.1181102362},
+    "scale_percent": 100,
+    "page_bottom_spacer_row_height": 53.5,
+    "page_top_spacer_row_height": 40.0,
 }
 
 
@@ -52,6 +56,31 @@ class OrdinaryGradeParseResult:
     warnings: list[str]
     export_payload: dict[str, Any]
     formula_count: int
+
+
+def build_ordinary_grade_record_export_filename(
+    fields: dict[str, Any] | None,
+    *,
+    suffix: str = ".xlsx",
+) -> str:
+    values = _as_dict(fields)
+    academic_year = str(values.get("academic_year") or "").strip() or "未设置学年"
+    semester_no = _semester_number(str(values.get("semester") or ""))
+    period = f"{academic_year}-{semester_no}" if semester_no != "__" else academic_year
+    course_name = str(values.get("course_name") or "").strip() or "未命名课程"
+    class_name = str(values.get("class_name") or "").strip() or "未命名班级"
+    normalized_suffix = str(suffix or ".xlsx").strip().lower()
+    if not normalized_suffix.startswith("."):
+        normalized_suffix = f".{normalized_suffix}"
+    if normalized_suffix != ".xlsx":
+        normalized_suffix = ".xlsx"
+    stem = (
+        f"{ORDINARY_GRADE_RECORD_FILE_SEQUENCE}. {period}"
+        f"《{course_name}》学生平时成绩记录表-{class_name}"
+    )
+    safe_stem = re.sub(r'[\\/:*?"<>|]+', "-", stem)
+    safe_stem = re.sub(r"\s+", " ", safe_stem).strip(" .")
+    return f"{safe_stem}{normalized_suffix}"
 
 
 def normalize_ordinary_grade_record_payload(
@@ -73,6 +102,7 @@ def normalize_ordinary_grade_record_payload(
     fields.setdefault("attendance_weight", 0.4)
     fields.setdefault("homework_weight", 0.3)
     fields.setdefault("assessment_weight", 0.3)
+    fields["export_filename"] = build_ordinary_grade_record_export_filename(fields)
 
     structured = _as_dict(base.get("structured"))
     parsed_students = _students_from_tables(tables or [])
@@ -482,16 +512,18 @@ def build_ordinary_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
     wb.calculation.forceFullCalc = True
     ws = wb.active
     ws.title = "平时成绩"
-    for named_style in wb._named_styles:
-        if getattr(named_style, "name", "") == "Normal":
-            named_style.font = Font(name="宋体", size=10)
-            break
+    # Excel converts character-based column widths to physical print widths using
+    # the workbook default font. The official .xls template uses 宋体 12 here,
+    # while individual table cells override their own 10/12/18 pt typography.
+    # Keeping the same default is therefore essential for print-width parity.
+    wb._fonts[0] = Font(name="宋体", size=12, charset=134)
 
-    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=False, autoPageBreaks=False)
     ws.page_setup.orientation = "portrait"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.scale = int(ORDINARY_GRADE_LAYOUT["scale_percent"])
     ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = False
+    ws.page_setup.fitToHeight = 1
     margins = ORDINARY_GRADE_LAYOUT["margins_in"]
     ws.page_margins.left = margins["left"]
     ws.page_margins.right = margins["right"]
@@ -511,7 +543,9 @@ def build_ordinary_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
         start_row = 1 + page_index * 37
         _write_page(ws, fields, chunk, start_row=start_row, page_index=page_index, total_students=len(students))
         if page_index < len(pages) - 1:
-            ws.row_breaks.append(Break(id=start_row + 36))
+            ws.row_dimensions[start_row + 35].height = float(ORDINARY_GRADE_LAYOUT["page_bottom_spacer_row_height"])
+            ws.row_dimensions[start_row + 36].height = float(ORDINARY_GRADE_LAYOUT["page_top_spacer_row_height"])
+            ws.row_breaks.append(Break(id=start_row + 35))
 
     last_row = _last_used_row_for_pages(pages)
     ws.print_area = f"A1:L{last_row}"
@@ -665,7 +699,21 @@ def _write_page(ws: Any, fields: dict[str, Any], students: list[dict[str, Any]],
     ws.cell(start_row, 1).alignment = center
     ws.row_dimensions[start_row].height = 34.5 if page_index == 0 else 29.5
 
-    ws.cell(start_row + 1, 1, _period_line(fields))
+    period_value: Any = _period_line(fields)
+    period_match = re.fullmatch(r"（20 (\d{2}) — 20 (\d{2}) 学年度第 ([^ ]+) 学期）", str(period_value))
+    if period_match:
+        normal_period_font = InlineFont(rFont="宋体", sz=12, b=True)
+        underlined_period_font = InlineFont(rFont="宋体", sz=12, b=True, u="single")
+        period_value = CellRichText(
+            TextBlock(normal_period_font, "（20"),
+            TextBlock(underlined_period_font, f" {period_match.group(1)} "),
+            TextBlock(normal_period_font, "— 20"),
+            TextBlock(underlined_period_font, f" {period_match.group(2)} "),
+            TextBlock(normal_period_font, "学年度第"),
+            TextBlock(underlined_period_font, f" {period_match.group(3)} "),
+            TextBlock(normal_period_font, "学期）"),
+        )
+    ws.cell(start_row + 1, 1, period_value)
     ws.cell(start_row + 1, 1).font = period_font
     ws.cell(start_row + 1, 1).alignment = center
     ws.row_dimensions[start_row + 1].height = 29.0 if page_index == 0 else 23.0
@@ -718,7 +766,7 @@ def _write_page(ws: Any, fields: dict[str, Any], students: list[dict[str, Any]],
             cell.border = border
             if col_index == 2:
                 cell.number_format = "@"
-            elif col_index in {5, 6, 7, 9, 10, 11}:
+            elif col_index in {5, 6, 7, 8, 9, 10, 11}:
                 cell.number_format = '0_);[RED]\\(0\\)'
             elif col_index == 12:
                 cell.number_format = '0.00_);[RED]\\(0.00\\)'
@@ -1074,7 +1122,7 @@ def _meta_line_one(fields: dict[str, Any]) -> str:
     college = str(fields.get("college") or "").strip()
     course_name = str(fields.get("course_name") or "").strip()
     hours = _number_text(fields.get("course_hours"))
-    credits = _number_text(fields.get("credits"))
+    credits = _credit_text(fields.get("credits"))
     return f"二级学院（部）：{college}   课程名称：{course_name}   学时 {hours} 学分：{credits}"
 
 
@@ -1100,12 +1148,12 @@ def _period_fields(value: Any) -> dict[str, str]:
 
 def _semester_number(value: str) -> str:
     raw = str(value or "").strip()
-    if "一" in raw or raw == "1":
+    if re.search(r"(?:第\s*)?(?:一|1)\s*学期", raw) or raw == "1":
         return "1"
-    if "二" in raw or raw == "2":
+    if re.search(r"(?:第\s*)?(?:二|2)\s*学期", raw) or raw == "2":
         return "2"
-    match = re.search(r"\d+", raw)
-    return match.group(0) if match else "__"
+    match = re.search(r"(?:^|[-_])(1|2)(?:$|[-_])", raw)
+    return match.group(1) if match else "__"
 
 
 def _semester_label(value: str) -> str:
@@ -1339,6 +1387,7 @@ def _ordinary_grade_queryable_fields(fields: dict[str, Any], structured: dict[st
         "academic_year": fields.get("academic_year") or "",
         "semester": fields.get("semester") or "",
         "class_size": fields.get("class_size") or "",
+        "export_filename": fields.get("export_filename") or "",
         "source_assignments": structured.get("source_assignments") or {},
         "student_count": len(structured.get("students") or []),
         "formula_templates": structured.get("formula_templates") or {},
@@ -1435,6 +1484,15 @@ def _number_text(value: Any) -> str:
     except (TypeError, ValueError):
         return str(value)
     return str(int(number)) if number.is_integer() else str(number)
+
+
+def _credit_text(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    try:
+        return f"{float(value):.1f}"
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _cell_text(value: Any) -> str:

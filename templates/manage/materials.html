@@ -192,7 +192,7 @@
     <div>
         <span class="materials-process-guide__eyebrow">过程材料工作流</span>
         <h3>{{ initial_ai_generate.status or '该表需要从真实课堂数据生成，不能在材料库中泛化生成。' }}</h3>
-        <p>建议先进入对应课堂检查作业、测评或考试数据；若已有学校模板 Excel，可直接导入解析并归档。</p>
+        <p>可直接在当前页选择课堂、核对作业与测评并完成生成；若已有学校模板 Excel，也可导入解析后归档。</p>
     </div>
     <div class="materials-process-guide__actions">
         <button type="button" class="btn btn-primary btn-sm" data-process-classroom-generate>从课堂生成</button>
@@ -352,39 +352,136 @@
 >
 
 <div id="materials-classroom-generate-modal" class="modal-backdrop" style="display:none;">
-    <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-scrollable materials-classroom-generate-dialog">
         <div class="modal-content">
             <div class="modal-header">
                 <div>
                     <h3 class="modal-title" id="materials-classroom-generate-title">从课堂数据生成</h3>
-                    <p class="modal-subtitle" id="materials-classroom-generate-subtitle">选择课堂后进入课程材料区，系统会自动打开期末材料生成面板。</p>
+                    <p class="modal-subtitle" id="materials-classroom-generate-subtitle">选择课堂并在这里完成来源配置，生成后仍停留在当前成绩表页面。</p>
                 </div>
                 <button class="modal-close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="materials-section" id="materials-classroom-generate-status"></div>
-                <div class="materials-classroom-picker-toolbar" id="materials-classroom-picker-toolbar">
-                    <label class="materials-classroom-picker-field">
-                        <span>学期</span>
-                        <select id="materials-classroom-semester-filter" aria-label="按学期筛选课堂">
-                            <option value="">全部学期</option>
-                        </select>
-                    </label>
-                    <label class="materials-classroom-picker-field materials-classroom-picker-field--search">
-                        <span>搜索课堂</span>
-                        <input
-                            id="materials-classroom-search"
-                            type="search"
-                            autocomplete="off"
-                            placeholder="模糊搜索课程、班级或学期"
-                        >
-                    </label>
-                    <div class="materials-classroom-picker-count" id="materials-classroom-picker-count" aria-live="polite"></div>
+                <div id="materials-classroom-picker-stage">
+                    <div class="materials-classroom-picker-toolbar" id="materials-classroom-picker-toolbar">
+                        <label class="materials-classroom-picker-field">
+                            <span>学期</span>
+                            <select id="materials-classroom-semester-filter" aria-label="按学期筛选课堂">
+                                <option value="">全部学期</option>
+                            </select>
+                        </label>
+                        <label class="materials-classroom-picker-field materials-classroom-picker-field--search">
+                            <span>搜索课堂</span>
+                            <input
+                                id="materials-classroom-search"
+                                type="search"
+                                autocomplete="off"
+                                placeholder="模糊搜索课程、班级或学期"
+                            >
+                        </label>
+                        <div class="materials-classroom-picker-count" id="materials-classroom-picker-count" aria-live="polite"></div>
+                    </div>
+                    <div class="materials-modal-options" id="materials-classroom-generate-list"></div>
                 </div>
-                <div class="materials-modal-options" id="materials-classroom-generate-list"></div>
+                <div class="ordinary-grade-wizard materials-ordinary-grade-wizard" id="materials-ordinary-grade-wizard" hidden>
+                    <div class="ordinary-grade-wizard__header">
+                        <div>
+                            <span class="ordinary-grade-wizard__eyebrow">真实课堂数据 · 五步生成</span>
+                            <strong id="materials-ordinary-grade-classroom-name">正在读取课堂</strong>
+                            <p>依次确认 3 份作业、1 份测评和生成要求；每份来源只能使用一次，缺失成绩按 0 分记录。</p>
+                        </div>
+                        <span class="ordinary-grade-wizard__attendance" id="materials-ordinary-attendance-freshness">正在检查考勤缓存…</span>
+                    </div>
+                    <ol class="ordinary-grade-progress" aria-label="平时成绩记录表生成进度">
+                        <li data-materials-ordinary-progress-step="0"><span>1</span><small>作业一</small></li>
+                        <li data-materials-ordinary-progress-step="1"><span>2</span><small>作业二</small></li>
+                        <li data-materials-ordinary-progress-step="2"><span>3</span><small>作业三</small></li>
+                        <li data-materials-ordinary-progress-step="3"><span>4</span><small>测评</small></li>
+                        <li data-materials-ordinary-progress-step="4"><span>5</span><small>要求</small></li>
+                    </ol>
+                    <div class="ordinary-grade-step-list">
+                        <button type="button" class="ordinary-grade-step-card" data-materials-ordinary-step-index="0">
+                            <span class="ordinary-grade-step-card__number">1</span>
+                            <span class="ordinary-grade-step-card__copy">
+                                <strong>选择平时作业 1</strong>
+                                <small data-materials-ordinary-selection-detail="0">尚未选择</small>
+                            </span>
+                            <span class="ordinary-grade-step-card__action">选择</span>
+                        </button>
+                        <button type="button" class="ordinary-grade-step-card" data-materials-ordinary-step-index="1">
+                            <span class="ordinary-grade-step-card__number">2</span>
+                            <span class="ordinary-grade-step-card__copy">
+                                <strong>选择平时作业 2</strong>
+                                <small data-materials-ordinary-selection-detail="1">尚未选择</small>
+                            </span>
+                            <span class="ordinary-grade-step-card__action">选择</span>
+                        </button>
+                        <button type="button" class="ordinary-grade-step-card" data-materials-ordinary-step-index="2">
+                            <span class="ordinary-grade-step-card__number">3</span>
+                            <span class="ordinary-grade-step-card__copy">
+                                <strong>选择平时作业 3</strong>
+                                <small data-materials-ordinary-selection-detail="2">尚未选择</small>
+                            </span>
+                            <span class="ordinary-grade-step-card__action">选择</span>
+                        </button>
+                        <button type="button" class="ordinary-grade-step-card" data-materials-ordinary-step-index="3">
+                            <span class="ordinary-grade-step-card__number">4</span>
+                            <span class="ordinary-grade-step-card__copy">
+                                <strong>选择课堂测评</strong>
+                                <small data-materials-ordinary-selection-detail="3">尚未选择</small>
+                            </span>
+                            <span class="ordinary-grade-step-card__action">选择</span>
+                        </button>
+                    </div>
+                    <div class="ordinary-grade-picker" id="materials-ordinary-grade-picker" hidden>
+                        <div class="ordinary-grade-picker__head">
+                            <div>
+                                <span id="materials-ordinary-grade-picker-kicker">第 1 步</span>
+                                <strong id="materials-ordinary-grade-picker-title">选择平时作业 1</strong>
+                            </div>
+                            <button type="button" class="ordinary-grade-picker__close" id="materials-ordinary-grade-picker-close" aria-label="收起来源选择">&times;</button>
+                        </div>
+                        <label class="ordinary-grade-picker__search">
+                            <span class="sr-only">搜索当前课堂的作业或测评</span>
+                            <input id="materials-ordinary-grade-picker-search" type="search" autocomplete="off" placeholder="模糊搜索标题、状态或评分情况">
+                        </label>
+                        <div class="ordinary-grade-picker__list" id="materials-ordinary-grade-picker-list"></div>
+                    </div>
+                    <section class="ordinary-grade-score-policy" aria-labelledby="materials-ordinary-score-floor-title">
+                        <div class="ordinary-grade-score-policy__intro">
+                            <span>第 5 步 · 成绩策略</span>
+                            <strong id="materials-ordinary-score-floor-title">设置最低平时分保护</strong>
+                            <p>只有真实出勤率达到 70% 的学生才参与配平。出勤分保持真实，系统只均衡上调所选作业和测评。</p>
+                        </div>
+                        <div class="ordinary-grade-score-policy__controls">
+                            <label class="ordinary-grade-score-policy__switch">
+                                <input id="materials-ordinary-score-floor-enabled" type="checkbox" checked>
+                                <span aria-hidden="true"></span>
+                                <b>启用最低分保护</b>
+                            </label>
+                            <label class="ordinary-grade-score-policy__value">
+                                <span>最低平时分</span>
+                                <span class="ordinary-grade-score-policy__input">
+                                    <input id="materials-ordinary-score-floor" type="number" min="0" max="100" step="1" value="60" inputmode="decimal">
+                                    <em>分</em>
+                                </span>
+                            </label>
+                        </div>
+                        <div class="ordinary-grade-score-policy__summary" id="materials-ordinary-score-floor-summary"></div>
+                        <small>公式不变：出勤 × 40% + 三次作业平均分 × 30% + 测评 × 30%。全部调整会写入 Excel 隐藏审计页。</small>
+                    </section>
+                    <label class="form-group materials-ordinary-grade-prompt">
+                        <span><small>第 5 步</small><b>额外的生成要求</b></span>
+                        <textarea id="materials-ordinary-grade-prompt" data-prompt-pool-key="manage.ordinary_grade_record_generate" rows="4" placeholder="可选：填写本次归档说明、课程组统一口径或需要教师后续核对的事项。"></textarea>
+                    </label>
+                    <div class="classroom-final-material-status" id="materials-ordinary-grade-status" hidden></div>
+                </div>
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-outline" id="materials-classroom-generate-back-btn" hidden>返回选课堂</button>
                 <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="materials-classroom-generate-submit-btn" hidden>生成并保存</button>
             </div>
         </div>
     </div>

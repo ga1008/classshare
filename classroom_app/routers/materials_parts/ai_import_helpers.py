@@ -9,6 +9,7 @@ AI_IMPORT_DETAIL_FIELD_LABELS = {
     "course_name": "课程",
     "class_name": "班级",
     "teacher_name": "教师",
+    "academic_year": "学年",
     "semester": "学期",
     "assessment_mode_label": "考核方式",
     "assessment_method": "考核形式",
@@ -23,6 +24,7 @@ AI_IMPORT_DETAIL_FIELD_LABELS = {
 AI_IMPORT_DETAIL_FIELD_ORDER = (
     "course_name",
     "class_name",
+    "academic_year",
     "semester",
     "teacher_name",
     "assessment_mode_label",

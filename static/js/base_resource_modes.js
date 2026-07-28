@@ -61,6 +61,18 @@ const RESOURCE_CONFIG = {
             { key: 'name', label: '材料名称', type: 'text', required: true },
             { key: 'scope_level', label: '开放范围', type: 'select', options: [['private', '私有'], ['department', '本系部公开'], ['college', '本院级公开'], ['school', '全校公开']] },
         ],
+        readOnlyFields: [
+            { key: 'document_type_label', label: '材料类型', type: 'text' },
+            { key: 'academic_year', label: '学年', type: 'text' },
+            { key: 'semester', label: '学期', type: 'text' },
+            { key: 'course_name', label: '课程', type: 'text' },
+            { key: 'class_name', label: '班级', type: 'text' },
+            { key: 'teacher_name', label: '任课教师', type: 'text' },
+            { key: 'class_size', label: '班级人数', type: 'number' },
+            { key: 'course_hours', label: '学时', type: 'number' },
+            { key: 'credits', label: '学分', type: 'number' },
+            { key: 'export_filename', label: '导出文件名', type: 'text', wide: true },
+        ],
     },
 };
 
@@ -261,7 +273,7 @@ function renderField(field, attributes, canEdit) {
     const rawValue = attributes[field.key];
     const disabled = canEdit ? '' : ' disabled';
     const required = field.required ? ' required' : '';
-    const fieldClass = field.type === 'textarea' ? 'resource-mode-field is-wide' : 'resource-mode-field';
+    const fieldClass = field.type === 'textarea' || field.wide ? 'resource-mode-field is-wide' : 'resource-mode-field';
     if (field.type === 'textarea') {
         return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><textarea name="${field.key}"${disabled}${required}>${escapeHtml(rawValue || '')}</textarea></div>`;
     }
@@ -306,9 +318,14 @@ async function openAttributes(button) {
         modal.querySelector('#resourceModeSubtitle').textContent = canEdit
             ? '仅保存归属、范围、状态和统计相关字段，不改写资源正文。'
             : '当前账号可查看属性，但不能保存属性修改。';
-        modal.querySelector('#resourceModeFields').innerHTML = config.fields
-            .map((field) => renderField(field, attributes, canEdit))
-            .join('');
+        const readOnlyFields = (config.readOnlyFields || []).filter((field) => {
+            const value = attributes[field.key];
+            return value !== null && value !== undefined && String(value).trim() !== '';
+        });
+        modal.querySelector('#resourceModeFields').innerHTML = [
+            ...config.fields.map((field) => renderField(field, attributes, canEdit)),
+            ...readOnlyFields.map((field) => renderField(field, attributes, false)),
+        ].join('');
         modal.querySelector('#resourceModeStats').innerHTML = renderStats(attributes.stats || {});
         modal.querySelector('#resourceModeSaveBtn').disabled = !canEdit;
         openModal();

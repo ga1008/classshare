@@ -10,7 +10,9 @@ from classroom_app.routers.materials_parts.ai_import import (
     _attach_ai_generation_document_source,
 )
 from classroom_app.routers.materials_parts.final_material_helpers import (
+    _academic_year_from_values,
     _build_manage_final_material_context,
+    _semester_label_from_value,
 )
 from classroom_app.routers.materials_parts.ai_import_helpers import (
     _build_ai_import_detail_summary,
@@ -40,6 +42,13 @@ from classroom_app.db import schema_lesson_plans
 
 
 class ProcessMaterialWorkflowContractTests(unittest.TestCase):
+    def test_final_material_academic_period_normalizes_local_and_jwxt_values(self):
+        self.assertEqual(_academic_year_from_values("2025-2026学年"), "2025-2026")
+        self.assertEqual(_academic_year_from_values("2025"), "2025-2026")
+        self.assertEqual(_semester_label_from_value("2025-2026-1"), "第一学期")
+        self.assertEqual(_semester_label_from_value("12", academic_term_code=True), "第二学期")
+        self.assertEqual(_semester_label_from_value("P03-2026"), "")
+
     def _final_import_types(self):
         registry = get_material_ai_import_registry()
         final = next(group for group in registry if group["key"] == "final_material")
@@ -860,6 +869,39 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("openAiImportModal(initialAiImportPreset)", script)
         self.assertIn("open_final_material", script)
         self.assertIn("final_material_type", script)
+
+    def test_ordinary_grade_manage_generation_stays_on_page_and_highlights_result(self):
+        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
+        styles = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="materials-ordinary-grade-wizard"', template)
+        self.assertEqual(template.count("data-materials-ordinary-step-index="), 4)
+        self.assertEqual(template.count("data-materials-ordinary-progress-step="), 5)
+        self.assertIn('id="materials-ordinary-grade-prompt"', template)
+        self.assertIn("function openManageOrdinaryGradeWizard", script)
+        self.assertIn("/ordinary-grade-record/candidates", script)
+        self.assertIn("/final-materials/generate", script)
+        self.assertIn("document_type: 'ordinary_grade_record'", script)
+        self.assertIn("new Set(selectedIds).size !== 4", script)
+        self.assertIn("function revealRecentlyGeneratedMaterial", script)
+        self.assertIn("package_material_id", script)
+        self.assertIn("recentGeneratedHighlightArmed", script)
+        self.assertIn("is-generated-highlight", script)
+        self.assertNotIn("function classroomGenerateUrl(", script)
+        self.assertIn(".materials-manage-row.is-generated-highlight", styles)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
+
+    def test_ordinary_grade_material_attributes_include_business_context(self):
+        router = Path("classroom_app/routers/materials_parts/library.py").read_text(encoding="utf-8")
+        helper = Path("classroom_app/routers/materials_parts/ai_import_helpers.py").read_text(encoding="utf-8")
+        modes = Path("static/js/base_resource_modes.js").read_text(encoding="utf-8")
+
+        for key in ("academic_year", "semester", "course_name", "class_name", "teacher_name", "export_filename"):
+            self.assertIn(f'"{key}"', router)
+            self.assertIn(f"key: '{key}'", modes)
+        self.assertIn('"academic_year": "学年"', helper)
+        self.assertIn("readOnlyFields", modes)
 
     def test_classroom_final_material_url_auto_opens_selected_type(self):
         script = Path("static/js/classroom_materials.js").read_text(encoding="utf-8")

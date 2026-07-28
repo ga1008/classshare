@@ -14,7 +14,11 @@ from .material_final_document_service import (
     final_material_label,
     normalize_final_material_payload,
 )
-from .ordinary_grade_record_service import ORDINARY_GRADE_RECORD_TYPE, build_ordinary_grade_record_xlsx
+from .ordinary_grade_record_service import (
+    ORDINARY_GRADE_RECORD_TYPE,
+    build_ordinary_grade_record_export_filename,
+    build_ordinary_grade_record_xlsx,
+)
 from .exam_grade_record_service import EXAM_GRADE_RECORD_TYPE, build_exam_grade_record_xlsx
 from .teacher_evaluation_text_service import split_analysis_blocks
 
@@ -106,9 +110,10 @@ def build_material_export_artifact(
     title = _resolve_title(payload, config, fallback_filename)
     base_name = _safe_filename(title or fallback_filename or "材料导出")
     if template_key == ORDINARY_GRADE_RECORD_TYPE:
+        ordinary_fields = _as_dict(export_payload.get("fields"))
         return MaterialExportArtifact(
             content=build_ordinary_grade_record_xlsx(payload),
-            filename=f"{base_name}.xlsx",
+            filename=build_ordinary_grade_record_export_filename(ordinary_fields),
             media_type=XLSX_MEDIA_TYPE,
         )
     if template_key == EXAM_GRADE_RECORD_TYPE:

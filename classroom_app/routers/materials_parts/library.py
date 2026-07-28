@@ -37,6 +37,35 @@ def _serialize_material_attributes(conn, material, user: dict) -> dict[str, Any]
     item = attach_git_repository_metadata(conn, [item])[0]
     can_manage = bool(item.get("can_manage"))
     item["permissions"] = build_mode_permissions(can_use=True, can_manage=can_manage)
+    ai_import_record = _find_material_ai_import_record(
+        conn,
+        int(material["id"]),
+        int(material["teacher_id"]),
+        completed_only=True,
+    )
+    if ai_import_record:
+        preview = _build_ai_import_preview(ai_import_record, content_limit=0)
+        fields = preview.get("fields") if isinstance(preview.get("fields"), dict) else {}
+        structured = preview.get("structured") if isinstance(preview.get("structured"), dict) else {}
+        item["document_type_label"] = preview.get("document_type_label") or ""
+        for key in (
+            "academic_year",
+            "semester",
+            "course_name",
+            "class_name",
+            "teacher_name",
+            "class_size",
+            "course_hours",
+            "credits",
+            "export_filename",
+        ):
+            item[key] = fields.get(key) if fields.get(key) not in (None, "") else ""
+        if preview.get("document_type") == "ordinary_grade_record":
+            item["academic_year"] = item.get("academic_year") or "未设置"
+            item["semester"] = item.get("semester") or "未设置"
+        if not item.get("class_size"):
+            students = structured.get("students") if isinstance(structured.get("students"), list) else []
+            item["class_size"] = len(students) if students else ""
     return item
 
 

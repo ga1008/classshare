@@ -37,7 +37,7 @@ const DOCUMENT_TYPE_LABELS = {
 };
 
 const CLASSROOM_GENERATION_HINTS = {
-    ordinary_grade_record: '进入课堂后请选择 3 份平时作业和 1 份测评；系统会读取真实提交、评分与考勤数据生成 Excel。',
+    ordinary_grade_record: '选择课堂后在当前页面确认 3 份平时作业和 1 份测评；系统会读取真实提交、评分与考勤数据生成 Excel。',
     exam_grade_record: '进入课堂后请选择已绑定试卷且有大题分值的考试；系统会读取考试成绩生成 Excel。',
 };
 
@@ -267,6 +267,18 @@ const state = {
     aiExpand: {
         busy: false,
     },
+    ordinaryGradeGenerate: {
+        offering: null,
+        candidates: [],
+        attendanceFreshness: {},
+        selections: [null, null, null, null],
+        activeStep: 0,
+        loading: false,
+        busy: false,
+        error: '',
+    },
+    recentGeneratedMaterialId: null,
+    recentGeneratedHighlightArmed: false,
     // 本地 AI 处理中的提示卡（优化 / 润色 / 续写），key → {label, message, tone}
     aiPending: new Map(),
     repository: {
@@ -323,6 +335,26 @@ const refs = {
     classroomGenerateSemesterFilter: document.getElementById('materials-classroom-semester-filter'),
     classroomGenerateSearch: document.getElementById('materials-classroom-search'),
     classroomGenerateCount: document.getElementById('materials-classroom-picker-count'),
+    classroomGeneratePickerStage: document.getElementById('materials-classroom-picker-stage'),
+    classroomGenerateBackBtn: document.getElementById('materials-classroom-generate-back-btn'),
+    classroomGenerateSubmitBtn: document.getElementById('materials-classroom-generate-submit-btn'),
+    ordinaryGradeWizard: document.getElementById('materials-ordinary-grade-wizard'),
+    ordinaryGradeClassroomName: document.getElementById('materials-ordinary-grade-classroom-name'),
+    ordinaryAttendanceFreshness: document.getElementById('materials-ordinary-attendance-freshness'),
+    ordinaryGradeStepCards: Array.from(document.querySelectorAll('[data-materials-ordinary-step-index]')),
+    ordinaryGradeSelectionDetails: Array.from(document.querySelectorAll('[data-materials-ordinary-selection-detail]')),
+    ordinaryGradeProgressSteps: Array.from(document.querySelectorAll('[data-materials-ordinary-progress-step]')),
+    ordinaryGradePicker: document.getElementById('materials-ordinary-grade-picker'),
+    ordinaryGradePickerClose: document.getElementById('materials-ordinary-grade-picker-close'),
+    ordinaryGradePickerKicker: document.getElementById('materials-ordinary-grade-picker-kicker'),
+    ordinaryGradePickerTitle: document.getElementById('materials-ordinary-grade-picker-title'),
+    ordinaryGradePickerSearch: document.getElementById('materials-ordinary-grade-picker-search'),
+    ordinaryGradePickerList: document.getElementById('materials-ordinary-grade-picker-list'),
+    ordinaryScoreFloorEnabled: document.getElementById('materials-ordinary-score-floor-enabled'),
+    ordinaryScoreFloorInput: document.getElementById('materials-ordinary-score-floor'),
+    ordinaryScoreFloorSummary: document.getElementById('materials-ordinary-score-floor-summary'),
+    ordinaryGradePrompt: document.getElementById('materials-ordinary-grade-prompt'),
+    ordinaryGradeStatus: document.getElementById('materials-ordinary-grade-status'),
     processClassroomGenerateBtn: document.querySelector('[data-process-classroom-generate]'),
     processAiImportBtn: document.querySelector('[data-process-ai-import]'),
     folderBtn: document.getElementById('materials-upload-folder-btn'),
@@ -550,7 +582,7 @@ function getProcessGeneratePolicy() {
     };
 }
 
-function classroomGenerateUrl(offering, documentType) {
+function classroomWorkspaceGenerateUrl(offering, documentType) {
     const id = Number(offering?.id || 0);
     if (!id) return '#';
     const params = new URLSearchParams();
@@ -592,6 +624,367 @@ function fuzzyTextMatches(haystack, query) {
         if (cursor >= needle.length) return true;
     }
     return false;
+}
+
+function resetOrdinaryGradeGeneration() {
+    state.ordinaryGradeGenerate.offering = null;
+    state.ordinaryGradeGenerate.candidates = [];
+    state.ordinaryGradeGenerate.attendanceFreshness = {};
+    state.ordinaryGradeGenerate.selections = [null, null, null, null];
+    state.ordinaryGradeGenerate.activeStep = 0;
+    state.ordinaryGradeGenerate.loading = false;
+    state.ordinaryGradeGenerate.busy = false;
+    state.ordinaryGradeGenerate.error = '';
+    if (refs.ordinaryGradePicker) refs.ordinaryGradePicker.hidden = true;
+    if (refs.ordinaryGradePickerSearch) refs.ordinaryGradePickerSearch.value = '';
+    if (refs.ordinaryGradePrompt) refs.ordinaryGradePrompt.value = '';
+    if (refs.ordinaryScoreFloorEnabled) refs.ordinaryScoreFloorEnabled.checked = true;
+    if (refs.ordinaryScoreFloorInput) refs.ordinaryScoreFloorInput.value = '60';
+    if (refs.ordinaryGradeStatus) {
+        refs.ordinaryGradeStatus.hidden = true;
+        refs.ordinaryGradeStatus.textContent = '';
+        refs.ordinaryGradeStatus.className = 'classroom-final-material-status';
+        delete refs.ordinaryGradeStatus.dataset.statusKind;
+    }
+}
+
+function ordinaryGradeCandidateBuckets() {
+    const candidates = state.ordinaryGradeGenerate.candidates || [];
+    return {
+        homework: candidates.filter((item) => item?.kind !== 'exam'),
+        assessment: candidates.filter((item) => item?.kind === 'exam'),
+    };
+}
+
+function ordinaryGradeStepCandidates(stepIndex) {
+    const buckets = ordinaryGradeCandidateBuckets();
+    return Number(stepIndex) === 3 ? buckets.assessment : buckets.homework;
+}
+
+function ordinaryGradeCandidateById(candidateId) {
+    return (state.ordinaryGradeGenerate.candidates || [])
+        .find((item) => Number(item?.id || 0) === Number(candidateId || 0)) || null;
+}
+
+function ordinaryGradeAttendanceLabel() {
+    const freshness = state.ordinaryGradeGenerate.attendanceFreshness || {};
+    if (freshness.is_fresh) {
+        return `考勤已同步于 ${freshness.last_synced_at_display || '刚刚'}，生成时使用 30 分钟缓存`;
+    }
+    if (freshness.last_synced_at_display) {
+        return `考勤上次同步于 ${freshness.last_synced_at_display}，生成前将自动刷新`;
+    }
+    return '考勤尚未同步，生成前将自动连接智慧课堂刷新';
+}
+
+function ordinaryGradeMinimumScore() {
+    const raw = String(refs.ordinaryScoreFloorInput?.value ?? '').trim();
+    return raw === '' ? Number.NaN : Number(raw);
+}
+
+function getManageOrdinaryGradeReadiness() {
+    const generation = state.ordinaryGradeGenerate;
+    if (!generation.offering) return { ready: false, message: '请先选择课堂。' };
+    if (generation.loading) return { ready: false, message: '正在读取当前课堂的作业和测评...' };
+    if (generation.error) return { ready: false, message: generation.error };
+    const buckets = ordinaryGradeCandidateBuckets();
+    if (buckets.homework.length < 3 || buckets.assessment.length < 1) {
+        return {
+            ready: false,
+            message: `当前课堂需要 3 份作业和 1 份测评，目前识别到 ${buckets.homework.length} 份作业、${buckets.assessment.length} 份测评。可先在课堂或试卷管理页调整“平时成绩用途”。`,
+        };
+    }
+    const selectedIds = generation.selections.map((value) => Number(value || 0));
+    if (selectedIds.some((value) => value <= 0)) {
+        return { ready: false, message: '请依次选择 3 份平时作业和 1 份测评。' };
+    }
+    if (new Set(selectedIds).size !== 4) {
+        return { ready: false, message: '三次作业和一次测评不能重复。' };
+    }
+    if (refs.ordinaryScoreFloorEnabled?.checked) {
+        const score = ordinaryGradeMinimumScore();
+        if (!Number.isFinite(score) || score < 0 || score > 100) {
+            return { ready: false, message: '最低平时分必须在 0 到 100 之间。' };
+        }
+    }
+    return { ready: true, message: '' };
+}
+
+function setManageOrdinaryGradeStatus(message = '', tone = '') {
+    if (!refs.ordinaryGradeStatus) return;
+    refs.ordinaryGradeStatus.hidden = !message;
+    refs.ordinaryGradeStatus.textContent = message;
+    refs.ordinaryGradeStatus.className = 'classroom-final-material-status';
+    if (tone) {
+        refs.ordinaryGradeStatus.dataset.statusKind = tone;
+    } else {
+        delete refs.ordinaryGradeStatus.dataset.statusKind;
+    }
+}
+
+function renderManageOrdinaryGradePicker() {
+    if (!refs.ordinaryGradePicker || refs.ordinaryGradePicker.hidden) return;
+    const generation = state.ordinaryGradeGenerate;
+    const stepIndex = Number(generation.activeStep || 0);
+    const keyword = refs.ordinaryGradePickerSearch?.value || '';
+    const selectedIds = generation.selections.map((value) => Number(value || 0));
+    const usedByOtherStep = new Map();
+    selectedIds.forEach((candidateId, index) => {
+        if (candidateId > 0 && index !== stepIndex) usedByOtherStep.set(candidateId, index);
+    });
+    const items = ordinaryGradeStepCandidates(stepIndex).filter((item) => fuzzyTextMatches([
+        item?.title,
+        item?.kind === 'exam' ? '考试 测评 测验' : '作业',
+        item?.status,
+        item?.graded_count,
+        item?.submission_count,
+        item?.average_score,
+    ].filter((value) => value !== null && value !== undefined).join(' '), keyword));
+    if (refs.ordinaryGradePickerKicker) refs.ordinaryGradePickerKicker.textContent = `第 ${stepIndex + 1} 步`;
+    if (refs.ordinaryGradePickerTitle) {
+        refs.ordinaryGradePickerTitle.textContent = stepIndex === 3 ? '选择课堂测评' : `选择平时作业 ${stepIndex + 1}`;
+    }
+    if (!refs.ordinaryGradePickerList) return;
+    if (!items.length) {
+        refs.ordinaryGradePickerList.innerHTML = `
+            <div class="ordinary-grade-picker__empty">
+                <strong>没有匹配的${stepIndex === 3 ? '测评' : '作业'}</strong>
+                <span>清空关键词重试，或在课堂任务卡片、教师试卷管理页调整“平时成绩用途”。</span>
+            </div>
+        `;
+        return;
+    }
+    refs.ordinaryGradePickerList.innerHTML = items.map((item) => {
+        const candidateId = Number(item?.id || 0);
+        const usedStep = usedByOtherStep.get(candidateId);
+        const isCurrent = selectedIds[stepIndex] === candidateId;
+        const disabled = usedStep !== undefined;
+        const average = item?.average_score === null || item?.average_score === undefined
+            ? '暂无均分'
+            : `均分 ${item.average_score}`;
+        const source = item?.ordinary_grade_kind_source === 'manual' ? '手动指定' : '自动识别';
+        return `
+            <button
+                type="button"
+                class="ordinary-grade-candidate${isCurrent ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}"
+                data-materials-ordinary-candidate-id="${escapeHtml(String(candidateId))}"
+                ${disabled ? 'disabled' : ''}
+            >
+                <span class="ordinary-grade-candidate__main">
+                    <strong>${escapeHtml(item?.title || `作业 ${candidateId}`)}</strong>
+                    <small>${escapeHtml(item?.kind === 'exam' ? '测评 / 考试' : '平时作业')} · ${escapeHtml(source)} · 已评分 ${escapeHtml(String(item?.graded_count || 0))}/${escapeHtml(String(item?.submission_count || 0))} · ${escapeHtml(average)}</small>
+                </span>
+                <span class="ordinary-grade-candidate__usage">${escapeHtml(disabled ? `已用于第 ${usedStep + 1} 步` : (isCurrent ? '当前已选择' : '选择此来源'))}</span>
+            </button>
+        `;
+    }).join('');
+}
+
+function renderManageOrdinaryGradeWizard() {
+    const generation = state.ordinaryGradeGenerate;
+    const selectedIds = generation.selections.map((value) => Number(value || 0));
+    if (refs.ordinaryGradeClassroomName) {
+        refs.ordinaryGradeClassroomName.textContent = offeringLabel(generation.offering);
+    }
+    if (refs.ordinaryAttendanceFreshness) {
+        refs.ordinaryAttendanceFreshness.textContent = ordinaryGradeAttendanceLabel();
+        refs.ordinaryAttendanceFreshness.classList.toggle('is-fresh', Boolean(generation.attendanceFreshness?.is_fresh));
+    }
+    refs.ordinaryGradeStepCards.forEach((card, stepIndex) => {
+        const candidate = ordinaryGradeCandidateById(selectedIds[stepIndex]);
+        const detail = refs.ordinaryGradeSelectionDetails[stepIndex];
+        card.classList.toggle('is-selected', Boolean(candidate));
+        card.classList.toggle('is-active', !refs.ordinaryGradePicker?.hidden && generation.activeStep === stepIndex);
+        if (detail) {
+            detail.textContent = candidate
+                ? `${candidate.title} · 已评分 ${candidate.graded_count || 0}/${candidate.submission_count || 0}${candidate.average_score === null || candidate.average_score === undefined ? '' : ` · 均分 ${candidate.average_score}`}`
+                : (stepIndex === 3 ? '尚未选择，将只显示测评、测试或考试' : '尚未选择，点击查看当前课堂作业');
+        }
+        const action = card.querySelector('.ordinary-grade-step-card__action');
+        if (action) action.textContent = candidate ? '更换' : '选择';
+    });
+    refs.ordinaryGradeProgressSteps.forEach((item, stepIndex) => {
+        const complete = stepIndex < 4 ? selectedIds[stepIndex] > 0 : selectedIds.every((value) => value > 0);
+        item.classList.toggle('is-complete', complete);
+        item.classList.toggle(
+            'is-active',
+            stepIndex < 4
+                ? (!refs.ordinaryGradePicker?.hidden && generation.activeStep === stepIndex)
+                : selectedIds.every((value) => value > 0),
+        );
+    });
+    const floorEnabled = Boolean(refs.ordinaryScoreFloorEnabled?.checked);
+    const floorScore = ordinaryGradeMinimumScore();
+    if (refs.ordinaryScoreFloorInput) refs.ordinaryScoreFloorInput.disabled = !floorEnabled;
+    if (refs.ordinaryScoreFloorSummary) {
+        refs.ordinaryScoreFloorSummary.textContent = !floorEnabled
+            ? '已关闭最低分保护：所有学生均按真实出勤、作业和测评成绩计算。'
+            : Number.isFinite(floorScore) && floorScore >= 0 && floorScore <= 100
+                ? `出勤率达到 70% 的学生，若公式平时分低于 ${floorScore} 分，系统只上调所选作业和测评；出勤率保持真实。`
+                : '请输入 0 到 100 之间的最低平时分。';
+    }
+    const readiness = getManageOrdinaryGradeReadiness();
+    if (!generation.busy) setManageOrdinaryGradeStatus(readiness.ready ? '' : readiness.message, readiness.ready ? '' : 'blocking');
+    if (refs.classroomGenerateSubmitBtn) {
+        refs.classroomGenerateSubmitBtn.disabled = generation.busy || !readiness.ready;
+        refs.classroomGenerateSubmitBtn.textContent = generation.busy
+            ? '正在生成...'
+            : (readiness.ready ? '生成并保存' : '请先补齐来源');
+        refs.classroomGenerateSubmitBtn.title = readiness.message || '';
+    }
+    refs.classroomGenerateModal?.querySelectorAll('[data-dismiss="modal"], .modal-close').forEach((button) => {
+        button.disabled = generation.busy;
+    });
+    if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.disabled = generation.busy;
+    renderManageOrdinaryGradePicker();
+}
+
+function openManageOrdinaryGradePicker(stepIndex) {
+    state.ordinaryGradeGenerate.activeStep = Math.max(0, Math.min(3, Number(stepIndex || 0)));
+    if (refs.ordinaryGradePicker) refs.ordinaryGradePicker.hidden = false;
+    if (refs.ordinaryGradePickerSearch) refs.ordinaryGradePickerSearch.value = '';
+    renderManageOrdinaryGradeWizard();
+    window.setTimeout(() => refs.ordinaryGradePickerSearch?.focus(), 60);
+}
+
+function selectManageOrdinaryGradeCandidate(candidateId) {
+    const generation = state.ordinaryGradeGenerate;
+    const stepIndex = Number(generation.activeStep || 0);
+    const numericId = Number(candidateId || 0);
+    if (numericId <= 0) return;
+    if (generation.selections.some((value, index) => index !== stepIndex && Number(value || 0) === numericId)) {
+        showToast('这份来源已用于其他步骤，请选择另一份作业或测评。', 'warning');
+        return;
+    }
+    generation.selections[stepIndex] = numericId;
+    const nextIncomplete = generation.selections.findIndex((value, index) => index > stepIndex && !value);
+    if (nextIncomplete >= 0) {
+        openManageOrdinaryGradePicker(nextIncomplete);
+        return;
+    }
+    if (refs.ordinaryGradePicker) refs.ordinaryGradePicker.hidden = true;
+    renderManageOrdinaryGradeWizard();
+    if (stepIndex === 3) {
+        refs.ordinaryGradePrompt?.focus();
+        refs.ordinaryGradePrompt?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+async function openManageOrdinaryGradeWizard(offering) {
+    const offeringId = Number(offering?.id || 0);
+    if (!offeringId) return;
+    resetOrdinaryGradeGeneration();
+    state.ordinaryGradeGenerate.offering = offering;
+    state.ordinaryGradeGenerate.loading = true;
+    if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = true;
+    if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = false;
+    if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = false;
+    if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = false;
+    if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = true;
+    refs.classroomGenerateModal?.querySelector('.materials-classroom-generate-dialog')?.classList.add('is-wizard');
+    refs.classroomGenerateTitle.textContent = '生成学生平时成绩记录表';
+    refs.classroomGenerateSubtitle.textContent = `${offeringLabel(offering)} · 生成完成后仍停留在当前页面`;
+    renderManageOrdinaryGradeWizard();
+    try {
+        const data = await apiFetch(`/api/classrooms/${offeringId}/ordinary-grade-record/candidates`, { silent: true });
+        state.ordinaryGradeGenerate.candidates = Array.isArray(data.items) ? data.items : [];
+        state.ordinaryGradeGenerate.attendanceFreshness = data.attendance_sync || {};
+        state.ordinaryGradeGenerate.error = '';
+        const buckets = ordinaryGradeCandidateBuckets();
+        if (buckets.homework.length >= 3 && buckets.assessment.length >= 1) {
+            openManageOrdinaryGradePicker(0);
+        }
+    } catch (error) {
+        state.ordinaryGradeGenerate.error = error.message || '读取作业和测评失败，请稍后重试。';
+    } finally {
+        state.ordinaryGradeGenerate.loading = false;
+        renderManageOrdinaryGradeWizard();
+    }
+}
+
+function returnToClassroomGeneratePicker() {
+    if (state.ordinaryGradeGenerate.busy) return;
+    resetOrdinaryGradeGeneration();
+    if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = false;
+    if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = true;
+    if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = true;
+    if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = true;
+    if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = false;
+    refs.classroomGenerateModal?.querySelector('.materials-classroom-generate-dialog')?.classList.remove('is-wizard');
+    renderClassroomGenerateOptions(getProcessGeneratePolicy());
+}
+
+async function revealRecentlyGeneratedMaterial(materialId) {
+    const normalizedId = Number(materialId || 0);
+    if (!normalizedId) return;
+    state.recentGeneratedMaterialId = normalizedId;
+    state.activeMaterialId = normalizedId;
+    await loadLibrary(state.currentParentId, false);
+    if (!state.items.some((item) => Number(item.id) === normalizedId)) {
+        state.filters.keyword = '';
+        state.filters.scopeLevel = 'all';
+        state.filters.school = '';
+        state.filters.department = '';
+        state.filters.college = '';
+        state.filters.course = '';
+        state.filters.className = '';
+        await loadLibrary(state.currentParentId, false);
+    }
+    window.requestAnimationFrame(() => {
+        const row = refs.listBody?.querySelector(`[data-id="${normalizedId}"]`);
+        row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.setTimeout(() => {
+            state.recentGeneratedHighlightArmed = true;
+        }, 350);
+    });
+}
+
+function clearRecentGeneratedHighlight() {
+    if (!state.recentGeneratedHighlightArmed || !state.recentGeneratedMaterialId) return;
+    state.recentGeneratedMaterialId = null;
+    state.recentGeneratedHighlightArmed = false;
+    renderList();
+}
+
+async function submitManageOrdinaryGradeGeneration() {
+    const generation = state.ordinaryGradeGenerate;
+    const readiness = getManageOrdinaryGradeReadiness();
+    if (!readiness.ready || generation.busy) {
+        setManageOrdinaryGradeStatus(readiness.message || '请先补齐来源。', 'blocking');
+        return;
+    }
+    const offeringId = Number(generation.offering?.id || 0);
+    const selectedIds = generation.selections.map((value) => Number(value || 0));
+    const prompt = refs.ordinaryGradePrompt?.value || '';
+    generation.busy = true;
+    renderManageOrdinaryGradeWizard();
+    setManageOrdinaryGradeStatus('正在核对考勤缓存、计算成绩并生成 Excel，请勿重复提交...', 'progress');
+    try {
+        const data = await apiFetch(`/api/classrooms/${offeringId}/final-materials/generate`, {
+            method: 'POST',
+            body: {
+                document_type: 'ordinary_grade_record',
+                prompt,
+                parent_id: state.currentParentId,
+                homework_assignment_ids: selectedIds.slice(0, 3),
+                assessment_assignment_id: selectedIds[3],
+                minimum_ordinary_score_enabled: Boolean(refs.ordinaryScoreFloorEnabled?.checked),
+                minimum_ordinary_score: Number.isFinite(ordinaryGradeMinimumScore()) ? ordinaryGradeMinimumScore() : 60,
+            },
+        });
+        await recordMaterialPromptBestEffort(refs.ordinaryGradePrompt, prompt);
+        const materialId = Number(data?.task?.package_material_id || 0);
+        closeModal('materials-classroom-generate-modal');
+        resetOrdinaryGradeGeneration();
+        showToast(data.message || '平时成绩记录表已生成', 'success', 5200);
+        await revealRecentlyGeneratedMaterial(materialId);
+    } catch (error) {
+        setManageOrdinaryGradeStatus(error.message || '生成失败，请核对课堂来源后重试。', 'error');
+        showToast(error.message || '生成失败，请稍后重试。', 'error');
+    } finally {
+        generation.busy = false;
+        renderManageOrdinaryGradeWizard();
+    }
 }
 
 function populateClassroomSemesterFilter() {
@@ -660,26 +1053,32 @@ function renderClassroomGenerateOptions(policy) {
         return;
     }
     refs.classroomGenerateList.innerHTML = filteredOfferings.map((offering) => {
-        const href = classroomGenerateUrl(offering, policy?.document_type || '');
         const label = offeringLabel(offering);
-        const meta = offeringMeta(offering) || '进入课堂材料区继续';
+        const meta = offeringMeta(offering) || '选择课堂后继续配置';
         const isOrdinaryGrade = policy?.document_type === 'ordinary_grade_record';
         const homeworkCount = Number(offering?.ordinary_homework_count || 0);
         const assessmentCount = Number(offering?.ordinary_assessment_count || 0);
         const sourceReady = Boolean(offering?.ordinary_grade_ready);
         const sourceStatus = sourceReady
             ? `来源齐全 · ${homeworkCount} 份作业 / ${assessmentCount} 份测评`
-            : `当前 ${homeworkCount} 份作业 / ${assessmentCount} 份测评 · 进入后补齐`;
-        return `
-            <a class="materials-modal-option${isOrdinaryGrade ? ` ${sourceReady ? 'is-source-ready' : 'is-source-missing'}` : ''}" href="${escapeHtml(href)}">
+            : `当前 ${homeworkCount} 份作业 / ${assessmentCount} 份测评 · 可进入检查`;
+        const content = `
                 <div>
                     <strong>${escapeHtml(label)}</strong>
                     <small>${escapeHtml(meta)}</small>
                     ${isOrdinaryGrade ? `<small class="materials-classroom-source-status">${escapeHtml(sourceStatus)}</small>` : ''}
                 </div>
-                <span>${escapeHtml(isOrdinaryGrade && !sourceReady ? '补齐来源' : '进入生成')}</span>
-            </a>
+                <span>${escapeHtml(isOrdinaryGrade && !sourceReady ? '检查来源' : '开始生成')}</span>
         `;
+        if (isOrdinaryGrade) {
+            return `
+                <button type="button" class="materials-modal-option ${sourceReady ? 'is-source-ready' : 'is-source-missing'}" data-materials-ordinary-offering-id="${escapeHtml(String(offering.id))}">
+                    ${content}
+                </button>
+            `;
+        }
+        const href = classroomWorkspaceGenerateUrl(offering, policy?.document_type || '');
+        return `<a class="materials-modal-option" href="${escapeHtml(href)}">${content}</a>`;
     }).join('');
 }
 
@@ -689,6 +1088,13 @@ function openClassroomGenerateModal() {
         showToast('当前页面无需从课堂数据生成。', 'info');
         return;
     }
+    resetOrdinaryGradeGeneration();
+    if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = false;
+    if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = true;
+    if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = true;
+    if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = true;
+    if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = false;
+    refs.classroomGenerateModal?.querySelector('.materials-classroom-generate-dialog')?.classList.remove('is-wizard');
     populateClassroomSemesterFilter();
     renderClassroomGenerateOptions(policy);
     openModal('materials-classroom-generate-modal');
@@ -960,6 +1366,8 @@ function renderList() {
         const visualMeta = getVisualMeta(item);
         const activeClass = Number(item.id) === Number(state.activeMaterialId) ? 'is-active' : '';
         const selectedClass = state.selectedIds.has(Number(item.id)) ? 'is-selected' : '';
+        const generatedClass = Number(item.id) === Number(state.recentGeneratedMaterialId) ? 'is-generated-highlight' : '';
+        const generatedBadge = generatedClass ? '<span class="materials-generated-badge">刚刚生成</span>' : '';
         const primaryAction = getMaterialPrimaryAction(item);
         const primaryActionHtml = item.node_type === 'folder'
             ? ''
@@ -995,7 +1403,7 @@ function renderList() {
         ].join('');
 
         return `
-            <div class="materials-row materials-manage-row ${activeClass} ${selectedClass}" data-id="${item.id}">
+            <div class="materials-row materials-manage-row ${activeClass} ${selectedClass} ${generatedClass}" data-id="${item.id}">
                 <div class="materials-row-check">
                     <input type="checkbox" data-role="select-item" data-id="${item.id}" ${state.selectedIds.has(Number(item.id)) ? 'checked' : ''}>
                 </div>
@@ -1004,7 +1412,7 @@ function renderList() {
                         <div class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</div>
                         <div class="materials-name-copy">
                             <strong title="${escapeHtml(item.name)}">${highlightText(item.name, state.filters.keyword)}</strong>
-                            <div class="materials-name-badges">${repositoryBadge}</div>
+                            <div class="materials-name-badges">${generatedBadge}${repositoryBadge}</div>
                             <span title="${escapeHtml(item.material_path || '')}">${highlightText(item.material_path || '', state.filters.keyword)}</span>
                         </div>
                     </div>
@@ -4113,6 +4521,45 @@ function bindEvents() {
     refs.classroomGenerateSearch?.addEventListener('input', () => {
         renderClassroomGenerateOptions(getProcessGeneratePolicy());
     });
+    refs.classroomGenerateList?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-materials-ordinary-offering-id]');
+        if (!button) return;
+        const offeringId = Number(button.dataset.materialsOrdinaryOfferingId || 0);
+        const offering = (config.offerings || []).find((item) => Number(item?.id || 0) === offeringId);
+        if (offering) {
+            openManageOrdinaryGradeWizard(offering).catch((error) => {
+                state.ordinaryGradeGenerate.error = error.message || '读取课堂来源失败。';
+                renderManageOrdinaryGradeWizard();
+            });
+        }
+    });
+    refs.ordinaryGradeStepCards.forEach((card) => {
+        card.addEventListener('click', () => {
+            openManageOrdinaryGradePicker(Number(card.dataset.materialsOrdinaryStepIndex || 0));
+        });
+    });
+    refs.ordinaryGradePickerClose?.addEventListener('click', () => {
+        if (refs.ordinaryGradePicker) refs.ordinaryGradePicker.hidden = true;
+        renderManageOrdinaryGradeWizard();
+    });
+    refs.ordinaryGradePickerSearch?.addEventListener('input', renderManageOrdinaryGradePicker);
+    refs.ordinaryGradePickerList?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-materials-ordinary-candidate-id]');
+        if (button && !button.disabled) {
+            selectManageOrdinaryGradeCandidate(Number(button.dataset.materialsOrdinaryCandidateId || 0));
+        }
+    });
+    refs.ordinaryScoreFloorEnabled?.addEventListener('change', renderManageOrdinaryGradeWizard);
+    refs.ordinaryScoreFloorInput?.addEventListener('input', renderManageOrdinaryGradeWizard);
+    refs.ordinaryGradePrompt?.addEventListener('input', renderManageOrdinaryGradeWizard);
+    refs.classroomGenerateBackBtn?.addEventListener('click', returnToClassroomGeneratePicker);
+    refs.classroomGenerateSubmitBtn?.addEventListener('click', () => {
+        submitManageOrdinaryGradeGeneration().catch((error) => {
+            setManageOrdinaryGradeStatus(error.message || '生成失败，请稍后重试。', 'error');
+        });
+    });
+    document.addEventListener('pointerdown', clearRecentGeneratedHighlight, true);
+    document.addEventListener('keydown', clearRecentGeneratedHighlight, true);
 
     refs.backBtn?.addEventListener('click', () => {
         const previousParentId = state.history.pop();
