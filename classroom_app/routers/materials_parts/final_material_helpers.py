@@ -3,9 +3,31 @@ from .generation_helpers import *
 from .ai_import_helpers import *
 from ...db.connection import execute_insert_returning_id, get_configured_db_engine
 from ...services.academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
+from ...services.material_identity_service import build_final_material_package_name
+
+
+def _generated_final_material_identity_fields(parse_result, course_name: str) -> dict[str, Any]:
+    """收集命名要用的业务字段：export_payload.fields 优先，metadata 兜底。"""
+    export_payload = parse_result.export_payload if isinstance(parse_result.export_payload, dict) else {}
+    fields = export_payload.get("fields") if isinstance(export_payload.get("fields"), dict) else {}
+    metadata = parse_result.metadata if isinstance(parse_result.metadata, dict) else {}
+    merged: dict[str, Any] = {}
+    for key in ("academic_year", "semester", "period", "course_name", "class_name"):
+        value = fields.get(key) or metadata.get(key)
+        if str(value or "").strip():
+            merged[key] = value
+    if course_name and not str(merged.get("course_name") or "").strip():
+        merged["course_name"] = course_name
+    return merged
 
 
 def _generated_final_material_package_base_name(parse_result, course_name: str) -> str:
+    """材料库文件夹名。
+
+    文档类型自己算出了公文风格的 export_filename（如平时成绩表、考核登分表）就
+    直接沿用，保证材料名与导出文件名一致；否则退回到统一的
+    "类型-课程-班级-学年学期" 命名，别再只留一个课程名。
+    """
     export_payload = parse_result.export_payload if isinstance(parse_result.export_payload, dict) else {}
     fields = export_payload.get("fields") if isinstance(export_payload.get("fields"), dict) else {}
     export_filename = str(fields.get("export_filename") or "").strip()
@@ -13,7 +35,10 @@ def _generated_final_material_package_base_name(parse_result, course_name: str) 
         filename_stem = Path(export_filename).stem.strip()
         if filename_stem:
             return filename_stem
-    return f"AI生成-{parse_result.document_type_label}-{course_name or '期末材料'}"
+    return build_final_material_package_name(
+        document_type_label=parse_result.document_type_label,
+        fields=_generated_final_material_identity_fields(parse_result, course_name),
+    )
 
 
 def _academic_year_from_values(*values: Any) -> str:

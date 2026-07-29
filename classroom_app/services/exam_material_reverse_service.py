@@ -28,6 +28,7 @@ from .assessment_plan_generation_service import find_teacher_own_signature_id
 from .academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 from .exam_json_service import normalize_exam_scoring_payload
 from .file_service import global_file_write_path
+from .material_identity_service import build_final_material_package_name
 from .material_ai_import_service import (
     MaterialExtraction,
     build_import_readme,
@@ -1232,6 +1233,24 @@ def _insert_running_material_generation_record(
     )
 
 
+def _reverse_package_base_name(parse_result, course_name: str) -> str:
+    """由试卷反推生成的材料同样要带上班级与学年学期，否则平行教学班无法区分。"""
+    export_payload = parse_result.export_payload if isinstance(parse_result.export_payload, dict) else {}
+    fields = export_payload.get("fields") if isinstance(export_payload.get("fields"), dict) else {}
+    metadata = parse_result.metadata if isinstance(parse_result.metadata, dict) else {}
+    merged: dict[str, Any] = {}
+    for key in ("academic_year", "semester", "period", "course_name", "class_name"):
+        value = fields.get(key) or metadata.get(key)
+        if _text(value):
+            merged[key] = value
+    if course_name and not _text(merged.get("course_name")):
+        merged["course_name"] = course_name
+    return build_final_material_package_name(
+        document_type_label=parse_result.document_type_label,
+        fields=merged,
+    )
+
+
 async def _persist_generated_rubric_record(record_id: int, parse_result, *, teacher_id: int) -> None:
     readme_content = build_import_readme(result=parse_result, original_name=f"{parse_result.document_type_label}.md")
     readme_bytes = readme_content.encode("utf-8")
@@ -1261,7 +1280,7 @@ async def _persist_generated_rubric_record(record_id: int, parse_result, *, teac
         owner_scope = load_teacher_org_scope(conn, int(teacher_id))
         now = datetime.now().isoformat()
         course_name = _text(parse_result.metadata.get("course_name"))
-        package_base_name = f"AI生成-{parse_result.document_type_label}-{course_name or '期末材料'}"
+        package_base_name = _reverse_package_base_name(parse_result, course_name)
         package_name = make_unique_material_name(conn, int(teacher_id), None, package_base_name)
         package_path = normalize_material_path(package_name)
         package_id, package_root_id = _insert_material_folder_row(

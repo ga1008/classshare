@@ -14,6 +14,10 @@ from fastapi import HTTPException
 
 from .exam_json_service import normalize_exam_scoring_payload
 from .libreoffice_service import convert_office_file
+from .material_identity_service import (
+    build_final_material_export_filename,
+    period_label,
+)
 
 
 EXAM_GRADE_RECORD_TYPE = "exam_grade_record"
@@ -72,6 +76,22 @@ class ExamGradeRecordParseResult:
     formula_count: int
 
 
+def build_exam_grade_record_export_filename(
+    fields: dict[str, Any] | None,
+    *,
+    suffix: str = ".xlsx",
+) -> str:
+    """导出文件名：``2025-2026-2《课程》机试（作品设计）考核登分表-班级.xlsx``。
+
+    与平时成绩记录表保持同一套公文命名，归档时一眼能看出学年学期/课程/班级。
+    """
+    return build_final_material_export_filename(
+        document_type_label=EXAM_GRADE_RECORD_LABEL,
+        fields=fields,
+        suffix=suffix,
+    )
+
+
 def normalize_exam_grade_record_payload(
     *,
     metadata: dict[str, Any] | None,
@@ -93,6 +113,8 @@ def normalize_exam_grade_record_payload(
     fields.setdefault("school", "广西外国语学院")
     fields.setdefault("assessment_method", "机试（作品设计）")
     fields.setdefault("title", f"{fields.get('school') or '广西外国语学院'}机试（作品设计）考核登分表")
+    # 每次都重算：学年/班级/课程可能在属性面板被改过，文件名要跟着走。
+    fields["export_filename"] = build_exam_grade_record_export_filename(fields)
 
     structured = _as_dict(base.get("structured"))
     sections = _normalize_sections(structured.get("sections") or _sections_from_tables(tables or []))
@@ -1367,12 +1389,17 @@ def _student_section_scores(student: dict[str, Any], *, section_count: int) -> l
 
 
 def _exam_grade_metadata_line(fields: dict[str, Any]) -> str:
+    """表头第二行。学年学期必须出现——否则归档后无法区分同课程的不同学期。"""
     course_code = str(fields.get("course_code") or "").strip()
     course_name = str(fields.get("course_name") or "").strip()
     course = f"[{course_code}]{course_name}" if course_code else course_name
     class_name = str(fields.get("class_name") or "").strip()
     teacher = str(fields.get("teacher_name") or "").strip()
-    return f"课程：{course}    专业年级班级：{class_name}\n授课老师：{teacher}"
+    period = period_label(fields)
+    second_line = f"授课老师：{teacher}"
+    if period:
+        second_line = f"{second_line}    学年学期：{period}"
+    return f"课程：{course}    专业年级班级：{class_name}\n{second_line}"
 
 
 def _exam_grade_column_widths(section_count: int) -> list[float]:

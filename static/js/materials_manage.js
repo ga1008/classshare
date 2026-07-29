@@ -1384,6 +1384,29 @@ function getMetaText(item) {
     return formatSize(item.file_size || 0);
 }
 
+/**
+ * 材料自身的学年学期短标签，如 `2025-2026学年第二学期`。
+ * 后端 fields 里学年与学期是分开存的；只有学年时也照样显示，别整段丢掉。
+ * @param {{academic_year?: string, semester?: string}} item
+ * @returns {string}
+ */
+function materialPeriodLabel(item) {
+    if (!item) return '';
+    const rawYear = String(item.academic_year || '').trim();
+    const rawSemester = String(item.semester || '').trim();
+    if (!rawYear && !rawSemester) return '';
+    // 值可能是 "未设置" 这类占位，不当作有效信息展示。
+    const combined = `${rawYear}${rawSemester}`;
+    const yearMatch = combined.match(/(20\d{2})\D+(20\d{2})/) || combined.match(/(20\d{2})/);
+    if (!yearMatch) return '';
+    const startYear = Number(yearMatch[1]);
+    const year = yearMatch[2] ? `${yearMatch[1]}-${yearMatch[2]}` : `${startYear}-${startYear + 1}`;
+    const termText = rawSemester || rawYear;
+    if (/第?\s*[二2]\s*学期/.test(termText)) return `${year}学年第二学期`;
+    if (/第?\s*[一1]\s*学期/.test(termText)) return `${year}学年第一学期`;
+    return `${year}学年`;
+}
+
 function getVisualMeta(item) {
     const repositoryMeta = getRepositoryVisualMeta(item);
     if (repositoryMeta) {
@@ -1674,13 +1697,21 @@ function renderList() {
             : '';
         const assignedCourses = Array.isArray(item.assigned_course_names) ? item.assigned_course_names.filter(Boolean) : [];
         const assignedClasses = Array.isArray(item.assigned_class_names) ? item.assigned_class_names.filter(Boolean) : [];
+        // 材料自身的学年学期/课程/班级（来自解析结果），与"已分配到哪些课堂"是两回事：
+        // 同一门课的平行教学班会生成同名材料，没有学期就分不清是哪一份。
+        const ownCourseName = String(item.course_name || '').trim();
+        const ownClassName = String(item.class_name || '').trim();
+        const periodText = materialPeriodLabel(item);
         const assignmentMeta = [
+            periodText
+                ? `<span class="materials-meta-item">${escapeHtml(periodText)}</span>`
+                : '',
             assignedCourses.length
                 ? `<span class="materials-meta-item">课程 ${escapeHtml(assignedCourses.slice(0, 2).join(' / '))}${assignedCourses.length > 2 ? ` +${assignedCourses.length - 2}` : ''}</span>`
-                : '',
+                : (ownCourseName ? `<span class="materials-meta-item">课程 ${escapeHtml(ownCourseName)}</span>` : ''),
             assignedClasses.length
                 ? `<span class="materials-meta-item">班级 ${escapeHtml(assignedClasses.slice(0, 2).join(' / '))}${assignedClasses.length > 2 ? ` +${assignedClasses.length - 2}` : ''}</span>`
-                : '',
+                : (ownClassName ? `<span class="materials-meta-item">班级 ${escapeHtml(ownClassName)}</span>` : ''),
         ].join('');
 
         return `
