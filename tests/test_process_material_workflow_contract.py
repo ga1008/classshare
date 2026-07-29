@@ -909,7 +909,8 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
 
         self.assertIn('id="materials-exam-grade-wizard"', template)
         self.assertIn('id="materials-exam-grade-candidate-list"', template)
-        self.assertIn("仅新增 1 份最终材料", template)
+        self.assertIn("1 份材料 · 1 张连续全班总表", template)
+        self.assertIn("不会按大题、学生或固定人数拆表", template)
         self.assertIn("function openManageExamGradeWizard", script)
         self.assertIn("/exam-grade-record/candidates", script)
         self.assertIn("function submitManageExamGradeGeneration", script)
@@ -917,6 +918,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("exam_assignment_id: Number(generation.selectedId)", script)
         self.assertIn("await revealRecentlyGeneratedMaterial(materialId)", script)
         self.assertIn("生成完成后仍停留在当前列表", script)
+        self.assertIn("全班学生同一张连续总表", script)
         self.assertIn("data-materials-exam-offering-id", script)
         self.assertIn("data-materials-exam-candidate-id", script)
         self.assertIn("'materials-total'", template)

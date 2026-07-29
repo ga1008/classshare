@@ -1054,12 +1054,13 @@ function collectOrdinaryGradeSelection() {
 
 function examGradeCandidateLabel(item) {
     const title = item?.title || `考试 ${item?.id || ''}`;
-    const stats = `${item?.graded_count || 0}/${item?.roster_count || item?.submission_count || 0}`;
+    const rosterCount = item?.roster_count || item?.submission_count || 0;
+    const stats = `${item?.graded_count || 0}/${rosterCount}`;
     const sections = item?.section_count ? `，${item.section_count} 个大题` : '';
     const total = item?.total_score ? `，满分 ${item.total_score}` : '';
     const average = item?.average_score === null || item?.average_score === undefined ? '' : `，均分 ${item.average_score}`;
     const blocked = item?.eligible === false ? `，不可生成：${item?.blocking_reason || '来源不完整'}` : '';
-    return `${title}（已评分 ${stats}${sections}${total}${average}${blocked}）`;
+    return `${title}（全班 ${rosterCount} 人同一张总表，已评分 ${stats}${sections}${total}${average}${blocked}）`;
 }
 
 function examGradeCandidateEligible(item) {
@@ -1397,7 +1398,12 @@ async function submitFinalMaterialGeneration() {
     }
     state.finalMaterialBusy = true;
     updateFinalMaterialSubmitState();
-    setFinalMaterialStatus('正在生成并保存材料...', 'progress');
+    setFinalMaterialStatus(
+        documentType === 'exam_grade_record'
+            ? '正在按名单顺序生成包含全班学生的一张连续总表...'
+            : '正在生成并保存材料...',
+        'progress',
+    );
     try {
         const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/final-materials/generate`, {
             method: 'POST',

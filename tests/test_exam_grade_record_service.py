@@ -10,6 +10,7 @@ from openpyxl import load_workbook
 
 from classroom_app.services.exam_grade_record_service import (
     EXAM_GRADE_RECORD_TYPE,
+    EXAM_GRADE_RECORD_TABLE_MODE,
     _load_exam_submissions,
     build_exam_grade_record_payload,
     build_exam_grade_record_xlsx,
@@ -200,8 +201,13 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["document_type"], EXAM_GRADE_RECORD_TYPE)
+        self.assertEqual(payload["structured"]["table_mode"], EXAM_GRADE_RECORD_TABLE_MODE)
+        self.assertEqual(payload["structured"]["ordering_source"], "active_class_roster.student_number_then_id")
+        self.assertEqual(len(payload["tables"]), 1)
+        self.assertEqual(len(payload["tables"][0]["rows"]), 5)
         self.assertEqual([item["label"] for item in payload["structured"]["sections"]], ["一", "二", "三"])
         students = payload["structured"]["students"]
+        self.assertEqual([item["row_order"] for item in students], [1, 2, 3])
         self.assertEqual(students[0]["raw_section_scores"], [30, 30, 31])
         self.assertEqual(students[0]["section_scores"], [29, 29, 29])
         self.assertEqual(students[0]["total_score"], 87)
@@ -267,7 +273,32 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
         self.assertIn("WHERE s.assignment_id = ?", submissions_conn.sql)
         self.assertEqual(submissions_conn.params, (301,))
 
-    def test_xlsx_export_uses_a4_sample_headers_widths_and_formulas(self):
+    def test_payload_preview_keeps_every_student_in_student_number_order(self):
+        extra_students = [
+            (1000 + index, 20, f"2025{index:04d}", f"扩展学生{index}", "active")
+            for index in range(125, 0, -1)
+        ]
+        self.conn.executemany("INSERT INTO students VALUES (?, ?, ?, ?, ?)", extra_students)
+        self.conn.commit()
+
+        payload = build_exam_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            exam_assignment_id=301,
+        )
+        students = payload["structured"]["students"]
+
+        self.assertEqual(len(students), 128)
+        self.assertEqual([item["student_number"] for item in students], sorted(item["student_number"] for item in students))
+        self.assertEqual([item["row_order"] for item in students], list(range(1, 129)))
+        self.assertIn("扩展学生125", payload["content_markdown"])
+        self.assertEqual(len(payload["tables"]), 1)
+        self.assertEqual(len(payload["tables"][0]["rows"]), 130)
+        self.assertEqual(payload["queryable_fields"]["student_count"], 128)
+        self.assertEqual(payload["queryable_fields"]["table_mode"], EXAM_GRADE_RECORD_TABLE_MODE)
+
+    def test_xlsx_export_uses_one_continuous_roster_sheet_with_a4_headers_and_formulas(self):
         payload = build_exam_grade_record_payload(
             self.conn,
             class_offering_id=30,
@@ -307,13 +338,15 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
         self.assertEqual(ws.print_title_rows, "$1:$4")
         self.assertTrue(ws.print_options.horizontalCentered)
         self.assertEqual(ws.oddFooter.center.text, "第 &P 页 / 共 &N 页")
-        self.assertEqual([item.id for item in ws.row_breaks.brk], [29])
+        self.assertEqual([item.id for item in ws.row_breaks.brk], [])
         self.assertEqual(len(ws.data_validations.dataValidation), 3)
         self.assertEqual(ws["A1"].font.name, "宋体")
         self.assertEqual(ws["A1"].font.charset, 134)
         self.assertLessEqual(ws.column_dimensions["D"].width, 16)
-        self.assertEqual(wb["生成核验"].sheet_state, "hidden")
-        self.assertEqual(wb["生成核验"]["I2"].value, "迟交扣 4 分")
+        self.assertEqual(wb.sheetnames, ["考核登分表"])
+        self.assertEqual(ws.max_row, 30)
+        self.assertEqual([ws.cell(row, 1).value for row in range(5, 31)], list(range(1, 27)))
+        self.assertEqual(ws.print_area, "'考核登分表'!$A$1:$G$30")
 
     def test_parser_ai_import_and_export_artifact_force_xlsx(self):
         payload = build_exam_grade_record_payload(
@@ -331,6 +364,8 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
             self.assertEqual(parsed.formula_count, 2)
             self.assertEqual(len(parsed.export_payload["structured"]["sections"]), 3)
             self.assertEqual(parsed.export_payload["structured"]["students"][0]["total_score"], 87)
+            self.assertEqual(len(parsed.tables), 1)
+            self.assertEqual([row[0] for row in parsed.tables[0]["rows"][2:]], [1, 2, 3])
 
             async def fail_ai_chat(*args, **kwargs):  # pragma: no cover - must not be called
                 raise AssertionError("exam grade import must use the local Excel parser")

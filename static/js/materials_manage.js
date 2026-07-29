@@ -1115,13 +1115,16 @@ function renderManageExamGradeWizard() {
     const generation = state.examGradeGenerate;
     const candidates = generation.candidates || [];
     const eligible = candidates.filter(examGradeCandidateEligible);
+    const selectedCandidate = examGradeCandidateById(generation.selectedId);
     if (refs.examGradeClassroomName) {
         refs.examGradeClassroomName.textContent = offeringLabel(generation.offering);
     }
     if (refs.examGradeSummary) {
         refs.examGradeSummary.textContent = generation.loading
             ? '正在核对考试与评分数据…'
-            : `${eligible.length} 场可生成 / ${candidates.length} 场已绑定试卷`;
+            : (selectedCandidate
+                ? `${Number(selectedCandidate.roster_count || 0)} 人连续总表 · 已评分 ${Number(selectedCandidate.graded_count || 0)} 人`
+                : `${eligible.length} 场可生成 / ${candidates.length} 场已绑定试卷`);
         refs.examGradeSummary.classList.toggle('is-fresh', !generation.loading && eligible.length > 0);
     }
     if (refs.examGradeCandidateList) {
@@ -1155,7 +1158,8 @@ function renderManageExamGradeWizard() {
                     >
                         <span class="ordinary-grade-candidate__main">
                             <strong>${escapeHtml(item?.title || `考试 ${candidateId}`)}</strong>
-                            <small>${escapeHtml(sourceTitle)} · ${escapeHtml(String(item?.section_count || 0))} 个大题 / 满分 ${escapeHtml(String(item?.total_score || 0))} · ${escapeHtml(coverage)} · ${escapeHtml(average)}</small>
+                            <small>${escapeHtml(sourceTitle)} · 全班 ${escapeHtml(String(rosterCount))} 人按顺序进入同一张总表 · ${escapeHtml(String(item?.section_count || 0))} 个大题 / 满分 ${escapeHtml(String(item?.total_score || 0))}</small>
+                            <small>${escapeHtml(coverage)} · ${escapeHtml(average)}</small>
                             <small>${escapeHtml(timing)}${usable ? '' : ` · ${escapeHtml(item?.blocking_reason || '暂不可生成')}`}</small>
                         </span>
                         <span class="ordinary-grade-candidate__usage">${escapeHtml(usable ? (selected ? '已选择' : '选择此考试') : '暂不可用')}</span>
@@ -1196,7 +1200,7 @@ async function openManageExamGradeWizard(offering) {
     if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = true;
     refs.classroomGenerateModal?.querySelector('.materials-classroom-generate-dialog')?.classList.add('is-wizard');
     refs.classroomGenerateTitle.textContent = '生成考核登分表';
-    refs.classroomGenerateSubtitle.textContent = `${offeringLabel(offering)} · 生成完成后仍停留在当前列表`;
+    refs.classroomGenerateSubtitle.textContent = `${offeringLabel(offering)} · 全班学生同一张连续总表 · 生成完成后仍停留在当前列表`;
     renderManageExamGradeWizard();
     try {
         const data = await apiFetch(`/api/classrooms/${offeringId}/exam-grade-record/candidates`, { silent: true });
@@ -1222,7 +1226,7 @@ async function submitManageExamGradeGeneration() {
     const offeringId = Number(generation.offering?.id || 0);
     generation.busy = true;
     renderManageExamGradeWizard();
-    setManageExamGradeStatus('正在核对学生名单、大题得分与总分，并生成可打印 Excel，请勿重复提交...', 'progress');
+    setManageExamGradeStatus('正在按名单顺序把全班学生写入同一张连续总表，并核对大题得分与总分，请勿重复提交...', 'progress');
     try {
         const data = await apiFetch(`/api/classrooms/${offeringId}/final-materials/generate`, {
             method: 'POST',

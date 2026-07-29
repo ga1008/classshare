@@ -488,7 +488,7 @@
                         <div>
                             <span class="ordinary-grade-wizard__eyebrow">真实考试成绩 · 原位生成</span>
                             <strong id="materials-exam-grade-classroom-name">正在读取课堂</strong>
-                            <p>选择一场已绑定试卷、配置大题分值且已有评分的考试。系统会保留完整学生名单，未评分学生留空，并在 Excel 内自动核验大题合计。</p>
+                            <p>选择一场已绑定试卷、配置大题分值且已有评分的考试。系统会把全班学生按名单顺序一次性写入同一张连续总表；未评分学生保留且成绩留空。</p>
                         </div>
                         <span class="ordinary-grade-wizard__attendance is-fresh" id="materials-exam-grade-summary">正在检查可用考试…</span>
                     </div>
@@ -504,8 +504,8 @@
                     </section>
                     <div class="exam-grade-generation-contract">
                         <span>生成结果</span>
-                        <strong>仅新增 1 份最终材料</strong>
-                        <p>完成后关闭弹窗、停留在当前考核登分表列表并定位新材料；生成过程和后台记录不会作为第二份材料展示。</p>
+                        <strong>1 份材料 · 1 张连续全班总表</strong>
+                        <p>不会按大题、学生或固定人数拆表，也不会把后台核验页交给用户；完成后停留在当前列表并定位新材料。</p>
                     </div>
                     <div class="classroom-final-material-status" id="materials-exam-grade-status" hidden></div>
                 </div>

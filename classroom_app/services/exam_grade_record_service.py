@@ -22,8 +22,8 @@ from .material_identity_service import (
 
 EXAM_GRADE_RECORD_TYPE = "exam_grade_record"
 EXAM_GRADE_RECORD_LABEL = "机试（作品设计）考核登分表"
-EXAM_GRADE_RECORD_SCHEMA_VERSION = "gxufl-exam-grade-record-v1"
-EXAM_GRADE_RECORD_ROWS_PER_PAGE = 25
+EXAM_GRADE_RECORD_SCHEMA_VERSION = "gxufl-exam-grade-record-v2"
+EXAM_GRADE_RECORD_TABLE_MODE = "single_continuous_roster_table"
 
 EXAM_GRADE_LAYOUT = {
     "page": "A4 portrait",
@@ -39,7 +39,7 @@ EXAM_GRADE_LAYOUT = {
     "row_heights": {"title": 35, "metadata": 32, "header": 15, "student": 18},
     "base_column_widths": {"index": 7.0, "student_number": 21.7265625, "student_name": 19.08984375, "total": 11.0},
     "sample_section_width": 46.0,
-    "rows_per_page": EXAM_GRADE_RECORD_ROWS_PER_PAGE,
+    "table_mode": EXAM_GRADE_RECORD_TABLE_MODE,
 }
 
 _CHINESE_ORDINALS = [
@@ -118,17 +118,17 @@ def normalize_exam_grade_record_payload(
 
     structured = _as_dict(base.get("structured"))
     sections = _normalize_sections(structured.get("sections") or _sections_from_tables(tables or []))
+    if not sections:
+        total = _coerce_float(fields.get("total_score")) or 100
+        sections = [{"index": 1, "label": "一", "title": "一", "full_score": _score_to_int(total), "questions": []}]
     students = _normalize_student_records(
         structured.get("students") if isinstance(structured.get("students"), list) else _students_from_tables(tables or []),
         section_count=len(sections),
     )
-    if not sections:
-        total = _coerce_float(fields.get("total_score")) or 100
-        sections = [{"index": 1, "label": "一", "title": "一", "full_score": _score_to_int(total), "questions": []}]
     total_score = sum(_score_to_int(section.get("full_score")) for section in sections)
     fields["total_score"] = total_score
     if not fields.get("class_size") and students:
-        fields["class_size"] = len([row for row in students if str(row.get("student_number") or "").strip()])
+        fields["class_size"] = len(students)
 
     warnings = _merge_warnings(base.get("warnings"), structured.get("warnings"))
     for student in students:
@@ -148,6 +148,8 @@ def normalize_exam_grade_record_payload(
     normalized_structured = {
         **structured,
         "template_schema_version": EXAM_GRADE_RECORD_SCHEMA_VERSION,
+        "table_mode": EXAM_GRADE_RECORD_TABLE_MODE,
+        "ordering_source": str(structured.get("ordering_source") or "source_list_order"),
         "sections": sections,
         "students": students,
         "source_exam": _as_dict(structured.get("source_exam")),
@@ -165,13 +167,19 @@ def normalize_exam_grade_record_payload(
             "document_type_label": EXAM_GRADE_RECORD_LABEL,
             "template_key": EXAM_GRADE_RECORD_TYPE,
             "fields": fields,
-            "tables": tables or base.get("tables") or [],
+            # 考核登分表的用户契约始终只有一张全班连续总表。内部评分核验明细留在
+            # structured.students 中供后台追溯，不再作为并列表或隐藏工作表交给用户。
+            "tables": [_table_from_students("考核登分表", sections, students)],
             "layout_profile": dict(EXAM_GRADE_LAYOUT),
             "structured": normalized_structured,
             "queryable_fields": _exam_grade_queryable_fields(fields, normalized_structured),
-            "content_markdown": content_markdown
-            or base.get("content_markdown")
-            or _build_content_markdown(fields, sections, students, normalized_structured.get("source_exam") or {}),
+            # 预览同样来自规范化后的全量名单，避免旧材料沿用历史的 120 人截断内容。
+            "content_markdown": _build_content_markdown(
+                fields,
+                sections,
+                students,
+                normalized_structured.get("source_exam") or {},
+            ),
             "compatibility": {
                 **_as_dict(base.get("compatibility")),
                 "source_format_preserved": True,
@@ -298,6 +306,7 @@ def build_exam_grade_record_payload(
         submission = submissions.get(student_id)
         row: dict[str, Any] = {
             "index": index,
+            "row_order": index,
             "student_id": student_id,
             "student_number": student.get("student_number") or "",
             "student_name": student.get("student_name") or "",
@@ -392,6 +401,7 @@ def build_exam_grade_record_payload(
                 "sections": sections,
                 "students": rows,
                 "source_exam": source_exam,
+                "ordering_source": "active_class_roster.student_number_then_id",
                 "warnings": _dedupe(warnings),
             },
         },
@@ -432,7 +442,17 @@ def parse_exam_grade_record_file(file_path: Path, original_name: str) -> ExamGra
             },
         },
     )
-    content_markdown = _build_content_markdown(metadata, sections, students, _as_dict(export_payload.get("structured")).get("source_exam") or {})
+    tables = list(export_payload.get("tables") or [])
+    normalized_structured = _as_dict(export_payload.get("structured"))
+    content_markdown = _build_content_markdown(
+        _as_dict(export_payload.get("fields")),
+        _normalize_sections(normalized_structured.get("sections")),
+        _normalize_student_records(
+            normalized_structured.get("students"),
+            section_count=len(normalized_structured.get("sections") or []),
+        ),
+        _as_dict(normalized_structured.get("source_exam")),
+    )
     export_payload["content_markdown"] = content_markdown
     return ExamGradeRecordParseResult(
         metadata=metadata,
@@ -448,7 +468,6 @@ def build_exam_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
     try:
         from openpyxl import Workbook
         from openpyxl.worksheet.datavalidation import DataValidation
-        from openpyxl.worksheet.pagebreak import Break
         from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
         from openpyxl.utils import get_column_letter
         from openpyxl.worksheet.properties import PageSetupProperties
@@ -588,7 +607,7 @@ def build_exam_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
         student = students[local_index] if local_index < len(students) else {}
         section_scores = _student_section_scores(student, section_count=section_count)
         values = [
-            student.get("index") or "",
+            local_index + 1 if student else "",
             student.get("student_number") or "",
             student.get("student_name") or "",
             *section_scores,
@@ -612,63 +631,10 @@ def build_exam_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
             last_score_col = get_column_letter(total_col - 1)
             total_cell.value = f"={first_score_col}{row_number}" if section_count == 1 else f"=SUM({first_score_col}{row_number}:{last_score_col}{row_number})"
         ws.row_dimensions[row_number].height = EXAM_GRADE_LAYOUT["row_heights"]["student"]
-        if local_index > 0 and local_index % EXAM_GRADE_RECORD_ROWS_PER_PAGE == 0:
-            ws.row_breaks.append(Break(id=row_number - 1))
 
     last_row = data_start + row_count - 1
     ws.print_area = f"A1:{get_column_letter(last_col)}{last_row}"
 
-    audit = wb.create_sheet("生成核验")
-    audit.sheet_state = "hidden"
-    audit.sheet_view.showGridLines = False
-    audit.freeze_panes = "A2"
-    audit_headers = [
-        "序号",
-        "学号",
-        "姓名",
-        "卷面大题分",
-        "登分大题分",
-        "卷面合计",
-        "最终总分",
-        "调整分",
-        "调整说明",
-        "来源逐题明细",
-    ]
-    audit.append(audit_headers)
-    for student in students:
-        audit.append(
-            [
-                student.get("index") or "",
-                student.get("student_number") or "",
-                student.get("student_name") or "",
-                json.dumps(student.get("raw_section_scores") or [], ensure_ascii=False),
-                json.dumps(student.get("section_scores") or [], ensure_ascii=False),
-                student.get("raw_total_score") if student.get("raw_total_score") not in (None, "") else "",
-                student.get("total_score") if student.get("total_score") not in (None, "") else "",
-                student.get("adjustment_points") or 0,
-                student.get("score_adjustment_reason") or "",
-                json.dumps(student.get("source_question_scores") or [], ensure_ascii=False),
-            ]
-        )
-    audit.auto_filter.ref = f"A1:J{max(1, len(students) + 1)}"
-    audit.column_dimensions["A"].width = 8
-    audit.column_dimensions["B"].width = 18
-    audit.column_dimensions["C"].width = 14
-    audit.column_dimensions["D"].width = 22
-    audit.column_dimensions["E"].width = 22
-    audit.column_dimensions["F"].width = 12
-    audit.column_dimensions["G"].width = 12
-    audit.column_dimensions["H"].width = 10
-    audit.column_dimensions["I"].width = 34
-    audit.column_dimensions["J"].width = 42
-    for cell in audit[1]:
-        cell.font = Font(name="宋体", size=10, bold=True, color="FFFFFF", charset=134, family=3)
-        cell.fill = PatternFill(fill_type="solid", fgColor="FF4F46E5")
-        cell.alignment = center
-    for row in audit.iter_rows(min_row=2, max_row=max(2, len(students) + 1), min_col=1, max_col=10):
-        for cell in row:
-            cell.font = Font(name="宋体", size=10, charset=134, family=3)
-            cell.alignment = left if cell.column in {4, 5, 9, 10} else center
     if hasattr(wb, "calculation"):
         wb.calculation.fullCalcOnLoad = True
         wb.calculation.forceFullCalc = True
@@ -1309,11 +1275,11 @@ def _table_from_students(title: str, sections: list[dict[str, Any]], students: l
     header = ["序号", "学号", "姓名", *[str(section.get("label") or _ordinal(index + 1)) for index, section in enumerate(sections)], "总分"]
     full_scores = ["", "", "", *[_score_to_int(section.get("full_score")) for section in sections], sum(_score_to_int(section.get("full_score")) for section in sections)]
     rows = [header, full_scores]
-    for student in students:
+    for row_order, student in enumerate(students, start=1):
         section_scores = _student_section_scores(student, section_count=len(sections))
         rows.append(
             [
-                student.get("index") or "",
+                row_order,
                 student.get("student_number") or "",
                 student.get("student_name") or "",
                 *section_scores,
@@ -1361,10 +1327,13 @@ def _normalize_student_records(values: Any, *, section_count: int) -> list[dict[
         total_score = _score_or_blank(item.get("total_score"))
         if total_score == "" and section_scores and any(value != "" for value in section_scores):
             total_score = sum(_score_to_int(value) for value in section_scores if value != "")
+        source_index = _coerce_int(item.get("source_index") or item.get("index"), default=index)
         result.append(
             {
                 **item,
-                "index": _coerce_int(item.get("index"), default=index),
+                "source_index": source_index,
+                "index": index,
+                "row_order": index,
                 "student_number": student_number,
                 "student_name": student_name,
                 "section_scores": section_scores,
@@ -1422,6 +1391,8 @@ def _exam_grade_queryable_fields(fields: dict[str, Any], structured: dict[str, A
         "semester": fields.get("semester") or "",
         "source_exam": structured.get("source_exam") or {},
         "student_count": len(students),
+        "table_mode": structured.get("table_mode") or EXAM_GRADE_RECORD_TABLE_MODE,
+        "ordering_source": structured.get("ordering_source") or "source_list_order",
         "section_count": len(sections),
         "section_labels": [section.get("label") for section in sections if isinstance(section, dict)],
         "total_score": fields.get("total_score") or "",
@@ -1449,7 +1420,7 @@ def _build_content_markdown(
         + " | 总分 |",
         "| --- | --- | --- | " + " | ".join("---" for _ in sections) + " | --- |",
     ]
-    for student in students[:120]:
+    for student in students:
         section_scores = _student_section_scores(student, section_count=len(sections))
         lines.append(
             "| "
