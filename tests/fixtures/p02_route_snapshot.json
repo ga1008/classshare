@@ -3504,6 +3504,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/materials/{material_id}/delete-impact",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_delete_impact",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/materials/{material_id}/learning-bindings",
     "methods": [
       "GET"

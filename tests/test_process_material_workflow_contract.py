@@ -710,7 +710,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
             r"\.modal-dialog\s*\{[^}]*pointer-events:\s*auto;",
         )
 
-    def test_materials_manage_delete_uses_process_material_confirm(self):
+    def test_materials_manage_delete_reverse_traces_references_before_one_step_unlink(self):
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
         styles = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
         delete_block = script[
@@ -721,11 +721,17 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         detail_z_index = re.search(r"\.materials-detail-modal\s*\{\s*z-index:\s*(\d+)", styles)
 
         self.assertIn("from './process_material_modal.js'", script)
+        self.assertIn("openProcessMaterialModal('删除材料与关联'", script)
+        self.assertIn("/delete-impact", delete_block)
         self.assertIn("openProcessMaterialConfirm({", delete_block)
+        self.assertIn("openMaterialDeleteImpactConfirm(material, impact)", delete_block)
         self.assertIn("title: '删除材料'", delete_block)
-        self.assertIn("detail: '删除后无法恢复，关联的过程材料预览、导出入口和课堂分配也会一并失效。'", delete_block)
+        self.assertIn("deleteParams.set('unlink_references', 'true')", delete_block)
+        self.assertIn("deleteParams.set('impact_token'", delete_block)
         self.assertIn("confirmText: '删除'", delete_block)
         self.assertIn("tone: 'danger'", delete_block)
+        self.assertIn(".material-delete-impact-group.is-delete", styles)
+        self.assertIn(".lp-modal--delete-impact", styles)
         self.assertNotIn("window.confirm", delete_block)
         self.assertIsNotNone(overlay_z_index)
         self.assertIsNotNone(detail_z_index)

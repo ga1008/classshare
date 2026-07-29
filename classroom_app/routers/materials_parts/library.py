@@ -4,12 +4,11 @@ from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
 from ..ui_parts.common import _build_manage_template_context
-from ...db.connection import get_configured_db_engine
+from ...db.connection import begin_immediate_transaction, get_configured_db_engine
 from ...services.base_resource_modes_service import (
-    build_material_delete_blockers,
     build_mode_permissions,
-    raise_if_delete_blocked,
 )
+from ...services.material_delete_service import build_material_delete_impact, unlink_material_delete_references
 from ...services.ordinary_grade_record_service import classify_ordinary_grade_assignment
 
 
@@ -910,17 +909,79 @@ async def update_material_scope(
     return {"status": "success", "material": item}
 
 
-@router.delete("/api/materials/{material_id}", response_class=JSONResponse)
-async def delete_material(material_id: int, user: dict = Depends(get_current_teacher)):
+@router.get("/api/materials/{material_id}/delete-impact", response_class=JSONResponse)
+def get_material_delete_impact(material_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        impact = build_material_delete_impact(conn, material)
+    return {"status": "success", "impact": impact}
+
+
+@router.delete("/api/materials/{material_id}", response_class=JSONResponse)
+async def delete_material(
+    material_id: int,
+    unlink_references: bool = Query(False),
+    impact_token: str = Query("", max_length=64),
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        begin_immediate_transaction(conn)
+        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        if get_configured_db_engine() == "postgres":
+            conn.execute(
+                """
+                SELECT id
+                FROM course_materials
+                WHERE root_id = ?
+                  AND (material_path = ? OR material_path LIKE ?)
+                FOR UPDATE
+                """,
+                (
+                    int(material["root_id"]),
+                    material["material_path"],
+                    f"{material['material_path']}/%",
+                ),
+            ).fetchall()
+
+        impact = build_material_delete_impact(conn, material)
+        if impact["total_reference_count"] and not unlink_references:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "material_delete_references",
+                    "message": (
+                        f"材料“{material['name']}”仍有 {impact['total_reference_count']} 项关联，"
+                        "请查看关联数据后选择“解除关联并删除”。"
+                    ),
+                    "impact": impact,
+                },
+            )
+
+        unlinked_impact = None
+        if unlink_references:
+            if not impact_token or impact_token != impact["impact_token"]:
+                raise HTTPException(
+                    409,
+                    detail={
+                        "code": "material_delete_impact_changed",
+                        "message": "材料关联情况已变化，请重新查看并确认后再删除。",
+                        "impact": impact,
+                    },
+                )
+            unlinked_impact = unlink_material_delete_references(conn, material, impact=impact)
+            remaining_impact = build_material_delete_impact(conn, material, include_items=False)
+            if remaining_impact["total_reference_count"]:
+                raise HTTPException(
+                    409,
+                    detail={
+                        "code": "material_delete_unlink_incomplete",
+                        "message": "部分材料关联未能安全解除，删除已取消，请刷新后重试。",
+                        "impact": build_material_delete_impact(conn, material),
+                    },
+                )
+
         subtree_rows = _collect_subtree_rows(conn, material)
         file_hashes = {row["file_hash"] for row in subtree_rows if row["node_type"] == "file" and row["file_hash"]}
-
-        raise_if_delete_blocked(
-            f"材料“{material['name']}”",
-            build_material_delete_blockers(conn, material),
-        )
         conn.execute("DELETE FROM course_materials WHERE id = ?", (material_id,))
         conn.commit()
 
@@ -934,6 +995,8 @@ async def delete_material(material_id: int, user: dict = Depends(get_current_tea
         "status": "success",
         "message": f"《{material['name']}》已删除",
         "removed_file_count": removed_files,
+        "unlinked_reference_count": int((unlinked_impact or {}).get("total_reference_count") or 0),
+        "deleted_learning_progress_count": int((unlinked_impact or {}).get("destructive_reference_count") or 0),
     }
 
 

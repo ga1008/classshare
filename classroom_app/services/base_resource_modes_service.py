@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from ..db.connection import get_configured_db_engine
 from .class_kind_service import class_kind_label, is_custom_class_kind, normalize_class_kind
 from .course_planning_service import load_course_lessons_by_course_id, serialize_course_row
+from .material_delete_service import build_material_delete_impact
 from .organization_scope_service import apply_teacher_scope_to_org, load_teacher_org_scope
 from .resource_access_service import (
     SCOPE_DEPARTMENT,
@@ -327,63 +328,8 @@ def build_exam_delete_blockers(conn: sqlite3.Connection, paper_id: str) -> dict[
 
 
 def build_material_delete_blockers(conn: sqlite3.Connection, material_row: Any) -> dict[str, int]:
-    material = _row_dict(material_row)
-    root_id = int(material["root_id"])
-    material_path = str(material["material_path"] or "")
-    subtree_id_sql = """
-        SELECT id
-        FROM course_materials
-        WHERE root_id = ?
-          AND (material_path = ? OR material_path LIKE ?)
-    """
-    subtree_params = (root_id, material_path, f"{material_path}/%")
-    return _positive_counts(
-        {
-            "课堂材料分配": _count_if_table(
-                conn,
-                "course_material_assignments",
-                f"SELECT COUNT(*) FROM course_material_assignments WHERE material_id IN ({subtree_id_sql})",
-                subtree_params,
-            ),
-            "课程课次引用": _count_if_table(
-                conn,
-                "course_lessons",
-                f"SELECT COUNT(*) FROM course_lessons WHERE learning_material_id IN ({subtree_id_sql})",
-                subtree_params,
-            ),
-            "课堂课次引用": _count_if_table(
-                conn,
-                "class_offering_sessions",
-                f"SELECT COUNT(*) FROM class_offering_sessions WHERE learning_material_id IN ({subtree_id_sql})",
-                subtree_params,
-            ),
-            "课堂首页材料": _count_if_table(
-                conn,
-                "class_offerings",
-                f"SELECT COUNT(*) FROM class_offerings WHERE home_learning_material_id IN ({subtree_id_sql})",
-                subtree_params,
-            ),
-            "AI导入记录": _count_if_table(
-                conn,
-                "material_ai_import_records",
-                f"""
-                SELECT COUNT(*)
-                FROM material_ai_import_records
-                WHERE package_material_id IN ({subtree_id_sql})
-                   OR source_material_id IN ({subtree_id_sql})
-                   OR parsed_material_id IN ({subtree_id_sql})
-                   OR parent_material_id IN ({subtree_id_sql})
-                """,
-                subtree_params * 4,
-            ),
-            "材料生成任务": _count_if_table(
-                conn,
-                "session_material_generation_tasks",
-                f"SELECT COUNT(*) FROM session_material_generation_tasks WHERE generated_material_id IN ({subtree_id_sql})",
-                subtree_params,
-            ),
-        }
-    )
+    impact = build_material_delete_impact(conn, material_row, include_items=False)
+    return _positive_counts(impact.get("blockers") or {})
 
 
 def build_mode_permissions(

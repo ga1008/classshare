@@ -1,7 +1,7 @@
 import { apiFetch } from './api.js';
 import { closeModal, escapeHtml, formatDate, formatSize, getFileIcon, openModal, renderMarkdown, showToast } from './ui.js';
 import { enhancePromptPoolInputs, recordPromptForInput } from './prompt_pool.js';
-import { openProcessMaterialConfirm } from './process_material_modal.js';
+import { openProcessMaterialConfirm, openProcessMaterialModal } from './process_material_modal.js';
 import { bindProcessMaterialExportDownloadActions } from './process_material_editor_preview.js';
 import {
     getLearningDocumentUrl,
@@ -216,6 +216,7 @@ const state = {
     overview: null,
     stats: null,
     searchTimer: null,
+    materialDeleteBusy: false,
     _aiAssignBusy: false,
     aiImport: {
         busy: false,
@@ -3689,24 +3690,155 @@ async function saveActiveMaterialContent() {
     await refreshActiveWorkspace(materialId);
 }
 
-async function deleteActiveMaterial() {
-    if (!state.activeDetail) return;
-    const confirmed = await openProcessMaterialConfirm({
-        title: '删除材料',
-        message: `确定删除材料“${state.activeDetail.name || '未命名材料'}”吗？`,
-        detail: '删除后无法恢复，关联的过程材料预览、导出入口和课堂分配也会一并失效。',
-        confirmText: '删除',
-        tone: 'danger',
+function renderMaterialDeleteImpactItem(item = {}) {
+    const primary = escapeHtml(item.primary || '未命名关联数据');
+    const secondary = item.secondary
+        ? `<span class="material-delete-impact-item__secondary">${escapeHtml(item.secondary)}</span>`
+        : '';
+    const meta = item.meta
+        ? `<span class="material-delete-impact-item__meta">${escapeHtml(item.meta)}</span>`
+        : '';
+    const content = `
+        <span class="material-delete-impact-item__copy">
+            <strong>${primary}</strong>
+            ${secondary}
+            ${meta}
+        </span>
+        ${String(item.url || '').startsWith('/') ? '<span class="material-delete-impact-item__open" aria-hidden="true">↗</span>' : ''}
+    `;
+    if (String(item.url || '').startsWith('/')) {
+        return `<a class="material-delete-impact-item" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${content}</a>`;
+    }
+    return `<div class="material-delete-impact-item">${content}</div>`;
+}
+
+function renderMaterialDeleteImpactGroup(group = {}) {
+    const risk = ['unlink', 'preserve', 'delete'].includes(group.risk) ? group.risk : 'unlink';
+    const riskLabel = risk === 'delete' ? '会删除记录' : (risk === 'preserve' ? '保留历史' : '解除关联');
+    const items = Array.isArray(group.items) ? group.items : [];
+    return `
+        <section class="material-delete-impact-group is-${risk}">
+            <header class="material-delete-impact-group__head">
+                <span class="material-delete-impact-group__icon" aria-hidden="true"></span>
+                <span class="material-delete-impact-group__title">
+                    <strong>${escapeHtml(group.label || '关联数据')}</strong>
+                    <small>${escapeHtml(group.effect || '')}</small>
+                </span>
+                <span class="material-delete-impact-group__count">${escapeHtml(String(group.count || 0))} 条</span>
+                <span class="material-delete-impact-group__risk">${riskLabel}</span>
+            </header>
+            ${items.length ? `<div class="material-delete-impact-group__items">${items.map(renderMaterialDeleteImpactItem).join('')}</div>` : ''}
+            ${group.has_more ? `<p class="material-delete-impact-group__more">仅展示部分关联项，共 ${escapeHtml(String(group.count || 0))} 条。</p>` : ''}
+        </section>
+    `;
+}
+
+function openMaterialDeleteImpactConfirm(material, impact) {
+    return new Promise((resolve) => {
+        let settled = false;
+        const groups = Array.isArray(impact?.groups) ? impact.groups : [];
+        const subtree = impact?.subtree || {};
+        const destructiveCount = Number(impact?.destructive_reference_count || 0);
+        const body = `
+            <div class="material-delete-impact">
+                <section class="material-delete-impact__summary">
+                    <span class="material-delete-impact__eyebrow">删除前反向追踪</span>
+                    <h4>${escapeHtml(material?.name || '未命名材料')}</h4>
+                    <p>
+                        找到 <strong>${escapeHtml(String(impact?.total_reference_count || 0))}</strong> 项业务关联。
+                        系统会在同一事务中解除引用，再删除材料及其
+                        ${escapeHtml(String(subtree.folder_count || 0))} 个文件夹、${escapeHtml(String(subtree.file_count || 0))} 个文件。
+                    </p>
+                </section>
+                <div class="material-delete-impact__groups">
+                    ${groups.map(renderMaterialDeleteImpactGroup).join('')}
+                </div>
+                <aside class="material-delete-impact__warning ${destructiveCount ? 'is-critical' : ''}">
+                    <span aria-hidden="true">${destructiveCount ? '!' : 'i'}</span>
+                    <p>${destructiveCount
+                        ? `其中 ${escapeHtml(String(destructiveCount))} 条学生学习进度会随材料永久删除；AI 导入和生成任务历史仍会保留。`
+                        : 'AI 导入和生成任务历史会保留，只清空指向本材料的关联；此材料本身删除后无法恢复。'
+                    }</p>
+                </aside>
+            </div>
+        `;
+        const footer = `
+            <button type="button" class="lp-btn lp-btn--ghost" data-material-delete-cancel>取消</button>
+            <button type="button" class="lp-btn lp-btn--danger" data-material-delete-confirm autofocus>解除关联并删除</button>
+        `;
+        const settle = (value, close) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+            close();
+        };
+        openProcessMaterialModal('删除材料与关联', body, {
+            footerHtml: footer,
+            wide: true,
+            onMount: (overlay, close) => {
+                overlay.querySelector('.lp-modal')?.classList.add('lp-modal--delete-impact');
+                overlay.querySelector('[data-material-delete-cancel]')?.addEventListener('click', () => settle(false, close));
+                overlay.querySelector('[data-material-delete-confirm]')?.addEventListener('click', () => settle(true, close));
+            },
+            onClose: () => {
+                if (settled) return;
+                settled = true;
+                resolve(false);
+            },
+        });
     });
-    if (!confirmed) return;
-    const result = await apiFetch(`/api/materials/${state.activeDetail.id}`, { method: 'DELETE' });
-    showToast(result.message || '材料已删除', 'success');
-    state.detailRequestId += 1;
-    state.activeMaterialId = null;
-    state.activeDetail = null;
-    renderDetail(null);
-    closeDetailModal();
-    await loadLibrary(state.currentParentId);
+}
+
+async function deleteActiveMaterial() {
+    if (!state.activeDetail || state.materialDeleteBusy) return;
+    state.materialDeleteBusy = true;
+    const deleteButton = refs.detail?.querySelector('[data-detail-action="delete"]');
+    const originalButtonText = deleteButton?.textContent || '删除';
+    if (deleteButton) {
+        deleteButton.disabled = true;
+        deleteButton.textContent = '检查关联…';
+    }
+    try {
+        const material = { ...state.activeDetail };
+        const impactResult = await apiFetch(`/api/materials/${material.id}/delete-impact`, { silent: true });
+        const impact = impactResult.impact || {};
+        const hasReferences = Number(impact.total_reference_count || 0) > 0;
+        const confirmed = hasReferences
+            ? await openMaterialDeleteImpactConfirm(material, impact)
+            : await openProcessMaterialConfirm({
+                title: '删除材料',
+                message: `确定删除材料“${material.name || '未命名材料'}”吗？`,
+                detail: '删除后无法恢复，材料文件、过程预览与导出入口也会一并失效。',
+                confirmText: '删除',
+                tone: 'danger',
+            });
+        if (!confirmed) return;
+        if (deleteButton) deleteButton.textContent = '正在删除…';
+        const deleteParams = new URLSearchParams();
+        if (hasReferences) {
+            deleteParams.set('unlink_references', 'true');
+            deleteParams.set('impact_token', String(impact.impact_token || ''));
+        }
+        const deleteUrl = `/api/materials/${material.id}${deleteParams.toString() ? `?${deleteParams.toString()}` : ''}`;
+        const result = await apiFetch(deleteUrl, { method: 'DELETE', silent: true });
+        const unlinkedCount = Number(result.unlinked_reference_count || 0);
+        showToast(
+            unlinkedCount > 0 ? `${result.message || '材料已删除'}，已处理 ${unlinkedCount} 项关联` : (result.message || '材料已删除'),
+            'success',
+        );
+        state.detailRequestId += 1;
+        state.activeMaterialId = null;
+        state.activeDetail = null;
+        renderDetail(null);
+        closeDetailModal();
+        await loadLibrary(state.currentParentId);
+    } finally {
+        state.materialDeleteBusy = false;
+        if (deleteButton?.isConnected) {
+            deleteButton.disabled = false;
+            deleteButton.textContent = originalButtonText;
+        }
+    }
 }
 
 function formatRepositoryCommandPreview(detail) {
