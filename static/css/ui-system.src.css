@@ -50525,6 +50525,38 @@ a.material-delete-impact-item:hover .material-delete-impact-item__open { color: 
 }
 .final-grade-refresh-row > span { color: #64748b; font-size: 12px; line-height: 1.5; }
 .final-grade-refresh-row .btn { flex: 0 0 auto; }
+.materials-final-grade-wizard.is-loading .final-grade-refresh-row .btn:disabled,
+#materials-classroom-generate-submit-btn.is-loading:disabled {
+    border-color: #cbd5e1;
+    background: #e2e8f0;
+    color: #94a3b8;
+    box-shadow: none;
+    opacity: 1;
+}
+.materials-final-grade-wizard.is-loading .final-grade-refresh-row .btn.is-loading::after,
+#materials-classroom-generate-submit-btn.is-loading::after {
+    border-color: rgba(100, 116, 139, 0.25);
+    border-top-color: #64748b;
+}
+.ordinary-grade-wizard__attendance.is-loading {
+    position: relative;
+    padding-left: 30px;
+    color: #64748b;
+    background: #f1f5f9;
+}
+.ordinary-grade-wizard__attendance.is-loading::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 11px;
+    width: 11px;
+    height: 11px;
+    margin-top: -5.5px;
+    border: 2px solid rgba(100, 116, 139, 0.22);
+    border-top-color: #64748b;
+    border-radius: 999px;
+    animation: spin 0.65s linear infinite;
+}
 .final-grade-course-choice {
     padding: 15px;
     border: 1px solid rgba(245, 158, 11, .28);
@@ -50545,6 +50577,19 @@ a.material-delete-impact-item:hover .material-delete-impact-item__open { color: 
     gap: 12px;
 }
 .final-grade-source-grid > .ordinary-grade-picker__empty { grid-column: 1 / -1; }
+.final-grade-verification-state {
+    min-height: 118px;
+    border: 1px dashed rgba(99, 102, 241, 0.24);
+    border-radius: 15px;
+    background: linear-gradient(145deg, rgba(238, 242, 255, 0.66), rgba(248, 250, 252, 0.94));
+}
+.final-grade-verification-state .spinner {
+    flex: 0 0 auto;
+}
+.final-grade-verification-state.is-error {
+    border-color: rgba(245, 158, 11, 0.34);
+    background: linear-gradient(145deg, rgba(255, 251, 235, 0.86), rgba(255, 255, 255, 0.96));
+}
 .final-grade-source-card {
     display: flex;
     flex-direction: column;

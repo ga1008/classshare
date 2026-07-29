@@ -516,6 +516,7 @@ def build_final_grade_transcript_readiness(
         class_offering_id=int(class_offering_id),
         document_type=ORDINARY_GRADE_RECORD_TYPE,
         context=context,
+        roster_students=roster_students,
     )
     exam_record = _select_matching_record(
         conn,
@@ -523,6 +524,7 @@ def build_final_grade_transcript_readiness(
         class_offering_id=int(class_offering_id),
         document_type=EXAM_GRADE_RECORD_TYPE,
         context=context,
+        roster_students=roster_students,
     )
     ordinary_source = _source_match_summary(
         ordinary_record,
@@ -740,6 +742,7 @@ def _select_matching_record(
     class_offering_id: int,
     document_type: str,
     context: dict[str, Any],
+    roster_students: list[dict[str, Any]],
 ):
     rows = conn.execute(
         """
@@ -749,27 +752,79 @@ def _select_matching_record(
           AND r.document_group = 'final_material'
           AND r.document_type = ?
           AND r.parse_status = 'completed'
-          AND EXISTS (
-                SELECT 1
-                FROM course_material_assignments a
-                WHERE a.class_offering_id = ?
-                  AND a.material_id IN (
-                        COALESCE(r.package_material_id, -1),
-                        COALESCE(r.parsed_material_id, -1),
-                        COALESCE(r.source_material_id, -1)
-                  )
-          )
         ORDER BY r.updated_at DESC, r.id DESC
-        LIMIT 20
+        LIMIT 100
         """,
-        (int(teacher_id), document_type, int(class_offering_id)),
+        (int(teacher_id), document_type),
     ).fetchall()
+    candidates: list[tuple[tuple[Any, ...], Any]] = []
     for row in rows:
         payload = _record_export_payload(row)
         fields = _as_dict(payload.get("fields"))
-        if _same_context(fields, context):
-            return row
-    return None
+        if not _same_context(fields, context):
+            continue
+        if not _record_matches_offering_scope(
+            conn,
+            row,
+            fields=fields,
+            class_offering_id=int(class_offering_id),
+        ):
+            continue
+        summary = _source_match_summary(
+            row,
+            roster_students=roster_students,
+            document_type=document_type,
+            class_offering_id=int(class_offering_id),
+        )
+        issue_count = (
+            int(summary.get("missing_count") or 0)
+            + int(summary.get("conflict_count") or 0)
+            + int(summary.get("duplicate_count") or 0)
+        )
+        rank = (
+            1 if summary.get("ready") else 0,
+            int(summary.get("matched_count") or 0),
+            -issue_count,
+            str(row["updated_at"] or ""),
+            int(row["id"]),
+        )
+        candidates.append((rank, row))
+    return max(candidates, key=lambda item: item[0])[1] if candidates else None
+
+
+def _record_matches_offering_scope(
+    conn,
+    record,
+    *,
+    fields: dict[str, Any],
+    class_offering_id: int,
+) -> bool:
+    field_offering_id = _positive_int(fields.get("class_offering_id"), 0)
+    if field_offering_id:
+        return field_offering_id == int(class_offering_id)
+    material_ids = [
+        int(value)
+        for value in (
+            record["package_material_id"],
+            record["parsed_material_id"],
+            record["source_material_id"],
+        )
+        if _positive_int(value, 0)
+    ]
+    if not material_ids:
+        return False
+    placeholders = ",".join("?" for _ in material_ids)
+    assignment = conn.execute(
+        f"""
+        SELECT 1
+        FROM course_material_assignments
+        WHERE class_offering_id = ?
+          AND material_id IN ({placeholders})
+        LIMIT 1
+        """,
+        (int(class_offering_id), *material_ids),
+    ).fetchone()
+    return bool(assignment)
 
 
 def _same_context(fields: dict[str, Any], context: dict[str, Any]) -> bool:
@@ -777,7 +832,7 @@ def _same_context(fields: dict[str, Any], context: dict[str, Any]) -> bool:
         ("academic_year", _academic_year_token),
         ("semester", _semester_token),
         ("course_name", _identity_text),
-        ("class_name", _identity_text),
+        ("class_name", _class_identity_text),
     )
     for key, normalizer in comparisons:
         expected = normalizer(context.get(key))
@@ -1303,6 +1358,10 @@ def _filename_part(value: Any) -> str:
 
 def _identity_text(value: Any) -> str:
     return re.sub(r"[\s·•._\-—()（）\[\]【】]+", "", _text(value)).lower()
+
+
+def _class_identity_text(value: Any) -> str:
+    return re.sub(r"班$", "", _identity_text(value))
 
 
 def _text(value: Any) -> str:

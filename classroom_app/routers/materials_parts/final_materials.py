@@ -1,3 +1,5 @@
+import traceback
+
 from .common import *
 from .generation_helpers import *
 from .ai_import_helpers import *
@@ -19,6 +21,7 @@ from ...services.final_grade_transcript_service import (
     build_final_grade_transcript_readiness,
 )
 from ...services.academic_exam_roster_sync_service import (
+    ACADEMIC_EXAM_ROSTER_CACHE_SECONDS,
     sync_classroom_exam_roster_from_academic_system,
 )
 from ...services.smart_classroom_checkin_sync_service import (
@@ -94,6 +97,7 @@ async def prepare_classroom_final_grade_transcript(
         int(user["id"]),
         int(class_offering_id),
         exam_course_key=str(payload.exam_course_key or "").strip(),
+        min_refresh_interval_seconds=ACADEMIC_EXAM_ROSTER_CACHE_SECONDS,
     )
     sync_status = str(roster_sync.get("status") or "")
     if sync_status != "success":
@@ -104,11 +108,25 @@ async def prepare_classroom_final_grade_transcript(
             "roster_sync": roster_sync,
         }
     with get_db_connection() as conn:
-        readiness = build_final_grade_transcript_readiness(
-            conn,
-            class_offering_id=int(class_offering_id),
-            teacher_id=int(user["id"]),
-        )
+        try:
+            readiness = build_final_grade_transcript_readiness(
+                conn,
+                class_offering_id=int(class_offering_id),
+                teacher_id=int(user["id"]),
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            traceback.print_exc()
+            return {
+                "status": "verification_failed",
+                "ready": False,
+                "message": (
+                    "考试名单已保留，但成绩来源核对暂时失败。"
+                    "系统没有把核对失败误判为材料缺失，请稍后重试。"
+                ),
+                "roster_sync": roster_sync,
+            }
     return {
         "status": "success",
         **readiness,
@@ -117,6 +135,9 @@ async def prepare_classroom_final_grade_transcript(
             "message": roster_sync.get("message") or "",
             "alignment": roster_sync.get("alignment") or {},
             "synced_at": _as_dict(readiness.get("roster")).get("synced_at") or "",
+            "cache_hit": bool(roster_sync.get("cache_hit")),
+            "sync_mode": roster_sync.get("sync_mode") or "",
+            "freshness": roster_sync.get("freshness") or {},
         },
     }
 
@@ -211,6 +232,7 @@ async def generate_classroom_final_material(
             int(user["id"]),
             int(class_offering_id),
             exam_course_key=str(payload.exam_course_key or "").strip(),
+            min_refresh_interval_seconds=ACADEMIC_EXAM_ROSTER_CACHE_SECONDS,
         )
         if str(final_grade_roster_sync.get("status") or "") != "success":
             raise HTTPException(
@@ -358,15 +380,24 @@ async def generate_classroom_final_material(
         if document_type == FINAL_GRADE_TRANSCRIPT_TYPE:
             if not str(payload.expected_roster_signature or "").strip():
                 raise HTTPException(409, "生成窗口的名单确认信息已失效，请重新同步并核对后生成。")
-            export_payload = build_final_grade_transcript_payload(
-                conn,
-                class_offering_id=int(class_offering_id),
-                teacher_id=int(user["id"]),
-                expected_roster_synced_at=str(final_grade_roster_sync.get("synced_at") or ""),
-                expected_roster_signature=str(payload.expected_roster_signature or "").strip(),
-                expected_ordinary_record_id=payload.ordinary_grade_record_id,
-                expected_exam_record_id=payload.exam_grade_record_id,
-            )
+            try:
+                export_payload = build_final_grade_transcript_payload(
+                    conn,
+                    class_offering_id=int(class_offering_id),
+                    teacher_id=int(user["id"]),
+                    expected_roster_synced_at=str(final_grade_roster_sync.get("synced_at") or ""),
+                    expected_roster_signature=str(payload.expected_roster_signature or "").strip(),
+                    expected_ordinary_record_id=payload.ordinary_grade_record_id,
+                    expected_exam_record_id=payload.exam_grade_record_id,
+                )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                traceback.print_exc()
+                raise HTTPException(
+                    503,
+                    "期末成绩单来源核对暂时失败，现有名单和成绩材料均未被修改，请稍后重试。",
+                ) from exc
             raw_result = {
                 "metadata": export_payload.get("fields") or {},
                 "content_markdown": export_payload.get("content_markdown") or "",

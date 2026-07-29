@@ -49,6 +49,23 @@ test.describe('P03 materials management', () => {
     await expect(page.locator('[data-process-classroom-generate]')).toBeVisible();
     await expect(page.locator('[data-process-ai-import]')).toBeVisible();
 
+    let releasePrepare!: () => void;
+    const prepareGate = new Promise<void>((resolve) => {
+      releasePrepare = resolve;
+    });
+    await page.route(/\/api\/classrooms\/\d+\/final-grade-transcript\/prepare$/, async (route) => {
+      await prepareGate;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'academic_query_failed',
+          ready: false,
+          message: '测试中的教务名单暂不可用',
+        }),
+      });
+    });
+
     await page.locator('[data-process-classroom-generate]').click();
     await expect(page.locator('#materials-classroom-generate-modal')).toBeVisible();
     const offering = page.locator('[data-materials-final-grade-offering-id]').first();
@@ -57,7 +74,14 @@ test.describe('P03 materials management', () => {
     await expect(page.locator('#materials-final-grade-wizard')).toBeVisible();
     await expect(page.locator('#materials-final-grade-wizard')).toContainText('仅展示 1 份教师需要的期末成绩单');
     await expect(page.locator('#materials-final-grade-wizard')).toContainText('教务考试名单');
-    await expect(page.locator('#materials-final-grade-refresh-btn')).toBeVisible();
+    await expect(page.locator('#materials-final-grade-refresh-btn')).toBeDisabled();
+    await expect(page.locator('#materials-final-grade-refresh-btn')).toHaveClass(/is-loading/);
+    await expect(page.locator('#materials-classroom-generate-submit-btn')).toBeDisabled();
+    await expect(page.locator('#materials-classroom-generate-submit-btn')).toHaveClass(/is-loading/);
+    releasePrepare();
+    await expect(page.locator('#materials-final-grade-source-grid')).toContainText('来源状态尚未判定');
+    await expect(page.locator('#materials-final-grade-source-grid')).not.toContainText('缺少来源');
+    await expect(page.locator('#materials-final-grade-refresh-btn')).toBeEnabled();
 
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.locator('#materials-final-grade-wizard')).toBeVisible();

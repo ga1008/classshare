@@ -40,7 +40,7 @@ const DOCUMENT_TYPE_LABELS = {
 const CLASSROOM_GENERATION_HINTS = {
     ordinary_grade_record: '选择课堂后在当前页面确认 3 份平时作业和 1 份测评；系统会读取真实提交、评分与考勤数据生成 Excel。',
     exam_grade_record: '选择课堂后在当前页面确认一场已绑定试卷、配置大题分值且已有评分的考试；生成后停留在当前列表。',
-    final_grade_transcript: '选择课堂后先即时同步教务考试名单，再逐人核对平时成绩表和考核登分表；生成后停留在当前列表。',
+    final_grade_transcript: '选择课堂后优先复用 30 分钟内的教务考试名单缓存，再逐人核对平时成绩表和考核登分表；生成后停留在当前列表。',
 };
 
 const SEARCH_DEBOUNCE_MS = 280;
@@ -296,6 +296,7 @@ const state = {
         loading: false,
         busy: false,
         error: '',
+        requestId: 0,
     },
     recentGeneratedMaterialId: null,
     recentGeneratedHighlightArmed: false,
@@ -707,6 +708,7 @@ function resetExamGradeGeneration() {
 }
 
 function resetFinalGradeGeneration() {
+    state.finalGradeGenerate.requestId += 1;
     state.finalGradeGenerate.offering = null;
     state.finalGradeGenerate.readiness = null;
     state.finalGradeGenerate.examCourseKey = '';
@@ -1319,7 +1321,7 @@ function renderFinalGradeSourceCard(source, key) {
 function getManageFinalGradeReadiness() {
     const generation = state.finalGradeGenerate;
     if (!generation.offering) return { ready: false, message: '请先选择课堂。' };
-    if (generation.loading) return { ready: false, message: '正在同步教务考试名单并核对两份成绩来源…' };
+    if (generation.loading) return { ready: false, message: '正在检查教务名单缓存并核对两份成绩来源…' };
     if (generation.error) return { ready: false, message: generation.error };
     if (generation.candidates.length && !generation.examCourseKey) {
         return { ready: false, message: '请先选择教务系统中的对应考试课程。' };
@@ -1334,12 +1336,19 @@ function renderManageFinalGradeWizard() {
     const readiness = generation.readiness || {};
     const roster = readiness.roster || {};
     const sources = readiness.sources || {};
+    const rosterSync = readiness.roster_sync || {};
+    const freshness = rosterSync.freshness || {};
+    const isWaiting = Boolean(generation.loading || generation.busy);
+    const remainingMinutes = Math.max(0, Math.ceil(Number(freshness.remaining_seconds || 0) / 60));
     if (refs.finalGradeClassroomName) refs.finalGradeClassroomName.textContent = offeringLabel(generation.offering);
     if (refs.finalGradeSummary) {
         refs.finalGradeSummary.textContent = generation.loading
-            ? '正在同步教务考试名单…'
-            : (readiness.ready ? `${Number(roster.student_count || 0)} 人全部核对完成` : '等待补齐来源');
+            ? '正在检查名单缓存并核对…'
+            : (rosterSync.cache_hit
+                ? `已用 30 分钟缓存${remainingMinutes ? ` · 约 ${remainingMinutes} 分钟后到期` : ''}`
+                : (readiness.ready ? `${Number(roster.student_count || 0)} 人全部核对完成` : '等待补齐来源'));
         refs.finalGradeSummary.classList.toggle('is-fresh', Boolean(readiness.ready));
+        refs.finalGradeSummary.classList.toggle('is-loading', Boolean(generation.loading));
     }
     if (refs.finalGradeCourseChoice) {
         refs.finalGradeCourseChoice.hidden = !generation.candidates.length;
@@ -1349,7 +1358,7 @@ function renderManageFinalGradeWizard() {
             const key = String(candidate?.exam_course_key || '');
             const selected = key === generation.examCourseKey;
             return `
-                <button type="button" class="ordinary-grade-candidate${selected ? ' is-selected' : ''}" data-materials-final-grade-course-key="${escapeHtml(key)}">
+                <button type="button" class="ordinary-grade-candidate${selected ? ' is-selected' : ''}" data-materials-final-grade-course-key="${escapeHtml(key)}"${isWaiting ? ' disabled aria-disabled="true"' : ''}>
                     <span class="ordinary-grade-candidate__main">
                         <strong>${escapeHtml(candidate?.course_name || '未命名课程')}</strong>
                         <small>${escapeHtml([candidate?.course_code, candidate?.teaching_class_name, candidate?.class_composition].filter(Boolean).join(' · '))}</small>
@@ -1362,11 +1371,13 @@ function renderManageFinalGradeWizard() {
     }
     if (refs.finalGradeSourceGrid) {
         refs.finalGradeSourceGrid.innerHTML = generation.loading
-            ? '<div class="ordinary-grade-picker__empty"><strong>正在核对来源</strong><span>同步教务名单后，将逐人比对两份成绩材料。</span></div>'
-            : [
+            ? '<div class="ordinary-grade-picker__empty final-grade-verification-state is-loading" role="status"><span class="spinner spinner-sm" aria-hidden="true"></span><strong>正在核对来源</strong><span>优先读取 30 分钟缓存；仅在缓存过期时访问教务系统，随后逐人比对两份成绩材料。</span></div>'
+            : (!readiness.sources && generation.error
+                ? `<div class="ordinary-grade-picker__empty final-grade-verification-state is-error" role="alert"><strong>来源状态尚未判定</strong><span>${escapeHtml(generation.error)}。系统不会把“核对失败”误报成“材料不存在”，请稍后重试。</span></div>`
+                : [
                 renderFinalGradeSourceCard(sources.ordinary_grade_record || {}, 'ordinary_grade_record'),
                 renderFinalGradeSourceCard(sources.exam_grade_record || {}, 'exam_grade_record'),
-            ].join('');
+                ].join(''));
     }
     const students = Array.isArray(roster.students) && roster.students.length
         ? roster.students
@@ -1386,14 +1397,29 @@ function renderManageFinalGradeWizard() {
         ` : '';
     }
     const current = getManageFinalGradeReadiness();
-    if (!generation.busy) setManageFinalGradeStatus(current.ready ? '' : current.message, current.ready ? '' : 'blocking');
-    if (refs.classroomGenerateSubmitBtn) {
-        refs.classroomGenerateSubmitBtn.disabled = generation.busy || !current.ready;
-        refs.classroomGenerateSubmitBtn.textContent = generation.busy
-            ? '正在生成 Excel...'
-            : (current.ready ? '生成并保存' : '请先完成来源核对');
-        refs.classroomGenerateSubmitBtn.title = current.message || '';
+    if (!generation.busy) {
+        setManageFinalGradeStatus(
+            current.ready ? (rosterSync.cache_hit ? rosterSync.message || '' : '') : current.message,
+            current.ready ? (rosterSync.cache_hit ? 'progress' : '') : (generation.loading ? 'progress' : 'blocking'),
+        );
     }
+    if (refs.finalGradeRefreshBtn) {
+        refs.finalGradeRefreshBtn.disabled = isWaiting;
+        refs.finalGradeRefreshBtn.classList.toggle('is-loading', Boolean(generation.loading));
+        refs.finalGradeRefreshBtn.textContent = generation.loading ? '正在同步并核对…' : '重新同步并核对';
+        refs.finalGradeRefreshBtn.setAttribute('aria-busy', generation.loading ? 'true' : 'false');
+    }
+    if (refs.classroomGenerateSubmitBtn) {
+        refs.classroomGenerateSubmitBtn.disabled = isWaiting || !current.ready;
+        refs.classroomGenerateSubmitBtn.classList.toggle('is-loading', isWaiting);
+        refs.classroomGenerateSubmitBtn.textContent = generation.loading
+            ? '正在同步并核对…'
+            : (generation.busy ? '正在生成 Excel...' : (current.ready ? '生成并保存' : '请先完成来源核对'));
+        refs.classroomGenerateSubmitBtn.title = current.message || '';
+        refs.classroomGenerateSubmitBtn.setAttribute('aria-busy', isWaiting ? 'true' : 'false');
+    }
+    refs.finalGradeWizard?.classList.toggle('is-loading', isWaiting);
+    refs.finalGradeWizard?.setAttribute('aria-busy', isWaiting ? 'true' : 'false');
     refs.classroomGenerateModal?.querySelectorAll('[data-dismiss="modal"], .modal-close').forEach((button) => {
         button.disabled = generation.busy;
     });
@@ -1404,6 +1430,12 @@ async function prepareManageFinalGradeGeneration(examCourseKey = '') {
     const generation = state.finalGradeGenerate;
     const offeringId = Number(generation.offering?.id || 0);
     if (!offeringId) return;
+    const requestId = generation.requestId + 1;
+    generation.requestId = requestId;
+    const isCurrentRequest = () => (
+        generation.requestId === requestId
+        && Number(generation.offering?.id || 0) === offeringId
+    );
     generation.loading = true;
     generation.error = '';
     generation.examCourseKey = examCourseKey || generation.examCourseKey || '';
@@ -1414,6 +1446,7 @@ async function prepareManageFinalGradeGeneration(examCourseKey = '') {
             body: { exam_course_key: generation.examCourseKey },
             silent: true,
         });
+        if (!isCurrentRequest()) return;
         if (data.status === 'needs_confirmation') {
             generation.candidates = Array.isArray(data?.roster_sync?.candidates)
                 ? data.roster_sync.candidates
@@ -1431,8 +1464,10 @@ async function prepareManageFinalGradeGeneration(examCourseKey = '') {
             generation.error = '';
         }
     } catch (error) {
+        if (!isCurrentRequest()) return;
         generation.error = error.message || '考试名单同步失败，请稍后重试。';
     } finally {
+        if (!isCurrentRequest()) return;
         generation.loading = false;
         renderManageFinalGradeWizard();
     }
@@ -1453,7 +1488,7 @@ async function openManageFinalGradeWizard(offering) {
     if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = true;
     refs.classroomGenerateModal?.querySelector('.materials-classroom-generate-dialog')?.classList.add('is-wizard');
     refs.classroomGenerateTitle.textContent = '生成期末成绩单';
-    refs.classroomGenerateSubtitle.textContent = `${offeringLabel(offering)} · 先同步名单，再严格关联成绩`;
+    refs.classroomGenerateSubtitle.textContent = `${offeringLabel(offering)} · 30 分钟名单缓存 · 严格关联成绩`;
     await prepareManageFinalGradeGeneration('');
 }
 
@@ -1468,7 +1503,7 @@ async function submitManageFinalGradeGeneration() {
     const sources = generation.readiness?.sources || {};
     generation.busy = true;
     renderManageFinalGradeWizard();
-    setManageFinalGradeStatus('正在再次同步名单并锁定两份来源，随后按教务顺序生成 Excel…', 'progress');
+    setManageFinalGradeStatus('正在锁定已核对的名单缓存与两份成绩来源，随后按教务顺序生成 Excel…', 'progress');
     try {
         const data = await apiFetch(`/api/classrooms/${offeringId}/final-materials/generate`, {
             method: 'POST',
@@ -1578,7 +1613,7 @@ function renderClassroomGenerateOptions(policy) {
                     <small>${escapeHtml(meta)}</small>
                     ${isOrdinaryGrade ? `<small class="materials-classroom-source-status">${escapeHtml(sourceStatus)}</small>` : ''}
                     ${isExamGrade ? '<small class="materials-classroom-source-status">选择后检查试卷结构与评分覆盖</small>' : ''}
-                    ${isFinalGrade ? '<small class="materials-classroom-source-status">选择后即时同步考试名单并核对两份成绩来源</small>' : ''}
+                    ${isFinalGrade ? '<small class="materials-classroom-source-status">选择后优先使用 30 分钟名单缓存并核对两份成绩来源</small>' : ''}
                 </div>
                 <span>${escapeHtml(isOrdinaryGrade && !sourceReady ? '检查来源' : (isExamGrade ? '检查考试' : (isFinalGrade ? '同步并核对' : '开始生成')))}</span>
         `;

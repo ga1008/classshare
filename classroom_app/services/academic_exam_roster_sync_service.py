@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import sqlite3
 import time
+import traceback
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -29,6 +31,7 @@ from .organization_scope_service import load_teacher_org_scope
 
 
 ACADEMIC_EXAM_ROSTER_SOURCE = "gxufl_jwxt"
+ACADEMIC_EXAM_ROSTER_CACHE_SECONDS = 30 * 60
 SCHOOL_CODE = "gxufl"
 
 ZF_EXAM_COURSE_INDEX_PATH = (
@@ -43,6 +46,8 @@ EXAM_ROSTER_TABLE_START_ROW = 8
 EXAM_ROSTER_FIRST_STUDENT_ROW = 9
 EXAM_ROSTER_STUDENT_ROWS_PER_SIDE = EXAM_ROSTER_TOTAL_ROWS - EXAM_ROSTER_FIRST_STUDENT_ROW + 1
 MAX_EXAM_ROSTER_STUDENTS = EXAM_ROSTER_STUDENT_ROWS_PER_SIDE * 2
+
+_exam_roster_sync_locks: dict[tuple[int, int], asyncio.Lock] = {}
 
 
 @dataclass
@@ -830,6 +835,107 @@ def _load_exam_students(conn: sqlite3.Connection, item_id: int) -> list[dict[str
     return [dict(row) for row in rows]
 
 
+def get_classroom_exam_roster_freshness(
+    conn,
+    *,
+    teacher_id: int,
+    class_offering_id: int,
+    max_age_seconds: int = ACADEMIC_EXAM_ROSTER_CACHE_SECONDS,
+    exam_course_key: str = "",
+) -> dict[str, Any]:
+    item = _load_latest_exam_item(
+        conn,
+        teacher_id=int(teacher_id),
+        class_offering_id=int(class_offering_id),
+    )
+    item_dict = dict(item) if item else {}
+    synced_at = _normalize_space(item_dict.get("synced_at"))
+    parsed = _parse_export_datetime(synced_at)
+    current_time = datetime.now(parsed.tzinfo) if parsed and parsed.tzinfo else datetime.now()
+    age_seconds = max(0, int((current_time - parsed).total_seconds())) if parsed else None
+    threshold = max(0, int(max_age_seconds or 0))
+    requested_key = _normalize_space(exam_course_key)
+    cached_key = _normalize_space(item_dict.get("exam_course_key"))
+    course_matches = not requested_key or requested_key == cached_key
+    student_count = (
+        len(_load_exam_students(conn, int(item_dict["id"])))
+        if item_dict.get("id")
+        else 0
+    )
+    return {
+        "class_offering_id": int(class_offering_id),
+        "exam_roster_item_id": _optional_int(item_dict.get("id")),
+        "exam_course_key": cached_key,
+        "requested_exam_course_key": requested_key,
+        "course_matches": course_matches,
+        "student_count": student_count,
+        "last_synced_at": synced_at,
+        "age_seconds": age_seconds,
+        "max_age_seconds": threshold,
+        "remaining_seconds": (
+            max(0, threshold - int(age_seconds))
+            if age_seconds is not None and threshold > 0
+            else 0
+        ),
+        "is_fresh": bool(
+            item
+            and student_count > 0
+            and course_matches
+            and parsed
+            and threshold > 0
+            and age_seconds is not None
+            and age_seconds < threshold
+        ),
+    }
+
+
+def _load_cached_exam_roster_payload(
+    *,
+    teacher_id: int,
+    class_offering_id: int,
+    exam_course_key: str,
+    max_age_seconds: int,
+) -> dict[str, Any] | None:
+    with get_db_connection() as conn:
+        context = _load_offering_context(conn, int(teacher_id), int(class_offering_id))
+        if not context:
+            return None
+        freshness = get_classroom_exam_roster_freshness(
+            conn,
+            teacher_id=int(teacher_id),
+            class_offering_id=int(class_offering_id),
+            max_age_seconds=int(max_age_seconds),
+            exam_course_key=exam_course_key,
+        )
+        if not freshness["is_fresh"]:
+            return None
+        item = _load_latest_exam_item(
+            conn,
+            teacher_id=int(teacher_id),
+            class_offering_id=int(class_offering_id),
+        )
+        if not item:
+            return None
+        status_payload = _status_payload(
+            conn,
+            teacher_id=int(teacher_id),
+            context=context,
+            item=item,
+        )
+    remaining_minutes = max(1, (int(freshness["remaining_seconds"]) + 59) // 60)
+    return {
+        **status_payload,
+        "status": "success",
+        "message": (
+            f"已使用 {freshness['last_synced_at'].replace('T', ' ')} 的教务考试名单缓存，"
+            f"约 {remaining_minutes} 分钟后到期；本次未重复访问教务系统。"
+        ),
+        "cache_hit": True,
+        "sync_mode": "cache",
+        "freshness": freshness,
+    }
+
+
 def _format_semester_exam_title(item: dict[str, Any], context: dict[str, Any]) -> str:
     academic_year_name = _normalize_space(item.get("academic_year_name"))
     if academic_year_name:
@@ -1018,7 +1124,7 @@ def load_classroom_exam_roster_status(teacher_id: int, class_offering_id: int) -
         return _status_payload(conn, teacher_id=int(teacher_id), context=context, item=item)
 
 
-async def sync_classroom_exam_roster_from_academic_system(
+async def _sync_classroom_exam_roster_from_academic_system_uncached(
     teacher_id: int,
     class_offering_id: int,
     *,
@@ -1113,7 +1219,63 @@ async def sync_classroom_exam_roster_from_academic_system(
         ),
         "alignment": alignment,
         "source_summary": source_summary,
+        "cache_hit": False,
+        "sync_mode": "live",
     }
+
+
+async def sync_classroom_exam_roster_from_academic_system(
+    teacher_id: int,
+    class_offering_id: int,
+    *,
+    exam_course_key: str = "",
+    min_refresh_interval_seconds: int = 0,
+) -> dict[str, Any]:
+    teacher_id = int(teacher_id)
+    class_offering_id = int(class_offering_id)
+    exam_course_key = _normalize_space(exam_course_key)
+    refresh_interval = max(0, int(min_refresh_interval_seconds or 0))
+    lock = _exam_roster_sync_locks.setdefault(
+        (teacher_id, class_offering_id),
+        asyncio.Lock(),
+    )
+    async with lock:
+        try:
+            if refresh_interval > 0:
+                cached = _load_cached_exam_roster_payload(
+                    teacher_id=teacher_id,
+                    class_offering_id=class_offering_id,
+                    exam_course_key=exam_course_key,
+                    max_age_seconds=refresh_interval,
+                )
+                if cached is not None:
+                    return cached
+            result = await _sync_classroom_exam_roster_from_academic_system_uncached(
+                teacher_id,
+                class_offering_id,
+                exam_course_key=exam_course_key,
+            )
+            if result.get("status") == "success" and refresh_interval > 0:
+                with get_db_connection() as conn:
+                    result["freshness"] = get_classroom_exam_roster_freshness(
+                        conn,
+                        teacher_id=teacher_id,
+                        class_offering_id=class_offering_id,
+                        max_age_seconds=refresh_interval,
+                        exam_course_key=exam_course_key,
+                    )
+            return result
+        except Exception:
+            traceback.print_exc()
+            return {
+                "status": "academic_query_failed",
+                "message": (
+                    "教务考试名单同步暂时失败，系统已保留原有名单，未覆盖任何成绩数据。"
+                    "请稍后重试；若刚刚同步成功，30 分钟内重新打开会直接使用缓存。"
+                ),
+                "cache_hit": False,
+                "sync_mode": "failed",
+            }
 
 
 def _parse_export_datetime(value: Any) -> datetime | None:

@@ -193,7 +193,7 @@
         <span class="materials-process-guide__eyebrow">过程材料工作流</span>
         <h3>{{ initial_ai_generate.status or '该表需要从真实课堂数据生成，不能在材料库中泛化生成。' }}</h3>
         {% if initial_library_filter.document_type == 'final_grade_transcript' %}
-        <p>可直接在当前页选择课堂：系统会先同步教务考试名单，再严格核对同课堂、同学年学期的平时成绩表与考核登分表；也可导入教务 Excel 模板归档。</p>
+        <p>可直接在当前页选择课堂：系统优先使用 30 分钟内的教务考试名单缓存，再严格核对同课堂、同学年学期的平时成绩表与考核登分表；也可导入教务 Excel 模板归档。</p>
         {% elif initial_library_filter.document_type == 'exam_grade_record' %}
         <p>可直接在当前页选择课堂、核对试卷大题与评分覆盖后完成生成；若已有学校模板 Excel，也可导入解析后归档。</p>
         {% else %}
@@ -512,19 +512,19 @@
                 <div class="ordinary-grade-wizard materials-final-grade-wizard" id="materials-final-grade-wizard" hidden>
                     <div class="ordinary-grade-wizard__header">
                         <div>
-                            <span class="ordinary-grade-wizard__eyebrow">教务实时名单 · 双来源逐人核验</span>
+                            <span class="ordinary-grade-wizard__eyebrow">教务名单 30 分钟缓存 · 双来源逐人核验</span>
                             <strong id="materials-final-grade-classroom-name">正在读取课堂</strong>
-                            <p>系统先同步教务考试名单，再按学年学期、班级、课程、学号和姓名核对平时成绩表与考核登分表；名单顺序以教务 row_order 为唯一准绳。</p>
+                            <p>系统优先读取 30 分钟内的教务考试名单缓存；缓存过期才重新访问教务系统。随后按学年学期、班级、课程、学号和姓名核对平时成绩表与考核登分表，名单顺序以教务 row_order 为唯一准绳。</p>
                         </div>
                         <span class="ordinary-grade-wizard__attendance" id="materials-final-grade-summary">正在同步考试名单…</span>
                     </div>
                     <div class="final-grade-roster-contract" id="materials-final-grade-roster">
-                        <div><span>1</span><strong>同步考试名单</strong><small>不使用本地班级排序替代</small></div>
+                        <div><span>1</span><strong>读取考试名单</strong><small>30 分钟缓存，过期再同步</small></div>
                         <div><span>2</span><strong>核对平时成绩</strong><small>学号匹配、姓名复核</small></div>
                         <div><span>3</span><strong>核对期末成绩</strong><small>同班课与同学年学期</small></div>
                     </div>
                     <div class="final-grade-refresh-row">
-                        <span>在其他页面补齐或更新成绩来源后，无需关闭窗口，回到这里重新核对即可。</span>
+                        <span>在其他页面补齐或更新成绩来源后，无需关闭窗口，回到这里重新核对即可；30 分钟内不会重复访问教务系统。</span>
                         <button type="button" class="btn btn-outline btn-sm" id="materials-final-grade-refresh-btn">重新同步并核对</button>
                     </div>
                     <section class="final-grade-course-choice" id="materials-final-grade-course-choice" hidden>

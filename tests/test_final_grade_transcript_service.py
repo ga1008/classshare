@@ -333,7 +333,31 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
         self.assertEqual(cm.exception.status_code, 409)
         self.assertIn("名单内容在确认后发生了变化", str(cm.exception.detail))
 
-    def test_missing_source_returns_direct_generation_links(self):
+    def test_explicit_offering_id_recovers_source_when_material_assignment_is_missing(self):
+        self.conn.execute("DELETE FROM course_material_assignments WHERE material_id = 710")
+        self.conn.commit()
+
+        readiness = build_final_grade_transcript_readiness(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+        )
+
+        source = readiness["sources"]["exam_grade_record"]
+        self.assertTrue(readiness["ready"])
+        self.assertTrue(source["record_found"])
+        self.assertEqual(source["record_id"], 71)
+
+    def test_unscoped_unassigned_source_returns_direct_generation_link(self):
+        record = self.conn.execute(
+            "SELECT export_payload_json FROM material_ai_import_records WHERE id = 71"
+        ).fetchone()
+        payload = json.loads(record["export_payload_json"])
+        payload["fields"].pop("class_offering_id")
+        self.conn.execute(
+            "UPDATE material_ai_import_records SET export_payload_json = ? WHERE id = 71",
+            (json.dumps(payload, ensure_ascii=False),),
+        )
         self.conn.execute("DELETE FROM course_material_assignments WHERE material_id = 710")
         self.conn.commit()
 
@@ -348,6 +372,37 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
         self.assertFalse(source["record_found"])
         self.assertIn("/manage/teaching/exam-grade-records", source["generate_url"])
         self.assertIn("class_offering_id=30", source["generate_url"])
+
+    def test_source_selection_prefers_complete_record_over_newer_incomplete_candidate(self):
+        record = self.conn.execute(
+            "SELECT export_payload_json FROM material_ai_import_records WHERE id = 71"
+        ).fetchone()
+        payload = json.loads(record["export_payload_json"])
+        payload["structured"]["students"][0]["total_score"] = ""
+        self.conn.execute(
+            """
+            INSERT INTO material_ai_import_records
+                (id, teacher_id, document_group, document_type, document_type_label,
+                 parse_status, package_material_id, parsed_material_id, source_material_id,
+                 export_payload_json, updated_at)
+            VALUES (72, 1, 'final_material', 'exam_grade_record', '考核登分表',
+                    'completed', 720, NULL, NULL, ?, '2026-07-29 10:30:00')
+            """,
+            (json.dumps(payload, ensure_ascii=False),),
+        )
+        self.conn.execute(
+            "INSERT INTO course_material_assignments VALUES (720, 30)"
+        )
+        self.conn.commit()
+
+        readiness = build_final_grade_transcript_readiness(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+        )
+
+        self.assertTrue(readiness["ready"])
+        self.assertEqual(readiness["sources"]["exam_grade_record"]["record_id"], 71)
 
     def test_duplicate_student_number_in_source_is_reported_and_blocked(self):
         record = self.conn.execute(
