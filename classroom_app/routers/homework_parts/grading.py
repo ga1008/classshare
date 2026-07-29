@@ -1,10 +1,26 @@
 from .common import *
 import uuid
 
+from ...services.assignment_lifecycle_service import ASSIGNMENT_STATUS_CLOSED
+from ...services.classroom_closeout_service import (
+    apply_absence_scores,
+    close_assignment,
+    normalize_absence_score,
+    refresh_learning_state,
+)
 from ...services.grading_revision_service import activate_submission_grade_revision
 
 
 router = APIRouter()
+
+
+async def _optional_json_body(request: Request) -> dict[str, Any]:
+    """这些教师操作既支持无 body 的快捷点击，也支持带参数的弹窗提交。"""
+    try:
+        payload = await request.json()
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 @router.post(
@@ -13,139 +29,47 @@ router = APIRouter()
     response_model=SubmissionMutationResponse,
     response_model_exclude_unset=True,
 )
-async def zero_unsubmitted_scores(assignment_id: str, user: dict = Depends(get_current_teacher)):
-    """为仍未提交的学生创建“缺交记 0”成绩，占位记录不视为正式提交。"""
+async def zero_unsubmitted_scores(
+    assignment_id: str,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    """为仍未提交的学生写“缺交”占位成绩，占位记录不视为正式提交。
+
+    默认 0 分；教师可在弹窗里传 ``{"score": N}`` 改成别的默认分。不改变作业
+    本身的状态——要连同截止请用 ``/assignments/{id}/close``。
+    """
+    payload = await _optional_json_body(request)
+    score = normalize_absence_score(payload.get("score", payload.get("default_score")))
+
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
         assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
-        offering_class_id = assignment.get("offering_class_id")
-        if not offering_class_id:
+        result = apply_absence_scores(
+            conn,
+            assignment,
+            teacher_id=int(user["id"]),
+            score=score,
+        )
+        if result.get("message"):
             return {
                 "status": "success",
                 "updated_count": 0,
                 "created_count": 0,
                 "skipped_count": 0,
-                "message": "当前作业未绑定班级，无法识别未提交学生",
+                "message": result["message"],
             }
-
-        students = [
-            dict(row)
-            for row in conn.execute(
-                """
-                SELECT s.id, s.student_id_number, s.name
-                FROM students s
-                WHERE s.class_id = ?
-                  AND COALESCE(s.enrollment_status, 'active') = 'active'
-                ORDER BY s.student_id_number, s.name
-                """,
-                (int(offering_class_id),),
-            )
-        ]
-        existing_rows = [
-            dict(row)
-            for row in conn.execute(
-                """
-                SELECT id, student_pk_id, status, is_absence_score
-                FROM submissions
-                WHERE assignment_id = ?
-                """,
-                (assignment_id,),
-            )
-        ]
-        existing_by_student: dict[int, dict[str, Any]] = {}
-        for row in existing_rows:
-            student_pk_id = int(row["student_pk_id"])
-            current = existing_by_student.get(student_pk_id)
-            row_is_absence = int(row.get("is_absence_score") or 0) == 1
-            current_is_absence = current is not None and int(current.get("is_absence_score") or 0) == 1
-            if current is None or (current_is_absence and not row_is_absence):
-                existing_by_student[student_pk_id] = row
-
-        now_iso = datetime.now().replace(microsecond=0).isoformat()
-        feedback = "未提交，按缺交记 0 分。"
-        created_count = 0
-        updated_count = 0
-        skipped_count = 0
-        affected_student_ids: set[int] = set()
-
-        for student in students:
-            student_pk_id = int(student["id"])
-            existing = existing_by_student.get(student_pk_id)
-            if existing and str(existing.get("status") or "") != "unsubmitted":
-                skipped_count += 1
-                continue
-
-            if existing:
-                conn.execute(
-                    """
-                    UPDATE submissions
-                    SET student_name = ?,
-                        status = 'unsubmitted',
-                        score = 0,
-                        feedback_md = ?,
-                        submitted_by_role = 'teacher',
-                        submitted_by_teacher_id = ?,
-                        submission_channel = 'absence_zero',
-                        resubmission_allowed = 0,
-                        resubmission_due_at = NULL,
-                        returned_at = NULL,
-                        returned_by_teacher_id = NULL,
-                        returned_reason = NULL,
-                        is_absence_score = 1,
-                        absence_scored_at = ?,
-                        absence_scored_by_teacher_id = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        student.get("name") or "",
-                        feedback,
-                        int(user["id"]),
-                        now_iso,
-                        int(user["id"]),
-                        int(existing["id"]),
-                    ),
-                )
-                updated_count += 1
-                affected_student_ids.add(student_pk_id)
-                continue
-
-            conn.execute(
-                """
-                INSERT INTO submissions (
-                    assignment_id, student_pk_id, student_name, status, score, feedback_md,
-                    answers_json, submitted_by_role, submitted_by_teacher_id, submission_channel,
-                    resubmission_allowed, resubmission_due_at, returned_at, returned_by_teacher_id,
-                    returned_reason, is_absence_score, absence_scored_at, absence_scored_by_teacher_id,
-                    submitted_at
-                ) VALUES (?, ?, ?, 'unsubmitted', 0, ?, NULL, 'teacher', ?, 'absence_zero',
-                          0, NULL, NULL, NULL, NULL, 1, ?, ?, ?)
-                """,
-                (
-                    assignment_id,
-                    student_pk_id,
-                    student.get("name") or "",
-                    feedback,
-                    int(user["id"]),
-                    now_iso,
-                    int(user["id"]),
-                    now_iso,
-                ),
-            )
-            created_count += 1
-            affected_student_ids.add(student_pk_id)
-
-        if assignment.get("class_offering_id"):
-            for student_pk_id in affected_student_ids:
-                try:
-                    refresh_student_learning_state(
-                        conn,
-                        int(assignment["class_offering_id"]),
-                        int(student_pk_id),
-                        event_source_ref=f"grading:{assignment_id}:zero",
-                    )
-                except Exception as exc:
-                    print(f"[LEARNING_PROGRESS] zero-unsubmitted snapshot refresh failed: {exc}")
+        refresh_learning_state(
+            conn,
+            assignment.get("class_offering_id"),
+            result.get("affected_student_ids") or [],
+            f"grading:{assignment_id}:zero",
+        )
         conn.commit()
+
+    created_count = int(result.get("created_count") or 0)
+    updated_count = int(result.get("updated_count") or 0)
+    skipped_count = int(result.get("skipped_count") or 0)
 
     if assignment.get("class_offering_id") and created_count + updated_count > 0:
         try:
@@ -156,9 +80,10 @@ async def zero_unsubmitted_scores(assignment_id: str, user: dict = Depends(get_c
                 display_name=str(user.get("name") or user["id"]),
                 action_type="assignment_zero_unsubmitted",
                 session_started_at=str(user.get("login_time") or "").strip() or None,
-                summary_text=f"未提交作业记 0：{assignment.get('title') or assignment_id}",
+                summary_text=f"未提交作业记 {score:g} 分：{assignment.get('title') or assignment_id}",
                 payload={
                     "assignment_id": assignment_id,
+                    "score": score,
                     "created_count": created_count,
                     "updated_count": updated_count,
                     "skipped_count": skipped_count,
@@ -174,6 +99,90 @@ async def zero_unsubmitted_scores(assignment_id: str, user: dict = Depends(get_c
         "created_count": created_count,
         "refreshed_count": updated_count,
         "skipped_count": skipped_count,
+        "score": score,
+    }
+
+
+@router.post(
+    "/assignments/{assignment_id}/close",
+    response_class=JSONResponse,
+    response_model=AssignmentMutationResponse,
+    response_model_exclude_unset=True,
+)
+async def close_assignment_now(
+    assignment_id: str,
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    """立即截止一份作业/测验，并给未提交者写默认分。
+
+    Body 全部可选::
+
+        {
+          "default_score": 0,        # 未提交者的默认分，0..100，缺省 0
+          "apply_absence": true,     # 关掉就只截止、不补分
+          "include_ungraded": false  # 是否把“已提交未批改”也按默认分记（破坏性）
+        }
+
+    全员已提交且已批改时补分环节自然什么都不做，效果就是“直接截止”。
+    """
+    payload = await _optional_json_body(request)
+    score = normalize_absence_score(payload.get("default_score", payload.get("score")))
+    apply_absence = payload.get("apply_absence", True) is not False
+    include_ungraded = bool(payload.get("include_ungraded"))
+
+    with get_db_connection() as conn:
+        close_overdue_assignments(conn)
+        assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
+        result = close_assignment(
+            conn,
+            assignment,
+            teacher_id=int(user["id"]),
+            score=score,
+            apply_absence=apply_absence,
+            include_ungraded=include_ungraded,
+        )
+        refresh_learning_state(
+            conn,
+            assignment.get("class_offering_id"),
+            result.get("affected_student_ids") or [],
+            f"grading:{assignment_id}:close",
+        )
+        conn.commit()
+
+    if assignment.get("class_offering_id"):
+        try:
+            record_behavior_event(
+                class_offering_id=int(assignment["class_offering_id"]),
+                user_pk=int(user["id"]),
+                user_role="teacher",
+                display_name=str(user.get("name") or user["id"]),
+                action_type="assignment_closed",
+                session_started_at=str(user.get("login_time") or "").strip() or None,
+                summary_text=f"截止作业：{assignment.get('title') or assignment_id}",
+                payload={
+                    "assignment_id": assignment_id,
+                    "default_score": result.get("default_score"),
+                    "created_count": result.get("created_count"),
+                    "updated_count": result.get("updated_count"),
+                    "graded_count": result.get("graded_count"),
+                },
+                page_key="assignment_detail",
+            )
+        except Exception as exc:
+            print(f"[BEHAVIOR] 记录作业截止失败: {exc}")
+
+    return {
+        "status": "success",
+        "updated_assignment_id": assignment_id,
+        "assignment_status": ASSIGNMENT_STATUS_CLOSED,
+        "closed": result.get("closed"),
+        "closed_at": result.get("closed_at"),
+        "default_score": result.get("default_score"),
+        "created_count": result.get("created_count"),
+        "updated_count": result.get("updated_count"),
+        "graded_count": result.get("graded_count"),
+        "skipped_count": result.get("skipped_count"),
     }
 
 

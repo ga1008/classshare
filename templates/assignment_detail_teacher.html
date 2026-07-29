@@ -1295,6 +1295,16 @@
                 </div>
             </details>
 
+            {% if assignment.status == 'published' %}
+            <button type="button" class="app-topbar-action app-topbar-action--tone-amber" onclick="openCloseAssignmentModal()" id="close-assignment-btn" title="立即截止本作业，并为未提交者记默认分" aria-label="立即截止本作业" aria-haspopup="dialog" aria-controls="close-assignment-modal">
+                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('shield') }}</span>
+                <span class="app-topbar-action__text">
+                    <strong>截止</strong>
+                    <small>收尾记分</small>
+                </span>
+            </button>
+            {% endif %}
+
             <div class="dropdown assignment-status-dropdown">
                 <button type="button" class="app-topbar-action app-topbar-action--solid" onclick="toggleStatusDropdown()" id="status-btn" title="切换作业状态" aria-label="切换作业状态" aria-haspopup="menu" aria-expanded="false">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('shield') }}</span>
@@ -1313,7 +1323,7 @@
                     </label>
                     <button class="dropdown-item" onclick="changeStatus('new')" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> 草稿</button>
                     <button class="dropdown-item" onclick="changeStatus('published')" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg> 进行中 (发布给学生)</button>
-                    <button class="dropdown-item" onclick="changeStatus('closed')" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> 已截止</button>
+                    <button class="dropdown-item" onclick="toggleStatusDropdown(); openCloseAssignmentModal()" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> 已截止（含缺交记分）</button>
                 </div>
             </div>
             <details class="assignment-more-dropdown">
@@ -1891,6 +1901,43 @@
     </div>
 </div>
 
+<!-- 截止作业模态框 -->
+<div class="modal-backdrop" id="close-assignment-modal" role="dialog" aria-modal="true" aria-labelledby="close-assignment-modal-title">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="close-assignment-modal-title">截止作业</h3>
+                <button class="modal-close" type="button" onclick="closeCloseAssignmentModal()" aria-label="关闭截止作业弹窗">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="close-assignment-summary" class="text-sm text-muted mb-md">正在统计提交情况…</p>
+
+                <div class="form-group" id="close-assignment-score-group" hidden>
+                    <label class="form-label" for="close-assignment-score-input">未提交者的默认分</label>
+                    <div class="flex items-center gap-2">
+                        <input type="range" id="close-assignment-score-range" min="0" max="100" step="1" value="0" aria-label="默认分滑块" style="flex:1;">
+                        <input type="number" id="close-assignment-score-input" class="form-control" min="0" max="100" step="1" value="0" style="width:6.5rem;">
+                    </div>
+                    <p class="text-xs text-muted mt-1">未提交者会被记为“缺交”占位成绩，与真正提交后得 0 分在成绩单里始终可区分。</p>
+                </div>
+
+                <label class="assignment-email-notice" for="close-assignment-include-ungraded" id="close-assignment-ungraded-group" hidden>
+                    <input type="checkbox" id="close-assignment-include-ungraded">
+                    <span>
+                        <strong>已提交但未批改的也按默认分记</strong>
+                        <small id="close-assignment-ungraded-hint">这会顶掉真实批改的机会，请谨慎勾选。</small>
+                    </span>
+                </label>
+
+                <div class="flex justify-end gap-2 mt-4">
+                    <button class="btn btn-outline" type="button" onclick="closeCloseAssignmentModal()">取消</button>
+                    <button class="btn btn-danger" type="button" onclick="confirmCloseAssignment()" id="confirm-close-assignment-btn">确认截止</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- 教师线下代交模态框 -->
 <div class="modal-backdrop" id="offline-submit-modal">
     <div class="modal-dialog" style="max-width: 1120px;">
@@ -1967,6 +2014,7 @@
     };
     window.closeExamPaperModal = () => closeModal('exam-paper-modal');
     window.closeWithdrawModal = () => closeModal('withdraw-submissions-modal');
+    window.closeCloseAssignmentModal = () => closeModal('close-assignment-modal');
     window.closeOfflineSubmitModal = () => {
         closeModal('offline-submit-modal');
         resetOfflineSubmitForm();
@@ -2897,6 +2945,128 @@
             updateZeroUnsubmittedButton();
         }
     };
+
+    // ==================== 截止作业 ====================
+    function getUngradedCandidates() {
+        return allEntries.filter(s =>
+            s.status && s.status !== 'unsubmitted' && s.status !== 'graded' && !isAbsenceScore(s)
+        );
+    }
+
+    function clampScore(raw) {
+        const value = Number(raw);
+        if (!Number.isFinite(value)) return 0;
+        return Math.max(0, Math.min(100, Math.round(value)));
+    }
+
+    function getCloseAssignmentScore() {
+        return clampScore(document.getElementById('close-assignment-score-input')?.value);
+    }
+
+    // 拖滑块时把值同步进数字框；在数字框里打字时只更新滑块，不回写输入框，
+    // 否则清空重输会被立刻填成 0。越界值等到 commit（失焦/回车）才纠正。
+    function syncCloseAssignmentScoreInputs(source) {
+        const range = document.getElementById('close-assignment-score-range');
+        const input = document.getElementById('close-assignment-score-input');
+        if (!range || !input) return;
+        if (source === 'range') {
+            input.value = String(clampScore(range.value));
+        } else {
+            range.value = String(clampScore(input.value));
+        }
+    }
+
+    function commitCloseAssignmentScore() {
+        const input = document.getElementById('close-assignment-score-input');
+        const range = document.getElementById('close-assignment-score-range');
+        const value = clampScore(input?.value);
+        if (input) input.value = String(value);
+        if (range) range.value = String(value);
+    }
+
+    window.openCloseAssignmentModal = function() {
+        const unsubmitted = getZeroUnsubmittedCandidates().length;
+        const ungraded = getUngradedCandidates().length;
+
+        const summary = document.getElementById('close-assignment-summary');
+        const scoreGroup = document.getElementById('close-assignment-score-group');
+        const ungradedGroup = document.getElementById('close-assignment-ungraded-group');
+        const ungradedHint = document.getElementById('close-assignment-ungraded-hint');
+        const includeUngraded = document.getElementById('close-assignment-include-ungraded');
+
+        if (summary) {
+            const parts = [];
+            if (unsubmitted > 0) parts.push(`<strong class="text-danger">${unsubmitted}</strong> 人未提交`);
+            if (ungraded > 0) parts.push(`<strong class="text-warning">${ungraded}</strong> 份已提交但未批改`);
+            summary.innerHTML = parts.length
+                ? `截止后学生将无法再提交。当前还有 ${parts.join('，')}。`
+                : '全部学生均已提交并完成批改，将直接截止本作业。';
+        }
+
+        if (scoreGroup) scoreGroup.hidden = unsubmitted === 0;
+        if (ungradedGroup) ungradedGroup.hidden = ungraded === 0;
+        if (ungradedHint && ungraded > 0) {
+            ungradedHint.textContent = `勾选后这 ${ungraded} 份提交会直接按默认分记为已批改，会顶掉真实批改的机会。`;
+        }
+        if (includeUngraded) includeUngraded.checked = false;
+        const scoreInput = document.getElementById('close-assignment-score-input');
+        const scoreRange = document.getElementById('close-assignment-score-range');
+        if (scoreInput) scoreInput.value = '0';
+        if (scoreRange) scoreRange.value = '0';
+        openModal('close-assignment-modal');
+    };
+
+    window.confirmCloseAssignment = async function() {
+        const btn = document.getElementById('confirm-close-assignment-btn');
+        const originalHtml = btn?.innerHTML;
+        const scoreInput = document.getElementById('close-assignment-score-input');
+        const scoreGroup = document.getElementById('close-assignment-score-group');
+        const includeUngraded = document.getElementById('close-assignment-include-ungraded');
+
+        const applyAbsence = scoreGroup ? !scoreGroup.hidden : false;
+        const body = {
+            default_score: getCloseAssignmentScore(),
+            apply_absence: applyAbsence,
+            include_ungraded: includeUngraded?.checked === true,
+        };
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 截止中...';
+        }
+        try {
+            const response = await fetch(`/api/assignments/${currentAssignmentId}/close`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || data.message || '截止失败');
+
+            const scored = Number(data.created_count || 0) + Number(data.updated_count || 0);
+            const graded = Number(data.graded_count || 0);
+            const notes = [];
+            if (scored > 0) notes.push(`${scored} 名未提交学生记 ${data.default_score} 分`);
+            if (graded > 0) notes.push(`${graded} 份未批改按 ${data.default_score} 分记录`);
+            showToast(notes.length ? `作业已截止：${notes.join('，')}` : '作业已截止', 'success');
+
+            closeModal('close-assignment-modal');
+            setTimeout(() => location.reload(), 800);
+        } catch (error) {
+            showToast(error.message || '截止失败', 'error');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        }
+    };
+
+    document.getElementById('close-assignment-score-range')
+        ?.addEventListener('input', () => syncCloseAssignmentScoreInputs('range'));
+    document.getElementById('close-assignment-score-input')
+        ?.addEventListener('input', () => syncCloseAssignmentScoreInputs('input'));
+    document.getElementById('close-assignment-score-input')
+        ?.addEventListener('change', commitCloseAssignmentScore);
 
     window.aiRegrade = async function(subId) {
         if (!confirm('确定要使用 AI 重新批改此作业吗？')) return;

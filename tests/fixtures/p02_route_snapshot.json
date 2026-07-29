@@ -464,6 +464,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/assignments/{assignment_id}/close",
+    "methods": [
+      "POST"
+    ],
+    "name": "close_assignment_now",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/assignments/{assignment_id}/draft",
     "methods": [
       "GET"
@@ -1061,6 +1069,22 @@
       "POST"
     ],
     "name": "resolve_live_signal",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom/{class_offering_id}/closeout/execute",
+    "methods": [
+      "POST"
+    ],
+    "name": "run_closeout",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom/{class_offering_id}/closeout/summary",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_closeout_summary",
     "include_in_schema": true
   },
   {

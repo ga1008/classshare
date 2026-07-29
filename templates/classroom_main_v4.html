@@ -5,6 +5,9 @@
 
 {% block css %}
 <link rel="stylesheet" href="{{ asset_url('css/ordinary_grade_kind_controls.css') }}">
+{% if user_info.role == 'teacher' %}
+<link rel="stylesheet" href="{{ asset_url('css/classroom_closeout.css') }}">
+{% endif %}
 <style>
     .assignment-card-action-row {
         display: flex;
@@ -446,6 +449,15 @@
                     </button>
                 </div>
             </details>
+            {% endif %}
+            {% if user_info.role == 'teacher' %}
+            <button type="button" class="app-topbar-action app-topbar-action--tone-amber classroom-topbar-section-link" data-classroom-closeout-open title="结课：收尾课堂内未结束的作业、测验、投票与分组" aria-label="打开结课浮窗" aria-haspopup="dialog" aria-controls="classroom-closeout-modal">
+                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('shield') }}</span>
+                <span class="app-topbar-action__text">
+                    <strong>结课</strong>
+                    <small>学期收尾</small>
+                </span>
+            </button>
             {% endif %}
         </div>
         <div class="app-topbar-actions app-topbar-actions--utility classroom-topbar-tools" aria-label="课堂工具入口">
@@ -2816,6 +2828,37 @@
 {% if user_info.role == 'teacher' %}
 {% include "partials/learning_material_selector.html" %}
 {% include "partials/session_material_ai_modal.html" %}
+
+<!-- 结课浮窗 -->
+<div class="modal-backdrop" id="classroom-closeout-modal" role="dialog" aria-modal="true" aria-labelledby="classroom-closeout-title">
+    <div class="modal-dialog closeout-modal__dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="classroom-closeout-title">结课收尾</h3>
+                <button class="modal-close" type="button" data-closeout-close aria-label="关闭结课浮窗">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="closeout-headline" id="closeout-headline">正在统计…</p>
+                <p class="closeout-subhead">
+                    下面是本课堂仍未结束的过程性任务。作业与测验可为未提交者设置默认分（滑块或直接输入，缺省 0 分）；
+                    不想现在处理的可以勾选“本次跳过”。
+                </p>
+
+                <div class="closeout-empty" id="closeout-empty" hidden>
+                    本课堂没有未结束的过程性任务。
+                </div>
+                <div class="closeout-card-list" id="closeout-card-list"></div>
+
+                <div class="closeout-footer" id="closeout-footer" hidden>
+                    <span class="closeout-footer__note">确认后学生将无法再提交或参与，此操作不可批量撤销。</span>
+                    <button class="btn btn-outline btn-sm" type="button" id="closeout-refresh-btn">重新统计</button>
+                    <button class="btn btn-outline" type="button" data-closeout-close>取消</button>
+                    <button class="btn btn-danger" type="button" id="closeout-confirm-btn">确认结课</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endif %}
 {% endblock %}
 
@@ -2837,6 +2880,7 @@
 {% if user_info.role == 'teacher' %}
 <script type="module" src="{{ asset_url('js/group_assignment_config.js') }}"></script>
 <script type="module" src="{{ asset_url('js/ordinary_grade_kind_controls.js') }}"></script>
+<script type="module" src="{{ asset_url('js/classroom_closeout.js') }}"></script>
 {% endif %}
 <script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
 <script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>

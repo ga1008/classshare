@@ -94,6 +94,7 @@ from .routers import achievements
 from .routers import points_shop
 from .routers import global_search
 from .routers import polls
+from .routers import classroom_closeout
 from .routers import lesson_plans
 from .routers import assessment_plans
 from .routers import teacher_evaluations
@@ -594,6 +595,7 @@ app.include_router(global_search.router)
 app.include_router(resume_console.router)
 app.include_router(classroom_interactions.router)
 app.include_router(polls.router)
+app.include_router(classroom_closeout.router)
 app.include_router(lesson_plans.router)
 app.include_router(assessment_plans.router)
 app.include_router(teacher_evaluations.router)
