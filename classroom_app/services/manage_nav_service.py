@@ -237,6 +237,18 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         nav_badge="Excel",
     ),
     ManageNavItem(
+        key="final_grade_transcripts",
+        domain="teaching",
+        group="过程材料",
+        label="期末成绩单",
+        icon="clipboard-list",
+        href="/manage/teaching/final-grade-transcripts",
+        search_text="期末成绩单 学生成绩录入模板 过程材料 归档 Excel XLSX final grade transcript",
+        ai_hint="期末成绩单：先即时同步教务考试名单，再按学年学期、班级、课程、学号和姓名关联平时成绩表与考核登分表，保持教务名单原始顺序生成 Excel。",
+        nav_note="同步教务考试名单，关联平时与期末成绩",
+        nav_badge="Excel",
+    ),
+    ManageNavItem(
         key="teacher_evaluations",
         domain="teaching",
         group="过程材料",

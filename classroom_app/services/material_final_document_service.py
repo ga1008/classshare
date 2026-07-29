@@ -17,8 +17,22 @@ from .exam_grade_record_service import (
     EXAM_GRADE_RECORD_TYPE,
     normalize_exam_grade_record_payload,
 )
+from .final_grade_transcript_service import (
+    FINAL_GRADE_TRANSCRIPT_LABEL,
+    FINAL_GRADE_TRANSCRIPT_LAYOUT,
+    FINAL_GRADE_TRANSCRIPT_SCHEMA_VERSION,
+    FINAL_GRADE_TRANSCRIPT_TYPE,
+    normalize_final_grade_transcript_payload,
+)
 
-FINAL_MATERIAL_TYPES = {"assessment_plan", "grading_rubric", "exam_paper", ORDINARY_GRADE_RECORD_TYPE, EXAM_GRADE_RECORD_TYPE}
+FINAL_MATERIAL_TYPES = {
+    "assessment_plan",
+    "grading_rubric",
+    "exam_paper",
+    ORDINARY_GRADE_RECORD_TYPE,
+    EXAM_GRADE_RECORD_TYPE,
+    FINAL_GRADE_TRANSCRIPT_TYPE,
+}
 
 
 FINAL_MATERIAL_LABELS = {
@@ -27,6 +41,7 @@ FINAL_MATERIAL_LABELS = {
     "exam_paper": "课程考核试卷",
     ORDINARY_GRADE_RECORD_TYPE: ORDINARY_GRADE_RECORD_LABEL,
     EXAM_GRADE_RECORD_TYPE: EXAM_GRADE_RECORD_LABEL,
+    FINAL_GRADE_TRANSCRIPT_TYPE: FINAL_GRADE_TRANSCRIPT_LABEL,
 }
 
 
@@ -73,6 +88,7 @@ FINAL_MATERIAL_LAYOUTS: dict[str, dict[str, Any]] = {
     },
     ORDINARY_GRADE_RECORD_TYPE: deepcopy(ORDINARY_GRADE_LAYOUT),
     EXAM_GRADE_RECORD_TYPE: deepcopy(EXAM_GRADE_LAYOUT),
+    FINAL_GRADE_TRANSCRIPT_TYPE: deepcopy(FINAL_GRADE_TRANSCRIPT_LAYOUT),
 }
 
 
@@ -214,6 +230,14 @@ def normalize_final_material_payload(
         )
     if key == EXAM_GRADE_RECORD_TYPE:
         return normalize_exam_grade_record_payload(
+            metadata=metadata,
+            content_markdown=content_markdown,
+            tables=tables,
+            export_payload=export_payload,
+            classroom_context=classroom_context,
+        )
+    if key == FINAL_GRADE_TRANSCRIPT_TYPE:
+        return normalize_final_grade_transcript_payload(
             metadata=metadata,
             content_markdown=content_markdown,
             tables=tables,
@@ -445,7 +469,7 @@ def build_final_material_generation_seed(
             "warnings": ["平时成绩记录表需在课堂中选择 3 份作业和 1 份测评后生成。"],
             "export_payload": export_payload,
         }
-    else:
+    elif key == EXAM_GRADE_RECORD_TYPE:
         export_payload = normalize_exam_grade_record_payload(
             metadata=fields,
             content_markdown="",
@@ -460,6 +484,23 @@ def build_final_material_generation_seed(
             "warnings": ["考核登分表需在课堂中选择一个已绑定试卷的考试后生成。"],
             "export_payload": export_payload,
         }
+    elif key == FINAL_GRADE_TRANSCRIPT_TYPE:
+        export_payload = normalize_final_grade_transcript_payload(
+            metadata=fields,
+            content_markdown="",
+            tables=[],
+            export_payload={"structured": {"template_schema_version": FINAL_GRADE_TRANSCRIPT_SCHEMA_VERSION}},
+            classroom_context=classroom_context,
+        )
+        return {
+            "metadata": export_payload["fields"],
+            "content_markdown": export_payload.get("content_markdown") or "",
+            "tables": [],
+            "warnings": ["期末成绩单需先同步考试名单，再关联同课堂、同学期的平时成绩表与考核登分表。"],
+            "export_payload": export_payload,
+        }
+    else:
+        raise ValueError(f"Unsupported final material type: {key}")
     content = "\n\n".join(f"## {item['title']}\n{item['content']}" for item in sections)
     export_payload = normalize_final_material_payload(
         document_type=key,

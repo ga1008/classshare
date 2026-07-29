@@ -39,6 +39,37 @@ test.describe('P03 materials management', () => {
     await expectNoBrowserErrors(errors, testInfo);
   });
 
+  test('teacher can open the final grade transcript import and generation workflows', async ({ page }, testInfo) => {
+    const fixture = readFixture();
+    const errors = collectBrowserErrors(page);
+
+    await loginTeacher(page, fixture);
+    await page.goto('/manage/teaching/final-grade-transcripts');
+    await expect(page.getByRole('heading', { name: '期末成绩单', exact: true })).toBeVisible();
+    await expect(page.locator('[data-process-classroom-generate]')).toBeVisible();
+    await expect(page.locator('[data-process-ai-import]')).toBeVisible();
+
+    await page.locator('[data-process-classroom-generate]').click();
+    await expect(page.locator('#materials-classroom-generate-modal')).toBeVisible();
+    const offering = page.locator('[data-materials-final-grade-offering-id]').first();
+    await expect(offering).toBeVisible();
+    await offering.click();
+    await expect(page.locator('#materials-final-grade-wizard')).toBeVisible();
+    await expect(page.locator('#materials-final-grade-wizard')).toContainText('仅展示 1 份教师需要的期末成绩单');
+    await expect(page.locator('#materials-final-grade-wizard')).toContainText('教务考试名单');
+    await page.locator('#materials-classroom-generate-modal [data-dismiss="modal"]').first().click();
+
+    await page.locator('[data-process-ai-import]').click();
+    await expect(page.locator('#materials-ai-import-modal')).toBeVisible();
+    await expect(page.locator('#materials-final-grade-import-context')).toBeVisible();
+    await expect(page.locator('#materials-final-grade-import-year')).toHaveAttribute('required', '');
+    await expect(page.locator('#materials-final-grade-import-semester')).toHaveAttribute('required', '');
+    await expect(page.locator('#materials-final-grade-import-offering')).toBeVisible();
+    await expect(page.locator('#materials-ai-import-format-hint')).toContainText('学校模板 Excel');
+
+    await expectNoBrowserErrors(errors, testInfo);
+  });
+
   test('student cannot open teacher materials management page', async ({ page }, testInfo) => {
     const fixture = readFixture();
     const errors = collectBrowserErrors(page);

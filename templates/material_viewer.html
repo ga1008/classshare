@@ -118,8 +118,8 @@
                     <button type="button"
                             class="btn btn-primary btn-sm"
                             data-process-export-url="{{ ai_record.export_url }}"
-                            data-process-export-label="{{ 'Excel' if ai_record.document_type in ['ordinary_grade_record', 'exam_grade_record'] else 'Word' }}">
-                        {{ '导出 Excel' if ai_record.document_type in ['ordinary_grade_record', 'exam_grade_record'] else '导出 Word' }}
+                            data-process-export-label="{{ 'Excel' if ai_record.document_type in ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'] else 'Word' }}">
+                        {{ '导出 Excel' if ai_record.document_type in ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'] else '导出 Word' }}
                     </button>
                     {% endif %}
                     {% if ai_record.export_pdf_url %}
@@ -169,8 +169,8 @@
                 <button type="button"
                         class="btn btn-primary"
                         data-process-export-url="{{ material.ai_import_record.export_url }}"
-                        data-process-export-label="{{ 'Excel' if material.ai_import_record.document_type in ['ordinary_grade_record', 'exam_grade_record'] else 'Word' }}">
-                    {{ '导出 Excel' if material.ai_import_record.document_type in ['ordinary_grade_record', 'exam_grade_record'] else '导出 Word' }}
+                        data-process-export-label="{{ 'Excel' if material.ai_import_record.document_type in ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'] else 'Word' }}">
+                    {{ '导出 Excel' if material.ai_import_record.document_type in ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'] else '导出 Word' }}
                 </button>
                 {% endif %}
                 {% if material.ai_import_record and material.ai_import_record.export_pdf_url %}

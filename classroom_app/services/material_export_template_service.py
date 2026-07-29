@@ -24,6 +24,11 @@ from .exam_grade_record_service import (
     build_exam_grade_record_export_filename,
     build_exam_grade_record_xlsx,
 )
+from .final_grade_transcript_service import (
+    FINAL_GRADE_TRANSCRIPT_TYPE,
+    build_final_grade_transcript_export_filename,
+    build_final_grade_transcript_xlsx,
+)
 from .teacher_evaluation_text_service import split_analysis_blocks
 
 
@@ -125,6 +130,13 @@ def build_material_export_artifact(
         return MaterialExportArtifact(
             content=build_exam_grade_record_xlsx(payload),
             filename=build_exam_grade_record_export_filename(exam_grade_fields),
+            media_type=XLSX_MEDIA_TYPE,
+        )
+    if template_key == FINAL_GRADE_TRANSCRIPT_TYPE:
+        transcript_fields = _as_dict(export_payload.get("fields"))
+        return MaterialExportArtifact(
+            content=build_final_grade_transcript_xlsx(payload),
+            filename=build_final_grade_transcript_export_filename(transcript_fields),
             media_type=XLSX_MEDIA_TYPE,
         )
     if output_format == "pdf":

@@ -50481,3 +50481,161 @@ a.material-delete-impact-item:hover .material-delete-impact-item__open { color: 
 @media (prefers-reduced-motion: reduce) {
     .life-tip-footer__skip { animation: none; opacity: 0.7; }
 }
+
+/* 期末成绩单：实时名单与双来源核验 */
+.materials-final-grade-wizard { min-height: 0; }
+.final-grade-roster-contract {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+.final-grade-roster-contract > div {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 2px 10px;
+    align-items: center;
+    padding: 13px 14px;
+    border: 1px solid rgba(20, 184, 166, .2);
+    border-radius: 14px;
+    background: linear-gradient(145deg, rgba(240, 253, 250, .96), rgba(248, 250, 252, .98));
+}
+.final-grade-roster-contract span {
+    grid-row: 1 / span 2;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    color: #fff;
+    background: linear-gradient(135deg, #0f766e, #14b8a6);
+    font-size: 13px;
+    font-weight: 800;
+}
+.final-grade-roster-contract strong { color: #0f172a; font-size: 13px; }
+.final-grade-roster-contract small { color: #64748b; font-size: 11px; }
+.final-grade-course-choice {
+    padding: 15px;
+    border: 1px solid rgba(245, 158, 11, .28);
+    border-radius: 15px;
+    background: #fffbeb;
+}
+.final-grade-course-choice > div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 10px;
+}
+.final-grade-course-choice > div:first-child strong { color: #92400e; }
+.final-grade-course-choice > div:first-child small { color: #a16207; }
+.final-grade-source-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.final-grade-source-grid > .ordinary-grade-picker__empty { grid-column: 1 / -1; }
+.final-grade-source-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 7px;
+    min-height: 164px;
+    padding: 16px;
+    border: 1px solid rgba(148, 163, 184, .28);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, .96);
+    box-shadow: 0 18px 36px -30px rgba(15, 23, 42, .45);
+}
+.final-grade-source-card.is-ready {
+    border-color: rgba(16, 185, 129, .3);
+    background: linear-gradient(150deg, rgba(236, 253, 245, .88), rgba(255, 255, 255, .98));
+}
+.final-grade-source-card.is-blocking {
+    border-color: rgba(245, 158, 11, .3);
+    background: linear-gradient(150deg, rgba(255, 251, 235, .9), rgba(255, 255, 255, .98));
+}
+.final-grade-source-card__status {
+    padding: 3px 9px;
+    border-radius: 999px;
+    color: #047857;
+    background: #d1fae5;
+    font-size: 11px;
+    font-weight: 800;
+}
+.final-grade-source-card.is-blocking .final-grade-source-card__status { color: #b45309; background: #fef3c7; }
+.final-grade-source-card strong { color: #0f172a; font-size: 16px; }
+.final-grade-source-card small,
+.final-grade-source-card > span { color: #64748b; font-size: 12px; }
+.final-grade-source-card p {
+    flex: 1;
+    margin: 0;
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.55;
+}
+.final-grade-student-preview {
+    padding: 14px 16px;
+    border: 1px solid rgba(79, 70, 229, .16);
+    border-radius: 15px;
+    background: rgba(238, 242, 255, .7);
+}
+.final-grade-student-preview > div:first-child {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    color: #4338ca;
+    font-size: 12px;
+}
+.final-grade-student-preview > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+.final-grade-student-preview > div:last-child > span {
+    display: inline-grid;
+    grid-template-columns: auto auto;
+    gap: 0 6px;
+    align-items: center;
+    padding: 7px 9px;
+    border: 1px solid rgba(129, 140, 248, .22);
+    border-radius: 10px;
+    background: #fff;
+    color: #1e293b;
+    font-size: 12px;
+}
+.final-grade-student-preview b { grid-row: 1 / span 2; color: #4f46e5; }
+.final-grade-student-preview small { color: #94a3b8; font-size: 10px; }
+.final-grade-import-context {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 14px;
+    padding: 16px;
+    border: 1px solid rgba(20, 184, 166, .24);
+    border-radius: 16px;
+    background: linear-gradient(145deg, rgba(240, 253, 250, .9), rgba(248, 250, 252, .96));
+}
+.final-grade-import-context[hidden] { display: none; }
+.final-grade-import-context__heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.final-grade-import-context__heading > div { display: flex; flex-direction: column; gap: 3px; }
+.final-grade-import-context__heading strong { color: #0f172a; }
+.final-grade-import-context__heading small { color: #64748b; font-size: 12px; }
+.final-grade-import-context__heading > span {
+    padding: 3px 9px;
+    border-radius: 999px;
+    color: #b45309;
+    background: #fef3c7;
+    font-size: 11px;
+    font-weight: 800;
+}
+.final-grade-import-context__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+@media (max-width: 760px) {
+    .final-grade-roster-contract,
+    .final-grade-source-grid,
+    .final-grade-import-context__grid { grid-template-columns: 1fr; }
+}

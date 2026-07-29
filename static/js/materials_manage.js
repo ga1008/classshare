@@ -34,11 +34,13 @@ const DOCUMENT_TYPE_LABELS = {
     exam_paper: '课程考核试卷',
     ordinary_grade_record: '学生平时成绩记录表',
     exam_grade_record: '考核登分表',
+    final_grade_transcript: '期末成绩单',
 };
 
 const CLASSROOM_GENERATION_HINTS = {
     ordinary_grade_record: '选择课堂后在当前页面确认 3 份平时作业和 1 份测评；系统会读取真实提交、评分与考勤数据生成 Excel。',
     exam_grade_record: '选择课堂后在当前页面确认一场已绑定试卷、配置大题分值且已有评分的考试；生成后停留在当前列表。',
+    final_grade_transcript: '选择课堂后先即时同步教务考试名单，再逐人核对平时成绩表和考核登分表；生成后停留在当前列表。',
 };
 
 const SEARCH_DEBOUNCE_MS = 280;
@@ -286,6 +288,15 @@ const state = {
         busy: false,
         error: '',
     },
+    finalGradeGenerate: {
+        offering: null,
+        readiness: null,
+        examCourseKey: '',
+        candidates: [],
+        loading: false,
+        busy: false,
+        error: '',
+    },
     recentGeneratedMaterialId: null,
     recentGeneratedHighlightArmed: false,
     // 本地 AI 处理中的提示卡（优化 / 润色 / 续写），key → {label, message, tone}
@@ -369,6 +380,15 @@ const refs = {
     examGradeSummary: document.getElementById('materials-exam-grade-summary'),
     examGradeCandidateList: document.getElementById('materials-exam-grade-candidate-list'),
     examGradeStatus: document.getElementById('materials-exam-grade-status'),
+    finalGradeWizard: document.getElementById('materials-final-grade-wizard'),
+    finalGradeClassroomName: document.getElementById('materials-final-grade-classroom-name'),
+    finalGradeSummary: document.getElementById('materials-final-grade-summary'),
+    finalGradeRoster: document.getElementById('materials-final-grade-roster'),
+    finalGradeCourseChoice: document.getElementById('materials-final-grade-course-choice'),
+    finalGradeCourseList: document.getElementById('materials-final-grade-course-list'),
+    finalGradeSourceGrid: document.getElementById('materials-final-grade-source-grid'),
+    finalGradeStudentPreview: document.getElementById('materials-final-grade-student-preview'),
+    finalGradeStatus: document.getElementById('materials-final-grade-status'),
     processClassroomGenerateBtn: document.querySelector('[data-process-classroom-generate]'),
     processAiImportBtn: document.querySelector('[data-process-ai-import]'),
     folderBtn: document.getElementById('materials-upload-folder-btn'),
@@ -383,6 +403,14 @@ const refs = {
     aiImportFormatHint: document.getElementById('materials-ai-import-format-hint'),
     aiImportStatus: document.getElementById('materials-ai-import-status'),
     aiImportSubmitBtn: document.getElementById('materials-ai-import-submit-btn'),
+    finalGradeImportContext: document.getElementById('materials-final-grade-import-context'),
+    finalGradeImportOffering: document.getElementById('materials-final-grade-import-offering'),
+    finalGradeImportYear: document.getElementById('materials-final-grade-import-year'),
+    finalGradeImportSemester: document.getElementById('materials-final-grade-import-semester'),
+    finalGradeImportSchool: document.getElementById('materials-final-grade-import-school'),
+    finalGradeImportCollege: document.getElementById('materials-final-grade-import-college'),
+    finalGradeImportDepartment: document.getElementById('materials-final-grade-import-department'),
+    finalGradeImportCourseNature: document.getElementById('materials-final-grade-import-course-nature'),
     aiGenerateOpenBtn: document.getElementById('materials-ai-generate-open-btn'),
     aiGenerateModal: document.getElementById('materials-ai-generate-modal'),
     aiGenerateGroup: document.getElementById('materials-ai-generate-group'),
@@ -677,6 +705,22 @@ function resetExamGradeGeneration() {
     }
 }
 
+function resetFinalGradeGeneration() {
+    state.finalGradeGenerate.offering = null;
+    state.finalGradeGenerate.readiness = null;
+    state.finalGradeGenerate.examCourseKey = '';
+    state.finalGradeGenerate.candidates = [];
+    state.finalGradeGenerate.loading = false;
+    state.finalGradeGenerate.busy = false;
+    state.finalGradeGenerate.error = '';
+    if (refs.finalGradeStatus) {
+        refs.finalGradeStatus.hidden = true;
+        refs.finalGradeStatus.textContent = '';
+        refs.finalGradeStatus.className = 'classroom-final-material-status';
+        delete refs.finalGradeStatus.dataset.statusKind;
+    }
+}
+
 function ordinaryGradeCandidateBuckets() {
     const candidates = state.ordinaryGradeGenerate.candidates || [];
     return {
@@ -908,6 +952,7 @@ async function openManageOrdinaryGradeWizard(offering) {
     if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = true;
     if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = false;
     if (refs.examGradeWizard) refs.examGradeWizard.hidden = true;
+    if (refs.finalGradeWizard) refs.finalGradeWizard.hidden = true;
     if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = false;
     if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = false;
     if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = true;
@@ -933,9 +978,10 @@ async function openManageOrdinaryGradeWizard(offering) {
 }
 
 function returnToClassroomGeneratePicker() {
-    if (state.ordinaryGradeGenerate.busy || state.examGradeGenerate.busy) return;
+    if (state.ordinaryGradeGenerate.busy || state.examGradeGenerate.busy || state.finalGradeGenerate.busy) return;
     resetOrdinaryGradeGeneration();
     resetExamGradeGeneration();
+    resetFinalGradeGeneration();
     if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = false;
     if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = true;
     if (refs.examGradeWizard) refs.examGradeWizard.hidden = true;
@@ -1143,6 +1189,7 @@ async function openManageExamGradeWizard(offering) {
     if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = true;
     if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = true;
     if (refs.examGradeWizard) refs.examGradeWizard.hidden = false;
+    if (refs.finalGradeWizard) refs.finalGradeWizard.hidden = true;
     if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = false;
     if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = false;
     if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = true;
@@ -1195,6 +1242,208 @@ async function submitManageExamGradeGeneration() {
     } finally {
         generation.busy = false;
         renderManageExamGradeWizard();
+    }
+}
+
+function setManageFinalGradeStatus(message = '', tone = '') {
+    if (!refs.finalGradeStatus) return;
+    refs.finalGradeStatus.hidden = !message;
+    refs.finalGradeStatus.textContent = message;
+    refs.finalGradeStatus.className = 'classroom-final-material-status';
+    if (tone) refs.finalGradeStatus.dataset.statusKind = tone;
+    else delete refs.finalGradeStatus.dataset.statusKind;
+}
+
+function renderFinalGradeSourceCard(source, key) {
+    const isReady = Boolean(source?.ready);
+    const found = Boolean(source?.record_found);
+    const label = source?.label || (key === 'ordinary_grade_record' ? '平时成绩表' : '考核登分表');
+    const matched = Number(source?.matched_count || 0);
+    const missing = Number(source?.missing_count || 0);
+    const conflicts = Number(source?.conflict_count || 0);
+    const duplicates = Number(source?.duplicate_count || 0);
+    const meta = found
+        ? `${matched} 人已匹配${missing ? ` · 缺 ${missing} 人` : ''}${conflicts ? ` · 冲突 ${conflicts} 人` : ''}${duplicates ? ` · 重复学号 ${duplicates} 个` : ''}`
+        : '尚未找到严格对应材料';
+    return `
+        <article class="final-grade-source-card${isReady ? ' is-ready' : ' is-blocking'}">
+            <div class="final-grade-source-card__status">${isReady ? '已就绪' : (found ? '需处理' : '缺少来源')}</div>
+            <strong>${escapeHtml(label)}</strong>
+            <small>${escapeHtml(meta)}</small>
+            <p>${escapeHtml(source?.message || '')}</p>
+            ${isReady
+                ? `<span>记录 #${escapeHtml(String(source?.record_id || ''))} · ${escapeHtml(formatDateLabel(source?.updated_at))}</span>`
+                : `<a class="btn btn-outline btn-sm" href="${escapeHtml(source?.generate_url || '#')}">前往生成${escapeHtml(label)}</a>`}
+        </article>
+    `;
+}
+
+function getManageFinalGradeReadiness() {
+    const generation = state.finalGradeGenerate;
+    if (!generation.offering) return { ready: false, message: '请先选择课堂。' };
+    if (generation.loading) return { ready: false, message: '正在同步教务考试名单并核对两份成绩来源…' };
+    if (generation.error) return { ready: false, message: generation.error };
+    if (generation.candidates.length && !generation.examCourseKey) {
+        return { ready: false, message: '请先选择教务系统中的对应考试课程。' };
+    }
+    const readiness = generation.readiness;
+    if (!readiness?.ready) return { ready: false, message: readiness?.message || '名单或成绩来源尚未准备完成。' };
+    return { ready: true, message: '' };
+}
+
+function renderManageFinalGradeWizard() {
+    const generation = state.finalGradeGenerate;
+    const readiness = generation.readiness || {};
+    const roster = readiness.roster || {};
+    const sources = readiness.sources || {};
+    if (refs.finalGradeClassroomName) refs.finalGradeClassroomName.textContent = offeringLabel(generation.offering);
+    if (refs.finalGradeSummary) {
+        refs.finalGradeSummary.textContent = generation.loading
+            ? '正在同步教务考试名单…'
+            : (readiness.ready ? `${Number(roster.student_count || 0)} 人全部核对完成` : '等待补齐来源');
+        refs.finalGradeSummary.classList.toggle('is-fresh', Boolean(readiness.ready));
+    }
+    if (refs.finalGradeCourseChoice) {
+        refs.finalGradeCourseChoice.hidden = !generation.candidates.length;
+    }
+    if (refs.finalGradeCourseList) {
+        refs.finalGradeCourseList.innerHTML = generation.candidates.map((candidate) => {
+            const key = String(candidate?.exam_course_key || '');
+            const selected = key === generation.examCourseKey;
+            return `
+                <button type="button" class="ordinary-grade-candidate${selected ? ' is-selected' : ''}" data-materials-final-grade-course-key="${escapeHtml(key)}">
+                    <span class="ordinary-grade-candidate__main">
+                        <strong>${escapeHtml(candidate?.course_name || '未命名课程')}</strong>
+                        <small>${escapeHtml([candidate?.course_code, candidate?.teaching_class_name, candidate?.class_composition].filter(Boolean).join(' · '))}</small>
+                        <small>${escapeHtml(`${Number(candidate?.declared_student_count || 0)} 人 · 匹配分 ${Number(candidate?.score || 0)}`)}</small>
+                    </span>
+                    <span class="ordinary-grade-candidate__usage">${selected ? '已选择' : '选择并同步'}</span>
+                </button>
+            `;
+        }).join('');
+    }
+    if (refs.finalGradeSourceGrid) {
+        refs.finalGradeSourceGrid.innerHTML = generation.loading
+            ? '<div class="ordinary-grade-picker__empty"><strong>正在核对来源</strong><span>同步教务名单后，将逐人比对两份成绩材料。</span></div>'
+            : [
+                renderFinalGradeSourceCard(sources.ordinary_grade_record || {}, 'ordinary_grade_record'),
+                renderFinalGradeSourceCard(sources.exam_grade_record || {}, 'exam_grade_record'),
+            ].join('');
+    }
+    const preview = Array.isArray(roster.preview) ? roster.preview : [];
+    if (refs.finalGradeStudentPreview) {
+        refs.finalGradeStudentPreview.hidden = !preview.length;
+        refs.finalGradeStudentPreview.innerHTML = preview.length ? `
+            <div><strong>教务名单顺序预览</strong><span>共 ${escapeHtml(String(roster.student_count || preview.length))} 人</span></div>
+            <div>${preview.map((student) => `<span><b>${escapeHtml(String(student.row_order || ''))}</b>${escapeHtml(student.student_name || '')}<small>${escapeHtml(student.student_number || '')}</small></span>`).join('')}</div>
+        ` : '';
+    }
+    const current = getManageFinalGradeReadiness();
+    if (!generation.busy) setManageFinalGradeStatus(current.ready ? '' : current.message, current.ready ? '' : 'blocking');
+    if (refs.classroomGenerateSubmitBtn) {
+        refs.classroomGenerateSubmitBtn.disabled = generation.busy || !current.ready;
+        refs.classroomGenerateSubmitBtn.textContent = generation.busy
+            ? '正在生成 Excel...'
+            : (current.ready ? '生成并保存' : '请先完成来源核对');
+        refs.classroomGenerateSubmitBtn.title = current.message || '';
+    }
+    refs.classroomGenerateModal?.querySelectorAll('[data-dismiss="modal"], .modal-close').forEach((button) => {
+        button.disabled = generation.busy;
+    });
+    if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.disabled = generation.busy;
+}
+
+async function prepareManageFinalGradeGeneration(examCourseKey = '') {
+    const generation = state.finalGradeGenerate;
+    const offeringId = Number(generation.offering?.id || 0);
+    if (!offeringId) return;
+    generation.loading = true;
+    generation.error = '';
+    generation.examCourseKey = examCourseKey || generation.examCourseKey || '';
+    renderManageFinalGradeWizard();
+    try {
+        const data = await apiFetch(`/api/classrooms/${offeringId}/final-grade-transcript/prepare`, {
+            method: 'POST',
+            body: { exam_course_key: generation.examCourseKey },
+            silent: true,
+        });
+        if (data.status === 'needs_confirmation') {
+            generation.candidates = Array.isArray(data?.roster_sync?.candidates)
+                ? data.roster_sync.candidates
+                : [];
+            generation.readiness = data;
+            generation.examCourseKey = '';
+            generation.error = data.message || '请选择对应考试课程。';
+        } else if (data.status !== 'success') {
+            generation.candidates = [];
+            generation.readiness = data;
+            generation.error = data.message || '考试名单同步未完成。';
+        } else {
+            generation.candidates = [];
+            generation.readiness = data;
+            generation.error = '';
+        }
+    } catch (error) {
+        generation.error = error.message || '考试名单同步失败，请稍后重试。';
+    } finally {
+        generation.loading = false;
+        renderManageFinalGradeWizard();
+    }
+}
+
+async function openManageFinalGradeWizard(offering) {
+    const offeringId = Number(offering?.id || 0);
+    if (!offeringId) return;
+    resetFinalGradeGeneration();
+    state.finalGradeGenerate.offering = offering;
+    if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = true;
+    if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = true;
+    if (refs.examGradeWizard) refs.examGradeWizard.hidden = true;
+    if (refs.finalGradeWizard) refs.finalGradeWizard.hidden = true;
+    if (refs.finalGradeWizard) refs.finalGradeWizard.hidden = false;
+    if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = false;
+    if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = false;
+    if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = true;
+    refs.classroomGenerateModal?.querySelector('.materials-classroom-generate-dialog')?.classList.add('is-wizard');
+    refs.classroomGenerateTitle.textContent = '生成期末成绩单';
+    refs.classroomGenerateSubtitle.textContent = `${offeringLabel(offering)} · 先同步名单，再严格关联成绩`;
+    await prepareManageFinalGradeGeneration('');
+}
+
+async function submitManageFinalGradeGeneration() {
+    const generation = state.finalGradeGenerate;
+    const readiness = getManageFinalGradeReadiness();
+    if (!readiness.ready || generation.busy) {
+        setManageFinalGradeStatus(readiness.message || '请先完成来源核对。', 'blocking');
+        return;
+    }
+    const offeringId = Number(generation.offering?.id || 0);
+    const sources = generation.readiness?.sources || {};
+    generation.busy = true;
+    renderManageFinalGradeWizard();
+    setManageFinalGradeStatus('正在再次同步名单并锁定两份来源，随后按教务顺序生成 Excel…', 'progress');
+    try {
+        const data = await apiFetch(`/api/classrooms/${offeringId}/final-materials/generate`, {
+            method: 'POST',
+            body: {
+                document_type: 'final_grade_transcript',
+                parent_id: state.currentParentId,
+                exam_course_key: generation.examCourseKey,
+                ordinary_grade_record_id: Number(sources?.ordinary_grade_record?.record_id || 0) || null,
+                exam_grade_record_id: Number(sources?.exam_grade_record?.record_id || 0) || null,
+            },
+        });
+        const materialId = Number(data?.task?.package_material_id || 0);
+        closeModal('materials-classroom-generate-modal');
+        resetFinalGradeGeneration();
+        showToast(data.message || '期末成绩单已生成', 'success', 5600);
+        await revealRecentlyGeneratedMaterial(materialId);
+    } catch (error) {
+        setManageFinalGradeStatus(error.message || '生成失败，请重新核对名单与来源。', 'error');
+        showToast(error.message || '生成失败，请稍后重试。', 'error');
+    } finally {
+        generation.busy = false;
+        renderManageFinalGradeWizard();
     }
 }
 
@@ -1268,6 +1517,7 @@ function renderClassroomGenerateOptions(policy) {
         const meta = offeringMeta(offering) || '选择课堂后继续配置';
         const isOrdinaryGrade = policy?.document_type === 'ordinary_grade_record';
         const isExamGrade = policy?.document_type === 'exam_grade_record';
+        const isFinalGrade = policy?.document_type === 'final_grade_transcript';
         const homeworkCount = Number(offering?.ordinary_homework_count || 0);
         const assessmentCount = Number(offering?.ordinary_assessment_count || 0);
         const sourceReady = Boolean(offering?.ordinary_grade_ready);
@@ -1280,8 +1530,9 @@ function renderClassroomGenerateOptions(policy) {
                     <small>${escapeHtml(meta)}</small>
                     ${isOrdinaryGrade ? `<small class="materials-classroom-source-status">${escapeHtml(sourceStatus)}</small>` : ''}
                     ${isExamGrade ? '<small class="materials-classroom-source-status">选择后检查试卷结构与评分覆盖</small>' : ''}
+                    ${isFinalGrade ? '<small class="materials-classroom-source-status">选择后即时同步考试名单并核对两份成绩来源</small>' : ''}
                 </div>
-                <span>${escapeHtml(isOrdinaryGrade && !sourceReady ? '检查来源' : (isExamGrade ? '检查考试' : '开始生成'))}</span>
+                <span>${escapeHtml(isOrdinaryGrade && !sourceReady ? '检查来源' : (isExamGrade ? '检查考试' : (isFinalGrade ? '同步并核对' : '开始生成')))}</span>
         `;
         if (isOrdinaryGrade) {
             return `
@@ -1293,6 +1544,13 @@ function renderClassroomGenerateOptions(policy) {
         if (isExamGrade) {
             return `
                 <button type="button" class="materials-modal-option" data-materials-exam-offering-id="${escapeHtml(String(offering.id))}">
+                    ${content}
+                </button>
+            `;
+        }
+        if (isFinalGrade) {
+            return `
+                <button type="button" class="materials-modal-option" data-materials-final-grade-offering-id="${escapeHtml(String(offering.id))}">
                     ${content}
                 </button>
             `;
@@ -1310,9 +1568,11 @@ function openClassroomGenerateModal() {
     }
     resetOrdinaryGradeGeneration();
     resetExamGradeGeneration();
+    resetFinalGradeGeneration();
     if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = false;
     if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = true;
     if (refs.examGradeWizard) refs.examGradeWizard.hidden = true;
+    if (refs.finalGradeWizard) refs.finalGradeWizard.hidden = true;
     if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = true;
     if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = true;
     if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = false;
@@ -1321,6 +1581,26 @@ function openClassroomGenerateModal() {
     renderClassroomGenerateOptions(policy);
     openModal('materials-classroom-generate-modal');
     window.setTimeout(() => refs.classroomGenerateSearch?.focus(), 80);
+}
+
+function openInitialClassroomGenerateIfRequested() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('open') !== 'classroom-generate') return false;
+    openClassroomGenerateModal();
+    const offeringId = Number(params.get('class_offering_id') || 0);
+    const offering = (config.offerings || []).find((item) => Number(item?.id || 0) === offeringId);
+    if (!offering) return true;
+    const type = getProcessGeneratePolicy()?.document_type;
+    window.setTimeout(() => {
+        if (type === 'ordinary_grade_record') {
+            openManageOrdinaryGradeWizard(offering).catch(() => {});
+        } else if (type === 'exam_grade_record') {
+            openManageExamGradeWizard(offering).catch(() => {});
+        } else if (type === 'final_grade_transcript') {
+            openManageFinalGradeWizard(offering).catch(() => {});
+        }
+    }, 0);
+    return true;
 }
 
 function applyProcessGenerateBlockIfNeeded() {
@@ -1916,8 +2196,8 @@ function renderWorkspaceTopbar(detail) {
     const exportUrl = detail.ai_import_record?.export_url || '';
     const exportPdfUrl = detail.ai_import_record?.export_pdf_url || '';
     const renderPreviewUrl = detail.ai_import_record?.render_preview_url || '';
-    const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(detail.ai_import_record?.document_type) ? '导出Excel' : '导出Word';
-    const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(detail.ai_import_record?.document_type) ? 'Excel' : 'Word';
+    const exportLabel = ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'].includes(detail.ai_import_record?.document_type) ? '导出Excel' : '导出Word';
+    const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'].includes(detail.ai_import_record?.document_type) ? 'Excel' : 'Word';
     const canManage = detail.can_manage !== false;
     const isFolder = detail.node_type === 'folder';
     const isBindable = Boolean(detail.is_markdown) || isRenderable(detail);
@@ -2139,8 +2419,8 @@ function renderAiImportDetailSummary(detail) {
     const renderPreviewUrl = record.render_preview_url || '';
     const exportUrl = record.export_url || '';
     const exportPdfUrl = record.export_pdf_url || '';
-    const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(record.document_type) ? '导出 Excel' : '导出 Word';
-    const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(record.document_type) ? 'Excel' : 'Word';
+    const exportLabel = ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'].includes(record.document_type) ? '导出 Excel' : '导出 Word';
+    const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'].includes(record.document_type) ? 'Excel' : 'Word';
     const sourceLabel = summary.source_file_name
         ? `${summary.parse_mode_label || record.parse_mode || '导入解析'} · ${summary.source_file_name}`
         : (summary.parse_mode_label || record.parse_mode || '导入解析');
@@ -2692,6 +2972,47 @@ function clearAiImportSelectedFile() {
     updateAiImportFileLabel();
 }
 
+function extractAcademicYearLabel(value) {
+    const match = String(value || '').match(/(20\d{2})\s*[-—至/]\s*(20\d{2})/);
+    if (match) return `${match[1]}-${match[2]}`;
+    const single = String(value || '').match(/(20\d{2})/);
+    return single ? `${single[1]}-${Number(single[1]) + 1}` : '';
+}
+
+function extractSemesterLabel(value) {
+    const text = String(value || '').replace(/\s+/g, '');
+    if (/第二|第2|二学期/.test(text) || ['12', '2'].includes(text)) return '第二学期';
+    if (/第一|第1|一学期/.test(text) || ['3', '1'].includes(text)) return '第一学期';
+    return '';
+}
+
+function populateFinalGradeImportContextFromOffering() {
+    const offeringId = Number(refs.finalGradeImportOffering?.value || 0);
+    const offering = (config.offerings || []).find((item) => Number(item?.id || 0) === offeringId);
+    if (!offering) return;
+    if (refs.finalGradeImportYear) {
+        refs.finalGradeImportYear.value = extractAcademicYearLabel(offering.academic_year_name || offering.semester);
+    }
+    if (refs.finalGradeImportSemester) {
+        refs.finalGradeImportSemester.value = extractSemesterLabel(offering.academic_term_name || offering.semester);
+    }
+    if (refs.finalGradeImportSchool) refs.finalGradeImportSchool.value = offering.school_name || '广西外国语学院';
+    if (refs.finalGradeImportCollege) refs.finalGradeImportCollege.value = offering.college || '';
+    if (refs.finalGradeImportDepartment) refs.finalGradeImportDepartment.value = offering.department || '';
+    if (refs.finalGradeImportCourseNature) refs.finalGradeImportCourseNature.value = offering.course_nature || '';
+}
+
+function updateFinalGradeImportContextVisibility() {
+    const isFinalGrade = refs.aiImportType?.value === 'final_grade_transcript';
+    if (refs.finalGradeImportContext) refs.finalGradeImportContext.hidden = !isFinalGrade;
+    if (!isFinalGrade) return;
+    const queryOfferingId = Number(new URLSearchParams(window.location.search).get('class_offering_id') || 0);
+    if (queryOfferingId && refs.finalGradeImportOffering && !refs.finalGradeImportOffering.value) {
+        refs.finalGradeImportOffering.value = String(queryOfferingId);
+        populateFinalGradeImportContextFromOffering();
+    }
+}
+
 function updateAiImportFormatGuide({ preserveStatus = true } = {}) {
     const typeMeta = getSelectedAiImportTypeMeta();
     if (refs.aiImportFileInput) {
@@ -2702,6 +3023,7 @@ function updateAiImportFormatGuide({ preserveStatus = true } = {}) {
         const accepted = formatAiImportExtensionList(typeMeta);
         refs.aiImportFormatHint.textContent = hint || `支持${accepted}文件。`;
     }
+    updateFinalGradeImportContextVisibility();
     if (state.aiImport.file && !isAiImportFileAccepted(state.aiImport.file, typeMeta)) {
         const message = getAiImportFormatMismatchMessage(state.aiImport.file, typeMeta);
         clearAiImportSelectedFile();
@@ -2805,6 +3127,17 @@ function setAiImportBusy(busy) {
     if (refs.aiImportChooseFileBtn) refs.aiImportChooseFileBtn.disabled = busy;
     if (refs.aiImportGroup) refs.aiImportGroup.disabled = busy;
     if (refs.aiImportType) refs.aiImportType.disabled = busy;
+    [
+        refs.finalGradeImportOffering,
+        refs.finalGradeImportYear,
+        refs.finalGradeImportSemester,
+        refs.finalGradeImportSchool,
+        refs.finalGradeImportCollege,
+        refs.finalGradeImportDepartment,
+        refs.finalGradeImportCourseNature,
+    ].forEach((field) => {
+        if (field) field.disabled = busy;
+    });
     setModalDismissDisabled(refs.aiImportModal, busy);
 }
 
@@ -3149,6 +3482,13 @@ function openAiImportModal(preset = getInitialAiImportPreset()) {
     }
     state.aiImport.file = null;
     if (refs.aiImportFileInput) refs.aiImportFileInput.value = '';
+    if (refs.finalGradeImportOffering) refs.finalGradeImportOffering.value = '';
+    if (refs.finalGradeImportYear) refs.finalGradeImportYear.value = '';
+    if (refs.finalGradeImportSemester) refs.finalGradeImportSemester.value = '';
+    if (refs.finalGradeImportSchool) refs.finalGradeImportSchool.value = '广西外国语学院';
+    if (refs.finalGradeImportCollege) refs.finalGradeImportCollege.value = '';
+    if (refs.finalGradeImportDepartment) refs.finalGradeImportDepartment.value = '';
+    if (refs.finalGradeImportCourseNature) refs.finalGradeImportCourseNature.value = '';
     renderAiImportGroups();
     applyAiImportPreset(preset);
     updateAiImportFileLabel();
@@ -3174,11 +3514,38 @@ async function submitAiImport() {
         setAiImportStatus(getAiImportFormatMismatchMessage(state.aiImport.file), 'warning');
         return;
     }
+    if (typeKey === 'final_grade_transcript') {
+        const required = [
+            [refs.finalGradeImportOffering?.value, '关联课堂'],
+            [refs.finalGradeImportYear?.value, '学年'],
+            [refs.finalGradeImportSemester?.value, '学期'],
+            [refs.finalGradeImportSchool?.value, '学校'],
+            [refs.finalGradeImportCollege?.value, '学院'],
+            [refs.finalGradeImportDepartment?.value, '系部'],
+            [refs.finalGradeImportCourseNature?.value, '课程属性'],
+        ];
+        const missing = required.filter(([value]) => !String(value || '').trim()).map(([, label]) => label);
+        if (missing.length) {
+            setAiImportStatus(`请先补充：${missing.join('、')}。`, 'warning');
+            return;
+        }
+    }
 
     const formData = new FormData();
     formData.append('file', state.aiImport.file, state.aiImport.file.name);
     formData.append('document_group', groupKey);
     formData.append('document_type', typeKey);
+    if (typeKey === 'final_grade_transcript') {
+        formData.append('import_context_json', JSON.stringify({
+            class_offering_id: Number(refs.finalGradeImportOffering?.value || 0),
+            academic_year: String(refs.finalGradeImportYear?.value || '').trim(),
+            semester: String(refs.finalGradeImportSemester?.value || '').trim(),
+            school: String(refs.finalGradeImportSchool?.value || '').trim(),
+            college: String(refs.finalGradeImportCollege?.value || '').trim(),
+            department: String(refs.finalGradeImportDepartment?.value || '').trim(),
+            course_nature: String(refs.finalGradeImportCourseNature?.value || '').trim(),
+        }));
+    }
     if (state.currentParentId) {
         formData.append('parent_id', String(state.currentParentId));
     }
@@ -4956,11 +5323,13 @@ function bindEvents() {
     refs.classroomGenerateList?.addEventListener('click', (event) => {
         const ordinaryButton = event.target.closest('[data-materials-ordinary-offering-id]');
         const examButton = event.target.closest('[data-materials-exam-offering-id]');
-        const button = ordinaryButton || examButton;
+        const finalGradeButton = event.target.closest('[data-materials-final-grade-offering-id]');
+        const button = ordinaryButton || examButton || finalGradeButton;
         if (!button) return;
         const offeringId = Number(
             ordinaryButton?.dataset.materialsOrdinaryOfferingId
             || examButton?.dataset.materialsExamOfferingId
+            || finalGradeButton?.dataset.materialsFinalGradeOfferingId
             || 0
         );
         const offering = (config.offerings || []).find((item) => Number(item?.id || 0) === offeringId);
@@ -4973,6 +5342,11 @@ function bindEvents() {
             openManageExamGradeWizard(offering).catch((error) => {
                 state.examGradeGenerate.error = error.message || '读取考试来源失败。';
                 renderManageExamGradeWizard();
+            });
+        } else if (offering && finalGradeButton) {
+            openManageFinalGradeWizard(offering).catch((error) => {
+                state.finalGradeGenerate.error = error.message || '同步考试名单失败。';
+                renderManageFinalGradeWizard();
             });
         }
     });
@@ -5001,12 +5375,27 @@ function bindEvents() {
         state.examGradeGenerate.selectedId = Number(button.dataset.materialsExamCandidateId || 0);
         renderManageExamGradeWizard();
     });
+    refs.finalGradeCourseList?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-materials-final-grade-course-key]');
+        if (!button || state.finalGradeGenerate.loading || state.finalGradeGenerate.busy) return;
+        const key = String(button.dataset.materialsFinalGradeCourseKey || '');
+        prepareManageFinalGradeGeneration(key).catch((error) => {
+            state.finalGradeGenerate.error = error.message || '考试名单同步失败。';
+            renderManageFinalGradeWizard();
+        });
+    });
     refs.classroomGenerateBackBtn?.addEventListener('click', returnToClassroomGeneratePicker);
     refs.classroomGenerateSubmitBtn?.addEventListener('click', () => {
         const documentType = getProcessGeneratePolicy()?.document_type;
         if (documentType === 'exam_grade_record') {
             submitManageExamGradeGeneration().catch((error) => {
                 setManageExamGradeStatus(error.message || '生成失败，请稍后重试。', 'error');
+            });
+            return;
+        }
+        if (documentType === 'final_grade_transcript') {
+            submitManageFinalGradeGeneration().catch((error) => {
+                setManageFinalGradeStatus(error.message || '生成失败，请稍后重试。', 'error');
             });
             return;
         }
@@ -5383,6 +5772,10 @@ function bindEvents() {
     refs.aiImportType?.addEventListener('change', () => {
         updateAiImportFormatGuide({ preserveStatus: false });
     });
+    refs.finalGradeImportOffering?.addEventListener('change', () => {
+        populateFinalGradeImportContextFromOffering();
+        setAiImportStatus('', 'info');
+    });
 
     refs.aiImportChooseFileBtn?.addEventListener('click', () => {
         if (!state.aiImport.busy) {
@@ -5686,3 +6079,5 @@ if (initialAiGeneratePreset?.open) {
 if (initialAiImportPreset?.open) {
     window.setTimeout(() => openAiImportModal(initialAiImportPreset), 0);
 }
+
+openInitialClassroomGenerateIfRequested();

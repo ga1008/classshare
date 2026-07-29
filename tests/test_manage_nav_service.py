@@ -38,16 +38,25 @@ class ManageNavServiceTests(unittest.TestCase):
         self.assertIn("grading_rubrics", process_items)
         self.assertIn("ordinary_grade_records", process_items)
         self.assertIn("exam_grade_records", process_items)
+        self.assertIn("final_grade_transcripts", process_items)
         self.assertIn("teacher_evaluations", process_items)
         self.assertLess(process_items.index("assessment_plans"), process_items.index("grading_rubrics"))
         self.assertLess(process_items.index("grading_rubrics"), process_items.index("ordinary_grade_records"))
         self.assertLess(process_items.index("ordinary_grade_records"), process_items.index("exam_grade_records"))
-        self.assertLess(process_items.index("exam_grade_records"), process_items.index("teacher_evaluations"))
+        self.assertLess(process_items.index("exam_grade_records"), process_items.index("final_grade_transcripts"))
+        self.assertLess(process_items.index("final_grade_transcripts"), process_items.index("teacher_evaluations"))
 
         labels = {
             item.key: item.label
             for item in MANAGE_NAV_ITEMS
-            if item.key in {"assessment_plans", "grading_rubrics", "ordinary_grade_records", "exam_grade_records"}
+            if item.key
+            in {
+                "assessment_plans",
+                "grading_rubrics",
+                "ordinary_grade_records",
+                "exam_grade_records",
+                "final_grade_transcripts",
+            }
         }
         self.assertEqual(
             {
@@ -55,6 +64,7 @@ class ManageNavServiceTests(unittest.TestCase):
                 "grading_rubrics": "评分细则表",
                 "ordinary_grade_records": "平时成绩表",
                 "exam_grade_records": "考核登分表",
+                "final_grade_transcripts": "期末成绩单",
             },
             labels,
         )
@@ -75,6 +85,8 @@ class ManageNavServiceTests(unittest.TestCase):
         self.assertIn("学校模板 Excel", by_key["ordinary_grade_records"]["nav_note"])
         self.assertEqual("Excel", by_key["exam_grade_records"]["nav_badge"])
         self.assertIn("已绑定试卷", by_key["exam_grade_records"]["nav_note"])
+        self.assertEqual("Excel", by_key["final_grade_transcripts"]["nav_badge"])
+        self.assertIn("同步教务考试名单", by_key["final_grade_transcripts"]["nav_note"])
         self.assertEqual("需试卷", by_key["grading_rubrics"]["nav_badge"])
         self.assertIn("Word/PDF", by_key["assessment_plans"]["nav_note"])
         self.assertIn("10项评分", by_key["teacher_evaluations"]["nav_badge"])

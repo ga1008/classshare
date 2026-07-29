@@ -439,8 +439,8 @@ function buildAiImportExportActionsHtml() {
     const record = material.ai_import_record || null;
     if (!record) return '';
     const actions = [];
-    const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(record.document_type) ? '导出 Excel' : '导出 Word';
-    const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(record.document_type) ? 'Excel' : 'Word';
+    const exportLabel = ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'].includes(record.document_type) ? '导出 Excel' : '导出 Word';
+    const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'].includes(record.document_type) ? 'Excel' : 'Word';
     if (record.render_preview_url) {
         actions.push(`<a href="${escapeHtml(record.render_preview_url)}" class="btn btn-outline" target="_blank" rel="noopener">渲染预览</a>`);
     }

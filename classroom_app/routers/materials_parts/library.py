@@ -153,6 +153,11 @@ GRADE_RECORD_IMPORT_PRESETS: dict[str, dict[str, Any]] = {
         "document_type": "exam_grade_record",
         "status": "可上传考核登分表 Excel 进行结构化解析；如需从课堂考试成绩生成，可在当前列表选择课堂和已绑定试卷的考试。",
     },
+    "final_grade_transcript": {
+        "document_group": "final_material",
+        "document_type": "final_grade_transcript",
+        "status": "上传教务学生成绩录入模板前需确认关联课堂、学年和学期；系统会自动补全组织与课程信息并逐行保存。",
+    },
 }
 
 
@@ -168,6 +173,12 @@ GRADE_RECORD_GENERATE_BLOCKERS: dict[str, dict[str, Any]] = {
         "document_type": "exam_grade_record",
         "blocked": True,
         "status": "考核登分表必须基于具体课堂考试成绩生成，不能在材料库中泛化生成；本页支持上传 Excel 后解析入库并导出 Excel。",
+    },
+    "final_grade_transcript": {
+        "document_group": "final_material",
+        "document_type": "final_grade_transcript",
+        "blocked": True,
+        "status": "期末成绩单必须先同步教务考试名单，再关联同课堂、同学年学期的平时成绩表与考核登分表；不使用本地名单或模糊姓名推断，最终仅生成 1 份学校模板 Excel。",
     },
 }
 
@@ -193,7 +204,37 @@ def _render_manage_materials_page(
                    COALESCE(s.start_date, '') AS semester_start_date,
                    COALESCE(s.end_date, '') AS semester_end_date,
                    c.name AS class_name,
-                   co.name AS course_name
+                   co.name AS course_name,
+                   COALESCE(co.school_name, c.school_name, '广西外国语学院') AS school_name,
+                   COALESCE(co.college, c.college, '') AS college,
+                   COALESCE(co.department, c.department, '') AS department,
+                   COALESCE((
+                       SELECT sync.course_nature
+                       FROM teacher_academic_course_sync_items sync
+                       WHERE sync.teacher_id = o.teacher_id
+                         AND (sync.course_id = o.course_id OR TRIM(sync.course_name) = TRIM(co.name))
+                         AND (o.semester_id IS NULL OR sync.semester_id = o.semester_id OR sync.semester_id IS NULL)
+                       ORDER BY sync.synced_at DESC, sync.id DESC
+                       LIMIT 1
+                   ), '') AS course_nature,
+                   COALESCE((
+                       SELECT sync.academic_year_name
+                       FROM teacher_academic_course_sync_items sync
+                       WHERE sync.teacher_id = o.teacher_id
+                         AND (sync.course_id = o.course_id OR TRIM(sync.course_name) = TRIM(co.name))
+                         AND (o.semester_id IS NULL OR sync.semester_id = o.semester_id OR sync.semester_id IS NULL)
+                       ORDER BY sync.synced_at DESC, sync.id DESC
+                       LIMIT 1
+                   ), '') AS academic_year_name,
+                   COALESCE((
+                       SELECT sync.academic_term_name
+                       FROM teacher_academic_course_sync_items sync
+                       WHERE sync.teacher_id = o.teacher_id
+                         AND (sync.course_id = o.course_id OR TRIM(sync.course_name) = TRIM(co.name))
+                         AND (o.semester_id IS NULL OR sync.semester_id = o.semester_id OR sync.semester_id IS NULL)
+                       ORDER BY sync.synced_at DESC, sync.id DESC
+                       LIMIT 1
+                   ), '') AS academic_term_name
             FROM class_offerings o
             JOIN classes c ON o.class_id = c.id
             JOIN courses co ON o.course_id = co.id
@@ -315,6 +356,21 @@ async def manage_exam_grade_records_page(request: Request, user: dict = Depends(
         initial_library_filter={"document_type": "exam_grade_record"},
         initial_ai_import=GRADE_RECORD_IMPORT_PRESETS["exam_grade_record"],
         initial_ai_generate=GRADE_RECORD_GENERATE_BLOCKERS["exam_grade_record"],
+    )
+
+
+@router.get("/manage/teaching/final-grade-transcripts", response_class=HTMLResponse)
+async def manage_final_grade_transcripts_page(request: Request, user: dict = Depends(get_current_teacher)):
+    return _render_manage_materials_page(
+        request,
+        user,
+        page_title="期末成绩单",
+        active_page="final_grade_transcripts",
+        page_heading="期末成绩单",
+        page_lead="即时同步教务考试名单，按原始顺序逐人核对平时成绩表与考核登分表；支持导入教务模板、结构化解析、渲染预览与像素级 Excel 导出。",
+        initial_library_filter={"document_type": "final_grade_transcript"},
+        initial_ai_import=GRADE_RECORD_IMPORT_PRESETS["final_grade_transcript"],
+        initial_ai_generate=GRADE_RECORD_GENERATE_BLOCKERS["final_grade_transcript"],
     )
 
 

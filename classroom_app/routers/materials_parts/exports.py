@@ -111,7 +111,11 @@ async def preview_ai_import_record_export(
     with get_db_connection() as conn:
         row, payload, fallback_filename = _load_ai_import_record_preview_payload(conn, record_id, user)
 
-    preferred_format = "xlsx" if row["document_type"] in {"ordinary_grade_record", "exam_grade_record"} else "docx"
+    preferred_format = (
+        "xlsx"
+        if row["document_type"] in {"ordinary_grade_record", "exam_grade_record", "final_grade_transcript"}
+        else "docx"
+    )
     requested_format = (format or preferred_format).strip().lower()
     if requested_format == "pdf":
         requested_format = preferred_format

@@ -61,6 +61,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
                 "grading_rubric",
                 "ordinary_grade_record",
                 "exam_grade_record",
+                "final_grade_transcript",
             }.issubset(self._final_import_types())
         )
 
@@ -69,7 +70,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         final = next(group for group in registry if group["key"] == "final_material")
         by_type = {item["key"]: item for item in final["types"]}
 
-        for key in ("ordinary_grade_record", "exam_grade_record"):
+        for key in ("ordinary_grade_record", "exam_grade_record", "final_grade_transcript"):
             self.assertEqual(by_type[key]["accepted_extensions"], [".xls", ".xlsx"])
             self.assertEqual(by_type[key]["accept"], ".xls,.xlsx")
             self.assertIn("Excel", by_type[key]["accepted_format_label"])
@@ -748,9 +749,10 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn('value="grading_rubric"', select_html)
         self.assertNotIn('value="ordinary_grade_record"', select_html)
         self.assertNotIn('value="exam_grade_record"', select_html)
+        self.assertNotIn('value="final_grade_transcript"', select_html)
 
     def test_grade_record_pages_preselect_import_and_block_generic_generation(self):
-        for key in ("ordinary_grade_record", "exam_grade_record"):
+        for key in ("ordinary_grade_record", "exam_grade_record", "final_grade_transcript"):
             self.assertEqual(GRADE_RECORD_IMPORT_PRESETS[key]["document_group"], "final_material")
             self.assertEqual(GRADE_RECORD_IMPORT_PRESETS[key]["document_type"], key)
             self.assertTrue(GRADE_RECORD_GENERATE_BLOCKERS[key]["blocked"])
@@ -926,6 +928,31 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("option value=", classroom_script)
         self.assertIn(".materials-exam-grade-wizard", styles)
         self.assertIn(".exam-grade-generation-contract", styles)
+
+    def test_final_grade_transcript_generation_syncs_roster_and_closes_source_loop(self):
+        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
+        router = Path("classroom_app/routers/materials_parts/final_materials.py").read_text(encoding="utf-8")
+        service = Path("classroom_app/services/final_grade_transcript_service.py").read_text(encoding="utf-8")
+        styles = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="materials-final-grade-wizard"', template)
+        self.assertIn("仅展示 1 份教师需要的期末成绩单", template)
+        self.assertIn("function openManageFinalGradeWizard", script)
+        self.assertIn("/final-grade-transcript/prepare", script)
+        self.assertIn("document_type: 'final_grade_transcript'", script)
+        self.assertIn("ordinary_grade_record_id", script)
+        self.assertIn("exam_grade_record_id", script)
+        self.assertIn("正在再次同步名单并锁定两份来源", script)
+        self.assertIn("source?.generate_url", script)
+        self.assertIn("await revealRecentlyGeneratedMaterial(materialId)", script)
+        self.assertIn("sync_classroom_exam_roster_from_academic_system", router)
+        self.assertIn("build_final_grade_transcript_readiness", router)
+        self.assertIn("build_final_grade_transcript_payload", router)
+        self.assertIn("ORDER BY row_order ASC, id ASC", service)
+        self.assertIn("_same_context(fields, context)", service)
+        self.assertIn("_identity_text(source.get(\"student_name\"))", service)
+        self.assertIn(".materials-final-grade-wizard", styles)
 
     def test_ordinary_grade_material_attributes_include_business_context(self):
         router = Path("classroom_app/routers/materials_parts/library.py").read_text(encoding="utf-8")

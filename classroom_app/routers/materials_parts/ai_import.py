@@ -5,6 +5,7 @@ from .final_material_helpers import *
 from .rewrite_helpers import *
 
 from ...db.connection import execute_insert_returning_id, get_configured_db_engine
+from ...services.final_grade_transcript_service import FINAL_GRADE_TRANSCRIPT_TYPE
 from ...services.material_mastery_check_service import build_material_mastery_check_payload
 
 
@@ -368,11 +369,53 @@ async def ai_import_material(
     document_group: str = Form(...),
     document_type: str = Form(...),
     parent_id: int | None = Form(default=None),
+    import_context_json: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     original_name = _normalize_uploaded_filename(file.filename)
     type_meta = resolve_material_ai_import_type(document_group, document_type)
     validate_material_ai_import_filename(type_meta, original_name)
+    import_context: dict[str, Any] = {}
+    if document_type == FINAL_GRADE_TRANSCRIPT_TYPE:
+        if len(import_context_json or "") > 20_000:
+            raise HTTPException(400, "期末成绩单导入信息过长。")
+        try:
+            raw_context = json.loads(import_context_json or "{}")
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, "期末成绩单导入信息格式无效。") from exc
+        if not isinstance(raw_context, dict):
+            raise HTTPException(400, "期末成绩单导入信息格式无效。")
+        class_offering_id = int(raw_context.get("class_offering_id") or 0)
+        academic_year = str(raw_context.get("academic_year") or "").strip()
+        semester = str(raw_context.get("semester") or "").strip()
+        if class_offering_id <= 0:
+            raise HTTPException(400, "导入期末成绩单前必须选择关联课堂。")
+        if not academic_year or not semester:
+            raise HTTPException(400, "导入期末成绩单前必须确认学年和学期。")
+        with get_db_connection() as conn:
+            trusted_context = _load_final_material_classroom_context(conn, class_offering_id, user)
+        import_context = {
+            **trusted_context,
+            "academic_year": academic_year,
+            "semester": semester,
+            "school": trusted_context.get("school_name")
+            or raw_context.get("school")
+            or "广西外国语学院",
+            "college": trusted_context.get("college") or raw_context.get("college") or "",
+            "department": trusted_context.get("department") or raw_context.get("department") or "",
+            "course_nature": trusted_context.get("course_nature") or raw_context.get("course_nature") or "",
+        }
+        missing = [
+            label
+            for key, label in (
+                ("college", "学院"),
+                ("department", "系部"),
+                ("course_nature", "课程属性"),
+            )
+            if not str(import_context.get(key) or "").strip()
+        ]
+        if missing:
+            raise HTTPException(400, f"课堂数据未能自动识别，请补充：{'、'.join(missing)}。")
 
     if parent_id is not None:
         with get_db_connection() as conn:
@@ -397,6 +440,7 @@ async def ai_import_material(
         "document_type": type_meta["label"],
         "parent_material_id": parent_id,
         "storage_path": str(stored_path),
+        "import_context": import_context,
     }
 
     with get_db_connection() as conn:

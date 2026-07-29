@@ -25,6 +25,11 @@ $env:P03_RUNTIME_ROOT = $RuntimeRoot
 $env:LANSHARE_DATA_ROOT = $RuntimeRoot
 $env:MAIN_DATA_DIR = $RuntimeRoot
 $env:MAIN_DB_PATH = (Join-Path $RuntimeRoot "db\classroom.db")
+# P03 always runs against its disposable copied SQLite database.  Pin the
+# engine explicitly so a developer's PostgreSQL .env cannot redirect browser
+# tests into the live local database.
+$env:DB_ENGINE = "sqlite"
+$env:POSTGRES_BACKEND_READY = "false"
 $env:AI_HOST = "127.0.0.1"
 $env:AI_PORT = [string]$AiPort
 $env:AI_ASSISTANT_URL = "http://127.0.0.1:$AiPort"

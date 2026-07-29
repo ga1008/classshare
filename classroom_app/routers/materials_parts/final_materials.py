@@ -13,6 +13,14 @@ from ...services.exam_grade_record_service import (
     build_exam_grade_record_payload,
     list_exam_grade_record_candidates,
 )
+from ...services.final_grade_transcript_service import (
+    FINAL_GRADE_TRANSCRIPT_TYPE,
+    build_final_grade_transcript_payload,
+    build_final_grade_transcript_readiness,
+)
+from ...services.academic_exam_roster_sync_service import (
+    sync_classroom_exam_roster_from_academic_system,
+)
 from ...services.smart_classroom_checkin_sync_service import (
     ORDINARY_GRADE_ATTENDANCE_CACHE_SECONDS,
     get_classroom_smart_attendance_freshness,
@@ -69,6 +77,48 @@ async def list_classroom_exam_grade_record_candidates(
             teacher_id=user["id"],
         )
     return {"status": "success", "items": items}
+
+
+@router.post(
+    "/api/classrooms/{class_offering_id}/final-grade-transcript/prepare",
+    response_class=JSONResponse,
+)
+async def prepare_classroom_final_grade_transcript(
+    class_offering_id: int,
+    payload: FinalGradeTranscriptPrepareRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        ensure_classroom_access(conn, class_offering_id, user)
+    roster_sync = await sync_classroom_exam_roster_from_academic_system(
+        int(user["id"]),
+        int(class_offering_id),
+        exam_course_key=str(payload.exam_course_key or "").strip(),
+    )
+    sync_status = str(roster_sync.get("status") or "")
+    if sync_status != "success":
+        return {
+            "status": sync_status or "failed",
+            "ready": False,
+            "message": roster_sync.get("message") or "考试名单同步未完成。",
+            "roster_sync": roster_sync,
+        }
+    with get_db_connection() as conn:
+        readiness = build_final_grade_transcript_readiness(
+            conn,
+            class_offering_id=int(class_offering_id),
+            teacher_id=int(user["id"]),
+        )
+    return {
+        "status": "success",
+        **readiness,
+        "roster_sync": {
+            "status": sync_status,
+            "message": roster_sync.get("message") or "",
+            "alignment": roster_sync.get("alignment") or {},
+            "synced_at": _as_dict(readiness.get("roster")).get("synced_at") or "",
+        },
+    }
 
 
 @router.get("/api/classrooms/{class_offering_id}/final-materials/prerequisites", response_class=JSONResponse)
@@ -151,6 +201,22 @@ async def generate_classroom_final_material(
                 409,
                 "智慧课堂同步已完成，但没有找到能与当前课堂可靠对应的最新考勤数据。"
                 "请先核对课堂教学班、课程代码和智慧课堂课表，再重新生成，系统不会用旧数据冒险生成。",
+            )
+
+    final_grade_roster_sync: dict[str, Any] | None = None
+    if document_type == FINAL_GRADE_TRANSCRIPT_TYPE:
+        with get_db_connection() as conn:
+            ensure_classroom_access(conn, class_offering_id, user)
+        final_grade_roster_sync = await sync_classroom_exam_roster_from_academic_system(
+            int(user["id"]),
+            int(class_offering_id),
+            exam_course_key=str(payload.exam_course_key or "").strip(),
+        )
+        if str(final_grade_roster_sync.get("status") or "") != "success":
+            raise HTTPException(
+                409,
+                final_grade_roster_sync.get("message")
+                or "生成前未能完成教务系统考试名单同步，请重新核对。",
             )
 
     with get_db_connection() as conn:
@@ -288,6 +354,54 @@ async def generate_classroom_final_material(
                 "message": "已根据所选课堂考试成绩生成考核登分表 Excel，并保存到课程材料。",
                 "task": task,
                 "ai_used": False,
+            }
+        if document_type == FINAL_GRADE_TRANSCRIPT_TYPE:
+            export_payload = build_final_grade_transcript_payload(
+                conn,
+                class_offering_id=int(class_offering_id),
+                teacher_id=int(user["id"]),
+                expected_roster_synced_at=str(final_grade_roster_sync.get("synced_at") or ""),
+                expected_ordinary_record_id=payload.ordinary_grade_record_id,
+                expected_exam_record_id=payload.exam_grade_record_id,
+            )
+            raw_result = {
+                "metadata": export_payload.get("fields") or {},
+                "content_markdown": export_payload.get("content_markdown") or "",
+                "tables": export_payload.get("tables") or [],
+                "warnings": (export_payload.get("structured") or {}).get("warnings") or [],
+                "export_payload": export_payload,
+            }
+            extraction = MaterialExtraction(
+                text=str(raw_result.get("content_markdown") or ""),
+                method="final_grade_transcript_local_generation",
+                source_kind="academic_roster_and_grade_records",
+                warnings=[],
+                quality={"usable": True},
+            )
+            parse_result = normalize_ai_parse_result(
+                raw_result,
+                original_name=f"期末成绩单-{classroom_context.get('course_name') or '课程'}.json",
+                type_meta=type_meta,
+                extraction=extraction,
+                extra_warnings=[],
+                ai_used=False,
+            )
+            parse_result.export_payload = export_payload
+            parse_result.metadata.update(export_payload.get("fields") or {})
+            parse_result.parsed_payload["metadata"] = parse_result.metadata
+            parse_result.parsed_payload["export_payload"] = parse_result.export_payload
+            task = await _create_generated_final_material_package(
+                class_offering_id=class_offering_id,
+                parent_id=payload.parent_id,
+                parse_result=parse_result,
+                user=user,
+            )
+            return {
+                "status": "success",
+                "message": "已按教务考试名单顺序逐人核对平时与期末成绩，生成 1 份期末成绩单 Excel。",
+                "task": task,
+                "ai_used": False,
+                "roster_sync": final_grade_roster_sync,
             }
         examples = _load_final_material_examples(
             conn,

@@ -180,8 +180,15 @@ class ClassroomFinalMaterialGenerateRequest(BaseModel):
     homework_assignment_ids: list[int] = Field(default_factory=list)
     assessment_assignment_id: int | None = None
     exam_assignment_id: int | None = None
+    exam_course_key: str = ""
+    ordinary_grade_record_id: int | None = None
+    exam_grade_record_id: int | None = None
     minimum_ordinary_score_enabled: bool = True
     minimum_ordinary_score: float = Field(default=60.0, ge=0, le=100)
+
+
+class FinalGradeTranscriptPrepareRequest(BaseModel):
+    exam_course_key: str = ""
 
 
 class MaterialAiRewriteRequest(BaseModel):

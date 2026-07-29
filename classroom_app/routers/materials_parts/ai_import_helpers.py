@@ -1,9 +1,13 @@
 from .common import *
-from .generation_helpers import *
 from ...db.connection import get_configured_db_engine
+from .generation_helpers import *
 
 
-FINAL_MATERIAL_SPREADSHEET_TYPES = {"ordinary_grade_record", "exam_grade_record"}
+FINAL_MATERIAL_SPREADSHEET_TYPES = {
+    "ordinary_grade_record",
+    "exam_grade_record",
+    "final_grade_transcript",
+}
 
 AI_IMPORT_DETAIL_FIELD_LABELS = {
     "course_name": "课程",
@@ -500,6 +504,8 @@ async def _run_material_ai_import_record(record_id: int) -> None:
         if not file_hash:
             metadata = _parse_json_object(record.get("metadata_json"))
             file_hash = str(metadata.get("source_file_hash") or metadata.get("file_hash") or "").strip()
+        else:
+            metadata = _parse_json_object(record.get("metadata_json"))
         stored_path = resolve_global_file_path(file_hash)
         if not stored_path:
             raise HTTPException(410, "源文件缓存已不存在，无法继续解析，请重新上传。")
@@ -510,6 +516,7 @@ async def _run_material_ai_import_record(record_id: int) -> None:
             document_group=record.get("document_group") or "",
             document_type=record.get("document_type") or "",
             ai_chat=_call_ai_chat,
+            import_metadata=_parse_json_object(metadata.get("import_context")),
         )
         await _persist_material_ai_import_success(record_id, record, parse_result)
     except Exception as exc:
@@ -567,7 +574,8 @@ async def _persist_material_ai_import_success(record_id: int, record: dict, pars
 
         owner_scope = load_teacher_org_scope(conn, teacher_id)
         now = datetime.now().isoformat()
-        package_base_name = f"AI解析-{Path(original_name).stem or parse_result.document_type_label}"
+        package_prefix = "导入" if parse_result.document_type == "final_grade_transcript" else "AI解析"
+        package_base_name = f"{package_prefix}-{Path(original_name).stem or parse_result.document_type_label}"
         package_name = make_unique_material_name(conn, teacher_id, parent_id, package_base_name)
         package_path = normalize_material_path(f"{base_prefix}/{package_name}" if base_prefix else package_name)
 
@@ -663,6 +671,33 @@ async def _persist_material_ai_import_success(record_id: int, record: dict, pars
                 int(record_id),
             ),
         )
+        class_offering_id = int(parse_result.metadata.get("class_offering_id") or 0)
+        if class_offering_id:
+            offering = conn.execute(
+                "SELECT id FROM class_offerings WHERE id = ? AND teacher_id = ? LIMIT 1",
+                (class_offering_id, teacher_id),
+            ).fetchone()
+            if not offering:
+                raise HTTPException(403, "导入关联课堂不存在或无权访问。")
+            if get_configured_db_engine() == "postgres":
+                conn.execute(
+                    """
+                    INSERT INTO course_material_assignments
+                    (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT (material_id, class_offering_id) DO NOTHING
+                    """,
+                    (package_id, class_offering_id, teacher_id, now),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO course_material_assignments
+                    (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (package_id, class_offering_id, teacher_id, now),
+                )
         refresh_root_git_metadata(conn, package_root_id)
         conn.commit()
 

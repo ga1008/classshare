@@ -569,7 +569,9 @@ function renderDetailContent(material, preview = null) {
 
 function isExcelFinalMaterial(material = null, preview = null) {
     const type = preview?.document_type || material?.ai_import_record?.document_type || '';
-    return type === 'ordinary_grade_record' || type === 'exam_grade_record';
+    return type === 'ordinary_grade_record'
+        || type === 'exam_grade_record'
+        || type === 'final_grade_transcript';
 }
 
 function setDetailExportButtons(material = null, preview = null) {

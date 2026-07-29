@@ -1160,6 +1160,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/final-grade-transcript/prepare",
+    "methods": [
+      "POST"
+    ],
+    "name": "prepare_classroom_final_grade_transcript",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/final-materials/generate",
     "methods": [
       "POST"
@@ -5421,6 +5429,14 @@
       "GET"
     ],
     "name": "manage_exams_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/final-grade-transcripts",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_final_grade_transcripts_page",
     "include_in_schema": true
   },
   {

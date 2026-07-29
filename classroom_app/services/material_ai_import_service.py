@@ -35,6 +35,11 @@ from .exam_grade_record_service import (
     EXAM_GRADE_RECORD_TYPE,
     parse_exam_grade_record_file,
 )
+from .final_grade_transcript_service import (
+    FINAL_GRADE_TRANSCRIPT_LABEL,
+    FINAL_GRADE_TRANSCRIPT_TYPE,
+    parse_final_grade_transcript_file,
+)
 
 try:
     from ai_assistant_doc_extract import extract_document_text, render_pdf_pages_to_data_urls
@@ -108,6 +113,11 @@ MATERIAL_AI_IMPORT_TYPE_FORMATS: dict[str, dict[str, Any]] = {
         "accepted_extensions": GRADE_RECORD_MATERIAL_AI_IMPORT_EXTENSIONS,
         "accepted_format_label": "Excel（.xls/.xlsx）",
         "format_hint": GRADE_RECORD_MATERIAL_AI_IMPORT_HINT,
+    },
+    FINAL_GRADE_TRANSCRIPT_TYPE: {
+        "accepted_extensions": GRADE_RECORD_MATERIAL_AI_IMPORT_EXTENSIONS,
+        "accepted_format_label": "Excel（.xls/.xlsx）",
+        "format_hint": "请上传教务系统学校模板 Excel；学年、学期及班课组织信息需在导入前确认。",
     },
 }
 
@@ -190,6 +200,12 @@ MATERIAL_AI_IMPORT_GROUPS: list[dict[str, Any]] = [
                 "label": EXAM_GRADE_RECORD_LABEL,
                 "template_key": EXAM_GRADE_RECORD_TYPE,
                 "aliases": ["考核登分表", "机试考核登分表", "作品设计考核登分表", "期末考试登分表"],
+            },
+            {
+                "key": FINAL_GRADE_TRANSCRIPT_TYPE,
+                "label": FINAL_GRADE_TRANSCRIPT_LABEL,
+                "template_key": FINAL_GRADE_TRANSCRIPT_TYPE,
+                "aliases": ["期末成绩单", "学生成绩录入模板", "学生成绩录入表"],
             },
             {
                 "key": "final_teaching_summary",
@@ -328,6 +344,7 @@ async def parse_material_document(
     document_group: str,
     document_type: str,
     ai_chat: MaterialAiChat,
+    import_metadata: dict[str, Any] | None = None,
 ) -> MaterialParseResult:
     type_meta = resolve_material_ai_import_type(document_group, document_type)
     if type_meta["group_key"] == "final_material" and type_meta["key"] == ORDINARY_GRADE_RECORD_TYPE:
@@ -397,6 +414,47 @@ async def parse_material_document(
             parsed_payload=payload,
             content_quality=content_quality,
             extraction_method="exam_grade_excel_formula_parser",
+            document_group=type_meta["group_key"],
+            document_type=type_meta["key"],
+            document_type_label=type_meta["label"],
+            ai_used=False,
+        )
+    if type_meta["group_key"] == "final_material" and type_meta["key"] == FINAL_GRADE_TRANSCRIPT_TYPE:
+        parsed = await asyncio.to_thread(
+            parse_final_grade_transcript_file,
+            file_path,
+            original_name,
+            import_metadata,
+        )
+        content_quality = _assess_text_quality(parsed.content_markdown, method="final_grade_transcript_excel_parser")
+        payload = {
+            "metadata": parsed.metadata,
+            "content_markdown": parsed.content_markdown,
+            "tables": parsed.tables,
+            "warnings": parsed.warnings,
+            "export_payload": parsed.export_payload,
+            "document_group": type_meta["group_key"],
+            "document_type": type_meta["key"],
+            "document_type_label": type_meta["label"],
+            "extraction": {
+                "method": "final_grade_transcript_excel_parser",
+                "source_kind": Path(original_name or file_path.name).suffix.lower().lstrip(".") or "excel",
+                "truncated": False,
+                "quality": {"usable": True, "formula_count": 0},
+            },
+            "content_quality": content_quality,
+            "ai_used": False,
+        }
+        return MaterialParseResult(
+            metadata=parsed.metadata,
+            content_markdown=parsed.content_markdown,
+            tables=parsed.tables,
+            warnings=parsed.warnings,
+            export_payload=parsed.export_payload,
+            raw_ai_result={"local_parser": FINAL_GRADE_TRANSCRIPT_TYPE, "formula_count": 0},
+            parsed_payload=payload,
+            content_quality=content_quality,
+            extraction_method="final_grade_transcript_excel_parser",
             document_group=type_meta["group_key"],
             document_type=type_meta["key"],
             document_type_label=type_meta["label"],

@@ -192,7 +192,9 @@
     <div>
         <span class="materials-process-guide__eyebrow">过程材料工作流</span>
         <h3>{{ initial_ai_generate.status or '该表需要从真实课堂数据生成，不能在材料库中泛化生成。' }}</h3>
-        {% if initial_library_filter.document_type == 'exam_grade_record' %}
+        {% if initial_library_filter.document_type == 'final_grade_transcript' %}
+        <p>可直接在当前页选择课堂：系统会先同步教务考试名单，再严格核对同课堂、同学年学期的平时成绩表与考核登分表；也可导入教务 Excel 模板归档。</p>
+        {% elif initial_library_filter.document_type == 'exam_grade_record' %}
         <p>可直接在当前页选择课堂、核对试卷大题与评分覆盖后完成生成；若已有学校模板 Excel，也可导入解析后归档。</p>
         {% else %}
         <p>可直接在当前页选择课堂、核对作业、测评与考勤后完成生成；若已有学校模板 Excel，也可导入解析后归档。</p>
@@ -507,6 +509,36 @@
                     </div>
                     <div class="classroom-final-material-status" id="materials-exam-grade-status" hidden></div>
                 </div>
+                <div class="ordinary-grade-wizard materials-final-grade-wizard" id="materials-final-grade-wizard" hidden>
+                    <div class="ordinary-grade-wizard__header">
+                        <div>
+                            <span class="ordinary-grade-wizard__eyebrow">教务实时名单 · 双来源逐人核验</span>
+                            <strong id="materials-final-grade-classroom-name">正在读取课堂</strong>
+                            <p>系统先同步教务考试名单，再按学年学期、班级、课程、学号和姓名核对平时成绩表与考核登分表；名单顺序以教务 row_order 为唯一准绳。</p>
+                        </div>
+                        <span class="ordinary-grade-wizard__attendance" id="materials-final-grade-summary">正在同步考试名单…</span>
+                    </div>
+                    <div class="final-grade-roster-contract" id="materials-final-grade-roster">
+                        <div><span>1</span><strong>同步考试名单</strong><small>不使用本地班级排序替代</small></div>
+                        <div><span>2</span><strong>核对平时成绩</strong><small>学号匹配、姓名复核</small></div>
+                        <div><span>3</span><strong>核对期末成绩</strong><small>同班课与同学年学期</small></div>
+                    </div>
+                    <section class="final-grade-course-choice" id="materials-final-grade-course-choice" hidden>
+                        <div>
+                            <strong>请选择教务系统中的对应考试课程</strong>
+                            <small>仅在系统无法唯一确定课程时出现，选择后会重新同步名单。</small>
+                        </div>
+                        <div id="materials-final-grade-course-list" class="ordinary-grade-picker__list"></div>
+                    </section>
+                    <div class="final-grade-source-grid" id="materials-final-grade-source-grid"></div>
+                    <div class="final-grade-student-preview" id="materials-final-grade-student-preview" hidden></div>
+                    <div class="exam-grade-generation-contract">
+                        <span>生成结果</span>
+                        <strong>仅展示 1 份教师需要的期末成绩单</strong>
+                        <p>同步快照、来源记录号和逐人匹配审计保存在后台结构化数据中，不会作为第二份材料卡片干扰教师。</p>
+                    </div>
+                    <div class="classroom-final-material-status" id="materials-final-grade-status" hidden></div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline" id="materials-classroom-generate-back-btn" hidden>返回选课堂</button>
@@ -660,6 +692,54 @@
                         <select id="materials-ai-import-type" class="form-control"></select>
                     </label>
                 </div>
+                <section class="final-grade-import-context" id="materials-final-grade-import-context" hidden>
+                    <div class="final-grade-import-context__heading">
+                        <div>
+                            <strong>期末成绩单归属信息</strong>
+                            <small>模板没有学年学期和组织字段；请选择课堂自动带入，并明确确认学年、学期。</small>
+                        </div>
+                        <span>必填</span>
+                    </div>
+                    <label class="materials-form-field final-grade-import-context__wide">
+                        <span>关联课堂</span>
+                        <select id="materials-final-grade-import-offering" class="form-control" required aria-required="true">
+                            <option value="">请选择课堂</option>
+                            {% for offering in offerings %}
+                            <option value="{{ offering.id }}">{{ offering.course_name }} · {{ offering.class_name }} · {{ offering.semester }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <div class="final-grade-import-context__grid">
+                        <label class="materials-form-field">
+                            <span>学年</span>
+                            <input id="materials-final-grade-import-year" class="form-control" placeholder="例如 2025-2026" required aria-required="true">
+                        </label>
+                        <label class="materials-form-field">
+                            <span>学期</span>
+                            <select id="materials-final-grade-import-semester" class="form-control" required aria-required="true">
+                                <option value="">请选择</option>
+                                <option value="第一学期">第一学期</option>
+                                <option value="第二学期">第二学期</option>
+                            </select>
+                        </label>
+                        <label class="materials-form-field">
+                            <span>学校</span>
+                            <input id="materials-final-grade-import-school" class="form-control" value="广西外国语学院" required aria-required="true">
+                        </label>
+                        <label class="materials-form-field">
+                            <span>学院</span>
+                            <input id="materials-final-grade-import-college" class="form-control" placeholder="从课堂自动识别" required aria-required="true">
+                        </label>
+                        <label class="materials-form-field">
+                            <span>系部</span>
+                            <input id="materials-final-grade-import-department" class="form-control" placeholder="从课堂自动识别" required aria-required="true">
+                        </label>
+                        <label class="materials-form-field">
+                            <span>课程属性</span>
+                            <input id="materials-final-grade-import-course-nature" class="form-control" placeholder="从教务同步数据自动识别" required aria-required="true">
+                        </label>
+                    </div>
+                </section>
                 <div class="materials-section materials-ai-import-file">
                     <div>
                         <div class="text-muted text-sm">待解析文件</div>
