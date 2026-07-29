@@ -356,11 +356,14 @@ async def generate_classroom_final_material(
                 "ai_used": False,
             }
         if document_type == FINAL_GRADE_TRANSCRIPT_TYPE:
+            if not str(payload.expected_roster_signature or "").strip():
+                raise HTTPException(409, "生成窗口的名单确认信息已失效，请重新同步并核对后生成。")
             export_payload = build_final_grade_transcript_payload(
                 conn,
                 class_offering_id=int(class_offering_id),
                 teacher_id=int(user["id"]),
                 expected_roster_synced_at=str(final_grade_roster_sync.get("synced_at") or ""),
+                expected_roster_signature=str(payload.expected_roster_signature or "").strip(),
                 expected_ordinary_record_id=payload.ordinary_grade_record_id,
                 expected_exam_record_id=payload.exam_grade_record_id,
             )

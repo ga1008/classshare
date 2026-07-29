@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sqlite3
 import unittest
 from unittest.mock import patch
@@ -211,6 +212,72 @@ class MaterialDeleteServiceTests(unittest.TestCase):
         self.assertEqual("material_delete_impact_changed", raised.exception.detail["code"])
         self.assertIsNotNone(self.conn.execute("SELECT id FROM course_materials WHERE id = 11").fetchone())
         self.assertEqual(1, self.conn.execute("SELECT COUNT(*) FROM course_material_assignments").fetchone()[0])
+
+    def test_final_grade_transcript_source_reference_is_visible_and_detached_with_snapshot_preserved(self):
+        for definition in (
+            "teacher_id INTEGER",
+            "export_payload_json TEXT",
+            "parsed_payload_json TEXT",
+            "warnings_json TEXT",
+        ):
+            self.conn.execute(f"ALTER TABLE material_ai_import_records ADD COLUMN {definition}")
+        self.conn.execute("UPDATE material_ai_import_records SET teacher_id = 1 WHERE id = 90")
+        self.conn.execute(
+            """
+            INSERT INTO course_materials
+            VALUES (13, 1, NULL, 13, 'final.xlsx', '期末成绩单.xlsx', 'file', 'hash-final', '2026-07-29T02:00:00')
+            """
+        )
+        export_payload = {
+            "fields": {
+                "course_name": "动态 Web 程序设计",
+                "class_name": "软工 2401 班",
+            },
+            "queryable_fields": {"ordinary_grade_record_id": 90},
+            "structured": {
+                "students": [{"student_number": "2401", "ordinary_score": 80, "final_score": 90}],
+                "source_lineage": {
+                    "ordinary_grade_record": {"record_id": 90, "updated_at": "2026-07-29T01:00:00"},
+                },
+                "warnings": [],
+            },
+        }
+        parsed_payload = {"export_payload": export_payload}
+        self.conn.execute(
+            """
+            INSERT INTO material_ai_import_records
+                (id, package_material_id, source_material_id, parsed_material_id, parent_material_id,
+                 document_type_label, document_type, parse_status, source_file_name, updated_at,
+                 teacher_id, export_payload_json, parsed_payload_json, warnings_json)
+            VALUES (91, 13, 13, 13, NULL, '期末成绩单', 'final_grade_transcript',
+                    'completed', '期末成绩单.xlsx', '2026-07-29T02:00:00', 1, ?, ?, '[]')
+            """,
+            (
+                json.dumps(export_payload, ensure_ascii=False),
+                json.dumps(parsed_payload, ensure_ascii=False),
+            ),
+        )
+        self.conn.commit()
+
+        impact = build_material_delete_impact(self.conn, self.material)
+        groups = {group["key"]: group for group in impact["groups"]}
+        self.assertEqual(1, groups["final_grade_transcript_sources"]["count"])
+        self.assertIn("平时成绩表", groups["final_grade_transcript_sources"]["items"][0]["secondary"])
+        self.assertIn("期末成绩单来源引用", impact["blockers"])
+
+        unlink_material_delete_references(self.conn, self.material, impact=impact)
+        detached = self.conn.execute(
+            "SELECT export_payload_json, warnings_json FROM material_ai_import_records WHERE id = 91"
+        ).fetchone()
+        detached_payload = json.loads(detached["export_payload_json"])
+        lineage = detached_payload["structured"]["source_lineage"]["ordinary_grade_record"]
+        self.assertTrue(lineage["detached"])
+        self.assertEqual(90, lineage["historical_record_id"])
+        self.assertNotIn("record_id", lineage)
+        self.assertEqual("", detached_payload["queryable_fields"]["ordinary_grade_record_id"])
+        self.assertEqual(1, len(detached_payload["structured"]["students"]))
+        self.assertIn("成绩快照", "".join(json.loads(detached["warnings_json"])))
+        self.assertEqual(0, build_material_delete_impact(self.conn, self.material)["total_reference_count"])
 
 
 if __name__ == "__main__":

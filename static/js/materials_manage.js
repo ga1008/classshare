@@ -386,6 +386,7 @@ const refs = {
     finalGradeRoster: document.getElementById('materials-final-grade-roster'),
     finalGradeCourseChoice: document.getElementById('materials-final-grade-course-choice'),
     finalGradeCourseList: document.getElementById('materials-final-grade-course-list'),
+    finalGradeRefreshBtn: document.getElementById('materials-final-grade-refresh-btn'),
     finalGradeSourceGrid: document.getElementById('materials-final-grade-source-grid'),
     finalGradeStudentPreview: document.getElementById('materials-final-grade-student-preview'),
     finalGradeStatus: document.getElementById('materials-final-grade-status'),
@@ -1262,18 +1263,51 @@ function renderFinalGradeSourceCard(source, key) {
     const missing = Number(source?.missing_count || 0);
     const conflicts = Number(source?.conflict_count || 0);
     const duplicates = Number(source?.duplicate_count || 0);
+    const extras = Number(source?.extra_count || 0);
     const meta = found
-        ? `${matched} 人已匹配${missing ? ` · 缺 ${missing} 人` : ''}${conflicts ? ` · 冲突 ${conflicts} 人` : ''}${duplicates ? ` · 重复学号 ${duplicates} 个` : ''}`
+        ? `${matched} 人已匹配${missing ? ` · 缺 ${missing} 人` : ''}${conflicts ? ` · 冲突 ${conflicts} 人` : ''}${duplicates ? ` · 重复学号 ${duplicates} 个` : ''}${extras ? ` · 来源多 ${extras} 人（不写入）` : ''}`
         : '尚未找到严格对应材料';
+    const issueItems = [
+        ...(Array.isArray(source?.missing_students) ? source.missing_students.map((item) => ({
+            tone: 'missing',
+            label: '缺少成绩',
+            text: `${item?.student_name || '未命名'} · ${item?.student_number || '无学号'}`,
+        })) : []),
+        ...(Array.isArray(source?.conflicts) ? source.conflicts.map((item) => ({
+            tone: 'conflict',
+            label: '姓名冲突',
+            text: `${item?.student_number || '无学号'} · 名单“${item?.roster_name || ''}” / 来源“${item?.source_name || ''}”`,
+        })) : []),
+        ...(Array.isArray(source?.duplicate_students) ? source.duplicate_students.map((item) => ({
+            tone: 'duplicate',
+            label: '重复学号',
+            text: `${item?.student_name || '未命名'} · ${item?.student_number || '无学号'}`,
+        })) : []),
+        ...(Array.isArray(source?.extra_students) ? source.extra_students.map((item) => ({
+            tone: 'extra',
+            label: '来源多出',
+            text: `${item?.student_name || '未命名'} · ${item?.student_number || '无学号'}（不会写入）`,
+        })) : []),
+    ];
+    const issueDetails = issueItems.length ? `
+        <details class="final-grade-source-card__issues">
+            <summary>查看 ${escapeHtml(String(issueItems.length))} 项人员明细</summary>
+            <div>${issueItems.map((item) => `
+                <span data-tone="${escapeHtml(item.tone)}"><b>${escapeHtml(item.label)}</b>${escapeHtml(item.text)}</span>
+            `).join('')}</div>
+        </details>
+    ` : '';
+    const actionLabel = found ? `重新生成或检查${label}` : `前往生成${label}`;
     return `
         <article class="final-grade-source-card${isReady ? ' is-ready' : ' is-blocking'}">
-            <div class="final-grade-source-card__status">${isReady ? '已就绪' : (found ? '需处理' : '缺少来源')}</div>
+            <div class="final-grade-source-card__status">${isReady ? (extras ? `已就绪 · 忽略 ${extras} 人` : '已就绪') : (found ? '需处理' : '缺少来源')}</div>
             <strong>${escapeHtml(label)}</strong>
             <small>${escapeHtml(meta)}</small>
             <p>${escapeHtml(source?.message || '')}</p>
+            ${issueDetails}
             ${isReady
                 ? `<span>记录 #${escapeHtml(String(source?.record_id || ''))} · ${escapeHtml(formatDateLabel(source?.updated_at))}</span>`
-                : `<a class="btn btn-outline btn-sm" href="${escapeHtml(source?.generate_url || '#')}">前往生成${escapeHtml(label)}</a>`}
+                : `<a class="btn btn-outline btn-sm" href="${escapeHtml(source?.generate_url || '#')}" target="_blank" rel="noopener">${escapeHtml(actionLabel)}</a>`}
         </article>
     `;
 }
@@ -1330,12 +1364,21 @@ function renderManageFinalGradeWizard() {
                 renderFinalGradeSourceCard(sources.exam_grade_record || {}, 'exam_grade_record'),
             ].join('');
     }
-    const preview = Array.isArray(roster.preview) ? roster.preview : [];
+    const students = Array.isArray(roster.students) && roster.students.length
+        ? roster.students
+        : (Array.isArray(roster.preview) ? roster.preview : []);
+    const preview = students.slice(0, 8);
     if (refs.finalGradeStudentPreview) {
         refs.finalGradeStudentPreview.hidden = !preview.length;
         refs.finalGradeStudentPreview.innerHTML = preview.length ? `
             <div><strong>教务名单顺序预览</strong><span>共 ${escapeHtml(String(roster.student_count || preview.length))} 人</span></div>
-            <div>${preview.map((student) => `<span><b>${escapeHtml(String(student.row_order || ''))}</b>${escapeHtml(student.student_name || '')}<small>${escapeHtml(student.student_number || '')}</small></span>`).join('')}</div>
+            <div class="final-grade-student-preview__chips">${preview.map((student) => `<span><b>${escapeHtml(String(student.row_order || ''))}</b>${escapeHtml(student.student_name || '')}<small>${escapeHtml(student.student_number || '')}</small></span>`).join('')}</div>
+            ${students.length > preview.length ? `
+                <details class="final-grade-student-preview__all">
+                    <summary>查看并核对全部 ${escapeHtml(String(students.length))} 人</summary>
+                    <div>${students.map((student) => `<span><b>${escapeHtml(String(student.row_order || ''))}</b>${escapeHtml(student.student_name || '')}<small>${escapeHtml(student.student_number || '')}</small></span>`).join('')}</div>
+                </details>
+            ` : ''}
         ` : '';
     }
     const current = getManageFinalGradeReadiness();
@@ -1429,6 +1472,7 @@ async function submitManageFinalGradeGeneration() {
                 document_type: 'final_grade_transcript',
                 parent_id: state.currentParentId,
                 exam_course_key: generation.examCourseKey,
+                expected_roster_signature: String(generation.readiness?.roster?.signature || ''),
                 ordinary_grade_record_id: Number(sources?.ordinary_grade_record?.record_id || 0) || null,
                 exam_grade_record_id: Number(sources?.exam_grade_record?.record_id || 0) || null,
             },
@@ -2981,6 +3025,8 @@ function extractAcademicYearLabel(value) {
 
 function extractSemesterLabel(value) {
     const text = String(value || '').replace(/\s+/g, '');
+    if (/(?:^|[-_/])(?:12|2)$/.test(text)) return '第二学期';
+    if (/(?:^|[-_/])(?:3|1)$/.test(text)) return '第一学期';
     if (/第二|第2|二学期/.test(text) || ['12', '2'].includes(text)) return '第二学期';
     if (/第一|第1|一学期/.test(text) || ['3', '1'].includes(text)) return '第一学期';
     return '';
@@ -5381,6 +5427,13 @@ function bindEvents() {
         const key = String(button.dataset.materialsFinalGradeCourseKey || '');
         prepareManageFinalGradeGeneration(key).catch((error) => {
             state.finalGradeGenerate.error = error.message || '考试名单同步失败。';
+            renderManageFinalGradeWizard();
+        });
+    });
+    refs.finalGradeRefreshBtn?.addEventListener('click', () => {
+        if (state.finalGradeGenerate.loading || state.finalGradeGenerate.busy) return;
+        prepareManageFinalGradeGeneration(state.finalGradeGenerate.examCourseKey).catch((error) => {
+            state.finalGradeGenerate.error = error.message || '重新同步核对失败。';
             renderManageFinalGradeWizard();
         });
     });

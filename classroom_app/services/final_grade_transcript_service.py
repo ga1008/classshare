@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import re
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -160,122 +162,130 @@ def parse_final_grade_transcript_file(
     original_name: str,
     import_metadata: dict[str, Any] | None = None,
 ) -> FinalGradeTranscriptParseResult:
-    workbook_path = _ensure_xlsx_workbook(file_path, original_name)
+    workbook_path, converted_temp_dir = _ensure_xlsx_workbook(file_path, original_name)
     try:
         import openpyxl
     except ImportError as exc:
         raise RuntimeError(f"缺少 XLSX 解析依赖 openpyxl: {exc}") from exc
 
+    workbook = None
     try:
         workbook = openpyxl.load_workbook(workbook_path, data_only=False, read_only=False)
     except Exception as exc:
+        if converted_temp_dir is not None:
+            shutil.rmtree(converted_temp_dir, ignore_errors=True)
         raise HTTPException(422, f"Excel 文件无法读取：{str(exc)[:160]}") from exc
-    if not workbook.worksheets:
-        raise HTTPException(422, "Excel 中没有可解析的工作表。")
-    worksheet = workbook.worksheets[0]
-    header_row, columns = _locate_header(worksheet)
-    if not header_row:
-        raise HTTPException(422, "未识别到“序号、班级、学号、姓名、平时(必填)、期末(必填)、备注”表头。")
+    try:
+        if not workbook.worksheets:
+            raise HTTPException(422, "Excel 中没有可解析的工作表。")
+        worksheet = workbook.worksheets[0]
+        header_row, columns = _locate_header(worksheet)
+        if not header_row:
+            raise HTTPException(422, "未识别到“序号、班级、学号、姓名、平时(必填)、期末(必填)、备注”表头。")
 
-    warnings: list[str] = []
-    students: list[dict[str, Any]] = []
-    seen_numbers: dict[str, int] = {}
-    class_names: list[str] = []
-    for row_number in range(header_row + 1, worksheet.max_row + 1):
-        values = {
-            key: worksheet.cell(row_number, column).value
-            for key, column in columns.items()
-        }
-        if all(_is_blank(values.get(key)) for key in ("student_number", "student_name", "ordinary_score", "final_score", "remark")):
-            continue
-        student_number = _text(values.get("student_number"))
-        student_name = _text(values.get("student_name"))
-        class_name = _text(values.get("class_name"))
-        if not student_number or not student_name:
-            raise HTTPException(422, f"第 {row_number} 行缺少学号或姓名，无法建立可靠学生关联。")
-        if student_number in seen_numbers:
-            raise HTTPException(
-                422,
-                f"学号 {student_number} 在第 {seen_numbers[student_number]}、{row_number} 行重复，无法安全导入。",
-            )
-        seen_numbers[student_number] = row_number
-        if class_name and class_name not in class_names:
-            class_names.append(class_name)
-        ordinary_score = _score_or_blank(values.get("ordinary_score"), row_number=row_number, label="平时")
-        final_score = _score_or_blank(values.get("final_score"), row_number=row_number, label="期末")
-        remark = _text(values.get("remark"))
-        if remark and remark not in FINAL_GRADE_TRANSCRIPT_REMARKS:
-            warnings.append(f"第 {row_number} 行备注“{remark}”不在模板下拉选项中，已原样保留。")
-        students.append(
-            {
-                "index": _positive_int(values.get("index"), len(students) + 1),
-                "source_row": row_number,
-                "class_name": class_name,
-                "student_number": student_number,
-                "student_name": student_name,
-                "ordinary_score": ordinary_score,
-                "final_score": final_score,
-                "remark": remark,
+        warnings: list[str] = []
+        students: list[dict[str, Any]] = []
+        seen_numbers: dict[str, int] = {}
+        class_names: list[str] = []
+        for row_number in range(header_row + 1, worksheet.max_row + 1):
+            values = {
+                key: worksheet.cell(row_number, column).value
+                for key, column in columns.items()
             }
-        )
-    if not students:
-        raise HTTPException(422, "没有识别到任何学生成绩行。")
+            if all(_is_blank(values.get(key)) for key in ("student_number", "student_name", "ordinary_score", "final_score", "remark")):
+                continue
+            student_number = _text(values.get("student_number"))
+            student_name = _text(values.get("student_name"))
+            class_name = _text(values.get("class_name"))
+            if not student_number or not student_name:
+                raise HTTPException(422, f"第 {row_number} 行缺少学号或姓名，无法建立可靠学生关联。")
+            if student_number in seen_numbers:
+                raise HTTPException(
+                    422,
+                    f"学号 {student_number} 在第 {seen_numbers[student_number]}、{row_number} 行重复，无法安全导入。",
+                )
+            seen_numbers[student_number] = row_number
+            if class_name and class_name not in class_names:
+                class_names.append(class_name)
+            ordinary_score = _score_or_blank(values.get("ordinary_score"), row_number=row_number, label="平时")
+            final_score = _score_or_blank(values.get("final_score"), row_number=row_number, label="期末")
+            remark = _text(values.get("remark"))
+            if remark and remark not in FINAL_GRADE_TRANSCRIPT_REMARKS:
+                warnings.append(f"第 {row_number} 行备注“{remark}”不在模板下拉选项中，已原样保留。")
+            students.append(
+                {
+                    "index": _positive_int(values.get("index"), len(students) + 1),
+                    "source_row": row_number,
+                    "class_name": class_name,
+                    "student_number": student_number,
+                    "student_name": student_name,
+                    "ordinary_score": ordinary_score,
+                    "final_score": final_score,
+                    "remark": remark,
+                }
+            )
+        if not students:
+            raise HTTPException(422, "没有识别到任何学生成绩行。")
 
-    metadata = _compact_dict(dict(import_metadata or {}))
-    if len(class_names) == 1:
-        metadata.setdefault("class_name", class_names[0])
-    elif len(class_names) > 1:
-        metadata.setdefault("class_name", "、".join(class_names))
-        warnings.append(f"文件包含 {len(class_names)} 个班级，已逐行保留班级字段。")
-    metadata.setdefault("source_filename", original_name)
-    metadata.setdefault("teacher_name", _teacher_from_filename(original_name))
-    metadata.setdefault("course_name", _course_from_filename(original_name))
-    metadata.setdefault("school", "广西外国语学院")
-    metadata["class_size"] = len(students)
-    missing_fields = [
-        label
-        for key, label in (
-            ("academic_year", "学年"),
-            ("semester", "学期"),
-            ("school", "学校"),
-            ("college", "学院"),
-            ("department", "系部"),
-            ("class_name", "班级"),
-            ("course_name", "课程"),
-            ("course_nature", "课程属性"),
-        )
-        if _is_blank(metadata.get(key))
-    ]
-    if missing_fields:
-        raise HTTPException(422, f"导入信息不完整，请补充：{'、'.join(missing_fields)}。")
+        metadata = _compact_dict(dict(import_metadata or {}))
+        if len(class_names) == 1:
+            metadata.setdefault("class_name", class_names[0])
+        elif len(class_names) > 1:
+            metadata.setdefault("class_name", "、".join(class_names))
+            warnings.append(f"文件包含 {len(class_names)} 个班级，已逐行保留班级字段。")
+        metadata.setdefault("source_filename", original_name)
+        metadata.setdefault("teacher_name", _teacher_from_filename(original_name))
+        metadata.setdefault("course_name", _course_from_filename(original_name))
+        metadata.setdefault("school", "广西外国语学院")
+        metadata["class_size"] = len(students)
+        missing_fields = [
+            label
+            for key, label in (
+                ("academic_year", "学年"),
+                ("semester", "学期"),
+                ("school", "学校"),
+                ("college", "学院"),
+                ("department", "系部"),
+                ("class_name", "班级"),
+                ("course_name", "课程"),
+                ("course_nature", "课程属性"),
+            )
+            if _is_blank(metadata.get(key))
+        ]
+        if missing_fields:
+            raise HTTPException(422, f"导入信息不完整，请补充：{'、'.join(missing_fields)}。")
 
-    table = _table_from_students(students)
-    payload = normalize_final_grade_transcript_payload(
-        metadata=metadata,
-        tables=[table],
-        export_payload={
-            "fields": metadata,
-            "structured": {
-                "students": students,
-                "warnings": warnings,
-                "import_contract": {
-                    "header_row": header_row,
-                    "source_sheet": worksheet.title,
-                    "source_row_count": len(students),
-                    "all_columns_preserved": True,
+        table = _table_from_students(students)
+        payload = normalize_final_grade_transcript_payload(
+            metadata=metadata,
+            tables=[table],
+            export_payload={
+                "fields": metadata,
+                "structured": {
+                    "students": students,
+                    "warnings": warnings,
+                    "import_contract": {
+                        "header_row": header_row,
+                        "source_sheet": worksheet.title,
+                        "source_row_count": len(students),
+                        "all_columns_preserved": True,
+                    },
                 },
             },
-        },
-    )
-    content_markdown = _build_content_markdown(metadata, students)
-    payload["content_markdown"] = content_markdown
-    return FinalGradeTranscriptParseResult(
-        metadata=metadata,
-        content_markdown=content_markdown,
-        tables=[table],
-        warnings=_dedupe(warnings),
-        export_payload=payload,
-    )
+        )
+        content_markdown = _build_content_markdown(metadata, students)
+        payload["content_markdown"] = content_markdown
+        return FinalGradeTranscriptParseResult(
+            metadata=metadata,
+            content_markdown=content_markdown,
+            tables=[table],
+            warnings=_dedupe(warnings),
+            export_payload=payload,
+        )
+    finally:
+        workbook.close()
+        if converted_temp_dir is not None:
+            shutil.rmtree(converted_temp_dir, ignore_errors=True)
 
 
 def build_final_grade_transcript_xlsx(payload: dict[str, Any]) -> bytes:
@@ -284,6 +294,7 @@ def build_final_grade_transcript_xlsx(payload: dict[str, Any]) -> bytes:
         from openpyxl.comments import Comment
         from openpyxl.styles import Alignment, Border, Color, Font, PatternFill, Protection, Side
         from openpyxl.worksheet.datavalidation import DataValidation
+        from openpyxl.writer.theme import theme_xml
     except ImportError as exc:
         raise RuntimeError(f"缺少 XLSX 导出依赖 openpyxl: {exc}") from exc
 
@@ -298,9 +309,37 @@ def build_final_grade_transcript_xlsx(payload: dict[str, Any]) -> bytes:
     students = _normalize_students(structured.get("students"))
 
     workbook = Workbook()
+    official_theme = (
+        theme_xml.replace('typeface="Cambria"', 'typeface="Aptos Display"')
+        .replace('typeface="Calibri"', 'typeface="Aptos Narrow"')
+        .replace(
+            'script="Hans" typeface="&#x5B8B;&#x4F53;"',
+            'script="Hans" typeface="等线 Light"',
+            1,
+        )
+        .replace(
+            'script="Hans" typeface="&#x5B8B;&#x4F53;"',
+            'script="Hans" typeface="等线"',
+            1,
+        )
+    )
+    workbook.loaded_theme = official_theme.encode("utf-8")
+    # Excel converts stored column-width units with the workbook's Normal font.
+    # Match the official template's 等线 11pt base style so the visible widths
+    # remain identical when opened or printed, even though every populated cell
+    # has its own explicit font.
+    workbook._named_styles[0].name = "常规"
+    workbook._named_styles[0].font = Font(
+        name="等线",
+        size=11,
+        family=2,
+        scheme="minor",
+    )
     worksheet = workbook.active
     worksheet.title = FINAL_GRADE_TRANSCRIPT_LAYOUT["sheet_name"]
+    worksheet.sheet_format.baseColWidth = None
     worksheet.sheet_format.defaultRowHeight = 14
+    worksheet.sheet_format.dyDescent = 0.3
     for column_letter, width in zip(
         "ABCDEFG",
         FINAL_GRADE_TRANSCRIPT_LAYOUT["column_widths"],
@@ -354,15 +393,15 @@ def build_final_grade_transcript_xlsx(payload: dict[str, Any]) -> bytes:
 
     worksheet["E1"].comment = Comment(
         "该分项或者阶段成绩录入级制为【百分制】,请输入 0 至 100 之间的数值!",
-        "教务系统",
+        "None",
     )
     worksheet["F1"].comment = Comment(
         "该分项或者阶段成绩录入级制为【百分制】,请输入 0 至 100 之间的数值!",
-        "教务系统",
+        "None",
     )
     worksheet["G1"].comment = Comment(
         "请从违纪,免训,免训*,取消考试资格,作弊,缺考选择相应备注!",
-        "教务系统",
+        "None",
     )
 
     for index, student in enumerate(students, start=1):
@@ -392,7 +431,6 @@ def build_final_grade_transcript_xlsx(payload: dict[str, Any]) -> bytes:
     last_row = max(2, len(students) + 1)
     score_validation = DataValidation(
         type="decimal",
-        operator="between",
         formula1="0",
         formula2="100",
         allow_blank=True,
@@ -440,6 +478,14 @@ def build_final_grade_transcript_export_filename(fields: dict[str, Any]) -> str:
     teacher = _filename_part(fields.get("teacher_name"))
     suffix = f"[{teacher}]" if teacher else ""
     return f"{course}学生成绩录入模板{suffix}-{class_name}.xlsx"
+
+
+def normalize_final_grade_academic_year(value: Any) -> str:
+    return _academic_year_token(value)
+
+
+def normalize_final_grade_semester(value: Any) -> str:
+    return _semester_label(value)
 
 
 def build_final_grade_transcript_readiness(
@@ -493,6 +539,7 @@ def build_final_grade_transcript_readiness(
     duplicate_roster_numbers = _duplicates(
         [_text(student.get("student_number")) for student in roster_students]
     )
+    roster_signature = _roster_signature(roster_item, roster_students)
     roster_ready = bool(roster_students) and not duplicate_roster_numbers
     ready = roster_ready and ordinary_source["ready"] and exam_source["ready"]
     if duplicate_roster_numbers:
@@ -525,7 +572,17 @@ def build_final_grade_transcript_readiness(
             "synced_at": roster_item["synced_at"] or "",
             "course_name": roster_item["course_name"] or "",
             "exam_course_key": roster_item["exam_course_key"] or "",
+            "signature": roster_signature,
             "duplicate_student_numbers": duplicate_roster_numbers,
+            "students": [
+                {
+                    "row_order": student.get("row_order"),
+                    "student_number": student.get("student_number"),
+                    "student_name": student.get("student_name"),
+                    "class_name": student.get("admin_class_name") or context.get("class_name") or "",
+                }
+                for student in roster_students
+            ],
             "preview": [
                 {
                     "row_order": student.get("row_order"),
@@ -549,6 +606,7 @@ def build_final_grade_transcript_payload(
     class_offering_id: int,
     teacher_id: int,
     expected_roster_synced_at: str = "",
+    expected_roster_signature: str = "",
     expected_ordinary_record_id: int | None = None,
     expected_exam_record_id: int | None = None,
 ) -> dict[str, Any]:
@@ -565,6 +623,8 @@ def build_final_grade_transcript_payload(
     exam_summary = _as_dict(sources.get("exam_grade_record"))
     if expected_roster_synced_at and expected_roster_synced_at != str(roster.get("synced_at") or ""):
         raise HTTPException(409, "考试名单在确认后发生了变化，请返回生成窗口重新核对。")
+    if expected_roster_signature and expected_roster_signature != str(roster.get("signature") or ""):
+        raise HTTPException(409, "教务考试名单内容在确认后发生了变化，请重新同步并核对完整名单。")
     if expected_ordinary_record_id and int(ordinary_summary.get("record_id") or 0) != int(expected_ordinary_record_id):
         raise HTTPException(409, "平时成绩表在确认后发生了变化，请重新核对后生成。")
     if expected_exam_record_id and int(exam_summary.get("record_id") or 0) != int(expected_exam_record_id):
@@ -577,6 +637,8 @@ def build_final_grade_transcript_payload(
     )
     if not roster_item or str(roster_item["synced_at"] or "") != str(roster.get("synced_at") or ""):
         raise HTTPException(409, "考试名单在生成期间发生了变化，请返回生成窗口重新核对。")
+    if _roster_signature(roster_item, roster_students) != str(roster.get("signature") or ""):
+        raise HTTPException(409, "教务考试名单内容在生成期间发生了变化，请重新同步并核对。")
     ordinary_record = _load_record(conn, int(ordinary_summary["record_id"]))
     exam_record = _load_record(conn, int(exam_summary["record_id"]))
     if str(ordinary_record["updated_at"] or "") != str(ordinary_summary.get("updated_at") or ""):
@@ -1017,17 +1079,36 @@ def _locate_header(worksheet) -> tuple[int | None, dict[str, int]]:
     return None, {}
 
 
-def _ensure_xlsx_workbook(file_path: Path, original_name: str) -> Path:
+def _ensure_xlsx_workbook(file_path: Path, original_name: str) -> tuple[Path, Path | None]:
     suffix = Path(original_name or file_path.name).suffix.lower()
     if suffix == ".xlsx":
-        return file_path
+        return file_path, None
     if suffix != ".xls":
         raise HTTPException(415, "期末成绩单仅支持 .xls 或 .xlsx 文件。")
     temp_dir = Path(tempfile.mkdtemp(prefix="final_grade_transcript_"))
     converted = convert_office_file(file_path, output_dir=temp_dir, target_extension="xlsx")
     if not converted or not Path(converted).exists():
+        shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(422, "旧版 Excel 转换失败，请另存为 .xlsx 后重试。")
-    return Path(converted)
+    return Path(converted), temp_dir
+
+
+def _roster_signature(roster_item, roster_students: list[dict[str, Any]]) -> str:
+    payload = {
+        "exam_course_key": _text(roster_item["exam_course_key"] if roster_item else ""),
+        "students": [
+            {
+                "row_order": _positive_int(student.get("row_order"), index),
+                "student_number": _text(student.get("student_number")),
+                "student_name": _text(student.get("student_name")),
+                "class_name": _text(student.get("admin_class_name")),
+            }
+            for index, student in enumerate(roster_students, start=1)
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def _normalize_students(values: Any) -> list[dict[str, Any]]:
@@ -1186,7 +1267,12 @@ def _academic_year_token(value: Any) -> str:
 
 
 def _semester_token(value: Any) -> str:
-    text = _identity_text(value)
+    raw = _text(value)
+    if re.search(r"(?:^|[-_/])(?:12|2)\s*$", raw):
+        return "2"
+    if re.search(r"(?:^|[-_/])(?:3|1)\s*$", raw):
+        return "1"
+    text = _identity_text(raw)
     if text in {"12", "2"} or re.search(r"(第二|第2|二学期|2学期)", text):
         return "2"
     if text in {"3", "1"} or re.search(r"(第一|第1|一学期|1学期)", text):

@@ -3,6 +3,12 @@ from .generation_helpers import *
 from .ai_import_helpers import *
 from ...db.connection import execute_insert_returning_id, get_configured_db_engine
 from ...services.academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
+from ...services.final_grade_transcript_service import (
+    FINAL_GRADE_TRANSCRIPT_TYPE,
+    build_final_grade_transcript_export_filename,
+    build_final_grade_transcript_xlsx,
+)
+from ...services.material_export_template_service import XLSX_MEDIA_TYPE
 from ...services.material_identity_service import build_final_material_package_name
 
 
@@ -904,6 +910,14 @@ async def _create_generated_final_material_package(
     parse_result,
     user: dict,
 ) -> dict:
+    if parse_result.document_type == FINAL_GRADE_TRANSCRIPT_TYPE:
+        return await _create_generated_final_grade_transcript_material(
+            class_offering_id=class_offering_id,
+            parent_id=parent_id,
+            parse_result=parse_result,
+            user=user,
+        )
+
     readme_content = build_import_readme(result=parse_result, original_name=f"{parse_result.document_type_label}.md")
     readme_bytes = readme_content.encode("utf-8")
     readme_hash = hashlib.sha256(readme_bytes).hexdigest()
@@ -998,6 +1012,123 @@ async def _create_generated_final_material_package(
                 (package_id, int(class_offering_id), user["id"], now),
             )
         refresh_root_git_metadata(conn, package_root_id)
+        conn.commit()
+        record = conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        return _serialize_material_ai_import_task(conn, record, user)
+
+
+async def _create_generated_final_grade_transcript_material(
+    *,
+    class_offering_id: int,
+    parent_id: int | None,
+    parse_result,
+    user: dict,
+) -> dict:
+    export_payload = parse_result.export_payload if isinstance(parse_result.export_payload, dict) else {}
+    fields = export_payload.get("fields") if isinstance(export_payload.get("fields"), dict) else {}
+    workbook_bytes = build_final_grade_transcript_xlsx(export_payload)
+    workbook_hash = hashlib.sha256(workbook_bytes).hexdigest()
+    await _write_material_file(workbook_hash, workbook_bytes)
+    parse_payload = _build_material_ai_parse_payload(parse_result)
+    parse_payload_json = json.dumps(parse_payload, ensure_ascii=False)
+    metadata_json = json.dumps(parse_result.metadata, ensure_ascii=False)
+    export_payload_json = json.dumps(export_payload, ensure_ascii=False)
+    warnings_json = json.dumps(parse_result.warnings, ensure_ascii=False)
+    content_quality_json = json.dumps(parse_result.content_quality, ensure_ascii=False)
+    workbook_profile = infer_material_profile("期末成绩单.xlsx", XLSX_MEDIA_TYPE)
+
+    with get_db_connection() as conn:
+        classroom_context = _load_final_material_classroom_context(conn, class_offering_id, user)
+        base_parent = None
+        base_prefix = ""
+        inherited_root_id = None
+        if parent_id is not None:
+            base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            if base_parent["node_type"] != "folder":
+                raise HTTPException(400, "只能生成到文件夹中")
+            base_prefix = str(base_parent["material_path"])
+            inherited_root_id = int(base_parent["root_id"])
+
+        owner_scope = load_teacher_org_scope(conn, user["id"])
+        now = datetime.now().isoformat()
+        preferred_name = build_final_grade_transcript_export_filename(fields)
+        material_name = make_unique_material_name(conn, user["id"], parent_id, preferred_name)
+        material_path = normalize_material_path(
+            f"{base_prefix}/{material_name}" if base_prefix else material_name
+        )
+        material_id = _insert_material_file_row(
+            conn,
+            user=user,
+            name=material_name,
+            material_path=material_path,
+            parent_id=base_parent["id"] if base_parent else None,
+            root_id=inherited_root_id,
+            file_profile=workbook_profile,
+            file_hash=workbook_hash,
+            file_size=len(workbook_bytes),
+            owner_scope=owner_scope,
+            now=now,
+            ai_parse_status="completed",
+            ai_parse_result_json=parse_payload_json,
+        )
+        material_root_id = int(inherited_root_id or material_id)
+        record_id = _insert_completed_material_ai_import_record(
+            conn,
+            user_id=int(user["id"]),
+            package_id=int(material_id),
+            parsed_id=int(material_id),
+            parent_id=base_parent["id"] if base_parent else None,
+            parse_result=parse_result,
+            source_file_name=material_name,
+            metadata_json=metadata_json,
+            parse_payload_json=parse_payload_json,
+            export_payload_json=export_payload_json,
+            warnings_json=warnings_json,
+            content_quality_json=content_quality_json,
+            now=now,
+        )
+        conn.execute(
+            """
+            UPDATE material_ai_import_records
+            SET source_material_id = ?,
+                source_file_hash = ?,
+                source_file_size = ?,
+                source_mime_type = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                int(material_id),
+                workbook_hash,
+                len(workbook_bytes),
+                XLSX_MEDIA_TYPE,
+                now,
+                int(record_id),
+            ),
+        )
+        if get_configured_db_engine() == "postgres":
+            conn.execute(
+                """
+                INSERT INTO course_material_assignments
+                (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (material_id, class_offering_id) DO NOTHING
+                """,
+                (material_id, int(class_offering_id), user["id"], now),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO course_material_assignments
+                (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (material_id, int(class_offering_id), user["id"], now),
+            )
+        refresh_root_git_metadata(conn, material_root_id)
         conn.commit()
         record = conn.execute(
             "SELECT * FROM material_ai_import_records WHERE id = ?",

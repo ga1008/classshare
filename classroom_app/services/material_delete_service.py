@@ -156,6 +156,226 @@ def _append_group(
     )
 
 
+def _json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    try:
+        loaded = json.loads(str(value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _json_array(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    try:
+        loaded = json.loads(str(value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return loaded if isinstance(loaded, list) else []
+
+
+def _material_subtree_ids(conn, material_row: Any) -> set[int]:
+    return {
+        _safe_int(_row_dict(row).get("id"))
+        for row in conn.execute(
+            f"SELECT id FROM course_materials WHERE id IN ({_SUBTREE_ID_SQL})",
+            _subtree_params(material_row),
+        ).fetchall()
+        if _safe_int(_row_dict(row).get("id"))
+    }
+
+
+def _source_import_record_ids(conn, material_row: Any) -> set[int]:
+    params = _subtree_params(material_row)
+    ai_where = " OR ".join(
+        f"{column} IN ({_SUBTREE_ID_SQL})"
+        for column in ("package_material_id", "source_material_id", "parsed_material_id", "parent_material_id")
+    )
+    return {
+        _safe_int(_row_dict(row).get("id"))
+        for row in conn.execute(
+            f"SELECT id FROM material_ai_import_records WHERE {ai_where}",
+            params * 4,
+        ).fetchall()
+        if _safe_int(_row_dict(row).get("id"))
+    }
+
+
+def _final_transcript_source_dependencies(
+    conn,
+    *,
+    source_record_ids: set[int],
+    teacher_id: int,
+    excluded_material_ids: set[int],
+) -> list[dict[str, Any]]:
+    if not source_record_ids:
+        return []
+    try:
+        rows = conn.execute(
+            """
+            SELECT id AS reference_id, package_material_id, parsed_material_id, source_material_id,
+                   document_type_label, export_payload_json, updated_at
+            FROM material_ai_import_records
+            WHERE teacher_id = ?
+              AND document_type = 'final_grade_transcript'
+              AND parse_status = 'completed'
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (int(teacher_id),),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    dependencies: list[dict[str, Any]] = []
+    source_labels = {
+        "ordinary_grade_record": "平时成绩表",
+        "exam_grade_record": "考核登分表",
+    }
+    for raw_row in rows:
+        row = _row_dict(raw_row)
+        material_ids = {
+            _safe_int(row.get("package_material_id")),
+            _safe_int(row.get("parsed_material_id")),
+            _safe_int(row.get("source_material_id")),
+        } - {0}
+        if material_ids & excluded_material_ids:
+            continue
+        export_payload = _json_object(row.get("export_payload_json"))
+        structured = _json_object(export_payload.get("structured"))
+        lineage = _json_object(structured.get("source_lineage"))
+        matched_labels: list[str] = []
+        for key, label in source_labels.items():
+            source = _json_object(lineage.get(key))
+            if source.get("detached"):
+                continue
+            if _safe_int(source.get("record_id")) in source_record_ids:
+                matched_labels.append(label)
+        if not matched_labels:
+            continue
+        fields = _json_object(export_payload.get("fields"))
+        dependencies.append(
+            {
+                **row,
+                "course_name": str(fields.get("course_name") or "").strip(),
+                "class_name": str(fields.get("class_name") or "").strip(),
+                "source_labels": matched_labels,
+            }
+        )
+    return dependencies
+
+
+def _detach_final_transcript_sources(
+    conn,
+    *,
+    source_record_ids: set[int],
+    teacher_id: int,
+    now: str,
+) -> int:
+    dependencies = _final_transcript_source_dependencies(
+        conn,
+        source_record_ids=source_record_ids,
+        teacher_id=teacher_id,
+        excluded_material_ids=set(),
+    )
+    detached_count = 0
+    for row in dependencies:
+        record_id = _safe_int(row.get("reference_id"))
+        current = conn.execute(
+            """
+            SELECT export_payload_json, parsed_payload_json, warnings_json,
+                   package_material_id, parsed_material_id, source_material_id
+            FROM material_ai_import_records
+            WHERE id = ?
+            """,
+            (record_id,),
+        ).fetchone()
+        if not current:
+            continue
+        current_data = _row_dict(current)
+        export_payload = _json_object(current_data.get("export_payload_json"))
+        structured = _json_object(export_payload.get("structured"))
+        lineage = _json_object(structured.get("source_lineage"))
+        changed = False
+        for key in ("ordinary_grade_record", "exam_grade_record"):
+            source = _json_object(lineage.get(key))
+            active_record_id = _safe_int(source.get("record_id"))
+            if active_record_id not in source_record_ids:
+                continue
+            source["historical_record_id"] = active_record_id
+            source.pop("record_id", None)
+            source["detached"] = True
+            source["detached_at"] = now
+            source["detach_reason"] = "来源材料已删除；期末成绩单保留生成时的成绩快照。"
+            lineage[key] = source
+            queryable = _json_object(export_payload.get("queryable_fields"))
+            queryable[f"{key}_id"] = ""
+            export_payload["queryable_fields"] = queryable
+            changed = True
+        if not changed:
+            continue
+        structured["source_lineage"] = lineage
+        structured["warnings"] = list(dict.fromkeys([
+            *(
+                str(item).strip()
+                for item in _json_array(structured.get("warnings"))
+                if str(item or "").strip()
+            ),
+            "上游成绩材料已删除；本期末成绩单保留生成时快照，后续重新生成前须补齐来源。",
+        ]))
+        export_payload["structured"] = structured
+
+        parsed_payload = _json_object(current_data.get("parsed_payload_json"))
+        if isinstance(parsed_payload.get("export_payload"), dict):
+            parsed_payload["export_payload"] = export_payload
+        warnings = [
+            str(item).strip()
+            for item in _json_array(current_data.get("warnings_json"))
+            if str(item or "").strip()
+        ]
+        warning = "上游成绩材料已删除；已保留生成时成绩快照和历史记录号。"
+        if warning not in warnings:
+            warnings.append(warning)
+        export_payload_json = json.dumps(export_payload, ensure_ascii=False)
+        parsed_payload_json = json.dumps(parsed_payload, ensure_ascii=False)
+        conn.execute(
+            """
+            UPDATE material_ai_import_records
+            SET export_payload_json = ?,
+                parsed_payload_json = ?,
+                warnings_json = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                export_payload_json,
+                parsed_payload_json,
+                json.dumps(warnings, ensure_ascii=False),
+                now,
+                record_id,
+            ),
+        )
+        material_ids = {
+            _safe_int(current_data.get("package_material_id")),
+            _safe_int(current_data.get("parsed_material_id")),
+            _safe_int(current_data.get("source_material_id")),
+        } - {0}
+        for material_id in material_ids:
+            try:
+                conn.execute(
+                    """
+                    UPDATE course_materials
+                    SET ai_parse_result_json = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (parsed_payload_json, now, material_id),
+                )
+            except sqlite3.OperationalError:
+                pass
+        detached_count += 1
+    return detached_count
+
+
 def build_material_delete_impact(
     conn,
     material_row: Any,
@@ -443,6 +663,40 @@ def build_material_delete_impact(
                 meta=str(row.get("source_file_name") or "").strip(),
             ),
         )
+        source_record_ids = _source_import_record_ids(conn, material)
+        transcript_dependencies = _final_transcript_source_dependencies(
+            conn,
+            source_record_ids=source_record_ids,
+            teacher_id=_safe_int(material.get("teacher_id")),
+            excluded_material_ids=_material_subtree_ids(conn, material),
+        )
+        _append_group(
+            groups,
+            key="final_grade_transcript_sources",
+            label="期末成绩单来源引用",
+            blocker_label="期末成绩单来源引用",
+            count=len(transcript_dependencies),
+            effect="保留已生成成绩快照，并解除对待删材料的活动来源关联",
+            risk="preserve",
+            rows=transcript_dependencies[:limit],
+            serialize=lambda row: _build_item(
+                primary=" · ".join(
+                    value
+                    for value in (
+                        str(row.get("course_name") or "").strip(),
+                        str(row.get("class_name") or "").strip(),
+                    )
+                    if value
+                ) or "期末成绩单",
+                secondary=f"引用：{'、'.join(row.get('source_labels') or [])}",
+                meta=f"记录 #{_safe_int(row.get('reference_id'))} · 删除后保留成绩快照",
+                url=(
+                    f"/materials/view/{_safe_int(row.get('package_material_id'))}"
+                    if _safe_int(row.get("package_material_id"))
+                    else ""
+                ),
+            ),
+        )
 
     if "session_material_generation_tasks" in available_tables:
         generation_count = _query_count(
@@ -595,6 +849,11 @@ def unlink_material_delete_references(
     impact = impact or build_material_delete_impact(conn, material_row, include_items=False)
     params = _subtree_params(material_row)
     now = datetime.now().isoformat()
+    source_record_ids = (
+        _source_import_record_ids(conn, material_row)
+        if "material_ai_import_records" in available_tables
+        else set()
+    )
 
     _execute_if_table(
         conn,
@@ -680,6 +939,12 @@ def unlink_material_delete_references(
             )
 
     if "material_ai_import_records" in available_tables:
+        _detach_final_transcript_sources(
+            conn,
+            source_record_ids=source_record_ids,
+            teacher_id=_safe_int(_row_dict(material_row).get("teacher_id")),
+            now=now,
+        )
         for column in ("package_material_id", "source_material_id", "parsed_material_id", "parent_material_id"):
             conn.execute(
                 f"""

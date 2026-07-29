@@ -523,6 +523,10 @@
                         <div><span>2</span><strong>核对平时成绩</strong><small>学号匹配、姓名复核</small></div>
                         <div><span>3</span><strong>核对期末成绩</strong><small>同班课与同学年学期</small></div>
                     </div>
+                    <div class="final-grade-refresh-row">
+                        <span>在其他页面补齐或更新成绩来源后，无需关闭窗口，回到这里重新核对即可。</span>
+                        <button type="button" class="btn btn-outline btn-sm" id="materials-final-grade-refresh-btn">重新同步并核对</button>
+                    </div>
                     <section class="final-grade-course-choice" id="materials-final-grade-course-choice" hidden>
                         <div>
                             <strong>请选择教务系统中的对应考试课程</strong>
@@ -712,7 +716,7 @@
                     <div class="final-grade-import-context__grid">
                         <label class="materials-form-field">
                             <span>学年</span>
-                            <input id="materials-final-grade-import-year" class="form-control" placeholder="例如 2025-2026" required aria-required="true">
+                            <input id="materials-final-grade-import-year" class="form-control" placeholder="例如 2025-2026" pattern="20\d{2}-20\d{2}" required aria-required="true">
                         </label>
                         <label class="materials-form-field">
                             <span>学期</span>

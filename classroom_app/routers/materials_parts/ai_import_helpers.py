@@ -10,7 +10,11 @@ FINAL_MATERIAL_SPREADSHEET_TYPES = {
 }
 
 AI_IMPORT_DETAIL_FIELD_LABELS = {
+    "school": "学校",
+    "college": "学院",
+    "department": "系部",
     "course_name": "课程",
+    "course_nature": "课程属性",
     "class_name": "班级",
     "teacher_name": "教师",
     "academic_year": "学年",
@@ -21,12 +25,17 @@ AI_IMPORT_DETAIL_FIELD_LABELS = {
     "exam_duration": "考试时长",
     "total_score": "总分",
     "student_count": "学生数",
+    "class_size": "学生数",
     "source_assessment_plan_title": "来源计划表",
     "source_exam_paper_title": "来源试卷",
 }
 
 AI_IMPORT_DETAIL_FIELD_ORDER = (
+    "school",
+    "college",
+    "department",
     "course_name",
+    "course_nature",
     "class_name",
     "academic_year",
     "semester",
@@ -37,6 +46,7 @@ AI_IMPORT_DETAIL_FIELD_ORDER = (
     "exam_duration",
     "total_score",
     "student_count",
+    "class_size",
     "source_assessment_plan_title",
     "source_exam_paper_title",
 )
@@ -533,6 +543,13 @@ async def _persist_material_ai_import_success(record_id: int, record: dict, pars
     source_file_hash = str(record.get("source_file_hash") or "").strip()
     source_file_size = int(record.get("source_file_size") or 0)
     source_mime_type = str(record.get("source_mime_type") or "").strip()
+    if parse_result.document_type == "final_grade_transcript":
+        await _persist_final_grade_transcript_import_success(
+            record_id=record_id,
+            record=record,
+            parse_result=parse_result,
+        )
+        return
 
     readme_content = build_import_readme(result=parse_result, original_name=original_name)
     readme_bytes = readme_content.encode("utf-8")
@@ -699,6 +716,148 @@ async def _persist_material_ai_import_success(record_id: int, record: dict, pars
                     (package_id, class_offering_id, teacher_id, now),
                 )
         refresh_root_git_metadata(conn, package_root_id)
+        conn.commit()
+
+
+async def _persist_final_grade_transcript_import_success(
+    *,
+    record_id: int,
+    record: dict,
+    parse_result,
+) -> None:
+    teacher_id = int(record.get("teacher_id") or 0)
+    parent_id = int(record.get("parent_material_id") or 0) or None
+    user = {"id": teacher_id, "role": "teacher"}
+    original_name = record.get("source_file_name") or "期末成绩单.xlsx"
+    source_file_hash = str(record.get("source_file_hash") or "").strip()
+    source_file_size = int(record.get("source_file_size") or 0)
+    source_mime_type = str(record.get("source_mime_type") or "").strip()
+    source_path = resolve_global_file_path(source_file_hash)
+    if not source_path:
+        raise HTTPException(410, "源文件缓存已不存在，无法保存导入结果，请重新上传。")
+    if source_file_size <= 0:
+        source_file_size = source_path.stat().st_size
+
+    file_profile = infer_material_profile(original_name, source_mime_type or None)
+    parse_payload_json = json.dumps(_build_material_ai_parse_payload(parse_result), ensure_ascii=False)
+    metadata_json = json.dumps(parse_result.metadata, ensure_ascii=False)
+    export_payload_json = json.dumps(parse_result.export_payload, ensure_ascii=False)
+    warnings_json = json.dumps(parse_result.warnings, ensure_ascii=False)
+    content_quality_json = json.dumps(parse_result.content_quality, ensure_ascii=False)
+
+    with get_db_connection() as conn:
+        current = conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = ?",
+            (int(record_id),),
+        ).fetchone()
+        if not current or str(current["parse_status"] or "").lower() not in MATERIAL_AI_IMPORT_ACTIVE_STATUSES:
+            return
+
+        base_parent = None
+        base_prefix = ""
+        inherited_root_id = None
+        if parent_id is not None:
+            base_parent = ensure_teacher_material_owner(conn, parent_id, teacher_id)
+            if base_parent["node_type"] != "folder":
+                raise HTTPException(400, "只能导入到文件夹中")
+            base_prefix = str(base_parent["material_path"])
+            inherited_root_id = int(base_parent["root_id"])
+
+        owner_scope = load_teacher_org_scope(conn, teacher_id)
+        now = datetime.now().isoformat()
+        material_name = make_unique_material_name(conn, teacher_id, parent_id, original_name)
+        material_path = normalize_material_path(
+            f"{base_prefix}/{material_name}" if base_prefix else material_name
+        )
+        material_id = _insert_material_file_row(
+            conn,
+            user=user,
+            name=material_name,
+            material_path=material_path,
+            parent_id=base_parent["id"] if base_parent else None,
+            root_id=inherited_root_id,
+            file_profile=file_profile,
+            file_hash=source_file_hash,
+            file_size=source_file_size,
+            owner_scope=owner_scope,
+            now=now,
+            ai_parse_status="completed",
+            ai_parse_result_json=parse_payload_json,
+        )
+        material_root_id = int(inherited_root_id or material_id)
+        conn.execute(
+            """
+            UPDATE material_ai_import_records
+            SET package_material_id = ?,
+                source_material_id = ?,
+                parsed_material_id = ?,
+                document_group = ?,
+                document_type = ?,
+                document_type_label = ?,
+                parse_status = 'completed',
+                parse_mode = ?,
+                extraction_method = ?,
+                metadata_json = ?,
+                content_markdown = ?,
+                parsed_payload_json = ?,
+                export_payload_json = ?,
+                warnings_json = ?,
+                content_quality_status = ?,
+                content_quality_json = ?,
+                error_message = '',
+                updated_at = ?,
+                completed_at = ?
+            WHERE id = ?
+            """,
+            (
+                int(material_id),
+                int(material_id),
+                int(material_id),
+                parse_result.document_group,
+                parse_result.document_type,
+                parse_result.document_type_label,
+                "ai" if parse_result.ai_used else "local_fallback",
+                parse_result.extraction_method,
+                metadata_json,
+                parse_result.content_markdown,
+                parse_payload_json,
+                export_payload_json,
+                warnings_json,
+                parse_result.content_quality.get("status", "ok"),
+                content_quality_json,
+                now,
+                now,
+                int(record_id),
+            ),
+        )
+        class_offering_id = int(parse_result.metadata.get("class_offering_id") or 0)
+        if class_offering_id:
+            offering = conn.execute(
+                "SELECT id FROM class_offerings WHERE id = ? AND teacher_id = ? LIMIT 1",
+                (class_offering_id, teacher_id),
+            ).fetchone()
+            if not offering:
+                raise HTTPException(403, "导入关联课堂不存在或无权访问。")
+            if get_configured_db_engine() == "postgres":
+                conn.execute(
+                    """
+                    INSERT INTO course_material_assignments
+                    (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT (material_id, class_offering_id) DO NOTHING
+                    """,
+                    (material_id, class_offering_id, teacher_id, now),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO course_material_assignments
+                    (material_id, class_offering_id, assigned_by_teacher_id, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (material_id, class_offering_id, teacher_id, now),
+                )
+        refresh_root_git_metadata(conn, material_root_id)
         conn.commit()
 
 

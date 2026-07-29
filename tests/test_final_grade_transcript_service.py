@@ -13,6 +13,7 @@ from classroom_app.services.final_grade_transcript_service import (
     build_final_grade_transcript_payload,
     build_final_grade_transcript_readiness,
     build_final_grade_transcript_xlsx,
+    normalize_final_grade_semester,
     parse_final_grade_transcript_file,
 )
 from classroom_app.services.material_export_template_service import (
@@ -235,6 +236,11 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
             [item["student_number"] for item in readiness["roster"]["preview"]],
             ["20240102", "20240101"],
         )
+        self.assertEqual(
+            [item["student_number"] for item in readiness["roster"]["students"]],
+            ["20240102", "20240101"],
+        )
+        self.assertEqual(64, len(readiness["roster"]["signature"]))
         self.assertEqual(readiness["sources"]["ordinary_grade_record"]["matched_count"], 2)
         self.assertEqual(readiness["sources"]["exam_grade_record"]["matched_count"], 2)
 
@@ -243,6 +249,7 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
             class_offering_id=30,
             teacher_id=1,
             expected_roster_synced_at="2026-07-29 10:10:00",
+            expected_roster_signature=readiness["roster"]["signature"],
             expected_ordinary_record_id=70,
             expected_exam_record_id=71,
         )
@@ -302,6 +309,29 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
             )
         self.assertEqual(cm.exception.status_code, 409)
         self.assertIn("名单在确认后发生了变化", str(cm.exception.detail))
+
+        readiness = build_final_grade_transcript_readiness(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+        )
+        self.conn.execute(
+            """
+            UPDATE teacher_academic_exam_roster_students
+            SET row_order = 3
+            WHERE id = 601
+            """
+        )
+        self.conn.commit()
+        with self.assertRaises(HTTPException) as cm:
+            build_final_grade_transcript_payload(
+                self.conn,
+                class_offering_id=30,
+                teacher_id=1,
+                expected_roster_signature=readiness["roster"]["signature"],
+            )
+        self.assertEqual(cm.exception.status_code, 409)
+        self.assertIn("名单内容在确认后发生了变化", str(cm.exception.detail))
 
     def test_missing_source_returns_direct_generation_links(self):
         self.conn.execute("DELETE FROM course_material_assignments WHERE material_id = 710")
@@ -363,6 +393,10 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
             [worksheet.column_dimensions[column].width for column in "ABCDEFG"],
             [20.0] * 7,
         )
+        self.assertEqual(workbook._named_styles[0].font.name, "等线")
+        self.assertEqual(workbook._named_styles[0].font.sz, 11)
+        self.assertIn(b'Aptos Narrow', workbook.loaded_theme)
+        self.assertIn("等线".encode("utf-8"), workbook.loaded_theme)
         self.assertEqual(worksheet.row_dimensions[1].height, 25.0)
         self.assertEqual(worksheet.row_dimensions[2].height, 20.0)
         self.assertEqual(
@@ -393,10 +427,12 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
             worksheet["E1"].comment.text,
             "该分项或者阶段成绩录入级制为【百分制】,请输入 0 至 100 之间的数值!",
         )
+        self.assertEqual(worksheet["E1"].comment.author, "None")
         validations = list(worksheet.data_validations.dataValidation)
         self.assertEqual(len(validations), 2)
         self.assertEqual(str(validations[0].sqref), "E2:F3")
         self.assertEqual(str(validations[1].sqref), "G2:G3")
+        self.assertIsNone(validations[0].operator)
         self.assertTrue(validations[0].allowBlank)
         self.assertTrue(validations[1].showErrorMessage)
         self.assertEqual(worksheet.page_margins.left, 0.7)
@@ -459,6 +495,12 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
         self.assertEqual(artifact.media_type, XLSX_MEDIA_TYPE)
         self.assertTrue(artifact.filename.endswith(".xlsx"))
         self.assertGreater(len(artifact.content), 1000)
+
+    def test_semester_normalization_accepts_platform_and_jwxt_period_codes(self):
+        self.assertEqual("第一学期", normalize_final_grade_semester("2025-2026-1"))
+        self.assertEqual("第二学期", normalize_final_grade_semester("2025-2026-2"))
+        self.assertEqual("第一学期", normalize_final_grade_semester("3"))
+        self.assertEqual("第二学期", normalize_final_grade_semester("12"))
 
 
 if __name__ == "__main__":

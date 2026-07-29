@@ -5,7 +5,11 @@ from .final_material_helpers import *
 from .rewrite_helpers import *
 
 from ...db.connection import execute_insert_returning_id, get_configured_db_engine
-from ...services.final_grade_transcript_service import FINAL_GRADE_TRANSCRIPT_TYPE
+from ...services.final_grade_transcript_service import (
+    FINAL_GRADE_TRANSCRIPT_TYPE,
+    normalize_final_grade_academic_year,
+    normalize_final_grade_semester,
+)
 from ...services.material_mastery_check_service import build_material_mastery_check_payload
 
 
@@ -386,14 +390,20 @@ async def ai_import_material(
         if not isinstance(raw_context, dict):
             raise HTTPException(400, "期末成绩单导入信息格式无效。")
         class_offering_id = int(raw_context.get("class_offering_id") or 0)
-        academic_year = str(raw_context.get("academic_year") or "").strip()
-        semester = str(raw_context.get("semester") or "").strip()
+        academic_year = normalize_final_grade_academic_year(raw_context.get("academic_year"))
+        semester = normalize_final_grade_semester(raw_context.get("semester"))
         if class_offering_id <= 0:
             raise HTTPException(400, "导入期末成绩单前必须选择关联课堂。")
         if not academic_year or not semester:
-            raise HTTPException(400, "导入期末成绩单前必须确认学年和学期。")
+            raise HTTPException(400, "学年须为“2025-2026”格式，学期须选择第一学期或第二学期。")
         with get_db_connection() as conn:
             trusted_context = _load_final_material_classroom_context(conn, class_offering_id, user)
+        trusted_year = normalize_final_grade_academic_year(trusted_context.get("academic_year"))
+        trusted_semester = normalize_final_grade_semester(trusted_context.get("semester"))
+        if trusted_year and trusted_year != academic_year:
+            raise HTTPException(409, f"填写学年与课堂归属不一致；该课堂为 {trusted_year} 学年。")
+        if trusted_semester and trusted_semester != semester:
+            raise HTTPException(409, f"填写学期与课堂归属不一致；该课堂为 {trusted_semester}。")
         import_context = {
             **trusted_context,
             "academic_year": academic_year,

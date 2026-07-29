@@ -57,6 +57,16 @@ test.describe('P03 materials management', () => {
     await expect(page.locator('#materials-final-grade-wizard')).toBeVisible();
     await expect(page.locator('#materials-final-grade-wizard')).toContainText('仅展示 1 份教师需要的期末成绩单');
     await expect(page.locator('#materials-final-grade-wizard')).toContainText('教务考试名单');
+    await expect(page.locator('#materials-final-grade-refresh-btn')).toBeVisible();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('#materials-final-grade-wizard')).toBeVisible();
+    await expect(page.locator('#materials-final-grade-refresh-btn')).toBeVisible();
+    const hasHorizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth + 1,
+    );
+    expect(hasHorizontalOverflow).toBeFalsy();
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.locator('#materials-classroom-generate-modal [data-dismiss="modal"]').first().click();
 
     await page.locator('[data-process-ai-import]').click();
@@ -79,6 +89,11 @@ test.describe('P03 materials management', () => {
     await page.waitForLoadState('networkidle').catch(() => undefined);
     await expect(page.locator('[data-lanshare-island="materials-manage-page"]')).toHaveCount(0);
     await expect(page.getByTestId('p03-materials-list')).toHaveCount(0);
+
+    await page.goto('/manage/teaching/final-grade-transcripts', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+    await expect(page.locator('[data-lanshare-island="materials-manage-page"]')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: '期末成绩单', exact: true })).toHaveCount(0);
 
     await expectNoBrowserErrors(errors, testInfo);
   });

@@ -181,6 +181,7 @@ class ClassroomFinalMaterialGenerateRequest(BaseModel):
     assessment_assignment_id: int | None = None
     exam_assignment_id: int | None = None
     exam_course_key: str = ""
+    expected_roster_signature: str = Field(default="", max_length=64)
     ordinary_grade_record_id: int | None = None
     exam_grade_record_id: int | None = None
     minimum_ordinary_score_enabled: bool = True
