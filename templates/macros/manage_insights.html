@@ -4,11 +4,11 @@
 #}
 
 {# Donut ring: a value/total completeness ring with a legend. #}
-{% macro insight_ring(title, value, total, caption, tone='indigo', value_label='') %}
+{% macro insight_ring(title, value, total, caption, tone='indigo', value_label='', data_key='') %}
 {% set v = (value | int) %}
 {% set t = (total | int) %}
 {% set pct = ((v / t * 100) | round | int) if t > 0 else 0 %}
-<article class="insight-panel insight-tone-{{ tone }}">
+<article class="insight-panel insight-tone-{{ tone }}"{% if data_key %} data-insight-key="{{ data_key }}"{% endif %}>
     <div class="insight-panel__head"><span class="insight-panel__title">{{ title }}</span></div>
     <div class="insight-ring-wrap">
         <div class="insight-ring" role="img" aria-label="{{ title }} {{ v }} / {{ t }}">
@@ -57,9 +57,9 @@
 {% endmacro %}
 
 {# Single headline metric with a contextual progress meter. #}
-{% macro insight_meter(title, value, percent, caption='', tone='indigo', unit='', delta='') %}
+{% macro insight_meter(title, value, percent, caption='', tone='indigo', unit='', delta='', data_key='') %}
 {% set p = (percent | int) %}
-<article class="insight-panel insight-tone-{{ tone }}">
+<article class="insight-panel insight-tone-{{ tone }}"{% if data_key %} data-insight-key="{{ data_key }}"{% endif %}>
     <div class="insight-panel__head"><span class="insight-panel__title">{{ title }}</span></div>
     <div class="insight-meter">
         <div class="insight-meter__row">

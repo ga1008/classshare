@@ -173,16 +173,16 @@
         <div class="insight-board">
             {{ insight_meter('材料总数', material_stats.total_count, 100,
                 '文件夹 ' ~ material_stats.folder_count ~ ' · 文件 ' ~ material_stats.file_count ~ ' · 根目录 ' ~ material_stats.root_count,
-                'indigo', '项') }}
+                'indigo', '项', '', 'materials-total') }}
             {{ insight_ring('文件占比', material_stats.file_count, material_stats.total_count,
                 '实际文件（非文件夹）在材料库中的占比。', 'teal',
-                material_stats.file_count ~ ' / ' ~ material_stats.total_count ~ ' 项') }}
+                material_stats.file_count ~ ' / ' ~ material_stats.total_count ~ ' 项', 'materials-file-ratio') }}
             {{ insight_ring('分配覆盖率', material_stats.assigned_material_count, material_stats.total_count,
                 '已分配到课堂的材料占比，覆盖 ' ~ material_stats.classroom_count ~ ' 个课堂。', 'violet',
-                material_stats.assigned_material_count ~ ' / ' ~ material_stats.total_count ~ ' 项') }}
+                material_stats.assigned_material_count ~ ' / ' ~ material_stats.total_count ~ ' 项', 'materials-assignment-ratio') }}
             {{ insight_meter('根目录入口', material_stats.root_count, 100,
                 '顶层材料入口 · 最近更新 ' ~ ((material_stats.latest_updated_at or '')[:10] or '暂无'),
-                'amber', '个') }}
+                'amber', '个', '', 'materials-root') }}
         </div>
     </div>
 </section>
@@ -192,7 +192,11 @@
     <div>
         <span class="materials-process-guide__eyebrow">过程材料工作流</span>
         <h3>{{ initial_ai_generate.status or '该表需要从真实课堂数据生成，不能在材料库中泛化生成。' }}</h3>
-        <p>可直接在当前页选择课堂、核对作业与测评并完成生成；若已有学校模板 Excel，也可导入解析后归档。</p>
+        {% if initial_library_filter.document_type == 'exam_grade_record' %}
+        <p>可直接在当前页选择课堂、核对试卷大题与评分覆盖后完成生成；若已有学校模板 Excel，也可导入解析后归档。</p>
+        {% else %}
+        <p>可直接在当前页选择课堂、核对作业、测评与考勤后完成生成；若已有学校模板 Excel，也可导入解析后归档。</p>
+        {% endif %}
     </div>
     <div class="materials-process-guide__actions">
         <button type="button" class="btn btn-primary btn-sm" data-process-classroom-generate>从课堂生成</button>
@@ -476,6 +480,32 @@
                         <textarea id="materials-ordinary-grade-prompt" data-prompt-pool-key="manage.ordinary_grade_record_generate" rows="4" placeholder="可选：填写本次归档说明、课程组统一口径或需要教师后续核对的事项。"></textarea>
                     </label>
                     <div class="classroom-final-material-status" id="materials-ordinary-grade-status" hidden></div>
+                </div>
+                <div class="ordinary-grade-wizard materials-exam-grade-wizard" id="materials-exam-grade-wizard" hidden>
+                    <div class="ordinary-grade-wizard__header">
+                        <div>
+                            <span class="ordinary-grade-wizard__eyebrow">真实考试成绩 · 原位生成</span>
+                            <strong id="materials-exam-grade-classroom-name">正在读取课堂</strong>
+                            <p>选择一场已绑定试卷、配置大题分值且已有评分的考试。系统会保留完整学生名单，未评分学生留空，并在 Excel 内自动核验大题合计。</p>
+                        </div>
+                        <span class="ordinary-grade-wizard__attendance is-fresh" id="materials-exam-grade-summary">正在检查可用考试…</span>
+                    </div>
+                    <section class="exam-grade-candidate-panel" aria-labelledby="materials-exam-grade-candidate-title">
+                        <div class="exam-grade-candidate-panel__header">
+                            <div>
+                                <span>第 2 步 · 选择考试</span>
+                                <strong id="materials-exam-grade-candidate-title">可用于生成的考试</strong>
+                            </div>
+                            <small>不可用考试会保留显示并说明原因，避免教师反复跳转排查。</small>
+                        </div>
+                        <div class="ordinary-grade-picker__list exam-grade-candidate-list" id="materials-exam-grade-candidate-list"></div>
+                    </section>
+                    <div class="exam-grade-generation-contract">
+                        <span>生成结果</span>
+                        <strong>仅新增 1 份最终材料</strong>
+                        <p>完成后关闭弹窗、停留在当前考核登分表列表并定位新材料；生成过程和后台记录不会作为第二份材料展示。</p>
+                    </div>
+                    <div class="classroom-final-material-status" id="materials-exam-grade-status" hidden></div>
                 </div>
             </div>
             <div class="modal-footer">

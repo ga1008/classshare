@@ -38,7 +38,7 @@ const DOCUMENT_TYPE_LABELS = {
 
 const CLASSROOM_GENERATION_HINTS = {
     ordinary_grade_record: '选择课堂后在当前页面确认 3 份平时作业和 1 份测评；系统会读取真实提交、评分与考勤数据生成 Excel。',
-    exam_grade_record: '进入课堂后请选择已绑定试卷且有大题分值的考试；系统会读取考试成绩生成 Excel。',
+    exam_grade_record: '选择课堂后在当前页面确认一场已绑定试卷、配置大题分值且已有评分的考试；生成后停留在当前列表。',
 };
 
 const SEARCH_DEBOUNCE_MS = 280;
@@ -278,6 +278,14 @@ const state = {
         busy: false,
         error: '',
     },
+    examGradeGenerate: {
+        offering: null,
+        candidates: [],
+        selectedId: null,
+        loading: false,
+        busy: false,
+        error: '',
+    },
     recentGeneratedMaterialId: null,
     recentGeneratedHighlightArmed: false,
     // 本地 AI 处理中的提示卡（优化 / 润色 / 续写），key → {label, message, tone}
@@ -356,6 +364,11 @@ const refs = {
     ordinaryScoreFloorSummary: document.getElementById('materials-ordinary-score-floor-summary'),
     ordinaryGradePrompt: document.getElementById('materials-ordinary-grade-prompt'),
     ordinaryGradeStatus: document.getElementById('materials-ordinary-grade-status'),
+    examGradeWizard: document.getElementById('materials-exam-grade-wizard'),
+    examGradeClassroomName: document.getElementById('materials-exam-grade-classroom-name'),
+    examGradeSummary: document.getElementById('materials-exam-grade-summary'),
+    examGradeCandidateList: document.getElementById('materials-exam-grade-candidate-list'),
+    examGradeStatus: document.getElementById('materials-exam-grade-status'),
     processClassroomGenerateBtn: document.querySelector('[data-process-classroom-generate]'),
     processAiImportBtn: document.querySelector('[data-process-ai-import]'),
     folderBtn: document.getElementById('materials-upload-folder-btn'),
@@ -649,6 +662,21 @@ function resetOrdinaryGradeGeneration() {
     }
 }
 
+function resetExamGradeGeneration() {
+    state.examGradeGenerate.offering = null;
+    state.examGradeGenerate.candidates = [];
+    state.examGradeGenerate.selectedId = null;
+    state.examGradeGenerate.loading = false;
+    state.examGradeGenerate.busy = false;
+    state.examGradeGenerate.error = '';
+    if (refs.examGradeStatus) {
+        refs.examGradeStatus.hidden = true;
+        refs.examGradeStatus.textContent = '';
+        refs.examGradeStatus.className = 'classroom-final-material-status';
+        delete refs.examGradeStatus.dataset.statusKind;
+    }
+}
+
 function ordinaryGradeCandidateBuckets() {
     const candidates = state.ordinaryGradeGenerate.candidates || [];
     return {
@@ -879,6 +907,7 @@ async function openManageOrdinaryGradeWizard(offering) {
     state.ordinaryGradeGenerate.loading = true;
     if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = true;
     if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = false;
+    if (refs.examGradeWizard) refs.examGradeWizard.hidden = true;
     if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = false;
     if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = false;
     if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = true;
@@ -904,10 +933,12 @@ async function openManageOrdinaryGradeWizard(offering) {
 }
 
 function returnToClassroomGeneratePicker() {
-    if (state.ordinaryGradeGenerate.busy) return;
+    if (state.ordinaryGradeGenerate.busy || state.examGradeGenerate.busy) return;
     resetOrdinaryGradeGeneration();
+    resetExamGradeGeneration();
     if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = false;
     if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = true;
+    if (refs.examGradeWizard) refs.examGradeWizard.hidden = true;
     if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = true;
     if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = true;
     if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = false;
@@ -988,6 +1019,185 @@ async function submitManageOrdinaryGradeGeneration() {
     }
 }
 
+function examGradeCandidateEligible(item) {
+    if (!item) return false;
+    if (typeof item.eligible === 'boolean') return item.eligible;
+    return Number(item.section_count || 0) > 0
+        && Number(item.total_score || 0) > 0
+        && Number(item.graded_count || 0) > 0;
+}
+
+function examGradeCandidateById(candidateId) {
+    return (state.examGradeGenerate.candidates || [])
+        .find((item) => Number(item?.id || 0) === Number(candidateId || 0)) || null;
+}
+
+function getManageExamGradeReadiness() {
+    const generation = state.examGradeGenerate;
+    if (!generation.offering) return { ready: false, message: '请先选择课堂。' };
+    if (generation.loading) return { ready: false, message: '正在读取当前课堂的考试、试卷结构和评分进度...' };
+    if (generation.error) return { ready: false, message: generation.error };
+    const eligible = generation.candidates.filter(examGradeCandidateEligible);
+    if (!eligible.length) {
+        return {
+            ready: false,
+            message: '当前课堂没有可生成的考试：需要绑定试卷、配置可识别的大题分值，并至少完成 1 名学生的评分。',
+        };
+    }
+    const selected = examGradeCandidateById(generation.selectedId);
+    if (!selected) return { ready: false, message: '请选择一场用于生成考核登分表的考试。' };
+    if (!examGradeCandidateEligible(selected)) {
+        return { ready: false, message: selected.blocking_reason || '所选考试尚不满足生成条件。' };
+    }
+    return { ready: true, message: '' };
+}
+
+function setManageExamGradeStatus(message = '', tone = '') {
+    if (!refs.examGradeStatus) return;
+    refs.examGradeStatus.hidden = !message;
+    refs.examGradeStatus.textContent = message;
+    refs.examGradeStatus.className = 'classroom-final-material-status';
+    if (tone) {
+        refs.examGradeStatus.dataset.statusKind = tone;
+    } else {
+        delete refs.examGradeStatus.dataset.statusKind;
+    }
+}
+
+function renderManageExamGradeWizard() {
+    const generation = state.examGradeGenerate;
+    const candidates = generation.candidates || [];
+    const eligible = candidates.filter(examGradeCandidateEligible);
+    if (refs.examGradeClassroomName) {
+        refs.examGradeClassroomName.textContent = offeringLabel(generation.offering);
+    }
+    if (refs.examGradeSummary) {
+        refs.examGradeSummary.textContent = generation.loading
+            ? '正在核对考试与评分数据…'
+            : `${eligible.length} 场可生成 / ${candidates.length} 场已绑定试卷`;
+        refs.examGradeSummary.classList.toggle('is-fresh', !generation.loading && eligible.length > 0);
+    }
+    if (refs.examGradeCandidateList) {
+        if (generation.loading) {
+            refs.examGradeCandidateList.innerHTML = '<div class="ordinary-grade-picker__empty"><strong>正在读取考试</strong><span>同时核对试卷大题、满分、课堂名单和评分覆盖情况。</span></div>';
+        } else if (generation.error) {
+            refs.examGradeCandidateList.innerHTML = `<div class="ordinary-grade-picker__empty"><strong>读取失败</strong><span>${escapeHtml(generation.error)}</span></div>`;
+        } else if (!candidates.length) {
+            refs.examGradeCandidateList.innerHTML = '<div class="ordinary-grade-picker__empty"><strong>还没有绑定试卷的考试</strong><span>请先在课堂创建考试并绑定试卷；完成评分后再生成正式登分表。</span></div>';
+        } else {
+            refs.examGradeCandidateList.innerHTML = candidates.map((item) => {
+                const candidateId = Number(item?.id || 0);
+                const usable = examGradeCandidateEligible(item);
+                const selected = candidateId === Number(generation.selectedId || 0);
+                const rosterCount = Number(item?.roster_count || item?.submission_count || 0);
+                const gradedCount = Number(item?.graded_count || 0);
+                const average = item?.average_score === null || item?.average_score === undefined
+                    ? '暂无均分'
+                    : `均分 ${item.average_score}`;
+                const coverage = rosterCount > 0
+                    ? `已评分 ${gradedCount}/${rosterCount} 人`
+                    : `已评分 ${gradedCount} 人`;
+                const sourceTitle = item?.exam_paper_title || '已绑定试卷';
+                const timing = item?.due_at ? `截止 ${formatDateLabel(item.due_at)}` : '未设置截止时间';
+                return `
+                    <button
+                        type="button"
+                        class="ordinary-grade-candidate exam-grade-candidate${selected ? ' is-selected' : ''}${usable ? '' : ' is-disabled'}"
+                        data-materials-exam-candidate-id="${escapeHtml(String(candidateId))}"
+                        ${usable ? '' : 'disabled'}
+                    >
+                        <span class="ordinary-grade-candidate__main">
+                            <strong>${escapeHtml(item?.title || `考试 ${candidateId}`)}</strong>
+                            <small>${escapeHtml(sourceTitle)} · ${escapeHtml(String(item?.section_count || 0))} 个大题 / 满分 ${escapeHtml(String(item?.total_score || 0))} · ${escapeHtml(coverage)} · ${escapeHtml(average)}</small>
+                            <small>${escapeHtml(timing)}${usable ? '' : ` · ${escapeHtml(item?.blocking_reason || '暂不可生成')}`}</small>
+                        </span>
+                        <span class="ordinary-grade-candidate__usage">${escapeHtml(usable ? (selected ? '已选择' : '选择此考试') : '暂不可用')}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+    }
+    const readiness = getManageExamGradeReadiness();
+    if (!generation.busy) {
+        setManageExamGradeStatus(readiness.ready ? '' : readiness.message, readiness.ready ? '' : 'blocking');
+    }
+    if (refs.classroomGenerateSubmitBtn) {
+        refs.classroomGenerateSubmitBtn.disabled = generation.busy || !readiness.ready;
+        refs.classroomGenerateSubmitBtn.textContent = generation.busy
+            ? '正在生成 Excel...'
+            : (readiness.ready ? '生成并保存' : '请先选择可用考试');
+        refs.classroomGenerateSubmitBtn.title = readiness.message || '';
+    }
+    refs.classroomGenerateModal?.querySelectorAll('[data-dismiss="modal"], .modal-close').forEach((button) => {
+        button.disabled = generation.busy;
+    });
+    if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.disabled = generation.busy;
+}
+
+async function openManageExamGradeWizard(offering) {
+    const offeringId = Number(offering?.id || 0);
+    if (!offeringId) return;
+    resetExamGradeGeneration();
+    state.examGradeGenerate.offering = offering;
+    state.examGradeGenerate.loading = true;
+    if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = true;
+    if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = true;
+    if (refs.examGradeWizard) refs.examGradeWizard.hidden = false;
+    if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = false;
+    if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = false;
+    if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = true;
+    refs.classroomGenerateModal?.querySelector('.materials-classroom-generate-dialog')?.classList.add('is-wizard');
+    refs.classroomGenerateTitle.textContent = '生成考核登分表';
+    refs.classroomGenerateSubtitle.textContent = `${offeringLabel(offering)} · 生成完成后仍停留在当前列表`;
+    renderManageExamGradeWizard();
+    try {
+        const data = await apiFetch(`/api/classrooms/${offeringId}/exam-grade-record/candidates`, { silent: true });
+        state.examGradeGenerate.candidates = Array.isArray(data.items) ? data.items : [];
+        const eligible = state.examGradeGenerate.candidates.filter(examGradeCandidateEligible);
+        state.examGradeGenerate.selectedId = eligible.length === 1 ? Number(eligible[0].id) : null;
+        state.examGradeGenerate.error = '';
+    } catch (error) {
+        state.examGradeGenerate.error = error.message || '读取考试候选失败，请稍后重试。';
+    } finally {
+        state.examGradeGenerate.loading = false;
+        renderManageExamGradeWizard();
+    }
+}
+
+async function submitManageExamGradeGeneration() {
+    const generation = state.examGradeGenerate;
+    const readiness = getManageExamGradeReadiness();
+    if (!readiness.ready || generation.busy) {
+        setManageExamGradeStatus(readiness.message || '请选择可用考试。', 'blocking');
+        return;
+    }
+    const offeringId = Number(generation.offering?.id || 0);
+    generation.busy = true;
+    renderManageExamGradeWizard();
+    setManageExamGradeStatus('正在核对学生名单、大题得分与总分，并生成可打印 Excel，请勿重复提交...', 'progress');
+    try {
+        const data = await apiFetch(`/api/classrooms/${offeringId}/final-materials/generate`, {
+            method: 'POST',
+            body: {
+                document_type: 'exam_grade_record',
+                parent_id: state.currentParentId,
+                exam_assignment_id: Number(generation.selectedId),
+            },
+        });
+        const materialId = Number(data?.task?.package_material_id || 0);
+        closeModal('materials-classroom-generate-modal');
+        resetExamGradeGeneration();
+        showToast(data.message || '考核登分表已生成', 'success', 5200);
+        await revealRecentlyGeneratedMaterial(materialId);
+    } catch (error) {
+        setManageExamGradeStatus(error.message || '生成失败，请核对考试评分后重试。', 'error');
+        showToast(error.message || '生成失败，请稍后重试。', 'error');
+    } finally {
+        generation.busy = false;
+        renderManageExamGradeWizard();
+    }
+}
+
 function populateClassroomSemesterFilter() {
     if (!refs.classroomGenerateSemesterFilter) return;
     const offerings = Array.isArray(config.offerings) ? config.offerings : [];
@@ -1057,6 +1267,7 @@ function renderClassroomGenerateOptions(policy) {
         const label = offeringLabel(offering);
         const meta = offeringMeta(offering) || '选择课堂后继续配置';
         const isOrdinaryGrade = policy?.document_type === 'ordinary_grade_record';
+        const isExamGrade = policy?.document_type === 'exam_grade_record';
         const homeworkCount = Number(offering?.ordinary_homework_count || 0);
         const assessmentCount = Number(offering?.ordinary_assessment_count || 0);
         const sourceReady = Boolean(offering?.ordinary_grade_ready);
@@ -1068,12 +1279,20 @@ function renderClassroomGenerateOptions(policy) {
                     <strong>${escapeHtml(label)}</strong>
                     <small>${escapeHtml(meta)}</small>
                     ${isOrdinaryGrade ? `<small class="materials-classroom-source-status">${escapeHtml(sourceStatus)}</small>` : ''}
+                    ${isExamGrade ? '<small class="materials-classroom-source-status">选择后检查试卷结构与评分覆盖</small>' : ''}
                 </div>
-                <span>${escapeHtml(isOrdinaryGrade && !sourceReady ? '检查来源' : '开始生成')}</span>
+                <span>${escapeHtml(isOrdinaryGrade && !sourceReady ? '检查来源' : (isExamGrade ? '检查考试' : '开始生成'))}</span>
         `;
         if (isOrdinaryGrade) {
             return `
                 <button type="button" class="materials-modal-option ${sourceReady ? 'is-source-ready' : 'is-source-missing'}" data-materials-ordinary-offering-id="${escapeHtml(String(offering.id))}">
+                    ${content}
+                </button>
+            `;
+        }
+        if (isExamGrade) {
+            return `
+                <button type="button" class="materials-modal-option" data-materials-exam-offering-id="${escapeHtml(String(offering.id))}">
                     ${content}
                 </button>
             `;
@@ -1090,8 +1309,10 @@ function openClassroomGenerateModal() {
         return;
     }
     resetOrdinaryGradeGeneration();
+    resetExamGradeGeneration();
     if (refs.classroomGeneratePickerStage) refs.classroomGeneratePickerStage.hidden = false;
     if (refs.ordinaryGradeWizard) refs.ordinaryGradeWizard.hidden = true;
+    if (refs.examGradeWizard) refs.examGradeWizard.hidden = true;
     if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.hidden = true;
     if (refs.classroomGenerateSubmitBtn) refs.classroomGenerateSubmitBtn.hidden = true;
     if (refs.classroomGenerateStatus) refs.classroomGenerateStatus.hidden = false;
@@ -1205,13 +1426,66 @@ function renderMaterialFacetOptions(select, options, selectedValue, emptyLabel) 
 
 function renderStats() {
     if (!state.stats) return;
-    refs.rootCount.textContent = String(state.stats.root_count || 0);
-    refs.totalCount.textContent = String(state.stats.total_count || 0);
-    refs.folderFileSummary.textContent = `文件夹 ${state.stats.folder_count || 0} / 文件 ${state.stats.file_count || 0}`;
-    refs.assignmentCount.textContent = String(state.stats.assigned_material_count || 0);
-    refs.classroomCount.textContent = `覆盖 ${state.stats.classroom_count || 0} 个课堂`;
+    const totalCount = Number(state.stats.total_count || 0);
+    const folderCount = Number(state.stats.folder_count || 0);
+    const fileCount = Number(state.stats.file_count || 0);
+    const rootCount = Number(state.stats.root_count || 0);
+    const assignedCount = Number(state.stats.assigned_material_count || 0);
+    const classroomCount = Number(state.stats.classroom_count || 0);
+    const latestUpdated = formatDateLabel(state.stats.latest_updated_at);
+
+    refs.rootCount.textContent = String(rootCount);
+    refs.totalCount.textContent = String(totalCount);
+    refs.folderFileSummary.textContent = `文件夹 ${folderCount} / 文件 ${fileCount}`;
+    refs.assignmentCount.textContent = String(assignedCount);
+    refs.classroomCount.textContent = `覆盖 ${classroomCount} 个课堂`;
     refs.totalSize.textContent = formatSize(state.stats.total_size || 0);
-    refs.latestUpdated.textContent = formatDateLabel(state.stats.latest_updated_at);
+    refs.latestUpdated.textContent = latestUpdated;
+
+    updateInsightMeter('materials-total', totalCount, Math.min(totalCount, 100), '项',
+        `文件夹 ${folderCount} · 文件 ${fileCount} · 根目录 ${rootCount}`);
+    updateInsightRing('materials-file-ratio', fileCount, totalCount,
+        '实际文件（非文件夹）在材料库中的占比。');
+    updateInsightRing('materials-assignment-ratio', assignedCount, totalCount,
+        `已分配到课堂的材料占比，覆盖 ${classroomCount} 个课堂。`);
+    updateInsightMeter('materials-root', rootCount, Math.min(rootCount, 100), '个',
+        `顶层材料入口 · 最近更新 ${latestUpdated === '--' ? '暂无' : latestUpdated.slice(0, 10)}`);
+}
+
+function updateInsightMeter(key, value, percent, unit, caption) {
+    const panel = document.querySelector(`[data-insight-key="${key}"]`);
+    if (!panel) return;
+    const valueNode = panel.querySelector('.insight-meter__value');
+    const fillNode = panel.querySelector('.insight-meter__track > i');
+    const captionNode = panel.querySelector('.insight-panel__caption');
+    if (valueNode) {
+        valueNode.textContent = String(value);
+        if (unit) {
+            const unitNode = document.createElement('small');
+            unitNode.textContent = unit;
+            valueNode.appendChild(unitNode);
+        }
+    }
+    fillNode?.style.setProperty('--meter-pct', String(Math.max(0, Math.min(Number(percent || 0), 100))));
+    if (captionNode) captionNode.textContent = caption;
+}
+
+function updateInsightRing(key, value, total, caption) {
+    const panel = document.querySelector(`[data-insight-key="${key}"]`);
+    if (!panel) return;
+    const safeTotal = Math.max(0, Number(total || 0));
+    const safeValue = Math.max(0, Number(value || 0));
+    const percent = safeTotal > 0 ? Math.round((safeValue / safeTotal) * 100) : 0;
+    const ring = panel.querySelector('.insight-ring');
+    const fillNode = panel.querySelector('.insight-ring__fill');
+    const percentNode = panel.querySelector('.insight-ring__center strong');
+    const valueNode = panel.querySelector('.insight-ring-legend b');
+    const captionNode = panel.querySelector('.insight-ring-legend span');
+    if (ring) ring.setAttribute('aria-label', `${panel.querySelector('.insight-panel__title')?.textContent || ''} ${safeValue} / ${safeTotal}`);
+    fillNode?.style.setProperty('--ring-pct', String(Math.max(0, Math.min(percent, 100))));
+    if (percentNode) percentNode.textContent = `${percent}%`;
+    if (valueNode) valueNode.textContent = `${safeValue} / ${safeTotal} 项`;
+    if (captionNode) captionNode.textContent = caption;
 }
 
 function renderLibraryOverview() {
@@ -1364,6 +1638,7 @@ function renderList() {
     }
 
     const rowsHtml = state.items.map((item) => {
+        const isFinalMaterialCatalogue = Boolean(state.filters.documentType);
         const visualMeta = getVisualMeta(item);
         const activeClass = Number(item.id) === Number(state.activeMaterialId) ? 'is-active' : '';
         const selectedClass = state.selectedIds.has(Number(item.id)) ? 'is-selected' : '';
@@ -1377,12 +1652,17 @@ function renderList() {
         const optimizingBadge = item.ai_optimize_status === 'running'
             ? '<span class="materials-meta-item" style="color:#0d9488;">AI 优化中…</span>'
             : '';
-        const readmeStatus = hasLearningDocument(item) ? '<span class="materials-meta-item">README</span>' : '';
+        const readmeStatus = !isFinalMaterialCatalogue && hasLearningDocument(item)
+            ? '<span class="materials-meta-item">README</span>'
+            : '';
         const scopeBadge = item.scope_label ? `<span class="materials-meta-item">${escapeHtml(item.scope_label)}</span>` : '';
         const sharedBadge = item.can_manage === false ? '<span class="materials-meta-item">共享材料</span>' : '';
         const documentAction = hasLearningDocument(item)
-            ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">文档</button>'
+            ? `<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">${isFinalMaterialCatalogue ? '查看正文' : '文档'}</button>`
             : '';
+        const materialMetaText = isFinalMaterialCatalogue && item.node_type === 'folder'
+            ? '最终材料'
+            : getMetaText(item);
         const renderAction = isRenderable(item)
             ? `<button type="button" class="btn btn-outline btn-sm materials-render-btn" data-action="render">${escapeHtml(getRenderLabel(item))}</button>`
             : '';
@@ -1419,7 +1699,7 @@ function renderList() {
                     </div>
                     <div class="materials-row-meta">
                         <span class="materials-type-pill">${escapeHtml(getMaterialTypeLabel(item))}</span>
-                        <span class="materials-meta-item">${escapeHtml(getMetaText(item))}</span>
+                        <span class="materials-meta-item">${escapeHtml(materialMetaText)}</span>
                         ${item.assignment_count ? `<span class="materials-meta-item">已分配 ${escapeHtml(String(item.assignment_count))} 次</span>` : ''}
                         ${assignmentMeta}
                         ${scopeBadge}
@@ -4643,14 +4923,25 @@ function bindEvents() {
         renderClassroomGenerateOptions(getProcessGeneratePolicy());
     });
     refs.classroomGenerateList?.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-materials-ordinary-offering-id]');
+        const ordinaryButton = event.target.closest('[data-materials-ordinary-offering-id]');
+        const examButton = event.target.closest('[data-materials-exam-offering-id]');
+        const button = ordinaryButton || examButton;
         if (!button) return;
-        const offeringId = Number(button.dataset.materialsOrdinaryOfferingId || 0);
+        const offeringId = Number(
+            ordinaryButton?.dataset.materialsOrdinaryOfferingId
+            || examButton?.dataset.materialsExamOfferingId
+            || 0
+        );
         const offering = (config.offerings || []).find((item) => Number(item?.id || 0) === offeringId);
-        if (offering) {
+        if (offering && ordinaryButton) {
             openManageOrdinaryGradeWizard(offering).catch((error) => {
                 state.ordinaryGradeGenerate.error = error.message || '读取课堂来源失败。';
                 renderManageOrdinaryGradeWizard();
+            });
+        } else if (offering && examButton) {
+            openManageExamGradeWizard(offering).catch((error) => {
+                state.examGradeGenerate.error = error.message || '读取考试来源失败。';
+                renderManageExamGradeWizard();
             });
         }
     });
@@ -4673,8 +4964,21 @@ function bindEvents() {
     refs.ordinaryScoreFloorEnabled?.addEventListener('change', renderManageOrdinaryGradeWizard);
     refs.ordinaryScoreFloorInput?.addEventListener('input', renderManageOrdinaryGradeWizard);
     refs.ordinaryGradePrompt?.addEventListener('input', renderManageOrdinaryGradeWizard);
+    refs.examGradeCandidateList?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-materials-exam-candidate-id]');
+        if (!button || button.disabled) return;
+        state.examGradeGenerate.selectedId = Number(button.dataset.materialsExamCandidateId || 0);
+        renderManageExamGradeWizard();
+    });
     refs.classroomGenerateBackBtn?.addEventListener('click', returnToClassroomGeneratePicker);
     refs.classroomGenerateSubmitBtn?.addEventListener('click', () => {
+        const documentType = getProcessGeneratePolicy()?.document_type;
+        if (documentType === 'exam_grade_record') {
+            submitManageExamGradeGeneration().catch((error) => {
+                setManageExamGradeStatus(error.message || '生成失败，请稍后重试。', 'error');
+            });
+            return;
+        }
         submitManageOrdinaryGradeGeneration().catch((error) => {
             setManageOrdinaryGradeStatus(error.message || '生成失败，请稍后重试。', 'error');
         });

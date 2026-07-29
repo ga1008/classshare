@@ -1052,25 +1052,35 @@ function collectOrdinaryGradeSelection() {
 
 function examGradeCandidateLabel(item) {
     const title = item?.title || `考试 ${item?.id || ''}`;
-    const stats = `${item?.graded_count || 0}/${item?.submission_count || 0}`;
+    const stats = `${item?.graded_count || 0}/${item?.roster_count || item?.submission_count || 0}`;
     const sections = item?.section_count ? `，${item.section_count} 个大题` : '';
     const total = item?.total_score ? `，满分 ${item.total_score}` : '';
     const average = item?.average_score === null || item?.average_score === undefined ? '' : `，均分 ${item.average_score}`;
-    return `${title}（已评分 ${stats}${sections}${total}${average}）`;
+    const blocked = item?.eligible === false ? `，不可生成：${item?.blocking_reason || '来源不完整'}` : '';
+    return `${title}（已评分 ${stats}${sections}${total}${average}${blocked}）`;
+}
+
+function examGradeCandidateEligible(item) {
+    if (!item) return false;
+    if (typeof item.eligible === 'boolean') return item.eligible;
+    return Number(item.section_count || 0) > 0
+        && Number(item.total_score || 0) > 0
+        && Number(item.graded_count || 0) > 0;
 }
 
 function populateExamGradeSelect() {
     const dom = refs();
     if (!dom.examGradeSelect) return;
     const previous = dom.examGradeSelect.value;
+    const eligible = state.examGradeCandidates.filter(examGradeCandidateEligible);
     dom.examGradeSelect.innerHTML = [
         '<option value="">请选择考试</option>',
-        ...state.examGradeCandidates.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(examGradeCandidateLabel(item))}</option>`),
+        ...state.examGradeCandidates.map((item) => `<option value="${escapeHtml(String(item.id))}"${examGradeCandidateEligible(item) ? '' : ' disabled'}>${escapeHtml(examGradeCandidateLabel(item))}</option>`),
     ].join('');
-    if (previous && state.examGradeCandidates.some((item) => String(item.id) === String(previous))) {
+    if (previous && eligible.some((item) => String(item.id) === String(previous))) {
         dom.examGradeSelect.value = previous;
-    } else if (state.examGradeCandidates.length === 1) {
-        dom.examGradeSelect.value = String(state.examGradeCandidates[0].id);
+    } else if (eligible.length === 1) {
+        dom.examGradeSelect.value = String(eligible[0].id);
     }
 }
 
@@ -1085,11 +1095,16 @@ function getExamGradeReadiness() {
     if (!state.examGradeCandidatesLoaded) {
         return { ready: false, message: '请等待系统读取当前课堂的考试成绩。' };
     }
-    if (!state.examGradeCandidates.length) {
-        return { ready: false, message: '当前课堂还没有可用于生成登分表的考试记录。' };
+    const eligible = state.examGradeCandidates.filter(examGradeCandidateEligible);
+    if (!eligible.length) {
+        return { ready: false, message: '当前课堂没有可生成的考试：需要绑定试卷、配置大题分值，并至少完成 1 名学生的评分。' };
     }
-    if (Number(dom.examGradeSelect?.value || 0) <= 0) {
+    const selected = state.examGradeCandidates.find((item) => Number(item?.id || 0) === Number(dom.examGradeSelect?.value || 0));
+    if (!selected) {
         return { ready: false, message: '请选择一个用于生成考核登分表的考试。' };
+    }
+    if (!examGradeCandidateEligible(selected)) {
+        return { ready: false, message: selected.blocking_reason || '所选考试尚不满足生成条件。' };
     }
     return { ready: true, message: '' };
 }

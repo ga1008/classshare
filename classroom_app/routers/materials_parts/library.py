@@ -146,12 +146,12 @@ GRADE_RECORD_IMPORT_PRESETS: dict[str, dict[str, Any]] = {
     "ordinary_grade_record": {
         "document_group": "final_material",
         "document_type": "ordinary_grade_record",
-        "status": "可上传平时成绩记录表 Excel 进行结构化解析；如需从课堂数据生成，请进入具体课堂的“课程材料”，选择 3 份作业和 1 份测评后生成。",
+        "status": "可上传平时成绩记录表 Excel 进行结构化解析；如需从课堂数据生成，可在当前列表选择课堂、3 份作业和 1 份测评。",
     },
     "exam_grade_record": {
         "document_group": "final_material",
         "document_type": "exam_grade_record",
-        "status": "可上传考核登分表 Excel 进行结构化解析；如需从课堂考试成绩生成，请进入具体课堂的“课程材料”，选择已绑定试卷的考试后生成。",
+        "status": "可上传考核登分表 Excel 进行结构化解析；如需从课堂考试成绩生成，可在当前列表选择课堂和已绑定试卷的考试。",
     },
 }
 
@@ -217,7 +217,11 @@ def _render_manage_materials_page(
             """,
             (user["id"],),
         ).fetchall()
-        stats = _get_teacher_material_stats(conn, user["id"])
+        stats = _get_teacher_material_stats(
+            conn,
+            user["id"],
+            document_type=str((initial_library_filter or {}).get("document_type") or ""),
+        )
 
     source_counts: dict[int, dict[str, int]] = {}
     for row in ordinary_source_rows:
@@ -380,7 +384,11 @@ async def get_teacher_material_library(
                 conn,
                 [_decorate_material_ownership(conn, serialize_material_row(current_folder), user)],
             )[0]
-        stats = _get_teacher_material_stats(conn, user["id"])
+        stats = _get_teacher_material_stats(
+            conn,
+            user["id"],
+            document_type=normalized_document_type_filter,
+        )
         overview = _build_teacher_library_overview(
             current_folder,
             normalized_keyword,

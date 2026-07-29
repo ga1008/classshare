@@ -19,6 +19,7 @@ from .libreoffice_service import convert_office_file
 EXAM_GRADE_RECORD_TYPE = "exam_grade_record"
 EXAM_GRADE_RECORD_LABEL = "机试（作品设计）考核登分表"
 EXAM_GRADE_RECORD_SCHEMA_VERSION = "gxufl-exam-grade-record-v1"
+EXAM_GRADE_RECORD_ROWS_PER_PAGE = 25
 
 EXAM_GRADE_LAYOUT = {
     "page": "A4 portrait",
@@ -34,6 +35,7 @@ EXAM_GRADE_LAYOUT = {
     "row_heights": {"title": 35, "metadata": 32, "header": 15, "student": 18},
     "base_column_widths": {"index": 7.0, "student_number": 21.7265625, "student_name": 19.08984375, "total": 11.0},
     "sample_section_width": 46.0,
+    "rows_per_page": EXAM_GRADE_RECORD_ROWS_PER_PAGE,
 }
 
 _CHINESE_ORDINALS = [
@@ -171,17 +173,27 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
                a.exam_paper_id,
                ep.title AS exam_paper_title,
                ep.questions_json,
-               COUNT(s.id) AS submission_count,
-               SUM(CASE WHEN s.score IS NOT NULL THEN 1 ELSE 0 END) AS graded_count,
-               AVG(CASE WHEN s.score IS NOT NULL THEN s.score ELSE NULL END) AS average_score
+               (
+                   SELECT COUNT(*)
+                   FROM students roster
+                   WHERE roster.class_id = o.class_id
+                     AND COALESCE(roster.enrollment_status, 'active') = 'active'
+               ) AS roster_count,
+               COUNT(DISTINCT CASE WHEN scored_student.id IS NOT NULL THEN s.student_pk_id ELSE NULL END) AS submission_count,
+               COUNT(DISTINCT CASE WHEN scored_student.id IS NOT NULL AND s.score IS NOT NULL THEN s.student_pk_id ELSE NULL END) AS graded_count,
+               AVG(CASE WHEN scored_student.id IS NOT NULL AND s.score IS NOT NULL THEN s.score ELSE NULL END) AS average_score
         FROM assignments a
         JOIN class_offerings o ON o.id = a.class_offering_id
         JOIN exam_papers ep ON ep.id = a.exam_paper_id
         LEFT JOIN submissions s ON s.assignment_id = a.id
+        LEFT JOIN students scored_student
+               ON scored_student.id = s.student_pk_id
+              AND scored_student.class_id = o.class_id
+              AND COALESCE(scored_student.enrollment_status, 'active') = 'active'
         WHERE a.class_offering_id = ?
           AND o.teacher_id = ?
           AND COALESCE(a.exam_paper_id, '') != ''
-        GROUP BY a.id, a.title, a.status, a.created_at, a.due_at, a.exam_paper_id, ep.title, ep.questions_json
+        GROUP BY a.id, a.title, a.status, a.created_at, a.due_at, a.exam_paper_id, ep.title, ep.questions_json, o.class_id
         ORDER BY COALESCE(a.due_at, a.created_at, '') DESC, a.id DESC
         """,
         (int(class_offering_id), int(teacher_id)),
@@ -192,6 +204,17 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
         sections = _sections_from_exam_data(item.get("questions_json"))
         total_score = sum(_score_to_int(section.get("full_score")) for section in sections)
         average_score = item.get("average_score")
+        roster_count = _coerce_int(item.get("roster_count"))
+        submission_count = _coerce_int(item.get("submission_count"))
+        graded_count = _coerce_int(item.get("graded_count"))
+        blocking_reason = ""
+        if not sections or total_score <= 0:
+            blocking_reason = "试卷未配置可识别的大题和分值"
+        elif roster_count <= 0:
+            blocking_reason = "课堂暂无在读学生"
+        elif graded_count <= 0:
+            blocking_reason = "考试尚无已评分成绩"
+        eligible = not blocking_reason
         items.append(
             {
                 "id": int(item["id"]),
@@ -204,9 +227,14 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
                 "exam_paper_title": item.get("exam_paper_title") or "",
                 "section_count": len(sections),
                 "total_score": total_score,
-                "submission_count": _coerce_int(item.get("submission_count")),
-                "graded_count": _coerce_int(item.get("graded_count")),
+                "roster_count": roster_count,
+                "submission_count": submission_count,
+                "graded_count": graded_count,
+                "missing_grade_count": max(0, roster_count - graded_count),
+                "coverage_percent": round(graded_count * 100 / roster_count, 1) if roster_count else 0,
                 "average_score": round(float(average_score), 2) if average_score is not None else None,
+                "eligible": eligible,
+                "blocking_reason": blocking_reason,
             }
         )
     return items
@@ -235,10 +263,14 @@ def build_exam_grade_record_payload(
         raise HTTPException(422, "所选考试没有可识别的大题分值，无法生成考核登分表。")
     total_score = sum(_score_to_int(section.get("full_score")) for section in sections)
     students = _load_roster(conn, class_offering_id=int(class_offering_id))
+    if not students:
+        raise HTTPException(422, "当前课堂没有在读学生，无法生成考核登分表。")
     submissions = _load_exam_submissions(conn, assignment_id=assignment_id)
 
     warnings: list[str] = []
     rows: list[dict[str, Any]] = []
+    missing_grade_students: list[str] = []
+    graded_student_count = 0
     for index, student in enumerate(students, start=1):
         student_id = int(student["student_id"])
         submission = submissions.get(student_id)
@@ -256,11 +288,16 @@ def build_exam_grade_record_payload(
             "source_question_scores": [],
         }
         if not submission or submission.get("score") in (None, ""):
-            warnings.append(f"{row['student_name'] or row['student_number']} 尚无考试总分，登分表中保留学生信息但成绩为空。")
+            missing_grade_students.append(str(row["student_name"] or row["student_number"] or f"第 {index} 名学生"))
             rows.append(row)
             continue
 
         target_total = _round_int_score(submission.get("score"))
+        if target_total < 0:
+            warnings.append(
+                f"{row['student_name'] or row['student_number']} 的最终分 {target_total} 小于 0，已按 0 分生成。"
+            )
+            target_total = 0
         if target_total > total_score:
             warnings.append(
                 f"{row['student_name'] or row['student_number']} 的最终分 {target_total} 超过试卷满分 {total_score}，已按满分生成。"
@@ -297,7 +334,15 @@ def build_exam_grade_record_payload(
                 "source_question_scores": source_question_scores,
             }
         )
+        graded_student_count += 1
         rows.append(row)
+
+    if graded_student_count <= 0:
+        raise HTTPException(422, "所选考试尚无已评分成绩，请完成评分后再生成考核登分表。")
+    if missing_grade_students:
+        preview = "、".join(missing_grade_students[:8])
+        suffix = f"等 {len(missing_grade_students)} 人" if len(missing_grade_students) > 8 else f"共 {len(missing_grade_students)} 人"
+        warnings.append(f"{preview}{suffix}尚无考试总分，登分表保留学生信息且成绩留空。")
 
     source_exam = {
         "assignment_id": int(assignment["id"]),
@@ -380,6 +425,8 @@ def parse_exam_grade_record_file(file_path: Path, original_name: str) -> ExamGra
 def build_exam_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
     try:
         from openpyxl import Workbook
+        from openpyxl.worksheet.datavalidation import DataValidation
+        from openpyxl.worksheet.pagebreak import Break
         from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
         from openpyxl.utils import get_column_letter
         from openpyxl.worksheet.properties import PageSetupProperties
@@ -414,8 +461,7 @@ def build_exam_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
     ws.page_setup.orientation = "portrait"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 1 if len(students) <= 60 else False
-    ws.page_setup.scale = 85
+    ws.page_setup.fitToHeight = 0
     margins = EXAM_GRADE_LAYOUT["margins_in"]
     ws.page_margins.left = margins["left"]
     ws.page_margins.right = margins["right"]
@@ -424,6 +470,13 @@ def build_exam_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
     ws.page_margins.header = margins["header"]
     ws.page_margins.footer = margins["footer"]
     ws.sheet_view.showGridLines = False
+    ws.sheet_view.zoomScale = 90
+    ws.freeze_panes = "D5"
+    ws.print_title_rows = "1:4"
+    ws.print_options.horizontalCentered = True
+    ws.oddFooter.center.text = "第 &P 页 / 共 &N 页"
+    ws.oddFooter.center.size = 9
+    ws.oddFooter.center.font = "宋体"
 
     widths = _exam_grade_column_widths(section_count)
     for col_index, width in enumerate(widths, start=1):
@@ -434,11 +487,11 @@ def build_exam_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
     bottom_border = Border(bottom=thin)
     center = Alignment(horizontal="center", vertical="center", wrap_text=True)
     left = Alignment(horizontal="left", vertical="center", wrap_text=True)
-    title_font = Font(name="宋体", size=18, bold=True)
-    meta_font = Font(name="黑体", size=12)
-    header_font = Font(name="宋体", size=11)
-    section_font = Font(name="宋体", size=12, bold=True, color="FF0000")
-    body_font = Font(name="宋体", size=11)
+    title_font = Font(name="宋体", size=18, bold=True, charset=134, family=3)
+    meta_font = Font(name="黑体", size=12, charset=134, family=3)
+    header_font = Font(name="宋体", size=11, bold=True, charset=134, family=3)
+    section_font = Font(name="宋体", size=12, bold=True, color="FF0000", charset=134, family=3)
+    body_font = Font(name="宋体", size=11, charset=134, family=3)
     green_fill = PatternFill(fill_type="solid", fgColor="FF92D050")
 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
@@ -476,6 +529,21 @@ def build_exam_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
         score_cell.border = border
         score_cell.fill = green_fill
         score_cell.number_format = "0"
+        validation = DataValidation(
+            type="whole",
+            operator="between",
+            formula1="0",
+            formula2=str(_score_to_int(section.get("full_score"))),
+            allow_blank=True,
+        )
+        validation.error = f"请输入 0 到 {_score_to_int(section.get('full_score'))} 之间的整数分数。"
+        validation.errorTitle = "大题分数超出范围"
+        validation.prompt = f"本大题满分 {_score_to_int(section.get('full_score'))} 分。"
+        validation.promptTitle = "录入大题得分"
+        validation.showErrorMessage = True
+        validation.showInputMessage = True
+        ws.add_data_validation(validation)
+        validation.add(f"{get_column_letter(col)}5:{get_column_letter(col)}{max(5, 4 + len(students))}")
 
     total_header = ws.cell(3, total_col, "总分")
     total_header.font = header_font
@@ -522,9 +590,67 @@ def build_exam_grade_record_xlsx(payload: dict[str, Any]) -> bytes:
             last_score_col = get_column_letter(total_col - 1)
             total_cell.value = f"={first_score_col}{row_number}" if section_count == 1 else f"=SUM({first_score_col}{row_number}:{last_score_col}{row_number})"
         ws.row_dimensions[row_number].height = EXAM_GRADE_LAYOUT["row_heights"]["student"]
+        if local_index > 0 and local_index % EXAM_GRADE_RECORD_ROWS_PER_PAGE == 0:
+            ws.row_breaks.append(Break(id=row_number - 1))
 
     last_row = data_start + row_count - 1
     ws.print_area = f"A1:{get_column_letter(last_col)}{last_row}"
+
+    audit = wb.create_sheet("生成核验")
+    audit.sheet_state = "hidden"
+    audit.sheet_view.showGridLines = False
+    audit.freeze_panes = "A2"
+    audit_headers = [
+        "序号",
+        "学号",
+        "姓名",
+        "卷面大题分",
+        "登分大题分",
+        "卷面合计",
+        "最终总分",
+        "调整分",
+        "调整说明",
+        "来源逐题明细",
+    ]
+    audit.append(audit_headers)
+    for student in students:
+        audit.append(
+            [
+                student.get("index") or "",
+                student.get("student_number") or "",
+                student.get("student_name") or "",
+                json.dumps(student.get("raw_section_scores") or [], ensure_ascii=False),
+                json.dumps(student.get("section_scores") or [], ensure_ascii=False),
+                student.get("raw_total_score") if student.get("raw_total_score") not in (None, "") else "",
+                student.get("total_score") if student.get("total_score") not in (None, "") else "",
+                student.get("adjustment_points") or 0,
+                student.get("score_adjustment_reason") or "",
+                json.dumps(student.get("source_question_scores") or [], ensure_ascii=False),
+            ]
+        )
+    audit.auto_filter.ref = f"A1:J{max(1, len(students) + 1)}"
+    audit.column_dimensions["A"].width = 8
+    audit.column_dimensions["B"].width = 18
+    audit.column_dimensions["C"].width = 14
+    audit.column_dimensions["D"].width = 22
+    audit.column_dimensions["E"].width = 22
+    audit.column_dimensions["F"].width = 12
+    audit.column_dimensions["G"].width = 12
+    audit.column_dimensions["H"].width = 10
+    audit.column_dimensions["I"].width = 34
+    audit.column_dimensions["J"].width = 42
+    for cell in audit[1]:
+        cell.font = Font(name="宋体", size=10, bold=True, color="FFFFFF", charset=134, family=3)
+        cell.fill = PatternFill(fill_type="solid", fgColor="FF4F46E5")
+        cell.alignment = center
+    for row in audit.iter_rows(min_row=2, max_row=max(2, len(students) + 1), min_col=1, max_col=10):
+        for cell in row:
+            cell.font = Font(name="宋体", size=10, charset=134, family=3)
+            cell.alignment = left if cell.column in {4, 5, 9, 10} else center
+    if hasattr(wb, "calculation"):
+        wb.calculation.fullCalcOnLoad = True
+        wb.calculation.forceFullCalc = True
+        wb.calculation.calcMode = "auto"
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
@@ -652,6 +778,7 @@ def _load_exam_submissions(conn, *, assignment_id: int) -> dict[int, dict[str, A
                ON gr.assignment_id = CAST(s.assignment_id AS TEXT)
               AND gr.student_pk_id = s.student_pk_id
         WHERE s.assignment_id = ?
+        ORDER BY s.id ASC
         """,
         (int(assignment_id),),
     ).fetchall()

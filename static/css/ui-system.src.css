@@ -9929,6 +9929,108 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     border: 1px solid rgba(79, 70, 229, 0.18);
 }
 
+.materials-exam-grade-wizard {
+    border: 1px solid rgba(14, 116, 144, 0.2);
+    background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 38%),
+        linear-gradient(145deg, rgba(240, 249, 255, 0.97), rgba(248, 250, 252, 0.99));
+}
+
+.exam-grade-candidate-panel {
+    margin: 0 1.15rem 1rem;
+    overflow: hidden;
+    border: 1px solid rgba(14, 116, 144, 0.18);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 18px 34px -32px rgba(15, 23, 42, 0.7);
+}
+
+.exam-grade-candidate-panel__header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.95rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.exam-grade-candidate-panel__header > div {
+    display: grid;
+    gap: 0.22rem;
+}
+
+.exam-grade-candidate-panel__header span {
+    color: #0e7490;
+    font-size: 0.7rem;
+    font-weight: 900;
+    letter-spacing: 0.07em;
+}
+
+.exam-grade-candidate-panel__header strong {
+    color: #0f172a;
+    font-size: 0.95rem;
+}
+
+.exam-grade-candidate-panel__header small {
+    max-width: 360px;
+    color: #64748b;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    text-align: right;
+}
+
+.exam-grade-candidate-list {
+    max-height: 340px;
+    padding-top: 0.9rem;
+}
+
+.exam-grade-candidate .ordinary-grade-candidate__main {
+    gap: 0.3rem;
+}
+
+.exam-grade-candidate .ordinary-grade-candidate__main small:last-child {
+    color: #475569;
+}
+
+.exam-grade-candidate.is-disabled .ordinary-grade-candidate__usage,
+.exam-grade-candidate.is-disabled .ordinary-grade-candidate__main small:last-child {
+    color: #b45309;
+}
+
+.exam-grade-generation-contract {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.18rem 0.65rem;
+    margin: 0 1.15rem 1rem;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 13px;
+    background: rgba(236, 253, 245, 0.82);
+}
+
+.exam-grade-generation-contract span {
+    grid-row: 1 / 3;
+    align-self: center;
+    padding: 0.3rem 0.55rem;
+    border-radius: 999px;
+    background: #059669;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 900;
+}
+
+.exam-grade-generation-contract strong {
+    color: #065f46;
+    font-size: 0.84rem;
+}
+
+.exam-grade-generation-contract p {
+    margin: 0;
+    color: #477064;
+    font-size: 0.74rem;
+    line-height: 1.5;
+}
+
 .materials-ordinary-grade-prompt {
     display: grid;
     gap: 0.55rem;
@@ -17055,6 +17157,30 @@ body.has-chat-image-preview-open {
 
     .ordinary-grade-picker {
         margin-inline: 0.75rem;
+    }
+
+    .exam-grade-candidate-panel,
+    .exam-grade-generation-contract {
+        margin-inline: 0.75rem;
+    }
+
+    .exam-grade-candidate-panel__header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .exam-grade-candidate-panel__header small {
+        max-width: none;
+        text-align: left;
+    }
+
+    .exam-grade-generation-contract {
+        grid-template-columns: 1fr;
+    }
+
+    .exam-grade-generation-contract span {
+        grid-row: auto;
+        justify-self: start;
     }
 
     .ordinary-grade-score-policy {

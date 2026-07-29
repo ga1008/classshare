@@ -186,6 +186,11 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
         self.assertEqual(candidates[0]["section_count"], 3)
         self.assertEqual(candidates[0]["total_score"], 100)
         self.assertEqual(candidates[0]["graded_count"], 2)
+        self.assertEqual(candidates[0]["roster_count"], 3)
+        self.assertEqual(candidates[0]["missing_grade_count"], 1)
+        self.assertEqual(candidates[0]["coverage_percent"], 66.7)
+        self.assertTrue(candidates[0]["eligible"])
+        self.assertEqual(candidates[0]["blocking_reason"], "")
 
         payload = build_exam_grade_record_payload(
             self.conn,
@@ -206,6 +211,32 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
         self.assertEqual(sum(students[1]["section_scores"]), 82)
         self.assertIn("小组互评折算扣", students[1]["score_adjustment_reason"])
         self.assertTrue(any("学生三" in warning for warning in payload["structured"]["warnings"]))
+
+    def test_generation_blocks_empty_roster_or_exam_without_graded_scores(self):
+        self.conn.execute("DELETE FROM submissions")
+        self.conn.execute("DELETE FROM group_assignment_member_results")
+        self.conn.commit()
+
+        candidates = list_exam_grade_record_candidates(self.conn, class_offering_id=30, teacher_id=1)
+        self.assertFalse(candidates[0]["eligible"])
+        self.assertIn("尚无已评分成绩", candidates[0]["blocking_reason"])
+        with self.assertRaisesRegex(Exception, "尚无已评分成绩"):
+            build_exam_grade_record_payload(
+                self.conn,
+                class_offering_id=30,
+                teacher_id=1,
+                exam_assignment_id=301,
+            )
+
+        self.conn.execute("DELETE FROM students")
+        self.conn.commit()
+        with self.assertRaisesRegex(Exception, "没有在读学生"):
+            build_exam_grade_record_payload(
+                self.conn,
+                class_offering_id=30,
+                teacher_id=1,
+                exam_assignment_id=301,
+            )
 
     def test_postgres_queries_keep_assignment_ids_native(self):
         class StrictPostgresLikeConnection:
@@ -243,6 +274,14 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
             teacher_id=1,
             exam_assignment_id=301,
         )
+        students = payload["structured"]["students"]
+        for index in range(4, 27):
+            clone = json.loads(json.dumps(students[0], ensure_ascii=False))
+            clone["index"] = index
+            clone["student_id"] = 1000 + index
+            clone["student_number"] = f"2024{index:04d}"
+            clone["student_name"] = f"学生{index}"
+            students.append(clone)
         content = build_exam_grade_record_xlsx(payload)
         wb = load_workbook(io.BytesIO(content), data_only=False)
         ws = wb.active
@@ -263,7 +302,18 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
         self.assertEqual(ws["F5"].value, 29)
         self.assertEqual(str(ws.page_setup.paperSize), "9")
         self.assertEqual(ws.page_setup.fitToWidth, 1)
+        self.assertEqual(ws.page_setup.fitToHeight, 0)
+        self.assertEqual(ws.freeze_panes, "D5")
+        self.assertEqual(ws.print_title_rows, "$1:$4")
+        self.assertTrue(ws.print_options.horizontalCentered)
+        self.assertEqual(ws.oddFooter.center.text, "第 &P 页 / 共 &N 页")
+        self.assertEqual([item.id for item in ws.row_breaks.brk], [29])
+        self.assertEqual(len(ws.data_validations.dataValidation), 3)
+        self.assertEqual(ws["A1"].font.name, "宋体")
+        self.assertEqual(ws["A1"].font.charset, 134)
         self.assertLessEqual(ws.column_dimensions["D"].width, 16)
+        self.assertEqual(wb["生成核验"].sheet_state, "hidden")
+        self.assertEqual(wb["生成核验"]["I2"].value, "迟交扣 4 分")
 
     def test_parser_ai_import_and_export_artifact_force_xlsx(self):
         payload = build_exam_grade_record_payload(

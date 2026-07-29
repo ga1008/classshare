@@ -5,6 +5,7 @@ from classroom_app.routers.materials_parts.common import (
     _apply_material_library_filters,
     _attach_material_assignment_facets,
     _build_material_filter_facets,
+    _get_teacher_material_stats,
 )
 
 
@@ -37,6 +38,23 @@ class MaterialLibraryFilterTests(unittest.TestCase):
             CREATE TABLE course_material_assignments (
                 material_id INTEGER NOT NULL,
                 class_offering_id INTEGER NOT NULL
+            );
+            CREATE TABLE course_materials (
+                id INTEGER PRIMARY KEY,
+                parent_id INTEGER,
+                teacher_id INTEGER NOT NULL,
+                material_path TEXT NOT NULL,
+                node_type TEXT NOT NULL,
+                file_size INTEGER,
+                updated_at TEXT
+            );
+            CREATE TABLE material_ai_import_records (
+                id INTEGER PRIMARY KEY,
+                document_type TEXT,
+                parse_status TEXT,
+                package_material_id INTEGER,
+                source_material_id INTEGER,
+                parsed_material_id INTEGER
             );
             """
         )
@@ -106,6 +124,40 @@ class MaterialLibraryFilterTests(unittest.TestCase):
         )
 
         self.assertEqual([1], [item["id"] for item in filtered])
+
+    def test_final_material_stats_count_only_the_user_facing_package(self) -> None:
+        self.conn.executemany(
+            """
+            INSERT INTO course_materials
+                (id, parent_id, teacher_id, material_path, node_type, file_size, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (11, None, 1, "AI生成-考核登分表", "folder", 0, "2026-07-29T15:00:00"),
+                (12, 11, 1, "AI生成-考核登分表/readme.md", "file", 128, "2026-07-29T15:00:00"),
+                (13, None, 1, "其他材料.pdf", "file", 256, "2026-07-29T14:00:00"),
+            ],
+        )
+        self.conn.execute(
+            """
+            INSERT INTO material_ai_import_records
+                (id, document_type, parse_status, package_material_id, source_material_id, parsed_material_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (1, "exam_grade_record", "completed", 11, 12, 12),
+        )
+        self.conn.execute(
+            "INSERT INTO course_material_assignments (material_id, class_offering_id) VALUES (?, ?)",
+            (11, 1001),
+        )
+
+        stats = _get_teacher_material_stats(self.conn, 1, document_type="exam_grade_record")
+
+        self.assertEqual(1, stats["total_count"])
+        self.assertEqual(1, stats["folder_count"])
+        self.assertEqual(0, stats["file_count"])
+        self.assertEqual(1, stats["assigned_material_count"])
+        self.assertEqual(1, stats["classroom_count"])
 
 
 if __name__ == "__main__":

@@ -797,25 +797,64 @@ def _list_material_rows_for_parent(
     return _attach_material_assignment_facets(conn, rows)
 
 
-def _get_teacher_material_stats(conn, teacher_id: int) -> dict:
+def _get_teacher_material_stats(conn, teacher_id: int, *, document_type: str = "") -> dict:
+    normalized_document_type = _normalize_material_document_type_filter(document_type)
+    material_conditions = ["m.teacher_id = ?"]
+    material_params: list[Any] = [teacher_id]
+    if normalized_document_type:
+        # Final-material pages catalogue the final package, not the canonical
+        # source/readme files that the package keeps for internal processing.
+        material_conditions.extend(
+            [
+                "m.parent_id IS NULL",
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM material_ai_import_records r
+                    WHERE r.document_type = ?
+                      AND COALESCE(r.parse_status, '') = 'completed'
+                      AND (
+                            r.package_material_id = m.id
+                            OR (
+                                r.package_material_id IS NULL
+                                AND (r.source_material_id = m.id OR r.parsed_material_id = m.id)
+                            )
+                      )
+                )
+                """,
+            ]
+        )
+        material_params.append(normalized_document_type)
+
     material_rows = conn.execute(
-        """
-        SELECT id, parent_id, material_path, node_type, file_size, updated_at
-        FROM course_materials
-        WHERE teacher_id = ?
+        f"""
+        SELECT m.id, m.parent_id, m.material_path, m.node_type, m.file_size, m.updated_at
+        FROM course_materials m
+        WHERE {' AND '.join(material_conditions)}
         """,
-        (teacher_id,),
+        material_params,
     ).fetchall()
     visible_rows = [dict(row) for row in material_rows if not is_git_internal_material_path(row["material_path"])]
+    visible_material_ids = [int(row["id"]) for row in visible_rows]
 
+    assignment_conditions = ["m.teacher_id = ?"]
+    assignment_params: list[Any] = [teacher_id]
+    if normalized_document_type:
+        if visible_material_ids:
+            assignment_conditions.append(
+                f"a.material_id IN ({','.join('?' for _ in visible_material_ids)})"
+            )
+            assignment_params.extend(visible_material_ids)
+        else:
+            assignment_conditions.append("1 = 0")
     assignment_rows = conn.execute(
-        """
+        f"""
         SELECT a.material_id, a.class_offering_id, m.material_path
         FROM course_material_assignments a
         JOIN course_materials m ON m.id = a.material_id
-        WHERE m.teacher_id = ?
+        WHERE {' AND '.join(assignment_conditions)}
         """,
-        (teacher_id,),
+        assignment_params,
     ).fetchall()
     visible_assignments = [dict(row) for row in assignment_rows if not is_git_internal_material_path(row["material_path"])]
 

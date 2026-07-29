@@ -10,6 +10,7 @@
 - 子页面传入的 `initialAiGenerate` / `initialAiImport` preset 必须在顶部按钮点击时继续生效，保证用户进入专门页面后看到对应材料类型和业务提示。
 - 导出格式按学校材料形态固定：表格成绩类导出 Excel；计划表、评分细则、评学表导出 Word/PDF。
 - AI 生成结果必须经过 normalizer 再入库，前端只展示后端可导出的结构化结果。
+- 成绩记录类材料还必须遵循 [成绩记录类材料生成验收规范](grade-record-generation-acceptance.md)：原位生成、只展示最终材料、公式可追踪和真实工作簿渲染验证。
 
 ## 类型矩阵
 
@@ -17,8 +18,8 @@
 | --- | --- | --- | --- | --- | --- |
 | 考核计划表 | `/manage/teaching/assessment-plans`；材料库 `final_material:assessment_plan` | 独立考核计划表导入；材料库 AI 解析为 `assessment_plan` payload | 可按课堂生成，也可在材料库结合附件生成 | 独立编辑器维护字段、考核项和命题信息 | Word/PDF，导出前保持考核项总分 100 |
 | 评分细则表 | `/manage/teaching/grading-rubrics`；材料库 `final_material:grading_rubric` | 上传评分细则或试卷相关材料后解析 | 课堂生成必须先有本课堂课程考核试卷；材料库生成必须关联具体试卷、题目附件或已生成作业题目 | 可通过期末材料优化接口修正字段和评分条目 | Word/PDF，按试题顺序渲染给分点、扣分项、截图/提交要求 |
-| 平时成绩表 | `/manage/teaching/ordinary-grade-records`；材料库 `final_material:ordinary_grade_record` | 只接受学校模板 Excel，本地解析结构化入库 | 只能在课堂材料中选择 3 份作业和 1 份测评后生成；材料库泛化生成必须禁止 | 通过 Excel 解析结果和导出 payload 保持公式、学生行和字段完整 | Excel，固定《广西外国语学院学生平时成绩记录表》格式 |
-| 考核登分表 | `/manage/teaching/exam-grade-records`；材料库 `final_material:exam_grade_record` | 只接受学校模板 Excel，本地解析大题得分和总分 | 只能在课堂材料中选择已绑定试卷且有大题分值的考试生成；材料库泛化生成必须禁止 | 通过 Excel 解析结果和导出 payload 保持大题列、总分校验和学生信息 | Excel，固定考核登分表格式 |
+| 平时成绩表 | `/manage/teaching/ordinary-grade-records`；材料库 `final_material:ordinary_grade_record` | 只接受学校模板 Excel，本地解析结构化入库 | 可在当前列表或课堂材料中选择 3 份作业和 1 份测评后生成；材料库泛化生成必须禁止 | 通过 Excel 解析结果和导出 payload 保持公式、学生行和字段完整 | Excel，固定《广西外国语学院学生平时成绩记录表》格式 |
+| 考核登分表 | `/manage/teaching/exam-grade-records`；材料库 `final_material:exam_grade_record` | 只接受学校模板 Excel，本地解析大题得分和总分 | 在当前列表选择课堂和考试原位生成；考试必须绑定试卷、有大题分值且至少一人已评分；材料库泛化生成必须禁止 | 通过 Excel 解析结果和导出 payload 保持大题列、总分校验、学生信息与隐藏核验数据 | Excel，固定考核登分表格式，A4 分页并重复表头 |
 | 教师评学表 | `/manage/teaching/teacher-evaluations` | 独立评学表导入解析，归一化 10 项评分和基础字段 | 按学年学期、课程、班级三层菜单生成，评分来自课堂表现归集并可手动调整 | 独立编辑器；“AI重新编写”只改分析建议，不改评分；平台侧依据必须转换为真实课堂表述 | Word/PDF，不完整下载需拒绝，预览可强制渲染 |
 
 ## 扩展检查清单
