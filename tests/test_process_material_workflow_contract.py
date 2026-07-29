@@ -1783,7 +1783,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn('"source_file_name": item.get("source_file_name")', helper)
         self.assertIn('"content_quality_label": _material_ai_import_quality_label', helper)
 
-    def test_ai_import_task_cards_offer_quality_preview_and_export_actions(self):
+    def test_ai_import_task_cards_only_surface_progress_and_actionable_failures(self):
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
         helper = Path("classroom_app/routers/materials_parts/ai_import_helpers.py").read_text(encoding="utf-8")
 
@@ -1794,22 +1794,20 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("from './process_material_editor_preview.js'", script)
         self.assertIn("bindProcessMaterialExportDownloadActions(document, showToast, { saved: false });", script)
         self.assertIn("task.content_quality_label", script)
-        self.assertIn("task.render_preview_url", script)
-        self.assertIn("task.export_url", script)
-        self.assertIn("task.export_pdf_url", script)
-        self.assertIn("data-process-export-url", script)
-        self.assertIn("data-process-export-label", script)
-        self.assertIn("const exportDownloadLabel", script)
-        self.assertIn("渲染预览", script)
-        self.assertIn("导出 PDF", script)
-        self.assertNotIn('href="${escapeHtml(task.export_url)}"', script)
-        self.assertNotIn('href="${escapeHtml(task.export_pdf_url)}"', script)
-        self.assertNotIn('href="${escapeHtml(exportUrl)}" class="btn btn-outline btn-sm">${escapeHtml(exportLabel)}</a>', script)
-        self.assertNotIn('href="${escapeHtml(exportPdfUrl)}" class="btn btn-outline btn-sm">导出 PDF</a>', script)
-        self.assertLess(
-            script.index("${renderPreviewAction}"),
-            script.index("${packageAction}"),
-        )
+        self.assertIn("function isAiImportTaskInCurrentScope(task)", script)
+        self.assertIn("function isAiImportTaskUserVisible(task)", script)
+        self.assertIn("task?.parse_status !== 'completed'", script)
+        self.assertIn("function retireCompletedAiImportTask(task)", script)
+        self.assertIn("retireCompletedAiImportTask(nextTask);", script)
+        self.assertIn("if (isAiImportTaskInCurrentScope(nextTask))", script)
+        self.assertNotIn("const renderPreviewAction", script)
+        self.assertNotIn("const packageAction", script)
+        self.assertNotIn("const viewAction", script)
+        self.assertNotIn('data-ai-import-action="open-package"', script)
+        self.assertNotIn('data-ai-import-action="view-doc"', script)
+        self.assertIn("detail.ai_import_record?.render_preview_url", script)
+        self.assertIn("detail.ai_import_record?.export_url", script)
+        self.assertIn("detail.ai_import_record?.export_pdf_url", script)
 
     def test_ai_import_task_dismissals_survive_refresh_without_hiding_updates(self):
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")

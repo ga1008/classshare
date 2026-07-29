@@ -2612,13 +2612,17 @@ function isAiImportTaskTerminal(task) {
     return AI_IMPORT_TERMINAL_STATUSES.has(task?.parse_status);
 }
 
-function isAiImportTaskVisible(task) {
+function isAiImportTaskInCurrentScope(task) {
     const currentParentId = state.currentParentId ? Number(state.currentParentId) : null;
     const documentType = normalizeDocumentTypeFilter(state.filters.documentType);
     if (documentType && normalizeDocumentTypeFilter(task?.document_type) !== documentType) {
         return false;
     }
     return (task?.parent_material_id || null) === currentParentId;
+}
+
+function isAiImportTaskUserVisible(task) {
+    return isAiImportTaskInCurrentScope(task) && task?.parse_status !== 'completed';
 }
 
 function upsertAiImportTask(rawTask) {
@@ -2651,7 +2655,7 @@ function removeAiImportTask(taskId) {
 
 function getVisibleAiImportTasks() {
     return Array.from(state.aiImport.tasks.values())
-        .filter(isAiImportTaskVisible)
+        .filter(isAiImportTaskUserVisible)
         .sort((left, right) => {
             const leftActive = isAiImportTaskActive(left) ? 0 : 1;
             const rightActive = isAiImportTaskActive(right) ? 0 : 1;
@@ -2702,26 +2706,8 @@ function renderAiImportTaskCards() {
     return tasks.map((task) => {
         const tone = getAiImportTaskTone(task);
         const active = isAiImportTaskActive(task);
-        const completed = task.parse_status === 'completed';
-        const exportLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(task.document_type) ? '导出 Excel' : '导出 Word';
-        const exportDownloadLabel = ['ordinary_grade_record', 'exam_grade_record'].includes(task.document_type) ? 'Excel' : 'Word';
         const qualityMeta = task.content_quality_label
             ? `<span>质量 ${escapeHtml(task.content_quality_label)}</span>`
-            : '';
-        const renderPreviewAction = completed && task.render_preview_url
-            ? `<a href="${escapeHtml(task.render_preview_url)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>`
-            : '';
-        const exportAction = completed && task.export_url
-            ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(task.export_url)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>`
-            : '';
-        const exportPdfAction = completed && task.export_pdf_url
-            ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(task.export_pdf_url)}" data-process-export-label="PDF">导出 PDF</button>`
-            : '';
-        const packageAction = completed && task.package_material_id
-            ? `<button type="button" class="btn btn-primary btn-sm" data-ai-import-action="open-package" data-ai-import-task-id="${task.id}">打开材料包</button>`
-            : '';
-        const viewAction = completed && task.parsed_material_id
-            ? `<button type="button" class="btn btn-outline btn-sm" data-ai-import-action="view-doc" data-ai-import-task-id="${task.id}">查看正文</button>`
             : '';
         const dismissAction = isAiImportTaskTerminal(task)
             ? `<button type="button" class="btn btn-ghost btn-sm" data-ai-import-action="dismiss" data-ai-import-task-id="${task.id}">关闭</button>`
@@ -2747,16 +2733,18 @@ function renderAiImportTaskCards() {
                     </div>
                 </div>
                 <div class="materials-ai-task-actions">
-                    ${renderPreviewAction}
-                    ${exportAction}
-                    ${exportPdfAction}
-                    ${packageAction}
-                    ${viewAction}
                     ${dismissAction}
                 </div>
             </section>
         `;
     }).join('');
+}
+
+function retireCompletedAiImportTask(task) {
+    if (!task || task.parse_status !== 'completed') return;
+    rememberAiImportTaskDismissal(task);
+    state.aiImport.tasks.delete(Number(task.id));
+    state.aiImport.knownTaskStates.delete(Number(task.id));
 }
 
 function hasActiveAiImportTasks() {
@@ -2812,9 +2800,10 @@ async function pollAiImportTasks() {
                     const toastType = ['quality_failed', 'unsupported'].includes(nextTask.parse_status) ? 'warning' : 'error';
                     showToast(nextTask.message || `《${nextTask.source_file_name}》${isAiGenerationTask(nextTask) ? '生成' : '解析'}未完成`, toastType, 5200);
                 }
-                if (isAiImportTaskVisible(nextTask)) {
+                if (isAiImportTaskInCurrentScope(nextTask)) {
                     shouldRefreshLibrary = true;
                 }
+                retireCompletedAiImportTask(nextTask);
             }
         } catch (_error) {
             // 单个状态轮询失败不打断其他任务；下一轮继续尝试。
@@ -5188,20 +5177,10 @@ function bindEvents() {
             event.preventDefault();
             event.stopPropagation();
             const taskId = Number(taskActionButton.dataset.aiImportTaskId || 0);
-            const task = state.aiImport.tasks.get(taskId);
             const action = taskActionButton.dataset.aiImportAction;
             if (action === 'dismiss') {
                 removeAiImportTask(taskId);
                 return;
-            }
-            if (action === 'open-package' && task?.package_material_id) {
-                openMaterialDetail(task.package_material_id).catch((error) => {
-                    showToast(error.message || '加载材料包失败', 'error');
-                });
-                return;
-            }
-            if (action === 'view-doc' && task?.parsed_material_id) {
-                window.open(`/materials/view/${task.parsed_material_id}`, '_blank', 'noopener');
             }
             return;
         }

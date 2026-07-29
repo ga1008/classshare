@@ -484,7 +484,10 @@ async def list_ai_import_records(
               AND {parent_clause}
               AND (
                     parse_status IN ('queued', 'running')
-                    OR updated_at >= ?
+                    OR (
+                        parse_status IN ('failed', 'ai_failed', 'quality_failed', 'unsupported')
+                        AND updated_at >= ?
+                    )
               )
             ORDER BY
                 CASE WHEN parse_status IN ('queued', 'running') THEN 0 ELSE 1 END,
