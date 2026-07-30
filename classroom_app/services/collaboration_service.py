@@ -1730,6 +1730,21 @@ def random_join_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, 
         raise HTTPException(400, "分组方案已过期，无法再加入")
     student_id = _user_pk(user)
     _ensure_students_in_class(conn, int(scheme["class_offering_id"]), [student_id])
+    try:
+        from .classroom_retake_service import is_confirmed_retake_student
+
+        is_retake = is_confirmed_retake_student(
+            conn,
+            class_offering_id=int(scheme["class_offering_id"]),
+            student_id=int(student_id),
+        )
+    except Exception:
+        is_retake = False
+    if is_retake:
+        raise HTTPException(
+            403,
+            "你在本课堂被登记为重修/免修学生，默认不参与课堂分组；如需加入请联系老师手动分配。",
+        )
     existing = _student_scheme_group(conn, scheme_id, student_id)
     if existing:
         raise HTTPException(400, f"你已在本方案的「{existing['name']}」中")

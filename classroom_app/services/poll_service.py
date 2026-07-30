@@ -849,6 +849,31 @@ def vote(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any], option_id
         raise HTTPException(403, "你不在该投票活动的参与名单内")
     if _effective_status(poll) != POLL_STATUS_ACTIVE:
         raise HTTPException(400, "该投票已结束或尚未开始")
+    if str(poll.get("audience_scope") or AUDIENCE_CLASS) == AUDIENCE_CLASS:
+        # 班级范围投票：已确认的重修/免修学生默认不参与；
+        # 老师/发起人通过自定义参与名单（custom）手动添加时不受限。
+        try:
+            from .classroom_retake_service import is_confirmed_retake_student
+
+            offering_rows = conn.execute(
+                "SELECT class_offering_id FROM poll_assignments WHERE poll_id = ?",
+                (int(poll_id),),
+            ).fetchall()
+            blocked = any(
+                is_confirmed_retake_student(
+                    conn,
+                    class_offering_id=int(row["class_offering_id"]),
+                    student_id=int(voter_id),
+                )
+                for row in offering_rows
+            )
+        except Exception:
+            blocked = False
+        if blocked:
+            raise HTTPException(
+                403,
+                "你在本课堂被登记为重修/免修学生，默认不参与投票；如需参与请联系老师把你加入参与名单。",
+            )
 
     chosen = [int(oid) for oid in (option_ids or []) if _safe_int(oid) is not None]
     chosen = sorted(set(chosen))

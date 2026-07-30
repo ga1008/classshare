@@ -1088,6 +1088,38 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classroom/{class_offering_id}/retake-students",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_classroom_retake_students",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom/{class_offering_id}/retake-students/confirm",
+    "methods": [
+      "POST"
+    ],
+    "name": "confirm_classroom_retake_student",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom/{class_offering_id}/retake-students/detect",
+    "methods": [
+      "POST"
+    ],
+    "name": "detect_classroom_retake_students",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classroom/{class_offering_id}/retake-students/revoke",
+    "methods": [
+      "POST"
+    ],
+    "name": "revoke_classroom_retake_student",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/behavior/batch",
     "methods": [
       "POST"

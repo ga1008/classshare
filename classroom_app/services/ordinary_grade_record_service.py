@@ -298,6 +298,13 @@ def build_ordinary_grade_record_payload(
     attendance_scores = _load_attendance_scores(conn, class_offering_id=int(class_offering_id), teacher_id=int(teacher_id))
     score_map = _load_assignment_scores(conn, assignment_ids=[*homework_ids, assessment_id])
 
+    from .classroom_retake_service import get_confirmed_retake_students
+
+    confirmed_retake_map = {
+        item["student_id"]: item
+        for item in get_confirmed_retake_students(conn, class_offering_id=int(class_offering_id))
+    }
+
     roster_numbers = {str(student.get("student_number") or "").strip() for student in students}
     unknown_retake_numbers = [number for number in retake_targets if number not in roster_numbers]
     if unknown_retake_numbers:
@@ -391,6 +398,68 @@ def build_ordinary_grade_record_payload(
                 "已按公式分配到出勤、作业与测评，不参与最低分配平。"
             )
             continue
+        roster_retake = confirmed_retake_map.get(student_id)
+        if roster_retake is not None:
+            # 名单处已确认的重修/插班学生：已提交按实际批改分数，未提交按
+            # 教师确认的默认分；出勤豁免、按默认分记录。
+            default_score = float(roster_retake["default_ordinary_score"])
+            homework_values = [
+                _score_or_zero(value) if value is not None else default_score
+                for value in raw_homework_scores
+            ]
+            assessment_value = (
+                _score_or_zero(raw_assessment_score)
+                if raw_assessment_score is not None
+                else default_score
+            )
+            computed_score = round(
+                calculate_ordinary_grade_score(default_score, homework_values, assessment_value),
+                2,
+            )
+            retake_row = {
+                "index": index,
+                "student_id": student_id,
+                "student_number": student_number,
+                "student_name": student.get("student_name") or "",
+                "attendance_raw_score": default_score,
+                "source_homework_scores": [_score_or_zero(value) for value in raw_homework_scores],
+                "source_assessment_score": _score_or_zero(raw_assessment_score),
+                "source_score_missing": {
+                    "homework": [value is None for value in raw_homework_scores],
+                    "assessment": raw_assessment_score is None,
+                },
+                "homework_scores": homework_values,
+                "assessment_score": assessment_value,
+                "is_retake": True,
+                "retake": {
+                    "mode": "roster_default",
+                    "default_score": default_score,
+                    "computed_score": computed_score,
+                },
+                "calculated_scores": {"ordinary_score": computed_score},
+                "score_floor_adjustment": {
+                    "enabled": bool(score_floor["enabled"]),
+                    "eligible": False,
+                    "applied": False,
+                    "capped": False,
+                    "reason": "retake_override",
+                    "requested_minimum_score": float(score_floor["minimum_score"]),
+                    "original_score": computed_score,
+                    "achieved_score": computed_score,
+                    "homework_scores": homework_values,
+                    "assessment_score": assessment_value,
+                    "algorithm_version": "retake-roster-v1",
+                    "seed_fingerprint": "",
+                },
+            }
+            rows.append(retake_row)
+            retake_rows.append(retake_row)
+            warnings.append(
+                f"{student.get('student_name') or student_number}（{student_number}）为已确认的重修/插班学生："
+                f"未参加的作业/测评按默认 {_format_score(default_score)} 分计入，出勤按默认分记录，"
+                f"已参加的任务保留真实成绩，本次平时成绩 {_format_score(computed_score)} 分。"
+            )
+            continue
         if any(value is None for value in raw_homework_scores) or raw_assessment_score is None:
             warnings.append(f"{student.get('student_name') or student.get('student_number')} 存在未批改或缺失的作业/测评成绩，原始成绩已按 0 分计入。")
         attendance_score = attendance_scores.get(student_id)
@@ -468,7 +537,11 @@ def build_ordinary_grade_record_payload(
             {
                 "student_number": row["student_number"],
                 "student_name": row["student_name"],
-                "target_score": row["retake"]["target_score"],
+                "mode": row["retake"].get("mode") or "manual",
+                "target_score": row["retake"].get(
+                    "target_score",
+                    row["retake"].get("default_score"),
+                ),
             }
             for row in retake_rows
         ],

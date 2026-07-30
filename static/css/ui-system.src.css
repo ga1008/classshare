@@ -22240,6 +22240,7 @@ body.has-chat-image-preview-open {
         "overview-trend overview-trend overview-trend"
         "overview-alerts overview-alerts overview-alerts"
         "overview-roster overview-roster overview-roster"
+        "overview-retake overview-retake overview-retake"
         "overview-exam overview-exam overview-exam"
         "overview-board overview-board overview-board";
     gap: 14px;
@@ -22872,6 +22873,139 @@ body.has-chat-image-preview-open {
     border: 1px solid rgba(15, 118, 110, 0.16);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.74);
+}
+
+.classroom-page .classroom-retake-panel {
+    grid-area: overview-retake;
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid rgba(79, 70, 229, 0.16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.74);
+}
+
+.classroom-retake-panel__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+
+.classroom-retake-panel__head strong {
+    font-size: 0.95rem;
+    color: #1e293b;
+}
+
+.classroom-retake-panel__head p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 0.76rem;
+    line-height: 1.55;
+}
+
+.classroom-retake-panel__actions {
+    flex-shrink: 0;
+}
+
+.classroom-retake-panel__list {
+    display: grid;
+    gap: 8px;
+}
+
+.classroom-retake-empty {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.9);
+    color: #64748b;
+    font-size: 0.78rem;
+}
+
+.classroom-retake-item {
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.86);
+}
+
+.classroom-retake-item[data-tone="confirmed"] {
+    border-color: rgba(16, 185, 129, 0.36);
+    background: rgba(240, 253, 250, 0.85);
+}
+
+.classroom-retake-item[data-tone="suggested"] {
+    border-color: rgba(79, 70, 229, 0.3);
+    background: rgba(238, 242, 255, 0.6);
+}
+
+.classroom-retake-item__main {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.classroom-retake-item__main small {
+    color: #94a3b8;
+}
+
+.classroom-retake-item__badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(79, 70, 229, 0.12);
+    color: #4338ca;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.classroom-retake-item[data-tone="confirmed"] .classroom-retake-item__badge {
+    background: rgba(16, 185, 129, 0.14);
+    color: #047857;
+}
+
+.classroom-retake-item[data-tone="dismissed"] .classroom-retake-item__badge {
+    background: rgba(148, 163, 184, 0.18);
+    color: #64748b;
+}
+
+.classroom-retake-item__reason {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.74rem;
+    line-height: 1.5;
+}
+
+.classroom-retake-item__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.classroom-retake-score {
+    color: #047857;
+    font-size: 0.78rem;
+}
+
+.classroom-retake-score-input {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #475569;
+    font-size: 0.76rem;
+}
+
+.classroom-retake-score-input input {
+    width: 72px;
+    padding: 4px 8px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 8px;
+    font-size: 0.8rem;
 }
 
 .classroom-page .learning-exam-roster-panel__head,
@@ -23508,6 +23642,7 @@ body.has-chat-image-preview-open {
             "overview-trend"
             "overview-alerts"
             "overview-roster"
+            "overview-retake"
             "overview-exam"
             "overview-board";
     }

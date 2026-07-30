@@ -569,6 +569,12 @@ async def refresh_generated_grade_record_material(
         )
         plan = build_grade_record_refresh_plan(record)
         ensure_classroom_access(conn, int(plan["class_offering_id"]), user)
+    return await _execute_grade_record_refresh(record, plan, user)
+
+
+async def _execute_grade_record_refresh(record, plan: dict[str, Any], user: dict) -> dict[str, Any]:
+    """Core of the one-click refresh: rebuild from the recorded selections and
+    persist in place. Access checks are the caller's responsibility."""
     record_id = int(record["id"])
     document_type = str(plan["document_type"])
     class_offering_id = int(plan["class_offering_id"])
@@ -625,3 +631,50 @@ async def refresh_generated_grade_record_material(
         "document_type": document_type,
         "attendance_sync": attendance_sync,
     }
+
+
+async def refresh_offering_grade_record_materials(
+    class_offering_id: int,
+    user: dict,
+) -> list[dict[str, Any]]:
+    """自动刷新本课堂已生成的平时成绩表/考核登分表（如确认插班生后）。
+
+    逐份材料独立执行：单份失败（如考勤同步不可用）不影响其他份，
+    结果汇总返回给调用方展示。"""
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM material_ai_import_records
+            WHERE teacher_id = ?
+              AND document_group = 'final_material'
+              AND document_type IN (?, ?)
+              AND parse_status = 'completed'
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (int(user["id"]), ORDINARY_GRADE_RECORD_TYPE, EXAM_GRADE_RECORD_TYPE),
+        ).fetchall()
+    eligible: list[tuple[Any, dict[str, Any]]] = []
+    for record in rows:
+        try:
+            plan = build_grade_record_refresh_plan(record)
+        except HTTPException:
+            continue
+        if int(plan["class_offering_id"]) == int(class_offering_id):
+            eligible.append((record, plan))
+    results: list[dict[str, Any]] = []
+    for record, plan in eligible:
+        entry = {
+            "record_id": int(record["id"]),
+            "document_type": str(plan["document_type"]),
+        }
+        try:
+            outcome = await _execute_grade_record_refresh(record, plan, user)
+            entry.update({"status": "success", "message": outcome.get("message") or ""})
+        except HTTPException as exc:
+            entry.update({"status": "failed", "message": str(exc.detail)})
+        except Exception:
+            traceback.print_exc()
+            entry.update({"status": "failed", "message": "自动更新暂时失败，材料未被修改。"})
+        results.append(entry)
+    return results

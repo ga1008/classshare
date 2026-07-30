@@ -26,6 +26,10 @@ from classroom_app.services.material_export_template_service import (
 
 class ExamGradeRecordServiceTests(unittest.TestCase):
     def setUp(self) -> None:
+        # 每个用例都是全新内存库：重置模块级 _SCHEMA_READY，确保重修表按需重建。
+        import classroom_app.db.schema_retake as schema_retake
+
+        schema_retake._SCHEMA_READY = False
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         self._create_schema()
@@ -217,6 +221,38 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
         self.assertEqual(sum(students[1]["section_scores"]), 82)
         self.assertIn("小组互评折算扣", students[1]["score_adjustment_reason"])
         self.assertTrue(any("学生三" in warning for warning in payload["structured"]["warnings"]))
+
+    def test_roster_confirmed_retake_student_defaults_when_absent_from_exam(self):
+        import classroom_app.db.schema_retake as schema_retake
+
+        schema_retake._SCHEMA_READY = False
+        schema_retake.ensure_retake_schema(self.conn)
+        self.conn.execute(
+            """
+            INSERT INTO classroom_retake_students
+                (class_offering_id, student_id, student_number, student_name, status,
+                 default_ordinary_score, created_at, updated_at)
+            VALUES (30, 103, '20240103', '学生三', 'confirmed', 70, '2026-07-30T10:00:00', '2026-07-30T10:00:00')
+            """
+        )
+        payload = build_exam_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            exam_assignment_id=301,
+        )
+        students = payload["structured"]["students"]
+        retake_row = next(item for item in students if item["student_number"] == "20240103")
+        self.assertTrue(retake_row["is_retake"])
+        self.assertEqual(retake_row["total_score"], 70)
+        self.assertEqual(sum(retake_row["section_scores"]), 70)
+        self.assertIn("默认分记录", retake_row["score_adjustment_reason"])
+        # 已提交的学生仍按真实批改分数入库。
+        real_row = next(item for item in students if item["student_number"] == "20240101")
+        self.assertEqual(real_row["total_score"], 87)
+        self.assertTrue(
+            any("学生三" in w and "重修" in w for w in payload["structured"]["warnings"])
+        )
 
     def test_generation_blocks_empty_roster_or_exam_without_graded_scores(self):
         self.conn.execute("DELETE FROM submissions")

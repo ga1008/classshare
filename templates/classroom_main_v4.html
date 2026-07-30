@@ -1227,6 +1227,18 @@
                     {% endfor %}
                 </div>
             </div>
+            <div class="classroom-retake-panel" data-retake-panel data-class-offering-id="{{ classroom.id }}" aria-label="重修插班生管理">
+                <div class="classroom-retake-panel__head">
+                    <div>
+                        <strong>重修 / 插班生管理</strong>
+                        <p data-retake-summary>AI 可按学号前缀识别疑似插班/重修学生；仅教师确认后生效：未参加的作业按默认平时分补记、考勤豁免、期末材料自动按默认分核对，插班生默认不参与投票与分组。</p>
+                    </div>
+                    <div class="classroom-retake-panel__actions">
+                        <button type="button" class="btn btn-outline btn-sm" data-retake-detect>AI 识别插班生</button>
+                    </div>
+                </div>
+                <div class="classroom-retake-panel__list" data-retake-list hidden></div>
+            </div>
             <div class="learning-exam-roster-panel" data-exam-roster-panel data-class-offering-id="{{ classroom.id }}" aria-label="期末考试名单与签名表">
                 <div class="learning-exam-roster-panel__head">
                     <div class="learning-exam-roster-title">
@@ -2883,6 +2895,7 @@
 <script type="module" src="{{ asset_url('js/group_assignment_config.js') }}"></script>
 <script type="module" src="{{ asset_url('js/ordinary_grade_kind_controls.js') }}"></script>
 <script type="module" src="{{ asset_url('js/classroom_closeout.js') }}"></script>
+<script type="module" src="{{ asset_url('js/classroom_retake.js') }}"></script>
 {% endif %}
 <script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
 <script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>

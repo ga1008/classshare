@@ -445,6 +445,9 @@ def apply_absence_scores(
     teacher_id: int,
     score: float = DEFAULT_ABSENCE_SCORE,
     include_ungraded: bool = False,
+    only_student_ids: set[int] | None = None,
+    score_overrides: dict[int, float] | None = None,
+    feedback_override: str = "",
 ) -> dict[str, Any]:
     """给未提交学生写"缺交"占位成绩。
 
@@ -467,10 +470,6 @@ def apply_absence_scores(
         result["message"] = "当前作业未绑定班级，无法识别未提交学生"
         return result
 
-    normalized = normalize_absence_score(score)
-    stored_score = _score_for_storage(normalized)
-    feedback = _absence_feedback(normalized)
-    ungraded_feedback = UNGRADED_FEEDBACK_TEMPLATE.format(score=stored_score)
     now_iso = _now_iso()
 
     students = _active_student_rows(conn, class_id)
@@ -481,6 +480,20 @@ def apply_absence_scores(
         student_pk_id = _safe_int(student.get("id"))
         if student_pk_id is None:
             continue
+        if only_student_ids is not None and student_pk_id not in only_student_ids:
+            continue
+        student_score = (score_overrides or {}).get(student_pk_id, score)
+        normalized = normalize_absence_score(student_score)
+        stored_score = _score_for_storage(normalized)
+        if student_pk_id in (score_overrides or {}) and feedback_override:
+            feedback = (
+                feedback_override.format(score=stored_score)
+                if "{score}" in feedback_override
+                else feedback_override
+            )
+        else:
+            feedback = _absence_feedback(normalized)
+        ungraded_feedback = UNGRADED_FEEDBACK_TEMPLATE.format(score=stored_score)
         existing = by_student.get(student_pk_id)
         student_name = student.get("name") or ""
 
@@ -584,6 +597,8 @@ def close_assignment(
     score: float = DEFAULT_ABSENCE_SCORE,
     apply_absence: bool = True,
     include_ungraded: bool = False,
+    score_overrides: dict[int, float] | None = None,
+    feedback_override: str = "",
 ) -> dict[str, Any]:
     """截止一份作业/测验，并（可选）给未提交者写默认分。
 
@@ -606,12 +621,38 @@ def close_assignment(
         cancel_assignment_due_reminders(conn, assignment_id)
 
     if apply_absence:
+        effective_overrides = dict(score_overrides or {})
+        effective_feedback = feedback_override
+        if not effective_overrides:
+            # 已确认的重修/插班学生用各自的默认平时分，而不是教师本次
+            # 选择的兜底分。best-effort：查询失败按普通流程处理。
+            try:
+                from .classroom_retake_service import (
+                    RETAKE_FEEDBACK_TEMPLATE,
+                    get_confirmed_retake_students,
+                )
+
+                offering_id = assignment.get("class_offering_id")
+                if offering_id:
+                    confirmed = get_confirmed_retake_students(
+                        conn, class_offering_id=int(offering_id)
+                    )
+                    if confirmed:
+                        effective_overrides = {
+                            item["student_id"]: item["default_ordinary_score"]
+                            for item in confirmed
+                        }
+                        effective_feedback = feedback_override or RETAKE_FEEDBACK_TEMPLATE
+            except Exception as exc:
+                print(f"[RETAKE] 截止时读取插班生默认分失败: {exc}")
         scoring = apply_absence_scores(
             conn,
             assignment,
             teacher_id=teacher_id,
             score=score,
             include_ungraded=include_ungraded,
+            score_overrides=effective_overrides or None,
+            feedback_override=effective_feedback,
         )
     else:
         scoring = {

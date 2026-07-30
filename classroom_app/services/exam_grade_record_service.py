@@ -297,6 +297,13 @@ def build_exam_grade_record_payload(
         raise HTTPException(422, "当前课堂没有在读学生，无法生成考核登分表。")
     submissions = _load_exam_submissions(conn, assignment_id=assignment_id)
 
+    from .classroom_retake_service import get_confirmed_retake_students
+
+    confirmed_retake_map = {
+        item["student_id"]: item
+        for item in get_confirmed_retake_students(conn, class_offering_id=int(class_offering_id))
+    }
+
     warnings: list[str] = []
     rows: list[dict[str, Any]] = []
     missing_grade_students: list[str] = []
@@ -319,6 +326,51 @@ def build_exam_grade_record_payload(
             "source_question_scores": [],
         }
         if not submission or submission.get("score") in (None, ""):
+            roster_retake = confirmed_retake_map.get(student_id)
+            if roster_retake is not None:
+                # 已确认的重修/插班学生未参加考试：按教师确认的默认分入库，
+                # 大题按满分比例拆分并校验总分一致。
+                default_total = min(
+                    _round_int_score(roster_retake["default_ordinary_score"]),
+                    total_score,
+                )
+                max_scores = [_score_to_int(section.get("full_score")) for section in sections]
+                raw_section_scores = _clamp_section_scores(
+                    _distribute_total_by_weights(default_total, max_scores),
+                    max_scores,
+                )
+                section_scores = _reconcile_section_scores(
+                    raw_section_scores,
+                    target_total=default_total,
+                    max_scores=max_scores,
+                )
+                if sum(section_scores) != default_total:
+                    raise HTTPException(
+                        500,
+                        f"{row['student_name'] or row['student_number']} 的重修默认分拆分校验失败，请稍后重试。",
+                    )
+                row.update(
+                    {
+                        "section_scores": section_scores,
+                        "raw_section_scores": section_scores,
+                        "total_score": default_total,
+                        "raw_total_score": default_total,
+                        "adjustment_points": 0,
+                        "score_adjustment_reason": "重修/插班学生未参加，按教师确认默认分记录",
+                        "is_retake": True,
+                        "retake": {
+                            "mode": "roster_default",
+                            "default_score": float(roster_retake["default_ordinary_score"]),
+                        },
+                    }
+                )
+                warnings.append(
+                    f"{row['student_name'] or row['student_number']} 为已确认的重修/插班学生，"
+                    f"未提交本场考试，按默认分 {default_total} 分入库。"
+                )
+                graded_student_count += 1
+                rows.append(row)
+                continue
             missing_grade_students.append(str(row["student_name"] or row["student_number"] or f"第 {index} 名学生"))
             rows.append(row)
             continue

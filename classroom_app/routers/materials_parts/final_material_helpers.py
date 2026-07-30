@@ -1291,6 +1291,8 @@ def build_grade_record_refresh_plan(record) -> dict[str, Any]:
         except (TypeError, ValueError):
             minimum_score = ORDINARY_GRADE_DEFAULT_MINIMUM_SCORE
         retake_policy = structured.get("retake_policy") if isinstance(structured.get("retake_policy"), dict) else {}
+        # 名单处确认的插班生（mode=roster_default）在重建时会直接从数据库
+        # 重新读取，不进手动覆盖名单，避免把"逐项默认分"误放大成"总分精确分配"。
         retake_students = [
             {
                 "student_number": str(item.get("student_number") or "").strip(),
@@ -1301,7 +1303,9 @@ def build_grade_record_refresh_plan(record) -> dict[str, Any]:
                 if isinstance(retake_policy.get("students"), list)
                 else []
             )
-            if isinstance(item, dict) and str(item.get("student_number") or "").strip()
+            if isinstance(item, dict)
+            and str(item.get("student_number") or "").strip()
+            and str(item.get("mode") or "manual") != "roster_default"
         ]
         return {
             "document_type": document_type,

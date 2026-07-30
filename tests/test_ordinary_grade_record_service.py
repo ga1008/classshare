@@ -33,6 +33,10 @@ from classroom_app.services.ordinary_grade_record_service import (
 
 class OrdinaryGradeRecordServiceTests(unittest.TestCase):
     def setUp(self) -> None:
+        # 每个用例都是全新内存库：重置模块级 _SCHEMA_READY，确保重修表按需重建。
+        import classroom_app.db.schema_retake as schema_retake
+
+        schema_retake._SCHEMA_READY = False
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         self._create_schema()
@@ -213,6 +217,48 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
         # Other students keep the normal pipeline.
         normal_row = next(row for row in students if row["student_number"] == "20240101")
         self.assertNotIn("is_retake", normal_row)
+
+    def test_roster_confirmed_retake_student_gets_component_default_fill(self):
+        import classroom_app.db.schema_retake as schema_retake
+
+        schema_retake._SCHEMA_READY = False
+        schema_retake.ensure_retake_schema(self.conn)
+        self.conn.execute(
+            """
+            INSERT INTO classroom_retake_students
+                (class_offering_id, student_id, student_number, student_name, status,
+                 default_ordinary_score, created_at, updated_at)
+            VALUES (30, 103, '20240103', '学生三', 'confirmed', 70, '2026-07-30T10:00:00', '2026-07-30T10:00:00')
+            """
+        )
+        payload = build_ordinary_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            homework_assignment_ids=[201, 202, 203],
+            assessment_assignment_id=204,
+        )
+        row = next(
+            item
+            for item in payload["structured"]["students"]
+            if item["student_number"] == "20240103"
+        )
+        self.assertTrue(row["is_retake"])
+        self.assertEqual(row["retake"]["mode"], "roster_default")
+        # 已参加的作业保留真实分（71），未参加的按默认 70 补齐；出勤豁免按 70。
+        self.assertEqual(row["homework_scores"], [71.0, 70.0, 70.0])
+        self.assertEqual(row["assessment_score"], 70.0)
+        self.assertEqual(row["attendance_raw_score"], 70.0)
+        expected = round(
+            calculate_ordinary_grade_score(70.0, [71.0, 70.0, 70.0], 70.0), 2
+        )
+        self.assertEqual(row["calculated_scores"]["ordinary_score"], expected)
+        warnings = payload["structured"]["warnings"]
+        self.assertFalse(any("学生三" in w and "按 0 分计入" in w for w in warnings))
+        self.assertTrue(any("学生三" in w and "重修" in w for w in warnings))
+        policy = payload["structured"]["retake_policy"]
+        self.assertEqual(policy["students"][0]["mode"], "roster_default")
+        self.assertEqual(policy["students"][0]["target_score"], 70.0)
 
     def test_retake_validation_rejects_unknown_and_invalid_entries(self):
         with self.assertRaises(HTTPException) as unknown:

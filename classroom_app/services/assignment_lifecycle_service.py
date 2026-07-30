@@ -336,7 +336,17 @@ def close_overdue_assignments(conn, now_dt: datetime | None = None) -> int:
             now_iso,
         ),
     )
-    return int(cursor.rowcount or 0)
+    closed_count = int(cursor.rowcount or 0)
+    if closed_count:
+        # 有作业刚被自动截止：给已确认的重修/插班学生补默认分占位。
+        # best-effort——回填失败绝不能影响正常的截止流程。
+        try:
+            from .classroom_retake_service import backfill_retake_absences_everywhere
+
+            backfill_retake_absences_everywhere(conn)
+        except Exception as exc:
+            print(f"[RETAKE] 自动截止后的插班生默认分回填失败: {exc}")
+    return closed_count
 
 
 def enrich_assignment_runtime_view(assignment_row, now_dt: datetime | None = None) -> dict[str, Any]:
