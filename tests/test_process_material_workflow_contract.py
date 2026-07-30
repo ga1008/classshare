@@ -2010,5 +2010,43 @@ class GradeRecordRefreshPlanTests(unittest.TestCase):
         self.assertEqual(unsupported.exception.status_code, 409)
 
 
+class FinalGradePrepareEnvelopeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_success_envelope_status_survives_readiness_status(self):
+        """readiness 自带 status='ready'，绝不能覆盖响应信封的 status='success'——
+        否则前端会把核对成功误判为同步失败，生成按钮永远锁死。"""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from classroom_app.routers.materials_parts import final_materials as fm
+
+        conn_ctx = MagicMock()
+        conn_ctx.__enter__ = MagicMock(return_value=MagicMock())
+        conn_ctx.__exit__ = MagicMock(return_value=False)
+        readiness = {
+            "ready": True,
+            "status": "ready",
+            "message": "名单及两份上游成绩已逐人核对完成。",
+            "classroom": {},
+            "roster": {"synced_at": "2026-07-30T10:00:00", "student_count": 37},
+            "sources": {"ordinary_grade_record": {"ready": True}, "exam_grade_record": {"ready": True}},
+        }
+        with (
+            patch.object(fm, "get_db_connection", return_value=conn_ctx),
+            patch.object(fm, "ensure_classroom_access"),
+            patch.object(
+                fm,
+                "sync_classroom_exam_roster_from_academic_system",
+                AsyncMock(return_value={"status": "success", "message": "", "cache_hit": True}),
+            ),
+            patch.object(fm, "build_final_grade_transcript_readiness", return_value=readiness),
+        ):
+            payload = fm.FinalGradeTranscriptPrepareRequest(exam_course_key="")
+            result = await fm.prepare_classroom_final_grade_transcript(30, payload, {"id": 1})
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["verification_status"], "ready")
+        self.assertTrue(result["ready"])
+        self.assertEqual(result["roster_sync"]["synced_at"], "2026-07-30T10:00:00")
+
+
 if __name__ == "__main__":
     unittest.main()

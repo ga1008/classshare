@@ -191,9 +191,14 @@ async def prepare_classroom_final_grade_transcript(
                 ),
                 "roster_sync": roster_sync,
             }
+    # readiness carries its own "status" (ready / sources_missing / ...) — keep it
+    # under a dedicated key so it can never clobber the envelope status the
+    # frontend uses to accept the response.
+    readiness_body = {key: value for key, value in readiness.items() if key != "status"}
     return {
         "status": "success",
-        **readiness,
+        "verification_status": str(readiness.get("status") or ""),
+        **readiness_body,
         "roster_sync": {
             "status": sync_status,
             "message": roster_sync.get("message") or "",
