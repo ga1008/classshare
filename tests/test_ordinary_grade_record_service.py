@@ -15,7 +15,10 @@ from classroom_app.services.material_export_template_service import (
 )
 from classroom_app.services.ordinary_grade_record_service import (
     ORDINARY_GRADE_RECORD_TYPE,
+    apply_ordinary_grade_manual_edits,
     apply_ordinary_grade_score_floor,
+    serialize_ordinary_grade_students_for_editor,
+    solve_ordinary_grade_components,
     build_ordinary_grade_record_export_filename,
     build_ordinary_grade_record_payload,
     build_ordinary_grade_record_xlsx,
@@ -733,6 +736,229 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
             "7. 2025-2026-1《服务器配置与管理》学生平时成绩记录表-软工2406班（专升本）.xlsx",
         )
         self.assertGreater(len(artifact.content), 6000)
+
+
+class OrdinaryGradeManualEditTests(OrdinaryGradeRecordServiceTests):
+    """Teacher raw-score editing: recompute forward, back-solve backward,
+    and keep the payload consistent for downstream final transcripts."""
+
+    def _generated_payload(self):
+        return build_ordinary_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            homework_assignment_ids=[201, 202, 203],
+            assessment_assignment_id=204,
+        )
+
+    def test_solve_components_hits_target_without_touching_attendance(self):
+        solution = solve_ordinary_grade_components(
+            target_score=82.0,
+            attendance_score=90.0,
+            homework_scores=[70.0, 75.0, 80.0],
+            assessment_score=60.0,
+        )
+        self.assertFalse(solution["attendance_adjusted"])
+        self.assertEqual(solution["attendance_score"], 90.0)
+        self.assertTrue(solution["exact"])
+        achieved = calculate_ordinary_grade_score(
+            solution["attendance_score"],
+            solution["homework_scores"],
+            solution["assessment_score"],
+        )
+        self.assertEqual(round(achieved, 2), 82.0)
+        for value in [*solution["homework_scores"], solution["assessment_score"]]:
+            self.assertGreaterEqual(value, 0.0)
+            self.assertLessEqual(value, 100.0)
+
+    def test_solve_components_is_deterministic(self):
+        kwargs = dict(
+            target_score=66.5,
+            attendance_score=75.0,
+            homework_scores=[40.0, 55.0, 62.0],
+            assessment_score=48.0,
+        )
+        self.assertEqual(
+            solve_ordinary_grade_components(**kwargs),
+            solve_ordinary_grade_components(**kwargs),
+        )
+
+    def test_solve_components_falls_back_when_target_unreachable(self):
+        # attendance 100 → formula floor is 40 even with all tasks at 0,
+        # so target 10 forces the uniform fallback that touches attendance.
+        solution = solve_ordinary_grade_components(
+            target_score=10.0,
+            attendance_score=100.0,
+            homework_scores=[90.0, 90.0, 90.0],
+            assessment_score=90.0,
+        )
+        self.assertTrue(solution["attendance_adjusted"])
+        achieved = calculate_ordinary_grade_score(
+            solution["attendance_score"],
+            solution["homework_scores"],
+            solution["assessment_score"],
+        )
+        self.assertEqual(round(achieved, 2), 10.0)
+
+    def test_component_edit_recomputes_ordinary_and_marks_manual_edit(self):
+        payload = self._generated_payload()
+        student = payload["structured"]["students"][0]
+        number = student["student_number"]
+        updated, summary = apply_ordinary_grade_manual_edits(
+            payload,
+            [
+                {
+                    "student_number": number,
+                    "homework_scores": [95.0, None, None],
+                    "assessment_score": 88.0,
+                }
+            ],
+            editor_name="张老师",
+        )
+        self.assertEqual(summary["edited_count"], 1)
+        row = next(
+            item
+            for item in updated["structured"]["students"]
+            if item["student_number"] == number
+        )
+        self.assertEqual(row["homework_scores"][0], 95.0)
+        self.assertEqual(row["assessment_score"], 88.0)
+        expected = round(
+            calculate_ordinary_grade_score(
+                float(row["attendance_raw_score"] or 0),
+                [float(value or 0) for value in row["homework_scores"]],
+                88.0,
+            ),
+            2,
+        )
+        self.assertEqual(row["calculated_scores"]["ordinary_score"], expected)
+        self.assertEqual(row["manual_edit"]["mode"], "components")
+        self.assertEqual(row["manual_edit"]["editor_name"], "张老师")
+        self.assertTrue(
+            any("手动调整" in warning for warning in updated["structured"]["warnings"])
+        )
+        # 一键更新回放所需的来源选择必须原样保留
+        self.assertEqual(
+            updated["structured"]["source_assignments"]["homework_assignment_ids"],
+            payload["structured"]["source_assignments"]["homework_assignment_ids"],
+        )
+
+    def test_ordinary_edit_back_solves_components_to_exact_target(self):
+        payload = self._generated_payload()
+        student = payload["structured"]["students"][0]
+        number = student["student_number"]
+        original_attendance = float(student["attendance_raw_score"] or 0)
+        updated, _summary = apply_ordinary_grade_manual_edits(
+            payload,
+            [{"student_number": number, "ordinary_score": 87.0}],
+        )
+        row = next(
+            item
+            for item in updated["structured"]["students"]
+            if item["student_number"] == number
+        )
+        # 下游期末成绩单优先读取 calculated_scores.ordinary_score
+        self.assertEqual(row["calculated_scores"]["ordinary_score"], 87.0)
+        achieved = calculate_ordinary_grade_score(
+            float(row["attendance_raw_score"] or 0),
+            [float(value or 0) for value in row["homework_scores"]],
+            float(row["assessment_score"] or 0),
+        )
+        self.assertEqual(round(achieved, 2), 87.0)
+        if not row["manual_edit"]["attendance_adjusted"]:
+            self.assertEqual(float(row["attendance_raw_score"]), original_attendance)
+        self.assertEqual(row["manual_edit"]["mode"], "ordinary")
+
+    def test_manual_edit_flows_into_final_transcript_source(self):
+        import json
+
+        from classroom_app.services.final_grade_transcript_service import (
+            _students_by_number,
+        )
+
+        payload = self._generated_payload()
+        number = payload["structured"]["students"][0]["student_number"]
+        updated, _summary = apply_ordinary_grade_manual_edits(
+            payload,
+            [{"student_number": number, "ordinary_score": 91.5}],
+        )
+
+        class _FakeRecord(dict):
+            def __getitem__(self, key):
+                if key == "export_payload_json":
+                    return json.dumps(updated, ensure_ascii=False)
+                return dict.__getitem__(self, key)
+
+        scores = _students_by_number(_FakeRecord(), ORDINARY_GRADE_RECORD_TYPE)
+        self.assertEqual(scores[number]["score"], 91.5)
+
+    def test_edit_validation_rejects_unknown_student_and_bad_scores(self):
+        payload = self._generated_payload()
+        with self.assertRaises(HTTPException):
+            apply_ordinary_grade_manual_edits(
+                payload, [{"student_number": "no-such", "ordinary_score": 80}]
+            )
+        number = payload["structured"]["students"][0]["student_number"]
+        with self.assertRaises(HTTPException):
+            apply_ordinary_grade_manual_edits(
+                payload, [{"student_number": number, "ordinary_score": 120}]
+            )
+        with self.assertRaises(HTTPException):
+            apply_ordinary_grade_manual_edits(payload, [])
+
+    def test_manual_retake_ordinary_edit_updates_retake_policy(self):
+        roster = self.conn.execute(
+            "SELECT student_id_number FROM students ORDER BY student_id_number LIMIT 1"
+        ).fetchone()
+        retake_number = str(roster["student_id_number"])
+        payload = build_ordinary_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            homework_assignment_ids=[201, 202, 203],
+            assessment_assignment_id=204,
+            retake_students=[{"student_number": retake_number, "ordinary_score": 78.0}],
+        )
+        updated, _summary = apply_ordinary_grade_manual_edits(
+            payload,
+            [{"student_number": retake_number, "ordinary_score": 83.0}],
+        )
+        policy_entry = next(
+            item
+            for item in updated["structured"]["retake_policy"]["students"]
+            if item["student_number"] == retake_number
+        )
+        # 一键更新回放 retake_policy，教师改过的目标分必须持久化
+        self.assertEqual(policy_entry["target_score"], 83.0)
+        row = next(
+            item
+            for item in updated["structured"]["students"]
+            if item["student_number"] == retake_number
+        )
+        self.assertEqual(row["calculated_scores"]["ordinary_score"], 83.0)
+
+    def test_serialize_students_for_editor(self):
+        payload = self._generated_payload()
+        editor = serialize_ordinary_grade_students_for_editor(payload)
+        self.assertEqual(editor["document_type"], ORDINARY_GRADE_RECORD_TYPE)
+        self.assertEqual(len(editor["students"]), len(payload["structured"]["students"]))
+        first = editor["students"][0]
+        for key in ("student_number", "student_name", "homework_scores", "computed"):
+            self.assertIn(key, first)
+        self.assertIn("ordinary", first["computed"])
+        self.assertEqual(editor["manual_edit_count"], 0)
+        updated, _summary = apply_ordinary_grade_manual_edits(
+            payload,
+            [{"student_number": first["student_number"], "ordinary_score": 85.0}],
+        )
+        edited_editor = serialize_ordinary_grade_students_for_editor(updated)
+        self.assertEqual(edited_editor["manual_edit_count"], 1)
+        edited_row = next(
+            item
+            for item in edited_editor["students"]
+            if item["student_number"] == first["student_number"]
+        )
+        self.assertEqual(edited_row["computed"]["ordinary"], 85.0)
 
 
 if __name__ == "__main__":

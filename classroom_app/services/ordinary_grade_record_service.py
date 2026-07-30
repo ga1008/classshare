@@ -6,6 +6,7 @@ import math
 import random
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -1618,6 +1619,415 @@ def distribute_retake_ordinary_score(
 def list_classroom_roster_students(conn, *, class_offering_id: int) -> list[dict[str, Any]]:
     """Public roster listing for wizard UIs (e.g. retake student picker)."""
     return _load_roster(conn, class_offering_id=int(class_offering_id), context={})
+
+
+ORDINARY_GRADE_MANUAL_EDIT_ALGORITHM_VERSION = "manual-edit-v1"
+ORDINARY_GRADE_MANUAL_EDIT_LOG_LIMIT = 100
+
+
+def solve_ordinary_grade_components(
+    *,
+    target_score: float,
+    attendance_score: float,
+    homework_scores: list[float],
+    assessment_score: float,
+) -> dict[str, Any]:
+    """Deterministically back-solve raw components so the official formula
+    (attendance×0.4 + homework avg×0.3 + assessment×0.3) rounds to the target.
+
+    Attendance is real check-in data, so it stays untouched whenever the target
+    is reachable by moving only homework/assessment; otherwise the whole row is
+    set uniformly to the target (the only exact fallback), flagged for audit."""
+    target = round(float(target_score), 2)
+    attendance = round(_score_or_zero(attendance_score), 2)
+    homework = [round(_score_or_zero(value), 2) for value in list(homework_scores or [])[:3]]
+    homework += [0.0] * (3 - len(homework))
+    assessment = round(_score_or_zero(assessment_score), 2)
+
+    attendance_adjusted = False
+    lowest = calculate_ordinary_grade_score(attendance, [0.0, 0.0, 0.0], 0.0)
+    highest = calculate_ordinary_grade_score(attendance, [100.0, 100.0, 100.0], 100.0)
+    if target < lowest - 1e-9 or target > highest + 1e-9:
+        attendance_adjusted = True
+        attendance = target
+        homework = [target, target, target]
+        assessment = target
+    else:
+        base_homework = list(homework)
+        base_assessment = assessment
+
+        def _shifted(shift: float) -> tuple[list[float], float]:
+            shifted_homework = [min(100.0, max(0.0, value + shift)) for value in base_homework]
+            shifted_assessment = min(100.0, max(0.0, base_assessment + shift))
+            return shifted_homework, shifted_assessment
+
+        low, high = -100.0, 100.0
+        for _ in range(60):
+            middle = (low + high) / 2.0
+            candidate_homework, candidate_assessment = _shifted(middle)
+            if calculate_ordinary_grade_score(attendance, candidate_homework, candidate_assessment) < target:
+                low = middle
+            else:
+                high = middle
+        homework, assessment = _shifted(high)
+        homework = [round(value, 2) for value in homework]
+        assessment = round(assessment, 2)
+        # Rounding to 2dp can leave a tiny residual; a 0.01 nudge on one
+        # homework slot moves the formula by 0.001, so this always converges
+        # to within half of the displayed 0.01 precision.
+        for _ in range(400):
+            residual = target - calculate_ordinary_grade_score(attendance, homework, assessment)
+            if abs(residual) <= 0.0049:
+                break
+            step = 0.01 if residual > 0 else -0.01
+            order = [3, 0, 1, 2] if abs(residual) > 0.02 else [0, 1, 2, 3]
+            moved = False
+            for slot in order:
+                if slot == 3:
+                    candidate = round(assessment + step, 2)
+                    if 0.0 <= candidate <= 100.0:
+                        assessment = candidate
+                        moved = True
+                        break
+                else:
+                    candidate = round(homework[slot] + step, 2)
+                    if 0.0 <= candidate <= 100.0:
+                        homework[slot] = candidate
+                        moved = True
+                        break
+            if not moved:
+                break
+
+    achieved = calculate_ordinary_grade_score(attendance, homework, assessment)
+    return {
+        "target_score": target,
+        "attendance_score": attendance,
+        "homework_scores": homework,
+        "assessment_score": assessment,
+        "achieved_score": round(achieved, 4),
+        "attendance_adjusted": attendance_adjusted,
+        "exact": abs(round(achieved, 2) - target) < 0.005,
+        "algorithm_version": ORDINARY_GRADE_MANUAL_EDIT_ALGORITHM_VERSION,
+    }
+
+
+def _manual_score_value(value: Any, *, label: str, student_number: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, f"学生 {student_number} 的{label}必须是 0 到 100 之间的数字。") from exc
+    if not math.isfinite(number) or number < 0 or number > 100:
+        raise HTTPException(400, f"学生 {student_number} 的{label}必须在 0 到 100 之间。")
+    return round(number, 2)
+
+
+def _current_ordinary_score(student: dict[str, Any]) -> float:
+    calculated = _as_dict(student.get("calculated_scores"))
+    stored = calculated.get("ordinary_score")
+    if stored not in (None, ""):
+        return round(_score_or_zero(stored), 2)
+    return round(
+        calculate_ordinary_grade_score(
+            _score_or_zero(student.get("attendance_raw_score")),
+            [_score_or_zero(value) for value in (student.get("homework_scores") or [])],
+            _score_or_zero(student.get("assessment_score")),
+        ),
+        2,
+    )
+
+
+def apply_ordinary_grade_manual_edits(
+    export_payload: dict[str, Any],
+    edits: list[dict[str, Any]],
+    *,
+    editor_name: str = "",
+    edited_at: str = "",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Apply teacher edits to the stored ordinary grade record payload.
+
+    Two modes per student row:
+    - components: teacher edited attendance/homework/assessment raw scores; the
+      ordinary score is recomputed with the official formula.
+    - ordinary: teacher edited the final ordinary score; raw components are
+      back-solved deterministically so the formula lands on the target.
+
+    The final transcript reads ``calculated_scores.ordinary_score`` first, so
+    both modes persist it — downstream materials always see the edited data.
+    One-click refresh rebuilds the payload from live classroom scores, which
+    intentionally discards these manual edits."""
+    if not isinstance(edits, list) or not edits:
+        raise HTTPException(400, "没有需要保存的成绩修改。")
+    base = _as_dict(export_payload)
+    if not base:
+        raise HTTPException(409, "该材料没有可编辑的平时成绩数据。")
+    structured = dict(_as_dict(base.get("structured")))
+    students = [dict(item) for item in structured.get("students") or [] if isinstance(item, dict)]
+    if not students:
+        raise HTTPException(409, "该平时成绩记录表没有学生成绩行，无法编辑。")
+    by_number: dict[str, int] = {}
+    for position, student in enumerate(students):
+        number = str(student.get("student_number") or "").strip()
+        if number and number not in by_number:
+            by_number[number] = position
+
+    timestamp = str(edited_at or "").strip() or datetime.now().isoformat(timespec="seconds")
+    retake_policy = dict(_as_dict(structured.get("retake_policy")))
+    retake_policy_students = [
+        dict(item) for item in retake_policy.get("students") or [] if isinstance(item, dict)
+    ]
+    edited_rows: list[dict[str, Any]] = []
+    attendance_adjusted_students: list[str] = []
+    log_entries: list[dict[str, Any]] = []
+
+    for edit in edits:
+        if not isinstance(edit, dict):
+            raise HTTPException(400, "成绩修改格式不正确。")
+        number = str(edit.get("student_number") or "").strip()
+        if not number:
+            raise HTTPException(400, "成绩修改缺少学号。")
+        if number not in by_number:
+            raise HTTPException(400, f"学号 {number} 不在本平时成绩记录表中。")
+        student = students[by_number[number]]
+        before = {
+            "attendance_raw_score": student.get("attendance_raw_score", ""),
+            "homework_scores": list(student.get("homework_scores") or []),
+            "assessment_score": student.get("assessment_score", ""),
+            "ordinary_score": _current_ordinary_score(student),
+        }
+
+        # Apply any provided raw components first, so an ordinary-score edit
+        # back-solves from the freshest component values in the same request.
+        if edit.get("attendance_raw_score") is not None:
+            student["attendance_raw_score"] = _manual_score_value(
+                edit.get("attendance_raw_score"), label="出勤成绩", student_number=number
+            )
+        homework = [_score_or_blank(value) for value in list(student.get("homework_scores") or [])[:3]]
+        homework += [""] * (3 - len(homework))
+        raw_homework_edit = edit.get("homework_scores")
+        if raw_homework_edit is not None:
+            if not isinstance(raw_homework_edit, list) or len(raw_homework_edit) > 3:
+                raise HTTPException(400, f"学生 {number} 的作业成绩必须是不超过 3 项的列表。")
+            for slot, value in enumerate(raw_homework_edit):
+                if value is None:
+                    continue
+                homework[slot] = _manual_score_value(
+                    value, label=f"作业{slot + 1}成绩", student_number=number
+                )
+        student["homework_scores"] = homework
+        if edit.get("assessment_score") is not None:
+            student["assessment_score"] = _manual_score_value(
+                edit.get("assessment_score"), label="测评成绩", student_number=number
+            )
+
+        target = edit.get("ordinary_score")
+        mode = "ordinary" if target is not None else "components"
+        attendance_adjusted = False
+        if mode == "ordinary":
+            target_value = _manual_score_value(target, label="平时成绩", student_number=number)
+            solution = solve_ordinary_grade_components(
+                target_score=target_value,
+                attendance_score=_score_or_zero(student.get("attendance_raw_score")),
+                homework_scores=[_score_or_zero(value) for value in student["homework_scores"]],
+                assessment_score=_score_or_zero(student.get("assessment_score")),
+            )
+            attendance_adjusted = bool(solution["attendance_adjusted"])
+            if attendance_adjusted:
+                student["attendance_raw_score"] = solution["attendance_score"]
+                attendance_adjusted_students.append(number)
+            student["homework_scores"] = list(solution["homework_scores"])
+            student["assessment_score"] = solution["assessment_score"]
+            ordinary_score = target_value
+            retake = _as_dict(student.get("retake"))
+            if student.get("is_retake") and retake:
+                student["retake"] = {**retake, "target_score": target_value}
+            for entry in retake_policy_students:
+                if (
+                    str(entry.get("student_number") or "").strip() == number
+                    and str(entry.get("mode") or "manual") != "roster_default"
+                ):
+                    entry["target_score"] = target_value
+        else:
+            ordinary_score = round(
+                calculate_ordinary_grade_score(
+                    _score_or_zero(student.get("attendance_raw_score")),
+                    [_score_or_zero(value) for value in student["homework_scores"]],
+                    _score_or_zero(student.get("assessment_score")),
+                ),
+                2,
+            )
+            retake = _as_dict(student.get("retake"))
+            if student.get("is_retake") and retake and retake.get("target_score") is not None:
+                student["retake"] = {**retake, "target_score": ordinary_score}
+            for entry in retake_policy_students:
+                if (
+                    str(entry.get("student_number") or "").strip() == number
+                    and str(entry.get("mode") or "manual") != "roster_default"
+                ):
+                    entry["target_score"] = ordinary_score
+
+        attendance_value = _score_or_zero(student.get("attendance_raw_score"))
+        homework_values = [_score_or_zero(value) for value in student["homework_scores"]]
+        student["calculated_scores"] = {
+            **_as_dict(student.get("calculated_scores")),
+            "attendance_score": round(attendance_value, 2),
+            "homework_score": round(sum(homework_values) / 3.0, 2),
+            "assessment_score": round(_score_or_zero(student.get("assessment_score")), 2),
+            "ordinary_score": ordinary_score,
+        }
+        after = {
+            "attendance_raw_score": student.get("attendance_raw_score", ""),
+            "homework_scores": list(student.get("homework_scores") or []),
+            "assessment_score": student.get("assessment_score", ""),
+            "ordinary_score": ordinary_score,
+        }
+        student["manual_edit"] = {
+            "mode": mode,
+            "edited_at": timestamp,
+            "editor_name": str(editor_name or "").strip(),
+            "attendance_adjusted": attendance_adjusted,
+            "algorithm_version": ORDINARY_GRADE_MANUAL_EDIT_ALGORITHM_VERSION,
+            "before": before,
+            "after": after,
+        }
+        edited_rows.append(
+            {
+                "student_number": number,
+                "student_name": str(student.get("student_name") or ""),
+                "mode": mode,
+                "ordinary_score": ordinary_score,
+                "attendance_adjusted": attendance_adjusted,
+            }
+        )
+        log_entries.append(
+            {
+                "student_number": number,
+                "student_name": str(student.get("student_name") or ""),
+                "mode": mode,
+                "edited_at": timestamp,
+                "editor_name": str(editor_name or "").strip(),
+                "before": before,
+                "after": after,
+            }
+        )
+
+    if not edited_rows:
+        raise HTTPException(400, "没有需要保存的成绩修改。")
+
+    manual_edit_log = [
+        dict(item) for item in structured.get("manual_edit_log") or [] if isinstance(item, dict)
+    ]
+    manual_edit_log.extend(log_entries)
+    manual_edit_log = manual_edit_log[-ORDINARY_GRADE_MANUAL_EDIT_LOG_LIMIT:]
+
+    edited_names = "、".join(
+        f"{row['student_name'] or row['student_number']}（{row['student_number']}）"
+        for row in edited_rows[:5]
+    )
+    if len(edited_rows) > 5:
+        edited_names += f" 等 {len(edited_rows)} 人"
+    warning_text = (
+        f"教师于 {timestamp[:16].replace('T', ' ')} 手动调整了 {len(edited_rows)} 名学生的平时成绩"
+        f"（{edited_names}）。一键更新时将重新以课堂实际作业、测验成绩覆盖手动修改。"
+    )
+    warnings = _merge_warnings(structured.get("warnings"), [warning_text])
+
+    if retake_policy_students or retake_policy:
+        retake_policy["students"] = retake_policy_students
+    new_structured = {
+        **structured,
+        "students": students,
+        "retake_policy": retake_policy,
+        "manual_edit_log": manual_edit_log,
+        "warnings": warnings,
+    }
+    tables: list[dict[str, Any]] = []
+    if base.get("tables"):
+        tables = [
+            _table_from_students(f"第 {page_index + 1} 版", chunk)
+            for page_index, chunk in enumerate(_chunk_students(students))
+        ]
+    normalized = normalize_ordinary_grade_record_payload(
+        metadata={},
+        content_markdown="",
+        tables=tables,
+        export_payload={**base, "structured": new_structured},
+    )
+    normalized_structured = _as_dict(normalized.get("structured"))
+    normalized["content_markdown"] = _build_content_markdown(
+        _as_dict(normalized.get("fields")),
+        normalized_structured.get("students") or [],
+        _as_dict(normalized_structured.get("source_assignments")),
+    )
+    summary = {
+        "edited_count": len(edited_rows),
+        "edited_students": edited_rows,
+        "attendance_adjusted_students": attendance_adjusted_students,
+        "message": (
+            f"已保存 {len(edited_rows)} 名学生的成绩修改，平时成绩已按公式自动均衡。"
+            + ("其中部分学生因目标分超出作业/测评可调范围，出勤分也被同步调整。" if attendance_adjusted_students else "")
+        ),
+    }
+    return normalized, summary
+
+
+def serialize_ordinary_grade_students_for_editor(export_payload: dict[str, Any]) -> dict[str, Any]:
+    """Flatten the stored payload into editor-friendly rows for the raw-score
+    editing dialog (secondary preview modal)."""
+    base = _as_dict(export_payload)
+    fields = _as_dict(base.get("fields"))
+    structured = _as_dict(base.get("structured"))
+    rows: list[dict[str, Any]] = []
+    for student in structured.get("students") or []:
+        if not isinstance(student, dict):
+            continue
+        homework = [_score_or_blank(value) for value in list(student.get("homework_scores") or [])[:3]]
+        homework += [""] * (3 - len(homework))
+        attendance = _score_or_blank(student.get("attendance_raw_score"))
+        assessment = _score_or_blank(student.get("assessment_score"))
+        homework_values = [_score_or_zero(value) for value in homework]
+        manual_edit = _as_dict(student.get("manual_edit"))
+        rows.append(
+            {
+                "index": _coerce_int(student.get("index")),
+                "student_number": str(student.get("student_number") or ""),
+                "student_name": str(student.get("student_name") or ""),
+                "attendance_raw_score": attendance,
+                "homework_scores": homework,
+                "assessment_score": assessment,
+                "computed": {
+                    "attendance": round(_score_or_zero(attendance), 2),
+                    "homework": round(sum(homework_values) / 3.0, 2),
+                    "assessment": round(_score_or_zero(assessment), 2),
+                    "ordinary": _current_ordinary_score(student),
+                },
+                "is_retake": bool(student.get("is_retake")),
+                "source_score_missing": _as_dict(student.get("source_score_missing")),
+                "manual_edit": (
+                    {
+                        "mode": str(manual_edit.get("mode") or ""),
+                        "edited_at": str(manual_edit.get("edited_at") or ""),
+                        "attendance_adjusted": bool(manual_edit.get("attendance_adjusted")),
+                    }
+                    if manual_edit
+                    else None
+                ),
+            }
+        )
+    return {
+        "document_type": ORDINARY_GRADE_RECORD_TYPE,
+        "document_type_label": ORDINARY_GRADE_RECORD_LABEL,
+        "fields": {
+            "course_name": fields.get("course_name") or "",
+            "class_name": fields.get("class_name") or "",
+            "teacher_name": fields.get("teacher_name") or "",
+            "academic_year": fields.get("academic_year") or "",
+            "semester": fields.get("semester") or "",
+            "class_size": fields.get("class_size") or len(rows),
+        },
+        "score_weights": {"attendance": 0.4, "homework": 0.3, "assessment": 0.3},
+        "students": rows,
+        "manual_edit_count": sum(1 for row in rows if row["manual_edit"]),
+    }
 
 
 def _normalize_score_floor_policy(*, enabled: bool, minimum_score: float) -> dict[str, Any]:

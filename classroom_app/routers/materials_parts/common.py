@@ -195,6 +195,18 @@ class FinalGradeTranscriptPrepareRequest(BaseModel):
     exam_grade_record_id: int | None = None
 
 
+class GradeRecordStudentScoreEdit(BaseModel):
+    student_number: str
+    attendance_raw_score: float | None = Field(default=None, ge=0, le=100)
+    homework_scores: list[float | None] | None = None
+    assessment_score: float | None = Field(default=None, ge=0, le=100)
+    ordinary_score: float | None = Field(default=None, ge=0, le=100)
+
+
+class GradeRecordScoreEditRequest(BaseModel):
+    edits: list[GradeRecordStudentScoreEdit] = Field(default_factory=list)
+
+
 class MaterialAiRewriteRequest(BaseModel):
     mode: str = "optimize"
     prompt: str = ""

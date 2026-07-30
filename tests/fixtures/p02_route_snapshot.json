@@ -3592,6 +3592,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/materials/{material_id}/grade-record/students",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_grade_record_students",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/grade-record/students",
+    "methods": [
+      "POST"
+    ],
+    "name": "update_grade_record_students",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/materials/{material_id}/learning-bindings",
     "methods": [
       "GET"

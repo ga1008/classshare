@@ -308,6 +308,15 @@ const state = {
     recentGeneratedHighlightArmed: false,
     // 本地 AI 处理中的提示卡（优化 / 润色 / 续写），key → {label, message, tone}
     aiPending: new Map(),
+    gradeScores: {
+        materialId: null,
+        recordId: null,
+        busy: false,
+        loading: false,
+        rows: [],
+        fields: {},
+        stickyStatus: false,
+    },
     repository: {
         materialId: null,
         detail: null,
@@ -467,6 +476,10 @@ const refs = {
     moveTarget: document.getElementById('materials-move-target'),
     moveStatus: document.getElementById('materials-move-status'),
     moveSubmitBtn: document.getElementById('materials-move-submit-btn'),
+    gradeScoresBody: document.getElementById('materials-grade-scores-body'),
+    gradeScoresMeta: document.getElementById('materials-grade-scores-meta'),
+    gradeScoresStatus: document.getElementById('materials-grade-scores-status'),
+    gradeScoresSaveBtn: document.getElementById('materials-grade-scores-save-btn'),
     bindName: document.getElementById('materials-bind-name'),
     bindOffering: document.getElementById('materials-bind-offering'),
     bindTargets: document.getElementById('materials-bind-targets'),
@@ -2556,6 +2569,7 @@ function renderWorkspaceTopbar(detail) {
                 ${renderPreviewUrl ? `<a href="${escapeHtml(renderPreviewUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
                 ${exportUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
                 ${exportPdfUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出PDF</button>` : ''}
+                ${detail.ai_import_record?.document_type === 'ordinary_grade_record' && canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="edit-grade-scores" title="查看并编辑全部学生的原始成绩，系统自动重算或反推平时成绩">编辑原始成绩</button>' : ''}
                 ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline btn-sm">下载</a>` : ''}
                 ${isGitRepository(detail) && canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="repository">仓库</button>' : ''}
                 <button type="button" class="btn btn-outline btn-sm" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
@@ -2806,6 +2820,7 @@ function renderAiImportDetailSummary(detail) {
                 ${warningsHtml}
             </details>
             <div class="materials-ai-import-summary-actions">
+                ${record.document_type === 'ordinary_grade_record' && detail.can_manage !== false ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="edit-grade-scores">编辑原始成绩</button>' : ''}
                 ${renderPreviewUrl ? `<a href="${escapeHtml(renderPreviewUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
                 ${exportUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
                 ${exportPdfUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出 PDF</button>` : ''}
@@ -3143,6 +3158,268 @@ async function refreshGeneratedFinalMaterial(materialId, button) {
             button.disabled = false;
             button.textContent = originalText || '一键更新';
         }
+    }
+}
+
+const GRADE_SCORE_COMPONENT_FIELDS = ['attendance', 'hw0', 'hw1', 'hw2', 'assessment'];
+
+function gradeScoreNumber(value) {
+    if (value === '' || value === null || value === undefined) return 0;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+}
+
+function gradeScoreInputValue(value) {
+    if (value === '' || value === null || value === undefined) return '';
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '';
+    return String(Math.round(number * 100) / 100);
+}
+
+function gradeScoreFieldInvalid(value) {
+    if (value === '' || value === null || value === undefined) return false;
+    const number = Number(value);
+    return !Number.isFinite(number) || number < 0 || number > 100;
+}
+
+function computeGradeScoreOrdinary(draft) {
+    const homeworkAvg = (gradeScoreNumber(draft.hw0) + gradeScoreNumber(draft.hw1) + gradeScoreNumber(draft.hw2)) / 3;
+    const ordinary = gradeScoreNumber(draft.attendance) * 0.4 + homeworkAvg * 0.3 + gradeScoreNumber(draft.assessment) * 0.3;
+    return Math.round(ordinary * 100) / 100;
+}
+
+function buildGradeScoreRows(students) {
+    return (students || []).map((student, position) => {
+        const homework = Array.isArray(student.homework_scores) ? student.homework_scores : [];
+        const original = {
+            attendance: gradeScoreInputValue(student.attendance_raw_score),
+            hw0: gradeScoreInputValue(homework[0]),
+            hw1: gradeScoreInputValue(homework[1]),
+            hw2: gradeScoreInputValue(homework[2]),
+            assessment: gradeScoreInputValue(student.assessment_score),
+            ordinary: gradeScoreInputValue(student.computed?.ordinary),
+        };
+        return {
+            index: student.index || position + 1,
+            studentNumber: String(student.student_number || ''),
+            studentName: String(student.student_name || ''),
+            isRetake: Boolean(student.is_retake),
+            manualEdit: student.manual_edit || null,
+            original,
+            draft: { ...original },
+            mode: null,
+        };
+    });
+}
+
+function gradeScoreFieldChanged(row, field) {
+    const before = row.original[field];
+    const after = row.draft[field];
+    if (after === '' || after === null || after === undefined) return false;
+    if (before === '') return true;
+    return Math.abs(gradeScoreNumber(before) - gradeScoreNumber(after)) > 0.004;
+}
+
+function gradeScoreRowDirty(row) {
+    if (row.mode === 'ordinary' && gradeScoreFieldChanged(row, 'ordinary')) return true;
+    return GRADE_SCORE_COMPONENT_FIELDS.some((field) => gradeScoreFieldChanged(row, field));
+}
+
+function gradeScoreRowStatus(row) {
+    const parts = [];
+    if (row.isRetake) parts.push('<span class="materials-meta-item" style="color:#b45309;">重修/免修</span>');
+    if (row.manualEdit) parts.push('<span class="materials-meta-item" style="color:#6d28d9;">已手动调整</span>');
+    if (row.mode === 'ordinary' && gradeScoreFieldChanged(row, 'ordinary')) {
+        parts.push('<span class="materials-meta-item" style="color:#0d9488;">保存时按目标分反推各项</span>');
+    } else if (gradeScoreRowDirty(row)) {
+        parts.push('<span class="materials-meta-item" style="color:#0d9488;">已按公式重算平时成绩</span>');
+    }
+    return parts.join(' ') || '<span class="materials-meta-item">—</span>';
+}
+
+function renderGradeScoresModal() {
+    if (!refs.gradeScoresBody) return;
+    const grade = state.gradeScores;
+    if (grade.loading) {
+        refs.gradeScoresBody.innerHTML = '<div class="materials-empty">正在读取学生原始成绩...</div>';
+        return;
+    }
+    if (!grade.rows.length) {
+        refs.gradeScoresBody.innerHTML = '<div class="materials-empty">该平时成绩记录表暂无学生成绩行。</div>';
+        return;
+    }
+    if (refs.gradeScoresMeta) {
+        const fields = grade.fields || {};
+        refs.gradeScoresMeta.textContent = [
+            fields.course_name || '',
+            fields.class_name || '',
+            `${grade.rows.length} 名学生`,
+        ].filter(Boolean).join(' · ');
+    }
+    const inputStyle = 'width:64px;padding:4px 6px;text-align:center;';
+    const rowsHtml = grade.rows.map((row) => {
+        const homeworkAvg = Math.round(((gradeScoreNumber(row.draft.hw0) + gradeScoreNumber(row.draft.hw1) + gradeScoreNumber(row.draft.hw2)) / 3) * 100) / 100;
+        const inputCell = (field, title) => `
+            <td style="padding:4px;">
+                <input type="number" min="0" max="100" step="0.5" class="form-control" style="${inputStyle}"
+                    value="${escapeHtml(String(row.draft[field] ?? ''))}"
+                    data-grade-row="${escapeHtml(row.studentNumber)}" data-grade-field="${field}" title="${escapeHtml(title)}">
+            </td>`;
+        return `
+            <tr data-grade-tr="${escapeHtml(row.studentNumber)}" style="border-bottom:1px solid rgba(100,116,139,0.16);">
+                <td style="padding:6px 4px;text-align:center;">${escapeHtml(String(row.index))}</td>
+                <td style="padding:6px 4px;white-space:nowrap;">${escapeHtml(row.studentNumber)}</td>
+                <td style="padding:6px 4px;white-space:nowrap;">${escapeHtml(row.studentName)}</td>
+                ${inputCell('attendance', '出勤成绩（“翻转校园”记录）')}
+                ${inputCell('hw0', '作业1')}
+                ${inputCell('hw1', '作业2')}
+                ${inputCell('hw2', '作业3')}
+                ${inputCell('assessment', '测评1')}
+                <td style="padding:6px 4px;text-align:center;" data-grade-computed="hw-avg">${escapeHtml(String(homeworkAvg))}</td>
+                ${inputCell('ordinary', '平时成绩 = 出勤×40% + 作业均分×30% + 测评×30%；直接修改会反推各原始分')}
+                <td style="padding:6px 4px;" data-grade-status>${gradeScoreRowStatus(row)}</td>
+            </tr>
+        `;
+    }).join('');
+    refs.gradeScoresBody.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr style="position:sticky;top:0;background:var(--surface-1,#fff);z-index:1;border-bottom:2px solid rgba(100,116,139,0.3);">
+                    <th style="padding:6px 4px;">序号</th>
+                    <th style="padding:6px 4px;">学号</th>
+                    <th style="padding:6px 4px;">姓名</th>
+                    <th style="padding:6px 4px;">出勤</th>
+                    <th style="padding:6px 4px;">作业1</th>
+                    <th style="padding:6px 4px;">作业2</th>
+                    <th style="padding:6px 4px;">作业3</th>
+                    <th style="padding:6px 4px;">测评</th>
+                    <th style="padding:6px 4px;">作业均分</th>
+                    <th style="padding:6px 4px;">平时成绩</th>
+                    <th style="padding:6px 4px;">状态</th>
+                </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+        </table>
+    `;
+    updateGradeScoresSaveState();
+}
+
+function updateGradeScoresSaveState() {
+    const grade = state.gradeScores;
+    const dirtyRows = grade.rows.filter(gradeScoreRowDirty);
+    const invalid = grade.rows.some((row) => Object.keys(row.draft).some((field) => gradeScoreFieldInvalid(row.draft[field])));
+    if (refs.gradeScoresSaveBtn) {
+        refs.gradeScoresSaveBtn.disabled = grade.busy || invalid || !dirtyRows.length;
+        refs.gradeScoresSaveBtn.textContent = grade.busy ? '保存中…' : (dirtyRows.length ? `保存修改（${dirtyRows.length} 人）` : '保存修改');
+    }
+    if (refs.gradeScoresStatus && !grade.stickyStatus) {
+        if (invalid) {
+            setModalStatus(refs.gradeScoresStatus, '存在超出 0-100 范围的分数，请先修正。', 'warning');
+        } else if (dirtyRows.length) {
+            setModalStatus(refs.gradeScoresStatus, `已修改 ${dirtyRows.length} 名学生，保存后期末成绩单等下游材料将使用新成绩。`, 'info');
+        } else {
+            setModalStatus(refs.gradeScoresStatus, '', 'info');
+        }
+    }
+}
+
+function handleGradeScoreInput(input) {
+    const grade = state.gradeScores;
+    const row = grade.rows.find((item) => item.studentNumber === String(input.dataset.gradeRow || ''));
+    const field = String(input.dataset.gradeField || '');
+    if (!row || !field) return;
+    grade.stickyStatus = false;
+    row.draft = { ...row.draft, [field]: input.value.trim() };
+    if (field === 'ordinary') {
+        row.mode = 'ordinary';
+    } else {
+        row.mode = 'components';
+        row.draft = { ...row.draft, ordinary: String(computeGradeScoreOrdinary(row.draft)) };
+        const tr = refs.gradeScoresBody?.querySelector(`[data-grade-tr="${CSS.escape(row.studentNumber)}"]`);
+        if (tr) {
+            const homeworkAvg = Math.round(((gradeScoreNumber(row.draft.hw0) + gradeScoreNumber(row.draft.hw1) + gradeScoreNumber(row.draft.hw2)) / 3) * 100) / 100;
+            const avgCell = tr.querySelector('[data-grade-computed="hw-avg"]');
+            if (avgCell) avgCell.textContent = String(homeworkAvg);
+            const ordinaryInput = tr.querySelector('[data-grade-field="ordinary"]');
+            if (ordinaryInput) ordinaryInput.value = row.draft.ordinary;
+        }
+    }
+    const tr = refs.gradeScoresBody?.querySelector(`[data-grade-tr="${CSS.escape(row.studentNumber)}"]`);
+    const statusCell = tr?.querySelector('[data-grade-status]');
+    if (statusCell) statusCell.innerHTML = gradeScoreRowStatus(row);
+    input.style.borderColor = gradeScoreFieldInvalid(input.value.trim()) ? '#dc2626' : '';
+    updateGradeScoresSaveState();
+}
+
+function collectGradeScoreEdits() {
+    return state.gradeScores.rows.filter(gradeScoreRowDirty).map((row) => {
+        const edit = { student_number: row.studentNumber };
+        if (gradeScoreFieldChanged(row, 'attendance')) edit.attendance_raw_score = gradeScoreNumber(row.draft.attendance);
+        const homeworkChanged = ['hw0', 'hw1', 'hw2'].some((field) => gradeScoreFieldChanged(row, field));
+        if (homeworkChanged) {
+            edit.homework_scores = ['hw0', 'hw1', 'hw2'].map((field) => (
+                gradeScoreFieldChanged(row, field) ? gradeScoreNumber(row.draft[field]) : null
+            ));
+        }
+        if (gradeScoreFieldChanged(row, 'assessment')) edit.assessment_score = gradeScoreNumber(row.draft.assessment);
+        if (row.mode === 'ordinary' && gradeScoreFieldChanged(row, 'ordinary')) {
+            edit.ordinary_score = gradeScoreNumber(row.draft.ordinary);
+        }
+        return edit;
+    });
+}
+
+async function openGradeScoresModal(materialId) {
+    const grade = state.gradeScores;
+    grade.materialId = Number(materialId);
+    grade.busy = false;
+    grade.loading = true;
+    grade.rows = [];
+    grade.fields = {};
+    grade.stickyStatus = false;
+    renderGradeScoresModal();
+    openModal('materials-grade-scores-modal');
+    try {
+        const data = await apiFetch(`/api/materials/${materialId}/grade-record/students`, { silent: true });
+        grade.recordId = data.record_id || null;
+        grade.fields = data.fields || {};
+        grade.rows = buildGradeScoreRows(data.students);
+    } finally {
+        grade.loading = false;
+    }
+    renderGradeScoresModal();
+}
+
+async function saveGradeScoreEdits() {
+    const grade = state.gradeScores;
+    if (grade.busy || !grade.materialId) return;
+    const edits = collectGradeScoreEdits();
+    if (!edits.length) {
+        setModalStatus(refs.gradeScoresStatus, '没有需要保存的修改。', 'info');
+        return;
+    }
+    grade.busy = true;
+    updateGradeScoresSaveState();
+    try {
+        const data = await apiFetch(`/api/materials/${grade.materialId}/grade-record/students`, {
+            method: 'POST',
+            body: { edits },
+        });
+        grade.rows = buildGradeScoreRows(data.students);
+        grade.fields = data.fields || grade.fields;
+        grade.stickyStatus = true;
+        renderGradeScoresModal();
+        setModalStatus(refs.gradeScoresStatus, data.message || '成绩修改已保存。', 'success');
+        showToast(data.message || '成绩修改已保存，下游材料将使用编辑后的数据。', 'success', 6200);
+        if (state.activeDetail?.id) {
+            loadMaterialDetail(state.activeDetail.id).catch(() => {});
+        }
+    } catch (error) {
+        grade.stickyStatus = true;
+        setModalStatus(refs.gradeScoresStatus, error.message || '保存失败，材料未被修改。', 'error');
+    } finally {
+        grade.busy = false;
+        updateGradeScoresSaveState();
     }
 }
 
@@ -5891,6 +6168,17 @@ function bindEvents() {
         });
     });
 
+    refs.gradeScoresBody?.addEventListener('input', (event) => {
+        const input = event.target.closest('[data-grade-field]');
+        if (input) handleGradeScoreInput(input);
+    });
+
+    refs.gradeScoresSaveBtn?.addEventListener('click', () => {
+        saveGradeScoreEdits().catch((error) => {
+            showToast(error.message || '保存成绩修改失败', 'error');
+        });
+    });
+
     refs.bindOffering?.addEventListener('change', () => {
         renderBindTargets();
     });
@@ -6114,6 +6402,12 @@ function bindEvents() {
         if (action === 'repository') {
             openRepositoryModal(state.activeDetail.id).catch((error) => {
                 showToast(error.message || '加载仓库信息失败', 'error');
+            });
+            return;
+        }
+        if (action === 'edit-grade-scores') {
+            openGradeScoresModal(state.activeDetail.id).catch((error) => {
+                showToast(error.message || '加载原始成绩失败', 'error');
             });
             return;
         }

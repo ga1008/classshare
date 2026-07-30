@@ -1051,6 +1051,30 @@
     </div>
 </div>
 
+<div id="materials-grade-scores-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-dialog" style="max-width:1120px;width:min(1120px,96vw);">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">编辑学生原始成绩</h3>
+                    <p class="modal-subtitle">
+                        修改出勤/作业/测评原始分会按官方公式自动重算平时成绩；直接修改平时成绩会自动反推各原始分并保持公式恰好成立。
+                        保存后期末成绩单等下游材料使用编辑后的数据；“一键更新”会重新以课堂实际作业、测验成绩覆盖这里的手动修改。
+                    </p>
+                    <p class="modal-subtitle" id="materials-grade-scores-meta"></p>
+                </div>
+                <button class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body" id="materials-grade-scores-body" style="max-height:62vh;overflow:auto;"></div>
+            <div class="modal-footer">
+                <div class="materials-ai-import-status" id="materials-grade-scores-status" hidden style="margin-right:auto;"></div>
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" id="materials-grade-scores-save-btn" disabled>保存修改</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="materials-bind-modal" class="modal-backdrop" style="display:none;">
     <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">

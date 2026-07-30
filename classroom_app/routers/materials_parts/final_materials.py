@@ -7,9 +7,11 @@ from .final_material_helpers import *
 from .rewrite_helpers import *
 from ...services.ordinary_grade_record_service import (
     ORDINARY_GRADE_RECORD_TYPE,
+    apply_ordinary_grade_manual_edits,
     build_ordinary_grade_record_payload,
     list_classroom_roster_students,
     list_ordinary_grade_assignment_candidates,
+    serialize_ordinary_grade_students_for_editor,
 )
 from ...services.exam_grade_record_service import (
     EXAM_GRADE_RECORD_TYPE,
@@ -548,6 +550,82 @@ async def generate_classroom_final_material(
         "message": f"{'AI' if ai_used else '本地草稿'}已生成{type_meta['label']}，并保存到课程材料。",
         "task": task,
         "ai_used": ai_used,
+    }
+
+
+def _load_editable_ordinary_grade_record(conn, material_id: int, user: dict):
+    """Locate the completed ordinary grade record behind a material node and
+    parse its export payload for the raw-score editor."""
+    ensure_teacher_material_owner(conn, int(material_id), user["id"])
+    record = _find_material_ai_import_record(
+        conn,
+        int(material_id),
+        int(user["id"]),
+        completed_only=True,
+    )
+    if record is None or str(record["document_type"] or "") != ORDINARY_GRADE_RECORD_TYPE:
+        raise HTTPException(404, "该材料没有可编辑的平时成绩记录表数据。")
+    export_payload = _parse_json_object(record["export_payload_json"])
+    if not export_payload:
+        raise HTTPException(409, "该平时成绩记录表缺少结构化成绩数据，无法编辑。")
+    return record, export_payload
+
+
+@router.get("/api/materials/{material_id}/grade-record/students", response_class=JSONResponse)
+async def get_grade_record_students(
+    material_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """二级浮窗数据源：返回平时成绩记录表中全部学生的原始成绩与计算成绩。"""
+    with get_db_connection() as conn:
+        record, export_payload = _load_editable_ordinary_grade_record(conn, material_id, user)
+    editor = serialize_ordinary_grade_students_for_editor(export_payload)
+    return {
+        "status": "success",
+        "record_id": int(record["id"]),
+        "can_edit": True,
+        **editor,
+    }
+
+
+@router.post("/api/materials/{material_id}/grade-record/students", response_class=JSONResponse)
+async def update_grade_record_students(
+    material_id: int,
+    payload: GradeRecordScoreEditRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    """保存教师在二级浮窗中的原始成绩/平时成绩修改。
+
+    编辑原始分（出勤/作业/测评）时按官方公式重新计算平时成绩；
+    直接编辑平时成绩时按确定性算法反推各原始分，保证公式恰好落在目标分。
+    结果原地回写材料真源（export_payload + readme），期末成绩单等下游材料
+    读取的就是编辑后的数据；“一键更新”会重新以课堂实际成绩覆盖这些修改。"""
+    edits = [edit.model_dump() for edit in payload.edits]
+    with get_db_connection() as conn:
+        record, export_payload = _load_editable_ordinary_grade_record(conn, material_id, user)
+    updated_payload, summary = apply_ordinary_grade_manual_edits(
+        export_payload,
+        edits,
+        editor_name=str(user.get("name") or ""),
+    )
+    fields = updated_payload.get("fields") if isinstance(updated_payload.get("fields"), dict) else {}
+    classroom_context = {
+        "course_name": fields.get("course_name") or "",
+        "class_name": fields.get("class_name") or "",
+    }
+    parse_result = _local_grade_record_parse_result(
+        document_type=ORDINARY_GRADE_RECORD_TYPE,
+        export_payload=updated_payload,
+        classroom_context=classroom_context,
+    )
+    task = await _persist_final_material_record_update(int(record["id"]), record, parse_result, user)
+    editor = serialize_ordinary_grade_students_for_editor(updated_payload)
+    return {
+        "status": "success",
+        "message": summary["message"],
+        "summary": summary,
+        "task": task,
+        **editor,
     }
 
 
