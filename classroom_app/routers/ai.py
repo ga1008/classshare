@@ -1890,7 +1890,7 @@ System Prompt:
             class_offering_id=class_offering_id,
             student_id=user_pk if user_role == "student" else None,
             teacher_id=user_pk if user_role == "teacher" else None,
-            source_ref=f"learning-support-profile:{user_role}:{user_pk}:{session_id}",
+            source_ref=f"learning-support-profile:{user_role}:{user_pk}:{session_db_id}",
         )
         response.raise_for_status()
         ai_response_data = response.json()

@@ -134,7 +134,7 @@ async def prepare_classroom_final_grade_transcript(
             "status": sync_status,
             "message": roster_sync.get("message") or "",
             "alignment": roster_sync.get("alignment") or {},
-            "synced_at": _as_dict(readiness.get("roster")).get("synced_at") or "",
+            "synced_at": (readiness.get("roster") or {}).get("synced_at") or "",
             "cache_hit": bool(roster_sync.get("cache_hit")),
             "sync_mode": roster_sync.get("sync_mode") or "",
             "freshness": roster_sync.get("freshness") or {},
