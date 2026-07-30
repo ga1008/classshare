@@ -1278,28 +1278,40 @@ function renderFinalGradeSourceCard(source, key) {
             tone: 'missing',
             label: '缺少成绩',
             text: `${item?.student_name || '未命名'} · ${item?.student_number || '无学号'}`,
+            targets: Array.isArray(item?.jump_targets) ? item.jump_targets : [],
         })) : []),
         ...(Array.isArray(source?.conflicts) ? source.conflicts.map((item) => ({
             tone: 'conflict',
             label: '姓名冲突',
             text: `${item?.student_number || '无学号'} · 名单“${item?.roster_name || ''}” / 来源“${item?.source_name || ''}”`,
+            targets: Array.isArray(item?.jump_targets) ? item.jump_targets : [],
         })) : []),
         ...(Array.isArray(source?.duplicate_students) ? source.duplicate_students.map((item) => ({
             tone: 'duplicate',
             label: '重复学号',
             text: `${item?.student_name || '未命名'} · ${item?.student_number || '无学号'}`,
+            targets: Array.isArray(item?.jump_targets) ? item.jump_targets : [],
         })) : []),
         ...(Array.isArray(source?.extra_students) ? source.extra_students.map((item) => ({
             tone: 'extra',
             label: '来源多出',
             text: `${item?.student_name || '未命名'} · ${item?.student_number || '无学号'}（不会写入）`,
+            targets: [],
         })) : []),
     ];
+    const renderIssueBody = (item) => {
+        const targets = Array.isArray(item.targets) ? item.targets.filter((target) => target && target.url) : [];
+        if (!targets.length) return escapeHtml(item.text);
+        const [first, ...rest] = targets;
+        const nameLink = `<a class="final-grade-issue-jump" href="${escapeHtml(first.url)}" target="_blank" rel="noopener" title="打开“${escapeHtml(first.title || '对应题目')}”并定位到该学生进行查看和补分">${escapeHtml(item.text)}</a>`;
+        const sourceLinks = targets.map((target) => `<a class="final-grade-issue-source" href="${escapeHtml(target.url)}" target="_blank" rel="noopener" title="打开并定位到该学生">${escapeHtml(target.title || '查看')}</a>`).join('');
+        return `${nameLink}<i class="final-grade-issue-sources">${targets.length > 1 ? '缺分来源：' : '来源：'}${sourceLinks}</i>`;
+    };
     const issueDetails = issueItems.length ? `
         <details class="final-grade-source-card__issues">
             <summary>查看 ${escapeHtml(String(issueItems.length))} 项人员明细</summary>
             <div>${issueItems.map((item) => `
-                <span data-tone="${escapeHtml(item.tone)}"><b>${escapeHtml(item.label)}</b>${escapeHtml(item.text)}</span>
+                <span data-tone="${escapeHtml(item.tone)}"><b>${escapeHtml(item.label)}</b><span class="final-grade-issue-body">${renderIssueBody(item)}</span></span>
             `).join('')}</div>
         </details>
     ` : '';

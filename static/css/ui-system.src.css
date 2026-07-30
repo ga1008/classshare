@@ -50658,6 +50658,34 @@ a.material-delete-impact-item:hover .material-delete-impact-item__open { color: 
 }
 .final-grade-source-card__issues b { color: #b45309; }
 .final-grade-source-card__issues span[data-tone="extra"] b { color: #4f46e5; }
+.final-grade-issue-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    min-width: 0;
+}
+.final-grade-issue-jump {
+    color: #1d4ed8;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.final-grade-issue-jump:hover { color: #1e40af; }
+.final-grade-issue-sources {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    color: #64748b;
+    font-size: 10px;
+    font-style: normal;
+}
+.final-grade-issue-source {
+    color: #4f46e5;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.final-grade-issue-source:hover { color: #4338ca; }
 .final-grade-student-preview {
     padding: 14px 16px;
     border: 1px solid rgba(79, 70, 229, .16);

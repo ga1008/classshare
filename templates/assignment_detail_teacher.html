@@ -1189,6 +1189,13 @@
             justify-content: flex-start;
         }
     }
+    @keyframes locate-flash-pulse {
+        0%, 100% { background-color: transparent; }
+        25%, 75% { background-color: rgba(250, 204, 21, .32); }
+    }
+    .submissions-table tbody tr.locate-flash > td {
+        animation: locate-flash-pulse 1.6s ease-in-out 3;
+    }
 </style>
 {% endblock %}
 
@@ -2056,6 +2063,28 @@
     let offlineRenderedQuestions = [];
     let offlineTargetStudent = null;
     let assignmentExamPaperPreviewRendered = false;
+    let pendingLocateKeyword = (new URLSearchParams(window.location.search).get('locate') || '').trim();
+
+    function applyPendingLocate() {
+        if (!pendingLocateKeyword) return;
+        const keyword = pendingLocateKeyword;
+        pendingLocateKeyword = '';
+        const filterInput = document.getElementById('submission-filter');
+        if (filterInput) filterInput.value = keyword;
+        currentFilter = 'all';
+        scoreRangeFilter = null;
+        renderSubmissions();
+        requestAnimationFrame(() => {
+            const row = document.querySelector('#submissions-list tr[data-testid="p03-submission-row"]');
+            if (!row) {
+                showToast(`名单中未找到“${keyword}”，可能已退课或不在本班`, 'warning');
+                return;
+            }
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.classList.add('locate-flash');
+            setTimeout(() => row.classList.remove('locate-flash'), 5000);
+        });
+    }
 
     function renderAssignmentExamPaperPreview() {
         if (assignmentExamPaperPreviewRendered || !OFFLINE_EXAM_QUESTIONS) return;
@@ -2244,6 +2273,7 @@
                 allEntries = (data.submissions || []).map((entry, index) => ({ ...entry, __rowIndex: index }));
                 renderSubmissions();
                 updateStats(data.stats);
+                applyPendingLocate();
             }
         } catch (error) {
             console.error('加载数据失败:', error);

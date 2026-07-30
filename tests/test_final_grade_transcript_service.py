@@ -433,6 +433,114 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
         self.assertEqual(source["duplicate_count"], 1)
         self.assertIn("重复学号", source["message"])
 
+    def test_missing_students_carry_jump_targets_to_source_assignments(self):
+        exam_record = self.conn.execute(
+            "SELECT export_payload_json FROM material_ai_import_records WHERE id = 71"
+        ).fetchone()
+        exam_payload = json.loads(exam_record["export_payload_json"])
+        exam_payload["structured"]["source_exam"] = {
+            "assignment_id": 901,
+            "assignment_title": "期末上机考核",
+        }
+        exam_payload["structured"]["students"][1]["total_score"] = ""
+        self.conn.execute(
+            "UPDATE material_ai_import_records SET export_payload_json = ? WHERE id = 71",
+            (json.dumps(exam_payload, ensure_ascii=False),),
+        )
+
+        ordinary_record = self.conn.execute(
+            "SELECT export_payload_json FROM material_ai_import_records WHERE id = 70"
+        ).fetchone()
+        ordinary_payload = json.loads(ordinary_record["export_payload_json"])
+        ordinary_payload["structured"]["source_assignments"] = {
+            "homework_assignment_ids": [801, 802],
+            "homework_assignments": [
+                {"id": 801, "title": "第一次作业"},
+                {"id": 802, "title": "第二次作业"},
+            ],
+            "assessment_assignment_id": 803,
+            "assessment_assignment": {"id": 803, "title": "阶段测评"},
+        }
+        # 学生二 disappears from the ordinary record entirely.
+        ordinary_payload["structured"]["students"] = [
+            student
+            for student in ordinary_payload["structured"]["students"]
+            if student["student_number"] != "20240102"
+        ]
+        self.conn.execute(
+            "UPDATE material_ai_import_records SET export_payload_json = ? WHERE id = 70",
+            (json.dumps(ordinary_payload, ensure_ascii=False),),
+        )
+        self.conn.commit()
+
+        readiness = build_final_grade_transcript_readiness(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+        )
+
+        self.assertFalse(readiness["ready"])
+        exam_missing = readiness["sources"]["exam_grade_record"]["missing_students"]
+        self.assertEqual(len(exam_missing), 1)
+        exam_targets = exam_missing[0]["jump_targets"]
+        self.assertEqual(len(exam_targets), 1)
+        self.assertEqual(exam_targets[0]["assignment_id"], 901)
+        self.assertEqual(exam_targets[0]["title"], "期末上机考核")
+        self.assertEqual(exam_targets[0]["url"], "/assignment/901?locate=20240102")
+
+        ordinary_missing = readiness["sources"]["ordinary_grade_record"]["missing_students"]
+        self.assertEqual(len(ordinary_missing), 1)
+        ordinary_targets = ordinary_missing[0]["jump_targets"]
+        self.assertEqual(
+            [target["assignment_id"] for target in ordinary_targets],
+            [801, 802, 803],
+        )
+        self.assertTrue(all("locate=20240102" in target["url"] for target in ordinary_targets))
+
+    def test_blank_ordinary_scores_target_only_blank_source_assignments(self):
+        from classroom_app.services.final_grade_transcript_service import (
+            _record_assignment_targets,
+            _record_raw_students,
+            _student_jump_targets,
+        )
+
+        record = self.conn.execute(
+            "SELECT export_payload_json FROM material_ai_import_records WHERE id = 70"
+        ).fetchone()
+        payload = json.loads(record["export_payload_json"])
+        payload["structured"]["source_assignments"] = {
+            "homework_assignment_ids": [801, 802],
+            "homework_assignments": [
+                {"id": 801, "title": "第一次作业"},
+                {"id": 802, "title": "第二次作业"},
+            ],
+            "assessment_assignment_id": 803,
+            "assessment_assignment": {"id": 803, "title": "阶段测评"},
+        }
+        for student in payload["structured"]["students"]:
+            if student["student_number"] == "20240102":
+                student["homework_scores"] = [88, None]
+                student["assessment_score"] = 90
+        self.conn.execute(
+            "UPDATE material_ai_import_records SET export_payload_json = ? WHERE id = 70",
+            (json.dumps(payload, ensure_ascii=False),),
+        )
+        self.conn.commit()
+
+        record_row = self.conn.execute(
+            "SELECT * FROM material_ai_import_records WHERE id = 70"
+        ).fetchone()
+        targets = _record_assignment_targets(record_row, "ordinary_grade_record")
+        raw_students = _record_raw_students(record_row)
+        jump = _student_jump_targets(
+            targets,
+            raw_students.get("20240102"),
+            document_type="ordinary_grade_record",
+            student_number="20240102",
+        )
+        self.assertEqual([target["assignment_id"] for target in jump], [802])
+        self.assertEqual(jump[0]["url"], "/assignment/802?locate=20240102")
+
     def test_xlsx_reproduces_template_styles_and_round_trips_every_column(self):
         payload = build_final_grade_transcript_payload(
             self.conn,

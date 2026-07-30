@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import HTTPException
 
@@ -865,24 +866,39 @@ def _source_match_summary(
             "conflict_count": 0,
         }
     students = _students_by_number(record, document_type)
+    assignment_targets = _record_assignment_targets(record, document_type)
+    raw_students = _record_raw_students(record)
     roster_numbers = {_text(student.get("student_number")) for student in roster_students}
-    missing: list[dict[str, str]] = []
-    conflicts: list[dict[str, str]] = []
-    duplicates: list[dict[str, str]] = []
+    missing: list[dict[str, Any]] = []
+    conflicts: list[dict[str, Any]] = []
+    duplicates: list[dict[str, Any]] = []
     for roster_student in roster_students:
         number = _text(roster_student.get("student_number"))
         roster_name = _text(roster_student.get("student_name"))
+        jump_targets = _student_jump_targets(
+            assignment_targets,
+            raw_students.get(number),
+            document_type=document_type,
+            student_number=number,
+        )
         source = students.get(number)
         if source and source.get("duplicate"):
             duplicates.append(
                 {
                     "student_number": number,
                     "student_name": roster_name,
+                    "jump_targets": jump_targets,
                 }
             )
             continue
         if not source or source.get("score") in (None, ""):
-            missing.append({"student_number": number, "student_name": roster_name})
+            missing.append(
+                {
+                    "student_number": number,
+                    "student_name": roster_name,
+                    "jump_targets": jump_targets,
+                }
+            )
             continue
         if _identity_text(source.get("student_name")) != _identity_text(roster_name):
             conflicts.append(
@@ -890,6 +906,7 @@ def _source_match_summary(
                     "student_number": number,
                     "roster_name": roster_name,
                     "source_name": _text(source.get("student_name")),
+                    "jump_targets": jump_targets,
                 }
             )
     extra = [
@@ -974,6 +991,124 @@ def _students_by_number(record, document_type: str) -> dict[str, dict[str, Any]]
         result[number]["score"] = ""
         result[number]["duplicate"] = True
     return result
+
+
+def _record_assignment_targets(record, document_type: str) -> list[dict[str, Any]]:
+    """Source assignments behind a grade record, so blocked students can be
+    traced back to the exact homework/exam page where their score is missing."""
+    if record is None:
+        return []
+    structured = _as_dict(_record_export_payload(record).get("structured"))
+    if document_type == EXAM_GRADE_RECORD_TYPE:
+        source_exam = _as_dict(structured.get("source_exam"))
+        assignment_id = _positive_int(source_exam.get("assignment_id"), 0)
+        if not assignment_id:
+            return []
+        return [
+            {
+                "assignment_id": assignment_id,
+                "title": _text(source_exam.get("assignment_title")) or "课程考试",
+                "kind": "exam",
+                "position": None,
+            }
+        ]
+    source = _as_dict(structured.get("source_assignments"))
+    homework_ids = (
+        source.get("homework_assignment_ids")
+        if isinstance(source.get("homework_assignment_ids"), list)
+        else []
+    )
+    homework_meta = (
+        source.get("homework_assignments")
+        if isinstance(source.get("homework_assignments"), list)
+        else []
+    )
+    targets: list[dict[str, Any]] = []
+    for position, raw_id in enumerate(homework_ids):
+        assignment_id = _positive_int(raw_id, 0)
+        if not assignment_id:
+            continue
+        meta = (
+            homework_meta[position]
+            if position < len(homework_meta) and isinstance(homework_meta[position], dict)
+            else {}
+        )
+        targets.append(
+            {
+                "assignment_id": assignment_id,
+                "title": _text(meta.get("title")) or f"作业 {assignment_id}",
+                "kind": "homework",
+                "position": position,
+            }
+        )
+    assessment_id = _positive_int(source.get("assessment_assignment_id"), 0)
+    if assessment_id:
+        assessment_meta = _as_dict(source.get("assessment_assignment"))
+        targets.append(
+            {
+                "assignment_id": assessment_id,
+                "title": _text(assessment_meta.get("title")) or f"测评 {assessment_id}",
+                "kind": "assessment",
+                "position": None,
+            }
+        )
+    return targets
+
+
+def _record_raw_students(record) -> dict[str, dict[str, Any]]:
+    if record is None:
+        return {}
+    structured = _as_dict(_record_export_payload(record).get("structured"))
+    result: dict[str, dict[str, Any]] = {}
+    for student in structured.get("students") if isinstance(structured.get("students"), list) else []:
+        if not isinstance(student, dict):
+            continue
+        number = _text(student.get("student_number"))
+        if number and number not in result:
+            result[number] = student
+    return result
+
+
+def _student_jump_targets(
+    assignment_targets: list[dict[str, Any]],
+    raw_student: dict[str, Any] | None,
+    *,
+    document_type: str,
+    student_number: str,
+) -> list[dict[str, Any]]:
+    if not assignment_targets or not student_number:
+        return []
+    selected = assignment_targets
+    if document_type == ORDINARY_GRADE_RECORD_TYPE and isinstance(raw_student, dict):
+        homework_scores = (
+            raw_student.get("homework_scores")
+            if isinstance(raw_student.get("homework_scores"), list)
+            else []
+        )
+        blank_targets = []
+        for target in assignment_targets:
+            if target.get("kind") == "homework":
+                position = target.get("position")
+                value = (
+                    homework_scores[position]
+                    if isinstance(position, int) and position < len(homework_scores)
+                    else None
+                )
+                if value in (None, ""):
+                    blank_targets.append(target)
+            elif target.get("kind") == "assessment" and raw_student.get("assessment_score") in (None, ""):
+                blank_targets.append(target)
+        if blank_targets:
+            selected = blank_targets
+    return [
+        {
+            "assignment_id": target["assignment_id"],
+            "title": target["title"],
+            "kind": target.get("kind") or "",
+            "url": f"/assignment/{target['assignment_id']}?locate={quote(student_number)}",
+        }
+        for target in selected
+    ]
 
 
 def _load_context(conn, *, class_offering_id: int, teacher_id: int) -> dict[str, Any]:
