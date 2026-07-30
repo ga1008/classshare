@@ -1348,10 +1348,17 @@ function renderFinalGradeSourceCard(source, key) {
     const contextMismatches = Array.isArray(source?.context_mismatches)
         ? source.context_mismatches
         : [];
+    const aligned = Number(source?.auto_aligned_count || 0);
     const meta = found
-        ? `${matched} 人已匹配${missing ? ` · 缺 ${missing} 人` : ''}${conflicts ? ` · 冲突 ${conflicts} 人` : ''}${duplicates ? ` · 重复学号 ${duplicates} 个` : ''}${extras ? ` · 来源多 ${extras} 人（不写入）` : ''}`
+        ? `${matched} 人已匹配${aligned ? ` · 已按教务名单更正姓名 ${aligned} 人` : ''}${missing ? ` · 缺 ${missing} 人` : ''}${conflicts ? ` · 冲突 ${conflicts} 人` : ''}${duplicates ? ` · 重复学号 ${duplicates} 个` : ''}${extras ? ` · 来源多 ${extras} 人（不写入）` : ''}`
         : '尚未找到严格对应材料';
     const issueItems = [
+        ...(Array.isArray(source?.auto_aligned_students) ? source.auto_aligned_students.map((item) => ({
+            tone: 'extra',
+            label: '已更正',
+            text: `${item?.student_number || '无学号'} · 来源“${item?.source_name || '（空白）'}”已按教务名单更正为“${item?.roster_name || ''}”`,
+            targets: [],
+        })) : []),
         ...(Array.isArray(source?.missing_students) ? source.missing_students.map((item) => ({
             tone: 'missing',
             label: '缺少成绩',

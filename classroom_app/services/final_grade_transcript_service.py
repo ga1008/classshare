@@ -5,6 +5,7 @@ import io
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -13,10 +14,14 @@ from fastapi import HTTPException
 
 from ..db.connection import get_configured_db_engine
 from .excel_upload_service import open_upload_workbook
-from .exam_grade_record_service import EXAM_GRADE_RECORD_TYPE
+from .exam_grade_record_service import (
+    EXAM_GRADE_RECORD_TYPE,
+    normalize_exam_grade_record_payload,
+)
 from .ordinary_grade_record_service import (
     ORDINARY_GRADE_RECORD_TYPE,
     calculate_ordinary_grade_score,
+    normalize_ordinary_grade_record_payload,
 )
 
 
@@ -531,6 +536,28 @@ def build_final_grade_transcript_readiness(
         roster_students=roster_students,
         selected_record_id=exam_grade_record_id,
     )
+    duplicate_roster_numbers = _duplicates(
+        [_text(student.get("student_number")) for student in roster_students]
+    )
+    # 教务名单是学号与姓名的唯一权威来源：名单本身干净时，学号一致但姓名不同的
+    # 来源行直接以名单姓名覆盖并回写材料，不再阻止生成。
+    ordinary_alignments: list[dict[str, Any]] = []
+    exam_alignments: list[dict[str, Any]] = []
+    if roster_students and not duplicate_roster_numbers:
+        ordinary_record, ordinary_alignments = _auto_align_source_names(
+            conn,
+            ordinary_record,
+            roster_students=roster_students,
+            document_type=ORDINARY_GRADE_RECORD_TYPE,
+            context=context,
+        )
+        exam_record, exam_alignments = _auto_align_source_names(
+            conn,
+            exam_record,
+            roster_students=roster_students,
+            document_type=EXAM_GRADE_RECORD_TYPE,
+            context=context,
+        )
     ordinary_source = _source_match_summary(
         ordinary_record,
         roster_students=roster_students,
@@ -559,9 +586,8 @@ def build_final_grade_transcript_readiness(
         class_offering_id=int(class_offering_id),
         selection_mode=exam_selection_mode,
     )
-    duplicate_roster_numbers = _duplicates(
-        [_text(student.get("student_number")) for student in roster_students]
-    )
+    _attach_alignment_summary(ordinary_source, ordinary_alignments)
+    _attach_alignment_summary(exam_source, exam_alignments)
     roster_signature = _roster_signature(roster_item, roster_students)
     roster_ready = bool(roster_students) and not duplicate_roster_numbers
     ready = roster_ready and ordinary_source["ready"] and exam_source["ready"]
@@ -1146,7 +1172,16 @@ def _build_source_candidate(
         comparisons=comparisons,
         scope_status=scope_status,
     )
-    selectable = bool(roster_students) and bool(summary.get("ready"))
+    # 仅剩姓名冲突且归属一致的材料允许选用：核对时会以教务名单姓名为准自动更正；
+    # 归属不一致的材料不能靠名单覆盖姓名，仍按原规则拦下。
+    name_conflicts_only = (
+        bool(roster_students)
+        and not mismatches
+        and int(summary.get("conflict_count") or 0) > 0
+        and not int(summary.get("missing_count") or 0)
+        and not int(summary.get("duplicate_count") or 0)
+    )
+    selectable = bool(roster_students) and (bool(summary.get("ready")) or name_conflicts_only)
     title = (
         _text(fields.get("export_filename"))
         or _text(fields.get("title"))
@@ -1174,7 +1209,12 @@ def _build_source_candidate(
         "similarity_score": similarity_score,
         "selectable": selectable,
         "selection_message": (
-            "学生学号、姓名和成绩均已核对通过，可以手动选用。"
+            (
+                f"有 {int(summary.get('conflict_count') or 0)} 处姓名与教务名单不一致，"
+                "选用后将以教务名单姓名为准自动更正。"
+                if name_conflicts_only
+                else "学生学号、姓名和成绩均已核对通过，可以手动选用。"
+            )
             if selectable
             else summary.get("message") or "材料内容未通过逐人核验，不能选用。"
         ),
@@ -1255,6 +1295,133 @@ def _decorate_source_selection(
             )
 
 
+def _auto_align_source_names(
+    conn,
+    record,
+    *,
+    roster_students: list[dict[str, Any]],
+    document_type: str,
+    context: dict[str, Any],
+):
+    """以教务名单为准更正来源材料中"学号一致但姓名不同"的行，并回写材料真源。
+
+    仅当材料的学年/学期/课程/班级与当前课堂一致时才回写，避免手动误选其他
+    班级材料时把别的名单姓名写进去。返回（可能已刷新的）记录与更正明细。
+    """
+    if record is None or not roster_students:
+        return record, []
+    payload = _record_export_payload(record)
+    if not _same_context(_as_dict(payload.get("fields")), context):
+        return record, []
+    roster_names: dict[str, str] = {}
+    for roster_student in roster_students:
+        number = _text(roster_student.get("student_number"))
+        name = _text(roster_student.get("student_name"))
+        if number and name:
+            roster_names[number] = name
+    structured = _as_dict(payload.get("structured"))
+    students = structured.get("students") if isinstance(structured.get("students"), list) else []
+    aligned_students: list[Any] = []
+    changes: list[dict[str, Any]] = []
+    for student in students:
+        if not isinstance(student, dict):
+            aligned_students.append(student)
+            continue
+        number = _text(student.get("student_number"))
+        roster_name = roster_names.get(number)
+        source_name = _text(student.get("student_name"))
+        if not roster_name or _identity_text(source_name) == _identity_text(roster_name):
+            aligned_students.append(student)
+            continue
+        aligned_students.append({**student, "student_name": roster_name})
+        changes.append(
+            {
+                "student_number": number,
+                "source_name": source_name,
+                "roster_name": roster_name,
+            }
+        )
+    if not changes:
+        return record, []
+    audit_notes = [
+        f"已按教务系统名单核对：学号 {item['student_number']} 的姓名由"
+        f"“{item['source_name'] or '（空白）'}”更正为“{item['roster_name']}”。"
+        for item in changes
+    ]
+    aligned_payload = {
+        **payload,
+        "structured": {
+            **structured,
+            "students": aligned_students,
+            "warnings": _dedupe([*_string_list(structured.get("warnings")), *audit_notes]),
+        },
+        "tables": _tables_with_roster_names(payload.get("tables"), roster_names),
+    }
+    aligned_payload.pop("content_markdown", None)
+    if document_type == ORDINARY_GRADE_RECORD_TYPE:
+        aligned_payload = normalize_ordinary_grade_record_payload(
+            metadata=None,
+            export_payload=aligned_payload,
+        )
+    else:
+        aligned_payload = normalize_exam_grade_record_payload(
+            metadata=None,
+            export_payload=aligned_payload,
+        )
+    conn.execute(
+        """
+        UPDATE material_ai_import_records
+        SET export_payload_json = ?, content_markdown = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            json.dumps(aligned_payload, ensure_ascii=False),
+            str(aligned_payload.get("content_markdown") or ""),
+            datetime.now().isoformat(),
+            int(record["id"]),
+        ),
+    )
+    conn.commit()
+    return _load_record(conn, int(record["id"])), changes
+
+
+def _tables_with_roster_names(tables: Any, roster_names: dict[str, str]) -> list[dict[str, Any]]:
+    """两类成绩表的 tables 行均为 [序号, 学号, 姓名, ...]，按学号同步姓名列。"""
+    if not isinstance(tables, list):
+        return []
+    aligned_tables: list[dict[str, Any]] = []
+    for table in tables:
+        if not isinstance(table, dict):
+            aligned_tables.append(table)
+            continue
+        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
+        aligned_rows: list[Any] = []
+        for row in rows:
+            if not isinstance(row, list) or len(row) < 3:
+                aligned_rows.append(row)
+                continue
+            roster_name = roster_names.get(_text(row[1]))
+            if roster_name and _identity_text(row[2]) != _identity_text(roster_name):
+                aligned_rows.append([row[0], row[1], roster_name, *row[3:]])
+            else:
+                aligned_rows.append(row)
+        aligned_tables.append({**table, "rows": aligned_rows})
+    return aligned_tables
+
+
+def _attach_alignment_summary(summary: dict[str, Any], changes: list[dict[str, Any]]) -> None:
+    summary["auto_aligned_count"] = len(changes)
+    summary["auto_aligned_students"] = changes[:12]
+    if not changes:
+        return
+    note = (
+        f"检测到 {len(changes)} 处学号一致但姓名不同，"
+        "已以教务名单为准自动更正来源材料中的姓名。"
+    )
+    message = _text(summary.get("message"))
+    summary["message"] = f"{message}{note}" if message else note
+
+
 def _source_match_summary(
     record,
     *,
@@ -1329,7 +1496,10 @@ def _source_match_summary(
     if duplicates:
         message = f"{label}有 {len(duplicates)} 个重复学号，无法确定唯一成绩，已阻止生成。"
     elif conflicts:
-        message = f"{label}有 {len(conflicts)} 名学生学号相同但姓名不一致，已阻止自动填入。"
+        message = (
+            f"{label}有 {len(conflicts)} 名学生学号相同但姓名不一致，"
+            "核对时将以教务名单姓名为准自动更正。"
+        )
     elif missing:
         message = f"{label}缺少 {len(missing)} 名学生的可用成绩，已阻止生成。"
     else:

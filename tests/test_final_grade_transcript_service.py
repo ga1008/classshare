@@ -107,6 +107,7 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
                 parsed_material_id INTEGER,
                 source_material_id INTEGER,
                 export_payload_json TEXT,
+                content_markdown TEXT,
                 updated_at TEXT
             );
             CREATE TABLE course_material_assignments (
@@ -266,7 +267,7 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
             "row_order",
         )
 
-    def test_readiness_blocks_same_number_with_different_name_and_stale_confirmation(self):
+    def test_readiness_auto_aligns_conflicting_names_to_roster_and_keeps_stale_guards(self):
         record = self.conn.execute(
             "SELECT export_payload_json FROM material_ai_import_records WHERE id = 71"
         ).fetchone()
@@ -283,24 +284,53 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
             class_offering_id=30,
             teacher_id=1,
         )
-        self.assertFalse(readiness["ready"])
-        self.assertEqual(readiness["status"], "exam_source_incomplete")
-        self.assertEqual(readiness["sources"]["exam_grade_record"]["conflict_count"], 1)
-
-        with self.assertRaises(HTTPException) as cm:
-            build_final_grade_transcript_payload(
-                self.conn,
-                class_offering_id=30,
-                teacher_id=1,
-            )
-        self.assertEqual(cm.exception.status_code, 409)
-
-        payload["structured"]["students"][0]["student_name"] = "学生一"
-        self.conn.execute(
-            "UPDATE material_ai_import_records SET export_payload_json = ? WHERE id = 71",
-            (json.dumps(payload, ensure_ascii=False),),
+        # 学号是唯一身份标识：学号一致但姓名不同时以教务名单为准自动覆盖来源材料。
+        self.assertTrue(readiness["ready"])
+        self.assertEqual(readiness["status"], "ready")
+        exam_source = readiness["sources"]["exam_grade_record"]
+        self.assertEqual(exam_source["conflict_count"], 0)
+        self.assertEqual(exam_source["auto_aligned_count"], 1)
+        self.assertEqual(
+            exam_source["auto_aligned_students"],
+            [
+                {
+                    "student_number": "20240101",
+                    "source_name": "同号异名",
+                    "roster_name": "学生一",
+                }
+            ],
         )
-        self.conn.commit()
+        self.assertIn("自动更正", exam_source["message"])
+        self.assertEqual(readiness["sources"]["ordinary_grade_record"]["auto_aligned_count"], 0)
+
+        stored = self.conn.execute(
+            "SELECT export_payload_json, content_markdown FROM material_ai_import_records WHERE id = 71"
+        ).fetchone()
+        stored_payload = json.loads(stored["export_payload_json"])
+        stored_names = {
+            student["student_number"]: student["student_name"]
+            for student in stored_payload["structured"]["students"]
+        }
+        self.assertEqual(stored_names["20240101"], "学生一")
+        self.assertTrue(
+            any("更正" in warning for warning in stored_payload["structured"]["warnings"])
+        )
+        self.assertIn("学生一", stored["content_markdown"] or "")
+        self.assertNotIn("同号异名", stored["content_markdown"] or "")
+
+        generated = build_final_grade_transcript_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+        )
+        students = generated["structured"]["students"]
+        self.assertEqual(
+            [student["student_name"] for student in students],
+            ["学生二", "学生一"],
+        )
+        # 覆盖姓名时材料按登分表的整数分政策重新规范化（与导出路径一致），79.5 → 80。
+        self.assertEqual([student["final_score"] for student in students], [80, 88])
+
         with self.assertRaises(HTTPException) as cm:
             build_final_grade_transcript_payload(
                 self.conn,
@@ -492,6 +522,11 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
         )
         self.assertFalse(blocked["ready"])
         self.assertEqual(blocked["sources"]["exam_grade_record"]["conflict_count"], 1)
+        # 归属不一致的材料不能拿本课堂名单覆盖姓名：材料内容必须保持原样。
+        stored = self.conn.execute(
+            "SELECT export_payload_json FROM material_ai_import_records WHERE id = 72"
+        ).fetchone()
+        self.assertIn("同号异名", stored["export_payload_json"])
         with self.assertRaises(HTTPException) as cm:
             build_final_grade_transcript_payload(
                 self.conn,
