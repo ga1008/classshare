@@ -34,6 +34,70 @@ from ...services.smart_classroom_checkin_sync_service import (
 router = APIRouter()
 
 
+async def _sync_fresh_attendance_for_ordinary_generation(user_id: int, class_offering_id: int) -> dict[str, Any]:
+    attendance_sync = await sync_teacher_smart_classroom_checkins(
+        int(user_id),
+        class_offering_id=int(class_offering_id),
+        min_refresh_interval_seconds=ORDINARY_GRADE_ATTENDANCE_CACHE_SECONDS,
+    )
+    sync_status = str(attendance_sync.get("status") or "").strip()
+    if sync_status == "missing_credential":
+        raise HTTPException(
+            409,
+            "生成前需要刷新智慧课堂考勤，但尚未配置可用的智慧课堂账号。请先在系统设置中完成账号验证。",
+        )
+    if sync_status == "failed":
+        raise HTTPException(
+            502,
+            attendance_sync.get("message") or "智慧课堂考勤同步失败，请稍后重试。",
+        )
+    sync_freshness = attendance_sync.get("freshness") if isinstance(attendance_sync.get("freshness"), dict) else {}
+    if sync_status not in {"cached", "success", "partial_success", "empty"} or not sync_freshness.get("is_fresh"):
+        raise HTTPException(
+            409,
+            "智慧课堂同步已完成，但没有找到能与当前课堂可靠对应的最新考勤数据。"
+            "请先核对课堂教学班、课程代码和智慧课堂课表，再重新生成，系统不会用旧数据冒险生成。",
+        )
+    return attendance_sync
+
+
+def _local_grade_record_parse_result(
+    *,
+    document_type: str,
+    export_payload: dict[str, Any],
+    classroom_context: dict[str, Any],
+):
+    type_meta = resolve_material_ai_import_type("final_material", document_type)
+    is_ordinary = document_type == ORDINARY_GRADE_RECORD_TYPE
+    raw_result = {
+        "metadata": export_payload.get("fields") or {},
+        "content_markdown": export_payload.get("content_markdown") or "",
+        "tables": export_payload.get("tables") or [],
+        "warnings": (export_payload.get("structured") or {}).get("warnings") or [],
+        "export_payload": export_payload,
+    }
+    extraction = MaterialExtraction(
+        text=str(raw_result.get("content_markdown") or ""),
+        method="ordinary_grade_local_generation" if is_ordinary else "exam_grade_local_generation",
+        source_kind="classroom_scores" if is_ordinary else "classroom_exam_scores",
+        warnings=[],
+        quality={"usable": True},
+    )
+    parse_result = normalize_ai_parse_result(
+        raw_result,
+        original_name=f"{type_meta['label']}-{classroom_context.get('course_name') or '期末材料'}.json",
+        type_meta=type_meta,
+        extraction=extraction,
+        extra_warnings=[],
+        ai_used=False,
+    )
+    parse_result.export_payload = export_payload
+    parse_result.metadata.update(export_payload.get("fields") or {})
+    parse_result.parsed_payload["metadata"] = parse_result.metadata
+    parse_result.parsed_payload["export_payload"] = parse_result.export_payload
+    return parse_result
+
+
 def _final_material_source_summary(record) -> dict[str, Any] | None:
     if not record:
         return None
@@ -200,29 +264,10 @@ async def generate_classroom_final_material(
     if document_type == ORDINARY_GRADE_RECORD_TYPE:
         with get_db_connection() as conn:
             ensure_classroom_access(conn, class_offering_id, user)
-        attendance_sync = await sync_teacher_smart_classroom_checkins(
+        attendance_sync = await _sync_fresh_attendance_for_ordinary_generation(
             int(user["id"]),
-            class_offering_id=int(class_offering_id),
-            min_refresh_interval_seconds=ORDINARY_GRADE_ATTENDANCE_CACHE_SECONDS,
+            int(class_offering_id),
         )
-        sync_status = str(attendance_sync.get("status") or "").strip()
-        if sync_status == "missing_credential":
-            raise HTTPException(
-                409,
-                "生成前需要刷新智慧课堂考勤，但尚未配置可用的智慧课堂账号。请先在系统设置中完成账号验证。",
-            )
-        if sync_status == "failed":
-            raise HTTPException(
-                502,
-                attendance_sync.get("message") or "智慧课堂考勤同步失败，请稍后重试。",
-            )
-        sync_freshness = attendance_sync.get("freshness") if isinstance(attendance_sync.get("freshness"), dict) else {}
-        if sync_status not in {"cached", "success", "partial_success", "empty"} or not sync_freshness.get("is_fresh"):
-            raise HTTPException(
-                409,
-                "智慧课堂同步已完成，但没有找到能与当前课堂可靠对应的最新考勤数据。"
-                "请先核对课堂教学班、课程代码和智慧课堂课表，再重新生成，系统不会用旧数据冒险生成。",
-            )
 
     final_grade_roster_sync: dict[str, Any] | None = None
     if document_type == FINAL_GRADE_TRANSCRIPT_TYPE:
@@ -288,32 +333,11 @@ async def generate_classroom_final_material(
                 minimum_ordinary_score_enabled=payload.minimum_ordinary_score_enabled,
                 minimum_ordinary_score=payload.minimum_ordinary_score,
             )
-            raw_result = {
-                "metadata": export_payload.get("fields") or {},
-                "content_markdown": export_payload.get("content_markdown") or "",
-                "tables": export_payload.get("tables") or [],
-                "warnings": (export_payload.get("structured") or {}).get("warnings") or [],
-                "export_payload": export_payload,
-            }
-            extraction = MaterialExtraction(
-                text=str(raw_result.get("content_markdown") or ""),
-                method="ordinary_grade_local_generation",
-                source_kind="classroom_scores",
-                warnings=[],
-                quality={"usable": True},
+            parse_result = _local_grade_record_parse_result(
+                document_type=document_type,
+                export_payload=export_payload,
+                classroom_context=classroom_context,
             )
-            parse_result = normalize_ai_parse_result(
-                raw_result,
-                original_name=f"{type_meta['label']}-{classroom_context.get('course_name') or '期末材料'}.json",
-                type_meta=type_meta,
-                extraction=extraction,
-                extra_warnings=[],
-                ai_used=False,
-            )
-            parse_result.export_payload = export_payload
-            parse_result.metadata.update(export_payload.get("fields") or {})
-            parse_result.parsed_payload["metadata"] = parse_result.metadata
-            parse_result.parsed_payload["export_payload"] = parse_result.export_payload
             task = await _create_generated_final_material_package(
                 class_offering_id=class_offering_id,
                 parent_id=payload.parent_id,
@@ -339,32 +363,11 @@ async def generate_classroom_final_material(
                 exam_assignment_id=payload.exam_assignment_id or 0,
                 classroom_context=classroom_context,
             )
-            raw_result = {
-                "metadata": export_payload.get("fields") or {},
-                "content_markdown": export_payload.get("content_markdown") or "",
-                "tables": export_payload.get("tables") or [],
-                "warnings": (export_payload.get("structured") or {}).get("warnings") or [],
-                "export_payload": export_payload,
-            }
-            extraction = MaterialExtraction(
-                text=str(raw_result.get("content_markdown") or ""),
-                method="exam_grade_local_generation",
-                source_kind="classroom_exam_scores",
-                warnings=[],
-                quality={"usable": True},
+            parse_result = _local_grade_record_parse_result(
+                document_type=document_type,
+                export_payload=export_payload,
+                classroom_context=classroom_context,
             )
-            parse_result = normalize_ai_parse_result(
-                raw_result,
-                original_name=f"{type_meta['label']}-{classroom_context.get('course_name') or '期末材料'}.json",
-                type_meta=type_meta,
-                extraction=extraction,
-                extra_warnings=[],
-                ai_used=False,
-            )
-            parse_result.export_payload = export_payload
-            parse_result.metadata.update(export_payload.get("fields") or {})
-            parse_result.parsed_payload["metadata"] = parse_result.metadata
-            parse_result.parsed_payload["export_payload"] = parse_result.export_payload
             task = await _create_generated_final_material_package(
                 class_offering_id=class_offering_id,
                 parent_id=payload.parent_id,
@@ -514,4 +517,79 @@ async def generate_classroom_final_material(
         "message": f"{'AI' if ai_used else '本地草稿'}已生成{type_meta['label']}，并保存到课程材料。",
         "task": task,
         "ai_used": ai_used,
+    }
+
+
+@router.post("/api/materials/{material_id}/final-material/refresh", response_class=JSONResponse)
+async def refresh_generated_grade_record_material(
+    material_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """一键更新：按材料原本记录的课堂来源（作业/考试选择、最低分策略等）
+    重新读取最新成绩数据，原地更新已生成的平时成绩表/考核登分表，
+    不新建材料、不改变材料位置与课堂绑定。"""
+    with get_db_connection() as conn:
+        ensure_teacher_material_owner(conn, int(material_id), user["id"])
+        record = _find_material_ai_import_record(
+            conn,
+            int(material_id),
+            int(user["id"]),
+            completed_only=True,
+        )
+        plan = build_grade_record_refresh_plan(record)
+        ensure_classroom_access(conn, int(plan["class_offering_id"]), user)
+    record_id = int(record["id"])
+    document_type = str(plan["document_type"])
+    class_offering_id = int(plan["class_offering_id"])
+
+    attendance_sync: dict[str, Any] | None = None
+    if document_type == ORDINARY_GRADE_RECORD_TYPE:
+        attendance_sync = await _sync_fresh_attendance_for_ordinary_generation(
+            int(user["id"]),
+            class_offering_id,
+        )
+
+    with get_db_connection() as conn:
+        classroom_context = _load_final_material_classroom_context(conn, class_offering_id, user)
+        try:
+            if document_type == ORDINARY_GRADE_RECORD_TYPE:
+                export_payload = build_ordinary_grade_record_payload(
+                    conn,
+                    class_offering_id=class_offering_id,
+                    teacher_id=user["id"],
+                    homework_assignment_ids=plan["homework_assignment_ids"],
+                    assessment_assignment_id=plan["assessment_assignment_id"],
+                    classroom_context=classroom_context,
+                    attendance_sync=attendance_sync,
+                    generation_requirements=plan["generation_requirements"],
+                    minimum_ordinary_score_enabled=plan["minimum_ordinary_score_enabled"],
+                    minimum_ordinary_score=plan["minimum_ordinary_score"],
+                )
+            else:
+                export_payload = build_exam_grade_record_payload(
+                    conn,
+                    class_offering_id=class_offering_id,
+                    teacher_id=user["id"],
+                    exam_assignment_id=plan["exam_assignment_id"],
+                    classroom_context=classroom_context,
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            traceback.print_exc()
+            raise HTTPException(503, "一键更新暂时失败，原材料内容未被修改，请稍后重试。")
+
+    parse_result = _local_grade_record_parse_result(
+        document_type=document_type,
+        export_payload=export_payload,
+        classroom_context=classroom_context,
+    )
+    task = await _persist_final_material_record_update(record_id, record, parse_result, user)
+    label = "平时成绩记录表" if document_type == ORDINARY_GRADE_RECORD_TYPE else "考核登分表"
+    return {
+        "status": "success",
+        "message": f"已按原有作业/考试选择重新获取最新成绩，原地更新{label}；材料位置与课堂绑定保持不变。",
+        "task": task,
+        "document_type": document_type,
+        "attendance_sync": attendance_sync,
     }

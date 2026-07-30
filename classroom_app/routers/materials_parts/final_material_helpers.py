@@ -10,6 +10,11 @@ from ...services.final_grade_transcript_service import (
 )
 from ...services.material_export_template_service import XLSX_MEDIA_TYPE
 from ...services.material_identity_service import build_final_material_package_name
+from ...services.exam_grade_record_service import EXAM_GRADE_RECORD_TYPE
+from ...services.ordinary_grade_record_service import (
+    ORDINARY_GRADE_DEFAULT_MINIMUM_SCORE,
+    ORDINARY_GRADE_RECORD_TYPE,
+)
 
 
 def _generated_final_material_identity_fields(parse_result, course_name: str) -> dict[str, Any]:
@@ -1222,6 +1227,88 @@ async def _create_generated_final_material_library_package(
             (record_id,),
         ).fetchone()
         return _serialize_material_ai_import_task(conn, record, user)
+
+
+GRADE_RECORD_REFRESHABLE_TYPES = {ORDINARY_GRADE_RECORD_TYPE, EXAM_GRADE_RECORD_TYPE}
+
+
+def build_grade_record_refresh_plan(record) -> dict[str, Any]:
+    """Extract the original generation selections from a completed grade-record
+    import record so it can be regenerated in place with fresh classroom data.
+
+    Raises HTTPException with an actionable message when the record cannot be
+    refreshed (imported files and legacy records carry no classroom lineage)."""
+    if record is None:
+        raise HTTPException(404, "该材料没有已完成的生成记录，无法一键更新。")
+    document_type = str(record["document_type"] or "")
+    if document_type not in GRADE_RECORD_REFRESHABLE_TYPES:
+        raise HTTPException(409, "只有平时成绩表和考核登分表支持一键更新。")
+    if str(record["parse_status"] or "") != "completed":
+        raise HTTPException(409, "该材料的生成记录尚未完成，无法一键更新。")
+    try:
+        payload = json.loads(record["export_payload_json"] or "{}")
+    except (TypeError, ValueError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    fields = payload.get("fields") if isinstance(payload.get("fields"), dict) else {}
+    structured = payload.get("structured") if isinstance(payload.get("structured"), dict) else {}
+
+    def _plan_int(value: Any) -> int:
+        try:
+            number = int(float(value))
+        except (TypeError, ValueError):
+            return 0
+        return number if number > 0 else 0
+
+    class_offering_id = _plan_int(fields.get("class_offering_id"))
+    ineligible_message = (
+        "该材料由文件导入或旧版本生成，没有记录课堂来源，无法一键更新。"
+        "请通过“课堂生成”按当前数据重新生成一次，之后即可一键更新。"
+    )
+    if not class_offering_id:
+        raise HTTPException(409, ineligible_message)
+
+    if document_type == ORDINARY_GRADE_RECORD_TYPE:
+        source = structured.get("source_assignments") if isinstance(structured.get("source_assignments"), dict) else {}
+        homework_ids = [
+            _plan_int(value)
+            for value in (
+                source.get("homework_assignment_ids")
+                if isinstance(source.get("homework_assignment_ids"), list)
+                else []
+            )
+        ]
+        homework_ids = [value for value in homework_ids if value]
+        assessment_id = _plan_int(source.get("assessment_assignment_id"))
+        if not homework_ids or not assessment_id:
+            raise HTTPException(409, ineligible_message)
+        score_floor = structured.get("score_floor_policy") if isinstance(structured.get("score_floor_policy"), dict) else {}
+        raw_enabled = score_floor.get("enabled", fields.get("minimum_ordinary_score_enabled", True))
+        raw_minimum = score_floor.get("minimum_score", fields.get("minimum_ordinary_score"))
+        try:
+            minimum_score = float(raw_minimum)
+        except (TypeError, ValueError):
+            minimum_score = ORDINARY_GRADE_DEFAULT_MINIMUM_SCORE
+        return {
+            "document_type": document_type,
+            "class_offering_id": class_offering_id,
+            "homework_assignment_ids": homework_ids,
+            "assessment_assignment_id": assessment_id,
+            "generation_requirements": str(structured.get("generation_requirements") or "").strip(),
+            "minimum_ordinary_score_enabled": bool(raw_enabled),
+            "minimum_ordinary_score": minimum_score,
+        }
+
+    source_exam = structured.get("source_exam") if isinstance(structured.get("source_exam"), dict) else {}
+    exam_assignment_id = _plan_int(source_exam.get("assignment_id"))
+    if not exam_assignment_id:
+        raise HTTPException(409, ineligible_message)
+    return {
+        "document_type": document_type,
+        "class_offering_id": class_offering_id,
+        "exam_assignment_id": exam_assignment_id,
+    }
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

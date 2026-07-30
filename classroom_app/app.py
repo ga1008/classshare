@@ -457,10 +457,14 @@ async def not_found_exception_handler(request: Request, exc: HTTPException):
     捕获所有 404 (Not Found) 错误，并返回一个友好的 HTML 页面。
     """
     if request.url.path.startswith("/api"):
+        # Business handlers raise 404 with meaningful details ("课堂不存在…",
+        # "所选考试不存在…"); only bare routing misses carry the default "Not Found".
+        raw_detail = str(getattr(exc, "detail", "") or "").strip()
+        detail = raw_detail if raw_detail and raw_detail != "Not Found" else "接口不存在"
         return _api_error_response(
             request,
             status_code=404,
-            detail="接口不存在",
+            detail=detail,
             code=ApiErrorCode.NOT_FOUND,
         )
 

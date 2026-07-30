@@ -13,6 +13,7 @@ from classroom_app.routers.materials_parts.final_material_helpers import (
     _academic_year_from_values,
     _build_manage_final_material_context,
     _semester_label_from_value,
+    build_grade_record_refresh_plan,
 )
 from classroom_app.routers.materials_parts.ai_import_helpers import (
     _build_ai_import_detail_summary,
@@ -1948,6 +1949,65 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         doc = Path("docs/process-material-workflow-coverage.md").read_text(encoding="utf-8")
         for label in ("考核计划表", "评分细则表", "平时成绩表", "考核登分表", "教师评学表"):
             self.assertIn(label, doc)
+
+
+class GradeRecordRefreshPlanTests(unittest.TestCase):
+    @staticmethod
+    def _record(document_type: str, structured: dict, *, fields: dict | None = None, parse_status: str = "completed") -> dict:
+        payload = {
+            "fields": {"class_offering_id": 30, **(fields or {})},
+            "structured": structured,
+        }
+        return {
+            "document_type": document_type,
+            "parse_status": parse_status,
+            "export_payload_json": json.dumps(payload, ensure_ascii=False),
+        }
+
+    def test_ordinary_plan_replays_original_selections(self):
+        record = self._record(
+            "ordinary_grade_record",
+            {
+                "source_assignments": {
+                    "homework_assignment_ids": [801, 802, 803],
+                    "assessment_assignment_id": 804,
+                },
+                "generation_requirements": "去掉最低一次作业",
+                "score_floor_policy": {"enabled": False, "minimum_score": 55},
+            },
+        )
+        plan = build_grade_record_refresh_plan(record)
+        self.assertEqual(plan["class_offering_id"], 30)
+        self.assertEqual(plan["homework_assignment_ids"], [801, 802, 803])
+        self.assertEqual(plan["assessment_assignment_id"], 804)
+        self.assertEqual(plan["generation_requirements"], "去掉最低一次作业")
+        self.assertFalse(plan["minimum_ordinary_score_enabled"])
+        self.assertEqual(plan["minimum_ordinary_score"], 55.0)
+
+    def test_exam_plan_replays_source_exam(self):
+        record = self._record(
+            "exam_grade_record",
+            {"source_exam": {"assignment_id": 901, "assignment_title": "期末上机考核"}},
+        )
+        plan = build_grade_record_refresh_plan(record)
+        self.assertEqual(plan["class_offering_id"], 30)
+        self.assertEqual(plan["exam_assignment_id"], 901)
+
+    def test_imported_record_without_lineage_is_rejected_with_guidance(self):
+        record = self._record("exam_grade_record", {"students": []})
+        with self.assertRaises(HTTPException) as ctx:
+            build_grade_record_refresh_plan(record)
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("课堂生成", ctx.exception.detail)
+
+    def test_unsupported_type_and_missing_record_are_rejected(self):
+        with self.assertRaises(HTTPException) as missing:
+            build_grade_record_refresh_plan(None)
+        self.assertEqual(missing.exception.status_code, 404)
+        record = self._record("final_grade_transcript", {})
+        with self.assertRaises(HTTPException) as unsupported:
+            build_grade_record_refresh_plan(record)
+        self.assertEqual(unsupported.exception.status_code, 409)
 
 
 if __name__ == "__main__":

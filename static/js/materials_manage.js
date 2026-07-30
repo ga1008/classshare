@@ -2067,6 +2067,13 @@ function renderList() {
         const repositoryAction = isGitRepository(item) && item.can_manage !== false
             ? '<button type="button" class="btn btn-outline btn-sm" data-action="repository">仓库</button>'
             : '';
+        const refreshableCatalogueTypes = ['ordinary_grade_record', 'exam_grade_record'];
+        const refreshAction = isFinalMaterialCatalogue
+            && refreshableCatalogueTypes.includes(String(state.filters.documentType || ''))
+            && item.node_type === 'folder'
+            && item.can_manage !== false
+            ? '<button type="button" class="btn btn-outline btn-sm materials-refresh-btn" data-action="refresh-final-material" title="按原来选好的作业/考试重新获取最新成绩，原地更新本材料，不新建也不需要删除旧材料">一键更新</button>'
+            : '';
         const repositoryBadge = visualMeta.badge
             ? `<span class="materials-repo-badge" style="--repo-color:${visualMeta.color};">${escapeHtml(visualMeta.badge)}</span>`
             : '';
@@ -2123,6 +2130,7 @@ function renderList() {
                     <button type="button" class="btn btn-ghost btn-sm" data-resource-attributes data-resource-type="material" data-resource-id="${item.id}">属性</button>
                     ${primaryActionHtml}
                     ${renderAction}
+                    ${refreshAction}
                     ${documentAction}
                     ${repositoryAction}
                     ${item.node_type === 'file' ? '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>' : ''}
@@ -2873,6 +2881,29 @@ function openFolder(materialId, trackHistory = true) {
 
 function previewMaterial(materialId) {
     window.open(`/materials/view/${materialId}`, '_blank', 'noopener');
+}
+
+async function refreshGeneratedFinalMaterial(materialId, button) {
+    if (button?.disabled) return;
+    const originalText = button?.textContent;
+    if (button) {
+        button.disabled = true;
+        button.textContent = '更新中…';
+    }
+    try {
+        const data = await apiFetch(`/api/materials/${materialId}/final-material/refresh`, {
+            method: 'POST',
+            body: {},
+        });
+        showToast(data.message || '材料已按最新成绩原地更新', 'success', 6200);
+        await loadLibrary(state.currentParentId, false);
+    } catch (error) {
+        showToast(error.message || '一键更新失败，原材料未被修改，请稍后重试', 'error', 6200);
+        if (button) {
+            button.disabled = false;
+            button.textContent = originalText || '一键更新';
+        }
+    }
 }
 
 function renderMaterial(materialId) {
@@ -6065,6 +6096,10 @@ function bindEvents() {
             openRepositoryModal(materialId).catch((error) => {
                 showToast(error.message || '加载仓库信息失败', 'error');
             });
+            return;
+        }
+        if (action === 'refresh-final-material') {
+            refreshGeneratedFinalMaterial(materialId, event.target.closest('[data-action]'));
             return;
         }
 

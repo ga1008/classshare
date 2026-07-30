@@ -3544,6 +3544,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/materials/{material_id}/final-material/refresh",
+    "methods": [
+      "POST"
+    ],
+    "name": "refresh_generated_grade_record_material",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/materials/{material_id}/learning-bindings",
     "methods": [
       "GET"
