@@ -1984,6 +1984,32 @@ class GradeRecordRefreshPlanTests(unittest.TestCase):
         self.assertFalse(plan["minimum_ordinary_score_enabled"])
         self.assertEqual(plan["minimum_ordinary_score"], 55.0)
 
+    def test_ordinary_plan_replays_retake_students(self):
+        record = self._record(
+            "ordinary_grade_record",
+            {
+                "source_assignments": {
+                    "homework_assignment_ids": [801, 802, 803],
+                    "assessment_assignment_id": 804,
+                },
+                "retake_policy": {
+                    "count": 2,
+                    "students": [
+                        {"student_number": "20240107", "student_name": "重修甲", "target_score": 60},
+                        {"student_number": "20240108", "student_name": "重修乙", "target_score": 75.5},
+                    ],
+                },
+            },
+        )
+        plan = build_grade_record_refresh_plan(record)
+        self.assertEqual(
+            plan["retake_students"],
+            [
+                {"student_number": "20240107", "ordinary_score": 60},
+                {"student_number": "20240108", "ordinary_score": 75.5},
+            ],
+        )
+
     def test_exam_plan_replays_source_exam(self):
         record = self._record(
             "exam_grade_record",

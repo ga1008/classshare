@@ -16996,6 +16996,69 @@ body.has-chat-image-preview-open {
     grid-column: 1 / -1;
 }
 
+.ordinary-grade-retake-policy__controls {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.25rem;
+}
+
+.ordinary-grade-retake-policy__search {
+    flex: 1 1 220px;
+}
+
+.ordinary-grade-retake-policy__search input {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 10px;
+    font-size: 0.8rem;
+}
+
+.ordinary-grade-retake-policy__list {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    max-height: 180px;
+    overflow: auto;
+    padding: 0.25rem 0;
+}
+
+.ordinary-retake-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    padding: 0.38rem 0.7rem;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    border-radius: 999px;
+    background: #fff;
+    color: #334155;
+    font-size: 0.76rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.ordinary-retake-chip small {
+    color: #94a3b8;
+    font-size: 0.68rem;
+}
+
+.ordinary-retake-chip:hover {
+    border-color: #6366f1;
+}
+
+.ordinary-retake-chip.is-selected {
+    border-color: #4f46e5;
+    background: #eef2ff;
+    color: #3730a3;
+}
+
+.ordinary-retake-chip.is-selected small {
+    color: #6366f1;
+}
+
 .classroom-final-material-prompt-heading {
     display: flex;
     align-items: center;

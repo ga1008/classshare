@@ -1290,6 +1290,19 @@ def build_grade_record_refresh_plan(record) -> dict[str, Any]:
             minimum_score = float(raw_minimum)
         except (TypeError, ValueError):
             minimum_score = ORDINARY_GRADE_DEFAULT_MINIMUM_SCORE
+        retake_policy = structured.get("retake_policy") if isinstance(structured.get("retake_policy"), dict) else {}
+        retake_students = [
+            {
+                "student_number": str(item.get("student_number") or "").strip(),
+                "ordinary_score": item.get("target_score"),
+            }
+            for item in (
+                retake_policy.get("students")
+                if isinstance(retake_policy.get("students"), list)
+                else []
+            )
+            if isinstance(item, dict) and str(item.get("student_number") or "").strip()
+        ]
         return {
             "document_type": document_type,
             "class_offering_id": class_offering_id,
@@ -1298,6 +1311,7 @@ def build_grade_record_refresh_plan(record) -> dict[str, Any]:
             "generation_requirements": str(structured.get("generation_requirements") or "").strip(),
             "minimum_ordinary_score_enabled": bool(raw_enabled),
             "minimum_ordinary_score": minimum_score,
+            "retake_students": retake_students,
         }
 
     source_exam = structured.get("source_exam") if isinstance(structured.get("source_exam"), dict) else {}

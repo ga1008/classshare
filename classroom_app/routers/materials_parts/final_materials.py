@@ -8,6 +8,7 @@ from .rewrite_helpers import *
 from ...services.ordinary_grade_record_service import (
     ORDINARY_GRADE_RECORD_TYPE,
     build_ordinary_grade_record_payload,
+    list_classroom_roster_students,
     list_ordinary_grade_assignment_candidates,
 )
 from ...services.exam_grade_record_service import (
@@ -128,7 +129,8 @@ async def list_classroom_ordinary_grade_record_candidates(
             teacher_id=int(user["id"]),
             class_offering_id=int(class_offering_id),
         )
-    return {"status": "success", "items": items, "attendance_sync": attendance_sync}
+        roster = list_classroom_roster_students(conn, class_offering_id=int(class_offering_id))
+    return {"status": "success", "items": items, "attendance_sync": attendance_sync, "roster": roster}
 
 
 @router.get("/api/classrooms/{class_offering_id}/exam-grade-record/candidates", response_class=JSONResponse)
@@ -337,6 +339,7 @@ async def generate_classroom_final_material(
                 generation_requirements=payload.prompt,
                 minimum_ordinary_score_enabled=payload.minimum_ordinary_score_enabled,
                 minimum_ordinary_score=payload.minimum_ordinary_score,
+                retake_students=payload.retake_students,
             )
             parse_result = _local_grade_record_parse_result(
                 document_type=document_type,
@@ -569,6 +572,7 @@ async def refresh_generated_grade_record_material(
                     generation_requirements=plan["generation_requirements"],
                     minimum_ordinary_score_enabled=plan["minimum_ordinary_score_enabled"],
                     minimum_ordinary_score=plan["minimum_ordinary_score"],
+                    retake_students=plan.get("retake_students") or [],
                 )
             else:
                 export_payload = build_exam_grade_record_payload(

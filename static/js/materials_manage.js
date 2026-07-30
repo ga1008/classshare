@@ -275,6 +275,8 @@ const state = {
         candidates: [],
         attendanceFreshness: {},
         selections: [null, null, null, null],
+        roster: [],
+        retakeSelected: new Set(),
         activeStep: 0,
         loading: false,
         busy: false,
@@ -374,6 +376,10 @@ const refs = {
     ordinaryScoreFloorEnabled: document.getElementById('materials-ordinary-score-floor-enabled'),
     ordinaryScoreFloorInput: document.getElementById('materials-ordinary-score-floor'),
     ordinaryScoreFloorSummary: document.getElementById('materials-ordinary-score-floor-summary'),
+    ordinaryRetakeScore: document.getElementById('materials-ordinary-retake-score'),
+    ordinaryRetakeSearch: document.getElementById('materials-ordinary-retake-search'),
+    ordinaryRetakeList: document.getElementById('materials-ordinary-retake-list'),
+    ordinaryRetakeSummary: document.getElementById('materials-ordinary-retake-summary'),
     ordinaryGradePrompt: document.getElementById('materials-ordinary-grade-prompt'),
     ordinaryGradeStatus: document.getElementById('materials-ordinary-grade-status'),
     examGradeWizard: document.getElementById('materials-exam-grade-wizard'),
@@ -675,6 +681,8 @@ function resetOrdinaryGradeGeneration() {
     state.ordinaryGradeGenerate.candidates = [];
     state.ordinaryGradeGenerate.attendanceFreshness = {};
     state.ordinaryGradeGenerate.selections = [null, null, null, null];
+    state.ordinaryGradeGenerate.roster = [];
+    state.ordinaryGradeGenerate.retakeSelected = new Set();
     state.ordinaryGradeGenerate.activeStep = 0;
     state.ordinaryGradeGenerate.loading = false;
     state.ordinaryGradeGenerate.busy = false;
@@ -684,6 +692,8 @@ function resetOrdinaryGradeGeneration() {
     if (refs.ordinaryGradePrompt) refs.ordinaryGradePrompt.value = '';
     if (refs.ordinaryScoreFloorEnabled) refs.ordinaryScoreFloorEnabled.checked = true;
     if (refs.ordinaryScoreFloorInput) refs.ordinaryScoreFloorInput.value = '60';
+    if (refs.ordinaryRetakeScore) refs.ordinaryRetakeScore.value = '60';
+    if (refs.ordinaryRetakeSearch) refs.ordinaryRetakeSearch.value = '';
     if (refs.ordinaryGradeStatus) {
         refs.ordinaryGradeStatus.hidden = true;
         refs.ordinaryGradeStatus.textContent = '';
@@ -758,6 +768,48 @@ function ordinaryGradeMinimumScore() {
     return raw === '' ? Number.NaN : Number(raw);
 }
 
+function ordinaryRetakeScoreValue() {
+    const raw = String(refs.ordinaryRetakeScore?.value ?? '').trim();
+    return raw === '' ? Number.NaN : Number(raw);
+}
+
+function renderOrdinaryRetakePicker() {
+    const generation = state.ordinaryGradeGenerate;
+    const selected = generation.retakeSelected instanceof Set ? generation.retakeSelected : new Set();
+    if (refs.ordinaryRetakeList) {
+        const keyword = String(refs.ordinaryRetakeSearch?.value || '').trim().toLowerCase();
+        const roster = Array.isArray(generation.roster) ? generation.roster : [];
+        const visible = keyword
+            ? roster.filter((student) => `${student.student_name || ''} ${student.student_number || ''}`.toLowerCase().includes(keyword))
+            : roster;
+        if (!roster.length) {
+            refs.ordinaryRetakeList.innerHTML = '<div class="ordinary-grade-picker__empty"><span>当前课堂暂无在读学生名单。</span></div>';
+        } else if (!visible.length) {
+            refs.ordinaryRetakeList.innerHTML = '<div class="ordinary-grade-picker__empty"><span>没有匹配的学生，请调整关键词。</span></div>';
+        } else {
+            refs.ordinaryRetakeList.innerHTML = visible.map((student) => {
+                const number = String(student.student_number || '');
+                const isSelected = selected.has(number);
+                return `
+                    <button type="button" class="ordinary-retake-chip${isSelected ? ' is-selected' : ''}" data-materials-retake-number="${escapeHtml(number)}" title="${isSelected ? '点击取消重修标记' : '点击标记为重修/免修学生'}">
+                        <b>${escapeHtml(student.student_name || '未命名')}</b>
+                        <small>${escapeHtml(number)}</small>
+                    </button>
+                `;
+            }).join('');
+        }
+    }
+    if (refs.ordinaryRetakeSummary) {
+        const score = ordinaryRetakeScoreValue();
+        const scoreValid = Number.isFinite(score) && score >= 0 && score <= 100;
+        refs.ordinaryRetakeSummary.textContent = !selected.size
+            ? '未选择重修/免修学生：全班都按真实出勤、作业和测评计分。'
+            : scoreValid
+                ? `已选择 ${selected.size} 名重修/免修学生，平时成绩统一按 ${score} 分写入，其余学生不受影响。`
+                : '请为重修/免修学生输入 0 到 100 之间的平时分。';
+    }
+}
+
 function getManageOrdinaryGradeReadiness() {
     const generation = state.ordinaryGradeGenerate;
     if (!generation.offering) return { ready: false, message: '请先选择课堂。' };
@@ -781,6 +833,12 @@ function getManageOrdinaryGradeReadiness() {
         const score = ordinaryGradeMinimumScore();
         if (!Number.isFinite(score) || score < 0 || score > 100) {
             return { ready: false, message: '最低平时分必须在 0 到 100 之间。' };
+        }
+    }
+    if (generation.retakeSelected instanceof Set && generation.retakeSelected.size) {
+        const retakeScore = ordinaryRetakeScoreValue();
+        if (!Number.isFinite(retakeScore) || retakeScore < 0 || retakeScore > 100) {
+            return { ready: false, message: '重修/免修学生的平时分必须在 0 到 100 之间。' };
         }
     }
     return { ready: true, message: '' };
@@ -913,6 +971,7 @@ function renderManageOrdinaryGradeWizard() {
     });
     if (refs.classroomGenerateBackBtn) refs.classroomGenerateBackBtn.disabled = generation.busy;
     renderManageOrdinaryGradePicker();
+    renderOrdinaryRetakePicker();
 }
 
 function openManageOrdinaryGradePicker(stepIndex) {
@@ -967,6 +1026,7 @@ async function openManageOrdinaryGradeWizard(offering) {
         const data = await apiFetch(`/api/classrooms/${offeringId}/ordinary-grade-record/candidates`, { silent: true });
         state.ordinaryGradeGenerate.candidates = Array.isArray(data.items) ? data.items : [];
         state.ordinaryGradeGenerate.attendanceFreshness = data.attendance_sync || {};
+        state.ordinaryGradeGenerate.roster = Array.isArray(data.roster) ? data.roster : [];
         state.ordinaryGradeGenerate.error = '';
         const buckets = ordinaryGradeCandidateBuckets();
         if (buckets.homework.length >= 3 && buckets.assessment.length >= 1) {
@@ -1051,6 +1111,12 @@ async function submitManageOrdinaryGradeGeneration() {
                 assessment_assignment_id: selectedIds[3],
                 minimum_ordinary_score_enabled: Boolean(refs.ordinaryScoreFloorEnabled?.checked),
                 minimum_ordinary_score: Number.isFinite(ordinaryGradeMinimumScore()) ? ordinaryGradeMinimumScore() : 60,
+                retake_students: Array.from(
+                    generation.retakeSelected instanceof Set ? generation.retakeSelected : [],
+                ).map((studentNumber) => ({
+                    student_number: studentNumber,
+                    ordinary_score: ordinaryRetakeScoreValue(),
+                })),
             },
         });
         await recordMaterialPromptBestEffort(refs.ordinaryGradePrompt, prompt);
@@ -5496,6 +5562,19 @@ function bindEvents() {
     });
     refs.ordinaryScoreFloorEnabled?.addEventListener('change', renderManageOrdinaryGradeWizard);
     refs.ordinaryScoreFloorInput?.addEventListener('input', renderManageOrdinaryGradeWizard);
+    refs.ordinaryRetakeList?.addEventListener('click', (event) => {
+        const chip = event.target.closest('[data-materials-retake-number]');
+        if (!chip) return;
+        const number = String(chip.dataset.materialsRetakeNumber || '');
+        if (!number) return;
+        const selected = state.ordinaryGradeGenerate.retakeSelected;
+        if (selected.has(number)) selected.delete(number);
+        else selected.add(number);
+        renderOrdinaryRetakePicker();
+        renderManageOrdinaryGradeWizard();
+    });
+    refs.ordinaryRetakeScore?.addEventListener('input', renderManageOrdinaryGradeWizard);
+    refs.ordinaryRetakeSearch?.addEventListener('input', renderOrdinaryRetakePicker);
     refs.ordinaryGradePrompt?.addEventListener('input', renderManageOrdinaryGradeWizard);
     refs.examGradeCandidateList?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-materials-exam-candidate-id]');

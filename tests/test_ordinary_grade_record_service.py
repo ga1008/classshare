@@ -21,6 +21,8 @@ from classroom_app.services.ordinary_grade_record_service import (
     build_ordinary_grade_record_xlsx,
     calculate_ordinary_grade_score,
     classify_ordinary_grade_assignment,
+    distribute_retake_ordinary_score,
+    normalize_retake_students,
     list_ordinary_grade_assignment_candidates,
     normalize_ordinary_grade_kind_override,
     normalize_ordinary_grade_record_payload,
@@ -159,6 +161,80 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
             ],
         )
         self.conn.commit()
+
+    def test_retake_distribution_hits_target_exactly_across_full_range(self):
+        for tenth in range(0, 1001, 5):
+            target = tenth / 10.0
+            result = distribute_retake_ordinary_score(target, seed_parts=(30, 101, 201, 202, 203, 204))
+            achieved = calculate_ordinary_grade_score(
+                result["attendance_score"],
+                result["homework_scores"],
+                result["assessment_score"],
+            )
+            self.assertAlmostEqual(achieved, round(target, 2), places=6, msg=f"target={target}")
+            for value in (result["attendance_score"], result["assessment_score"], *result["homework_scores"]):
+                self.assertGreaterEqual(value, 0.0, msg=f"target={target}")
+                self.assertLessEqual(value, 100.0, msg=f"target={target}")
+        # Deterministic: same inputs → identical distribution.
+        first = distribute_retake_ordinary_score(60, seed_parts=(30, 101, 201, 202, 203, 204))
+        second = distribute_retake_ordinary_score(60, seed_parts=(30, 101, 201, 202, 203, 204))
+        self.assertEqual(first, second)
+
+    def test_retake_students_receive_exact_teacher_set_score(self):
+        payload = build_ordinary_grade_record_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            homework_assignment_ids=[201, 202, 203],
+            assessment_assignment_id=204,
+            retake_students=[{"student_number": "20240103", "ordinary_score": 72}],
+        )
+        students = payload["structured"]["students"]
+        retake_row = next(row for row in students if row["student_number"] == "20240103")
+        self.assertTrue(retake_row["is_retake"])
+        self.assertEqual(retake_row["calculated_scores"]["ordinary_score"], 72)
+        achieved = calculate_ordinary_grade_score(
+            retake_row["attendance_raw_score"],
+            retake_row["homework_scores"],
+            retake_row["assessment_score"],
+        )
+        self.assertAlmostEqual(achieved, 72.0, places=6)
+        self.assertEqual(retake_row["score_floor_adjustment"]["reason"], "retake_override")
+        # 学生三 normally triggers missing-score warnings; as a retake student
+        # the only warning about them must be the teacher-set score notice.
+        warnings = payload["structured"]["warnings"]
+        self.assertFalse(any("学生三" in warning and "按 0 分计入" in warning for warning in warnings))
+        self.assertTrue(any("学生三" in warning and "重修" in warning for warning in warnings))
+        policy = payload["structured"]["retake_policy"]
+        self.assertEqual(policy["count"], 1)
+        self.assertEqual(policy["students"][0]["student_number"], "20240103")
+        self.assertEqual(policy["students"][0]["target_score"], 72)
+        self.assertEqual(payload["fields"]["retake_student_count"], 1)
+        # Other students keep the normal pipeline.
+        normal_row = next(row for row in students if row["student_number"] == "20240101")
+        self.assertNotIn("is_retake", normal_row)
+
+    def test_retake_validation_rejects_unknown_and_invalid_entries(self):
+        with self.assertRaises(HTTPException) as unknown:
+            build_ordinary_grade_record_payload(
+                self.conn,
+                class_offering_id=30,
+                teacher_id=1,
+                homework_assignment_ids=[201, 202, 203],
+                assessment_assignment_id=204,
+                retake_students=[{"student_number": "99999999", "ordinary_score": 60}],
+            )
+        self.assertEqual(unknown.exception.status_code, 400)
+        self.assertIn("不在本课堂名单", unknown.exception.detail)
+        with self.assertRaises(HTTPException):
+            normalize_retake_students([{"student_number": "20240101", "ordinary_score": 101}])
+        with self.assertRaises(HTTPException):
+            normalize_retake_students([{"student_number": "", "ordinary_score": 60}])
+        with self.assertRaises(HTTPException):
+            normalize_retake_students([
+                {"student_number": "20240101", "ordinary_score": 60},
+                {"student_number": "20240101", "ordinary_score": 70},
+            ])
 
     def test_source_validation_rejects_wrong_count_and_overlap(self):
         with self.assertRaises(HTTPException):

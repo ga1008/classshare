@@ -186,6 +186,7 @@ class ClassroomFinalMaterialGenerateRequest(BaseModel):
     exam_grade_record_id: int | None = None
     minimum_ordinary_score_enabled: bool = True
     minimum_ordinary_score: float = Field(default=60.0, ge=0, le=100)
+    retake_students: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class FinalGradeTranscriptPrepareRequest(BaseModel):

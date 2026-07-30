@@ -477,6 +477,28 @@
                         <div class="ordinary-grade-score-policy__summary" id="materials-ordinary-score-floor-summary"></div>
                         <small>公式不变：出勤 × 40% + 三次作业平均分 × 30% + 测评 × 30%。全部调整会写入 Excel 隐藏审计页。</small>
                     </section>
+                    <section class="ordinary-grade-score-policy ordinary-grade-retake-policy" aria-labelledby="materials-ordinary-retake-title">
+                        <div class="ordinary-grade-score-policy__intro">
+                            <span>第 6 步 · 重修/免修学生（可选）</span>
+                            <strong id="materials-ordinary-retake-title">为重修插班生直接设定平时分</strong>
+                            <p>被选中的学生不参与作业、测评与考勤计分：系统按公式把设定的总平时分精确分配到出勤、三次作业和测评，最终计算分恰好等于设定值，并写入 Excel 隐藏审计页。</p>
+                        </div>
+                        <div class="ordinary-grade-retake-policy__controls">
+                            <label class="ordinary-grade-score-policy__value">
+                                <span>统一平时分</span>
+                                <span class="ordinary-grade-score-policy__input">
+                                    <input id="materials-ordinary-retake-score" type="number" min="0" max="100" step="1" value="60" inputmode="decimal">
+                                    <em>分</em>
+                                </span>
+                            </label>
+                            <label class="ordinary-grade-retake-policy__search">
+                                <span class="sr-only">搜索学生姓名或学号</span>
+                                <input id="materials-ordinary-retake-search" type="search" autocomplete="off" placeholder="搜索姓名 / 学号后点选学生">
+                            </label>
+                        </div>
+                        <div class="ordinary-grade-retake-policy__list" id="materials-ordinary-retake-list"></div>
+                        <div class="ordinary-grade-score-policy__summary" id="materials-ordinary-retake-summary"></div>
+                    </section>
                     <label class="form-group materials-ordinary-grade-prompt">
                         <span><small>第 5 步</small><b>额外的生成要求</b></span>
                         <textarea id="materials-ordinary-grade-prompt" data-prompt-pool-key="manage.ordinary_grade_record_generate" rows="4" placeholder="可选：填写本次归档说明、课程组统一口径或需要教师后续核对的事项。"></textarea>

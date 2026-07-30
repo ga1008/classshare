@@ -261,11 +261,13 @@ def build_ordinary_grade_record_payload(
     generation_requirements: str = "",
     minimum_ordinary_score_enabled: bool = True,
     minimum_ordinary_score: float = ORDINARY_GRADE_DEFAULT_MINIMUM_SCORE,
+    retake_students: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     homework_ids, assessment_id = validate_ordinary_grade_sources(
         homework_assignment_ids=homework_assignment_ids,
         assessment_assignment_id=assessment_assignment_id,
     )
+    retake_targets = normalize_retake_students(retake_students)
     context = _load_context(conn, class_offering_id=int(class_offering_id), teacher_id=int(teacher_id), classroom_context=classroom_context)
     assignments = _load_source_assignments(
         conn,
@@ -297,6 +299,15 @@ def build_ordinary_grade_record_payload(
     attendance_scores = _load_attendance_scores(conn, class_offering_id=int(class_offering_id), teacher_id=int(teacher_id))
     score_map = _load_assignment_scores(conn, assignment_ids=[*homework_ids, assessment_id])
 
+    roster_numbers = {str(student.get("student_number") or "").strip() for student in students}
+    unknown_retake_numbers = [number for number in retake_targets if number not in roster_numbers]
+    if unknown_retake_numbers:
+        raise HTTPException(
+            400,
+            f"以下重修学生学号不在本课堂名单中：{'、'.join(unknown_retake_numbers[:8])}。"
+            "请重新核对后再生成。",
+        )
+
     score_floor = _normalize_score_floor_policy(
         enabled=minimum_ordinary_score_enabled,
         minimum_score=minimum_ordinary_score,
@@ -314,12 +325,73 @@ def build_ordinary_grade_record_payload(
     )
     warnings: list[str] = []
     rows: list[dict[str, Any]] = []
+    retake_rows: list[dict[str, Any]] = []
     for index, student in enumerate(students, start=1):
         student_id = int(student["student_id"])
+        student_number = str(student.get("student_number") or "").strip()
         raw_homework_scores = [score_map.get((int(assignment_id), student_id)) for assignment_id in homework_ids]
         raw_assessment_score = score_map.get((int(assessment_id), student_id))
         source_homework_scores = [_score_or_zero(value) for value in raw_homework_scores]
         source_assessment_score = _score_or_zero(raw_assessment_score)
+        if student_number in retake_targets:
+            # 重修/免修学生：不参加平时任务，平时分由教师直接设定，
+            # 按公式反向分配到出勤、三次作业和测评，最终计算分恰为设定值。
+            distribution = distribute_retake_ordinary_score(
+                retake_targets[student_number],
+                seed_parts=(
+                    int(class_offering_id),
+                    student_id,
+                    *homework_ids,
+                    assessment_id,
+                ),
+            )
+            retake_row = {
+                "index": index,
+                "student_id": student_id,
+                "student_number": student_number,
+                "student_name": student.get("student_name") or "",
+                "attendance_raw_score": distribution["attendance_score"],
+                "source_homework_scores": source_homework_scores,
+                "source_assessment_score": source_assessment_score,
+                "source_score_missing": {
+                    "homework": [value is None for value in raw_homework_scores],
+                    "assessment": raw_assessment_score is None,
+                },
+                "homework_scores": distribution["homework_scores"],
+                "assessment_score": distribution["assessment_score"],
+                "is_retake": True,
+                "retake": distribution,
+                "calculated_scores": {"ordinary_score": distribution["target_score"]},
+                "score_floor_adjustment": {
+                    "enabled": bool(score_floor["enabled"]),
+                    "eligible": False,
+                    "applied": False,
+                    "capped": False,
+                    "reason": "retake_override",
+                    "requested_minimum_score": float(score_floor["minimum_score"]),
+                    "original_score": round(
+                        calculate_ordinary_grade_score(
+                            _score_or_zero(attendance_scores.get(student_id)),
+                            source_homework_scores,
+                            source_assessment_score,
+                        ),
+                        4,
+                    ),
+                    "achieved_score": distribution["achieved_score"],
+                    "homework_scores": distribution["homework_scores"],
+                    "assessment_score": distribution["assessment_score"],
+                    "algorithm_version": distribution["algorithm_version"],
+                    "seed_fingerprint": distribution["seed_fingerprint"],
+                },
+            }
+            rows.append(retake_row)
+            retake_rows.append(retake_row)
+            warnings.append(
+                f"{student.get('student_name') or student_number}（{student_number}）为重修/免修学生，"
+                f"平时成绩由教师设定为 {_format_score(distribution['target_score'])} 分，"
+                "已按公式分配到出勤、作业与测评，不参与最低分配平。"
+            )
+            continue
         if any(value is None for value in raw_homework_scores) or raw_assessment_score is None:
             warnings.append(f"{student.get('student_name') or student.get('student_number')} 存在未批改或缺失的作业/测评成绩，原始成绩已按 0 分计入。")
         attendance_score = attendance_scores.get(student_id)
@@ -391,6 +463,19 @@ def build_ordinary_grade_record_payload(
     }
     if str(generation_requirements or "").strip():
         fields["generation_requirements"] = str(generation_requirements).strip()
+    retake_policy = {
+        "count": len(retake_rows),
+        "students": [
+            {
+                "student_number": row["student_number"],
+                "student_name": row["student_name"],
+                "target_score": row["retake"]["target_score"],
+            }
+            for row in retake_rows
+        ],
+    }
+    if retake_rows:
+        fields["retake_student_count"] = len(retake_rows)
     payload = normalize_ordinary_grade_record_payload(
         metadata=fields,
         content_markdown="",
@@ -403,6 +488,7 @@ def build_ordinary_grade_record_payload(
                 "attendance_sync": dict(attendance_sync or {}),
                 "generation_requirements": str(generation_requirements or "").strip(),
                 "score_floor_policy": score_floor,
+                "retake_policy": retake_policy,
                 "formula_templates": _formula_templates(),
                 "warnings": _dedupe(warnings),
             },
@@ -596,6 +682,7 @@ def _write_score_floor_audit_sheet(
         "already_at_or_above_floor": "原平时分已达标",
         "adjusted_to_floor": "已配平到最低分",
         "capped_by_attendance": "受真实出勤限制，已配平到可达到的最高分",
+        "retake_override": "重修/免修学生，平时分由教师设定并按公式分配",
     }
     for student in students:
         adjustment = _as_dict(student.get("score_floor_adjustment"))
@@ -1358,6 +1445,89 @@ def apply_ordinary_grade_score_floor(
     }
 
 
+def normalize_retake_students(retake_students: Any) -> dict[str, float]:
+    """Validate teacher-provided retake overrides into {student_number: target_score}."""
+    if not retake_students:
+        return {}
+    if not isinstance(retake_students, list):
+        raise HTTPException(400, "重修学生设置格式不正确。")
+    result: dict[str, float] = {}
+    for item in retake_students:
+        if not isinstance(item, dict):
+            raise HTTPException(400, "重修学生设置格式不正确。")
+        number = str(item.get("student_number") or "").strip()
+        if not number:
+            raise HTTPException(400, "重修学生设置缺少学号。")
+        try:
+            score = float(item.get("ordinary_score"))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, f"重修学生 {number} 的平时分必须是 0 到 100 之间的数字。") from exc
+        if not math.isfinite(score) or score < 0 or score > 100:
+            raise HTTPException(400, f"重修学生 {number} 的平时分必须在 0 到 100 之间。")
+        if number in result:
+            raise HTTPException(400, f"重修学生 {number} 被重复设置，请检查后重试。")
+        result[number] = round(score, 2)
+    return result
+
+
+def distribute_retake_ordinary_score(
+    target_score: float,
+    seed_parts: tuple[Any, ...] = (),
+) -> dict[str, Any]:
+    """Deterministically split a teacher-set ordinary score across attendance,
+    three homework slots and the assessment so the weighted formula
+    (attendance×0.4 + homework avg×0.3 + assessment×0.3) lands exactly on target.
+
+    Homework deltas sum to zero (average stays on target) and the assessment
+    delta is compensated through attendance, so the identity holds precisely."""
+    target = round(float(target_score), 2)
+    seed_text = "|".join(
+        [
+            "retake-v1",
+            *(str(part) for part in seed_parts),
+            f"{target:.4f}",
+        ]
+    )
+    seed_digest = hashlib.sha256(seed_text.encode("utf-8")).digest()
+    rng = random.Random(int.from_bytes(seed_digest[:8], "big"))
+
+    margin = int(min(4.0, target, 100.0 - target))
+    d1 = rng.randint(-margin, margin) if margin > 0 else 0
+    d2 = rng.randint(max(-margin, -margin - d1), min(margin, margin - d1)) if margin > 0 else 0
+    d3 = -(d1 + d2)
+    homework = [round(target + delta, 2) for delta in (d1, d2, d3)]
+
+    assessment_candidates = [
+        delta
+        for delta in (-4, -2, 0, 2, 4)
+        if abs(delta) <= margin and 0.0 <= target - 0.75 * delta <= 100.0 and 0.0 <= target + delta <= 100.0
+    ] or [0]
+    assessment_delta = assessment_candidates[rng.randrange(len(assessment_candidates))]
+    assessment = round(target + assessment_delta, 2)
+    attendance = round(target - 0.75 * assessment_delta, 2)
+
+    achieved = calculate_ordinary_grade_score(attendance, homework, assessment)
+    if abs(achieved - target) > 1e-6 or not all(0.0 <= value <= 100.0 for value in (*homework, assessment, attendance)):
+        homework = [target, target, target]
+        assessment = target
+        attendance = target
+        achieved = calculate_ordinary_grade_score(attendance, homework, assessment)
+    return {
+        "target_score": target,
+        "attendance_score": attendance,
+        "homework_scores": homework,
+        "assessment_score": assessment,
+        "achieved_score": round(achieved, 4),
+        "seed_fingerprint": seed_digest.hex()[:16],
+        "algorithm_version": "retake-v1",
+    }
+
+
+def list_classroom_roster_students(conn, *, class_offering_id: int) -> list[dict[str, Any]]:
+    """Public roster listing for wizard UIs (e.g. retake student picker)."""
+    return _load_roster(conn, class_offering_id=int(class_offering_id), context={})
+
+
 def _normalize_score_floor_policy(*, enabled: bool, minimum_score: float) -> dict[str, Any]:
     try:
         value = float(minimum_score)
@@ -1423,6 +1593,13 @@ def _build_content_markdown(fields: dict[str, Any], students: list[dict[str, Any
             score_floor_policy.get("attendance_eligibility_percent", ORDINARY_GRADE_ATTENDANCE_ELIGIBILITY_PERCENT),
         )
         lines.append(f"- 最低分保护：出勤率达到 {_format_score(threshold)}% 后，最低平时分 {_format_score(minimum_score)} 分；出勤不调整。")
+    retake_students_note = [
+        f"{student.get('student_name') or student.get('student_number')}（{student.get('student_number')}，{_format_score(_as_dict(student.get('retake')).get('target_score'))} 分）"
+        for student in students
+        if isinstance(student, dict) and student.get("is_retake")
+    ]
+    if retake_students_note:
+        lines.append(f"- 重修/免修学生（平时分由教师设定）：{'；'.join(retake_students_note)}")
     lines.extend(["", "| 序号 | 学号 | 姓名 | 出勤 | 作业1 | 作业2 | 作业3 | 测评 |", "| --- | --- | --- | --- | --- | --- | --- | --- |"])
     for student in students[:80]:
         homework_scores = list(student.get("homework_scores") or [])[:3]
