@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 from classroom_app.services.exam_grade_record_service import (
     EXAM_GRADE_RECORD_TYPE,
@@ -356,10 +356,9 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
             exam_assignment_id=301,
         )
         content = build_exam_grade_record_xlsx(payload)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp:
-            temp.write(content)
-            temp_path = Path(temp.name)
-        try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / ("a" * 64)
+            temp_path.write_bytes(content)
             parsed = parse_exam_grade_record_file(temp_path, "考核登分表.xlsx")
             self.assertEqual(parsed.formula_count, 2)
             self.assertEqual(len(parsed.export_payload["structured"]["sections"]), 3)
@@ -387,8 +386,92 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
             self.assertEqual(artifact.media_type, XLSX_MEDIA_TYPE)
             self.assertTrue(artifact.filename.endswith(".xlsx"))
             self.assertGreater(len(artifact.content), 5000)
-        finally:
-            temp_path.unlink(missing_ok=True)
+
+    def test_parser_matches_real_source_shape_and_audits_score_integrity(self):
+        workbook = Workbook()
+        cover = workbook.active
+        cover.title = "说明"
+        cover["A1"] = "请勿删除本说明页"
+        worksheet = workbook.create_sheet("考核登分表")
+        worksheet.merge_cells("A1:J1")
+        worksheet["A1"] = "广西外国语学院期末考试考核登分表"
+        worksheet.merge_cells("A2:J2")
+        worksheet["A2"] = (
+            "课程：计算机网络    专业年级班级：软工2302班\n"
+            "授课老师：张海林    学年学期：2025-2026学年第二学期"
+        )
+        worksheet.append(["序号", "学号", "姓名", "一", "二", "三", "四", "五", "六", "总分"])
+        worksheet.append(["", "", "", 10, 10, 10, 20, 20, 30, 100])
+        expected_total = 0
+        for index in range(1, 50):
+            scores = [8, 7, 9, 14, 18, 24]
+            row = index + 4
+            expected_total += sum(scores)
+            worksheet.append(
+                [
+                    index,
+                    f"2305301{index:04d}",
+                    f"学生{index}",
+                    *scores,
+                    f'=IF(COUNT(D{row}:I{row})=0,"",SUM(D{row}:I{row}))',
+                ]
+            )
+        output = io.BytesIO()
+        workbook.save(output)
+        workbook.close()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / ("b" * 64)
+            path.write_bytes(output.getvalue())
+            parsed = parse_exam_grade_record_file(
+                path,
+                "2025-2026-2《计算机网络》期末考试考核登分表-软工2302班.xlsx",
+            )
+
+        fields = parsed.export_payload["fields"]
+        structured = parsed.export_payload["structured"]
+        self.assertEqual(parsed.metadata["source_sheet"], "考核登分表")
+        self.assertEqual(parsed.metadata["academic_year"], "2025-2026")
+        self.assertEqual(parsed.metadata["semester"], "第二学期")
+        self.assertEqual(fields["course_name"], "计算机网络")
+        self.assertEqual(fields["class_name"], "软工2302班")
+        self.assertEqual(fields["teacher_name"], "张海林")
+        self.assertEqual(fields["total_score"], 100)
+        self.assertEqual(len(structured["sections"]), 6)
+        self.assertEqual(len(structured["students"]), 49)
+        self.assertEqual(parsed.formula_count, 49)
+        self.assertEqual(
+            sum(int(item["total_score"]) for item in structured["students"]),
+            expected_total,
+        )
+        self.assertEqual(parsed.warnings, [])
+
+    def test_parser_surfaces_duplicate_student_formula_and_score_anomalies(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "考核登分表"
+        worksheet["A1"] = "广西外国语学院期末考试考核登分表"
+        worksheet["A2"] = (
+            "课程：计算机网络    专业年级班级：软工2302班\n"
+            "授课老师：张海林    学年学期：2025-2026学年第二学期"
+        )
+        worksheet.append(["序号", "学号", "姓名", "一", "二", "总分"])
+        worksheet.append(["", "", "", 40, 60, 100])
+        worksheet.append([1, "23050001", "学生一", 45, 50, "=SUM(D5:E5)"])
+        worksheet.append([2, "23050001", "学生二", 30, 40, "=SUM(D5:E5)"])
+        output = io.BytesIO()
+        workbook.save(output)
+        workbook.close()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / ("c" * 64)
+            path.write_bytes(output.getvalue())
+            parsed = parse_exam_grade_record_file(path, "考核登分表.xlsx")
+
+        warning_text = "\n".join(parsed.warnings)
+        self.assertIn("超出 0 至 40 分", warning_text)
+        self.assertIn("学号 23050001", warning_text)
+        self.assertIn("总分公式未覆盖全部大题列", warning_text)
 
 
 if __name__ == "__main__":

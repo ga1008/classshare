@@ -649,10 +649,9 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
             assessment_assignment_id=204,
         )
         content = build_ordinary_grade_record_xlsx(payload)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp:
-            temp.write(content)
-            temp_path = Path(temp.name)
-        try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / ("b" * 64)
+            temp_path.write_bytes(content)
             parsed = parse_ordinary_grade_record_file(temp_path, "平时成绩记录表.xlsx")
             self.assertEqual(parsed.formula_count, 12)
             self.assertEqual(len(parsed.export_payload["structured"]["students"]), 3)
@@ -672,8 +671,6 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
             self.assertFalse(result.ai_used)
             self.assertEqual(result.document_type, ORDINARY_GRADE_RECORD_TYPE)
             self.assertEqual(result.extraction_method, "ordinary_grade_excel_formula_parser")
-        finally:
-            temp_path.unlink(missing_ok=True)
 
     def test_export_artifact_forces_xlsx_even_if_docx_requested(self):
         payload = build_ordinary_grade_record_payload(

@@ -612,9 +612,13 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
             "course_nature": "专业必修课",
         }
         with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / "服务器配置与管理学生成绩录入模板[张海林].xlsx"
+            path = Path(temp_dir) / ("c" * 64)
             path.write_bytes(content)
-            parsed = parse_final_grade_transcript_file(path, path.name, metadata)
+            parsed = parse_final_grade_transcript_file(
+                path,
+                "服务器配置与管理学生成绩录入模板[张海林].xlsx",
+                metadata,
+            )
 
         students = parsed.export_payload["structured"]["students"]
         self.assertEqual(len(students), 2)

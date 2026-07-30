@@ -4,7 +4,6 @@ import io
 import json
 import math
 import re
-import tempfile
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -13,11 +12,12 @@ from typing import Any
 from fastapi import HTTPException
 
 from .exam_json_service import normalize_exam_scoring_payload
-from .libreoffice_service import convert_office_file
+from .excel_upload_service import open_upload_workbook_pair
 from .material_identity_service import (
     build_final_material_export_filename,
     period_label,
 )
+from .semester_identity_service import parse_semester_identity
 
 
 EXAM_GRADE_RECORD_TYPE = "exam_grade_record"
@@ -411,22 +411,49 @@ def build_exam_grade_record_payload(
 
 
 def parse_exam_grade_record_file(file_path: Path, original_name: str) -> ExamGradeRecordParseResult:
-    workbook_path = _ensure_xlsx_workbook(file_path, original_name)
-    import openpyxl
-
-    wb_formula = openpyxl.load_workbook(workbook_path, data_only=False)
-    wb_values = openpyxl.load_workbook(workbook_path, data_only=True)
-    ws_formula = wb_formula.worksheets[0]
-    ws_values = wb_values.worksheets[0]
-    header_row = _find_exam_grade_header_row(ws_formula)
-    if not header_row:
-        raise HTTPException(422, "未识别到“考核登分表”的序号、学号、姓名和总分表头。")
-    columns = _header_columns(ws_formula, header_row)
-    sections = _parse_excel_sections(ws_formula, ws_values, header_row, columns)
-    if not sections:
-        raise HTTPException(422, "未识别到大题得分列。")
-    metadata = _parse_excel_metadata(ws_formula, header_row)
-    students, formula_count, warnings = _parse_excel_students(ws_formula, ws_values, header_row, columns, section_count=len(sections))
+    with open_upload_workbook_pair(
+        file_path,
+        original_name,
+        material_label="考核登分表",
+    ) as (wb_formula, wb_values):
+        ws_formula, ws_values, header_row, matching_sheet_count = _locate_exam_grade_worksheet(
+            wb_formula,
+            wb_values,
+        )
+        if ws_formula is None or ws_values is None or not header_row:
+            raise HTTPException(422, "未识别到“考核登分表”的序号、学号、姓名和总分表头。")
+        columns = _header_columns(ws_formula, header_row)
+        sections, section_columns, section_warnings = _parse_excel_sections(
+            ws_formula,
+            ws_values,
+            header_row,
+            columns,
+        )
+        if not sections:
+            raise HTTPException(422, "未识别到带有效满分的大题得分列。")
+        metadata = _parse_excel_metadata(ws_formula, header_row)
+        metadata["source_sheet"] = ws_formula.title
+        metadata["source_filename"] = str(original_name or file_path.name).strip()
+        metadata["total_score"] = sum(_score_to_int(section.get("full_score")) for section in sections)
+        students, formula_count, student_warnings = _parse_excel_students(
+            ws_formula,
+            ws_values,
+            header_row,
+            columns,
+            sections=sections,
+            section_columns=section_columns,
+        )
+    if not students:
+        raise HTTPException(422, "未识别到任何学生成绩行，请确认文件不是空白模板。")
+    metadata["class_size"] = len(students)
+    warnings = [*section_warnings, *student_warnings]
+    if matching_sheet_count > 1:
+        warnings.append(
+            f"文件中有 {matching_sheet_count} 张工作表符合考核登分表结构，"
+            f"已按工作簿顺序解析《{metadata.get('source_sheet') or ''}》。"
+        )
+    if formula_count <= 0:
+        warnings.append("源 Excel 未识别到总分公式，导出时将按大题合计公式重新生成。")
     tables = [_table_from_students("考核登分表", sections, students)]
     export_payload = normalize_exam_grade_record_payload(
         metadata=metadata,
@@ -444,6 +471,10 @@ def parse_exam_grade_record_file(file_path: Path, original_name: str) -> ExamGra
     )
     tables = list(export_payload.get("tables") or [])
     normalized_structured = _as_dict(export_payload.get("structured"))
+    normalized_warnings = _merge_warnings(warnings, normalized_structured.get("warnings"))
+    normalized_structured["warnings"] = normalized_warnings
+    export_payload["structured"] = normalized_structured
+    export_payload["warnings"] = normalized_warnings
     content_markdown = _build_content_markdown(
         _as_dict(export_payload.get("fields")),
         _normalize_sections(normalized_structured.get("sections")),
@@ -458,7 +489,7 @@ def parse_exam_grade_record_file(file_path: Path, original_name: str) -> ExamGra
         metadata=metadata,
         content_markdown=content_markdown,
         tables=tables,
-        warnings=_dedupe(warnings),
+        warnings=normalized_warnings,
         export_payload=export_payload,
         formula_count=formula_count,
     )
@@ -1080,53 +1111,95 @@ def _clamp_section_scores(scores: list[int], max_scores: list[int]) -> list[int]
     return result
 
 
-def _ensure_xlsx_workbook(file_path: Path, original_name: str) -> Path:
-    suffix = Path(original_name or file_path.name).suffix.lower()
-    if suffix == ".xlsx":
-        return Path(file_path)
-    if suffix != ".xls":
-        raise HTTPException(415, "考核登分表仅支持 .xls/.xlsx Excel 文件。")
-    converted = convert_office_file(Path(file_path), "xlsx", timeout=120)
-    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    temp.write(converted.output_bytes)
-    temp.close()
-    return Path(temp.name)
+def _locate_exam_grade_worksheet(
+    wb_formula: Any,
+    wb_values: Any,
+) -> tuple[Any | None, Any | None, int | None, int]:
+    value_sheets = {worksheet.title: worksheet for worksheet in wb_values.worksheets}
+    candidates: list[tuple[Any, Any, int]] = []
+    for index, ws_formula in enumerate(wb_formula.worksheets):
+        header_row = _find_exam_grade_header_row(ws_formula)
+        if not header_row:
+            continue
+        ws_values = value_sheets.get(ws_formula.title)
+        if ws_values is None and index < len(wb_values.worksheets):
+            ws_values = wb_values.worksheets[index]
+        if ws_values is not None:
+            candidates.append((ws_formula, ws_values, header_row))
+    if not candidates:
+        return None, None, None, 0
+    ws_formula, ws_values, header_row = candidates[0]
+    return ws_formula, ws_values, header_row, len(candidates)
 
 
 def _find_exam_grade_header_row(ws: Any) -> int | None:
-    for row in range(1, ws.max_row + 1):
-        values = [str(ws.cell(row, col).value or "").strip() for col in range(1, ws.max_column + 1)]
-        compact = "".join(values)
-        if all(label in compact for label in ("序号", "学号", "姓名", "总分")):
-            return row
+    max_row = min(int(ws.max_row or 0), 80)
+    max_column = min(int(ws.max_column or 0), 64)
+    for row in range(1, max_row + 1):
+        columns = _header_columns(ws, row, strict=False, max_column=max_column)
+        if set(columns) == {"index", "student_number", "student_name", "total"}:
+            if columns["index"] < columns["student_number"] < columns["student_name"] < columns["total"]:
+                return row
     return None
 
 
-def _header_columns(ws: Any, header_row: int) -> dict[str, int]:
+def _header_columns(
+    ws: Any,
+    header_row: int,
+    *,
+    strict: bool = True,
+    max_column: int | None = None,
+) -> dict[str, int]:
     result: dict[str, int] = {}
-    for col in range(1, ws.max_column + 1):
-        value = str(ws.cell(header_row, col).value or "").strip()
-        if value == "序号":
+    aliases = {
+        "index": {"序号", "编号"},
+        "student_number": {"学号", "学生学号"},
+        "student_name": {"姓名", "学生姓名"},
+        "total": {"总分", "总成绩", "合计"},
+    }
+    scan_columns = max_column if max_column is not None else int(ws.max_column or 0)
+    for col in range(1, scan_columns + 1):
+        value = _identity_cell_text(ws.cell(header_row, col).value)
+        if value in aliases["index"]:
             result["index"] = col
-        elif value == "学号":
+        elif value in aliases["student_number"]:
             result["student_number"] = col
-        elif value == "姓名":
+        elif value in aliases["student_name"]:
             result["student_name"] = col
-        elif value == "总分":
+        elif value in aliases["total"]:
             result["total"] = col
     missing = [key for key in ("index", "student_number", "student_name", "total") if key not in result]
-    if missing:
+    if strict and missing:
         raise HTTPException(422, f"考核登分表缺少表头：{', '.join(missing)}")
     return result
 
 
-def _parse_excel_sections(ws_formula: Any, ws_values: Any, header_row: int, columns: dict[str, int]) -> list[dict[str, Any]]:
-    sections = []
+def _parse_excel_sections(
+    ws_formula: Any,
+    ws_values: Any,
+    header_row: int,
+    columns: dict[str, int],
+) -> tuple[list[dict[str, Any]], list[int], list[str]]:
+    sections: list[dict[str, Any]] = []
+    section_columns: list[int] = []
+    warnings: list[str] = []
     for col in range(columns["student_name"] + 1, columns["total"]):
         label = str(ws_formula.cell(header_row, col).value or "").strip()
         if not label:
             continue
-        full_score = ws_values.cell(header_row + 1, col).value
+        raw_full_score = ws_values.cell(header_row + 1, col).value
+        if raw_full_score in (None, ""):
+            raw_full_score = ws_formula.cell(header_row + 1, col).value
+        numeric_full_score = _coerce_float(raw_full_score)
+        if numeric_full_score is None or numeric_full_score <= 0:
+            raise HTTPException(
+                422,
+                f"大题“{label}”缺少有效满分，请检查第 {header_row + 1} 行第 {col} 列。",
+            )
+        full_score = _score_to_int(numeric_full_score)
+        if abs(numeric_full_score - full_score) > 1e-9:
+            warnings.append(f"大题“{label}”满分 {numeric_full_score:g} 不是整数，已按 {full_score} 分解析。")
+        section_columns.append(col)
         sections.append(
             {
                 "index": len(sections) + 1,
@@ -1136,7 +1209,22 @@ def _parse_excel_sections(ws_formula: Any, ws_values: Any, header_row: int, colu
                 "questions": [],
             }
         )
-    return sections
+    if not sections:
+        return [], [], warnings
+
+    section_total = sum(_score_to_int(section.get("full_score")) for section in sections)
+    declared_total_raw = ws_values.cell(header_row + 1, columns["total"]).value
+    if declared_total_raw in (None, ""):
+        declared_total_raw = ws_formula.cell(header_row + 1, columns["total"]).value
+    declared_total = _coerce_float(declared_total_raw)
+    if declared_total is not None and _score_to_int(declared_total) != section_total:
+        warnings.append(
+            f"表头声明总分 {_score_to_int(declared_total)} 与大题满分合计 {section_total} 不一致，"
+            "已保留大题分值并标记复核。"
+        )
+    if section_total != 100:
+        warnings.append(f"大题满分合计为 {section_total}，不是学校模板通常要求的 100 分，请复核源文件。")
+    return sections, section_columns, warnings
 
 
 def _parse_excel_metadata(ws: Any, header_row: int) -> dict[str, Any]:
@@ -1160,6 +1248,10 @@ def _parse_excel_metadata(ws: Any, header_row: int) -> dict[str, Any]:
     teacher = re.search(r"(?:授课老师|授课教师|任课教师)[:：]\s*(.+?)(?:\s+|$)", combined)
     if teacher:
         fields["teacher_name"] = teacher.group(1).strip()
+    semester_identity = parse_semester_identity(combined)
+    if semester_identity is not None:
+        fields["academic_year"] = f"{semester_identity.start_year}-{semester_identity.end_year}"
+        fields["semester"] = "第一学期" if semester_identity.term == 1 else "第二学期"
     return _compact_dict(fields)
 
 
@@ -1169,15 +1261,17 @@ def _parse_excel_students(
     header_row: int,
     columns: dict[str, int],
     *,
-    section_count: int,
+    sections: list[dict[str, Any]],
+    section_columns: list[int],
 ) -> tuple[list[dict[str, Any]], int, list[str]]:
-    students = []
+    students: list[dict[str, Any]] = []
     formula_count = 0
     warnings: list[str] = []
     row = header_row + 2
     blank_streak = 0
+    seen_student_numbers: dict[str, int] = {}
     while row <= ws_formula.max_row:
-        number = str(ws_formula.cell(row, columns["student_number"]).value or "").strip()
+        number = _student_number_text(ws_formula.cell(row, columns["student_number"]))
         name = str(ws_formula.cell(row, columns["student_name"]).value or "").strip()
         if not number and not name:
             blank_streak += 1
@@ -1186,20 +1280,73 @@ def _parse_excel_students(
             row += 1
             continue
         blank_streak = 0
-        section_scores = []
-        for offset in range(section_count):
-            section_scores.append(_score_or_blank(ws_values.cell(row, columns["student_name"] + 1 + offset).value))
+        if not number:
+            warnings.append(f"第 {row} 行缺少学号，已保留姓名“{name}”并标记复核。")
+        elif number in seen_student_numbers:
+            warnings.append(f"学号 {number} 在第 {seen_student_numbers[number]}、{row} 行重复，请复核学生名单。")
+        else:
+            seen_student_numbers[number] = row
+        if not name:
+            warnings.append(f"第 {row} 行学号 {number} 缺少姓名，已保留该成绩行并标记复核。")
+
+        section_scores: list[int | str] = []
+        for section, section_column in zip(sections, section_columns):
+            raw_score = ws_values.cell(row, section_column).value
+            formula_score = ws_formula.cell(row, section_column).value
+            if raw_score in (None, "") and not str(formula_score or "").startswith("="):
+                raw_score = formula_score
+            numeric_score = _coerce_float(raw_score)
+            if raw_score not in (None, "") and numeric_score is None:
+                warnings.append(
+                    f"第 {row} 行大题“{section.get('label') or ''}”成绩“{raw_score}”不是有效数值，已留空。"
+                )
+                section_scores.append("")
+                continue
+            score = _score_or_blank(numeric_score)
+            section_scores.append(score)
+            if numeric_score is None:
+                continue
+            rounded_score = _score_to_int(numeric_score)
+            full_score = _score_to_int(section.get("full_score"))
+            if abs(numeric_score - rounded_score) > 1e-9:
+                warnings.append(
+                    f"第 {row} 行大题“{section.get('label') or ''}”成绩 {numeric_score:g} "
+                    f"不是整数，已按 {rounded_score} 分解析。"
+                )
+            if rounded_score < 0 or rounded_score > full_score:
+                warnings.append(
+                    f"第 {row} 行大题“{section.get('label') or ''}”成绩 {rounded_score} "
+                    f"超出 0 至 {full_score} 分，请复核源文件。"
+                )
         total_formula = str(ws_formula.cell(row, columns["total"]).value or "")
         if total_formula.startswith("="):
             formula_count += 1
+            if not _formula_sums_section_range(
+                total_formula,
+                row=row,
+                first_column=section_columns[0],
+                last_column=section_columns[-1],
+            ):
+                warnings.append(f"第 {row} 行总分公式未覆盖全部大题列，导出时将按标准求和公式生成。")
         total_value = _score_or_blank(ws_values.cell(row, columns["total"]).value)
+        calculated_total = (
+            sum(_score_to_int(value) for value in section_scores if value != "")
+            if any(value != "" for value in section_scores)
+            else ""
+        )
         if total_value == "" and any(value != "" for value in section_scores):
-            total_value = sum(_score_to_int(value) for value in section_scores if value != "")
+            total_value = calculated_total
             if not total_formula.startswith("="):
                 warnings.append(f"第 {row} 行总分为空，已按大题得分合计。")
+        elif calculated_total != "" and total_value != "" and _score_to_int(total_value) != calculated_total:
+            warnings.append(
+                f"第 {row} 行总分 {_score_to_int(total_value)} 与大题合计 {calculated_total} 不一致，"
+                "已保留源值并标记复核。"
+            )
         students.append(
             {
                 "index": _coerce_int(ws_formula.cell(row, columns["index"]).value, default=len(students) + 1),
+                "source_row": row,
                 "student_number": number,
                 "student_name": name,
                 "section_scores": section_scores,
@@ -1210,6 +1357,44 @@ def _parse_excel_students(
         )
         row += 1
     return students, formula_count, warnings
+
+
+def _identity_cell_text(value: Any) -> str:
+    return re.sub(r"[\s\u3000]+", "", str(value or "")).strip()
+
+
+def _student_number_text(cell: Any) -> str:
+    value = cell.value
+    if value in (None, ""):
+        return ""
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float)) and float(value).is_integer():
+        text = str(int(value))
+        number_format = str(getattr(cell, "number_format", "") or "").split(";", 1)[0].strip()
+        if re.fullmatch(r"0+", number_format):
+            text = text.zfill(len(number_format))
+        return text
+    return str(value).strip()
+
+
+def _formula_sums_section_range(
+    formula: str,
+    *,
+    row: int,
+    first_column: int,
+    last_column: int,
+) -> bool:
+    try:
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return True
+    expected = (
+        f"SUM({get_column_letter(first_column)}{row}:"
+        f"{get_column_letter(last_column)}{row})"
+    )
+    normalized = re.sub(r"[\s$]+", "", str(formula or "")).upper()
+    return expected.upper() in normalized
 
 
 def _sections_from_tables(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:

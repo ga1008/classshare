@@ -5,14 +5,13 @@ import io
 import math
 import random
 import re
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
 
-from .libreoffice_service import convert_office_file
+from .excel_upload_service import open_upload_workbook_pair
 
 
 ORDINARY_GRADE_RECORD_TYPE = "ordinary_grade_record"
@@ -519,29 +518,41 @@ def validate_ordinary_grade_sources(
 
 
 def parse_ordinary_grade_record_file(file_path: Path, original_name: str) -> OrdinaryGradeParseResult:
-    workbook_path = _ensure_xlsx_workbook(file_path, original_name)
-    import openpyxl
+    with open_upload_workbook_pair(
+        file_path,
+        original_name,
+        material_label="平时成绩记录表",
+    ) as (wb_formula, wb_values):
+        ws_formula, ws_values, starts, matching_sheet_count = _locate_ordinary_grade_worksheet(
+            wb_formula,
+            wb_values,
+        )
+        if ws_formula is None or ws_values is None or not starts:
+            raise HTTPException(422, "未识别到“广西外国语学院学生平时成绩记录表”标题。")
 
-    wb_formula = openpyxl.load_workbook(workbook_path, data_only=False)
-    wb_values = openpyxl.load_workbook(workbook_path, data_only=True)
-    ws_formula = wb_formula.worksheets[0]
-    ws_values = wb_values.worksheets[0]
-    starts = _find_record_block_starts(ws_formula)
-    if not starts:
-        raise HTTPException(422, "未识别到“广西外国语学院学生平时成绩记录表”标题。")
+        metadata = _parse_block_metadata(ws_formula, starts[0])
+        metadata["source_sheet"] = ws_formula.title
+        metadata["source_filename"] = str(original_name or file_path.name).strip()
+        students: list[dict[str, Any]] = []
+        tables: list[dict[str, Any]] = []
+        warnings: list[str] = []
+        formula_count = 0
+        for block_index, start in enumerate(starts, start=1):
+            block_rows, block_formula_count, block_warnings = _parse_block_students(
+                ws_formula,
+                ws_values,
+                start,
+            )
+            formula_count += block_formula_count
+            warnings.extend(block_warnings)
+            students.extend(block_rows)
+            tables.append(_table_from_students(f"第 {block_index} 版", block_rows))
 
-    metadata = _parse_block_metadata(ws_formula, starts[0])
-    students: list[dict[str, Any]] = []
-    tables: list[dict[str, Any]] = []
-    warnings: list[str] = []
-    formula_count = 0
-    for block_index, start in enumerate(starts, start=1):
-        block_rows, block_formula_count, block_warnings = _parse_block_students(ws_formula, ws_values, start)
-        formula_count += block_formula_count
-        warnings.extend(block_warnings)
-        students.extend(block_rows)
-        tables.append(_table_from_students(f"第 {block_index} 版", block_rows))
-
+    if matching_sheet_count > 1:
+        warnings.append(
+            f"文件中有 {matching_sheet_count} 张工作表符合平时成绩记录表结构，"
+            f"已按工作簿顺序解析《{metadata.get('source_sheet') or ''}》。"
+        )
     if formula_count <= 0:
         warnings.append("源 Excel 未识别到公式列，导出时将按官方公式重新生成。")
     export_payload = normalize_ordinary_grade_record_payload(
@@ -890,17 +901,25 @@ def _write_page(ws: Any, fields: dict[str, Any], students: list[dict[str, Any]],
         ws.row_dimensions[row_number].height = [15.0, 14.25, 14.25, 67.5][offset] if page_index == 0 else [15.0, 15.0, 15.0, 68.0][offset]
 
 
-def _ensure_xlsx_workbook(file_path: Path, original_name: str) -> Path:
-    suffix = Path(original_name or file_path.name).suffix.lower()
-    if suffix == ".xlsx":
-        return Path(file_path)
-    if suffix != ".xls":
-        raise HTTPException(415, "平时成绩记录表仅支持 .xls/.xlsx Excel 文件。")
-    converted = convert_office_file(Path(file_path), "xlsx", timeout=120)
-    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    temp.write(converted.output_bytes)
-    temp.close()
-    return Path(temp.name)
+def _locate_ordinary_grade_worksheet(
+    wb_formula: Any,
+    wb_values: Any,
+) -> tuple[Any | None, Any | None, list[int], int]:
+    value_sheets = {worksheet.title: worksheet for worksheet in wb_values.worksheets}
+    candidates: list[tuple[Any, Any, list[int]]] = []
+    for index, ws_formula in enumerate(wb_formula.worksheets):
+        starts = _find_record_block_starts(ws_formula)
+        if not starts:
+            continue
+        ws_values = value_sheets.get(ws_formula.title)
+        if ws_values is None and index < len(wb_values.worksheets):
+            ws_values = wb_values.worksheets[index]
+        if ws_values is not None:
+            candidates.append((ws_formula, ws_values, starts))
+    if not candidates:
+        return None, None, [], 0
+    ws_formula, ws_values, starts = candidates[0]
+    return ws_formula, ws_values, starts, len(candidates)
 
 
 def _find_record_block_starts(ws: Any) -> list[int]:

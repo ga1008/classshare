@@ -4,8 +4,6 @@ import hashlib
 import io
 import json
 import re
-import shutil
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,8 +12,8 @@ from urllib.parse import quote
 from fastapi import HTTPException
 
 from ..db.connection import get_configured_db_engine
+from .excel_upload_service import open_upload_workbook
 from .exam_grade_record_service import EXAM_GRADE_RECORD_TYPE
-from .libreoffice_service import convert_office_file
 from .ordinary_grade_record_service import (
     ORDINARY_GRADE_RECORD_TYPE,
     calculate_ordinary_grade_score,
@@ -163,28 +161,22 @@ def parse_final_grade_transcript_file(
     original_name: str,
     import_metadata: dict[str, Any] | None = None,
 ) -> FinalGradeTranscriptParseResult:
-    workbook_path, converted_temp_dir = _ensure_xlsx_workbook(file_path, original_name)
-    try:
-        import openpyxl
-    except ImportError as exc:
-        raise RuntimeError(f"缺少 XLSX 解析依赖 openpyxl: {exc}") from exc
-
-    workbook = None
-    try:
-        workbook = openpyxl.load_workbook(workbook_path, data_only=False, read_only=False)
-    except Exception as exc:
-        if converted_temp_dir is not None:
-            shutil.rmtree(converted_temp_dir, ignore_errors=True)
-        raise HTTPException(422, f"Excel 文件无法读取：{str(exc)[:160]}") from exc
-    try:
-        if not workbook.worksheets:
-            raise HTTPException(422, "Excel 中没有可解析的工作表。")
-        worksheet = workbook.worksheets[0]
-        header_row, columns = _locate_header(worksheet)
-        if not header_row:
+    with open_upload_workbook(
+        file_path,
+        original_name,
+        material_label="期末成绩单",
+        data_only=False,
+    ) as workbook:
+        worksheet, header_row, columns, matching_sheet_count = _locate_transcript_worksheet(workbook)
+        if worksheet is None or not header_row:
             raise HTTPException(422, "未识别到“序号、班级、学号、姓名、平时(必填)、期末(必填)、备注”表头。")
 
         warnings: list[str] = []
+        if matching_sheet_count > 1:
+            warnings.append(
+                f"文件中有 {matching_sheet_count} 张工作表符合期末成绩单结构，"
+                f"已按工作簿顺序解析《{worksheet.title}》。"
+            )
         students: list[dict[str, Any]] = []
         seen_numbers: dict[str, int] = {}
         class_names: list[str] = []
@@ -283,10 +275,6 @@ def parse_final_grade_transcript_file(
             warnings=_dedupe(warnings),
             export_payload=payload,
         )
-    finally:
-        workbook.close()
-        if converted_temp_dir is not None:
-            shutil.rmtree(converted_temp_dir, ignore_errors=True)
 
 
 def build_final_grade_transcript_xlsx(payload: dict[str, Any]) -> bytes:
@@ -1247,6 +1235,20 @@ def _record_export_payload(record) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _locate_transcript_worksheet(
+    workbook: Any,
+) -> tuple[Any | None, int | None, dict[str, int], int]:
+    candidates: list[tuple[Any, int, dict[str, int]]] = []
+    for worksheet in workbook.worksheets:
+        header_row, columns = _locate_header(worksheet)
+        if header_row:
+            candidates.append((worksheet, header_row, columns))
+    if not candidates:
+        return None, None, {}, 0
+    worksheet, header_row, columns = candidates[0]
+    return worksheet, header_row, columns, len(candidates)
+
+
 def _locate_header(worksheet) -> tuple[int | None, dict[str, int]]:
     aliases = {
         "index": {"序号"},
@@ -1267,20 +1269,6 @@ def _locate_header(worksheet) -> tuple[int | None, dict[str, int]]:
         if set(columns) == set(aliases):
             return row, columns
     return None, {}
-
-
-def _ensure_xlsx_workbook(file_path: Path, original_name: str) -> tuple[Path, Path | None]:
-    suffix = Path(original_name or file_path.name).suffix.lower()
-    if suffix == ".xlsx":
-        return file_path, None
-    if suffix != ".xls":
-        raise HTTPException(415, "期末成绩单仅支持 .xls 或 .xlsx 文件。")
-    temp_dir = Path(tempfile.mkdtemp(prefix="final_grade_transcript_"))
-    converted = convert_office_file(file_path, output_dir=temp_dir, target_extension="xlsx")
-    if not converted or not Path(converted).exists():
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        raise HTTPException(422, "旧版 Excel 转换失败，请另存为 .xlsx 后重试。")
-    return Path(converted), temp_dir
 
 
 def _roster_signature(roster_item, roster_students: list[dict[str, Any]]) -> str:
