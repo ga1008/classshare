@@ -295,6 +295,10 @@ const state = {
         readiness: null,
         examCourseKey: '',
         candidates: [],
+        sourceOverrides: {
+            ordinary_grade_record: null,
+            exam_grade_record: null,
+        },
         loading: false,
         busy: false,
         error: '',
@@ -723,6 +727,10 @@ function resetFinalGradeGeneration() {
     state.finalGradeGenerate.readiness = null;
     state.finalGradeGenerate.examCourseKey = '';
     state.finalGradeGenerate.candidates = [];
+    state.finalGradeGenerate.sourceOverrides = {
+        ordinary_grade_record: null,
+        exam_grade_record: null,
+    };
     state.finalGradeGenerate.loading = false;
     state.finalGradeGenerate.busy = false;
     state.finalGradeGenerate.error = '';
@@ -1336,6 +1344,10 @@ function renderFinalGradeSourceCard(source, key) {
     const conflicts = Number(source?.conflict_count || 0);
     const duplicates = Number(source?.duplicate_count || 0);
     const extras = Number(source?.extra_count || 0);
+    const isManual = source?.selection_mode === 'manual';
+    const contextMismatches = Array.isArray(source?.context_mismatches)
+        ? source.context_mismatches
+        : [];
     const meta = found
         ? `${matched} 人已匹配${missing ? ` · 缺 ${missing} 人` : ''}${conflicts ? ` · 冲突 ${conflicts} 人` : ''}${duplicates ? ` · 重复学号 ${duplicates} 个` : ''}${extras ? ` · 来源多 ${extras} 人（不写入）` : ''}`
         : '尚未找到严格对应材料';
@@ -1382,18 +1394,150 @@ function renderFinalGradeSourceCard(source, key) {
         </details>
     ` : '';
     const actionLabel = found ? `重新生成或检查${label}` : `前往生成${label}`;
+    const selectionLabel = isManual ? '手动选择' : '自动匹配';
+    const contextWarning = contextMismatches.length ? `
+        <details class="final-grade-source-card__issues">
+            <summary>查看 ${escapeHtml(String(contextMismatches.length))} 项归属差异</summary>
+            <div>${contextMismatches.map((item) => `
+                <span data-tone="extra"><b>已记录</b><span class="final-grade-issue-body">${escapeHtml(item)}</span></span>
+            `).join('')}</div>
+        </details>
+    ` : '';
     return `
         <article class="final-grade-source-card${isReady ? ' is-ready' : ' is-blocking'}">
-            <div class="final-grade-source-card__status">${isReady ? (extras ? `已就绪 · 忽略 ${extras} 人` : '已就绪') : (found ? '需处理' : '缺少来源')}</div>
+            <div class="final-grade-source-card__status">${isReady ? (extras ? `已就绪 · 忽略 ${extras} 人` : '已就绪') : (found ? '需处理' : '缺少来源')} · ${selectionLabel}</div>
             <strong>${escapeHtml(label)}</strong>
+            ${found && source?.source_name ? `<small>${escapeHtml(source.source_name)}</small>` : ''}
             <small>${escapeHtml(meta)}</small>
             <p>${escapeHtml(source?.message || '')}</p>
             ${issueDetails}
-            ${isReady
-                ? `<span>记录 #${escapeHtml(String(source?.record_id || ''))} · ${escapeHtml(formatDateLabel(source?.updated_at))}</span>`
-                : `<a class="btn btn-outline btn-sm" href="${escapeHtml(source?.generate_url || '#')}" target="_blank" rel="noopener">${escapeHtml(actionLabel)}</a>`}
+            ${contextWarning}
+            ${isReady ? `<span>记录 #${escapeHtml(String(source?.record_id || ''))} · ${escapeHtml(formatDateLabel(source?.updated_at))} · 近似度 ${escapeHtml(String(source?.similarity_score ?? '—'))}</span>` : ''}
+            <div>
+                ${isReady ? '' : `<a class="btn btn-outline btn-sm" href="${escapeHtml(source?.generate_url || '#')}" target="_blank" rel="noopener">${escapeHtml(actionLabel)}</a>`}
+                <button type="button" class="btn btn-outline btn-sm" data-materials-final-grade-manual-source="${escapeHtml(key)}">${isManual ? '更换材料' : '手动选择'}</button>
+            </div>
         </article>
     `;
+}
+
+function finalGradeSourceLabel(documentType) {
+    return documentType === 'ordinary_grade_record' ? '平时成绩表' : '考核登分表';
+}
+
+function renderFinalGradeSourceCandidate(candidate, selectedId) {
+    const selectable = Boolean(candidate?.selectable);
+    const selected = Number(candidate?.record_id || 0) === Number(selectedId || 0);
+    const fields = candidate?.fields || {};
+    const identity = [
+        fields.academic_year,
+        fields.semester,
+        fields.course_name,
+        fields.class_name,
+    ].filter(Boolean).join(' · ');
+    const mismatchText = Array.isArray(candidate?.context_mismatches) && candidate.context_mismatches.length
+        ? `归属提示：${candidate.context_mismatches.join('；')}`
+        : '学年、学期、课程和班级归属一致';
+    const matchText = [
+        `${Number(candidate?.matched_count || 0)} 人匹配`,
+        Number(candidate?.missing_count || 0) ? `缺 ${Number(candidate.missing_count)} 人` : '',
+        Number(candidate?.conflict_count || 0) ? `冲突 ${Number(candidate.conflict_count)} 人` : '',
+        Number(candidate?.duplicate_count || 0) ? `重复学号 ${Number(candidate.duplicate_count)} 个` : '',
+        Number(candidate?.extra_count || 0) ? `多出 ${Number(candidate.extra_count)} 人（忽略）` : '',
+    ].filter(Boolean).join(' · ');
+    return `
+        <button
+            type="button"
+            class="ordinary-grade-candidate${selected ? ' is-selected' : ''}"
+            data-materials-final-grade-source-record-id="${escapeHtml(String(candidate?.record_id || ''))}"
+            ${selectable ? '' : 'disabled aria-disabled="true"'}
+            title="${escapeHtml(candidate?.selection_message || '')}">
+            <span class="ordinary-grade-candidate__main">
+                <strong>${escapeHtml(candidate?.title || `${finalGradeSourceLabel(candidate?.document_type)} #${candidate?.record_id || ''}`)}</strong>
+                <small>${escapeHtml(identity || '材料未填写完整归属信息')}</small>
+                <small>${escapeHtml(matchText)} · 近似度 ${escapeHtml(String(candidate?.similarity_score ?? 0))}</small>
+                <small>${escapeHtml(mismatchText)}</small>
+                ${selectable ? '' : `<small>${escapeHtml(candidate?.selection_message || '内容核对未通过，不能选用。')}</small>`}
+            </span>
+            <span class="ordinary-grade-candidate__usage">${selected ? '当前选用' : (selectable ? '选择' : '不可选')}</span>
+        </button>
+    `;
+}
+
+function openManageFinalGradeSourcePicker(documentType) {
+    if (!['ordinary_grade_record', 'exam_grade_record'].includes(documentType)) return;
+    const generation = state.finalGradeGenerate;
+    const offeringId = Number(generation.offering?.id || 0);
+    if (!offeringId || generation.loading || generation.busy) return;
+    const label = finalGradeSourceLabel(documentType);
+    const overrideId = Number(generation.sourceOverrides?.[documentType] || 0);
+    const currentId = overrideId || Number(generation.readiness?.sources?.[documentType]?.record_id || 0);
+    openProcessMaterialModal(
+        `手动选择${label}`,
+        '<div class="ordinary-grade-picker__empty" role="status"><span class="spinner spinner-sm" aria-hidden="true"></span><strong>正在读取并核对可选材料…</strong></div>',
+        {
+            wide: true,
+            footerHtml: `
+                <button type="button" class="lp-btn lp-btn--ghost" data-materials-final-grade-source-auto ${overrideId ? '' : 'disabled'}>恢复自动匹配</button>
+                <button type="button" class="lp-btn lp-btn--ghost" data-pm-close>关闭</button>
+            `,
+            onMount: (overlay, close) => {
+                const body = overlay.querySelector('.lp-modal__body');
+                const autoButton = overlay.querySelector('[data-materials-final-grade-source-auto]');
+                autoButton?.addEventListener('click', async () => {
+                    generation.sourceOverrides[documentType] = null;
+                    close();
+                    await prepareManageFinalGradeGeneration(generation.examCourseKey);
+                });
+                apiFetch(
+                    `/api/classrooms/${offeringId}/final-grade-transcript/source-candidates?document_type=${encodeURIComponent(documentType)}`,
+                    { silent: true },
+                ).then((data) => {
+                    const items = Array.isArray(data?.items) ? data.items : [];
+                    if (!body) return;
+                    body.innerHTML = items.length ? `
+                        <div class="exam-grade-candidate-panel__header">
+                            <div>
+                                <span>按近似度从高到低</span>
+                                <strong>共 ${escapeHtml(String(items.length))} 份${escapeHtml(label)}</strong>
+                            </div>
+                            <small>只有学号、姓名和成绩逐人核对通过的材料可选；归属差异会再次确认并写入审计。</small>
+                        </div>
+                        <div class="ordinary-grade-picker__list">${items.map((item) => renderFinalGradeSourceCandidate(item, currentId)).join('')}</div>
+                    ` : '<div class="ordinary-grade-picker__empty"><strong>暂无已解析材料</strong><span>请先导入或生成该类成绩材料，再返回此处选择。</span></div>';
+                    body.querySelectorAll('[data-materials-final-grade-source-record-id]').forEach((button) => {
+                        button.addEventListener('click', async () => {
+                            if (button.disabled) return;
+                            const recordId = Number(button.dataset.materialsFinalGradeSourceRecordId || 0);
+                            const candidate = items.find((item) => Number(item?.record_id || 0) === recordId);
+                            if (!candidate?.selectable) {
+                                showToast(candidate?.selection_message || '材料内容核对未通过，不能选用。', 'error');
+                                return;
+                            }
+                            const mismatches = Array.isArray(candidate.context_mismatches)
+                                ? candidate.context_mismatches
+                                : [];
+                            if (mismatches.length) {
+                                const confirmed = await openProcessMaterialConfirm({
+                                    title: `确认选用这份${label}`,
+                                    message: '学生学号、姓名和成绩已全部核对通过，但材料归属信息与当前课堂存在差异。',
+                                    detail: `${mismatches.slice(0, 4).join('；')}。确认后系统会使用当前课堂信息生成，并把差异写入后台审计。`,
+                                    confirmText: '确认选用',
+                                });
+                                if (!confirmed) return;
+                            }
+                            generation.sourceOverrides[documentType] = recordId;
+                            close();
+                            await prepareManageFinalGradeGeneration(generation.examCourseKey);
+                        });
+                    });
+                }).catch((error) => {
+                    if (!body) return;
+                    body.innerHTML = `<div class="ordinary-grade-picker__empty"><strong>材料列表读取失败</strong><span>${escapeHtml(error.message || '请稍后重试。')}</span></div>`;
+                });
+            },
+        },
+    );
 }
 
 function getManageFinalGradeReadiness() {
@@ -1521,7 +1665,11 @@ async function prepareManageFinalGradeGeneration(examCourseKey = '') {
     try {
         const data = await apiFetch(`/api/classrooms/${offeringId}/final-grade-transcript/prepare`, {
             method: 'POST',
-            body: { exam_course_key: generation.examCourseKey },
+            body: {
+                exam_course_key: generation.examCourseKey,
+                ordinary_grade_record_id: Number(generation.sourceOverrides?.ordinary_grade_record || 0) || null,
+                exam_grade_record_id: Number(generation.sourceOverrides?.exam_grade_record || 0) || null,
+            },
             silent: true,
         });
         if (!isCurrentRequest()) return;
@@ -1579,6 +1727,25 @@ async function submitManageFinalGradeGeneration() {
     }
     const offeringId = Number(generation.offering?.id || 0);
     const sources = generation.readiness?.sources || {};
+    const manuallySelected = [
+        sources?.ordinary_grade_record,
+        sources?.exam_grade_record,
+    ].filter((source) => source?.selection_mode === 'manual');
+    if (manuallySelected.length) {
+        const details = manuallySelected.map((source) => {
+            const mismatchCount = Array.isArray(source?.context_mismatches)
+                ? source.context_mismatches.length
+                : 0;
+            return `${source?.label || '成绩材料'} #${source?.record_id || '—'}“${source?.source_name || '未命名'}”${mismatchCount ? `（${mismatchCount} 项归属差异）` : ''}`;
+        }).join('；');
+        const confirmed = await openProcessMaterialConfirm({
+            title: '最终确认手动选择的成绩来源',
+            message: `系统已再次核对 ${Number(generation.readiness?.roster?.student_count || 0)} 名学生的学号、姓名和成绩完整性。`,
+            detail: `本次将使用：${details}。如材料选错，请取消并在来源卡片中点击“更换材料”。`,
+            confirmText: '确认生成',
+        });
+        if (!confirmed) return;
+    }
     generation.busy = true;
     renderManageFinalGradeWizard();
     setManageFinalGradeStatus('正在锁定已核对的名单缓存与两份成绩来源，随后按教务顺序生成 Excel…', 'progress');
@@ -5597,6 +5764,11 @@ function bindEvents() {
             state.finalGradeGenerate.error = error.message || '重新同步核对失败。';
             renderManageFinalGradeWizard();
         });
+    });
+    refs.finalGradeSourceGrid?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-materials-final-grade-manual-source]');
+        if (!button) return;
+        openManageFinalGradeSourcePicker(String(button.dataset.materialsFinalGradeManualSource || ''));
     });
     refs.classroomGenerateBackBtn?.addEventListener('click', returnToClassroomGeneratePicker);
     refs.classroomGenerateSubmitBtn?.addEventListener('click', () => {

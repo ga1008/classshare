@@ -191,6 +191,8 @@ class ClassroomFinalMaterialGenerateRequest(BaseModel):
 
 class FinalGradeTranscriptPrepareRequest(BaseModel):
     exam_course_key: str = ""
+    ordinary_grade_record_id: int | None = None
+    exam_grade_record_id: int | None = None
 
 
 class MaterialAiRewriteRequest(BaseModel):

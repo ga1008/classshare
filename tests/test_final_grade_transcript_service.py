@@ -13,6 +13,7 @@ from classroom_app.services.final_grade_transcript_service import (
     build_final_grade_transcript_payload,
     build_final_grade_transcript_readiness,
     build_final_grade_transcript_xlsx,
+    list_final_grade_transcript_source_candidates,
     normalize_final_grade_semester,
     parse_final_grade_transcript_file,
 )
@@ -348,7 +349,7 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
         self.assertTrue(source["record_found"])
         self.assertEqual(source["record_id"], 71)
 
-    def test_unscoped_unassigned_source_returns_direct_generation_link(self):
+    def test_unscoped_unassigned_import_is_auto_matched_by_exact_business_context(self):
         record = self.conn.execute(
             "SELECT export_payload_json FROM material_ai_import_records WHERE id = 71"
         ).fetchone()
@@ -367,11 +368,148 @@ class FinalGradeTranscriptServiceTests(unittest.TestCase):
             teacher_id=1,
         )
 
-        self.assertFalse(readiness["ready"])
+        self.assertTrue(readiness["ready"])
         source = readiness["sources"]["exam_grade_record"]
-        self.assertFalse(source["record_found"])
-        self.assertIn("/manage/teaching/exam-grade-records", source["generate_url"])
-        self.assertIn("class_offering_id=30", source["generate_url"])
+        self.assertTrue(source["record_found"])
+        self.assertEqual(source["record_id"], 71)
+        self.assertEqual(source["selection_mode"], "automatic")
+        self.assertEqual(source["context_mismatches"], [])
+
+    def test_manual_candidates_rank_by_similarity_and_block_bad_student_content(self):
+        record = self.conn.execute(
+            "SELECT export_payload_json FROM material_ai_import_records WHERE id = 71"
+        ).fetchone()
+        payload = json.loads(record["export_payload_json"])
+        payload["fields"]["course_name"] = "另一门课程"
+        payload["fields"]["class_name"] = "其他班级"
+        payload["fields"].pop("class_offering_id")
+        self.conn.execute(
+            """
+            INSERT INTO material_ai_import_records
+                (id, teacher_id, document_group, document_type, document_type_label,
+                 parse_status, package_material_id, parsed_material_id, source_material_id,
+                 export_payload_json, updated_at)
+            VALUES (72, 1, 'final_material', 'exam_grade_record', '考核登分表',
+                    'completed', 720, NULL, NULL, ?, '2026-07-29 10:30:00')
+            """,
+            (json.dumps(payload, ensure_ascii=False),),
+        )
+        broken_payload = json.loads(record["export_payload_json"])
+        broken_payload["fields"]["course_name"] = "最相近但内容错误的课程"
+        broken_payload["structured"]["students"][0]["student_name"] = "同号异名"
+        self.conn.execute(
+            """
+            INSERT INTO material_ai_import_records
+                (id, teacher_id, document_group, document_type, document_type_label,
+                 parse_status, package_material_id, parsed_material_id, source_material_id,
+                 export_payload_json, updated_at)
+            VALUES (73, 1, 'final_material', 'exam_grade_record', '考核登分表',
+                    'completed', 730, NULL, NULL, ?, '2026-07-29 10:31:00')
+            """,
+            (json.dumps(broken_payload, ensure_ascii=False),),
+        )
+        self.conn.commit()
+
+        result = list_final_grade_transcript_source_candidates(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            document_type="exam_grade_record",
+        )
+
+        self.assertEqual([item["record_id"] for item in result["items"]], [71, 72, 73])
+        self.assertTrue(result["items"][0]["selectable"])
+        self.assertTrue(result["items"][1]["selectable"])
+        self.assertEqual(len(result["items"][1]["context_mismatches"]), 2)
+        self.assertFalse(result["items"][2]["selectable"])
+        self.assertEqual(result["items"][2]["conflict_count"], 1)
+
+    def test_manual_override_allows_context_difference_but_keeps_roster_guard(self):
+        record = self.conn.execute(
+            "SELECT export_payload_json FROM material_ai_import_records WHERE id = 71"
+        ).fetchone()
+        payload = json.loads(record["export_payload_json"])
+        payload["fields"].update(
+            {
+                "course_name": "旧课程名称",
+                "class_name": "软工2406班",
+            }
+        )
+        payload["fields"].pop("class_offering_id")
+        payload["structured"]["students"][0]["total_score"] = 66
+        payload["structured"]["students"][1]["total_score"] = 77
+        self.conn.execute(
+            """
+            INSERT INTO material_ai_import_records
+                (id, teacher_id, document_group, document_type, document_type_label,
+                 parse_status, package_material_id, parsed_material_id, source_material_id,
+                 export_payload_json, updated_at)
+            VALUES (72, 1, 'final_material', 'exam_grade_record', '考核登分表',
+                    'completed', 720, NULL, NULL, ?, '2026-07-29 10:30:00')
+            """,
+            (json.dumps(payload, ensure_ascii=False),),
+        )
+        self.conn.commit()
+
+        readiness = build_final_grade_transcript_readiness(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            exam_grade_record_id=72,
+        )
+
+        source = readiness["sources"]["exam_grade_record"]
+        self.assertTrue(readiness["ready"])
+        self.assertEqual(source["record_id"], 72)
+        self.assertEqual(source["selection_mode"], "manual")
+        self.assertEqual(len(source["context_mismatches"]), 2)
+        self.assertIn("归属差异", source["message"])
+
+        generated = build_final_grade_transcript_payload(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            expected_roster_signature=readiness["roster"]["signature"],
+            expected_exam_record_id=72,
+        )
+        students = generated["structured"]["students"]
+        self.assertEqual([student["final_score"] for student in students], [77, 66])
+        lineage = generated["structured"]["source_lineage"]["exam_grade_record"]
+        self.assertEqual(lineage["selection_mode"], "manual")
+        self.assertEqual(len(lineage["context_mismatches"]), 2)
+
+        payload["structured"]["students"][0]["student_name"] = "同号异名"
+        self.conn.execute(
+            "UPDATE material_ai_import_records SET export_payload_json = ? WHERE id = 72",
+            (json.dumps(payload, ensure_ascii=False),),
+        )
+        self.conn.commit()
+        blocked = build_final_grade_transcript_readiness(
+            self.conn,
+            class_offering_id=30,
+            teacher_id=1,
+            exam_grade_record_id=72,
+        )
+        self.assertFalse(blocked["ready"])
+        self.assertEqual(blocked["sources"]["exam_grade_record"]["conflict_count"], 1)
+        with self.assertRaises(HTTPException) as cm:
+            build_final_grade_transcript_payload(
+                self.conn,
+                class_offering_id=30,
+                teacher_id=1,
+                expected_exam_record_id=72,
+            )
+        self.assertEqual(cm.exception.status_code, 409)
+
+    def test_manual_override_rejects_wrong_document_type(self):
+        with self.assertRaises(HTTPException) as cm:
+            build_final_grade_transcript_readiness(
+                self.conn,
+                class_offering_id=30,
+                teacher_id=1,
+                exam_grade_record_id=70,
+            )
+        self.assertEqual(cm.exception.status_code, 404)
 
     def test_source_selection_prefers_complete_record_over_newer_incomplete_candidate(self):
         record = self.conn.execute(

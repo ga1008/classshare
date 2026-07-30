@@ -20,6 +20,7 @@ from ...services.final_grade_transcript_service import (
     FINAL_GRADE_TRANSCRIPT_TYPE,
     build_final_grade_transcript_payload,
     build_final_grade_transcript_readiness,
+    list_final_grade_transcript_source_candidates,
 )
 from ...services.academic_exam_roster_sync_service import (
     ACADEMIC_EXAM_ROSTER_CACHE_SECONDS,
@@ -148,6 +149,26 @@ async def list_classroom_exam_grade_record_candidates(
     return {"status": "success", "items": items}
 
 
+@router.get(
+    "/api/classrooms/{class_offering_id}/final-grade-transcript/source-candidates",
+    response_class=JSONResponse,
+)
+async def list_classroom_final_grade_transcript_source_candidates(
+    class_offering_id: int,
+    document_type: str = Query(...),
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        ensure_classroom_access(conn, class_offering_id, user)
+        result = list_final_grade_transcript_source_candidates(
+            conn,
+            class_offering_id=int(class_offering_id),
+            teacher_id=int(user["id"]),
+            document_type=document_type,
+        )
+    return {"status": "success", **result}
+
+
 @router.post(
     "/api/classrooms/{class_offering_id}/final-grade-transcript/prepare",
     response_class=JSONResponse,
@@ -179,6 +200,8 @@ async def prepare_classroom_final_grade_transcript(
                 conn,
                 class_offering_id=int(class_offering_id),
                 teacher_id=int(user["id"]),
+                ordinary_grade_record_id=payload.ordinary_grade_record_id,
+                exam_grade_record_id=payload.exam_grade_record_id,
             )
         except HTTPException:
             raise

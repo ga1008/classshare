@@ -1168,6 +1168,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/final-grade-transcript/source-candidates",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_classroom_final_grade_transcript_source_candidates",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/final-materials/generate",
     "methods": [
       "POST"

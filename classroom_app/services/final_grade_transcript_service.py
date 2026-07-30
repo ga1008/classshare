@@ -47,6 +47,18 @@ FINAL_GRADE_TRANSCRIPT_LAYOUT = {
         "footer": 0.3,
     },
 }
+FINAL_GRADE_SOURCE_TYPES = frozenset(
+    {
+        ORDINARY_GRADE_RECORD_TYPE,
+        EXAM_GRADE_RECORD_TYPE,
+    }
+)
+FINAL_GRADE_CONTEXT_FIELDS = (
+    ("academic_year", "学年", "_academic_year_token"),
+    ("semester", "学期", "_semester_token"),
+    ("course_name", "课程", "_identity_text"),
+    ("class_name", "班级", "_class_identity_text"),
+)
 
 
 @dataclass(frozen=True)
@@ -482,6 +494,8 @@ def build_final_grade_transcript_readiness(
     *,
     class_offering_id: int,
     teacher_id: int,
+    ordinary_grade_record_id: int | None = None,
+    exam_grade_record_id: int | None = None,
 ) -> dict[str, Any]:
     context = _load_context(
         conn,
@@ -499,21 +513,23 @@ def build_final_grade_transcript_readiness(
             "sources": _empty_sources(class_offering_id),
         }
 
-    ordinary_record = _select_matching_record(
+    ordinary_record, ordinary_selection_mode = _resolve_source_record(
         conn,
         teacher_id=int(teacher_id),
         class_offering_id=int(class_offering_id),
         document_type=ORDINARY_GRADE_RECORD_TYPE,
         context=context,
         roster_students=roster_students,
+        selected_record_id=ordinary_grade_record_id,
     )
-    exam_record = _select_matching_record(
+    exam_record, exam_selection_mode = _resolve_source_record(
         conn,
         teacher_id=int(teacher_id),
         class_offering_id=int(class_offering_id),
         document_type=EXAM_GRADE_RECORD_TYPE,
         context=context,
         roster_students=roster_students,
+        selected_record_id=exam_grade_record_id,
     )
     ordinary_source = _source_match_summary(
         ordinary_record,
@@ -521,11 +537,27 @@ def build_final_grade_transcript_readiness(
         document_type=ORDINARY_GRADE_RECORD_TYPE,
         class_offering_id=int(class_offering_id),
     )
+    _decorate_source_selection(
+        conn,
+        ordinary_source,
+        ordinary_record,
+        context=context,
+        class_offering_id=int(class_offering_id),
+        selection_mode=ordinary_selection_mode,
+    )
     exam_source = _source_match_summary(
         exam_record,
         roster_students=roster_students,
         document_type=EXAM_GRADE_RECORD_TYPE,
         class_offering_id=int(class_offering_id),
+    )
+    _decorate_source_selection(
+        conn,
+        exam_source,
+        exam_record,
+        context=context,
+        class_offering_id=int(class_offering_id),
+        selection_mode=exam_selection_mode,
     )
     duplicate_roster_numbers = _duplicates(
         [_text(student.get("student_number")) for student in roster_students]
@@ -605,6 +637,8 @@ def build_final_grade_transcript_payload(
         conn,
         class_offering_id=int(class_offering_id),
         teacher_id=int(teacher_id),
+        ordinary_grade_record_id=expected_ordinary_record_id,
+        exam_grade_record_id=expected_exam_record_id,
     )
     if not readiness.get("ready"):
         raise HTTPException(409, readiness.get("message") or "期末成绩单来源尚未准备完成。")
@@ -630,8 +664,18 @@ def build_final_grade_transcript_payload(
         raise HTTPException(409, "考试名单在生成期间发生了变化，请返回生成窗口重新核对。")
     if _roster_signature(roster_item, roster_students) != str(roster.get("signature") or ""):
         raise HTTPException(409, "教务考试名单内容在生成期间发生了变化，请重新同步并核对。")
-    ordinary_record = _load_record(conn, int(ordinary_summary["record_id"]))
-    exam_record = _load_record(conn, int(exam_summary["record_id"]))
+    ordinary_record = _load_source_record_for_teacher(
+        conn,
+        teacher_id=int(teacher_id),
+        document_type=ORDINARY_GRADE_RECORD_TYPE,
+        record_id=int(ordinary_summary["record_id"]),
+    )
+    exam_record = _load_source_record_for_teacher(
+        conn,
+        teacher_id=int(teacher_id),
+        document_type=EXAM_GRADE_RECORD_TYPE,
+        record_id=int(exam_summary["record_id"]),
+    )
     if str(ordinary_record["updated_at"] or "") != str(ordinary_summary.get("updated_at") or ""):
         raise HTTPException(409, "平时成绩表在生成期间发生了变化，请重新核对后生成。")
     if str(exam_record["updated_at"] or "") != str(exam_summary.get("updated_at") or ""):
@@ -683,11 +727,17 @@ def build_final_grade_transcript_payload(
             "record_id": int(ordinary_summary["record_id"]),
             "updated_at": ordinary_summary.get("updated_at") or "",
             "matched_student_count": len(rows),
+            "selection_mode": ordinary_summary.get("selection_mode") or "automatic",
+            "similarity_score": ordinary_summary.get("similarity_score"),
+            "context_mismatches": ordinary_summary.get("context_mismatches") or [],
         },
         "exam_grade_record": {
             "record_id": int(exam_summary["record_id"]),
             "updated_at": exam_summary.get("updated_at") or "",
             "matched_student_count": len(rows),
+            "selection_mode": exam_summary.get("selection_mode") or "automatic",
+            "similarity_score": exam_summary.get("similarity_score"),
+            "context_mismatches": exam_summary.get("context_mismatches") or [],
         },
     }
     payload = normalize_final_grade_transcript_payload(
@@ -724,6 +774,150 @@ def _empty_sources(class_offering_id: int) -> dict[str, Any]:
     }
 
 
+def list_final_grade_transcript_source_candidates(
+    conn,
+    *,
+    class_offering_id: int,
+    teacher_id: int,
+    document_type: str,
+    limit: int = 50,
+) -> dict[str, Any]:
+    document_type = _text(document_type)
+    if document_type not in FINAL_GRADE_SOURCE_TYPES:
+        raise HTTPException(400, "仅支持选择平时成绩表或考核登分表。")
+    context = _load_context(
+        conn,
+        class_offering_id=int(class_offering_id),
+        teacher_id=int(teacher_id),
+    )
+    roster_item, roster_students = _load_exam_roster(
+        conn,
+        class_offering_id=int(class_offering_id),
+        teacher_id=int(teacher_id),
+    )
+    rows = _list_source_records(
+        conn,
+        teacher_id=int(teacher_id),
+        document_type=document_type,
+        limit=max(1, min(int(limit or 50), 100)),
+    )
+    assigned_material_ids = _assigned_material_ids(
+        conn,
+        class_offering_id=int(class_offering_id),
+    )
+    items = [
+        _build_source_candidate(
+            conn,
+            row,
+            context=context,
+            roster_students=roster_students,
+            document_type=document_type,
+            class_offering_id=int(class_offering_id),
+            assigned_material_ids=assigned_material_ids,
+        )
+        for row in rows
+    ]
+    items.sort(
+        key=lambda item: (
+            int(item.get("similarity_score") or 0),
+            1 if item.get("selectable") else 0,
+            str(item.get("updated_at") or ""),
+            int(item.get("record_id") or 0),
+        ),
+        reverse=True,
+    )
+    return {
+        "classroom": context,
+        "roster": {
+            "ready": bool(roster_item and roster_students),
+            "student_count": len(roster_students),
+            "synced_at": roster_item["synced_at"] if roster_item else "",
+        },
+        "document_type": document_type,
+        "items": items,
+    }
+
+
+def _resolve_source_record(
+    conn,
+    *,
+    teacher_id: int,
+    class_offering_id: int,
+    document_type: str,
+    context: dict[str, Any],
+    roster_students: list[dict[str, Any]],
+    selected_record_id: int | None,
+):
+    if _positive_int(selected_record_id, 0):
+        return (
+            _load_source_record_for_teacher(
+                conn,
+                teacher_id=int(teacher_id),
+                document_type=document_type,
+                record_id=int(selected_record_id),
+            ),
+            "manual",
+        )
+    return (
+        _select_matching_record(
+            conn,
+            teacher_id=int(teacher_id),
+            class_offering_id=int(class_offering_id),
+            document_type=document_type,
+            context=context,
+            roster_students=roster_students,
+        ),
+        "automatic",
+    )
+
+
+def _list_source_records(
+    conn,
+    *,
+    teacher_id: int,
+    document_type: str,
+    limit: int = 100,
+):
+    return conn.execute(
+        """
+        SELECT r.*
+        FROM material_ai_import_records r
+        WHERE r.teacher_id = ?
+          AND r.document_group = 'final_material'
+          AND r.document_type = ?
+          AND r.parse_status = 'completed'
+        ORDER BY r.updated_at DESC, r.id DESC
+        LIMIT ?
+        """,
+        (int(teacher_id), document_type, max(1, min(int(limit or 100), 100))),
+    ).fetchall()
+
+
+def _load_source_record_for_teacher(
+    conn,
+    *,
+    teacher_id: int,
+    document_type: str,
+    record_id: int,
+):
+    row = conn.execute(
+        """
+        SELECT r.*
+        FROM material_ai_import_records r
+        WHERE r.id = ?
+          AND r.teacher_id = ?
+          AND r.document_group = 'final_material'
+          AND r.document_type = ?
+          AND r.parse_status = 'completed'
+        LIMIT 1
+        """,
+        (int(record_id), int(teacher_id), document_type),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "所选成绩材料不存在、已失效或无权访问，请重新选择。")
+    return row
+
+
 def _select_matching_record(
     conn,
     *,
@@ -733,19 +927,11 @@ def _select_matching_record(
     context: dict[str, Any],
     roster_students: list[dict[str, Any]],
 ):
-    rows = conn.execute(
-        """
-        SELECT r.*
-        FROM material_ai_import_records r
-        WHERE r.teacher_id = ?
-          AND r.document_group = 'final_material'
-          AND r.document_type = ?
-          AND r.parse_status = 'completed'
-        ORDER BY r.updated_at DESC, r.id DESC
-        LIMIT 100
-        """,
-        (int(teacher_id), document_type),
-    ).fetchall()
+    rows = _list_source_records(
+        conn,
+        teacher_id=int(teacher_id),
+        document_type=document_type,
+    )
     candidates: list[tuple[tuple[Any, ...], Any]] = []
     for row in rows:
         payload = _record_export_payload(row)
@@ -791,29 +977,12 @@ def _record_matches_offering_scope(
     field_offering_id = _positive_int(fields.get("class_offering_id"), 0)
     if field_offering_id:
         return field_offering_id == int(class_offering_id)
-    material_ids = [
-        int(value)
-        for value in (
-            record["package_material_id"],
-            record["parsed_material_id"],
-            record["source_material_id"],
-        )
-        if _positive_int(value, 0)
-    ]
-    if not material_ids:
-        return False
-    placeholders = ",".join("?" for _ in material_ids)
-    assignment = conn.execute(
-        f"""
-        SELECT 1
-        FROM course_material_assignments
-        WHERE class_offering_id = ?
-          AND material_id IN ({placeholders})
-        LIMIT 1
-        """,
-        (int(class_offering_id), *material_ids),
-    ).fetchone()
-    return bool(assignment)
+    # Imported grade sheets do not ask the teacher to select a classroom, so
+    # they legitimately have neither class_offering_id nor a material
+    # assignment. The caller has already required an exact year/term/course/
+    # class match; requiring a second binding here made valid imports
+    # undiscoverable.
+    return True
 
 
 def _same_context(fields: dict[str, Any], context: dict[str, Any]) -> bool:
@@ -831,6 +1000,259 @@ def _same_context(fields: dict[str, Any], context: dict[str, Any]) -> bool:
     field_offering_id = _positive_int(fields.get("class_offering_id"), 0)
     expected_offering_id = _positive_int(context.get("class_offering_id"), 0)
     return not field_offering_id or field_offering_id == expected_offering_id
+
+
+def _context_normalizer(name: str):
+    return {
+        "_academic_year_token": _academic_year_token,
+        "_semester_token": _semester_token,
+        "_identity_text": _identity_text,
+        "_class_identity_text": _class_identity_text,
+    }[name]
+
+
+def _record_context_comparison(fields: dict[str, Any], context: dict[str, Any]) -> list[dict[str, Any]]:
+    comparisons: list[dict[str, Any]] = []
+    for key, label, normalizer_name in FINAL_GRADE_CONTEXT_FIELDS:
+        normalizer = _context_normalizer(normalizer_name)
+        expected_value = _text(context.get(key))
+        actual_value = _text(fields.get(key))
+        expected = normalizer(expected_value)
+        actual = normalizer(actual_value)
+        if expected and actual and expected == actual:
+            status = "matched"
+        elif not actual:
+            status = "missing"
+        else:
+            status = "mismatched"
+        comparisons.append(
+            {
+                "key": key,
+                "label": label,
+                "status": status,
+                "expected": expected_value,
+                "actual": actual_value,
+            }
+        )
+    return comparisons
+
+
+def _assigned_material_ids(conn, *, class_offering_id: int) -> set[int]:
+    rows = conn.execute(
+        """
+        SELECT material_id
+        FROM course_material_assignments
+        WHERE class_offering_id = ?
+        """,
+        (int(class_offering_id),),
+    ).fetchall()
+    return {
+        int(row["material_id"])
+        for row in rows
+        if _positive_int(row["material_id"], 0)
+    }
+
+
+def _record_scope_status(
+    conn,
+    record,
+    *,
+    fields: dict[str, Any],
+    class_offering_id: int,
+    assigned_material_ids: set[int] | None = None,
+) -> str:
+    field_offering_id = _positive_int(fields.get("class_offering_id"), 0)
+    if field_offering_id:
+        return "exact_offering" if field_offering_id == int(class_offering_id) else "other_offering"
+    material_ids = [
+        int(value)
+        for value in (
+            record["package_material_id"],
+            record["parsed_material_id"],
+            record["source_material_id"],
+        )
+        if _positive_int(value, 0)
+    ]
+    if not material_ids:
+        return "unbound"
+    if assigned_material_ids is None:
+        assigned_material_ids = _assigned_material_ids(
+            conn,
+            class_offering_id=int(class_offering_id),
+        )
+    return "assigned" if any(material_id in assigned_material_ids for material_id in material_ids) else "unbound"
+
+
+def _source_similarity_score(
+    summary: dict[str, Any],
+    *,
+    roster_count: int,
+    comparisons: list[dict[str, Any]],
+    scope_status: str,
+) -> int:
+    matched_count = max(0, int(summary.get("matched_count") or 0))
+    roster_points = 0.0
+    if roster_count > 0:
+        roster_points = min(55.0, (matched_count / roster_count) * 55.0)
+    weights = {
+        "academic_year": 8,
+        "semester": 8,
+        "course_name": 12,
+        "class_name": 12,
+    }
+    context_points = sum(
+        weights.get(str(item.get("key") or ""), 0)
+        for item in comparisons
+        if item.get("status") == "matched"
+    )
+    scope_points = 5 if scope_status in {"exact_offering", "assigned"} else 0
+    return max(0, min(100, int(round(roster_points + context_points + scope_points))))
+
+
+def _build_source_candidate(
+    conn,
+    record,
+    *,
+    context: dict[str, Any],
+    roster_students: list[dict[str, Any]],
+    document_type: str,
+    class_offering_id: int,
+    assigned_material_ids: set[int],
+) -> dict[str, Any]:
+    payload = _record_export_payload(record)
+    fields = _as_dict(payload.get("fields"))
+    summary = _source_match_summary(
+        record,
+        roster_students=roster_students,
+        document_type=document_type,
+        class_offering_id=int(class_offering_id),
+    )
+    comparisons = _record_context_comparison(fields, context)
+    mismatches = [
+        f"{item['label']}：材料“{item.get('actual') or '未填写'}” / 当前“{item.get('expected') or '未识别'}”"
+        for item in comparisons
+        if item.get("status") != "matched"
+    ]
+    scope_status = _record_scope_status(
+        conn,
+        record,
+        fields=fields,
+        class_offering_id=int(class_offering_id),
+        assigned_material_ids=assigned_material_ids,
+    )
+    similarity_score = _source_similarity_score(
+        summary,
+        roster_count=len(roster_students),
+        comparisons=comparisons,
+        scope_status=scope_status,
+    )
+    selectable = bool(roster_students) and bool(summary.get("ready"))
+    title = (
+        _text(fields.get("export_filename"))
+        or _text(fields.get("title"))
+        or _text(record["document_type_label"])
+        or ("平时成绩表" if document_type == ORDINARY_GRADE_RECORD_TYPE else "考核登分表")
+    )
+    material_id = next(
+        (
+            int(value)
+            for value in (
+                record["package_material_id"],
+                record["parsed_material_id"],
+                record["source_material_id"],
+            )
+            if _positive_int(value, 0)
+        ),
+        0,
+    )
+    return {
+        "record_id": int(record["id"]),
+        "material_id": material_id or None,
+        "document_type": document_type,
+        "title": title,
+        "updated_at": record["updated_at"] or "",
+        "similarity_score": similarity_score,
+        "selectable": selectable,
+        "selection_message": (
+            "学生学号、姓名和成绩均已核对通过，可以手动选用。"
+            if selectable
+            else summary.get("message") or "材料内容未通过逐人核验，不能选用。"
+        ),
+        "matched_count": int(summary.get("matched_count") or 0),
+        "missing_count": int(summary.get("missing_count") or 0),
+        "conflict_count": int(summary.get("conflict_count") or 0),
+        "duplicate_count": int(summary.get("duplicate_count") or 0),
+        "extra_count": int(summary.get("extra_count") or 0),
+        "fields": {
+            key: fields.get(key) or ""
+            for key in ("academic_year", "semester", "course_name", "class_name", "teacher_name")
+        },
+        "context_comparisons": comparisons,
+        "context_mismatches": mismatches,
+        "scope_status": scope_status,
+    }
+
+
+def _decorate_source_selection(
+    conn,
+    summary: dict[str, Any],
+    record,
+    *,
+    context: dict[str, Any],
+    class_offering_id: int,
+    selection_mode: str,
+) -> None:
+    summary["selection_mode"] = selection_mode
+    if record is None:
+        summary["context_comparisons"] = []
+        summary["context_mismatches"] = []
+        summary["similarity_score"] = 0
+        return
+    fields = _as_dict(_record_export_payload(record).get("fields"))
+    summary["source_name"] = (
+        _text(fields.get("export_filename"))
+        or _text(fields.get("title"))
+        or _text(record["document_type_label"])
+        or summary.get("label")
+        or ""
+    )
+    comparisons = _record_context_comparison(fields, context)
+    mismatches = [
+        f"{item['label']}：材料“{item.get('actual') or '未填写'}” / 当前“{item.get('expected') or '未识别'}”"
+        for item in comparisons
+        if item.get("status") != "matched"
+    ]
+    scope_status = _record_scope_status(
+        conn,
+        record,
+        fields=fields,
+        class_offering_id=int(class_offering_id),
+    )
+    summary["context_comparisons"] = comparisons
+    summary["context_mismatches"] = mismatches
+    summary["scope_status"] = scope_status
+    summary["similarity_score"] = _source_similarity_score(
+        summary,
+        roster_count=(
+            int(summary.get("matched_count") or 0)
+            + int(summary.get("missing_count") or 0)
+            + int(summary.get("conflict_count") or 0)
+            + int(summary.get("duplicate_count") or 0)
+        ),
+        comparisons=comparisons,
+        scope_status=scope_status,
+    )
+    if selection_mode == "manual" and summary.get("ready"):
+        if mismatches:
+            summary["message"] = (
+                f"{summary.get('label') or '成绩材料'}已手动选择，学生学号、姓名和成绩逐人核对通过；"
+                f"检测到 {len(mismatches)} 项归属差异，已记录到生成审计中。"
+            )
+        else:
+            summary["message"] = (
+                f"{summary.get('label') or '成绩材料'}已手动选择，"
+                f"并按学号和姓名核对 {int(summary.get('matched_count') or 0)} 人。"
+            )
 
 
 def _source_match_summary(

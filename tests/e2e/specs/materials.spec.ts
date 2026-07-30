@@ -83,6 +83,109 @@ test.describe('P03 materials management', () => {
     await expect(page.locator('#materials-final-grade-source-grid')).not.toContainText('缺少来源');
     await expect(page.locator('#materials-final-grade-refresh-btn')).toBeEnabled();
 
+    await page.unroute(/\/api\/classrooms\/\d+\/final-grade-transcript\/prepare$/);
+    await page.route(/\/api\/classrooms\/\d+\/final-grade-transcript\/prepare$/, async (route) => {
+      const requestBody = route.request().postDataJSON() as { exam_grade_record_id?: number | null };
+      const manualExam = Number(requestBody?.exam_grade_record_id || 0) === 72;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'success',
+          verification_status: manualExam ? 'ready' : 'exam_source_incomplete',
+          ready: manualExam,
+          message: manualExam ? '两份来源已核对完成。' : '请选择可用的考核登分表。',
+          roster: {
+            ready: true,
+            student_count: 2,
+            signature: 'a'.repeat(64),
+            students: [
+              { row_order: 1, student_number: '20240101', student_name: '学生一' },
+              { row_order: 2, student_number: '20240102', student_name: '学生二' },
+            ],
+          },
+          sources: {
+            ordinary_grade_record: {
+              ready: true,
+              record_found: true,
+              record_id: 70,
+              label: '平时成绩表',
+              source_name: '2025-2026-2 平时成绩表.xlsx',
+              matched_count: 2,
+              selection_mode: 'automatic',
+              similarity_score: 100,
+            },
+            exam_grade_record: manualExam ? {
+              ready: true,
+              record_found: true,
+              record_id: 72,
+              label: '考核登分表',
+              source_name: '导入-考核登分表-软工2302班.xlsx',
+              matched_count: 2,
+              selection_mode: 'manual',
+              similarity_score: 95,
+              context_mismatches: [],
+            } : {
+              ready: false,
+              record_found: false,
+              label: '考核登分表',
+              message: '未找到严格对应材料。',
+              generate_url: '/manage/teaching/exam-grade-records',
+            },
+          },
+          roster_sync: { status: 'success', cache_hit: true, freshness: { remaining_seconds: 1200 } },
+        }),
+      });
+    });
+    await page.route(/\/api\/classrooms\/\d+\/final-grade-transcript\/source-candidates\?document_type=exam_grade_record$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'success',
+          items: [
+            {
+              record_id: 72,
+              document_type: 'exam_grade_record',
+              title: '导入-考核登分表-软工2302班.xlsx',
+              similarity_score: 95,
+              selectable: true,
+              matched_count: 2,
+              fields: {
+                academic_year: '2025-2026',
+                semester: '第二学期',
+                course_name: '计算机网络',
+                class_name: '软工2302班',
+              },
+              context_mismatches: [],
+            },
+            {
+              record_id: 73,
+              document_type: 'exam_grade_record',
+              title: '错误名单.xlsx',
+              similarity_score: 61,
+              selectable: false,
+              matched_count: 1,
+              conflict_count: 1,
+              selection_message: '考核登分表有 1 名学生学号相同但姓名不一致。',
+              fields: { course_name: '计算机网络', class_name: '软工2303班' },
+              context_mismatches: ['班级：材料“软工2303班” / 当前“软工2302班”'],
+            },
+          ],
+        }),
+      });
+    });
+    await page.locator('#materials-final-grade-refresh-btn').click();
+    await expect(page.locator('#materials-final-grade-source-grid')).toContainText('手动选择');
+    await page.locator('[data-materials-final-grade-manual-source="exam_grade_record"]').click();
+    await expect(page.locator('.lp-modal')).toContainText('按近似度从高到低');
+    const manualCandidates = page.locator('[data-materials-final-grade-source-record-id]');
+    await expect(manualCandidates).toHaveCount(2);
+    await expect(manualCandidates.nth(1)).toBeDisabled();
+    await manualCandidates.nth(0).click();
+    await expect(page.locator('#materials-final-grade-source-grid')).toContainText('导入-考核登分表-软工2302班.xlsx');
+    await expect(page.locator('#materials-final-grade-source-grid')).toContainText('已就绪 · 手动选择');
+
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.locator('#materials-final-grade-wizard')).toBeVisible();
     await expect(page.locator('#materials-final-grade-refresh-btn')).toBeVisible();
