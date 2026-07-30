@@ -2133,7 +2133,7 @@ function renderList() {
                     ${refreshAction}
                     ${documentAction}
                     ${repositoryAction}
-                    ${item.node_type === 'file' ? '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>' : ''}
+                    ${item.node_type === 'file' && primaryAction.action !== 'download' ? '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>' : ''}
                     <button type="button" class="btn btn-ghost btn-sm" data-action="details">查看</button>
                 </div>
             </div>
