@@ -1440,3 +1440,272 @@ if (root) {
     const idle = window.requestIdleCallback || ((fn) => window.setTimeout(fn, 800));
     idle(fetchGreeting);
 })();
+
+// ── 教师课堂教学评价：低频同步 + 本地详情浮窗 ─────────────────────
+(function initAcademicEvaluationExperience() {
+    const syncConfig = window.DASHBOARD_ACADEMIC_EVALUATION_SYNC || {};
+    const panel = document.querySelector('[data-academic-evaluation-sync-panel]');
+    const syncButton = document.querySelector('[data-academic-evaluation-sync-action]');
+    const syncTitle = document.querySelector('[data-academic-evaluation-sync-title]');
+    const syncStatus = document.querySelector('[data-academic-evaluation-sync-status]');
+    const modal = document.querySelector('[data-academic-evaluation-modal]');
+    const dialog = modal?.querySelector('.academic-evaluation-modal__dialog');
+    const modalBody = modal?.querySelector('[data-academic-evaluation-modal-body]');
+    const modalTitle = modal?.querySelector('[data-academic-evaluation-modal-title]');
+    const modalSubtitle = modal?.querySelector('[data-academic-evaluation-modal-subtitle]');
+    if (!panel && !modal) return;
+
+    let syncing = false;
+    let activeOfferingId = '';
+    let returnFocus = null;
+    let abortController = null;
+
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[char]);
+    const finite = (value, fallback = 0) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+    };
+    const scoreText = (value) => Number.isFinite(Number(value)) ? Number(value).toFixed(1) : '--';
+    const sentiment = (value) => ['positive', 'improvement', 'neutral'].includes(value) ? value : 'neutral';
+
+    function keywordHtml(keyword, withCount = false) {
+        const count = Math.max(0, finite(keyword?.count));
+        return `<span class="evaluation-keyword evaluation-keyword--${sentiment(keyword?.sentiment)}">${escapeHtml(keyword?.label || '')}${withCount && count ? `<small>×${count}</small>` : ''}</span>`;
+    }
+
+    function cardSummaryHtml(overview) {
+        const keywords = Array.isArray(overview?.keywords) ? overview.keywords.slice(0, 3) : [];
+        const keywordContent = keywords.length
+            ? `<div class="dashboard-evaluation-card__keywords" aria-label="学生评语 AI 关键词">${keywords.map((item) => keywordHtml(item)).join('')}</div>`
+            : `<span class="dashboard-evaluation-card__pending">${overview?.ai_keyword_status === 'running' ? 'AI 正在提炼评语关键词…' : '暂无可提炼的文字评语'}</span>`;
+        const responseRate = overview?.response_rate == null ? '' : `<span>有效率 ${escapeHtml(overview.response_rate)}%</span>`;
+        const score = Math.max(0, Math.min(100, finite(overview?.score)));
+        return `
+            <section class="dashboard-evaluation-card" data-academic-evaluation-summary>
+                <div class="dashboard-evaluation-card__score" style="--evaluation-score:${score}">
+                    <span>总体评价</span><strong>${escapeHtml(overview?.score_display || scoreText(score))}</strong><small>/ 100</small>
+                </div>
+                <div class="dashboard-evaluation-card__insight">
+                    <div class="dashboard-evaluation-card__meta">
+                        <span>${Math.max(0, finite(overview?.valid_response_count))} 份有效评价</span>${responseRate}<span>${escapeHtml(overview?.freshness_label || '刚刚更新')}</span>
+                    </div>
+                    ${keywordContent}
+                </div>
+                <button type="button" class="dashboard-evaluation-card__detail" data-academic-evaluation-open="${escapeHtml(overview?.offering_id || '')}">
+                    查看详情
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
+            </section>`;
+    }
+
+    function updateOfferingCards(overviews) {
+        Object.entries(overviews || {}).forEach(([offeringId, overview]) => {
+            const card = document.querySelector(`[data-offering-card][data-offering-id="${CSS.escape(offeringId)}"]`);
+            if (!card || !overview?.available) return;
+            const enriched = { ...overview, offering_id: offeringId };
+            const current = card.querySelector('[data-academic-evaluation-summary]');
+            const metrics = card.querySelector('.dashboard-offering-card__metrics');
+            if (current) {
+                current.outerHTML = cardSummaryHtml(enriched);
+            } else if (metrics) {
+                metrics.insertAdjacentHTML('beforebegin', cardSummaryHtml(enriched));
+            }
+        });
+    }
+
+    function setSyncUi(state, message = '') {
+        if (!panel) return;
+        panel.classList.toggle('is-syncing', state === 'running');
+        if (syncButton) {
+            syncButton.disabled = state === 'running';
+            const label = syncButton.querySelector('span');
+            if (label) label.textContent = state === 'running' ? '同步中…' : '刷新评价';
+        }
+        if (syncTitle) {
+            syncTitle.textContent = state === 'running'
+                ? '正在低频同步教学评价'
+                : state === 'failed' ? '本次同步未完成，已保留原数据' : '教学反馈已对齐课堂';
+        }
+        if (syncStatus && message) syncStatus.textContent = message;
+    }
+
+    async function synchronize(force = false, automatic = false) {
+        if (syncing || !syncConfig.endpoint) return;
+        syncing = true;
+        setSyncUi('running', automatic ? '页面继续可用；请求将严格串行，完成后自动更新卡片' : '正在安全读取已发布评价，请稍候…');
+        try {
+            const response = await fetch(syncConfig.endpoint, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.detail || payload.message || `同步失败（${response.status}）`);
+            updateOfferingCards(payload.offerings);
+            const failed = payload.status === 'failed';
+            setSyncUi(failed ? 'failed' : 'ready', payload.message || (failed ? '同步未完成' : '教学评价已更新'));
+            if (!automatic || failed) showMessage(payload.message || (failed ? '教学评价同步未完成' : '教学评价已更新'), failed ? 'error' : 'success');
+        } catch (error) {
+            setSyncUi('failed', `${error.message || '网络异常'}；课堂仍显示上次同步结果`);
+            if (!automatic) showMessage(error.message || '教学评价同步失败', 'error');
+        } finally {
+            syncing = false;
+            if (syncButton) syncButton.disabled = false;
+        }
+    }
+
+    function loadingHtml() {
+        return `<div class="academic-evaluation-modal__loading"><span class="academic-evaluation-modal__loader" aria-hidden="true"></span><strong>正在整理课堂评价…</strong><small>量化指标、AI 关键词与匿名评语即将呈现</small></div>`;
+    }
+
+    function metricHtml(metric) {
+        const satisfaction = Math.max(0, Math.min(100, finite(metric?.satisfaction_score ?? metric?.mean_score)));
+        return `<div class="academic-evaluation-metric">
+            <div class="academic-evaluation-metric__head"><span>${escapeHtml(metric?.metric_name || '评价指标')}</span><strong>${scoreText(metric?.satisfaction_score ?? metric?.mean_score)}</strong></div>
+            <div class="academic-evaluation-metric__track"><span style="--metric-progress:${satisfaction}%"></span></div>
+        </div>`;
+    }
+
+    function commentsHtml(comments) {
+        if (!Array.isArray(comments) || !comments.length) return '<div class="academic-evaluation-muted">这一评价维度暂无有效文字评语</div>';
+        return `<div class="academic-evaluation-comments">${comments.map((comment, index) => `
+            <article class="academic-evaluation-comment">
+                <span class="academic-evaluation-comment__index">${index + 1}</span>
+                <p>${escapeHtml(comment?.text || '')}</p>
+            </article>`).join('')}</div>`;
+    }
+
+    function sourcePanelHtml(source, index) {
+        const metrics = Array.isArray(source?.metrics) ? source.metrics : [];
+        const comments = Array.isArray(source?.comments) ? source.comments : [];
+        return `<div class="academic-evaluation-source-panel${index === 0 ? ' is-active' : ''}" data-evaluation-source-panel="${index}">
+            <div class="academic-evaluation-source-meta">
+                <span>课程得分 ${scoreText(source?.course_score)}</span>
+                <span>有效评价 ${Math.max(0, finite(source?.valid_response_count))} / ${Math.max(0, finite(source?.response_count))}</span>
+                ${source?.campus_name ? `<span>${escapeHtml(source.campus_name)}</span>` : ''}
+                ${source?.institution_rank ? `<span>学校排名 ${escapeHtml(source.institution_rank)}</span>` : ''}
+            </div>
+            <div class="academic-evaluation-section__header"><h3>分项指标</h3><span>${metrics.length} 项</span></div>
+            ${metrics.length ? `<div class="academic-evaluation-metrics">${metrics.map(metricHtml).join('')}</div>` : '<div class="academic-evaluation-muted">暂无分项评分数据</div>'}
+            <div class="academic-evaluation-section__header"><h3>匿名学生评语</h3><span>${comments.length} 条</span></div>
+            ${commentsHtml(comments)}
+        </div>`;
+    }
+
+    function renderDetail(payload) {
+        if (!payload?.available) {
+            modalBody.innerHTML = `<div class="academic-evaluation-modal__empty"><strong>暂未匹配到这门课堂的已发布评价</strong><small>${escapeHtml(payload?.message || '完成低频同步后再来看看')}</small></div>`;
+            return;
+        }
+        const overall = payload.overall || {};
+        const sources = Array.isArray(payload.sources) ? payload.sources : [];
+        const keywords = Array.isArray(payload.keywords) ? payload.keywords : [];
+        const summaries = Array.isArray(payload.ai_summaries) ? payload.ai_summaries.filter(Boolean) : [];
+        const score = Math.max(0, Math.min(100, finite(overall.score)));
+        modalTitle.textContent = payload.offering?.course_name || '教学评价详情';
+        modalSubtitle.textContent = `${payload.offering?.class_name || '课堂'} · ${payload.offering?.semester_name || '当前学期'} · ${overall.freshness_label || '本地同步数据'}`;
+        modalBody.innerHTML = `
+            <div class="academic-evaluation-overview">
+                <section class="academic-evaluation-score-panel">
+                    <div class="academic-evaluation-score-panel__number" style="--evaluation-score:${score}">${escapeHtml(overall.score_display || scoreText(score))}</div>
+                    <div class="academic-evaluation-score-panel__copy"><span>Overall score</span><strong>总体评价 / 100</strong><small>${Math.max(0, finite(overall.valid_response_count))} 份有效评价 · ${Math.max(0, finite(overall.comment_count))} 条评语</small></div>
+                </section>
+                <section class="academic-evaluation-insight-panel">
+                    <h3>AI 评语洞察</h3>
+                    <p>${escapeHtml(summaries[0] || 'AI 仅将匿名评语聚合为关键词，不推断或识别学生身份。')}</p>
+                    <div class="academic-evaluation-keywords">${keywords.length ? keywords.map((item) => keywordHtml(item, true)).join('') : '<span class="academic-evaluation-muted">暂无可提炼关键词</span>'}</div>
+                </section>
+            </div>
+            <section class="academic-evaluation-section">
+                <div class="academic-evaluation-section__header"><h3>评价明细</h3><span>${sources.length} 组课时类型</span></div>
+                <div class="academic-evaluation-source-tabs" role="tablist" aria-label="评价课时类型">
+                    ${sources.map((source, index) => `<button type="button" role="tab" aria-selected="${index === 0}" class="academic-evaluation-source-tab${index === 0 ? ' is-active' : ''}" data-evaluation-source-tab="${index}">${escapeHtml(source?.hour_type_name || `评价 ${index + 1}`)}</button>`).join('')}
+                </div>
+                ${sources.map(sourcePanelHtml).join('')}
+            </section>
+            <p class="academic-evaluation-frequency">${escapeHtml(payload.frequency_note || '')} 本页详情始终读取本地镜像。</p>`;
+        modalBody.querySelectorAll('[data-evaluation-source-tab]').forEach((tab) => {
+            tab.addEventListener('click', () => {
+                const index = tab.dataset.evaluationSourceTab;
+                modalBody.querySelectorAll('[data-evaluation-source-tab]').forEach((item) => {
+                    const active = item === tab;
+                    item.classList.toggle('is-active', active);
+                    item.setAttribute('aria-selected', String(active));
+                });
+                modalBody.querySelectorAll('[data-evaluation-source-panel]').forEach((item) => item.classList.toggle('is-active', item.dataset.evaluationSourcePanel === index));
+            });
+        });
+    }
+
+    async function openDetail(offeringId, trigger) {
+        if (!modal || !modalBody || !offeringId) return;
+        activeOfferingId = String(offeringId);
+        returnFocus = trigger || document.activeElement;
+        abortController?.abort();
+        abortController = new AbortController();
+        modal.hidden = false;
+        document.body.classList.add('academic-evaluation-modal-open');
+        modalBody.innerHTML = loadingHtml();
+        const card = document.querySelector(`[data-offering-card][data-offering-id="${CSS.escape(activeOfferingId)}"]`);
+        if (modalTitle) modalTitle.textContent = card?.dataset.courseName || '教学评价详情';
+        if (modalSubtitle) modalSubtitle.textContent = '读取本地同步结果，不会再次访问教务系统';
+        window.requestAnimationFrame(() => dialog?.focus());
+        try {
+            const response = await fetch(`/api/academic-evaluations/classrooms/${encodeURIComponent(activeOfferingId)}`, {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+                signal: abortController.signal,
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.detail || '评价详情读取失败');
+            if (!modal.hidden && activeOfferingId === String(offeringId)) renderDetail(payload);
+        } catch (error) {
+            if (error.name === 'AbortError') return;
+            modalBody.innerHTML = `<div class="academic-evaluation-modal__error"><strong>评价详情暂时无法读取</strong><small>${escapeHtml(error.message || '请稍后再试')}</small></div>`;
+        }
+    }
+
+    function closeDetail() {
+        if (!modal || modal.hidden) return;
+        abortController?.abort();
+        modal.hidden = true;
+        document.body.classList.remove('academic-evaluation-modal-open');
+        activeOfferingId = '';
+        if (returnFocus instanceof HTMLElement) returnFocus.focus();
+    }
+
+    document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-academic-evaluation-open]');
+        if (trigger) {
+            event.preventDefault();
+            event.stopPropagation();
+            openDetail(trigger.dataset.academicEvaluationOpen, trigger);
+            return;
+        }
+        if (event.target.closest('[data-academic-evaluation-close]')) closeDetail();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (!modal || modal.hidden) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeDetail();
+            return;
+        }
+        if (event.key !== 'Tab' || !dialog) return;
+        const focusable = Array.from(dialog.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'));
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
+
+    syncButton?.addEventListener('click', () => synchronize(true, false));
+    if (syncConfig.should_auto_sync && syncConfig.has_credential) {
+        const idle = window.requestIdleCallback || ((callback) => window.setTimeout(callback, 1400));
+        idle(() => synchronize(false, true));
+    }
+})();

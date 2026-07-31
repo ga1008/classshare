@@ -281,6 +281,32 @@
                     {% endif %}
                 </div>
 
+                {% if user_info.role == 'teacher' %}
+                {% set evaluation_sync = dashboard_academic_evaluation_sync|default({}) %}
+                <div class="dashboard-evaluation-sync{% if evaluation_sync.is_running %} is-syncing{% endif %}" data-academic-evaluation-sync-panel>
+                    <div class="dashboard-evaluation-sync__signal" aria-hidden="true">
+                        <span></span><span></span><span></span>
+                    </div>
+                    <div class="dashboard-evaluation-sync__copy">
+                        <span class="dashboard-evaluation-sync__eyebrow">Student voice · 教学评价</span>
+                        <strong data-academic-evaluation-sync-title>
+                            {% if evaluation_sync.is_running %}正在低频同步教学评价{% elif evaluation_sync.has_data %}教学反馈已对齐课堂{% elif evaluation_sync.has_credential %}等待首次同步教学评价{% else %}连接教务账号后显示教学评价{% endif %}
+                        </strong>
+                        <small data-academic-evaluation-sync-status aria-live="polite">
+                            {% if evaluation_sync.has_data %}{{ evaluation_sync.freshness_label }} · 自动最多每 {{ evaluation_sync.auto_refresh_hours }} 小时一次{% elif evaluation_sync.has_credential %}系统将在本页空闲时执行一次低频同步{% else %}量化分数与匿名评语关键词仅教师本人可见{% endif %}
+                        </small>
+                    </div>
+                    {% if evaluation_sync.has_credential %}
+                    <button type="button" class="dashboard-evaluation-sync__action" data-academic-evaluation-sync-action{% if evaluation_sync.is_running %} disabled{% endif %}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6v6h-6"/><path d="M4 18v-6h6"/><path d="M18.5 9a7 7 0 0 0-12-2L4 9"/><path d="m20 15-2.5 2A7 7 0 0 1 5.5 15"/></svg>
+                        <span>刷新评价</span>
+                    </button>
+                    {% else %}
+                    <a class="dashboard-evaluation-sync__action" href="/manage/system/academic-integrations">连接教务账号</a>
+                    {% endif %}
+                </div>
+                {% endif %}
+
                 {% if class_offerings %}
                 <div class="dashboard-toolbar">
                     <div class="dashboard-toolbar__filters" role="tablist" aria-label="首页筛选">
@@ -368,6 +394,7 @@
                     <article
                         class="dashboard-offering-card dashboard-reveal"
                         data-offering-card
+                        data-offering-id="{{ offering.id }}"
                         data-attention="{{ 'true' if offering.needs_attention else 'false' }}"
                         data-recent="{{ 'true' if offering.has_recent_activity else 'false' }}"
                         data-progress="{{ 'true' if offering.has_progress else 'false' }}"
@@ -419,6 +446,39 @@
                             <span class="dashboard-badge dashboard-badge--{{ badge.tone }}">{{ badge.label }}</span>
                             {% endfor %}
                         </div>
+                        {% endif %}
+
+                        {% if user_info.role == 'teacher' and offering.academic_evaluation %}
+                        {% set evaluation = offering.academic_evaluation %}
+                        <section class="dashboard-evaluation-card" data-academic-evaluation-summary>
+                            <div class="dashboard-evaluation-card__score" style="--evaluation-score: {{ evaluation.score|default(0) }}">
+                                <span>总体评价</span>
+                                <strong>{{ evaluation.score_display }}</strong>
+                                <small>/ 100</small>
+                            </div>
+                            <div class="dashboard-evaluation-card__insight">
+                                <div class="dashboard-evaluation-card__meta">
+                                    <span>{{ evaluation.valid_response_count }} 份有效评价</span>
+                                    {% if evaluation.response_rate is not none %}<span>有效率 {{ evaluation.response_rate }}%</span>{% endif %}
+                                    <span>{{ evaluation.freshness_label }}</span>
+                                </div>
+                                {% if evaluation.keywords %}
+                                <div class="dashboard-evaluation-card__keywords" aria-label="学生评语 AI 关键词">
+                                    {% for keyword in evaluation.keywords[:3] %}
+                                    <span class="evaluation-keyword evaluation-keyword--{{ keyword.sentiment }}">{{ keyword.label }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% elif evaluation.ai_keyword_status == 'running' %}
+                                <span class="dashboard-evaluation-card__pending">AI 正在提炼评语关键词…</span>
+                                {% else %}
+                                <span class="dashboard-evaluation-card__pending">暂无可提炼的文字评语</span>
+                                {% endif %}
+                            </div>
+                            <button type="button" class="dashboard-evaluation-card__detail" data-academic-evaluation-open="{{ offering.id }}" aria-label="查看 {{ offering.course_name }} 教学评价详情">
+                                查看详情
+                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                            </button>
+                        </section>
                         {% endif %}
 
                         <div class="dashboard-offering-card__metrics">
@@ -625,6 +685,30 @@
         </aside>
     </section>
 </section>
+{% if user_info.role == 'teacher' %}
+<div class="academic-evaluation-modal" data-academic-evaluation-modal hidden>
+    <div class="academic-evaluation-modal__backdrop" data-academic-evaluation-close></div>
+    <section class="academic-evaluation-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="academic-evaluation-modal-title" tabindex="-1">
+        <header class="academic-evaluation-modal__header">
+            <div>
+                <span class="academic-evaluation-modal__eyebrow">Student voice · 课堂评价洞察</span>
+                <h2 id="academic-evaluation-modal-title" data-academic-evaluation-modal-title>教学评价详情</h2>
+                <p data-academic-evaluation-modal-subtitle>读取本地同步结果，不会再次访问教务系统</p>
+            </div>
+            <button type="button" class="academic-evaluation-modal__close" data-academic-evaluation-close aria-label="关闭评价详情">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </header>
+        <div class="academic-evaluation-modal__body" data-academic-evaluation-modal-body>
+            <div class="academic-evaluation-modal__loading" data-academic-evaluation-loading>
+                <span class="academic-evaluation-modal__loader" aria-hidden="true"></span>
+                <strong>正在整理课堂评价…</strong>
+                <small>量化指标、AI 关键词与匿名评语即将呈现</small>
+            </div>
+        </div>
+    </section>
+</div>
+{% endif %}
 {% if user_info.role == 'student' and cultivation_profile and cultivation_profile.latest_unrevealed_certificate %}
 {% set learning_certificate = cultivation_profile.latest_unrevealed_certificate %}
 {% include "partials/learning_certificate_reveal.html" %}
@@ -635,6 +719,7 @@
 {{ super() }}
 <script>
     window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
+    window.DASHBOARD_ACADEMIC_EVALUATION_SYNC = {{ dashboard_academic_evaluation_sync | default({}) | tojson }};
 </script>
 {% if user_info.role == 'student' and cultivation_profile %}
 <script>
@@ -650,7 +735,7 @@
 </script>
 {% endif %}
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
-<script type="module" src="/static/js/dashboard.js?v=personal-greeting-20260724"></script>
+<script type="module" src="/static/js/dashboard.js?v=academic-evaluation-20260731"></script>
 <script type="module" src="/static/js/dashboard_count_up.js?v=student-dashboard-polish-20260612"></script>
 <script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260714-modal-fix-v3"></script>
 {% endblock %}

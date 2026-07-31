@@ -30,6 +30,9 @@ from .todo_service import build_classroom_todo_overview, list_manual_todo_items
 from .email_notification_service import get_teacher_email_reminder_readiness
 from .feedback_review_service import build_feedback_review_summary
 from .manage_nav_service import build_dashboard_domain_cards, canonical_manage_href
+from .academic_evaluation_sync_service import (
+    build_teacher_academic_evaluation_dashboard_context,
+)
 
 RECENT_ACTIVITY_DAYS = 14
 DEFAULT_TIMELINE_HOUR = "08:00"
@@ -1203,6 +1206,13 @@ def _build_teacher_dashboard_context(
     offerings = _load_teacher_offerings(conn, teacher_id)
     offering_ids = [int(item["id"]) for item in offerings]
     course_ids = sorted({int(item["course_id"]) for item in offerings})
+    academic_evaluations, academic_evaluation_sync = (
+        build_teacher_academic_evaluation_dashboard_context(
+            conn,
+            teacher_id=teacher_id,
+            offerings=offerings,
+        )
+    )
 
     assignment_stats = _load_teacher_assignment_stats(conn, offering_ids)
     pending_submission_stats = _load_teacher_pending_submission_stats(conn, offering_ids)
@@ -1379,6 +1389,12 @@ def _build_teacher_dashboard_context(
             {"label": "待批改", "value": pending_review_count, "note": f"批改中 {grading_count}"},
             {"label": "资料", "value": resource_total, "note": f"文件 {resource_count} · 材料 {material_count}"},
         ]
+        offering["academic_evaluation"] = academic_evaluations.get(offering_id)
+        evaluation_keywords = (
+            offering["academic_evaluation"].get("keywords", [])
+            if offering["academic_evaluation"]
+            else []
+        )
         offering["search_text"] = _build_dashboard_search_text(
             offering.get("course_name"),
             offering.get("class_name"),
@@ -1391,6 +1407,12 @@ def _build_teacher_dashboard_context(
             summary,
             *meta,
             *(badge.get("label") for badge in badges),
+            (
+                f"教学评价 {offering['academic_evaluation'].get('score_display', '')}"
+                if offering["academic_evaluation"]
+                else ""
+            ),
+            *(keyword.get("label") for keyword in evaluation_keywords),
             *(f"{metric['label']} {metric['value']} {metric['note']}" for metric in offering["metrics"]),
             f"近{RECENT_ACTIVITY_DAYS}天活跃学生 {recent_active_student_count}",
             f"近{RECENT_ACTIVITY_DAYS}天登录 {recent_login_count}",
@@ -1703,6 +1725,7 @@ def _build_teacher_dashboard_context(
             "action_href": canonical_manage_href("offerings"),
         },
         "class_offerings": enriched_offerings,
+        "dashboard_academic_evaluation_sync": academic_evaluation_sync,
         "dashboard_semester_calendar": semester_calendar,
         "dashboard_can_create_todo": True,
         "dashboard_todo_create_options": todo_create_options,

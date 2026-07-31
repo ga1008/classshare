@@ -16,6 +16,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/academic-evaluations/classrooms/{class_offering_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_academic_evaluation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/academic-evaluations/sync-current",
+    "methods": [
+      "POST"
+    ],
+    "name": "sync_current_academic_evaluations",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/academic-final-materials",
     "methods": [
       "GET"

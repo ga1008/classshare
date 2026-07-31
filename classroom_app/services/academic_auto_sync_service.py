@@ -12,6 +12,8 @@ from .academic_course_exam_sync_service import (
 )
 from .academic_invigilation_sync_service import sync_current_teacher_invigilations_from_academic_system
 from .academic_roster_sync_service import sync_current_teacher_rosters_from_academic_system
+from .academic_evaluation_sync_service import sync_current_teacher_academic_evaluations
+from ..db.schema_academic_evaluations import ensure_academic_evaluation_schema
 
 
 SyncCallable = Callable[[int], Awaitable[dict[str, Any]]]
@@ -88,6 +90,14 @@ def _compact_teaching_place_counts(result: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _compact_evaluation_counts(result: dict[str, Any]) -> dict[str, int]:
+    return {
+        "course_count": _int_value(result, "course_count"),
+        "evaluation_count": _int_value(result, "evaluation_count"),
+        "comment_count": _int_value(result, "comment_count"),
+    }
+
+
 def _current_term_params() -> dict[str, str]:
     today = china_now().date()
     year_start = today.year if today.month >= 8 else today.year - 1
@@ -151,6 +161,7 @@ def _sync_stat(conn, table_name: str, teacher_id: int, *, time_column: str = "sy
         "teacher_academic_invigilation_items",
         "teacher_academic_course_exam_items",
         "teacher_academic_teaching_places",
+        "teacher_academic_course_evaluations",
         "academic_semesters",
     }
     if table_name not in allowed_tables:
@@ -173,6 +184,7 @@ def _sync_stat(conn, table_name: str, teacher_id: int, *, time_column: str = "sy
 
 def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, Any]]:
     ensure_course_exam_schema(conn)
+    ensure_academic_evaluation_schema(conn)
     term_params = _current_term_params()
     common_query_params = {"gnmkdm": "N2150"}
     timetable_body: dict[str, Any] = {
@@ -214,6 +226,7 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
     invigilation_stat = _sync_stat(conn, "teacher_academic_invigilation_items", int(teacher_id))
     course_exam_stat = _sync_stat(conn, "teacher_academic_course_exam_items", int(teacher_id))
     place_stat = _sync_stat(conn, "teacher_academic_teaching_places", int(teacher_id))
+    evaluation_stat = _sync_stat(conn, "teacher_academic_course_evaluations", int(teacher_id))
     semester_stat = _sync_stat(conn, "academic_semesters", int(teacher_id), time_column="calendar_sync_at")
 
     return [
@@ -375,6 +388,39 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
             "safe_note": "只读取教务系统任课考试安排；课堂时间轴、日程和通知只写入本地系统。",
         },
         {
+            "key": "academic_evaluations",
+            "label": "教学评价",
+            "description": "低频同步学生对课程与教师的量化评价和匿名评语，评语由 AI 聚合为关键词后展示在教师课堂。",
+            "endpoint": "/api/academic-evaluations/sync-current",
+            "method": "POST",
+            "parameters": [
+                {"name": "xnm/xqm", "value": "自动识别当前学年学期"},
+                {"name": "评价对象", "value": "教师"},
+                {"name": "频率保护", "value": "自动 24 小时、手动 6 小时最短间隔"},
+            ],
+            "last_synced_at": evaluation_stat["last_synced_at"],
+            "has_synced": evaluation_stat["count"] > 0,
+            "status_text": f"已同步 {evaluation_stat['count']} 组课程评价",
+            "counts": {"evaluation_count": evaluation_stat["count"]},
+            "stats": [
+                {"label": "课程评价", "value": evaluation_stat["count"]},
+            ],
+            "request_template": _request_template(
+                url="https://jwxt.gxufl.com/jxpjtj/jxpjtj_cxXspjjsxxMap.html",
+                params={"gnmkdm": "N305025"},
+                referer="https://jwxt.gxufl.com/jxpjtj/jxpjtj_cxXspjjstjIndex.html?gnmkdm=N305025&layout=default",
+                body={
+                    **term_params,
+                    "kch_id": "",
+                    "xsdm": "",
+                    "pjdxdm": "01",
+                    "doType": "query",
+                    "flag": "1",
+                },
+            ),
+            "safe_note": "所有源站请求严格串行；课堂页面只读本地缓存，不会因浏览或打开浮窗反复访问教务系统。",
+        },
+        {
             "key": "teaching_places",
             "label": "教学场地",
             "description": "同步教务系统教学场地，用于本地模糊查询、考试教室选择和空闲教室推荐。",
@@ -448,12 +494,14 @@ async def _run_stage(
 
 
 def _summarize_auto_sync(stages: list[dict[str, Any]]) -> tuple[str, str]:
-    success_count = sum(1 for item in stages if item.get("status") == "success")
+    healthy_statuses = {"success", "fresh", "no_data"}
+    success_count = sum(1 for item in stages if item.get("status") in healthy_statuses)
     if success_count == len(stages):
         course_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "courses"), {})
         roster_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "rosters"), {})
         invigilation_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "invigilations"), {})
         place_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "teaching_places"), {})
+        evaluation_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "academic_evaluations"), {})
         return (
             "success",
             (
@@ -463,7 +511,8 @@ def _summarize_auto_sync(stages: list[dict[str, Any]]) -> tuple[str, str]:
                 f"{roster_counts.get('touched_class_count', 0)} 个班级、"
                 f"{roster_counts.get('roster_student_count', 0)} 条教学班名单关系、"
                 f"{place_counts.get('place_count', 0)} 个教学场地、"
-                f"{invigilation_counts.get('invigilation_count', 0)} 条监考安排。"
+                f"{invigilation_counts.get('invigilation_count', 0)} 条监考安排、"
+                f"{evaluation_counts.get('evaluation_count', 0)} 组教学评价。"
             ),
         )
     if success_count:
@@ -571,6 +620,13 @@ async def sync_teacher_academic_data_after_credential_verified(teacher_id: int) 
             label="教学场地",
             runner=sync_teaching_places_from_academic_system,
             count_builder=_compact_teaching_place_counts,
+        ),
+        await _run_stage(
+            teacher_id=teacher_id,
+            key="academic_evaluations",
+            label="教学评价",
+            runner=sync_current_teacher_academic_evaluations,
+            count_builder=_compact_evaluation_counts,
         ),
     ]
     status, message = _summarize_auto_sync(stages)

@@ -23,6 +23,7 @@ from .schema_teacher_evaluations import ensure_teacher_evaluation_schema
 from .schema_prompt_pool import ensure_prompt_pool_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
 from .schema_academic_final_materials import ensure_academic_final_material_schema
+from .schema_academic_evaluations import ensure_academic_evaluation_schema
 from .schema_polls import ensure_poll_schema
 from .schema_resume import ensure_resume_schema
 from .schema_scheduler import ensure_scheduler_schema
@@ -209,6 +210,16 @@ def init_database():
             print("[DB] PostgreSQL academic final-material table ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL academic final-material schema step skipped: {exc}")
+        try:
+            academic_evaluation_conn = get_db_connection()
+            try:
+                ensure_academic_evaluation_schema(academic_evaluation_conn)
+                academic_evaluation_conn.commit()
+            finally:
+                academic_evaluation_conn.close()
+            print("[DB] PostgreSQL academic evaluation tables ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL academic evaluation schema step skipped: {exc}")
         print(
             "[DB] PostgreSQL schema verified: "
             f"{report['present_required_table_count']}/{report['required_table_count']} required tables"
@@ -236,6 +247,7 @@ def init_database():
             ensure_resume_schema(conn)
             ensure_prompt_pool_schema(conn)
             ensure_academic_final_material_schema(conn)
+            ensure_academic_evaluation_schema(conn)
             conn.commit()
         except Exception:
             conn.rollback()
