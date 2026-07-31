@@ -36,9 +36,9 @@ from .semester_identity_service import current_identity, infer_identity_from_dat
 
 SCHOOL_CODE = "gxufl"
 EVALUATION_TARGET_TEACHER = "01"
-AUTO_REFRESH_SECONDS = 24 * 60 * 60
 MANUAL_REFRESH_SECONDS = 6 * 60 * 60
 LEASE_SECONDS = 12 * 60
+AI_ANALYSIS_VERSION = "comment-insight-v2"
 REQUEST_DELAY_MIN_SECONDS = 0.75
 REQUEST_DELAY_MAX_SECONDS = 1.25
 MAX_SOURCE_COURSES = 24
@@ -315,11 +315,17 @@ def _acquire_sync_lease(
         ),
     )
 
-    eligibility_sql = "(next_allowed_at IS NULL OR next_allowed_at <= ?)"
-    eligibility_value = now_iso
+    # A published course evaluation is a terminal snapshot. Automatic sync is
+    # therefore a one-shot bootstrap for the term; only the teacher can request
+    # a later refresh. A crashed worker may retry after its lease expires because
+    # completed_at is written only when an attempt finishes.
+    eligibility_sql = "completed_at IS NULL"
+    eligibility_params: tuple[Any, ...] = ()
     if force:
         eligibility_sql = "(completed_at IS NULL OR completed_at <= ?)"
-        eligibility_value = (now - timedelta(seconds=MANUAL_REFRESH_SECONDS)).isoformat()
+        eligibility_params = (
+            (now - timedelta(seconds=MANUAL_REFRESH_SECONDS)).isoformat(),
+        )
 
     cursor = conn.execute(
         f"""
@@ -343,7 +349,7 @@ def _acquire_sync_lease(
             academic_year,
             academic_term,
             now_iso,
-            eligibility_value,
+            *eligibility_params,
         ),
     )
     state = _sync_state_row(
@@ -359,6 +365,8 @@ def _acquire_sync_lease(
         _parse_iso(state.get("lease_expires_at")) or now
     ) > now:
         return "running", state
+    if not force and state.get("completed_at"):
+        return "completed", state
     return "cooldown", state
 
 
@@ -375,7 +383,6 @@ def _finish_sync_lease(
     error: str = "",
 ) -> None:
     now_iso = _now_iso()
-    retry_seconds = AUTO_REFRESH_SECONDS if status in {"success", "partial_success", "no_data"} else MANUAL_REFRESH_SECONDS
     conn.execute(
         """
         UPDATE teacher_academic_evaluation_sync_state
@@ -391,7 +398,7 @@ def _finish_sync_lease(
             max(0, int(synced_evaluation_count)),
             _clean_text(error, limit=800),
             now_iso,
-            _iso_after(retry_seconds),
+            _iso_after(MANUAL_REFRESH_SECONDS),
             now_iso,
             int(teacher_id),
             SCHOOL_CODE,
@@ -657,9 +664,10 @@ def _upsert_evaluation(
             institution_percentile_score, academic_year_course_score,
             enrolled_count, response_count, valid_response_count,
             institution_rank, course_unit_rank, comment_count,
+            meaningful_comment_count,
             source_summary_json, sync_status, synced_at, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
         ON CONFLICT(
             teacher_id, school_code, academic_year, academic_term,
             source_course_key, hour_type_code, evaluation_target_code
@@ -679,6 +687,7 @@ def _upsert_evaluation(
             institution_rank = excluded.institution_rank,
             course_unit_rank = excluded.course_unit_rank,
             comment_count = excluded.comment_count,
+            meaningful_comment_count = excluded.meaningful_comment_count,
             source_summary_json = excluded.source_summary_json,
             sync_status = 'active',
             synced_at = excluded.synced_at,
@@ -707,6 +716,7 @@ def _upsert_evaluation(
             item.get("institution_rank"),
             item.get("course_unit_rank"),
             len(item.get("comments") or []),
+            len(item.get("comments") or []),
             json.dumps(source_summary, ensure_ascii=False, separators=(",", ":")),
             synced_at,
             synced_at,
@@ -734,6 +744,20 @@ def _upsert_evaluation(
         ),
     ).fetchone()
     evaluation_id = int(row["id"])
+    previous_comment_filters = {
+        str(previous["comment_hash"] or ""): (
+            _safe_int(previous["is_meaningful"], 1),
+            str(previous["filter_source"] or "unclassified"),
+        )
+        for previous in conn.execute(
+            """
+            SELECT comment_hash, is_meaningful, filter_source
+            FROM teacher_academic_course_evaluation_comments
+            WHERE evaluation_id = ? AND comment_hash <> ''
+            """,
+            (evaluation_id,),
+        ).fetchall()
+    }
     conn.execute(
         "DELETE FROM teacher_academic_course_evaluation_metrics WHERE evaluation_id = ?",
         (evaluation_id,),
@@ -767,23 +791,43 @@ def _upsert_evaluation(
             ),
         )
     for comment in item.get("comments") or []:
+        comment_hash = str(comment.get("comment_hash") or "")
+        meaningful, filter_source = previous_comment_filters.get(
+            comment_hash,
+            (1, "unclassified"),
+        )
         conn.execute(
             """
             INSERT INTO teacher_academic_course_evaluation_comments (
                 evaluation_id, source_comment_key, sequence_no,
-                comment_text, comment_hash, created_at
+                comment_text, comment_hash, is_meaningful, filter_source, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 evaluation_id,
                 comment.get("source_comment_key") or str(comment.get("sequence_no") or ""),
                 _safe_int(comment.get("sequence_no")),
                 comment.get("comment_text") or "",
-                comment.get("comment_hash") or "",
+                comment_hash,
+                meaningful,
+                filter_source,
                 synced_at,
             ),
         )
+    conn.execute(
+        """
+        UPDATE teacher_academic_course_evaluations
+        SET meaningful_comment_count = (
+            SELECT COUNT(*)
+            FROM teacher_academic_course_evaluation_comments comments
+            WHERE comments.evaluation_id = teacher_academic_course_evaluations.id
+              AND comments.is_meaningful = 1
+        )
+        WHERE id = ?
+        """,
+        (evaluation_id,),
+    )
     return evaluation_id
 
 
@@ -812,55 +856,116 @@ def _extract_ai_json(payload: Any) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _normalize_ai_keywords(payload: dict[str, Any] | None) -> tuple[str, list[dict[str, Any]]]:
+_LOW_INFORMATION_COMMENTS = {
+    "好", "很好", "挺好", "挺好的", "非常好",
+    "老师很好", "教师很好", "教得很好", "教的很好", "好老师",
+    "无", "暂无", "没有", "无意见", "没意见", "暂无意见",
+    "满意", "非常满意", "good", "ok", "nice",
+}
+
+
+def _is_obviously_low_information_comment(value: Any) -> bool:
+    text = unicodedata.normalize("NFKC", _clean_text(value, limit=500)).casefold()
+    compact = re.sub(r"[^\w\u3400-\u9fff]+", "", text, flags=re.UNICODE)
+    if not compact or compact in _LOW_INFORMATION_COMMENTS or len(compact) <= 1:
+        return True
+    if re.fullmatch(r"\d{1,8}", compact):
+        return True
+    return bool(len(compact) <= 8 and re.fullmatch(r"(.)\1{2,}", compact))
+
+
+def _normalize_ai_analysis(
+    payload: dict[str, Any] | None,
+    *,
+    candidate_ids: set[str] | None = None,
+) -> tuple[str, list[dict[str, Any]], set[str]]:
     data = payload or {}
     summary = _clean_text(data.get("summary"), limit=100)
-    raw_keywords = data.get("keywords") if isinstance(data.get("keywords"), list) else []
     keywords: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for raw in raw_keywords:
-        item = raw if isinstance(raw, dict) else {"label": raw}
-        label = _clean_text(item.get("label") or item.get("keyword"), limit=16)
-        key = label.casefold()
-        if not label or key in seen:
-            continue
-        seen.add(key)
-        sentiment = str(item.get("sentiment") or "neutral").strip().lower()
-        if sentiment not in {"positive", "improvement", "neutral"}:
-            sentiment = "neutral"
-        confidence = _safe_float(item.get("confidence"))
-        keywords.append(
-            {
-                "label": label,
-                "sentiment": sentiment,
-                "count": max(1, _safe_int(item.get("count"), 1)),
-                "confidence": round(max(0.0, min(1.0, confidence if confidence is not None else 0.7)), 2),
-            }
-        )
-        if len(keywords) >= 8:
-            break
-    return summary, keywords
+
+    def append_keywords(raw_items: Any, forced_sentiment: str | None = None) -> None:
+        if not isinstance(raw_items, list):
+            return
+        for raw in raw_items:
+            item = raw if isinstance(raw, dict) else {"label": raw}
+            label = _clean_text(item.get("label") or item.get("keyword"), limit=16)
+            key = label.casefold()
+            if not label or key in seen:
+                continue
+            sentiment = forced_sentiment or str(item.get("sentiment") or "neutral").strip().lower()
+            if sentiment not in {"positive", "improvement", "neutral"}:
+                sentiment = "neutral"
+            confidence = _safe_float(item.get("confidence"))
+            seen.add(key)
+            keywords.append(
+                {
+                    "label": label,
+                    "sentiment": sentiment,
+                    "count": max(1, _safe_int(item.get("count"), 1)),
+                    "confidence": round(
+                        max(0.0, min(1.0, confidence if confidence is not None else 0.7)),
+                        2,
+                    ),
+                }
+            )
+            if len(keywords) >= 16:
+                return
+
+    append_keywords(data.get("strengths"), "positive")
+    append_keywords(data.get("improvements"), "improvement")
+    if not keywords:
+        append_keywords(data.get("keywords"))
+
+    allowed_ids = candidate_ids or set()
+    raw_meaningful_ids = data.get("meaningful_comment_ids")
+    if isinstance(raw_meaningful_ids, list):
+        meaningful_ids = {
+            str(item).strip()
+            for item in raw_meaningful_ids
+            if str(item).strip() in allowed_ids
+        }
+    else:
+        # Fail open for comments when an older model omits the new filter field.
+        meaningful_ids = set(allowed_ids)
+    return summary, keywords, meaningful_ids
 
 
 async def _ai_keyword_summary(
     *,
     teacher_id: int,
     course_name: str,
-    comments: list[str],
+    comments: list[dict[str, Any]],
     source_hash: str,
-) -> tuple[str, list[dict[str, Any]], str]:
-    useful_comments = [_clean_text(item, limit=500) for item in comments if _clean_text(item, limit=500)]
-    prompt_comments = useful_comments[:160]
+) -> tuple[str, list[dict[str, Any]], str, set[str]]:
+    prompt_comments: list[dict[str, Any]] = []
+    id_to_hash: dict[str, str] = {}
+    for index, item in enumerate(comments[:160], start=1):
+        text = _clean_text(item.get("text"), limit=500)
+        if not text:
+            continue
+        comment_id = f"c{index}"
+        prompt_comments.append({
+            "id": comment_id, "text": text,
+            "occurrences": max(1, _safe_int(item.get("occurrences"), 1)),
+        })
+        id_to_hash[comment_id] = str(item.get("hash") or "")
     payload = {
         "system_prompt": (
-            "你是教学评价文本分析助手。只分析匿名学生评语，不推断学生身份。"
-            "过滤‘好’‘无’等信息量极低文本，合并同义表达；既保留优势，也如实保留改进建议。"
-            "仅输出JSON：summary为不超过60字的教师可读结论；keywords为3到8项，"
-            "每项包含label、sentiment(positive/improvement/neutral)、count、confidence(0到1)。"
+            "你是教学评价文本分析助手，使用快速、保守的标准分析匿名学生评语，不推断学生身份。"
+            "先识别有具体教学信息的评语；排除仅有‘好/很好/无/good’、纯表态、符号数字、"
+            "重复套话或与教学无关的文本。合并同义表达，绝不为了凑数虚构缺点。"
+            "仅输出JSON：summary为不超过60字的教师可读结论；strengths和improvements各为0到8项，"
+            "每项包含label、count、confidence(0到1)，count需参考occurrences；"
+            "meaningful_comment_ids列出应保留的评语id。"
         ),
         "messages": [],
         "new_message": json.dumps(
-            {"course_name": course_name, "comment_count": len(useful_comments), "comments": prompt_comments},
+            {
+                "course_name": course_name,
+                "comment_count": sum(item["occurrences"] for item in prompt_comments),
+                "comments": prompt_comments,
+            },
             ensure_ascii=False,
         ),
         "file_texts": [],
@@ -880,20 +985,50 @@ async def _ai_keyword_summary(
         priority="P2",
         teacher_id=int(teacher_id),
         source_ref=f"academic-evaluation:{source_hash}",
-        metadata={"course_name": course_name, "comment_count": len(useful_comments)},
+        metadata={"course_name": course_name, "comment_count": sum(
+            item["occurrences"] for item in prompt_comments
+        )},
     )
     response.raise_for_status()
     response_payload = response.json()
-    summary, keywords = _normalize_ai_keywords(_extract_ai_json(response_payload))
-    if not keywords:
-        raise ValueError("AI未返回有效评价关键词。")
+    analysis_payload = _extract_ai_json(response_payload)
+    if analysis_payload is None:
+        raise ValueError("评价分析未返回有效JSON。")
+    summary, keywords, meaningful_ids = _normalize_ai_analysis(
+        analysis_payload,
+        candidate_ids=set(id_to_hash),
+    )
     model = _clean_text(
         response_payload.get("model")
         or response_payload.get("model_used")
         or response_payload.get("model_name"),
         limit=120,
     )
-    return summary, keywords, model
+    meaningful_hashes = {
+        id_to_hash[comment_id]
+        for comment_id in meaningful_ids
+        if id_to_hash.get(comment_id)
+    }
+    return summary, keywords, model, meaningful_hashes
+
+
+def _refresh_meaningful_comment_counts(conn: Any, evaluation_ids: list[int]) -> None:
+    if not evaluation_ids:
+        return
+    placeholders = ",".join("?" for _ in evaluation_ids)
+    conn.execute(
+        f"""
+        UPDATE teacher_academic_course_evaluations
+        SET meaningful_comment_count = (
+            SELECT COUNT(*)
+            FROM teacher_academic_course_evaluation_comments comments
+            WHERE comments.evaluation_id = teacher_academic_course_evaluations.id
+              AND comments.is_meaningful = 1
+        )
+        WHERE id IN ({placeholders})
+        """,
+        tuple(evaluation_ids),
+    )
 
 
 async def _refresh_ai_keywords(
@@ -908,19 +1043,41 @@ async def _refresh_ai_keywords(
         key = _normalize_course_name(item.get("course_name"))
         entry = grouped.setdefault(
             key,
-            {"course_name": item.get("course_name") or "课程", "comments": [], "ids": []},
+            {"course_name": item.get("course_name") or "课程", "ids": []},
         )
         entry["ids"].append(int(evaluation_id))
-        entry["comments"].extend(
-            str(comment.get("comment_text") or "") for comment in (item.get("comments") or [])
-        )
 
     for entry in grouped.values():
-        comments = sorted({_clean_text(item, limit=2000) for item in entry["comments"] if _clean_text(item, limit=2000)})
-        source_hash = hashlib.sha256("\n".join(comments).encode("utf-8")).hexdigest()
         placeholders = ",".join("?" for _ in entry["ids"])
         with get_db_connection() as conn:
             ensure_academic_evaluation_schema(conn)
+            comment_rows = [
+                _mapping(row)
+                for row in conn.execute(
+                    f"""
+                    SELECT id, evaluation_id, comment_hash, comment_text,
+                           is_meaningful, filter_source
+                    FROM teacher_academic_course_evaluation_comments
+                    WHERE evaluation_id IN ({placeholders})
+                    ORDER BY evaluation_id, sequence_no, id
+                    """,
+                    tuple(entry["ids"]),
+                ).fetchall()
+            ]
+            unique_comments: dict[str, dict[str, Any]] = {}
+            for row in comment_rows:
+                text = _clean_text(row.get("comment_text"), limit=2000)
+                comment_hash = str(row.get("comment_hash") or hashlib.sha256(text.encode("utf-8")).hexdigest())
+                if text:
+                    aggregate = unique_comments.setdefault(comment_hash, {
+                        "hash": comment_hash, "text": text, "occurrences": 0,
+                    })
+                    aggregate["occurrences"] += 1
+            source_hash = hashlib.sha256(
+                (AI_ANALYSIS_VERSION + "\n" + "\n".join(
+                    sorted(f"{item['text']}\t{item['occurrences']}" for item in unique_comments.values())
+                )).encode("utf-8")
+            ).hexdigest()
             cached = conn.execute(
                 f"""
                 SELECT ai_summary, ai_keywords_json, ai_keyword_model
@@ -928,81 +1085,176 @@ async def _refresh_ai_keywords(
                 WHERE id IN ({placeholders})
                   AND ai_keyword_status = 'completed'
                   AND ai_keyword_source_hash = ?
+                  AND ai_analysis_version = ?
                 LIMIT 1
                 """,
-                (*entry["ids"], source_hash),
+                (*entry["ids"], source_hash, AI_ANALYSIS_VERSION),
             ).fetchone()
-            if not comments:
+            classifications_complete = all(
+                str(row.get("filter_source") or "")
+                in {
+                    "heuristic-low-information",
+                    "ai-meaningful",
+                    "ai-low-information",
+                    "ai-overflow-visible",
+                }
+                for row in comment_rows
+            )
+            if not comment_rows:
                 conn.execute(
                     f"""
                     UPDATE teacher_academic_course_evaluations
                     SET ai_summary = '', ai_keywords_json = '[]',
                         ai_keyword_status = 'no_comments', ai_keyword_error = '',
-                        ai_keyword_source_hash = ?, ai_keyword_updated_at = ?, updated_at = ?
+                        ai_analysis_version = ?, ai_keyword_source_hash = ?,
+                        ai_keyword_updated_at = ?, updated_at = ?, meaningful_comment_count = 0
                     WHERE id IN ({placeholders})
                     """,
-                    (source_hash, _now_iso(), _now_iso(), *entry["ids"]),
+                    (AI_ANALYSIS_VERSION, source_hash, _now_iso(), _now_iso(), *entry["ids"]),
                 )
                 conn.commit()
                 continue
-            if cached is not None:
+            if cached is not None and classifications_complete:
                 conn.execute(
                     f"""
                     UPDATE teacher_academic_course_evaluations
                     SET ai_summary = ?, ai_keywords_json = ?, ai_keyword_status = 'completed',
                         ai_keyword_model = ?, ai_keyword_error = '',
-                        ai_keyword_source_hash = ?, ai_keyword_updated_at = ?, updated_at = ?
+                        ai_analysis_version = ?, ai_keyword_source_hash = ?,
+                        ai_keyword_updated_at = ?, updated_at = ?
                     WHERE id IN ({placeholders})
                     """,
                     (
                         cached["ai_summary"],
                         cached["ai_keywords_json"],
                         cached["ai_keyword_model"],
+                        AI_ANALYSIS_VERSION,
                         source_hash,
                         _now_iso(),
                         _now_iso(),
                         *entry["ids"],
                     ),
                 )
+                _refresh_meaningful_comment_counts(conn, entry["ids"])
+                conn.commit()
+                continue
+
+            obvious_hashes = {
+                key
+                for key, item in unique_comments.items()
+                if _is_obviously_low_information_comment(item["text"])
+            }
+            candidate_comments = [
+                item for key, item in unique_comments.items() if key not in obvious_hashes
+            ]
+            review_candidates = candidate_comments[:160]
+            conn.execute(
+                f"""
+                UPDATE teacher_academic_course_evaluation_comments
+                SET is_meaningful = 1, filter_source = 'ai-overflow-visible'
+                WHERE evaluation_id IN ({placeholders})
+                """,
+                tuple(entry["ids"]),
+            )
+            if review_candidates:
+                review_hashes = sorted(item["hash"] for item in review_candidates)
+                review_placeholders = ",".join("?" for _ in review_hashes)
+                conn.execute(
+                    f"""
+                    UPDATE teacher_academic_course_evaluation_comments
+                    SET filter_source = 'pending-ai'
+                    WHERE evaluation_id IN ({placeholders})
+                      AND comment_hash IN ({review_placeholders})
+                    """,
+                    (*entry["ids"], *review_hashes),
+                )
+            if obvious_hashes:
+                hash_placeholders = ",".join("?" for _ in obvious_hashes)
+                conn.execute(
+                    f"""
+                    UPDATE teacher_academic_course_evaluation_comments
+                    SET is_meaningful = 0, filter_source = 'heuristic-low-information'
+                    WHERE evaluation_id IN ({placeholders})
+                      AND comment_hash IN ({hash_placeholders})
+                    """,
+                    (*entry["ids"], *sorted(obvious_hashes)),
+                )
+            if not candidate_comments:
+                conn.execute(
+                    f"""
+                    UPDATE teacher_academic_course_evaluations
+                    SET ai_summary = '', ai_keywords_json = '[]',
+                        ai_keyword_status = 'completed', ai_keyword_error = '',
+                        ai_analysis_version = ?, ai_keyword_source_hash = ?,
+                        ai_keyword_updated_at = ?, updated_at = ?
+                    WHERE id IN ({placeholders})
+                    """,
+                    (AI_ANALYSIS_VERSION, source_hash, _now_iso(), _now_iso(), *entry["ids"]),
+                )
+                _refresh_meaningful_comment_counts(conn, entry["ids"])
                 conn.commit()
                 continue
             conn.execute(
                 f"""
                 UPDATE teacher_academic_course_evaluations
                 SET ai_keyword_status = 'running', ai_keyword_error = '',
-                    ai_keyword_source_hash = ?, updated_at = ?
+                    ai_analysis_version = ?, ai_keyword_source_hash = ?, updated_at = ?
                 WHERE id IN ({placeholders})
                 """,
-                (source_hash, _now_iso(), *entry["ids"]),
+                (AI_ANALYSIS_VERSION, source_hash, _now_iso(), *entry["ids"]),
             )
+            _refresh_meaningful_comment_counts(conn, entry["ids"])
             conn.commit()
 
         try:
-            summary, keywords, model = await _ai_keyword_summary(
+            summary, keywords, model, meaningful_hashes = await _ai_keyword_summary(
                 teacher_id=teacher_id,
                 course_name=str(entry["course_name"]),
-                comments=comments,
+                comments=review_candidates,
                 source_hash=source_hash,
             )
             with get_db_connection() as conn:
                 conn.execute(
                     f"""
+                    UPDATE teacher_academic_course_evaluation_comments
+                    SET is_meaningful = 0, filter_source = 'ai-low-information'
+                    WHERE evaluation_id IN ({placeholders})
+                      AND filter_source = 'pending-ai'
+                    """,
+                    tuple(entry["ids"]),
+                )
+                if meaningful_hashes:
+                    hash_placeholders = ",".join("?" for _ in meaningful_hashes)
+                    conn.execute(
+                        f"""
+                        UPDATE teacher_academic_course_evaluation_comments
+                        SET is_meaningful = 1, filter_source = 'ai-meaningful'
+                        WHERE evaluation_id IN ({placeholders})
+                          AND comment_hash IN ({hash_placeholders})
+                        """,
+                        (*entry["ids"], *sorted(meaningful_hashes)),
+                    )
+                conn.execute(
+                    f"""
                     UPDATE teacher_academic_course_evaluations
                     SET ai_summary = ?, ai_keywords_json = ?, ai_keyword_status = 'completed',
                         ai_keyword_model = ?, ai_keyword_error = '',
-                        ai_keyword_source_hash = ?, ai_keyword_updated_at = ?, updated_at = ?
+                        ai_analysis_version = ?, ai_keyword_source_hash = ?,
+                        ai_keyword_updated_at = ?, updated_at = ?
                     WHERE id IN ({placeholders})
                     """,
                     (
                         summary,
                         json.dumps(keywords, ensure_ascii=False, separators=(",", ":")),
                         model,
+                        AI_ANALYSIS_VERSION,
                         source_hash,
                         _now_iso(),
                         _now_iso(),
                         *entry["ids"],
                     ),
                 )
+                _refresh_meaningful_comment_counts(conn, entry["ids"])
                 conn.commit()
         except Exception as exc:  # noqa: BLE001 - score data remains useful without AI.
             error = f"{type(exc).__name__}: {str(exc)[:240]}"
@@ -1012,11 +1264,20 @@ async def _refresh_ai_keywords(
                     f"""
                     UPDATE teacher_academic_course_evaluations
                     SET ai_keyword_status = 'failed', ai_keyword_error = ?,
-                        ai_keyword_source_hash = ?, ai_keyword_updated_at = ?, updated_at = ?
+                        ai_analysis_version = ?, ai_keyword_source_hash = ?,
+                        ai_keyword_updated_at = ?, updated_at = ?
                     WHERE id IN ({placeholders})
                     """,
-                    (error, source_hash, _now_iso(), _now_iso(), *entry["ids"]),
+                    (
+                        error,
+                        AI_ANALYSIS_VERSION,
+                        source_hash,
+                        _now_iso(),
+                        _now_iso(),
+                        *entry["ids"],
+                    ),
                 )
+                _refresh_meaningful_comment_counts(conn, entry["ids"])
                 conn.commit()
     return warnings
 
@@ -1059,6 +1320,12 @@ async def sync_current_teacher_academic_evaluations(
         return {
             "status": "already_running",
             "message": "教学评价正在后台同步，本次未重复访问教务系统。",
+            "sync": _public_sync_state(state),
+        }
+    if lease_status == "completed":
+        return {
+            "status": "already_synced",
+            "message": "本学期课程已完成一次默认同步；如需更新，请由教师手动同步。",
             "sync": _public_sync_state(state),
         }
     if lease_status == "cooldown":
@@ -1252,7 +1519,9 @@ def _evaluation_overview(rows: list[dict[str, Any]]) -> dict[str, Any]:
     enrolled_count = sum(max(0, _safe_int(row.get("enrolled_count"))) for row in rows)
     response_count = sum(max(0, _safe_int(row.get("response_count"))) for row in rows)
     valid_count = sum(max(0, _safe_int(row.get("valid_response_count"))) for row in rows)
-    comment_count = sum(max(0, _safe_int(row.get("comment_count"))) for row in rows)
+    comment_count = sum(
+        max(0, _safe_int(row.get("meaningful_comment_count"))) for row in rows
+    )
     last_synced_at = max((str(row.get("synced_at") or "") for row in rows), default="")
     summaries = [_clean_text(row.get("ai_summary"), limit=100) for row in rows if _clean_text(row.get("ai_summary"), limit=100)]
     return {
@@ -1357,17 +1626,18 @@ def build_teacher_academic_evaluation_dashboard_context(
     ).fetchone()
     state = _mapping(state_row)
     now = china_now()
-    next_allowed = _parse_iso(state.get("next_allowed_at"))
     lease_expires = _parse_iso(state.get("lease_expires_at"))
     is_running = str(state.get("status") or "") == "running" and bool(lease_expires and lease_expires > now)
-    should_auto_sync = bool(credential_row) and not is_running and (next_allowed is None or next_allowed <= now)
+    auto_sync_completed = bool(state.get("completed_at"))
+    should_auto_sync = bool(credential_row) and not is_running and not auto_sync_completed
     sync_payload = {
         **_public_sync_state(state),
         "has_credential": bool(credential_row),
         "has_data": bool(rows),
         "should_auto_sync": should_auto_sync,
+        "auto_sync_completed": auto_sync_completed,
+        "auto_sync_mode": "once_per_term",
         "is_running": is_running,
-        "auto_refresh_hours": AUTO_REFRESH_SECONDS // 3600,
         "manual_refresh_hours": MANUAL_REFRESH_SECONDS // 3600,
         "endpoint": "/api/academic-evaluations/sync-current",
     }
@@ -1464,7 +1734,7 @@ def get_teacher_classroom_academic_evaluation_detail(
                 """
                 SELECT sequence_no, comment_text
                 FROM teacher_academic_course_evaluation_comments
-                WHERE evaluation_id = ?
+                WHERE evaluation_id = ? AND is_meaningful = 1
                 ORDER BY sequence_no, id
                 """,
                 (evaluation_id,),
@@ -1486,14 +1756,25 @@ def get_teacher_classroom_academic_evaluation_detail(
                 "metrics": metrics,
                 "comments": comments,
                 "comment_count": len(comments),
+                "filtered_comment_count": max(
+                    0,
+                    _safe_int(row.get("comment_count")) - len(comments),
+                ),
                 "synced_at": str(row.get("synced_at") or ""),
             }
         )
+    keywords = _keyword_union(rows, limit=16)
     return {
         "available": True,
         "offering": offering,
         "overall": _evaluation_overview(rows),
-        "keywords": _keyword_union(rows, limit=8),
+        "keywords": keywords,
+        "strength_keywords": [
+            item for item in keywords if item.get("sentiment") != "improvement"
+        ][:8],
+        "improvement_keywords": [
+            item for item in keywords if item.get("sentiment") == "improvement"
+        ][:8],
         "ai_summaries": [
             _clean_text(row.get("ai_summary"), limit=100)
             for row in rows
@@ -1502,14 +1783,13 @@ def get_teacher_classroom_academic_evaluation_detail(
         "sources": sources,
         "sync": _public_sync_state(_mapping(state_row)),
         "frequency_note": (
-            f"自动同步每 {AUTO_REFRESH_SECONDS // 3600} 小时最多一次；"
-            f"手动刷新至少间隔 {MANUAL_REFRESH_SECONDS // 3600} 小时。"
+            "每门课程默认只自动同步一次；后续更新由教师手动触发，"
+            f"手动同步至少间隔 {MANUAL_REFRESH_SECONDS // 3600} 小时。"
         ),
     }
 
 
 __all__ = [
-    "AUTO_REFRESH_SECONDS",
     "MANUAL_REFRESH_SECONDS",
     "build_teacher_academic_evaluation_dashboard_context",
     "get_teacher_classroom_academic_evaluation_detail",

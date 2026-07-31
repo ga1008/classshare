@@ -1448,6 +1448,7 @@ if (root) {
     const syncButton = document.querySelector('[data-academic-evaluation-sync-action]');
     const syncTitle = document.querySelector('[data-academic-evaluation-sync-title]');
     const syncStatus = document.querySelector('[data-academic-evaluation-sync-status]');
+    const syncTriggerLabel = document.querySelector('[data-academic-evaluation-sync-trigger-label]');
     const modal = document.querySelector('[data-academic-evaluation-modal]');
     const dialog = modal?.querySelector('.academic-evaluation-modal__dialog');
     const modalBody = modal?.querySelector('[data-academic-evaluation-modal-body]');
@@ -1475,11 +1476,27 @@ if (root) {
         return `<span class="evaluation-keyword evaluation-keyword--${sentiment(keyword?.sentiment)}">${escapeHtml(keyword?.label || '')}${withCount && count ? `<small>×${count}</small>` : ''}</span>`;
     }
 
+    function heatmapHtml(items, tone) {
+        if (!Array.isArray(items) || !items.length) {
+            const empty = tone === 'improvement' ? '暂未形成高频缺点' : '暂无可归纳的高频词';
+            return `<span class="academic-evaluation-heatmap__empty">${empty}</span>`;
+        }
+        const maxCount = Math.max(...items.map((item) => Math.max(1, finite(item?.count, 1))));
+        return items.map((item) => {
+            const count = Math.max(1, finite(item?.count, 1));
+            const level = Math.max(1, Math.min(5, Math.ceil((count / maxCount) * 5)));
+            const confidence = Math.round(Math.max(0, Math.min(1, finite(item?.confidence, .7))) * 100);
+            return `<span class="academic-evaluation-heatword is-${tone} heat-${level}" title="出现 ${count} 次 · 置信度 ${confidence}%">
+                ${escapeHtml(item?.label || '')}<small>${count}</small>
+            </span>`;
+        }).join('');
+    }
+
     function cardSummaryHtml(overview) {
         const keywords = Array.isArray(overview?.keywords) ? overview.keywords.slice(0, 3) : [];
         const keywordContent = keywords.length
-            ? `<div class="dashboard-evaluation-card__keywords" aria-label="学生评语 AI 关键词">${keywords.map((item) => keywordHtml(item)).join('')}</div>`
-            : `<span class="dashboard-evaluation-card__pending">${overview?.ai_keyword_status === 'running' ? 'AI 正在提炼评语关键词…' : '暂无可提炼的文字评语'}</span>`;
+            ? `<div class="dashboard-evaluation-card__keywords" aria-label="学生评语高频词">${keywords.map((item) => keywordHtml(item)).join('')}</div>`
+            : `<span class="dashboard-evaluation-card__pending">${overview?.ai_keyword_status === 'running' ? '正在提炼评语高频词…' : '暂无可提炼的文字评语'}</span>`;
         const responseRate = overview?.response_rate == null ? '' : `<span>有效率 ${escapeHtml(overview.response_rate)}%</span>`;
         const score = Math.max(0, Math.min(100, finite(overview?.score)));
         return `
@@ -1521,12 +1538,14 @@ if (root) {
         if (syncButton) {
             syncButton.disabled = state === 'running';
             const label = syncButton.querySelector('span');
-            if (label) label.textContent = state === 'running' ? '同步中…' : '刷新评价';
+            if (label) label.textContent = state === 'running' ? '同步中…' : '手动同步';
         }
+        if (syncTriggerLabel) syncTriggerLabel.textContent = state === 'running' ? '同步中' : '评价';
+        panel.querySelector('.dashboard-evaluation-menu__state')?.classList.toggle('is-ready', state === 'ready');
         if (syncTitle) {
             syncTitle.textContent = state === 'running'
-                ? '正在低频同步教学评价'
-                : state === 'failed' ? '本次同步未完成，已保留原数据' : '教学反馈已对齐课堂';
+                ? '正在同步教学评价'
+                : state === 'failed' ? '本次同步未完成，已保留原数据' : '评价数据已对齐课堂';
         }
         if (syncStatus && message) syncStatus.textContent = message;
     }
@@ -1558,24 +1577,57 @@ if (root) {
     }
 
     function loadingHtml() {
-        return `<div class="academic-evaluation-modal__loading"><span class="academic-evaluation-modal__loader" aria-hidden="true"></span><strong>正在整理课堂评价…</strong><small>量化指标、AI 关键词与匿名评语即将呈现</small></div>`;
+        return `<div class="academic-evaluation-modal__loading"><span class="academic-evaluation-modal__loader" aria-hidden="true"></span><strong>正在整理课堂评价…</strong><small>评价洞察、量化指标与有效评语即将呈现</small></div>`;
     }
 
-    function metricHtml(metric) {
+    function metricScore(metric) {
+        return Math.max(0, Math.min(100, finite(metric?.satisfaction_score ?? metric?.mean_score)));
+    }
+
+    function metricShortName(metric, index) {
+        const fullName = String(metric?.metric_name || '').trim();
+        const firstClause = fullName.split(/[，,。；;：:]/)[0]
+            .replace(/^(课程|课堂|教师|学生)/, '')
+            .replace(/^(能否|是否|能够)/, '')
+            .trim();
+        if (!firstClause) return `指标 ${index + 1}`;
+        return firstClause.length > 9 ? `${firstClause.slice(0, 9)}…` : firstClause;
+    }
+
+    function sortedMetrics(metrics, mode = 'desc') {
+        return metrics.map((metric, index) => ({ metric, index })).sort((left, right) => {
+            if (mode === 'source') return left.index - right.index;
+            const difference = metricScore(right.metric) - metricScore(left.metric);
+            return mode === 'asc' ? -difference || left.index - right.index : difference || left.index - right.index;
+        });
+    }
+
+    function metricHtml(metric, index, rank) {
         const satisfaction = Math.max(0, Math.min(100, finite(metric?.satisfaction_score ?? metric?.mean_score)));
-        return `<div class="academic-evaluation-metric">
-            <div class="academic-evaluation-metric__head"><span>${escapeHtml(metric?.metric_name || '评价指标')}</span><strong>${scoreText(metric?.satisfaction_score ?? metric?.mean_score)}</strong></div>
+        const fullName = metric?.metric_name || '评价指标';
+        return `<article class="academic-evaluation-metric" tabindex="0" title="${escapeHtml(fullName)}" aria-label="${escapeHtml(fullName)}，得分 ${scoreText(satisfaction)}">
+            <span class="academic-evaluation-metric__rank">${rank + 1}</span>
+            <strong>${escapeHtml(metricShortName(metric, index))}</strong>
+            <em>${scoreText(satisfaction)}</em>
             <div class="academic-evaluation-metric__track"><span style="--metric-progress:${satisfaction}%"></span></div>
-        </div>`;
+            <span class="academic-evaluation-metric__tooltip" role="tooltip">${escapeHtml(fullName)}</span>
+        </article>`;
+    }
+
+    function metricGridHtml(metrics, mode = 'desc') {
+        return sortedMetrics(metrics, mode)
+            .map(({ metric, index }, rank) => metricHtml(metric, index, rank))
+            .join('');
     }
 
     function commentsHtml(comments) {
         if (!Array.isArray(comments) || !comments.length) return '<div class="academic-evaluation-muted">这一评价维度暂无有效文字评语</div>';
         return `<div class="academic-evaluation-comments">${comments.map((comment, index) => `
-            <article class="academic-evaluation-comment">
+            <article class="academic-evaluation-comment"${index >= 8 ? ' data-comment-extra hidden' : ''}>
                 <span class="academic-evaluation-comment__index">${index + 1}</span>
                 <p>${escapeHtml(comment?.text || '')}</p>
-            </article>`).join('')}</div>`;
+            </article>`).join('')}</div>
+            ${comments.length > 8 ? `<button type="button" class="academic-evaluation-comments__toggle" data-comment-toggle aria-expanded="false">展开其余 ${comments.length - 8} 条</button>` : ''}`;
     }
 
     function sourcePanelHtml(source, index) {
@@ -1588,9 +1640,16 @@ if (root) {
                 ${source?.campus_name ? `<span>${escapeHtml(source.campus_name)}</span>` : ''}
                 ${source?.institution_rank ? `<span>学校排名 ${escapeHtml(source.institution_rank)}</span>` : ''}
             </div>
-            <div class="academic-evaluation-section__header"><h3>分项指标</h3><span>${metrics.length} 项</span></div>
-            ${metrics.length ? `<div class="academic-evaluation-metrics">${metrics.map(metricHtml).join('')}</div>` : '<div class="academic-evaluation-muted">暂无分项评分数据</div>'}
-            <div class="academic-evaluation-section__header"><h3>匿名学生评语</h3><span>${comments.length} 条</span></div>
+            <div class="academic-evaluation-section__header academic-evaluation-section__header--metrics">
+                <div><h3>分项指标</h3><span>${metrics.length} 项 · 悬停查看完整说明</span></div>
+                <div class="academic-evaluation-sort" role="group" aria-label="分项指标排序">
+                    <button type="button" class="is-active" data-metric-sort="desc" aria-pressed="true">高到低</button>
+                    <button type="button" data-metric-sort="asc" aria-pressed="false">低到高</button>
+                    <button type="button" data-metric-sort="source" aria-pressed="false">原顺序</button>
+                </div>
+            </div>
+            ${metrics.length ? `<div class="academic-evaluation-metrics" data-metric-grid>${metricGridHtml(metrics)}</div>` : '<div class="academic-evaluation-muted">暂无分项评分数据</div>'}
+            <div class="academic-evaluation-section__header"><h3>匿名学生评语</h3><span>保留 ${comments.length} 条${source?.filtered_comment_count ? ` · 已过滤 ${Math.max(0, finite(source.filtered_comment_count))} 条低信息文本` : ''}</span></div>
             ${commentsHtml(comments)}
         </div>`;
     }
@@ -1603,6 +1662,12 @@ if (root) {
         const overall = payload.overall || {};
         const sources = Array.isArray(payload.sources) ? payload.sources : [];
         const keywords = Array.isArray(payload.keywords) ? payload.keywords : [];
+        const strengths = Array.isArray(payload.strength_keywords)
+            ? payload.strength_keywords
+            : keywords.filter((item) => item?.sentiment !== 'improvement');
+        const improvements = Array.isArray(payload.improvement_keywords)
+            ? payload.improvement_keywords
+            : keywords.filter((item) => item?.sentiment === 'improvement');
         const summaries = Array.isArray(payload.ai_summaries) ? payload.ai_summaries.filter(Boolean) : [];
         const score = Math.max(0, Math.min(100, finite(overall.score)));
         modalTitle.textContent = payload.offering?.course_name || '教学评价详情';
@@ -1611,12 +1676,15 @@ if (root) {
             <div class="academic-evaluation-overview">
                 <section class="academic-evaluation-score-panel">
                     <div class="academic-evaluation-score-panel__number" style="--evaluation-score:${score}">${escapeHtml(overall.score_display || scoreText(score))}</div>
-                    <div class="academic-evaluation-score-panel__copy"><span>Overall score</span><strong>总体评价 / 100</strong><small>${Math.max(0, finite(overall.valid_response_count))} 份有效评价 · ${Math.max(0, finite(overall.comment_count))} 条评语</small></div>
+                    <div class="academic-evaluation-score-panel__copy"><span>Overall score</span><strong>总体评价 / 100</strong><small>${Math.max(0, finite(overall.valid_response_count))} 份有效评价 · ${Math.max(0, finite(overall.comment_count))} 条有效评语</small></div>
                 </section>
                 <section class="academic-evaluation-insight-panel">
-                    <h3>AI 评语洞察</h3>
-                    <p>${escapeHtml(summaries[0] || 'AI 仅将匿名评语聚合为关键词，不推断或识别学生身份。')}</p>
-                    <div class="academic-evaluation-keywords">${keywords.length ? keywords.map((item) => keywordHtml(item, true)).join('') : '<span class="academic-evaluation-muted">暂无可提炼关键词</span>'}</div>
+                    <h3>评价洞察</h3>
+                    <p>${escapeHtml(summaries[0] || '匿名评语仅用于聚合教学反馈，不推断或识别学生身份。')}</p>
+                    <div class="academic-evaluation-heatmaps">
+                        <section class="academic-evaluation-heatmap is-strength"><h4>优势热力图</h4><div>${heatmapHtml(strengths, 'strength')}</div></section>
+                        <section class="academic-evaluation-heatmap is-improvement"><h4>缺点热力图</h4><div>${heatmapHtml(improvements, 'improvement')}</div></section>
+                    </div>
                 </section>
             </div>
             <section class="academic-evaluation-section">
@@ -1636,6 +1704,31 @@ if (root) {
                     item.setAttribute('aria-selected', String(active));
                 });
                 modalBody.querySelectorAll('[data-evaluation-source-panel]').forEach((item) => item.classList.toggle('is-active', item.dataset.evaluationSourcePanel === index));
+            });
+        });
+        modalBody.querySelectorAll('[data-metric-sort]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const sourcePanel = button.closest('[data-evaluation-source-panel]');
+                const sourceIndex = Number(sourcePanel?.dataset.evaluationSourcePanel);
+                const metrics = Array.isArray(sources[sourceIndex]?.metrics) ? sources[sourceIndex].metrics : [];
+                const grid = sourcePanel?.querySelector('[data-metric-grid]');
+                if (!grid) return;
+                grid.innerHTML = metricGridHtml(metrics, button.dataset.metricSort || 'desc');
+                sourcePanel.querySelectorAll('[data-metric-sort]').forEach((item) => {
+                    const active = item === button;
+                    item.classList.toggle('is-active', active);
+                    item.setAttribute('aria-pressed', String(active));
+                });
+            });
+        });
+        modalBody.querySelectorAll('[data-comment-toggle]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const expanded = button.getAttribute('aria-expanded') === 'true';
+                button.closest('[data-evaluation-source-panel]')?.querySelectorAll('[data-comment-extra]')
+                    .forEach((item) => { item.hidden = expanded; });
+                button.setAttribute('aria-expanded', String(!expanded));
+                const hiddenCount = button.closest('[data-evaluation-source-panel]')?.querySelectorAll('[data-comment-extra]').length || 0;
+                button.textContent = expanded ? `展开其余 ${hiddenCount} 条` : '收起评语';
             });
         });
     }
@@ -1678,6 +1771,7 @@ if (root) {
     }
 
     document.addEventListener('click', (event) => {
+        if (panel?.open && !panel.contains(event.target)) panel.removeAttribute('open');
         const trigger = event.target.closest('[data-academic-evaluation-open]');
         if (trigger) {
             event.preventDefault();
@@ -1688,6 +1782,7 @@ if (root) {
         if (event.target.closest('[data-academic-evaluation-close]')) closeDetail();
     });
     document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && panel?.open) panel.removeAttribute('open');
         if (!modal || modal.hidden) return;
         if (event.key === 'Escape') {
             event.preventDefault();

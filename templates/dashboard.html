@@ -283,28 +283,6 @@
 
                 {% if user_info.role == 'teacher' %}
                 {% set evaluation_sync = dashboard_academic_evaluation_sync|default({}) %}
-                <div class="dashboard-evaluation-sync{% if evaluation_sync.is_running %} is-syncing{% endif %}" data-academic-evaluation-sync-panel>
-                    <div class="dashboard-evaluation-sync__signal" aria-hidden="true">
-                        <span></span><span></span><span></span>
-                    </div>
-                    <div class="dashboard-evaluation-sync__copy">
-                        <span class="dashboard-evaluation-sync__eyebrow">Student voice · 教学评价</span>
-                        <strong data-academic-evaluation-sync-title>
-                            {% if evaluation_sync.is_running %}正在低频同步教学评价{% elif evaluation_sync.has_data %}教学反馈已对齐课堂{% elif evaluation_sync.has_credential %}等待首次同步教学评价{% else %}连接教务账号后显示教学评价{% endif %}
-                        </strong>
-                        <small data-academic-evaluation-sync-status aria-live="polite">
-                            {% if evaluation_sync.has_data %}{{ evaluation_sync.freshness_label }} · 自动最多每 {{ evaluation_sync.auto_refresh_hours }} 小时一次{% elif evaluation_sync.has_credential %}系统将在本页空闲时执行一次低频同步{% else %}量化分数与匿名评语关键词仅教师本人可见{% endif %}
-                        </small>
-                    </div>
-                    {% if evaluation_sync.has_credential %}
-                    <button type="button" class="dashboard-evaluation-sync__action" data-academic-evaluation-sync-action{% if evaluation_sync.is_running %} disabled{% endif %}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6v6h-6"/><path d="M4 18v-6h6"/><path d="M18.5 9a7 7 0 0 0-12-2L4 9"/><path d="m20 15-2.5 2A7 7 0 0 1 5.5 15"/></svg>
-                        <span>刷新评价</span>
-                    </button>
-                    {% else %}
-                    <a class="dashboard-evaluation-sync__action" href="/manage/system/academic-integrations">连接教务账号</a>
-                    {% endif %}
-                </div>
                 {% endif %}
 
                 {% if class_offerings %}
@@ -354,6 +332,35 @@
                             >
                             <button type="submit" class="dashboard-search-submit">搜索</button>
                         </div>
+                        {% if user_info.role == 'teacher' %}
+                        <details class="dashboard-evaluation-menu{% if evaluation_sync.is_running %} is-syncing{% endif %}" data-academic-evaluation-sync-panel>
+                            <summary class="dashboard-evaluation-menu__trigger" aria-label="教学评价同步与设置">
+                                <span class="dashboard-evaluation-menu__icon" aria-hidden="true"><i></i><i></i><i></i></span>
+                                <span data-academic-evaluation-sync-trigger-label>评价</span>
+                                <span class="dashboard-evaluation-menu__state{% if evaluation_sync.has_data %} is-ready{% endif %}" aria-hidden="true"></span>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                            </summary>
+                            <div class="dashboard-evaluation-menu__popover">
+                                <span class="dashboard-evaluation-menu__eyebrow">Student voice · 教学评价</span>
+                                <strong data-academic-evaluation-sync-title>
+                                    {% if evaluation_sync.is_running %}正在同步教学评价{% elif evaluation_sync.has_data %}评价数据已对齐课堂{% elif evaluation_sync.auto_sync_completed %}已完成首次检查{% elif evaluation_sync.has_credential %}等待首次同步{% else %}尚未连接教务账号{% endif %}
+                                </strong>
+                                <small data-academic-evaluation-sync-status aria-live="polite">
+                                    {% if evaluation_sync.has_data %}{{ evaluation_sync.freshness_label }} · 默认仅同步一次{% elif evaluation_sync.auto_sync_completed %}后续需要更新时请手动同步{% elif evaluation_sync.has_credential %}页面空闲时将执行一次默认同步{% else %}连接后可读取量化分数与匿名评语{% endif %}
+                                </small>
+                                <div class="dashboard-evaluation-menu__actions">
+                                    {% if evaluation_sync.has_credential %}
+                                    <button type="button" class="dashboard-evaluation-menu__action is-primary" data-academic-evaluation-sync-action{% if evaluation_sync.is_running %} disabled{% endif %}>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6v6h-6"/><path d="M4 18v-6h6"/><path d="M18.5 9a7 7 0 0 0-12-2L4 9"/><path d="m20 15-2.5 2A7 7 0 0 1 5.5 15"/></svg>
+                                        <span>手动同步</span>
+                                    </button>
+                                    {% endif %}
+                                    <a class="dashboard-evaluation-menu__action" href="/manage/system/academic-integrations">教务连接</a>
+                                </div>
+                                <p>每门课程默认只自动同步一次；详情始终读取本地数据。</p>
+                            </div>
+                        </details>
+                        {% endif %}
                     </form>
 
                     {% if user_info.role == 'teacher' %}
@@ -463,13 +470,13 @@
                                     <span>{{ evaluation.freshness_label }}</span>
                                 </div>
                                 {% if evaluation.keywords %}
-                                <div class="dashboard-evaluation-card__keywords" aria-label="学生评语 AI 关键词">
+                                <div class="dashboard-evaluation-card__keywords" aria-label="学生评语高频词">
                                     {% for keyword in evaluation.keywords[:3] %}
                                     <span class="evaluation-keyword evaluation-keyword--{{ keyword.sentiment }}">{{ keyword.label }}</span>
                                     {% endfor %}
                                 </div>
                                 {% elif evaluation.ai_keyword_status == 'running' %}
-                                <span class="dashboard-evaluation-card__pending">AI 正在提炼评语关键词…</span>
+                                <span class="dashboard-evaluation-card__pending">正在提炼评语高频词…</span>
                                 {% else %}
                                 <span class="dashboard-evaluation-card__pending">暂无可提炼的文字评语</span>
                                 {% endif %}
@@ -703,7 +710,7 @@
             <div class="academic-evaluation-modal__loading" data-academic-evaluation-loading>
                 <span class="academic-evaluation-modal__loader" aria-hidden="true"></span>
                 <strong>正在整理课堂评价…</strong>
-                <small>量化指标、AI 关键词与匿名评语即将呈现</small>
+                <small>评价洞察、量化指标与有效评语即将呈现</small>
             </div>
         </div>
     </section>
@@ -735,7 +742,7 @@
 </script>
 {% endif %}
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
-<script type="module" src="/static/js/dashboard.js?v=academic-evaluation-20260731"></script>
+<script type="module" src="/static/js/dashboard.js?v=academic-evaluation-insight-v2-20260731"></script>
 <script type="module" src="/static/js/dashboard_count_up.js?v=student-dashboard-polish-20260612"></script>
 <script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260714-modal-fix-v3"></script>
 {% endblock %}

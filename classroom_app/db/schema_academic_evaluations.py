@@ -12,6 +12,28 @@ from typing import Any
 from .connection import get_configured_db_engine
 
 
+def _add_column_if_missing(
+    conn: Any,
+    *,
+    engine: str,
+    table: str,
+    column: str,
+    definition: str,
+) -> None:
+    """Add a small forward-compatible extension on SQLite and PostgreSQL."""
+    if engine == "postgres":
+        conn.execute(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}"
+        )
+        return
+    existing = {
+        str(row[1])
+        for row in conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+    }
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def ensure_academic_evaluation_schema(conn: Any) -> None:
     engine = get_configured_db_engine()
     timestamp_type = "TIMESTAMP" if engine == "postgres" else "TEXT"
@@ -69,9 +91,11 @@ def ensure_academic_evaluation_schema(conn: Any) -> None:
             institution_rank INTEGER,
             course_unit_rank INTEGER,
             comment_count INTEGER NOT NULL DEFAULT 0,
+            meaningful_comment_count INTEGER NOT NULL DEFAULT 0,
             ai_summary TEXT NOT NULL DEFAULT '',
             ai_keywords_json TEXT NOT NULL DEFAULT '[]',
             ai_keyword_status TEXT NOT NULL DEFAULT 'pending',
+            ai_analysis_version TEXT NOT NULL DEFAULT '',
             ai_keyword_model TEXT NOT NULL DEFAULT '',
             ai_keyword_error TEXT NOT NULL DEFAULT '',
             ai_keyword_source_hash TEXT NOT NULL DEFAULT '',
@@ -119,10 +143,51 @@ def ensure_academic_evaluation_schema(conn: Any) -> None:
             sequence_no INTEGER NOT NULL DEFAULT 0,
             comment_text TEXT NOT NULL DEFAULT '',
             comment_hash TEXT NOT NULL DEFAULT '',
+            is_meaningful INTEGER NOT NULL DEFAULT 1,
+            filter_source TEXT NOT NULL DEFAULT 'unclassified',
             created_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (evaluation_id, source_comment_key),
             FOREIGN KEY (evaluation_id) REFERENCES teacher_academic_course_evaluations (id) ON DELETE CASCADE
         )
+        """
+    )
+
+    _add_column_if_missing(
+        conn,
+        engine=engine,
+        table="teacher_academic_course_evaluations",
+        column="meaningful_comment_count",
+        definition="INTEGER NOT NULL DEFAULT 0",
+    )
+    _add_column_if_missing(
+        conn,
+        engine=engine,
+        table="teacher_academic_course_evaluations",
+        column="ai_analysis_version",
+        definition="TEXT NOT NULL DEFAULT ''",
+    )
+    _add_column_if_missing(
+        conn,
+        engine=engine,
+        table="teacher_academic_course_evaluation_comments",
+        column="is_meaningful",
+        definition="INTEGER NOT NULL DEFAULT 1",
+    )
+    _add_column_if_missing(
+        conn,
+        engine=engine,
+        table="teacher_academic_course_evaluation_comments",
+        column="filter_source",
+        definition="TEXT NOT NULL DEFAULT 'unclassified'",
+    )
+    # Existing rows predate the filter. Keep them visible until the next
+    # explicit analysis instead of silently treating them as discarded.
+    conn.execute(
+        """
+        UPDATE teacher_academic_course_evaluations
+        SET meaningful_comment_count = comment_count
+        WHERE meaningful_comment_count = 0 AND comment_count > 0
+          AND COALESCE(ai_analysis_version, '') = ''
         """
     )
 
@@ -143,6 +208,11 @@ def ensure_academic_evaluation_schema(conn: Any) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_academic_evaluation_comment_parent "
         "ON teacher_academic_course_evaluation_comments (evaluation_id, sequence_no)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_academic_evaluation_comment_meaningful "
+        "ON teacher_academic_course_evaluation_comments "
+        "(evaluation_id, is_meaningful, sequence_no)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_academic_evaluation_sync_due "

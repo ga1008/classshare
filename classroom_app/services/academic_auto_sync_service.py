@@ -396,7 +396,7 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
             "parameters": [
                 {"name": "xnm/xqm", "value": "自动识别当前学年学期"},
                 {"name": "评价对象", "value": "教师"},
-                {"name": "频率保护", "value": "自动 24 小时、手动 6 小时最短间隔"},
+                {"name": "同步策略", "value": "每门课程默认一次，后续由教师手动更新"},
             ],
             "last_synced_at": evaluation_stat["last_synced_at"],
             "has_synced": evaluation_stat["count"] > 0,
@@ -418,7 +418,7 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
                     "flag": "1",
                 },
             ),
-            "safe_note": "所有源站请求严格串行；课堂页面只读本地缓存，不会因浏览或打开浮窗反复访问教务系统。",
+            "safe_note": "首次同步后不再自动重复访问；所有源站请求严格串行，课堂页面和详情始终只读本地缓存。",
         },
         {
             "key": "teaching_places",
@@ -494,7 +494,7 @@ async def _run_stage(
 
 
 def _summarize_auto_sync(stages: list[dict[str, Any]]) -> tuple[str, str]:
-    healthy_statuses = {"success", "fresh", "no_data"}
+    healthy_statuses = {"success", "fresh", "no_data", "already_synced"}
     success_count = sum(1 for item in stages if item.get("status") in healthy_statuses)
     if success_count == len(stages):
         course_counts = next((item.get("counts") or {} for item in stages if item.get("key") == "courses"), {})

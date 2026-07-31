@@ -2,7 +2,7 @@ import json
 import sqlite3
 import unittest
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -11,6 +11,9 @@ from classroom_app.services.academic_evaluation_sync_service import (
     _acquire_sync_lease,
     _fetch_evaluations,
     _finish_sync_lease,
+    _is_obviously_low_information_comment,
+    _normalize_ai_analysis,
+    _refresh_ai_keywords,
     _upsert_evaluation,
     build_teacher_academic_evaluation_dashboard_context,
     get_teacher_classroom_academic_evaluation_detail,
@@ -81,7 +84,26 @@ class AcademicEvaluationSchemaTests(unittest.TestCase):
             ensure_academic_evaluation_schema(conn)
         ddl = "\n".join(statement for statement, _params in conn.statements)
         self.assertIn("SERIAL PRIMARY KEY", ddl)
+        self.assertIn("meaningful_comment_count", ddl)
+        self.assertIn("is_meaningful", ddl)
         self.assertNotIn("AUTOINCREMENT", ddl)
+
+    def test_fast_analysis_contract_separates_heatmaps_and_filters_noise(self):
+        summary, keywords, meaningful_ids = _normalize_ai_analysis(
+            {
+                "summary": "互动自然，但案例更新仍可加强。",
+                "strengths": [{"label": "互动自然", "count": 5, "confidence": .92}],
+                "improvements": [{"label": "案例更新", "count": 2, "confidence": .81}],
+                "meaningful_comment_ids": ["c2"],
+            },
+            candidate_ids={"c1", "c2"},
+        )
+        self.assertEqual(summary, "互动自然，但案例更新仍可加强。")
+        self.assertEqual([item["sentiment"] for item in keywords], ["positive", "improvement"])
+        self.assertEqual(meaningful_ids, {"c2"})
+        self.assertTrue(_is_obviously_low_information_comment("很好"))
+        self.assertTrue(_is_obviously_low_information_comment("good"))
+        self.assertFalse(_is_obviously_low_information_comment("老师会结合案例解释网络协议"))
 
 
 class AcademicEvaluationSourceContractTests(unittest.IsolatedAsyncioTestCase):
@@ -264,6 +286,15 @@ class AcademicEvaluationLocalReadTests(unittest.TestCase):
             synced_evaluation_count=1,
         )
         self.conn.commit()
+        repeat_status, _repeat_state = _acquire_sync_lease(
+            self.conn,
+            teacher_id=1,
+            semester_id=10,
+            academic_year="2025-2026",
+            academic_term="2",
+            force=False,
+        )
+        self.assertEqual(repeat_status, "completed")
         forced_status, _forced_state = _acquire_sync_lease(
             self.conn,
             teacher_id=1,
@@ -273,6 +304,80 @@ class AcademicEvaluationLocalReadTests(unittest.TestCase):
             force=True,
         )
         self.assertEqual(forced_status, "cooldown")
+
+
+class AcademicEvaluationCommentFilterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_fast_analysis_hides_low_information_comments_from_detail(self):
+        conn = _memory_database()
+        try:
+            evaluation_id = _upsert_evaluation(
+                conn,
+                teacher_id=1,
+                semester_id=10,
+                academic_year="2025-2026",
+                academic_term="2",
+                item={
+                    "source_course_key": "COURSE-1",
+                    "course_name": "计算机网络",
+                    "hour_type_code": "01",
+                    "hour_type_name": "理论",
+                    "evaluation_target_code": "01",
+                    "course_score": 98,
+                    "response_count": 56,
+                    "valid_response_count": 44,
+                    "metrics": [],
+                    "comments": [
+                        {
+                            "source_comment_key": "C1",
+                            "sequence_no": 1,
+                            "comment_text": "好",
+                            "comment_hash": "noise-hash",
+                        },
+                        {
+                            "source_comment_key": "C2",
+                            "sequence_no": 2,
+                            "comment_text": "老师会结合案例解释网络协议。",
+                            "comment_hash": "useful-hash",
+                        },
+                    ],
+                },
+                source_summary=[],
+                synced_at="2026-07-31T10:00:00+08:00",
+            )
+            conn.commit()
+            analysis_result = (
+                "案例讲解获得认可。",
+                [{"label": "案例讲解", "sentiment": "positive", "count": 1, "confidence": .9}],
+                "fast-model",
+                {"useful-hash"},
+            )
+            with patch(
+                "classroom_app.services.academic_evaluation_sync_service.get_db_connection",
+                return_value=conn,
+            ), patch(
+                "classroom_app.services.academic_evaluation_sync_service._ai_keyword_summary",
+                new=AsyncMock(return_value=analysis_result),
+            ):
+                warnings = await _refresh_ai_keywords(
+                    teacher_id=1,
+                    evaluations=[{"course_name": "计算机网络"}],
+                    evaluation_ids=[evaluation_id],
+                )
+            self.assertEqual(warnings, [])
+            rows = conn.execute(
+                "SELECT comment_hash, is_meaningful FROM teacher_academic_course_evaluation_comments ORDER BY sequence_no"
+            ).fetchall()
+            self.assertEqual([(row[0], row[1]) for row in rows], [("noise-hash", 0), ("useful-hash", 1)])
+            detail = get_teacher_classroom_academic_evaluation_detail(
+                conn,
+                teacher_id=1,
+                class_offering_id=40,
+            )
+            self.assertEqual([item["text"] for item in detail["sources"][0]["comments"]], ["老师会结合案例解释网络协议。"])
+            self.assertEqual(detail["sources"][0]["filtered_comment_count"], 1)
+            self.assertEqual(detail["overall"]["comment_count"], 1)
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":
