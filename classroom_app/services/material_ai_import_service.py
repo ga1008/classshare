@@ -40,6 +40,12 @@ from .final_grade_transcript_service import (
     FINAL_GRADE_TRANSCRIPT_TYPE,
     parse_final_grade_transcript_file,
 )
+from .academic_final_material_service import (
+    ACADEMIC_EXAM_ANALYSIS_LABEL,
+    ACADEMIC_EXAM_ANALYSIS_TYPE,
+    ACADEMIC_GRADE_REGISTER_LABEL,
+    ACADEMIC_GRADE_REGISTER_TYPE,
+)
 
 try:
     from ai_assistant_doc_extract import extract_document_text, render_pdf_pages_to_data_urls
@@ -118,6 +124,16 @@ MATERIAL_AI_IMPORT_TYPE_FORMATS: dict[str, dict[str, Any]] = {
         "accepted_extensions": GRADE_RECORD_MATERIAL_AI_IMPORT_EXTENSIONS,
         "accepted_format_label": "Excel（.xls/.xlsx）",
         "format_hint": "请上传教务系统学校模板 Excel；学年、学期及班课组织信息需在导入前确认。",
+    },
+    ACADEMIC_GRADE_REGISTER_TYPE: {
+        "accepted_extensions": WORD_FORM_MATERIAL_AI_IMPORT_RECOMMENDED_EXTENSIONS,
+        "accepted_format_label": "教务 FineReport Word（.doc/.rtf）",
+        "format_hint": "由系统从教务成绩页自动下载并执行确定性成绩校验。",
+    },
+    ACADEMIC_EXAM_ANALYSIS_TYPE: {
+        "accepted_extensions": WORD_FORM_MATERIAL_AI_IMPORT_RECOMMENDED_EXTENSIONS,
+        "accepted_format_label": "教务 FineReport Word（.doc/.rtf）",
+        "format_hint": "由系统与期末成绩登记表成对下载、解析并交叉校验。",
     },
 }
 
@@ -206,6 +222,18 @@ MATERIAL_AI_IMPORT_GROUPS: list[dict[str, Any]] = [
                 "label": FINAL_GRADE_TRANSCRIPT_LABEL,
                 "template_key": FINAL_GRADE_TRANSCRIPT_TYPE,
                 "aliases": ["期末成绩单", "学生成绩录入模板", "学生成绩录入表"],
+            },
+            {
+                "key": ACADEMIC_GRADE_REGISTER_TYPE,
+                "label": ACADEMIC_GRADE_REGISTER_LABEL,
+                "template_key": ACADEMIC_GRADE_REGISTER_TYPE,
+                "aliases": ["期末成绩登记表", "教务期末成绩登记表"],
+            },
+            {
+                "key": ACADEMIC_EXAM_ANALYSIS_TYPE,
+                "label": ACADEMIC_EXAM_ANALYSIS_LABEL,
+                "template_key": ACADEMIC_EXAM_ANALYSIS_TYPE,
+                "aliases": ["试卷分析表", "课程试卷分析表", "教务试卷分析表"],
             },
             {
                 "key": "final_teaching_summary",

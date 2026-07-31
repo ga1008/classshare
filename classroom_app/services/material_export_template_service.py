@@ -30,6 +30,14 @@ from .final_grade_transcript_service import (
     build_final_grade_transcript_xlsx,
 )
 from .teacher_evaluation_text_service import split_analysis_blocks
+from .academic_final_material_service import (
+    ACADEMIC_EXAM_ANALYSIS_TYPE,
+    ACADEMIC_GRADE_REGISTER_TYPE,
+)
+from .academic_final_material_document_service import (
+    build_academic_final_material_docx,
+    build_academic_final_material_filename,
+)
 
 
 @dataclass(frozen=True)
@@ -56,6 +64,8 @@ TEMPLATE_CONFIGS: dict[str, dict[str, str]] = {
     "exam_paper": {"title": "课程考核试卷", "preferred_format": "docx"},
     ORDINARY_GRADE_RECORD_TYPE: {"title": "学生平时成绩记录表", "preferred_format": "xlsx"},
     EXAM_GRADE_RECORD_TYPE: {"title": "机试（作品设计）考核登分表", "preferred_format": "xlsx"},
+    ACADEMIC_GRADE_REGISTER_TYPE: {"title": "期末成绩登记表", "preferred_format": "docx"},
+    ACADEMIC_EXAM_ANALYSIS_TYPE: {"title": "试卷分析表", "preferred_format": "docx"},
     "final_teaching_summary": {"title": "教师教学工作总结", "preferred_format": "docx"},
 }
 
@@ -139,6 +149,20 @@ def build_material_export_artifact(
             filename=build_final_grade_transcript_export_filename(transcript_fields),
             media_type=XLSX_MEDIA_TYPE,
         )
+    if template_key in {ACADEMIC_GRADE_REGISTER_TYPE, ACADEMIC_EXAM_ANALYSIS_TYPE}:
+        docx_content = build_academic_final_material_docx(payload, template_key)
+        filename = build_academic_final_material_filename(payload, template_key)
+        if output_format == "pdf":
+            return MaterialExportArtifact(
+                content=_convert_docx_bytes_to_pdf(docx_content, base_name=Path(filename).stem),
+                filename=f"{Path(filename).stem}.pdf",
+                media_type=PDF_MEDIA_TYPE,
+            )
+        return MaterialExportArtifact(
+            content=docx_content,
+            filename=filename,
+            media_type=DOCX_MEDIA_TYPE,
+        )
     if output_format == "pdf":
         docx_content = _build_docx_export(payload, title=title)
         return MaterialExportArtifact(
@@ -175,6 +199,8 @@ def _build_docx_export(payload: dict[str, Any], *, title: str) -> bytes:
         raise RuntimeError(f"缺少 DOCX 导出依赖 python-docx: {exc}") from exc
 
     template_key = str(_as_dict(payload.get("export_payload")).get("template_key") or payload.get("document_type") or "")
+    if template_key in {ACADEMIC_GRADE_REGISTER_TYPE, ACADEMIC_EXAM_ANALYSIS_TYPE}:
+        return build_academic_final_material_docx(payload, template_key)
     if template_key == "evaluation_sheet":
         return _build_evaluation_sheet_docx_export(payload)
     if template_key in FINAL_MATERIAL_TYPES:

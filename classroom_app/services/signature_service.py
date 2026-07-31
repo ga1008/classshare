@@ -225,6 +225,8 @@ def can_view_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any])
     if role == "teacher":
         if _is_owner(actor, row):
             return True
+        if str(row["owner_role"] or "") == "system" or str(row["scope_level"] or "") == "platform":
+            return True
         return _same_department(actor, row)
     return False
 
@@ -272,6 +274,8 @@ def can_use_signature(
         return False
     if not can_view_signature(actor, row):
         return False
+    if str(row["owner_role"] or "") == "system" or str(row["scope_level"] or "") == "platform":
+        return True
     return _signature_request_state(conn, actor, row).get("request_status") == "approved"
 
 

@@ -24,6 +24,13 @@ from .final_grade_transcript_service import (
     FINAL_GRADE_TRANSCRIPT_TYPE,
     normalize_final_grade_transcript_payload,
 )
+from .academic_final_material_service import (
+    ACADEMIC_EXAM_ANALYSIS_LABEL,
+    ACADEMIC_EXAM_ANALYSIS_TYPE,
+    ACADEMIC_GRADE_REGISTER_LABEL,
+    ACADEMIC_GRADE_REGISTER_TYPE,
+    normalize_academic_final_material_payload,
+)
 
 FINAL_MATERIAL_TYPES = {
     "assessment_plan",
@@ -32,6 +39,8 @@ FINAL_MATERIAL_TYPES = {
     ORDINARY_GRADE_RECORD_TYPE,
     EXAM_GRADE_RECORD_TYPE,
     FINAL_GRADE_TRANSCRIPT_TYPE,
+    ACADEMIC_GRADE_REGISTER_TYPE,
+    ACADEMIC_EXAM_ANALYSIS_TYPE,
 }
 
 
@@ -42,6 +51,8 @@ FINAL_MATERIAL_LABELS = {
     ORDINARY_GRADE_RECORD_TYPE: ORDINARY_GRADE_RECORD_LABEL,
     EXAM_GRADE_RECORD_TYPE: EXAM_GRADE_RECORD_LABEL,
     FINAL_GRADE_TRANSCRIPT_TYPE: FINAL_GRADE_TRANSCRIPT_LABEL,
+    ACADEMIC_GRADE_REGISTER_TYPE: ACADEMIC_GRADE_REGISTER_LABEL,
+    ACADEMIC_EXAM_ANALYSIS_TYPE: ACADEMIC_EXAM_ANALYSIS_LABEL,
 }
 
 
@@ -89,6 +100,16 @@ FINAL_MATERIAL_LAYOUTS: dict[str, dict[str, Any]] = {
     ORDINARY_GRADE_RECORD_TYPE: deepcopy(ORDINARY_GRADE_LAYOUT),
     EXAM_GRADE_RECORD_TYPE: deepcopy(EXAM_GRADE_LAYOUT),
     FINAL_GRADE_TRANSCRIPT_TYPE: deepcopy(FINAL_GRADE_TRANSCRIPT_LAYOUT),
+    ACADEMIC_GRADE_REGISTER_TYPE: {
+        "page": "A4 portrait",
+        "margins_cm": {"top": 0.35, "bottom": 0.35, "left": 0.45, "right": 0.45},
+        "signature_mode": "inline_locked",
+    },
+    ACADEMIC_EXAM_ANALYSIS_TYPE: {
+        "page": "A4 portrait",
+        "margins_cm": {"top": 0.75, "bottom": 0.55, "left": 1.05, "right": 1.05},
+        "signature_mode": "inline_locked",
+    },
 }
 
 
@@ -243,6 +264,12 @@ def normalize_final_material_payload(
             tables=tables,
             export_payload=export_payload,
             classroom_context=classroom_context,
+        )
+    if key in {ACADEMIC_GRADE_REGISTER_TYPE, ACADEMIC_EXAM_ANALYSIS_TYPE}:
+        return normalize_academic_final_material_payload(
+            document_type=key,
+            metadata=metadata,
+            export_payload=export_payload,
         )
 
     normalized_tables = normalize_table_payloads(tables or [])

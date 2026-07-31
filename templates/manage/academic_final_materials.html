@@ -1,0 +1,217 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}{{ document_type_label }}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/academic_final_materials.css') }}">
+{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('同步教务', '一次下载两份表', 'refresh', variant='primary', tone='indigo', attrs='data-afm-open-sync') }}
+{{ topbar_action(sibling_label, '切换期末材料', 'file-plus', href=sibling_url, variant='soft', tone='slate') }}
+{% endblock %}
+
+{% block content %}
+<section
+    class="afm"
+    data-afm-root
+    data-document-type="{{ document_type }}"
+    data-document-label="{{ document_type_label }}"
+>
+    <header class="afm-hero">
+        <div class="afm-hero__copy">
+            <span class="afm-eyebrow">期末材料 · 教务系统闭环</span>
+            <h2>{{ document_type_label }}</h2>
+            <p>
+                选择一个已有课堂，系统只登录一次教务系统并成对下载“成绩登记表”和“试卷分析表”，
+                完成分数复算、跨表校验、结构化入库后，再进入签名与定稿。
+            </p>
+            <div class="afm-hero__actions">
+                <button type="button" class="afm-btn afm-btn--primary" data-afm-open-sync>
+                    <span aria-hidden="true">↻</span> 同步教务双表
+                </button>
+                <a class="afm-btn afm-btn--ghost" href="{{ sibling_url }}">查看{{ sibling_label }}</a>
+            </div>
+        </div>
+        <div class="afm-hero__flow" aria-label="处理流程">
+            <div><strong>01</strong><span>确认成绩已提交</span></div>
+            <i aria-hidden="true"></i>
+            <div><strong>02</strong><span>双表下载与校验</span></div>
+            <i aria-hidden="true"></i>
+            <div><strong>03</strong><span>签名、预览、下载</span></div>
+        </div>
+    </header>
+
+    <div class="afm-notice">
+        <span class="afm-notice__icon" aria-hidden="true">✓</span>
+        <div>
+            <strong>一次同步，两张表共同更新</strong>
+            <p>30 分钟内复用已完成结果；强制重同步也只在同一教务会话中顺序下载两份 Word，避免重复请求。</p>
+        </div>
+    </div>
+
+    <div class="afm-toolbar">
+        <label class="afm-search">
+            <span aria-hidden="true">⌕</span>
+            <input type="search" data-afm-search placeholder="搜索课程、班级或学期">
+        </label>
+        <div class="afm-toolbar__summary" data-afm-summary>正在读取期末材料…</div>
+    </div>
+
+    <div class="afm-loading" data-afm-loading>
+        <span class="afm-spinner" aria-hidden="true"></span>
+        <p>正在读取已同步课程…</p>
+    </div>
+    <div class="afm-grid" data-afm-grid hidden></div>
+    <div class="afm-empty" data-afm-empty hidden>
+        <div aria-hidden="true">期</div>
+        <strong>还没有{{ document_type_label }}</strong>
+        <p>从已有课堂发起同步；系统会同时准备两份期末材料。</p>
+        <button type="button" class="afm-btn afm-btn--primary" data-afm-open-sync>开始同步</button>
+    </div>
+</section>
+
+<dialog class="afm-dialog afm-dialog--sync" data-afm-sync-dialog>
+    <form method="dialog" class="afm-dialog__panel" data-afm-sync-form>
+        <header class="afm-dialog__header">
+            <div>
+                <span class="afm-eyebrow">教务系统 · 成对同步</span>
+                <h3>选择要同步的课堂</h3>
+                <p>系统会先确认成绩提交状态，通过后自动下载两份 Word 并交叉校验。</p>
+            </div>
+            <button type="button" class="afm-icon-btn" data-afm-close-sync aria-label="关闭">×</button>
+        </header>
+        <label class="afm-search afm-search--dialog">
+            <span aria-hidden="true">⌕</span>
+            <input type="search" data-afm-course-search placeholder="搜索课程、班级、学期">
+        </label>
+        <div class="afm-course-list" data-afm-course-list></div>
+        <label class="afm-force">
+            <input type="checkbox" data-afm-force>
+            <span><strong>强制重新同步</strong><small>忽略 30 分钟缓存，适合刚在教务系统重新提交成绩的情况。</small></span>
+        </label>
+        <footer class="afm-dialog__footer">
+            <span data-afm-sync-hint>请选择一个课堂。</span>
+            <button type="button" class="afm-btn afm-btn--ghost" data-afm-close-sync>取消</button>
+            <button type="submit" class="afm-btn afm-btn--primary" data-afm-sync-submit disabled>确认并同步两份表</button>
+        </footer>
+    </form>
+</dialog>
+
+<dialog class="afm-dialog afm-dialog--editor" data-afm-editor-dialog>
+    <form method="dialog" class="afm-dialog__panel" data-afm-editor-form>
+        <header class="afm-dialog__header">
+            <div>
+                <span class="afm-eyebrow" data-afm-editor-eyebrow>期末材料定稿</span>
+                <h3 data-afm-editor-title>编辑{{ document_type_label }}</h3>
+                <p data-afm-editor-subtitle></p>
+            </div>
+            <button type="button" class="afm-icon-btn" data-afm-close-editor aria-label="关闭">×</button>
+        </header>
+
+        <div class="afm-editor__body">
+            <div class="afm-editor__identity" data-afm-identity></div>
+
+            <section data-afm-grade-fields hidden>
+                <div class="afm-section-heading">
+                    <div><span>签字</span><h4>任课教师签名</h4></div>
+                    <p>系统优先自动带入本人最近使用的签名，保存后按固定尺寸嵌入文档。</p>
+                </div>
+                <label class="afm-field">
+                    <span>教师签名</span>
+                    <select data-afm-teacher-signature></select>
+                </label>
+            </section>
+
+            <section data-afm-analysis-fields hidden>
+                <div class="afm-section-heading">
+                    <div><span>需确认</span><h4>考试与阅卷信息</h4></div>
+                    <p>以下字段无法从当前教务接口可靠判断，由教师确认；后续课程信息接口可直接接入。</p>
+                </div>
+                <div class="afm-fields-grid">
+                    <label class="afm-field"><span>命题形式</span>
+                        <select data-afm-field="proposition_form">
+                            <option value="">请选择</option><option>试题库</option><option>试卷库</option><option>教师组题</option>
+                        </select>
+                    </label>
+                    <label class="afm-field"><span>考试形式</span>
+                        <select data-afm-field="exam_form">
+                            <option value="">请选择</option><option>开卷</option><option>闭卷</option>
+                        </select>
+                    </label>
+                    <label class="afm-field"><span>教考分离</span>
+                        <select data-afm-field="separate_teaching_exam">
+                            <option value="">请选择</option><option>是</option><option>否</option>
+                        </select>
+                    </label>
+                    <label class="afm-field"><span>课程性质</span>
+                        <select data-afm-field="course_nature">
+                            <option value="">请选择</option><option>选修</option><option>必修</option>
+                        </select>
+                    </label>
+                    <label class="afm-field afm-field--wide"><span>阅卷形式</span>
+                        <select data-afm-field="marking_form">
+                            <option value="">请选择</option><option>本人阅卷</option><option>同行阅卷</option>
+                            <option>集体阅卷</option><option>机器阅卷</option><option>其他</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="afm-section-heading afm-section-heading--analysis">
+                    <div><span>思考型 AI</span><h4>试题与成绩简要分析</h4></div>
+                    <button type="button" class="afm-btn afm-btn--ai" data-afm-regenerate>重新生成</button>
+                </div>
+                <label class="afm-field">
+                    <span>教师分析（建议约 200 字，可直接编辑）</span>
+                    <textarea rows="8" maxlength="1200" data-afm-analysis-text></textarea>
+                </label>
+                <label class="afm-field afm-field--prompt">
+                    <span>重新生成强化要求（可选）</span>
+                    <textarea
+                        rows="3"
+                        maxlength="2000"
+                        data-afm-regenerate-prompt
+                        data-prompt-pool-key="academic_final_material.exam_analysis_regenerate"
+                        placeholder="例如：控制在200字；语气更像任课教师；重点分析综合题失分原因，并给出3项可执行改进。"
+                    ></textarea>
+                </label>
+
+                <div class="afm-section-heading afm-section-heading--signature">
+                    <div><span>审核区</span><h4>签名库</h4></div>
+                    <p>两处“同意”已使用不同手写字体自动填入；这里只选择对应审核人的签名。</p>
+                </div>
+                <div class="afm-fields-grid">
+                    <label class="afm-field"><span>系（教研室）签名</span><select data-afm-department-signature></select></label>
+                    <label class="afm-field"><span>教学院长签名</span><select data-afm-dean-signature></select></label>
+                </div>
+            </section>
+        </div>
+
+        <footer class="afm-dialog__footer">
+            <button type="button" class="afm-btn afm-btn--ghost" data-afm-preview-current>预览当前文档</button>
+            <span class="afm-dialog__spacer"></span>
+            <button type="button" class="afm-btn afm-btn--ghost" data-afm-close-editor>取消</button>
+            <button type="submit" class="afm-btn afm-btn--primary" data-afm-save>保存并更新文档</button>
+        </footer>
+    </form>
+</dialog>
+
+<dialog class="afm-dialog afm-dialog--preview" data-afm-preview-dialog>
+    <div class="afm-dialog__panel">
+        <header class="afm-dialog__header">
+            <div><span class="afm-eyebrow">导出一致预览</span><h3 data-afm-preview-title>文档预览</h3></div>
+            <button type="button" class="afm-icon-btn" data-afm-close-preview aria-label="关闭">×</button>
+        </header>
+        <iframe title="期末材料文档预览" data-afm-preview-frame></iframe>
+    </div>
+</dialog>
+
+<script id="academic-final-material-boot" type="application/json">
+{{ {"document_type": document_type, "document_type_label": document_type_label} | tojson }}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/academic_final_materials.js') }}"></script>
+{% endblock %}
