@@ -21,9 +21,10 @@ import math
 import re
 import statistics
 import time
+import unicodedata
 import uuid
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
@@ -63,7 +64,10 @@ ACADEMIC_FINAL_MATERIAL_TYPES = {
 }
 
 ACADEMIC_FINAL_MATERIAL_CACHE_SECONDS = 30 * 60
+ACADEMIC_FINAL_MATERIAL_STALE_SECONDS = 12 * 60
+ACADEMIC_FINAL_MATERIAL_ACTIVE_STATUSES = {"queued", "running", "processing"}
 ZF_REPORT_INIT_PATH = "/report/report_cxFineReportViewIndex.html"
+ZF_GRADE_ENTRY_FUNCTION_CODE = "N302505"
 ZF_GRADE_REGISTER_REPORT_ID = "cjddy_bj.cpt"
 ZF_EXAM_ANALYSIS_REPORT_ID = "sjfxabjdy.cpt"
 FINE_REPORT_ALLOWED_HOSTS = {"jwcjcx.gxufl.com", "jwxt.gxufl.com"}
@@ -93,6 +97,25 @@ def _json_loads(value: Any, fallback: Any) -> Any:
 
 def _normalize_space(value: Any) -> str:
     return re.sub(r"[ \u3000]+", " ", str(value or "")).strip()
+
+
+def _normalize_match_text(value: Any) -> str:
+    """Normalize human-entered labels without erasing meaningful symbols.
+
+    Course names are entered independently in LanShare and JWXT.  Case,
+    full-width Latin characters, spaces and decorative separators are not
+    identity-bearing, while symbols such as ``+`` and ``#`` can be part of a
+    real course name and must be preserved.
+    """
+
+    text = unicodedata.normalize("NFKC", _normalize_space(value)).casefold()
+    return re.sub(r"[\s·•・‐‑‒–—―_-]+", "", text)
+
+
+def _labels_equivalent(left: Any, right: Any) -> bool:
+    left_key = _normalize_match_text(left)
+    right_key = _normalize_match_text(right)
+    return bool(left_key and right_key and (left_key == right_key or left_key in right_key or right_key in left_key))
 
 
 def _float(value: Any) -> float | None:
@@ -386,8 +409,10 @@ def validate_paired_reports(
     *,
     context: dict[str, Any] | None = None,
     remote_student_count: int = 0,
+    accepted_metadata_keys: set[str] | None = None,
 ) -> dict[str, Any]:
     context = context or {}
+    accepted_metadata_keys = set(accepted_metadata_keys or ())
     errors: list[str] = []
     warnings: list[str] = []
     checks: list[dict[str, Any]] = []
@@ -422,9 +447,10 @@ def validate_paired_reports(
     ):
         left = _normalize_space(grade_fields.get(field_key))
         right = _normalize_space(analysis_fields.get(field_key))
+        check_key = f"paired_{field_key}"
         check(
-            f"paired_{field_key}",
-            bool(left and right and (left == right or left in right or right in left)),
+            check_key,
+            _labels_equivalent(left, right) or check_key in accepted_metadata_keys,
             f"两份报表的{label}不一致（{left or '空'} / {right or '空'}）。",
         )
     for field_key, context_key, label in (
@@ -434,9 +460,10 @@ def validate_paired_reports(
         expected = _normalize_space(context.get(context_key))
         actual = _normalize_space(grade_fields.get(field_key))
         if expected:
+            check_key = f"context_{field_key}"
             check(
-                f"context_{field_key}",
-                actual == expected or actual in expected or expected in actual,
+                check_key,
+                _labels_equivalent(actual, expected) or check_key in accepted_metadata_keys,
                 f"报表{label}“{actual}”与所选课堂“{expected}”不一致。",
             )
 
@@ -676,7 +703,7 @@ def is_grade_entry_submitted(status: Any, raw_row: dict[str, Any] | None = None)
     normalized = re.sub(r"\s+", "", str(status or ""))
     if any(marker in normalized for marker in ("未提交", "未录入", "未完成", "待提交", "未锁定")):
         return False
-    if any(marker in normalized for marker in ("已提交", "已录入", "已完成", "已锁定")):
+    if any(marker in normalized for marker in ("已提交", "提交", "已录入", "已完成", "已锁定", "审核通过")):
         return True
     raw = raw_row or {}
     flags = [
@@ -684,7 +711,22 @@ def is_grade_entry_submitted(status: Any, raw_row: dict[str, Any] | None = None)
         _field(raw, "sftj", "SFTJ"),
         _field(raw, "tjzt", "TJZT"),
     ]
-    return any(str(flag).strip().lower() in {"1", "true", "yes", "submitted"} for flag in flags)
+    if any(str(flag).strip().lower() in {"1", "true", "yes", "submitted"} for flag in flags):
+        return True
+    raw_status = re.sub(
+        r"\s+",
+        "",
+        " ".join(
+            str(value or "")
+            for value in (
+                _field(raw, "lrztmc", "LRZTMC"),
+                _field(raw, "cjlrshzt", "CJLRSHZT"),
+            )
+        ),
+    )
+    if any(marker in raw_status for marker in ("未提交", "退回", "不通过")):
+        return False
+    return any(marker in raw_status for marker in ("提交", "审核通过"))
 
 
 def _safe_report_url(value: str, *, base_url: str) -> str:
@@ -699,13 +741,44 @@ def _safe_report_url(value: str, *, base_url: str) -> str:
     return candidate
 
 
+def _html_attribute(tag: str, name: str) -> str:
+    match = re.search(
+        rf"\b{re.escape(name)}\s*=\s*(['\"])(.*?)\1",
+        str(tag or ""),
+        re.IGNORECASE | re.DOTALL,
+    )
+    return html.unescape(match.group(2)).strip() if match else ""
+
+
+def _extract_report_form(response: httpx.Response, *, base_url: str) -> tuple[str, dict[str, str]]:
+    for match in re.finditer(
+        r"<form\b(?P<attributes>[^>]*)>(?P<body>.*?)</form>",
+        response.text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        attributes = match.group("attributes")
+        if _html_attribute(attributes, "id") != "reportSearchForm":
+            continue
+        action = _safe_report_url(_html_attribute(attributes, "action"), base_url=base_url)
+        if not action:
+            return "", {}
+        payload: dict[str, str] = {}
+        for input_match in list(re.finditer(r"<input\b[^>]*>", match.group("body"), re.IGNORECASE))[:32]:
+            tag = input_match.group(0)
+            name = _html_attribute(tag, "name")
+            if name:
+                payload[name] = _html_attribute(tag, "value")
+        return action, payload
+    return "", {}
+
+
 def _extract_report_url(response: httpx.Response, report_id: str, *, base_url: str) -> str:
     candidates = [str(response.headers.get("location") or ""), str(response.url)]
     body = response.text
     candidates.extend(
         match.group(0)
         for match in re.finditer(
-            r"https://(?:jwcjcx|jwxt)\.gxufl\.com/[^\s\"'<>]+ReportServer[^\s\"'<>]*",
+            r"https://(?:jwcjcx|jwxt)\.gxufl\.com(?::\d+)?/[^\s\"'<>]*ReportServer[^\s\"'<>]*",
             body,
             re.IGNORECASE,
         )
@@ -714,17 +787,7 @@ def _extract_report_url(response: httpx.Response, report_id: str, *, base_url: s
         safe = _safe_report_url(candidate, base_url=base_url)
         if safe:
             return safe
-    return (
-        f"https://jwcjcx.gxufl.com/WebReport/ReportServer?"
-        + urlencode(
-            {
-                "reportlet": report_id,
-                "op": "",
-                "__showtoolbar__": "true",
-                "__cumulatepagenumber__": "false",
-            }
-        )
-    )
+    return ""
 
 
 def _find_fine_report_session_id(response: httpx.Response) -> str:
@@ -759,9 +822,12 @@ async def _download_fine_report_word(
 ) -> bytes:
     init_response = await client.post(
         ZF_REPORT_INIT_PATH,
-        params={"reportID": report_id, "_t": int(time.time() * 1000)},
+        params={
+            "reportID": report_id,
+            "gnmkdmKey": ZF_GRADE_ENTRY_FUNCTION_CODE,
+            "_t": int(time.time() * 1000),
+        },
         data={
-            "gnmkdmKey": "N302505",
             "mapRow.row.jxb_id": teaching_class_id,
             "mapRow.row.jgh_id": teacher_org_id,
         },
@@ -770,6 +836,10 @@ async def _download_fine_report_word(
             "Referer": str(client.base_url).rstrip("/") + ZF_EXAM_COURSE_INDEX_PATH,
         },
     )
+    if init_response.status_code >= 400:
+        raise ValueError(f"教务系统打开{report_id}失败（HTTP {init_response.status_code}）。")
+    if "无功能权限" in init_response.text:
+        raise ValueError(f"教务系统拒绝打开{report_id}，当前账号缺少报表权限。")
     source_summary.append(
         {
             "path": ZF_REPORT_INIT_PATH,
@@ -778,12 +848,21 @@ async def _download_fine_report_word(
             "status_code": init_response.status_code,
         }
     )
-    report_url = _extract_report_url(init_response, report_id, base_url=str(client.base_url))
-    report_response = await client.get(report_url, follow_redirects=True)
+    report_url, report_form = _extract_report_form(init_response, base_url=str(client.base_url))
+    if not report_url:
+        report_url = _extract_report_url(init_response, report_id, base_url=str(client.base_url))
+    if not report_url:
+        raise ValueError(f"教务系统打开{report_id}后未返回有效报表地址。")
+    if report_form:
+        report_response = await client.post(report_url, data=report_form, follow_redirects=True)
+        report_method = "POST"
+    else:
+        report_response = await client.get(report_url, follow_redirects=True)
+        report_method = "GET"
     source_summary.append(
         {
             "path": urlparse(report_url).path,
-            "method": "GET",
+            "method": report_method,
             "report_id": report_id,
             "status_code": report_response.status_code,
             "host": urlparse(str(report_response.url)).hostname or "",
@@ -838,7 +917,7 @@ def _load_batch(conn: Any, *, teacher_id: int, class_offering_id: int):
     ).fetchone()
 
 
-def _fresh_cached_batch(teacher_id: int, class_offering_id: int) -> dict[str, Any] | None:
+def load_fresh_cached_batch(teacher_id: int, class_offering_id: int) -> dict[str, Any] | None:
     with get_db_connection() as conn:
         row = _load_batch(conn, teacher_id=teacher_id, class_offering_id=class_offering_id)
         if not row or str(row["sync_status"] or "") != "completed":
@@ -854,12 +933,46 @@ def _fresh_cached_batch(teacher_id: int, class_offering_id: int) -> dict[str, An
         return serialize_batch(row)
 
 
+def reclaim_stale_academic_final_material_batches(conn: Any, teacher_id: int) -> int:
+    """Turn orphaned background jobs into retryable failures.
+
+    A worker restart can interrupt an in-process synchronization after its state
+    has already been persisted.  List requests call this cheap bounded update so
+    the UI never polls an abandoned ``queued``/``running`` row forever.
+    """
+    ensure_academic_final_material_schema(conn)
+    cutoff = (china_now().replace(tzinfo=None) - timedelta(seconds=ACADEMIC_FINAL_MATERIAL_STALE_SECONDS)).isoformat(
+        timespec="seconds"
+    )
+    now = _now_iso()
+    placeholders = ", ".join("?" for _ in ACADEMIC_FINAL_MATERIAL_ACTIVE_STATUSES)
+    cursor = conn.execute(
+        f"""
+        UPDATE academic_final_material_batches
+        SET sync_status = 'failed',
+            last_error = '后台同步已中断，请重新同步。',
+            updated_at = ?
+        WHERE teacher_id = ?
+          AND sync_status IN ({placeholders})
+          AND updated_at < ?
+        """,
+        (
+            now,
+            int(teacher_id),
+            *sorted(ACADEMIC_FINAL_MATERIAL_ACTIVE_STATUSES),
+            cutoff,
+        ),
+    )
+    return max(0, int(cursor.rowcount or 0))
+
+
 def serialize_batch(row: Any) -> dict[str, Any]:
     item = dict(row)
     return {
         **item,
         "validation": _json_loads(item.get("validation_json"), {}),
         "edit_state": _json_loads(item.get("edit_state_json"), {}),
+        "sync_options": _json_loads(item.get("sync_options_json"), {}),
         "source_summary": _json_loads(item.get("source_summary_json"), []),
         "grade_record_id": int(item.get("grade_record_id") or 0) or None,
         "analysis_record_id": int(item.get("analysis_record_id") or 0) or None,
@@ -897,6 +1010,7 @@ def upsert_batch_state(
         "validation_status",
         "validation_json",
         "edit_state_json",
+        "sync_options_json",
         "last_error",
         "source_summary_json",
         "synced_at",
@@ -977,7 +1091,10 @@ def list_teacher_final_material_candidates(conn: Any, teacher_id: int) -> list[d
         LEFT JOIN academic_final_material_batches b
           ON b.teacher_id = o.teacher_id AND b.class_offering_id = o.id
         WHERE o.teacher_id = ?
-        ORDER BY COALESCE(b.synced_at, o.created_at) DESC, o.id DESC
+        ORDER BY (b.synced_at IS NULL) ASC,
+                 b.synced_at DESC,
+                 o.created_at DESC,
+                 o.id DESC
         """,
         (int(teacher_id),),
     ).fetchall()
@@ -1055,7 +1172,7 @@ async def sync_paired_reports_from_academic_system(
     lock = _sync_locks.setdefault((teacher_id, class_offering_id), asyncio.Lock())
     async with lock:
         if not force:
-            cached = _fresh_cached_batch(teacher_id, class_offering_id)
+            cached = load_fresh_cached_batch(teacher_id, class_offering_id)
             if cached and cached.get("grade_record_id") and cached.get("analysis_record_id"):
                 return {
                     "status": "cached",
@@ -1071,7 +1188,7 @@ async def sync_paired_reports_from_academic_system(
                 conn,
                 teacher_id=teacher_id,
                 class_offering_id=class_offering_id,
-                values={"sync_status": "running", "last_error": ""},
+                values={"sync_status": "running", "sync_options_json": "{}", "last_error": ""},
             )
             conn.commit()
         if not context:
@@ -1119,7 +1236,10 @@ async def sync_paired_reports_from_academic_system(
                         class_offering_id,
                         status="needs_confirmation",
                         message=message,
-                        values={"source_summary_json": _json_dumps(sources)},
+                        values={
+                            "source_summary_json": _json_dumps(sources),
+                            "sync_options_json": _json_dumps({"candidates": candidates}),
+                        },
                     )
                     return {
                         "status": "needs_confirmation",

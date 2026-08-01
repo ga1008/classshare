@@ -1,14 +1,20 @@
-.afm {
+.afm,
+.afm-dialog {
     --afm-ink: #172033;
     --afm-muted: #65718a;
     --afm-line: rgba(115, 128, 158, .19);
     --afm-indigo: #5b57e9;
     --afm-indigo-dark: #4743c8;
     --afm-teal: #0f9f91;
+}
+
+.afm {
     display: grid;
     gap: 18px;
     color: var(--afm-ink);
 }
+
+.afm [hidden], .afm-dialog [hidden] { display: none !important; }
 
 .afm-hero {
     position: relative;
@@ -91,6 +97,7 @@
 .afm-btn:disabled { opacity: .52; cursor: not-allowed; }
 .afm-btn--primary { color: #fff; background: linear-gradient(135deg, var(--afm-indigo), #706bf3); box-shadow: 0 12px 24px -14px rgba(71, 67, 200, .9); }
 .afm-btn--primary:hover:not(:disabled) { background: linear-gradient(135deg, var(--afm-indigo-dark), var(--afm-indigo)); }
+.afm-dialog .afm-btn--primary:disabled { color: #5753c7; border-color: rgba(91, 87, 233, .2); background: #eeefff; box-shadow: none; opacity: 1; }
 .afm-btn--ghost { color: #3e4961; border-color: var(--afm-line); background: rgba(255, 255, 255, .84); }
 .afm-btn--ai { min-height: 34px; padding: 6px 12px; color: #6d28d9; border-color: rgba(139, 92, 246, .22); background: #f5f3ff; }
 
@@ -117,31 +124,6 @@
 .afm-hero__flow strong { display: block; color: var(--afm-indigo); font-size: 20px; font-weight: 900; }
 .afm-hero__flow span { display: block; margin-top: 5px; color: #526078; font-size: 11px; line-height: 1.45; }
 .afm-hero__flow i { height: 1px; background: linear-gradient(90deg, rgba(91, 87, 233, .2), rgba(15, 159, 145, .4)); }
-
-.afm-notice {
-    display: flex;
-    align-items: center;
-    gap: 13px;
-    padding: 14px 17px;
-    border: 1px solid rgba(15, 159, 145, .18);
-    border-radius: 15px;
-    background: linear-gradient(90deg, rgba(240, 253, 250, .9), rgba(248, 250, 252, .94));
-}
-
-.afm-notice__icon {
-    flex: 0 0 auto;
-    width: 34px;
-    height: 34px;
-    display: grid;
-    place-items: center;
-    border-radius: 10px;
-    color: #fff;
-    background: var(--afm-teal);
-    font-weight: 900;
-}
-
-.afm-notice strong { font-size: 13px; }
-.afm-notice p { margin: 3px 0 0; color: var(--afm-muted); font-size: 12px; line-height: 1.5; }
 
 .afm-toolbar {
     display: flex;
@@ -194,7 +176,7 @@
 .afm-status--completed { color: #047857; background: #ecfdf5; }
 .afm-status--validation_failed, .afm-status--failed { color: #b42318; background: #fff1f2; }
 .afm-status--grades_missing, .afm-status--needs_attention, .afm-status--needs_confirmation { color: #b45309; background: #fffbeb; }
-.afm-status--processing, .afm-status--running { color: #4338ca; background: #eef2ff; }
+.afm-status--queued, .afm-status--processing, .afm-status--running { color: #4338ca; background: #eef2ff; }
 
 .afm-card__meta { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 17px 0; }
 .afm-card__meta div { padding: 9px 10px; border-radius: 10px; background: #f8fafc; }

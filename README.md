@@ -55,6 +55,12 @@ LanShare 是一个为真实课堂打造的教学平台。它最早只是一个�
 
 把地址发给学生，一间在线教室就开张了。🎉
 
+## 前端开发约定
+
+- 新功能需要补充说明时，统一复用 [说明浮窗模板与接口](docs/ui-explanation-system.md)，不要新增页面私有 tooltip、悬浮定位脚本或重复样式。
+- 页面标题、副标题、空状态和帮助文案的精简规则与验收标准见 [全系统文案精简计划](docs/ui-copy-simplification-plan.md)。
+- 可运行 `python tools/ui/audit_ui_copy.py --output docs/ui-copy-audit-candidates.md` 重新生成文案候选清单。
+
 ## 一句话总结
 
 LanShare 想做的事很简单：**把老师从琐碎的事务里解放出来，把 AI 变成课堂里靠谱的第二位老师。**

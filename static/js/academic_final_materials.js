@@ -9,6 +9,10 @@ const typeLabel = root.dataset.documentLabel;
 const isGrade = type === 'academic_grade_register';
 const $ = (selector, scope = document) => scope.querySelector(selector);
 const $$ = (selector, scope = document) => Array.from(scope.querySelectorAll(selector));
+const activeSyncStatuses = new Set(['queued', 'running', 'processing']);
+const promptedConfirmationBatches = new Set();
+let pollTimer = 0;
+let itemsRequestRunning = false;
 
 const state = {
     items: [],
@@ -24,7 +28,6 @@ const state = {
 const els = {
     grid: $('[data-afm-grid]'),
     empty: $('[data-afm-empty]'),
-    loading: $('[data-afm-loading]'),
     summary: $('[data-afm-summary]'),
     search: $('[data-afm-search]'),
     syncDialog: $('[data-afm-sync-dialog]'),
@@ -70,6 +73,16 @@ function message(text, kind = 'success') {
     }
 }
 
+async function request(endpoint, options = {}, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await apiFetch(endpoint, { ...options, signal: controller.signal, silent: true });
+    } finally {
+        window.clearTimeout(timeout);
+    }
+}
+
 function setBusy(button, busy, busyText = '处理中…') {
     if (!button) return;
     if (busy) {
@@ -85,8 +98,9 @@ function setBusy(button, busy, busyText = '处理中…') {
 function statusLabel(status) {
     return {
         completed: '已就绪',
-        processing: '正在入库',
-        running: '正在同步',
+        queued: '等待后台同步',
+        processing: '后台生成中',
+        running: '后台同步中',
         validation_failed: '校验未通过',
         grades_missing: '成绩未提交',
         needs_attention: '需要处理',
@@ -116,7 +130,6 @@ function filteredItems() {
 
 function renderCards() {
     const items = filteredItems();
-    els.loading.hidden = true;
     els.grid.hidden = !items.length;
     els.empty.hidden = Boolean(items.length) || Boolean(state.items.length);
     const isDocumentComplete = (item) => Boolean(
@@ -131,15 +144,22 @@ function renderCards() {
     els.grid.innerHTML = items.map((item) => {
         const readyItem = item.sync_status === 'completed' && item.record_id;
         const documentComplete = readyItem && isDocumentComplete(item);
-        const action = readyItem
-            ? `
+        const syncActive = activeSyncStatuses.has(item.sync_status);
+        const confirmationCandidates = item.sync_options?.candidates;
+        let action = `<button type="button" class="afm-btn afm-btn--primary" data-afm-resync="${item.class_offering_id}">重新同步</button>`;
+        if (readyItem) {
+            action = `
                 <button type="button" class="afm-btn afm-btn--primary" data-afm-edit="${escapeHtml(item.id)}">${documentComplete ? '查看与调整' : '补全与签名'}</button>
                 <button type="button" class="afm-btn afm-btn--ghost" data-afm-preview="${escapeHtml(item.preview_url)}" data-title="${escapeHtml(item.course_name)}">预览</button>
                 ${documentComplete
                     ? `<a class="afm-btn afm-btn--ghost" href="${escapeHtml(item.export_url)}">下载 Word</a>`
                     : '<button type="button" class="afm-btn afm-btn--ghost" disabled title="请先补齐必填项和签名">补全后下载</button>'}
-              `
-            : `<button type="button" class="afm-btn afm-btn--primary" data-afm-resync="${item.class_offering_id}">处理并同步</button>`;
+              `;
+        } else if (syncActive) {
+            action = '<button type="button" class="afm-btn afm-btn--ghost" disabled>后台处理中</button>';
+        } else if (item.sync_status === 'needs_confirmation' && Array.isArray(confirmationCandidates) && confirmationCandidates.length) {
+            action = `<button type="button" class="afm-btn afm-btn--primary" data-afm-confirm-course="${escapeHtml(item.id)}">确认教务课程</button>`;
+        }
         return `
             <article class="afm-card">
                 <div class="afm-card__top">
@@ -160,27 +180,78 @@ function renderCards() {
                     <div><span>成绩状态</span><strong>${escapeHtml(item.grade_entry_status || '待教务确认')}</strong></div>
                     <div><span>双表校验</span><strong>${item.validation_status === 'passed' ? '✓ 已通过' : escapeHtml(item.validation_status || '待校验')}</strong></div>
                 </div>
-                ${item.last_error ? `<div class="afm-card__error">${escapeHtml(item.last_error)}</div>` : ''}
+                ${(item.validation?.errors?.[0] || item.last_error)
+                    ? `<div class="afm-card__error">${escapeHtml(item.validation?.errors?.[0] || item.last_error)}</div>`
+                    : ''}
                 <div class="afm-card__actions">${action}</div>
             </article>`;
     }).join('');
 }
 
-async function loadItems() {
-    els.loading.hidden = false;
+function stopPolling() {
+    if (pollTimer) window.clearTimeout(pollTimer);
+    pollTimer = 0;
+}
+
+function schedulePolling(delay = 2200) {
+    stopPolling();
+    pollTimer = window.setTimeout(() => loadItems({ notify: false }), delay);
+}
+
+function openExamCourseConfirmation(item) {
+    const candidates = item?.sync_options?.candidates;
+    if (!item?.class_offering_id || !Array.isArray(candidates) || !candidates.length) return;
+    state.pendingClassOfferingId = Number(item.class_offering_id);
+    state.pendingExamCandidates = candidates;
+    els.courseSearch.hidden = true;
+    els.syncSubmit.textContent = '确认教务课程并继续';
+    els.syncSubmit.dataset.label = '确认教务课程并继续';
+    els.syncSubmit.disabled = true;
+    els.syncHint.textContent = '请选择本课堂对应的教务教学班。';
+    renderExamCourseCandidates();
+    if (!els.syncDialog.open) els.syncDialog.showModal();
+}
+
+function promptForPendingConfirmation() {
+    const item = state.items.find((candidate) => (
+        candidate.sync_status === 'needs_confirmation'
+        && Array.isArray(candidate.sync_options?.candidates)
+        && candidate.sync_options.candidates.length
+        && !promptedConfirmationBatches.has(String(candidate.id))
+    ));
+    if (!item) return;
+    promptedConfirmationBatches.add(String(item.id));
+    openExamCourseConfirmation(item);
+}
+
+async function loadItems({ notify = true } = {}) {
+    if (itemsRequestRunning) return;
+    itemsRequestRunning = true;
     try {
-        const data = await apiFetch(`/api/academic-final-materials?document_type=${encodeURIComponent(type)}`);
+        const data = await request(`/api/academic-final-materials?document_type=${encodeURIComponent(type)}`);
         state.items = Array.isArray(data.items) ? data.items : [];
         renderCards();
+        promptForPendingConfirmation();
+        if (state.items.some((item) => activeSyncStatuses.has(item.sync_status))) {
+            schedulePolling();
+        } else {
+            stopPolling();
+        }
     } catch (error) {
-        els.loading.hidden = true;
         els.empty.hidden = false;
-        message(error.message || '读取期末材料失败。', 'error');
+        els.grid.hidden = true;
+        els.summary.textContent = '读取失败，将自动重试';
+        if (notify) message(error.message || '读取期末材料失败。', 'error');
+        schedulePolling(5000);
+    } finally {
+        itemsRequestRunning = false;
     }
 }
 
 function candidateStateLabel(candidate) {
     if (candidate.sync_status === 'completed') return '已同步';
+    if (activeSyncStatuses.has(candidate.sync_status)) return '后台处理中';
+    if (candidate.sync_status === 'needs_confirmation') return '待确认课程';
     if (candidate.sync_status === 'grades_missing') return '成绩未提交';
     if (candidate.sync_status === 'failed') return '上次失败';
     return '可同步';
@@ -227,10 +298,13 @@ async function openSync(preselect = '') {
     state.pendingExamCandidates = [];
     els.courseSearch.hidden = false;
     els.syncSubmit.textContent = '确认并同步两份表';
+    els.syncSubmit.dataset.label = '确认并同步两份表';
+    els.syncSubmit.disabled = true;
+    els.syncHint.textContent = '请选择一个课堂。';
     els.syncDialog.showModal();
     els.courseList.innerHTML = '<div class="afm-loading" style="min-height:160px"><span class="afm-spinner"></span><p>读取课堂列表…</p></div>';
     try {
-        const data = await apiFetch('/api/academic-final-materials/candidates');
+        const data = await request('/api/academic-final-materials/candidates');
         state.candidates = Array.isArray(data.items) ? data.items : [];
         renderCandidates();
         if (preselect) {
@@ -252,10 +326,10 @@ async function submitSync(event) {
     const selectedExamCourse = $('input[name="afm-exam-course"]:checked', els.syncForm);
     const classOfferingId = state.pendingClassOfferingId || Number(selected?.value || 0);
     if (!classOfferingId || (state.pendingClassOfferingId && !selectedExamCourse)) return;
-    setBusy(els.syncSubmit, true, '同步并校验中…');
-    els.syncHint.textContent = '正在登录教务系统并顺序下载两份 Word，请勿重复提交。';
+    setBusy(els.syncSubmit, true, '正在提交…');
+    els.syncHint.textContent = '正在提交后台任务…';
     try {
-        const data = await apiFetch('/api/academic-final-materials/sync', {
+        const data = await request('/api/academic-final-materials/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -263,23 +337,17 @@ async function submitSync(event) {
                 exam_course_key: selectedExamCourse?.value || '',
                 force: Boolean(els.force.checked),
             }),
-        });
+        }, 20000);
         els.syncDialog.close();
-        message(data.message || '双表同步完成。');
-        await loadItems();
+        state.pendingClassOfferingId = 0;
+        state.pendingExamCandidates = [];
+        message(data.message || '已开始后台同步。');
+        await loadItems({ notify: false });
+        schedulePolling(1200);
     } catch (error) {
-        if (error?.data?.status === 'needs_confirmation' && Array.isArray(error.data.candidates)) {
-            state.pendingClassOfferingId = classOfferingId;
-            state.pendingExamCandidates = error.data.candidates;
-            els.courseSearch.hidden = true;
-            renderExamCourseCandidates();
-            els.syncSubmit.dataset.label = '确认教务课程并继续';
-            els.syncHint.textContent = '发现多个相近的教务教学班，请确认本课堂对应项。';
-            return;
-        }
-        els.syncHint.textContent = error.message || '同步失败，请按提示处理后重试。';
-        message(error.message || '同步失败。', 'error');
-        await loadItems();
+        els.syncHint.textContent = error.message || '任务提交失败，请稍后重试。';
+        message(error.message || '任务提交失败。', 'error');
+        await loadItems({ notify: false });
     } finally {
         setBusy(els.syncSubmit, false);
         els.syncSubmit.disabled = Boolean(
@@ -449,6 +517,11 @@ els.grid.addEventListener('click', (event) => {
     if (preview) return openPreview(preview.dataset.afmPreview, preview.dataset.title);
     const resync = event.target.closest('[data-afm-resync]');
     if (resync) return openSync(resync.dataset.afmResync);
+    const confirmation = event.target.closest('[data-afm-confirm-course]');
+    if (confirmation) {
+        const item = state.items.find((candidate) => String(candidate.id) === confirmation.dataset.afmConfirmCourse);
+        return openExamCourseConfirmation(item);
+    }
 });
 els.regenerate?.addEventListener('click', regenerateAnalysis);
 els.previewCurrent?.addEventListener('click', () => openPreview(state.currentPreviewUrl, state.currentRecord?.fields?.course_name || typeLabel));
@@ -457,5 +530,6 @@ els.previewCurrent?.addEventListener('click', () => openPreview(state.currentPre
         if (event.target === dialog) closeDialog(dialog);
     });
 });
+window.addEventListener('pagehide', stopPolling);
 
 loadItems();

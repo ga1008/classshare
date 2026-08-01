@@ -17,12 +17,32 @@ from .connection import get_configured_db_engine
 _SCHEMA_READY = False
 
 
+def _add_column_if_missing(
+    conn: Any,
+    *,
+    engine: str,
+    table: str,
+    column: str,
+    definition: str,
+) -> None:
+    if engine == "postgres":
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
+        return
+    existing = {
+        str(row[1])
+        for row in conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+    }
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def ensure_academic_final_material_schema(conn: Any) -> None:
     global _SCHEMA_READY
     if _SCHEMA_READY:
         return
 
-    timestamp_type = "TIMESTAMP" if get_configured_db_engine() == "postgres" else "TEXT"
+    engine = get_configured_db_engine()
+    timestamp_type = "TIMESTAMP" if engine == "postgres" else "TEXT"
     conn.execute(
         f"""
         CREATE TABLE IF NOT EXISTS academic_final_material_batches (
@@ -49,6 +69,7 @@ def ensure_academic_final_material_schema(conn: Any) -> None:
             validation_status TEXT NOT NULL DEFAULT 'unchecked',
             validation_json TEXT NOT NULL DEFAULT '{{}}',
             edit_state_json TEXT NOT NULL DEFAULT '{{}}',
+            sync_options_json TEXT NOT NULL DEFAULT '{{}}',
             last_error TEXT NOT NULL DEFAULT '',
             source_summary_json TEXT NOT NULL DEFAULT '[]',
             synced_at {timestamp_type},
@@ -62,6 +83,13 @@ def ensure_academic_final_material_schema(conn: Any) -> None:
             FOREIGN KEY (analysis_record_id) REFERENCES material_ai_import_records (id) ON DELETE SET NULL
         )
         """
+    )
+    _add_column_if_missing(
+        conn,
+        engine=engine,
+        table="academic_final_material_batches",
+        column="sync_options_json",
+        definition="TEXT NOT NULL DEFAULT '{}'",
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_academic_final_material_teacher_status "

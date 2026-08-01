@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import sqlite3
 import unittest
+from datetime import datetime, timedelta
+from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from docx import Document
+import httpx
 
 from classroom_app.db import schema_academic_final_materials
+from classroom_app.services.academic_exam_roster_sync_service import _exam_course_from_row
 from classroom_app.services.academic_final_material_document_service import (
     build_exam_analysis_docx,
     build_grade_register_docx,
@@ -17,8 +25,11 @@ from classroom_app.services.academic_final_material_service import (
     build_exam_analysis_export_payload,
     build_grade_register_export_payload,
     is_grade_entry_submitted,
+    list_teacher_final_material_candidates,
+    _download_fine_report_word,
     parse_exam_analysis_rtf,
     parse_grade_register_rtf,
+    reclaim_stale_academic_final_material_batches,
     upsert_batch_state,
     validate_paired_reports,
 )
@@ -92,12 +103,55 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
         self.assertFalse(check["ok"])
         self.assertIn("平均分", validation["errors"][0])
 
+    def test_validator_treats_course_name_case_and_width_as_equivalent(self) -> None:
+        context = {"course_name": "动态ｗｅｂ程序设计"}
+        self.grade["fields"]["course_name"] = "动态Web程序设计"
+        self.analysis["fields"]["course_name"] = "动态 WEB 程序设计"
+
+        validation = validate_paired_reports(
+            self.grade,
+            self.analysis,
+            context=context,
+            remote_student_count=2,
+        )
+
+        self.assertTrue(validation["passed"], validation["errors"])
+        context_check = next(item for item in validation["checks"] if item["key"] == "context_course_name")
+        self.assertTrue(context_check["ok"])
+
     def test_grade_entry_status_does_not_treat_negative_labels_as_submitted(self) -> None:
         for status in ("未提交", "未录入", "待提交", "未完成"):
             self.assertFalse(is_grade_entry_submitted(status), status)
         for status in ("已提交", "已录入", "已完成"):
             self.assertTrue(is_grade_entry_submitted(status), status)
         self.assertTrue(is_grade_entry_submitted("", {"cjsftj": "1"}))
+        self.assertTrue(
+            is_grade_entry_submitted(
+                "3",
+                {
+                    "lrzt": "3",
+                    "lrztmc": "提交",
+                    "cjlrshzt": "审核通过",
+                    "tjsj": "2026-07-31 02:08:29",
+                },
+            )
+        )
+
+    def test_exam_course_prefers_human_readable_submission_status(self) -> None:
+        course = _exam_course_from_row(
+            {
+                "jxb_id": "teaching-class-1",
+                "kch_id": "course-1",
+                "kcmc": "计算机网络实验",
+                "lrzt": "3",
+                "lrztmc": "提交",
+                "cjlrshzt": "审核通过",
+            },
+            source_url="https://jwxt.gxufl.com/example",
+            term_params={"xnm": "2025", "xqm": "12"},
+        )
+        self.assertIsNotNone(course)
+        self.assertEqual("提交", course.grade_entry_status)
 
     def test_both_docx_renderers_produce_openable_documents(self) -> None:
         grade_payload = build_grade_register_export_payload(self.grade, self.validation)
@@ -165,6 +219,11 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
         try:
             schema_academic_final_materials.ensure_academic_final_material_schema(conn)
             schema_academic_final_materials.ensure_academic_final_material_schema(conn)
+            columns = {
+                str(row[1])
+                for row in conn.execute("PRAGMA table_info(academic_final_material_batches)").fetchall()
+            }
+            self.assertIn("sync_options_json", columns)
             conn.execute(
                 """
                 INSERT INTO academic_final_material_batches
@@ -193,7 +252,14 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
                 conn,
                 teacher_id=3,
                 class_offering_id=9,
-                values={"sync_status": "running", "course_name": "计算机网络"},
+                values={
+                    "sync_status": "running",
+                    "course_name": "计算机网络",
+                    "sync_options_json": json.dumps(
+                        {"candidates": [{"exam_course_key": "course-1"}]},
+                        ensure_ascii=False,
+                    ),
+                },
             )
             second = upsert_batch_state(
                 conn,
@@ -204,10 +270,287 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
             self.assertEqual(first["id"], second["id"])
             self.assertEqual("计算机网络", second["course_name"])
             self.assertEqual("completed", second["sync_status"])
+            self.assertEqual("course-1", second["sync_options"]["candidates"][0]["exam_course_key"])
             self.assertEqual(1, conn.execute("SELECT COUNT(*) FROM academic_final_material_batches").fetchone()[0])
         finally:
             conn.close()
             schema_academic_final_materials._SCHEMA_READY = False
+
+    def test_stale_background_sync_becomes_retryable_failure(self) -> None:
+        schema_academic_final_materials._SCHEMA_READY = False
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            schema_academic_final_materials.ensure_academic_final_material_schema(conn)
+            old = (datetime.now() - timedelta(hours=1)).isoformat(timespec="seconds")
+            conn.execute(
+                """
+                INSERT INTO academic_final_material_batches
+                    (id, teacher_id, class_offering_id, sync_status, created_at, updated_at)
+                VALUES ('stale', 7, 11, 'running', ?, ?)
+                """,
+                (old, old),
+            )
+            reclaimed = reclaim_stale_academic_final_material_batches(conn, 7)
+            row = conn.execute(
+                "SELECT sync_status, last_error FROM academic_final_material_batches WHERE id = 'stale'"
+            ).fetchone()
+            self.assertEqual(1, reclaimed)
+            self.assertEqual("failed", row["sync_status"])
+            self.assertIn("重新同步", row["last_error"])
+        finally:
+            conn.close()
+            schema_academic_final_materials._SCHEMA_READY = False
+
+    def test_candidate_query_does_not_mix_postgres_timestamp_and_text(self) -> None:
+        class EmptyCursor:
+            @staticmethod
+            def fetchall():
+                return []
+
+        class RecordingConnection:
+            def __init__(self):
+                self.sql = ""
+
+            def execute(self, sql, _params=()):
+                self.sql = sql
+                return EmptyCursor()
+
+        conn = RecordingConnection()
+        with patch(
+            "classroom_app.services.academic_final_material_service.ensure_academic_final_material_schema"
+        ):
+            self.assertEqual([], list_teacher_final_material_candidates(conn, 7))
+
+        self.assertNotIn("COALESCE(b.synced_at, o.created_at)", conn.sql)
+        self.assertIn("(b.synced_at IS NULL) ASC", conn.sql)
+        self.assertIn("b.synced_at DESC", conn.sql)
+        self.assertIn("o.created_at DESC", conn.sql)
+
+    def test_page_hides_state_containers_and_omits_redundant_notice(self) -> None:
+        css = Path("static/css/academic_final_materials.css").read_text(encoding="utf-8")
+        template = Path("templates/manage/academic_final_materials.html").read_text(encoding="utf-8")
+        script = Path("static/js/academic_final_materials.js").read_text(encoding="utf-8")
+        self.assertIn(".afm [hidden], .afm-dialog [hidden] { display: none !important; }", css)
+        self.assertIn(".afm,\n.afm-dialog {", css)
+        self.assertIn(".afm-dialog .afm-btn--primary:disabled", css)
+        self.assertNotIn("一次同步，两张表共同更新", template)
+        self.assertNotIn("正在读取已同步课程", template)
+        self.assertIn("activeSyncStatuses", script)
+        self.assertIn("schedulePolling", script)
+
+
+class AcademicFinalMaterialBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ai_review_serializes_decimal_course_context(self) -> None:
+        from classroom_app.routers.materials_parts import academic_final_materials as router_module
+
+        ai_response = {
+            "analysis_text": "本课程试题结构覆盖核心知识、综合应用与实践能力，难度梯度合理。成绩分布表明多数学生掌握扎实，少数学生在综合分析和知识迁移方面仍需加强。后续将增加分层案例、限时诊断和课堂复盘，并通过专项训练与过程反馈形成持续改进闭环。",
+            "warnings": [],
+        }
+        with patch.object(router_module, "_call_ai_chat", return_value=ai_response) as ai_call:
+            text, warnings, ai_used = await router_module._ai_review_and_analysis(
+                {"fields": {"course_name": "动态Web程序设计"}},
+                {"fields": {}, "structured": {}},
+                {"credits": Decimal("2.0"), "assignments": []},
+            )
+
+        self.assertTrue(ai_used)
+        self.assertFalse(warnings)
+        self.assertGreaterEqual(len(text), 80)
+        self.assertIn('"credits": 2.0', ai_call.call_args.args[1])
+
+    async def test_ai_metadata_assistance_is_private_and_requires_deterministic_recheck(self) -> None:
+        from classroom_app.routers.materials_parts import academic_final_materials as router_module
+
+        grade = parse_grade_register_rtf(_rtf_bytes(GRADE_TEXT))
+        analysis = parse_exam_analysis_rtf(_rtf_bytes(ANALYSIS_TEXT))
+        context = {"course_name": "计算机网络实训", "teacher_name": "张老师"}
+        validation = validate_paired_reports(grade, analysis, context=context, remote_student_count=2)
+        result = {
+            "grade": grade,
+            "analysis": analysis,
+            "context": context,
+            "remote_students": [{}, {}],
+            "validation": validation,
+        }
+        ai_response = {
+            "equivalences": [
+                {
+                    "key": "context_course_name",
+                    "equivalent": True,
+                    "confidence": 0.99,
+                    "reason": "本地课堂使用简称",
+                }
+            ]
+        }
+
+        with patch.object(router_module, "_call_ai_chat", return_value=ai_response) as ai_call:
+            revised, warnings, ai_used = await router_module._ai_assist_metadata_validation(result)
+
+        self.assertTrue(ai_used)
+        self.assertTrue(revised["passed"], revised["errors"])
+        self.assertTrue(revised["ai_assistance"]["deterministic_recheck_passed"])
+        self.assertTrue(warnings)
+        prompt = ai_call.call_args.args[1]
+        self.assertNotIn("2300000001", prompt)
+        self.assertNotIn("学生甲", prompt)
+
+    async def test_ai_metadata_assistance_never_handles_score_failures(self) -> None:
+        from classroom_app.routers.materials_parts import academic_final_materials as router_module
+
+        grade = parse_grade_register_rtf(_rtf_bytes(GRADE_TEXT))
+        analysis = parse_exam_analysis_rtf(_rtf_bytes(ANALYSIS_TEXT))
+        analysis["statistics"]["average"] = 99.99
+        validation = validate_paired_reports(grade, analysis, remote_student_count=2)
+        result = {
+            "grade": grade,
+            "analysis": analysis,
+            "context": {},
+            "remote_students": [{}, {}],
+            "validation": validation,
+        }
+
+        with patch.object(router_module, "_call_ai_chat") as ai_call:
+            revised, warnings, ai_used = await router_module._ai_assist_metadata_validation(result)
+
+        self.assertFalse(ai_used)
+        self.assertFalse(revised["passed"])
+        self.assertEqual([], warnings)
+        ai_call.assert_not_called()
+
+    async def test_report_download_sends_function_code_in_query_and_rejects_permission_page(self) -> None:
+        class PermissionDeniedClient:
+            base_url = "https://jwxt.gxufl.com"
+
+            def __init__(self):
+                self.params = {}
+                self.get_called = False
+
+            async def post(self, path, *, params, data, headers):
+                self.params = dict(params)
+                request = httpx.Request("POST", f"https://jwxt.gxufl.com{path}")
+                return httpx.Response(200, request=request, text="<html>无功能权限</html>")
+
+            async def get(self, *_args, **_kwargs):
+                self.get_called = True
+                raise AssertionError("权限页不得回退到公开空白报表")
+
+        client = PermissionDeniedClient()
+        with self.assertRaisesRegex(ValueError, "缺少报表权限"):
+            await _download_fine_report_word(
+                client,
+                report_id="cjddy_bj.cpt",
+                teaching_class_id="teaching-class-1",
+                teacher_org_id="",
+                source_summary=[],
+            )
+        self.assertEqual("N302505", client.params["gnmkdmKey"])
+        self.assertFalse(client.get_called)
+
+    async def test_report_download_posts_authorized_report_form_with_port(self) -> None:
+        class AuthorizedReportClient:
+            base_url = "https://jwxt.gxufl.com"
+
+            def __init__(self):
+                self.calls = []
+
+            async def post(self, path, **kwargs):
+                self.calls.append((str(path), kwargs))
+                if str(path).startswith("/report/"):
+                    request = httpx.Request("POST", f"https://jwxt.gxufl.com{path}")
+                    return httpx.Response(
+                        200,
+                        request=request,
+                        text="""
+                            <form action="https://jwcjcx.gxufl.com:443/WebReport/ReportServer?reportlet=cjddy_bj.cpt"
+                                  id="reportSearchForm" method="post">
+                                <input type="hidden" name="jxb_id" value="teaching-class-1">
+                            </form>
+                        """,
+                    )
+                request = httpx.Request("POST", str(path))
+                return httpx.Response(200, request=request, content=b"{\\rtf1 paired report}")
+
+            async def get(self, *_args, **_kwargs):
+                raise AssertionError("带参数的教务报表表单必须使用 POST")
+
+        client = AuthorizedReportClient()
+        content = await _download_fine_report_word(
+            client,
+            report_id="cjddy_bj.cpt",
+            teaching_class_id="teaching-class-1",
+            teacher_org_id="",
+            source_summary=[],
+        )
+        self.assertEqual(b"{\\rtf1 paired report}", content)
+        self.assertEqual(2, len(client.calls))
+        self.assertEqual(
+            "https://jwcjcx.gxufl.com:443/WebReport/ReportServer?reportlet=cjddy_bj.cpt",
+            client.calls[1][0],
+        )
+        self.assertEqual({"jxb_id": "teaching-class-1"}, client.calls[1][1]["data"])
+        self.assertTrue(client.calls[1][1]["follow_redirects"])
+
+    async def test_sync_route_returns_queued_without_waiting_for_worker(self) -> None:
+        from classroom_app.routers.materials_parts import academic_final_materials as router_module
+
+        body = router_module.AcademicFinalMaterialSyncRequest(
+            class_offering_id=81,
+            force=True,
+        )
+        connection = MagicMock()
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+        connection_context.__exit__.return_value = False
+        queued_batch = {
+            "id": "queued-batch",
+            "teacher_id": 5,
+            "class_offering_id": 81,
+            "sync_status": "queued",
+            "updated_at": datetime(2026, 8, 2, 4, 0, 0),
+        }
+
+        with (
+            patch.object(router_module, "get_db_connection", return_value=connection_context),
+            patch.object(router_module, "upsert_batch_state", return_value=queued_batch),
+            patch.object(router_module, "_schedule_academic_final_material_sync", return_value=True),
+        ):
+            response = await router_module.api_sync_academic_final_materials(
+                body,
+                {"id": 5},
+            )
+
+        self.assertEqual(202, response.status_code)
+        payload = json.loads(response.body)
+        self.assertEqual("queued", payload["status"])
+        self.assertEqual("queued", payload["batch"]["sync_status"])
+        self.assertEqual("2026-08-02T04:00:00", payload["batch"]["updated_at"])
+        connection.commit.assert_called_once_with()
+
+    async def test_duplicate_background_schedules_are_coalesced(self) -> None:
+        from classroom_app.routers.materials_parts import academic_final_materials as router_module
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def fake_run(_body, _user):
+            started.set()
+            await release.wait()
+            return {"status": "success"}
+
+        body = router_module.AcademicFinalMaterialSyncRequest(class_offering_id=81)
+        key = router_module._academic_final_material_task_key(5, 81)
+        router_module._academic_final_material_tasks.pop(key, None)
+        with patch.object(router_module, "_run_academic_final_material_sync", side_effect=fake_run):
+            self.assertTrue(router_module._schedule_academic_final_material_sync(body, {"id": 5}))
+            await asyncio.wait_for(started.wait(), timeout=1)
+            self.assertFalse(router_module._schedule_academic_final_material_sync(body, {"id": 5}))
+            release.set()
+            task = router_module._academic_final_material_tasks[key]
+            await asyncio.wait_for(asyncio.shield(task), timeout=1)
+            await asyncio.sleep(0)
+        self.assertNotIn(key, router_module._academic_final_material_tasks)
 
 
 if __name__ == "__main__":

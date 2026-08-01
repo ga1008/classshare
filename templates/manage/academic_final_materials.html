@@ -1,4 +1,9 @@
 {% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_attrs %}
+{% set sync_links = [
+    {'label': '教务账号', 'href': '/manage/me/credentials'},
+    {'label': sibling_label, 'href': sibling_url}
+] %}
 
 {% block title %}{{ document_type_label }}{% endblock %}
 
@@ -8,7 +13,15 @@
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('同步教务', '一次下载两份表', 'refresh', variant='primary', tone='indigo', attrs='data-afm-open-sync') }}
+{% set sync_explanation -%}
+data-afm-open-sync {{ explain_attrs(
+    '同步教务双表',
+    '任务提交后在后台登录教务系统，成对获取成绩登记表和试卷分析表，并自动完成交叉校验。页面可以关闭，稍后回来查看结果。',
+    links=sync_links,
+    placement='bottom'
+) }}
+{%- endset %}
+{{ topbar_action('同步教务', '后台运行', 'refresh', variant='primary', tone='indigo', attrs=sync_explanation) }}
 {{ topbar_action(sibling_label, '切换期末材料', 'file-plus', href=sibling_url, variant='soft', tone='slate') }}
 {% endblock %}
 
@@ -28,7 +41,12 @@
                 完成分数复算、跨表校验、结构化入库后，再进入签名与定稿。
             </p>
             <div class="afm-hero__actions">
-                <button type="button" class="afm-btn afm-btn--primary" data-afm-open-sync>
+                <button type="button" class="afm-btn afm-btn--primary" data-afm-open-sync {{ explain_attrs(
+                    '同步教务双表',
+                    '任务提交后在后台登录教务系统，成对获取成绩登记表和试卷分析表，并自动完成交叉校验。页面可以关闭，稍后回来查看结果。',
+                    links=sync_links,
+                    placement='bottom'
+                ) }}>
                     <span aria-hidden="true">↻</span> 同步教务双表
                 </button>
                 <a class="afm-btn afm-btn--ghost" href="{{ sibling_url }}">查看{{ sibling_label }}</a>
@@ -43,26 +61,14 @@
         </div>
     </header>
 
-    <div class="afm-notice">
-        <span class="afm-notice__icon" aria-hidden="true">✓</span>
-        <div>
-            <strong>一次同步，两张表共同更新</strong>
-            <p>30 分钟内复用已完成结果；强制重同步也只在同一教务会话中顺序下载两份 Word，避免重复请求。</p>
-        </div>
-    </div>
-
     <div class="afm-toolbar">
         <label class="afm-search">
             <span aria-hidden="true">⌕</span>
             <input type="search" data-afm-search placeholder="搜索课程、班级或学期">
         </label>
-        <div class="afm-toolbar__summary" data-afm-summary>正在读取期末材料…</div>
+        <div class="afm-toolbar__summary" data-afm-summary></div>
     </div>
 
-    <div class="afm-loading" data-afm-loading>
-        <span class="afm-spinner" aria-hidden="true"></span>
-        <p>正在读取已同步课程…</p>
-    </div>
     <div class="afm-grid" data-afm-grid hidden></div>
     <div class="afm-empty" data-afm-empty hidden>
         <div aria-hidden="true">期</div>

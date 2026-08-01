@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
 from datetime import datetime
 from typing import Any
 
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from .common import *
@@ -27,12 +29,15 @@ from ...services.academic_final_material_service import (
     build_grade_register_export_payload,
     build_parse_result_dict,
     ensure_system_consent_signatures,
+    load_fresh_cached_batch,
     list_teacher_final_material_batches,
     list_teacher_final_material_candidates,
+    reclaim_stale_academic_final_material_batches,
     resolve_signature_path,
     serialize_batch,
     sync_paired_reports_from_academic_system,
     upsert_batch_state,
+    validate_paired_reports,
 )
 from ...services.assessment_plan_generation_service import find_teacher_own_signature_id
 from ...services.material_ai_import_service import MaterialParseResult
@@ -78,6 +83,15 @@ ANALYSIS_CHOICE_SETS = {
     "course_nature": {"", "选修", "必修"},
     "marking_form": {"", "本人阅卷", "同行阅卷", "集体阅卷", "机器阅卷", "其他"},
 }
+ACADEMIC_FINAL_MATERIAL_JOB_TIMEOUT_SECONDS = 10 * 60
+AI_METADATA_VALIDATION_KEYS = {
+    "paired_course_name",
+    "paired_teacher_name",
+    "paired_class_name",
+    "context_course_name",
+    "context_teacher_name",
+}
+_academic_final_material_tasks: dict[tuple[int, int], asyncio.Task] = {}
 
 
 def _json_object(value: Any) -> dict[str, Any]:
@@ -269,7 +283,7 @@ async def _ai_review_and_analysis(
                     "输出 JSON：analysis_text（150-260个中文字符）、warnings（字符串数组）。",
                     "分析必须覆盖试题结构、成绩分布、掌握情况、原因、改进措施；语气客观专业，避免空话。",
                     f"教师强化要求：{extra_prompt.strip() or '无'}",
-                    f"数据 JSON：{json.dumps(source, ensure_ascii=False)}",
+                    f"数据 JSON：{json.dumps(jsonable_encoder(source), ensure_ascii=False)}",
                 ]
             ),
             capability="thinking",
@@ -288,6 +302,129 @@ async def _ai_review_and_analysis(
     except Exception as exc:
         warning = exc.detail if isinstance(exc, HTTPException) else str(exc)
         return _fallback_analysis_text(analysis_payload, course_context), [f"AI 深度复核暂不可用，已生成可编辑的本地严谨草稿：{warning}"], False
+
+
+def _failed_validation_checks(validation: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in (validation.get("checks") or [])
+        if not bool(item.get("ok")) and str(item.get("severity") or "error") == "error"
+    ]
+
+
+async def _ai_assist_metadata_validation(
+    result: dict[str, Any],
+) -> tuple[dict[str, Any], list[str], bool]:
+    """Resolve metadata aliases with AI, then rerun every deterministic check.
+
+    The model receives only report headers and failure descriptions: no student
+    names, numbers or scores.  Numeric/statistical failures never enter this
+    fallback and AI cannot directly mark a batch as valid.
+    """
+
+    validation = result.get("validation") or {}
+    failed_checks = _failed_validation_checks(validation)
+    requested_keys = {str(item.get("key") or "") for item in failed_checks}
+    if not requested_keys or not requested_keys.issubset(AI_METADATA_VALIDATION_KEYS):
+        return validation, [], False
+
+    field_keys = ("course_name", "teacher_name", "class_name", "academic_year", "semester")
+    recognition_source = {
+        "failed_checks": [
+            {"key": str(item.get("key") or ""), "message": str(item.get("message") or "")}
+            for item in failed_checks
+        ],
+        "grade_register": {key: (result.get("grade") or {}).get("fields", {}).get(key, "") for key in field_keys},
+        "exam_analysis": {key: (result.get("analysis") or {}).get("fields", {}).get(key, "") for key in field_keys},
+        "selected_classroom": {key: (result.get("context") or {}).get(key, "") for key in field_keys},
+    }
+    compared_values = {
+        "paired_course_name": (
+            recognition_source["grade_register"]["course_name"],
+            recognition_source["exam_analysis"]["course_name"],
+        ),
+        "paired_teacher_name": (
+            recognition_source["grade_register"]["teacher_name"],
+            recognition_source["exam_analysis"]["teacher_name"],
+        ),
+        "paired_class_name": (
+            recognition_source["grade_register"]["class_name"],
+            recognition_source["exam_analysis"]["class_name"],
+        ),
+        "context_course_name": (
+            recognition_source["grade_register"]["course_name"],
+            recognition_source["selected_classroom"]["course_name"],
+        ),
+        "context_teacher_name": (
+            recognition_source["grade_register"]["teacher_name"],
+            recognition_source["selected_classroom"]["teacher_name"],
+        ),
+    }
+    if any(not all(str(value or "").strip() for value in compared_values[key]) for key in requested_keys):
+        return validation, [], False
+    try:
+        response = await _call_ai_chat(
+            "你是高校教务报表字段识别助手。只判断名称是否为同一对象的大小写、简称、别名或格式差异；不得修改学生、成绩、人数或统计数据。无法确定时必须返回不等价。",
+            "\n\n".join(
+                [
+                    "判断失败字段是否语义等价。只输出 JSON：equivalences 数组，每项包含 key、equivalent、confidence（0到1）、reason。",
+                    "只有高度确定是同一课程、教师或班级时才可 equivalent=true。",
+                    f"待识别数据：{json.dumps(recognition_source, ensure_ascii=False)}",
+                ]
+            ),
+            capability="thinking",
+            response_format="json",
+            task_type="academic_final_material_recognition",
+            task_priority="background",
+            task_label="materials:academic-final-recognition",
+            timeout=180.0,
+        )
+    except Exception as exc:
+        warning = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        return validation, [f"AI 字段识别暂不可用：{warning}"], False
+
+    items = response.get("equivalences") if isinstance(response, dict) else []
+    accepted_keys: set[str] = set()
+    decisions: list[dict[str, Any]] = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "")
+        try:
+            confidence = float(item.get("confidence") or 0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        equivalent = item.get("equivalent") is True
+        if key in requested_keys and equivalent and confidence >= 0.98:
+            accepted_keys.add(key)
+        if key in requested_keys:
+            decisions.append(
+                {
+                    "key": key,
+                    "equivalent": equivalent,
+                    "confidence": round(max(0.0, min(1.0, confidence)), 4),
+                    "reason": str(item.get("reason") or "")[:200],
+                }
+            )
+
+    if accepted_keys != requested_keys:
+        return validation, ["AI 未能高置信度确认报表名称等价，已继续阻止入库。"], True
+
+    revised = validate_paired_reports(
+        result.get("grade") or {},
+        result.get("analysis") or {},
+        context=result.get("context") or {},
+        remote_student_count=len(result.get("remote_students") or []),
+        accepted_metadata_keys=accepted_keys,
+    )
+    revised["ai_assistance"] = {
+        "used": True,
+        "scope": "metadata_equivalence_only",
+        "accepted_keys": sorted(accepted_keys),
+        "decisions": decisions,
+        "deterministic_recheck_passed": bool(revised.get("passed")),
+    }
+    return revised, (["AI 已辅助确认名称别名，全部成绩与统计规则已重新校验。"] if revised.get("passed") else []), True
 
 
 async def _attach_source_document(
@@ -463,6 +600,9 @@ async def api_academic_final_material_list(
     if document_type not in ACADEMIC_FINAL_MATERIAL_TYPES:
         raise HTTPException(400, "期末材料类型不受支持。")
     with get_db_connection() as conn:
+        reclaimed = reclaim_stale_academic_final_material_batches(conn, int(user["id"]))
+        if reclaimed:
+            conn.commit()
         items = list_teacher_final_material_batches(conn, int(user["id"]), document_type=document_type)
     return {"status": "success", "items": items}
 
@@ -481,11 +621,10 @@ async def api_academic_final_material_detail(batch_id: str, user: dict = Depends
     }
 
 
-@router.post("/api/academic-final-materials/sync", response_class=JSONResponse)
-async def api_sync_academic_final_materials(
+async def _run_academic_final_material_sync(
     body: AcademicFinalMaterialSyncRequest,
-    user: dict = Depends(get_current_teacher),
-):
+    user: dict,
+) -> dict[str, Any]:
     result = await sync_paired_reports_from_academic_system(
         int(user["id"]),
         int(body.class_offering_id),
@@ -495,9 +634,14 @@ async def api_sync_academic_final_materials(
     if result.get("status") == "cached":
         return result
     if result.get("status") != "downloaded":
-        return JSONResponse(result, status_code=409 if result.get("status") != "failed" else 502)
+        return result
 
     validation = result["validation"]
+    recognition_warnings: list[str] = []
+    recognition_ai_used = False
+    if not validation.get("passed"):
+        validation, recognition_warnings, recognition_ai_used = await _ai_assist_metadata_validation(result)
+        result["validation"] = validation
     common_batch_values = {
         "academic_year": str((result.get("course") or {}).get("academic_year") or ""),
         "academic_term": str((result.get("course") or {}).get("academic_term") or ""),
@@ -513,6 +657,7 @@ async def api_sync_academic_final_materials(
         "analysis_source_size": len(result["analysis_bytes"]),
         "validation_status": validation.get("status") or "failed",
         "validation_json": json.dumps(validation, ensure_ascii=False),
+        "sync_options_json": "{}",
         "source_summary_json": json.dumps(result.get("source_summary") or [], ensure_ascii=False),
     }
     if not validation.get("passed"):
@@ -524,19 +669,16 @@ async def api_sync_academic_final_materials(
                 values={
                     **common_batch_values,
                     "sync_status": "validation_failed",
-                    "last_error": "两份教务报表交叉校验未通过，已阻止错误数据入库。",
+                    "last_error": str((validation.get("errors") or ["双表校验未通过。"])[0])[:500],
                 },
             )
             conn.commit()
-        return JSONResponse(
-            {
-                "status": "validation_failed",
-                "message": "两份文档已经下载，但成绩与统计交叉校验未通过，系统已阻止入库。",
-                "batch": batch,
-                "validation": validation,
-            },
-            status_code=422,
-        )
+        return {
+            "status": "validation_failed",
+            "message": "两份文档已经下载，但成绩与统计交叉校验未通过，系统已阻止入库。",
+            "batch": batch,
+            "validation": validation,
+        }
 
     with get_db_connection() as conn:
         existing = upsert_batch_state(
@@ -580,8 +722,9 @@ async def api_sync_academic_final_materials(
     )
     analysis_payload["structured"]["analysis_text"] = analysis_text
     analysis_payload["fields"]["analysis_text"] = analysis_text
-    grade_result = _make_parse_result(grade_payload, warnings=ai_warnings, ai_used=ai_used)
-    analysis_result = _make_parse_result(analysis_payload, warnings=ai_warnings, ai_used=ai_used)
+    all_ai_warnings = [*recognition_warnings, *ai_warnings]
+    grade_result = _make_parse_result(grade_payload, warnings=all_ai_warnings, ai_used=ai_used or recognition_ai_used)
+    analysis_result = _make_parse_result(analysis_payload, warnings=all_ai_warnings, ai_used=ai_used or recognition_ai_used)
 
     try:
         grade_task = await _save_or_update_record(
@@ -631,6 +774,7 @@ async def api_sync_academic_final_materials(
                         "grade_complete": bool(teacher_signature_id),
                         "analysis_required_fields": sorted(ANALYSIS_EDIT_FIELDS),
                         "analysis_ai_generated": ai_used,
+                        "validation_ai_assisted": recognition_ai_used,
                         "analysis_complete": False,
                     },
                     ensure_ascii=False,
@@ -646,8 +790,163 @@ async def api_sync_academic_final_materials(
         "batch": batch,
         "grade": grade_task,
         "analysis": analysis_task,
-        "warnings": ai_warnings,
+        "warnings": all_ai_warnings,
     }
+
+
+def _mark_academic_final_material_job_failed(
+    *,
+    teacher_id: int,
+    class_offering_id: int,
+    message: str,
+) -> None:
+    with get_db_connection() as conn:
+        upsert_batch_state(
+            conn,
+            teacher_id=int(teacher_id),
+            class_offering_id=int(class_offering_id),
+            values={
+                "sync_status": "failed",
+                "last_error": str(message or "后台同步失败。")[:500],
+            },
+        )
+        conn.commit()
+
+
+async def _run_academic_final_material_sync_job(
+    body: AcademicFinalMaterialSyncRequest,
+    user: dict,
+) -> None:
+    teacher_id = int(user["id"])
+    class_offering_id = int(body.class_offering_id)
+    try:
+        await asyncio.wait_for(
+            _run_academic_final_material_sync(body, user),
+            timeout=ACADEMIC_FINAL_MATERIAL_JOB_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        _mark_academic_final_material_job_failed(
+            teacher_id=teacher_id,
+            class_offering_id=class_offering_id,
+            message="教务系统响应超时，后台同步已停止，请稍后重试。",
+        )
+    except asyncio.CancelledError:
+        _mark_academic_final_material_job_failed(
+            teacher_id=teacher_id,
+            class_offering_id=class_offering_id,
+            message="后台同步因服务重启而中断，请重新同步。",
+        )
+        raise
+    except Exception as exc:  # Worker boundary: persist a retryable terminal state.
+        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        _mark_academic_final_material_job_failed(
+            teacher_id=teacher_id,
+            class_offering_id=class_offering_id,
+            message=f"后台同步失败：{message}",
+        )
+
+
+def _academic_final_material_task_key(teacher_id: int, class_offering_id: int) -> tuple[int, int]:
+    return int(teacher_id), int(class_offering_id)
+
+
+def _academic_final_material_task_is_running(teacher_id: int, class_offering_id: int) -> bool:
+    task = _academic_final_material_tasks.get(
+        _academic_final_material_task_key(teacher_id, class_offering_id)
+    )
+    return bool(task and not task.done())
+
+
+def _schedule_academic_final_material_sync(
+    body: AcademicFinalMaterialSyncRequest,
+    user: dict,
+) -> bool:
+    key = _academic_final_material_task_key(int(user["id"]), int(body.class_offering_id))
+    existing = _academic_final_material_tasks.get(key)
+    if existing and not existing.done():
+        return False
+
+    task = asyncio.create_task(_run_academic_final_material_sync_job(body, dict(user)))
+    _academic_final_material_tasks[key] = task
+
+    def _cleanup(done: asyncio.Task) -> None:
+        if _academic_final_material_tasks.get(key) is done:
+            _academic_final_material_tasks.pop(key, None)
+        try:
+            done.exception()
+        except (asyncio.CancelledError, Exception):
+            pass
+
+    task.add_done_callback(_cleanup)
+    return True
+
+
+@router.post("/api/academic-final-materials/sync", response_class=JSONResponse)
+async def api_sync_academic_final_materials(
+    body: AcademicFinalMaterialSyncRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    teacher_id = int(user["id"])
+    class_offering_id = int(body.class_offering_id)
+    if not body.force:
+        cached = load_fresh_cached_batch(teacher_id, class_offering_id)
+        if cached and cached.get("grade_record_id") and cached.get("analysis_record_id"):
+            return {
+                "status": "cached",
+                "message": "已使用最近同步结果。",
+                "batch": cached,
+            }
+
+    if _academic_final_material_task_is_running(teacher_id, class_offering_id):
+        with get_db_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM academic_final_material_batches
+                WHERE teacher_id = ? AND class_offering_id = ?
+                LIMIT 1
+                """,
+                (teacher_id, class_offering_id),
+            ).fetchone()
+        return JSONResponse(
+            jsonable_encoder({
+                "status": "already_running",
+                "message": "该课堂正在后台同步。",
+                "batch": serialize_batch(row) if row else None,
+            }),
+            status_code=202,
+        )
+
+    with get_db_connection() as conn:
+        batch = upsert_batch_state(
+            conn,
+            teacher_id=teacher_id,
+            class_offering_id=class_offering_id,
+            values={
+                "sync_status": "queued",
+                "sync_options_json": "{}",
+                "last_error": "",
+            },
+        )
+        conn.commit()
+
+    try:
+        scheduled = _schedule_academic_final_material_sync(body, dict(user))
+    except RuntimeError as exc:
+        _mark_academic_final_material_job_failed(
+            teacher_id=teacher_id,
+            class_offering_id=class_offering_id,
+            message="后台同步任务启动失败，请稍后重试。",
+        )
+        raise HTTPException(503, "后台同步任务启动失败，请稍后重试。") from exc
+
+    return JSONResponse(
+        jsonable_encoder({
+            "status": "queued" if scheduled else "already_running",
+            "message": "已开始后台同步。" if scheduled else "该课堂正在后台同步。",
+            "batch": batch,
+        }),
+        status_code=202,
+    )
 
 
 def _validate_analysis_choices(payload: dict[str, Any]) -> None:

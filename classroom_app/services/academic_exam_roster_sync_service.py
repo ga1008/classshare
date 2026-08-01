@@ -253,7 +253,10 @@ def _exam_course_from_row(row: dict[str, Any], *, source_url: str, term_params: 
         teacher_name=_field(row, "jsxm", "JSXM"),
         schedule_text=_field(row, "sksj", "SKSJ"),
         exam_method=_field(row, "khfsmc", "KHFSMC"),
-        grade_entry_status=_field(row, "lrzt", "lrztmc", "LRZT", "LRZTMC"),
+        # ZFSoft returns the numeric workflow code in ``lrzt`` and the
+        # user-facing state in ``lrztmc``.  Prefer the label so callers do not
+        # mistake a submitted row (for example code 3 / “提交”) for unknown.
+        grade_entry_status=_field(row, "lrztmc", "LRZTMC", "lrzt", "LRZT"),
         credits=_parse_float(_field(row, "xf", "XF")),
         declared_student_count=_parse_int(_field(row, "jxbrs", "rs", "JXBRS", "RS")),
         raw_json=dict(row),
