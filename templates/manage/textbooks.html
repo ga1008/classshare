@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block extra_head %}
 <style>
@@ -141,9 +142,15 @@
     <section class="manage-pagehead">
         <div class="manage-pagehead__intro">
             <div>
-                <div class="academic-eyebrow">Textbook Library</div>
-                <h2>教材管理</h2>
-                <p class="manage-pagehead__lead">统一维护教材信息与附件，开设课堂时可直接引用。</p>
+                <div class="manage-pagehead__title-row">
+                    <h2>教材</h2>
+                    {{ explain_button(
+                        '教材',
+                        '统一维护教材信息与附件，开设课堂时可直接引用；AI 可整理简介与目录。',
+                        placement='bottom',
+                        label='教材说明'
+                    ) }}
+                </div>
             </div>
             <div class="manage-pagehead__actions">
                 <button type="button" class="btn btn-primary" id="heroTextbookCreateBtn">新建教材</button>

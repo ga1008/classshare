@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block title %}试卷库{% endblock %}
 
@@ -1496,9 +1497,15 @@
     <section class="manage-pagehead">
         <div class="manage-pagehead__intro">
             <div>
-                <div class="academic-eyebrow">Exam Library</div>
-                <h2>试卷资产管理</h2>
-                <p class="manage-pagehead__lead">按状态、题型、来源与标签整理试卷，归集同类试卷成清晰工作区。</p>
+                <div class="manage-pagehead__title-row">
+                    <h2>试卷</h2>
+                    {{ explain_button(
+                        '试卷',
+                        '按状态、题型、来源与标签整理试卷，归集同类试卷成清晰工作区。',
+                        placement='bottom',
+                        label='试卷说明'
+                    ) }}
+                </div>
             </div>
             <div class="manage-pagehead__actions">
                 <a href="/exam/new" class="btn btn-primary">新建试卷</a>

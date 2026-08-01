@@ -48,15 +48,15 @@
 
 {% macro topbar_action(label, caption, icon, href=None, button_id=None, variant='', tone='', attrs='') -%}
 {% set class_name = 'app-topbar-action' ~ (' app-topbar-action--' ~ variant if variant else '') ~ (' app-topbar-action--tone-' ~ tone if tone else '') %}
+{% set explain = ' data-explain data-explain-title="' ~ (label|e) ~ '" data-explain-text="' ~ (caption|e) ~ '" data-explain-placement="bottom"' if caption else '' %}
 {% if href %}
-<a href="{{ href }}" class="{{ class_name }}" title="{{ label }}" aria-label="{{ label }}" {{ attrs|safe }}>
+<a href="{{ href }}" class="{{ class_name }}" aria-label="{{ label }}"{{ explain|safe }} {{ attrs|safe }}>
 {% else %}
-<button type="button" class="{{ class_name }}" title="{{ label }}" aria-label="{{ label }}"{% if button_id %} id="{{ button_id }}"{% endif %} {{ attrs|safe }}>
+<button type="button" class="{{ class_name }}" aria-label="{{ label }}"{% if button_id %} id="{{ button_id }}"{% endif %}{{ explain|safe }} {{ attrs|safe }}>
 {% endif %}
     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon(icon) }}</span>
     <span class="app-topbar-action__text">
         <strong>{{ label }}</strong>
-        <small>{{ caption }}</small>
     </span>
 {% if href %}
 </a>

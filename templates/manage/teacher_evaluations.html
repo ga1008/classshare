@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block title %}教师评学表{% endblock %}
 
@@ -15,10 +16,12 @@
         <div>
             <div class="manage-lp__title-row">
                 <h2>教师评学表库</h2>
-                <button type="button" class="manage-lp__hint-trigger" aria-label="教师评学表使用提示">?</button>
-                <div class="manage-lp__floating-hint" role="tooltip">
-                    每门课每个教学班级一份评学表。可空白新建、按班级生成或导入解析，编辑完成后可预览、导出与设置公开范围。
-                </div>
+                {{ explain_button(
+                    '教师评学表',
+                    '每门课每个教学班一份。支持空白新建、按班级生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。',
+                    placement='bottom',
+                    label='教师评学表说明'
+                ) }}
             </div>
         </div>
         <div class="manage-lp__summary" data-te-summary></div>

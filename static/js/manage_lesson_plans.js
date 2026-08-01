@@ -922,7 +922,7 @@ async function openAttributesModal(id) {
             <label>公开范围
                 <select name="scope_level">${scopeOptions}</select>
             </label>
-            <p class="lp-form__hint">教案默认私有；可设为本系部 / 本院级 / 全校公开，公开后其他老师可在自己的教案库看到并一键继承。</p>
+            <p class="lp-form__hint">默认私有；公开后其他老师可在自己的教案库一键继承。</p>
         </form>`;
     const footer = `<button type="button" class="lp-btn lp-btn--primary" data-lp-submit>保存</button>`;
     let modalBusy = false;

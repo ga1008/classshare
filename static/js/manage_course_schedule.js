@@ -34,7 +34,7 @@ const refs = {
 
 const deck = createScheduleDeck(refs.deckMount, {
     title: '周课程时间轴',
-    description: '滚轮或方向键切换周次，点击最前面的周卡片放大查看整周课表；放大后点击课程块可进入对应课堂。',
+    description: '滚轮或方向键切换周次，点击周卡片放大；点击课程块进入课堂。',
     emptyHtml: () => (state.hasCredential
         ? '<strong>暂无课表数据</strong><p>点击右上角「同步智慧课堂」拉取本学期排课。</p>'
         : '<strong>还未配置智慧课堂账号</strong><p>请先到 <a href="/manage/teaching/smart-classroom-integrations">智慧课堂对接</a> 保存并验证账号，再回来同步课程表。</p>'),

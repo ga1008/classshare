@@ -627,6 +627,7 @@
 <body class="{% if embedded_mode %}manage-embedded-page{% endif %} manage-domain-{{ manage_nav.active_domain|default('teaching') }}">
     {% if not embedded_mode %}
     {% from "macros/manage_icons.html" import manage_icon %}
+    {% from "macros/ui_explanation.html" import explain_attrs %}
     <div class="manage-layout manage-domain-{{ manage_nav.active_domain|default('teaching') }}" data-manage-domain="{{ manage_nav.active_domain|default('teaching') }}">
         <aside class="manage-sidebar" id="sidebar">
             <div class="manage-brand">
@@ -651,7 +652,7 @@
                     role="tab"
                     aria-selected="{{ 'true' if domain.active else 'false' }}"
                     aria-controls="manage-domain-{{ domain.key }}"
-                    title="{{ domain.description }}"
+                    {{ explain_attrs(domain.title, domain.description, placement='right') }}
                 >
                     <span>{{ domain.short_label }}</span>
                 </button>
@@ -687,7 +688,7 @@
                             class="manage-nav-item{% if item.active %} active{% endif %}"
                             data-nav-text="{{ item.search_text }}"
                             data-nav-domain="{{ item.domain }}"
-                            title="{{ item.ai_hint or item.label }}"
+                            {{ explain_attrs(item.label, item.help_text, placement='right') }}
                         >
                             <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
                             <span class="manage-nav-item__copy">
@@ -715,7 +716,7 @@
                             class="manage-nav-item{% if item.active %} active{% endif %}"
                             data-nav-text="{{ item.search_text }}"
                             data-nav-domain="{{ item.domain }}"
-                            title="{{ item.ai_hint or item.label }}"
+                            {{ explain_attrs(item.label, item.help_text, placement='right') }}
                         >
                             <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
                             <span class="manage-nav-item__copy">

@@ -242,7 +242,7 @@ function renderCourseSummary() {
         elements.courseSummary.innerHTML = `
             <div class="academic-empty">
                 <strong>还没有选中课程</strong>
-                选择课程后，可在这里快速确认课程模板是否足够完整，避免开课后再返工调整。
+                选择课程后在这里核对课程模板完整度。
             </div>
         `;
         return;

@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block extra_head %}
 {% endblock %}
@@ -24,9 +25,15 @@
     <section class="manage-pagehead">
         <div class="manage-pagehead__intro">
             <div>
-                <div class="academic-eyebrow">Class Library</div>
-                <h2>班级与学生名册工作台</h2>
-                <p class="manage-pagehead__lead">集中维护班级、系别与学生名单，开课、查看学生与通知可达性都从这里进入。</p>
+                <div class="manage-pagehead__title-row">
+                    <h2>班级</h2>
+                    {{ explain_button(
+                        '班级',
+                        '集中维护班级、系别与学生名单；开课、查看学生与通知可达性都从这里进入。',
+                        placement='bottom',
+                        label='班级说明'
+                    ) }}
+                </div>
             </div>
             <div class="manage-pagehead__actions">
                 <button type="button" class="btn btn-outline" id="syncAcademicRosterBtn">从教务系统同步</button>
@@ -286,7 +293,7 @@
                     <div class="academic-hint">至少包含“姓名”和“学号”；建议包含“邮箱/email”。</div>
                 </div>
                 <div class="class-form-note">
-                    缺邮箱不会阻止导入，但系统会在列表中标出，方便后续补齐重要通知触达。
+                    缺邮箱不阻止导入；缺失学生会在列表中标出。
                 </div>
                 <button type="submit" class="btn btn-primary">创建班级并导入学生</button>
             </form>

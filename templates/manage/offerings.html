@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block extra_head %}
 <style>
@@ -446,11 +447,15 @@
 {% block content %}
 <div class="academic-shell offering-page-shell">
     <section class="academic-hero">
-        <div class="academic-eyebrow">Teaching Schedule</div>
-        <h2>开设课堂与生成课程时间轴</h2>
-        <p>
-            选择学期、班级、课程和教材后，系统会优先使用教务系统真实课表生成每一次课；没有教务排课时，再使用固定周循环生成课堂时间轴和任务列表。
-        </p>
+        <div class="manage-pagehead__title-row">
+            <h2>开设课堂</h2>
+            {{ explain_button(
+                '开设课堂',
+                '选择学期、班级、课程和教材后，系统优先使用教务系统真实课表生成每一次课；没有教务排课时，再按固定周循环生成课堂时间轴和任务列表。',
+                placement='bottom',
+                label='开设课堂说明'
+            ) }}
+        </div>
         <div class="academic-hero-actions">
             <a href="/manage/teaching/courses" class="academic-link-btn">先完善课程模板</a>
             <a href="/manage/teaching/semesters?open=new" class="academic-link-btn">新增学期</a>

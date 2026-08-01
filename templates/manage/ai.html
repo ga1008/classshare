@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block extra_head %}
 <style>
@@ -30,15 +31,14 @@
 {% block content %}
 <div class="academic-shell">
     <section class="academic-hero">
-        <div class="academic-eyebrow">AI Configuration</div>
-        <h2>课堂 AI 助教配置</h2>
-        <p>
-            为每个课堂配置独立的 AI 系统提示词和课程大纲，绑定教材后 AI 将自动关联教材信息作为辅助参考。
-        </p>
-        <div class="academic-hero-actions">
-            <span class="academic-badge is-success">教材信息自动关联</span>
-            <span class="academic-badge">课堂信息自动填充</span>
-            <span class="academic-badge is-accent">支持手动重新生成</span>
+        <div class="manage-pagehead__title-row">
+            <h2>AI 助教</h2>
+            {{ explain_button(
+                'AI 助教',
+                '为每个课堂配置独立的 AI 系统提示词和课程大纲；绑定教材后自动关联教材信息，课堂信息自动填充，可随时重新生成默认草稿。',
+                placement='bottom',
+                label='AI 助教说明'
+            ) }}
         </div>
     </section>
 

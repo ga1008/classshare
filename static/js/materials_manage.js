@@ -4695,12 +4695,12 @@ const AI_REWRITE_MODE_COPY = {
     },
     optimize: {
         title: 'AI优化排版',
-        subtitle: '整理为排版规整的 Markdown 文档。改动限制决定允许对原文改动多少，默认“一般”。',
+        subtitle: '整理为排版规整的 Markdown 文档；改动限制默认“一般”。',
         pendingLabel: 'AI 正在优化排版',
     },
     polish: {
         title: 'AI深度润色',
-        subtitle: '按材料意思深度重写并优化排版；可选择目标课堂，让内容贴合课程、班级与专业目标。',
+        subtitle: '按材料意思深度重写；可选目标课堂让内容更贴合。',
         pendingLabel: 'AI 正在深度润色',
     },
 };

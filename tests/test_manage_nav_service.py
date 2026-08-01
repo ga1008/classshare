@@ -96,7 +96,7 @@ class ManageNavServiceTests(unittest.TestCase):
         self.assertIn("manage-nav-item__copy", template)
         self.assertIn("manage-nav-item__note", template)
         self.assertIn("manage-nav-item__badge", template)
-        self.assertIn("item.ai_hint or item.label", template)
+        self.assertIn("explain_attrs(item.label, item.help_text", template)
 
     def test_manage_nav_filters_admin_items_and_marks_active_domain(self):
         teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "classrooms", is_super_admin=False)

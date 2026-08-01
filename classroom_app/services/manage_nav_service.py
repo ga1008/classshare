@@ -49,6 +49,7 @@ class ManageNavItem:
     href: str
     search_text: str
     ai_hint: str
+    help_text: str = ""
     nav_note: str = ""
     nav_badge: str = ""
     required_flag: str = ""
@@ -524,6 +525,7 @@ def _item_to_template_dict(item: ManageNavItem, *, active_key: str) -> dict[str,
         "href": item.href,
         "search_text": search_text,
         "ai_hint": item.ai_hint,
+        "help_text": item.help_text or item.ai_hint,
         "nav_note": item.nav_note,
         "nav_badge": item.nav_badge,
         "required_flag": item.required_flag,

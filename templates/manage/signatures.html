@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block title %}电子签名{% endblock %}
 
@@ -544,9 +545,15 @@
     <div class="manage-pagehead">
         <div class="manage-pagehead__intro">
             <div>
-                <div class="academic-eyebrow">Signature Library</div>
-                <h2>签名库</h2>
-                <p class="manage-pagehead__lead">签名按学校与系部隔离；引用他人签名需归属人审批。</p>
+                <div class="manage-pagehead__title-row">
+                    <h2>签名</h2>
+                    {{ explain_button(
+                        '签名',
+                        '签名按学校与系部隔离；引用他人签名需归属人审批。',
+                        placement='bottom',
+                        label='签名说明'
+                    ) }}
+                </div>
             </div>
         </div>
         <div class="manage-pagehead__insights">

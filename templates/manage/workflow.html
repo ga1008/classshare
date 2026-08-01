@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block extra_head %}
 {% endblock %}
@@ -13,12 +14,15 @@
 <div class="academic-shell workflow-shell">
     <section class="academic-hero workflow-hero">
         <div class="workflow-hero-copy">
-            <div class="academic-eyebrow">Teaching Workflow</div>
-            <h2>按新建课堂向导，一步一步完成开课</h2>
-            <p>
-                工作台现在跟随“开设新课堂”的真实流程组织：每张步骤卡只对应一件事，
-                下方工作区继续复用现有管理页，便于在启动向导前补齐数据。
-            </p>
+            <div class="manage-pagehead__title-row">
+                <h2>开课向导</h2>
+                {{ explain_button(
+                    '开课向导',
+                    '按“开设新课堂”的真实流程组织：每张步骤卡只对应一件事，下方工作区复用现有管理页，便于在启动向导前补齐数据。',
+                    placement='bottom',
+                    label='开课向导说明'
+                ) }}
+            </div>
             <div class="workflow-hero-actions">
                 <button type="button" class="btn btn-primary" data-teacher-onboarding-open>开设新课堂</button>
                 <a href="/manage/teaching/offerings" class="btn btn-outline">查看课堂列表</a>

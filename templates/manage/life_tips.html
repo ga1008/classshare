@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block title %}一言提示{% endblock %}
 
@@ -11,8 +12,15 @@
 <section class="manage-life-tips" data-life-tip-root data-categories='{{ life_tip_categories | tojson }}'>
     <div class="manage-life-tips__intro">
         <div>
-            <h2>登录一言提示库</h2>
-            <p>学生/教师登录加载屏上的一句话提示：通用池全平台共享，本校/本系池由公文 AI 挖掘与手工录入。下架劣句、查看"有用/无感"反馈，让句库越用越准。</p>
+            <div class="manage-pagehead__title-row">
+                <h2>一言提示</h2>
+                {{ explain_button(
+                    '一言提示',
+                    '学生/教师登录加载屏上的一句话提示：通用池全平台共享，本校/本系池由公文 AI 挖掘与手工录入。可下架劣句、查看“有用/无感”反馈。',
+                    placement='bottom',
+                    label='一言提示说明'
+                ) }}
+            </div>
         </div>
         <div class="manage-life-tips__summary" data-life-tip-summary></div>
     </div>

@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block title %}投票管理{% endblock %}
 
@@ -11,8 +12,15 @@
 <section class="manage-polls" data-poll-manage-root>
     <div class="manage-polls__intro">
         <div>
-            <h2>投票活动</h2>
-            <p>创建跨班级共享的投票活动：一个投票可分配到多个班级，所有班级成员共享同一份投票数据。草稿与已结束的投票仅你自己可见。</p>
+            <div class="manage-pagehead__title-row">
+                <h2>投票</h2>
+                {{ explain_button(
+                    '投票',
+                    '一个投票可分配到多个班级，所有班级成员共享同一份投票数据。草稿与已结束的投票仅你自己可见。',
+                    placement='bottom',
+                    label='投票说明'
+                ) }}
+            </div>
         </div>
         <div class="manage-polls__summary" data-poll-summary></div>
     </div>

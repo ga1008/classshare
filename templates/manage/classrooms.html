@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block extra_head %}
 <style>
@@ -549,9 +550,15 @@
     <section class="manage-pagehead">
         <div class="manage-pagehead__intro">
             <div>
-                <div class="academic-eyebrow">Classroom Atlas</div>
-                <h2>教室与空闲场地工作台</h2>
-                <p class="manage-pagehead__lead">教学场地来自教务系统同步，空闲教室按学期、周次、星期、节次实时查询。</p>
+                <div class="manage-pagehead__title-row">
+                    <h2>教室</h2>
+                    {{ explain_button(
+                        '教室',
+                        '教学场地来自教务系统同步；空闲教室按学期、周次、星期、节次实时查询。',
+                        placement='bottom',
+                        label='教室说明'
+                    ) }}
+                </div>
             </div>
             <div class="manage-pagehead__actions">
                 <button type="button" class="btn btn-outline" id="focusFreeRoomBtn">查询空闲教室</button>

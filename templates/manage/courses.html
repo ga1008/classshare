@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block extra_head %}
 <style>
@@ -1111,9 +1112,15 @@
     <section class="manage-pagehead">
         <div class="manage-pagehead__intro">
             <div>
-                <div class="academic-eyebrow">Course Studio</div>
-                <h2>课程管理与课堂模板</h2>
-                <p class="manage-pagehead__lead">沉淀可复用的课程模板，开课时直接继承并生成排课时间轴。</p>
+                <div class="manage-pagehead__title-row">
+                    <h2>课程</h2>
+                    {{ explain_button(
+                        '课程',
+                        '沉淀可复用的课程模板；开课时直接继承课堂设置并生成排课时间轴。',
+                        placement='bottom',
+                        label='课程说明'
+                    ) }}
+                </div>
             </div>
             <div class="manage-pagehead__actions">
                 <button type="button" class="btn btn-outline" id="heroCourseAcademicSyncBtn">从教务系统同步</button>

@@ -423,9 +423,8 @@ function renderDetail(snapshot, group, activeTab = 'members') {
     if (!group) {
         return `
             <aside class="collaboration-detail">
-                <div class="collaboration-empty">
+                <div class="collaboration-empty" data-explain data-explain-title="小组详情" data-explain-text="小组的成员、文件、成果和互评会在这里展开。">
                     <strong>选择一个小组</strong>
-                    <p>小组的成员、文件、成果和互评会在这里展开。</p>
                 </div>
             </aside>
         `;

@@ -127,9 +127,8 @@
         {% endfor %}
     </div>
     {% else %}
-    <div class="agenda-reminder__empty">
-        <strong>这会儿没有临近的安排</strong>
-        <p>监考、考试、作业截止和你新建的待办都会出现在这里，最紧要的排在最前面。</p>
+    <div class="agenda-reminder__empty" data-explain data-explain-title="近期安排" data-explain-text="监考、考试、作业截止和你新建的待办都会出现在这里，最紧要的排在最前面。">
+        <strong>暂无近期安排</strong>
     </div>
     {% endif %}
 </section>
