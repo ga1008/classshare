@@ -508,6 +508,16 @@ def _can_view_item(item: ManageNavItem, *, is_super_admin: bool) -> bool:
     return True
 
 
+def _fallback_help_text(item: ManageNavItem) -> str:
+    if item.help_text:
+        return item.help_text
+    hint = item.ai_hint or ""
+    # ai_hint keeps a "标签：" prefix for AI context; the popover already shows
+    # the label as its title, so strip the duplicate.
+    prefix = f"{item.label}："
+    return hint[len(prefix):] if hint.startswith(prefix) else hint
+
+
 def _item_to_template_dict(item: ManageNavItem, *, active_key: str) -> dict[str, Any]:
     meta = MANAGE_DOMAIN_META[item.domain]
     search_text = " ".join(
@@ -525,7 +535,7 @@ def _item_to_template_dict(item: ManageNavItem, *, active_key: str) -> dict[str,
         "href": item.href,
         "search_text": search_text,
         "ai_hint": item.ai_hint,
-        "help_text": item.help_text or item.ai_hint,
+        "help_text": _fallback_help_text(item),
         "nav_note": item.nav_note,
         "nav_badge": item.nav_badge,
         "required_flag": item.required_flag,
