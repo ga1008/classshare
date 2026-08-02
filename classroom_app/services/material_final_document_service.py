@@ -102,8 +102,11 @@ FINAL_MATERIAL_LAYOUTS: dict[str, dict[str, Any]] = {
     FINAL_GRADE_TRANSCRIPT_TYPE: deepcopy(FINAL_GRADE_TRANSCRIPT_LAYOUT),
     ACADEMIC_GRADE_REGISTER_TYPE: {
         "page": "A4 portrait",
-        "margins_cm": {"top": 0.35, "bottom": 0.35, "left": 0.45, "right": 0.45},
-        "signature_mode": "inline_locked",
+        "page_twips": {"width": 11905, "height": 16837},
+        "margins_twips": {"top": 226, "bottom": 5, "left": 283, "right": 283},
+        "table_width_twips": 11225,
+        "roster_capacity": {"left": 40, "right": 30},
+        "signature_mode": "template_overlay",
     },
     ACADEMIC_EXAM_ANALYSIS_TYPE: {
         "page": "A4 portrait",

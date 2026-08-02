@@ -15,6 +15,24 @@ from .academic_final_material_service import (
 )
 
 
+_GRADE_REGISTER_TEMPLATE_PATH = Path(__file__).with_name("assets") / "gxufl_academic_grade_register_template.docx"
+_GRADE_REGISTER_LEFT_CAPACITY = 40
+_GRADE_REGISTER_RIGHT_CAPACITY = 30
+_GRADE_REGISTER_MAX_STUDENTS = _GRADE_REGISTER_LEFT_CAPACITY + _GRADE_REGISTER_RIGHT_CAPACITY
+_GRADE_REGISTER_STUDENT_KEYS = (
+    "student_number",
+    "student_name",
+    "ordinary_score",
+    "midterm_score",
+    "experiment_online_score",
+    "final_exam_score",
+    "final_score",
+    "remark",
+)
+_GRADE_REGISTER_LEFT_COLUMNS = (0, 1, 2, 3, 4, 5, 6, 7)
+_GRADE_REGISTER_RIGHT_COLUMNS = (8, 10, 11, 12, 13, 14, 15, 16)
+
+
 def _payload(parse_payload: dict[str, Any]) -> dict[str, Any]:
     export_payload = parse_payload.get("export_payload")
     return export_payload if isinstance(export_payload, dict) else parse_payload
@@ -80,26 +98,6 @@ def _set_cell_width(cell: Any, width_cm: float) -> None:
     tc_w.set(qn("w:type"), "dxa")
 
 
-def _set_repeat_table_header(row: Any) -> None:
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
-
-    tr_pr = row._tr.get_or_add_trPr()
-    repeat = OxmlElement("w:tblHeader")
-    repeat.set(qn("w:val"), "true")
-    tr_pr.append(repeat)
-
-
-def _set_cell_shading(cell: Any, fill: str) -> None:
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
-
-    tc_pr = cell._tc.get_or_add_tcPr()
-    shading = OxmlElement("w:shd")
-    shading.set(qn("w:fill"), fill)
-    tc_pr.append(shading)
-
-
 def _set_table_borders(table: Any, *, size: int = 6) -> None:
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
@@ -117,19 +115,6 @@ def _set_table_borders(table: Any, *, size: int = 6) -> None:
         element.set(qn("w:color"), "000000")
         borders.append(element)
     tbl_pr.append(borders)
-
-
-def _add_table_separator(document: Any, *, points: float = 0.5) -> None:
-    """Prevent Word from coalescing adjacent tables into one incompatible grid."""
-    from docx.shared import Pt
-
-    paragraph = document.add_paragraph()
-    paragraph.paragraph_format.space_before = 0
-    paragraph.paragraph_format.space_after = 0
-    paragraph.paragraph_format.line_spacing = 1
-    run = paragraph.add_run("\u200b")
-    _set_run_font(run, points)
-
 
 def _add_title(document: Any, title: str, fields: dict[str, Any], *, size: float = 16) -> None:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -179,27 +164,6 @@ def _add_image_to_cell(
     return True
 
 
-def _add_grade_metadata(document: Any, fields: dict[str, Any]) -> None:
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
-    from docx.shared import Cm
-
-    rows = [
-        ["开课部门", fields.get("department") or "", "班级", fields.get("class_name") or "", "任课教师", fields.get("teacher_name") or "", "学分", fields.get("credits") or ""],
-        ["课程名称", fields.get("course_name") or "", "课程性质", fields.get("course_nature") or "", "考核方式", fields.get("assessment_method") or "", "填表日期", fields.get("date") or ""],
-    ]
-    widths = [1.5, 4.5, 1.4, 3.0, 1.6, 2.8, 1.4, 2.5]
-    table = document.add_table(rows=2, cols=8)
-    table.autofit = False
-    _set_table_borders(table, size=4)
-    for row_index, values in enumerate(rows):
-        table.rows[row_index].height = Cm(0.8)
-        table.rows[row_index].height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-        for column_index, value in enumerate(values):
-            cell = table.rows[row_index].cells[column_index]
-            _set_cell_width(cell, widths[column_index])
-            _set_cell_text(cell, value, size=8, bold=column_index % 2 == 0, align=1 if column_index % 2 == 0 else 0)
-
-
 def _score_text(value: Any) -> str:
     if value in (None, ""):
         return ""
@@ -209,153 +173,224 @@ def _score_text(value: Any) -> str:
     return f"{parsed:.2f}"
 
 
-def _add_grade_roster(document: Any, structured: dict[str, Any]) -> None:
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
-    from docx.shared import Cm
+def _set_template_cell_text(cell: Any, value: Any) -> None:
+    from docx.oxml.ns import qn
 
-    students = structured.get("students") if isinstance(structured.get("students"), list) else []
-    headers = ["学号", "姓名", "平时", "期中", "实验/\n在线", "期末", "总评", "备注"] * 2
-    widths = [2.5, 1.4, 1.0, 0.85, 0.9, 0.85, 1.0, 1.25] * 2
-    rows_per_side = (len(students) + 1) // 2
-    table = document.add_table(rows=1 + rows_per_side, cols=16)
-    table.autofit = False
-    _set_table_borders(table, size=4)
-    _set_repeat_table_header(table.rows[0])
-    table.rows[0].height = Cm(0.9)
-    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-    for index, header in enumerate(headers):
-        cell = table.rows[0].cells[index]
-        _set_cell_width(cell, widths[index])
-        _set_cell_text(cell, header, size=7.2, bold=True)
-        _set_cell_shading(cell, "F3F4F6")
-    keys = [
-        "student_number",
-        "student_name",
+    text_nodes = list(cell._tc.iter(qn("w:t")))
+    text = "" if value is None else str(value)
+    if not text_nodes:
+        run = cell.paragraphs[0].add_run(text)
+        _set_run_font(run, 9, name="微软雅黑")
+        return
+    text_nodes[0].text = text
+    for node in text_nodes[1:]:
+        node.text = ""
+
+
+def _academic_period_text(fields: dict[str, Any]) -> str:
+    academic_year = str(fields.get("academic_year") or "").strip()
+    semester = str(fields.get("semester") or "").strip()
+    if academic_year and not academic_year.endswith("学年"):
+        academic_year = f"{academic_year}学年"
+    if semester and not semester.endswith("学期"):
+        semester = f"{semester}学期"
+    return f"{academic_year}{semester}"
+
+
+def _grade_student_value(student: dict[str, Any] | None, key: str) -> str:
+    if not student:
+        return ""
+    value = student.get(key)
+    if key == "final_score" and value not in (None, ""):
+        parsed = float(value)
+        return "100" if abs(parsed - 100) < 0.001 else f"{parsed:.2f}"
+    if key in {
         "ordinary_score",
         "midterm_score",
         "experiment_online_score",
         "final_exam_score",
-        "final_score",
-        "remark",
-    ]
-    for row_index in range(rows_per_side):
-        table.rows[row_index + 1].height = Cm(0.54)
-        table.rows[row_index + 1].height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-        pair = [students[row_index] if row_index < len(students) else None]
-        right_index = rows_per_side + row_index
-        pair.append(students[right_index] if right_index < len(students) else None)
-        for side, student in enumerate(pair):
-            for key_index, key in enumerate(keys):
-                column_index = side * 8 + key_index
-                cell = table.rows[row_index + 1].cells[column_index]
-                _set_cell_width(cell, widths[column_index])
-                value = ""
-                if student:
-                    value = student.get(key) or ""
-                    if key in {
-                        "ordinary_score",
-                        "midterm_score",
-                        "experiment_online_score",
-                        "final_exam_score",
-                        "final_score",
-                    }:
-                        value = _score_text(student.get(key))
-                _set_cell_text(cell, value, size=6.7)
+    }:
+        return _score_text(value)
+    return "" if value is None else str(value)
 
 
-def _add_grade_summary(document: Any, structured: dict[str, Any]) -> None:
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
-    from docx.shared import Cm, Pt
-
-    paragraph = document.add_paragraph()
-    paragraph.paragraph_format.space_before = Pt(1)
-    paragraph.paragraph_format.space_after = Pt(1)
-    paragraph.alignment = 1
-    formula = str(structured.get("formula") or "平时*40% + 期末*60%")
-    _set_run_font(paragraph.add_run(f"总评成绩 = {formula}"), 8, bold=True)
-
-    distribution = structured.get("score_distribution") if isinstance(structured.get("score_distribution"), list) else []
-    stats = structured.get("statistics") if isinstance(structured.get("statistics"), dict) else {}
-    table = document.add_table(rows=3, cols=7)
-    table.autofit = False
-    _set_table_borders(table, size=4)
-    values = [
-        ["期末成绩分析", "90分以上", "80-89分", "70-79分", "60-69分", "60分以下", "统计"],
-        [
-            "人数",
-            next((item.get("count") for item in distribution if item.get("segment") == "90-100"), 0),
-            next((item.get("count") for item in distribution if item.get("segment") == "80-89"), 0),
-            next((item.get("count") for item in distribution if item.get("segment") == "70-79"), 0),
-            next((item.get("count") for item in distribution if item.get("segment") == "60-69"), 0),
-            next((item.get("count") for item in distribution if item.get("segment") == "<60"), 0),
-            f"应/实考 {stats.get('student_count') or 0}/{stats.get('student_count') or 0}",
-        ],
-        [
-            "百分比",
-            *[
-                f"{next((float(item.get('ratio') or 0) for item in distribution if item.get('segment') == segment), 0):.2f}%"
-                for segment in ("90-100", "80-89", "70-79", "60-69", "<60")
-            ],
-            f"平均分 {float(stats.get('average') or 0):.2f}",
-        ],
-    ]
-    widths = [2.0, 2.2, 2.2, 2.2, 2.2, 2.2, 6.2]
-    for row_index, row_values in enumerate(values):
-        table.rows[row_index].height = Cm(0.55)
-        table.rows[row_index].height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-        for column_index, value in enumerate(row_values):
-            cell = table.rows[row_index].cells[column_index]
-            _set_cell_width(cell, widths[column_index])
-            _set_cell_text(cell, value, size=7.5, bold=row_index == 0 or column_index == 0)
+def _score_band_counts(students: list[dict[str, Any]]) -> list[int]:
+    counts = [0] * 8
+    for student in students:
+        try:
+            score = float(student.get("final_exam_score"))
+        except (TypeError, ValueError):
+            continue
+        if score >= 90:
+            index = 0
+        elif score >= 80:
+            index = 1
+        elif score >= 70:
+            index = 2
+        elif score >= 60:
+            index = 3
+        elif score >= 50:
+            index = 4
+        elif score >= 40:
+            index = 5
+        elif score >= 30:
+            index = 6
+        else:
+            index = 7
+        counts[index] += 1
+    return counts
 
 
-def _add_grade_signature(document: Any, fields: dict[str, Any]) -> None:
-    from docx.shared import Cm, Pt
+def _grade_status_counts(students: list[dict[str, Any]]) -> dict[str, int]:
+    aliases = {
+        "免考(修)": ("免考", "免修"),
+        "缓考": ("缓考",),
+        "作弊": ("作弊",),
+        "旷考": ("旷考",),
+        "交流生": ("交流生",),
+        "借读生": ("借读生",),
+    }
+    counts = {key: 0 for key in aliases}
+    for student in students:
+        remark = str(student.get("remark") or "").strip()
+        for key, values in aliases.items():
+            if any(value in remark for value in values):
+                counts[key] += 1
+                break
+    return counts
 
-    table = document.add_table(rows=1, cols=2)
-    table.autofit = False
-    table.rows[0].cells[0].merge(table.rows[0].cells[1])
-    cell = table.rows[0].cells[0]
-    cell.text = ""
-    paragraph = cell.paragraphs[0]
-    paragraph.alignment = 2
-    paragraph.paragraph_format.space_before = Pt(1)
-    paragraph.paragraph_format.space_after = 0
-    _set_run_font(paragraph.add_run("教师："), 9, bold=True)
-    signature_path = fields.get("teacher_signature_image_path")
-    if signature_path and Path(str(signature_path)).is_file():
-        paragraph.add_run().add_picture(str(signature_path), width=Cm(2.8))
-    else:
-        _set_run_font(paragraph.add_run("______________________________"), 9)
-    _set_run_font(paragraph.add_run(" 签字"), 9)
+
+def _add_grade_signature_overlay(document: Any, table: Any, signature_path: Any) -> None:
+    path = Path(str(signature_path or ""))
+    if not path.is_file():
+        return
+
+    from docx.oxml import parse_xml
+
+    relationship_id, _image = document.part.get_or_add_image(str(path))
+    pict = parse_xml(
+        f"""
+        <w:pict
+            xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+            xmlns:v="urn:schemas-microsoft-com:vml"
+            xmlns:o="urn:schemas-microsoft-com:office:office"
+            w14:anchorId="4E0449E0">
+          <v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75"
+              o:preferrelative="t" path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f">
+            <v:stroke joinstyle="miter"/>
+            <v:formulas>
+              <v:f eqn="if lineDrawn pixelLineWidth 0"/><v:f eqn="sum @0 1 0"/>
+              <v:f eqn="sum 0 0 @1"/><v:f eqn="prod @2 1 2"/>
+              <v:f eqn="prod @3 21600 pixelWidth"/><v:f eqn="prod @3 21600 pixelHeight"/>
+              <v:f eqn="sum @0 0 1"/><v:f eqn="prod @6 1 2"/>
+              <v:f eqn="prod @7 21600 pixelWidth"/><v:f eqn="sum @8 21600 0"/>
+              <v:f eqn="prod @7 21600 pixelHeight"/><v:f eqn="sum @10 21600 0"/>
+            </v:formulas>
+            <v:path o:extrusionok="f" gradientshapeok="t" o:connecttype="rect"/>
+            <o:lock v:ext="edit" aspectratio="t"/>
+          </v:shapetype>
+          <v:shape id="_x0000_s2050" type="#_x0000_t75"
+              style="position:absolute;margin-left:18.4pt;margin-top:3.15pt;width:60.55pt;height:21.2pt;z-index:251659264;mso-position-horizontal-relative:text;mso-position-vertical-relative:text">
+            <v:imagedata r:id="{relationship_id}" o:title=""/>
+          </v:shape>
+        </w:pict>
+        """
+    )
+    anchor_paragraph = table.rows[45].cells[6].paragraphs[0]
+    anchor_run = anchor_paragraph.runs[0] if anchor_paragraph.runs else anchor_paragraph.add_run()
+    anchor_run._r.append(pict)
 
 
 def build_grade_register_docx(parse_payload: dict[str, Any]) -> bytes:
     from docx import Document
-    from docx.shared import Cm, Pt
 
     payload = _payload(parse_payload)
     fields = payload.get("fields") if isinstance(payload.get("fields"), dict) else {}
     structured = payload.get("structured") if isinstance(payload.get("structured"), dict) else {}
-    document = Document()
-    section = document.sections[0]
-    section.page_width = Cm(21)
-    section.page_height = Cm(29.7)
-    section.top_margin = Cm(0.35)
-    section.bottom_margin = Cm(0.35)
-    section.left_margin = Cm(0.45)
-    section.right_margin = Cm(0.45)
-    section.header_distance = Cm(0.2)
-    section.footer_distance = Cm(0.2)
-    document.styles["Normal"].paragraph_format.space_after = Pt(0)
+    students = structured.get("students") if isinstance(structured.get("students"), list) else []
+    students = [student for student in students if isinstance(student, dict)]
+    if len(students) > _GRADE_REGISTER_MAX_STUDENTS:
+        raise ValueError(f"期末成绩登记表模板最多容纳 {_GRADE_REGISTER_MAX_STUDENTS} 名学生，当前为 {len(students)} 名。")
+    if not _GRADE_REGISTER_TEMPLATE_PATH.is_file():
+        raise RuntimeError("期末成绩登记表官方版式模板缺失，无法导出。")
 
-    _add_title(document, "广西外国语学院期末成绩登记表", fields, size=15)
-    _add_grade_metadata(document, fields)
-    _add_table_separator(document)
-    _add_grade_roster(document, structured)
-    _add_grade_summary(document, structured)
-    _add_table_separator(document)
-    _add_grade_signature(document, fields)
+    document = Document(str(_GRADE_REGISTER_TEMPLATE_PATH))
+    if len(document.tables) != 1 or len(document.tables[0].rows) != 47:
+        raise RuntimeError("期末成绩登记表官方版式模板结构已损坏。")
+    table = document.tables[0]
+
+    metadata_cells = {
+        (0, 0): "广西外国语学院期末成绩登记表",
+        (1, 0): _academic_period_text(fields),
+        (2, 0): f"开课部门：{fields.get('department') or ''}",
+        (2, 4): f"班级：{fields.get('class_name') or ''}",
+        (2, 10): f"任课教师：{fields.get('teacher_name') or ''}",
+        (2, 14): f"学分：{fields.get('credits') or ''}",
+        (3, 0): f"课程名称：{fields.get('course_name') or ''}",
+        (3, 4): f"课程性质：{fields.get('course_nature') or ''}",
+        (3, 8): f"考核方式：{fields.get('assessment_method') or ''}",
+        (3, 11): f"填表日期：{fields.get('date') or ''}",
+    }
+    for (row_index, column_index), value in metadata_cells.items():
+        _set_template_cell_text(table.rows[row_index].cells[column_index], value)
+
+    padded_students: list[dict[str, Any] | None] = [*students]
+    padded_students.extend([None] * (_GRADE_REGISTER_MAX_STUDENTS - len(padded_students)))
+    for slot in range(_GRADE_REGISTER_LEFT_CAPACITY):
+        row = table.rows[5 + slot]
+        student = padded_students[slot]
+        for key, column_index in zip(_GRADE_REGISTER_STUDENT_KEYS, _GRADE_REGISTER_LEFT_COLUMNS):
+            _set_template_cell_text(row.cells[column_index], _grade_student_value(student, key))
+    for slot in range(_GRADE_REGISTER_RIGHT_CAPACITY):
+        row = table.rows[5 + slot]
+        student = padded_students[_GRADE_REGISTER_LEFT_CAPACITY + slot]
+        for key, column_index in zip(_GRADE_REGISTER_STUDENT_KEYS, _GRADE_REGISTER_RIGHT_COLUMNS):
+            _set_template_cell_text(row.cells[column_index], _grade_student_value(student, key))
+
+    formula = str(structured.get("formula") or "平时*40% + 期末*60%").strip()
+    _set_template_cell_text(table.rows[35].cells[9], f"总评成绩 = {formula}")
+
+    band_counts = _score_band_counts(students)
+    total = len(students)
+    for offset, count in enumerate(band_counts):
+        row = table.rows[37 + offset]
+        _set_template_cell_text(row.cells[10], count)
+        ratio = count * 100 / total if total else 0
+        _set_template_cell_text(row.cells[12], "0%" if count == 0 else f"{ratio:.2f}%")
+
+    examined = sum(
+        1
+        for student in students
+        if student.get("final_exam_score") not in (None, "")
+    )
+    status_counts = _grade_status_counts(students)
+    statistics = structured.get("statistics") if isinstance(structured.get("statistics"), dict) else {}
+    numeric_scores = [
+        float(student["final_exam_score"])
+        for student in students
+        if student.get("final_exam_score") not in (None, "")
+    ]
+    average = float(statistics.get("average") or (sum(numeric_scores) / len(numeric_scores) if numeric_scores else 0))
+    summary_values = [
+        f"{total}/{examined}",
+        status_counts["免考(修)"],
+        status_counts["缓考"],
+        status_counts["作弊"],
+        status_counts["旷考"],
+        status_counts["交流生"],
+        status_counts["借读生"],
+        f"{average:.2f}",
+    ]
+    for offset, value in enumerate(summary_values):
+        _set_template_cell_text(table.rows[37 + offset].cells[16], value)
+
+    _set_template_cell_text(table.rows[46].cells[0], "教师：______________________________签字")
+    _add_grade_signature_overlay(document, table, fields.get("teacher_signature_image_path"))
+    if "{{" in document._element.xml:
+        raise RuntimeError("期末成绩登记表仍包含未替换的模板占位符。")
+
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()

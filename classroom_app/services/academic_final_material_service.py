@@ -570,7 +570,7 @@ def build_grade_register_export_payload(
         for index, segment in enumerate(["<60", "60-69", "70-79", "80-89", "90-100"])
     ]
     return {
-        "schema_version": "gxufl-academic-grade-register-v1",
+        "schema_version": "gxufl-academic-grade-register-v2",
         "template_key": ACADEMIC_GRADE_REGISTER_TYPE,
         "document_group": "final_material",
         "document_type": ACADEMIC_GRADE_REGISTER_TYPE,
@@ -585,8 +585,11 @@ def build_grade_register_export_payload(
         },
         "layout_profile": {
             "page": "A4 portrait",
-            "margins_cm": {"top": 0.4, "bottom": 0.4, "left": 0.5, "right": 0.5},
-            "signature_mode": "inline_locked",
+            "page_twips": {"width": 11905, "height": 16837},
+            "margins_twips": {"top": 226, "bottom": 5, "left": 283, "right": 283},
+            "table_width_twips": 11225,
+            "roster_capacity": {"left": 40, "right": 30},
+            "signature_mode": "template_overlay",
         },
     }
 

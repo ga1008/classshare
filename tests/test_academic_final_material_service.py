@@ -8,10 +8,14 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
+from zipfile import ZipFile
 
 from docx import Document
+from docx.oxml.ns import qn
 import httpx
+from PIL import Image
 
 from classroom_app.db import schema_academic_final_materials
 from classroom_app.services.academic_exam_roster_sync_service import _exam_course_from_row
@@ -180,6 +184,100 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
             )
             self.assertIn(title, all_text)
             self.assertIn("计算机网络实验", all_text)
+
+    def test_grade_register_reuses_official_single_table_geometry_and_slot_order(self) -> None:
+        payload = build_grade_register_export_payload(self.grade, self.validation)
+        students = []
+        for index in range(45):
+            score = float(100 - index)
+            students.append(
+                {
+                    "student_number": f"24000000{index + 1:03d}",
+                    "student_name": f"学生{index + 1:02d}",
+                    "ordinary_score": score,
+                    "midterm_score": None,
+                    "experiment_online_score": None,
+                    "final_exam_score": score,
+                    "final_score": score,
+                    "remark": "",
+                }
+            )
+        payload["structured"]["students"] = students
+        payload["structured"]["statistics"] = {"student_count": 45, "average": 78.0}
+
+        content = build_grade_register_docx(payload)
+        document = Document(BytesIO(content))
+        self.assertEqual(1, len(document.sections))
+        self.assertEqual(1, len(document.tables))
+        section = document.sections[0]
+        self.assertEqual(11905, section.page_width.twips)
+        self.assertEqual(16837, section.page_height.twips)
+        self.assertEqual(226, section.top_margin.twips)
+        self.assertEqual(5, section.bottom_margin.twips)
+        self.assertEqual(283, section.left_margin.twips)
+        self.assertEqual(283, section.right_margin.twips)
+
+        table = document.tables[0]
+        self.assertEqual(47, len(table.rows))
+        self.assertEqual(17, len(table.columns))
+        grid_widths = [int(node.get(qn("w:w"))) for node in table._tbl.tblGrid]
+        self.assertEqual(
+            [1473, 850, 566, 510, 566, 567, 567, 511, 396, 1078, 851, 567, 511, 567, 567, 567, 511],
+            grid_widths,
+        )
+        row_heights = [
+            int(row._tr.get_or_add_trPr().find(qn("w:trHeight")).get(qn("w:val")))
+            for row in table.rows
+        ]
+        self.assertEqual([480, 280, 340, 340, 500], row_heights[:5])
+        self.assertEqual([180, 280], row_heights[-2:])
+        self.assertEqual("学生40", table.rows[44].cells[1].text)
+        self.assertEqual("学生41", table.rows[5].cells[10].text)
+        self.assertEqual("学生45", table.rows[9].cells[10].text)
+        self.assertEqual("", table.rows[10].cells[10].text)
+        self.assertIn("总评成绩 =", table.rows[35].cells[9].text)
+        self.assertEqual("期末成绩分析表", table.rows[36].cells[8].text)
+        self.assertEqual(
+            [11, 10, 10, 10, 4, 0, 0, 0],
+            [int(table.rows[row].cells[10].text) for row in range(37, 45)],
+        )
+        self.assertNotIn("F3F4F6", document._element.xml)
+        self.assertNotIn("{{", document._element.xml)
+
+        with ZipFile(BytesIO(content)) as archive:
+            self.assertNotIn("word/media/image1.png", archive.namelist())
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+        for reference_value in ("甘鸿明", "张海林", "服务器配置与管理", "软工2406"):
+            self.assertNotIn(reference_value, document_xml)
+
+    def test_grade_register_rejects_rosters_larger_than_official_template_capacity(self) -> None:
+        payload = build_grade_register_export_payload(self.grade, self.validation)
+        payload["structured"]["students"] = [
+            {
+                "student_number": f"24000000{index + 1:03d}",
+                "student_name": f"学生{index + 1:02d}",
+                "final_score": 80,
+            }
+            for index in range(71)
+        ]
+        with self.assertRaisesRegex(ValueError, "最多容纳 70 名学生"):
+            build_grade_register_docx(payload)
+
+    def test_grade_register_signature_uses_the_official_floating_overlay(self) -> None:
+        payload = build_grade_register_export_payload(self.grade, self.validation)
+        with TemporaryDirectory() as temp_dir:
+            signature_path = Path(temp_dir) / "signature.png"
+            Image.new("RGBA", (160, 48), (0, 0, 0, 0)).save(signature_path)
+            payload["fields"]["teacher_signature_image_path"] = str(signature_path)
+            content = build_grade_register_docx(payload)
+
+        with ZipFile(BytesIO(content)) as archive:
+            self.assertIn("word/media/image1.png", archive.namelist())
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+        self.assertIn("<w:pict", document_xml)
+        self.assertIn("margin-left:18.4pt", document_xml)
+        self.assertIn("width:60.55pt", document_xml)
+        self.assertIn("height:21.2pt", document_xml)
 
     def test_shared_export_contract_supports_both_types(self) -> None:
         grade_payload = build_grade_register_export_payload(self.grade, self.validation)
