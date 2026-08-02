@@ -208,7 +208,6 @@
     <section class="dashboard-hero dashboard-reveal" aria-label="首页总览">
         <div class="dashboard-hero__content">
             <div class="dashboard-hero__topline">
-                <span class="dashboard-hero__eyebrow">{{ dashboard_hero.eyebrow }}</span>
                 <span class="dashboard-hero__status">今日课堂中枢</span>
             </div>
             <h1 class="dashboard-hero__title">{{ dashboard_hero.title }}</h1>
@@ -252,16 +251,14 @@
     <section class="dashboard-panel dashboard-reveal" aria-label="教师三域入口">
         <div class="dashboard-panel__header dashboard-panel__header--spread">
             <div>
-                <h2>教师三域</h2>
-                <p>按教学、教务、教师三个方向进入管理中心。</p>
+                <h2>管理中心</h2>
             </div>
         </div>
         <div class="dashboard-domain-grid">
             {% for domain in dashboard_domain_cards %}
-            <a href="{{ domain.href }}" class="dashboard-domain-card" data-domain="{{ domain.domain }}">
+            <a href="{{ domain.href }}" class="dashboard-domain-card" data-domain="{{ domain.domain }}" data-explain data-explain-title="{{ domain.title }}" data-explain-text="{{ domain.description }}">
                 <span>{{ domain.label }}</span>
                 <strong>{{ domain.title }}</strong>
-                <small>{{ domain.description }}</small>
             </a>
             {% endfor %}
         </div>
@@ -273,8 +270,7 @@
             <section class="dashboard-panel dashboard-panel--primary dashboard-panel--class-list dashboard-reveal" id="dashboard-class-list">
                 <div class="dashboard-panel__header dashboard-panel__header--spread">
                     <div>
-                        <h2>课堂列表</h2>
-                        <p>你的课堂会先按搜索与标签筛选收窄，再按系别班级、课程或学期时间轴归纳。</p>
+                        <h2 data-explain data-explain-title="课堂列表" data-explain-text="课堂先按搜索与标签筛选收窄，再按系别班级、课程或学期时间轴归纳。">课堂列表</h2>
                     </div>
                     {% if class_offerings %}
                     <span class="dashboard-section-pill">共 {{ class_offerings|length }} 个课堂</span>

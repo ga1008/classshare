@@ -7,11 +7,6 @@
 {% endblock %}
 
 {% block content %}
-<section class="manage-domain-hero">
-    <h1>我的概览</h1>
-    <p>{{ profile.name }}，资料、安全、通知、签名和对接凭据都收在教师域里。</p>
-</section>
-
 <section class="manage-domain-grid" aria-label="教师个人状态">
     {% for card in personal_cards %}
     <a class="manage-domain-card" href="{{ card.href }}">
@@ -26,7 +21,7 @@
     <div class="academic-panel-header">
         <div>
             <span class="academic-panel-kicker">个人中心</span>
-            <h2>常用个人入口</h2>
+            <h2>快捷入口</h2>
         </div>
     </div>
     <div class="manage-domain-grid">

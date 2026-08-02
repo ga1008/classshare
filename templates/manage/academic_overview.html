@@ -7,11 +7,6 @@
 {% endblock %}
 
 {% block content %}
-<section class="manage-domain-hero">
-    <h1>教务总览</h1>
-    <p>课表、考试、监考、教室和公文集中在这里，先看状态，再进入对应页面处理。</p>
-</section>
-
 <section class="manage-domain-grid" aria-label="教务状态">
     {% for card in overview_cards %}
     <a class="manage-domain-card" href="{{ card.href }}">

@@ -3,7 +3,7 @@
 {% block content %}
 <section class="rz-job-hero">
     <span class="rz-home-eyebrow">先读懂岗位，再改简历</span>
-    <h2>把岗位描述变成一张可执行的简历清单</h2>
+    <h2 data-explain data-explain-title="岗位分析" data-explain-text="粘贴岗位描述后，AI 会拆出核心要求、已有证据、真实缺口和每段经历的改进动作。">岗位分析</h2>
     <p>粘贴职责和任职要求，系统会标出当前资料已有的证据、仍需补充的内容，并逐段提示经历该怎么写得更具体。</p>
 </section>
 
@@ -22,7 +22,7 @@
             </label>
             <label class="rz-job-form__wide">岗位职责与任职要求 <b>*</b>
                 <textarea id="rzJobDescription" maxlength="15000" rows="14"
-                          placeholder="请粘贴招聘信息中的岗位职责、任职要求、优先条件等。信息越完整，分析越有用。" required></textarea>
+                          placeholder="粘贴岗位职责、任职要求等，信息越完整分析越准。" required></textarea>
                 <small><span id="rzJobCount">0</span> / 15000</small>
             </label>
             <div class="rz-job-form__wide rz-job-form__actions">

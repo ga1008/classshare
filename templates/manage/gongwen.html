@@ -188,8 +188,7 @@
 <section class="gwlist-shell">
     <div class="gwlist-hero">
         <div>
-            <h1>公文材料</h1>
-            <p>统一认证账号收件箱内的公文已同步到本地，可检索、查看与下载附件。后续可基于公文内容设置提醒。</p>
+            <h1 data-explain data-explain-title="公文" data-explain-text="统一认证账号收件箱内的公文已同步到本地，可检索、查看与下载附件。">公文</h1>
         </div>
         <div class="gwlist-toolbar">
             <span class="gwlist-time" id="gw-doc-last-sync">{% if summary.last_synced_at %}上次同步：{{ summary.last_synced_at[:16] }}{% else %}尚未同步{% endif %}</span>
@@ -211,7 +210,7 @@
 
     <div class="gwlist-card">
         <div class="gwlist-card-head">
-            <h3>收件箱公文</h3>
+            <h3>收件箱</h3>
             <div class="gwlist-toolbar">
                 <div class="gwlist-search">
                     <input type="search" id="gw-doc-search" placeholder="搜索标题 / 文号 / 发文单位 / 正文内容…" autocomplete="off">

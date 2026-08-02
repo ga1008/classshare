@@ -56,6 +56,24 @@ test.describe('unified explanation popover', () => {
     await expectNoBrowserErrors(errors, testInfo);
   });
 
+  test('dashboard domain cards move descriptions into the popover', async ({ page }, testInfo) => {
+    const fixture = readFixture();
+    const errors = collectBrowserErrors(page);
+    await loginTeacher(page, fixture);
+
+    await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+
+    await expect(page.locator('.dashboard-hero__eyebrow')).toHaveCount(0);
+
+    const card = page.locator('.dashboard-domain-card[data-explain]').first();
+    await expect(card).toBeVisible();
+    await expect(card.locator('small')).toHaveCount(0);
+    await expect(card).toHaveAttribute('data-explain-text', /.+/);
+
+    await expectNoBrowserErrors(errors, testInfo);
+  });
+
   test('sidebar navigation items explain themselves without native tooltips', async ({ page }, testInfo) => {
     const fixture = readFixture();
     const errors = collectBrowserErrors(page);
