@@ -189,7 +189,7 @@ function renderStats(item) {
 function renderCapabilities() {
     if (!refs.capabilityList) return;
     if (!state.capabilities.length) {
-        refs.capabilityList.innerHTML = '<div class="smart-classroom-empty">暂无可同步功能。请先在账号管理中保存并验证智慧课堂账号。</div>';
+        refs.capabilityList.innerHTML = '<div class="smart-classroom-empty">请先在账号管理保存并验证智慧课堂账号。</div>';
         return;
     }
     refs.capabilityList.innerHTML = state.capabilities.map((item) => {
@@ -321,7 +321,7 @@ function fillCredentialForm(item) {
 function renderCredentials() {
     if (!refs.list) return;
     if (!state.credentials.length) {
-        refs.list.innerHTML = '<div class="smart-classroom-empty">尚未保存智慧课堂账号。填写并通过校验后，可同步点名记录和学生签到状态。</div>';
+        refs.list.innerHTML = '<div class="smart-classroom-empty">保存并验证智慧课堂账号后，可同步点名与签到。</div>';
         return;
     }
 

@@ -134,7 +134,7 @@ function renderStats(item) {
 function renderCapabilities() {
     if (!refs.capabilityList) return;
     if (!state.capabilities.length) {
-        refs.capabilityList.innerHTML = '<div class="gw-empty">暂无可同步功能。请先在账号管理中保存并验证统一认证账号。</div>';
+        refs.capabilityList.innerHTML = '<div class="gw-empty">请先在账号管理保存并验证统一认证账号。</div>';
         return;
     }
     refs.capabilityList.innerHTML = state.capabilities.map((item) => {
@@ -208,7 +208,7 @@ function fillCredentialForm(item) {
 function renderCredentials() {
     if (!refs.list) return;
     if (!state.credentials.length) {
-        refs.list.innerHTML = '<div class="gw-empty">尚未保存统一认证账号。填写并通过校验后，可同步公文与附件。</div>';
+        refs.list.innerHTML = '<div class="gw-empty">保存并验证统一认证账号后，可同步公文与附件。</div>';
         return;
     }
     refs.list.innerHTML = state.credentials.map((item) => {

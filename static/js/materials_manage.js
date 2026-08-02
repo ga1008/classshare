@@ -2325,7 +2325,7 @@ function renderList() {
             && refreshableCatalogueTypes.includes(String(state.filters.documentType || ''))
             && item.node_type === 'folder'
             && item.can_manage !== false
-            ? '<button type="button" class="btn btn-outline btn-sm materials-refresh-btn" data-action="refresh-final-material" title="按原来选好的作业/考试重新获取最新成绩，原地更新本材料，不新建也不需要删除旧材料">一键更新</button>'
+            ? '<button type="button" class="btn btn-outline btn-sm materials-refresh-btn" data-action="refresh-final-material" title="按原有作业/考试重新取最新成绩，原地更新本材料">一键更新</button>'
             : '';
         const repositoryBadge = visualMeta.badge
             ? `<span class="materials-repo-badge" style="--repo-color:${visualMeta.color};">${escapeHtml(visualMeta.badge)}</span>`

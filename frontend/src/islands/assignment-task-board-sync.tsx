@@ -57,7 +57,7 @@ function buildRoleMetrics(snapshot: AssignmentTaskBoardSnapshot): AssignmentMetr
         value: summary.total,
         note: `${summary.assignmentCount} 作业 · ${summary.examCount} 考试`,
         tone: 'primary',
-        description: '课堂内由教师创建并分配的作业与考试，个人试炼不混入这里。',
+        description: '教师分配的作业与考试；个人试炼不在此处。',
         actionLabel: '查看任务列表',
       },
       {
@@ -67,7 +67,7 @@ function buildRoleMetrics(snapshot: AssignmentTaskBoardSnapshot): AssignmentMetr
         value: summary.reviewQueue,
         note: `批改中 ${summary.gradingQueue}`,
         tone: summary.reviewQueue > 0 ? 'danger' : 'neutral',
-        description: '定位到有待批改提交的任务，进入详情后继续原有批改流程。',
+        description: '定位有待批改提交的任务。',
         actionLabel: '定位待批改任务',
       },
       {
@@ -77,7 +77,7 @@ function buildRoleMetrics(snapshot: AssignmentTaskBoardSnapshot): AssignmentMetr
         value: summary.returnedCount,
         note: '学生需补交',
         tone: summary.returnedCount > 0 ? 'warning' : 'neutral',
-        description: '定位到已退回或处于补交流程的任务，便于回看学生后续提交。',
+        description: '定位已退回或补交中的任务。',
         actionLabel: '定位待重交任务',
       },
       {
@@ -116,7 +116,7 @@ function buildRoleMetrics(snapshot: AssignmentTaskBoardSnapshot): AssignmentMetr
       value: returned,
       note: '教师退回',
       tone: returned > 0 ? 'warning' : 'neutral',
-      description: '定位老师退回后需要再次完善的任务，进入后按原提交流程处理。',
+      description: '定位被退回需完善的任务。',
       actionLabel: '定位待重交任务',
     },
     {
@@ -136,7 +136,7 @@ function buildRoleMetrics(snapshot: AssignmentTaskBoardSnapshot): AssignmentMetr
       value: completed,
       note: `已评分 ${graded}`,
       tone: 'success',
-      description: '回看已经提交、批改中或已评分的任务，便于确认结果和反馈。',
+      description: '回看已提交、批改中或已评分的任务。',
       actionLabel: '定位已提交任务',
     },
   ];

@@ -972,7 +972,7 @@ class BlogCenter {
                 section_key: '',
                 name: '全部频道',
                 short_name: '全部',
-                description: '从全站内容信号中发现值得继续读下去的文章。',
+                description: '发现值得读下去的文章。',
                 icon: '◎',
                 accent_color: '#0f172a',
                 post_count: total,
@@ -3410,7 +3410,7 @@ class BlogCenter {
                                 <button type="button" class="blog-toolbar-chip" data-blog-comment-upload>${SVG.plus}<span>图片</span></button>
                                 <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-blog-comment-file-input hidden multiple>
                             </div>
-                            <div class="blog-comment-toolbar__hint">支持 Markdown 多行评论、图片、自定义表情；@管家 后会由 AI 结合上下文回复。</div>
+                            <div class="blog-comment-toolbar__hint">支持 Markdown、图片和表情；@管家 可邀请 AI 回复。</div>
                             <div class="blog-comment-toolbar__panels">
                                 <div class="blog-comment-emoji-anchor" data-blog-comment-emoji-anchor></div>
                                 <div class="blog-comment-custom-emoji-panel" data-blog-comment-custom-emoji-panel hidden></div>
@@ -3496,7 +3496,7 @@ class BlogCenter {
                     </div>
                     <div class="blog-empty__signal">NO SIGNAL / 频道雪花</div>
                     <div class="blog-empty__title">${escapeHtml(title || '当前频道暂无内容')}</div>
-                    <div class="blog-empty__desc">信号源保持在线，可调整筛选条件、拖动频道带，或发布一篇内容点亮这里。</div>
+                    <div class="blog-empty__desc">调整筛选，或发布一篇内容点亮这里。</div>
                 </div>
             `;
         }

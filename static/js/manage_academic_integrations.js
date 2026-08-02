@@ -207,7 +207,7 @@ function renderStats(item) {
 function renderCapabilities() {
     if (!refs.capabilityList) return;
     if (!state.capabilities.length) {
-        refs.capabilityList.innerHTML = '<div class="edu-empty">暂无可同步功能。请先在账号管理中保存并验证教务账号。</div>';
+        refs.capabilityList.innerHTML = '<div class="edu-empty">请先在账号管理保存并验证教务账号。</div>';
         return;
     }
     refs.capabilityList.innerHTML = state.capabilities.map((item) => {
@@ -339,7 +339,7 @@ function fillCredentialForm(item) {
 function renderCredentials() {
     if (!refs.list) return;
     if (!state.credentials.length) {
-        refs.list.innerHTML = '<div class="edu-empty">尚未保存教务系统账号。填写并通过校验后，可同步课程、班级学生、校历、监考和教学场地。</div>';
+        refs.list.innerHTML = '<div class="edu-empty">保存并验证教务账号后，可同步课程、学生、校历、监考与场地。</div>';
         return;
     }
 

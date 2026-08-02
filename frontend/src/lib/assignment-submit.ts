@@ -97,7 +97,7 @@ export function buildAssignmentSubmitStatus({
     return {
       tone: 'danger' as const,
       title: '提交窗口已关闭',
-      description: '服务器时间已不再允许提交，页面会继续保留当前内容供查看。',
+      description: '已过提交时间，内容仅供查看。',
     };
   }
 
@@ -105,7 +105,7 @@ export function buildAssignmentSubmitStatus({
     return {
       tone: 'muted' as const,
       title: canResubmitSubmission ? '等待重新作答' : '等待作答',
-      description: '输入答案或添加附件后再提交，系统会同步记录文本和文件。',
+      description: '输入答案或添加附件后提交。',
     };
   }
 
@@ -128,6 +128,6 @@ export function buildAssignmentSubmitStatus({
   return {
     tone: 'info' as const,
     title: '已有可提交内容',
-    description: '还可以继续补充答案或附件，提交时会一并保存。',
+    description: '可继续补充答案或附件，提交时一并保存。',
   };
 }

@@ -1885,7 +1885,7 @@ function initTeachingTimelineLegacy() {
             const currentHomeMaterial = getHomeMaterial();
             const selectedMaterial = await learningMaterialSelector.open({
                 title: '选择课程首页',
-                subtitle: '首页用于课程目录、简介和后续学习文档导航，会显示在时间轴第一课之前。',
+                subtitle: '课程目录与简介，显示在时间轴第一课之前。',
                 confirmLabel: currentHomeMaterial ? '更换首页' : '设置为首页',
                 allowClear: Boolean(currentHomeMaterial),
                 clearLabel: '移除课程首页',
@@ -1916,7 +1916,7 @@ function initTeachingTimelineLegacy() {
         try {
             const selectedMaterial = await learningMaterialSelector.open({
                 title: '选择课堂材料',
-                subtitle: '为当前时间轴节点绑定一个 Markdown 文档，课堂内“学习文档”按钮会直接跳转到该页面。',
+                subtitle: '绑定 Markdown 文档，课堂“学习文档”按钮直达该页面。',
                 confirmLabel: '绑定到本次课',
                 initialMaterial: session.learning_material,
             });
@@ -3021,7 +3021,7 @@ function initTeachingTimeline() {
         try {
             const selectedMaterial = await learningMaterialSelector.open({
                 title: '添加课程首页材料',
-                subtitle: '首页用于课程目录、简介与后续导航，显示在时间轴第一课之前；可添加多份材料。',
+                subtitle: '课程目录与简介，显示在第一课之前；可添加多份材料。',
                 confirmLabel: '添加为首页材料',
                 footerNote: '可绑定 Markdown 文档或可渲染的 HTML（单体文件或前端项目目录）。单击文件选中，双击文件夹进入；可点“选择此文件夹”绑定整个网页目录。',
                 allowFolders: true,
@@ -3041,7 +3041,7 @@ function initTeachingTimeline() {
         try {
             const selectedMaterial = await learningMaterialSelector.open({
                 title: '添加课堂材料',
-                subtitle: '为本次课添加学习材料，可同时绑定多份；课堂卡片的材料入口会列出全部材料。',
+                subtitle: '为本次课绑定学习材料，可同时绑定多份。',
                 confirmLabel: '添加到本次课',
                 footerNote: '可绑定 Markdown 文档或可渲染的 HTML（单体文件或前端项目目录）。单击文件选中，双击文件夹进入；可点“选择此文件夹”绑定整个网页目录。',
                 allowFolders: true,

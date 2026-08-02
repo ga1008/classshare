@@ -605,7 +605,7 @@ if (root) {
             scheduleDeckPanel.append(scheduleDeckStatus, mount);
             scheduleDeck = createScheduleDeck(mount, {
                 title: '3D 课表',
-                description: '本学期课表 · 滚轮或方向键切换周次，点击卡片放大；放大后点击课程进入课堂。',
+                description: '滚轮或方向键切换周次，点击卡片放大；点击课程进入课堂。',
                 showTermSelect: true,
                 onTermChange: (year, term) => loadScheduleOverview({ year, term }),
                 emptyHtml: () => '<strong>暂无课表数据</strong><p>请先到 <a href="/manage/teaching/course-schedule">课时统计</a> 同步智慧课堂课程表。</p>',
