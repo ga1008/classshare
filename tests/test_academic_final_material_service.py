@@ -419,6 +419,7 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
                     payload,
                 )
 
+        self.assertIn("FROM course_materials", conn.execute.call_args.args[0])
         export_payload = repaired["export_payload"]
         self.assertEqual("gxufl-academic-grade-register-v3", export_payload["schema_version"])
         self.assertEqual(

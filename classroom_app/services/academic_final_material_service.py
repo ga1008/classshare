@@ -1478,7 +1478,7 @@ def repair_legacy_grade_register_roster_order(conn: Any, row: Any, payload: dict
     if not source_material_id:
         return root
     material = conn.execute(
-        "SELECT file_hash FROM materials WHERE id = ? LIMIT 1",
+        "SELECT file_hash FROM course_materials WHERE id = ? LIMIT 1",
         (int(source_material_id),),
     ).fetchone()
     source_path = resolve_global_file_path(material["file_hash"] if material else "")
