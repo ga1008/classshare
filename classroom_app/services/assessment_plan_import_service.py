@@ -26,6 +26,7 @@ from ..core import ai_client
 from ..db.connection import get_db_connection
 from . import assessment_plan_service as ap
 from . import signature_service
+from . import signature_workflow_service
 from .material_ai_import_service import MAX_VISION_IMAGES, extract_material_content
 
 _TEXT_BUDGET_PER_FILE = 16000
@@ -411,6 +412,31 @@ async def run_import_job(
         }
 
         with get_db_connection() as conn:
+            signature_bindings = (
+                (
+                    harvest["examiner_signature_id"],
+                    "assessment_plan.examiner_signature",
+                    "命题教师签名",
+                ),
+                (
+                    harvest["reviewer_signature_id"],
+                    "assessment_plan.reviewer_signature",
+                    "审核教师签名",
+                ),
+            )
+            for signature_id, function_point_key, role_label in signature_bindings:
+                if not signature_id:
+                    continue
+                signature_workflow_service.authorize_and_consume_signature_use(
+                    conn,
+                    user,
+                    int(signature_id),
+                    function_point_key=function_point_key,
+                    context_type="assessment_plan",
+                    context_id=str(plan_id),
+                    context_label=f"{course_name or '课程考核计划表'} · {role_label}",
+                    metadata={"source": "document_import", "role": role_label},
+                )
             ap.apply_imported_payload(
                 conn,
                 plan_id,

@@ -26,6 +26,7 @@ from classroom_app.services.academic_final_material_document_service import (
 from classroom_app.services.academic_final_material_service import (
     ACADEMIC_EXAM_ANALYSIS_TYPE,
     ACADEMIC_GRADE_REGISTER_TYPE,
+    academic_final_material_record_urls,
     build_exam_analysis_export_payload,
     build_grade_register_export_payload,
     is_grade_entry_submitted,
@@ -33,6 +34,7 @@ from classroom_app.services.academic_final_material_service import (
     _download_fine_report_word,
     parse_exam_analysis_rtf,
     parse_grade_register_rtf,
+    repair_legacy_grade_register_roster_order,
     reclaim_stale_academic_final_material_batches,
     upsert_batch_state,
     validate_paired_reports,
@@ -57,6 +59,23 @@ def _rtf_bytes(text: str) -> bytes:
             codepoint = ord(char)
             signed = codepoint if codepoint < 32768 else codepoint - 65536
             parts.append(rf"\u{signed}?")
+    parts.append("}")
+    return "".join(parts).encode("ascii")
+
+
+def _gb18030_hex_rtf(text: str) -> bytes:
+    parts = [r"{\rtf1\ansi\ansicpg936 "]
+    for value in text.encode("gb18030"):
+        if value == 9:
+            parts.append(r"\tab ")
+        elif value == 10:
+            parts.append(r"\par ")
+        elif value in b"\\{}":
+            parts.append("\\" + chr(value))
+        elif 32 <= value < 127:
+            parts.append(chr(value))
+        else:
+            parts.append(rf"\'{value:02x}")
     parts.append("}")
     return "".join(parts).encode("ascii")
 
@@ -91,6 +110,17 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
             self.analysis,
             remote_student_count=2,
         )
+
+    def test_generated_document_urls_are_release_and_record_versioned(self) -> None:
+        with patch(
+            "classroom_app.services.academic_final_material_service.get_deployment_release_id",
+            return_value="release-42",
+        ):
+            first = academic_final_material_record_urls(36, "2026-08-03T01:00:00")
+            second = academic_final_material_record_urls(36, "2026-08-03T02:00:00")
+        self.assertIn("format=docx&v=release-42-", first["export_url"])
+        self.assertIn("format=docx&v=release-42-", first["preview_url"])
+        self.assertNotEqual(first["export_url"], second["export_url"])
 
     def test_paired_parser_and_deterministic_validator_pass(self) -> None:
         self.assertEqual(2, len(self.grade["students"]))
@@ -185,6 +215,92 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
             self.assertIn(title, all_text)
             self.assertIn("计算机网络实验", all_text)
 
+    def test_exam_analysis_rebuilds_official_single_table_geometry(self) -> None:
+        payload = build_exam_analysis_export_payload(
+            self.analysis,
+            self.validation,
+            defaults={
+                "proposition_form": "教师组题",
+                "exam_form": "闭卷",
+                "separate_teaching_exam": "否",
+                "course_nature": "必修",
+                "marking_form": "本人阅卷",
+                "analysis_text": "一、成绩分布与试卷分析\n本次成绩能够反映课程目标达成情况。\n二、改进意见与措施\n后续加强综合实践训练。",
+            },
+        )
+        with TemporaryDirectory() as temp_dir:
+            department_signature = Path(temp_dir) / "department.png"
+            dean_signature = Path(temp_dir) / "dean.png"
+            Image.new("RGBA", (220, 72), (0, 0, 0, 0)).save(department_signature)
+            Image.new("RGBA", (220, 72), (1, 1, 1, 0)).save(dean_signature)
+            payload["fields"]["department_signature_image_path"] = str(department_signature)
+            payload["fields"]["dean_signature_image_path"] = str(dean_signature)
+            content = build_exam_analysis_docx(payload)
+
+        document = Document(BytesIO(content))
+        self.assertEqual(1, len(document.tables))
+        self.assertEqual(22, len(document.tables[0].rows))
+        section = document.sections[0]
+        self.assertEqual(11905, section.page_width.twips)
+        self.assertEqual(16837, section.page_height.twips)
+        self.assertEqual(388, section.top_margin.twips)
+        self.assertEqual(388, section.bottom_margin.twips)
+        self.assertEqual(1080, section.left_margin.twips)
+        self.assertEqual(1080, section.right_margin.twips)
+
+        table = document.tables[0]
+        grid_widths = [int(node.get(qn("w:w"))) for node in table._tbl.tblGrid]
+        self.assertEqual([434, 930, 630, 1080, 570, 870, 1425, 915, 1080, 840, 870], grid_widths)
+        row_heights = [
+            int(row._tr.get_or_add_trPr().find(qn("w:trHeight")).get(qn("w:val")))
+            if row._tr.get_or_add_trPr().find(qn("w:trHeight")) is not None else None
+            for row in table.rows
+        ]
+        self.assertEqual([720, 340, 220], row_heights[:3])
+        self.assertEqual(3000, row_heights[15])
+        self.assertEqual(4960, row_heights[17])
+        self.assertEqual(1542, row_heights[20])
+        self.assertEqual("广西外国语学院课程试卷分析表", table.rows[0].cells[0].text)
+        self.assertIn("教师组题", table.rows[5].cells[7].text)
+        self.assertEqual("√", table.rows[5].cells[9].text)
+        self.assertIn("本人阅卷 √", table.rows[13].cells[2].text)
+        self.assertIn("简要分析试题结构", table.rows[16].cells[1].text)
+        self.assertIn("成绩分布与试卷分析", table.rows[17].cells[1].text)
+        self.assertIn("本表一式两份", table.rows[21].cells[0].text)
+        self.assertIn('w:textDirection w:val="tbRl"', document._element.xml)
+
+        with ZipFile(BytesIO(content)) as archive:
+            media = [name for name in archive.namelist() if name.startswith("word/media/")]
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+        self.assertGreaterEqual(len(media), 2)  # Word may deduplicate identical signature images.
+        self.assertEqual(3, document_xml.count("<a:blip "))
+        self.assertNotIn(str(department_signature), document_xml)
+        self.assertNotIn(str(dean_signature), document_xml)
+        self.assertNotIn("已阅", document_xml)
+        self.assertNotIn("{{", document_xml)
+
+    def test_exam_analysis_parser_repairs_gb18030_ansi_and_reads_checkmarks(self) -> None:
+        text = """广西外国语学院课程试卷分析表
+2025-2026学年第1学期
+课程名称\t服务器配置与管理\t学时数\t48\t开课单位\tE02软件工程系
+教师姓名\t张海林\t课程性质\t选修\t√\t必修
+命题形式(打√)\t试题库\t\t试卷库\t\t教师组题\t√
+考试形式(打√)\t开卷\t√\t闭卷\t\t教考分离(打√)\t是\t\t否\t√
+学生班级\t软工2406班（专升本）
+人数\t0\t2\t4\t5\t34
+比例\t0.00%\t4.44%\t8.89%\t11.11%\t75.56%
+平均分\t88.71\t标准差\t7.75
+最高分\t98\t最低分\t63\t及格率\t100.00%
+阅卷形式(打√)\t本人阅卷 √\t同行阅卷\t集体阅卷\t机器阅卷\t其他"""
+        body = text.encode("gb18030").replace(b"\t", b"\\tab ").replace(b"\n", b"\\par ")
+        parsed = parse_exam_analysis_rtf(b"{\\rtf1\\ansi\\ansicpg936 " + body + b"}")
+        self.assertEqual("服务器配置与管理", parsed["fields"]["course_name"])
+        self.assertEqual("选修", parsed["fields"]["course_nature"])
+        self.assertEqual("教师组题", parsed["fields"]["proposition_form"])
+        self.assertEqual("开卷", parsed["fields"]["exam_form"])
+        self.assertEqual("否", parsed["fields"]["separate_teaching_exam"])
+        self.assertEqual("本人阅卷", parsed["fields"]["marking_form"])
+
     def test_grade_register_reuses_official_single_table_geometry_and_slot_order(self) -> None:
         payload = build_grade_register_export_payload(self.grade, self.validation)
         students = []
@@ -249,6 +365,66 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
             document_xml = archive.read("word/document.xml").decode("utf-8")
         for reference_value in ("甘鸿明", "张海林", "服务器配置与管理", "软工2406"):
             self.assertNotIn(reference_value, document_xml)
+
+    def test_grade_parser_repairs_ansi_hex_and_preserves_column_major_roster_order(self) -> None:
+        source = """广西外国语学院期末成绩登记表
+2025-2026学年第1学期
+开课部门：E02软件工程系\t班级：软工2406班\t任课教师：张海林\t学分：3.0
+课程名称：服务器配置与管理\t课程性质：专业教育\t考核方式：考试\t填表日期：2026-03-05
+学号\t姓名\t平时\t期中\t实验/在线\t期末\t总评\t备注\t学号\t姓名\t平时\t期中\t实验/在线\t期末\t总评\t备注
+24000000001\t左一\t90\t\t\t90\t90\t\t24000000003\t右一\t80\t\t\t80\t80\t
+24000000002\t左二\t91\t\t\t91\t91
+教师："""
+        parsed = parse_grade_register_rtf(_gb18030_hex_rtf(source))
+        self.assertEqual("服务器配置与管理", parsed["fields"]["course_name"])
+        self.assertEqual(
+            ["24000000001", "24000000002", "24000000003"],
+            [item["student_number"] for item in parsed["students"]],
+        )
+        self.assertEqual({"left_student_count": 2, "right_student_count": 1}, parsed["source_layout"])
+
+    def test_legacy_persisted_roster_is_lazily_repaired_from_source(self) -> None:
+        source = """广西外国语学院期末成绩登记表
+2025-2026学年第1学期
+开课部门：E02软件工程系\t班级：软工2406班\t任课教师：张海林\t学分：3.0
+课程名称：服务器配置与管理\t课程性质：专业教育\t考核方式：考试\t填表日期：2026-03-05
+学号\t姓名\t平时\t期中\t实验/在线\t期末\t总评\t备注\t学号\t姓名\t平时\t期中\t实验/在线\t期末\t总评\t备注
+24000000001\t左一\t90\t\t\t90\t90\t\t24000000003\t右一\t80\t\t\t80\t80\t
+24000000002\t左二\t91\t\t\t91\t91
+教师："""
+        with TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "source.doc"
+            source_path.write_bytes(_gb18030_hex_rtf(source))
+            conn = MagicMock()
+            conn.execute.return_value.fetchone.return_value = {"file_hash": "abc"}
+            payload = {
+                "export_payload": {
+                    "schema_version": "gxufl-academic-grade-register-v2",
+                    "structured": {
+                        "students": [
+                            {"student_number": "24000000001", "student_name": "左一"},
+                            {"student_number": "24000000003", "student_name": "右一"},
+                            {"student_number": "24000000002", "student_name": "左二"},
+                        ]
+                    },
+                }
+            }
+            with patch(
+                "classroom_app.services.academic_final_material_service.resolve_global_file_path",
+                return_value=source_path,
+            ):
+                repaired = repair_legacy_grade_register_roster_order(
+                    conn,
+                    {"document_type": ACADEMIC_GRADE_REGISTER_TYPE, "source_material_id": 99},
+                    payload,
+                )
+
+        export_payload = repaired["export_payload"]
+        self.assertEqual("gxufl-academic-grade-register-v3", export_payload["schema_version"])
+        self.assertEqual(
+            ["24000000001", "24000000002", "24000000003"],
+            [item["student_number"] for item in export_payload["structured"]["students"]],
+        )
 
     def test_grade_register_rejects_rosters_larger_than_official_template_capacity(self) -> None:
         payload = build_grade_register_export_payload(self.grade, self.validation)

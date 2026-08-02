@@ -6,9 +6,12 @@ Covers scope normalization, payload normalization + score balance, CRUD &
 visibility, docx export, and the docx signature-image extractor.
 """
 
+import asyncio
 import sqlite3
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from classroom_app.db.schema_assessment_plans import ensure_assessment_plan_schema
 import classroom_app.db.schema_assessment_plans as schema_mod
@@ -343,6 +346,66 @@ class SignatureExtractionTests(unittest.TestCase):
         for image in images:
             self.assertIn(image["role"], {"examiner", "reviewer", "unknown"})
             self.assertTrue(image["data"])
+
+
+class ImportSignatureAuthorizationTests(unittest.TestCase):
+    def test_imported_signature_bindings_use_registered_points(self):
+        conn = MagicMock()
+
+        @contextmanager
+        def connection_scope():
+            yield conn
+
+        parsed = {
+            "fields": {
+                "course_name": "服务器配置与管理",
+                "examiner_name": "张老师",
+                "reviewer_name": "李老师",
+            },
+            "assessment_items": [{"assessment_form": "机试", "content": "综合任务", "score": "100"}],
+        }
+        harvested = {
+            "signatures": [],
+            "examiner_signature_id": 11,
+            "reviewer_signature_id": 12,
+        }
+        with (
+            patch.object(imp, "get_db_connection", side_effect=connection_scope),
+            patch.object(imp, "_set_status"),
+            patch.object(
+                imp,
+                "_extract_files",
+                return_value={"file_texts": [{"name": "a.docx", "content": "x"}], "images": [], "warnings": []},
+            ),
+            patch.object(imp, "_parse_with_ai", new=AsyncMock(return_value=parsed)),
+            patch.object(imp, "_harvest_signatures", new=AsyncMock(return_value=harvested)),
+            patch.object(imp.ap, "apply_imported_payload") as apply_payload,
+            patch.object(imp.ap, "set_generation_status"),
+            patch.object(imp.signature_workflow_service, "authorize_and_consume_signature_use") as authorize,
+        ):
+            asyncio.run(
+                imp.run_import_job(
+                    "plan-42",
+                    [{"path": "a.docx", "name": "a.docx"}],
+                    "",
+                    7,
+                    cleanup_files=False,
+                )
+            )
+
+        self.assertEqual(2, authorize.call_count)
+        bindings = {
+            (call.args[2], call.kwargs["function_point_key"], call.kwargs["context_id"])
+            for call in authorize.call_args_list
+        }
+        self.assertEqual(
+            {
+                (11, "assessment_plan.examiner_signature", "plan-42"),
+                (12, "assessment_plan.reviewer_signature", "plan-42"),
+            },
+            bindings,
+        )
+        apply_payload.assert_called_once()
 
 
 if __name__ == "__main__":

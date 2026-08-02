@@ -420,6 +420,34 @@
         justify-content: flex-end;
     }
 
+    .signature-function-point-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 8px;
+    }
+
+    .signature-function-point-option {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        padding: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, 0.84);
+    }
+
+    .signature-function-point-option strong,
+    .signature-function-point-option small {
+        display: block;
+    }
+
+    .signature-function-point-option small {
+        margin-top: 3px;
+        color: var(--text-muted);
+        line-height: 1.45;
+    }
+
     @media (max-width: 980px) {
         .signature-overview,
         .signature-shell,
@@ -474,6 +502,10 @@
                     <label class="signature-field">
                         <span>签名人</span>
                         <input type="text" class="form-control" id="signature-edit-subject-name-input" name="subject_name" maxlength="80">
+                    </label>
+                    <label class="signature-field">
+                        <span>签名者教师账号</span>
+                        <input type="search" class="form-control" id="signature-edit-subject-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="用于本人审批与使用权识别">
                     </label>
                     <label class="signature-field">
                         <span>所属身份</span>
@@ -549,7 +581,7 @@
                     <h2>签名</h2>
                     {{ explain_button(
                         '签名',
-                        '签名按学校与系部隔离；引用他人签名需归属人审批。',
+                        '本人或归属权在本人名下的签名可直接使用；其他签名必须按已登记功能点申请，归属人或签名者任一批准后，每个功能点仅可使用一次。',
                         placement='bottom',
                         label='签名说明'
                     ) }}
@@ -636,7 +668,6 @@
             <dl class="signature-detail-list" id="signature-detail-list"></dl>
             <div class="signature-actions">
                 <a class="btn btn-outline btn-sm" id="signature-download-link" href="#" hidden>下载</a>
-                <button type="button" class="btn btn-primary btn-sm" id="signature-use-btn" hidden>记录调用</button>
                 <button type="button" class="btn btn-outline btn-sm" id="signature-request-btn" hidden>申请使用</button>
                 <button type="button" class="btn btn-outline btn-sm" id="signature-edit-btn" hidden>编辑属性</button>
                 <button type="button" class="btn btn-danger btn-sm" id="signature-delete-btn" hidden>删除</button>
@@ -651,6 +682,15 @@
         </div>
         <div class="signature-request-list" id="signature-request-list">
             <div class="signature-empty">暂无待审批申请。</div>
+        </div>
+    </section>
+
+    <section class="signature-panel signature-requests-panel" aria-label="我的签名申请">
+        <div class="signature-requests-head">
+            <h3>我的申请</h3>
+        </div>
+        <div class="signature-request-list" id="signature-outgoing-request-list">
+            <div class="signature-empty">暂无签名使用申请。</div>
         </div>
     </section>
 </section>
@@ -689,6 +729,10 @@
                         <span>签名人</span>
                         <input type="text" class="form-control" id="signature-subject-name-input" name="subject_name" maxlength="80" placeholder="签名对应的姓名">
                     </label>
+                    <label class="signature-field" id="signature-subject-account-field">
+                        <span>签名者教师账号</span>
+                        <input type="search" class="form-control" id="signature-subject-account-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="用于本人审批与使用权识别">
+                    </label>
                     <label class="signature-field" id="signature-scope-level-field">
                         <span>可用层级</span>
                         <select class="form-control" id="signature-scope-level-input" name="scope_level">
@@ -707,6 +751,32 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
                 <button type="submit" class="btn btn-primary" id="signature-upload-submit-btn">上传</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="signature-request-modal" class="modal-backdrop signature-upload-modal" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <form class="modal-content" id="signature-request-form">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">申请一次性使用签名</h3>
+                    <p class="modal-subtitle" id="signature-request-subtitle">选择本次需要的一个或多个已登记功能点。</p>
+                </div>
+                <button type="button" class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="signature-function-point-list" id="signature-function-point-list"></div>
+                <label class="signature-field" style="margin-top:14px;">
+                    <span>申请说明（选填）</span>
+                    <textarea class="form-control" id="signature-request-note" rows="3" maxlength="300" placeholder="说明对应材料或使用原因"></textarea>
+                </label>
+                <div class="signature-upload-status" id="signature-request-status"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary" id="signature-request-submit-btn">提交申请</button>
             </div>
         </form>
     </div>

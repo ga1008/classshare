@@ -20,9 +20,9 @@ from fastapi.responses import JSONResponse, Response
 
 from ..config import AI_DURABLE_JOBS_ENABLED
 from ..database import get_db_connection
-from ..dependencies import get_current_teacher
+from ..dependencies import get_client_ip, get_current_teacher
 from ..services import assessment_plan_service as ap
-from ..services import signature_service
+from ..services import signature_service, signature_workflow_service
 from ..services.assessment_plan_generation_service import run_generation_job
 from ..services.assessment_plan_import_service import run_import_job
 from ..services.ai_durable_job_service import cleanup_ai_job_input_files
@@ -442,13 +442,21 @@ async def put_signature(plan_id: str, request: Request, user: dict = Depends(get
         raise HTTPException(400, "签名角色必须是 examiner 或 reviewer")
     signature_id = body.get("signature_id")
     with get_db_connection() as conn:
-        _load_owned_or_super(conn, plan_id, user)
+        owned_plan = _load_owned_or_super(conn, plan_id, user)
         normalized_id: int | None = None
         if signature_id:
-            # Enforce usage permission via the signature service before binding.
             try:
-                signature_service.get_signature_row_for_actor(
-                    conn, user, int(signature_id), require_use=True
+                signature_workflow_service.authorize_and_consume_signature_use(
+                    conn,
+                    user,
+                    int(signature_id),
+                    function_point_key=f"assessment_plan.{role}_signature",
+                    context_type="assessment_plan",
+                    context_id=str(plan_id),
+                    context_label=str(owned_plan.get("title") or f"课程考核计划表 {plan_id}"),
+                    metadata={"plan_id": str(plan_id), "signature_role": role},
+                    ip=get_client_ip(request),
+                    user_agent=request.headers.get("user-agent", ""),
                 )
             except signature_service.SignatureServiceError as exc:
                 raise HTTPException(exc.status_code, exc.message) from exc

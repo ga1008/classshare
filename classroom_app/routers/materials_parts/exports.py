@@ -12,6 +12,12 @@ from ...services.document_render_service import DocumentRenderError, document_re
 
 router = APIRouter()
 
+_DYNAMIC_DOCUMENT_HEADERS = {
+    "Cache-Control": "private, no-store, max-age=0, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
 
 def _load_ai_import_record_preview_payload(conn, record_id: int, user: dict):
     row = conn.execute(
@@ -42,7 +48,7 @@ def _load_ai_import_record_preview_payload(conn, record_id: int, user: dict):
             continue
     if not has_access:
         raise HTTPException(404, "未找到可预览的解析记录")
-    payload = _build_ai_import_payload_from_record(row)
+    payload = _build_ai_import_payload_from_record(row, conn)
     fallback_filename = row["source_file_name"] or f"材料解析-{record_id}"
     return row, payload, fallback_filename
 
@@ -82,7 +88,7 @@ async def export_ai_import_record(
                 continue
         if not has_access:
             raise HTTPException(404, "未找到可导出的解析记录")
-        payload = _build_ai_import_payload_from_record(row)
+        payload = _build_ai_import_payload_from_record(row, conn)
         fallback_filename = row["source_file_name"] or f"材料解析-{record_id}"
 
     artifact = build_material_export_artifact(
@@ -98,6 +104,7 @@ async def export_ai_import_record(
         temp_path,
         media_type=artifact.media_type,
         filename=artifact.filename,
+        headers=_DYNAMIC_DOCUMENT_HEADERS,
         background=BackgroundTask(_cleanup_temp_file, temp_path),
     )
 

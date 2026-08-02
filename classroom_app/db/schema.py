@@ -17,6 +17,7 @@ from .schema_classroom_activity import ensure_classroom_activity_schema
 from .schema_cultivation_progress import ensure_cultivation_progress_schema
 from .schema_foundation import ensure_foundation_schema
 from .schema_learning_blog import ensure_learning_blog_signature_schema
+from .schema_signature_workflow import ensure_signature_workflow_schema
 from .schema_lesson_plans import ensure_lesson_plan_schema
 from .schema_assessment_plans import ensure_assessment_plan_schema
 from .schema_teacher_evaluations import ensure_teacher_evaluation_schema
@@ -44,6 +45,7 @@ def init_database():
             runtime_table_report = ensure_postgres_runtime_tables(conn)
             runtime_column_report = ensure_postgres_runtime_columns(conn)
             runtime_constraint_report = ensure_postgres_runtime_constraints(conn)
+            ensure_signature_workflow_schema(conn)
             conn.commit()
             report = validate_postgres_schema(conn)
             report["runtime_tables"] = runtime_table_report
@@ -238,6 +240,7 @@ def init_database():
             ensure_poll_schema(conn)
             ensure_materials_integrations_schema(conn)
             ensure_learning_blog_signature_schema(conn)
+            ensure_signature_workflow_schema(conn)
             ensure_scheduler_schema(conn)
             ensure_gongwen_schema(conn)
             ensure_agent_task_extension_schema(conn)

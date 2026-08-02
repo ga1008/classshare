@@ -861,21 +861,32 @@ async def _persist_final_grade_transcript_import_success(
         conn.commit()
 
 
-def _build_ai_import_payload_from_record(row) -> dict:
+def _build_ai_import_payload_from_record(row, conn=None) -> dict:
     payload = _parse_json_object(row["parsed_payload_json"])
-    if payload:
-        return payload
-    return {
-        "metadata": _parse_json_object(row["metadata_json"]),
-        "content_markdown": row["content_markdown"] or "",
-        "tables": [],
-        "warnings": _parse_json_array(row["warnings_json"]),
-        "export_payload": _parse_json_object(row["export_payload_json"]),
-        "document_group": row["document_group"],
-        "document_type": row["document_type"],
-        "document_type_label": row["document_type_label"],
-        "extraction_method": row["extraction_method"],
-    }
+    if not payload:
+        payload = {
+            "metadata": _parse_json_object(row["metadata_json"]),
+            "content_markdown": row["content_markdown"] or "",
+            "tables": [],
+            "warnings": _parse_json_array(row["warnings_json"]),
+            "export_payload": _parse_json_object(row["export_payload_json"]),
+            "document_group": row["document_group"],
+            "document_type": row["document_type"],
+            "document_type_label": row["document_type_label"],
+            "extraction_method": row["extraction_method"],
+        }
+    if conn is not None and str(row["document_type"] or "") in {
+        "academic_grade_register",
+        "academic_exam_analysis",
+    }:
+        from ...services.academic_final_material_service import (
+            hydrate_academic_final_material_signature_paths,
+            repair_legacy_grade_register_roster_order,
+        )
+
+        payload = repair_legacy_grade_register_roster_order(conn, row, payload)
+        payload = hydrate_academic_final_material_signature_paths(conn, payload)
+    return payload
 
 
 def _find_material_ai_import_record(conn, material_id: int, teacher_id: int, *, completed_only: bool = False):
@@ -908,6 +919,18 @@ def _build_ai_import_preview(record, *, content_limit: int = 8000) -> dict:
     record_id = int(record["id"])
     document_type = record["document_type"] or ""
     export_format = _material_ai_import_export_format(document_type)
+    artifact_urls = {
+        "export_url": f"/api/materials/ai-import-records/{record_id}/export?format={export_format}",
+        "render_preview_url": f"/api/materials/ai-import-records/{record_id}/render-preview?format={export_format}",
+    }
+    if document_type in {"academic_grade_register", "academic_exam_analysis"}:
+        from ...services.academic_final_material_service import academic_final_material_record_urls
+
+        versioned = academic_final_material_record_urls(record_id, record["updated_at"])
+        artifact_urls = {
+            "export_url": versioned["export_url"],
+            "render_preview_url": versioned["preview_url"],
+        }
     return {
         "id": record_id,
         "document_group": record["document_group"] or "",
@@ -924,9 +947,9 @@ def _build_ai_import_preview(record, *, content_limit: int = 8000) -> dict:
         "warnings": warnings,
         "content_markdown": content_markdown[:content_limit],
         "content_truncated": len(content_markdown) > content_limit,
-        "export_url": f"/api/materials/ai-import-records/{record_id}/export?format={export_format}",
+        "export_url": artifact_urls["export_url"],
         "export_pdf_url": _material_ai_import_pdf_export_url(record_id, document_type),
-        "render_preview_url": f"/api/materials/ai-import-records/{record_id}/render-preview?format={export_format}",
+        "render_preview_url": artifact_urls["render_preview_url"],
     }
 
 

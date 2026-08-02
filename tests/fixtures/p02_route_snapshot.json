@@ -4520,6 +4520,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/signatures/function-points",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_function_points",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/signatures/image/{signature_id:int}",
     "methods": [
       "GET"
@@ -4549,6 +4557,14 @@
       "POST"
     ],
     "name": "api_approve_signature_access_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/requests/{request_id:int}/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_cancel_signature_access_request",
     "include_in_schema": true
   },
   {

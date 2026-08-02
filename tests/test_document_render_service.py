@@ -206,6 +206,33 @@ class DocumentRenderServiceTests(unittest.TestCase):
                 payload["pages"],
             )
 
+    def test_download_route_never_caches_dynamic_document(self):
+        with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
+            service = DocumentRenderService(root=Path(temp_dir))
+            job = service.render_artifact(
+                _build_pdf_bytes(page_count=1),
+                filename="sample.pdf",
+                media_type="application/pdf",
+                source_format="pdf",
+            )
+            token = issue_render_token(job.key, user={"id": 7, "role": "teacher"})
+            original_service = document_renderer_router.document_render_service
+            document_renderer_router.document_render_service = service
+            try:
+                response = asyncio.run(
+                    document_renderer_router.download_rendered_document(
+                        job.key,
+                        token=token,
+                        user={"id": 7, "role": "teacher"},
+                    )
+                )
+            finally:
+                document_renderer_router.document_render_service = original_service
+
+            self.assertEqual("private, no-store, max-age=0, must-revalidate", response.headers["cache-control"])
+            self.assertEqual("no-cache", response.headers["pragma"])
+            self.assertEqual("0", response.headers["expires"])
+
     def test_cache_stats_reports_jobs_and_render_profile_separates_keys(self):
         with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:
             root = Path(temp_dir)

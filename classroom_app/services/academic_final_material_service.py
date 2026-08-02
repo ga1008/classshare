@@ -51,6 +51,8 @@ from .academic_integration_service import (
     open_authenticated_academic_client,
 )
 from .academic_service import china_now
+from .deployment_cache_service import get_deployment_release_id
+from .file_service import resolve_global_file_path
 from .signature_service import resolve_signature_file_path
 
 
@@ -73,6 +75,17 @@ ZF_EXAM_ANALYSIS_REPORT_ID = "sjfxabjdy.cpt"
 FINE_REPORT_ALLOWED_HOSTS = {"jwcjcx.gxufl.com", "jwxt.gxufl.com"}
 
 _sync_locks: dict[tuple[int, int], asyncio.Lock] = {}
+
+
+def academic_final_material_record_urls(record_id: int, updated_at: Any = "") -> dict[str, str]:
+    """Return release- and record-versioned URLs for freshly rendered artifacts."""
+    updated_digest = hashlib.sha256(str(updated_at or "").encode("utf-8")).hexdigest()[:10]
+    version = f"{get_deployment_release_id()}-{updated_digest}"
+    base = f"/api/materials/ai-import-records/{int(record_id)}"
+    return {
+        "export_url": f"{base}/export?format=docx&v={version}",
+        "preview_url": f"{base}/render-preview?format=docx&v={version}",
+    }
 
 
 def _now_iso() -> str:
@@ -263,6 +276,49 @@ def extract_fine_report_rtf_text(content: bytes) -> str:
             output.append("\t")
 
     text = "".join(output).replace("\x00", "")
+    # FineReport writes Chinese ANSI bytes according to the RTF code page.
+    # The low-level parser above keeps those bytes losslessly via latin-1;
+    # repair them as GB18030 when that yields substantially more CJK text.
+    def repair_ansi_runs(value: str) -> str:
+        repaired_parts: list[str] = []
+        source_chars: list[str] = []
+        source_bytes = bytearray()
+
+        def flush() -> None:
+            if not source_chars:
+                return
+            source_part = "".join(source_chars)
+            try:
+                decoded = bytes(source_bytes).decode("gb18030")
+            except UnicodeDecodeError:
+                decoded = source_part
+            repaired_parts.append(decoded)
+            source_chars.clear()
+            source_bytes.clear()
+
+        for item in value:
+            codepoint = ord(item)
+            if codepoint <= 0xFF:
+                encoded = bytes((codepoint,))
+            else:
+                try:
+                    encoded = item.encode("cp1252")
+                except UnicodeEncodeError:
+                    encoded = b""
+            if encoded:
+                source_chars.append(item)
+                source_bytes.extend(encoded)
+                continue
+            flush()
+            repaired_parts.append(item)
+        flush()
+        return "".join(repaired_parts)
+
+    repaired = repair_ansi_runs(text)
+    original_cjk = len(re.findall(r"[\u3400-\u9fff]", text))
+    repaired_cjk = len(re.findall(r"[\u3400-\u9fff]", repaired))
+    if repaired_cjk > original_cjk:
+        text = repaired
     text = re.sub(r"\t+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return "\n".join(line.rstrip() for line in text.splitlines()).strip()
@@ -300,7 +356,8 @@ def parse_grade_register_rtf(content: bytes) -> dict[str, Any]:
     if "期末成绩登记表" not in text:
         raise ValueError("下载文件中未识别到“期末成绩登记表”标题。")
     lines = text.splitlines()
-    students: list[dict[str, Any]] = []
+    left_students: list[dict[str, Any]] = []
+    right_students: list[dict[str, Any]] = []
     seen: set[str] = set()
     header_seen = False
     for line in lines:
@@ -310,11 +367,17 @@ def parse_grade_register_rtf(content: bytes) -> dict[str, Any]:
             continue
         if "教师：" in line:
             break
-        for offset in (0, 8):
+        for offset, target in ((0, left_students), (8, right_students)):
             student = _student_from_cells(cells[offset : offset + 8])
             if student and student["student_number"] not in seen:
                 seen.add(student["student_number"])
-                students.append(student)
+                target.append(student)
+
+    # FineReport emits each visual row as left cells followed by right cells.
+    # The business roster order is column-major (all left rows, then right),
+    # not row-major/interleaved.  Preserve that order before the deterministic
+    # DOCX template assigns the first 40 students to its left column.
+    students = [*left_students, *right_students]
 
     period_match = re.search(r"(20\d{2}\s*-\s*20\d{2})\s*学年第?\s*([一二12])\s*学期", text)
     fields = {
@@ -336,6 +399,10 @@ def parse_grade_register_rtf(content: bytes) -> dict[str, Any]:
         "text": text,
         "fields": fields,
         "students": students,
+        "source_layout": {
+            "left_student_count": len(left_students),
+            "right_student_count": len(right_students),
+        },
         "formula": formula,
         "source_format": "fine_report_rtf_doc",
     }
@@ -347,6 +414,21 @@ def _cells_after_label(lines: list[str], label: str) -> list[str]:
         if label in cells:
             return cells[cells.index(label) + 1 :]
     return []
+
+
+def _selected_rtf_option(lines: list[str], label: str, options: list[str]) -> str:
+    for line in lines:
+        if label not in line:
+            continue
+        cells = [_normalize_space(value) for value in line.split("\t")]
+        option_indexes = [(option, index) for option in options for index, cell in enumerate(cells) if option in cell]
+        option_indexes.sort(key=lambda item: item[1])
+        for position, (option, start) in enumerate(option_indexes):
+            end = option_indexes[position + 1][1] if position + 1 < len(option_indexes) else len(cells)
+            segment = " ".join(cells[start:end])
+            if "√" in segment or "✓" in segment:
+                return option
+    return ""
 
 
 def parse_exam_analysis_rtf(content: bytes) -> dict[str, Any]:
@@ -370,12 +452,12 @@ def parse_exam_analysis_rtf(content: bytes) -> dict[str, Any]:
         "course_hours": course_cells[2] if len(course_cells) > 2 else "",
         "department": course_cells[4] if len(course_cells) > 4 else "",
         "teacher_name": teacher_cells[0] if teacher_cells else "",
-        "course_nature": "",
+        "course_nature": _selected_rtf_option(lines, "教师姓名", ["选修", "必修"]),
         "class_name": class_cells[0] if class_cells else "",
-        "proposition_form": "",
-        "exam_form": "",
-        "separate_teaching_exam": "",
-        "marking_form": "",
+        "proposition_form": _selected_rtf_option(lines, "命题形式", ["试题库", "试卷库", "教师组题"]),
+        "exam_form": _selected_rtf_option(lines, "考试形式", ["开卷", "闭卷"]),
+        "separate_teaching_exam": _selected_rtf_option(lines, "教考分离", ["是", "否"]),
+        "marking_form": _selected_rtf_option(lines, "阅卷形式", ["本人阅卷", "同行阅卷", "集体阅卷", "机器阅卷", "其他"]),
     }
     segments = ["<60", "60-69", "70-79", "80-89", "90-100"]
     distribution = []
@@ -390,11 +472,18 @@ def parse_exam_analysis_rtf(content: bytes) -> dict[str, Any]:
         "minimum": _float(maximum_cells[2] if len(maximum_cells) > 2 else ""),
         "pass_rate": _float(maximum_cells[4] if len(maximum_cells) > 4 else ""),
     }
+    analysis_text = ""
+    heading = "简要分析试题结构，成绩分布，学生掌握情况及其主要原因，提出教学改进意见与措施"
+    if heading in text:
+        tail = text.split(heading, 1)[1]
+        tail = re.split(r"系（教研室）审核意见", tail, maxsplit=1)[0]
+        analysis_text = "\n".join(line.strip() for line in tail.splitlines() if line.strip())
     return {
         "text": text,
         "fields": fields,
         "distribution": distribution,
         "statistics": statistics_payload,
+        "analysis_text": analysis_text,
         "source_format": "fine_report_rtf_doc",
     }
 
@@ -570,7 +659,7 @@ def build_grade_register_export_payload(
         for index, segment in enumerate(["<60", "60-69", "70-79", "80-89", "90-100"])
     ]
     return {
-        "schema_version": "gxufl-academic-grade-register-v2",
+        "schema_version": "gxufl-academic-grade-register-v3",
         "template_key": ACADEMIC_GRADE_REGISTER_TYPE,
         "document_group": "final_material",
         "document_type": ACADEMIC_GRADE_REGISTER_TYPE,
@@ -578,6 +667,7 @@ def build_grade_register_export_payload(
         "fields": fields,
         "structured": {
             "students": parsed.get("students") or [],
+            "source_layout": parsed.get("source_layout") or {},
             "score_distribution": distribution,
             "statistics": validation.get("computed") or {},
             "formula": parsed.get("formula") or "平时*40% + 期末*60%",
@@ -614,7 +704,7 @@ def build_exam_analysis_export_payload(
         for index, segment in enumerate(["<60", "60-69", "70-79", "80-89", "90-100"])
     ]
     return {
-        "schema_version": "gxufl-academic-exam-analysis-v1",
+        "schema_version": "gxufl-academic-exam-analysis-v2",
         "template_key": ACADEMIC_EXAM_ANALYSIS_TYPE,
         "document_group": "final_material",
         "document_type": ACADEMIC_EXAM_ANALYSIS_TYPE,
@@ -623,13 +713,16 @@ def build_exam_analysis_export_payload(
         "structured": {
             "score_distribution": distribution,
             "statistics": computed,
-            "analysis_text": str((defaults or {}).get("analysis_text") or ""),
+            "analysis_text": str((defaults or {}).get("analysis_text") or parsed.get("analysis_text") or ""),
             "validation": validation,
         },
         "layout_profile": {
             "page": "A4 portrait",
-            "margins_cm": {"top": 1.0, "bottom": 0.8, "left": 1.1, "right": 1.1},
-            "signature_mode": "inline_locked",
+            "page_points": {"width": 595.25, "height": 841.85},
+            "margins_points": {"top": 19.4, "bottom": 19.4, "left": 54.0, "right": 54.0},
+            "table_width_points": 482.2,
+            "table_rows": 22,
+            "signature_mode": "feature_bound_runtime_resolution",
         },
     }
 
@@ -1155,8 +1248,11 @@ def list_teacher_final_material_batches(
                     if document_type == ACADEMIC_GRADE_REGISTER_TYPE
                     else ACADEMIC_EXAM_ANALYSIS_LABEL
                 ),
-                "export_url": f"/api/materials/ai-import-records/{record_id}/export?format=docx" if record_id else "",
-                "preview_url": f"/api/materials/ai-import-records/{record_id}/render-preview?format=docx" if record_id else "",
+                **(
+                    academic_final_material_record_urls(int(record_id), row["record_updated_at"])
+                    if record_id
+                    else {"export_url": "", "preview_url": ""}
+                ),
             }
         )
         items.append(item)
@@ -1357,6 +1453,82 @@ def resolve_signature_path(conn: Any, signature_id: int | None) -> str:
         return ""
     path = resolve_signature_file_path(row)
     return str(path) if path else ""
+
+
+def repair_legacy_grade_register_roster_order(conn: Any, row: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Rebuild pre-v3 row-interleaved rosters from the immutable source RTF.
+
+    Old records stored left/right visual cells in row-major order.  The official
+    form is column-major, so merely applying the new template would move every
+    second student.  Repair only when the source file exists and its student-ID
+    set exactly matches the persisted payload; otherwise leave data untouched.
+    """
+    if str(row["document_type"] or "") != ACADEMIC_GRADE_REGISTER_TYPE:
+        return payload
+    root = dict(payload or {})
+    nested_export = root.get("export_payload") if isinstance(root.get("export_payload"), dict) else None
+    export_payload = dict(nested_export or root)
+    structured = dict(export_payload.get("structured") or {})
+    if structured.get("source_layout"):
+        return root
+    current_students = [item for item in structured.get("students") or [] if isinstance(item, dict)]
+    if not current_students:
+        return root
+    source_material_id = row["source_material_id"]
+    if not source_material_id:
+        return root
+    material = conn.execute(
+        "SELECT file_hash FROM materials WHERE id = ? LIMIT 1",
+        (int(source_material_id),),
+    ).fetchone()
+    source_path = resolve_global_file_path(material["file_hash"] if material else "")
+    if not source_path:
+        return root
+    try:
+        parsed = parse_grade_register_rtf(source_path.read_bytes())
+    except (OSError, ValueError):
+        return root
+    repaired_students = [item for item in parsed.get("students") or [] if isinstance(item, dict)]
+    current_ids = [str(item.get("student_number") or "") for item in current_students]
+    repaired_ids = [str(item.get("student_number") or "") for item in repaired_students]
+    if len(current_ids) != len(repaired_ids) or set(current_ids) != set(repaired_ids):
+        return root
+    structured["students"] = repaired_students
+    structured["source_layout"] = parsed.get("source_layout") or {}
+    export_payload["structured"] = structured
+    export_payload["schema_version"] = "gxufl-academic-grade-register-v3"
+    if nested_export is not None:
+        root["export_payload"] = export_payload
+        return root
+    return export_payload
+
+
+def hydrate_academic_final_material_signature_paths(conn: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Resolve persisted signature IDs only at the trusted render boundary."""
+    if not isinstance(payload, dict):
+        return payload
+    outer = dict(payload)
+    export_payload = outer.get("export_payload")
+    if isinstance(export_payload, dict):
+        target = dict(export_payload)
+        outer["export_payload"] = target
+    else:
+        target = outer
+    fields = dict(target.get("fields") or {})
+    mappings = (
+        ("teacher_signature_id", "teacher_signature_image_path"),
+        ("department_signature_id", "department_signature_image_path"),
+        ("dean_signature_id", "dean_signature_image_path"),
+    )
+    for id_key, path_key in mappings:
+        fields.pop(path_key, None)
+        signature_id = fields.get(id_key)
+        if signature_id:
+            path = resolve_signature_path(conn, int(signature_id))
+            if path:
+                fields[path_key] = path
+    target["fields"] = fields
+    return outer
 
 
 SYSTEM_CONSENT_ASSETS = (

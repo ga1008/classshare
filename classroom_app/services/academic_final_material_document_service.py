@@ -404,29 +404,45 @@ def _choice(options: list[str], selected: Any) -> str:
 def _chart_image(distribution: list[dict[str, Any]]) -> io.BytesIO:
     from PIL import Image, ImageDraw, ImageFont
 
-    width, height = 1100, 300
-    image = Image.new("RGB", (width, height), "white")
+    width, height = 1250, 390
+    image = Image.new("RGB", (width, height), "#D0D0D0")
     draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default()
-    left, top, right, bottom = 75, 20, width - 25, height - 50
-    draw.line((left, top, left, bottom), fill="#6B7280", width=2)
-    draw.line((left, bottom, right, bottom), fill="#6B7280", width=2)
+    font_paths = (
+        Path("C:/Windows/Fonts/simsun.ttc"),
+        Path("C:/Windows/Fonts/simhei.ttf"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+    )
+    font_path = next((path for path in font_paths if path.is_file()), None)
+    label_font = ImageFont.truetype(str(font_path), 24) if font_path else ImageFont.load_default()
+    value_font = ImageFont.truetype(str(font_path), 25) if font_path else ImageFont.load_default()
+    axis_font = ImageFont.truetype(str(font_path), 21) if font_path else ImageFont.load_default()
+    left, top, right, bottom = 88, 35, width - 28, height - 58
+    draw.line((left, top, left, bottom), fill="#B2B2B2", width=2)
+    draw.line((left, bottom, right, bottom), fill="#B2B2B2", width=2)
     counts = [int(item.get("count") or 0) for item in distribution[:5]]
     maximum = max(counts or [1]) or 1
+    axis_max = max(5, ((maximum + 4) // 5) * 5)
     labels = ["<60", "60-69", "70-79", "80-89", "90-100"]
-    colors = ["#94A3B8", "#64748B", "#F59E0B", "#FB7185", "#14B8A6"]
+    colors = ["#A7A7A7", "#70AD47", "#ED7D31", "#FF3B3B", "#20A9C2"]
+    for tick in range(0, axis_max + 1, 5):
+        y = bottom - (bottom - top) * tick / axis_max
+        if tick:
+            draw.line((left, y, right, y), fill="#C6C6C6", width=1)
+        label = str(tick)
+        box = draw.textbbox((0, 0), label, font=axis_font)
+        draw.text((left - 12 - (box[2] - box[0]), y - (box[3] - box[1]) / 2), label, fill="#4B4B4B", font=axis_font)
     slot = (right - left) / 5
     for index, count in enumerate(counts + [0] * (5 - len(counts))):
-        bar_width = slot * 0.45
-        x0 = left + index * slot + slot * 0.275
+        bar_width = slot * 0.34
+        x0 = left + index * slot + slot * 0.33
         x1 = x0 + bar_width
-        bar_height = (bottom - top - 20) * count / maximum
+        bar_height = (bottom - top - 12) * count / axis_max
         y0 = bottom - bar_height
-        draw.rounded_rectangle((x0, y0, x1, bottom), radius=8, fill=colors[index])
-        count_box = draw.textbbox((0, 0), str(count), font=font)
-        draw.text(((x0 + x1 - (count_box[2] - count_box[0])) / 2, max(top, y0 - 18)), str(count), fill="#111827", font=font)
-        label_box = draw.textbbox((0, 0), labels[index], font=font)
-        draw.text(((x0 + x1 - (label_box[2] - label_box[0])) / 2, bottom + 12), labels[index], fill="#374151", font=font)
+        draw.rectangle((x0, y0, x1, bottom), fill=colors[index])
+        count_box = draw.textbbox((0, 0), str(count), font=value_font)
+        draw.text(((x0 + x1 - (count_box[2] - count_box[0])) / 2, max(top, y0 - 30)), str(count), fill="#222222", font=value_font)
+        label_box = draw.textbbox((0, 0), labels[index], font=label_font)
+        draw.text(((x0 + x1 - (label_box[2] - label_box[0])) / 2, bottom + 12), labels[index], fill="#333333", font=label_font)
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
@@ -440,148 +456,282 @@ def _merge_row(table: Any, row_index: int, start: int, end: int) -> Any:
     return cell
 
 
-def _add_analysis_form(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> None:
-    from docx.shared import Cm
-
-    table = document.add_table(rows=6, cols=6)
-    table.autofit = False
-    _set_table_borders(table, size=5)
-    widths = [2.0, 3.0, 1.55, 2.5, 1.7, 3.1]
-    for row in table.rows:
-        for index, cell in enumerate(row.cells):
-            _set_cell_width(cell, widths[index])
-    rows = [
-        ["课程名称", fields.get("course_name") or "", "学时数", fields.get("course_hours") or "", "开课单位", fields.get("department") or ""],
-        ["教师姓名", fields.get("teacher_name") or "", "课程性质", _choice(["选修", "必修"], fields.get("course_nature")), "", ""],
-        ["命题形式(打√)", _choice(["试题库", "试卷库", "教师组题"], fields.get("proposition_form")), "", "", "", ""],
-        ["考试形式(打√)", _choice(["开卷", "闭卷"], fields.get("exam_form")), "", "教考分离(打√)", _choice(["是", "否"], fields.get("separate_teaching_exam")), ""],
-        ["学生班级", fields.get("class_name") or "", "", "", "", ""],
-        ["阅卷形式(打√)", _choice(["本人阅卷", "同行阅卷", "集体阅卷", "机器阅卷", "其他"], fields.get("marking_form")), "", "", "", ""],
-    ]
-    merge_specs = {
-        1: [(3, 5)],
-        2: [(1, 5)],
-        3: [(1, 2), (4, 5)],
-        4: [(1, 5)],
-        5: [(1, 5)],
-    }
-    for row_index, specs in merge_specs.items():
-        for start, end in specs:
-            _merge_row(table, row_index, start, end)
-    for row_index, values in enumerate(rows):
-        for column_index, value in enumerate(values):
-            cell = table.rows[row_index].cells[column_index]
-            if cell._tc is not table.rows[row_index].cells[column_index]._tc:
-                continue
-            if column_index > 0 and any(start < column_index <= end for start, end in merge_specs.get(row_index, [])):
-                continue
-            _set_cell_text(cell, value, size=8, bold=column_index in {0, 2, 3, 4} and bool(value))
-
-    distribution = structured.get("score_distribution") if isinstance(structured.get("score_distribution"), list) else []
-    stats = structured.get("statistics") if isinstance(structured.get("statistics"), dict) else {}
-    score_table = document.add_table(rows=5, cols=6)
-    score_table.autofit = False
-    _set_table_borders(score_table, size=5)
-    score_values = [
-        ["分数段", "<60", "60-69", "70-79", "80-89", "90-100"],
-        ["人数", *[int(item.get("count") or 0) for item in distribution[:5]]],
-        ["比例", *[f"{float(item.get('ratio') or 0):.2f}%" for item in distribution[:5]]],
-        ["平均分", f"{float(stats.get('average') or 0):.2f}", "标准差", f"{float(stats.get('standard_deviation') or 0):.2f}", "", ""],
-        ["最高分", _score_text(stats.get("maximum")), "最低分", _score_text(stats.get("minimum")), "及格率", f"{float(stats.get('pass_rate') or 0):.2f}%"],
-    ]
-    for row_index, values in enumerate(score_values):
-        for column_index, value in enumerate(values):
-            _set_cell_width(score_table.rows[row_index].cells[column_index], 2.2)
-            _set_cell_text(score_table.rows[row_index].cells[column_index], value, size=8, bold=column_index % 2 == 0 or row_index == 0)
-
-    chart_header = document.add_table(rows=1, cols=1)
-    _set_table_borders(chart_header, size=5)
-    _set_cell_text(chart_header.rows[0].cells[0], "学生成绩分布图", size=8.5, bold=True)
-    chart_table = document.add_table(rows=1, cols=1)
-    _set_table_borders(chart_table, size=5)
-    chart_cell = chart_table.rows[0].cells[0]
-    chart_cell.text = ""
-    paragraph = chart_cell.paragraphs[0]
-    paragraph.alignment = 1
-    paragraph.paragraph_format.space_before = 0
-    paragraph.paragraph_format.space_after = 0
-    paragraph.add_run().add_picture(_chart_image(distribution), width=Cm(16.2), height=Cm(4.4))
+_ANALYSIS_GRID_POINTS = (21.7, 46.5, 31.5, 54.0, 28.5, 43.5, 71.25, 45.75, 54.0, 42.0, 43.5)
 
 
-def _add_analysis_text_and_signatures(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> None:
+def _set_cell_width_points(cell: Any, width_points: float) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    cell.width = Pt(width_points)
+    tc_pr = cell._tc.get_or_add_tcPr()
+    tc_w = tc_pr.find(qn("w:tcW"))
+    if tc_w is None:
+        tc_w = OxmlElement("w:tcW")
+        tc_pr.append(tc_w)
+    tc_w.set(qn("w:w"), str(round(width_points * 20)))
+    tc_w.set(qn("w:type"), "dxa")
+
+
+def _set_row_height(row: Any, points: float | None, *, exact: bool = True) -> None:
     from docx.enum.table import WD_ROW_HEIGHT_RULE
-    from docx.shared import Cm, Pt
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
 
-    heading = document.add_table(rows=1, cols=1)
-    _set_table_borders(heading, size=5)
-    _set_cell_text(
-        heading.rows[0].cells[0],
-        "简要分析试题结构，成绩分布，学生掌握情况及其主要原因，提出教学改进意见与措施",
-        size=8.2,
-        bold=True,
-        align=0,
-    )
-    body = document.add_table(rows=1, cols=1)
-    _set_table_borders(body, size=5)
-    body.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    body.rows[0].height = Cm(3.0)
-    text = structured.get("analysis_text") or fields.get("analysis_text") or ""
-    _set_cell_text(body.rows[0].cells[0], text, size=9, align=0)
+    if points is not None:
+        row.height = Pt(points)
+        row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY if exact else WD_ROW_HEIGHT_RULE.AT_LEAST
+    tr_pr = row._tr.get_or_add_trPr()
+    cant_split = OxmlElement("w:cantSplit")
+    cant_split.set(qn("w:val"), "1")
+    tr_pr.append(cant_split)
 
-    review = document.add_table(rows=2, cols=2)
-    review.autofit = False
-    _set_table_borders(review, size=5)
-    labels = ["系（教研室）审核意见：", "教学院长审核意见："]
-    consent_paths = [fields.get("department_consent_image_path"), fields.get("dean_consent_image_path")]
-    signature_paths = [fields.get("department_signature_image_path"), fields.get("dean_signature_image_path")]
-    for column_index in range(2):
-        cell = review.rows[0].cells[column_index]
-        cell.text = ""
-        paragraph = cell.paragraphs[0]
-        paragraph.alignment = 0
+
+def _set_cell_direction_vertical(cell: Any) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tc_pr = cell._tc.get_or_add_tcPr()
+    direction = OxmlElement("w:textDirection")
+    direction.set(qn("w:val"), "tbRl")
+    tc_pr.append(direction)
+
+
+def _remove_cell_borders(cell: Any) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tc_pr = cell._tc.get_or_add_tcPr()
+    borders = tc_pr.find(qn("w:tcBorders"))
+    if borders is None:
+        borders = OxmlElement("w:tcBorders")
+        tc_pr.append(borders)
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        element = borders.find(qn(f"w:{edge}"))
+        if element is None:
+            element = OxmlElement(f"w:{edge}")
+            borders.append(element)
+        element.set(qn("w:val"), "nil")
+
+
+def _configure_analysis_table(table: Any) -> None:
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    table.autofit = False
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    _set_table_borders(table, size=4)
+    tbl_pr = table._tbl.tblPr
+    layout = tbl_pr.find(qn("w:tblLayout"))
+    if layout is None:
+        layout = OxmlElement("w:tblLayout")
+        tbl_pr.append(layout)
+    layout.set(qn("w:type"), "fixed")
+    width = tbl_pr.find(qn("w:tblW"))
+    if width is not None:
+        width.set(qn("w:w"), str(round(482.2 * 20)))
+        width.set(qn("w:type"), "dxa")
+    margins = OxmlElement("w:tblCellMar")
+    for edge in ("top", "left", "bottom", "right"):
+        node = OxmlElement(f"w:{edge}")
+        node.set(qn("w:w"), "0")
+        node.set(qn("w:type"), "dxa")
+        margins.append(node)
+    tbl_pr.append(margins)
+    grid_columns = list(table._tbl.tblGrid)
+    for grid_column, points in zip(grid_columns, _ANALYSIS_GRID_POINTS):
+        grid_column.set(qn("w:w"), str(round(points * 20)))
+    for row in table.rows:
+        for column, cell in enumerate(row.cells):
+            _set_cell_width_points(cell, _ANALYSIS_GRID_POINTS[column])
+
+
+def _analysis_cell(table: Any, row: int, start: int, end: int, text: Any = "", *, size: float = 9, bold: bool = False, align: int = 1) -> Any:
+    cell = _merge_row(table, row, start, end)
+    _set_cell_text(cell, text, size=size, bold=bold, align=align)
+    return cell
+
+
+def _check(selected: Any, option: str) -> str:
+    return "√" if str(selected or "").strip() == option else ""
+
+
+def _set_analysis_body(cell: Any, value: Any) -> None:
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+
+    cell.text = ""
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+    lines = [line.strip() for line in str(value or "").replace("\r", "").split("\n") if line.strip()]
+    if not lines:
+        lines = [""]
+    for index, line in enumerate(lines):
+        paragraph = cell.paragraphs[0] if index == 0 else cell.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         paragraph.paragraph_format.space_before = 0
         paragraph.paragraph_format.space_after = 0
-        _set_run_font(paragraph.add_run(labels[column_index]), 8.2, bold=True)
-        if consent_paths[column_index] and Path(str(consent_paths[column_index])).is_file():
-            paragraph.add_run().add_picture(str(consent_paths[column_index]), width=Cm(2.0))
-        signature_cell = review.rows[1].cells[column_index]
-        signature_cell.text = ""
-        signature_paragraph = signature_cell.paragraphs[0]
-        signature_paragraph.alignment = 0
-        _set_run_font(signature_paragraph.add_run("签字："), 8.2, bold=True)
-        if signature_paths[column_index] and Path(str(signature_paths[column_index])).is_file():
-            signature_paragraph.add_run().add_picture(str(signature_paths[column_index]), width=Cm(2.5))
-        else:
-            _set_run_font(signature_paragraph.add_run("________________"), 8.2)
+        paragraph.paragraph_format.line_spacing = 1
+        paragraph.paragraph_format.first_line_indent = Pt(24) if not re.match(r"^[一二三四五六七八九十]+[、.]|^\d+[.、]", line) else Pt(0)
+        _set_run_font(paragraph.add_run(line), 12)
 
-    note = document.add_paragraph()
-    note.paragraph_format.space_before = Pt(1)
-    note.paragraph_format.space_after = 0
-    _set_run_font(note.add_run("注：1、本表一式两份，一份交学生所在学院，一份交开课学院存档。"), 7.5)
+
+def _set_review_signature(cell: Any, path_value: Any) -> None:
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Cm
+
+    cell.text = ""
+    paragraph = cell.paragraphs[0]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    paragraph.paragraph_format.space_before = 0
+    paragraph.paragraph_format.space_after = 0
+    _set_run_font(paragraph.add_run("签字："), 9)
+    path = Path(str(path_value or ""))
+    if path.is_file():
+        paragraph.add_run().add_picture(str(path), width=Cm(3.1), height=Cm(1.1))
+
+
+def _build_analysis_table(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> Any:
+    from docx.shared import Cm
+
+    table = document.add_table(rows=22, cols=11)
+    _configure_analysis_table(table)
+    heights = (36, 17, 11, 14, 14, 14, 15, 14, 14, 15, 15, 15, 15, 14, 14, 150, 14, 248, 14, None, 77.1, 14)
+    for row, height in zip(table.rows, heights):
+        _set_row_height(row, height, exact=height is not None)
+
+    title = _analysis_cell(table, 0, 0, 10, "广西外国语学院课程试卷分析表", size=16)
+    period = _analysis_cell(table, 1, 0, 10, _academic_period_text(fields), size=12)
+    spacer = _analysis_cell(table, 2, 0, 10, "", size=9)
+    for cell in (title, period, spacer):
+        _remove_cell_borders(cell)
+
+    _analysis_cell(table, 3, 0, 1, "课程名称")
+    _analysis_cell(table, 3, 2, 4, fields.get("course_name") or "", align=0)
+    _analysis_cell(table, 3, 5, 5, "学时数")
+    _analysis_cell(table, 3, 6, 6, fields.get("course_hours") or "")
+    _analysis_cell(table, 3, 7, 7, "开课单位")
+    _analysis_cell(table, 3, 8, 10, fields.get("department") or "")
+
+    _analysis_cell(table, 4, 0, 1, "教师姓名")
+    _analysis_cell(table, 4, 2, 4, fields.get("teacher_name") or "")
+    _analysis_cell(table, 4, 5, 6, "课程性质")
+    _analysis_cell(table, 4, 7, 7, "选修")
+    _analysis_cell(table, 4, 8, 8, _check(fields.get("course_nature"), "选修"))
+    _analysis_cell(table, 4, 9, 9, "必修")
+    _analysis_cell(table, 4, 10, 10, _check(fields.get("course_nature"), "必修"))
+
+    _analysis_cell(table, 5, 0, 1, "命题形式(打√)")
+    proposition_cells = ((2, 2, "试题库"), (5, 5, "试卷库"), (7, 8, "教师组题"))
+    check_cells = ((3, 4, "试题库"), (6, 6, "试卷库"), (9, 10, "教师组题"))
+    for start, end, label in proposition_cells:
+        _analysis_cell(table, 5, start, end, label)
+    for start, end, label in check_cells:
+        _analysis_cell(table, 5, start, end, _check(fields.get("proposition_form"), label))
+
+    _analysis_cell(table, 6, 0, 1, "考试形式(打√)")
+    for start, value in ((2, "开卷"), (4, "闭卷")):
+        _analysis_cell(table, 6, start, start, value)
+        _analysis_cell(table, 6, start + 1, start + 1, _check(fields.get("exam_form"), value))
+    _analysis_cell(table, 6, 6, 6, "教考分离(打√)")
+    _analysis_cell(table, 6, 7, 7, "是")
+    _analysis_cell(table, 6, 8, 8, _check(fields.get("separate_teaching_exam"), "是"))
+    _analysis_cell(table, 6, 9, 9, "否")
+    _analysis_cell(table, 6, 10, 10, _check(fields.get("separate_teaching_exam"), "否"))
+
+    _analysis_cell(table, 7, 0, 1, "学生班级")
+    _analysis_cell(table, 7, 2, 10, fields.get("class_name") or "", align=0)
+
+    distribution = structured.get("score_distribution") if isinstance(structured.get("score_distribution"), list) else []
+    distribution = [item for item in distribution if isinstance(item, dict)]
+    while len(distribution) < 5:
+        distribution.append({"count": 0, "ratio": 0})
+    vertical = table.cell(8, 0).merge(table.cell(12, 0))
+    _set_cell_direction_vertical(vertical)
+    _set_cell_text(vertical, "分数分布", size=9, bold=True)
+    row_specs = ((2, 3), (4, 5), (6, 6), (7, 8), (9, 10))
+    for row_index, label, values in (
+        (8, "分数段", ["<60", "60-69", "70-79", "80-89", "90-100"]),
+        (9, "人数", [int(item.get("count") or 0) for item in distribution[:5]]),
+        (10, "比例", [f"{float(item.get('ratio') or 0):.2f}%" for item in distribution[:5]]),
+    ):
+        _analysis_cell(table, row_index, 1, 1, label)
+        for (start, end), value in zip(row_specs, values):
+            _analysis_cell(table, row_index, start, end, value)
+    stats = structured.get("statistics") if isinstance(structured.get("statistics"), dict) else {}
+    _analysis_cell(table, 11, 1, 1, "平均分")
+    _analysis_cell(table, 11, 2, 5, f"{float(stats.get('average') or 0):.2f}")
+    _analysis_cell(table, 11, 6, 6, "标准差")
+    _analysis_cell(table, 11, 7, 10, f"{float(stats.get('standard_deviation') or 0):.2f}")
+    _analysis_cell(table, 12, 1, 1, "最高分")
+    _analysis_cell(table, 12, 2, 3, _score_text(stats.get("maximum")))
+    _analysis_cell(table, 12, 4, 5, "最低分")
+    _analysis_cell(table, 12, 6, 6, _score_text(stats.get("minimum")))
+    _analysis_cell(table, 12, 7, 8, "及格率")
+    _analysis_cell(table, 12, 9, 10, f"{float(stats.get('pass_rate') or 0):.2f}%")
+
+    _analysis_cell(table, 13, 0, 1, "阅卷形式(打√)")
+    for (start, end), label in zip(row_specs, ("本人阅卷", "同行阅卷", "集体阅卷", "机器阅卷", "其他")):
+        suffix = " √" if str(fields.get("marking_form") or "").strip() == label else ""
+        _analysis_cell(table, 13, start, end, f"{label}{suffix}")
+
+    _analysis_cell(table, 14, 0, 10, "学生成绩分布图", size=9)
+    chart_cell = _analysis_cell(table, 15, 0, 10, "")
+    chart_paragraph = chart_cell.paragraphs[0]
+    chart_paragraph.alignment = 1
+    chart_paragraph.paragraph_format.space_before = 0
+    chart_paragraph.paragraph_format.space_after = 0
+    chart_paragraph.add_run().add_picture(_chart_image(distribution), width=Cm(16.54), height=Cm(5.16))
+
+    _analysis_cell(table, 16, 0, 0, "")
+    _analysis_cell(
+        table,
+        16,
+        1,
+        10,
+        "简要分析试题结构，成绩分布，学生掌握情况及其主要原因，提出教学改进意见与措施",
+        size=9,
+        align=0,
+    )
+    analysis_label = _analysis_cell(table, 17, 0, 0, "试卷分析", size=9, bold=True)
+    _set_cell_direction_vertical(analysis_label)
+    analysis_cell = _analysis_cell(table, 17, 1, 10, "", align=0)
+    _set_analysis_body(analysis_cell, structured.get("analysis_text") or fields.get("analysis_text") or "")
+
+    _analysis_cell(table, 18, 0, 5, "系（教研室）审核意见：", size=9, align=0)
+    _analysis_cell(table, 18, 6, 10, "教学院长审核意见：", size=9, align=0)
+    _analysis_cell(table, 19, 0, 5, fields.get("department_review_opinion") or "", size=9, align=0)
+    _analysis_cell(table, 19, 6, 10, fields.get("dean_review_opinion") or "", size=9, align=0)
+    department_signature_cell = _analysis_cell(table, 20, 0, 5, "")
+    dean_signature_cell = _analysis_cell(table, 20, 6, 10, "")
+    _set_review_signature(department_signature_cell, fields.get("department_signature_image_path"))
+    _set_review_signature(dean_signature_cell, fields.get("dean_signature_image_path"))
+    _analysis_cell(table, 21, 0, 10, "注：1、本表一式两份，一份交学生所在学院，一份交开课学院存档。", size=9, bold=True, align=0)
+    return table
 
 
 def build_exam_analysis_docx(parse_payload: dict[str, Any]) -> bytes:
     from docx import Document
-    from docx.shared import Cm, Pt
+    from docx.shared import Pt
 
     payload = _payload(parse_payload)
     fields = payload.get("fields") if isinstance(payload.get("fields"), dict) else {}
     structured = payload.get("structured") if isinstance(payload.get("structured"), dict) else {}
     document = Document()
     section = document.sections[0]
-    section.page_width = Cm(21)
-    section.page_height = Cm(29.7)
-    section.top_margin = Cm(0.75)
-    section.bottom_margin = Cm(0.55)
-    section.left_margin = Cm(1.05)
-    section.right_margin = Cm(1.05)
-    section.header_distance = Cm(0.3)
-    section.footer_distance = Cm(0.3)
+    section.page_width = Pt(595.25)
+    section.page_height = Pt(841.85)
+    section.top_margin = Pt(19.4)
+    section.bottom_margin = Pt(19.4)
+    section.left_margin = Pt(54)
+    section.right_margin = Pt(54)
+    section.header_distance = Pt(36)
+    section.footer_distance = Pt(36)
     document.styles["Normal"].paragraph_format.space_after = Pt(0)
-
-    _add_title(document, "广西外国语学院课程试卷分析表", fields, size=15)
-    _add_analysis_form(document, fields, structured)
-    _add_analysis_text_and_signatures(document, fields, structured)
+    _build_analysis_table(document, fields, structured)
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()

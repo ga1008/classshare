@@ -262,11 +262,11 @@ function renderImportDetails() {
 // ---------------------------------------------------------------------------
 async function loadSignatureOptions() {
     try {
-        const mine = await apiFetch('/api/signatures?scope=mine&limit=200');
-        state.signatureOptions.mine = (mine.items || []).filter((s) => s.can_use !== false);
+        const mine = await apiFetch('/api/signatures?limit=200&function_point_key=assessment_plan.examiner_signature');
+        state.signatureOptions.mine = (mine.items || []).filter((s) => s.can_use);
     } catch (_) { state.signatureOptions.mine = []; }
     try {
-        const all = await apiFetch('/api/signatures?limit=200');
+        const all = await apiFetch('/api/signatures?limit=200&function_point_key=assessment_plan.reviewer_signature');
         state.signatureOptions.usable = (all.items || []).filter((s) => s.can_use);
     } catch (_) { state.signatureOptions.usable = []; }
     // Ensure currently-bound signatures appear even if not in the filtered lists.

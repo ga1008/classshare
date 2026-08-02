@@ -214,8 +214,19 @@ def _is_owner(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
     return str(row["owner_role"] or "") == role and owner_id == user_id
 
 
+def _is_subject(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
+    role, user_id = _actor_identity(actor)
+    try:
+        subject_id = int(row["subject_id"] or 0)
+    except (TypeError, ValueError, KeyError, IndexError):
+        subject_id = 0
+    return str(row["subject_role"] or "") == role and subject_id == user_id
+
+
 def can_view_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
     if bool(actor.get("is_super_admin")):
+        return True
+    if _is_owner(actor, row) or _is_subject(actor, row):
         return True
     role, _ = _actor_identity(actor)
     if not _same_school(actor, row):
@@ -223,8 +234,6 @@ def can_view_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any])
     if role == "student":
         return _is_owner(actor, row)
     if role == "teacher":
-        if _is_owner(actor, row):
-            return True
         if str(row["owner_role"] or "") == "system" or str(row["scope_level"] or "") == "platform":
             return True
         return _same_department(actor, row)
@@ -246,11 +255,12 @@ def _signature_request_state(
         SELECT id, status, requested_at, reviewed_at, review_note
         FROM signature_access_requests
         WHERE signature_id = ?
-          AND requester_teacher_id = ?
+          AND requester_role = ?
+          AND requester_id = ?
         ORDER BY requested_at DESC, id DESC
         LIMIT 1
         """,
-        (int(row["id"]), requester_id),
+        (int(row["id"]), actor.get("role") or "teacher", requester_id),
     ).fetchone()
     if not request_row:
         return {}
@@ -268,15 +278,10 @@ def can_use_signature(
     row: sqlite3.Row | dict[str, Any],
     conn: sqlite3.Connection | None = None,
 ) -> bool:
-    if bool(actor.get("is_super_admin")) or _is_owner(actor, row):
-        return True
-    if actor.get("role") != "teacher":
-        return False
-    if not can_view_signature(actor, row):
-        return False
-    if str(row["owner_role"] or "") == "system" or str(row["scope_level"] or "") == "platform":
-        return True
-    return _signature_request_state(conn, actor, row).get("request_status") == "approved"
+    # Global/broad grants are intentionally forbidden.  A feature-specific
+    # approved item is evaluated by signature_workflow_service at the exact
+    # binding location.  This helper only represents unconditional direct use.
+    return _is_owner(actor, row) or _is_subject(actor, row)
 
 
 def can_request_signature_use(
@@ -286,11 +291,11 @@ def can_request_signature_use(
 ) -> bool:
     if actor.get("role") != "teacher":
         return False
-    if bool(actor.get("is_super_admin")) or _is_owner(actor, row):
+    if _is_owner(actor, row) or _is_subject(actor, row):
         return False
     if not can_view_signature(actor, row):
         return False
-    return _signature_request_state(conn, actor, row).get("request_status") not in {"pending", "approved"}
+    return _signature_request_state(conn, actor, row).get("request_status") != "pending"
 
 
 def can_delete_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
@@ -484,6 +489,7 @@ def list_signatures(
     owner_role: str = "",
     subject_role: str = "",
     scope: str = "",
+    function_point_key: str = "",
     limit: int = 200,
 ) -> dict[str, Any]:
     actor = build_signature_actor(conn, user)
@@ -570,7 +576,7 @@ def list_signatures(
     )
     params.append(bounded_limit)
     rows = conn.execute(sql, params).fetchall()
-    items = [serialize_signature(row, actor, conn) for row in rows]
+    items = [serialize_signature(row, actor, conn, function_point_key=function_point_key) for row in rows]
     return {
         "items": items,
         "total": total,
@@ -630,6 +636,8 @@ def serialize_signature(
     row: sqlite3.Row,
     actor: dict[str, Any],
     conn: sqlite3.Connection | None = None,
+    *,
+    function_point_key: str = "",
 ) -> dict[str, Any]:
     row_id = int(row["id"])
     owner_role = str(row["owner_role"] or "")
@@ -642,11 +650,18 @@ def serialize_signature(
     request_state = _signature_request_state(conn, actor, row)
     can_view = can_view_signature(actor, row)
     can_use = can_use_signature(actor, row, conn)
+    feature_access: dict[str, Any] = {}
+    if function_point_key and conn is not None:
+        from . import signature_workflow_service
+
+        feature_access = signature_workflow_service.access_state(conn, actor, row, function_point_key)
+        can_use = bool(feature_access.get("can_use"))
     return {
         "id": row_id,
         "name": row["name"],
         "subject_name": subject_name,
         "subject_role": subject_role,
+        "subject_id": row["subject_id"],
         "subject_role_label": _role_label(subject_role),
         "owner_role": owner_role,
         "owner_role_label": _role_label(owner_role),
@@ -676,7 +691,8 @@ def serialize_signature(
         "can_delete": can_delete,
         "can_view": can_view,
         "can_use": can_use,
-        "can_request_use": can_request_signature_use(actor, row, conn),
+        "can_request_use": bool(feature_access.get("can_request")) if feature_access else can_request_signature_use(actor, row, conn),
+        "function_point_access": feature_access,
         "request_id": request_state.get("request_id"),
         "request_status": request_state.get("request_status", ""),
         "requested_at": request_state.get("requested_at", ""),
@@ -744,6 +760,54 @@ def _teacher_owner_row(conn: sqlite3.Connection, teacher_id: int | str) -> sqlit
     if not row:
         raise SignatureServiceError(400, "目标归属教师不存在或已停用。")
     return row
+
+
+def _resolve_subject_id(
+    conn: sqlite3.Connection,
+    *,
+    subject_role: str,
+    subject_name: str,
+    explicit_id: Any,
+    school_code: str,
+) -> int | None:
+    if subject_role not in {"teacher", "student"}:
+        return None
+    table = "teachers" if subject_role == "teacher" else "students"
+    if explicit_id not in (None, ""):
+        try:
+            subject_id = int(explicit_id)
+        except (TypeError, ValueError) as exc:
+            raise SignatureServiceError(400, "签名者账号 ID 无效。") from exc
+        row = conn.execute(
+            f"SELECT id, name, school_code FROM {table} WHERE id = ? LIMIT 1",
+            (subject_id,),
+        ).fetchone()
+        if not row:
+            raise SignatureServiceError(400, "未找到对应的签名者账号。")
+        if school_code and normalize_school_code(row["school_code"]) != normalize_school_code(school_code):
+            raise SignatureServiceError(400, "签名者账号与签名所属学校不一致。")
+        return int(row["id"])
+    clean_name = _clean_text(subject_name, 80)
+    if not clean_name:
+        return None
+    rows = conn.execute(
+        f"""
+        SELECT id FROM {table}
+        WHERE LOWER(TRIM(COALESCE(name, ''))) = LOWER(TRIM(?))
+          AND LOWER(TRIM(COALESCE(school_code, ''))) = LOWER(TRIM(?))
+        ORDER BY id LIMIT 2
+        """,
+        (clean_name, normalize_school_code(school_code)),
+    ).fetchall()
+    return int(rows[0]["id"]) if len(rows) == 1 else None
+
+
+def _subject_name_by_id(conn: sqlite3.Connection, subject_role: str, subject_id: int | None) -> str:
+    table = "teachers" if subject_role == "teacher" else "students" if subject_role == "student" else ""
+    if not table or not subject_id:
+        return ""
+    row = conn.execute(f"SELECT name FROM {table} WHERE id = ? LIMIT 1", (int(subject_id),)).fetchone()
+    return _clean_text(row["name"] if row else "", 80)
 
 
 def list_signature_teacher_options(
@@ -919,12 +983,33 @@ def update_signature_metadata(
         org_scope["college"] = normalize_org_text(payload.get("college", org_scope["college"]))
         org_scope["department"] = normalize_org_text(payload.get("department", org_scope["department"]))
 
+    explicit_subject_id = payload.get("subject_id", payload.get("subject_teacher_id"))
+    if (
+        explicit_subject_id in (None, "")
+        and subject_role == str(row["subject_role"] or "")
+        and clean_subject_name == str(row["subject_name"] or "")
+    ):
+        subject_id = row["subject_id"]
+    elif subject_role == actor_role and clean_subject_name == _clean_text(actor.get("name"), 80):
+        subject_id = actor_id
+    else:
+        subject_id = _resolve_subject_id(
+            conn,
+            subject_role=subject_role,
+            subject_name=clean_subject_name,
+            explicit_id=explicit_subject_id,
+            school_code=org_scope["school_code"],
+        )
+    if explicit_subject_id not in (None, "") and subject_id:
+        clean_subject_name = _subject_name_by_id(conn, subject_role, int(subject_id)) or clean_subject_name
+
     conn.execute(
         """
         UPDATE electronic_signatures
         SET name = ?,
             subject_name = ?,
             subject_role = ?,
+            subject_id = ?,
             scope_level = ?,
             owner_role = ?,
             owner_id = ?,
@@ -943,6 +1028,7 @@ def update_signature_metadata(
             clean_name,
             clean_subject_name,
             subject_role,
+            subject_id,
             requested_scope_level,
             owner_role,
             owner_id,
@@ -1044,6 +1130,7 @@ async def create_signature_from_upload(
     name: str = "",
     subject_role: str = "",
     subject_name: str = "",
+    subject_id: int | None = None,
     scope_level: str = "",
     description: str = "",
 ) -> dict[str, Any]:
@@ -1069,24 +1156,38 @@ async def create_signature_from_upload(
     clean_name = _clean_text(name, 80) or _clean_text(Path(original_filename).stem, 80) or "电子签名"
     clean_subject_name = _clean_text(subject_name, 80) or actor.get("name") or clean_name
     owner_scope = _owner_scope_for_upload(actor, normalized_scope)
+    normalized_subject_id = (
+        actor_id
+        if normalized_subject_role == actor_role and clean_subject_name == _clean_text(actor.get("name"), 80)
+        else _resolve_subject_id(
+            conn,
+            subject_role=normalized_subject_role,
+            subject_name=clean_subject_name,
+            explicit_id=subject_id,
+            school_code=owner_scope["school_code"],
+        )
+    )
+    if subject_id not in (None, "") and normalized_subject_id:
+        clean_subject_name = _subject_name_by_id(conn, normalized_subject_role, normalized_subject_id) or clean_subject_name
 
     signature_id = execute_insert_returning_id(
         conn,
         """
         INSERT INTO electronic_signatures (
-            name, subject_name, subject_role, scope_level,
+            name, subject_name, subject_role, subject_id, scope_level,
             owner_role, owner_id, owner_name_snapshot,
             uploaded_by_role, uploaded_by_id, uploaded_by_name_snapshot,
             school_code, school_name, college, department,
             file_hash, file_ext, mime_type, stored_path, file_size,
             description, metadata_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             clean_name,
             clean_subject_name,
             normalized_subject_role,
+            normalized_subject_id,
             normalized_scope,
             actor_role,
             actor_id,
@@ -1184,24 +1285,36 @@ async def create_signature_from_bytes(
     clean_name = _clean_text(name, 80) or "导入签名"
     clean_subject_name = _clean_text(subject_name, 80) or clean_name
     owner_scope = _owner_scope_for_upload(actor, normalized_scope)
+    normalized_subject_id = (
+        actor_id
+        if normalized_subject_role == actor_role and clean_subject_name == _clean_text(actor.get("name"), 80)
+        else _resolve_subject_id(
+            conn,
+            subject_role=normalized_subject_role,
+            subject_name=clean_subject_name,
+            explicit_id=None,
+            school_code=owner_scope["school_code"],
+        )
+    )
 
     signature_id = execute_insert_returning_id(
         conn,
         """
         INSERT INTO electronic_signatures (
-            name, subject_name, subject_role, scope_level,
+            name, subject_name, subject_role, subject_id, scope_level,
             owner_role, owner_id, owner_name_snapshot,
             uploaded_by_role, uploaded_by_id, uploaded_by_name_snapshot,
             school_code, school_name, college, department,
             file_hash, file_ext, mime_type, stored_path, file_size,
             description, metadata_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             clean_name,
             clean_subject_name,
             normalized_subject_role,
+            normalized_subject_id,
             normalized_scope,
             actor_role,
             actor_id,
@@ -1293,64 +1406,6 @@ def delete_signature(conn: sqlite3.Connection, user: dict[str, Any], signature_i
     return {"id": int(signature_id), "removed_file": removed_file}
 
 
-def _request_status_filter(value: str) -> str:
-    normalized = str(value or "").strip().lower()
-    return normalized if normalized in {"pending", "approved", "rejected"} else ""
-
-
-def _signature_request_select() -> str:
-    return """
-        SELECT
-            r.*,
-            s.name AS signature_name,
-            s.subject_name AS signature_subject_name,
-            s.scope_level AS signature_scope_level,
-            s.school_code AS signature_school_code,
-            s.school_name AS signature_school_name,
-            s.college AS signature_college,
-            s.department AS signature_department,
-            rt.name AS requester_name,
-            rt.email AS requester_email,
-            ot.name AS owner_teacher_name,
-            reviewer.name AS reviewer_name
-        FROM signature_access_requests r
-        JOIN electronic_signatures s ON s.id = r.signature_id
-        LEFT JOIN teachers rt ON rt.id = r.requester_teacher_id
-        LEFT JOIN teachers ot ON r.owner_role = 'teacher' AND ot.id = r.owner_id
-        LEFT JOIN teachers reviewer ON reviewer.id = r.reviewed_by_teacher_id
-    """
-
-
-def _serialize_signature_access_request(row: sqlite3.Row) -> dict[str, Any]:
-    return {
-        "id": int(row["id"]),
-        "signature_id": int(row["signature_id"]),
-        "signature_name": row["signature_name"] or "",
-        "signature_subject_name": row["signature_subject_name"] or row["signature_name"] or "",
-        "signature_scope_level": row["signature_scope_level"] or "",
-        "school_code": row["signature_school_code"] or "",
-        "school_name": row["signature_school_name"] or "",
-        "college": row["signature_college"] or "",
-        "department": row["signature_department"] or "",
-        "requester_teacher_id": int(row["requester_teacher_id"] or 0),
-        "requester_name": row["requester_name"] or "",
-        "requester_email": row["requester_email"] or "",
-        "owner_role": row["owner_role"] or "",
-        "owner_id": row["owner_id"],
-        "owner_name": row["owner_teacher_name"] or "",
-        "status": row["status"] or "",
-        "request_note": row["request_note"] or "",
-        "review_note": row["review_note"] or "",
-        "context_type": row["context_type"] or "",
-        "context_id": row["context_id"] or "",
-        "context_label": row["context_label"] or "",
-        "requested_at": row["requested_at"] or "",
-        "reviewed_at": row["reviewed_at"] or "",
-        "reviewed_by_teacher_id": row["reviewed_by_teacher_id"],
-        "reviewer_name": row["reviewer_name"] or "",
-    }
-
-
 def create_signature_access_request(
     conn: sqlite3.Connection,
     user: dict[str, Any],
@@ -1360,59 +1415,19 @@ def create_signature_access_request(
     context_type: str = "",
     context_id: str = "",
     context_label: str = "",
+    function_point_keys: list[str] | None = None,
 ) -> dict[str, Any]:
-    actor = build_signature_actor(conn, user)
-    if actor.get("role") != "teacher":
-        raise SignatureServiceError(403, "Only teachers can request signature usage.")
-    row = _get_signature_row(conn, signature_id)
-    if not can_view_signature(actor, row):
-        raise SignatureServiceError(403, "Current account cannot view this signature.")
-    if can_use_signature(actor, row, conn):
-        raise SignatureServiceError(400, "Current account can already use this signature.")
-    if not can_request_signature_use(actor, row, conn):
-        state = _signature_request_state(conn, actor, row)
-        status = state.get("request_status", "")
-        if status == "pending":
-            raise SignatureServiceError(409, "A pending request already exists.")
-        if status == "approved":
-            raise SignatureServiceError(409, "This request has already been approved.")
-        raise SignatureServiceError(403, "Current account cannot request this signature.")
-    try:
-        request_id = execute_insert_returning_id(
-            conn,
-            """
-            INSERT INTO signature_access_requests (
-                signature_id, requester_teacher_id, owner_role, owner_id,
-                request_note, context_type, context_id, context_label
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                int(signature_id),
-                int(actor["id"]),
-                row["owner_role"] or "",
-                row["owner_id"],
-                _clean_text(note, 300),
-                _clean_text(context_type, 60),
-                _clean_text(context_id, 80),
-                _clean_text(context_label, 120),
-            ),
-        )
-    except Exception as exc:
-        state = _signature_request_state(conn, actor, row)
-        if state:
-            raise SignatureServiceError(409, "A request for this signature already exists.") from exc
-        raise
+    if not function_point_keys:
+        raise SignatureServiceError(400, "签名申请必须绑定至少一个已登记功能点。")
+    from . import signature_workflow_service
 
-    request_row = conn.execute(
-        _signature_request_select()
-        + """
-        WHERE r.id = ?
-        LIMIT 1
-        """,
-        (request_id,),
-    ).fetchone()
-    return {"status": "success", "request": _serialize_signature_access_request(request_row)}
+    return signature_workflow_service.create_access_request(
+        conn,
+        user,
+        signature_id,
+        function_point_keys=function_point_keys,
+        note=note,
+    )
 
 
 def list_signature_access_requests(
@@ -1423,47 +1438,15 @@ def list_signature_access_requests(
     status: str = "",
     limit: int = 100,
 ) -> dict[str, Any]:
-    actor = build_signature_actor(conn, user)
-    if actor.get("role") != "teacher":
-        raise SignatureServiceError(403, "Only teachers can view signature requests.")
-    normalized_direction = str(direction or "incoming").strip().lower()
-    where: list[str] = []
-    params: list[Any] = []
-    if normalized_direction == "outgoing":
-        where.append("r.requester_teacher_id = ?")
-        params.append(int(actor["id"]))
-    else:
-        normalized_direction = "incoming"
-        if not bool(actor.get("is_super_admin")):
-            where.append("r.owner_role = 'teacher' AND r.owner_id = ?")
-            params.append(int(actor["id"]))
-    normalized_status = _request_status_filter(status)
-    if normalized_status:
-        where.append("r.status = ?")
-        params.append(normalized_status)
-    where_sql = " AND ".join(f"({item})" for item in where) if where else "1 = 1"
-    bounded_limit = max(1, min(int(limit or 100), 500))
-    rows = conn.execute(
-        _signature_request_select()
-        + """
-        WHERE
-        """
-        + where_sql
-        + """
-        ORDER BY
-            CASE r.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
-            r.requested_at DESC,
-            r.id DESC
-        LIMIT ?
-        """,
-        (*params, bounded_limit),
-    ).fetchall()
-    return {
-        "items": [_serialize_signature_access_request(row) for row in rows],
-        "direction": normalized_direction,
-        "status": normalized_status,
-        "actor": serialize_signature_actor(actor),
-    }
+    from . import signature_workflow_service
+
+    return signature_workflow_service.list_access_requests(
+        conn,
+        user,
+        direction=direction,
+        status=status,
+        limit=limit,
+    )
 
 
 def review_signature_access_request(
@@ -1474,48 +1457,15 @@ def review_signature_access_request(
     action: str,
     note: str = "",
 ) -> dict[str, Any]:
-    actor = build_signature_actor(conn, user)
-    if actor.get("role") != "teacher":
-        raise SignatureServiceError(403, "Only teachers can review signature requests.")
-    row = conn.execute(
-        _signature_request_select()
-        + """
-        WHERE r.id = ?
-        LIMIT 1
-        """,
-        (int(request_id),),
-    ).fetchone()
-    if not row:
-        raise SignatureServiceError(404, "Signature request does not exist.")
-    is_owner_teacher = row["owner_role"] == "teacher" and int(row["owner_id"] or 0) == int(actor["id"])
-    if not bool(actor.get("is_super_admin")) and not is_owner_teacher:
-        raise SignatureServiceError(403, "Only the signature owner or super admin can review this request.")
-    if row["status"] != "pending":
-        raise SignatureServiceError(409, "Only pending requests can be reviewed.")
-    normalized_action = str(action or "").strip().lower()
-    if normalized_action not in {"approve", "reject"}:
-        raise SignatureServiceError(400, "Review action must be approve or reject.")
-    new_status = "approved" if normalized_action == "approve" else "rejected"
-    conn.execute(
-        """
-        UPDATE signature_access_requests
-        SET status = ?,
-            review_note = ?,
-            reviewed_at = CURRENT_TIMESTAMP,
-            reviewed_by_teacher_id = ?
-        WHERE id = ?
-        """,
-        (new_status, _clean_text(note, 300), int(actor["id"]), int(request_id)),
+    from . import signature_workflow_service
+
+    return signature_workflow_service.review_access_request(
+        conn,
+        user,
+        request_id,
+        action=action,
+        note=note,
     )
-    refreshed = conn.execute(
-        _signature_request_select()
-        + """
-        WHERE r.id = ?
-        LIMIT 1
-        """,
-        (int(request_id),),
-    ).fetchone()
-    return {"status": "success", "request": _serialize_signature_access_request(refreshed)}
 
 
 def record_signature_usage(
@@ -1531,6 +1481,8 @@ def record_signature_usage(
     ip: str = "",
     user_agent: str = "",
 ) -> dict[str, Any]:
+    if _clean_text(action, 40) == "use":
+        raise SignatureServiceError(400, "签名插入必须通过已登记功能点执行，不能记录无挂钩调用。")
     row, actor = get_signature_row_for_actor(conn, user, signature_id)
     actor_role, actor_id = _actor_identity(actor)
     conn.execute(
@@ -1563,7 +1515,11 @@ def record_signature_usage(
 
 def build_signature_dashboard_context(conn: sqlite3.Connection, user: dict[str, Any]) -> dict[str, Any]:
     payload = list_signatures(conn, user, limit=500)
-    pending_requests = list_signature_access_requests(conn, user, direction="incoming", status="pending", limit=20)
+    from . import signature_workflow_service
+
+    pending_requests = signature_workflow_service.list_access_requests(
+        conn, user, direction="incoming", status="pending", limit=20
+    )
     return {
         "signature_actor": payload["actor"],
         "signature_stats": payload["stats"],

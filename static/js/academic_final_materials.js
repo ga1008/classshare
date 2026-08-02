@@ -17,7 +17,7 @@ let itemsRequestRunning = false;
 const state = {
     items: [],
     candidates: [],
-    signatures: [],
+    signaturesByPoint: {},
     currentBatchId: '',
     currentRecord: null,
     currentPreviewUrl: '',
@@ -357,8 +357,12 @@ async function submitSync(event) {
     }
 }
 
-function signatureOptions(selectedId, { allowEmpty = true } = {}) {
-    const usable = state.signatures.filter((item) => item.can_use && item.owner_role !== 'system');
+function signatureOptions(functionPointKey, selectedId, { allowEmpty = true } = {}) {
+    const signatures = state.signaturesByPoint[functionPointKey] || [];
+    const usable = signatures.filter((item) => (
+        item.owner_role !== 'system'
+        && (item.can_use || Number(item.id) === Number(selectedId))
+    ));
     return [
         allowEmpty ? '<option value="">暂不填入</option>' : '',
         ...usable.map((item) => `<option value="${item.id}" ${Number(selectedId) === Number(item.id) ? 'selected' : ''}>${escapeHtml(item.subject_name || item.name)} · ${escapeHtml(item.scope_label || '')}</option>`),
@@ -366,9 +370,16 @@ function signatureOptions(selectedId, { allowEmpty = true } = {}) {
 }
 
 async function ensureSignatures() {
-    if (state.signatures.length) return;
-    const data = await apiFetch('/api/signatures?limit=500');
-    state.signatures = Array.isArray(data.items) ? data.items : [];
+    const points = isGrade
+        ? ['academic_final_material.grade_register.teacher_signature']
+        : [
+            'academic_final_material.exam_analysis.department_review_signature',
+            'academic_final_material.exam_analysis.dean_review_signature',
+        ];
+    await Promise.all(points.map(async (point) => {
+        const data = await apiFetch(`/api/signatures?limit=500&function_point_key=${encodeURIComponent(point)}`);
+        state.signaturesByPoint[point] = Array.isArray(data.items) ? data.items : [];
+    }));
 }
 
 function identityHtml(fields) {
@@ -403,14 +414,23 @@ async function openEditor(batchId) {
         els.gradeFields.hidden = !isGrade;
         els.analysisFields.hidden = isGrade;
         if (isGrade) {
-            els.teacherSignature.innerHTML = signatureOptions(fields.teacher_signature_id);
+            els.teacherSignature.innerHTML = signatureOptions(
+                'academic_final_material.grade_register.teacher_signature',
+                fields.teacher_signature_id,
+            );
         } else {
             $$('[data-afm-field]', els.analysisFields).forEach((input) => {
                 input.value = fields[input.dataset.afmField] || '';
             });
             els.analysisText.value = structured.analysis_text || fields.analysis_text || '';
-            els.departmentSignature.innerHTML = signatureOptions(fields.department_signature_id);
-            els.deanSignature.innerHTML = signatureOptions(fields.dean_signature_id);
+            els.departmentSignature.innerHTML = signatureOptions(
+                'academic_final_material.exam_analysis.department_review_signature',
+                fields.department_signature_id,
+            );
+            els.deanSignature.innerHTML = signatureOptions(
+                'academic_final_material.exam_analysis.dean_review_signature',
+                fields.dean_signature_id,
+            );
             enhancePromptPoolInput(els.regeneratePrompt);
         }
     } catch (error) {

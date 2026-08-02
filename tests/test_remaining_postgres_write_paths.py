@@ -207,32 +207,21 @@ class RemainingPostgresWritePathTests(unittest.TestCase):
         record_growth.assert_called_once()
         self.assertTrue(any("ON CONFLICT" in sql for sql, _ in conn.execute_calls))
 
-    def test_signature_access_request_uses_returning_helper(self):
+    def test_signature_access_request_delegates_to_feature_bound_workflow(self):
         conn = RecordingConnection()
-        actor = {"id": 5, "role": "teacher"}
-        signature_row = FakeRow({"id": 44, "owner_role": "teacher", "owner_id": 9})
-        with patch.object(signature_service, "build_signature_actor", return_value=actor), patch.object(
-            signature_service,
-            "_get_signature_row",
-            return_value=signature_row,
-        ), patch.object(signature_service, "can_view_signature", return_value=True), patch.object(
-            signature_service,
-            "can_use_signature",
-            return_value=False,
-        ), patch.object(signature_service, "can_request_signature_use", return_value=True), patch.object(
-            signature_service,
-            "execute_insert_returning_id",
-            return_value=801,
-        ) as insert_helper, patch.object(
-            signature_service,
-            "_serialize_signature_access_request",
-            return_value={"id": 801},
-        ):
-            result = signature_service.create_signature_access_request(conn, {"id": 5, "role": "teacher"}, 44)
+        with patch(
+            "classroom_app.services.signature_workflow_service.create_access_request",
+            return_value={"status": "success", "request": {"id": 801}},
+        ) as create_request:
+            result = signature_service.create_signature_access_request(
+                conn,
+                {"id": 5, "role": "teacher"},
+                44,
+                function_point_keys=["assessment_plan.reviewer_signature"],
+            )
 
         self.assertEqual({"status": "success", "request": {"id": 801}}, result)
-        self.assertEqual(1, insert_helper.call_count)
-        self.assertIn("INSERT INTO signature_access_requests", insert_helper.call_args.args[1])
+        create_request.assert_called_once()
 
     def test_submission_alignment_uses_returning_helper_for_recovered_submission(self):
         class AlignmentConn(RecordingConnection):

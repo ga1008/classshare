@@ -71,7 +71,9 @@ async def download_rendered_document(
         media_type=media_type,
         headers={
             "Content-Disposition": disposition,
-            "Cache-Control": "private, max-age=900",
+            "Cache-Control": "private, no-store, max-age=0, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
             "X-Content-Type-Options": "nosniff",
         },
     )

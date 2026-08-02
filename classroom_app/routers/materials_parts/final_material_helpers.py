@@ -10,6 +10,7 @@ from ...services.final_grade_transcript_service import (
 )
 from ...services.material_export_template_service import XLSX_MEDIA_TYPE
 from ...services.material_identity_service import build_final_material_package_name
+from ...services import signature_service, signature_workflow_service
 from ...services.exam_grade_record_service import EXAM_GRADE_RECORD_TYPE
 from ...services.ordinary_grade_record_service import (
     ORDINARY_GRADE_DEFAULT_MINIMUM_SCORE,
@@ -803,7 +804,14 @@ def _build_final_material_ai_user_prompt(
     )
 
 
-async def _persist_final_material_record_update(record_id: int, record, parse_result, user: dict) -> dict:
+async def _persist_final_material_record_update(
+    record_id: int,
+    record,
+    parse_result,
+    user: dict,
+    *,
+    signature_use_intents: list[dict[str, Any]] | None = None,
+) -> dict:
     readme_content = build_import_readme(result=parse_result, original_name=record["source_file_name"] or parse_result.document_type_label)
     readme_bytes = readme_content.encode("utf-8")
     readme_hash = hashlib.sha256(readme_bytes).hexdigest()
@@ -833,6 +841,22 @@ async def _persist_final_material_record_update(record_id: int, record, parse_re
         ).fetchone()
         if not current:
             raise HTTPException(404, "未找到可更新的解析记录")
+        for intent in signature_use_intents or []:
+            try:
+                signature_workflow_service.authorize_and_consume_signature_use(
+                    conn,
+                    user,
+                    int(intent["signature_id"]),
+                    function_point_key=str(intent["function_point_key"]),
+                    context_type=str(intent["context_type"]),
+                    context_id=str(intent["context_id"]),
+                    context_label=str(intent.get("context_label") or ""),
+                    metadata=intent.get("metadata") if isinstance(intent.get("metadata"), dict) else {},
+                    ip=str(intent.get("ip") or ""),
+                    user_agent=str(intent.get("user_agent") or ""),
+                )
+            except signature_service.SignatureServiceError as exc:
+                raise HTTPException(exc.status_code, exc.message) from exc
         if parsed_id:
             material = ensure_teacher_material_owner(conn, parsed_id, user["id"])
             conn.execute(

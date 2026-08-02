@@ -697,10 +697,18 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["student_growth_events"])
         for column in ("scope_level", "stored_path", "deleted_at"):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["electronic_signatures"])
+        self.assertIn("subject_id", REQUIRED_POSTGRES_COLUMNS["electronic_signatures"])
         for column in ("signature_name_snapshot", "context_label", "user_agent"):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["signature_usage_logs"])
         for column in ("requester_teacher_id", "reviewed_at", "reviewed_by_teacher_id"):
             self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["signature_access_requests"])
+        for table_name in (
+            "signature_function_points",
+            "signature_access_request_items",
+            "signature_access_request_reviewers",
+        ):
+            self.assertIn(table_name, REQUIRED_POSTGRES_TABLES)
+            self.assertIn(table_name, REQUIRED_POSTGRES_COLUMNS)
 
     def test_validate_schema_blocks_missing_table(self):
         conn = FakePostgresConnection(missing_tables=("submissions",))
@@ -728,7 +736,9 @@ class PostgresSchemaValidationTests(unittest.TestCase):
                 "classroom_app.db.schema.ensure_foundation_schema"
             ) as sqlite_initializer, patch(
                 "classroom_app.db.schema.ensure_cultivation_progress_schema"
-            ) as cultivation_schema:
+            ) as cultivation_schema, patch(
+                "classroom_app.db.schema.ensure_signature_workflow_schema"
+            ) as signature_workflow_schema:
                 report = database.init_database()
         finally:
             config.DB_ENGINE = original_engine
@@ -736,6 +746,7 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         self.assertEqual("ok", report["status"])
         self.assertTrue(conn.closed)
         cultivation_schema.assert_called_once_with(conn, engine="postgres")
+        signature_workflow_schema.assert_called_once_with(conn)
         sqlite_initializer.assert_not_called()
 
 

@@ -859,17 +859,11 @@ def build_export_fields(conn: sqlite3.Connection, plan: dict[str, Any]) -> dict[
     """Build the export fields, injecting bound signature image paths + names."""
     fields = dict(plan.get("fields") or {})
     examiner_subject, examiner_path = _signature_image_path(conn, plan.get("examiner_signature_id"))
-    if not examiner_path:
-        examiner_subject, examiner_path = _signature_image_for_subject(
-            conn, plan, fields.get("examiner_name") or fields.get("teacher_name")
-        )
     if examiner_path:
         fields["examiner_signature_image_path"] = examiner_path
     if examiner_subject and not fields.get("examiner_name"):
         fields["examiner_name"] = examiner_subject
     reviewer_subject, reviewer_path = _signature_image_path(conn, plan.get("reviewer_signature_id"))
-    if not reviewer_path:
-        reviewer_subject, reviewer_path = _signature_image_for_subject(conn, plan, fields.get("reviewer_name"))
     if reviewer_path:
         fields["reviewer_signature_image_path"] = reviewer_path
     if reviewer_subject and not fields.get("reviewer_name"):

@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from ..database import get_db_connection
 from ..dependencies import get_client_ip, get_current_user
-from ..services import signature_service
+from ..services import signature_service, signature_workflow_service
 
 
 router = APIRouter(prefix="/api/signatures")
@@ -34,6 +34,7 @@ async def api_list_signatures(
     owner_role: str = "",
     subject_role: str = "",
     scope: str = "",
+    function_point_key: str = "",
     limit: int = 200,
     user: dict = Depends(get_current_user),
 ):
@@ -47,6 +48,7 @@ async def api_list_signatures(
                 owner_role=owner_role,
                 subject_role=subject_role,
                 scope=scope,
+                function_point_key=function_point_key,
                 limit=limit,
             )
     except signature_service.SignatureServiceError as exc:
@@ -91,6 +93,7 @@ async def api_upload_signature(
     name: str = Form(""),
     subject_role: str = Form(""),
     subject_name: str = Form(""),
+    subject_id: int | None = Form(None),
     scope_level: str = Form(""),
     description: str = Form(""),
     user: dict = Depends(get_current_user),
@@ -104,6 +107,7 @@ async def api_upload_signature(
                 name=name,
                 subject_role=subject_role,
                 subject_name=subject_name,
+                subject_id=subject_id,
                 scope_level=scope_level,
                 description=description,
             )
@@ -177,11 +181,11 @@ async def api_record_signature_use(
     payload = await _json_body(request)
     try:
         with get_db_connection() as conn:
-            result = signature_service.record_signature_usage(
+            result = signature_workflow_service.authorize_and_consume_signature_use(
                 conn,
                 user,
                 signature_id,
-                action=str(payload.get("action") or "use"),
+                function_point_key=str(payload.get("function_point_key") or ""),
                 context_type=str(payload.get("context_type") or ""),
                 context_id=str(payload.get("context_id") or ""),
                 context_label=str(payload.get("context_label") or ""),
@@ -204,14 +208,13 @@ async def api_create_signature_access_request(
     payload = await _json_body(request)
     try:
         with get_db_connection() as conn:
-            result = signature_service.create_signature_access_request(
+            raw_points = payload.get("function_point_keys")
+            result = signature_workflow_service.create_access_request(
                 conn,
                 user,
                 signature_id,
                 note=str(payload.get("note") or ""),
-                context_type=str(payload.get("context_type") or ""),
-                context_id=str(payload.get("context_id") or ""),
-                context_label=str(payload.get("context_label") or ""),
+                function_point_keys=[str(item) for item in raw_points] if isinstance(raw_points, list) else [],
             )
             conn.commit()
         return result
@@ -227,7 +230,7 @@ async def api_list_signature_access_requests(
 ):
     try:
         with get_db_connection() as conn:
-            return signature_service.list_signature_access_requests(
+            return signature_workflow_service.list_access_requests(
                 conn,
                 user,
                 direction=direction,
@@ -246,7 +249,7 @@ async def api_approve_signature_access_request(
     payload = await _json_body(request)
     try:
         with get_db_connection() as conn:
-            result = signature_service.review_signature_access_request(
+            result = signature_workflow_service.review_access_request(
                 conn,
                 user,
                 request_id,
@@ -268,7 +271,7 @@ async def api_reject_signature_access_request(
     payload = await _json_body(request)
     try:
         with get_db_connection() as conn:
-            result = signature_service.review_signature_access_request(
+            result = signature_workflow_service.review_access_request(
                 conn,
                 user,
                 request_id,
@@ -277,6 +280,30 @@ async def api_reject_signature_access_request(
             )
             conn.commit()
         return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/requests/{request_id:int}/cancel", response_class=JSONResponse)
+async def api_cancel_signature_access_request(
+    request_id: int,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            result = signature_workflow_service.cancel_access_request(conn, user, request_id)
+            conn.commit()
+        return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.get("/function-points", response_class=JSONResponse)
+async def api_signature_function_points(user: dict = Depends(get_current_user)):
+    try:
+        with get_db_connection() as conn:
+            signature_service.build_signature_actor(conn, user)
+            return {"items": signature_workflow_service.list_function_points(conn)}
     except signature_service.SignatureServiceError as exc:
         _raise_signature_error(exc)
 

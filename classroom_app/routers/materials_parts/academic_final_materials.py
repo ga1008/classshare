@@ -17,6 +17,7 @@ from .generation_helpers import *
 from .ai_import_helpers import *
 from .final_material_helpers import *
 from ..ui_parts.common import _build_manage_template_context
+from ...dependencies import get_client_ip
 from ...services import signature_service
 from ...services.academic_final_material_service import (
     ACADEMIC_EXAM_ANALYSIS_LABEL,
@@ -24,22 +25,20 @@ from ...services.academic_final_material_service import (
     ACADEMIC_FINAL_MATERIAL_TYPES,
     ACADEMIC_GRADE_REGISTER_LABEL,
     ACADEMIC_GRADE_REGISTER_TYPE,
+    academic_final_material_record_urls,
     build_content_markdown,
     build_exam_analysis_export_payload,
     build_grade_register_export_payload,
     build_parse_result_dict,
-    ensure_system_consent_signatures,
     load_fresh_cached_batch,
     list_teacher_final_material_batches,
     list_teacher_final_material_candidates,
     reclaim_stale_academic_final_material_batches,
-    resolve_signature_path,
     serialize_batch,
     sync_paired_reports_from_academic_system,
     upsert_batch_state,
     validate_paired_reports,
 )
-from ...services.assessment_plan_generation_service import find_teacher_own_signature_id
 from ...services.material_ai_import_service import MaterialParseResult
 
 
@@ -153,8 +152,7 @@ def _serialize_record_payload(record: Any) -> dict[str, Any]:
         "updated_at": record["updated_at"] or "",
         "fields": payload.get("fields") if isinstance(payload.get("fields"), dict) else {},
         "structured": payload.get("structured") if isinstance(payload.get("structured"), dict) else {},
-        "export_url": f"/api/materials/ai-import-records/{int(record['id'])}/export?format=docx",
-        "preview_url": f"/api/materials/ai-import-records/{int(record['id'])}/render-preview?format=docx",
+        **academic_final_material_record_urls(int(record["id"]), record["updated_at"]),
     }
 
 
@@ -687,9 +685,10 @@ async def _run_academic_final_material_sync(
             class_offering_id=int(body.class_offering_id),
             values={**common_batch_values, "sync_status": "processing", "last_error": ""},
         )
-        teacher_signature_id = find_teacher_own_signature_id(conn, int(user["id"]))
-        teacher_signature_path = resolve_signature_path(conn, teacher_signature_id)
-        consent = ensure_system_consent_signatures(conn)
+        # Signature binding is an explicit, feature-bound action performed in
+        # the editor.  Synchronization never inserts or persists a signature.
+        teacher_signature_id = None
+        teacher_signature_path = ""
         course_context = _load_course_analysis_context(conn, int(body.class_offering_id), int(user["id"]))
         conn.commit()
 
@@ -699,17 +698,7 @@ async def _run_academic_final_material_sync(
         teacher_signature_id=teacher_signature_id,
         teacher_signature_path=teacher_signature_path,
     )
-    analysis_defaults = {
-        "proposition_form": "",
-        "exam_form": "",
-        "separate_teaching_exam": "",
-        "course_nature": "",
-        "marking_form": "",
-        "department_consent_signature_id": (consent.get("department") or {}).get("id"),
-        "department_consent_image_path": (consent.get("department") or {}).get("path", ""),
-        "dean_consent_signature_id": (consent.get("dean") or {}).get("id"),
-        "dean_consent_image_path": (consent.get("dean") or {}).get("path", ""),
-    }
+    analysis_defaults: dict[str, Any] = {}
     analysis_payload = build_exam_analysis_export_payload(
         result["analysis"],
         validation,
@@ -963,30 +952,46 @@ def _apply_signature(
     id_key: str,
     path_key: str,
     signature_id: int | None,
-) -> None:
+    function_point_key: str,
+    context_type: str,
+    context_id: str,
+    context_label: str,
+    ip: str = "",
+    user_agent: str = "",
+) -> dict[str, Any] | None:
     fields[id_key] = int(signature_id) if signature_id else None
     fields[path_key] = ""
     if not signature_id:
-        return
+        return None
     try:
         row, _actor = signature_service.get_signature_row_for_actor(
             conn,
             user,
             int(signature_id),
-            require_use=True,
+            require_use=False,
         )
     except signature_service.SignatureServiceError as exc:
         raise HTTPException(exc.status_code, exc.message) from exc
     path = signature_service.resolve_signature_file_path(row)
     if not path:
         raise HTTPException(422, "所选签名图片文件不存在。")
-    fields[path_key] = str(path)
+    return {
+        "signature_id": int(signature_id),
+        "function_point_key": function_point_key,
+        "context_type": context_type,
+        "context_id": context_id,
+        "context_label": context_label,
+        "metadata": {"document_type": context_type},
+        "ip": ip,
+        "user_agent": user_agent,
+    }
 
 
 @router.patch("/api/academic-final-materials/{batch_id}", response_class=JSONResponse)
 async def api_update_academic_final_material(
     batch_id: str,
     body: AcademicFinalMaterialUpdateRequest,
+    request: Request,
     user: dict = Depends(get_current_teacher),
 ):
     if body.document_type not in ACADEMIC_FINAL_MATERIAL_TYPES:
@@ -1006,16 +1011,32 @@ async def api_update_academic_final_material(
         export_payload = _record_export_payload(record)
         fields = dict(export_payload.get("fields") or {})
         structured = dict(export_payload.get("structured") or {})
+        for stale_path_key in (
+            "teacher_signature_image_path",
+            "department_signature_image_path",
+            "dean_signature_image_path",
+        ):
+            fields.pop(stale_path_key, None)
+        signature_use_intents: list[dict[str, Any]] = []
+        context_label = f"{fields.get('course_name') or ''} · {fields.get('class_name') or ''}".strip(" ·")
         if body.document_type == ACADEMIC_GRADE_REGISTER_TYPE:
             if "teacher_signature_id" in body_payload:
-                _apply_signature(
+                intent = _apply_signature(
                     conn,
                     user,
                     fields,
                     id_key="teacher_signature_id",
                     path_key="teacher_signature_image_path",
                     signature_id=body.teacher_signature_id,
+                    function_point_key="academic_final_material.grade_register.teacher_signature",
+                    context_type="academic_final_material",
+                    context_id=str(record["id"]),
+                    context_label=context_label or f"期末成绩登记表 #{record['id']}",
+                    ip=get_client_ip(request),
+                    user_agent=request.headers.get("user-agent", ""),
                 )
+                if intent:
+                    signature_use_intents.append(intent)
         else:
             for key in ANALYSIS_EDIT_FIELDS:
                 if key in body_payload:
@@ -1027,28 +1048,50 @@ async def api_update_academic_final_material(
                 structured["analysis_text"] = text
                 fields["analysis_text"] = text
             if "department_signature_id" in body_payload:
-                _apply_signature(
+                intent = _apply_signature(
                     conn,
                     user,
                     fields,
                     id_key="department_signature_id",
                     path_key="department_signature_image_path",
                     signature_id=body.department_signature_id,
+                    function_point_key="academic_final_material.exam_analysis.department_review_signature",
+                    context_type="academic_final_material",
+                    context_id=str(record["id"]),
+                    context_label=context_label or f"试卷分析表 #{record['id']}",
+                    ip=get_client_ip(request),
+                    user_agent=request.headers.get("user-agent", ""),
                 )
+                if intent:
+                    signature_use_intents.append(intent)
             if "dean_signature_id" in body_payload:
-                _apply_signature(
+                intent = _apply_signature(
                     conn,
                     user,
                     fields,
                     id_key="dean_signature_id",
                     path_key="dean_signature_image_path",
                     signature_id=body.dean_signature_id,
+                    function_point_key="academic_final_material.exam_analysis.dean_review_signature",
+                    context_type="academic_final_material",
+                    context_id=str(record["id"]),
+                    context_label=context_label or f"试卷分析表 #{record['id']}",
+                    ip=get_client_ip(request),
+                    user_agent=request.headers.get("user-agent", ""),
                 )
+                if intent:
+                    signature_use_intents.append(intent)
         export_payload["fields"] = fields
         export_payload["structured"] = structured
         conn.commit()
     parse_result = _make_parse_result(export_payload, ai_used=bool(record["parse_mode"] in {"ai", "ai_generated"}))
-    task = await _persist_final_material_record_update(int(record["id"]), record, parse_result, user)
+    task = await _persist_final_material_record_update(
+        int(record["id"]),
+        record,
+        parse_result,
+        user,
+        signature_use_intents=signature_use_intents,
+    )
     with get_db_connection() as conn:
         batch_row = _batch_for_teacher(conn, batch_id, int(user["id"]))
         edit_state = _json_object(batch_row["edit_state_json"])

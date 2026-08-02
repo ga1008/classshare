@@ -25,6 +25,7 @@ from ..db.connection import execute_insert_returning_id, get_configured_db_engin
 from ..db.schema_materials_integrations import ensure_materials_integrations_schema
 from . import assessment_plan_service as ap
 from .assessment_plan_generation_service import find_teacher_own_signature_id
+from . import signature_service, signature_workflow_service
 from .academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 from .exam_json_service import normalize_exam_scoring_payload
 from .file_service import global_file_write_path
@@ -309,7 +310,20 @@ async def run_assessment_plan_reverse_job(
             course_name = normalized["fields"].get("course_name") or context["paper"]["title"] or "课程"
             ap.update_attributes(conn, plan_id, title=f"{course_name}（试卷反推）")
             if own_signature_id:
-                ap.set_signature(conn, plan_id, role="examiner", signature_id=own_signature_id)
+                try:
+                    signature_workflow_service.authorize_and_consume_signature_use(
+                        conn,
+                        {"role": "teacher", "id": int(teacher_id)},
+                        own_signature_id,
+                        function_point_key="assessment_plan.examiner_signature",
+                        context_type="assessment_plan",
+                        context_id=str(plan_id),
+                        context_label=f"{course_name}（试卷反推）",
+                        metadata={"source": "exam_reverse"},
+                    )
+                    ap.set_signature(conn, plan_id, role="examiner", signature_id=own_signature_id)
+                except signature_service.SignatureServiceError as exc:
+                    warnings.append(f"本人签名自动绑定失败：{exc.message}")
             ap.set_generation_status(
                 conn,
                 plan_id,
