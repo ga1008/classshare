@@ -123,7 +123,7 @@ function preloadImage(url, timeoutMs) {
 
 const TONE_LUMA_THRESHOLD = 148;
 
-function sampleImageTone(image) {
+export function sampleImageTone(image) {
     // 采样图片中央横带（文字所在区域）的平均亮度：亮 → 深色字，暗 → 白字。
     try {
         const canvas = document.createElement('canvas');
@@ -161,7 +161,7 @@ function buildIdentityChip(profile) {
     `;
 }
 
-function buildTipReveal(profile, tip, durationMs, hasImage, tone) {
+function buildTipReveal(profile, tip, durationMs, hasImage, tone, imageUrl) {
     const overlay = document.createElement('div');
     overlay.className = 'cultivation-login-reveal cultivation-login-reveal--tip';
     overlay.setAttribute('role', 'status');
@@ -170,7 +170,7 @@ function buildTipReveal(profile, tip, durationMs, hasImage, tone) {
     overlay.dataset.tipTone = tone === 'light' ? 'light' : 'dark';
     overlay.innerHTML = `
         <div class="life-tip-backdrop${hasImage ? ' has-image' : ''}" aria-hidden="true"
-            ${hasImage ? `style="background-image: url('${escapeHtml(tip.image_url)}')"` : ''}></div>
+            ${hasImage ? `style="background-image: url('${escapeHtml(imageUrl || tip.image_url)}')"` : ''}></div>
         <div class="life-tip-vignette" aria-hidden="true"></div>
         ${buildIdentityChip(profile)}
         <section class="life-tip-stage">
@@ -372,13 +372,21 @@ function preloadDuringReveal(loginTipCandidates) {
     });
 }
 
-function playLifeTipReveal(profile, tip, onDone, otherCandidates) {
+function playLifeTipReveal(profile, tip, onDone, otherCandidates, scene = null) {
     const durationMs = tipDurationMs(tip.text);
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches || false;
 
-    preloadImage(tip.image_url, TIP_IMAGE_WAIT_MS).then((hasImage) => {
-        const tone = hasImage ? sampleImageTone(hasImage) : 'dark';
-        const overlay = buildTipReveal(profile, tip, durationMs, hasImage, tone);
+    // 场景模式：登录页已预载并展示同一张背景图，直接复用，保证"背景图不变"。
+    const readyPromise = scene?.imageUrl
+        ? Promise.resolve(true)
+        : preloadImage(tip.image_url, TIP_IMAGE_WAIT_MS);
+
+    readyPromise.then((loaded) => {
+        const hasImage = Boolean(scene?.imageUrl || loaded);
+        const imageUrl = scene?.imageUrl || (hasImage ? tip.image_url : null);
+        const tone = scene?.tone || (loaded && loaded !== true ? sampleImageTone(loaded) : 'dark');
+        const overlay = buildTipReveal(profile, tip, durationMs, hasImage, tone, imageUrl);
+        if (scene) overlay.classList.add('cultivation-login-reveal--scene');
         document.body.appendChild(overlay);
         document.documentElement.classList.add('has-cultivation-login-reveal');
         document.body.classList.add('has-cultivation-login-reveal');
@@ -392,6 +400,16 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates) {
             finished = true;
             if (autoTimer) window.clearTimeout(autoTimer);
             window.removeEventListener('keydown', onKeydown, true);
+            const topbar = document.querySelector('.app-topbar');
+            if (hasImage && imageUrl && topbar && !scene) {
+                // 首页 cookie 播放路径：背景不散场，收缩进顶栏成为菜单背景。
+                collapseRevealToTopbar(overlay, imageUrl, tip.text, onDone);
+                return;
+            }
+            if (hasImage && imageUrl && scene) {
+                // 登录页场景路径：把背景交棒给首页，由首页完成收缩动画。
+                writeSceneHandoff({ image: imageUrl, tip: tip.text, t: Date.now() });
+            }
             overlay.classList.add('is-closing');
             window.setTimeout(() => {
                 overlay.remove();
@@ -412,9 +430,251 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates) {
 
         wireTipFeedback(overlay, tip);
         wireTipSave(overlay, tip, hasImage);
+        if (scene?.fromRect && !reducedMotion) {
+            morphStageFromRect(overlay, scene.fromRect);
+        }
         revealTipText(overlay.querySelector('[data-life-tip-text]'), tip.text, durationMs, reducedMotion);
         preloadDuringReveal(otherCandidates);
     });
+}
+
+// ── 登录场景交棒（2026-08-03）：登录页背景 → 一言玻璃卡 → 首页顶栏 ──────
+
+const SCENE_HANDOFF_KEY = 'lanshareLoginScene';
+const TOPBAR_SCENE_KEY = 'lanshareTopbarScene';
+const SCENE_HANDOFF_MAX_AGE_MS = 45000;
+const SCENE_COLLAPSE_MS = 820;
+
+function readSessionJson(key) {
+    try {
+        const raw = window.sessionStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function writeSessionJson(key, value) {
+    try {
+        window.sessionStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+        // sessionStorage 不可用时放弃交棒，首页回落普通顶栏。
+    }
+}
+
+function writeSceneHandoff(state) {
+    writeSessionJson(SCENE_HANDOFF_KEY, state);
+}
+
+function persistTopbarScene(state) {
+    writeSessionJson(TOPBAR_SCENE_KEY, { ...state, t: Date.now() });
+}
+
+// 表单卡 → 一言玻璃卡的近似 FLIP 变形：从登录卡的位置/大小生长到居中。
+function morphStageFromRect(overlay, fromRect) {
+    const stage = overlay.querySelector('.life-tip-stage');
+    if (!stage || !fromRect || !fromRect.width) return;
+    stage.classList.add('life-tip-stage--morph');
+    window.requestAnimationFrame(() => {
+        const to = stage.getBoundingClientRect();
+        if (!to.width || !to.height) return;
+        const dx = (fromRect.left + fromRect.width / 2) - (to.left + to.width / 2);
+        const dy = (fromRect.top + fromRect.height / 2) - (to.top + to.height / 2);
+        const sx = Math.max(0.2, fromRect.width / to.width);
+        const sy = Math.max(0.2, fromRect.height / to.height);
+        stage.style.transition = 'none';
+        stage.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+        stage.style.opacity = '0.35';
+        window.requestAnimationFrame(() => {
+            stage.style.transition = '';
+            stage.style.transform = '';
+            stage.style.opacity = '';
+        });
+    });
+}
+
+function ensureTopbarSceneLayer(imageUrl) {
+    const topbar = document.querySelector('.app-topbar');
+    if (!topbar || !imageUrl) return;
+    let layer = topbar.querySelector('.app-topbar__scene');
+    if (!layer) {
+        layer = document.createElement('div');
+        layer.className = 'app-topbar__scene';
+        layer.setAttribute('aria-hidden', 'true');
+        layer.innerHTML = '<i></i><b></b>';
+        topbar.prepend(layer);
+    }
+    const imageNode = layer.querySelector('i');
+    if (imageNode) imageNode.style.backgroundImage = `url('${imageUrl}')`;
+    document.documentElement.classList.add('has-topbar-scene');
+}
+
+function ensureTopbarChip(tipText) {
+    const topbar = document.querySelector('.app-topbar');
+    if (!topbar || topbar.querySelector('.topbar-scene-chip')) return;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'topbar-scene-chip';
+    chip.innerHTML = '<span class="topbar-scene-chip__dot" aria-hidden="true"></span>人生一言';
+    const text = String(tipText || '').trim();
+    if (text) {
+        chip.title = text;
+        chip.setAttribute('aria-label', `人生一言：${text}`);
+        chip.addEventListener('click', (event) => {
+            event.stopPropagation();
+            let pop = document.querySelector('.topbar-scene-pop');
+            if (pop) {
+                pop.remove();
+                return;
+            }
+            // 挂在 body 上做 fixed 定位，避开顶栏层叠上下文与继承样式。
+            pop = document.createElement('div');
+            pop.className = 'topbar-scene-pop';
+            pop.textContent = text;
+            const rect = chip.getBoundingClientRect();
+            pop.style.top = `${Math.round(rect.bottom + 10)}px`;
+            pop.style.left = `${Math.round(Math.max(12, rect.left))}px`;
+            document.body.appendChild(pop);
+            const close = () => document.querySelector('.topbar-scene-pop')?.remove();
+            window.setTimeout(() => {
+                document.addEventListener('click', close, { once: true });
+            }, 0);
+        });
+    } else {
+        chip.disabled = true;
+    }
+    const brand = topbar.querySelector('.app-topbar-brand');
+    if (brand) {
+        brand.after(chip);
+    } else {
+        topbar.prepend(chip);
+    }
+}
+
+// 首页 cookie 播放路径的收场：一言背景整体收缩进顶栏、化为模糊菜单背景。
+function collapseRevealToTopbar(overlay, imageUrl, tipText, onDone) {
+    const topbar = document.querySelector('.app-topbar');
+    const rect = topbar.getBoundingClientRect();
+    persistTopbarScene({ image: imageUrl, tip: tipText || '' });
+    ensureTopbarSceneLayer(imageUrl);
+
+    overlay.classList.add('is-scene-collapsing');
+    const backdrop = overlay.querySelector('.life-tip-backdrop');
+    if (backdrop) {
+        backdrop.style.animation = 'none';
+        backdrop.style.transition = `inset ${SCENE_COLLAPSE_MS}ms cubic-bezier(0.3, 0.7, 0.25, 1), filter ${SCENE_COLLAPSE_MS}ms ease, opacity ${SCENE_COLLAPSE_MS}ms ease`;
+        window.requestAnimationFrame(() => {
+            const bottomGap = Math.max(0, window.innerHeight - Math.max(56, rect.height + rect.top));
+            backdrop.style.inset = `0 0 ${bottomGap}px 0`;
+            backdrop.style.filter = 'blur(24px) saturate(1.1) brightness(1.04)';
+            backdrop.style.opacity = '0';
+        });
+    }
+    window.setTimeout(() => {
+        overlay.remove();
+        document.documentElement.classList.remove('has-cultivation-login-reveal');
+        document.body.classList.remove('has-cultivation-login-reveal');
+        ensureTopbarChip(tipText);
+        onDone?.();
+    }, SCENE_COLLAPSE_MS + 60);
+}
+
+// 场景选句：优先挑与登录背景图分类相配、且近期没看过的一句。
+function chooseSceneTip(loginTip, scene) {
+    const tips = Array.isArray(loginTip?.tips) ? loginTip.tips.filter((tip) => tip && tip.text) : [];
+    if (!tips.length) return null;
+    const seen = new Set(readSeenTipIds());
+    const categories = new Set(scene?.categories || []);
+    const unseen = tips.filter((tip) => !seen.has(tip.id));
+    return unseen.find((tip) => categories.has(tip.category))
+        || unseen[0]
+        || tips.find((tip) => categories.has(tip.category))
+        || tips[0];
+}
+
+/**
+ * 登录页专用入口：表单卡原地变形为一言玻璃卡，结束后交棒给首页。
+ */
+export function playLoginSceneReveal(profile, options = {}) {
+    const onDone = typeof options.onDone === 'function' ? options.onDone : null;
+    const scene = options.scene || null;
+    const card = options.fromElement || null;
+    const fromRect = card?.getBoundingClientRect?.() || null;
+    if (card) card.classList.add('login-card--handoff');
+    clearRevealCookie();
+
+    const tip = chooseSceneTip(options.loginTip, scene);
+    if (!tip) {
+        // 没有可播的一言：仍把背景交棒给首页，保持视觉连续。
+        if (scene?.imageUrl) {
+            writeSceneHandoff({ image: scene.imageUrl, tip: '', t: Date.now() });
+        }
+        window.setTimeout(() => onDone?.(), scene ? 560 : 420);
+        return;
+    }
+    const others = (options.loginTip?.tips || []).filter((item) => item && item.id !== tip.id);
+    playLifeTipReveal(profile, tip, onDone, others, scene ? {
+        imageUrl: scene.imageUrl || null,
+        tone: scene.tone || null,
+        categories: scene.categories || [],
+        fromRect,
+    } : { imageUrl: null, tone: null, categories: [], fromRect });
+}
+
+// 首页开场：读取交棒状态，把满屏背景优雅收缩进顶栏。
+function runSceneEntrance() {
+    const root = document.documentElement;
+    const handoff = readSessionJson(SCENE_HANDOFF_KEY);
+    try {
+        window.sessionStorage.removeItem(SCENE_HANDOFF_KEY);
+    } catch (error) {
+        // 忽略。
+    }
+    const hasCover = root.classList.contains('has-scene-cover');
+    const fresh = handoff?.image && Date.now() - (handoff.t || 0) < SCENE_HANDOFF_MAX_AGE_MS;
+
+    if (!fresh) {
+        root.classList.remove('has-scene-cover');
+        const persisted = readSessionJson(TOPBAR_SCENE_KEY);
+        if (persisted?.image) {
+            ensureTopbarSceneLayer(persisted.image);
+            ensureTopbarChip(persisted.tip);
+        }
+        return false;
+    }
+
+    persistTopbarScene({ image: handoff.image, tip: handoff.tip || '' });
+    ensureTopbarSceneLayer(handoff.image);
+
+    const topbar = document.querySelector('.app-topbar');
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches || false;
+    if (!hasCover || !topbar || reducedMotion) {
+        root.classList.remove('has-scene-cover', 'scene-cover-collapsing');
+        ensureTopbarChip(handoff.tip);
+        return true;
+    }
+
+    const rect = topbar.getBoundingClientRect();
+    root.style.setProperty('--scene-cover-end', `${Math.max(56, Math.round(rect.height + rect.top))}px`);
+
+    let label = null;
+    if (handoff.tip) {
+        label = document.createElement('p');
+        label.className = 'scene-cover-tip';
+        label.textContent = handoff.tip;
+        document.body.appendChild(label);
+    }
+
+    window.setTimeout(() => {
+        root.classList.add('scene-cover-collapsing');
+        label?.classList.add('is-collapsing');
+        window.setTimeout(() => {
+            root.classList.remove('has-scene-cover', 'scene-cover-collapsing');
+            label?.remove();
+            ensureTopbarChip(handoff.tip);
+        }, SCENE_COLLAPSE_MS + 80);
+    }, 300);
+    return true;
 }
 
 // ── 纯修为卡（无提示语时的兜底展示） ──────────────────────────────
@@ -517,7 +777,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (document.body?.dataset.authenticatedUser !== 'true') {
         return;
     }
-    const wantsReveal = shouldRevealFromCookie();
+    // 登录页交棒的背景收缩开场优先；播过就不再走 cookie 浮层，避免二次打断。
+    const sceneEntered = runSceneEntrance();
+    if (sceneEntered) {
+        clearRevealCookie();
+    }
+    const wantsReveal = !sceneEntered && shouldRevealFromCookie();
     const payload = await fetchCultivationProfile(wantsReveal);
     const profile = payload?.profile || null;
     if (profile) {

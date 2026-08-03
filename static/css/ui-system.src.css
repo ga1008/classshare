@@ -51639,3 +51639,221 @@ body.academic-evaluation-modal-open { overflow: hidden; }
         transition: none !important;
     }
 }
+
+/* ==== 登录场景 & 顶栏一言（2026-08-03）：登录页背景图 + 液态玻璃表单 + 背景收缩进顶栏 ==== */
+/* 登录页满屏一言背景（初始化成功后 body.login-scene-active 渐显） */
+.login-scene-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 1s ease;
+}
+body.login-scene-active .login-scene-backdrop { opacity: 1; }
+.login-scene-backdrop__image {
+    position: absolute;
+    inset: -4%;
+    background-size: cover;
+    background-position: center;
+    animation: life-tip-kenburns 22s ease-out forwards;
+}
+.login-scene-backdrop__veil {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(180deg, rgba(2, 6, 23, 0.34) 0%, rgba(2, 6, 23, 0.08) 32%, rgba(2, 6, 23, 0.14) 68%, rgba(2, 6, 23, 0.48) 100%);
+}
+/* 液态玻璃登录卡：白玻璃在亮暗图上都可读（iOS 液态玻璃质感） */
+body.login-scene-active .login-card {
+    background: rgba(255, 255, 255, 0.58);
+    backdrop-filter: blur(28px) saturate(1.6);
+    -webkit-backdrop-filter: blur(28px) saturate(1.6);
+    border: 1px solid rgba(255, 255, 255, 0.66);
+    box-shadow:
+        0 32px 90px -32px rgba(2, 6, 23, 0.55),
+        inset 0 1px 0 rgba(255, 255, 255, 0.85),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.25);
+    transition: opacity 0.5s ease, transform 0.62s cubic-bezier(0.32, 0.72, 0.24, 1), filter 0.5s ease;
+}
+body.login-scene-active .login-card .form-control {
+    background: rgba(255, 255, 255, 0.74);
+    border-color: rgba(255, 255, 255, 0.9);
+}
+body.login-scene-active .login-card .form-control:focus {
+    background: rgba(255, 255, 255, 0.92);
+}
+body.login-scene-active .login-tip-box,
+body.login-scene-active .identity-panel-note {
+    background: rgba(255, 255, 255, 0.4);
+}
+/* 登录成功：表单卡溶解让位给一言玻璃卡（近似 FLIP 变形的起点） */
+.login-card.login-card--handoff {
+    opacity: 0 !important;
+    transform: scale(1.05) translateY(-8px);
+    filter: blur(12px);
+    pointer-events: none;
+}
+/* 备案页脚在图上保持可读 */
+body.login-scene-active .site-record-footer {
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    border-top: 1px solid rgba(255, 255, 255, 0.6);
+}
+/* 一言玻璃卡从表单卡位置生长出来 */
+.cultivation-login-reveal--tip .life-tip-stage.life-tip-stage--morph {
+    opacity: 1;
+    transform: none;
+    transition: transform 0.68s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease;
+    will-change: transform;
+}
+/* 首页开场满屏背景（交棒图，绘制先于首屏，随后收缩进顶栏） */
+html.has-scene-cover { overflow: hidden; }
+html.has-scene-cover::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100dvh;
+    z-index: 6000;
+    background-image: var(--scene-cover-image);
+    background-size: cover;
+    background-position: center;
+    pointer-events: none;
+}
+html.scene-cover-collapsing::before {
+    animation: scene-cover-collapse 0.82s cubic-bezier(0.3, 0.7, 0.25, 1) forwards;
+}
+@keyframes scene-cover-collapse {
+    0% { height: 100dvh; filter: blur(0) brightness(0.97); opacity: 1; border-radius: 0; }
+    58% { filter: blur(12px); opacity: 1; }
+    84% { height: calc(var(--scene-cover-end, 64px) + 26px); border-radius: 0 0 30px 30px; opacity: 0.9; }
+    100% { height: var(--scene-cover-end, 64px); filter: blur(26px) brightness(1.04); opacity: 0; border-radius: 0; }
+}
+/* 收缩时一言文字缩小飞向顶栏左侧化作「人生一言」 */
+.scene-cover-tip {
+    position: fixed;
+    left: 50%;
+    top: 44%;
+    transform: translate(-50%, -50%);
+    z-index: 6002;
+    margin: 0;
+    max-width: min(680px, 86vw);
+    color: #fff;
+    font-size: clamp(15px, 2.2vw, 21px);
+    font-weight: 600;
+    line-height: 1.7;
+    text-align: center;
+    text-shadow: 0 2px 18px rgba(2, 6, 23, 0.7);
+    pointer-events: none;
+    transition: transform 0.8s cubic-bezier(0.3, 0.7, 0.25, 1), opacity 0.62s ease;
+}
+.scene-cover-tip.is-collapsing {
+    opacity: 0;
+    transform: translate(calc(-50% - 38vw), calc(-50% - 36vh)) scale(0.32);
+}
+/* 顶栏一言背景：模糊图 + 白纱，保证按钮可读 */
+.app-topbar__scene {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+}
+.app-topbar__scene i {
+    position: absolute;
+    inset: -44px;
+    background-size: cover;
+    background-position: center 30%;
+    filter: blur(22px) saturate(1.12) brightness(1.05);
+    transform: scale(1.06);
+}
+.app-topbar__scene b {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.42));
+}
+/* 顶栏左侧「人生一言」小胶囊 */
+.topbar-scene-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    padding: 5px 12px;
+    border: 1px solid rgba(15, 23, 42, 0.14);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(8px);
+    color: #334155;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    animation: topbar-scene-chip-in 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.topbar-scene-chip:hover {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: rgba(15, 23, 42, 0.24);
+    transform: translateY(-1px);
+}
+.topbar-scene-chip:disabled { cursor: default; opacity: 0.7; }
+.topbar-scene-chip__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #38bdf8, #a78bfa);
+    box-shadow: 0 0 8px 1px rgba(56, 189, 248, 0.5);
+}
+@keyframes topbar-scene-chip-in {
+    from { opacity: 0; transform: translateY(-6px) scale(0.86); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* 点击胶囊展开的一言浮窗 */
+.topbar-scene-pop {
+    position: fixed;
+    z-index: 6050;
+    max-width: min(460px, 84vw);
+    padding: 14px 18px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(20px) saturate(1.5);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    box-shadow: 0 24px 60px -24px rgba(2, 6, 23, 0.45);
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.8;
+    animation: topbar-scene-chip-in 0.35s ease;
+}
+/* 首页 cookie 播放路径的收场（背景收缩期间其余元素退场） */
+.cultivation-login-reveal.is-scene-collapsing {
+    background: transparent;
+    pointer-events: none;
+}
+.cultivation-login-reveal.is-scene-collapsing .life-tip-vignette,
+.cultivation-login-reveal.is-scene-collapsing .cultivation-login-reveal__field,
+.cultivation-login-reveal.is-scene-collapsing .life-tip-identity,
+.cultivation-login-reveal.is-scene-collapsing .life-tip-footer {
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+.cultivation-login-reveal.is-scene-collapsing .life-tip-stage {
+    opacity: 0;
+    transform: translate(calc(-50vw + 160px), calc(-50vh + 40px)) scale(0.18);
+    transition: transform 0.78s cubic-bezier(0.3, 0.7, 0.25, 1), opacity 0.6s ease;
+}
+@media (max-width: 768px) {
+    .topbar-scene-chip { display: none; }
+    .topbar-scene-pop { left: 12px; right: 12px; max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .login-scene-backdrop__image { animation: none; }
+    .scene-cover-tip { transition: none; }
+    .topbar-scene-chip { animation: none; }
+    html.scene-cover-collapsing::before { animation-duration: 0.01ms; }
+    .cultivation-login-reveal--tip .life-tip-stage.life-tip-stage--morph { transition: none; }
+}

@@ -15,6 +15,36 @@
     {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}"{% if user_info is defined and user_info %} data-authenticated-user="true"{% endif %}>
+    {% if user_info is defined and user_info %}
+    <script>
+        // 人生一言场景预挂载：登录页交棒的背景图在首屏绘制前就位，避免闪白。
+        (() => {
+            try {
+                let handoff = null;
+                try { handoff = JSON.parse(sessionStorage.getItem('lanshareLoginScene') || 'null'); } catch (e) { /* 忽略 */ }
+                const fresh = handoff && handoff.image && Date.now() - (handoff.t || 0) < 45000;
+                const root = document.documentElement;
+                const safeUrl = (value) => 'url("' + String(value).replace(/["\\]/g, '') + '")';
+                if (fresh) {
+                    root.classList.add('has-scene-cover');
+                    root.style.setProperty('--scene-cover-image', safeUrl(handoff.image));
+                    // 兜底：主脚本没接手时 8 秒后自行撤下满屏遮罩，避免卡死页面。
+                    setTimeout(() => {
+                        root.classList.remove('has-scene-cover', 'scene-cover-collapsing');
+                    }, 8000);
+                }
+                let scene = fresh ? handoff : null;
+                if (!scene) {
+                    try { scene = JSON.parse(sessionStorage.getItem('lanshareTopbarScene') || 'null'); } catch (e) { /* 忽略 */ }
+                }
+                if (scene && scene.image) {
+                    root.classList.add('has-topbar-scene');
+                    root.style.setProperty('--topbar-scene-image', safeUrl(scene.image));
+                }
+            } catch (e) { /* 场景装饰失败不影响页面 */ }
+        })();
+    </script>
+    {% endif %}
     {% block body %}{% endblock %}
 
     <!-- Global Toast Container -->
@@ -58,7 +88,7 @@
 
     <script type="module" src="/static/js/auth.js"></script>
     {% if user_info is defined and user_info %}
-    <script type="module" src="/static/js/cultivation_identity.js?v=20260724-lifetip8"></script>
+    <script type="module" src="/static/js/cultivation_identity.js?v=20260803-scene1"></script>
     <script type="module" src="/static/js/message_center_bell.js"></script>
     {% if user_info.role == 'teacher' %}
     <script type="module" src="/static/js/teacher_onboarding.js"></script>

@@ -1,6 +1,9 @@
 import { apiFetch } from '/static/js/api.js';
-import { playCultivationReveal } from '/static/js/cultivation_identity.js?v=20260724-lifetip8';
+import { finishLoginWithScene, initLoginScene } from '/static/js/login_scene.js?v=20260803-scene1';
 import { closeModal, openModal, showToast } from '/static/js/ui.js';
+
+// 登录页人生一言场景（背景图 + 液态玻璃表单），DOMContentLoaded 后初始化。
+let loginScene = null;
 
 function setSubmitting(button, submitting, pendingText) {
     if (!button) {
@@ -29,11 +32,13 @@ function redirectAfterLogin(result) {
 
     showToast(message, 'success');
     const go = () => window.location.assign(redirectTo);
-    if (result.cultivation_profile) {
-        playCultivationReveal(result.cultivation_profile, {
-            durationMs: 3600,
+    if (loginScene || result.cultivation_profile || result.login_tip) {
+        finishLoginWithScene({
+            scene: loginScene,
+            profile: result.cultivation_profile || null,
             loginTip: result.login_tip || null,
-            onDone: go,
+            redirectTo,
+            cardElement: document.querySelector('.login-card'),
         });
         return;
     }
@@ -45,6 +50,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!root) {
         return;
     }
+
+    initLoginScene().then((scene) => {
+        loginScene = scene;
+    }).catch(() => {
+        loginScene = null;
+    });
 
     const modePanels = Array.from(document.querySelectorAll('[data-login-panel]'));
     const passwordForm = document.getElementById('student-password-login-form');

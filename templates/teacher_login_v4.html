@@ -14,7 +14,7 @@
     <h2>教师登录</h2>
     <p class="subtitle">管理您的课堂、资源与作业</p>
 
-    <form action="/teacher/login" method="post">
+    <form id="teacher-login-form" action="/teacher/login" method="post">
         <input type="hidden" name="next" value="{{ next_url }}">
         <div class="form-group text-left">
             <label class="form-label" for="email">邮箱</label>
@@ -31,4 +31,9 @@
         <a href="{{ student_entry_url }}">学生入口</a>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="module" src="/static/js/teacher_login.js?v=20260803-scene1"></script>
 {% endblock %}
