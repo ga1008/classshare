@@ -404,75 +404,40 @@ def create_access_request(
     return {"status": "success", "request": get_request(conn, request_id)}
 
 
-def _request_items(conn: Any, request_id: int) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT id, function_point_key, function_point_label_snapshot, status,
-               consumed_at, consumed_context_type, consumed_context_id, usage_log_id,
-               material_type, material_id, material_revision
-        FROM signature_access_request_items
-        WHERE request_id = ? ORDER BY id
-        """,
-        (int(request_id),),
-    ).fetchall()
-    return [
-        {
-            "id": int(row["id"]),
-            "function_point_key": row["function_point_key"],
-            "function_point_label": row["function_point_label_snapshot"],
-            "status": row["status"],
-            "consumed_at": row["consumed_at"] or "",
-            "context_type": row["consumed_context_type"] or "",
-            "context_id": row["consumed_context_id"] or "",
-            "usage_log_id": row["usage_log_id"],
-            "material_type": row["material_type"] or "",
-            "material_id": row["material_id"] or "",
-            "material_revision": row["material_revision"] or "",
-        }
-        for row in rows
-    ]
+def _serialize_request_item(row: Any) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "function_point_key": row["function_point_key"],
+        "function_point_label": row["function_point_label_snapshot"],
+        "status": row["status"],
+        "consumed_at": row["consumed_at"] or "",
+        "context_type": row["consumed_context_type"] or "",
+        "context_id": row["consumed_context_id"] or "",
+        "usage_log_id": row["usage_log_id"],
+        "material_type": row["material_type"] or "",
+        "material_id": row["material_id"] or "",
+        "material_revision": row["material_revision"] or "",
+    }
 
 
-def _request_reviewers(conn: Any, request_id: int) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT reviewer_role, reviewer_id, reviewer_kind, reviewer_name_snapshot,
-               status, review_note, reviewed_at
-        FROM signature_access_request_reviewers
-        WHERE request_id = ? ORDER BY id
-        """,
-        (int(request_id),),
-    ).fetchall()
-    return [
-        {
-            "role": row["reviewer_role"],
-            "id": int(row["reviewer_id"]),
-            "kind": row["reviewer_kind"],
-            "name": row["reviewer_name_snapshot"],
-            "status": row["status"],
-            "review_note": row["review_note"],
-            "reviewed_at": row["reviewed_at"] or "",
-        }
-        for row in rows
-    ]
+def _serialize_request_reviewer(row: Any) -> dict[str, Any]:
+    return {
+        "role": row["reviewer_role"],
+        "id": int(row["reviewer_id"]),
+        "kind": row["reviewer_kind"],
+        "name": row["reviewer_name_snapshot"],
+        "status": row["status"],
+        "review_note": row["review_note"],
+        "reviewed_at": row["reviewed_at"] or "",
+    }
 
 
-def get_request(conn: Any, request_id: int) -> dict[str, Any]:
-    row = conn.execute(
-        """
-        SELECT request.*, signature.name AS signature_name,
-               signature.subject_name AS signature_subject_name,
-               teacher.name AS requester_name
-        FROM signature_access_requests request
-        JOIN electronic_signatures signature ON signature.id = request.signature_id
-        LEFT JOIN teachers teacher
-          ON request.requester_role = 'teacher' AND teacher.id = request.requester_id
-        WHERE request.id = ? LIMIT 1
-        """,
-        (int(request_id),),
-    ).fetchone()
-    if not row:
-        raise signature_service.SignatureServiceError(404, "签名使用申请不存在。")
+def _serialize_request_row(
+    row: Any,
+    *,
+    items: list[dict[str, Any]],
+    reviewers: list[dict[str, Any]],
+) -> dict[str, Any]:
     return {
         "id": int(row["id"]),
         "signature_id": int(row["signature_id"]),
@@ -494,9 +459,87 @@ def get_request(conn: Any, request_id: int) -> dict[str, Any]:
         "material_id": row["material_id"] or "",
         "material_revision": row["material_revision"] or "",
         "display_order": int(row["display_order"] or 0),
-        "items": _request_items(conn, request_id),
-        "reviewers": _request_reviewers(conn, request_id),
+        "items": items,
+        "reviewers": reviewers,
     }
+
+
+def get_requests(conn: Any, request_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Load several request aggregates with three bounded queries.
+
+    Signature-point dialogs and request inboxes may display hundreds of
+    requests.  Loading every request, item and reviewer independently creates
+    a 1 + 2N query pattern, so collect each relation once and assemble the
+    existing response contract in memory.
+    """
+    normalized_ids: list[int] = []
+    seen_ids: set[int] = set()
+    for value in request_ids:
+        try:
+            request_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if request_id > 0 and request_id not in seen_ids:
+            normalized_ids.append(request_id)
+            seen_ids.add(request_id)
+    if not normalized_ids:
+        return {}
+    placeholders = ",".join("?" for _ in normalized_ids)
+    request_rows = conn.execute(
+        f"""
+        SELECT request.*, signature.name AS signature_name,
+               signature.subject_name AS signature_subject_name,
+               teacher.name AS requester_name
+        FROM signature_access_requests request
+        JOIN electronic_signatures signature ON signature.id = request.signature_id
+        LEFT JOIN teachers teacher
+          ON request.requester_role = 'teacher' AND teacher.id = request.requester_id
+        WHERE request.id IN ({placeholders})
+        """,
+        tuple(normalized_ids),
+    ).fetchall()
+    item_rows = conn.execute(
+        f"""
+        SELECT id, request_id, function_point_key, function_point_label_snapshot, status,
+               consumed_at, consumed_context_type, consumed_context_id, usage_log_id,
+               material_type, material_id, material_revision
+        FROM signature_access_request_items
+        WHERE request_id IN ({placeholders})
+        ORDER BY request_id, id
+        """,
+        tuple(normalized_ids),
+    ).fetchall()
+    reviewer_rows = conn.execute(
+        f"""
+        SELECT request_id, reviewer_role, reviewer_id, reviewer_kind,
+               reviewer_name_snapshot, status, review_note, reviewed_at
+        FROM signature_access_request_reviewers
+        WHERE request_id IN ({placeholders})
+        ORDER BY request_id, id
+        """,
+        tuple(normalized_ids),
+    ).fetchall()
+    items_by_request = {request_id: [] for request_id in normalized_ids}
+    reviewers_by_request = {request_id: [] for request_id in normalized_ids}
+    for row in item_rows:
+        items_by_request.setdefault(int(row["request_id"]), []).append(_serialize_request_item(row))
+    for row in reviewer_rows:
+        reviewers_by_request.setdefault(int(row["request_id"]), []).append(_serialize_request_reviewer(row))
+    return {
+        int(row["id"]): _serialize_request_row(
+            row,
+            items=items_by_request.get(int(row["id"]), []),
+            reviewers=reviewers_by_request.get(int(row["id"]), []),
+        )
+        for row in request_rows
+    }
+
+
+def get_request(conn: Any, request_id: int) -> dict[str, Any]:
+    request = get_requests(conn, [int(request_id)]).get(int(request_id))
+    if not request:
+        raise signature_service.SignatureServiceError(404, "签名使用申请不存在。")
+    return request
 
 
 def list_access_requests(
@@ -538,8 +581,10 @@ def list_access_requests(
         """,
         (*params, max(1, min(int(limit or 100), 500))),
     ).fetchall()
+    request_ids = [int(row["id"]) for row in rows]
+    requests_by_id = get_requests(conn, request_ids)
     return {
-        "items": [get_request(conn, int(row["id"])) for row in rows],
+        "items": [requests_by_id[request_id] for request_id in request_ids if request_id in requests_by_id],
         "direction": normalized_direction,
         "status": normalized_status,
         "actor": signature_service.serialize_signature_actor(actor),

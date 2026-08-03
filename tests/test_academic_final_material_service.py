@@ -18,6 +18,7 @@ import httpx
 from PIL import Image
 
 from classroom_app.db import schema_academic_final_materials
+from classroom_app.services import academic_final_material_document_service
 from classroom_app.services.academic_exam_roster_sync_service import _exam_course_from_row
 from classroom_app.services.academic_final_material_document_service import (
     build_exam_analysis_docx,
@@ -455,6 +456,47 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
         self.assertIn("margin-left:18.4pt", document_xml)
         self.assertIn("width:60.55pt", document_xml)
         self.assertIn("height:21.2pt", document_xml)
+
+    def test_grade_register_rejects_an_unverified_template_asset(self) -> None:
+        payload = build_grade_register_export_payload(self.grade, self.validation)
+        with TemporaryDirectory() as temp_dir:
+            corrupted = Path(temp_dir) / "grade-template.docx"
+            corrupted.write_bytes(b"not-the-audited-template")
+            with patch.object(academic_final_material_document_service, "_GRADE_REGISTER_TEMPLATE_PATH", corrupted):
+                with self.assertRaisesRegex(RuntimeError, "模板校验失败"):
+                    build_grade_register_docx(payload)
+
+    def test_grade_register_normalizes_period_and_tolerates_non_numeric_exam_markers(self) -> None:
+        payload = build_grade_register_export_payload(self.grade, self.validation)
+        payload["fields"]["academic_year"] = "2025 - 2026 学年"
+        payload["fields"]["semester"] = "二"
+        payload["structured"]["students"] = [
+            {
+                "student_number": "24000000001",
+                "student_name": "学生甲",
+                "ordinary_score": 90,
+                "final_exam_score": "缓考",
+                "final_score": 90,
+                "remark": "缓考",
+            },
+            {
+                "student_number": "24000000002",
+                "student_name": "学生乙",
+                "ordinary_score": 80,
+                "final_exam_score": 80,
+                "final_score": 80,
+                "remark": "",
+            },
+        ]
+        payload["structured"]["statistics"] = {"average": "nan"}
+
+        document = Document(BytesIO(build_grade_register_docx(payload)))
+        table = document.tables[0]
+        self.assertEqual("2025-2026学年第2学期", table.rows[1].cells[0].text)
+        self.assertEqual("缓考", table.rows[5].cells[5].text)
+        self.assertEqual("2/1", table.rows[37].cells[16].text)
+        self.assertEqual("1", table.rows[39].cells[16].text)
+        self.assertEqual("80.00", table.rows[44].cells[16].text)
 
     def test_shared_export_contract_supports_both_types(self) -> None:
         grade_payload = build_grade_register_export_payload(self.grade, self.validation)

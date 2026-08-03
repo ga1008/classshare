@@ -74,9 +74,11 @@ def _serialize_flow(conn: Any, flow_row: Any | None) -> dict[str, Any] | None:
         """,
         (int(flow["id"]),),
     ).fetchall()
+    request_ids = [int(row["request_id"]) for row in rows if int(row["request_id"] or 0) > 0]
+    requests_by_id = signature_workflow_service.get_requests(conn, request_ids)
     items: list[dict[str, Any]] = []
     for row in rows:
-        request = signature_workflow_service.get_request(conn, int(row["request_id"])) if row["request_id"] else None
+        request_id = int(row["request_id"] or 0)
         items.append(
             {
                 "id": int(row["id"]),
@@ -85,8 +87,8 @@ def _serialize_flow(conn: Any, flow_row: Any | None) -> dict[str, Any] | None:
                 "display_order": int(row["display_order"] or 0),
                 "status": row["status"] or "",
                 "granted_at": row["granted_at"] or "",
-                "request_id": int(row["request_id"] or 0),
-                "request": request,
+                "request_id": request_id,
+                "request": requests_by_id.get(request_id),
             }
         )
     return {
@@ -119,6 +121,22 @@ def _binding_ids(conn: Any, scope: dict[str, str]) -> list[int]:
         ),
     ).fetchall()
     return [int(row["signature_id"]) for row in rows]
+
+
+def _lock_binding_scope(conn: Any, scope: dict[str, str]) -> None:
+    """Serialize replacement of one material revision's ordered bindings."""
+    if get_configured_db_engine() != "postgres":
+        return
+    lock_key = ":".join(
+        [
+            "signature-point-binding",
+            scope["function_point_key"],
+            scope["material_type"],
+            scope["material_id"],
+            scope["material_revision"],
+        ]
+    )
+    conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (lock_key,))
 
 
 def get_point_state(
@@ -367,6 +385,10 @@ def bind_point_signatures(
             ordered.append(normalized)
     if len(ordered) > MAX_SIGNATURES_PER_POINT:
         raise signature_service.SignatureServiceError(400, f"同一签名点最多绑定 {MAX_SIGNATURES_PER_POINT} 个签名。")
+    # Binding is a replace-all operation. Without a scope lock, two concurrent
+    # saves can both delete the old rows and then interleave their inserts,
+    # producing a mixed order that neither user submitted.
+    _lock_binding_scope(conn, scope)
     for signature_id in ordered:
         signature = signature_workflow_service._signature_row(conn, signature_id)
         if not signature_service.resolve_signature_file_path(signature):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from classroom_app.db import schema_signature_workflow
 from classroom_app.services import signature_point_service, signature_service, signature_workflow_service
@@ -284,6 +284,74 @@ class SignaturePointServiceTests(unittest.TestCase):
             material_type="academic_final_material", material_id="88",
         )
         self.assertIsNone(signature_point_service._active_flow_row(self.conn, actor, scope))
+
+    def test_active_flow_requests_are_loaded_in_one_batch(self) -> None:
+        created = signature_point_service.create_point_flow(
+            self.conn,
+            self.user,
+            function_point_key=self.point,
+            material_type="academic_final_material",
+            material_id="88",
+            signature_ids=[1, 2],
+        )["flow"]
+        listed = {
+            "items": [
+                {"id": 1, "name": "甲签名", "owner_role": "teacher", "owner_id": 2, "subject_role": "teacher", "subject_id": 3},
+                {"id": 2, "name": "乙签名", "owner_role": "teacher", "owner_id": 4, "subject_role": "teacher", "subject_id": 5},
+            ]
+        }
+        statements: list[str] = []
+        self.conn.set_trace_callback(statements.append)
+        try:
+            with patch.object(signature_service, "list_signatures", return_value=listed):
+                state = signature_point_service.get_point_state(
+                    self.conn,
+                    self.user,
+                    function_point_key=self.point,
+                    material_type="academic_final_material",
+                    material_id="88",
+                )
+        finally:
+            self.conn.set_trace_callback(None)
+
+        self.assertEqual(created["id"], state["active_flow"]["id"])
+        self.assertTrue(all(item["request"]["reviewers"] for item in state["active_flow"]["items"]))
+        aggregate_queries = [
+            statement for statement in statements
+            if "SELECT REQUEST.*" in " ".join(statement.upper().split())
+        ]
+        self.assertEqual(1, len(aggregate_queries), aggregate_queries)
+
+    def test_postgres_binding_replacement_takes_scope_lock_before_delete(self) -> None:
+        conn = MagicMock()
+        scope = {
+            "function_point_key": self.point,
+            "material_type": "academic_final_material",
+            "material_id": "88",
+            "material_revision": "revision-a",
+        }
+        actor = {"role": "teacher", "id": 1}
+        with (
+            patch.object(signature_point_service, "_scope", return_value=(actor, scope)),
+            patch.object(signature_point_service, "get_configured_db_engine", return_value="postgres"),
+        ):
+            result = signature_point_service.bind_point_signatures(
+                conn,
+                self.user,
+                function_point_key=self.point,
+                material_type="academic_final_material",
+                material_id="88",
+                signature_ids=[],
+            )
+
+        self.assertEqual([], result)
+        statements = [call.args[0] for call in conn.execute.call_args_list]
+        lock_index = next(index for index, statement in enumerate(statements) if "pg_advisory_xact_lock" in statement)
+        delete_index = next(index for index, statement in enumerate(statements) if "DELETE FROM signature_point_bindings" in statement)
+        self.assertLess(lock_index, delete_index)
+        lock_params = conn.execute.call_args_list[lock_index].args[1]
+        self.assertIn("signature-point-binding", lock_params[0])
+        self.assertIn("revision-a", lock_params[0])
 
 
 if __name__ == "__main__":

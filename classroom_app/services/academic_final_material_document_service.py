@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -16,9 +18,26 @@ from .academic_final_material_service import (
 
 
 _GRADE_REGISTER_TEMPLATE_PATH = Path(__file__).with_name("assets") / "gxufl_academic_grade_register_template.docx"
+_GRADE_REGISTER_TEMPLATE_SHA256 = "8351a5027010c6f38e3edaeb6b49252d691e1d0a22c0f301a760abeb742d2b9e"
 _GRADE_REGISTER_LEFT_CAPACITY = 40
 _GRADE_REGISTER_RIGHT_CAPACITY = 30
 _GRADE_REGISTER_MAX_STUDENTS = _GRADE_REGISTER_LEFT_CAPACITY + _GRADE_REGISTER_RIGHT_CAPACITY
+_GRADE_REGISTER_GRID_WIDTHS = (
+    1473, 850, 566, 510, 566, 567, 567, 511, 396,
+    1078, 851, 567, 511, 567, 567, 567, 511,
+)
+_GRADE_REGISTER_ROW_HEIGHTS = (
+    480,
+    280,
+    340,
+    340,
+    500,
+    *([340] * 32),
+    500,
+    *([340] * 7),
+    180,
+    280,
+)
 _GRADE_REGISTER_STUDENT_KEYS = (
     "student_number",
     "student_name",
@@ -167,10 +186,20 @@ def _add_image_to_cell(
 def _score_text(value: Any) -> str:
     if value in (None, ""):
         return ""
-    parsed = float(value)
+    parsed = _finite_float(value)
+    if parsed is None:
+        return str(value).strip()
     if abs(parsed - round(parsed)) < 0.001:
         return str(int(round(parsed)))
     return f"{parsed:.2f}"
+
+
+def _finite_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def _set_template_cell_text(cell: Any, value: Any) -> None:
@@ -188,11 +217,18 @@ def _set_template_cell_text(cell: Any, value: Any) -> None:
 
 
 def _academic_period_text(fields: dict[str, Any]) -> str:
-    academic_year = str(fields.get("academic_year") or "").strip()
-    semester = str(fields.get("semester") or "").strip()
+    academic_year = re.sub(r"\s+", "", str(fields.get("academic_year") or ""))
+    semester = re.sub(r"\s+", "", str(fields.get("semester") or ""))
     if academic_year and not academic_year.endswith("学年"):
         academic_year = f"{academic_year}学年"
-    if semester and not semester.endswith("学期"):
+    normalized_semester = semester.replace("学期", "").removeprefix("第")
+    semester_number = {
+        "1": "1", "一": "1", "上": "1", "秋季": "1",
+        "2": "2", "二": "2", "下": "2", "春季": "2",
+    }.get(normalized_semester)
+    if semester_number:
+        semester = f"第{semester_number}学期"
+    elif semester and not semester.endswith("学期"):
         semester = f"{semester}学期"
     return f"{academic_year}{semester}"
 
@@ -202,7 +238,9 @@ def _grade_student_value(student: dict[str, Any] | None, key: str) -> str:
         return ""
     value = student.get(key)
     if key == "final_score" and value not in (None, ""):
-        parsed = float(value)
+        parsed = _finite_float(value)
+        if parsed is None:
+            return str(value).strip()
         return "100" if abs(parsed - 100) < 0.001 else f"{parsed:.2f}"
     if key in {
         "ordinary_score",
@@ -217,9 +255,8 @@ def _grade_student_value(student: dict[str, Any] | None, key: str) -> str:
 def _score_band_counts(students: list[dict[str, Any]]) -> list[int]:
     counts = [0] * 8
     for student in students:
-        try:
-            score = float(student.get("final_exam_score"))
-        except (TypeError, ValueError):
+        score = _finite_float(student.get("final_exam_score"))
+        if score is None:
             continue
         if score >= 90:
             index = 0
@@ -239,6 +276,57 @@ def _score_band_counts(students: list[dict[str, Any]]) -> list[int]:
             index = 7
         counts[index] += 1
     return counts
+
+
+def _load_verified_grade_register_template() -> Any:
+    """Load only the audited, privacy-scrubbed official template asset."""
+    from docx import Document
+    from docx.oxml.ns import qn
+
+    if not _GRADE_REGISTER_TEMPLATE_PATH.is_file():
+        raise RuntimeError("期末成绩登记表官方版式模板缺失，无法导出。")
+    content = _GRADE_REGISTER_TEMPLATE_PATH.read_bytes()
+    actual_hash = hashlib.sha256(content).hexdigest()
+    if actual_hash != _GRADE_REGISTER_TEMPLATE_SHA256:
+        raise RuntimeError("期末成绩登记表官方版式模板校验失败，请恢复经过像素验收的模板资产。")
+    document = Document(io.BytesIO(content))
+    if len(document.sections) != 1 or len(document.tables) != 1:
+        raise RuntimeError("期末成绩登记表官方版式模板结构已损坏。")
+    section = document.sections[0]
+    section_geometry = (
+        section.page_width.twips,
+        section.page_height.twips,
+        section.top_margin.twips,
+        section.right_margin.twips,
+        section.bottom_margin.twips,
+        section.left_margin.twips,
+    )
+    if section_geometry != (11905, 16837, 226, 283, 5, 283):
+        raise RuntimeError("期末成绩登记表官方版式模板页面参数已漂移。")
+    table = document.tables[0]
+    if len(table.rows) != 47 or len(table.columns) != 17:
+        raise RuntimeError("期末成绩登记表官方版式模板表格结构已损坏。")
+    grid_widths = tuple(int(node.get(qn("w:w"))) for node in table._tbl.tblGrid)
+    row_heights = tuple(
+        int(row._tr.get_or_add_trPr().find(qn("w:trHeight")).get(qn("w:val")))
+        for row in table.rows
+    )
+    tbl_pr = table._tbl.tblPr
+    table_width = tbl_pr.find(qn("w:tblW"))
+    table_indent = tbl_pr.find(qn("w:tblInd"))
+    table_layout = tbl_pr.find(qn("w:tblLayout"))
+    if (
+        grid_widths != _GRADE_REGISTER_GRID_WIDTHS
+        or row_heights != _GRADE_REGISTER_ROW_HEIGHTS
+        or table_width is None
+        or table_width.get(qn("w:w")) != "11225"
+        or table_indent is None
+        or table_indent.get(qn("w:w")) != "5"
+        or table_layout is None
+        or table_layout.get(qn("w:type")) != "fixed"
+    ):
+        raise RuntimeError("期末成绩登记表官方版式模板表格参数已漂移。")
+    return document
 
 
 def _grade_status_counts(students: list[dict[str, Any]]) -> dict[str, int]:
@@ -315,8 +403,6 @@ def _add_grade_signature_overlay(document: Any, table: Any, signature_path: Any,
 
 
 def build_grade_register_docx(parse_payload: dict[str, Any]) -> bytes:
-    from docx import Document
-
     payload = _payload(parse_payload)
     fields = payload.get("fields") if isinstance(payload.get("fields"), dict) else {}
     structured = payload.get("structured") if isinstance(payload.get("structured"), dict) else {}
@@ -324,12 +410,7 @@ def build_grade_register_docx(parse_payload: dict[str, Any]) -> bytes:
     students = [student for student in students if isinstance(student, dict)]
     if len(students) > _GRADE_REGISTER_MAX_STUDENTS:
         raise ValueError(f"期末成绩登记表模板最多容纳 {_GRADE_REGISTER_MAX_STUDENTS} 名学生，当前为 {len(students)} 名。")
-    if not _GRADE_REGISTER_TEMPLATE_PATH.is_file():
-        raise RuntimeError("期末成绩登记表官方版式模板缺失，无法导出。")
-
-    document = Document(str(_GRADE_REGISTER_TEMPLATE_PATH))
-    if len(document.tables) != 1 or len(document.tables[0].rows) != 47:
-        raise RuntimeError("期末成绩登记表官方版式模板结构已损坏。")
+    document = _load_verified_grade_register_template()
     table = document.tables[0]
 
     metadata_cells = {
@@ -371,19 +452,17 @@ def build_grade_register_docx(parse_payload: dict[str, Any]) -> bytes:
         ratio = count * 100 / total if total else 0
         _set_template_cell_text(row.cells[12], "0%" if count == 0 else f"{ratio:.2f}%")
 
-    examined = sum(
-        1
-        for student in students
-        if student.get("final_exam_score") not in (None, "")
-    )
     status_counts = _grade_status_counts(students)
     statistics = structured.get("statistics") if isinstance(structured.get("statistics"), dict) else {}
     numeric_scores = [
-        float(student["final_exam_score"])
+        score
         for student in students
-        if student.get("final_exam_score") not in (None, "")
+        if (score := _finite_float(student.get("final_exam_score"))) is not None
     ]
-    average = float(statistics.get("average") or (sum(numeric_scores) / len(numeric_scores) if numeric_scores else 0))
+    examined = len(numeric_scores)
+    average = _finite_float(statistics.get("average"))
+    if average is None:
+        average = sum(numeric_scores) / len(numeric_scores) if numeric_scores else 0.0
     summary_values = [
         f"{total}/{examined}",
         status_counts["免考(修)"],
