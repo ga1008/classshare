@@ -852,11 +852,44 @@ def _ensure_postgres_classroom_todo_optional_scope(conn: Any, table_names: set[s
     return changed
 
 
+def _ensure_postgres_signature_requester_optional(conn: Any, table_names: set[str]) -> bool:
+    """Students may file signature requests, so the legacy teacher column must accept NULL."""
+    if "signature_access_requests" not in table_names:
+        return False
+    conn.execute(
+        "SELECT pg_advisory_xact_lock(hashtext(?))",
+        ("lanshare:signature_access_requests:optional-requester-teacher",),
+    )
+    nullable_rows = _fetch_mappings(
+        conn,
+        """
+        SELECT is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = ?
+          AND table_name = ?
+          AND column_name = ?
+        """,
+        ("public", "signature_access_requests", "requester_teacher_id"),
+        columns=("is_nullable",),
+    )
+    if not nullable_rows or str(nullable_rows[0].get("is_nullable") or "").upper() == "YES":
+        return False
+    conn.execute(
+        'ALTER TABLE "signature_access_requests" '
+        'ALTER COLUMN "requester_teacher_id" DROP NOT NULL'
+    )
+    return True
+
+
 def ensure_postgres_runtime_constraints(conn: Any) -> dict[str, Any]:
     created_indexes: list[str] = []
     skipped_indexes: list[str] = []
     table_names = _public_tables(conn)
     classroom_todo_scope_repaired = _ensure_postgres_classroom_todo_optional_scope(
+        conn,
+        table_names,
+    )
+    signature_requester_repaired = _ensure_postgres_signature_requester_optional(
         conn,
         table_names,
     )
@@ -882,7 +915,10 @@ def ensure_postgres_runtime_constraints(conn: Any) -> dict[str, Any]:
         "created_indexes": created_indexes,
         "skipped_indexes": skipped_indexes,
         "classroom_todo_scope_repaired": classroom_todo_scope_repaired,
-        "schema_writes_executed": bool(created_indexes or classroom_todo_scope_repaired),
+        "signature_requester_repaired": signature_requester_repaired,
+        "schema_writes_executed": bool(
+            created_indexes or classroom_todo_scope_repaired or signature_requester_repaired
+        ),
     }
 
 

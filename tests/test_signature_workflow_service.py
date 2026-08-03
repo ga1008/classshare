@@ -16,6 +16,7 @@ class SignatureWorkflowServiceTests(unittest.TestCase):
         self.conn.executescript(
             """
             CREATE TABLE teachers (id INTEGER PRIMARY KEY, name TEXT, email TEXT);
+            CREATE TABLE students (id INTEGER PRIMARY KEY, name TEXT);
             INSERT INTO teachers VALUES (1, '申请教师', 'one@example.test');
             INSERT INTO teachers VALUES (2, '归属教师', 'two@example.test');
             INSERT INTO teachers VALUES (3, '签名教师', 'three@example.test');

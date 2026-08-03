@@ -245,7 +245,7 @@ def _signature_request_state(
     actor: dict[str, Any],
     row: sqlite3.Row | dict[str, Any],
 ) -> dict[str, Any]:
-    if conn is None or actor.get("role") != "teacher":
+    if conn is None or actor.get("role") not in {"teacher", "student"}:
         return {}
     requester_id = int(actor.get("id") or 0)
     if requester_id <= 0:
@@ -289,7 +289,7 @@ def can_request_signature_use(
     row: sqlite3.Row | dict[str, Any],
     conn: sqlite3.Connection | None = None,
 ) -> bool:
-    if actor.get("role") != "teacher":
+    if actor.get("role") not in {"teacher", "student"}:
         return False
     if _is_owner(actor, row) or _is_subject(actor, row):
         return False
@@ -372,7 +372,12 @@ def _visibility_sql(actor: dict[str, Any], selected_school_code: str = "") -> tu
     scope = actor.get("scope") or {}
     school_code = normalize_school_code(scope.get("school_code"))
     if role == "student":
-        return "(s.school_code = ? AND s.owner_role = 'student' AND s.owner_id = ?)", [school_code, user_id]
+        # Students see the signatures they hold plus every signature that IS
+        # theirs (teacher-harvested images keep the student as subject).
+        return (
+            "((s.owner_role = 'student' AND s.owner_id = ?) OR (s.subject_role = 'student' AND s.subject_id = ?))",
+            [user_id, user_id],
+        )
 
     memberships = _actor_memberships(actor)
     if normalize_org_text(selected_school_code):
@@ -1154,7 +1159,13 @@ async def create_signature_from_upload(
         normalized_scope = "department" if actor_role == "teacher" else "personal"
 
     clean_name = _clean_text(name, 80) or _clean_text(Path(original_filename).stem, 80) or "电子签名"
-    clean_subject_name = _clean_text(subject_name, 80) or actor.get("name") or clean_name
+    if actor_role == "student" and not actor.get("is_super_admin"):
+        # A student account registers only its own autograph; impersonating a
+        # classmate's signature must go through a teacher-managed upload.
+        subject_id = actor_id
+        clean_subject_name = _clean_text(actor.get("name"), 80) or clean_name
+    else:
+        clean_subject_name = _clean_text(subject_name, 80) or actor.get("name") or clean_name
     owner_scope = _owner_scope_for_upload(actor, normalized_scope)
     normalized_subject_id = (
         actor_id

@@ -20,6 +20,14 @@ REQUEST_STATUS_VALUES = {
     "cancelled",
 }
 
+REQUESTER_ROLES = {"teacher", "student"}
+
+# Reviewers and requesters land on different surfaces per role.
+SIGNATURE_INBOX_LINKS = {
+    "teacher": "/manage/me/signatures#signature-requests",
+    "student": "/profile?section=signatures",
+}
+
 
 def _clean(value: Any, limit: int = 160) -> str:
     return " ".join(str(value or "").strip().split())[:limit]
@@ -257,7 +265,7 @@ def _notify(
             actor_role=actor.get("role") or "",
             actor_user_pk=int(actor.get("id") or 0),
             actor_display_name=actor.get("name") or "",
-            link_url="/manage/me/signatures#signature-requests",
+            link_url=SIGNATURE_INBOX_LINKS.get(role, SIGNATURE_INBOX_LINKS["teacher"]),
             ref_type=ref_type,
             ref_id=ref_id,
             metadata=metadata,
@@ -282,8 +290,8 @@ def create_access_request(
     display_order: int = 0,
 ) -> dict[str, Any]:
     actor = signature_service.build_signature_actor(conn, user)
-    if actor.get("role") != "teacher":
-        raise signature_service.SignatureServiceError(403, "当前仅教师可以提出签名使用申请。")
+    if actor.get("role") not in REQUESTER_ROLES:
+        raise signature_service.SignatureServiceError(403, "仅教师或学生账号可以提出签名使用申请。")
     signature = _signature_row(conn, signature_id)
     if not signature_service.can_view_signature(actor, signature):
         raise signature_service.SignatureServiceError(403, "当前账号无权查看此签名。")
@@ -344,7 +352,7 @@ def create_access_request(
             """,
             (
                 int(signature_id),
-                int(actor["id"]),
+                int(actor["id"]) if actor["role"] == "teacher" else None,
                 actor["role"],
                 int(actor["id"]),
                 signature["owner_role"] or "",
@@ -490,11 +498,13 @@ def get_requests(conn: Any, request_ids: list[int]) -> dict[int, dict[str, Any]]
         f"""
         SELECT request.*, signature.name AS signature_name,
                signature.subject_name AS signature_subject_name,
-               teacher.name AS requester_name
+               COALESCE(teacher.name, student.name) AS requester_name
         FROM signature_access_requests request
         JOIN electronic_signatures signature ON signature.id = request.signature_id
         LEFT JOIN teachers teacher
           ON request.requester_role = 'teacher' AND teacher.id = request.requester_id
+        LEFT JOIN students student
+          ON request.requester_role = 'student' AND student.id = request.requester_id
         WHERE request.id IN ({placeholders})
         """,
         tuple(normalized_ids),
@@ -588,6 +598,57 @@ def list_access_requests(
         "items": [requests_by_id[request_id] for request_id in request_ids if request_id in requests_by_id],
         "direction": normalized_direction,
         "status": normalized_status,
+        "actor": signature_service.serialize_signature_actor(actor),
+    }
+
+
+def list_signature_usage_about_actor(
+    conn: Any,
+    user: dict[str, Any],
+    *,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Usage trail of every signature the actor signs or owns (requirement: 被使用可追溯)."""
+    actor = signature_service.build_signature_actor(conn, user)
+    actor_id = int(actor["id"])
+    rows = conn.execute(
+        """
+        SELECT log.id, log.signature_id, log.signature_name_snapshot,
+               log.actor_role, log.actor_id, log.actor_name_snapshot,
+               log.context_type, log.context_id, log.context_label,
+               log.function_point_key, log.authorization_mode, log.created_at,
+               signature.subject_name AS signature_subject_name,
+               signature.name AS signature_name
+        FROM signature_usage_logs log
+        JOIN electronic_signatures signature ON signature.id = log.signature_id
+        WHERE log.action = 'use'
+          AND (
+              (signature.subject_role = ? AND signature.subject_id = ?)
+              OR (signature.owner_role = ? AND signature.owner_id = ?)
+          )
+        ORDER BY log.created_at DESC, log.id DESC
+        LIMIT ?
+        """,
+        (actor["role"], actor_id, actor["role"], actor_id, max(1, min(int(limit or 100), 500))),
+    ).fetchall()
+    return {
+        "items": [
+            {
+                "id": int(row["id"]),
+                "signature_id": int(row["signature_id"] or 0),
+                "signature_name": row["signature_subject_name"] or row["signature_name"] or row["signature_name_snapshot"] or "",
+                "used_by_role": row["actor_role"] or "",
+                "used_by_id": int(row["actor_id"] or 0),
+                "used_by_name": row["actor_name_snapshot"] or "",
+                "context_type": row["context_type"] or "",
+                "context_label": row["context_label"] or "",
+                "function_point_key": row["function_point_key"] or "",
+                "authorization_mode": row["authorization_mode"] or "",
+                "used_at": row["created_at"] or "",
+                "is_self_use": (row["actor_role"] or "") == actor["role"] and int(row["actor_id"] or 0) == actor_id,
+            }
+            for row in rows
+        ],
         "actor": signature_service.serialize_signature_actor(actor),
     }
 

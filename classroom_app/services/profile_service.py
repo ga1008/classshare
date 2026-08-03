@@ -14,7 +14,7 @@ from .learning_progress_service import build_student_global_cultivation_profile
 from .portfolio_service import build_student_portfolio_context
 from .student_auth_service import build_student_security_summary
 
-PROFILE_SECTIONS = ("overview", "portfolio", "settings", "security", "notifications", "private", "email")
+PROFILE_SECTIONS = ("overview", "portfolio", "signatures", "settings", "security", "notifications", "private", "email")
 
 EDITABLE_PROFILE_FIELDS = (
     "nickname",
@@ -263,6 +263,7 @@ def build_profile_nav(conn, user: dict, active_section: str) -> list[dict[str, A
     ]
     if role == "student":
         nav_items.insert(1, ("portfolio", "成长档案", "作品"))
+        nav_items.insert(2, ("signatures", "电子签名", "签名"))
     if role == "teacher":
         nav_items.insert(3, ("email", "邮箱通知", "发信"))
 
@@ -681,6 +682,8 @@ def build_profile_page_context(conn, user: dict, section: Any) -> dict[str, Any]
     if active_section == "email" and profile["role"] != "teacher":
         active_section = "settings"
     if active_section == "portfolio" and profile["role"] != "student":
+        active_section = "overview"
+    if active_section == "signatures" and profile["role"] != "student":
         active_section = "overview"
     overview = build_profile_overview(conn, profile, user)
     portfolio_context = None

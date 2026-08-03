@@ -963,7 +963,7 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS signature_access_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signature_id INTEGER NOT NULL,
-            requester_teacher_id INTEGER NOT NULL,
+            requester_teacher_id INTEGER,
             owner_role TEXT NOT NULL DEFAULT '',
             owner_id INTEGER,
             status TEXT NOT NULL DEFAULT 'pending',

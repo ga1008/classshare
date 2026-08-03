@@ -6,6 +6,45 @@
 
 {% block css %}
 {{ super() }}
+{% if active_section == 'signatures' %}
+<style>
+.psig-shell{display:grid;gap:16px}
+.psig-shell.is-busy{opacity:.6;pointer-events:none}
+.psig-card{display:grid;gap:12px}
+.psig-hint{margin:0;color:#64748b;font-size:12px;line-height:1.6}
+.psig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.psig-item{display:grid;grid-template-columns:88px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px;border:1px solid #e6eaf2;border-radius:12px;background:#fff}
+.psig-item img{width:88px;height:44px;object-fit:contain;border-radius:8px;background:#f8fafc}
+.psig-item__meta{display:grid;gap:3px}
+.psig-item__meta strong{color:#172033;font-size:13px}
+.psig-item__meta small{color:#8a94a6;font-size:11px}
+.psig-badge{display:inline-block;margin-right:4px;padding:2px 7px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:10px;font-weight:700}
+.psig-badge.is-self{background:#eef2ff;color:#4f46e5}
+.psig-link{border:0;background:none;color:#475569;font-size:12px;font-weight:700;cursor:pointer}
+.psig-link.is-danger{color:#b42318}
+.psig-list{display:grid;gap:10px}
+.psig-request{display:grid;gap:8px;padding:12px;border:1px solid #e6eaf2;border-radius:12px;background:#fff}
+.psig-request>p{margin:0;color:#334155;font-size:13px;line-height:1.6}
+.psig-request__head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.psig-request__head strong{color:#172033;font-size:13px}
+.psig-request__foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.psig-request__foot>span:first-child{display:flex;flex-wrap:wrap;gap:5px}
+.psig-actions{display:flex;gap:8px}
+.psig-note{color:#64748b!important;font-size:12px!important}
+.psig-chip{padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:11px;font-style:normal}
+.psig-chip.is-approved{background:#dcfce7;color:#166534}
+.psig-chip.is-rejected,.psig-chip.is-cancelled{background:#fee2e2;color:#991b1b}
+.psig-chip.is-pending{background:#fef3c7;color:#92400e}
+.psig-count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#4f46e5;color:#fff;font-size:11px;font-style:normal;vertical-align:2px}
+.psig-usage{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.psig-usage li{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 12px;border:1px solid #eef1f6;border-radius:10px;background:#fff;color:#334155;font-size:12.5px}
+.psig-usage time{color:#8a94a6;font-size:11px;white-space:nowrap}
+.psig-empty{padding:16px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;text-align:center;font-size:12.5px}
+.psig-history summary{color:#64748b;font-size:12px;cursor:pointer}
+.psig-history>.psig-list{margin-top:10px}
+@media(max-width:640px){.psig-grid{grid-template-columns:1fr}.psig-usage li{flex-direction:column;gap:3px}}
+</style>
+{% endif %}
 {% endblock %}
 
 {% block main_content %}
@@ -499,6 +538,18 @@
                 </aside>
             </section>
 
+            {% elif active_section == 'signatures' %}
+            <section class="profile-band profile-section-head profile-reveal">
+                <div>
+                    <span class="profile-eyebrow">Signatures</span>
+                    <h2>电子签名</h2>
+                    <p>上传本人签名后，任何人在官方材料中使用它前都需要你的批准；每一次使用都会留下记录。</p>
+                </div>
+            </section>
+            <section class="psig-shell" data-signature-app>
+                <div class="psig-empty">正在读取签名数据…</div>
+            </section>
+
             {% elif active_section == 'settings' %}
             <section class="profile-band profile-section-head profile-reveal">
                 <div>
@@ -945,6 +996,9 @@
 {% include "partials/markdown_assets.html" %}
 <script src="{{ asset_url('js/echarts.min.js') }}"></script>
 <script type="module" src="{{ asset_url('js/profile.js') }}"></script>
+{% if active_section == 'signatures' %}
+<script type="module" src="{{ asset_url('js/profile_signatures.js') }}"></script>
+{% endif %}
 {% if active_section in ['notifications', 'private'] %}
 {{ vite_entry_tags('frontend/src/islands/message-center-page.tsx') }}
 {{ vite_entry_tags('frontend/src/islands/message-center-workspace-sync.tsx') }}
