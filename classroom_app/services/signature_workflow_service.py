@@ -238,12 +238,13 @@ def _notify(
     metadata: dict[str, Any],
 ) -> int:
     count = 0
+    actor_identity = (str(actor.get("role") or ""), int(actor.get("id") or 0))
     seen: set[tuple[str, int]] = set()
     for recipient in recipients:
         role = str(recipient.get("role") or "")
         user_id = int(recipient.get("id") or 0)
         identity = (role, user_id)
-        if role not in {"teacher", "student"} or user_id <= 0 or identity in seen:
+        if role not in {"teacher", "student"} or user_id <= 0 or identity in seen or identity == actor_identity:
             continue
         seen.add(identity)
         payload = message_center_service._build_notification_payload(
