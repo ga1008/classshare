@@ -199,7 +199,7 @@
             <input type="hidden" name="next" value="{{ next_url }}">
             <div class="form-group">
                 <label class="form-label" for="identifier">姓名或学号</label>
-                <input type="text" id="identifier" name="identifier" class="form-control" placeholder="请输入姓名或学号" required autofocus>
+                <input type="text" id="identifier" name="identifier" class="form-control" placeholder="请输入姓名或学号" required autofocus autocomplete="username">
             </div>
             <div class="form-group">
                 <label class="form-label" for="password">密码</label>
@@ -320,5 +320,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/student_login.js?v=20260803-scene1"></script>
+<script type="module" src="/static/js/student_login.js?v=20260803-scene2"></script>
 {% endblock %}

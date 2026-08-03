@@ -18,7 +18,7 @@
         <input type="hidden" name="next" value="{{ next_url }}">
         <div class="form-group text-left">
             <label class="form-label" for="email">邮箱</label>
-            <input type="email" id="email" name="email" class="form-control" placeholder="请输入教师邮箱" required autofocus>
+            <input type="email" id="email" name="email" class="form-control" placeholder="请输入教师邮箱" required autofocus autocomplete="email">
         </div>
         <div class="form-group text-left">
             <label class="form-label" for="password">密码</label>
@@ -35,5 +35,5 @@
 
 {% block scripts %}
 {{ super() }}
-<script type="module" src="/static/js/teacher_login.js?v=20260803-scene1"></script>
+<script type="module" src="/static/js/teacher_login.js?v=20260803-scene2"></script>
 {% endblock %}

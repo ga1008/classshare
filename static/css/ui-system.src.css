@@ -51674,7 +51674,8 @@ body.login-scene-active .login-card {
         0 32px 90px -32px rgba(2, 6, 23, 0.55),
         inset 0 1px 0 rgba(255, 255, 255, 0.85),
         inset 0 -1px 0 rgba(255, 255, 255, 0.25);
-    transition: opacity 0.5s ease, transform 0.62s cubic-bezier(0.32, 0.72, 0.24, 1), filter 0.5s ease;
+    transition: opacity 0.5s ease, transform 0.62s cubic-bezier(0.32, 0.72, 0.24, 1), filter 0.5s ease,
+        background-color 0.9s ease, border-color 0.9s ease, box-shadow 0.9s ease;
 }
 body.login-scene-active .login-card .form-control {
     background: rgba(255, 255, 255, 0.74);
@@ -51847,8 +51848,9 @@ html.scene-cover-collapsing::before {
     transition: transform 0.78s cubic-bezier(0.3, 0.7, 0.25, 1), opacity 0.6s ease;
 }
 @media (max-width: 768px) {
-    .topbar-scene-chip { display: none; }
-    .topbar-scene-pop { left: 12px; right: 12px; max-width: none; }
+    .topbar-scene-chip { padding: 7px; }
+    .topbar-scene-chip .topbar-scene-chip__label { display: none; }
+    .topbar-scene-pop { max-width: none; }
 }
 @media (prefers-reduced-motion: reduce) {
     .login-scene-backdrop__image { animation: none; }
@@ -51856,4 +51858,62 @@ html.scene-cover-collapsing::before {
     .topbar-scene-chip { animation: none; }
     html.scene-cover-collapsing::before { animation-duration: 0.01ms; }
     .cultivation-login-reveal--tip .life-tip-stage.life-tip-stage--morph { transition: none; }
+}
+
+/* ==== 登录场景第二批打磨（2026-08-03）：时段氛围、暂停阅读、摇头反馈、内容入场 ==== */
+/* 亮图（阳光系）轻纱：不再套暗调渐晕，保持治愈氛围 */
+body[data-scene-tone="light"] .login-scene-backdrop__veil {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 30%, rgba(2, 6, 23, 0.06) 66%, rgba(2, 6, 23, 0.26) 100%);
+}
+/* 登录失败：玻璃卡轻微摇头 */
+.login-card.login-card--shake {
+    animation: login-card-shake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+@keyframes login-card-shake {
+    10%, 90% { transform: translateX(-2px); }
+    20%, 80% { transform: translateX(4px); }
+    30%, 50%, 70% { transform: translateX(-7px); }
+    40%, 60% { transform: translateX(7px); }
+}
+/* 悬停玻璃卡暂停：进度条与文字渐隐一起冻结 */
+.cultivation-login-reveal--tip.is-paused .life-tip-footer__timer i {
+    animation-play-state: paused;
+}
+.cultivation-login-reveal--tip.is-paused .life-tip-footer__skip {
+    animation: none;
+    opacity: 0.9;
+}
+/* 首页开场编排：背景收缩的同时主内容自下方淡入上浮 */
+html.has-scene-cover .main-content {
+    opacity: 0;
+}
+html.scene-cover-collapsing .main-content {
+    animation: scene-main-in 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.28s forwards;
+}
+@keyframes scene-main-in {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+/* 浮窗标题行 */
+.topbar-scene-pop__title {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.24em;
+    color: #64748b;
+    text-transform: uppercase;
+}
+.topbar-scene-pop__text {
+    margin: 0;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.8;
+}
+@media (prefers-reduced-motion: reduce) {
+    .login-card.login-card--shake { animation: none; }
+    html.has-scene-cover .main-content { opacity: 1; }
+    html.scene-cover-collapsing .main-content { animation: none; }
 }

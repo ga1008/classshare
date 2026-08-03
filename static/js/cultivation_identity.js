@@ -184,7 +184,7 @@ function buildTipReveal(profile, tip, durationMs, hasImage, tone, imageUrl) {
                 <button type="button" class="life-tip-feedback" data-life-tip-feedback="1">👍 有用</button>
                 <button type="button" class="life-tip-feedback" data-life-tip-feedback="-1">👎 无感</button>
                 <button type="button" class="life-tip-feedback" data-life-tip-save>💾 保存</button>
-                <span class="life-tip-footer__skip">点击任意处跳过 ›</span>
+                <span class="life-tip-footer__skip" data-life-tip-skip>点击任意处继续 ›</span>
             </div>
         </footer>
     `;
@@ -421,12 +421,46 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates, scene = null) 
         const onKeydown = () => finish();
 
         overlay.addEventListener('click', finish);
+        const stage = overlay.querySelector('.life-tip-stage');
         // 点玻璃卡不算跳过：想多读几秒、长按选中复制句子都不被打断。
-        overlay.querySelector('.life-tip-stage')?.addEventListener('click', (event) => {
+        stage?.addEventListener('click', (event) => {
             event.stopPropagation();
         });
         window.addEventListener('keydown', onKeydown, true);
-        autoTimer = window.setTimeout(finish, durationMs);
+
+        // 悬停玻璃卡暂停计时：读完再走，移开自动续走剩余时长。
+        const skipLabel = overlay.querySelector('[data-life-tip-skip]');
+        let remainingMs = durationMs;
+        let timerStartedAt = Date.now();
+        const startTimer = () => {
+            timerStartedAt = Date.now();
+            autoTimer = window.setTimeout(finish, remainingMs);
+        };
+        const pauseTimer = () => {
+            if (finished || !autoTimer) return;
+            window.clearTimeout(autoTimer);
+            autoTimer = null;
+            remainingMs = Math.max(600, remainingMs - (Date.now() - timerStartedAt));
+            overlay.classList.add('is-paused');
+            if (skipLabel) skipLabel.textContent = '静静读完 · 点击任意处继续 ›';
+            // 阅读中文字定格为完全可见：取消渐显/渐隐动画，避免悬停时句子仍隐形或变暗。
+            const textNode = overlay.querySelector('[data-life-tip-text]');
+            if (textNode) {
+                textNode.style.animation = 'none';
+                textNode.style.opacity = '1';
+                textNode.style.filter = 'none';
+                textNode.style.transform = 'none';
+            }
+        };
+        const resumeTimer = () => {
+            if (finished || autoTimer) return;
+            overlay.classList.remove('is-paused');
+            if (skipLabel) skipLabel.textContent = '点击任意处继续 ›';
+            startTimer();
+        };
+        stage?.addEventListener('mouseenter', pauseTimer);
+        stage?.addEventListener('mouseleave', resumeTimer);
+        startTimer();
 
         wireTipFeedback(overlay, tip);
         wireTipSave(overlay, tip, hasImage);
@@ -515,29 +549,48 @@ function ensureTopbarChip(tipText) {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'topbar-scene-chip';
-    chip.innerHTML = '<span class="topbar-scene-chip__dot" aria-hidden="true"></span>人生一言';
+    chip.innerHTML = '<span class="topbar-scene-chip__dot" aria-hidden="true"></span><span class="topbar-scene-chip__label">人生一言</span>';
     const text = String(tipText || '').trim();
     if (text) {
         chip.title = text;
         chip.setAttribute('aria-label', `人生一言：${text}`);
         chip.addEventListener('click', (event) => {
             event.stopPropagation();
-            let pop = document.querySelector('.topbar-scene-pop');
-            if (pop) {
-                pop.remove();
+            const existing = document.querySelector('.topbar-scene-pop');
+            if (existing) {
+                existing.remove();
                 return;
             }
             // 挂在 body 上做 fixed 定位，避开顶栏层叠上下文与继承样式。
-            pop = document.createElement('div');
+            const pop = document.createElement('div');
             pop.className = 'topbar-scene-pop';
-            pop.textContent = text;
+            const title = document.createElement('strong');
+            title.className = 'topbar-scene-pop__title';
+            title.textContent = '今日一言';
+            const body = document.createElement('p');
+            body.className = 'topbar-scene-pop__text';
+            body.textContent = text;
+            pop.append(title, body);
             const rect = chip.getBoundingClientRect();
             pop.style.top = `${Math.round(rect.bottom + 10)}px`;
-            pop.style.left = `${Math.round(Math.max(12, rect.left))}px`;
+            if (window.innerWidth < 560) {
+                pop.style.left = '12px';
+                pop.style.right = '12px';
+            } else {
+                pop.style.left = `${Math.round(Math.max(12, rect.left))}px`;
+            }
             document.body.appendChild(pop);
-            const close = () => document.querySelector('.topbar-scene-pop')?.remove();
+            const close = () => {
+                document.querySelector('.topbar-scene-pop')?.remove();
+                document.removeEventListener('click', close);
+                document.removeEventListener('keydown', onEsc);
+            };
+            const onEsc = (keyEvent) => {
+                if (keyEvent.key === 'Escape') close();
+            };
             window.setTimeout(() => {
-                document.addEventListener('click', close, { once: true });
+                document.addEventListener('click', close);
+                document.addEventListener('keydown', onEsc);
             }, 0);
         });
     } else {

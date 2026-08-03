@@ -1,5 +1,5 @@
 import { apiFetch } from '/static/js/api.js';
-import { finishLoginWithScene, initLoginScene } from '/static/js/login_scene.js?v=20260803-scene1';
+import { finishLoginWithScene, initLoginScene } from '/static/js/login_scene.js?v=20260803-scene2';
 import { closeModal, openModal, showToast } from '/static/js/ui.js';
 
 // 登录页人生一言场景（背景图 + 液态玻璃表单），DOMContentLoaded 后初始化。
@@ -30,9 +30,9 @@ function redirectAfterLogin(result) {
         ? `登录成功，这是您第 ${loginCount} 次登录。`
         : '登录成功。';
 
-    showToast(message, 'success');
     const go = () => window.location.assign(redirectTo);
     if (loginScene || result.cultivation_profile || result.login_tip) {
+        // 一言屏本身就是登录成功的反馈，不再叠加 toast。
         finishLoginWithScene({
             scene: loginScene,
             profile: result.cultivation_profile || null,
@@ -42,7 +42,18 @@ function redirectAfterLogin(result) {
         });
         return;
     }
+    showToast(message, 'success');
     window.setTimeout(go, 450);
+}
+
+// 登录失败的物理反馈：玻璃卡轻微摇头。
+function shakeLoginCard() {
+    const card = document.querySelector('.login-card');
+    if (!card) return;
+    card.classList.remove('login-card--shake');
+    void card.offsetWidth;
+    card.classList.add('login-card--shake');
+    window.setTimeout(() => card.classList.remove('login-card--shake'), 620);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -162,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     consecutivePasswordFailures = 0;
                 }
+                shakeLoginCard();
                 showToast(error.message || '登录失败。', 'error');
             } finally {
                 setSubmitting(submitButton, false, '');

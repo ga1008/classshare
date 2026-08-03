@@ -1,6 +1,6 @@
 // 登录页「人生一言」场景：进页面即铺一言背景图 + 液态玻璃表单，
 // 登录成功后表单原地化为一言玻璃卡，结束时把背景交棒给首页顶栏。
-import { playLoginSceneReveal, sampleImageTone } from '/static/js/cultivation_identity.js?v=20260803-scene1';
+import { playLoginSceneReveal, sampleImageTone } from '/static/js/cultivation_identity.js?v=20260803-scene2';
 
 const MANIFEST_URL = '/static/img/life_tips/manifest.json';
 const IMAGE_BASE = '/static/img/life_tips/';
@@ -35,7 +35,12 @@ async function pickSceneImage() {
             ? manifest.images.filter((item) => item && item.file)
             : [];
         if (!images.length) return null;
-        const chosen = images[Math.floor(Math.random() * images.length)];
+        // 时段感知：白天优先阳光治愈系，傍晚/夜间优先电影暗调系，氛围随一天节律。
+        const hour = new Date().getHours();
+        const wantSunny = hour >= 6 && hour < 17;
+        const moodPool = images.filter((item) => item.file.includes('-sunny-') === wantSunny);
+        const source = moodPool.length ? moodPool : images;
+        const chosen = source[Math.floor(Math.random() * source.length)];
         return {
             url: IMAGE_BASE + chosen.file,
             categories: Array.isArray(chosen.categories) ? chosen.categories : [],
