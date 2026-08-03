@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "macros/app_topbar.html" import app_topbar_icon %}
+{% from "macros/ui_explanation.html" import explain_attrs %}
 
 {% block title %}{{ classroom.course_name }} - {{ classroom.class_name }} | 课堂平台{% endblock %}
 
@@ -16,6 +17,10 @@
         gap: 8px;
         width: 100%;
         min-width: 0;
+    }
+
+    .assignment-board__head [data-explain] {
+        cursor: help;
     }
 
     .assignment-wrong-summary-link {
@@ -1461,17 +1466,15 @@
 
             <div class="assignment-board" id="assignment-list" data-assignment-list-region data-assignment-section-view="tasks">
                 <div class="assignment-board__head">
-                    <div>
-                        <span>任务列表</span>
-                        <strong>{% if user_info.role == 'teacher' %}课堂作业区域{% else %}我的作业区域{% endif %}</strong>
-                    </div>
-                    <small>
-                        {% if user_info.role == 'teacher' %}
-                        点击任务进入布置、批改、重交跟踪与发布信息。
-                        {% else %}
-                        点击任务进入提交、补交、考试作答或查看批改结果。
-                        {% endif %}
-                    </small>
+                    <strong
+                        tabindex="0"
+                        aria-haspopup="dialog"
+                        {{ explain_attrs(
+                            '任务列表',
+                            '点击任务进入布置、批改、重交跟踪与发布信息。' if user_info.role == 'teacher' else '点击任务进入提交、补交、考试作答或查看批改结果。',
+                            placement='bottom'
+                        ) }}
+                    >任务列表</strong>
                 </div>
                 {% if assignments %}
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 assignment-grid">
@@ -1679,8 +1682,9 @@
                                     {{ teacher_unsubmitted_count }} 人未交
                                     {% elif assignment.created_at %}创建于 {{ assignment.created_at[:10] }}{% else %}随时可进入查看{% endif %}
                                 </span>
+                                {% if user_info.role == 'teacher' %}
                                 <span class="assignment-card-action-row">
-                                    {% if user_info.role == 'teacher' and assignment.exam_paper_id %}
+                                    {% if assignment.exam_paper_id %}
                                     <a
                                         class="assignment-wrong-summary-link"
                                         href="/assignment/{{ assignment.id }}/wrong-summary"
@@ -1692,7 +1696,6 @@
                                         错题归集
                                     </a>
                                     {% endif %}
-                                    {% if user_info.role == 'teacher' %}
                                     <button
                                         type="button"
                                         class="assignment-group-config-link"
@@ -1707,9 +1710,8 @@
                                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                                         <span>分组配置</span>
                                     </button>
-                                    {% endif %}
-                                    <span class="assignment-meta-link">查看详情</span>
                                 </span>
+                                {% endif %}
                             </div>
                         </div>
                     </article>

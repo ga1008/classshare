@@ -10,7 +10,8 @@
 {% endblock %}
 
 {% block content %}
-<div class="academic-shell semester-layout">
+<div class="academic-shell semester-layout{% if embedded_mode %} is-embedded{% endif %}">
+    {% if not embedded_mode %}
     <section class="academic-hero">
         <div class="manage-pagehead__title-row">
             <h2>学期</h2>
@@ -48,14 +49,18 @@
             <div class="academic-stat-help">建议时间：{{ semester_defaults.start_date }} 至 {{ semester_defaults.end_date }}</div>
         </article>
     </section>
+    {% endif %}
 
-    <section class="academic-content-grid two-column">
+    <section class="academic-content-grid{% if not embedded_mode %} two-column{% endif %}">
         <article class="academic-card">
             <div class="academic-card-header">
                 <div>
                     <h3 class="academic-card-title">学期列表</h3>
                     <p class="academic-card-subtitle">支持搜索与复用；同校共享学期由创建者维护，其他教师可直接用于开课。</p>
                 </div>
+                {% if embedded_mode %}
+                <button type="button" class="btn btn-primary" id="heroSemesterCreateBtn">新建学期</button>
+                {% endif %}
             </div>
             <div class="academic-card-body">
                 <div class="academic-toolbar academic-toolbar-between">
@@ -73,6 +78,7 @@
             </div>
         </article>
 
+        {% if not embedded_mode %}
         <article class="academic-card">
             <div class="academic-card-header">
                 <div>
@@ -100,9 +106,12 @@
                 </div>
             </div>
         </article>
+        {% endif %}
     </section>
 
+    {% if not embedded_mode %}
     {% include "partials/semester_calendar_panel.html" %}
+    {% endif %}
 </div>
 
 <div class="academic-modal-backdrop" id="semesterModalBackdrop">
@@ -152,11 +161,12 @@
 <script>
     window.SEMESTER_MANAGE_DATA = {
         semesterCalendar: {{ semester_calendar | tojson }},
-        defaults: {{ semester_defaults | tojson }}
+        defaults: {{ semester_defaults | tojson }},
+        embeddedMode: {{ embedded_mode | tojson }}
     };
 </script>
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_semesters.js?v=ux-empty-collapse-20260803"></script>
+<script type="module" src="/static/js/manage_semesters.js?v=ux-wizard-dedup-20260804"></script>
 {% endblock %}

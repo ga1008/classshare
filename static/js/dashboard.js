@@ -1804,3 +1804,61 @@ if (root) {
         idle(() => synchronize(false, true));
     }
 })();
+
+// ===== UX overhaul 2026-08 · 阶段 9 移动端分区手风琴 =====
+// 窄屏（<640px）把辅助分区默认收起为「标题一行」，点击标题展开/收起；
+// 展开偏好记忆在 localStorage，桌面端完全不介入。
+(() => {
+    const MOBILE_QUERY = window.matchMedia('(max-width: 639px)');
+    const STORAGE_KEY = 'lanshare:dashboard-mobile-expanded';
+    const sections = Array.from(document.querySelectorAll('[data-mobile-collapse]'));
+    if (!sections.length) return;
+
+    const readExpanded = () => {
+        try {
+            return new Set(JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]'));
+        } catch {
+            return new Set();
+        }
+    };
+    const writeExpanded = (expanded) => {
+        try {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(expanded)));
+        } catch {
+            /* 存储不可用时静默降级为不记忆 */
+        }
+    };
+
+    const expanded = readExpanded();
+
+    const apply = () => {
+        sections.forEach((section) => {
+            const key = section.dataset.mobileCollapse || '';
+            const shouldCollapse = MOBILE_QUERY.matches && !expanded.has(key);
+            section.classList.toggle('is-mobile-collapsed', shouldCollapse);
+        });
+    };
+
+    // 事件委托：岛屿（如快捷入口）会整体重渲染 header 节点，逐节点绑定会丢失监听
+    document.addEventListener('click', (event) => {
+        if (!MOBILE_QUERY.matches) return;
+        const header = event.target.closest('.dashboard-panel__header, .semester-calendar-panel__header');
+        if (!header) return;
+        const section = header.closest('[data-mobile-collapse]');
+        if (!section) return;
+        if (event.target.closest('button, a, select, input')) return;
+        const key = section.dataset.mobileCollapse || '';
+        if (expanded.has(key)) {
+            expanded.delete(key);
+        } else {
+            expanded.add(key);
+        }
+        writeExpanded(expanded);
+        apply();
+    });
+
+    if (typeof MOBILE_QUERY.addEventListener === 'function') {
+        MOBILE_QUERY.addEventListener('change', apply);
+    }
+    apply();
+})();

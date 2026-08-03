@@ -9,8 +9,6 @@ const stageOrder = steps.map((item) => item.id);
 const animationTimers = new WeakMap();
 
 const elements = {
-    recommendedLabel: document.getElementById('workflowRecommendedLabel'),
-    recommendedHelp: document.getElementById('workflowRecommendedHelp'),
     stageRail: document.querySelector('.workflow-stage-rail'),
     stageTrack: document.getElementById('workflowStageTrack'),
     stageButtons: Array.from(document.querySelectorAll('[data-stage-id]')),
@@ -225,22 +223,6 @@ function renderStageCopy(step) {
     }
     if (elements.stageAdviceText) {
         elements.stageAdviceText.textContent = buildStageAdvice(step);
-    }
-}
-
-function renderRecommended() {
-    const recommendedStep = stepMap.get(String(config.recommended_stage || ''));
-    if (!recommendedStep) {
-        return;
-    }
-
-    if (elements.recommendedLabel) {
-        elements.recommendedLabel.textContent = recommendedStep.title;
-    }
-    if (elements.recommendedHelp) {
-        elements.recommendedHelp.textContent = state.stage === recommendedStep.id
-            ? '当前就是推荐阶段，可以直接在下方继续处理。'
-            : `系统建议优先处理“${recommendedStep.title}”。`;
     }
 }
 
@@ -576,7 +558,6 @@ function loadFrame() {
 
 function render({ animateStep = false, animatePanels = false } = {}) {
     const step = getCurrentStep();
-    renderRecommended();
     renderStageRail();
     renderStageCopy(step);
     renderChecklist(step);

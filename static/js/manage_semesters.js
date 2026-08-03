@@ -163,7 +163,7 @@ function renderSemesterList() {
                 </div>
             </div>
             <div class="academic-list-side">
-                <button type="button" class="btn btn-ghost btn-sm" data-action="focus" data-semester-id="${semester.id}">查看日历</button>
+                ${config.embeddedMode ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-action="focus" data-semester-id="${semester.id}">查看日历</button>`}
                 ${canManage ? `<button type="button" class="btn btn-outline btn-sm" data-action="sync-calendar" data-semester-id="${semester.id}">同步校历</button>` : ''}
                 ${canManage ? `<button type="button" class="btn btn-outline btn-sm" data-action="edit" data-semester-id="${semester.id}">编辑</button>` : ''}
                 ${canManage ? `<button type="button" class="btn btn-danger btn-sm" data-action="delete" data-semester-id="${semester.id}">删除</button>` : ''}

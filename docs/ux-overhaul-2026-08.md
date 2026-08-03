@@ -118,6 +118,12 @@
       8 筛选收进「筛选」展开器带生效数徽章、范围信息只剩面包屑一处；学生课堂
       零材料收纳态用 hidden 保节点防 JS 空引用；报告
       `.codex-temp/task-materials-declutter-report.md`）
-- [ ] 阶段 7：全局微动效令牌 + 统一 hover
-- [ ] 阶段 8：workflow 向导裁剪 + 课堂任务区去重
-- [ ] 阶段 9：移动端手风琴折叠
+- [x] 阶段 7：全局微动效令牌（`--ux-motion-*` + `--ux-ease`）+ 统一交互卡
+      hover/focus 反馈 + 列表淡入/徽章脉冲 + reduced-motion 全关
+- [x] 阶段 8：workflow 向导裁剪（推荐处理卡删除、embedded 学期页只剩
+      新建+列表，iframe 内 hero/统计/焦点卡/完整日历不再渲染）+ 课堂任务区
+      双标题合一、说明进浮窗、「查看详情」重复入口删除（codex 执行，已验收，
+      报告 `.codex-temp/task-wizard-taskarea-report.md`）
+- [x] 阶段 9：首页移动端手风琴（学期日历/快捷入口/优先处理/最近动态/登录安全
+      窄屏默认收起为一行标题，点击展开、localStorage 记忆；事件委托防岛屿
+      重渲染丢监听；学生首页移动端全页高 ~6000px → ≤4200px 断言线）

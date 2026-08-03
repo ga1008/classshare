@@ -551,7 +551,7 @@
                 {% endif %}
             </section>
 
-            <section class="dashboard-semester-section dashboard-reveal" id="dashboard-semester">
+            <section class="dashboard-semester-section dashboard-reveal" id="dashboard-semester" data-mobile-collapse="semester">
                 {% with
                     semester_calendar_panel_title='学期日历',
                     semester_calendar_panel_subtitle='查看完整学期周历、当前周次、节假日与聚焦周待办轴线。',
@@ -571,6 +571,7 @@
                 class="dashboard-panel dashboard-reveal"
                 data-lanshare-island="dashboard-quick-actions"
                 data-island-id="dashboard-quick-actions"
+                data-mobile-collapse="quick-actions"
             >
                 <script type="application/json" data-dashboard-quick-actions-payload>
                     {{ {"section": dashboard_sections.quick_actions, "actions": dashboard_quick_actions} | tojson }}
@@ -606,7 +607,7 @@
                 </div>
             </section>
 
-            <section class="dashboard-panel dashboard-reveal">
+            <section class="dashboard-panel dashboard-reveal" data-mobile-collapse="focus">
                 <div class="dashboard-panel__header" title="{{ dashboard_focus.subtitle }}">
                     <h2>{{ dashboard_focus.title }}</h2>
                     <p>{{ dashboard_focus.subtitle }}</p>
@@ -624,7 +625,7 @@
                 </div>
             </section>
 
-            <section class="dashboard-panel dashboard-reveal">
+            <section class="dashboard-panel dashboard-reveal" data-mobile-collapse="activity">
                 <div class="dashboard-panel__header" title="{{ dashboard_activity.subtitle }}">
                     <h2>{{ dashboard_activity.title }}</h2>
                     <p>{{ dashboard_activity.subtitle }}</p>
@@ -651,7 +652,7 @@
             </section>
 
             {% if student_security_summary %}
-            <section class="dashboard-panel dashboard-reveal">
+            <section class="dashboard-panel dashboard-reveal" data-mobile-collapse="security">
                 <div class="dashboard-panel__header" title="帮助你确认最近一次登录设备与时间。">
                     <h2>登录安全</h2>
                     <p>帮助你确认最近一次登录设备与时间。</p>
@@ -747,7 +748,7 @@
 </script>
 {% endif %}
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
-<script type="module" src="/static/js/dashboard.js?v=ux-empty-collapse-20260803"></script>
+<script type="module" src="/static/js/dashboard.js?v=ux-mobile-accordion-20260804"></script>
 <script type="module" src="/static/js/dashboard_count_up.js?v=student-dashboard-polish-20260612"></script>
 <script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260714-modal-fix-v3"></script>
 {% endblock %}

@@ -2,6 +2,11 @@
 {% from "macros/ui_explanation.html" import explain_button %}
 
 {% block extra_head %}
+<style>
+    .workflow-shell .workflow-hero {
+        grid-template-columns: minmax(0, 1fr);
+    }
+</style>
 {% endblock %}
 
 {% block header_actions %}
@@ -28,14 +33,6 @@
                 <a href="/manage/teaching/offerings" class="btn btn-outline">查看课堂列表</a>
             </div>
         </div>
-
-        <aside class="workflow-hero-side">
-            <article class="workflow-hero-panel">
-                <span>推荐处理</span>
-                <strong id="workflowRecommendedLabel">加载中</strong>
-                <p id="workflowRecommendedHelp">系统会根据开课必需条件给出下一步建议。</p>
-            </article>
-        </aside>
     </section>
 
     <section class="workflow-stage-carousel" aria-label="开课流程导航">
@@ -140,5 +137,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_workflow.js"></script>
+<script type="module" src="/static/js/manage_workflow.js?v=ux-wizard-dedup-20260804"></script>
 {% endblock %}

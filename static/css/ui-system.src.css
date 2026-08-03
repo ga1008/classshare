@@ -52029,3 +52029,164 @@ html.scene-cover-collapsing .main-content {
 .classroom-materials-conditional[hidden] {
     display: none !important;
 }
+
+/* ===== UX overhaul 2026-08 · 阶段 7 全局微动效令牌与统一反馈 ===== */
+:root {
+    --ux-motion-fast: 120ms;
+    --ux-motion-base: 180ms;
+    --ux-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* 统一交互卡反馈：1px 上浮 + 边框加深 + 轻阴影（覆盖各处零散定义，保持一致节奏） */
+.dashboard-quick-action,
+.dashboard-domain-card,
+.dashboard-stat-card,
+.profile-metric-card,
+.profile-nav__link,
+.profile-cultivation-card,
+.message-center-tab,
+.semester-calendar-overview-card,
+.dashboard-offering-card,
+.manage-nav-item {
+    transition:
+        transform var(--ux-motion-base) var(--ux-ease),
+        border-color var(--ux-motion-base) var(--ux-ease),
+        box-shadow var(--ux-motion-base) var(--ux-ease),
+        background-color var(--ux-motion-base) var(--ux-ease);
+}
+
+.dashboard-quick-action:hover,
+.dashboard-domain-card:hover,
+.profile-metric-card:hover,
+.profile-cultivation-card:hover,
+.dashboard-offering-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(100, 116, 139, 0.42);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+/* 键盘可达性：统一 focus 环 */
+.dashboard-quick-action:focus-visible,
+.dashboard-domain-card:focus-visible,
+.profile-nav__link:focus-visible,
+.message-center-tab:focus-visible,
+.dashboard-offering-card:focus-visible {
+    outline: 2px solid rgba(79, 70, 229, 0.55);
+    outline-offset: 2px;
+}
+
+/* 内容区重渲染的柔和进入：列表/信息流子项淡入上移，替代生硬跳变 */
+@keyframes ux-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.message-center-feed > *,
+.message-center-tabs > *,
+.dashboard-quick-actions > * {
+    animation: ux-fade-in var(--ux-motion-base) var(--ux-ease) both;
+}
+
+/* 计数徽章出现时轻微脉冲一次，引导注意而不打扰 */
+@keyframes ux-pop {
+    0% {
+        transform: scale(0.7);
+    }
+    60% {
+        transform: scale(1.12);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.message-center-tab__count,
+.profile-nav__badge,
+.message-center-pill.is-danger {
+    animation: ux-pop 240ms var(--ux-ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dashboard-quick-action,
+    .dashboard-domain-card,
+    .dashboard-stat-card,
+    .profile-metric-card,
+    .profile-nav__link,
+    .profile-cultivation-card,
+    .message-center-tab,
+    .semester-calendar-overview-card,
+    .dashboard-offering-card,
+    .manage-nav-item {
+        transition: none;
+    }
+
+    .message-center-feed > *,
+    .message-center-tabs > *,
+    .dashboard-quick-actions > *,
+    .message-center-tab__count,
+    .profile-nav__badge,
+    .message-center-pill.is-danger {
+        animation: none;
+    }
+
+    .dashboard-quick-action:hover,
+    .dashboard-domain-card:hover,
+    .profile-metric-card:hover,
+    .profile-cultivation-card:hover,
+    .dashboard-offering-card:hover {
+        transform: none;
+    }
+}
+
+/* ===== UX overhaul 2026-08 · 阶段 9 移动端分区手风琴 ===== */
+@media (max-width: 639px) {
+    [data-mobile-collapse] .dashboard-panel__header,
+    [data-mobile-collapse] .semester-calendar-panel__header {
+        cursor: pointer;
+        position: relative;
+        padding-right: 28px;
+    }
+
+    /* 折叠指示箭头：展开时向上 */
+    [data-mobile-collapse] .dashboard-panel__header::after,
+    [data-mobile-collapse] .semester-calendar-panel__header::after {
+        content: '';
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid rgba(100, 116, 139, 0.7);
+        border-bottom: 2px solid rgba(100, 116, 139, 0.7);
+        transform: translateY(-70%) rotate(45deg);
+        transition: transform var(--ux-motion-base) var(--ux-ease);
+    }
+
+    [data-mobile-collapse]:not(.is-mobile-collapsed) .dashboard-panel__header::after,
+    [data-mobile-collapse]:not(.is-mobile-collapsed) .semester-calendar-panel__header::after {
+        transform: translateY(-30%) rotate(225deg);
+    }
+
+    .is-mobile-collapsed.dashboard-panel > *:not(.dashboard-panel__header):not(script),
+    .is-mobile-collapsed .semester-calendar-panel > *:not(.semester-calendar-panel__header) {
+        display: none !important;
+    }
+
+    /* 折叠时头部收紧、说明小字隐藏，只剩一行标题 */
+    .is-mobile-collapsed .dashboard-panel__header p {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-mobile-collapse] .dashboard-panel__header::after,
+    [data-mobile-collapse] .semester-calendar-panel__header::after {
+        transition: none;
+    }
+}
