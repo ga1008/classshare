@@ -455,6 +455,7 @@ async function loadSignatureRequests() {
             apiFetch('/api/signatures/requests?direction=outgoing', { method: 'GET', silent: true }),
         ]);
         state.pendingRequests = Array.isArray(incoming.items) ? incoming.items : [];
+        state.adminRequestView = Boolean(incoming.admin_view);
         state.outgoingRequests = Array.isArray(outgoing.items) ? outgoing.items : [];
         renderSignatureRequests();
     } catch (error) {
@@ -479,7 +480,13 @@ function renderSignatureRequests() {
         const mine = (item.reviewers || []).find((reviewer) => (
             reviewer.role === state.actor?.role && Number(reviewer.id) === Number(state.actor?.id)
         ));
-        const actions = mine?.status === 'pending' ? `
+        const canAct = mine?.status === 'pending'
+            || (state.adminRequestView && !mine && item.status === 'pending');
+        const adminBadge = state.adminRequestView && !mine
+            ? '<span class="signature-chip is-system">管理员代批</span>'
+            : '';
+        const actions = canAct ? `
+            ${adminBadge}
             <button type="button" class="btn btn-primary btn-sm" data-signature-request-action="approve">批准</button>
             <button type="button" class="btn btn-outline btn-sm" data-signature-request-action="reject">拒绝</button>
         ` : `<span class="signature-chip">${escapeHtml(mine?.status || item.status)}</span>`;
