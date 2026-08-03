@@ -260,7 +260,7 @@ def _grade_status_counts(students: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
-def _add_grade_signature_overlay(document: Any, table: Any, signature_path: Any) -> None:
+def _add_grade_signature_overlay(document: Any, table: Any, signature_path: Any, signature_count: int = 1) -> None:
     path = Path(str(signature_path or ""))
     if not path.is_file():
         return
@@ -268,6 +268,17 @@ def _add_grade_signature_overlay(document: Any, table: Any, signature_path: Any)
     from docx.oxml import parse_xml
 
     relationship_id, _image = document.part.get_or_add_image(str(path))
+    width_pt = 60.55
+    height_pt = 21.2
+    if int(signature_count or 1) > 1:
+        try:
+            from PIL import Image
+
+            with Image.open(path) as source:
+                aspect_ratio = source.width / max(1, source.height)
+            width_pt = min(130.0, max(60.55, height_pt * aspect_ratio))
+        except Exception:
+            width_pt = min(130.0, 60.55 * int(signature_count or 1))
     pict = parse_xml(
         f"""
         <w:pict
@@ -292,7 +303,7 @@ def _add_grade_signature_overlay(document: Any, table: Any, signature_path: Any)
             <o:lock v:ext="edit" aspectratio="t"/>
           </v:shapetype>
           <v:shape id="_x0000_s2050" type="#_x0000_t75"
-              style="position:absolute;margin-left:18.4pt;margin-top:3.15pt;width:60.55pt;height:21.2pt;z-index:251659264;mso-position-horizontal-relative:text;mso-position-vertical-relative:text">
+              style="position:absolute;margin-left:18.4pt;margin-top:3.15pt;width:{width_pt:g}pt;height:{height_pt:g}pt;z-index:251659264;mso-position-horizontal-relative:text;mso-position-vertical-relative:text">
             <v:imagedata r:id="{relationship_id}" o:title=""/>
           </v:shape>
         </w:pict>
@@ -387,7 +398,13 @@ def build_grade_register_docx(parse_payload: dict[str, Any]) -> bytes:
         _set_template_cell_text(table.rows[37 + offset].cells[16], value)
 
     _set_template_cell_text(table.rows[46].cells[0], "教师：______________________________签字")
-    _add_grade_signature_overlay(document, table, fields.get("teacher_signature_image_path"))
+    teacher_signature_ids = fields.get("teacher_signature_ids") if isinstance(fields.get("teacher_signature_ids"), list) else []
+    _add_grade_signature_overlay(
+        document,
+        table,
+        fields.get("teacher_signature_image_path"),
+        len(teacher_signature_ids) or (1 if fields.get("teacher_signature_image_path") else 0),
+    )
     if "{{" in document._element.xml:
         raise RuntimeError("期末成绩登记表仍包含未替换的模板占位符。")
 
@@ -579,7 +596,7 @@ def _set_analysis_body(cell: Any, value: Any) -> None:
         _set_run_font(paragraph.add_run(line), 12)
 
 
-def _set_review_signature(cell: Any, path_value: Any) -> None:
+def _set_review_signature(cell: Any, path_value: Any, signature_count: int = 1) -> None:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Cm
 
@@ -591,7 +608,10 @@ def _set_review_signature(cell: Any, path_value: Any) -> None:
     _set_run_font(paragraph.add_run("签字："), 9)
     path = Path(str(path_value or ""))
     if path.is_file():
-        paragraph.add_run().add_picture(str(path), width=Cm(3.1), height=Cm(1.1))
+        if int(signature_count or 1) <= 1:
+            paragraph.add_run().add_picture(str(path), width=Cm(3.1), height=Cm(1.1))
+        else:
+            paragraph.add_run().add_picture(str(path), width=Cm(4.35))
 
 
 def _build_analysis_table(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> Any:
@@ -707,8 +727,18 @@ def _build_analysis_table(document: Any, fields: dict[str, Any], structured: dic
     _analysis_cell(table, 19, 6, 10, fields.get("dean_review_opinion") or "", size=9, align=0)
     department_signature_cell = _analysis_cell(table, 20, 0, 5, "")
     dean_signature_cell = _analysis_cell(table, 20, 6, 10, "")
-    _set_review_signature(department_signature_cell, fields.get("department_signature_image_path"))
-    _set_review_signature(dean_signature_cell, fields.get("dean_signature_image_path"))
+    department_ids = fields.get("department_signature_ids") if isinstance(fields.get("department_signature_ids"), list) else []
+    dean_ids = fields.get("dean_signature_ids") if isinstance(fields.get("dean_signature_ids"), list) else []
+    _set_review_signature(
+        department_signature_cell,
+        fields.get("department_signature_image_path"),
+        len(department_ids) or (1 if fields.get("department_signature_image_path") else 0),
+    )
+    _set_review_signature(
+        dean_signature_cell,
+        fields.get("dean_signature_image_path"),
+        len(dean_ids) or (1 if fields.get("dean_signature_image_path") else 0),
+    )
     _analysis_cell(table, 21, 0, 10, "注：1、本表一式两份，一份交学生所在学院，一份交开课学院存档。", size=9, bold=True, align=0)
     return table
 

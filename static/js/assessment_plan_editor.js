@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml } from './ui.js';
+import { SignaturePointControl } from './signature_point_workflow.js';
 import {
     closePendingPreviewWindow,
     isPreviewLinkBusy,
@@ -27,7 +28,11 @@ const state = {
     notes: Array.isArray(boot.notes) ? boot.notes : [],
     examinerSignature: boot.examiner_signature || null,
     reviewerSignature: boot.reviewer_signature || null,
-    signatureOptions: { mine: [], usable: [] },
+    examinerSignatures: Array.isArray(boot.examiner_signatures) ? boot.examiner_signatures : [],
+    reviewerSignatures: Array.isArray(boot.reviewer_signatures) ? boot.reviewer_signatures : [],
+    examinerSignatureIds: Array.isArray(boot.examiner_signature_ids) ? boot.examiner_signature_ids : (boot.examiner_signature?.id ? [boot.examiner_signature.id] : []),
+    reviewerSignatureIds: Array.isArray(boot.reviewer_signature_ids) ? boot.reviewer_signature_ids : (boot.reviewer_signature?.id ? [boot.reviewer_signature.id] : []),
+    signaturePoints: {},
     dirty: false,
     saving: false,
 };
@@ -197,28 +202,22 @@ function signatureSubjectName(role) {
     return String(state.fields[key] || state.fields.teacher_name || '').trim();
 }
 
-function signatureRow(role, label, bound, options) {
-    const optsHtml = ['<option value="">未绑定</option>']
-        .concat(options.map((o) => {
-            const selected = bound && Number(bound.id) === Number(o.id) ? ' selected' : '';
-            return `<option value="${o.id}"${selected}>${escapeHtml(o.subject_name || o.name)}</option>`;
-        }))
-        .join('');
-    const preview = bound && bound.image_url
-        ? `<img class="ap-sign-img" src="${escapeHtml(bound.image_url)}" alt="签名预览">`
+function signatureRow(role, label, boundItems) {
+    const preview = boundItems.length
+        ? boundItems.map((bound) => `<img class="ap-sign-img" src="${escapeHtml(bound.image_url)}" alt="${escapeHtml(bound.subject_name || label)}签名预览">`).join('')
         : '<span class="ap-sign-empty">未绑定签名</span>';
     const subjectName = signatureSubjectName(role);
     let notice = '';
     if (role === 'reviewer' && !subjectName) {
         notice = '请先填写系主任姓名；保存后会从签名库匹配，也可以上传新签名并自动入库。';
-    } else if (role === 'reviewer' && !bound) {
+    } else if (role === 'reviewer' && !boundItems.length) {
         notice = '未绑定系主任签名。若签名库没有自动匹配，请在这里上传并绑定。';
     }
     return `
         <div class="ap-sign-row">
             <div class="ap-sign-label">${escapeHtml(label)}</div>
             <div class="ap-sign-picker">
-                <select data-signature-role="${role}">${optsHtml}</select>
+                <div data-ap-signature-point="${role}"></div>
                 <div class="ap-sign-upload">
                     <input type="file" accept="image/png,image/jpeg" data-signature-file="${role}">
                     <button type="button" class="lp-link" data-upload-signature="${role}">上传并绑定</button>
@@ -232,8 +231,8 @@ function signatureRow(role, label, bound, options) {
 function renderSignatures() {
     const wrap = document.getElementById('ap-signatures');
     wrap.innerHTML =
-        signatureRow('examiner', '命题教师签名', state.examinerSignature, state.signatureOptions.mine) +
-        signatureRow('reviewer', '系（教研室）主任审核签字', state.reviewerSignature, state.signatureOptions.usable);
+        signatureRow('examiner', '命题教师签名', state.examinerSignatures) +
+        signatureRow('reviewer', '系（教研室）主任审核签字', state.reviewerSignatures);
 }
 
 function renderImportDetails() {
@@ -258,24 +257,33 @@ function renderImportDetails() {
 }
 
 // ---------------------------------------------------------------------------
-// Signature options
+// Material-scoped signature points
 // ---------------------------------------------------------------------------
-async function loadSignatureOptions() {
-    try {
-        const mine = await apiFetch('/api/signatures?limit=200&function_point_key=assessment_plan.examiner_signature');
-        state.signatureOptions.mine = (mine.items || []).filter((s) => s.can_use);
-    } catch (_) { state.signatureOptions.mine = []; }
-    try {
-        const all = await apiFetch('/api/signatures?limit=200&function_point_key=assessment_plan.reviewer_signature');
-        state.signatureOptions.usable = (all.items || []).filter((s) => s.can_use);
-    } catch (_) { state.signatureOptions.usable = []; }
-    // Ensure currently-bound signatures appear even if not in the filtered lists.
-    for (const [bound, bucket] of [[state.examinerSignature, 'mine'], [state.reviewerSignature, 'usable']]) {
-        if (bound && !state.signatureOptions[bucket].some((s) => Number(s.id) === Number(bound.id))) {
-            state.signatureOptions[bucket] = [bound, ...state.signatureOptions[bucket]];
-        }
-    }
-    renderSignatures();
+const signatureBindTimers = Object.create(null);
+function scheduleSignatureBinding(role, ids) {
+    window.clearTimeout(signatureBindTimers[role]);
+    signatureBindTimers[role] = window.setTimeout(() => bindSignature(role, ids), 300);
+}
+
+async function initSignaturePoints() {
+    const configs = [
+        ['examiner', 'assessment_plan.examiner_signature', '课程考核计划表 · 命题教师签名处', state.examinerSignatureIds],
+        ['reviewer', 'assessment_plan.reviewer_signature', '课程考核计划表 · 系（教研室）主任审核签名处', state.reviewerSignatureIds],
+    ];
+    await Promise.all(configs.map(async ([role, pointKey, pointLabel, initialSelectedIds]) => {
+        const control = new SignaturePointControl({
+            root: document.querySelector(`[data-ap-signature-point="${role}"]`),
+            pointKey,
+            pointLabel,
+            materialType: 'assessment_plan',
+            materialId: state.id,
+            initialSelectedIds,
+            onChange: (ids) => scheduleSignatureBinding(role, ids),
+            notify: showToast,
+        });
+        state.signaturePoints[role] = control;
+        await control.load();
+    }));
 }
 
 // ---------------------------------------------------------------------------
@@ -399,27 +407,30 @@ async function openSavedPreview(event) {
     }
 }
 
-async function applySignatureBinding(role, signatureId) {
+async function applySignatureBinding(role, signatureIds) {
     const res = await apiFetch(`/api/assessment-plans/${state.id}/signature`, {
         method: 'PUT',
-        body: { role, signature_id: signatureId ? Number(signatureId) : null },
+        body: { role, signature_ids: Array.isArray(signatureIds) ? signatureIds : [] },
     });
     state.examinerSignature = res.examiner_signature || null;
     state.reviewerSignature = res.reviewer_signature || null;
-    renderSignatures();
+    state.examinerSignatures = res.examiner_signatures || [];
+    state.reviewerSignatures = res.reviewer_signatures || [];
+    state.examinerSignatureIds = res.examiner_signature_ids || [];
+    state.reviewerSignatureIds = res.reviewer_signature_ids || [];
     reloadPreview();
 }
 
-async function bindSignature(role, signatureId) {
+async function bindSignature(role, signatureIds) {
     if (state.saving) return;
     setEditorBusy(true);
     setSaveState('is-saving', '更新签名中');
     try {
-        await applySignatureBinding(role, signatureId);
+        await applySignatureBinding(role, signatureIds);
         showToast('签名已更新，预览已刷新', 'success');
     } catch (err) {
         showToast(err.message || '绑定签名失败', 'error');
-        renderSignatures();
+        await state.signaturePoints[role]?.load();
     } finally {
         setEditorBusy(false);
         restoreSaveState();
@@ -462,8 +473,9 @@ async function uploadSignature(role) {
             throw new Error('签名上传成功但未返回签名编号。');
         }
         if (input) input.value = '';
-        await loadSignatureOptions();
-        await applySignatureBinding(role, signature.id);
+        await state.signaturePoints[role]?.load();
+        await applySignatureBinding(role, [signature.id]);
+        await state.signaturePoints[role]?.setMaterial(state.id, [signature.id]);
         showToast('签名已上传、入库并绑定，预览已刷新。', 'success');
     } catch (err) {
         showToast(err.message || '上传签名失败', 'error');
@@ -502,8 +514,6 @@ function bindEvents() {
         if (state.saving) return;
         const fieldEl = e.target.closest('[data-field]');
         if (fieldEl) { state.fields[fieldEl.dataset.field] = fieldEl.value; markDirty(); return; }
-        const sigEl = e.target.closest('[data-signature-role]');
-        if (sigEl) { bindSignature(sigEl.dataset.signatureRole, sigEl.value); }
     });
 
     form.addEventListener('click', (e) => {
@@ -547,14 +557,14 @@ function bindEvents() {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-function init() {
+async function init() {
     if (!state.id) return;
     renderFields();
     renderItems();
     renderSignatures();
     renderImportDetails();
     bindEvents();
-    loadSignatureOptions();
+    await initSignaturePoints();
 }
 
-init();
+init().catch((error) => showToast(error.message || '签名点初始化失败', 'error'));

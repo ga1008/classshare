@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import re
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -62,6 +63,9 @@ class AcademicFinalMaterialUpdateRequest(BaseModel):
     teacher_signature_id: int | None = None
     department_signature_id: int | None = None
     dean_signature_id: int | None = None
+    teacher_signature_ids: list[int] | None = None
+    department_signature_ids: list[int] | None = None
+    dean_signature_ids: list[int] | None = None
 
 
 class AcademicFinalMaterialRegenerateRequest(BaseModel):
@@ -486,7 +490,7 @@ async def _attach_source_document(
             """
             UPDATE material_ai_import_records
             SET source_material_id = ?, source_file_name = ?, source_file_hash = ?,
-                source_file_size = ?, source_mime_type = ?, updated_at = ?
+                source_file_size = ?, source_mime_type = ?, signature_revision = ?, updated_at = ?
             WHERE id = ?
             """,
             (
@@ -495,6 +499,7 @@ async def _attach_source_document(
                 file_hash,
                 len(source_bytes),
                 profile["mime_type"],
+                uuid.uuid4().hex,
                 now,
                 int(record_id),
             ),
@@ -944,39 +949,49 @@ def _validate_analysis_choices(payload: dict[str, Any]) -> None:
             raise HTTPException(400, f"{key} 的选项不受支持。")
 
 
-def _apply_signature(
+def _apply_signatures(
     conn: Any,
     user: dict,
     fields: dict[str, Any],
     *,
     id_key: str,
+    ids_key: str,
     path_key: str,
-    signature_id: int | None,
+    signature_ids: list[int],
     function_point_key: str,
     context_type: str,
     context_id: str,
     context_label: str,
     ip: str = "",
     user_agent: str = "",
-) -> dict[str, Any] | None:
-    fields[id_key] = int(signature_id) if signature_id else None
+) -> dict[str, Any]:
+    normalized_ids: list[int] = []
+    for value in signature_ids:
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            continue
+        if normalized > 0 and normalized not in normalized_ids:
+            normalized_ids.append(normalized)
+    if len(normalized_ids) > 12:
+        raise HTTPException(400, "同一签名点最多选择 12 个签名。")
+    fields[ids_key] = normalized_ids
+    fields[id_key] = normalized_ids[0] if normalized_ids else None
     fields[path_key] = ""
-    if not signature_id:
-        return None
-    try:
-        row, _actor = signature_service.get_signature_row_for_actor(
-            conn,
-            user,
-            int(signature_id),
-            require_use=False,
-        )
-    except signature_service.SignatureServiceError as exc:
-        raise HTTPException(exc.status_code, exc.message) from exc
-    path = signature_service.resolve_signature_file_path(row)
-    if not path:
-        raise HTTPException(422, "所选签名图片文件不存在。")
+    for signature_id in normalized_ids:
+        try:
+            row, _actor = signature_service.get_signature_row_for_actor(
+                conn,
+                user,
+                int(signature_id),
+                require_use=False,
+            )
+        except signature_service.SignatureServiceError as exc:
+            raise HTTPException(exc.status_code, exc.message) from exc
+        if not signature_service.resolve_signature_file_path(row):
+            raise HTTPException(422, "所选签名图片文件不存在。")
     return {
-        "signature_id": int(signature_id),
+        "signature_ids": normalized_ids,
         "function_point_key": function_point_key,
         "context_type": context_type,
         "context_id": context_id,
@@ -1020,14 +1035,16 @@ async def api_update_academic_final_material(
         signature_use_intents: list[dict[str, Any]] = []
         context_label = f"{fields.get('course_name') or ''} · {fields.get('class_name') or ''}".strip(" ·")
         if body.document_type == ACADEMIC_GRADE_REGISTER_TYPE:
-            if "teacher_signature_id" in body_payload:
-                intent = _apply_signature(
+            if "teacher_signature_ids" in body_payload or "teacher_signature_id" in body_payload:
+                selected_ids = body.teacher_signature_ids if body.teacher_signature_ids is not None else ([body.teacher_signature_id] if body.teacher_signature_id else [])
+                intent = _apply_signatures(
                     conn,
                     user,
                     fields,
                     id_key="teacher_signature_id",
+                    ids_key="teacher_signature_ids",
                     path_key="teacher_signature_image_path",
-                    signature_id=body.teacher_signature_id,
+                    signature_ids=selected_ids,
                     function_point_key="academic_final_material.grade_register.teacher_signature",
                     context_type="academic_final_material",
                     context_id=str(record["id"]),
@@ -1035,8 +1052,7 @@ async def api_update_academic_final_material(
                     ip=get_client_ip(request),
                     user_agent=request.headers.get("user-agent", ""),
                 )
-                if intent:
-                    signature_use_intents.append(intent)
+                signature_use_intents.append(intent)
         else:
             for key in ANALYSIS_EDIT_FIELDS:
                 if key in body_payload:
@@ -1047,14 +1063,16 @@ async def api_update_academic_final_material(
                     raise HTTPException(400, "教学分析不能为空。")
                 structured["analysis_text"] = text
                 fields["analysis_text"] = text
-            if "department_signature_id" in body_payload:
-                intent = _apply_signature(
+            if "department_signature_ids" in body_payload or "department_signature_id" in body_payload:
+                selected_ids = body.department_signature_ids if body.department_signature_ids is not None else ([body.department_signature_id] if body.department_signature_id else [])
+                intent = _apply_signatures(
                     conn,
                     user,
                     fields,
                     id_key="department_signature_id",
+                    ids_key="department_signature_ids",
                     path_key="department_signature_image_path",
-                    signature_id=body.department_signature_id,
+                    signature_ids=selected_ids,
                     function_point_key="academic_final_material.exam_analysis.department_review_signature",
                     context_type="academic_final_material",
                     context_id=str(record["id"]),
@@ -1062,16 +1080,17 @@ async def api_update_academic_final_material(
                     ip=get_client_ip(request),
                     user_agent=request.headers.get("user-agent", ""),
                 )
-                if intent:
-                    signature_use_intents.append(intent)
-            if "dean_signature_id" in body_payload:
-                intent = _apply_signature(
+                signature_use_intents.append(intent)
+            if "dean_signature_ids" in body_payload or "dean_signature_id" in body_payload:
+                selected_ids = body.dean_signature_ids if body.dean_signature_ids is not None else ([body.dean_signature_id] if body.dean_signature_id else [])
+                intent = _apply_signatures(
                     conn,
                     user,
                     fields,
                     id_key="dean_signature_id",
+                    ids_key="dean_signature_ids",
                     path_key="dean_signature_image_path",
-                    signature_id=body.dean_signature_id,
+                    signature_ids=selected_ids,
                     function_point_key="academic_final_material.exam_analysis.dean_review_signature",
                     context_type="academic_final_material",
                     context_id=str(record["id"]),
@@ -1079,8 +1098,7 @@ async def api_update_academic_final_material(
                     ip=get_client_ip(request),
                     user_agent=request.headers.get("user-agent", ""),
                 )
-                if intent:
-                    signature_use_intents.append(intent)
+                signature_use_intents.append(intent)
         export_payload["fields"] = fields
         export_payload["structured"] = structured
         conn.commit()
@@ -1102,15 +1120,24 @@ async def api_update_academic_final_material(
             }
         )
         if body.document_type == ACADEMIC_EXAM_ANALYSIS_TYPE:
+            has_department_signature = bool(
+                fields.get("department_signature_ids") or fields.get("department_signature_id")
+            )
+            has_dean_signature = bool(
+                fields.get("dean_signature_ids") or fields.get("dean_signature_id")
+            )
             edit_state["analysis_complete"] = bool(
                 all(str(fields.get(key) or "").strip() for key in ANALYSIS_EDIT_FIELDS)
                 and str(structured.get("analysis_text") or "").strip()
-                and fields.get("department_signature_id")
-                and fields.get("dean_signature_id")
+                and has_department_signature
+                and has_dean_signature
             )
         else:
-            edit_state["teacher_signature_ready"] = bool(fields.get("teacher_signature_id"))
-            edit_state["grade_complete"] = bool(fields.get("teacher_signature_id"))
+            has_teacher_signature = bool(
+                fields.get("teacher_signature_ids") or fields.get("teacher_signature_id")
+            )
+            edit_state["teacher_signature_ready"] = has_teacher_signature
+            edit_state["grade_complete"] = has_teacher_signature
         updated = upsert_batch_state(
             conn,
             teacher_id=int(user["id"]),

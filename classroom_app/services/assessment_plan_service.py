@@ -27,6 +27,7 @@ from ..db.connection import get_configured_db_engine
 from ..db.schema_assessment_plans import ensure_assessment_plan_schema
 from . import material_scope_service as scope_core
 from . import signature_service
+from .signature_composition_service import compose_signature_strip, resolve_signature_paths
 from .academic_class_mapping_service import resolve_offering_display_class_name
 from .class_label_service import build_academic_class_label
 from .material_export_template_service import build_material_export_artifact
@@ -457,11 +458,12 @@ def create_assessment_plan(
             id, teacher_id, title, course_id, class_offering_id,
             fields_json, items_json, notes_json,
             examiner_signature_id, reviewer_signature_id,
+            examiner_signature_ids_json, reviewer_signature_ids_json, signature_revision,
             tags_json, scope_level, source_type, status,
             ai_gen_task_id, ai_gen_status, ai_gen_error, ai_gen_progress,
             inherited_from, school_code, school_name, college, department,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             plan_id,
@@ -474,6 +476,9 @@ def create_assessment_plan(
             _dump(resolved_notes),
             int(examiner_signature_id) if examiner_signature_id else None,
             int(reviewer_signature_id) if reviewer_signature_id else None,
+            _dump([int(examiner_signature_id)] if examiner_signature_id else []),
+            _dump([int(reviewer_signature_id)] if reviewer_signature_id else []),
+            plan_id,
             _dump(_normalize_tags(tags)),
             normalize_scope_level(scope_level),
             source_type,
@@ -515,9 +520,34 @@ def _hydrate(conn: sqlite3.Connection, row: dict[str, Any]) -> dict[str, Any]:
     row["scope_label"] = scope_label(row["scope_level"])
     row["score_total"] = _sum_scores(row["items"])
     row["score_balanced"] = abs(row["score_total"] - TARGET_TOTAL_SCORE) < 1e-6
-    row["examiner_signature"] = _signature_brief(conn, row.get("examiner_signature_id"))
-    row["reviewer_signature"] = _signature_brief(conn, row.get("reviewer_signature_id"))
+    examiner_ids = _signature_ids(row.get("examiner_signature_ids_json"), row.get("examiner_signature_id"))
+    reviewer_ids = _signature_ids(row.get("reviewer_signature_ids_json"), row.get("reviewer_signature_id"))
+    row["examiner_signature_ids"] = examiner_ids
+    row["reviewer_signature_ids"] = reviewer_ids
+    row["examiner_signatures"] = [_signature_brief(conn, item) for item in examiner_ids]
+    row["reviewer_signatures"] = [_signature_brief(conn, item) for item in reviewer_ids]
+    row["examiner_signatures"] = [item for item in row["examiner_signatures"] if item]
+    row["reviewer_signatures"] = [item for item in row["reviewer_signatures"] if item]
+    row["examiner_signature"] = row["examiner_signatures"][0] if row["examiner_signatures"] else None
+    row["reviewer_signature"] = row["reviewer_signatures"][0] if row["reviewer_signatures"] else None
     return row
+
+
+def _signature_ids(raw: Any, legacy_id: Any = None) -> list[int]:
+    values = _load(raw, [])
+    if not isinstance(values, list):
+        values = []
+    if not values and legacy_id:
+        values = [legacy_id]
+    result: list[int] = []
+    for value in values:
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            continue
+        if normalized > 0 and normalized not in result:
+            result.append(normalized)
+    return result[:12]
 
 
 def _signature_brief(conn: sqlite3.Connection, signature_id: Any) -> dict[str, Any] | None:
@@ -683,12 +713,49 @@ def set_signature(
     role: str,
     signature_id: int | None,
 ) -> None:
+    set_signatures(
+        conn,
+        plan_id,
+        role=role,
+        signature_ids=[int(signature_id)] if signature_id else [],
+    )
+
+
+def set_signatures(
+    conn: sqlite3.Connection,
+    plan_id: str,
+    *,
+    role: str,
+    signature_ids: list[int],
+) -> None:
     ensure_assessment_plan_schema(conn)
     column = "examiner_signature_id" if role == "examiner" else "reviewer_signature_id"
+    json_column = "examiner_signature_ids_json" if role == "examiner" else "reviewer_signature_ids_json"
+    normalized = _signature_ids(signature_ids)
     conn.execute(
-        f"UPDATE assessment_plans SET {column} = ?, updated_at = ? WHERE id = ?",
-        (int(signature_id) if signature_id else None, _now(), str(plan_id)),
+        f"UPDATE assessment_plans SET {column} = ?, {json_column} = ?, updated_at = ? WHERE id = ?",
+        (normalized[0] if normalized else None, _dump(normalized), _now(), str(plan_id)),
     )
+
+
+def rotate_signature_revision(conn: sqlite3.Connection, plan_id: str) -> str:
+    """Invalidate all point grants/bindings when a material is rebuilt."""
+    ensure_assessment_plan_schema(conn)
+    revision = uuid.uuid4().hex
+    conn.execute(
+        """
+        UPDATE assessment_plans
+        SET signature_revision = ?,
+            examiner_signature_id = NULL,
+            reviewer_signature_id = NULL,
+            examiner_signature_ids_json = '[]',
+            reviewer_signature_ids_json = '[]',
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (revision, _now(), str(plan_id)),
+    )
+    return revision
 
 
 def delete_assessment_plan(conn: sqlite3.Connection, plan_id: str) -> None:
@@ -858,12 +925,20 @@ def _signature_image_for_subject(conn: sqlite3.Connection, plan: dict[str, Any],
 def build_export_fields(conn: sqlite3.Connection, plan: dict[str, Any]) -> dict[str, Any]:
     """Build the export fields, injecting bound signature image paths + names."""
     fields = dict(plan.get("fields") or {})
-    examiner_subject, examiner_path = _signature_image_path(conn, plan.get("examiner_signature_id"))
+    examiner_ids = plan.get("examiner_signature_ids") or ([plan.get("examiner_signature_id")] if plan.get("examiner_signature_id") else [])
+    reviewer_ids = plan.get("reviewer_signature_ids") or ([plan.get("reviewer_signature_id")] if plan.get("reviewer_signature_id") else [])
+    examiner_subjects = [_signature_image_path(conn, item)[0] for item in examiner_ids]
+    reviewer_subjects = [_signature_image_path(conn, item)[0] for item in reviewer_ids]
+    examiner_subject = "、".join(item for item in examiner_subjects if item)
+    reviewer_subject = "、".join(item for item in reviewer_subjects if item)
+    examiner_path = compose_signature_strip(resolve_signature_paths(conn, examiner_ids), slot_width=260, height=130)
+    reviewer_path = compose_signature_strip(resolve_signature_paths(conn, reviewer_ids), slot_width=260, height=130)
+    fields["examiner_signature_count"] = len(examiner_ids)
+    fields["reviewer_signature_count"] = len(reviewer_ids)
     if examiner_path:
         fields["examiner_signature_image_path"] = examiner_path
     if examiner_subject and not fields.get("examiner_name"):
         fields["examiner_name"] = examiner_subject
-    reviewer_subject, reviewer_path = _signature_image_path(conn, plan.get("reviewer_signature_id"))
     if reviewer_path:
         fields["reviewer_signature_image_path"] = reviewer_path
     if reviewer_subject and not fields.get("reviewer_name"):

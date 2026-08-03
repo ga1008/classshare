@@ -16,9 +16,12 @@ The document lives in JSON columns:
 * ``items_json``   — the 考核项目 list (``assessment_form`` / ``content`` / ``score``).
 * ``notes_json``   — the 表后注释 (defaults to ``ASSESSMENT_PLAN_NOTES``).
 
-Signatures are referenced (not embedded) by ``examiner_signature_id`` /
-``reviewer_signature_id`` pointing at ``electronic_signatures`` rows; the export
-resolves them to the stored image and embeds it into the docx.
+Signatures are referenced (not embedded) by the ordered
+``examiner_signature_ids_json`` / ``reviewer_signature_ids_json`` arrays.  The
+legacy scalar columns retain the first ID for backward compatibility.  A
+``signature_revision`` rotates whenever the material is rebuilt so grants and
+bindings cannot leak into a new document instance; export resolves the current
+ordered IDs to a balanced composite image only at the trusted render boundary.
 
 Sharing follows the same 系部 → 院级 → 校级 ladder as materials/lesson-plans with
 the owner's org unit snapshotted onto the row so visibility needs no join.
@@ -31,7 +34,10 @@ ISO-8601 TEXT and booleans are stored as INTEGER 0/1.
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
+
+from .connection import get_configured_db_engine
 
 _SCHEMA_READY = False
 
@@ -55,6 +61,9 @@ def ensure_assessment_plan_schema(conn: Any) -> None:
             notes_json TEXT NOT NULL DEFAULT '[]',
             examiner_signature_id INTEGER,
             reviewer_signature_id INTEGER,
+            examiner_signature_ids_json TEXT NOT NULL DEFAULT '[]',
+            reviewer_signature_ids_json TEXT NOT NULL DEFAULT '[]',
+            signature_revision TEXT NOT NULL DEFAULT '',
             tags_json TEXT NOT NULL DEFAULT '[]',
             scope_level TEXT NOT NULL DEFAULT 'private',
             source_type TEXT NOT NULL DEFAULT 'blank',
@@ -73,6 +82,24 @@ def ensure_assessment_plan_schema(conn: Any) -> None:
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
+    )
+    engine = "sqlite" if isinstance(conn, sqlite3.Connection) else get_configured_db_engine()
+    if engine == "postgres":
+        conn.execute("ALTER TABLE assessment_plans ADD COLUMN IF NOT EXISTS examiner_signature_ids_json TEXT NOT NULL DEFAULT '[]'")
+        conn.execute("ALTER TABLE assessment_plans ADD COLUMN IF NOT EXISTS reviewer_signature_ids_json TEXT NOT NULL DEFAULT '[]'")
+        conn.execute("ALTER TABLE assessment_plans ADD COLUMN IF NOT EXISTS signature_revision TEXT NOT NULL DEFAULT ''")
+    else:
+        columns = {str(row[1]) for row in conn.execute('PRAGMA table_info("assessment_plans")').fetchall()}
+        for column, definition in (
+            ("examiner_signature_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("reviewer_signature_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("signature_revision", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column not in columns:
+                conn.execute(f"ALTER TABLE assessment_plans ADD COLUMN {column} {definition}")
+    conn.execute(
+        "UPDATE assessment_plans SET signature_revision = id "
+        "WHERE TRIM(COALESCE(signature_revision, '')) = ''"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_assessment_plans_owner "

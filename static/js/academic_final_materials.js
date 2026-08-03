@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
+import { SignaturePointControl } from './signature_point_workflow.js';
 
 const root = document.querySelector('[data-afm-root]');
 if (!root) throw new Error('Academic final-material root not found.');
@@ -17,7 +18,7 @@ let itemsRequestRunning = false;
 const state = {
     items: [],
     candidates: [],
-    signaturesByPoint: {},
+    signaturePoints: {},
     currentBatchId: '',
     currentRecord: null,
     currentPreviewUrl: '',
@@ -44,9 +45,9 @@ const els = {
     identity: $('[data-afm-identity]'),
     gradeFields: $('[data-afm-grade-fields]'),
     analysisFields: $('[data-afm-analysis-fields]'),
-    teacherSignature: $('[data-afm-teacher-signature]'),
-    departmentSignature: $('[data-afm-department-signature]'),
-    deanSignature: $('[data-afm-dean-signature]'),
+    teacherSignaturePoint: $('[data-afm-teacher-signature-point]'),
+    departmentSignaturePoint: $('[data-afm-department-signature-point]'),
+    deanSignaturePoint: $('[data-afm-dean-signature-point]'),
     analysisText: $('[data-afm-analysis-text]'),
     regeneratePrompt: $('[data-afm-regenerate-prompt]'),
     regenerate: $('[data-afm-regenerate]'),
@@ -357,29 +358,30 @@ async function submitSync(event) {
     }
 }
 
-function signatureOptions(functionPointKey, selectedId, { allowEmpty = true } = {}) {
-    const signatures = state.signaturesByPoint[functionPointKey] || [];
-    const usable = signatures.filter((item) => (
-        item.owner_role !== 'system'
-        && (item.can_use || Number(item.id) === Number(selectedId))
-    ));
-    return [
-        allowEmpty ? '<option value="">暂不填入</option>' : '',
-        ...usable.map((item) => `<option value="${item.id}" ${Number(selectedId) === Number(item.id) ? 'selected' : ''}>${escapeHtml(item.subject_name || item.name)} · ${escapeHtml(item.scope_label || '')}</option>`),
-    ].join('');
+function signatureIds(fields, pluralKey, legacyKey) {
+    return Array.isArray(fields[pluralKey])
+        ? fields[pluralKey]
+        : (fields[legacyKey] ? [fields[legacyKey]] : []);
 }
 
-async function ensureSignatures() {
-    const points = isGrade
-        ? ['academic_final_material.grade_register.teacher_signature']
-        : [
-            'academic_final_material.exam_analysis.department_review_signature',
-            'academic_final_material.exam_analysis.dean_review_signature',
-        ];
-    await Promise.all(points.map(async (point) => {
-        const data = await apiFetch(`/api/signatures?limit=500&function_point_key=${encodeURIComponent(point)}`);
-        state.signaturesByPoint[point] = Array.isArray(data.items) ? data.items : [];
-    }));
+async function ensureSignaturePoint({ key, label, root, selectedIds, materialId }) {
+    let control = state.signaturePoints[key];
+    if (!control) {
+        control = new SignaturePointControl({
+            root,
+            pointKey: key,
+            pointLabel: label,
+            materialType: 'academic_final_material',
+            materialId,
+            initialSelectedIds: selectedIds,
+            notify: message,
+        });
+        state.signaturePoints[key] = control;
+        await control.load();
+    } else {
+        await control.setMaterial(materialId, selectedIds);
+    }
+    return control;
 }
 
 function identityHtml(fields) {
@@ -399,10 +401,7 @@ async function openEditor(batchId) {
     els.editorSubtitle.textContent = '正在读取结构化内容与签名库…';
     els.identity.innerHTML = '<div style="grid-column:1/-1">正在加载…</div>';
     try {
-        const [detail] = await Promise.all([
-            apiFetch(`/api/academic-final-materials/${encodeURIComponent(batchId)}`),
-            ensureSignatures(),
-        ]);
+        const detail = await apiFetch(`/api/academic-final-materials/${encodeURIComponent(batchId)}`);
         const record = isGrade ? detail.grade : detail.analysis;
         if (!record?.id) throw new Error('该材料还未完成同步。');
         state.currentRecord = record;
@@ -414,23 +413,34 @@ async function openEditor(batchId) {
         els.gradeFields.hidden = !isGrade;
         els.analysisFields.hidden = isGrade;
         if (isGrade) {
-            els.teacherSignature.innerHTML = signatureOptions(
-                'academic_final_material.grade_register.teacher_signature',
-                fields.teacher_signature_id,
-            );
+            await ensureSignaturePoint({
+                key: 'academic_final_material.grade_register.teacher_signature',
+                label: '期末成绩登记表 · 任课教师签名处',
+                root: els.teacherSignaturePoint,
+                selectedIds: signatureIds(fields, 'teacher_signature_ids', 'teacher_signature_id'),
+                materialId: record.id,
+            });
         } else {
             $$('[data-afm-field]', els.analysisFields).forEach((input) => {
                 input.value = fields[input.dataset.afmField] || '';
             });
             els.analysisText.value = structured.analysis_text || fields.analysis_text || '';
-            els.departmentSignature.innerHTML = signatureOptions(
-                'academic_final_material.exam_analysis.department_review_signature',
-                fields.department_signature_id,
-            );
-            els.deanSignature.innerHTML = signatureOptions(
-                'academic_final_material.exam_analysis.dean_review_signature',
-                fields.dean_signature_id,
-            );
+            await Promise.all([
+                ensureSignaturePoint({
+                    key: 'academic_final_material.exam_analysis.department_review_signature',
+                    label: '试卷分析表 · 系（教研室）审核签名处',
+                    root: els.departmentSignaturePoint,
+                    selectedIds: signatureIds(fields, 'department_signature_ids', 'department_signature_id'),
+                    materialId: record.id,
+                }),
+                ensureSignaturePoint({
+                    key: 'academic_final_material.exam_analysis.dean_review_signature',
+                    label: '试卷分析表 · 教学院长审核签名处',
+                    root: els.deanSignaturePoint,
+                    selectedIds: signatureIds(fields, 'dean_signature_ids', 'dean_signature_id'),
+                    materialId: record.id,
+                }),
+            ]);
             enhancePromptPoolInput(els.regeneratePrompt);
         }
     } catch (error) {
@@ -442,14 +452,14 @@ async function openEditor(batchId) {
 function editorPayload() {
     const payload = { document_type: type };
     if (isGrade) {
-        payload.teacher_signature_id = els.teacherSignature.value ? Number(els.teacherSignature.value) : null;
+        payload.teacher_signature_ids = state.signaturePoints['academic_final_material.grade_register.teacher_signature']?.getSelectedIds() || [];
     } else {
         $$('[data-afm-field]', els.analysisFields).forEach((input) => {
             payload[input.dataset.afmField] = input.value;
         });
         payload.analysis_text = els.analysisText.value.trim();
-        payload.department_signature_id = els.departmentSignature.value ? Number(els.departmentSignature.value) : null;
-        payload.dean_signature_id = els.deanSignature.value ? Number(els.deanSignature.value) : null;
+        payload.department_signature_ids = state.signaturePoints['academic_final_material.exam_analysis.department_review_signature']?.getSelectedIds() || [];
+        payload.dean_signature_ids = state.signaturePoints['academic_final_material.exam_analysis.dean_review_signature']?.getSelectedIds() || [];
     }
     return payload;
 }

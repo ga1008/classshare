@@ -438,7 +438,8 @@ function renderSignatureRequests() {
         const signatureName = escapeHtml(item.signature_name || '未命名签名');
         const requester = escapeHtml(item.requester_name || `教师 ${item.requester_teacher_id}`);
         const pointLabels = (item.items || []).map((entry) => entry.function_point_label).filter(Boolean).join('、');
-        const meta = escapeHtml(`${requester} · ${pointLabels || '未登记功能点'} · ${item.requested_at ? formatDate(item.requested_at) : ''}`);
+        const material = item.context_label ? ` · ${item.context_label}` : '';
+        const meta = escapeHtml(`${requester} · ${pointLabels || '未登记功能点'}${material} · ${item.requested_at ? formatDate(item.requested_at) : ''}`);
         const mine = (item.reviewers || []).find((reviewer) => (
             reviewer.role === state.actor?.role && Number(reviewer.id) === Number(state.actor?.id)
         ));
@@ -469,8 +470,8 @@ function renderOutgoingRequests() {
         return;
     }
     const statusLabels = {
-        pending: '待审批', approved: '已批准·待使用', partially_used: '部分已使用',
-        consumed: '已全部使用', rejected: '已拒绝', cancelled: '已撤销',
+        pending: '待审批', approved: '已批准·当前材料可用', partially_used: '旧版授权部分已使用',
+        consumed: '旧版授权已使用', rejected: '已拒绝', cancelled: '已结束',
     };
     list.innerHTML = state.outgoingRequests.map((item) => {
         const points = (item.items || []).map((entry) => `${entry.function_point_label}（${entry.status}）`).join('、');
@@ -478,7 +479,7 @@ function renderOutgoingRequests() {
             <article class="signature-request-item" data-signature-request-id="${item.id}">
                 <div class="signature-request-main">
                     <p class="signature-request-title">${escapeHtml(item.signature_name || '未命名签名')} · ${escapeHtml(statusLabels[item.status] || item.status)}</p>
-                    <div class="signature-request-meta">${escapeHtml(points || '未登记功能点')} · ${escapeHtml(item.requested_at ? formatDate(item.requested_at) : '')}</div>
+                <div class="signature-request-meta">${escapeHtml(points || '未登记功能点')}${item.context_label ? ` · ${escapeHtml(item.context_label)}` : ''} · ${escapeHtml(item.requested_at ? formatDate(item.requested_at) : '')}</div>
                 </div>
                 <div class="signature-request-actions">
                     ${item.status === 'pending' ? '<button type="button" class="btn btn-outline btn-sm" data-signature-request-action="cancel">撤销</button>' : ''}

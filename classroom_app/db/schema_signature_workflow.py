@@ -1,8 +1,9 @@
-"""Engine-aware schema for feature-bound, one-time signature authorization.
+"""Engine-aware schema for material-scoped signature authorization.
 
 The legacy signature tables are kept for backward compatibility.  This module
 adds the workflow entities and the exact identity/audit columns required to
-make every third-party signature use explicit, reviewable and consumable.
+make every third-party signature use explicit, reviewable, ordered and bound
+to one immutable material revision.
 """
 
 from __future__ import annotations
@@ -18,31 +19,31 @@ _SCHEMA_READY = False
 SIGNATURE_FUNCTION_POINTS: tuple[tuple[str, str, str, str], ...] = (
     (
         "academic_final_material.grade_register.teacher_signature",
-        "期末成绩登记表·教师签名",
+        "期末成绩登记表 · 底部任课教师签字处",
         "academic_final_material",
         "期末成绩登记表底部教师签字处",
     ),
     (
         "academic_final_material.exam_analysis.department_review_signature",
-        "试卷分析表·系部审核签名",
+        "试卷分析表 · 系（教研室）审核意见签名处",
         "academic_final_material",
         "试卷分析表系部审核栏签名处",
     ),
     (
         "academic_final_material.exam_analysis.dean_review_signature",
-        "试卷分析表·教学院长审核签名",
+        "试卷分析表 · 教学院长审核意见签名处",
         "academic_final_material",
         "试卷分析表教学院长审核栏签名处",
     ),
     (
         "assessment_plan.examiner_signature",
-        "课程考核计划表·命题人签名",
+        "课程考核计划表 · 命题教师签名处",
         "assessment_plan",
         "课程考核计划表命题人签名处",
     ),
     (
         "assessment_plan.reviewer_signature",
-        "课程考核计划表·审核人签名",
+        "课程考核计划表 · 系（教研室）主任审核签名处",
         "assessment_plan",
         "课程考核计划表审核人签名处",
     ),
@@ -134,6 +135,12 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
             "requester_id": "INTEGER",
             "decided_at": timestamp_type,
             "cancelled_at": timestamp_type,
+            "flow_id": "INTEGER",
+            "function_point_key": "TEXT NOT NULL DEFAULT ''",
+            "material_type": "TEXT NOT NULL DEFAULT ''",
+            "material_id": "TEXT NOT NULL DEFAULT ''",
+            "material_revision": "TEXT NOT NULL DEFAULT ''",
+            "display_order": "INTEGER NOT NULL DEFAULT 0",
         },
         engine=engine,
     )
@@ -146,6 +153,7 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
             "request_item_id": "INTEGER",
             "authorization_mode": "TEXT NOT NULL DEFAULT ''",
             "idempotency_key": "TEXT NOT NULL DEFAULT ''",
+            "material_revision": "TEXT NOT NULL DEFAULT ''",
         },
         engine=engine,
     )
@@ -161,6 +169,65 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
             is_enabled INTEGER NOT NULL DEFAULT 1,
             created_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS signature_point_flows (
+            id {id_type} {primary_key},
+            function_point_key TEXT NOT NULL,
+            material_type TEXT NOT NULL,
+            material_id TEXT NOT NULL,
+            material_revision TEXT NOT NULL,
+            material_label TEXT NOT NULL DEFAULT '',
+            requester_role TEXT NOT NULL,
+            requester_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            request_note TEXT NOT NULL DEFAULT '',
+            created_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            ended_at {timestamp_type},
+            FOREIGN KEY (function_point_key) REFERENCES signature_function_points (point_key)
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS signature_point_flow_items (
+            id {id_type} {primary_key},
+            flow_id INTEGER NOT NULL,
+            signature_id INTEGER NOT NULL,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            request_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            granted_at {timestamp_type},
+            created_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (flow_id, signature_id),
+            FOREIGN KEY (flow_id) REFERENCES signature_point_flows (id) ON DELETE CASCADE,
+            FOREIGN KEY (signature_id) REFERENCES electronic_signatures (id) ON DELETE CASCADE,
+            FOREIGN KEY (request_id) REFERENCES signature_access_requests (id) ON DELETE SET NULL
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS signature_point_bindings (
+            id {id_type} {primary_key},
+            function_point_key TEXT NOT NULL,
+            material_type TEXT NOT NULL,
+            material_id TEXT NOT NULL,
+            material_revision TEXT NOT NULL,
+            signature_id INTEGER NOT NULL,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            bound_by_role TEXT NOT NULL,
+            bound_by_id INTEGER NOT NULL,
+            created_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (function_point_key, material_type, material_id, material_revision, signature_id),
+            FOREIGN KEY (function_point_key) REFERENCES signature_function_points (point_key),
+            FOREIGN KEY (signature_id) REFERENCES electronic_signatures (id) ON DELETE CASCADE
         )
         """
     )
@@ -183,7 +250,18 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
             FOREIGN KEY (function_point_key) REFERENCES signature_function_points (point_key),
             FOREIGN KEY (usage_log_id) REFERENCES signature_usage_logs (id) ON DELETE SET NULL
         )
-        """
+            """
+        )
+
+    _add_columns(
+        conn,
+        "signature_access_request_items",
+        {
+            "material_type": "TEXT NOT NULL DEFAULT ''",
+            "material_id": "TEXT NOT NULL DEFAULT ''",
+            "material_revision": "TEXT NOT NULL DEFAULT ''",
+        },
+        engine=engine,
     )
     conn.execute(
         f"""
@@ -246,11 +324,25 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
     )
 
     conn.execute("DROP INDEX IF EXISTS idx_signature_access_requests_active_unique")
+    conn.execute("DROP INDEX IF EXISTS idx_signature_access_requests_scoped_active_unique")
     conn.execute(
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_signature_access_requests_active_unique
-        ON signature_access_requests (signature_id, requester_role, requester_id)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_signature_access_requests_scoped_active_unique
+        ON signature_access_requests (
+            signature_id, requester_role, requester_id, function_point_key,
+            material_type, material_id, material_revision
+        )
         WHERE status = 'pending'
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_signature_point_flows_active_unique
+        ON signature_point_flows (
+            function_point_key, material_type, material_id, material_revision,
+            requester_role, requester_id
+        )
+        WHERE status IN ('pending', 'partially_approved')
         """
     )
     conn.execute(
@@ -265,6 +357,9 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
         "CREATE INDEX IF NOT EXISTS idx_signature_request_items_available ON signature_access_request_items (function_point_key, status, request_id)",
         "CREATE INDEX IF NOT EXISTS idx_signature_request_reviewers_incoming ON signature_access_request_reviewers (reviewer_role, reviewer_id, status, request_id)",
         "CREATE INDEX IF NOT EXISTS idx_signature_usage_feature_context ON signature_usage_logs (function_point_key, context_type, context_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_signature_point_flows_scope ON signature_point_flows (function_point_key, material_type, material_id, material_revision, requester_role, requester_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_signature_point_flow_items_request ON signature_point_flow_items (request_id, status, display_order)",
+        "CREATE INDEX IF NOT EXISTS idx_signature_point_bindings_scope ON signature_point_bindings (function_point_key, material_type, material_id, material_revision, display_order)",
     ):
         conn.execute(statement)
 

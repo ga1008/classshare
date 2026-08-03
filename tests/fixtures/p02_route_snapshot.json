@@ -4544,6 +4544,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/signatures/point-flows/{flow_id:int}/end",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_end_signature_point_flow",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/points/{function_point_key}/flows",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_signature_point_flow",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/points/{function_point_key}/state",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_point_state",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/signatures/requests",
     "methods": [
       "GET"

@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from ..database import get_db_connection
 from ..dependencies import get_client_ip, get_current_user
-from ..services import signature_service, signature_workflow_service
+from ..services import signature_point_service, signature_service, signature_workflow_service
 
 
 router = APIRouter(prefix="/api/signatures")
@@ -278,6 +278,65 @@ async def api_reject_signature_access_request(
                 action="reject",
                 note=str(payload.get("note") or ""),
             )
+            conn.commit()
+        return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.get("/points/{function_point_key}/state", response_class=JSONResponse)
+async def api_signature_point_state(
+    function_point_key: str,
+    material_type: str,
+    material_id: str,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            return signature_point_service.get_point_state(
+                conn,
+                user,
+                function_point_key=function_point_key,
+                material_type=material_type,
+                material_id=material_id,
+            )
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/points/{function_point_key}/flows", response_class=JSONResponse)
+async def api_create_signature_point_flow(
+    function_point_key: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    payload = await _json_body(request)
+    raw_ids = payload.get("signature_ids")
+    try:
+        with get_db_connection() as conn:
+            result = signature_point_service.create_point_flow(
+                conn,
+                user,
+                function_point_key=function_point_key,
+                material_type=str(payload.get("material_type") or ""),
+                material_id=str(payload.get("material_id") or ""),
+                signature_ids=list(raw_ids) if isinstance(raw_ids, list) else [],
+                note=str(payload.get("note") or ""),
+            )
+            conn.commit()
+        return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/point-flows/{flow_id:int}/end", response_class=JSONResponse)
+async def api_end_signature_point_flow(
+    flow_id: int,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            result = signature_point_service.end_point_flow(conn, user, flow_id)
             conn.commit()
         return result
     except signature_service.SignatureServiceError as exc:

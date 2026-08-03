@@ -1,4 +1,4 @@
-"""Feature-bound signature request, dual-review and one-time-use workflow."""
+"""Feature- and material-bound signature request and review workflow."""
 
 from __future__ import annotations
 
@@ -104,7 +104,25 @@ def _function_points(conn: Any, keys: list[str]) -> list[Any]:
     return [by_key[key] for key in normalized]
 
 
-def _available_item(conn: Any, actor: dict[str, Any], signature_id: int, function_point_key: str) -> Any:
+def _available_item(
+    conn: Any,
+    actor: dict[str, Any],
+    signature_id: int,
+    function_point_key: str,
+    *,
+    material_type: str = "",
+    material_id: str = "",
+    material_revision: str = "",
+) -> Any:
+    scoped = bool(material_type and material_id and material_revision)
+    scope_sql = (
+        "AND item.material_type = ? AND item.material_id = ? AND item.material_revision = ?"
+        if scoped else
+        "AND item.material_type = '' AND item.material_id = '' AND item.material_revision = ''"
+    )
+    params: list[Any] = [int(signature_id), actor["role"], int(actor["id"]), function_point_key]
+    if scoped:
+        params.extend([material_type, material_id, material_revision])
     return conn.execute(
         """
         SELECT item.*, request.status AS request_status
@@ -116,11 +134,11 @@ def _available_item(conn: Any, actor: dict[str, Any], signature_id: int, functio
           AND request.status IN ('approved', 'partially_used')
           AND item.function_point_key = ?
           AND item.status = 'available'
-          AND item.consumed_at IS NULL
+          {scope_sql}
         ORDER BY request.requested_at, request.id, item.id
         LIMIT 1
-        """,
-        (int(signature_id), actor["role"], int(actor["id"]), function_point_key),
+        """.format(scope_sql=scope_sql),
+        tuple(params),
     ).fetchone()
 
 
@@ -129,6 +147,10 @@ def access_state(
     actor: dict[str, Any],
     signature: Any,
     function_point_key: str,
+    *,
+    material_type: str = "",
+    material_id: str = "",
+    material_revision: str = "",
 ) -> dict[str, Any]:
     point = _function_points(conn, [function_point_key])[0]
     mode = direct_authorization_mode(actor, signature)
@@ -149,7 +171,15 @@ def access_state(
             "function_point_label": point["label"],
             "grant_item_id": None,
         }
-    item = _available_item(conn, actor, int(signature["id"]), str(point["point_key"]))
+    item = _available_item(
+        conn,
+        actor,
+        int(signature["id"]),
+        str(point["point_key"]),
+        material_type=material_type,
+        material_id=material_id,
+        material_revision=material_revision,
+    )
     return {
         "can_use": bool(item),
         "can_request": not bool(item),
@@ -243,6 +273,12 @@ def create_access_request(
     *,
     function_point_keys: list[str],
     note: str = "",
+    flow_id: int | None = None,
+    material_type: str = "",
+    material_id: str = "",
+    material_revision: str = "",
+    material_label: str = "",
+    display_order: int = 0,
 ) -> dict[str, Any]:
     actor = signature_service.build_signature_actor(conn, user)
     if actor.get("role") != "teacher":
@@ -253,19 +289,30 @@ def create_access_request(
     if direct_authorization_mode(actor, signature):
         raise signature_service.SignatureServiceError(400, "本人签名或归属权在本人名下的签名无需申请。")
     points = _function_points(conn, function_point_keys)
+    normalized_material_type = _clean(material_type, 80)
+    normalized_material_id = _clean(material_id, 160)
+    normalized_material_revision = _clean(material_revision, 160)
+    normalized_point_key = str(points[0]["point_key"]) if len(points) == 1 else ""
+    if bool(flow_id) and (len(points) != 1 or not all((normalized_material_type, normalized_material_id, normalized_material_revision))):
+        raise signature_service.SignatureServiceError(400, "签名点流程必须绑定一个功能点和明确的材料版本。")
     if get_configured_db_engine() == "postgres":
         conn.execute(
             "SELECT pg_advisory_xact_lock(hashtext(?))",
-            (f"signature-request:{int(signature_id)}:{actor['role']}:{int(actor['id'])}",),
+            (f"signature-request:{int(signature_id)}:{actor['role']}:{int(actor['id'])}:{normalized_point_key}:{normalized_material_type}:{normalized_material_id}:{normalized_material_revision}",),
         )
     existing = conn.execute(
         """
         SELECT id FROM signature_access_requests
         WHERE signature_id = ? AND requester_role = ? AND requester_id = ?
+          AND function_point_key = ? AND material_type = ?
+          AND material_id = ? AND material_revision = ?
           AND status = 'pending'
         ORDER BY requested_at DESC, id DESC LIMIT 1
         """,
-        (int(signature_id), actor["role"], int(actor["id"])),
+        (
+            int(signature_id), actor["role"], int(actor["id"]), normalized_point_key,
+            normalized_material_type, normalized_material_id, normalized_material_revision,
+        ),
     ).fetchone()
     if existing:
         raise signature_service.SignatureServiceError(409, "该签名已有待审批申请，请先等待审批或撤销。")
@@ -289,8 +336,10 @@ def create_access_request(
             INSERT INTO signature_access_requests (
                 signature_id, requester_teacher_id, requester_role, requester_id,
                 owner_role, owner_id, status, request_note,
-                context_type, context_id, context_label
-            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 'signature_workflow', '', ?)
+                context_type, context_id, context_label,
+                flow_id, function_point_key, material_type, material_id,
+                material_revision, display_order
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(signature_id),
@@ -300,20 +349,37 @@ def create_access_request(
                 signature["owner_role"] or "",
                 signature["owner_id"],
                 _clean(note, 300),
-                "、".join(str(point["label"]) for point in points)[:120],
+                normalized_material_type or "signature_workflow",
+                normalized_material_id,
+                _clean(material_label, 120) or "、".join(str(point["label"]) for point in points)[:120],
+                int(flow_id) if flow_id else None,
+                normalized_point_key,
+                normalized_material_type,
+                normalized_material_id,
+                normalized_material_revision,
+                max(0, int(display_order or 0)),
             ),
             engine=get_configured_db_engine(),
         )
-    except sqlite3.IntegrityError as exc:
-        raise signature_service.SignatureServiceError(409, "该签名已有待审批申请，请先等待审批或撤销。") from exc
+    except Exception as exc:
+        detail = str(exc).lower()
+        if isinstance(exc, sqlite3.IntegrityError) or (
+            get_configured_db_engine() == "postgres" and ("unique" in detail or "duplicate" in detail)
+        ):
+            raise signature_service.SignatureServiceError(409, "该签名已有待审批申请，请先等待审批或撤销。") from exc
+        raise
     for point in points:
         conn.execute(
             """
             INSERT INTO signature_access_request_items (
-                request_id, function_point_key, function_point_label_snapshot
-            ) VALUES (?, ?, ?)
+                request_id, function_point_key, function_point_label_snapshot,
+                material_type, material_id, material_revision
+            ) VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (request_id, point["point_key"], point["label"]),
+            (
+                request_id, point["point_key"], point["label"],
+                normalized_material_type, normalized_material_id, normalized_material_revision,
+            ),
         )
     for reviewer in reviewers:
         conn.execute(
@@ -330,7 +396,7 @@ def create_access_request(
         recipients=reviewers,
         actor=actor,
         title="收到签名使用申请",
-        body=f"{actor['name']} 申请在“{labels}”使用“{signature['subject_name'] or signature['name']}”签名。任一审批人同意后，每个功能点可使用一次。",
+        body=f"{actor['name']} 申请在“{labels}”使用“{signature['subject_name'] or signature['name']}”签名，材料：{_clean(material_label, 120) or '当前材料'}。任一审批人同意后，仅可在当前材料版本不限次数使用。",
         ref_type="signature_request",
         ref_id=str(request_id),
         metadata={"request_id": request_id, "signature_id": int(signature_id), "function_point_keys": [p["point_key"] for p in points]},
@@ -342,7 +408,8 @@ def _request_items(conn: Any, request_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT id, function_point_key, function_point_label_snapshot, status,
-               consumed_at, consumed_context_type, consumed_context_id, usage_log_id
+               consumed_at, consumed_context_type, consumed_context_id, usage_log_id,
+               material_type, material_id, material_revision
         FROM signature_access_request_items
         WHERE request_id = ? ORDER BY id
         """,
@@ -358,6 +425,9 @@ def _request_items(conn: Any, request_id: int) -> list[dict[str, Any]]:
             "context_type": row["consumed_context_type"] or "",
             "context_id": row["consumed_context_id"] or "",
             "usage_log_id": row["usage_log_id"],
+            "material_type": row["material_type"] or "",
+            "material_id": row["material_id"] or "",
+            "material_revision": row["material_revision"] or "",
         }
         for row in rows
     ]
@@ -414,9 +484,16 @@ def get_request(conn: Any, request_id: int) -> dict[str, Any]:
         "requester_name": row["requester_name"] or "",
         "status": row["status"] or "",
         "request_note": row["request_note"] or "",
+        "context_label": row["context_label"] or "",
         "requested_at": row["requested_at"] or "",
         "decided_at": row["decided_at"] or row["reviewed_at"] or "",
         "cancelled_at": row["cancelled_at"] or "",
+        "flow_id": int(row["flow_id"] or 0),
+        "function_point_key": row["function_point_key"] or "",
+        "material_type": row["material_type"] or "",
+        "material_id": row["material_id"] or "",
+        "material_revision": row["material_revision"] or "",
+        "display_order": int(row["display_order"] or 0),
         "items": _request_items(conn, request_id),
         "reviewers": _request_reviewers(conn, request_id),
     }
@@ -541,7 +618,7 @@ def review_access_request(
             (_clean(note, 300), int(actor["id"]) if actor["role"] == "teacher" else None, int(request_id)),
         )
         title = "签名使用申请已批准"
-        body = f"{actor['name']} 已批准申请；每个所选功能点可使用一次。"
+        body = f"{actor['name']} 已批准申请；该签名仅在当前材料版本对应签名点内不限次数使用。"
     else:
         remaining = conn.execute(
             """
@@ -569,6 +646,7 @@ def review_access_request(
         else:
             title = "一位审批人已拒绝签名申请"
             body = "另一位审批人仍可处理；任一人同意后申请即可生效。"
+    _sync_point_flow_for_request(conn, request_id)
     refreshed = get_request(conn, request_id)
     _notify(
         conn,
@@ -602,12 +680,145 @@ def cancel_access_request(conn: Any, user: dict[str, Any], request_id: int) -> d
         "UPDATE signature_access_request_reviewers SET status = 'cancelled' WHERE request_id = ? AND status = 'pending'",
         (int(request_id),),
     )
+    _sync_point_flow_for_request(conn, request_id)
     return {"status": "success", "request": get_request(conn, request_id)}
+
+
+def _sync_point_flow_for_request(conn: Any, request_id: int) -> None:
+    """Project a legacy per-signature decision onto its point-level flow."""
+    request = conn.execute(
+        "SELECT flow_id, status FROM signature_access_requests WHERE id = ? LIMIT 1",
+        (int(request_id),),
+    ).fetchone()
+    if not request or not int(request["flow_id"] or 0):
+        return
+    flow_id = int(request["flow_id"])
+    request_status = str(request["status"] or "")
+    item_status = (
+        "approved" if request_status in {"approved", "partially_used", "consumed"}
+        else "rejected" if request_status == "rejected"
+        else "cancelled" if request_status == "cancelled"
+        else "pending"
+    )
+    conn.execute(
+        """
+        UPDATE signature_point_flow_items
+        SET status = ?,
+            granted_at = CASE WHEN ? = 'approved' THEN COALESCE(granted_at, CURRENT_TIMESTAMP) ELSE granted_at END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE flow_id = ? AND request_id = ?
+        """,
+        (item_status, item_status, flow_id, int(request_id)),
+    )
+    counts = conn.execute(
+        """
+        SELECT
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+            SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+        FROM signature_point_flow_items WHERE flow_id = ?
+        """,
+        (flow_id,),
+    ).fetchone()
+    pending_count = int(counts["pending_count"] or 0)
+    approved_count = int(counts["approved_count"] or 0)
+    rejected_count = int(counts["rejected_count"] or 0)
+    if pending_count:
+        flow_status = "partially_approved" if approved_count or rejected_count else "pending"
+        ended_at_sql = "ended_at"
+    else:
+        flow_status = "approved" if approved_count else "rejected"
+        ended_at_sql = "CURRENT_TIMESTAMP"
+    conn.execute(
+        f"UPDATE signature_point_flows SET status = ?, updated_at = CURRENT_TIMESTAMP, ended_at = {ended_at_sql} WHERE id = ? AND status <> 'cancelled'",
+        (flow_status, flow_id),
+    )
 
 
 def _idempotency_key(signature_id: int, function_point_key: str, context_type: str, context_id: str) -> str:
     raw = f"signature-use-v1|{int(signature_id)}|{function_point_key}|{context_type}|{context_id}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def resolve_material_scope(
+    conn: Any,
+    actor: dict[str, Any],
+    *,
+    function_point_key: str,
+    material_type: str,
+    material_id: str,
+    strict: bool = True,
+) -> dict[str, str]:
+    """Resolve and authorize the immutable revision behind a signature point."""
+    point = _function_points(conn, [function_point_key])[0]
+    normalized_type = _clean(material_type, 80)
+    normalized_id = _clean(material_id, 160)
+    if not normalized_type or not normalized_id:
+        raise signature_service.SignatureServiceError(400, "签名点必须绑定明确的材料。")
+    if str(point["module_key"] or "") != normalized_type:
+        raise signature_service.SignatureServiceError(400, "签名点与材料类型不匹配。")
+    if normalized_type == "academic_final_material":
+        try:
+            row = conn.execute(
+                """
+                SELECT id, teacher_id, source_file_hash, signature_revision, document_type_label, export_payload_json
+                FROM material_ai_import_records WHERE id = ? AND parse_status = 'completed' LIMIT 1
+                """,
+                (int(normalized_id),),
+            ).fetchone()
+        except (sqlite3.OperationalError, TypeError, ValueError):
+            if strict:
+                raise signature_service.SignatureServiceError(404, "期末材料不存在或尚未生成完成。")
+            return {"material_revision": ""}
+        if not row:
+            if not strict:
+                return {"material_revision": ""}
+            raise signature_service.SignatureServiceError(404, "期末材料不存在或尚未生成完成。")
+        revision = _clean(row["signature_revision"], 160)
+        if not revision:
+            revision = f"source:{_clean(row['source_file_hash'], 120)}" if _clean(row["source_file_hash"], 120) else f"record:{normalized_id}"
+        label = str(row["document_type_label"] or "期末材料")
+        try:
+            payload = json.loads(str(row["export_payload_json"] or "{}"))
+            fields = payload.get("fields") if isinstance(payload, dict) else {}
+            if isinstance(fields, dict):
+                details = " · ".join(_clean(fields.get(key), 60) for key in ("course_name", "class_name") if _clean(fields.get(key), 60))
+                if details:
+                    label = f"{label} · {details}"
+        except (TypeError, ValueError):
+            pass
+        owner_id = int(row["teacher_id"] or 0)
+    elif normalized_type == "assessment_plan":
+        try:
+            row = conn.execute(
+                "SELECT id, teacher_id, title, signature_revision FROM assessment_plans WHERE id = ? LIMIT 1",
+                (normalized_id,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            if strict:
+                raise signature_service.SignatureServiceError(404, "课程考核计划表不存在。")
+            return {"material_revision": ""}
+        if not row:
+            if not strict:
+                return {"material_revision": ""}
+            raise signature_service.SignatureServiceError(404, "课程考核计划表不存在。")
+        revision = _clean(row["signature_revision"], 160) or f"plan:{normalized_id}"
+        label = _clean(row["title"], 120) or "课程考核计划表"
+        owner_id = int(row["teacher_id"] or 0)
+    else:
+        raise signature_service.SignatureServiceError(400, "该材料类型尚未接入签名点工作流。")
+    if actor.get("role") != "teacher" or (
+        owner_id != int(actor.get("id") or 0) and not bool(actor.get("is_super_admin"))
+    ):
+        raise signature_service.SignatureServiceError(403, "只有材料归属教师可以管理该材料的签名点。")
+    return {
+        "function_point_key": str(point["point_key"]),
+        "function_point_label": str(point["label"]),
+        "material_type": normalized_type,
+        "material_id": normalized_id,
+        "material_revision": revision,
+        "material_label": label,
+    }
 
 
 def _existing_usage(conn: Any, key: str) -> Any:
@@ -631,6 +842,7 @@ def _insert_usage(
     context_label: str,
     authorization_mode: str,
     idempotency_key: str,
+    material_revision: str,
     request_id: int | None,
     request_item_id: int | None,
     metadata: dict[str, Any],
@@ -644,9 +856,9 @@ def _insert_usage(
             signature_id, signature_name_snapshot,
             actor_role, actor_id, actor_name_snapshot, action,
             context_type, context_id, context_label, function_point_key,
-            request_id, request_item_id, authorization_mode, idempotency_key,
+            request_id, request_item_id, authorization_mode, idempotency_key, material_revision,
             metadata_json, ip, user_agent
-        ) VALUES (?, ?, ?, ?, ?, 'use', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, 'use', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             int(signature["id"]),
@@ -662,6 +874,7 @@ def _insert_usage(
             request_item_id,
             authorization_mode,
             idempotency_key,
+            material_revision,
             json.dumps(metadata or {}, ensure_ascii=False),
             _clean(ip, 80),
             _clean(user_agent, 240),
@@ -708,7 +921,19 @@ def authorize_and_consume_signature_use(
         raise signature_service.SignatureServiceError(400, "签名使用必须绑定明确的业务对象。")
     if not signature_service.can_view_signature(actor, signature):
         raise signature_service.SignatureServiceError(403, "当前账号无权查看此签名。")
-    key = _idempotency_key(int(signature_id), point["point_key"], normalized_context_type, normalized_context_id)
+    material_revision = ""
+    if normalized_context_type in {"academic_final_material", "assessment_plan"}:
+        scope = resolve_material_scope(
+            conn,
+            actor,
+            function_point_key=str(point["point_key"]),
+            material_type=normalized_context_type,
+            material_id=normalized_context_id,
+            strict=False,
+        )
+        material_revision = scope["material_revision"]
+    raw_key_context = f"{normalized_context_id}|{material_revision}" if material_revision else normalized_context_id
+    key = _idempotency_key(int(signature_id), point["point_key"], normalized_context_type, raw_key_context)
     engine = get_configured_db_engine()
     if engine == "postgres":
         conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (f"signature-use:{key}",))
@@ -728,33 +953,31 @@ def authorize_and_consume_signature_use(
     request_id: int | None = None
     request_item_id: int | None = None
     if not mode:
-        item = _available_item(conn, actor, int(signature_id), str(point["point_key"]))
+        item = _available_item(
+            conn,
+            actor,
+            int(signature_id),
+            str(point["point_key"]),
+            material_type=normalized_context_type if material_revision else "",
+            material_id=normalized_context_id if material_revision else "",
+            material_revision=material_revision,
+        )
         if not item:
-            raise signature_service.SignatureServiceError(403, "该功能点没有可用的一次性签名授权，请先申请并获批。")
+            raise signature_service.SignatureServiceError(403, "当前材料版本的该签名点没有可用授权，请先申请并获批。")
         request_id = int(item["request_id"])
         request_item_id = int(item["id"])
-        cursor = conn.execute(
-            """
-            UPDATE signature_access_request_items
-            SET status = 'consumed', consumed_at = CURRENT_TIMESTAMP,
-                consumed_context_type = ?, consumed_context_id = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status = 'available' AND consumed_at IS NULL
-            """,
-            (normalized_context_type, normalized_context_id, request_item_id),
-        )
-        if int(cursor.rowcount or 0) != 1:
-            repeat = _existing_usage(conn, key)
-            if repeat:
-                return {
-                    "status": "success",
-                    "signature_id": int(signature_id),
-                    "usage_log_id": int(repeat["id"]),
-                    "authorization_mode": repeat["authorization_mode"],
-                    "request_id": repeat["request_id"],
-                    "request_item_id": repeat["request_item_id"],
-                    "already_consumed": True,
-                }
-            raise signature_service.SignatureServiceError(409, "该功能点的一次性授权已被其他操作使用。")
+        if not material_revision:
+            cursor = conn.execute(
+                """
+                UPDATE signature_access_request_items
+                SET status = 'consumed', consumed_at = CURRENT_TIMESTAMP,
+                    consumed_context_type = ?, consumed_context_id = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'available' AND consumed_at IS NULL
+                """,
+                (normalized_context_type, normalized_context_id, request_item_id),
+            )
+            if int(cursor.rowcount or 0) != 1:
+                raise signature_service.SignatureServiceError(409, "该旧版一次性授权已被其他操作使用。")
         mode = "approval"
 
     usage_log_id = _insert_usage(
@@ -767,13 +990,14 @@ def authorize_and_consume_signature_use(
         context_label=_clean(context_label, 160) or str(point["label"]),
         authorization_mode=mode,
         idempotency_key=key,
+        material_revision=material_revision,
         request_id=request_id,
         request_item_id=request_item_id,
         metadata=metadata or {},
         ip=ip,
         user_agent=user_agent,
     )
-    if request_item_id is not None and request_id is not None:
+    if request_item_id is not None and request_id is not None and not material_revision:
         conn.execute(
             "UPDATE signature_access_request_items SET usage_log_id = ? WHERE id = ?",
             (usage_log_id, request_item_id),

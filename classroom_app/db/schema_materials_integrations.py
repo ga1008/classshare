@@ -1,5 +1,7 @@
 import sqlite3
 
+from .connection import get_configured_db_engine
+
 from .migrations import (
     _backfill_organization_scopes,
     _ensure_teacher_organization_memberships_schema,
@@ -149,6 +151,7 @@ def ensure_materials_integrations_schema(conn: sqlite3.Connection) -> None:
                     content_quality_status TEXT NOT NULL DEFAULT 'unchecked',
                     content_quality_json TEXT NOT NULL DEFAULT '{}',
                     error_message TEXT DEFAULT '',
+                    signature_revision TEXT NOT NULL DEFAULT '',
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     started_at TEXT,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -157,6 +160,13 @@ def ensure_materials_integrations_schema(conn: sqlite3.Connection) -> None:
                     FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
                 )
                  ''')
+    engine = "sqlite" if isinstance(conn, sqlite3.Connection) else get_configured_db_engine()
+    if engine == "postgres":
+        conn.execute("ALTER TABLE material_ai_import_records ADD COLUMN IF NOT EXISTS signature_revision TEXT NOT NULL DEFAULT ''")
+    else:
+        columns = {str(row[1]) for row in conn.execute('PRAGMA table_info("material_ai_import_records")').fetchall()}
+        if "signature_revision" not in columns:
+            conn.execute("ALTER TABLE material_ai_import_records ADD COLUMN signature_revision TEXT NOT NULL DEFAULT ''")
 
     conn.execute('''
                 CREATE TABLE IF NOT EXISTS course_material_assignments

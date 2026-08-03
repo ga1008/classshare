@@ -9,6 +9,7 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="{{ asset_url('css/academic_final_materials.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/signature_point_workflow.css') }}">
 {% endblock %}
 
 {% block header_actions %}
@@ -122,12 +123,9 @@ data-afm-open-sync {{ explain_attrs(
             <section data-afm-grade-fields hidden>
                 <div class="afm-section-heading">
                     <div><span>签字</span><h4>任课教师签名</h4></div>
-                    <p>系统优先自动带入本人最近使用的签名，保存后按固定尺寸嵌入文档。</p>
+                    <p>本人签名可直接选择；他人签名须在本材料签名点申请获批，多人按选择顺序均衡嵌入。</p>
                 </div>
-                <label class="afm-field">
-                    <span>教师签名</span>
-                    <select data-afm-teacher-signature></select>
-                </label>
+                <div data-afm-teacher-signature-point></div>
             </section>
 
             <section data-afm-analysis-fields hidden>
@@ -185,11 +183,11 @@ data-afm-open-sync {{ explain_attrs(
 
                 <div class="afm-section-heading afm-section-heading--signature">
                     <div><span>审核区</span><h4>签名库</h4></div>
-                    <p>两处“同意”已使用不同手写字体自动填入；这里只选择对应审核人的签名。</p>
+                    <p>两处审核签名分别申请、分别授权；获批签名仅在当前材料版本中可选。</p>
                 </div>
                 <div class="afm-fields-grid">
-                    <label class="afm-field"><span>系（教研室）签名</span><select data-afm-department-signature></select></label>
-                    <label class="afm-field"><span>教学院长签名</span><select data-afm-dean-signature></select></label>
+                    <div data-afm-department-signature-point></div>
+                    <div data-afm-dean-signature-point></div>
                 </div>
             </section>
         </div>

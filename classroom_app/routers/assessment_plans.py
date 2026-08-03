@@ -22,7 +22,7 @@ from ..config import AI_DURABLE_JOBS_ENABLED
 from ..database import get_db_connection
 from ..dependencies import get_client_ip, get_current_teacher
 from ..services import assessment_plan_service as ap
-from ..services import signature_service, signature_workflow_service
+from ..services import signature_point_service, signature_service
 from ..services.assessment_plan_generation_service import run_generation_job
 from ..services.assessment_plan_import_service import run_import_job
 from ..services.ai_durable_job_service import cleanup_ai_job_input_files
@@ -142,6 +142,10 @@ async def get_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
         "reviewer_signature": plan.get("reviewer_signature"),
         "examiner_signature_id": plan.get("examiner_signature_id"),
         "reviewer_signature_id": plan.get("reviewer_signature_id"),
+        "examiner_signature_ids": plan.get("examiner_signature_ids") or [],
+        "reviewer_signature_ids": plan.get("reviewer_signature_ids") or [],
+        "examiner_signatures": plan.get("examiner_signatures") or [],
+        "reviewer_signatures": plan.get("reviewer_signatures") or [],
         "score_total": plan.get("score_total"),
         "score_balanced": plan.get("score_balanced"),
         "import_preview": plan.get("import_preview"),
@@ -334,6 +338,7 @@ async def retry_plan(plan_id: str, user: dict = Depends(get_current_teacher)):
         class_offering_id = plan.get("class_offering_id")
         if source_type == "classroom" and class_offering_id:
             field_overrides = _clean_generate_field_overrides(plan.get("fields"))
+            ap.rotate_signature_revision(conn, plan_id)
             ap.set_generation_status(
                 conn,
                 plan_id,
@@ -440,34 +445,40 @@ async def put_signature(plan_id: str, request: Request, user: dict = Depends(get
     role = str(body.get("role") or "").strip()
     if role not in {"examiner", "reviewer"}:
         raise HTTPException(400, "签名角色必须是 examiner 或 reviewer")
-    signature_id = body.get("signature_id")
+    raw_ids = body.get("signature_ids")
+    if isinstance(raw_ids, list):
+        signature_ids = raw_ids
+    else:
+        signature_id = body.get("signature_id")
+        signature_ids = [signature_id] if signature_id else []
     with get_db_connection() as conn:
         owned_plan = _load_owned_or_super(conn, plan_id, user)
-        normalized_id: int | None = None
-        if signature_id:
-            try:
-                signature_workflow_service.authorize_and_consume_signature_use(
-                    conn,
-                    user,
-                    int(signature_id),
-                    function_point_key=f"assessment_plan.{role}_signature",
-                    context_type="assessment_plan",
-                    context_id=str(plan_id),
-                    context_label=str(owned_plan.get("title") or f"课程考核计划表 {plan_id}"),
-                    metadata={"plan_id": str(plan_id), "signature_role": role},
-                    ip=get_client_ip(request),
-                    user_agent=request.headers.get("user-agent", ""),
-                )
-            except signature_service.SignatureServiceError as exc:
-                raise HTTPException(exc.status_code, exc.message) from exc
-            normalized_id = int(signature_id)
-        ap.set_signature(conn, plan_id, role=role, signature_id=normalized_id)
+        try:
+            normalized_ids = signature_point_service.bind_point_signatures(
+                conn,
+                user,
+                function_point_key=f"assessment_plan.{role}_signature",
+                material_type="assessment_plan",
+                material_id=str(plan_id),
+                signature_ids=signature_ids,
+                context_label=str(owned_plan.get("title") or f"课程考核计划表 {plan_id}"),
+                metadata={"plan_id": str(plan_id), "signature_role": role},
+                ip=get_client_ip(request),
+                user_agent=request.headers.get("user-agent", ""),
+            )
+        except signature_service.SignatureServiceError as exc:
+            raise HTTPException(exc.status_code, exc.message) from exc
+        ap.set_signatures(conn, plan_id, role=role, signature_ids=normalized_ids)
         conn.commit()
         plan = ap.get_assessment_plan(conn, plan_id)
     return {
         "ok": True,
         "examiner_signature": plan.get("examiner_signature"),
         "reviewer_signature": plan.get("reviewer_signature"),
+        "examiner_signatures": plan.get("examiner_signatures") or [],
+        "reviewer_signatures": plan.get("reviewer_signatures") or [],
+        "examiner_signature_ids": plan.get("examiner_signature_ids") or [],
+        "reviewer_signature_ids": plan.get("reviewer_signature_ids") or [],
         "card": ap.serialize_card(plan),
     }
 

@@ -885,7 +885,7 @@ def _build_ai_import_payload_from_record(row, conn=None) -> dict:
         )
 
         payload = repair_legacy_grade_register_roster_order(conn, row, payload)
-        payload = hydrate_academic_final_material_signature_paths(conn, payload)
+        payload = hydrate_academic_final_material_signature_paths(conn, payload, record=row)
     return payload
 
 

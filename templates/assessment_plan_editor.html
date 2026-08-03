@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>编辑考核计划表 · {{ plan.title }}</title>
     {% include "partials/ui_system_assets.html" %}
+    <link rel="stylesheet" href="{{ asset_url('css/signature_point_workflow.css') }}">
 </head>
 <body class="lp-editor-body">
     <header class="lp-editor__header">
@@ -37,7 +38,7 @@
             <details class="lp-editor__cover" open>
                 <summary>签名</summary>
                 <div class="ap-signatures" id="ap-signatures"></div>
-                <p class="ap-hint">可绑定本人签名；主任签字可线下手写，或从签名库选择（需授权）。</p>
+                <p class="ap-hint">每个签名栏都是独立签名点；他人签名须为当前材料申请获批，也可按顺序选择多人签名。</p>
             </details>
 
             <details class="lp-editor__cover" id="ap-import-details" hidden>
@@ -67,6 +68,10 @@
         "notes": {{ plan['notes'] | tojson }},
         "examiner_signature": {{ plan['examiner_signature'] | tojson }},
         "reviewer_signature": {{ plan['reviewer_signature'] | tojson }},
+        "examiner_signatures": {{ (plan['examiner_signatures'] or []) | tojson }},
+        "reviewer_signatures": {{ (plan['reviewer_signatures'] or []) | tojson }},
+        "examiner_signature_ids": {{ (plan['examiner_signature_ids'] or []) | tojson }},
+        "reviewer_signature_ids": {{ (plan['reviewer_signature_ids'] or []) | tojson }},
         "import_preview": {{ plan['import_preview'] | tojson }}
     }
     </script>

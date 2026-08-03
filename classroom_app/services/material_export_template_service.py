@@ -506,6 +506,7 @@ def _add_plan_meta_table(document: Any, fields: dict[str, Any]) -> None:
                     row.cells[col_index],
                     value,
                     str(fields.get(image_key) or "").strip(),
+                    int(fields.get("examiner_signature_count" if col_index == 1 else "reviewer_signature_count") or 1),
                 )
                 continue
             _set_assessment_cell_text(
@@ -545,6 +546,7 @@ def _add_rubric_meta_table(document: Any, fields: dict[str, Any]) -> None:
                     cell,
                     value,
                     str(fields.get(image_key) or fields.get(fallback_key) or "").strip(),
+                    int(fields.get("examiner_signature_count" if col_index == 1 else "reviewer_signature_count") or 1),
                 )
                 continue
             _set_cell_text(cell, value, bold=True, align=1)
@@ -1326,7 +1328,7 @@ def _set_assessment_cell_text(cell: Any, text: Any, *, bold: bool = False, cente
     _set_run_assessment_songti(paragraph.add_run(_stringify(text)), 10.5, bold=bold)
 
 
-def _set_assessment_signature_cell(cell: Any, text: Any, image_path: str = "") -> None:
+def _set_assessment_signature_cell(cell: Any, text: Any, image_path: str = "", signature_count: int = 1) -> None:
     """Render a signature cell: the name text, plus the bound signature image if present."""
     from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -1345,9 +1347,15 @@ def _set_assessment_signature_cell(cell: Any, text: Any, image_path: str = "") -
         try:
             from docx.shared import Cm
 
-            if name_text:
-                paragraph.add_run("  ")
-            paragraph.add_run().add_picture(str(path), height=Cm(0.62))
+            if int(signature_count or 1) > 1:
+                if name_text:
+                    paragraph.add_run().add_break()
+                balanced_width_cm = min(4.0, 1.7 * int(signature_count or 1))
+                paragraph.add_run().add_picture(str(path), width=Cm(balanced_width_cm))
+            else:
+                if name_text:
+                    paragraph.add_run("  ")
+                paragraph.add_run().add_picture(str(path), height=Cm(0.62))
         except Exception:
             # Never let a bad image break the export — the name text already stands.
             pass

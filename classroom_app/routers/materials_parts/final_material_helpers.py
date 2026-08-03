@@ -10,7 +10,7 @@ from ...services.final_grade_transcript_service import (
 )
 from ...services.material_export_template_service import XLSX_MEDIA_TYPE
 from ...services.material_identity_service import build_final_material_package_name
-from ...services import signature_service, signature_workflow_service
+from ...services import signature_point_service, signature_service, signature_workflow_service
 from ...services.exam_grade_record_service import EXAM_GRADE_RECORD_TYPE
 from ...services.ordinary_grade_record_service import (
     ORDINARY_GRADE_DEFAULT_MINIMUM_SCORE,
@@ -843,18 +843,33 @@ async def _persist_final_material_record_update(
             raise HTTPException(404, "未找到可更新的解析记录")
         for intent in signature_use_intents or []:
             try:
-                signature_workflow_service.authorize_and_consume_signature_use(
-                    conn,
-                    user,
-                    int(intent["signature_id"]),
-                    function_point_key=str(intent["function_point_key"]),
-                    context_type=str(intent["context_type"]),
-                    context_id=str(intent["context_id"]),
-                    context_label=str(intent.get("context_label") or ""),
-                    metadata=intent.get("metadata") if isinstance(intent.get("metadata"), dict) else {},
-                    ip=str(intent.get("ip") or ""),
-                    user_agent=str(intent.get("user_agent") or ""),
-                )
+                raw_ids = intent.get("signature_ids")
+                if isinstance(raw_ids, list):
+                    signature_point_service.bind_point_signatures(
+                        conn,
+                        user,
+                        function_point_key=str(intent["function_point_key"]),
+                        material_type=str(intent["context_type"]),
+                        material_id=str(intent["context_id"]),
+                        signature_ids=raw_ids,
+                        context_label=str(intent.get("context_label") or ""),
+                        metadata=intent.get("metadata") if isinstance(intent.get("metadata"), dict) else {},
+                        ip=str(intent.get("ip") or ""),
+                        user_agent=str(intent.get("user_agent") or ""),
+                    )
+                else:
+                    signature_workflow_service.authorize_and_consume_signature_use(
+                        conn,
+                        user,
+                        int(intent["signature_id"]),
+                        function_point_key=str(intent["function_point_key"]),
+                        context_type=str(intent["context_type"]),
+                        context_id=str(intent["context_id"]),
+                        context_label=str(intent.get("context_label") or ""),
+                        metadata=intent.get("metadata") if isinstance(intent.get("metadata"), dict) else {},
+                        ip=str(intent.get("ip") or ""),
+                        user_agent=str(intent.get("user_agent") or ""),
+                    )
             except signature_service.SignatureServiceError as exc:
                 raise HTTPException(exc.status_code, exc.message) from exc
         if parsed_id:

@@ -54,6 +54,7 @@ from .academic_service import china_now
 from .deployment_cache_service import get_deployment_release_id
 from .file_service import resolve_global_file_path
 from .signature_service import resolve_signature_file_path
+from .signature_composition_service import compose_signature_strip, resolve_signature_paths
 
 
 ACADEMIC_GRADE_REGISTER_TYPE = "academic_grade_register"
@@ -1503,8 +1504,20 @@ def repair_legacy_grade_register_roster_order(conn: Any, row: Any, payload: dict
     return export_payload
 
 
-def hydrate_academic_final_material_signature_paths(conn: Any, payload: dict[str, Any]) -> dict[str, Any]:
-    """Resolve persisted signature IDs only at the trusted render boundary."""
+def hydrate_academic_final_material_signature_paths(
+    conn: Any,
+    payload: dict[str, Any],
+    *,
+    record: Any | None = None,
+) -> dict[str, Any]:
+    """Resolve signature images only at the trusted render boundary.
+
+    Records created or rebuilt by the material-scoped workflow have a
+    ``signature_revision``.  For those records, the binding table is the sole
+    authority: stale IDs in an older JSON payload must never survive a rebuild.
+    Rows predating this workflow have no revision and retain their legacy
+    scalar-ID behavior for archival compatibility.
+    """
     if not isinstance(payload, dict):
         return payload
     outer = dict(payload)
@@ -1516,17 +1529,68 @@ def hydrate_academic_final_material_signature_paths(conn: Any, payload: dict[str
         target = outer
     fields = dict(target.get("fields") or {})
     mappings = (
-        ("teacher_signature_id", "teacher_signature_image_path"),
-        ("department_signature_id", "department_signature_image_path"),
-        ("dean_signature_id", "dean_signature_image_path"),
+        (
+            "teacher_signature_id",
+            "teacher_signature_ids",
+            "teacher_signature_image_path",
+            "academic_final_material.grade_register.teacher_signature",
+        ),
+        (
+            "department_signature_id",
+            "department_signature_ids",
+            "department_signature_image_path",
+            "academic_final_material.exam_analysis.department_review_signature",
+        ),
+        (
+            "dean_signature_id",
+            "dean_signature_ids",
+            "dean_signature_image_path",
+            "academic_final_material.exam_analysis.dean_review_signature",
+        ),
     )
-    for id_key, path_key in mappings:
+    record_keys = set(record.keys()) if record is not None and hasattr(record, "keys") else set()
+    revision = str(record["signature_revision"] or "").strip() if "signature_revision" in record_keys else ""
+    record_id = str(record["id"] or "").strip() if "id" in record_keys else ""
+    document_type = str(record["document_type"] or "").strip() if "document_type" in record_keys else ""
+    relevant_points = {
+        "academic_grade_register": {"academic_final_material.grade_register.teacher_signature"},
+        "academic_exam_analysis": {
+            "academic_final_material.exam_analysis.department_review_signature",
+            "academic_final_material.exam_analysis.dean_review_signature",
+        },
+    }.get(document_type, set())
+    for id_key, ids_key, path_key, point_key in mappings:
         fields.pop(path_key, None)
-        signature_id = fields.get(id_key)
-        if signature_id:
-            path = resolve_signature_path(conn, int(signature_id))
-            if path:
-                fields[path_key] = path
+        if relevant_points and point_key not in relevant_points:
+            continue
+        if revision and record_id:
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT signature_id FROM signature_point_bindings
+                    WHERE function_point_key = ? AND material_type = 'academic_final_material'
+                      AND material_id = ? AND material_revision = ?
+                    ORDER BY display_order, id
+                    """,
+                    (point_key, record_id, revision),
+                ).fetchall()
+                signature_ids = [int(row["signature_id"]) for row in rows]
+            except (sqlite3.OperationalError, KeyError, TypeError, ValueError):
+                signature_ids = []
+            fields[ids_key] = signature_ids
+            fields[id_key] = signature_ids[0] if signature_ids else None
+        else:
+            raw_ids = fields.get(ids_key)
+            signature_ids = list(raw_ids) if isinstance(raw_ids, list) else []
+            if not signature_ids and fields.get(id_key):
+                signature_ids = [fields[id_key]]
+        paths = resolve_signature_paths(conn, signature_ids)
+        if paths:
+            fields[path_key] = compose_signature_strip(
+                paths,
+                slot_width=320 if ids_key == "teacher_signature_ids" else 250,
+                height=145,
+            )
     target["fields"] = fields
     return outer
 
