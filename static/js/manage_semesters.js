@@ -4,7 +4,7 @@ import {
     computeSemesterWeekCount,
     initSemesterCalendar,
     parseIsoDate,
-} from '/static/js/semester_calendar.js';
+} from '/static/js/semester_calendar.js?v=ux-empty-collapse-20260803';
 
 const config = window.SEMESTER_MANAGE_DATA || {};
 const semesterCalendarConfig = config.semesterCalendar || {};

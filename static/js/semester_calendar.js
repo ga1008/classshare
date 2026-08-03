@@ -1531,6 +1531,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             elements.board.style.gridTemplateColumns = '';
             elements.board.style.gridTemplateRows = '';
             elements.empty.hidden = false;
+            root.classList.add('is-empty');
             renderOverview(null, null);
             renderTodoToolbar(null);
             renderWeekTodoStage(null, null);
@@ -1540,6 +1541,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         renderOverview(semester, model);
         renderTodoToolbar(semester);
         elements.empty.hidden = true;
+        root.classList.remove('is-empty');
 
         const board = elements.board;
         board.innerHTML = '';

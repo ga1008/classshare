@@ -115,7 +115,7 @@ function render() {
     root.innerHTML = `
         <section class="profile-band profile-reveal psig-card">
             <div class="profile-band__head">
-                <div><span class="profile-eyebrow">My Signature</span><h3>我的签名</h3></div>
+                <div><h3>我的签名</h3></div>
                 <div class="psig-upload">
                     <input type="file" accept="image/png,image/jpeg" data-psig-file hidden>
                     <button type="button" class="btn btn-primary btn-sm" data-psig-upload>上传签名</button>
@@ -129,7 +129,7 @@ function render() {
 
         <section class="profile-band profile-reveal psig-card" ${pendingIncoming.length || settledIncoming.length ? '' : 'hidden'}>
             <div class="profile-band__head">
-                <div><span class="profile-eyebrow">Approvals</span><h3>待我审批${pendingIncoming.length ? ` <i class="psig-count">${pendingIncoming.length}</i>` : ''}</h3></div>
+                <div><h3>待我审批${pendingIncoming.length ? ` <i class="psig-count">${pendingIncoming.length}</i>` : ''}</h3></div>
             </div>
             <div class="psig-list">
                 ${pendingIncoming.map(renderIncoming).join('') || '<div class="psig-empty">暂无待审批申请。</div>'}
@@ -139,14 +139,14 @@ function render() {
 
         <section class="profile-band profile-reveal psig-card" ${state.outgoing.length ? '' : 'hidden'}>
             <div class="profile-band__head">
-                <div><span class="profile-eyebrow">My Requests</span><h3>我的申请</h3></div>
+                <div><h3>我的申请</h3></div>
             </div>
             <div class="psig-list">${state.outgoing.map(renderOutgoing).join('')}</div>
         </section>
 
         <section class="profile-band profile-reveal psig-card">
             <div class="profile-band__head">
-                <div><span class="profile-eyebrow">Usage Trail</span><h3>使用记录</h3></div>
+                <div><h3>使用记录</h3></div>
             </div>
             <ul class="psig-usage">
                 ${state.usage.map(renderUsage).join('') || '<li class="psig-empty">你的签名还没有被使用过。</li>'}

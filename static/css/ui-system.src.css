@@ -51923,3 +51923,42 @@ html.scene-cover-collapsing .main-content {
     animation: none;
     transform: scale(1.02);
 }
+
+/* ===== UX overhaul 2026-08 · B1 学期日历空态降级 ===== */
+/* display:grid 会压过 [hidden]，补齐守卫，空态时概览四卡真正隐藏 */
+.semester-calendar-panel__overview[hidden] {
+    display: none !important;
+}
+
+/* 空态（JS 挂 is-empty）：收起操作按钮、学期选择与滚动区，只留标题 + 一行空态 */
+.semester-calendar-panel.is-empty .semester-calendar-panel__actions,
+.semester-calendar-panel.is-empty .semester-calendar-panel__toolbar,
+.semester-calendar-panel.is-empty .semester-calendar-scroll {
+    display: none;
+}
+
+.semester-calendar-panel.is-empty .semester-calendar-panel__empty {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 14px 18px;
+    margin: 0;
+}
+
+.semester-calendar-panel.is-empty .semester-calendar-panel__empty p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+/* ===== UX overhaul 2026-08 · B2 教师首页 hero 零值统计折叠 ===== */
+.dashboard-hero__stats-quiet {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px dashed rgba(148, 163, 184, 0.35);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}

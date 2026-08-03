@@ -230,15 +230,26 @@
         </div>
 
         <div class="dashboard-hero__aside">
+            {% set stats_ns = namespace(all_zero=true) %}
+            {% for stat in dashboard_stats %}
+                {% if (stat.value | string | trim) not in ['0', '', '--', '0%'] %}
+                    {% set stats_ns.all_zero = false %}
+                {% endif %}
+            {% endfor %}
+            {% if dashboard_stats and stats_ns.all_zero %}
+            <div class="dashboard-hero__stats-quiet dashboard-reveal" data-explain data-explain-title="今日概览" data-explain-text="开课后这里会显示{{ dashboard_stats | map(attribute='label') | join('、') }}。">
+                今日暂无新增数据
+            </div>
+            {% else %}
             <section class="dashboard-hero__stats" aria-label="首页概览">
                 {% for stat in dashboard_stats %}
-                <article class="dashboard-stat-card dashboard-stat-card--compact dashboard-reveal">
+                <article class="dashboard-stat-card dashboard-stat-card--compact dashboard-reveal" data-explain data-explain-title="{{ stat.label }}" data-explain-text="{{ stat.note }}">
                     <span class="dashboard-stat-card__label">{{ stat.label }}</span>
                     <strong class="dashboard-stat-card__value">{{ stat.value }}</strong>
-                    <p class="dashboard-stat-card__note">{{ stat.note }}</p>
                 </article>
                 {% endfor %}
             </section>
+            {% endif %}
 
             {% with agenda_widget_extra_class='agenda-reminder--spotlight', agenda_widget_title='待办与提醒', agenda_widget_can_sync=True %}
                 {% include "partials/dashboard_agenda_widget.html" %}
@@ -738,7 +749,7 @@
 </script>
 {% endif %}
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
-<script type="module" src="/static/js/dashboard.js?v=academic-evaluation-insight-v2-20260731"></script>
+<script type="module" src="/static/js/dashboard.js?v=ux-empty-collapse-20260803"></script>
 <script type="module" src="/static/js/dashboard_count_up.js?v=student-dashboard-polish-20260612"></script>
 <script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260714-modal-fix-v3"></script>
 {% endblock %}
