@@ -315,10 +315,44 @@ class PostgresSchemaValidationTests(unittest.TestCase):
 
         self.assertTrue(expected.issubset(runtime_targets))
 
+    # Schema modules whose tables are created at runtime via engine-aware
+    # ensure_* helpers (idempotent CREATE TABLE IF NOT EXISTS on both engines).
+    # They are intentionally NOT in REQUIRED_POSTGRES_TABLES: the preflight
+    # validator must not demand these tables exist before the app has booted
+    # once. A new schema module must either register its tables in
+    # REQUIRED_POSTGRES_TABLES or be added here explicitly.
+    RUNTIME_ENSURED_SCHEMA_MODULES = frozenset(
+        {
+            "schema_academic_evaluations.py",
+            "schema_academic_final_materials.py",
+            "schema_assessment_plans.py",
+            "schema_career_engagement.py",
+            "schema_career_path.py",
+            "schema_lesson_plans.py",
+            "schema_life_tips.py",
+            "schema_polls.py",
+            "schema_prompt_pool.py",
+            "schema_resume.py",
+            "schema_retake.py",
+            "schema_session_learning_materials.py",
+            "schema_smart_schedule.py",
+            "schema_study_group_scheme.py",
+            "schema_teacher_evaluations.py",
+            "schema_wechat_mp.py",
+        }
+    )
+
     def test_required_schema_covers_all_static_sqlite_schema_tables(self):
         repo_root = Path(__file__).resolve().parents[1]
+        db_dir = repo_root / "classroom_app" / "db"
+        existing_modules = {path.name for path in db_dir.glob("schema*.py")}
+        stale_exemptions = self.RUNTIME_ENSURED_SCHEMA_MODULES - existing_modules
+        self.assertEqual(set(), stale_exemptions, "remove stale runtime-ensured exemptions")
+
         schema_tables: set[str] = set()
-        for path in (repo_root / "classroom_app" / "db").glob("schema*.py"):
+        for path in db_dir.glob("schema*.py"):
+            if path.name in self.RUNTIME_ENSURED_SCHEMA_MODULES:
+                continue
             text = path.read_text(encoding="utf-8")
             schema_tables.update(
                 match.group(1)

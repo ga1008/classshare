@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -45,6 +46,30 @@ def resolve_soffice_command() -> str | None:
         if path:
             return path
     return None
+
+
+@lru_cache(maxsize=1)
+def soffice_is_runnable() -> bool:
+    """Check that the resolved LibreOffice can actually start.
+
+    A resolved binary can still fail to launch (e.g. a broken Windows install
+    exits with STATUS_DLL_INIT_FAILED before parsing arguments), so probe with
+    ``--version`` once and cache the result for the process lifetime.
+    """
+
+    soffice = resolve_soffice_command()
+    if not soffice:
+        return False
+    try:
+        completed = subprocess.run(
+            [soffice, "--headless", "--version"],
+            check=False,
+            capture_output=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0
 
 
 def user_installation_arg(profile_dir: Path) -> str:

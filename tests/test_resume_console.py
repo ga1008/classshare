@@ -536,8 +536,8 @@ class ResumeImportTests(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    __import__("classroom_app.services.libreoffice_service", fromlist=["resolve_soffice_command"]).resolve_soffice_command(),
-    "LibreOffice not installed",
+    __import__("classroom_app.services.libreoffice_service", fromlist=["soffice_is_runnable"]).soffice_is_runnable(),
+    "LibreOffice not installed or not runnable in this environment",
 )
 class ExportTests(unittest.TestCase):
     def test_pdf_and_docx_bytes(self):
