@@ -51962,3 +51962,70 @@ html.scene-cover-collapsing .main-content {
     color: var(--text-muted);
     font-size: 0.85rem;
 }
+
+/* ===== UX overhaul 2026-08 · B3/B4 材料区收纳 ===== */
+.materials-filter-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    gap: var(--spacing-3);
+}
+
+.materials-filter-toggle {
+    align-self: stretch;
+    gap: 7px;
+    min-width: 96px;
+}
+
+.materials-filter-toggle > svg {
+    width: 16px;
+    height: 16px;
+}
+
+.materials-filter-toggle[aria-expanded="true"] {
+    border-color: rgba(59, 130, 246, 0.38);
+    background: rgba(59, 130, 246, 0.08);
+    color: var(--primary-color);
+}
+
+.materials-filter-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--primary-color);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.materials-breadcrumb-count {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    margin-left: auto;
+    padding: 0 9px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 999px;
+    background: rgba(248, 250, 252, 0.9);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.classroom-materials-empty-state {
+    padding: 14px 0 2px;
+    text-align: left;
+}
+
+/* grid/flex author styles must not override native hidden behavior. */
+.materials-sort-controls[hidden],
+.materials-filter-count[hidden],
+.classroom-materials-conditional[hidden] {
+    display: none !important;
+}

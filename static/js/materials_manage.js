@@ -168,10 +168,6 @@ function formatDateLabel(value) {
     return formatDate(value || '') || '暂无';
 }
 
-function getSortSummary(sortBy, sortOrder) {
-    return `按${SORT_FIELD_LABELS[sortBy] || '名称'}${sortOrder === 'desc' ? '降序' : '升序'}`;
-}
-
 const initialLibraryState = getInitialLibraryState();
 
 const state = {
@@ -502,13 +498,9 @@ const refs = {
     classFilter: document.getElementById('materials-class-filter'),
     sortBy: document.getElementById('materials-sort-by'),
     sortOrder: document.getElementById('materials-sort-order'),
-    scopeName: document.getElementById('materials-scope-name'),
-    scopePath: document.getElementById('materials-scope-path'),
-    scopeDescription: document.getElementById('materials-scope-description'),
-    resultCount: document.getElementById('materials-result-count'),
-    sortSummary: document.getElementById('materials-sort-summary'),
-    searchSummary: document.getElementById('materials-search-summary'),
-    documentTypeSummary: document.getElementById('materials-document-type-summary'),
+    filtersToggle: document.getElementById('materials-filters-toggle'),
+    filtersPanel: document.getElementById('materials-filters-panel'),
+    filterCount: document.getElementById('materials-filter-count'),
     selectAll: document.getElementById('materials-select-all'),
     selectionBar: document.getElementById('materials-selection-bar'),
     selectionCount: document.getElementById('materials-selection-count'),
@@ -2062,6 +2054,39 @@ function updateFilterControls() {
     renderMaterialFacetOptions(refs.classFilter, state.facets?.classes || [], state.filters.className, '全部班级');
     refs.sortBy.value = state.filters.sortBy;
     refs.sortOrder.value = state.filters.sortOrder;
+    updateFilterToggle();
+}
+
+function getActiveFilterCount() {
+    const defaultSortOrder = DEFAULT_SORT_ORDERS[state.filters.sortBy] || 'asc';
+    return [
+        state.filters.scopeLevel !== 'all',
+        Boolean(state.filters.school),
+        Boolean(state.filters.department),
+        Boolean(state.filters.college),
+        Boolean(state.filters.course),
+        Boolean(state.filters.className),
+        state.filters.sortBy !== 'name',
+        state.filters.sortOrder !== defaultSortOrder,
+    ].filter(Boolean).length;
+}
+
+function updateFilterToggle() {
+    const count = getActiveFilterCount();
+    if (refs.filterCount) {
+        refs.filterCount.hidden = count === 0;
+        refs.filterCount.textContent = String(count);
+    }
+    refs.filtersToggle?.setAttribute(
+        'aria-label',
+        count > 0 ? `筛选，当前有 ${count} 项生效` : '筛选',
+    );
+}
+
+function setFiltersExpanded(expanded) {
+    if (!refs.filtersPanel || !refs.filtersToggle) return;
+    refs.filtersPanel.hidden = !expanded;
+    refs.filtersToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 }
 
 function renderMaterialFacetOptions(select, options, selectedValue, emptyLabel) {
@@ -2139,51 +2164,6 @@ function updateInsightRing(key, value, total, caption) {
     if (captionNode) captionNode.textContent = caption;
 }
 
-function renderLibraryOverview() {
-    const overview = state.overview || {
-        scope_name: '材料库根目录',
-        scope_path: '/',
-        description: '当前目录显示 0 项',
-        result_count: 0,
-        search_active: false,
-        sort_by: state.filters.sortBy,
-        sort_order: state.filters.sortOrder,
-    };
-
-    refs.scopeName.textContent = overview.scope_name || '材料库根目录';
-    refs.scopePath.textContent = overview.scope_path || '/';
-    refs.scopeDescription.textContent = overview.description || '当前目录显示 0 项';
-    refs.resultCount.textContent = `${overview.result_count || 0} 项`;
-    refs.sortSummary.textContent = getSortSummary(overview.sort_by || state.filters.sortBy, overview.sort_order || state.filters.sortOrder);
-
-    const documentTypeLabel = overview.document_type_label || getDocumentTypeLabel(state.filters.documentType);
-    if (documentTypeLabel && refs.documentTypeSummary) {
-        refs.documentTypeSummary.hidden = false;
-        refs.documentTypeSummary.textContent = `类型：${documentTypeLabel}`;
-    } else if (refs.documentTypeSummary) {
-        refs.documentTypeSummary.hidden = true;
-        refs.documentTypeSummary.textContent = '';
-    }
-
-    const filterLabels = [];
-    if (state.filters.school) filterLabels.push(`学校：${state.filters.school}`);
-    if (state.filters.department) filterLabels.push(`系部：${state.filters.department}`);
-    if (state.filters.college) filterLabels.push(`学院：${state.filters.college}`);
-    if (state.filters.course) filterLabels.push(`课程：${state.filters.course}`);
-    if (state.filters.className) filterLabels.push(`班级：${state.filters.className}`);
-
-    if (overview.search_active || filterLabels.length) {
-        refs.searchSummary.hidden = false;
-        refs.searchSummary.textContent = [
-            overview.search_active ? `搜索：${overview.search_keyword || state.filters.keyword}` : '',
-            ...filterLabels,
-        ].filter(Boolean).join(' · ');
-    } else {
-        refs.searchSummary.hidden = true;
-        refs.searchSummary.textContent = '';
-    }
-}
-
 function updateSelectionBar() {
     const count = state.selectedIds.size;
     refs.selectionBar.hidden = count === 0;
@@ -2192,15 +2172,17 @@ function updateSelectionBar() {
 }
 
 function renderBreadcrumbs(breadcrumbs) {
+    const resultCount = Math.max(0, Number(state.overview?.result_count ?? state.items.length ?? 0));
+    const countMarkup = `<span class="materials-breadcrumb-count">${resultCount} 项</span>`;
     if (!breadcrumbs || breadcrumbs.length === 0) {
-        refs.breadcrumbs.innerHTML = '<span class="text-muted">材料库根目录</span>';
+        refs.breadcrumbs.innerHTML = `<span class="text-muted">材料库根目录</span>${countMarkup}`;
         return;
     }
 
-    refs.breadcrumbs.innerHTML = breadcrumbs.map((crumb, index) => `
+    refs.breadcrumbs.innerHTML = `${breadcrumbs.map((crumb, index) => `
         ${index > 0 ? '<span class="separator">/</span>' : ''}
         <button type="button" data-crumb-id="${crumb.id}">${escapeHtml(crumb.name)}</button>
-    `).join('');
+    `).join('')}${countMarkup}`;
 }
 
 function renderRepositoryToolbar() {
@@ -3114,7 +3096,6 @@ async function loadLibrary(parentId = null, trackHistory = false) {
 
     updateFilterControls();
     renderStats();
-    renderLibraryOverview();
     renderBreadcrumbs(state.currentBreadcrumbs);
     renderNavigationState();
     renderRepositoryToolbar();
@@ -6247,7 +6228,12 @@ function bindEvents() {
         });
     });
 
+    refs.filtersToggle?.addEventListener('click', () => {
+        setFiltersExpanded(refs.filtersToggle.getAttribute('aria-expanded') !== 'true');
+    });
+
     const reloadForLibraryFilter = (message) => {
+        updateFilterToggle();
         loadLibrary(state.currentParentId, false).catch((error) => {
             showToast(error.message || message, 'error');
         });

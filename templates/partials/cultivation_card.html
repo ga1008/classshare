@@ -21,7 +21,7 @@
     </div>
     <div class="cultivation-card__body">
         <div class="cultivation-card__topline">
-            <span>{{ card.eyebrow or 'Cultivation' }}</span>
+            {% if card.eyebrow %}<span>{{ card.eyebrow }}</span>{% endif %}
             {% if card.badge %}<em>{{ card.badge }}</em>{% endif %}
         </div>
         <strong class="cultivation-card__title">{{ card.title or level.level_name or '修为进度' }}</strong>

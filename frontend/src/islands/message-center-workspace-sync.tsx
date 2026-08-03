@@ -1,4 +1,4 @@
-import { Bell, CheckCheck, MessageCircle, RefreshCw, Search, Send, ShieldMinus } from 'lucide-react';
+import { Bell, MessageCircle, RefreshCw, Send, ShieldMinus } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -74,7 +74,7 @@ function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspace
         <h2>{snapshot.privateOpen ? contactLabel : snapshot.currentTabLabel}</h2>
         <p>{message}</p>
         <div className="message-center-workspace-sync__chips">
-          <span>{snapshot.filterLabel}</span>
+          {snapshot.filterLabel && snapshot.filterLabel !== '全部' ? <span>{snapshot.filterLabel}</span> : null}
           {snapshot.keyword ? <span>关键词：{snapshot.keyword}</span> : null}
           {snapshot.pendingAttachmentCount > 0 ? <span>待发附件 {snapshot.pendingAttachmentCount}</span> : null}
           {snapshot.isSendingMessage ? <span>发送中</span> : null}
@@ -85,32 +85,34 @@ function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspace
       <div className="message-center-workspace-sync__metrics">
         <Metric label={primaryMetric.label} value={primaryMetric.value} tone="primary" />
         <Metric label="总未读" value={snapshot.unreadTotal} tone={snapshot.unreadTotal > 0 ? 'danger' : 'success'} />
-        <Metric label="联系人" value={`${snapshot.visibleContactTotal}/${snapshot.contactTotal}`} tone="contact" />
-        <Metric label="黑名单" value={snapshot.blockCount} tone={snapshot.blockCount > 0 ? 'warning' : 'neutral'} />
+        {snapshot.privateOpen ? (
+          <Metric label="联系人" value={`${snapshot.visibleContactTotal}/${snapshot.contactTotal}`} tone="contact" />
+        ) : null}
+        {snapshot.blockCount > 0 ? (
+          <Metric label="黑名单" value={snapshot.blockCount} tone="warning" />
+        ) : null}
       </div>
 
-      <div className="message-center-workspace-sync__contact">
-        <div>
-          <span>{snapshot.privateOpen ? '当前联系人' : '当前视图'}</span>
-          <strong>{snapshot.privateOpen ? contactLabel : snapshot.currentTabLabel}</strong>
-          <small>{contactMeta}</small>
+      {snapshot.privateOpen && (snapshot.currentContactUnread > 0 || snapshot.isBlocked) ? (
+        <div className="message-center-workspace-sync__contact">
+          <div>
+            <span>当前联系人</span>
+            <strong>{contactLabel}</strong>
+            <small>{contactMeta}</small>
+          </div>
+          {snapshot.currentContactUnread > 0 ? (
+            <em>{snapshot.currentContactUnread} 条未读</em>
+          ) : null}
+          {snapshot.isBlocked ? (
+            <em className="is-warning"><ShieldMinus size={13} aria-hidden="true" /> 已拉黑</em>
+          ) : null}
         </div>
-        {snapshot.privateOpen && snapshot.currentContactUnread > 0 ? (
-          <em>{snapshot.currentContactUnread} 条未读</em>
-        ) : null}
-        {snapshot.privateOpen && snapshot.isBlocked ? (
-          <em className="is-warning"><ShieldMinus size={13} aria-hidden="true" /> 已拉黑</em>
-        ) : null}
-      </div>
+      ) : null}
 
       <div className="message-center-workspace-sync__actions" aria-label="消息中心快捷操作">
         <button type="button" onClick={() => sendWorkspaceCommand('refresh')}>
           <RefreshCw size={15} aria-hidden="true" />
           刷新
-        </button>
-        <button type="button" onClick={() => sendWorkspaceCommand('mark-read')} disabled={snapshot.unreadTotal === 0 && snapshot.currentContactUnread === 0}>
-          <CheckCheck size={15} aria-hidden="true" />
-          标记已读
         </button>
         <a href={notificationsHref} onClick={handleNotificationsClick}>
           <Bell size={15} aria-hidden="true" />
@@ -120,18 +122,16 @@ function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspace
           <MessageCircle size={15} aria-hidden="true" />
           私信
         </a>
-        <button type="button" onClick={() => sendWorkspaceCommand('focus-search')}>
-          <Search size={15} aria-hidden="true" />
-          搜索
-        </button>
-        <button
-          type="button"
-          onClick={() => sendWorkspaceCommand('focus-composer')}
-          disabled={!snapshot.privateOpen || !snapshot.hasConversation || !snapshot.canSend}
-        >
-          <Send size={15} aria-hidden="true" />
-          输入
-        </button>
+        {snapshot.privateOpen ? (
+          <button
+            type="button"
+            onClick={() => sendWorkspaceCommand('focus-composer')}
+            disabled={!snapshot.hasConversation || !snapshot.canSend}
+          >
+            <Send size={15} aria-hidden="true" />
+            输入
+          </button>
+        ) : null}
       </div>
     </section>
   );

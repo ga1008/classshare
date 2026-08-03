@@ -53,7 +53,6 @@
             {% set focus_status_label = '可破境 · ' ~ focus.eligible_stage.name if focus.eligible_stage else (('下一境界 · ' ~ focus.next_stage.name) if focus.next_stage else '全部境界已点亮') %}
             {% set cultivation_card = {
                 'variant': 'full',
-                'eyebrow': 'Focus Course',
                 'title': focus.course_name,
                 'subtitle': focus.class_name,
                 'score': focus.score,
@@ -121,7 +120,6 @@
                 {% set course_status_label = '可破境 · ' ~ course.eligible_stage.name if course.eligible_stage else (('下一境界 · ' ~ course.next_stage.name) if course.next_stage else '全部境界已点亮') %}
                 {% set cultivation_card = {
                     'variant': 'compact',
-                    'eyebrow': 'Course Status',
                     'title': course.course_name,
                     'subtitle': course.class_name,
                     'score': course.score,

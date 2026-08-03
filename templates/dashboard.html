@@ -107,7 +107,6 @@
     <section class="student-cockpit dashboard-reveal{% if not student_cockpit.show_course_pulse %} student-cockpit--no-pulse{% endif %}" aria-labelledby="student-cockpit-title">
         <div class="student-cockpit__head">
             <div>
-                <span class="student-cockpit__eyebrow">Daily cockpit</span>
                 <h2 id="student-cockpit-title" data-personal-greeting>{{ student_cockpit.title }}</h2>
                 <p>{{ student_cockpit.subtitle }}</p>
             </div>
@@ -172,7 +171,6 @@
                     <a href="{{ course.href }}" class="student-cockpit-pulse student-cockpit-pulse--{{ course.tone }}" data-course-tone="{{ course.course_tone }}">
                         {% set cultivation_card = {
                             'variant': 'compact',
-                            'eyebrow': 'Course Pulse',
                             'title': course.course_name,
                             'subtitle': course.class_name,
                             'score': course.score,
@@ -196,7 +194,7 @@
     <a href="/career-path" class="career-future-card dashboard-reveal" aria-label="打开你的职业发展网络">
         <div class="career-future-card__stars" aria-hidden="true"></div>
         <div class="career-future-card__body">
-            <span class="career-future-card__eyebrow">你的未来 · Career Galaxy</span>
+            <span class="career-future-card__eyebrow">你的未来</span>
             <h2 class="career-future-card__title">点亮专属于你的职业生涯网络</h2>
             <p class="career-future-card__desc">先做几道简单的小测试，让 AI 读懂你的性格与节奏，为你重新设计推荐路线、必备知识与从现在到毕业的准备清单。</p>
         </div>

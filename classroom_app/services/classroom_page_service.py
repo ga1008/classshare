@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .discussion_mood_service import get_discussion_mood_payload
+from .materials_service import get_effective_assignment_nodes
 from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
 from .prompt_utils import polite_address
 
@@ -18,6 +19,11 @@ def build_classroom_page_context(
     role = str(user.get("role") or "student").strip().lower()
     assignment_stats = _build_assignment_stats(role=role, assignments=assignments)
     resource_count = len(shared_files)
+    assigned_material_count = (
+        len(get_effective_assignment_nodes(conn, int(classroom.get("id") or 0)))
+        if role == "student"
+        else 0
+    )
     class_size = classroom.get("class_student_count")
     class_size_text = str(class_size) if class_size not in (None, "") else "--"
     raw_ui_copy = get_ui_copy_block(conn, scene="classroom", role=role)
@@ -57,14 +63,14 @@ def build_classroom_page_context(
 
     sections = {
         "assignment": {
-            "eyebrow": "Learning Flow",
+            "eyebrow": "",
             "title": ui_copy["assignment_title"],
             "subtitle": ui_copy["assignment_subtitle"],
             "empty_title": ui_copy["assignment_empty_title"],
             "empty_description": ui_copy["assignment_empty_description"],
         },
         "materials": {
-            "eyebrow": "Course Library",
+            "eyebrow": "",
             "title": ui_copy["materials_title"],
             "subtitle": ui_copy["materials_subtitle"],
         },
@@ -93,6 +99,7 @@ def build_classroom_page_context(
         "sections": sections,
         "assignment_stats": assignment_stats,
         "assignment_metrics": _build_assignment_metrics(role=role, assignment_stats=assignment_stats),
+        "assigned_material_count": assigned_material_count,
         "materials_tags": ["目录浏览", "README 预览", "批量下载"],
         "resource_tags": (
             ["课堂共享", "拖拽上传", f"共 {resource_count} 项资源"]

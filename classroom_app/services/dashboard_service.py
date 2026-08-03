@@ -2775,34 +2775,6 @@ def _build_student_dashboard_context(
             "href": "/achievements",
             "badge": None,
         },
-        {
-            "mode": "link",
-            "label": "学分币商店",
-            "description": "学习攒币，兑换补签卡等道具",
-            "href": "/points",
-            "badge": None,
-        },
-        {
-            "mode": "link",
-            "label": "成长档案",
-            "description": "整理作品、证书与复盘证据",
-            "href": "/profile?section=portfolio",
-            "badge": None,
-        },
-        {
-            "mode": "link",
-            "label": ui_copy["action_message_label"],
-            "description": ui_copy["action_message_description"],
-            "href": "/message-center",
-            "badge": unread_total or None,
-        },
-        {
-            "mode": "button",
-            "label": ui_copy["action_security_label"],
-            "description": ui_copy["action_security_description"],
-            "button_attrs": {"data-open-student-security": "true"},
-            "badge": None,
-        },
     ]
     recent_count = sum(1 for item in enriched_offerings if item["has_recent_activity"])
     dashboard_filters = [

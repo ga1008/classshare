@@ -139,6 +139,12 @@
 
 {% block content %}
 {% set process_generate_blocked = initial_ai_generate and initial_ai_generate.get('blocked') %}
+{% set show_material_insights =
+    (material_stats.total_count or 0) > 0
+    or (material_stats.file_count or 0) > 0
+    or (material_stats.assigned_material_count or 0) > 0
+    or (material_stats.root_count or 0) > 0
+%}
 {% from "macros/manage_insights.html" import insight_ring, insight_meter %}
 <div
     data-materials-manage-page-app
@@ -170,6 +176,7 @@
         <span id="materials-classroom-count">覆盖 {{ material_stats.classroom_count }} 个课堂</span>
         <span id="materials-total-size">{{ material_stats.total_size or 0 }} B</span>
     </div>
+    {% if show_material_insights %}
     <div class="manage-pagehead__insights">
         <span class="manage-pagehead__sub">信息归集</span>
         <div class="insight-board">
@@ -187,6 +194,7 @@
                 'amber', '个', '', 'materials-root') }}
         </div>
     </div>
+    {% endif %}
 </section>
 
 {% if process_generate_blocked %}
@@ -223,25 +231,42 @@
         </div>
 
         <div class="materials-library-controls">
-            <label class="materials-search-box" for="materials-search-input">
-                <span class="materials-search-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="7"></circle>
-                        <path d="m20 20-3.5-3.5"></path>
-                    </svg>
-                </span>
-                <input
-                    type="search"
-                    id="materials-search-input"
-                    data-testid="p03-materials-search"
-                    class="form-control"
-                    placeholder="按名称或路径模糊搜索当前范围内的材料"
-                    autocomplete="off"
+            <div class="materials-filter-toolbar">
+                <label class="materials-search-box" for="materials-search-input">
+                    <span class="materials-search-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="7"></circle>
+                            <path d="m20 20-3.5-3.5"></path>
+                        </svg>
+                    </span>
+                    <input
+                        type="search"
+                        id="materials-search-input"
+                        data-testid="p03-materials-search"
+                        class="form-control"
+                        placeholder="按名称或路径模糊搜索当前范围内的材料"
+                        autocomplete="off"
+                    >
+                    <button type="button" class="btn btn-ghost btn-sm" id="materials-search-clear-btn" hidden>清空</button>
+                </label>
+                <button
+                    type="button"
+                    class="btn btn-outline btn-sm materials-filter-toggle"
+                    id="materials-filters-toggle"
+                    aria-controls="materials-filters-panel"
+                    aria-expanded="false"
                 >
-                <button type="button" class="btn btn-ghost btn-sm" id="materials-search-clear-btn" hidden>清空</button>
-            </label>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M4 6h16"></path>
+                        <path d="M7 12h10"></path>
+                        <path d="M10 18h4"></path>
+                    </svg>
+                    <span>筛选</span>
+                    <span class="materials-filter-count" id="materials-filter-count" hidden>0</span>
+                </button>
+            </div>
 
-            <div class="materials-sort-controls">
+            <div class="materials-sort-controls" id="materials-filters-panel" hidden>
                 <label class="materials-inline-field">
                     <span>开放范围</span>
                     <select id="materials-scope-filter" class="form-control">
@@ -300,21 +325,6 @@
                         <option value="desc">降序</option>
                     </select>
                 </label>
-            </div>
-        </div>
-
-        <div class="materials-library-summary" id="materials-library-summary">
-            <div class="materials-library-summary-main">
-                <div class="materials-library-summary-label">当前范围</div>
-                <strong id="materials-scope-name">材料库根目录</strong>
-                <div class="text-muted text-sm" id="materials-scope-path">/</div>
-                <div class="text-muted text-sm" id="materials-scope-description">正在加载材料列表...</div>
-            </div>
-            <div class="materials-library-summary-chips">
-                <span class="materials-summary-chip" id="materials-result-count">0 项</span>
-                <span class="materials-summary-chip" id="materials-sort-summary">按名称升序</span>
-                <span class="materials-summary-chip" id="materials-document-type-summary" hidden>文档类型</span>
-                <span class="materials-summary-chip" id="materials-search-summary" hidden>未启用搜索</span>
             </div>
         </div>
 

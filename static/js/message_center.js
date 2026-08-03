@@ -65,6 +65,7 @@ if (app) {
         keyword: '',
         contactKeyword: '',
         filterKey: 'all',
+        tabsExpanded: false,
         searchTimer: null,
         lastSendAt: 0,
         sendCooldownMs: 12000,
@@ -675,16 +676,30 @@ if (app) {
             return;
         }
         tabsEl.hidden = false;
-        tabsEl.innerHTML = (state.summary.tabs || []).map((tab) => `
+        const tabs = state.summary.tabs || [];
+        const isPrimaryTab = (tab) => tab.category === 'all'
+            || tab.category === state.currentTab
+            || Number(tab.unread_count || 0) > 0;
+        const hiddenCount = tabs.filter((tab) => !isPrimaryTab(tab)).length;
+        const visibleTabs = state.tabsExpanded ? tabs : tabs.filter(isPrimaryTab);
+        const renderTabButton = (tab) => `
             <button
                 type="button"
                 class="message-center-tab ${tab.category === state.currentTab ? 'is-active' : ''}"
                 data-tab="${escapeHtml(tab.category)}"
             >
                 <span>${escapeHtml(tab.label)}</span>
-                <span class="message-center-tab__count">${Number(tab.unread_count || 0)}</span>
+                ${Number(tab.unread_count || 0) > 0 ? `<span class="message-center-tab__count">${Number(tab.unread_count || 0)}</span>` : ''}
             </button>
-        `).join('');
+        `;
+        const toggleButton = hiddenCount > 0 || state.tabsExpanded
+            ? `
+            <button type="button" class="message-center-tab message-center-tab--toggle" data-tabs-toggle>
+                <span>${state.tabsExpanded ? '收起分类' : `更多分类 (${hiddenCount})`}</span>
+            </button>
+        `
+            : '';
+        tabsEl.innerHTML = visibleTabs.map(renderTabButton).join('') + toggleButton;
     }
 
     function renderFilterOptions() {
@@ -1486,6 +1501,12 @@ if (app) {
     }
 
     tabsEl.addEventListener('click', async (event) => {
+        const toggle = event.target.closest('[data-tabs-toggle]');
+        if (toggle) {
+            state.tabsExpanded = !state.tabsExpanded;
+            renderTabs();
+            return;
+        }
         const button = event.target.closest('[data-tab]');
         if (!button) {
             return;

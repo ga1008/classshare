@@ -48,7 +48,7 @@ STATIC_UI_COPY_SNAPSHOT: dict[str, dict[str, dict[str, str]]] = {
             "spotlight_login_label": "累计登录",
             "spotlight_login_note": "进度、提醒和安全记录都在这里。",
             "quick_actions_title": "快捷入口",
-            "quick_actions_subtitle": "重点任务、消息与账号设置，一步直达。",
+            "quick_actions_subtitle": "重点任务、错题、成绩与成就，一步直达。",
             "focus_title": "优先处理",
             "focus_subtitle": "最要紧的事，先在这里收掉。",
             "activity_title": "最近动态",

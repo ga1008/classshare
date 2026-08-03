@@ -60,7 +60,6 @@
     <section class="profile-hero profile-reveal">
         <div class="profile-hero__main">
             <div class="profile-hero__eyebrow-row">
-                <span class="profile-eyebrow">{{ profile.role_label }} Personal Hub</span>
                 <span class="profile-section-pill">{{ current_nav }}</span>
             </div>
             <div class="profile-hero__identity">
@@ -69,20 +68,11 @@
                 </span>
                 <div class="profile-hero__copy">
                     <h1>{{ profile.name }}</h1>
-                    <div class="profile-hero__stats" aria-label="个人统计">
-                        {% for item in hero_stats %}
-                        <span class="profile-hero__stat">
-                            <strong>{{ item.value }}{% if item.suffix %}<small>{{ item.suffix }}</small>{% endif %}</strong>
-                            <em>{{ item.label }}</em>
-                        </span>
-                        {% endfor %}
-                    </div>
                     <div class="profile-chip-row">
                         <span class="profile-chip profile-chip--role" data-profile-display-role>{{ profile.display_role }}</span>
                         {% if profile.class_name %}<span class="profile-chip">{{ profile.class_name }}</span>{% endif %}
                         {% if profile.student_id_number %}<span class="profile-chip">学号 {{ profile.student_id_number }}</span>{% endif %}
                         <span class="profile-chip">今日心情 <strong data-profile-mood-display>{{ profile.today_mood or '未设置' }}</strong></span>
-                        <span class="profile-chip">资料 <strong data-profile-completion-value>{{ profile.completion.percent }}</strong>%</span>
                         <a class="profile-chip profile-chip--link" data-profile-homepage-chip href="{{ profile.homepage_url or '#' }}" target="_blank" rel="noopener noreferrer" {% if not profile.homepage_url %}hidden{% endif %}>个人主页</a>
                     </div>
                 </div>
@@ -99,7 +89,6 @@
             {% set cultivation_status_label = '可破境 · ' ~ cultivation.next_stage_name if cultivation.breakthrough_ready and cultivation.next_stage_name else ('试炼生成中' if cultivation.generating_stage_exam else (('下一境界 · ' ~ cultivation.next_stage_name) if cultivation.next_stage_name else '全部点亮')) %}
             {% set cultivation_card = {
                 'variant': 'full',
-                'eyebrow': 'Cultivation',
                 'title': cultivation.highest_level.level_name,
                 'subtitle': cultivation.sect_level_label ~ ' · ' ~ cultivation.course_count ~ ' 门课堂',
                 'score': cultivation.score,
@@ -115,20 +104,12 @@
             <div class="profile-signal-grid">
                 <div><span>可破境课堂</span><strong>{{ cultivation.breakthrough_course_count }}</strong></div>
                 <div><span>已获道印</span><strong>{{ cultivation.certificate_count }}</strong></div>
-                <div><span>未读通知</span><strong>{{ notification_unread_count }}</strong></div>
-                <div><span>未读私信</span><strong>{{ private_unread_count }}</strong></div>
             </div>
             {% else %}
             <span>资料完整度</span>
             <div class="profile-hero__signal-value"><strong data-profile-completion-value>{{ profile.completion.percent }}</strong><small>%</small></div>
             <p>已完善 {{ profile.completion.completed }} / {{ profile.completion.total }} 项</p>
             <div class="profile-progress"><span data-profile-completion-bar style="width: {{ profile.completion.percent }}%"></span></div>
-            <div class="profile-signal-grid">
-                <div><span>未读通知</span><strong>{{ notification_unread_count }}</strong></div>
-                <div><span>未读私信</span><strong>{{ private_unread_count }}</strong></div>
-                <div><span>头像</span><strong>{{ '已自定义' if profile.avatar_file_hash else '默认' }}</strong></div>
-                <div><span>主页</span><strong>{{ '已填写' if profile.homepage_url else '未填写' }}</strong></div>
-            </div>
             {% endif %}
         </aside>
     </section>
@@ -157,53 +138,21 @@
                 {% endfor %}
             </nav>
 
-            <section class="profile-band profile-sideband profile-reveal">
-                <div class="profile-band__head">
-                    <div>
-                        <h3>当前状态</h3>
-                    </div>
-                </div>
-                <div class="profile-summary-list">
-                    <div class="profile-summary-row"><span>今日心情</span><strong data-profile-mood-display>{{ profile.today_mood or '未设置' }}</strong></div>
-                    <div class="profile-summary-row"><span>身份昵称</span><strong data-profile-display-role>{{ profile.display_role }}</strong></div>
-                    <div class="profile-summary-row"><span>密码更新</span><strong>{{ profile.password_updated_at or '暂无记录' }}</strong></div>
-                </div>
-            </section>
-
-            <section class="profile-band profile-sideband profile-reveal">
-                <div class="profile-band__head">
-                    <div>
-                        <h3>快捷入口</h3>
-                    </div>
-                </div>
-                <div class="profile-quick-links">
-                    <a href="/dashboard"><strong>返回首页</strong><span>课堂总入口</span></a>
-                    {% if profile.role == 'student' %}<a href="/profile?section=portfolio"><strong>成长档案</strong><span>作品、证书、复盘与时间线</span></a>{% endif %}
-                    <a href="/profile?section=settings"><strong>编辑资料</strong><span>头像、昵称、联系方式</span></a>
-                    <a href="/profile?section=security"><strong>账号安全</strong><span>密码与登录状态</span></a>
-                </div>
-            </section>
         </aside>
 
         <section class="profile-main">
             {% if active_section == 'overview' %}
             <section class="profile-band profile-section-head profile-reveal">
                 <div>
-                    <h2>{{ overview.headline }}</h2>
-                    <p>课堂、任务、互动和通知的个人工作台。</p>
-                </div>
-                <div class="profile-section-head__actions">
-                    <a class="btn btn-outline" href="/profile?section=notifications">处理通知</a>
-                    <a class="btn btn-outline" href="/profile?section=private">进入私信</a>
+                    <h2 data-explain data-explain-title="{{ overview.headline }}" data-explain-text="课堂、任务、互动和通知的个人工作台。">{{ overview.headline }}</h2>
                 </div>
             </section>
 
             <section class="profile-metric-grid">
                 {% for item in overview.metric_cards %}
-                <article class="profile-metric-card profile-reveal" data-tone="{{ loop.index0 }}">
+                <article class="profile-metric-card profile-reveal" data-tone="{{ loop.index0 }}" data-explain data-explain-title="{{ item.label }}" data-explain-text="{{ item.note }}">
                     <span>{{ item.label }}</span>
                     <strong>{{ item.value }}</strong>
-                    <p>{{ item.note }}</p>
                 </article>
                 {% endfor %}
             </section>
@@ -223,7 +172,7 @@
                         {% set course_subtitle = course.class_name ~ (' · ' ~ course.teacher_name if course.teacher_name else '') %}
                         {% set cultivation_card = {
                             'variant': 'compact',
-                            'eyebrow': course.sect_name or 'Course',
+                            'eyebrow': course.sect_name or '',
                             'title': course.course_name,
                             'subtitle': course_subtitle,
                             'score': course.score,
@@ -263,7 +212,6 @@
                         <article class="profile-chart-card profile-reveal">
                             <div class="profile-band__head">
                                 <div>
-                                    <span class="profile-eyebrow">{{ 'Distribution' if chart.type == 'doughnut' else 'Touchpoints' }}</span>
                                     <h3>{{ chart.title }}</h3>
                                 </div>
                             </div>
@@ -874,14 +822,13 @@
                 ></div>
                 <section class="profile-band profile-stream-head profile-reveal">
                     <div>
-                        <span class="profile-eyebrow">{{ 'Private Messages' if active_section == 'private' else 'Notifications' }}</span>
-                        <h2>{{ '私信' if active_section == 'private' else '通知中心' }}</h2>
-                        <p>{{ '和同学、老师或 AI 助教保持一对一沟通。' if active_section == 'private' else '系统通知集中处理，私信保留在独立入口。' }}</p>
+                        <h2 data-explain data-explain-title="{{ '私信' if active_section == 'private' else '通知中心' }}" data-explain-text="{{ '和同学、老师或 AI 助教保持一对一沟通。' if active_section == 'private' else '系统通知集中处理，私信保留在独立入口。未读数量会实时同步到右上角铃铛。' }}">{{ '私信' if active_section == 'private' else '通知中心' }}</h2>
                     </div>
-                    <div class="message-center-hero__stats profile-message-stats">
-                        <div class="message-center-stat"><span class="message-center-stat__label">总未读</span><strong class="message-center-stat__value" id="message-center-unread-total">0</strong></div>
-                        <div class="message-center-stat"><span class="message-center-stat__label">当前分类</span><strong class="message-center-stat__value" id="message-center-current-tab-label">全部</strong></div>
-                        <div class="message-center-stat{% if active_section == 'notifications' %} is-muted{% endif %}"><span class="message-center-stat__label">私信联系人</span><strong class="message-center-stat__value" id="message-center-contact-total">0</strong></div>
+                    {# 工作台状态卡是未读/联系人数字的唯一可见来源；这些 id 由 message_center.js 实时写入，保留供同步 #}
+                    <div hidden>
+                        <strong id="message-center-unread-total">0</strong>
+                        <strong id="message-center-current-tab-label">全部</strong>
+                        <strong id="message-center-contact-total">0</strong>
                     </div>
                 </section>
 

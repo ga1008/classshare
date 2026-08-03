@@ -20,23 +20,12 @@
         hidden
     ></div>
     <section class="message-center-hero">
-        <h1 class="message-center-hero__title">系统信息管理中心</h1>
-        <p class="message-center-hero__text">
-            在这里集中处理私信、作业通知、课堂 @ 提醒、提交动态与 AI 反馈。未读数量会实时同步到右上角铃铛。
-        </p>
-        <div class="message-center-hero__stats">
-            <div class="message-center-stat">
-                <span class="message-center-stat__label">总未读</span>
-                <strong class="message-center-stat__value" id="message-center-unread-total">0</strong>
-            </div>
-            <div class="message-center-stat">
-                <span class="message-center-stat__label">当前分类</span>
-                <strong class="message-center-stat__value" id="message-center-current-tab-label">全部</strong>
-            </div>
-            <div class="message-center-stat">
-                <span class="message-center-stat__label">私信联系人</span>
-                <strong class="message-center-stat__value" id="message-center-contact-total">0</strong>
-            </div>
+        <h1 class="message-center-hero__title" data-explain data-explain-title="消息中心" data-explain-text="在这里集中处理私信、作业通知、课堂 @ 提醒、提交动态与 AI 反馈。未读数量会实时同步到右上角铃铛。">消息中心</h1>
+        {# 工作台状态卡是未读/联系人数字的唯一可见来源；这些 id 由 message_center.js 实时写入，保留供同步 #}
+        <div hidden>
+            <strong id="message-center-unread-total">0</strong>
+            <strong id="message-center-current-tab-label">全部</strong>
+            <strong id="message-center-contact-total">0</strong>
         </div>
     </section>
 
