@@ -1,6 +1,6 @@
 // 登录页「人生一言」场景：进页面即铺一言背景图 + 液态玻璃表单，
 // 登录成功后表单原地化为一言玻璃卡，结束时把背景交棒给首页顶栏。
-import { playLoginSceneReveal, sampleImageTone } from '/static/js/cultivation_identity.js?v=20260803-scene2';
+import { playLoginSceneReveal, sampleImageTone } from '/static/js/cultivation_identity.js?v=20260803-scene3';
 
 const MANIFEST_URL = '/static/img/life_tips/manifest.json';
 const IMAGE_BASE = '/static/img/life_tips/';

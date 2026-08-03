@@ -458,7 +458,9 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates, scene = null) 
             if (skipLabel) skipLabel.textContent = '点击任意处继续 ›';
             startTimer();
         };
-        stage?.addEventListener('mouseenter', pauseTimer);
+        // 用 mousemove 而非 mouseenter：登录按钮的位置恰与玻璃卡重叠，
+        // 光标原地不动时浮层出现会触发 mouseenter，把计时器永久暂停（体验假死）。
+        stage?.addEventListener('mousemove', pauseTimer);
         stage?.addEventListener('mouseleave', resumeTimer);
         startTimer();
 
@@ -614,12 +616,13 @@ function collapseRevealToTopbar(overlay, imageUrl, tipText, onDone) {
     overlay.classList.add('is-scene-collapsing');
     const backdrop = overlay.querySelector('.life-tip-backdrop');
     if (backdrop) {
+        // 只动 transform/opacity（合成器动画）：逐帧改 inset/filter 会在低端机上掉帧。
         backdrop.style.animation = 'none';
-        backdrop.style.transition = `inset ${SCENE_COLLAPSE_MS}ms cubic-bezier(0.3, 0.7, 0.25, 1), filter ${SCENE_COLLAPSE_MS}ms ease, opacity ${SCENE_COLLAPSE_MS}ms ease`;
+        backdrop.style.willChange = 'transform, opacity';
+        backdrop.style.transition = `transform ${SCENE_COLLAPSE_MS}ms cubic-bezier(0.3, 0.7, 0.25, 1), opacity ${SCENE_COLLAPSE_MS}ms ease`;
         window.requestAnimationFrame(() => {
-            const bottomGap = Math.max(0, window.innerHeight - Math.max(56, rect.height + rect.top));
-            backdrop.style.inset = `0 0 ${bottomGap}px 0`;
-            backdrop.style.filter = 'blur(24px) saturate(1.1) brightness(1.04)';
+            const rise = Math.max(0, window.innerHeight - Math.max(56, rect.height + rect.top));
+            backdrop.style.transform = `translateY(-${rise}px)`;
             backdrop.style.opacity = '0';
         });
     }
@@ -721,12 +724,13 @@ function runSceneEntrance() {
     window.setTimeout(() => {
         root.classList.add('scene-cover-collapsing');
         label?.classList.add('is-collapsing');
+        // 合成器动画在主线程忙时也能满帧跑，无需等首页脚本空闲。
         window.setTimeout(() => {
             root.classList.remove('has-scene-cover', 'scene-cover-collapsing');
             label?.remove();
             ensureTopbarChip(handoff.tip);
         }, SCENE_COLLAPSE_MS + 80);
-    }, 300);
+    }, 140);
     return true;
 }
 

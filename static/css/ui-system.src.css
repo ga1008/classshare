@@ -51656,7 +51656,7 @@ body.login-scene-active .login-scene-backdrop { opacity: 1; }
     inset: -4%;
     background-size: cover;
     background-position: center;
-    animation: life-tip-kenburns 22s ease-out forwards;
+    transform: scale(1.03);
 }
 .login-scene-backdrop__veil {
     position: absolute;
@@ -51667,8 +51667,8 @@ body.login-scene-active .login-scene-backdrop { opacity: 1; }
 /* 液态玻璃登录卡：白玻璃在亮暗图上都可读（iOS 液态玻璃质感） */
 body.login-scene-active .login-card {
     background: rgba(255, 255, 255, 0.58);
-    backdrop-filter: blur(28px) saturate(1.6);
-    -webkit-backdrop-filter: blur(28px) saturate(1.6);
+    backdrop-filter: blur(18px) saturate(1.5);
+    -webkit-backdrop-filter: blur(18px) saturate(1.5);
     border: 1px solid rgba(255, 255, 255, 0.66);
     box-shadow:
         0 32px 90px -32px rgba(2, 6, 23, 0.55),
@@ -51692,7 +51692,6 @@ body.login-scene-active .identity-panel-note {
 .login-card.login-card--handoff {
     opacity: 0 !important;
     transform: scale(1.05) translateY(-8px);
-    filter: blur(12px);
     pointer-events: none;
 }
 /* 备案页脚在图上保持可读 */
@@ -51723,15 +51722,15 @@ html.has-scene-cover::before {
     background-size: cover;
     background-position: center;
     pointer-events: none;
+    will-change: transform, opacity;
 }
 html.scene-cover-collapsing::before {
     animation: scene-cover-collapse 0.82s cubic-bezier(0.3, 0.7, 0.25, 1) forwards;
 }
 @keyframes scene-cover-collapse {
-    0% { height: 100dvh; filter: blur(0) brightness(0.97); opacity: 1; border-radius: 0; }
-    58% { filter: blur(12px); opacity: 1; }
-    84% { height: calc(var(--scene-cover-end, 64px) + 26px); border-radius: 0 0 30px 30px; opacity: 0.9; }
-    100% { height: var(--scene-cover-end, 64px); filter: blur(26px) brightness(1.04); opacity: 0; border-radius: 0; }
+    0% { transform: translateY(0); opacity: 1; }
+    55% { opacity: 1; }
+    100% { transform: translateY(calc(-100dvh + var(--scene-cover-end, 64px))); opacity: 0; }
 }
 /* 收缩时一言文字缩小飞向顶栏左侧化作「人生一言」 */
 .scene-cover-tip {
@@ -51916,4 +51915,11 @@ html.scene-cover-collapsing .main-content {
     .login-card.login-card--shake { animation: none; }
     html.has-scene-cover .main-content { opacity: 1; }
     html.scene-cover-collapsing .main-content { animation: none; }
+}
+
+/* ==== 登录场景性能层（2026-08-03）：动画全部合成器化，静态模糊一次成型 ==== */
+/* 一言浮层背景同样取消 ken-burns：玻璃卡 backdrop-filter 下背景必须静止 */
+.life-tip-backdrop {
+    animation: none;
+    transform: scale(1.02);
 }

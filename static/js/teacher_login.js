@@ -1,5 +1,5 @@
 // 教师登录页：人生一言场景 + fetch 提交（保留原生表单 POST 作为无 JS 回退）。
-import { finishLoginWithScene, initLoginScene } from '/static/js/login_scene.js?v=20260803-scene2';
+import { finishLoginWithScene, initLoginScene } from '/static/js/login_scene.js?v=20260803-scene3';
 import { showToast } from '/static/js/ui.js';
 
 let loginScene = null;

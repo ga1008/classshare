@@ -1,5 +1,5 @@
 import { apiFetch } from '/static/js/api.js';
-import { finishLoginWithScene, initLoginScene } from '/static/js/login_scene.js?v=20260803-scene2';
+import { finishLoginWithScene, initLoginScene } from '/static/js/login_scene.js?v=20260803-scene3';
 import { closeModal, openModal, showToast } from '/static/js/ui.js';
 
 // 登录页人生一言场景（背景图 + 液态玻璃表单），DOMContentLoaded 后初始化。
