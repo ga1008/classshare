@@ -52,14 +52,18 @@ function renderSignatureCard(item) {
     const badges = [];
     if (item.subject_role === 'student' && item.subject_id) badges.push('<span class="psig-badge is-self">本人签名</span>');
     if (item.is_owner) badges.push('<span class="psig-badge">归属于我</span>');
+    if (item.can_claim) badges.push('<span class="psig-badge is-claim">待认领</span>');
+    const action = item.can_claim
+        ? `<button type="button" class="psig-link is-claim" data-psig-claim="${item.id}">认领</button>`
+        : (item.can_delete ? `<button type="button" class="psig-link is-danger" data-psig-delete="${item.id}">删除</button>` : '');
     return `<article class="psig-item">
         <img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.subject_name || item.name)}" loading="lazy">
         <div class="psig-item__meta">
             <strong>${escapeHtml(item.subject_name || item.name)}</strong>
             <span>${badges.join('')}</span>
-            <small>${item.usage_count ? `已被使用 ${item.usage_count} 次` : '尚未被使用'}</small>
+            <small>${item.can_claim ? '识别为你的签名，认领后与账号绑定' : (item.usage_count ? `已被使用 ${item.usage_count} 次` : '尚未被使用')}</small>
         </div>
-        ${item.can_delete ? `<button type="button" class="psig-link is-danger" data-psig-delete="${item.id}">删除</button>` : ''}
+        ${action}
     </article>`;
 }
 
@@ -209,6 +213,20 @@ async function cancelRequest(requestId) {
     }
 }
 
+async function claimSignature(signatureId) {
+    if (state.busy) return;
+    setBusy(true);
+    try {
+        await apiFetch(`/api/signatures/${signatureId}/claim`, { method: 'POST' });
+        showToast('已认领并绑定到你的账号；他人使用前将由你审批。', 'success');
+        await refresh();
+    } catch (error) {
+        showToast(error.message || '认领失败。', 'error');
+    } finally {
+        setBusy(false);
+    }
+}
+
 async function deleteSignature(signatureId) {
     if (state.busy) return;
     if (!window.confirm('删除后基于它的授权将失效，确定删除该签名？')) return;
@@ -233,6 +251,9 @@ function bindEvents() {
     });
     root.querySelectorAll('[data-psig-delete]').forEach((button) => {
         button.addEventListener('click', () => deleteSignature(Number(button.dataset.psigDelete)));
+    });
+    root.querySelectorAll('[data-psig-claim]').forEach((button) => {
+        button.addEventListener('click', () => claimSignature(Number(button.dataset.psigClaim)));
     });
     root.querySelectorAll('[data-psig-cancel]').forEach((button) => {
         button.addEventListener('click', () => cancelRequest(Number(button.dataset.psigCancel)));

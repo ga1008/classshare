@@ -50013,7 +50013,21 @@ a.material-delete-impact-item:hover .material-delete-impact-item__open { color: 
     box-shadow: 0 10px 24px -22px rgba(15, 118, 110, 0.55);
     transition: border-color var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
 }
-.prompt-pool-share input { width: 15px; height: 15px; accent-color: #0f766e; flex: 0 0 auto; }
+/* The share row is injected next to arbitrary editor inputs; page-level
+   generic `... input` rules must never be able to stretch this checkbox. */
+.prompt-pool-share input[type="checkbox"] {
+    width: 15px !important;
+    height: 15px !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 3px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    accent-color: #0f766e;
+    flex: 0 0 auto;
+}
 .prompt-pool-share span { white-space: nowrap; }
 .prompt-pool-share small {
     color: #64748b;

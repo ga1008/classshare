@@ -65,6 +65,8 @@ def direct_authorization_mode(actor: dict[str, Any], signature: Any) -> str:
         return "self"
     if _same_identity(signature["owner_role"], signature["owner_id"], actor):
         return "owner"
+    if actor.get("role") == "teacher" and str(signature["owner_role"] or "") == "system":
+        return "platform"
     return ""
 
 
@@ -206,6 +208,21 @@ def _identity_name(conn: Any, role: str, user_id: int) -> str:
     return _clean(row["name"] if row else "", 80)
 
 
+def _admin_identities(conn: Any) -> list[dict[str, Any]]:
+    """Active super admins act as reviewers of last resort for unbound signatures."""
+    rows = conn.execute(
+        """
+        SELECT id, name FROM teachers
+        WHERE COALESCE(is_super_admin, 0) = 1 AND COALESCE(is_active, 1) = 1
+        ORDER BY id
+        """
+    ).fetchall()
+    return [
+        {"role": "teacher", "id": int(row["id"]), "kind": "admin", "name": _clean(row["name"], 80)}
+        for row in rows
+    ]
+
+
 def _reviewer_identities(conn: Any, signature: Any) -> list[dict[str, Any]]:
     candidates = [
         (signature["owner_role"], signature["owner_id"], "owner", signature["owner_name_snapshot"]),
@@ -325,18 +342,16 @@ def create_access_request(
     ).fetchone()
     if existing:
         raise signature_service.SignatureServiceError(409, "该签名已有待审批申请，请先等待审批或撤销。")
-    try:
-        subject_id = int(signature["subject_id"] or 0)
-    except (TypeError, ValueError):
-        subject_id = 0
-    if str(signature["subject_role"] or "").strip().lower() not in {"teacher", "student"} or subject_id <= 0:
-        raise signature_service.SignatureServiceError(
-            422,
-            "该签名尚未绑定可核验的签名者账号，请先由归属人补充签名者账号后再申请。",
-        )
     reviewers = _reviewer_identities(conn, signature)
     if not reviewers:
-        raise signature_service.SignatureServiceError(422, "该签名尚未绑定可核验的归属人或签名者账号，暂不能申请。")
+        # Unbound signature (signer not registered, no accountable owner):
+        # platform admins review on the person's behalf so requests never stall.
+        reviewers = _admin_identities(conn)
+    if not reviewers:
+        raise signature_service.SignatureServiceError(
+            422,
+            "该签名未绑定任何账号，且平台暂无管理员可代为审批，请先联系管理员认领或绑定签名。",
+        )
 
     try:
         request_id = execute_insert_returning_id(
@@ -568,9 +583,14 @@ def list_access_requests(
         raise signature_service.SignatureServiceError(400, "不支持的申请状态筛选。")
     where: list[str] = []
     params: list[Any] = []
+    is_admin_view = False
     if normalized_direction == "outgoing":
         where.extend(["request.requester_role = ?", "request.requester_id = ?"])
         params.extend([actor["role"], int(actor["id"])])
+    elif bool(actor.get("is_super_admin")):
+        # Admins oversee every request so unbound signatures never stall.
+        is_admin_view = True
+        where.append("1 = 1")
     else:
         where.append(
             "EXISTS (SELECT 1 FROM signature_access_request_reviewers reviewer "
@@ -598,6 +618,7 @@ def list_access_requests(
         "items": [requests_by_id[request_id] for request_id in request_ids if request_id in requests_by_id],
         "direction": normalized_direction,
         "status": normalized_status,
+        "admin_view": is_admin_view,
         "actor": signature_service.serialize_signature_actor(actor),
     }
 
@@ -680,8 +701,28 @@ def review_access_request(
         """,
         (int(request_id), actor["role"], int(actor["id"])),
     ).fetchone()
+    if not reviewer and bool(actor.get("is_super_admin")):
+        # Admins may step in on any pending request (代为审批), e.g. when the
+        # signer never registered an account. Register the ad-hoc reviewer row
+        # so the decision is recorded under the admin's own identity.
+        conn.execute(
+            """
+            INSERT INTO signature_access_request_reviewers (
+                request_id, reviewer_role, reviewer_id, reviewer_kind, reviewer_name_snapshot
+            ) VALUES (?, ?, ?, 'admin', ?)
+            """,
+            (int(request_id), actor["role"], int(actor["id"]), _clean(actor.get("name"), 80)),
+        )
+        reviewer = conn.execute(
+            """
+            SELECT * FROM signature_access_request_reviewers
+            WHERE request_id = ? AND reviewer_role = ? AND reviewer_id = ?
+            LIMIT 1
+            """,
+            (int(request_id), actor["role"], int(actor["id"])),
+        ).fetchone()
     if not reviewer:
-        raise signature_service.SignatureServiceError(403, "只有签名归属人或签名者本人可以审批。")
+        raise signature_service.SignatureServiceError(403, "只有签名归属人、签名者本人或管理员可以审批。")
     if reviewer["status"] != "pending":
         raise signature_service.SignatureServiceError(409, "你已经处理过该申请。")
     normalized_action = str(action or "").strip().lower()
@@ -789,6 +830,43 @@ def cancel_access_request(conn: Any, user: dict[str, Any], request_id: int) -> d
     )
     _sync_point_flow_for_request(conn, request_id)
     return {"status": "success", "request": get_request(conn, request_id)}
+
+
+def claim_signature(conn: Any, user: dict[str, Any], signature_id: int) -> dict[str, Any]:
+    """Bind an unbound signature bearing the actor's own name to their account."""
+    actor = signature_service.build_signature_actor(conn, user)
+    signature = _signature_row(conn, signature_id)
+    if not signature_service.can_claim_signature(actor, signature):
+        raise signature_service.SignatureServiceError(
+            403, "只能认领与本人姓名一致、且尚未绑定账号的签名。"
+        )
+    cursor = conn.execute(
+        """
+        UPDATE electronic_signatures
+        SET subject_role = ?, subject_id = ?, subject_name = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND COALESCE(subject_id, 0) <= 0
+        """,
+        (actor["role"], int(actor["id"]), actor.get("name") or signature["subject_name"], int(signature_id)),
+    )
+    if int(cursor.rowcount or 0) != 1:
+        raise signature_service.SignatureServiceError(409, "该签名刚刚已被认领，请刷新查看。")
+    owner_role = str(signature["owner_role"] or "").strip().lower()
+    try:
+        owner_id = int(signature["owner_id"] or 0)
+    except (TypeError, ValueError):
+        owner_id = 0
+    if owner_role in {"teacher", "student"} and owner_id > 0:
+        _notify(
+            conn,
+            recipients=[{"role": owner_role, "id": owner_id}],
+            actor=actor,
+            title="签名已被本人认领",
+            body=f"{actor['name']} 已认领并绑定签名“{signature['subject_name'] or signature['name']}”，后续使用申请将由本人参与审批。",
+            ref_type="signature_claim",
+            ref_id=str(int(signature_id)),
+            metadata={"signature_id": int(signature_id)},
+        )
+    return {"status": "success", "signature_id": int(signature_id)}
 
 
 def _sync_point_flow_for_request(conn: Any, request_id: int) -> None:

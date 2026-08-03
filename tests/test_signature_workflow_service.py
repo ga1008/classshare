@@ -297,7 +297,7 @@ class SignatureWorkflowServiceTests(unittest.TestCase):
             )
         self.assertEqual(400, caught.exception.status_code)
 
-    def test_third_party_request_requires_a_bound_signer_account(self) -> None:
+    def test_unbound_signer_with_bound_owner_reviews_via_owner_alone(self) -> None:
         self.conn.execute(
             """
             INSERT INTO electronic_signatures (
@@ -308,16 +308,23 @@ class SignatureWorkflowServiceTests(unittest.TestCase):
         )
         signature_id = int(self.conn.execute("SELECT MAX(id) FROM electronic_signatures").fetchone()[0])
 
-        with self.assertRaises(signature_service.SignatureServiceError) as caught:
-            signature_workflow_service.create_access_request(
-                self.conn,
-                {"role": "teacher", "id": 1},
-                signature_id,
-                function_point_keys=["assessment_plan.reviewer_signature"],
-            )
+        created = signature_workflow_service.create_access_request(
+            self.conn,
+            {"role": "teacher", "id": 1},
+            signature_id,
+            function_point_keys=["assessment_plan.reviewer_signature"],
+        )["request"]
+        self.assertEqual([("teacher", 2, "owner")], [
+            (item["role"], item["id"], item["kind"]) for item in created["reviewers"]
+        ])
 
-        self.assertEqual(422, caught.exception.status_code)
-        self.assertIn("签名者账号", caught.exception.message)
+        approved = signature_workflow_service.review_access_request(
+            self.conn,
+            {"role": "teacher", "id": 2},
+            created["id"],
+            action="approve",
+        )["request"]
+        self.assertEqual("approved", approved["status"])
 
 
 if __name__ == "__main__":

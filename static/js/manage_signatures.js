@@ -140,6 +140,19 @@ function cacheElements() {
             els['signature-request-btn'] = button;
         }
     }
+    if (!els['signature-claim-btn']) {
+        const actions = document.querySelector('.signature-actions');
+        if (actions) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-primary btn-sm';
+            button.id = 'signature-claim-btn';
+            button.hidden = true;
+            button.textContent = '认领为本人签名';
+            actions.insertBefore(button, els['signature-request-btn'] || null);
+            els['signature-claim-btn'] = button;
+        }
+    }
 }
 
 function signatureQuery() {
@@ -320,6 +333,7 @@ function renderDetail(item) {
             <span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>
             ${item.is_owner ? '<span class="signature-chip is-owner">归属我</span>' : ''}
             ${item.owner_role === 'system' ? '<span class="signature-chip is-system">平台导入</span>' : ''}
+            ${item.owner_role !== 'system' && !item.subject_bound ? '<span class="signature-chip">未绑定账号</span>' : ''}
         `;
     }
     if (els['signature-detail-list']) {
@@ -341,13 +355,20 @@ function renderDetail(item) {
             </div>
         `).join('');
     }
-    setActionVisibility(Boolean(item.can_use), Boolean(item.can_delete), Boolean(item.can_edit), Boolean(item.can_request_use));
+    setActionVisibility(
+        Boolean(item.can_use),
+        Boolean(item.can_delete),
+        Boolean(item.can_edit),
+        Boolean(item.can_request_use),
+        Boolean(item.can_claim),
+    );
     if (els['signature-download-link']) {
         els['signature-download-link'].href = item.download_url || '#';
     }
 }
 
-function setActionVisibility(canUse, canDelete, canEdit = false, canRequestUse = false) {
+function setActionVisibility(canUse, canDelete, canEdit = false, canRequestUse = false, canClaim = false) {
+    if (els['signature-claim-btn']) els['signature-claim-btn'].hidden = !canClaim;
     if (els['signature-download-link']) els['signature-download-link'].hidden = !canUse;
     if (els['signature-request-btn']) {
         els['signature-request-btn'].hidden = !canRequestUse;
@@ -357,6 +378,21 @@ function setActionVisibility(canUse, canDelete, canEdit = false, canRequestUse =
     }
     if (els['signature-edit-btn']) els['signature-edit-btn'].hidden = !canEdit;
     if (els['signature-delete-btn']) els['signature-delete-btn'].hidden = !canDelete;
+}
+
+async function claimCurrentSignature() {
+    if (!state.selectedId) return;
+    const item = state.items.find((entry) => entry.id === state.selectedId);
+    if (!item || !item.can_claim) return;
+    const button = els['signature-claim-btn'];
+    if (button) button.disabled = true;
+    try {
+        await apiFetch(`/api/signatures/${state.selectedId}/claim`, { method: 'POST' });
+        showMessage('已认领并绑定到你的账号；后续使用申请将由你审批。', 'success');
+        await loadSignatures({ keepSelection: true });
+    } finally {
+        if (button) button.disabled = false;
+    }
 }
 
 async function requestCurrentSignatureUse() {
@@ -713,6 +749,7 @@ function bindEvents() {
     els['signature-upload-form']?.addEventListener('submit', submitUpload);
     els['signature-edit-form']?.addEventListener('submit', submitEdit);
     els['signature-request-btn']?.addEventListener('click', requestCurrentSignatureUse);
+    els['signature-claim-btn']?.addEventListener('click', claimCurrentSignature);
     els['signature-request-form']?.addEventListener('submit', submitSignatureRequest);
     els['signature-requests-refresh-btn']?.addEventListener('click', loadSignatureRequests);
     els['signature-request-list']?.addEventListener('click', (event) => {

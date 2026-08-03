@@ -174,21 +174,25 @@ def get_point_state(
     grants = {int(row["signature_id"]): int(row["grant_item_id"]) for row in grant_rows}
     signatures: list[dict[str, Any]] = []
     for item in listed.get("items") or []:
-        if item.get("owner_role") == "system":
-            continue
         direct_mode = signature_workflow_service.direct_authorization_mode(actor, item)
         grant_item_id = grants.get(int(item["id"]))
         can_use = bool(direct_mode or grant_item_id)
         try:
-            signer_id = int(item.get("subject_id") or 0)
+            owner_id = int(item.get("owner_id") or 0)
         except (TypeError, ValueError):
-            signer_id = 0
-        signer_bound = str(item.get("subject_role") or "").strip().lower() in {"teacher", "student"} and signer_id > 0
+            owner_id = 0
+        owner_bound = str(item.get("owner_role") or "").strip().lower() in {"teacher", "student"} and owner_id > 0
+        signer_bound = bool(item.get("subject_bound"))
+        # Unbound signatures stay requestable — platform admins review them —
+        # so a colleague without an account never blocks an official document.
+        needs_admin_review = not owner_bound and not signer_bound
         signatures.append(
             {
                 **item,
                 "can_use": can_use,
-                "can_request": bool(not can_use and signer_bound),
+                "can_request": not can_use,
+                "needs_admin_review": needs_admin_review,
+                "signer_bound": signer_bound,
                 "authorization_mode": direct_mode or ("approval" if grant_item_id else ""),
                 "grant_item_id": grant_item_id,
             }
@@ -267,8 +271,10 @@ def create_point_flow(
         )
         if access.get("can_use"):
             raise signature_service.SignatureServiceError(400, "申请中包含已可直接使用或已获授权的签名。")
-        if not signature_workflow_service._reviewer_identities(conn, signature):
-            raise signature_service.SignatureServiceError(422, "申请中有签名未绑定可核验的归属人或签名者账号。")
+        if not signature_workflow_service._reviewer_identities(conn, signature) and not signature_workflow_service._admin_identities(conn):
+            raise signature_service.SignatureServiceError(
+                422, "申请中有签名未绑定任何账号，且平台暂无管理员可代为审批。"
+            )
     try:
         flow_id = execute_insert_returning_id(
             conn,

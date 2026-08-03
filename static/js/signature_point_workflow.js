@@ -194,14 +194,14 @@ export class SignaturePointControl {
                 <div class="spw-dialog-body">
                     <div class="spw-flow-summary"><strong>${esc(statusText[flow.status] || flow.status)}</strong><span>${esc(flow.material_label || '')}</span></div>
                     <ol class="spw-flow-items">${items}</ol>
-                    <p class="spw-flow-note">审批规则：签名归属人或签名者本人任一同意即可授权；多人签名分别审批，已通过的授权不会因结束其余申请而撤销。</p>
+                    <p class="spw-flow-note">审批规则：签名归属人或签名者本人任一同意即可授权；未绑定账号的签名由平台管理员代为审批。多人签名分别审批，已通过的授权不会因结束其余申请而撤销。</p>
                 </div>
                 <footer><button type="button" data-spw-refresh>刷新状态</button><span></span><button type="button" class="is-danger" data-spw-end>结束申请</button></footer>`;
             panel.querySelector('[data-spw-end]')?.addEventListener('click', () => this.endFlow(flow.id));
             panel.querySelector('[data-spw-refresh]')?.addEventListener('click', () => this.refreshDialog());
         } else {
             const candidates = this.state?.requestable_signatures || [];
-            const options = candidates.map((item) => `<label><input type="checkbox" value="${item.id}"><span class="spw-candidate-order">—</span><span><strong>${esc(item.subject_name || item.name)}</strong><small>${esc(item.owner_name || item.scope_label || '')}</small></span></label>`).join('');
+            const options = candidates.map((item) => `<label><input type="checkbox" value="${item.id}"><span class="spw-candidate-order">—</span><span><strong>${esc(item.subject_name || item.name)}</strong><small>${esc(item.owner_name || item.scope_label || '')}${item.needs_admin_review ? ' · <em class="spw-admin-review">未绑定账号，由管理员审批</em>' : ''}</small></span></label>`).join('');
             panel.innerHTML = `
                 <header><div><span>新建签名申请</span><h3>${esc(this.pointLabel)}</h3></div><button type="button" data-spw-close aria-label="关闭">×</button></header>
                 <div class="spw-dialog-body">

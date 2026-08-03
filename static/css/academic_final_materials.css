@@ -258,8 +258,8 @@
 .afm-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
 .afm-field { display: grid; gap: 6px; color: #526078; font-size: 11px; font-weight: 750; }
 .afm-field--wide { grid-column: 1 / -1; }
-.afm-field input, .afm-field select, .afm-field textarea { width: 100%; border: 1px solid rgba(115,128,158,.27); border-radius: 10px; outline: 0; background: #fff; color: var(--afm-ink); font: inherit; font-size: 13px; transition: border-color .15s ease, box-shadow .15s ease; }
-.afm-field input, .afm-field select { height: 40px; padding: 0 11px; }
+.afm-field input:not([type="checkbox"]), .afm-field select, .afm-field textarea { width: 100%; border: 1px solid rgba(115,128,158,.27); border-radius: 10px; outline: 0; background: #fff; color: var(--afm-ink); font: inherit; font-size: 13px; transition: border-color .15s ease, box-shadow .15s ease; }
+.afm-field input:not([type="checkbox"]), .afm-field select { height: 40px; padding: 0 11px; }
 .afm-field textarea { min-height: 80px; padding: 10px 11px; resize: vertical; line-height: 1.65; }
 .afm-field input:focus, .afm-field select:focus, .afm-field textarea:focus { border-color: rgba(91,87,233,.65); box-shadow: 0 0 0 3px rgba(91,87,233,.1); }
 .afm-field--prompt { margin-top: 10px; }

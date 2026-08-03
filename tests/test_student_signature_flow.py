@@ -20,9 +20,12 @@ ACTORS = {
     ("teacher", 1): "申请教师",
     ("teacher", 2): "归属教师",
     ("teacher", 3): "签名教师",
+    ("teacher", 9): "平台管理员",
     ("student", 1): "学生甲",
     ("student", 5): "学生乙",
 }
+
+ADMIN_IDENTITIES = {("teacher", 9)}
 
 
 class StudentSignatureFlowTests(unittest.TestCase):
@@ -32,10 +35,15 @@ class StudentSignatureFlowTests(unittest.TestCase):
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(
             """
-            CREATE TABLE teachers (id INTEGER PRIMARY KEY, name TEXT, email TEXT);
-            INSERT INTO teachers VALUES (1, '申请教师', 'one@example.test');
-            INSERT INTO teachers VALUES (2, '归属教师', 'two@example.test');
-            INSERT INTO teachers VALUES (3, '签名教师', 'three@example.test');
+            CREATE TABLE teachers (
+                id INTEGER PRIMARY KEY, name TEXT, email TEXT,
+                is_super_admin INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1
+            );
+            INSERT INTO teachers VALUES (1, '申请教师', 'one@example.test', 0, 1);
+            INSERT INTO teachers VALUES (2, '归属教师', 'two@example.test', 0, 1);
+            INSERT INTO teachers VALUES (3, '签名教师', 'three@example.test', 0, 1);
+            INSERT INTO teachers VALUES (9, '平台管理员', 'admin@example.test', 1, 1);
             CREATE TABLE students (id INTEGER PRIMARY KEY, name TEXT);
             INSERT INTO students VALUES (1, '学生甲');
             INSERT INTO students VALUES (5, '学生乙');
@@ -49,6 +57,7 @@ class StudentSignatureFlowTests(unittest.TestCase):
                 owner_id INTEGER,
                 owner_name_snapshot TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'active',
+                updated_at TEXT,
                 deleted_at TEXT
             );
             CREATE TABLE signature_usage_logs (
@@ -132,7 +141,7 @@ class StudentSignatureFlowTests(unittest.TestCase):
                 "role": str(user["role"]),
                 "id": int(user["id"]),
                 "name": ACTORS[(str(user["role"]), int(user["id"]))],
-                "is_super_admin": False,
+                "is_super_admin": (str(user["role"]), int(user["id"])) in ADMIN_IDENTITIES,
                 "scope": {},
                 "memberships": [],
             },
@@ -275,6 +284,121 @@ class StudentSignatureFlowTests(unittest.TestCase):
             self.conn, {"role": "student", "id": 5}
         )
         self.assertEqual([], outsider_view["items"])
+
+    def _insert_signature(self, *, name, subject_name, subject_role, subject_id, owner_role, owner_id, owner_name="") -> int:
+        self.conn.execute(
+            """
+            INSERT INTO electronic_signatures (
+                name, subject_name, subject_role, subject_id,
+                owner_role, owner_id, owner_name_snapshot
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (name, subject_name, subject_role, subject_id, owner_role, owner_id, owner_name),
+        )
+        return int(self.conn.execute("SELECT MAX(id) FROM electronic_signatures").fetchone()[0])
+
+    def test_claim_binds_unbound_signature_and_blocks_name_mismatch(self) -> None:
+        signature_id = self._insert_signature(
+            name="学生乙签名", subject_name="学生乙", subject_role="student", subject_id=None,
+            owner_role="teacher", owner_id=2, owner_name="归属教师",
+        )
+        with self.assertRaises(signature_service.SignatureServiceError) as denied:
+            signature_workflow_service.claim_signature(self.conn, {"role": "student", "id": 1}, signature_id)
+        self.assertEqual(403, denied.exception.status_code)
+
+        claimed = signature_workflow_service.claim_signature(self.conn, {"role": "student", "id": 5}, signature_id)
+        self.assertEqual("success", claimed["status"])
+        row = self.conn.execute(
+            "SELECT subject_role, subject_id FROM electronic_signatures WHERE id = ?", (signature_id,)
+        ).fetchone()
+        self.assertEqual(("student", 5), (row["subject_role"], int(row["subject_id"])))
+        owner_note = self.conn.execute(
+            "SELECT recipient_role, recipient_user_pk FROM message_center_notifications WHERE ref_type = 'signature_claim'"
+        ).fetchone()
+        self.assertEqual(("teacher", 2), (owner_note["recipient_role"], int(owner_note["recipient_user_pk"])))
+
+        with self.assertRaises(signature_service.SignatureServiceError) as repeated:
+            signature_workflow_service.claim_signature(self.conn, {"role": "student", "id": 5}, signature_id)
+        self.assertEqual(403, repeated.exception.status_code)
+
+    def test_fully_unbound_signature_falls_back_to_admin_review(self) -> None:
+        signature_id = self._insert_signature(
+            name="外聘签名", subject_name="外聘专家", subject_role="teacher", subject_id=None,
+            owner_role="teacher", owner_id=None,
+        )
+        created = signature_workflow_service.create_access_request(
+            self.conn,
+            {"role": "teacher", "id": 1},
+            signature_id,
+            function_point_keys=["assessment_plan.reviewer_signature"],
+        )["request"]
+        self.assertEqual([("teacher", 9, "admin")], [
+            (item["role"], item["id"], item["kind"]) for item in created["reviewers"]
+        ])
+
+        admin_inbox = signature_workflow_service.list_access_requests(
+            self.conn, {"role": "teacher", "id": 9}, direction="incoming"
+        )
+        self.assertTrue(admin_inbox["admin_view"])
+        self.assertIn(created["id"], [item["id"] for item in admin_inbox["items"]])
+
+        approved = signature_workflow_service.review_access_request(
+            self.conn, {"role": "teacher", "id": 9}, created["id"], action="approve"
+        )["request"]
+        self.assertEqual("approved", approved["status"])
+
+    def test_admin_can_step_into_any_pending_request(self) -> None:
+        created = signature_workflow_service.create_access_request(
+            self.conn,
+            {"role": "teacher", "id": 1},
+            1,
+            function_point_keys=["academic_final_material.grade_register.teacher_signature"],
+        )["request"]
+        self.assertNotIn(
+            ("teacher", 9), {(item["role"], item["id"]) for item in created["reviewers"]}
+        )
+        approved = signature_workflow_service.review_access_request(
+            self.conn, {"role": "teacher", "id": 9}, created["id"], action="approve"
+        )["request"]
+        self.assertEqual("approved", approved["status"])
+        admin_review = next(item for item in approved["reviewers"] if item["id"] == 9)
+        self.assertEqual(("admin", "approved"), (admin_review["kind"], admin_review["status"]))
+
+        ordinary_outsider = signature_workflow_service.create_access_request(
+            self.conn,
+            {"role": "teacher", "id": 1},
+            2,
+            function_point_keys=["assessment_plan.examiner_signature"],
+        )["request"]
+        with self.assertRaises(signature_service.SignatureServiceError) as denied:
+            signature_workflow_service.review_access_request(
+                self.conn, {"role": "student", "id": 5}, ordinary_outsider["id"], action="approve"
+            )
+        self.assertEqual(403, denied.exception.status_code)
+
+    def test_platform_stamp_is_directly_usable_by_teachers(self) -> None:
+        signature_id = self._insert_signature(
+            name="审核意见·同意", subject_name="同意（楷行）", subject_role="other", subject_id=None,
+            owner_role="system", owner_id=None,
+        )
+        used = signature_workflow_service.authorize_and_consume_signature_use(
+            self.conn,
+            {"role": "teacher", "id": 1},
+            signature_id,
+            function_point_key="academic_final_material.exam_analysis.dean_review_signature",
+            context_type="academic_final_material",
+            context_id="record-20",
+            context_label="试卷分析表",
+        )
+        self.assertEqual("platform", used["authorization_mode"])
+        with self.assertRaises(signature_service.SignatureServiceError) as blocked:
+            signature_workflow_service.create_access_request(
+                self.conn,
+                {"role": "teacher", "id": 1},
+                signature_id,
+                function_point_keys=["academic_final_material.exam_analysis.dean_review_signature"],
+            )
+        self.assertEqual(400, blocked.exception.status_code)
 
 
 if __name__ == "__main__":

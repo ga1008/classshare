@@ -273,6 +273,29 @@ def _signature_request_state(
     }
 
 
+def is_subject_bound(row: sqlite3.Row | dict[str, Any]) -> bool:
+    """The signature is tied to a registered account that can review requests."""
+    try:
+        subject_id = int(row["subject_id"] or 0)
+    except (KeyError, IndexError, TypeError, ValueError):
+        subject_id = 0
+    return str(row["subject_role"] or "").strip().lower() in {"teacher", "student"} and subject_id > 0
+
+
+def can_claim_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
+    """A registered account may claim an unbound signature bearing its own name."""
+    role, user_id = _actor_identity(actor)
+    if role not in {"teacher", "student"} or user_id <= 0:
+        return False
+    if is_subject_bound(row) or str(row["owner_role"] or "") == "system":
+        return False
+    subject_role = str(row["subject_role"] or "").strip().lower()
+    if subject_role not in {role, "", "other"}:
+        return False
+    subject_name = _clean_text(row["subject_name"], 80)
+    return bool(subject_name) and subject_name == _clean_text(actor.get("name"), 80)
+
+
 def can_use_signature(
     actor: dict[str, Any],
     row: sqlite3.Row | dict[str, Any],
@@ -281,7 +304,11 @@ def can_use_signature(
     # Global/broad grants are intentionally forbidden.  A feature-specific
     # approved item is evaluated by signature_workflow_service at the exact
     # binding location.  This helper only represents unconditional direct use.
-    return _is_owner(actor, row) or _is_subject(actor, row)
+    if _is_owner(actor, row) or _is_subject(actor, row):
+        return True
+    # Platform stamps (system-owned, e.g. 审核意见"同意") are shared assets any
+    # teacher may embed directly — they are not personal autographs.
+    return actor.get("role") == "teacher" and str(row["owner_role"] or "") == "system"
 
 
 def can_request_signature_use(
@@ -291,7 +318,7 @@ def can_request_signature_use(
 ) -> bool:
     if actor.get("role") not in {"teacher", "student"}:
         return False
-    if _is_owner(actor, row) or _is_subject(actor, row):
+    if can_use_signature(actor, row, conn):
         return False
     if not can_view_signature(actor, row):
         return False
@@ -372,11 +399,16 @@ def _visibility_sql(actor: dict[str, Any], selected_school_code: str = "") -> tu
     scope = actor.get("scope") or {}
     school_code = normalize_school_code(scope.get("school_code"))
     if role == "student":
-        # Students see the signatures they hold plus every signature that IS
-        # theirs (teacher-harvested images keep the student as subject).
+        # Students see the signatures they hold, every signature that IS theirs
+        # (teacher-harvested images keep the student as subject), plus unbound
+        # same-school signatures bearing their name so they can claim them.
+        actor_name = _clean_text(actor.get("name"), 80)
         return (
-            "((s.owner_role = 'student' AND s.owner_id = ?) OR (s.subject_role = 'student' AND s.subject_id = ?))",
-            [user_id, user_id],
+            "((s.owner_role = 'student' AND s.owner_id = ?)"
+            " OR (s.subject_role = 'student' AND s.subject_id = ?)"
+            " OR (s.school_code = ? AND COALESCE(s.subject_id, 0) <= 0"
+            "     AND s.subject_role IN ('student', '', 'other') AND s.subject_name = ?))",
+            [user_id, user_id, school_code, actor_name],
         )
 
     memberships = _actor_memberships(actor)
@@ -410,6 +442,11 @@ def _visibility_sql(actor: dict[str, Any], selected_school_code: str = "") -> tu
     for item_school_code, department in department_pairs:
         clauses.append("(s.school_code = ? AND s.department = ? AND s.owner_role IN ('teacher', 'student', 'system'))")
         params.extend([item_school_code, department])
+    # can_view_signature grants teachers same-school access to platform assets;
+    # the list query must agree or platform stamps vanish from pickers.
+    for item_school_code in school_codes:
+        clauses.append("(s.school_code = ? AND (s.owner_role = 'system' OR s.scope_level = 'platform'))")
+        params.append(item_school_code)
     return "(" + " OR ".join(clauses) + ")", params
 
 
@@ -692,6 +729,8 @@ def serialize_signature(
         "usage_count": int(row["usage_count"] or 0),
         "last_used_at": row["last_used_at"] or "",
         "is_owner": is_owner,
+        "subject_bound": is_subject_bound(row),
+        "can_claim": can_claim_signature(actor, row),
         "can_edit": can_edit,
         "can_delete": can_delete,
         "can_view": can_view,

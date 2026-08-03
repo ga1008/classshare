@@ -240,6 +240,20 @@ async def api_list_signature_access_requests(
         _raise_signature_error(exc)
 
 
+@router.post("/{signature_id:int}/claim", response_class=JSONResponse)
+async def api_claim_signature(
+    signature_id: int,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            result = signature_workflow_service.claim_signature(conn, user, signature_id)
+            conn.commit()
+        return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
 @router.get("/usage-logs", response_class=JSONResponse)
 async def api_list_signature_usage_logs(
     limit: int = 100,
