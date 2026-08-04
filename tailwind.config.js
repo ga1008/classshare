@@ -48,6 +48,9 @@ module.exports = {
           DEFAULT: 'hsl(var(--ls-card) / <alpha-value>)',
           foreground: 'hsl(var(--ls-card-foreground) / <alpha-value>)',
         },
+        success: 'hsl(var(--ls-success) / <alpha-value>)',
+        warning: 'hsl(var(--ls-warning) / <alpha-value>)',
+        info: 'hsl(var(--ls-info) / <alpha-value>)',
         brand: {
           50: '#eef2ff',
           100: '#e0e7ff',
