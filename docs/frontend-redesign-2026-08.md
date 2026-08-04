@@ -36,6 +36,7 @@
 | P2.5 ✅ | 全站基元并轨 | 遗留全局变量 `--primary-color/--danger-color/--text-primary` 派生自 `--ls-*`;`.btn-primary/outline/danger` 扁平化到令牌(去渐变),focus ring 走 `--ls-ring`——101 个模板的按钮一次统一,且教师页遗留按钮自动跟随青绿角色主题;dashboard 内联 style 硬编码色清零 |
 | P2.6 ✅ | 硬编码主色清扫 | 全文件 340 处硬编码主色/危险色(`rgba(79,70,229,α)`×212、`#4f46e5`×79、`rgba(239,68,68,α)`×48)一次性替换为 `hsl(var(--ls-primary/destructive) / α)`;表单控件 focus/选中/文件按钮 hover 随之全部令牌化 |
 | P2.7 ✅ | 色调/灰阶清扫 | 新增 `--ls-success/warning/info` 令牌(Tailwind 亦暴露 `tw-bg-success` 等);全文件 1341 处字面量并轨(色调 hex×92、rgba×347、灰阶 hex×902→`var(--gray-N)`),profile/classroom/消息中心 CSS 债务大头清除;脚本已保护 `--gray-*` 定义行与 url() 行 |
+| P2.8 ✅ | 圆角标度统一 | 1072 处 `border-radius: Npx` 字面量归入五档令牌标度(sm 8/md 11.2/lg 15.2/xl 18.4/新增 2xl 24/full);≤5px 细节与 >28px 特型保留;"生硬感"的圆角混乱(12 档并存)清除 |
 | P2 🔄 | Dashboard 全页 | 变量层已并轨 ✅:`--dashboard-*` 全部派生自 `--ls-*`,角色主题(教师青绿 `175 77% 26%`/学生靛蓝)下沉为 `.role-teacher` 的 `--ls-primary/ring/accent` 覆盖,shadcn 组件自动跟随角色色;卡片圆角统一到 `--ls-radius`。剩余:面板/列表标记迁 shadcn、删旧 CSS 段 |
 | P3 | 消息中心 + 个人资料页 | 已有 island 基础,改造成本最低 |
 | P4 | 课堂主页(classroom_main_v4) | 体量最大,拆板块分批 |
