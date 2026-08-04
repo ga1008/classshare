@@ -44,7 +44,7 @@
     .assignment-wrong-summary-link:focus-visible {
         border-color: rgba(14, 165, 233, 0.42);
         background: rgba(224, 242, 254, 0.96);
-        color: #075985;
+        color: hsl(var(--ls-info-strong));
         outline: none;
         transform: translateY(-1px);
     }
@@ -181,7 +181,7 @@
     }
 
     .classroom-page .teaching-timeline-segment-doc.is-exam {
-        background: rgba(245, 158, 11, 0.16);
+        background: hsl(var(--ls-warning) / 0.16);
         color: #92400e;
     }
 
@@ -202,7 +202,7 @@
         width: fit-content;
         padding: 4px 9px;
         border-radius: 999px;
-        background: rgba(245, 158, 11, 0.14);
+        background: hsl(var(--ls-warning) / 0.14);
         color: #92400e;
         font-size: 0.72rem;
         font-weight: 850;
@@ -228,7 +228,7 @@
         display: grid;
         gap: 8px;
         padding: 12px;
-        border: 1px solid rgba(245, 158, 11, 0.22);
+        border: 1px solid hsl(var(--ls-warning) / 0.22);
         border-radius: 8px;
         background: linear-gradient(135deg, rgba(255, 251, 235, 0.92), rgba(255, 255, 255, 0.92));
     }
@@ -245,12 +245,12 @@
     }
 
     .classroom-page .semester-gantt-row.is-academic_exam .semester-gantt-bar {
-        background: linear-gradient(90deg, #f59e0b, #14b8a6);
+        background: linear-gradient(90deg, hsl(var(--ls-warning)), hsl(var(--ls-teal-bright)));
     }
 
     .classroom-page .semester-todo-item.is-academic_exam .semester-todo-source-dot {
-        background: rgba(245, 158, 11, 0.18);
-        box-shadow: inset 0 0 0 6px #d97706;
+        background: hsl(var(--ls-warning) / 0.18);
+        box-shadow: inset 0 0 0 6px hsl(32 95% 44%);
     }
 
     .assignment-time-strip {
@@ -275,7 +275,7 @@
     }
 
     .assignment-time-strip__value {
-        color: #0f766e;
+        color: hsl(var(--ls-teal));
         font-size: 1rem;
         font-weight: 850;
         line-height: 1.1;
@@ -288,12 +288,12 @@
     }
 
     .assignment-time-strip.is-urgent {
-        border-color: rgba(245, 158, 11, 0.32);
+        border-color: hsl(var(--ls-warning) / 0.32);
         background: linear-gradient(135deg, rgba(255, 251, 235, 0.94), rgba(255, 247, 237, 0.88));
     }
 
     .assignment-time-strip.is-urgent .assignment-time-strip__value {
-        color: #b45309;
+        color: var(--warning-dark);
     }
 
     .assignment-time-strip.is-late {
@@ -303,7 +303,7 @@
 
     .assignment-time-strip.is-late .assignment-time-strip__value,
     .assignment-time-strip.is-expired .assignment-time-strip__value {
-        color: #dc2626;
+        color: var(--danger-hover);
     }
 
     .late-policy-toggle-row {
@@ -323,7 +323,7 @@
     .late-policy-mini-panel {
         margin: 0 0 var(--spacing-md);
         padding: 12px;
-        border: 1px solid rgba(245, 158, 11, 0.28);
+        border: 1px solid hsl(var(--ls-warning) / 0.28);
         border-radius: 8px;
         background: rgba(255, 251, 235, 0.72);
     }

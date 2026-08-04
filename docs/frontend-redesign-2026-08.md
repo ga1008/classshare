@@ -40,7 +40,7 @@
 | P2.9 ✅ | 字号标度统一 | 1308 处 font-size 字面量(25+ 档微差)归入六档令牌:`--text-2xs/xs/sm/md/rg` + 1rem;>1rem 标题保留;高频阴影 `0 14px 30px -28px …` ×12 去重为 `--shadow-xs`;阴影长尾经评估不做强行归档(单层改双层会成片改变景深) |
 | P2 🔄 | Dashboard 全页 | 变量层已并轨 ✅:`--dashboard-*` 全部派生自 `--ls-*`,角色主题(教师青绿 `175 77% 26%`/学生靛蓝)下沉为 `.role-teacher` 的 `--ls-primary/ring/accent` 覆盖,shadcn 组件自动跟随角色色;卡片圆角统一到 `--ls-radius`。剩余:面板/列表标记迁 shadcn、删旧 CSS 段 |
 | P3 🔄 | 消息中心 + 个人资料页 | R1 ✅:全站游离蓝清扫(blue-500/600 hex+rgba ×190 → `--ls-primary`,根治蓝紫混用);消息卡片补 hover 抬升+过渡,未读强调条并入主色。R2 ✅:蓝/天蓝浅深色阶残留 188 处清零(蓝家族色相校正为靛蓝、保 alpha/明度;sky-700/800 ×65 并入新令牌 `--ls-info-strong`),己方消息气泡渐变随之归正。待做:联系人列表/编辑器细节 |
-| P4 | 课堂主页(classroom_main_v4) | 体量最大,拆板块分批 |
+| P4 🔄 | 课堂主页(classroom_main_v4) | R1 审计+青绿令牌化 ✅:课堂域品牌色(teal-700/500)从未令牌化,新增 `--ls-teal/--ls-teal-bright` 并全局清扫 858 处(含红/绿/琥珀色阶归并到 --danger-hover/--success-dark/--warning-dark 等既有变量);模板内联 style 13 处同步。审计结论:结构/交互层无大缺陷(卡片有 hover、布局协调),剩余为 rgba 中性阴影与少量紫罗兰点缀(刻意保留)。待做:板块级 shadcn 标记迁移(低优先) |
 | P5 | 管理中心各子页 | 表格密集,引入 shadcn 数据表格模式 |
 | P6 ✅ | daisyUI/flowbite 退役 | 审计发现 `dui-`/flowbite 类在模板/JS/islands/编译产物中零使用(纯死重),已卸载两依赖(-14 包)并清理 tailwind.config,产物 -12KB;四页视觉回归无损 |
 | P7 | Tailwind 3 → 4 升级 | 依赖 P6;CSS-first 配置,`--ls-*` 迁入 `@theme` |
