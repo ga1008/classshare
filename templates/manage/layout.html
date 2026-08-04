@@ -960,32 +960,28 @@
                 });
             });
 
-            // Collapsible categories: default collapsed, the active group opens,
-            // user toggles persist across visits.
-            const GROUP_STORAGE_KEY = 'lanshare:manage-nav-open-groups';
+            // Collapsible categories, accordion style: on load only the active
+            // group is open (server-rendered is-open); opening a category slides
+            // the others closed so the rail never piles up.
+            try { localStorage.removeItem('lanshare:manage-nav-open-groups'); } catch (_) {}
             const groupEls = Array.from(nav?.querySelectorAll('.manage-nav-group[data-nav-group]') || []);
-            let openGroups = [];
-            try {
-                const parsed = JSON.parse(localStorage.getItem(GROUP_STORAGE_KEY) || '[]');
-                if (Array.isArray(parsed)) openGroups = parsed;
-            } catch (_) { /* private mode / bad payload */ }
-            const persistOpenGroups = () => {
-                try { localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(openGroups)); } catch (_) {}
-            };
             const syncGroupToggle = (group) => {
                 const isOpen = group.classList.contains('is-open');
                 group.querySelector('.manage-nav-group-toggle')?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
             };
             groupEls.forEach((group) => {
-                const key = group.dataset.navGroup;
-                if (openGroups.includes(key)) group.classList.add('is-open');
                 syncGroupToggle(group);
                 group.querySelector('.manage-nav-group-toggle')?.addEventListener('click', () => {
-                    const isOpen = group.classList.toggle('is-open');
-                    openGroups = isOpen
-                        ? Array.from(new Set([...openGroups, key]))
-                        : openGroups.filter((stored) => stored !== key);
-                    persistOpenGroups();
+                    const willOpen = !group.classList.contains('is-open');
+                    if (willOpen) {
+                        groupEls.forEach((other) => {
+                            if (other !== group && other.classList.contains('is-open')) {
+                                other.classList.remove('is-open');
+                                syncGroupToggle(other);
+                            }
+                        });
+                    }
+                    group.classList.toggle('is-open', willOpen);
                     syncGroupToggle(group);
                 });
             });
