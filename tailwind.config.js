@@ -7,7 +7,6 @@ module.exports = {
     './frontend/src/**/*.{ts,tsx}',
     './static/js/**/*.js',
     './static/css/ui-system.src.css',
-    './node_modules/flowbite/**/*.js',
   ],
   blocklist: ['[content_start:end_index]', '[a-z0-9_:-]'],
   corePlugins: {
@@ -89,38 +88,5 @@ module.exports = {
   },
   plugins: [
     require('tailwindcss-animate'),
-    require('flowbite/plugin'),
-    require('daisyui'),
   ],
-  daisyui: {
-    logs: false,
-    base: false,
-    prefix: 'dui-',
-    themes: [
-      {
-        lanshare: {
-          primary: '#4f46e5',
-          secondary: '#0891b2',
-          accent: '#10b981',
-          neutral: '#0f172a',
-          'base-100': '#ffffff',
-          'base-200': '#f1f5f9',
-          'base-300': '#e2e8f0',
-          info: '#0ea5e9',
-          success: '#10b981',
-          warning: '#f59e0b',
-          error: '#ef4444',
-          '--rounded-box': '0.7rem',
-          '--rounded-btn': '0.5rem',
-          '--rounded-badge': '9999px',
-          '--animation-btn': '0.18s',
-          '--animation-input': '0.18s',
-          '--btn-focus-scale': '0.99',
-          '--border-btn': '1px',
-          '--tab-border': '1px',
-          '--tab-radius': '0.5rem',
-        },
-      },
-    ],
-  },
 };

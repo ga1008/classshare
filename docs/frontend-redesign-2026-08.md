@@ -39,7 +39,7 @@
 | P3 | 消息中心 + 个人资料页 | 已有 island 基础,改造成本最低 |
 | P4 | 课堂主页(classroom_main_v4) | 体量最大,拆板块分批 |
 | P5 | 管理中心各子页 | 表格密集,引入 shadcn 数据表格模式 |
-| P6 | daisyUI/flowbite 退役 | 全局 grep 清零 `dui-`/flowbite 类后卸载依赖 |
+| P6 ✅ | daisyUI/flowbite 退役 | 审计发现 `dui-`/flowbite 类在模板/JS/islands/编译产物中零使用(纯死重),已卸载两依赖(-14 包)并清理 tailwind.config,产物 -12KB;四页视觉回归无损 |
 | P7 | Tailwind 3 → 4 升级 | 依赖 P6;CSS-first 配置,`--ls-*` 迁入 `@theme` |
 
 ## 四、验证方式
