@@ -1,5 +1,7 @@
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
 import { readIslandJsonPayload } from '@/lib/island-payload';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 type QuickAction = {
   mode: 'link' | 'button';
@@ -58,14 +60,25 @@ function normalizeQuickActionsPayload(value: unknown): QuickActionsPayload {
   };
 }
 
+const quickActionClass = cn(
+  'tw-flex tw-min-w-0 tw-gap-3 tw-rounded-lg tw-border tw-border-border tw-bg-card/80 tw-p-3.5',
+  'tw-text-left tw-text-foreground tw-no-underline tw-transition-all tw-duration-150',
+  'hover:tw--translate-y-px hover:tw-border-ring/40 hover:tw-bg-card hover:tw-shadow-soft-sm hover:tw-text-foreground hover:tw-no-underline',
+  'focus-visible:tw-outline-none focus-visible:tw-ring-2 focus-visible:tw-ring-ring/60 focus-visible:tw-ring-offset-1',
+);
+
 function QuickActionContent({ action }: { action: QuickAction }) {
   return (
     <>
-      <div>
-        <strong>{action.label}</strong>
-        <p>{action.description}</p>
+      <div className="tw-min-w-0 tw-flex-1">
+        <strong className="tw-mb-1 tw-block tw-text-sm tw-font-semibold tw-text-foreground">{action.label}</strong>
+        <p className="tw-m-0 tw-text-[0.85rem] tw-leading-relaxed tw-text-muted-foreground">{action.description}</p>
       </div>
-      {action.badge ? <span className="dashboard-quick-action__badge">{action.badge}</span> : null}
+      {action.badge ? (
+        <Badge variant="secondary" className="tw-shrink-0 tw-self-start tw-rounded-full tw-bg-accent tw-px-2.5 tw-py-1 tw-text-accent-foreground">
+          {action.badge}
+        </Badge>
+      ) : null}
     </>
   );
 }
@@ -73,7 +86,7 @@ function QuickActionContent({ action }: { action: QuickAction }) {
 function DashboardQuickAction({ action }: { action: QuickAction }) {
   if (action.mode === 'link') {
     return (
-      <a href={action.href || '#'} className="dashboard-quick-action">
+      <a href={action.href || '#'} className={quickActionClass}>
         <QuickActionContent action={action} />
       </a>
     );
@@ -82,11 +95,7 @@ function DashboardQuickAction({ action }: { action: QuickAction }) {
   const buttonAttrs = action.button_attrs || {};
 
   return (
-    <button
-      type="button"
-      className="dashboard-quick-action dashboard-quick-action--button"
-      {...buttonAttrs}
-    >
+    <button type="button" className={cn(quickActionClass, 'tw-w-full tw-cursor-pointer')} {...buttonAttrs}>
       <QuickActionContent action={action} />
     </button>
   );

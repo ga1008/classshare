@@ -6,6 +6,30 @@
     :root,
     :root[data-theme="lanshare"],
     [data-theme="lanshare"] {
+        /* Semantic design tokens (HSL channels) — single source for shadcn/ui
+           components via tailwind.config.js. New UI must consume these instead
+           of the legacy hex tokens below. */
+        --ls-background: 0 0% 100%;
+        --ls-foreground: 222 47% 11%;
+        --ls-card: 0 0% 100%;
+        --ls-card-foreground: 222 47% 11%;
+        --ls-popover: 0 0% 100%;
+        --ls-popover-foreground: 222 47% 11%;
+        --ls-primary: 243 75% 59%;
+        --ls-primary-foreground: 0 0% 100%;
+        --ls-secondary: 210 40% 96%;
+        --ls-secondary-foreground: 215 25% 27%;
+        --ls-muted: 210 40% 96%;
+        --ls-muted-foreground: 215 16% 47%;
+        --ls-accent: 227 100% 94%;
+        --ls-accent-foreground: 244 55% 41%;
+        --ls-destructive: 0 84% 60%;
+        --ls-destructive-foreground: 0 0% 100%;
+        --ls-border: 214 32% 91%;
+        --ls-input: 214 32% 91%;
+        --ls-ring: 243 75% 59%;
+        --ls-radius: 0.7rem;
+
         --primary-color: #4f46e5;
         --primary-hover: #4338ca;
         --primary-light: #e0e7ff;
