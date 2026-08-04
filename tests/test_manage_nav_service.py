@@ -70,7 +70,7 @@ class ManageNavServiceTests(unittest.TestCase):
         )
         self.assertEqual({5}, {len(label) for label in labels.values()})
 
-    def test_process_material_nav_surfaces_workflow_notes_and_badges(self):
+    def test_process_material_nav_keeps_notes_in_popover_not_rail(self):
         nav = build_manage_nav({"id": 1, "role": "teacher"}, "ordinary_grade_records", is_super_admin=False)
         process_items = [
             item
@@ -81,22 +81,55 @@ class ManageNavServiceTests(unittest.TestCase):
         ]
         by_key = {item["key"]: item for item in process_items}
 
+        # Workflow notes/badges stay in the registry (search + popover), but the
+        # sidebar renders titles only.
         self.assertEqual("Excel", by_key["ordinary_grade_records"]["nav_badge"])
         self.assertIn("学校模板 Excel", by_key["ordinary_grade_records"]["nav_note"])
-        self.assertEqual("Excel", by_key["exam_grade_records"]["nav_badge"])
         self.assertIn("已绑定试卷", by_key["exam_grade_records"]["nav_note"])
-        self.assertEqual("Excel", by_key["final_grade_transcripts"]["nav_badge"])
         self.assertIn("同步教务考试名单", by_key["final_grade_transcripts"]["nav_note"])
-        self.assertEqual("需试卷", by_key["grading_rubrics"]["nav_badge"])
-        self.assertIn("Word/PDF", by_key["assessment_plans"]["nav_note"])
-        self.assertIn("10项评分", by_key["teacher_evaluations"]["nav_badge"])
         self.assertIn("Excel", by_key["ordinary_grade_records"]["search_text"])
+        # The hover popover absorbs the workflow note.
+        self.assertIn("学校模板 Excel", by_key["ordinary_grade_records"]["help_text"])
+        self.assertIn("同步教务考试名单", by_key["final_grade_transcripts"]["help_text"])
 
         template = Path("templates/manage/layout.html").read_text(encoding="utf-8")
         self.assertIn("manage-nav-item__copy", template)
-        self.assertIn("manage-nav-item__note", template)
-        self.assertIn("manage-nav-item__badge", template)
+        self.assertNotIn("manage-nav-item__note", template)
+        self.assertNotIn("manage-nav-item__badge", template)
         self.assertIn("explain_attrs(item.label, item.help_text", template)
+        # Collapsible category rail contract.
+        self.assertIn("manage-nav-group-toggle", template)
+        self.assertIn("manage-nav-group-items", template)
+
+    def test_life_tips_lives_under_platform_admin(self):
+        life_tips = next(item for item in MANAGE_NAV_ITEMS if item.key == "life_tips")
+        self.assertEqual("admin", life_tips.domain)
+        self.assertEqual("平台管理", life_tips.group)
+        self.assertEqual("super_admin", life_tips.required_flag)
+
+        admin_nav = build_manage_nav({"id": 1, "role": "teacher"}, "life_tips", is_super_admin=True)
+        admin_keys = [
+            item["key"]
+            for group in admin_nav["admin_groups"]
+            for item in group["items"]
+        ]
+        self.assertIn("life_tips", admin_keys)
+        self.assertEqual("admin", admin_nav["active_domain"])
+
+        teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "workflow", is_super_admin=False)
+        teaching_keys = [
+            item["key"]
+            for domain in teacher_nav["domains"]
+            for group in domain["groups"]
+            for item in group["items"]
+        ]
+        self.assertNotIn("life_tips", teaching_keys)
+
+    def test_smart_classroom_and_course_schedule_live_under_academic(self):
+        by_key = {item.key: item for item in MANAGE_NAV_ITEMS}
+        self.assertEqual("academic", by_key["system_smart_classroom_integrations"].domain)
+        self.assertEqual("数据同步", by_key["system_smart_classroom_integrations"].group)
+        self.assertEqual("academic", by_key["course_schedule"].domain)
 
     def test_manage_nav_filters_admin_items_and_marks_active_domain(self):
         teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "classrooms", is_super_admin=False)

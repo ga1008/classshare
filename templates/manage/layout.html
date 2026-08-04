@@ -158,13 +158,92 @@
         .manage-nav-group { margin-top: 4px; }
         .manage-nav-group.is-empty { display: none; }
 
-        .manage-nav-section-title {
-            padding: 12px 12px 5px;
-            font-size: 0.68rem;
+        /* Collapsible category header — sticks to the top of the scrolling rail. */
+        .manage-nav-group-toggle {
+            position: sticky;
+            top: 0;
+            z-index: 3;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 9px 12px 8px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 62%, rgba(255, 255, 255, 0.86));
+            backdrop-filter: blur(6px);
+            font: inherit;
+            font-size: 0.7rem;
             font-weight: 800;
             color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.09em;
+            text-align: left;
+            cursor: pointer;
+            transition: color var(--transition-fast), background var(--transition-fast);
+        }
+
+        .manage-nav-group-toggle:hover {
+            color: var(--manage-domain-accent, var(--primary-color));
+            background: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.07);
+        }
+
+        .manage-nav-group-toggle__label { flex: 0 1 auto; min-width: 0; }
+
+        .manage-nav-group-toggle__count {
+            flex: 0 0 auto;
+            min-width: 18px;
+            padding: 1px 5px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.16);
+            color: var(--text-muted);
+            font-size: 0.62rem;
+            font-weight: 800;
+            text-align: center;
+            letter-spacing: 0;
+            transition: background var(--transition-fast), color var(--transition-fast);
+        }
+
+        .manage-nav-group.is-open .manage-nav-group-toggle__count,
+        .manage-nav-group.is-active .manage-nav-group-toggle__count {
+            background: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.14);
+            color: var(--manage-domain-accent-dark, var(--primary-color));
+        }
+
+        .manage-nav-group-toggle__chevron {
+            flex: 0 0 auto;
+            margin-left: auto;
+            transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .manage-nav-group.is-open .manage-nav-group-toggle__chevron { transform: rotate(180deg); }
+
+        .manage-nav-group.is-active .manage-nav-group-toggle {
+            color: var(--manage-domain-accent-dark, var(--primary-color));
+        }
+
+        /* Slide open/close via the grid-rows trick (animatable auto height). */
+        .manage-nav-group-items {
+            display: grid;
+            grid-template-rows: 0fr;
+            transition: grid-template-rows 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .manage-nav-group-items-inner {
+            min-height: 0;
+            overflow: hidden;
+            display: grid;
+            gap: 1px;
+        }
+
+        .manage-nav-group.is-open .manage-nav-group-items,
+        .manage-nav.is-searching .manage-nav-group-items {
+            grid-template-rows: 1fr;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .manage-nav-group-items,
+            .manage-nav-group-toggle__chevron { transition: none; }
         }
 
         .manage-nav-item {
@@ -201,43 +280,11 @@
             gap: 2px;
         }
 
-        .manage-nav-item__label-row {
-            min-width: 0;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
         .manage-nav-item__label {
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-        }
-
-        .manage-nav-item__badge {
-            flex: 0 0 auto;
-            max-width: 82px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            padding: 2px 6px;
-            border-radius: 999px;
-            background: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.11);
-            color: var(--manage-domain-accent-dark, var(--primary-color));
-            font-size: 0.66rem;
-            font-weight: 800;
-        }
-
-        .manage-nav-item__note {
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            color: var(--text-muted);
-            font-size: 0.72rem;
-            line-height: 1.35;
-            font-weight: 560;
         }
 
         .manage-nav-item:hover {
@@ -275,7 +322,13 @@
         }
 
         /* Admin group: amber accent so privileged tools read as distinct. */
-        .manage-nav-group--admin .manage-nav-section-title { color: #b45309; }
+        .manage-nav-group--admin .manage-nav-group-toggle { color: #b45309; }
+        .manage-nav-group--admin .manage-nav-group-toggle:hover { background: rgba(245, 158, 11, 0.09); }
+        .manage-nav-group--admin.is-open .manage-nav-group-toggle__count,
+        .manage-nav-group--admin.is-active .manage-nav-group-toggle__count {
+            background: rgba(245, 158, 11, 0.16);
+            color: #b45309;
+        }
         .manage-nav-group--admin .manage-nav-item.active {
             background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(217, 119, 6, 0.1));
             color: #b45309;
@@ -346,11 +399,13 @@
         .manage-sidebar.is-collapsed .manage-brand { justify-content: center; padding-left: 0; padding-right: 0; }
         .manage-sidebar.is-collapsed .manage-brand__copy,
         .manage-sidebar.is-collapsed .manage-nav-search,
-        .manage-sidebar.is-collapsed .manage-nav-section-title,
+        .manage-sidebar.is-collapsed .manage-nav-group-toggle,
         .manage-sidebar.is-collapsed .manage-nav-item__copy,
         .manage-sidebar.is-collapsed .manage-user-info,
         .manage-sidebar.is-collapsed .manage-user .btn,
         .manage-sidebar.is-collapsed .manage-nav-empty { display: none; }
+        /* Icon rail keeps every destination reachable: force groups open. */
+        .manage-sidebar.is-collapsed .manage-nav-group-items { grid-template-rows: 1fr; }
         .manage-sidebar.is-collapsed .manage-sidebar-collapse { transform: rotate(180deg); margin-left: 0; }
         .manage-sidebar.is-collapsed .manage-brand__mark { display: none; }
         .manage-sidebar.is-collapsed .manage-nav { padding-left: 0; padding-right: 0; }
@@ -512,6 +567,26 @@
             max-width: none;
             padding: 0;
             margin: 0;
+        }
+
+        /* Page float-in / float-out transition (MPA-friendly). */
+        @media (prefers-reduced-motion: no-preference) {
+            .manage-content:not(.is-embedded) {
+                animation: managePageEnter 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+            }
+
+            .manage-main.is-leaving .manage-content {
+                animation: managePageLeave 0.16s ease-in forwards;
+            }
+        }
+
+        @keyframes managePageEnter {
+            from { opacity: 0; transform: translateY(16px) scale(0.995); }
+            to { opacity: 1; transform: none; }
+        }
+
+        @keyframes managePageLeave {
+            to { opacity: 0; transform: translateY(-10px); }
         }
 
         .manage-embedded-root {
@@ -680,26 +755,30 @@
                     {% if not domain.active %}hidden{% endif %}
                 >
                     {% for group in domain.groups %}
-                    <div class="manage-nav-group manage-nav-group--{{ domain.key }}{% if group.active %} is-active{% endif %}">
-                        <div class="manage-nav-section-title">{{ group.label }}</div>
-                        {% for item in group['items'] %}
-                        <a
-                            href="{{ item.href }}"
-                            class="manage-nav-item{% if item.active %} active{% endif %}"
-                            data-nav-text="{{ item.search_text }}"
-                            data-nav-domain="{{ item.domain }}"
-                            {{ explain_attrs(item.label, item.help_text, placement='right') }}
-                        >
-                            <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
-                            <span class="manage-nav-item__copy">
-                                <span class="manage-nav-item__label-row">
-                                    <span class="manage-nav-item__label">{{ item.label }}</span>
-                                    {% if item.nav_badge %}<span class="manage-nav-item__badge">{{ item.nav_badge }}</span>{% endif %}
-                                </span>
-                                {% if item.nav_note %}<span class="manage-nav-item__note">{{ item.nav_note }}</span>{% endif %}
-                            </span>
-                        </a>
-                        {% endfor %}
+                    <div class="manage-nav-group manage-nav-group--{{ domain.key }}{% if group.active %} is-active is-open{% endif %}" data-nav-group="{{ domain.key }}:{{ group.label }}">
+                        <button type="button" class="manage-nav-group-toggle" aria-expanded="{{ 'true' if group.active else 'false' }}">
+                            <span class="manage-nav-group-toggle__label">{{ group.label }}</span>
+                            <span class="manage-nav-group-toggle__count">{{ group['items']|length }}</span>
+                            <svg class="manage-nav-group-toggle__chevron" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+                        </button>
+                        <div class="manage-nav-group-items">
+                            <div class="manage-nav-group-items-inner">
+                                {% for item in group['items'] %}
+                                <a
+                                    href="{{ item.href }}"
+                                    class="manage-nav-item{% if item.active %} active{% endif %}"
+                                    data-nav-text="{{ item.search_text }}"
+                                    data-nav-domain="{{ item.domain }}"
+                                    {{ explain_attrs(item.label, item.help_text, placement='right') }}
+                                >
+                                    <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
+                                    <span class="manage-nav-item__copy">
+                                        <span class="manage-nav-item__label">{{ item.label }}</span>
+                                    </span>
+                                </a>
+                                {% endfor %}
+                            </div>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
@@ -708,26 +787,30 @@
                 {% if manage_nav.admin_groups %}
                 <div class="manage-nav-admin" data-manage-domain="admin">
                     {% for group in manage_nav.admin_groups %}
-                    <div class="manage-nav-group manage-nav-group--admin{% if group.active %} is-active{% endif %}">
-                        <div class="manage-nav-section-title">{{ group.label }}</div>
-                        {% for item in group['items'] %}
-                        <a
-                            href="{{ item.href }}"
-                            class="manage-nav-item{% if item.active %} active{% endif %}"
-                            data-nav-text="{{ item.search_text }}"
-                            data-nav-domain="{{ item.domain }}"
-                            {{ explain_attrs(item.label, item.help_text, placement='right') }}
-                        >
-                            <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
-                            <span class="manage-nav-item__copy">
-                                <span class="manage-nav-item__label-row">
-                                    <span class="manage-nav-item__label">{{ item.label }}</span>
-                                    {% if item.nav_badge %}<span class="manage-nav-item__badge">{{ item.nav_badge }}</span>{% endif %}
-                                </span>
-                                {% if item.nav_note %}<span class="manage-nav-item__note">{{ item.nav_note }}</span>{% endif %}
-                            </span>
-                        </a>
-                        {% endfor %}
+                    <div class="manage-nav-group manage-nav-group--admin{% if group.active %} is-active is-open{% endif %}" data-nav-group="admin:{{ group.label }}">
+                        <button type="button" class="manage-nav-group-toggle" aria-expanded="{{ 'true' if group.active else 'false' }}">
+                            <span class="manage-nav-group-toggle__label">{{ group.label }}</span>
+                            <span class="manage-nav-group-toggle__count">{{ group['items']|length }}</span>
+                            <svg class="manage-nav-group-toggle__chevron" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+                        </button>
+                        <div class="manage-nav-group-items">
+                            <div class="manage-nav-group-items-inner">
+                                {% for item in group['items'] %}
+                                <a
+                                    href="{{ item.href }}"
+                                    class="manage-nav-item{% if item.active %} active{% endif %}"
+                                    data-nav-text="{{ item.search_text }}"
+                                    data-nav-domain="{{ item.domain }}"
+                                    {{ explain_attrs(item.label, item.help_text, placement='right') }}
+                                >
+                                    <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
+                                    <span class="manage-nav-item__copy">
+                                        <span class="manage-nav-item__label">{{ item.label }}</span>
+                                    </span>
+                                </a>
+                                {% endfor %}
+                            </div>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
@@ -774,13 +857,13 @@
                             <small>教师管理中心</small>
                         </span>
                     </a>
-                    <div class="manage-topbar-page" aria-label="当前管理页面">
+                    <div class="manage-topbar-page ls-anim-rise" aria-label="当前管理页面">
                         <span>当前页面</span>
                         <strong>{{ page_title }}</strong>
                     </div>
                 </div>
                 <nav class="navbar-user app-topbar-nav manage-topbar-nav" aria-label="管理中心入口">
-                    <div class="app-topbar-actions app-topbar-actions--primary manage-context-actions" aria-label="本页常用操作">
+                    <div class="app-topbar-actions app-topbar-actions--primary manage-context-actions ls-anim-stagger" aria-label="本页常用操作">
                         {% block header_actions %}
                         {{ topbar_action('开设课堂', '新学期入口', 'plus', href=manage_nav.hrefs.offerings, variant='solid', tone='teal') }}
                         {% endblock %}
@@ -868,11 +951,42 @@
             domainTabs.forEach((tab) => {
                 tab.addEventListener('click', () => {
                     if (search) search.value = '';
+                    nav?.classList.remove('is-searching');
                     setActiveDomain(tab.dataset.domainTab);
                     nav?.querySelectorAll('.manage-nav-item').forEach((item) => { item.style.display = ''; });
                     nav?.querySelectorAll('.manage-nav-group').forEach((group) => group.classList.remove('is-empty'));
                     empty?.classList.remove('is-visible');
                     centerActiveManageNavItem();
+                });
+            });
+
+            // Collapsible categories: default collapsed, the active group opens,
+            // user toggles persist across visits.
+            const GROUP_STORAGE_KEY = 'lanshare:manage-nav-open-groups';
+            const groupEls = Array.from(nav?.querySelectorAll('.manage-nav-group[data-nav-group]') || []);
+            let openGroups = [];
+            try {
+                const parsed = JSON.parse(localStorage.getItem(GROUP_STORAGE_KEY) || '[]');
+                if (Array.isArray(parsed)) openGroups = parsed;
+            } catch (_) { /* private mode / bad payload */ }
+            const persistOpenGroups = () => {
+                try { localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(openGroups)); } catch (_) {}
+            };
+            const syncGroupToggle = (group) => {
+                const isOpen = group.classList.contains('is-open');
+                group.querySelector('.manage-nav-group-toggle')?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            };
+            groupEls.forEach((group) => {
+                const key = group.dataset.navGroup;
+                if (openGroups.includes(key)) group.classList.add('is-open');
+                syncGroupToggle(group);
+                group.querySelector('.manage-nav-group-toggle')?.addEventListener('click', () => {
+                    const isOpen = group.classList.toggle('is-open');
+                    openGroups = isOpen
+                        ? Array.from(new Set([...openGroups, key]))
+                        : openGroups.filter((stored) => stored !== key);
+                    persistOpenGroups();
+                    syncGroupToggle(group);
                 });
             });
 
@@ -896,6 +1010,8 @@
                 const groups = Array.from(nav.querySelectorAll('.manage-nav-group'));
                 const apply = () => {
                     const q = search.value.trim().toLowerCase();
+                    // Searching temporarily slides every category open.
+                    nav.classList.toggle('is-searching', Boolean(q));
                     let anyVisible = false;
                     const visibleDomains = new Set();
                     items.forEach((item) => {
@@ -988,6 +1104,27 @@
                 }
             }
         };
+
+        // Float-out transition when navigating via the sidebar or topbar actions.
+        const REDUCED_MOTION_QUERY = window.matchMedia('(prefers-reduced-motion: reduce)');
+        document.addEventListener('click', (event) => {
+            if (event.defaultPrevented || event.button !== 0) return;
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            if (REDUCED_MOTION_QUERY.matches) return;
+            const link = event.target.closest('.manage-nav-item[href], .manage-context-actions a[href]');
+            if (!link) return;
+            const href = link.getAttribute('href') || '';
+            if (!href || href.startsWith('#') || link.target === '_blank') return;
+            if (href === window.location.pathname || href === `${window.location.pathname}${window.location.search}`) return;
+            event.preventDefault();
+            document.querySelector('.manage-main')?.classList.add('is-leaving');
+            window.setTimeout(() => { window.location.href = href; }, 150);
+        });
+
+        // bfcache restore: never leave the page stuck in its exit state.
+        window.addEventListener('pageshow', () => {
+            document.querySelector('.manage-main')?.classList.remove('is-leaving');
+        });
 
         document.addEventListener('click', (event) => {
             const sidebar = document.getElementById('sidebar');

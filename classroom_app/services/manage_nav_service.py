@@ -168,16 +168,6 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/polls",),
     ),
     ManageNavItem(
-        key="life_tips",
-        domain="teaching",
-        group="内容资产",
-        label="一言提示",
-        icon="message-circle",
-        href="/manage/teaching/life-tips",
-        search_text="一言 提示 人生提示 登录提示 life tip loading",
-        ai_hint="一言提示：管理学生/教师登录加载屏上的一句话提示——审核 AI 从公文挖掘的条目、手工新增本校/本系提示、下架劣句、查看有用/无感反馈。",
-    ),
-    ManageNavItem(
         key="materials",
         domain="teaching",
         group="内容资产",
@@ -286,27 +276,6 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         nav_badge="AI分析",
     ),
     ManageNavItem(
-        key="course_schedule",
-        domain="teaching",
-        group="课堂工具",
-        label="课时统计",
-        icon="calendar",
-        href="/manage/teaching/course-schedule",
-        search_text="课时统计 课程表 课表 周课表 课时 schedule timetable hours",
-        ai_hint="课时统计：同步智慧课堂教师课程表，按学年学期、课程、班级查询，3D 周课表展示并统计课程课时与学期课时。",
-    ),
-    ManageNavItem(
-        key="system_smart_classroom_integrations",
-        domain="teaching",
-        group="课堂工具",
-        label="智慧课堂",
-        icon="bar-chart",
-        href="/manage/teaching/smart-classroom-integrations",
-        search_text="智慧课堂 点名 签到 smart classroom attendance",
-        ai_hint="智慧课堂：配置智慧课堂点名、签到和课堂考勤同步能力。",
-        legacy_hrefs=("/manage/system/smart-classroom-integrations",),
-    ),
-    ManageNavItem(
         key="academic_overview",
         domain="academic",
         group="域首页",
@@ -328,14 +297,35 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/system/academic-integrations",),
     ),
     ManageNavItem(
+        key="system_smart_classroom_integrations",
+        domain="academic",
+        group="数据同步",
+        label="智慧课堂",
+        icon="bar-chart",
+        href="/manage/teaching/smart-classroom-integrations",
+        search_text="智慧课堂 点名 签到 smart classroom attendance",
+        ai_hint="智慧课堂：配置智慧课堂点名、签到和课堂考勤同步能力。",
+        legacy_hrefs=("/manage/system/smart-classroom-integrations",),
+    ),
+    ManageNavItem(
+        key="course_schedule",
+        domain="academic",
+        group="课表课时",
+        label="课时统计",
+        icon="calendar",
+        href="/manage/teaching/course-schedule",
+        search_text="课时统计 课程表 课表 周课表 课时 schedule timetable hours",
+        ai_hint="课时统计：同步智慧课堂教师课程表，按学年学期、课程、班级查询，3D 周课表展示并统计课程课时与学期课时。",
+    ),
+    ManageNavItem(
         key="classrooms",
         domain="academic",
         group="场地",
-        label="教室与空闲教室",
+        label="教室查询",
         icon="building",
         href="/manage/academic/classrooms",
-        search_text="教室 教学场地 空闲教室 classroom room",
-        ai_hint="教室与空闲教室：查询教学场地、同步教室数据并筛选空闲教室。",
+        search_text="教室查询 教室 教学场地 空闲教室 classroom room",
+        ai_hint="教室查询：查询教学场地、同步教室数据并筛选空闲教室。",
         legacy_hrefs=("/manage/classrooms",),
     ),
     ManageNavItem(
@@ -385,21 +375,21 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         key="teacher_credentials",
         domain="teacher",
         group="账号与安全",
-        label="我的对接凭据",
+        label="对接凭据",
         icon="link",
         href="/manage/me/credentials",
         search_text="对接凭据 教务 智慧课堂 公文通 账号 credential",
-        ai_hint="我的对接凭据：集中查看教师个人教务、智慧课堂和公文通账号凭据状态。",
+        ai_hint="对接凭据：集中查看教师个人教务、智慧课堂和公文通账号凭据状态。",
     ),
     ManageNavItem(
         key="system_password_resets",
         domain="teacher",
         group="账号与安全",
-        label="学生找回申请",
+        label="账号找回",
         icon="lock",
         href="/manage/me/password-resets",
-        search_text="找回申请 密码 学生 password reset",
-        ai_hint="学生找回申请：教师审核和处理自己班级学生的账号找回事务。",
+        search_text="账号找回 找回申请 密码 学生 password reset",
+        ai_hint="账号找回：教师审核和处理自己班级学生的账号找回事务。",
         legacy_hrefs=("/manage/system/password-resets",),
     ),
     ManageNavItem(
@@ -425,6 +415,17 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         required_flag="super_admin",
     ),
     ManageNavItem(
+        key="life_tips",
+        domain=MANAGE_ADMIN_DOMAIN,
+        group="平台管理",
+        label="一言提示",
+        icon="message-circle",
+        href="/manage/teaching/life-tips",
+        search_text="一言 提示 人生提示 登录提示 life tip loading",
+        ai_hint="一言提示：管理学生/教师登录加载屏上的一句话提示——审核 AI 从公文挖掘的条目、手工新增本校/本系提示、下架劣句、查看有用/无感反馈。",
+        required_flag="super_admin",
+    ),
+    ManageNavItem(
         key="system_feedback",
         domain=MANAGE_ADMIN_DOMAIN,
         group="平台管理",
@@ -439,11 +440,11 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         key="system_blog_crawler",
         domain=MANAGE_ADMIN_DOMAIN,
         group="平台管理",
-        label="AI博客管家",
+        label="博客管家",
         icon="bot",
         href="/manage/system/blog-crawler",
-        search_text="AI博客管家 爬虫 新闻 blog crawler",
-        ai_hint="AI博客管家：超管教师维护新闻爬取、摘要和博客发布队列。",
+        search_text="博客管家 AI博客管家 爬虫 新闻 blog crawler",
+        ai_hint="博客管家：超管教师用 AI 维护新闻爬取、摘要和博客发布队列。",
         required_flag="super_admin",
     ),
     ManageNavItem(
@@ -515,7 +516,12 @@ def _fallback_help_text(item: ManageNavItem) -> str:
     # ai_hint keeps a "标签：" prefix for AI context; the popover already shows
     # the label as its title, so strip the duplicate.
     prefix = f"{item.label}："
-    return hint[len(prefix):] if hint.startswith(prefix) else hint
+    base = hint[len(prefix):] if hint.startswith(prefix) else hint
+    # The sidebar renders titles only; workflow notes surface in the popover.
+    note = (item.nav_note or "").strip()
+    if note and note not in base:
+        return f"{base}（{note}）" if base else note
+    return base
 
 
 def _item_to_template_dict(item: ManageNavItem, *, active_key: str) -> dict[str, Any]:
