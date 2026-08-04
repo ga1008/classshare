@@ -25185,22 +25185,24 @@ body.has-chat-image-preview-open {
 
 /* --- Source: static/css/dashboard.css --- */
 .dashboard-page {
-    --dashboard-accent: #4f46e5;
-    --dashboard-accent-rgb: 79, 70, 229;
+    /* Derived from the --ls-* semantic token layer (see docs/frontend-redesign-2026-08.md).
+       Role accents are expressed as --ls-primary overrides below so shadcn components
+       inside the dashboard follow the role color automatically. */
+    --dashboard-accent: hsl(var(--ls-primary));
     --dashboard-accent-2: #0f766e;
     --dashboard-accent-2-rgb: 15, 118, 110;
     --dashboard-warm: #b45309;
     --dashboard-warm-rgb: 180, 83, 9;
-    --dashboard-ink: #111827;
+    --dashboard-ink: hsl(var(--ls-foreground));
     --dashboard-paper: rgba(255, 255, 255, 0.84);
     --dashboard-paper-strong: rgba(255, 255, 255, 0.96);
-    --dashboard-border: rgba(100, 116, 139, 0.18);
-    --dashboard-border-strong: rgba(79, 70, 229, 0.3);
+    --dashboard-border: hsl(var(--ls-muted-foreground) / 0.18);
+    --dashboard-border-strong: hsl(var(--ls-primary) / 0.3);
     --dashboard-shadow-soft: 0 18px 42px -34px rgba(15, 23, 42, 0.42);
     --dashboard-shadow-lift: 0 22px 50px -34px rgba(15, 23, 42, 0.48);
-    --dashboard-radius-panel: 18px;
-    --dashboard-radius-card: 8px;
-    --dashboard-focus-ring: 0 0 0 3px rgba(var(--dashboard-accent-rgb), 0.16);
+    --dashboard-radius-panel: calc(var(--ls-radius) + 0.4rem);
+    --dashboard-radius-card: var(--ls-radius);
+    --dashboard-focus-ring: 0 0 0 3px hsl(var(--ls-primary) / 0.16);
     background:
         linear-gradient(90deg, rgba(255, 255, 255, 0.16) 1px, transparent 1px),
         linear-gradient(180deg, #f7f9fc 0%, #eef4f8 46%, #f7f3ec 100%);
@@ -25209,16 +25211,12 @@ body.has-chat-image-preview-open {
 }
 
 .dashboard-page.role-teacher {
-    --dashboard-accent: #0f766e;
-    --dashboard-accent-rgb: 15, 118, 110;
+    --ls-primary: 175 77% 26%;
+    --ls-ring: 175 77% 26%;
+    --ls-accent: 167 85% 89%;
+    --ls-accent-foreground: 176 69% 22%;
     --dashboard-accent-2: #4f46e5;
     --dashboard-accent-2-rgb: 79, 70, 229;
-    --dashboard-border-strong: rgba(15, 118, 110, 0.3);
-    --dashboard-focus-ring: 0 0 0 3px rgba(15, 118, 110, 0.16);
-}
-
-.dashboard-page.role-student {
-    --dashboard-accent: #4f46e5;
 }
 
 .dashboard-page,
@@ -25287,7 +25285,7 @@ body.has-chat-image-preview-open {
     inset: 0;
     pointer-events: none;
     background:
-        linear-gradient(120deg, rgba(var(--dashboard-accent-rgb), 0.09), transparent 36%),
+        linear-gradient(120deg, hsl(var(--ls-primary) / 0.09), transparent 36%),
         linear-gradient(300deg, rgba(var(--dashboard-warm-rgb), 0.08), transparent 42%);
     opacity: 0.86;
 }
@@ -25432,7 +25430,7 @@ body.has-chat-image-preview-open {
     border-radius: 12px;
     background:
         linear-gradient(155deg, rgba(17, 24, 39, 0.96), rgba(38, 38, 38, 0.9)),
-        linear-gradient(90deg, rgba(var(--dashboard-accent-rgb), 0.34), rgba(var(--dashboard-accent-2-rgb), 0.2));
+        linear-gradient(90deg, hsl(var(--ls-primary) / 0.34), rgba(var(--dashboard-accent-2-rgb), 0.2));
     color: var(--text-inverse);
     box-shadow: 0 24px 44px -30px rgba(15, 23, 42, 0.62);
 }
@@ -26269,7 +26267,7 @@ body.has-chat-image-preview-open {
 .dashboard-group-section {
     min-width: 0;
     border: 1px solid rgba(100, 116, 139, 0.2);
-    border-left: 4px solid rgba(var(--dashboard-accent-rgb), 0.52);
+    border-left: 4px solid hsl(var(--ls-primary) / 0.52);
     border-radius: var(--dashboard-radius-card);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(248, 250, 252, 0.64)),
@@ -26369,7 +26367,7 @@ body.has-chat-image-preview-open {
     min-height: 28px;
     padding: 0 10px;
     border-radius: 999px;
-    background: rgba(var(--dashboard-accent-rgb), 0.1);
+    background: hsl(var(--ls-primary) / 0.1);
     color: var(--dashboard-accent);
     font-size: 0.78rem;
     font-weight: 750;
@@ -27167,7 +27165,7 @@ body.has-chat-image-preview-open {
     justify-content: center;
     padding: 0 9px;
     border-radius: 999px;
-    background: rgba(var(--dashboard-accent-rgb), 0.12);
+    background: hsl(var(--ls-primary) / 0.12);
     color: var(--dashboard-accent);
     font-size: 0.78rem;
 }
@@ -27274,7 +27272,7 @@ body.has-chat-image-preview-open {
     height: 64px;
     margin-bottom: 14px;
     border-radius: 50%;
-    background: rgba(var(--dashboard-accent-rgb), 0.1);
+    background: hsl(var(--ls-primary) / 0.1);
     color: var(--dashboard-accent);
 }
 
@@ -27298,7 +27296,7 @@ body.has-chat-image-preview-open {
     border-color: var(--dashboard-border);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.96)),
-        linear-gradient(120deg, rgba(var(--dashboard-accent-rgb), 0.06), transparent 44%);
+        linear-gradient(120deg, hsl(var(--ls-primary) / 0.06), transparent 44%);
     box-shadow: var(--dashboard-shadow-soft);
 }
 
@@ -45028,9 +45026,9 @@ body.has-teaching-session-modal {
 .dashboard-agenda__today-btn {
     flex: 0 0 auto;
     padding: 8px 16px;
-    border: 1px solid rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.32);
+    border: 1px solid hsl(var(--ls-primary) / 0.32);
     border-radius: 999px;
-    background: rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.08);
+    background: hsl(var(--ls-primary) / 0.08);
     color: var(--dashboard-accent, #2563eb);
     font-weight: 700;
     font-size: 0.86rem;
@@ -45039,7 +45037,7 @@ body.has-teaching-session-modal {
 }
 
 .dashboard-agenda__today-btn:hover {
-    background: rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.16);
+    background: hsl(var(--ls-primary) / 0.16);
 }
 
 .dashboard-agenda__today-btn:active {
@@ -45125,7 +45123,7 @@ body.has-teaching-session-modal {
     border-radius: 50%;
     background: var(--dashboard-accent, #2563eb);
     border: 3px solid var(--dashboard-paper, #fff);
-    box-shadow: 0 0 0 4px rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.16);
+    box-shadow: 0 0 0 4px hsl(var(--ls-primary) / 0.16);
 }
 
 .dashboard-agenda-day {
@@ -45150,7 +45148,7 @@ body.has-teaching-session-modal {
 
 .dashboard-agenda-day.is-current .dashboard-agenda-day__marker {
     background: var(--dashboard-accent, #2563eb);
-    box-shadow: 0 0 0 4px rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.18);
+    box-shadow: 0 0 0 4px hsl(var(--ls-primary) / 0.18);
 }
 
 .dashboard-agenda-day.is-future .dashboard-agenda-day__marker {
@@ -45186,7 +45184,7 @@ body.has-teaching-session-modal {
 }
 
 .dashboard-agenda-day__rel.is-current {
-    background: rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.14);
+    background: hsl(var(--ls-primary) / 0.14);
     color: var(--dashboard-accent, #2563eb);
 }
 
@@ -45276,7 +45274,7 @@ body.has-teaching-session-modal {
     flex: 0 0 auto;
     padding: 4px 12px;
     border-radius: 999px;
-    background: rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.1);
+    background: hsl(var(--ls-primary) / 0.1);
     color: var(--dashboard-accent, #2563eb);
     font-size: 0.78rem;
     font-weight: 700;
@@ -45292,7 +45290,7 @@ body.has-teaching-session-modal {
 }
 
 .dashboard-agenda-session.is-current {
-    border-color: rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.45);
+    border-color: hsl(var(--ls-primary) / 0.45);
     box-shadow: inset 3px 0 0 var(--dashboard-accent, #2563eb);
 }
 
@@ -45311,8 +45309,8 @@ body.has-teaching-session-modal {
 }
 
 @keyframes agendaPing {
-    0%, 100% { box-shadow: 0 0 0 4px rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.18); }
-    40% { box-shadow: 0 0 0 9px rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.28); }
+    0%, 100% { box-shadow: 0 0 0 4px hsl(var(--ls-primary) / 0.18); }
+    40% { box-shadow: 0 0 0 9px hsl(var(--ls-primary) / 0.28); }
 }
 
 @media (max-width: 640px) {
@@ -45386,7 +45384,7 @@ body.has-teaching-session-modal {
 }
 
 .dashboard-agenda-session__kind.kind-class {
-    background: rgba(var(--dashboard-accent-rgb, 37, 99, 235), 0.12);
+    background: hsl(var(--ls-primary) / 0.12);
     color: var(--dashboard-accent, #2563eb);
 }
 
@@ -46508,9 +46506,9 @@ body.has-teaching-session-modal {
 .dashboard-empty-search__chip {
     min-height: 32px;
     padding: 0 12px;
-    border: 1px solid rgba(var(--dashboard-accent-rgb), 0.22);
+    border: 1px solid hsl(var(--ls-primary) / 0.22);
     border-radius: var(--dash-radius-chip, 999px);
-    background: rgba(var(--dashboard-accent-rgb), 0.08);
+    background: hsl(var(--ls-primary) / 0.08);
     color: var(--dashboard-accent);
     font-weight: 750;
     cursor: pointer;
@@ -46578,7 +46576,7 @@ body.has-teaching-session-modal {
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: rgba(var(--dashboard-accent-rgb), 0.1);
+    background: hsl(var(--ls-primary) / 0.1);
     color: var(--dashboard-accent);
     font-weight: 800;
 }

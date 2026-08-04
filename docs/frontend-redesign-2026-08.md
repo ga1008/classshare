@@ -33,7 +33,7 @@
 | 期 | 范围 | 说明 |
 |---|---|---|
 | P1 ✅ | 基座 + 试点 | 令牌层、shadcn、quick-actions |
-| P2 | Dashboard 全页 | 教师/学生首页面板卡片、列表、管理中心入口统一化 |
+| P2 🔄 | Dashboard 全页 | 变量层已并轨 ✅:`--dashboard-*` 全部派生自 `--ls-*`,角色主题(教师青绿 `175 77% 26%`/学生靛蓝)下沉为 `.role-teacher` 的 `--ls-primary/ring/accent` 覆盖,shadcn 组件自动跟随角色色;卡片圆角统一到 `--ls-radius`。剩余:面板/列表标记迁 shadcn、删旧 CSS 段 |
 | P3 | 消息中心 + 个人资料页 | 已有 island 基础,改造成本最低 |
 | P4 | 课堂主页(classroom_main_v4) | 体量最大,拆板块分批 |
 | P5 | 管理中心各子页 | 表格密集,引入 shadcn 数据表格模式 |
