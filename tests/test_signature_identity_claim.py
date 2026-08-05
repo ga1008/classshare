@@ -306,26 +306,22 @@ class SignatureIdentityClaimTests(unittest.TestCase):
         )
 
     def test_batch_review_isolates_failures(self) -> None:
-        # One claimable unbound signature (id 1) and one bound signature (id 2):
-        # the bound one's claim can only be approved by its signer, so the
-        # admin batch approves the first and reports the veto on the second.
+        # A real pending claim plus a bogus request id: the batch approves the
+        # first and reports the failure on the second without aborting.
         first = signature_workflow_service.create_claim_request(
             self.conn, {"role": "student", "id": 1}, 1
-        )["request"]
-        second = signature_workflow_service.create_claim_request(
-            self.conn, {"role": "student", "id": 1}, 2
         )["request"]
         result = signature_workflow_service.batch_review_access_requests(
             self.conn,
             {"role": "teacher", "id": 9},
-            [first["id"], second["id"]],
+            [first["id"], 987654],
             action="approve",
         )
         self.assertEqual(1, result["processed"])
         self.assertEqual(1, result["failed"])
         outcomes = {item["id"]: item for item in result["items"]}
         self.assertEqual("approved", outcomes[first["id"]].get("status"))
-        self.assertIn("签名者本人", outcomes[second["id"]].get("error", ""))
+        self.assertTrue(outcomes[987654].get("error"))
 
     def _insert_duplicate(self, *, subject_id: int | None = None) -> int:
         cursor = self.conn.execute(
@@ -481,9 +477,10 @@ class SignatureIdentityClaimTests(unittest.TestCase):
         self.assertEqual("dean", row["identity_category"])
         self.assertEqual(0, int(row["identity_verified"]))
 
-    def test_bound_signature_claim_requires_signer_and_blocks_admin(self) -> None:
-        # Signature 2 is bound to teacher 2: only the signer may approve the
-        # transfer; the platform admin cannot step in.
+    def test_bound_signature_claim_signer_first_admin_fallback(self) -> None:
+        # Signature 2 is bound to teacher 2: the signer is the (only) listed
+        # reviewer, but a super admin may step in so onboarding-phase gaps
+        # never deadlock the flow. The former signer gets a transfer notice.
         created = signature_workflow_service.create_claim_request(
             self.conn, {"role": "student", "id": 1}, 2
         )
@@ -493,18 +490,18 @@ class SignatureIdentityClaimTests(unittest.TestCase):
             [("teacher", 2)],
             [(item["role"], item["id"]) for item in request["reviewers"]],
         )
-        with self.assertRaises(signature_service.SignatureServiceError) as ctx:
-            signature_workflow_service.review_access_request(
-                self.conn, {"role": "teacher", "id": 9}, request["id"], action="approve"
-            )
-        self.assertEqual(403, ctx.exception.status_code)
         approved = signature_workflow_service.review_access_request(
-            self.conn, {"role": "teacher", "id": 2}, request["id"], action="approve"
+            self.conn, {"role": "teacher", "id": 9}, request["id"], action="approve"
         )["request"]
         self.assertEqual("approved", approved["status"])
         row = self._signature(2)
         self.assertEqual("student", row["subject_role"])
         self.assertEqual(1, int(row["subject_id"]))
+        transfer_notice = self.conn.execute(
+            "SELECT COUNT(*) FROM message_center_notifications "
+            "WHERE ref_type = 'signature_claim_transfer' AND recipient_role = 'teacher' AND recipient_user_pk = 2"
+        ).fetchone()[0]
+        self.assertEqual(1, int(transfer_notice))
 
     def test_stale_request_reminder_and_escalation(self) -> None:
         created = signature_workflow_service.create_claim_request(

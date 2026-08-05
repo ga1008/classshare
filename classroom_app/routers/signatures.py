@@ -150,18 +150,27 @@ async def api_signature_image(
 ):
     try:
         with get_db_connection() as conn:
+            is_admin_viewer = False
             row, actor = signature_service.get_signature_row_for_actor(
                 conn,
                 user,
                 signature_id,
-                require_use=bool(int(download or 0) == 1),
+                require_use=False,
             )
+            is_admin_viewer = bool(actor.get("is_super_admin"))
+            if int(download or 0) == 1 and not is_admin_viewer and not signature_service.can_use_signature(actor, row, conn):
+                raise HTTPException(status_code=403, detail="当前账号无权下载此签名。")
             file_path = signature_service.resolve_signature_file_path(row)
             if not file_path:
                 raise HTTPException(status_code=404, detail="签名图片文件不存在。")
-            # 浏览场景（卡片/详情/认领审批）只对可直接使用者出原图；
-            # 其他有查看权的人拿到带“仅供预览”水印的降清图，防止截图滥用。
-            if int(download or 0) != 1 and not signature_service.can_use_signature(actor, row, conn):
+            # 浏览场景（卡片/详情/认领审批）只对可直接使用者出原图；其他有
+            # 查看权的人拿到带“仅供预览”水印的降清图。超管审核需要原图，
+            # 始终放行（替代所有人审批的兜底职责）。
+            if (
+                int(download or 0) != 1
+                and not is_admin_viewer
+                and not signature_service.can_use_signature(actor, row, conn)
+            ):
                 try:
                     preview = signature_image_service.ensure_preview(row["file_hash"], file_path)
                 except signature_image_service.SignatureImageError:

@@ -711,17 +711,12 @@ def review_access_request(
         (int(request_id), actor["role"], int(actor["id"])),
     ).fetchone()
     if not reviewer and bool(actor.get("is_super_admin")):
-        if str(request.get("request_kind") or "use") == "claim":
-            claim_signature_row = _signature_row(conn, int(request["signature_id"]))
-            if signature_service.is_subject_bound(claim_signature_row):
-                # Bound signature: transfer needs the signer's own consent —
-                # admin step-in would bypass the veto.
-                raise signature_service.SignatureServiceError(
-                    403, "该签名已绑定本人账号，认领转移只能由签名者本人审批。"
-                )
-        # Admins may step in on any pending request (代为审批), e.g. when the
-        # signer never registered an account. Register the ad-hoc reviewer row
-        # so the decision is recorded under the admin's own identity.
+        # 起步阶段大量教师尚未注册使用系统：超管可代批**一切** pending 流程
+        # （含已绑定签名的认领转移，防止流程死锁）。绑定人仍是第一审批人，
+        # 转移会通知原绑定人留痕，可事后异议。
+        # Admins may step in on any pending request (代为审批). Register the
+        # ad-hoc reviewer row so the decision is recorded under the admin's
+        # own identity.
         conn.execute(
             """
             INSERT INTO signature_access_request_reviewers (
@@ -1031,6 +1026,9 @@ def _apply_claim_transfer(conn: Any, request: dict[str, Any]) -> None:
     requester_name = _identity_name(conn, requester_role, requester_id) or _clean(request["requester_name"], 80)
     if requester_role not in {"teacher", "student"} or requester_id <= 0 or not requester_name:
         raise signature_service.SignatureServiceError(422, "认领申请人账号无效，无法完成归属转移。")
+    previous = _signature_row(conn, signature_id)
+    previous_signer_role = str(previous["subject_role"] or "").strip().lower()
+    previous_signer_id = int(previous["subject_id"] or 0)
     cursor = conn.execute(
         """
         UPDATE electronic_signatures
@@ -1051,6 +1049,23 @@ def _apply_claim_transfer(conn: Any, request: dict[str, Any]) -> None:
     if int(cursor.rowcount or 0) != 1:
         raise signature_service.SignatureServiceError(409, "签名已被删除或停用，无法完成认领。")
     signature_identity_service.sync_identity_for_signature(conn, signature_id)
+    if (
+        previous_signer_role in {"teacher", "student"}
+        and previous_signer_id > 0
+        and (previous_signer_role != requester_role or previous_signer_id != requester_id)
+    ):
+        # The former bound signer must know an admin-approved transfer detached
+        # them, so a wrong decision can be contested.
+        _notify(
+            conn,
+            recipients=[{"role": previous_signer_role, "id": previous_signer_id}],
+            actor={"role": requester_role, "id": requester_id, "name": requester_name},
+            title="签名绑定已转移",
+            body=f"签名“{previous['subject_name'] or previous['name']}”经审批已转移绑定至 {requester_name}；如有异议请联系管理员。",
+            ref_type="signature_claim_transfer",
+            ref_id=str(signature_id),
+            metadata={"signature_id": signature_id, "request_id": int(request["id"])},
+        )
     # Other users' pending claims on the same signature are now moot.
     other_rows = conn.execute(
         """

@@ -2108,7 +2108,9 @@ def record_signature_usage(
 ) -> dict[str, Any]:
     if _clean_text(action, 40) == "use":
         raise SignatureServiceError(400, "签名插入必须通过已登记功能点执行，不能记录无挂钩调用。")
-    row, actor = get_signature_row_for_actor(conn, user, signature_id)
+    # Callers gate the action themselves (e.g. the image route allows admin
+    # downloads); this helper only records the audit trail.
+    row, actor = get_signature_row_for_actor(conn, user, signature_id, require_use=False)
     actor_role, actor_id = _actor_identity(actor)
     conn.execute(
         """
