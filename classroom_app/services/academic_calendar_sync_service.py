@@ -719,6 +719,11 @@ def _merge_events(events: list[CalendarEvent]) -> dict[str, CalendarEvent]:
     return merged
 
 
+def _resolve_calendar_sync_status(*, has_academic_alignment: bool) -> str:
+    """Official semester alignment alone determines sync completeness."""
+    return SYNC_STATUS_SYNCED if has_academic_alignment else SYNC_STATUS_GENERATED
+
+
 def _generate_calendar_days(
     *,
     semester_id: int,
@@ -1160,7 +1165,7 @@ async def sync_semester_calendar_for_teacher(teacher_id: int, semester_id: int) 
     # The academic range is the authoritative sync result. Crawler/AI enrichment
     # may add holiday evidence, but its failure must not turn a complete official
     # semester range into the misleading “partial sync” state.
-    status = SYNC_STATUS_SYNCED if has_academic_alignment else SYNC_STATUS_GENERATED
+    status = _resolve_calendar_sync_status(has_academic_alignment=has_academic_alignment)
     event_count = sum(1 for row in days if row.get("day_type") in {DAY_TYPE_HOLIDAY, DAY_TYPE_WORKDAY})
     message_parts = []
     if has_academic_alignment:
