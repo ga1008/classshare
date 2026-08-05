@@ -81,6 +81,11 @@ function cacheElements() {
         'signature-edit-btn',
         'signature-replace-image-btn',
         'signature-replace-image-input',
+        'signature-unbind-btn',
+        'signature-batch-select-all-label',
+        'signature-batch-select-all',
+        'signature-batch-approve-btn',
+        'signature-batch-reject-btn',
         'signature-delete-btn',
         'signature-open-claim-btn',
         'signature-claim-search-input',
@@ -388,6 +393,10 @@ function setActionVisibility(canUse, canDelete, canEdit = false, canRequestUse =
         const item = state.items.find((entry) => entry.id === state.selectedId);
         els['signature-replace-image-btn'].hidden = !canReplaceImage(item);
     }
+    if (els['signature-unbind-btn']) {
+        const item = state.items.find((entry) => entry.id === state.selectedId);
+        els['signature-unbind-btn'].hidden = !item?.can_unbind;
+    }
     if (els['signature-download-link']) els['signature-download-link'].hidden = !canUse;
     if (els['signature-request-btn']) {
         els['signature-request-btn'].hidden = !canRequestUse;
@@ -482,6 +491,60 @@ async function replaceCurrentSignatureImage(file) {
     }
 }
 
+async function unbindCurrentSignature() {
+    if (!state.selectedId) return;
+    const item = state.items.find((entry) => entry.id === state.selectedId);
+    if (!item?.can_unbind) return;
+    if (!window.confirm(`确定解除“${item.subject_name || item.name}”与账号的绑定？解除后该签名的使用申请将由归属人或管理员审批。`)) {
+        return;
+    }
+    try {
+        await apiFetch(`/api/signatures/${state.selectedId}/unbind`, { method: 'POST' });
+        showMessage('绑定已解除。', 'success');
+        await loadSignatures({ keepSelection: true });
+    } catch {
+        // apiFetch already surfaces the error.
+    }
+}
+
+function selectedBatchRequestIds() {
+    return Array.from(document.querySelectorAll('input[data-signature-batch-check]:checked'))
+        .map((input) => Number(input.dataset.signatureBatchCheck || 0))
+        .filter(Boolean);
+}
+
+function updateBatchToolbar() {
+    const isAdmin = Boolean(state.adminRequestView);
+    const hasPending = state.pendingRequests.length > 0;
+    ['signature-batch-select-all-label', 'signature-batch-approve-btn', 'signature-batch-reject-btn'].forEach((id) => {
+        if (els[id]) els[id].hidden = !(isAdmin && hasPending);
+    });
+}
+
+async function batchReviewRequests(action) {
+    const ids = selectedBatchRequestIds();
+    if (!ids.length) {
+        showMessage('请先勾选要处理的申请。', 'warning');
+        return;
+    }
+    const verb = action === 'approve' ? '批准' : '拒绝';
+    if (!window.confirm(`确定批量${verb}选中的 ${ids.length} 条申请？`)) return;
+    const buttons = [els['signature-batch-approve-btn'], els['signature-batch-reject-btn']];
+    buttons.forEach((button) => { if (button) button.disabled = true; });
+    try {
+        const result = await apiFetch('/api/signatures/requests/batch-review', {
+            method: 'POST',
+            body: { request_ids: ids, action },
+        });
+        const failNote = result.failed ? `，${result.failed} 条失败（如认领须签名者本人审批）` : '';
+        showMessage(`已${verb} ${result.processed} 条申请${failNote}。`, result.failed ? 'warning' : 'success');
+        await loadSignatureRequests();
+        await loadSignatures({ keepSelection: true });
+    } finally {
+        buttons.forEach((button) => { if (button) button.disabled = false; });
+    }
+}
+
 async function claimCurrentSignature() {
     if (!state.selectedId) return;
     const item = state.items.find((entry) => entry.id === state.selectedId);
@@ -570,6 +633,7 @@ function renderSignatureRequests() {
     if (!list) return;
     if (!state.pendingRequests.length) {
         list.innerHTML = '<div class="signature-empty">暂无待审批申请。</div>';
+        updateBatchToolbar();
         renderOutgoingRequests();
         return;
     }
@@ -589,11 +653,15 @@ function renderSignatureRequests() {
         const adminBadge = state.adminRequestView && !mine
             ? '<span class="signature-chip is-system">管理员代批</span>'
             : '';
+        const batchCheck = state.adminRequestView
+            ? `<input type="checkbox" data-signature-batch-check="${item.id}" style="width:16px;height:16px;accent-color:#0f766e;" aria-label="选择此申请">`
+            : '';
         const actions = canAct ? `
+            ${batchCheck}
             ${adminBadge}
             <button type="button" class="btn btn-primary btn-sm" data-signature-request-action="approve">批准</button>
             <button type="button" class="btn btn-outline btn-sm" data-signature-request-action="reject">拒绝</button>
-        ` : `<span class="signature-chip">${escapeHtml(mine?.status || item.status)}</span>`;
+        ` : `${batchCheck}<span class="signature-chip">${escapeHtml(mine?.status || item.status)}</span>`;
         const claimPreview = isClaim
             ? `<img class="signature-request-preview" src="/api/signatures/${item.signature_id}/image" alt="签名图" loading="lazy" style="max-height:44px;max-width:120px;object-fit:contain;background:#fff;border:1px solid rgba(148,163,184,.3);border-radius:6px;padding:2px;margin-top:6px;">`
             : '';
@@ -610,6 +678,7 @@ function renderSignatureRequests() {
             </article>
         `;
     }).join('');
+    updateBatchToolbar();
     renderOutgoingRequests();
 }
 
@@ -913,6 +982,15 @@ function bindEvents() {
         if (!button) return;
         applyClaim(Number(button.dataset.signatureClaimApply || 0), button);
     });
+    els['signature-unbind-btn']?.addEventListener('click', unbindCurrentSignature);
+    els['signature-batch-select-all']?.addEventListener('change', () => {
+        const checked = Boolean(els['signature-batch-select-all']?.checked);
+        document.querySelectorAll('input[data-signature-batch-check]').forEach((input) => {
+            input.checked = checked;
+        });
+    });
+    els['signature-batch-approve-btn']?.addEventListener('click', () => batchReviewRequests('approve'));
+    els['signature-batch-reject-btn']?.addEventListener('click', () => batchReviewRequests('reject'));
     els['signature-replace-image-btn']?.addEventListener('click', () => els['signature-replace-image-input']?.click());
     els['signature-replace-image-input']?.addEventListener('change', () => {
         const file = els['signature-replace-image-input']?.files?.[0];

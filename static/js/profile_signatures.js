@@ -86,7 +86,9 @@ function renderSignatureCard(item) {
     if (item.can_claim) badges.push('<span class="psig-badge is-claim">待认领</span>');
     const action = item.can_claim
         ? `<button type="button" class="psig-link is-claim" data-psig-claim="${item.id}">认领</button>`
-        : (item.can_delete ? `<button type="button" class="psig-link is-danger" data-psig-delete="${item.id}">删除</button>` : '');
+        : (item.can_unbind
+            ? `<button type="button" class="psig-link is-danger" data-psig-unbind="${item.id}">解绑</button>`
+            : (item.can_delete ? `<button type="button" class="psig-link is-danger" data-psig-delete="${item.id}">删除</button>` : ''));
     return `<article class="psig-item">
         <img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.subject_name || item.name)}" loading="lazy">
         <div class="psig-item__meta">
@@ -263,6 +265,21 @@ async function claimSignature(signatureId) {
     }
 }
 
+async function unbindSignature(signatureId) {
+    if (state.busy) return;
+    if (!window.confirm('确定解除该签名与你账号的绑定？解除后使用申请将改由归属人或管理员审批。')) return;
+    setBusy(true);
+    try {
+        await apiFetch(`/api/signatures/${signatureId}/unbind`, { method: 'POST' });
+        showToast('绑定已解除。', 'success');
+        await refresh();
+    } catch (error) {
+        showToast(error.message || '解绑失败。', 'error');
+    } finally {
+        setBusy(false);
+    }
+}
+
 async function deleteSignature(signatureId) {
     if (state.busy) return;
     if (!window.confirm('删除后基于它的授权将失效，确定删除该签名？')) return;
@@ -332,6 +349,9 @@ function bindEvents() {
     });
     root.querySelectorAll('[data-psig-claim]').forEach((button) => {
         button.addEventListener('click', () => claimSignature(Number(button.dataset.psigClaim)));
+    });
+    root.querySelectorAll('[data-psig-unbind]').forEach((button) => {
+        button.addEventListener('click', () => unbindSignature(Number(button.dataset.psigUnbind)));
     });
     root.querySelectorAll('[data-psig-cancel]').forEach((button) => {
         button.addEventListener('click', () => cancelRequest(Number(button.dataset.psigCancel)));

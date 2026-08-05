@@ -692,6 +692,7 @@
                 <button type="button" class="btn btn-outline btn-sm" id="signature-request-btn" hidden>申请使用</button>
                 <button type="button" class="btn btn-outline btn-sm" id="signature-edit-btn" hidden>编辑属性</button>
                 <button type="button" class="btn btn-outline btn-sm" id="signature-replace-image-btn" hidden>更换图片</button>
+                <button type="button" class="btn btn-outline btn-sm" id="signature-unbind-btn" hidden>解除绑定</button>
                 <input type="file" id="signature-replace-image-input" accept=".png,.jpg,.jpeg" hidden>
                 <button type="button" class="btn btn-danger btn-sm" id="signature-delete-btn" hidden>删除</button>
             </div>
@@ -701,7 +702,14 @@
     <section class="signature-panel signature-requests-panel" id="signature-requests" aria-label="签名申请审批">
         <div class="signature-requests-head">
             <h3>待审批申请</h3>
-            <button type="button" class="btn btn-ghost btn-sm" id="signature-requests-refresh-btn">刷新</button>
+            <div class="signature-request-actions">
+                <label class="signature-chip" id="signature-batch-select-all-label" hidden style="cursor:pointer;gap:5px;">
+                    <input type="checkbox" id="signature-batch-select-all" style="accent-color:#0f766e;">全选
+                </label>
+                <button type="button" class="btn btn-primary btn-sm" id="signature-batch-approve-btn" hidden>批量批准</button>
+                <button type="button" class="btn btn-outline btn-sm" id="signature-batch-reject-btn" hidden>批量拒绝</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="signature-requests-refresh-btn">刷新</button>
+            </div>
         </div>
         <div class="signature-request-list" id="signature-request-list">
             <div class="signature-empty">暂无待审批申请。</div>

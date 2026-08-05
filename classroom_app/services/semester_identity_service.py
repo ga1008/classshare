@@ -10,8 +10,8 @@ This module defines ONE canonical identity — ``SemesterIdentity(start_year,
 term)`` — and the parsing/formatting helpers every producer and consumer must
 go through. Rules of the road:
 
-* **Canonical display name** = ``{start}-{end}第{一|二}学期`` (汉字学期号，无空格)。
-* Identity is ``(start_year: int, term: 1|2)``; ``code`` (``2025-2026-2``) is the
+* **Canonical display name** = ``{start}-{end}第{一|二|三}学期`` (汉字学期号，无空格)。
+* Identity is ``(start_year: int, term: 1|2|3)``; ``code`` (``2025-2026-2``) is the
   stable machine key for grouping/dedup.
 * Never invent a second parser. If a new legacy shape appears, extend
   :func:`parse_semester_identity` here.
@@ -27,15 +27,26 @@ from typing import Any, Iterable
 # 年份区间：2025-2026 / 2025—2026 / 2025~2026 / 2025 至 2026
 _YEAR_RANGE_RE = re.compile(r"(20\d{2})\s*[-–—~～至]\s*(20\d{2})")
 # "第二学期" / "第2学期" / "第 二 学期"
-_TERM_WORD_RE = re.compile(r"第\s*([一二两12１２])\s*学期")
-# 年份区间之后紧跟的 "-1" / "-2"（如 "2025-2026-2"）
-_TRAILING_TERM_RE = re.compile(r"^[\s\-–—_/]*([12１２])\b")
-_TERM_DIGITS = {"一": 1, "两": 2, "二": 2, "1": 1, "2": 2, "１": 1, "２": 2}
-_TERM_CN = {1: "一", 2: "二"}
+_TERM_WORD_RE = re.compile(r"第\s*([一二三两123１２３])\s*学期")
+# 年份区间之后紧跟的 "-1" / "-2" / "-3"（如 "2025-2026-2"）
+_TRAILING_TERM_RE = re.compile(r"^[\s\-–—_/]*([123１２３])\b")
+_TERM_DIGITS = {
+    "一": 1,
+    "两": 2,
+    "二": 2,
+    "三": 3,
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "１": 1,
+    "２": 2,
+    "３": 3,
+}
+_TERM_CN = {1: "一", 2: "二", 3: "三"}
 
-# ZF 教务系统学期码：xqm 3 = 第一学期，12 = 第二学期。
-_XQM_TO_TERM = {"3": 1, "12": 2}
-_TERM_TO_XQM = {1: "3", 2: "12"}
+# ZF 教务系统学期码：xqm 3 = 第一学期，12 = 第二学期，16 = 第三学期。
+_XQM_TO_TERM = {"3": 1, "12": 2, "16": 3}
+_TERM_TO_XQM = {1: "3", 2: "12", 3: "16"}
 
 
 @dataclass(frozen=True)
@@ -43,7 +54,7 @@ class SemesterIdentity:
     """A single real academic semester, independent of how it was written."""
 
     start_year: int
-    term: int  # 1 或 2
+    term: int  # 1、2 或 3
 
     @property
     def end_year(self) -> int:
@@ -74,7 +85,7 @@ class SemesterIdentity:
 def canonical_semester_name(start_year: Any, term: Any) -> str:
     """``(2025, 2)`` → ``"2025-2026第二学期"``."""
     year = int(start_year)
-    term_number = 2 if str(term).strip() in ("2", "二", "两") or term == 2 else 1
+    term_number = _TERM_DIGITS.get(str(term).strip(), 1)
     return f"{year}-{year + 1}第{_TERM_CN[term_number]}学期"
 
 
@@ -83,7 +94,9 @@ def make_identity(start_year: Any, term: Any) -> SemesterIdentity | None:
         year = int(str(start_year).strip())
     except (TypeError, ValueError):
         return None
-    term_number = 2 if str(term).strip() in ("2", "二", "两") or term == 2 else 1
+    term_number = _TERM_DIGITS.get(str(term).strip())
+    if term_number is None:
+        return None
     if year < 1900 or year > 2200:
         return None
     return SemesterIdentity(start_year=year, term=term_number)
@@ -151,7 +164,7 @@ def identity_from_year_term(year_range: Any, term: Any) -> SemesterIdentity | No
         start_year = int(single.group(1))
     term_text = str(term or "").strip()
     term_number = _TERM_DIGITS.get(term_text)
-    if term_number is None and term_text in ("3", "12"):
+    if term_number is None and term_text in _XQM_TO_TERM:
         term_number = _XQM_TO_TERM.get(term_text)
     if term_number is None:
         term_number = _term_from_text(term_text)
@@ -211,6 +224,46 @@ def infer_identity_from_dates(
     if start.month <= 1:
         return make_identity(start.year - 1, 1)
     return make_identity(start.year - 1, 2)
+
+
+def identity_from_semester_record(
+    semester: Any,
+    *,
+    reference_date: Any = None,
+) -> SemesterIdentity | None:
+    """Resolve a database semester row/dict through the canonical parser.
+
+    Explicit names win because a third/summer term cannot be inferred from its
+    dates alone.  Dates remain the compatibility fallback for older rows whose
+    names did not include a term number.
+    """
+    if semester is None:
+        return None
+    try:
+        name = semester.get("name")
+        start_date = semester.get("start_date")
+        end_date = semester.get("end_date")
+    except AttributeError:
+        try:
+            name = semester["name"]
+            start_date = semester["start_date"]
+            end_date = semester["end_date"]
+        except (KeyError, TypeError, IndexError):
+            return None
+    return (
+        parse_semester_identity(name)
+        or infer_identity_from_dates(start_date, end_date, name=name)
+        or (current_identity(reference_date) if reference_date is not None else None)
+    )
+
+
+def zf_term_params_from_semester(semester: Any) -> dict[str, str] | None:
+    """Return the verified GXUFL/ZF ``xnm`` + ``xqm`` pair for a semester."""
+    identity = identity_from_semester_record(semester)
+    if identity is None:
+        return None
+    xnm, xqm = identity.as_xnm_xqm()
+    return {"xnm": xnm, "xqm": xqm}
 
 
 def normalize_semester_text(*sources: Any, fallback: str = "") -> str:

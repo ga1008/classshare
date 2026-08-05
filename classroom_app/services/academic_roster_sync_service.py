@@ -15,6 +15,11 @@ from ..database import get_db_connection
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
 from .academic_class_mapping_service import refresh_teaching_class_mappings_from_roster
+from .academic_course_sync_service import (
+    _upsert_courses_and_schedule_items,
+    build_schedule_items_from_teaching_class_rosters,
+    infer_missing_course_metadata_with_ai,
+)
 from .academic_integration_service import (
     load_teacher_academic_access_method,
     open_authenticated_academic_client,
@@ -23,6 +28,7 @@ from .academic_service import china_now, parse_date_input
 from .department_service import infer_department_from_text, normalize_department
 from .organization_scope_service import apply_teacher_scope_to_org, load_teacher_org_scope
 from .student_lifecycle_service import STUDENT_STATUS_ACTIVE, STUDENT_STATUS_SUSPENDED
+from .semester_identity_service import identity_from_semester_record, zf_term_params_from_semester
 
 
 ACADEMIC_ROSTER_SOURCE = "gxufl_jwxt"
@@ -108,39 +114,21 @@ def _parse_int(value: Any) -> int:
 
 
 def _semester_year_start(semester: dict[str, Any]) -> int:
-    name = str(semester.get("name") or "")
-    match = re.search(r"(20\d{2})\s*[-—至]\s*(20\d{2})", name)
-    if match:
-        return int(match.group(1))
-    start_date = parse_date_input(semester.get("start_date"))
-    if start_date:
-        return start_date.year if start_date.month >= 8 else start_date.year - 1
+    identity = identity_from_semester_record(semester)
+    if identity:
+        return identity.start_year
     today = china_now().date()
     return today.year if today.month >= 8 else today.year - 1
 
 
 def _semester_term_number(semester: dict[str, Any]) -> int:
-    name = str(semester.get("name") or "")
-    if re.search(r"(第?\s*2|第二|二)\s*学期", name):
-        return 2
-    if re.search(r"(第?\s*1|第一|一)\s*学期", name):
-        return 1
-    start_date = parse_date_input(semester.get("start_date"))
-    if start_date and 2 <= start_date.month <= 7:
-        return 2
-    return 1
+    identity = identity_from_semester_record(semester)
+    return identity.term if identity else 1
 
 
 def _term_param_candidates(semester: dict[str, Any]) -> list[dict[str, str]]:
-    year_start = _semester_year_start(semester)
-    term_number = _semester_term_number(semester)
-    year_values = [str(year_start), f"{year_start}-{year_start + 1}"]
-    term_values = ["12", "2"] if term_number == 2 else ["3", "1"]
-    candidates: list[dict[str, str]] = []
-    for xnm in year_values:
-        for xqm in term_values:
-            candidates.append({"xnm": xnm, "xqm": xqm})
-    return candidates
+    params = zf_term_params_from_semester(semester)
+    return [params] if params else []
 
 
 def _ajax_headers(client: httpx.AsyncClient, *, accept: str = "application/json,text/javascript,*/*;q=0.8") -> dict[str, str]:
@@ -207,12 +195,46 @@ def _student_flags_from_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _class_names_from_composition(value: Any) -> list[str]:
+    text = _normalize_space(value)
+    if not text or text in {"无", "未分班"}:
+        return []
+    parts = [
+        _normalize_space(part)
+        for part in re.split(r"[,，、;；+＋/]", text)
+        if _normalize_space(part)
+    ]
+    return list(dict.fromkeys(parts or [text]))
+
+
+def _class_name_for_student(row: dict[str, Any], roster: AcademicTeachingClassRoster) -> str:
+    """Use JXBZC as the authoritative class-name source.
+
+    When one teaching class contains multiple administrative classes, the
+    student row's ``BJ`` selects the matching member of ``JXBZC`` instead of
+    replacing the composition with the teaching-class alias ``JXBMC``.
+    """
+    composition_names = _class_names_from_composition(roster.class_composition)
+    row_class_name = _normalize_space(row.get("BJ"))
+    if len(composition_names) == 1:
+        return composition_names[0]
+    if row_class_name:
+        for candidate in composition_names:
+            if row_class_name == candidate or row_class_name in candidate or candidate in row_class_name:
+                return candidate
+    if row_class_name:
+        return row_class_name
+    if composition_names:
+        return composition_names[0]
+    return ""
+
+
 def _student_from_row(row: dict[str, Any], roster: AcademicTeachingClassRoster) -> AcademicRosterStudent | None:
     student_number = _normalize_space(row.get("XH") or row.get("XH_ID"))
     name = _normalize_space(row.get("XM"))
     if not student_number or not name:
         return None
-    class_name = _normalize_space(row.get("BJ") or roster.class_composition)
+    class_name = _class_name_for_student(row, roster)
     if not class_name or class_name in {"无", "未分班"}:
         class_name = f"教务未分班-{roster.teaching_class_name or roster.course_name or '学生'}"
     return AcademicRosterStudent(
@@ -394,6 +416,34 @@ def _load_semester_by_id(conn, teacher_id: int, semester_id: int) -> dict[str, A
     return dict(row) if row else None
 
 
+def build_academic_sync_semester_options(semesters: list[Any]) -> list[dict[str, Any]]:
+    """Serialize local semesters with the exact GXUFL query parameters."""
+    options: list[dict[str, Any]] = []
+    for raw in semesters:
+        semester = dict(raw)
+        identity = identity_from_semester_record(semester)
+        term_params = zf_term_params_from_semester(semester)
+        if not identity or not term_params or semester.get("id") is None:
+            continue
+        options.append(
+            {
+                "id": int(semester["id"]),
+                "name": str(semester.get("name") or identity.canonical_name).strip(),
+                "start_date": str(semester.get("start_date") or "")[:10],
+                "end_date": str(semester.get("end_date") or "")[:10],
+                "is_current": bool(semester.get("is_current")),
+                "temporal_status": str(semester.get("temporal_status") or ""),
+                "temporal_status_label": str(semester.get("temporal_status_label") or ""),
+                "academic_year": f"{identity.start_year}-{identity.end_year}",
+                "term_number": identity.term,
+                "term_label": f"第{'一' if identity.term == 1 else '二' if identity.term == 2 else '三'}学期",
+                "xnm": term_params["xnm"],
+                "xqm": term_params["xqm"],
+            }
+        )
+    return options
+
+
 def _find_course_id(conn, teacher_id: int, roster: AcademicTeachingClassRoster) -> int | None:
     teacher_scope = load_teacher_org_scope(conn, teacher_id)
     teacher_department = normalize_department(teacher_scope.get("department"))
@@ -494,7 +544,6 @@ def _upsert_class(
     warnings: list[str],
 ) -> int | None:
     class_name = student.class_name.strip()
-    row = conn.execute("SELECT * FROM classes WHERE name = ? LIMIT 1", (class_name,)).fetchone()
     department = normalize_department(student.college) or normalize_department(student.major) or infer_department_from_text(class_name)
     org_scope = apply_teacher_scope_to_org(
         conn,
@@ -502,6 +551,19 @@ def _upsert_class(
         college=student.college,
         department=department,
     )
+    row = conn.execute(
+        """
+        SELECT *
+        FROM classes
+        WHERE lower(TRIM(name)) = lower(TRIM(?))
+        ORDER BY
+            CASE WHEN created_by_teacher_id = ? THEN 0 ELSE 1 END,
+            CASE WHEN lower(TRIM(COALESCE(school_code, ''))) = lower(TRIM(?)) THEN 0 ELSE 1 END,
+            id
+        LIMIT 1
+        """,
+        (class_name, int(teacher_id), org_scope["school_code"]),
+    ).fetchone()
     message = f"由教务系统同步：{student.college or student.major or class_name}"
     metadata = _json_dumps(_class_metadata(student, rosters))
     if row is None:
@@ -539,7 +601,11 @@ def _upsert_class(
         return class_id
 
     if int(row["created_by_teacher_id"]) != int(teacher_id):
-        warnings.append(f"班级“{class_name}”已属于其他教师，已跳过以避免误改。")
+        row_school_code = _normalize_space(row["school_code"])
+        if row_school_code and row_school_code.casefold() == org_scope["school_code"].casefold():
+            stats["classes_reused"] += 1
+            return int(row["id"])
+        warnings.append(f"班级“{class_name}”与其他学校的同名班级冲突，已跳过以避免跨校误合并。")
         stats["class_conflicts"] += 1
         return None
 
@@ -696,7 +762,10 @@ def _upsert_student(
         return student_id
 
     if int(existing["current_teacher_id"]) != int(teacher_id):
-        warnings.append(f"学生“{student.name} / {student.student_number}”已属于其他教师的班级，已跳过。")
+        if int(existing["class_id"]) == int(class_id):
+            stats["students_reused"] += 1
+            return int(existing["id"])
+        warnings.append(f"学生“{student.name} / {student.student_number}”已属于其他班级，已跳过自动转班并保留原数据。")
         stats["student_conflicts"] += 1
         return None
 
@@ -970,9 +1039,11 @@ def _persist_rosters(
     stats = {
         "classes_created": 0,
         "classes_updated": 0,
+        "classes_reused": 0,
         "class_conflicts": 0,
         "students_created": 0,
         "students_updated": 0,
+        "students_reused": 0,
         "students_moved": 0,
         "student_conflicts": 0,
         "contact_conflicts": 0,
@@ -989,8 +1060,43 @@ def _persist_rosters(
 
     rosters_by_class_name: dict[str, list[AcademicTeachingClassRoster]] = {}
     for roster in rosters:
+        for class_name in _class_names_from_composition(roster.class_composition):
+            rosters_by_class_name.setdefault(class_name, []).append(roster)
         for student in roster.students:
             rosters_by_class_name.setdefault(student.class_name, []).append(roster)
+
+    # Create/reuse every administrative class declared by JXBZC, including a
+    # valid empty teaching class whose student list currently has no rows.
+    for class_name, related_rosters in rosters_by_class_name.items():
+        sample_student = next(
+            (
+                student
+                for related_roster in related_rosters
+                for student in related_roster.students
+                if student.class_name == class_name
+            ),
+            None,
+        )
+        if sample_student is None:
+            sample_roster = related_rosters[0]
+            sample_student = AcademicRosterStudent(
+                student_number="",
+                name="",
+                class_name=class_name,
+                college=sample_roster.college,
+            )
+        class_id = _upsert_class(
+            conn,
+            teacher_id=teacher_id,
+            student=sample_student,
+            rosters=related_rosters,
+            synced_at=synced_at,
+            stats=stats,
+            warnings=warnings,
+        )
+        class_cache[class_name] = class_id
+        if class_id:
+            touched_class_ids.add(int(class_id))
 
     for roster in rosters:
         course_id = _find_course_id(conn, teacher_id, roster)
@@ -1007,9 +1113,7 @@ def _persist_rosters(
         roster_class_ids: set[int] = set()
         imported_count = 0
         for student in roster.students:
-            if student.class_name in class_cache:
-                class_id = class_cache[student.class_name]
-            else:
+            if student.class_name not in class_cache:
                 class_id = _upsert_class(
                     conn,
                     teacher_id=teacher_id,
@@ -1020,6 +1124,8 @@ def _persist_rosters(
                     warnings=warnings,
                 )
                 class_cache[student.class_name] = class_id
+            else:
+                class_id = class_cache[student.class_name]
             if not class_id:
                 continue
             touched_class_ids.add(int(class_id))
@@ -1121,15 +1227,28 @@ async def _fetch_all_rosters(
     return rosters, sources
 
 
-async def sync_current_teacher_rosters_from_academic_system(teacher_id: int) -> dict[str, Any]:
+async def sync_current_teacher_rosters_from_academic_system(
+    teacher_id: int,
+    semester_id: int | None = None,
+) -> dict[str, Any]:
     with get_db_connection() as conn:
         access_payload = load_teacher_academic_access_method(conn, teacher_id, school_code="gxufl")
-        semester = _load_current_semester(conn, teacher_id, china_now().date())
+        semester = (
+            _load_semester_by_id(conn, teacher_id, int(semester_id))
+            if semester_id is not None
+            else _load_current_semester(conn, teacher_id, china_now().date())
+        )
 
     if not access_payload:
         return {
             "status": "missing_credential",
             "message": "请先在系统设置中配置并验证教务系统账号，再同步班级与学生名单。",
+        }
+
+    if semester_id is not None and not semester:
+        return {
+            "status": "invalid_semester",
+            "message": "所选学年学期不存在、已被删除，或不属于当前学校。请刷新页面后重新选择。",
         }
 
     if not semester:
@@ -1167,10 +1286,25 @@ async def sync_current_teacher_rosters_from_academic_system(teacher_id: int) -> 
             "source_summary": source_summary,
         }
 
+    course_source_url = ZF_TEACHING_CLASS_LIST_PATH
+    schedule_items = build_schedule_items_from_teaching_class_rosters(
+        rosters,
+        source_url=course_source_url,
+    )
+    ai_enrichment, ai_enrichment_summary = await infer_missing_course_metadata_with_ai(schedule_items)
     synced_at = _now_iso()
     with get_db_connection() as conn:
         try:
-            result = _persist_rosters(
+            course_result = _upsert_courses_and_schedule_items(
+                conn,
+                teacher_id=teacher_id,
+                semester=semester,
+                items=schedule_items,
+                source_summary=source_summary,
+                ai_enrichment=ai_enrichment,
+                ai_enrichment_summary=ai_enrichment_summary,
+            )
+            roster_result = _persist_rosters(
                 conn,
                 teacher_id=teacher_id,
                 semester=semester,
@@ -1183,34 +1317,60 @@ async def sync_current_teacher_rosters_from_academic_system(teacher_id: int) -> 
             conn.rollback()
             raise
 
+    warnings = list(dict.fromkeys([*(course_result.get("warnings") or []), *(roster_result.get("warnings") or [])]))
+    term_params = zf_term_params_from_semester(semester) or {}
     return {
         "status": "success",
         "message": (
-            f"已从教务系统同步 {result['teaching_class_count']} 个教学班、"
-            f"{result['touched_class_count']} 个本平台班级、{result['roster_student_count']} 条学生名单关系。"
-            f"已更新 {result['class_mapping_count']} 条教学班名称转换关系。"
-            "系统已自动创建或更新班级与学生，未自动删除本地名单。"
+            f"已从教务系统同步 {course_result['course_count']} 门课程、{roster_result['teaching_class_count']} 个教学班、"
+            f"{roster_result['touched_class_count']} 个本平台班级、{roster_result['roster_student_count']} 条学生名单关系。"
+            f"已更新 {roster_result['class_mapping_count']} 条教学班名称转换关系。"
+            "课程、班级和学生已一次性合并，本地名单与人工联系方式均未自动删除。"
         ),
         "semester_id": int(semester["id"]),
         "semester_name": str(semester.get("name") or ""),
+        "academic_year": f"{term_params.get('xnm', '')}-{int(term_params.get('xnm') or 0) + 1}" if term_params.get("xnm") else "",
+        "academic_term": int(identity_from_semester_record(semester).term) if identity_from_semester_record(semester) else 0,
+        "xnm": term_params.get("xnm", ""),
+        "xqm": term_params.get("xqm", ""),
         "synced_at": synced_at,
-        "classes_created": result["classes_created"],
-        "classes_updated": result["classes_updated"],
-        "students_created": result["students_created"],
-        "students_updated": result["students_updated"],
-        "students_moved": result["students_moved"],
-        "memberships_upserted": result["memberships_upserted"],
-        "teaching_class_count": result["teaching_class_count"],
-        "course_count": result["course_count"],
-        "roster_student_count": result["roster_student_count"],
-        "touched_class_count": result["touched_class_count"],
-        "class_mapping_count": result["class_mapping_count"],
-        "class_conflicts": result["class_conflicts"],
-        "student_conflicts": result["student_conflicts"],
-        "contact_conflicts": result["contact_conflicts"],
-        "stale_students": result["stale_students"],
-        "rosters": result["rosters"],
-        "warnings": result["warnings"],
-        "follow_up_items": [*result["warnings"][:3], *FOLLOW_UP_ITEMS],
+        "created_count": course_result["created_count"],
+        "updated_count": course_result["updated_count"],
+        "courses_created": course_result["created_count"],
+        "courses_updated": course_result["updated_count"],
+        "course_count": course_result["course_count"],
+        "schedule_item_count": course_result["schedule_item_count"],
+        "occurrence_count": course_result.get("occurrence_count") or 0,
+        "offering_update_count": course_result.get("offering_update_count") or 0,
+        "courses": course_result["courses"],
+        "unresolved_course_fields": course_result.get("unresolved_course_fields") or [],
+        "ai_enrichment": course_result.get("ai_enrichment") or ai_enrichment_summary,
+        "classes_created": roster_result["classes_created"],
+        "classes_updated": roster_result["classes_updated"],
+        "classes_reused": roster_result.get("classes_reused") or 0,
+        "students_created": roster_result["students_created"],
+        "students_updated": roster_result["students_updated"],
+        "students_reused": roster_result.get("students_reused") or 0,
+        "students_moved": roster_result["students_moved"],
+        "memberships_upserted": roster_result["memberships_upserted"],
+        "teaching_class_count": roster_result["teaching_class_count"],
+        "roster_student_count": roster_result["roster_student_count"],
+        "touched_class_count": roster_result["touched_class_count"],
+        "class_mapping_count": roster_result["class_mapping_count"],
+        "class_conflicts": roster_result["class_conflicts"],
+        "student_conflicts": roster_result["student_conflicts"],
+        "contact_conflicts": roster_result["contact_conflicts"],
+        "stale_students": roster_result["stale_students"],
+        "rosters": roster_result["rosters"],
+        "warnings": warnings,
+        "follow_up_items": [*warnings[:3], *FOLLOW_UP_ITEMS],
+        "remaining_setup": ["选择教材", "复核教务接口未提供且无法可靠推断的空白字段"],
+        "source_contract": {
+            "course_name_field": "KCMC",
+            "teaching_class_alias_field": "JXBMC",
+            "class_name_field": "JXBZC",
+            "teaching_class_list_path": ZF_TEACHING_CLASS_LIST_PATH,
+            "student_roster_path": ZF_TEACHING_CLASS_STUDENT_LIST_PATH,
+        },
         "source_summary": source_summary,
     }

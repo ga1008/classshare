@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import sqlite3
 from collections import OrderedDict
@@ -11,6 +12,7 @@ from typing import Any
 
 import httpx
 
+from ..core import ai_client
 from ..database import get_db_connection
 from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
@@ -26,9 +28,10 @@ from .course_planning_service import (
     replace_offering_sessions,
     select_academic_teaching_class_for_offering,
 )
-from .department_service import infer_department_from_text, normalize_department
+from .department_service import DEPARTMENT_PRESETS, infer_department_from_text, normalize_department
 from .learning_progress_service import normalize_course_sect_name
 from .organization_scope_service import apply_teacher_scope_to_org, load_teacher_org_scope
+from .semester_identity_service import identity_from_semester_record, zf_term_params_from_semester
 
 
 ACADEMIC_COURSE_SOURCE = "gxufl_jwxt"
@@ -607,6 +610,188 @@ def _dedupe_schedule_items(items: list[AcademicCourseScheduleItem]) -> list[Acad
     return unique_items
 
 
+def _split_teaching_schedule(value: Any) -> list[str]:
+    return [part.strip() for part in re.split(r"[;；]", _normalize_space(value)) if part.strip()]
+
+
+def _schedule_section_parts(schedule_text: str) -> list[str]:
+    match = re.search(r"第\s*([^节{}]+?)\s*节", schedule_text)
+    if not match:
+        return [_parse_section_text(schedule_text)]
+    parts = [part.strip() for part in re.split(r"[,，、]", match.group(1)) if part.strip()]
+    return parts or [_parse_section_text(schedule_text)]
+
+
+def build_schedule_items_from_teaching_class_rosters(
+    rosters: list[Any],
+    *,
+    source_url: str,
+) -> list[AcademicCourseScheduleItem]:
+    """Convert the authoritative student-roster teaching-class rows to course items.
+
+    ``KCMC`` is the real course name, ``JXBMC`` is only the teaching-class
+    identifier/alias, and ``JXBZC`` is the administrative class composition.
+    GXUFL combines several weekday/section/week fragments in ``SKSJ``; split
+    those fragments so downstream occurrence expansion remains exact.
+    """
+    items: list[AcademicCourseScheduleItem] = []
+    for roster in rosters:
+        course_name = _normalize_space(getattr(roster, "course_name", ""))
+        if not course_name:
+            continue
+        schedule_parts = _split_teaching_schedule(getattr(roster, "schedule_text", ""))
+        location_parts = _split_teaching_schedule(getattr(roster, "location_text", ""))
+        if not schedule_parts:
+            schedule_parts = [""]
+        for schedule_index, schedule_text in enumerate(schedule_parts):
+            location = ""
+            if location_parts:
+                location = location_parts[min(schedule_index, len(location_parts) - 1)]
+            weeks_match = re.search(r"[\{｛]([^\}｝]+)[\}｝]", schedule_text)
+            weeks_text = _normalize_space(weeks_match.group(1) if weeks_match else "")
+            section_parts = _schedule_section_parts(schedule_text) if schedule_text else [""]
+            for section_text in section_parts:
+                raw_row = dict(getattr(roster, "raw_json", {}) or {})
+                items.append(
+                    AcademicCourseScheduleItem(
+                        academic_year=_normalize_space(getattr(roster, "academic_year", ""))[:24],
+                        academic_year_name=_normalize_space(getattr(roster, "academic_year_name", ""))[:40],
+                        academic_term=_normalize_space(getattr(roster, "academic_term", ""))[:24],
+                        academic_term_name=_normalize_space(getattr(roster, "academic_term_name", ""))[:40],
+                        teacher_name=_normalize_space(getattr(roster, "teacher_name", ""))[:80],
+                        course_name=course_name[:160],
+                        course_code=_normalize_space(getattr(roster, "course_code", ""))[:80],
+                        teaching_class_name=_normalize_space(getattr(roster, "teaching_class_name", ""))[:180],
+                        time_text=schedule_text[:180],
+                        weeks_text=weeks_text[:180],
+                        weekday=_parse_weekday(schedule_text),
+                        weekday_label=_weekday_label(_parse_weekday(schedule_text)),
+                        section_text=section_text[:40],
+                        location=location[:220],
+                        class_composition=_normalize_space(getattr(roster, "class_composition", ""))[:260],
+                        teaching_class_student_count=max(
+                            int(getattr(roster, "declared_student_count", 0) or 0),
+                            int(getattr(roster, "selected_student_count", 0) or 0),
+                        ),
+                        student_count=max(
+                            int(getattr(roster, "declared_student_count", 0) or 0),
+                            int(getattr(roster, "selected_student_count", 0) or 0),
+                        ),
+                        raw_text=_normalize_space(
+                            " ".join(
+                                filter(
+                                    None,
+                                    [
+                                        course_name,
+                                        _normalize_space(getattr(roster, "course_code", "")),
+                                        _normalize_space(getattr(roster, "teaching_class_name", "")),
+                                        _normalize_space(getattr(roster, "class_composition", "")),
+                                        schedule_text,
+                                        location,
+                                    ],
+                                )
+                            )
+                        )[:1600],
+                        raw_json={"row": raw_row, "contract": "gxufl_student_roster_teaching_class"},
+                        source_url=source_url,
+                    )
+                )
+    return _dedupe_schedule_items(items)
+
+
+def _academic_sync_ai_enabled() -> bool:
+    return str(os.getenv("ACADEMIC_SYNC_AI_ENRICHMENT_ENABLED", "1")).strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+async def infer_missing_course_metadata_with_ai(
+    items: list[AcademicCourseScheduleItem],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Best-effort, one-call inference for fields absent from the source contract.
+
+    Deterministic source fields are never sent back through AI.  Only courses
+    whose department cannot be inferred from known class aliases are included;
+    low-confidence or out-of-vocabulary answers are ignored and left blank for
+    the teacher to complete.
+    """
+    grouped: dict[str, dict[str, Any]] = {}
+    for item in items:
+        key = item.course_code or item.course_name
+        if not key or key in grouped:
+            continue
+        deterministic = infer_department_from_text(item.class_composition, item.course_name, item.raw_text)
+        if deterministic:
+            continue
+        grouped[key] = {
+            "course_code": item.course_code,
+            "course_name": item.course_name,
+            "class_composition": item.class_composition,
+        }
+    if not grouped:
+        return {}, {"status": "not_needed", "requested_count": 0, "accepted_count": 0}
+    if not _academic_sync_ai_enabled():
+        return {}, {"status": "disabled", "requested_count": len(grouped), "accepted_count": 0}
+
+    payload = {
+        "system_prompt": (
+            "你是高校教务数据整理助手。只根据课程名称、课程号和教学班组成，"
+            "判断课程最可能归属的系别。只能从给定候选系别中选择；证据不足时 department 必须为空。"
+            "不得修改课程名称、课程号、班级名称等确定性字段。严格返回 JSON："
+            '{"courses":[{"course_code":"","course_name":"","department":"","confidence":0.0,"reason":""}]}'
+        ),
+        "messages": [],
+        "new_message": _json_dumps(
+            {
+                "allowed_departments": DEPARTMENT_PRESETS,
+                "courses": list(grouped.values())[:40],
+            }
+        ),
+        "base64_urls": [],
+        "file_texts": [],
+        "model_capability": "standard",
+        "task_type": "fast_text_response",
+        "response_format": "json",
+        "task_priority": "background",
+        "task_label": "academic_course_metadata_inference",
+    }
+    try:
+        response = await ai_client.post("/api/ai/chat", json=payload, timeout=18.0)
+        response.raise_for_status()
+        response_payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        return {}, {"status": "unavailable", "requested_count": len(grouped), "accepted_count": 0}
+
+    parsed = response_payload.get("response_json") if isinstance(response_payload, dict) else None
+    rows = parsed.get("courses") if isinstance(parsed, dict) else None
+    accepted: dict[str, dict[str, Any]] = {}
+    if isinstance(rows, list):
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            key = _normalize_space(raw.get("course_code") or raw.get("course_name"))
+            department = normalize_department(raw.get("department"))
+            try:
+                confidence = float(raw.get("confidence") or 0)
+            except (TypeError, ValueError):
+                confidence = 0.0
+            if key not in grouped or department not in DEPARTMENT_PRESETS or confidence < 0.82:
+                continue
+            accepted[key] = {
+                "department": department,
+                "confidence": round(confidence, 3),
+                "reason": _normalize_space(raw.get("reason"))[:160],
+            }
+    return accepted, {
+        "status": "success",
+        "requested_count": len(grouped),
+        "accepted_count": len(accepted),
+    }
+
+
 def _parse_schedule_response(
     response: httpx.Response,
     *,
@@ -632,12 +817,9 @@ def _parse_schedule_response(
 
 def _semester_identity(semester: dict[str, Any]):
     """学期 dict（name/start_date）→ 规范 SemesterIdentity（统一口径）。"""
-    from .semester_identity_service import current_identity, infer_identity_from_dates
+    from .semester_identity_service import current_identity
 
-    identity = infer_identity_from_dates(
-        semester.get("start_date"), name=semester.get("name")
-    )
-    return identity or current_identity(china_now().date())
+    return identity_from_semester_record(semester) or current_identity(china_now().date())
 
 
 def _semester_year_start(semester: dict[str, Any]) -> int:
@@ -649,15 +831,8 @@ def _semester_term_number(semester: dict[str, Any]) -> int:
 
 
 def _term_param_candidates(semester: dict[str, Any]) -> list[dict[str, str]]:
-    year_start = _semester_year_start(semester)
-    term_number = _semester_term_number(semester)
-    year_values = [str(year_start), f"{year_start}-{year_start + 1}"]
-    term_values = ["12", "2"] if term_number == 2 else ["3", "1"]
-    candidates: list[dict[str, str]] = []
-    for xnm in year_values:
-        for xqm in term_values:
-            candidates.append({"xnm": xnm, "xqm": xqm})
-    return candidates
+    params = zf_term_params_from_semester(semester)
+    return [params] if params else []
 
 
 def _ajax_headers(client: httpx.AsyncClient, *, accept: str = "application/json,text/javascript,*/*;q=0.8") -> dict[str, str]:
@@ -952,6 +1127,22 @@ def _course_description(item: AcademicCourseScheduleItem, schedule_count: int) -
         "请继续补充课程目标、教材、课堂设置和本平台班级绑定后再用于正式开课。",
     ]
     return "；".join(part for part in pieces if part)
+
+
+def _derived_group_total_hours(items: list[AcademicCourseScheduleItem]) -> int:
+    """Derive course hours without double-counting parallel teaching classes."""
+    hours_by_teaching_class: dict[str, int] = {}
+    for item in items:
+        teaching_class_key = item.teaching_class_name or item.class_composition or "__course__"
+        week_numbers = _parse_week_numbers(item.weeks_text)
+        if not week_numbers or item.weekday is None:
+            continue
+        _section_start, _section_end, section_count = _parse_section_range(item.section_text)
+        hours_by_teaching_class[teaching_class_key] = (
+            hours_by_teaching_class.get(teaching_class_key, 0)
+            + len(week_numbers) * max(1, int(section_count or 1))
+        )
+    return max(hours_by_teaching_class.values(), default=0)
 
 
 def _course_row_with_match(row: Any, match_mode: str) -> dict[str, Any]:
@@ -1306,6 +1497,8 @@ def _upsert_courses_and_schedule_items(
     semester: dict[str, Any],
     items: list[AcademicCourseScheduleItem],
     source_summary: list[dict[str, Any]],
+    ai_enrichment: dict[str, dict[str, Any]] | None = None,
+    ai_enrichment_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     grouped: "OrderedDict[str, list[AcademicCourseScheduleItem]]" = OrderedDict()
     for item in items:
@@ -1317,6 +1510,7 @@ def _upsert_courses_and_schedule_items(
     affected_course_ids: list[int] = []
     course_results: list[dict[str, Any]] = []
     warnings: list[str] = []
+    unresolved_course_fields: list[dict[str, Any]] = []
     synced_at = _now_iso()
     sync_message = "已同步本学期教务课表；请继续补充教材、课堂设置和本平台班级绑定。"
 
@@ -1349,9 +1543,20 @@ def _upsert_courses_and_schedule_items(
             ),
             default=0,
         )
-        department = normalize_department(infer_department_from_text(first_item.course_name, first_item.raw_text))
+        if total_hours <= 0:
+            total_hours = _derived_group_total_hours(group_items)
+        deterministic_department = infer_department_from_text(
+            first_item.class_composition,
+            first_item.course_name,
+            first_item.raw_text,
+        )
+        enrichment_key = first_item.course_code or first_item.course_name
+        inferred = (ai_enrichment or {}).get(enrichment_key) or {}
+        department = normalize_department(deterministic_department or inferred.get("department"))
         org_scope = apply_teacher_scope_to_org(conn, teacher_id, department=department)
         metadata = _course_metadata(semester=semester, items=group_items, source_summary=source_summary)
+        if inferred:
+            metadata["ai_inference"] = inferred
 
         if existing:
             course_id = int(existing["id"])
@@ -1539,8 +1744,26 @@ def _upsert_courses_and_schedule_items(
                 "action": action,
                 "match_mode": match_mode,
                 "ambiguous_existing_count": ambiguous_count,
+                "department": department,
+                "total_hours": total_hours,
+                "missing_fields": [
+                    field_name
+                    for field_name, is_missing in (
+                        ("department", not department),
+                        ("credits", credits <= 0),
+                    )
+                    if is_missing
+                ],
             }
         )
+        if course_results[-1]["missing_fields"]:
+            unresolved_course_fields.append(
+                {
+                    "course_id": course_id,
+                    "course_name": first_item.course_name,
+                    "missing_fields": course_results[-1]["missing_fields"],
+                }
+            )
 
     offering_update_count, offering_warnings = _sync_existing_offering_academic_sessions(
         conn,
@@ -1550,6 +1773,10 @@ def _upsert_courses_and_schedule_items(
         synced_at=synced_at,
     )
     warnings.extend(offering_warnings)
+    if unresolved_course_fields:
+        warnings.append(
+            f"{len(unresolved_course_fields)} 门课程仍有教务接口未提供且无法可靠推断的字段，系统已留空并标记教师补全。"
+        )
 
     return {
         "created_count": created_count,
@@ -1559,6 +1786,8 @@ def _upsert_courses_and_schedule_items(
         "occurrence_count": occurrence_count,
         "offering_update_count": offering_update_count,
         "courses": course_results,
+        "unresolved_course_fields": unresolved_course_fields,
+        "ai_enrichment": dict(ai_enrichment_summary or {}),
         "warnings": warnings,
     }
 

@@ -4608,6 +4608,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/signatures/requests/batch-review",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_batch_review_signature_requests",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/signatures/requests/{request_id:int}/approve",
     "methods": [
       "POST"
@@ -4725,6 +4733,14 @@
       "POST"
     ],
     "name": "api_create_signature_access_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/{signature_id:int}/unbind",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_unbind_signature",
     "include_in_schema": true
   },
   {

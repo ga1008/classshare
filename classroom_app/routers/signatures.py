@@ -311,6 +311,43 @@ async def api_create_signature_claim_request(
         _raise_signature_error(exc)
 
 
+@router.post("/{signature_id:int}/unbind", response_class=JSONResponse)
+async def api_unbind_signature(
+    signature_id: int,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            item = signature_service.unbind_signature(conn, user, signature_id)
+            conn.commit()
+        return {"status": "success", "signature": item}
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/requests/batch-review", response_class=JSONResponse)
+async def api_batch_review_signature_requests(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    payload = await _json_body(request)
+    raw_ids = payload.get("request_ids")
+    action = str(payload.get("action") or "")
+    try:
+        with get_db_connection() as conn:
+            result = signature_workflow_service.batch_review_access_requests(
+                conn,
+                user,
+                [item for item in raw_ids] if isinstance(raw_ids, list) else [],
+                action=action,
+                note=str(payload.get("note") or ""),
+            )
+            conn.commit()
+        return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
 @router.get("/{signature_id:int}/refs", response_class=JSONResponse)
 async def api_signature_refs(
     signature_id: int,

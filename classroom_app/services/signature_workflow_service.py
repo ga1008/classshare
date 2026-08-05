@@ -834,6 +834,45 @@ def review_access_request(
     return {"status": "success", "request": refreshed}
 
 
+def batch_review_access_requests(
+    conn: Any,
+    user: dict[str, Any],
+    request_ids: list[int],
+    *,
+    action: str,
+    note: str = "",
+) -> dict[str, Any]:
+    """Review several pending requests in one go (admin inbox tool).
+
+    Per-request isolation: one failure (e.g. claim-veto guard) never blocks
+    the rest; each outcome is reported so the UI can show what happened.
+    """
+    normalized_ids: list[int] = []
+    seen: set[int] = set()
+    for value in request_ids or []:
+        try:
+            request_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if request_id > 0 and request_id not in seen:
+            seen.add(request_id)
+            normalized_ids.append(request_id)
+    if not normalized_ids:
+        raise signature_service.SignatureServiceError(400, "请选择至少一条申请。")
+    if len(normalized_ids) > 50:
+        raise signature_service.SignatureServiceError(400, "一次最多批量处理 50 条申请。")
+    results = {"processed": 0, "failed": 0, "items": []}
+    for request_id in normalized_ids:
+        try:
+            outcome = review_access_request(conn, user, request_id, action=action, note=note)
+            results["processed"] += 1
+            results["items"].append({"id": request_id, "status": outcome["request"]["status"]})
+        except signature_service.SignatureServiceError as exc:
+            results["failed"] += 1
+            results["items"].append({"id": request_id, "error": exc.message})
+    return {"status": "success", **results}
+
+
 def cancel_access_request(conn: Any, user: dict[str, Any], request_id: int) -> dict[str, Any]:
     actor = signature_service.build_signature_actor(conn, user)
     request = get_request(conn, request_id)

@@ -56,10 +56,26 @@ class SignatureIdentityClaimTests(unittest.TestCase):
                 owner_role TEXT NOT NULL,
                 owner_id INTEGER,
                 owner_name_snapshot TEXT NOT NULL DEFAULT '',
+                uploaded_by_role TEXT NOT NULL DEFAULT '',
+                uploaded_by_id INTEGER,
+                uploaded_by_name_snapshot TEXT NOT NULL DEFAULT '',
                 scope_level TEXT NOT NULL DEFAULT 'department',
+                school_code TEXT NOT NULL DEFAULT '',
+                school_name TEXT NOT NULL DEFAULT '',
+                college TEXT NOT NULL DEFAULT '',
+                department TEXT NOT NULL DEFAULT '',
+                file_hash TEXT NOT NULL DEFAULT '',
+                file_ext TEXT NOT NULL DEFAULT '.png',
+                mime_type TEXT NOT NULL DEFAULT 'image/png',
+                stored_path TEXT NOT NULL DEFAULT '',
+                file_size INTEGER NOT NULL DEFAULT 0,
+                description TEXT NOT NULL DEFAULT '',
+                legacy_source TEXT NOT NULL DEFAULT '',
+                metadata_json TEXT NOT NULL DEFAULT '{}',
                 ownership_updated_at TEXT,
                 ownership_updated_by_teacher_id INTEGER,
                 status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT,
                 deleted_at TEXT
             );
@@ -263,6 +279,53 @@ class SignatureIdentityClaimTests(unittest.TestCase):
         self.assertEqual(1, changed)
         row = self._signature(2)
         self.assertEqual("department_head", row["identity_category"])
+
+    def test_unbind_by_signer_and_permission_guards(self) -> None:
+        # Signature 2 bound to teacher 2 (also owner) → owner-signer cannot
+        # unbind through this exit (they keep control anyway)…
+        row = self._signature(2)
+        self.assertFalse(
+            signature_service.can_unbind_signature(
+                {"role": "teacher", "id": 2, "is_super_admin": False}, row
+            )
+        )
+        # …but a super admin can detach a wrong binding.
+        self.assertTrue(
+            signature_service.can_unbind_signature(
+                {"role": "teacher", "id": 9, "is_super_admin": True}, row
+            )
+        )
+        result = signature_service.unbind_signature(self.conn, {"role": "teacher", "id": 9}, 2)
+        self.assertFalse(result["subject_bound"])
+        self.assertIsNone(self._signature(2)["subject_id"])
+        # Unbound rows expose nothing to unbind anymore.
+        self.assertFalse(
+            signature_service.can_unbind_signature(
+                {"role": "teacher", "id": 9, "is_super_admin": True}, self._signature(2)
+            )
+        )
+
+    def test_batch_review_isolates_failures(self) -> None:
+        # One claimable unbound signature (id 1) and one bound signature (id 2):
+        # the bound one's claim can only be approved by its signer, so the
+        # admin batch approves the first and reports the veto on the second.
+        first = signature_workflow_service.create_claim_request(
+            self.conn, {"role": "student", "id": 1}, 1
+        )["request"]
+        second = signature_workflow_service.create_claim_request(
+            self.conn, {"role": "student", "id": 1}, 2
+        )["request"]
+        result = signature_workflow_service.batch_review_access_requests(
+            self.conn,
+            {"role": "teacher", "id": 9},
+            [first["id"], second["id"]],
+            action="approve",
+        )
+        self.assertEqual(1, result["processed"])
+        self.assertEqual(1, result["failed"])
+        outcomes = {item["id"]: item for item in result["items"]}
+        self.assertEqual("approved", outcomes[first["id"]].get("status"))
+        self.assertIn("签名者本人", outcomes[second["id"]].get("error", ""))
 
     def test_sync_fills_signature_identity_from_account(self) -> None:
         self.conn.execute("UPDATE teachers SET identity_category = 'counselor' WHERE id = 2")

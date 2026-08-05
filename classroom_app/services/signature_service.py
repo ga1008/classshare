@@ -274,6 +274,44 @@ def _signature_request_state(
     }
 
 
+def _bulk_request_states(
+    conn: sqlite3.Connection,
+    actor: dict[str, Any],
+    signature_ids: list[int],
+) -> dict[int, dict[str, Any]]:
+    """Latest access-request state per signature for this actor, one query."""
+    if not signature_ids or actor.get("role") not in {"teacher", "student"}:
+        return {}
+    requester_id = int(actor.get("id") or 0)
+    if requester_id <= 0:
+        return {}
+    placeholders = ",".join("?" for _ in signature_ids)
+    rows = conn.execute(
+        f"""
+        SELECT id, signature_id, status, requested_at, reviewed_at, review_note
+        FROM signature_access_requests
+        WHERE signature_id IN ({placeholders})
+          AND requester_role = ?
+          AND requester_id = ?
+        ORDER BY requested_at DESC, id DESC
+        """,
+        (*signature_ids, actor.get("role") or "teacher", requester_id),
+    ).fetchall()
+    result: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        signature_id = int(row["signature_id"])
+        if signature_id in result:
+            continue  # ordered newest-first: first row per signature wins
+        result[signature_id] = {
+            "request_id": int(row["id"]),
+            "request_status": row["status"] or "",
+            "requested_at": row["requested_at"] or "",
+            "reviewed_at": row["reviewed_at"] or "",
+            "review_note": row["review_note"] or "",
+        }
+    return result
+
+
 def is_subject_bound(row: sqlite3.Row | dict[str, Any]) -> bool:
     """The signature is tied to a registered account that can review requests."""
     try:
@@ -324,6 +362,19 @@ def can_request_signature_use(
     if not can_view_signature(actor, row):
         return False
     return _signature_request_state(conn, actor, row).get("request_status") != "pending"
+
+
+def can_unbind_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
+    """The bound signer (or a super admin) may detach a wrong binding.
+
+    Owner-and-signer-in-one keeps full control anyway, so unbinding is only
+    surfaced when the binding could have been someone else's mistake.
+    """
+    if not is_subject_bound(row):
+        return False
+    if bool(actor.get("is_super_admin")):
+        return True
+    return _is_subject(actor, row) and not _is_owner(actor, row)
 
 
 def can_delete_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]) -> bool:
@@ -626,7 +677,17 @@ def list_signatures(
     )
     params.append(bounded_limit)
     rows = conn.execute(sql, params).fetchall()
-    items = [serialize_signature(row, actor, conn, function_point_key=function_point_key) for row in rows]
+    request_states = _bulk_request_states(conn, actor, [int(row["id"]) for row in rows])
+    items = [
+        serialize_signature(
+            row,
+            actor,
+            conn,
+            function_point_key=function_point_key,
+            request_state=request_states.get(int(row["id"]), {}),
+        )
+        for row in rows
+    ]
     return {
         "items": items,
         "total": total,
@@ -688,6 +749,7 @@ def serialize_signature(
     conn: sqlite3.Connection | None = None,
     *,
     function_point_key: str = "",
+    request_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     row_id = int(row["id"])
     owner_role = str(row["owner_role"] or "")
@@ -700,7 +762,9 @@ def serialize_signature(
     is_owner = _is_owner(actor, row)
     can_delete = can_delete_signature(actor, row)
     can_edit = can_edit_signature(actor, row)
-    request_state = _signature_request_state(conn, actor, row)
+    # List pages pass a prefetched state (one query per page, not per row).
+    if request_state is None:
+        request_state = _signature_request_state(conn, actor, row)
     can_view = can_view_signature(actor, row)
     can_use = can_use_signature(actor, row, conn)
     feature_access: dict[str, Any] = {}
@@ -749,7 +813,15 @@ def serialize_signature(
         "can_delete": can_delete,
         "can_view": can_view,
         "can_use": can_use,
-        "can_request_use": bool(feature_access.get("can_request")) if feature_access else can_request_signature_use(actor, row, conn),
+        "can_request_use": bool(feature_access.get("can_request")) if feature_access else (
+            # Inlined can_request_signature_use with the prefetched request
+            # state, so listing 500 rows costs one query instead of 500.
+            actor.get("role") in {"teacher", "student"}
+            and not can_use
+            and can_view
+            and request_state.get("request_status") != "pending"
+        ),
+        "can_unbind": can_unbind_signature(actor, row),
         "function_point_access": feature_access,
         "request_id": request_state.get("request_id"),
         "request_status": request_state.get("request_status", ""),
@@ -1729,6 +1801,56 @@ def list_claim_candidates(
             }
         )
     return {"items": items, "actor": serialize_signature_actor(actor)}
+
+
+def unbind_signature(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    signature_id: int,
+) -> dict[str, Any]:
+    """Detach a signature from its bound account (误绑/认领错了的正规出口).
+
+    Keeps subject_name/identity so the record stays meaningful; only the
+    account linkage is removed. Pending requests keep their reviewer rows —
+    approvals recorded before the unbind stay valid history.
+    """
+    actor = build_signature_actor(conn, user)
+    row = _get_signature_row(conn, signature_id)
+    if not can_unbind_signature(actor, row):
+        raise SignatureServiceError(403, "只有绑定的签名者本人或超管可以解除绑定。")
+    subject_role = str(row["subject_role"] or "")
+    subject_id = int(row["subject_id"] or 0)
+    cursor = conn.execute(
+        """
+        UPDATE electronic_signatures
+        SET subject_id = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND subject_role = ? AND COALESCE(subject_id, 0) = ?
+        """,
+        (int(signature_id), subject_role, subject_id),
+    )
+    if int(cursor.rowcount or 0) != 1:
+        raise SignatureServiceError(409, "绑定状态已变化，请刷新后重试。")
+    from . import signature_workflow_service
+
+    owner_role = str(row["owner_role"] or "").strip().lower()
+    owner_id = int(row["owner_id"] or 0)
+    recipients = []
+    if owner_role in {"teacher", "student"} and owner_id > 0:
+        recipients.append({"role": owner_role, "id": owner_id})
+    if subject_role in {"teacher", "student"} and subject_id > 0:
+        recipients.append({"role": subject_role, "id": subject_id})
+    signature_workflow_service._notify(
+        conn,
+        recipients=recipients,
+        actor=actor,
+        title="签名绑定已解除",
+        body=f"{actor.get('name')} 解除了签名“{row['subject_name'] or row['name']}”与账号的绑定；后续使用申请将由归属人或管理员审批。",
+        ref_type="signature_unbind",
+        ref_id=str(int(signature_id)),
+        metadata={"signature_id": int(signature_id)},
+    )
+    refreshed = _get_signature_row(conn, signature_id)
+    return serialize_signature(refreshed, actor, conn)
 
 
 def create_signature_access_request(
