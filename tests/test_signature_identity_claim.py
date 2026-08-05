@@ -270,6 +270,64 @@ class SignatureIdentityClaimTests(unittest.TestCase):
         self.assertEqual({"signature": "counselor"}, result)
         self.assertEqual("counselor", self._signature(2)["identity_category"])
 
+    def test_propagate_clears_verified_flag(self) -> None:
+        self.conn.execute("UPDATE electronic_signatures SET identity_verified = 1 WHERE id = 2")
+        signature_identity_service.propagate_account_identity(self.conn, "teacher", 2, "dean")
+        row = self._signature(2)
+        self.assertEqual("dean", row["identity_category"])
+        self.assertEqual(0, int(row["identity_verified"]))
+
+    def test_bound_signature_claim_requires_signer_and_blocks_admin(self) -> None:
+        # Signature 2 is bound to teacher 2: only the signer may approve the
+        # transfer; the platform admin cannot step in.
+        created = signature_workflow_service.create_claim_request(
+            self.conn, {"role": "student", "id": 1}, 2
+        )
+        self.assertEqual("request", created["mode"])
+        request = created["request"]
+        self.assertEqual(
+            [("teacher", 2)],
+            [(item["role"], item["id"]) for item in request["reviewers"]],
+        )
+        with self.assertRaises(signature_service.SignatureServiceError) as ctx:
+            signature_workflow_service.review_access_request(
+                self.conn, {"role": "teacher", "id": 9}, request["id"], action="approve"
+            )
+        self.assertEqual(403, ctx.exception.status_code)
+        approved = signature_workflow_service.review_access_request(
+            self.conn, {"role": "teacher", "id": 2}, request["id"], action="approve"
+        )["request"]
+        self.assertEqual("approved", approved["status"])
+        row = self._signature(2)
+        self.assertEqual("student", row["subject_role"])
+        self.assertEqual(1, int(row["subject_id"]))
+
+    def test_stale_request_reminder_and_escalation(self) -> None:
+        created = signature_workflow_service.create_claim_request(
+            self.conn, {"role": "student", "id": 1}, 1
+        )
+        request_id = int(created["request"]["id"])
+        self.conn.execute(
+            "UPDATE signature_access_requests SET requested_at = '2020-01-01 00:00:00' WHERE id = ?",
+            (request_id,),
+        )
+        first = signature_workflow_service.remind_stale_signature_requests(self.conn)
+        self.assertEqual(1, first["reminded"])
+        self.assertEqual(1, first["escalated"])
+        row = self.conn.execute(
+            "SELECT last_reminded_at, escalated_at FROM signature_access_requests WHERE id = ?",
+            (request_id,),
+        ).fetchone()
+        self.assertTrue(row["last_reminded_at"])
+        self.assertTrue(row["escalated_at"])
+        reminder_count = self.conn.execute(
+            "SELECT COUNT(*) FROM message_center_notifications WHERE ref_type = 'signature_request_reminder'"
+        ).fetchone()[0]
+        self.assertGreater(int(reminder_count), 0)
+        # Within the repeat window and already escalated: sweep is a no-op.
+        second = signature_workflow_service.remind_stale_signature_requests(self.conn)
+        self.assertEqual({"reminded": 0, "escalated": 0}, second)
+
 
 if __name__ == "__main__":
     unittest.main()

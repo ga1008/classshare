@@ -109,7 +109,10 @@ function renderIncoming(item) {
             <strong>${escapeHtml(item.requester_name || '申请人')}</strong>
             <em class="psig-chip is-${escapeHtml(item.status)}">${escapeHtml(requestStatusText[item.status] || item.status)}</em>
         </div>
-        <p>申请在「${escapeHtml(requestSummary(item))}」使用「${escapeHtml(item.signature_subject_name || item.signature_name)}」签名。批准后仅限该材料当前版本使用。</p>
+        ${item.request_kind === 'claim'
+        ? `<p>申请认领「${escapeHtml(item.signature_subject_name || item.signature_name)}」签名；批准后归属权转移并绑定申请人账号。</p>
+           <img src="/api/signatures/${item.signature_id}/image" alt="签名图" loading="lazy" style="max-height:44px;max-width:120px;object-fit:contain;background:#fff;border:1px solid rgba(148,163,184,.3);border-radius:6px;padding:2px;">`
+        : `<p>申请在「${escapeHtml(requestSummary(item))}」使用「${escapeHtml(item.signature_subject_name || item.signature_name)}」签名。批准后仅限该材料当前版本使用。</p>`}
         ${item.request_note ? `<p class="psig-note">留言：${escapeHtml(item.request_note)}</p>` : ''}
         <div class="psig-request__foot">
             <span>${reviewers}</span>

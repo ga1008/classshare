@@ -4688,6 +4688,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/signatures/{signature_id:int}/refs",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_refs",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/signatures/{signature_id:int}/requests",
     "methods": [
       "POST"

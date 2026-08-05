@@ -69,6 +69,7 @@ from .services.assignment_lifecycle_service import close_overdue_assignments
 from .services.ai_grading_service import expire_stale_ai_grading_submissions
 from .services.exam_generation_recovery_service import expire_stale_exam_generation_tasks
 from .services.cultivation_alert_service import ensure_cultivation_alert_task
+from .services.signature_workflow_service import ensure_signature_reminder_task
 from .services.learning_progress_service import (
     ensure_cultivation_score_event_archive_task,
     ensure_cultivation_snapshot_refresh_task,
@@ -206,6 +207,7 @@ async def startup_event():
             cultivation_report_task_id = ensure_cultivation_weekly_report_task(align_conn)
             cultivation_archive_task_id = ensure_cultivation_score_event_archive_task(align_conn)
             cultivation_alert_task_id = ensure_cultivation_alert_task(align_conn)
+            signature_reminder_task_id = ensure_signature_reminder_task(align_conn)
             align_conn.commit()
         interrupted_wrong_summary_jobs = expire_interrupted_wrong_summary_jobs()
         if repair_report.paths_repaired > 0 or repair_report.paths_still_missing > 0:

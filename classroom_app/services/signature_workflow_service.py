@@ -710,6 +710,14 @@ def review_access_request(
         (int(request_id), actor["role"], int(actor["id"])),
     ).fetchone()
     if not reviewer and bool(actor.get("is_super_admin")):
+        if str(request.get("request_kind") or "use") == "claim":
+            claim_signature_row = _signature_row(conn, int(request["signature_id"]))
+            if signature_service.is_subject_bound(claim_signature_row):
+                # Bound signature: transfer needs the signer's own consent —
+                # admin step-in would bypass the veto.
+                raise signature_service.SignatureServiceError(
+                    403, "该签名已绑定本人账号，认领转移只能由签名者本人审批。"
+                )
         # Admins may step in on any pending request (代为审批), e.g. when the
         # signer never registered an account. Register the ad-hoc reviewer row
         # so the decision is recorded under the admin's own identity.
@@ -889,10 +897,26 @@ def create_claim_request(
     ).fetchone()
     if existing:
         raise signature_service.SignatureServiceError(409, "你已提交过该签名的认领申请，请等待审批。")
-    reviewers = _reviewer_identities(conn, signature)
-    for admin in _admin_identities(conn):
-        if not any(r["role"] == admin["role"] and r["id"] == admin["id"] for r in reviewers):
-            reviewers.append(admin)
+    if signature_service.is_subject_bound(signature):
+        # 已绑定账号的签名：本人拥有唯一否决权 —— 只有签名者本人能批准
+        # 转移，管理员与归属人不可代批（管理员仅兜底未绑定的签名）。
+        # 不能复用 _reviewer_identities：owner 与 signer 为同一人时去重会
+        # 把条目记成 owner，按 kind 过滤就丢了签名者。
+        signer_role = str(signature["subject_role"] or "").strip().lower()
+        signer_id = int(signature["subject_id"] or 0)
+        reviewers = [
+            {
+                "role": signer_role,
+                "id": signer_id,
+                "kind": "signer",
+                "name": _clean(signature["subject_name"], 80) or _identity_name(conn, signer_role, signer_id),
+            }
+        ]
+    else:
+        reviewers = _reviewer_identities(conn, signature)
+        for admin in _admin_identities(conn):
+            if not any(r["role"] == admin["role"] and r["id"] == admin["id"] for r in reviewers):
+                reviewers.append(admin)
     reviewers = [r for r in reviewers if not (r["role"] == actor["role"] and r["id"] == int(actor["id"]))]
     if not reviewers:
         raise signature_service.SignatureServiceError(
@@ -937,9 +961,14 @@ def create_claim_request(
             """,
             (request_id, reviewer["role"], reviewer["id"], reviewer["kind"], reviewer["name"]),
         )
+    notify_recipients = list(reviewers)
+    for identity in _reviewer_identities(conn, signature):
+        # Owner of a bound signature is informed even though only the signer decides.
+        if not any(r["role"] == identity["role"] and r["id"] == identity["id"] for r in notify_recipients):
+            notify_recipients.append(identity)
     _notify(
         conn,
-        recipients=reviewers,
+        recipients=notify_recipients,
         actor=actor,
         title="收到签名认领申请",
         body=f"{actor['name']} 申请认领签名“{signature['subject_name'] or signature['name']}”。批准后签名归属权将转移并绑定其账号，身份属性自动同步。",
@@ -1040,6 +1069,122 @@ def claim_signature(conn: Any, user: dict[str, Any], signature_id: int) -> dict[
             metadata={"signature_id": int(signature_id)},
         )
     return {"status": "success", "signature_id": int(signature_id)}
+
+
+TASK_KIND_SIGNATURE_REQUEST_REMINDER = "signature_request_reminder"
+REMINDER_AFTER_HOURS = 48
+REMINDER_REPEAT_HOURS = 48
+ESCALATE_AFTER_DAYS = 7
+REMINDER_INTERVAL_SECONDS = 6 * 3600
+
+
+def remind_stale_signature_requests(conn: Any, *, now: Any = None) -> dict[str, int]:
+    """Nudge pending reviewers after 48h and escalate to admins after 7 days.
+
+    Timestamps compare in UTC ("YYYY-MM-DD HH:MM:SS"), matching the engines'
+    CURRENT_TIMESTAMP defaults. Runs from the unified scheduler.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    if isinstance(now, datetime):
+        now_dt = now
+    else:
+        now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_text = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+    remind_cutoff = (now_dt - timedelta(hours=REMINDER_AFTER_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
+    repeat_cutoff = (now_dt - timedelta(hours=REMINDER_REPEAT_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
+    escalate_cutoff = (now_dt - timedelta(days=ESCALATE_AFTER_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+
+    stale_rows = conn.execute(
+        """
+        SELECT id FROM signature_access_requests
+        WHERE status = 'pending'
+          AND requested_at <= ?
+          AND (last_reminded_at IS NULL OR last_reminded_at <= ?)
+        ORDER BY requested_at ASC
+        LIMIT 200
+        """,
+        (remind_cutoff, repeat_cutoff),
+    ).fetchall()
+    reminded = 0
+    requests_by_id = get_requests(conn, [int(row["id"]) for row in stale_rows])
+    for request_id, request in requests_by_id.items():
+        pending_reviewers = [
+            {"role": item["role"], "id": item["id"]}
+            for item in request["reviewers"]
+            if item["status"] == "pending"
+        ]
+        if not pending_reviewers:
+            continue
+        kind_label = "认领" if request.get("request_kind") == "claim" else "使用"
+        _notify(
+            conn,
+            recipients=pending_reviewers,
+            actor={"role": request["requester_role"], "id": request["requester_id"], "name": request["requester_name"] or "申请人"},
+            title=f"签名{kind_label}申请等待你审批",
+            body=f"{request['requester_name'] or '申请人'} 对“{request['signature_subject_name'] or request['signature_name']}”的{kind_label}申请已等待超过 {REMINDER_AFTER_HOURS} 小时，请尽快处理。",
+            ref_type="signature_request_reminder",
+            ref_id=f"{request_id}:{now_text}",
+            metadata={"request_id": request_id, "request_kind": request.get("request_kind") or "use"},
+        )
+        conn.execute(
+            "UPDATE signature_access_requests SET last_reminded_at = ? WHERE id = ?",
+            (now_text, request_id),
+        )
+        reminded += 1
+
+    escalate_rows = conn.execute(
+        """
+        SELECT id FROM signature_access_requests
+        WHERE status = 'pending'
+          AND requested_at <= ?
+          AND escalated_at IS NULL
+        ORDER BY requested_at ASC
+        LIMIT 100
+        """,
+        (escalate_cutoff,),
+    ).fetchall()
+    escalated = 0
+    admins = _admin_identities(conn)
+    escalate_by_id = get_requests(conn, [int(row["id"]) for row in escalate_rows])
+    for request_id, request in escalate_by_id.items():
+        if admins:
+            kind_label = "认领" if request.get("request_kind") == "claim" else "使用"
+            _notify(
+                conn,
+                recipients=[{"role": item["role"], "id": item["id"]} for item in admins],
+                actor={"role": request["requester_role"], "id": request["requester_id"], "name": request["requester_name"] or "申请人"},
+                title=f"签名{kind_label}申请超期未审（已升级）",
+                body=f"“{request['signature_subject_name'] or request['signature_name']}”的{kind_label}申请已滞留超过 {ESCALATE_AFTER_DAYS} 天仍未处理，请管理员关注或代为审批。",
+                ref_type="signature_request_escalation",
+                ref_id=str(request_id),
+                metadata={"request_id": request_id, "request_kind": request.get("request_kind") or "use"},
+            )
+        conn.execute(
+            "UPDATE signature_access_requests SET escalated_at = ? WHERE id = ?",
+            (now_text, request_id),
+        )
+        escalated += 1
+    return {"reminded": reminded, "escalated": escalated}
+
+
+def ensure_signature_reminder_task(conn: Any) -> int:
+    from datetime import datetime, timedelta
+
+    from .scheduled_task_service import schedule_task
+
+    return schedule_task(
+        conn,
+        task_kind=TASK_KIND_SIGNATURE_REQUEST_REMINDER,
+        run_at=datetime.now() + timedelta(seconds=600),
+        payload={},
+        dedupe_key="signature:request-reminder",
+        recurrence_seconds=REMINDER_INTERVAL_SECONDS,
+        title="Signature request reminder sweep",
+        priority=70,
+        max_attempts=3,
+        replace=False,
+    )
 
 
 def _sync_point_flow_for_request(conn: Any, request_id: int) -> None:

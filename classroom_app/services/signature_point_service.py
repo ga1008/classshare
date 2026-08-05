@@ -19,6 +19,30 @@ from . import signature_identity_service, signature_service, signature_workflow_
 MAX_SIGNATURES_PER_POINT = 12
 ACTIVE_FLOW_STATUSES = {"pending", "partially_approved"}
 
+# 身份过滤叠加组织层级：系主任签名点默认只匹配材料归属教师同系的
+# 系主任，院长限同学院；校长/教师等只要求同校（列表可见性已保证）。
+_DEPARTMENT_IDENTITIES = {"department_head", "vice_department_head"}
+_COLLEGE_IDENTITIES = {"dean", "vice_dean"}
+
+
+def identity_org_match(actor: dict[str, Any], item: dict[str, Any], accepted_identities: set[str]) -> bool:
+    """Does this signature satisfy the point's identity requirement for this actor?
+
+    ``item`` must carry identity_category / school_code / college / department.
+    An empty requirement always matches. The "show all" toggle on the client
+    bypasses this filter, so an org mismatch never hard-blocks a selection.
+    """
+    if not accepted_identities:
+        return True
+    identity = str(item.get("identity_category") or "")
+    if identity not in accepted_identities:
+        return False
+    if identity in _DEPARTMENT_IDENTITIES:
+        return signature_service._same_department(actor, item)
+    if identity in _COLLEGE_IDENTITIES:
+        return signature_service._same_college(actor, item)
+    return True
+
 
 def _clean(value: Any, limit: int = 160) -> str:
     return " ".join(str(value or "").strip().split())[:limit]
@@ -198,10 +222,7 @@ def get_point_state(
                 "can_request": not can_use,
                 "needs_admin_review": needs_admin_review,
                 "signer_bound": signer_bound,
-                "identity_match": (
-                    not accepted_identities
-                    or str(item.get("identity_category") or "") in accepted_identities
-                ),
+                "identity_match": identity_org_match(actor, item, accepted_identities),
                 "authorization_mode": direct_mode or ("approval" if grant_item_id else ""),
                 "grant_item_id": grant_item_id,
             }

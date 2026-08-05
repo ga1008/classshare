@@ -631,6 +631,7 @@ REQUIRED_POSTGRES_TABLES = (
     "signature_point_flows",
     "signature_point_flow_items",
     "signature_point_bindings",
+    "signature_image_versions",
     "assignment_wrong_summary_jobs",
     "classroom_behavior_events",
     "classroom_behavior_states",

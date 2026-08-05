@@ -718,6 +718,7 @@ def serialize_signature(
         "subject_role_label": _role_label(subject_role),
         "identity_category": identity_category,
         "identity_label": signature_identity_service.identity_label(identity_category),
+        "identity_verified": bool(row["identity_verified"] if "identity_verified" in row.keys() else 0),
         "owner_role": owner_role,
         "owner_role_label": _role_label(owner_role),
         "owner_id": row["owner_id"],
@@ -1048,6 +1049,14 @@ def update_signature_metadata(
     else:
         new_identity = previous_identity
     identity_changed = new_identity != previous_identity
+    previous_verified = int(row["identity_verified"] if "identity_verified" in row.keys() else 0)
+    if is_super_admin and "identity_category" in payload and new_identity:
+        # A super admin stating the identity counts as verification.
+        new_verified = 1
+    elif identity_changed or not new_identity:
+        new_verified = 0
+    else:
+        new_verified = previous_verified
 
     explicit_subject_id = payload.get("subject_id", payload.get("subject_teacher_id"))
     if (
@@ -1077,6 +1086,7 @@ def update_signature_metadata(
             subject_role = ?,
             subject_id = ?,
             identity_category = ?,
+            identity_verified = ?,
             scope_level = ?,
             owner_role = ?,
             owner_id = ?,
@@ -1097,6 +1107,7 @@ def update_signature_metadata(
             subject_role,
             subject_id,
             new_identity,
+            new_verified,
             requested_scope_level,
             owner_role,
             owner_id,
@@ -1273,6 +1284,7 @@ async def create_signature_from_upload(
     if subject_id not in (None, "") and normalized_subject_id:
         clean_subject_name = _subject_name_by_id(conn, normalized_subject_role, normalized_subject_id) or clean_subject_name
     normalized_identity = signature_identity_service.normalize_identity_category(identity_category)
+    identity_verified = 1 if (actor.get("is_super_admin") and normalized_identity) else 0
     if not normalized_identity and normalized_subject_id:
         normalized_identity = signature_identity_service.get_account_identity(
             conn, normalized_subject_role, normalized_subject_id
@@ -1282,14 +1294,14 @@ async def create_signature_from_upload(
         conn,
         """
         INSERT INTO electronic_signatures (
-            name, subject_name, subject_role, subject_id, identity_category, scope_level,
+            name, subject_name, subject_role, subject_id, identity_category, identity_verified, scope_level,
             owner_role, owner_id, owner_name_snapshot,
             uploaded_by_role, uploaded_by_id, uploaded_by_name_snapshot,
             school_code, school_name, college, department,
             file_hash, file_ext, mime_type, stored_path, file_size,
             description, metadata_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             clean_name,
@@ -1297,6 +1309,7 @@ async def create_signature_from_upload(
             normalized_subject_role,
             normalized_subject_id,
             normalized_identity,
+            identity_verified,
             normalized_scope,
             actor_role,
             actor_id,
@@ -1535,6 +1548,26 @@ async def replace_signature_image(
         raise SignatureServiceError(400, "文件扩展名与图片内容不一致。")
     file_hash = hashlib.sha256(data).hexdigest()
     target_path = await _store_signature_bytes(file_hash, ext, data)
+    active_bindings = count_active_signature_bindings(conn, signature_id)
+    conn.execute(
+        """
+        INSERT INTO signature_image_versions (
+            signature_id, old_file_hash, old_file_ext, new_file_hash, new_file_ext,
+            active_binding_count, changed_by_role, changed_by_id, changed_by_name_snapshot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(signature_id),
+            row["file_hash"] or "",
+            row["file_ext"] or "",
+            file_hash,
+            ext,
+            active_bindings,
+            actor.get("role") or "",
+            int(actor.get("id") or 0),
+            _clean_text(actor.get("name"), 80),
+        ),
+    )
     conn.execute(
         """
         UPDATE electronic_signatures
@@ -1551,8 +1584,74 @@ async def replace_signature_image(
             int(signature_id),
         ),
     )
+    _notify_image_replaced(conn, actor, row, active_bindings)
     refreshed = _get_signature_row(conn, signature_id)
-    return serialize_signature(refreshed, actor, conn)
+    return {**serialize_signature(refreshed, actor, conn), "active_binding_count": active_bindings}
+
+
+def count_active_signature_bindings(conn: sqlite3.Connection, signature_id: int) -> int:
+    return int(
+        conn.execute(
+            "SELECT COUNT(*) FROM signature_point_bindings WHERE signature_id = ?",
+            (int(signature_id),),
+        ).fetchone()[0]
+        or 0
+    )
+
+
+def _notify_image_replaced(
+    conn: sqlite3.Connection,
+    actor: dict[str, Any],
+    row: sqlite3.Row,
+    active_bindings: int,
+) -> None:
+    """Tell the signer/owner and every binder that re-exports now embed a new image."""
+    from . import signature_workflow_service
+
+    recipients = signature_workflow_service._reviewer_identities(conn, row)
+    binder_rows = conn.execute(
+        """
+        SELECT DISTINCT bound_by_role AS role, bound_by_id AS id
+        FROM signature_point_bindings
+        WHERE signature_id = ?
+        """,
+        (int(row["id"]),),
+    ).fetchall()
+    recipients.extend(
+        {"role": str(binder["role"] or ""), "id": int(binder["id"] or 0)} for binder in binder_rows
+    )
+    suffix = f"；该签名当前被 {active_bindings} 处材料签名点引用，重新导出将使用新图片" if active_bindings else ""
+    signature_workflow_service._notify(
+        conn,
+        recipients=recipients,
+        actor=actor,
+        title="签名图片已更换",
+        body=f"{actor.get('name')} 更换了签名“{row['subject_name'] or row['name']}”的图片{suffix}。",
+        ref_type="signature_image_replaced",
+        ref_id=str(int(row["id"])),
+        metadata={"signature_id": int(row["id"]), "active_binding_count": active_bindings},
+    )
+
+
+def get_signature_refs(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    signature_id: int,
+) -> dict[str, Any]:
+    """Reference counts shown before destructive actions (delete / replace image)."""
+    row, _actor = get_signature_row_for_actor(conn, user, signature_id, require_use=False)
+    pending_requests = int(
+        conn.execute(
+            "SELECT COUNT(*) FROM signature_access_requests WHERE signature_id = ? AND status = 'pending'",
+            (int(signature_id),),
+        ).fetchone()[0]
+        or 0
+    )
+    return {
+        "signature_id": int(signature_id),
+        "active_binding_count": count_active_signature_bindings(conn, signature_id),
+        "pending_request_count": pending_requests,
+    }
 
 
 def list_claim_candidates(

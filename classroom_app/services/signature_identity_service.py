@@ -140,8 +140,13 @@ def sync_identity_for_signature(conn: Any, signature_id: int) -> dict[str, str]:
         set_account_identity(conn, subject_role, subject_id, signature_identity)
         return {"account": signature_identity}
     if account_identity and not signature_identity:
+        # Self-service fill: identity arrives unverified until an admin confirms.
         conn.execute(
-            "UPDATE electronic_signatures SET identity_category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            """
+            UPDATE electronic_signatures
+            SET identity_category = ?, identity_verified = 0, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
             (account_identity, int(signature_id)),
         )
         return {"signature": account_identity}
@@ -161,7 +166,7 @@ def propagate_account_identity(conn: Any, role: str, user_id: Any, identity: str
     cursor = conn.execute(
         """
         UPDATE electronic_signatures
-        SET identity_category = ?, updated_at = CURRENT_TIMESTAMP
+        SET identity_category = ?, identity_verified = 0, updated_at = CURRENT_TIMESTAMP
         WHERE subject_role = ? AND subject_id = ?
           AND status = 'active' AND deleted_at IS NULL
           AND COALESCE(identity_category, '') <> ?

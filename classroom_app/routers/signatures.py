@@ -292,6 +292,18 @@ async def api_create_signature_claim_request(
         _raise_signature_error(exc)
 
 
+@router.get("/{signature_id:int}/refs", response_class=JSONResponse)
+async def api_signature_refs(
+    signature_id: int,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            return signature_service.get_signature_refs(conn, user, signature_id)
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
 @router.post("/{signature_id:int}/image", response_class=JSONResponse)
 async def api_replace_signature_image(
     signature_id: int,

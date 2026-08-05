@@ -144,7 +144,7 @@ export class SignaturePointControl {
         const remaining = usable.filter((item) => !this.selectedIds.includes(Number(item.id)));
         const visible = this.filterCandidates(remaining, this.searchTerm, this.identityFilterOn);
         const hiddenCount = remaining.length - visible.length;
-        const options = visible.map((item) => `<option value="${item.id}">${esc(item.subject_name || item.name)}${item.identity_label ? ` · ${esc(item.identity_label)}` : ''} · ${esc(item.scope_label || '')}</option>`).join('');
+        const options = visible.map((item) => `<option value="${item.id}">${esc(item.subject_name || item.name)}${item.identity_label ? ` · ${esc(item.identity_label)}${item.identity_verified ? '✓' : ''}` : ''} · ${esc(item.scope_label || '')}</option>`).join('');
         const flowBadge = this.state?.active_flow
             ? `<span class="spw-flow-badge">${esc(statusText[this.state.active_flow.status] || '申请处理中')}</span>`
             : '';
@@ -256,7 +256,7 @@ export class SignaturePointControl {
             if (!Array.isArray(this.dialogRequestOrder)) this.dialogRequestOrder = [];
             const options = visibleCandidates.map((item) => {
                 const order = this.dialogRequestOrder.indexOf(Number(item.id));
-                return `<label><input type="checkbox" value="${item.id}" ${order >= 0 ? 'checked' : ''}><span class="spw-candidate-order">${order >= 0 ? order + 1 : '—'}</span><span><strong>${esc(item.subject_name || item.name)}</strong><small>${item.identity_label ? `${esc(item.identity_label)} · ` : ''}${esc(item.owner_name || item.scope_label || '')}${item.needs_admin_review ? ' · <em class="spw-admin-review">未绑定账号，由管理员审批</em>' : ''}</small></span></label>`;
+                return `<label><input type="checkbox" value="${item.id}" ${order >= 0 ? 'checked' : ''}><span class="spw-candidate-order">${order >= 0 ? order + 1 : '—'}</span><span><strong>${esc(item.subject_name || item.name)}</strong><small>${item.identity_label ? `${esc(item.identity_label)}${item.identity_verified ? '✓' : ''} · ` : ''}${esc(item.owner_name || item.scope_label || '')}${item.needs_admin_review ? ' · <em class="spw-admin-review">未绑定账号，由管理员审批</em>' : ''}</small></span></label>`;
             }).join('');
             panel.innerHTML = `
                 <header><div><span>新建签名申请</span><h3>${esc(this.pointLabel)}</h3></div><button type="button" data-spw-close aria-label="关闭">×</button></header>

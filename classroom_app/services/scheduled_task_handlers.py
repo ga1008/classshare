@@ -564,3 +564,22 @@ def handle_assignment_due_reminder(task: dict[str, Any]) -> str:
 
 
 register_task_handler(ASSIGNMENT_DUE_REMINDER_TASK_KIND, handle_assignment_due_reminder)
+
+
+from .signature_workflow_service import (  # noqa: E402
+    TASK_KIND_SIGNATURE_REQUEST_REMINDER,
+    remind_stale_signature_requests,
+)
+
+
+def handle_signature_request_reminder(task: dict[str, Any]) -> str:
+    with get_db_connection() as conn:
+        result = remind_stale_signature_requests(conn)
+        conn.commit()
+    return (
+        f"signature request sweep: reminded={result.get('reminded', 0)} "
+        f"escalated={result.get('escalated', 0)}"
+    )
+
+
+register_task_handler(TASK_KIND_SIGNATURE_REQUEST_REMINDER, handle_signature_request_reminder)

@@ -302,7 +302,7 @@ function renderCard(item) {
                 <strong class="signature-card-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong>
                 <div class="signature-meta-line">
                     <span class="signature-chip${chipClass}">${escapeHtml(item.scope_label)}</span>
-                    ${item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}</span>` : `<span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>`}
+                    ${item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}${item.identity_verified ? ' ✓' : ''}</span>` : `<span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>`}
                     ${item.is_owner ? '<span class="signature-chip is-owner">归属我</span>' : `<span class="signature-chip">${escapeHtml(item.owner_name || '未归属')}</span>`}
                 </div>
             </div>
@@ -338,7 +338,7 @@ function renderDetail(item) {
         els['signature-detail-chips'].innerHTML = `
             <span class="signature-chip${item.is_owner ? ' is-owner' : ''}">${escapeHtml(item.scope_label)}</span>
             <span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>
-            ${item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}</span>` : ''}
+            ${item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}${item.identity_verified ? '（已核验）' : '（未核验）'}</span>` : ''}
             ${item.is_owner ? '<span class="signature-chip is-owner">归属我</span>' : ''}
             ${item.owner_role === 'system' ? '<span class="signature-chip is-system">平台导入</span>' : ''}
             ${item.owner_role !== 'system' && !item.subject_bound ? '<span class="signature-chip">未绑定账号</span>' : ''}
@@ -454,8 +454,23 @@ async function applyClaim(signatureId, button) {
     }
 }
 
+async function fetchSignatureRefs(signatureId) {
+    try {
+        return await apiFetch(`/api/signatures/${signatureId}/refs`, { method: 'GET', silent: true });
+    } catch {
+        return null;
+    }
+}
+
 async function replaceCurrentSignatureImage(file) {
     if (!state.selectedId || !file) return;
+    const refs = await fetchSignatureRefs(state.selectedId);
+    if (refs?.active_binding_count > 0) {
+        const proceed = window.confirm(
+            `该签名当前被 ${refs.active_binding_count} 处材料签名点引用；更换图片后这些材料重新导出将使用新图片，相关人员会收到通知。确定更换？`,
+        );
+        if (!proceed) return;
+    }
     const formData = new FormData();
     formData.append('file', file);
     try {
@@ -579,11 +594,15 @@ function renderSignatureRequests() {
             <button type="button" class="btn btn-primary btn-sm" data-signature-request-action="approve">批准</button>
             <button type="button" class="btn btn-outline btn-sm" data-signature-request-action="reject">拒绝</button>
         ` : `<span class="signature-chip">${escapeHtml(mine?.status || item.status)}</span>`;
+        const claimPreview = isClaim
+            ? `<img class="signature-request-preview" src="/api/signatures/${item.signature_id}/image" alt="签名图" loading="lazy" style="max-height:44px;max-width:120px;object-fit:contain;background:#fff;border:1px solid rgba(148,163,184,.3);border-radius:6px;padding:2px;margin-top:6px;">`
+            : '';
         return `
             <article class="signature-request-item" data-signature-request-id="${item.id}">
                 <div class="signature-request-main">
                     <p class="signature-request-title">${signatureName}</p>
                     <div class="signature-request-meta">${meta}</div>
+                    ${claimPreview}
                 </div>
                 <div class="signature-request-actions">
                     ${actions}
@@ -643,7 +662,14 @@ async function deleteCurrentSignature() {
     if (!state.selectedId) return;
     const item = state.items.find((entry) => entry.id === state.selectedId);
     if (!item) return;
-    if (!window.confirm(`确定删除“${item.name}”？删除后不会再出现在可用签名中。`)) {
+    const refs = await fetchSignatureRefs(state.selectedId);
+    const bindingWarning = refs?.active_binding_count > 0
+        ? `\n注意：该签名当前被 ${refs.active_binding_count} 处材料签名点引用，删除后这些材料重新导出将缺少此签名。`
+        : '';
+    const pendingWarning = refs?.pending_request_count > 0
+        ? `\n另有 ${refs.pending_request_count} 条待审批申请与它关联。`
+        : '';
+    if (!window.confirm(`确定删除“${item.name}”？删除后不会再出现在可用签名中。${bindingWarning}${pendingWarning}`)) {
         return;
     }
     try {

@@ -1,6 +1,6 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml } from './ui.js';
-import { SignaturePointControl } from './signature_point_workflow.js?v=identity-filter-1';
+import { SignaturePointControl } from './signature_point_workflow.js?v=identity-filter-2';
 import {
     closePendingPreviewWindow,
     isPreviewLinkBusy,

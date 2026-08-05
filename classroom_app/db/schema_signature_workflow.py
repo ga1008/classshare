@@ -137,6 +137,9 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
         {
             "subject_id": "INTEGER",
             "identity_category": "TEXT NOT NULL DEFAULT ''",
+            # Set only when a super admin confirms the identity; any change made
+            # through self-service paths clears it back to 0.
+            "identity_verified": "INTEGER NOT NULL DEFAULT 0",
         },
         engine=engine,
     )
@@ -159,6 +162,8 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
             "material_id": "TEXT NOT NULL DEFAULT ''",
             "material_revision": "TEXT NOT NULL DEFAULT ''",
             "display_order": "INTEGER NOT NULL DEFAULT 0",
+            "last_reminded_at": timestamp_type,
+            "escalated_at": timestamp_type,
         },
         engine=engine,
     )
@@ -305,6 +310,24 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
         )
         """
     )
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS signature_image_versions (
+            id {id_type} {primary_key},
+            signature_id INTEGER NOT NULL,
+            old_file_hash TEXT NOT NULL DEFAULT '',
+            old_file_ext TEXT NOT NULL DEFAULT '',
+            new_file_hash TEXT NOT NULL DEFAULT '',
+            new_file_ext TEXT NOT NULL DEFAULT '',
+            active_binding_count INTEGER NOT NULL DEFAULT 0,
+            changed_by_role TEXT NOT NULL DEFAULT '',
+            changed_by_id INTEGER,
+            changed_by_name_snapshot TEXT NOT NULL DEFAULT '',
+            created_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (signature_id) REFERENCES electronic_signatures (id) ON DELETE CASCADE
+        )
+        """
+    )
 
     conn.execute(
         """
@@ -387,6 +410,8 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
         "CREATE INDEX IF NOT EXISTS idx_signature_point_flows_scope ON signature_point_flows (function_point_key, material_type, material_id, material_revision, requester_role, requester_id, status)",
         "CREATE INDEX IF NOT EXISTS idx_signature_point_flow_items_request ON signature_point_flow_items (request_id, status, display_order)",
         "CREATE INDEX IF NOT EXISTS idx_signature_point_bindings_scope ON signature_point_bindings (function_point_key, material_type, material_id, material_revision, display_order)",
+        "CREATE INDEX IF NOT EXISTS idx_signature_image_versions_signature ON signature_image_versions (signature_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_signature_point_bindings_signature ON signature_point_bindings (signature_id)",
     ):
         conn.execute(statement)
 
