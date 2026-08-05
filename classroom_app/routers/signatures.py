@@ -8,7 +8,12 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from ..database import get_db_connection
 from ..dependencies import get_client_ip, get_current_user
-from ..services import signature_point_service, signature_service, signature_workflow_service
+from ..services import (
+    signature_image_service,
+    signature_point_service,
+    signature_service,
+    signature_workflow_service,
+)
 
 
 router = APIRouter(prefix="/api/signatures")
@@ -143,7 +148,7 @@ async def api_signature_image(
 ):
     try:
         with get_db_connection() as conn:
-            row, _actor = signature_service.get_signature_row_for_actor(
+            row, actor = signature_service.get_signature_row_for_actor(
                 conn,
                 user,
                 signature_id,
@@ -152,6 +157,20 @@ async def api_signature_image(
             file_path = signature_service.resolve_signature_file_path(row)
             if not file_path:
                 raise HTTPException(status_code=404, detail="签名图片文件不存在。")
+            # 浏览场景（卡片/详情/认领审批）只对可直接使用者出原图；
+            # 其他有查看权的人拿到带“仅供预览”水印的降清图，防止截图滥用。
+            if int(download or 0) != 1 and not signature_service.can_use_signature(actor, row, conn):
+                try:
+                    preview = signature_image_service.ensure_preview(row["file_hash"], file_path)
+                except signature_image_service.SignatureImageError:
+                    raise HTTPException(status_code=404, detail="签名图片文件不存在。")
+                response = FileResponse(
+                    preview,
+                    media_type="image/png",
+                    content_disposition_type="inline",
+                )
+                response.headers["Cache-Control"] = "private, max-age=300"
+                return response
             if int(download or 0) == 1:
                 signature_service.record_signature_usage(
                     conn,

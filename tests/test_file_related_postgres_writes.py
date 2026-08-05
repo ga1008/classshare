@@ -39,11 +39,27 @@ class FakeConnection:
         return FakeCursor()
 
 
+def _real_png_bytes() -> bytes:
+    """normalize_upload_image parses real pixels, so fixtures need a real PNG."""
+    import io as _io
+
+    from PIL import Image as _Image, ImageDraw as _ImageDraw
+
+    image = _Image.new("RGB", (200, 100), "white")
+    _ImageDraw.Draw(image).line((20, 70, 160, 30), fill=(10, 10, 10), width=6)
+    buffer = _io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+_REAL_PNG_BYTES = _real_png_bytes()
+
+
 class FakeUpload:
     def __init__(self, *, filename="image.png", content_type="image/png", data=None):
         self.filename = filename
         self.content_type = content_type
-        self._data = data or b"\x89PNG\r\n\x1a\nfake-png"
+        self._data = data or _REAL_PNG_BYTES
         self._read = False
 
     async def read(self, _size=-1):

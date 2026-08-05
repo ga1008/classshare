@@ -15,7 +15,7 @@ from fastapi import UploadFile
 from ..config import SIGNATURES_DIR, SIGNATURES_LEGACY_DIRS
 from ..db.connection import execute_insert_returning_id
 from ..storage_paths import unique_paths
-from . import signature_identity_service
+from . import signature_identity_service, signature_image_service
 from .message_center_service import is_super_admin_teacher
 from .organization_management_service import list_school_options
 from .organization_scope_service import (
@@ -1226,6 +1226,11 @@ async def create_signature_from_upload(
     mime_type = _detect_mime(data, ext)
     if ALLOWED_SIGNATURE_EXTENSIONS[ext] != mime_type:
         raise SignatureServiceError(400, "文件扩展名与图片内容不一致。")
+    # 自助上传统一规范化：校验非空白、裁掉留白、白底转透明、重编码 PNG。
+    try:
+        data, ext, mime_type = signature_image_service.normalize_upload_image(data)
+    except signature_image_service.SignatureImageError as exc:
+        raise SignatureServiceError(400, str(exc)) from exc
 
     actor_role, actor_id = _actor_identity(actor)
 
@@ -1546,6 +1551,10 @@ async def replace_signature_image(
     mime_type = _detect_mime(data, ext)
     if ALLOWED_SIGNATURE_EXTENSIONS[ext] != mime_type:
         raise SignatureServiceError(400, "文件扩展名与图片内容不一致。")
+    try:
+        data, ext, mime_type = signature_image_service.normalize_upload_image(data)
+    except signature_image_service.SignatureImageError as exc:
+        raise SignatureServiceError(400, str(exc)) from exc
     file_hash = hashlib.sha256(data).hexdigest()
     target_path = await _store_signature_bytes(file_hash, ext, data)
     active_bindings = count_active_signature_bindings(conn, signature_id)
