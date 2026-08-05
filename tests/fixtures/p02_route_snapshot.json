@@ -4720,6 +4720,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/signatures/{signature_id:int}/merge",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_merge_signatures",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/signatures/{signature_id:int}/refs",
     "methods": [
       "GET"

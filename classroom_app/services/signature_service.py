@@ -1803,6 +1803,148 @@ def list_claim_candidates(
     return {"items": items, "actor": serialize_signature_actor(actor)}
 
 
+def merge_duplicate_signatures(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    primary_id: int,
+    duplicate_ids: list[int],
+) -> dict[str, Any]:
+    """Fold duplicate same-name signature rows into one primary (超管工具).
+
+    Document imports keep producing new rows for the same person. Merging
+    repoints bindings / flow items / usage logs to the primary, cancels the
+    duplicates' pending requests (the unique pending index would collide on a
+    repoint), migrates an account binding the primary lacks, and soft-deletes
+    the duplicates with a ``merged:<primary>`` marker. Image files stay on
+    disk — exported documents may still reference them.
+    """
+    actor = build_signature_actor(conn, user)
+    if not bool(actor.get("is_super_admin")):
+        raise SignatureServiceError(403, "只有超级管理员可以归并签名。")
+    primary = _get_signature_row(conn, primary_id)
+    if str(primary["owner_role"] or "") == "system":
+        raise SignatureServiceError(400, "平台公共签章不参与归并。")
+    primary_name = _clean_text(primary["subject_name"] or primary["name"], 80)
+    normalized_ids: list[int] = []
+    seen: set[int] = {int(primary_id)}
+    for value in duplicate_ids or []:
+        try:
+            duplicate_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if duplicate_id > 0 and duplicate_id not in seen:
+            seen.add(duplicate_id)
+            normalized_ids.append(duplicate_id)
+    if not normalized_ids:
+        raise SignatureServiceError(400, "请选择至少一个要并入的重复签名。")
+    if len(normalized_ids) > 20:
+        raise SignatureServiceError(400, "一次最多归并 20 个签名。")
+
+    from . import signature_workflow_service
+
+    merged = 0
+    for duplicate_id in normalized_ids:
+        duplicate = _get_signature_row(conn, duplicate_id)
+        if str(duplicate["owner_role"] or "") == "system":
+            raise SignatureServiceError(400, "平台公共签章不参与归并。")
+        duplicate_name = _clean_text(duplicate["subject_name"] or duplicate["name"], 80)
+        if duplicate_name != primary_name:
+            raise SignatureServiceError(400, f"“{duplicate_name}”与主签名姓名不一致，仅同名签名可归并。")
+        if normalize_school_code(duplicate["school_code"]) != normalize_school_code(primary["school_code"]):
+            raise SignatureServiceError(400, "仅同一学校的签名可归并。")
+        if (
+            is_subject_bound(duplicate)
+            and is_subject_bound(primary)
+            and (
+                str(duplicate["subject_role"]) != str(primary["subject_role"])
+                or int(duplicate["subject_id"] or 0) != int(primary["subject_id"] or 0)
+            )
+        ):
+            raise SignatureServiceError(
+                422, "主签名与重复签名绑定了不同账号，归并会造成归属混乱，请先解绑其一。"
+            )
+        if is_subject_bound(duplicate) and not is_subject_bound(primary):
+            conn.execute(
+                """
+                UPDATE electronic_signatures
+                SET subject_role = ?, subject_id = ?, subject_name = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    str(duplicate["subject_role"]),
+                    int(duplicate["subject_id"]),
+                    duplicate["subject_name"] or primary_name,
+                    int(primary_id),
+                ),
+            )
+            signature_identity_service.sync_identity_for_signature(conn, int(primary_id))
+            primary = _get_signature_row(conn, primary_id)
+
+        # Pending requests cannot be repointed (unique pending index) — end them.
+        pending_rows = conn.execute(
+            "SELECT id FROM signature_access_requests WHERE signature_id = ? AND status = 'pending'",
+            (duplicate_id,),
+        ).fetchall()
+        for pending in pending_rows:
+            pending_id = int(pending["id"])
+            conn.execute(
+                """
+                UPDATE signature_access_requests
+                SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP,
+                    review_note = '签名已归并到同名主签名，请对主签名重新申请。'
+                WHERE id = ? AND status = 'pending'
+                """,
+                (pending_id,),
+            )
+            conn.execute(
+                "UPDATE signature_access_request_items SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE request_id = ? AND status = 'pending'",
+                (pending_id,),
+            )
+            conn.execute(
+                "UPDATE signature_access_request_reviewers SET status = 'cancelled' WHERE request_id = ? AND status = 'pending'",
+                (pending_id,),
+            )
+        conn.execute(
+            "UPDATE signature_access_requests SET signature_id = ? WHERE signature_id = ? AND status <> 'cancelled'",
+            (int(primary_id), duplicate_id),
+        )
+        conn.execute(
+            "UPDATE signature_point_bindings SET signature_id = ? WHERE signature_id = ?",
+            (int(primary_id), duplicate_id),
+        )
+        conn.execute(
+            "UPDATE signature_point_flow_items SET signature_id = ? WHERE signature_id = ?",
+            (int(primary_id), duplicate_id),
+        )
+        conn.execute(
+            "UPDATE signature_usage_logs SET signature_id = ? WHERE signature_id = ?",
+            (int(primary_id), duplicate_id),
+        )
+        conn.execute(
+            """
+            UPDATE electronic_signatures
+            SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP,
+                legacy_source = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (f"merged:{int(primary_id)}", duplicate_id),
+        )
+        recipients = signature_workflow_service._reviewer_identities(conn, duplicate)
+        signature_workflow_service._notify(
+            conn,
+            recipients=recipients,
+            actor=actor,
+            title="同名签名已归并",
+            body=f"管理员已将签名“{duplicate_name}”并入同名主签名；原有材料绑定与授权已自动迁移。",
+            ref_type="signature_merge",
+            ref_id=f"{duplicate_id}->{int(primary_id)}",
+            metadata={"primary_id": int(primary_id), "duplicate_id": duplicate_id},
+        )
+        merged += 1
+    refreshed = _get_signature_row(conn, primary_id)
+    return {"status": "success", "merged": merged, "signature": serialize_signature(refreshed, actor, conn)}
+
+
 def unbind_signature(
     conn: sqlite3.Connection,
     user: dict[str, Any],

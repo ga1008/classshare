@@ -311,6 +311,28 @@ async def api_create_signature_claim_request(
         _raise_signature_error(exc)
 
 
+@router.post("/{signature_id:int}/merge", response_class=JSONResponse)
+async def api_merge_signatures(
+    signature_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    payload = await _json_body(request)
+    raw_ids = payload.get("duplicate_ids")
+    try:
+        with get_db_connection() as conn:
+            result = signature_service.merge_duplicate_signatures(
+                conn,
+                user,
+                signature_id,
+                [item for item in raw_ids] if isinstance(raw_ids, list) else [],
+            )
+            conn.commit()
+        return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
 @router.post("/{signature_id:int}/unbind", response_class=JSONResponse)
 async def api_unbind_signature(
     signature_id: int,

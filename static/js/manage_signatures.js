@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { openSignaturePad } from './signature_pad.js?v=1';
 import { closeModal, escapeHtml, formatDate, formatSize, openModal, showMessage } from './ui.js';
 
 const state = {
@@ -82,6 +83,11 @@ function cacheElements() {
         'signature-replace-image-btn',
         'signature-replace-image-input',
         'signature-unbind-btn',
+        'signature-merge-btn',
+        'signature-merge-list',
+        'signature-merge-subtitle',
+        'signature-merge-submit-btn',
+        'signature-open-pad-btn',
         'signature-batch-select-all-label',
         'signature-batch-select-all',
         'signature-batch-approve-btn',
@@ -397,6 +403,9 @@ function setActionVisibility(canUse, canDelete, canEdit = false, canRequestUse =
         const item = state.items.find((entry) => entry.id === state.selectedId);
         els['signature-unbind-btn'].hidden = !item?.can_unbind;
     }
+    if (els['signature-merge-btn']) {
+        els['signature-merge-btn'].hidden = !mergeCandidatesForSelected().length;
+    }
     if (els['signature-download-link']) els['signature-download-link'].hidden = !canUse;
     if (els['signature-request-btn']) {
         els['signature-request-btn'].hidden = !canRequestUse;
@@ -488,6 +497,83 @@ async function replaceCurrentSignatureImage(file) {
         await loadSignatures({ keepSelection: true });
     } catch {
         // apiFetch already surfaces the error.
+    }
+}
+
+function mergeCandidatesForSelected() {
+    const item = state.items.find((entry) => entry.id === state.selectedId);
+    if (!item || !isSuperAdmin() || item.owner_role === 'system') return [];
+    const name = (item.subject_name || item.name || '').trim();
+    if (!name) return [];
+    return state.items.filter((entry) => (
+        entry.id !== item.id
+        && entry.owner_role !== 'system'
+        && (entry.subject_name || entry.name || '').trim() === name
+    ));
+}
+
+function openMergeModal() {
+    const item = state.items.find((entry) => entry.id === state.selectedId);
+    const candidates = mergeCandidatesForSelected();
+    if (!item || !candidates.length) return;
+    if (els['signature-merge-subtitle']) {
+        els['signature-merge-subtitle'].textContent = `将勾选的重复签名并入主签名“${item.subject_name || item.name}”（ID ${item.id}）；材料绑定与已批授权自动迁移，待审申请会被取消。`;
+    }
+    if (els['signature-merge-list']) {
+        els['signature-merge-list'].innerHTML = candidates.map((entry) => `
+            <article class="signature-request-item">
+                <div class="signature-request-main" style="display:flex;gap:10px;align-items:center;">
+                    <input type="checkbox" data-signature-merge-check="${entry.id}" style="width:16px;height:16px;accent-color:#0f766e;">
+                    <img src="${escapeHtml(entry.image_url)}" alt="" loading="lazy" style="max-height:40px;max-width:110px;object-fit:contain;background:#fff;border:1px solid rgba(148,163,184,.3);border-radius:6px;padding:2px;">
+                    <div>
+                        <p class="signature-request-title">ID ${entry.id} · ${escapeHtml(entry.subject_name || entry.name)}</p>
+                        <div class="signature-request-meta">归属：${escapeHtml(entry.owner_name || '未归属')} · 已调用 ${entry.usage_count || 0} 次${entry.subject_bound ? ' · 已绑定账号' : ''}</div>
+                    </div>
+                </div>
+            </article>
+        `).join('');
+    }
+    openModal('signature-merge-modal');
+}
+
+async function submitMerge() {
+    const ids = Array.from(document.querySelectorAll('input[data-signature-merge-check]:checked'))
+        .map((input) => Number(input.dataset.signatureMergeCheck || 0))
+        .filter(Boolean);
+    if (!ids.length) {
+        showMessage('请勾选要并入的重复签名。', 'warning');
+        return;
+    }
+    if (!window.confirm(`确定把 ${ids.length} 个重复签名并入当前主签名？此操作不可撤销。`)) return;
+    const button = els['signature-merge-submit-btn'];
+    if (button) button.disabled = true;
+    try {
+        const result = await apiFetch(`/api/signatures/${state.selectedId}/merge`, {
+            method: 'POST',
+            body: { duplicate_ids: ids },
+        });
+        showMessage(`已归并 ${result.merged} 个同名签名。`, 'success');
+        closeModal('signature-merge-modal');
+        await loadSignatures({ keepSelection: true });
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function uploadHandwrittenSignature(blob) {
+    const formData = new FormData();
+    formData.append('file', new File([blob], 'handwritten.png', { type: 'image/png' }));
+    const typedName = els['signature-name-input']?.value?.trim() || '';
+    formData.append('name', typedName || '手写签名');
+    formData.append('identity_category', els['signature-identity-input']?.value || '');
+    formData.append('description', els['signature-description-input']?.value?.trim() || '手写板录入');
+    try {
+        await apiFetch('/api/signatures/upload', { method: 'POST', body: formData });
+        showMessage('手写签名已保存并绑定到你的账号。', 'success');
+        closeModal('signature-upload-modal');
+        await loadSignatures({ keepSelection: false });
+    } catch {
+        // apiFetch already surfaces the error (e.g. duplicate-name claim hint).
     }
 }
 
@@ -983,6 +1069,11 @@ function bindEvents() {
         applyClaim(Number(button.dataset.signatureClaimApply || 0), button);
     });
     els['signature-unbind-btn']?.addEventListener('click', unbindCurrentSignature);
+    els['signature-merge-btn']?.addEventListener('click', openMergeModal);
+    els['signature-merge-submit-btn']?.addEventListener('click', submitMerge);
+    els['signature-open-pad-btn']?.addEventListener('click', () => {
+        openSignaturePad({ onConfirm: (blob) => uploadHandwrittenSignature(blob) });
+    });
     els['signature-batch-select-all']?.addEventListener('change', () => {
         const checked = Boolean(els['signature-batch-select-all']?.checked);
         document.querySelectorAll('input[data-signature-batch-check]').forEach((input) => {

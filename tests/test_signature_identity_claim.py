@@ -327,6 +327,91 @@ class SignatureIdentityClaimTests(unittest.TestCase):
         self.assertEqual("approved", outcomes[first["id"]].get("status"))
         self.assertIn("签名者本人", outcomes[second["id"]].get("error", ""))
 
+    def _insert_duplicate(self, *, subject_id: int | None = None) -> int:
+        cursor = self.conn.execute(
+            """
+            INSERT INTO electronic_signatures (
+                name, subject_name, subject_role, subject_id,
+                owner_role, owner_id, owner_name_snapshot, identity_category
+            ) VALUES ('陈忠伟', '陈忠伟', 'teacher', ?, 'teacher', 2, '归属教师', '')
+            """,
+            (subject_id,),
+        )
+        return int(cursor.lastrowid)
+
+    def test_merge_repoints_references_and_soft_deletes(self) -> None:
+        duplicate_id = self._insert_duplicate()
+        self.conn.execute(
+            """
+            INSERT INTO signature_point_bindings (
+                function_point_key, material_type, material_id, material_revision,
+                signature_id, display_order, bound_by_role, bound_by_id
+            ) VALUES ('assessment_plan.examiner_signature', 'assessment_plan', 'p1', 'rev1', ?, 0, 'teacher', 2)
+            """,
+            (duplicate_id,),
+        )
+        self.conn.execute(
+            "INSERT INTO signature_usage_logs (signature_id, actor_role, actor_id, action) VALUES (?, 'teacher', 2, 'use')",
+            (duplicate_id,),
+        )
+        pending = signature_workflow_service.create_claim_request(
+            self.conn, {"role": "student", "id": 1}, duplicate_id
+        )["request"]
+
+        with self.assertRaises(signature_service.SignatureServiceError) as forbidden:
+            signature_service.merge_duplicate_signatures(
+                self.conn, {"role": "teacher", "id": 2}, 1, [duplicate_id]
+            )
+        self.assertEqual(403, forbidden.exception.status_code)
+
+        result = signature_service.merge_duplicate_signatures(
+            self.conn, {"role": "teacher", "id": 9}, 1, [duplicate_id]
+        )
+        self.assertEqual(1, result["merged"])
+        dup_row = self._signature(duplicate_id)
+        self.assertEqual("deleted", dup_row["status"])
+        self.assertEqual("merged:1", dup_row["legacy_source"])
+        binding = self.conn.execute(
+            "SELECT signature_id FROM signature_point_bindings LIMIT 1"
+        ).fetchone()
+        self.assertEqual(1, int(binding["signature_id"]))
+        usage = self.conn.execute(
+            "SELECT signature_id FROM signature_usage_logs LIMIT 1"
+        ).fetchone()
+        self.assertEqual(1, int(usage["signature_id"]))
+        request_row = self.conn.execute(
+            "SELECT status FROM signature_access_requests WHERE id = ?", (pending["id"],)
+        ).fetchone()
+        self.assertEqual("cancelled", request_row["status"])
+
+    def test_merge_guards_names_and_conflicting_bindings(self) -> None:
+        with self.assertRaises(signature_service.SignatureServiceError) as name_guard:
+            # Signature 2 carries a different subject name (归属教师).
+            signature_service.merge_duplicate_signatures(
+                self.conn, {"role": "teacher", "id": 9}, 1, [2]
+            )
+        self.assertEqual(400, name_guard.exception.status_code)
+
+        # Duplicate bound to teacher 1 migrates its binding onto the unbound primary.
+        duplicate_id = self._insert_duplicate(subject_id=1)
+        signature_service.merge_duplicate_signatures(
+            self.conn, {"role": "teacher", "id": 9}, 1, [duplicate_id]
+        )
+        primary = self._signature(1)
+        self.assertEqual(1, int(primary["subject_id"]))
+
+        # Now a duplicate bound to a different account must be rejected.
+        conflicting_id = self._insert_duplicate(subject_id=2)
+        self.conn.execute(
+            "UPDATE electronic_signatures SET subject_name = '陈忠伟' WHERE id = ?",
+            (conflicting_id,),
+        )
+        with self.assertRaises(signature_service.SignatureServiceError) as conflict:
+            signature_service.merge_duplicate_signatures(
+                self.conn, {"role": "teacher", "id": 9}, 1, [conflicting_id]
+            )
+        self.assertEqual(422, conflict.exception.status_code)
+
     def test_sync_fills_signature_identity_from_account(self) -> None:
         self.conn.execute("UPDATE teachers SET identity_category = 'counselor' WHERE id = 2")
         result = signature_identity_service.sync_identity_for_signature(self.conn, 2)

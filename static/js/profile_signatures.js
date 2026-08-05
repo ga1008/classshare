@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { openSignaturePad } from './signature_pad.js?v=1';
 import { escapeHtml, showToast } from './ui.js';
 
 const root = document.querySelector('[data-signature-app]');
@@ -155,6 +156,7 @@ function render() {
                 <div class="psig-upload">
                     <input type="file" accept="image/png,image/jpeg" data-psig-file hidden>
                     <button type="button" class="btn btn-outline btn-sm" data-psig-claim-toggle>${state.claimPanelOpen ? '收起认领' : '认领签名'}</button>
+                    <button type="button" class="btn btn-outline btn-sm" data-psig-pad>手写签名</button>
                     <button type="button" class="btn btn-primary btn-sm" data-psig-upload>上传签名</button>
                 </div>
             </div>
@@ -355,6 +357,11 @@ function bindEvents() {
     });
     root.querySelectorAll('[data-psig-cancel]').forEach((button) => {
         button.addEventListener('click', () => cancelRequest(Number(button.dataset.psigCancel)));
+    });
+    root.querySelector('[data-psig-pad]')?.addEventListener('click', () => {
+        openSignaturePad({
+            onConfirm: (blob) => uploadSignature(new File([blob], 'handwritten.png', { type: 'image/png' })),
+        });
     });
     root.querySelector('[data-psig-claim-toggle]')?.addEventListener('click', toggleClaimPanel);
     const claimSearch = root.querySelector('[data-psig-claim-search]');
