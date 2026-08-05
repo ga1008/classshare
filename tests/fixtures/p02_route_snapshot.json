@@ -2720,6 +2720,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/semesters/{semester_id}/calendar/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_semester_calendar_sync_status",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/semesters/{semester_id}/calendar/sync",
     "methods": [
       "POST"
@@ -4109,6 +4117,22 @@
       "POST"
     ],
     "name": "api_test_teacher_email_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/identities",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_profile_identities",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/identities",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_update_profile_identities",
     "include_in_schema": true
   },
   {

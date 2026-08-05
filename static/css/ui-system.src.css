@@ -33054,12 +33054,20 @@ body.page-wrapper:has(.blog-shell) {
     display: none;
     position: fixed;
     inset: 0;
-    padding: 28px 16px;
+    width: 100vw;
+    min-height: 100vh;
+    height: 100dvh;
+    padding: max(18px, env(safe-area-inset-top)) 16px max(18px, env(safe-area-inset-bottom));
+    overflow-y: auto;
     background: rgba(15, 23, 42, 0.4);
     backdrop-filter: blur(6px);
     justify-content: center;
     align-items: center;
     z-index: 1200;
+}
+
+body.has-academic-modal {
+    overflow: hidden;
 }
 
 .academic-modal-backdrop.is-open {
@@ -33068,7 +33076,8 @@ body.page-wrapper:has(.blog-shell) {
 
 .academic-modal {
     width: min(920px, 100%);
-    max-height: calc(100vh - 56px);
+    max-height: calc(100dvh - 36px);
+    margin: auto;
     overflow: auto;
     border-radius: var(--radius-2xl);
     background: rgba(255, 255, 255, 0.98);
@@ -33232,6 +33241,41 @@ body.page-wrapper:has(.blog-shell) {
     border-radius: var(--radius-xl);
     border: 1px solid rgba(148, 163, 184, 0.18);
     background: rgba(255, 255, 255, 0.92);
+}
+
+.academic-list-item-selectable {
+    cursor: pointer;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.academic-list-item-selectable:hover {
+    border-color: hsl(var(--ls-info) / 0.28);
+    transform: translateY(-1px);
+}
+
+.academic-list-item-selectable:focus-visible {
+    outline: 3px solid hsl(var(--ls-info) / 0.2);
+    outline-offset: 2px;
+}
+
+.semester-button-spinner {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 999px;
+    animation: semester-button-spin 0.72s linear infinite;
+}
+
+.btn.is-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+@keyframes semester-button-spin {
+    to { transform: rotate(360deg); }
 }
 
 .academic-list-item.is-active {

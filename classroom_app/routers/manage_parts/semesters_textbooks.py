@@ -67,11 +67,13 @@ async def api_save_semester(
             teacher_scope = load_teacher_org_scope(conn, int(user["id"]))
             should_sync_calendar = False
             if semester_id_value:
-                _ensure_teacher_can_manage_semester(
+                semester_row = _ensure_teacher_can_manage_semester(
                     conn,
                     semester_id=semester_id_value,
                     teacher_id=user["id"],
                 )
+                if is_semester_calendar_sync_active(semester_row):
+                    raise HTTPException(409, "校历正在同步，请等待同步完成后再编辑学期。")
                 conn.execute(
                     """
                     UPDATE academic_semesters
@@ -189,11 +191,18 @@ async def api_sync_semester_calendar(
     user: dict = Depends(get_current_teacher),
 ):
     with get_db_connection() as conn:
-        _ensure_teacher_can_manage_semester(
+        semester_row = _ensure_teacher_can_manage_semester(
             conn,
             semester_id=semester_id,
             teacher_id=user["id"],
         )
+        if is_semester_calendar_sync_active(semester_row):
+            return {
+                "status": "already_running",
+                "message": "校历正在同步，请稍候。",
+                "semester_id": int(semester_id),
+                "calendar_sync_status": str(semester_row["calendar_sync_status"] or "running"),
+            }
         mark_semester_calendar_sync_queued(
             conn,
             teacher_id=int(user["id"]),
@@ -206,7 +215,37 @@ async def api_sync_semester_calendar(
         "status": "success",
         "message": "校历同步已开始，系统会自动拉取教务系统并核对广西节假日/补课日期。",
         "semester_id": int(semester_id),
+        "calendar_sync_status": "pending",
     }
+
+
+@router.get("/semesters/{semester_id}/calendar/status", response_class=JSONResponse)
+async def api_get_semester_calendar_sync_status(
+    semester_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        semester_row = _ensure_teacher_can_use_semester(
+            conn,
+            semester_id=semester_id,
+            teacher_id=user["id"],
+        )
+        active = is_semester_calendar_sync_active(semester_row)
+        status = str(semester_row["calendar_sync_status"] or "pending")
+        if status in {"pending", "running"} and not active:
+            status = "failed"
+            message = "上一次校历同步未正常结束，可以重新同步。"
+        else:
+            message = str(semester_row["calendar_sync_message"] or "")
+        return {
+            "status": "success",
+            "semester_id": int(semester_id),
+            "calendar_sync_status": status,
+            "calendar_sync_active": active,
+            "calendar_sync_message": message,
+            "calendar_sync_at": str(semester_row["calendar_sync_at"] or ""),
+            "updated_at": str(semester_row["updated_at"] or ""),
+        }
 
 
 @router.post("/semesters/calendar/sync-current", response_class=JSONResponse)

@@ -1548,6 +1548,17 @@ REQUIRED_POSTGRES_COLUMNS = {
         "changed_by_name_snapshot",
         "created_at",
     ),
+    "identity_appointments": (
+        "id",
+        "holder_role",
+        "holder_id",
+        "identity_category",
+        "term_start",
+        "term_end",
+        "status",
+        "created_at",
+        "updated_at",
+    ),
     "assignment_wrong_answer_ai_cache": (
         "id",
         "assignment_id",

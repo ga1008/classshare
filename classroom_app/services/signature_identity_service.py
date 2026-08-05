@@ -153,6 +153,259 @@ def sync_identity_for_signature(conn: Any, signature_id: int) -> dict[str, str]:
     return {}
 
 
+_DATE_RE = None
+
+
+def _normalize_term_date(value: Any) -> str:
+    """Accept '' or 'YYYY-MM-DD'; anything else raises ValueError."""
+    import re
+
+    global _DATE_RE
+    if _DATE_RE is None:
+        _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if not _DATE_RE.match(text):
+        raise ValueError(f"任期日期格式应为 YYYY-MM-DD：{text}")
+    return text
+
+
+def _today_text(today: Any = None) -> str:
+    from datetime import date, datetime
+
+    if isinstance(today, str) and today:
+        return today
+    if isinstance(today, datetime):
+        return today.date().isoformat()
+    if isinstance(today, date):
+        return today.isoformat()
+    return date.today().isoformat()
+
+
+def _in_term(row: Any, today_text: str) -> bool:
+    start = str(row["term_start"] or "")
+    end = str(row["term_end"] or "")
+    if start and start > today_text:
+        return False
+    if end and end < today_text:
+        return False
+    return True
+
+
+def list_identity_appointments(conn: Any, role: str, user_id: Any) -> list[dict[str, Any]]:
+    table_role = str(role or "").strip().lower()
+    try:
+        holder_id = int(user_id or 0)
+    except (TypeError, ValueError):
+        holder_id = 0
+    if table_role not in {"teacher", "student"} or holder_id <= 0:
+        return []
+    rows = conn.execute(
+        """
+        SELECT id, identity_category, term_start, term_end, status
+        FROM identity_appointments
+        WHERE holder_role = ? AND holder_id = ?
+        ORDER BY id
+        """,
+        (table_role, holder_id),
+    ).fetchall()
+    today = _today_text()
+    ordered = {key: index for index, (key, _label) in enumerate(IDENTITY_CATEGORIES)}
+    items = [
+        {
+            "id": int(row["id"]),
+            "identity_category": row["identity_category"],
+            "identity_label": identity_label(row["identity_category"]),
+            "term_start": row["term_start"] or "",
+            "term_end": row["term_end"] or "",
+            "status": row["status"] or "active",
+            "is_effective": (row["status"] or "active") == "active" and _in_term(row, today),
+        }
+        for row in rows
+    ]
+    return sorted(items, key=lambda item: ordered.get(item["identity_category"], 99))
+
+
+def effective_identity_categories(
+    conn: Any,
+    role: str,
+    user_id: Any,
+    *,
+    today: Any = None,
+) -> list[str]:
+    """Active, in-term identity categories; falls back to the legacy column
+    when the holder has no appointment rows at all (pre-migration accounts)."""
+    table_role = str(role or "").strip().lower()
+    try:
+        holder_id = int(user_id or 0)
+    except (TypeError, ValueError):
+        holder_id = 0
+    if table_role not in {"teacher", "student"} or holder_id <= 0:
+        return []
+    rows = conn.execute(
+        """
+        SELECT identity_category, term_start, term_end, status
+        FROM identity_appointments
+        WHERE holder_role = ? AND holder_id = ?
+        """,
+        (table_role, holder_id),
+    ).fetchall()
+    today_text = _today_text(today)
+    if not rows:
+        legacy = get_account_identity(conn, table_role, holder_id)
+        return [legacy] if legacy else []
+    ordered = {key: index for index, (key, _label) in enumerate(IDENTITY_CATEGORIES)}
+    effective = {
+        normalize_identity_category(row["identity_category"])
+        for row in rows
+        if (row["status"] or "active") == "active" and _in_term(row, today_text)
+    }
+    effective.discard("")
+    return sorted(effective, key=lambda key: ordered.get(key, 99))
+
+
+def effective_identities_bulk(
+    conn: Any,
+    holders: list[tuple[str, int]],
+    *,
+    today: Any = None,
+) -> dict[tuple[str, int], list[str]]:
+    """Batch variant for pickers: one query for appointments, legacy fallback
+    only for holders without any appointment rows."""
+    normalized: list[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+    for role, user_id in holders:
+        table_role = str(role or "").strip().lower()
+        try:
+            holder_id = int(user_id or 0)
+        except (TypeError, ValueError):
+            holder_id = 0
+        key = (table_role, holder_id)
+        if table_role in {"teacher", "student"} and holder_id > 0 and key not in seen:
+            seen.add(key)
+            normalized.append(key)
+    if not normalized:
+        return {}
+    placeholders = " OR ".join("(holder_role = ? AND holder_id = ?)" for _ in normalized)
+    params: list[Any] = []
+    for role, holder_id in normalized:
+        params.extend([role, holder_id])
+    rows = conn.execute(
+        f"""
+        SELECT holder_role, holder_id, identity_category, term_start, term_end, status
+        FROM identity_appointments
+        WHERE {placeholders}
+        """,
+        tuple(params),
+    ).fetchall()
+    today_text = _today_text(today)
+    has_rows: set[tuple[str, int]] = set()
+    result: dict[tuple[str, int], set[str]] = {key: set() for key in normalized}
+    for row in rows:
+        key = (str(row["holder_role"]), int(row["holder_id"]))
+        has_rows.add(key)
+        if (row["status"] or "active") == "active" and _in_term(row, today_text):
+            category = normalize_identity_category(row["identity_category"])
+            if category:
+                result.setdefault(key, set()).add(category)
+    ordered = {key: index for index, (key, _label) in enumerate(IDENTITY_CATEGORIES)}
+    output: dict[tuple[str, int], list[str]] = {}
+    for key in normalized:
+        if key not in has_rows:
+            legacy = get_account_identity(conn, key[0], key[1])
+            output[key] = [legacy] if legacy else []
+        else:
+            output[key] = sorted(result.get(key, set()), key=lambda item: ordered.get(item, 99))
+    return output
+
+
+def recompute_primary_identity(conn: Any, role: str, user_id: Any) -> str:
+    """Primary identity = most senior effective appointment; keeps the legacy
+    single-value column (and bound signatures) in sync with appointments."""
+    effective = effective_identity_categories(conn, role, user_id)
+    primary = effective[0] if effective else ""
+    current = get_account_identity(conn, role, user_id)
+    if primary != current:
+        set_account_identity(conn, role, user_id, primary)
+        propagate_account_identity(conn, role, user_id, primary)
+    return primary
+
+
+def set_identity_appointments(
+    conn: Any,
+    role: str,
+    user_id: Any,
+    items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Replace-all write of a holder's appointments (max 4, deduped by category)."""
+    table_role = str(role or "").strip().lower()
+    try:
+        holder_id = int(user_id or 0)
+    except (TypeError, ValueError):
+        holder_id = 0
+    if table_role not in {"teacher", "student"} or holder_id <= 0:
+        raise ValueError("任职身份只能设置在教师或学生账号上。")
+    normalized: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        category = normalize_identity_category(item.get("identity_category"))
+        if not category:
+            raise ValueError("包含无法识别的身份类别。")
+        if category in seen:
+            raise ValueError(f"身份“{identity_label(category)}”重复出现。")
+        seen.add(category)
+        term_start = _normalize_term_date(item.get("term_start"))
+        term_end = _normalize_term_date(item.get("term_end"))
+        if term_start and term_end and term_start > term_end:
+            raise ValueError("任期开始日期不能晚于结束日期。")
+        normalized.append({"identity_category": category, "term_start": term_start, "term_end": term_end})
+    if len(normalized) > 4:
+        raise ValueError("一个账号最多登记 4 个任职身份。")
+    conn.execute(
+        "DELETE FROM identity_appointments WHERE holder_role = ? AND holder_id = ?",
+        (table_role, holder_id),
+    )
+    for item in normalized:
+        conn.execute(
+            """
+            INSERT INTO identity_appointments (
+                holder_role, holder_id, identity_category, term_start, term_end, status
+            ) VALUES (?, ?, ?, ?, ?, 'active')
+            """,
+            (table_role, holder_id, item["identity_category"], item["term_start"], item["term_end"]),
+        )
+    recompute_primary_identity(conn, table_role, holder_id)
+    return list_identity_appointments(conn, table_role, holder_id)
+
+
+def expire_identity_appointments(conn: Any, *, today: Any = None) -> int:
+    """Mark overdue appointments expired and demote affected accounts."""
+    today_text = _today_text(today)
+    rows = conn.execute(
+        """
+        SELECT DISTINCT holder_role, holder_id FROM identity_appointments
+        WHERE status = 'active' AND term_end <> '' AND term_end < ?
+        """,
+        (today_text,),
+    ).fetchall()
+    if not rows:
+        return 0
+    cursor = conn.execute(
+        """
+        UPDATE identity_appointments
+        SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'active' AND term_end <> '' AND term_end < ?
+        """,
+        (today_text,),
+    )
+    for row in rows:
+        recompute_primary_identity(conn, str(row["holder_role"]), int(row["holder_id"]))
+    return int(cursor.rowcount or 0)
+
+
 def propagate_account_identity(conn: Any, role: str, user_id: Any, identity: str) -> int:
     """Account identity was edited: push it to every signature bound to it."""
     table_role = str(role or "").strip().lower()

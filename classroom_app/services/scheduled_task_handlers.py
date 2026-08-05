@@ -573,12 +573,16 @@ from .signature_workflow_service import (  # noqa: E402
 
 
 def handle_signature_request_reminder(task: dict[str, Any]) -> str:
+    from .signature_identity_service import expire_identity_appointments
+
     with get_db_connection() as conn:
         result = remind_stale_signature_requests(conn)
+        # 同一轮顺带处理任职身份到期：过期任命降级并同步绑定签名。
+        expired = expire_identity_appointments(conn)
         conn.commit()
     return (
         f"signature request sweep: reminded={result.get('reminded', 0)} "
-        f"escalated={result.get('escalated', 0)}"
+        f"escalated={result.get('escalated', 0)} identity_expired={expired}"
     )
 
 

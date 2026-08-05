@@ -4,7 +4,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote_plus, urljoin, urlparse
@@ -27,7 +27,14 @@ from .academic_service import (
     parse_date_input,
 )
 from .organization_scope_service import load_teacher_org_scope
-from .semester_identity_service import identity_from_year_term, normalize_semester_text
+from .semester_identity_service import (
+    SemesterIdentity,
+    current_identity,
+    identity_from_year_term,
+    infer_identity_from_dates,
+    normalize_semester_text,
+    parse_semester_identity,
+)
 
 
 SYNC_STATUS_PENDING = "pending"
@@ -46,6 +53,10 @@ ACADEMIC_CALENDAR_TIMEOUT_SECONDS = 14.0
 HOLIDAY_CRAWLER_TIMEOUT_SECONDS = 12.0
 HOLIDAY_AI_TIMEOUT_SECONDS = 90.0
 MAX_CRAWLER_ITEMS = 36
+SYNC_ACTIVE_STALE_AFTER_SECONDS = 20 * 60
+
+ZF_CALENDAR_INDEX_PATH = "/pkgl/xlgl_cxXlIndex.html"
+ZF_CALENDAR_GNMKDM = "N210505"
 
 ZF_HOME_CALENDAR_PATHS: tuple[str, ...] = (
     "/xtgl/index_initMenu.html",
@@ -118,6 +129,38 @@ def _domain(url: str) -> str:
 def _date_key(value: Any) -> str:
     parsed = parse_date_input(value)
     return parsed.isoformat() if parsed else ""
+
+
+def is_semester_calendar_sync_active(row: Any, *, reference_time: datetime | None = None) -> bool:
+    """Return whether a pending/running sync is still a live job.
+
+    A stale flag must not lock the semester forever after a worker restart. Database
+    ``CURRENT_TIMESTAMP`` values are interpreted as UTC when they are naive.
+    """
+    item = dict(row or {})
+    if str(item.get("calendar_sync_status") or "").strip() not in {
+        SYNC_STATUS_PENDING,
+        SYNC_STATUS_RUNNING,
+    }:
+        return False
+
+    raw_updated_at = item.get("updated_at")
+    if not raw_updated_at:
+        return True
+    try:
+        updated_at = raw_updated_at if isinstance(raw_updated_at, datetime) else datetime.fromisoformat(
+            str(raw_updated_at).strip().replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        return True
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+    now = reference_time or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return (
+        now.astimezone(timezone.utc) - updated_at.astimezone(timezone.utc)
+    ).total_seconds() <= SYNC_ACTIVE_STALE_AFTER_SECONDS
 
 
 def _event_kind(value: Any) -> str:
@@ -252,6 +295,8 @@ def _parse_academic_calendar_alignment(page_html: str, *, source_url: str) -> li
 
 async def _fetch_academic_alignment_candidates(
     access_payload: dict[str, Any] | None,
+    *,
+    expected_identity: SemesterIdentity | None = None,
 ) -> tuple[list[CalendarAlignment], list[dict[str, Any]]]:
     if not access_payload:
         return [], [{"source": "academic_system", "status": "skipped", "message": "未配置可用教务系统账号"}]
@@ -260,6 +305,73 @@ async def _fetch_academic_alignment_candidates(
     source_summaries: list[dict[str, Any]] = []
     try:
         async with open_authenticated_academic_client(access_payload) as (client, profile, _login_result):
+            index_url = urljoin(profile.base_url, ZF_CALENDAR_INDEX_PATH)
+            if expected_identity:
+                xnm, xqm = expected_identity.as_xnm_xqm()
+                try:
+                    response = await client.get(
+                        ZF_CALENDAR_INDEX_PATH,
+                        params={"xnm": xnm, "xqm": xqm, "gnmkdm": ZF_CALENDAR_GNMKDM},
+                        headers={
+                            "Accept": "text/html, */*; q=0.01",
+                            "Referer": f"{index_url}?gnmkdm={ZF_CALENDAR_GNMKDM}&layout=default",
+                            "X-Requested-With": "XMLHttpRequest",
+                        },
+                        follow_redirects=True,
+                        timeout=ACADEMIC_CALENDAR_TIMEOUT_SECONDS,
+                    )
+                    response.raise_for_status()
+                    parsed = [
+                        item
+                        for item in _parse_academic_calendar_alignment(
+                            response.text,
+                            source_url=str(response.url),
+                        )
+                        if parse_semester_identity(item.name) == expected_identity
+                    ]
+                    if parsed:
+                        for item in parsed:
+                            item.confidence = 0.99
+                        candidates.extend(parsed)
+                        source_summaries.append(
+                            {
+                                "source": "academic_system",
+                                "status": "success",
+                                "endpoint": ZF_CALENDAR_INDEX_PATH,
+                                "url": str(response.url),
+                                "xnm": xnm,
+                                "xqm": xqm,
+                                "gnmkdm": ZF_CALENDAR_GNMKDM,
+                                "found": len(parsed),
+                            }
+                        )
+                        return candidates, source_summaries
+                    source_summaries.append(
+                        {
+                            "source": "academic_system",
+                            "status": "partial",
+                            "endpoint": ZF_CALENDAR_INDEX_PATH,
+                            "xnm": xnm,
+                            "xqm": xqm,
+                            "gnmkdm": ZF_CALENDAR_GNMKDM,
+                            "message": "教务校历接口已响应，但未解析到目标学期的完整起止日期",
+                        }
+                    )
+                except httpx.HTTPError as exc:
+                    source_summaries.append(
+                        {
+                            "source": "academic_system",
+                            "status": "failed",
+                            "endpoint": ZF_CALENDAR_INDEX_PATH,
+                            "xnm": xnm,
+                            "xqm": xqm,
+                            "gnmkdm": ZF_CALENDAR_GNMKDM,
+                            "message": str(exc)[:220],
+                        }
+                    )
+
+            # Compatibility fallback for deployments whose ZFSoft variant exposes
+            # the semester range on the authenticated landing page.
             for path in ZF_HOME_CALENDAR_PATHS:
                 url = urljoin(profile.base_url, path)
                 try:
@@ -280,12 +392,12 @@ async def _fetch_academic_alignment_candidates(
                         }
                     )
                     break
-            if not source_summaries:
+            if not candidates and not source_summaries:
                 source_summaries.append(
                     {
                         "source": "academic_system",
                         "status": "partial",
-                        "message": "已登录教务系统，但首页未解析到教学日历范围",
+                        "message": "已登录教务系统，但校历接口和首页均未解析到教学日历范围",
                     }
                 )
     except Exception as exc:
@@ -305,8 +417,16 @@ async def _fetch_academic_alignment(
     *,
     requested_start: date,
     requested_end: date,
+    semester_name: str = "",
 ) -> tuple[CalendarAlignment | None, list[dict[str, Any]]]:
-    candidates, source_summaries = await _fetch_academic_alignment_candidates(access_payload)
+    expected_identity = parse_semester_identity(semester_name) or infer_identity_from_dates(
+        requested_start,
+        name=semester_name,
+    )
+    candidates, source_summaries = await _fetch_academic_alignment_candidates(
+        access_payload,
+        expected_identity=expected_identity,
+    )
     return _pick_best_alignment(candidates, requested_start, requested_end), source_summaries
 
 
@@ -569,8 +689,13 @@ def _built_in_events(start_date: date, end_date: date) -> list[CalendarEvent]:
                 day_type=day_type,
                 label=str(info.get("label") or ("调休上课" if day_type == DAY_TYPE_WORKDAY else "节假日")),
                 source="built_in",
-                confidence=0.78,
-                metadata={"scope": info.get("scope") or ""},
+                source_url=str(info.get("source_url") or ""),
+                confidence=float(info.get("confidence") or 0.92),
+                metadata={
+                    key: value
+                    for key, value in info.items()
+                    if key not in {"kind", "label", "source_url", "confidence"}
+                },
             )
         )
     return events
@@ -727,8 +852,12 @@ async def prepare_current_semester_from_academic_system(teacher_id: int) -> dict
             "message": "请先在系统设置中配置并通过校验的教务系统账号，再从教务系统同步学期。",
         }
 
-    candidates, academic_sources = await _fetch_academic_alignment_candidates(access_payload)
-    alignment = _pick_current_alignment(candidates, china_now().date())
+    reference_date = china_now().date()
+    candidates, academic_sources = await _fetch_academic_alignment_candidates(
+        access_payload,
+        expected_identity=current_identity(reference_date),
+    )
+    alignment = _pick_current_alignment(candidates, reference_date)
     if not alignment:
         source_message = ""
         failed_source = next((item for item in academic_sources if item.get("status") == "failed"), None)
@@ -736,7 +865,7 @@ async def prepare_current_semester_from_academic_system(teacher_id: int) -> dict
             source_message = str(failed_source.get("message") or "")[:160]
         return {
             "status": "no_current_semester",
-            "message": "已尝试登录教务系统，但未解析到当前学期教学日历。请确认教务系统首页已显示本学期校历后再试。",
+            "message": "已尝试登录教务系统，但未从校历查询接口解析到当前学期的完整起止日期。",
             "source_message": source_message,
             "source_summary": academic_sources,
         }
@@ -993,6 +1122,7 @@ async def sync_semester_calendar_for_teacher(teacher_id: int, semester_id: int) 
         access_payload,
         requested_start=requested_start,
         requested_end=requested_end,
+        semester_name=str(semester.get("name") or ""),
     )
     effective_start = parse_date_input(alignment.start_date) if alignment else None
     effective_end = parse_date_input(alignment.end_date) if alignment else None
@@ -1027,11 +1157,10 @@ async def sync_semester_calendar_for_teacher(teacher_id: int, semester_id: int) 
         events=all_events,
     )
     has_academic_alignment = bool(alignment and alignment.start_date and alignment.end_date)
-    has_ai_success = any(item.get("source") == "ai" and item.get("status") == "success" for item in ai_sources)
-    has_crawler_success = any(item.get("source") == "crawler" and item.get("status") == "success" for item in crawler_sources)
-    status = SYNC_STATUS_SYNCED if has_academic_alignment and has_ai_success else SYNC_STATUS_PARTIAL
-    if not has_academic_alignment and not has_ai_success and not has_crawler_success:
-        status = SYNC_STATUS_GENERATED
+    # The academic range is the authoritative sync result. Crawler/AI enrichment
+    # may add holiday evidence, but its failure must not turn a complete official
+    # semester range into the misleading “partial sync” state.
+    status = SYNC_STATUS_SYNCED if has_academic_alignment else SYNC_STATUS_GENERATED
     event_count = sum(1 for row in days if row.get("day_type") in {DAY_TYPE_HOLIDAY, DAY_TYPE_WORKDAY})
     message_parts = []
     if has_academic_alignment:

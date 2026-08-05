@@ -24,7 +24,7 @@ MAX_CLASSROOM_SECTION_LENGTH = 2400
 # - 国务院办公厅关于 2025 年部分节假日安排的通知（gov.cn, 2024-11）
 # - 国务院办公厅关于 2026 年部分节假日安排的通知（gov.cn, 2025-11）
 # - 广西壮族自治区人民政府办公厅关于 2025 / 2026 年广西三月三放假的通知
-HOLIDAY_DATA: dict[int, dict[str, dict[str, dict[str, str]]]] = {
+HOLIDAY_DATA: dict[int, dict[str, dict[str, dict[str, Any]]]] = {
     2025: {
         "holidays": {
             "2025-01-01": {"label": "元旦", "scope": "national", "kind": "holiday"},
@@ -114,6 +114,61 @@ HOLIDAY_DATA: dict[int, dict[str, dict[str, dict[str, str]]]] = {
             "2026-09-20": {"label": "国庆节调休上班", "scope": "national", "kind": "workday"},
             "2026-10-10": {"label": "国庆节调休上班", "scope": "national", "kind": "workday"},
         },
+    },
+}
+
+HOLIDAY_POLICY_SOURCES = {
+    (2025, "national"): "https://www.gov.cn/zhengce/zhengceku/202411/content_6986383.htm",
+    (2025, "guangxi"): "https://www.gxzf.gov.cn/gggs/t19661326.shtml",
+    (2026, "national"): "https://zwfw.gansu.gov.cn/huixian/zczx/tzgg/art/2025/art_715c16a75e4d4c289c295e77772c7274.html",
+    (2026, "guangxi"): "https://www.gxzf.gov.cn/gggs/t27317475.shtml",
+}
+
+# The State Council notice specifies which weekend dates are workdays, while
+# schools publish which weekday timetable is followed. These mappings are kept
+# explicit so both the semester page and dashboard answer “which day is made up”.
+ACADEMIC_MAKEUP_DATA: dict[str, dict[str, Any]] = {
+    "2025-04-27": {
+        "label": "劳动节调休上课：补 5 月 5 日（周一）课程",
+        "makeup_for_date": "2025-05-05",
+        "makeup_for_weekday": "周一",
+        "source_url": "https://bkjy.ucas.edu.cn/index.php/tzgg/7435-2025-8",
+    },
+    "2025-09-28": {
+        "label": "国庆节调休上课：补 10 月 7 日（周二）课程",
+        "makeup_for_date": "2025-10-07",
+        "makeup_for_weekday": "周二",
+        "source_url": "https://bkjy.ucas.edu.cn/index.php/tzgg/7435-2025-8",
+    },
+    "2025-10-11": {
+        "label": "国庆节调休上课：补 10 月 8 日（周三）课程",
+        "makeup_for_date": "2025-10-08",
+        "makeup_for_weekday": "周三",
+        "source_url": "https://bkjy.ucas.edu.cn/index.php/tzgg/7435-2025-8",
+    },
+    "2026-01-04": {
+        "label": "元旦调休上课：补 1 月 2 日（周五）课程",
+        "makeup_for_date": "2026-01-02",
+        "makeup_for_weekday": "周五",
+        "source_url": "https://bkjy.ucas.ac.cn/index.php/tzgg/7773-2026-4",
+    },
+    "2026-05-09": {
+        "label": "劳动节调休上课：补 5 月 5 日（周二）课程",
+        "makeup_for_date": "2026-05-05",
+        "makeup_for_weekday": "周二",
+        "source_url": "https://jw.nau.edu.cn/2026/0427/c8051a156624/page.htm",
+    },
+    "2026-09-20": {
+        "label": "国庆节调休上课：补 10 月 6 日（周二）课程",
+        "makeup_for_date": "2026-10-06",
+        "makeup_for_weekday": "周二",
+        "source_url": "https://eece.ucas.ac.cn/index.php/zh-cn/2014-06-13-06-44-38/2014-06-13-06-45-50/2669-2026",
+    },
+    "2026-10-10": {
+        "label": "国庆节调休上课：补 10 月 7 日（周三）课程",
+        "makeup_for_date": "2026-10-07",
+        "makeup_for_weekday": "周三",
+        "source_url": "https://eece.ucas.ac.cn/index.php/zh-cn/2014-06-13-06-44-38/2014-06-13-06-45-50/2669-2026",
     },
 }
 
@@ -283,8 +338,8 @@ def truncate_text(value: Any, limit: int = 140) -> str:
     return normalized[: max(limit - 3, 0)].rstrip() + "..."
 
 
-def build_holiday_lookup(years: Iterable[int]) -> dict[str, dict[str, str]]:
-    lookup: dict[str, dict[str, str]] = {}
+def build_holiday_lookup(years: Iterable[int]) -> dict[str, dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
     normalized_years: set[int] = set()
 
     for raw_year in years:
@@ -297,7 +352,16 @@ def build_holiday_lookup(years: Iterable[int]) -> dict[str, dict[str, str]]:
     for year in normalized_years:
         payload = HOLIDAY_DATA.get(year) or {}
         for bucket in ("holidays", "workdays"):
-            lookup.update(payload.get(bucket) or {})
+            for iso_date, raw_info in (payload.get(bucket) or {}).items():
+                info = dict(raw_info)
+                scope = str(info.get("scope") or "national")
+                info.setdefault("source_url", HOLIDAY_POLICY_SOURCES.get((year, scope), ""))
+                info.setdefault("confidence", 0.96)
+                info.setdefault("policy_source_url", HOLIDAY_POLICY_SOURCES.get((year, scope), ""))
+                if iso_date in ACADEMIC_MAKEUP_DATA:
+                    info.update(ACADEMIC_MAKEUP_DATA[iso_date])
+                    info["verification_note"] = "调休课程映射已参考公开高校教学通知核验；如学校另有通知，以校内通知为准。"
+                lookup[iso_date] = info
 
     return lookup
 
@@ -318,10 +382,40 @@ def _safe_json_list(raw_value: Any) -> list[Any]:
     return parsed if isinstance(parsed, list) else []
 
 
+def _safe_json_dict(raw_value: Any) -> dict[str, Any]:
+    if isinstance(raw_value, dict):
+        return raw_value
+    if raw_value in (None, ""):
+        return {}
+    try:
+        parsed = json.loads(str(raw_value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _calendar_sync_is_active(item: dict[str, Any]) -> bool:
+    if str(item.get("calendar_sync_status") or "") not in {"pending", "running"}:
+        return False
+    raw_updated_at = item.get("updated_at")
+    if not raw_updated_at:
+        return True
+    try:
+        updated_at = raw_updated_at if isinstance(raw_updated_at, datetime) else datetime.fromisoformat(
+            str(raw_updated_at).strip().replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        return True
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - updated_at.astimezone(timezone.utc)).total_seconds() <= 20 * 60
+
+
 def _serialize_calendar_day_row(row: Any) -> dict[str, Any]:
     item = dict(row)
     day_type = str(item.get("day_type") or "").strip()
     frontend_kind = "workday" if day_type == "workday" else ("holiday" if day_type == "holiday" else day_type)
+    metadata = _safe_json_dict(item.get("metadata_json"))
     return {
         "date": str(item.get("date") or ""),
         "kind": frontend_kind,
@@ -332,6 +426,11 @@ def _serialize_calendar_day_row(row: Any) -> dict[str, Any]:
         "confidence": float(item.get("confidence") or 0.0),
         "week_index": int(item.get("week_index") or 0),
         "weekday": int(item.get("weekday") or 0),
+        "metadata": metadata,
+        "makeup_for_date": str(metadata.get("makeup_for_date") or ""),
+        "makeup_for_weekday": str(metadata.get("makeup_for_weekday") or ""),
+        "policy_source_url": str(metadata.get("policy_source_url") or ""),
+        "verification_note": str(metadata.get("verification_note") or ""),
     }
 
 
@@ -342,7 +441,7 @@ def _attach_semester_calendar_days(conn, rows: list[dict[str, Any]]) -> list[dic
     placeholders = ",".join("?" for _ in semester_ids)
     day_rows = conn.execute(
         f"""
-        SELECT semester_id, date, week_index, weekday, day_type, label, source, source_url, confidence
+        SELECT semester_id, date, week_index, weekday, day_type, label, source, source_url, confidence, metadata_json
         FROM academic_semester_calendar_days
         WHERE semester_id IN ({placeholders})
           AND day_type IN ('holiday', 'workday')
@@ -605,12 +704,25 @@ def serialize_semester_row(row: Any, *, reference_date: date | None = None) -> d
     item["is_current"] = bool(
         start_date_value and end_date_value and start_date_value <= today <= end_date_value
     )
+    if start_date_value and today < start_date_value:
+        item["temporal_status"] = "future"
+        item["temporal_status_label"] = "未开始"
+    elif end_date_value and today > end_date_value:
+        item["temporal_status"] = "past"
+        item["temporal_status_label"] = "已结束"
+    elif item["is_current"]:
+        item["temporal_status"] = "current"
+        item["temporal_status_label"] = "进行中"
+    else:
+        item["temporal_status"] = "unknown"
+        item["temporal_status_label"] = "日期待确认"
     item["display_range"] = (
         f"{start_date_value.isoformat()} 至 {end_date_value.isoformat()}"
         if start_date_value and end_date_value
         else ""
     )
     item["calendar_sync_status"] = str(item.get("calendar_sync_status") or "pending")
+    item["calendar_sync_active"] = _calendar_sync_is_active(item)
     item["calendar_sync_at"] = str(item.get("calendar_sync_at") or "")
     item["calendar_sync_message"] = str(item.get("calendar_sync_message") or "")
     item["calendar_source_summary"] = [

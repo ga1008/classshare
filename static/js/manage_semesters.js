@@ -4,7 +4,7 @@ import {
     computeSemesterWeekCount,
     initSemesterCalendar,
     parseIsoDate,
-} from '/static/js/semester_calendar.js?v=ux-empty-collapse-20260803';
+} from '/static/js/semester_calendar.js?v=calendar-sync-20260805';
 
 const config = window.SEMESTER_MANAGE_DATA || {};
 const semesterCalendarConfig = config.semesterCalendar || {};
@@ -46,6 +46,7 @@ const elements = {
 };
 
 let semesterCalendar = null;
+const activeSyncPolls = new Map();
 
 function normalizeSemester(item) {
     const weekCount = Number(item.week_count || 0);
@@ -61,8 +62,13 @@ function normalizeSemester(item) {
         school_name: String(item.school_name || ''),
         organization_label: String(item.organization_label || item.school_name || ''),
         calendar_sync_status: String(item.calendar_sync_status || 'pending'),
+        calendar_sync_active: item.calendar_sync_active === false
+            ? false
+            : ['pending', 'running'].includes(String(item.calendar_sync_status || 'pending')),
         calendar_sync_message: String(item.calendar_sync_message || ''),
         calendar_sync_at: String(item.calendar_sync_at || ''),
+        temporal_status: String(item.temporal_status || ''),
+        temporal_status_label: String(item.temporal_status_label || ''),
         calendar_holiday_count: Number(item.calendar_holiday_count || 0),
         calendar_workday_count: Number(item.calendar_workday_count || 0),
         searchText: [
@@ -106,16 +112,33 @@ function inferSemesterName(dateValue) {
 }
 
 function getCurrentWeekText(semester) {
-    if (!semester?.is_current) {
-        return '当前不在学期范围内';
-    }
     const today = parseIsoDate(todayIso);
     const startDate = parseIsoDate(semester.start_date);
-    if (!today || !startDate) {
-        return '当前不在学期范围内';
+    const endDate = parseIsoDate(semester.end_date);
+    if (!today || !startDate || !endDate) {
+        return '学期日期尚未完整确认';
+    }
+    if (today < startDate) {
+        const days = Math.ceil((startDate - today) / 86400000);
+        return `距离开学还有 ${days} 天`;
+    }
+    if (today > endDate) {
+        return `该学期已于 ${semester.end_date} 结束`;
     }
     const currentWeek = computeSemesterWeekCount(startDate, today);
     return `今天位于第 ${Math.max(currentWeek, 1)} 周`;
+}
+
+function temporalMeta(semester) {
+    const status = String(semester?.temporal_status || 'unknown');
+    const map = {
+        current: { label: '进行中', className: 'is-success' },
+        future: { label: '未开始', className: 'is-accent' },
+        past: { label: '已结束', className: 'is-muted' },
+        unknown: { label: '日期待确认', className: 'is-muted' },
+    };
+    const result = map[status] || map.unknown;
+    return { ...result, label: semester?.temporal_status_label || result.label };
 }
 
 function calendarSyncMeta(semester) {
@@ -145,17 +168,23 @@ function renderSemesterList() {
         ${(() => {
             const sync = calendarSyncMeta(semester);
             const canManage = semester.can_manage !== false;
+            const temporal = temporalMeta(semester);
+            const isSyncing = semester.calendar_sync_active === true;
             return `
         <div
-            class="academic-list-item${semester.id === state.activeSemesterId ? ' is-active' : ''}"
+            class="academic-list-item academic-list-item-selectable${semester.id === state.activeSemesterId ? ' is-active' : ''}"
             data-semester-id="${semester.id}"
+            role="button"
+            tabindex="0"
             aria-current="${semester.id === state.activeSemesterId ? 'true' : 'false'}"
+            aria-label="切换当前焦点到 ${escapeHtml(semester.name || '该学期')}"
+            aria-busy="${isSyncing ? 'true' : 'false'}"
         >
             <div class="academic-list-main">
                 <strong>${escapeHtml(semester.name || '未命名学期')}</strong>
                 <p>${escapeHtml(semester.start_date || '--')} 至 ${escapeHtml(semester.end_date || '--')} · ${semester.week_count || 0} 周</p>
                 <div class="academic-badge-row">
-                    ${semester.is_current ? '<span class="academic-badge is-success">当前学期</span>' : '<span class="academic-badge is-muted">历史或未来学期</span>'}
+                    <span class="academic-badge ${temporal.className}">${escapeHtml(temporal.label)}</span>
                     <span class="academic-badge">开学首周自动计为第 1 周</span>
                     <span class="academic-badge ${sync.className}">${sync.label}</span>
                     ${semester.is_shared_semester ? '<span class="academic-badge is-accent">同校共享</span>' : ''}
@@ -164,9 +193,9 @@ function renderSemesterList() {
             </div>
             <div class="academic-list-side">
                 ${config.embeddedMode ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-action="focus" data-semester-id="${semester.id}">查看日历</button>`}
-                ${canManage ? `<button type="button" class="btn btn-outline btn-sm" data-action="sync-calendar" data-semester-id="${semester.id}">同步校历</button>` : ''}
-                ${canManage ? `<button type="button" class="btn btn-outline btn-sm" data-action="edit" data-semester-id="${semester.id}">编辑</button>` : ''}
-                ${canManage ? `<button type="button" class="btn btn-danger btn-sm" data-action="delete" data-semester-id="${semester.id}">删除</button>` : ''}
+                ${canManage ? `<button type="button" class="btn btn-outline btn-sm${isSyncing ? ' is-loading' : ''}" data-action="sync-calendar" data-semester-id="${semester.id}" ${isSyncing ? 'disabled aria-disabled="true"' : ''}>${isSyncing ? '<span class="semester-button-spinner" aria-hidden="true"></span><span>正在同步</span>' : '同步校历'}</button>` : ''}
+                ${canManage ? `<button type="button" class="btn btn-outline btn-sm" data-action="edit" data-semester-id="${semester.id}" ${isSyncing ? 'disabled aria-disabled="true" title="校历同步完成后可编辑"' : ''}>编辑</button>` : ''}
+                ${canManage ? `<button type="button" class="btn btn-danger btn-sm" data-action="delete" data-semester-id="${semester.id}" ${isSyncing ? 'disabled aria-disabled="true" title="校历同步完成后可删除"' : ''}>删除</button>` : ''}
             </div>
         </div>
             `;
@@ -194,7 +223,7 @@ function renderSummary() {
         `学期名称：${semester.name || '未命名学期'}`,
         `起止日期：${semester.start_date || '--'} 至 ${semester.end_date || '--'}`,
         `自动周数：第 1 周至第 ${semester.week_count || 0} 周`,
-        `当前状态：${semester.is_current ? '进行中' : '非进行中'}`,
+        `当前状态：${temporalMeta(semester).label}`,
         `校历同步：${calendarSyncMeta(semester).label}${semester.calendar_sync_at ? `（${semester.calendar_sync_at}）` : ''}`,
         `节假日/补课：${semester.calendar_holiday_count || 0} 个假期，${semester.calendar_workday_count || 0} 个调休补课日`,
         getCurrentWeekText(semester),
@@ -219,17 +248,21 @@ function renderSummary() {
     }
 }
 
-function setActiveSemester(semesterId) {
+function setActiveSemester(semesterId, { scrollCalendar = false } = {}) {
     const semester = getSemesterById(semesterId);
     state.activeSemesterId = semester ? semester.id : (state.semesters[0]?.id ?? null);
 
     if (semesterCalendar) {
         semesterCalendar.setActiveSemester(state.activeSemesterId);
-        return;
+    } else {
+        renderSemesterList();
+        renderSummary();
     }
-
-    renderSemesterList();
-    renderSummary();
+    if (scrollCalendar && elements.calendarRoot) {
+        window.requestAnimationFrame(() => {
+            elements.calendarRoot.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    }
 }
 
 function openModal(mode, semester = null) {
@@ -238,6 +271,10 @@ function openModal(mode, semester = null) {
     }
     if (mode === 'edit' && semester?.can_manage === false) {
         showMessage('同校共享学期可以直接复用，只有创建者可以编辑。', 'warning');
+        return;
+    }
+    if (mode === 'edit' && semester?.calendar_sync_active) {
+        showMessage('校历正在同步，请等待完成后再编辑学期。', 'info');
         return;
     }
 
@@ -268,6 +305,8 @@ function openModal(mode, semester = null) {
 
     updateWeekPreview();
     elements.modalBackdrop.classList.add('is-open');
+    document.body.classList.add('has-academic-modal');
+    window.requestAnimationFrame(() => elements.nameInput?.focus());
 }
 
 function closeModal() {
@@ -275,6 +314,7 @@ function closeModal() {
         return;
     }
     elements.modalBackdrop.classList.remove('is-open');
+    document.body.classList.remove('has-academic-modal');
 }
 
 function updateWeekPreview() {
@@ -320,6 +360,58 @@ async function handleDeleteSemester(semesterId) {
     window.location.reload();
 }
 
+function updateSemesterSyncState(semesterId, payload = {}) {
+    const semester = getSemesterById(semesterId);
+    if (!semester) return;
+    const status = String(payload.calendar_sync_status || semester.calendar_sync_status || 'pending');
+    semester.calendar_sync_status = status;
+    semester.calendar_sync_active = payload.calendar_sync_active === undefined
+        ? ['pending', 'running'].includes(status)
+        : payload.calendar_sync_active === true;
+    if (payload.calendar_sync_message !== undefined) {
+        semester.calendar_sync_message = String(payload.calendar_sync_message || '');
+    }
+    if (payload.calendar_sync_at !== undefined) {
+        semester.calendar_sync_at = String(payload.calendar_sync_at || '');
+    }
+    renderSemesterList();
+    renderSummary();
+}
+
+function wait(milliseconds) {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function pollSemesterSync(semesterId, { reloadOnComplete = true } = {}) {
+    if (activeSyncPolls.has(semesterId)) {
+        return activeSyncPolls.get(semesterId);
+    }
+    const task = (async () => {
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+            await wait(attempt === 0 ? 500 : 1500);
+            const result = await apiFetch(`/api/manage/semesters/${semesterId}/calendar/status`);
+            updateSemesterSyncState(semesterId, result);
+            if (result.calendar_sync_active !== true) {
+                if (reloadOnComplete) {
+                    const nextUrl = new URL(window.location.href);
+                    nextUrl.searchParams.set('semester_id', String(semesterId));
+                    window.location.assign(nextUrl.toString());
+                }
+                return result;
+            }
+        }
+        showMessage('校历仍在后台同步，可稍后刷新查看结果。', 'info');
+        return null;
+    })().catch((error) => {
+        showMessage(error.message || '读取校历同步进度失败，可稍后刷新重试。', 'warning');
+        return null;
+    }).finally(() => {
+        activeSyncPolls.delete(semesterId);
+    });
+    activeSyncPolls.set(semesterId, task);
+    return task;
+}
+
 async function handleSyncCalendar(semesterId, button = null) {
     const semester = getSemesterById(semesterId);
     if (!semester) {
@@ -329,21 +421,23 @@ async function handleSyncCalendar(semesterId, button = null) {
         showMessage('同校共享学期已可复用，校历同步由创建者维护。', 'warning');
         return;
     }
-    const originalText = button?.textContent || '';
-    if (button) {
-        button.disabled = true;
-        button.textContent = '同步中...';
-    }
+    if (semester.calendar_sync_active) return;
+    updateSemesterSyncState(semesterId, {
+        calendar_sync_status: 'pending',
+        calendar_sync_active: true,
+        calendar_sync_message: '校历同步已排队，正在连接教务系统。',
+    });
     try {
         const result = await apiFetch(`/api/manage/semesters/${semester.id}/calendar/sync`, { method: 'POST' });
         showMessage(result.message || '校历同步已开始', 'success');
-        window.setTimeout(() => window.location.reload(), 1200);
+        await pollSemesterSync(semester.id);
     } catch (error) {
         showMessage(error.message || '校历同步启动失败', 'error');
-        if (button) {
-            button.disabled = false;
-            button.textContent = originalText;
-        }
+        updateSemesterSyncState(semesterId, {
+            calendar_sync_status: 'failed',
+            calendar_sync_active: false,
+            calendar_sync_message: error.message || '校历同步启动失败',
+        });
     }
 }
 
@@ -351,7 +445,8 @@ async function handleSyncCurrentSemester(button = null) {
     const originalText = button?.textContent || '';
     if (button) {
         button.disabled = true;
-        button.textContent = '正在同步...';
+        button.classList.add('is-loading');
+        button.innerHTML = '<span class="semester-button-spinner" aria-hidden="true"></span><span>正在同步</span>';
     }
     if (elements.submitBtn) {
         elements.submitBtn.disabled = true;
@@ -360,19 +455,18 @@ async function handleSyncCurrentSemester(button = null) {
         const result = await apiFetch('/api/manage/semesters/calendar/sync-current', { method: 'POST' });
         showMessage(result.message || '已从教务系统同步本学期', 'success');
         closeModal();
-        window.setTimeout(() => {
-            const semesterId = Number(result.semester_id || 0);
-            if (semesterId) {
-                window.location.href = `${window.location.pathname}?semester_id=${semesterId}`;
-            } else {
-                window.location.reload();
-            }
-        }, 1200);
+        const semesterId = Number(result.semester_id || 0);
+        if (semesterId) {
+            window.location.href = `${window.location.pathname}?semester_id=${semesterId}`;
+        } else {
+            window.location.reload();
+        }
     } catch (error) {
         showMessage(error.message || '从教务系统同步失败', 'error');
         if (button) {
             button.disabled = false;
             button.textContent = originalText;
+            button.classList.remove('is-loading');
         }
         if (elements.submitBtn) {
             elements.submitBtn.disabled = false;
@@ -455,6 +549,9 @@ function initEvents() {
     elements.list?.addEventListener('click', async (event) => {
         const actionButton = event.target.closest('[data-action]');
         if (!actionButton) {
+            const row = event.target.closest('[data-semester-id]');
+            const rowSemesterId = Number(row?.dataset.semesterId || 0);
+            if (rowSemesterId) setActiveSemester(rowSemesterId);
             return;
         }
 
@@ -464,7 +561,7 @@ function initEvents() {
         }
 
         if (actionButton.dataset.action === 'focus') {
-            setActiveSemester(semesterId);
+            setActiveSemester(semesterId, { scrollCalendar: true });
             return;
         }
         if (actionButton.dataset.action === 'edit') {
@@ -482,6 +579,15 @@ function initEvents() {
             await handleDeleteSemester(semesterId);
         }
     });
+    elements.list?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        if (event.target.closest('[data-action]')) return;
+        const row = event.target.closest('.academic-list-item[data-semester-id]');
+        const semesterId = Number(row?.dataset.semesterId || 0);
+        if (!semesterId) return;
+        event.preventDefault();
+        setActiveSemester(semesterId);
+    });
 
     elements.startInput?.addEventListener('change', updateWeekPreview);
     elements.endInput?.addEventListener('change', updateWeekPreview);
@@ -491,6 +597,11 @@ function initEvents() {
     });
     elements.form?.addEventListener('submit', handleSubmit);
     elements.syncCurrentBtn?.addEventListener('click', () => handleSyncCurrentSemester(elements.syncCurrentBtn));
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && elements.modalBackdrop?.classList.contains('is-open')) {
+            closeModal();
+        }
+    });
 }
 
 function initDefaultState() {
@@ -532,6 +643,12 @@ semesterCalendar = initSemesterCalendar(elements.calendarRoot, semesterCalendarC
     onMessage: (message, tone) => showMessage(message, tone || 'info'),
 });
 
+if (elements.modalBackdrop && elements.modalBackdrop.parentElement !== document.body) {
+    document.body.appendChild(elements.modalBackdrop);
+}
 initEvents();
 initDefaultState();
 handleQueryOpen();
+state.semesters
+    .filter((semester) => semester.calendar_sync_active)
+    .forEach((semester) => pollSemesterSync(semester.id));

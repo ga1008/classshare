@@ -184,6 +184,16 @@ def get_point_state(
         signature_identity_service.expand_required_identities(point_row["required_identities"])
     )
     listed = signature_service.list_signatures(conn, user, limit=500)
+    bound_holders = [
+        (str(item.get("subject_role") or ""), int(item.get("subject_id") or 0))
+        for item in (listed.get("items") or [])
+        if item.get("subject_bound")
+    ]
+    account_identity_map = (
+        signature_identity_service.effective_identities_bulk(conn, bound_holders)
+        if bound_holders and accepted_identities
+        else {}
+    )
     grant_rows = conn.execute(
         """
         SELECT request.signature_id, item.id AS grant_item_id
@@ -222,7 +232,17 @@ def get_point_state(
                 "can_request": not can_use,
                 "needs_admin_review": needs_admin_review,
                 "signer_bound": signer_bound,
-                "identity_match": identity_org_match(actor, item, accepted_identities),
+                # 绑定签名按签名者账号的全部有效任职身份匹配（兼任场景）；
+                # 未绑定签名只看签名自身的身份属性。
+                "identity_match": (
+                    identity_org_match(actor, item, accepted_identities)
+                    or any(
+                        identity_org_match(actor, {**item, "identity_category": candidate}, accepted_identities)
+                        for candidate in account_identity_map.get(
+                            (str(item.get("subject_role") or ""), int(item.get("subject_id") or 0)), []
+                        )
+                    )
+                ),
                 "authorization_mode": direct_mode or ("approval" if grant_item_id else ""),
                 "grant_item_id": grant_item_id,
             }

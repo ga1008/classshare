@@ -153,6 +153,7 @@ from ...services.academic_integration_service import (
     verify_academic_credential,
 )
 from ...services.academic_calendar_sync_service import (
+    is_semester_calendar_sync_active,
     mark_semester_calendar_sync_queued,
     prepare_current_semester_from_academic_system,
     sync_semester_calendar_background,

@@ -312,6 +312,22 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
     )
     conn.execute(
         f"""
+        CREATE TABLE IF NOT EXISTS identity_appointments (
+            id {id_type} {primary_key},
+            holder_role TEXT NOT NULL,
+            holder_id INTEGER NOT NULL,
+            identity_category TEXT NOT NULL,
+            term_start TEXT NOT NULL DEFAULT '',
+            term_end TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (holder_role, holder_id, identity_category)
+        )
+        """
+    )
+    conn.execute(
+        f"""
         CREATE TABLE IF NOT EXISTS signature_image_versions (
             id {id_type} {primary_key},
             signature_id INTEGER NOT NULL,
@@ -411,6 +427,8 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
         "CREATE INDEX IF NOT EXISTS idx_signature_point_flow_items_request ON signature_point_flow_items (request_id, status, display_order)",
         "CREATE INDEX IF NOT EXISTS idx_signature_point_bindings_scope ON signature_point_bindings (function_point_key, material_type, material_id, material_revision, display_order)",
         "CREATE INDEX IF NOT EXISTS idx_signature_image_versions_signature ON signature_image_versions (signature_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_identity_appointments_holder ON identity_appointments (holder_role, holder_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_identity_appointments_expiry ON identity_appointments (status, term_end)",
         "CREATE INDEX IF NOT EXISTS idx_signature_point_bindings_signature ON signature_point_bindings (signature_id)",
     ):
         conn.execute(statement)

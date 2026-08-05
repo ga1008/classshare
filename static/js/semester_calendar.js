@@ -103,6 +103,10 @@ function buildSemesterDayLookup(semester) {
             source: day?.source || '',
             source_url: day?.source_url || '',
             confidence: day?.confidence ?? null,
+            makeup_for_date: day?.makeup_for_date || day?.metadata?.makeup_for_date || '',
+            makeup_for_weekday: day?.makeup_for_weekday || day?.metadata?.makeup_for_weekday || '',
+            policy_source_url: day?.policy_source_url || day?.metadata?.policy_source_url || '',
+            verification_note: day?.verification_note || day?.metadata?.verification_note || '',
         };
     });
     return lookup;
@@ -1620,6 +1624,13 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                     const tag = document.createElement('div');
                     tag.className = `semester-mini-tag ${day.holidayInfo.kind === 'workday' ? 'workday' : 'holiday'}`;
                     tag.textContent = day.holidayInfo.label;
+                    const evidenceParts = [
+                        day.holidayInfo.makeup_for_date
+                            ? `补课对应：${day.holidayInfo.makeup_for_date}${day.holidayInfo.makeup_for_weekday ? `（${day.holidayInfo.makeup_for_weekday}）` : ''}`
+                            : '',
+                        day.holidayInfo.verification_note || '',
+                    ].filter(Boolean);
+                    if (evidenceParts.length) tag.title = evidenceParts.join('\n');
                     cell.appendChild(tag);
                 } else if (day.isWeekend) {
                     const tag = document.createElement('div');

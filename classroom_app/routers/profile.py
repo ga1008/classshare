@@ -357,6 +357,39 @@ async def api_update_basic_profile(request: Request, user: dict = Depends(get_cu
     }
 
 
+@router.get("/api/profile/identities", response_class=JSONResponse)
+async def api_list_profile_identities(user: dict = Depends(get_current_user)):
+    from ..services import signature_identity_service
+
+    with get_db_connection() as conn:
+        items = signature_identity_service.list_identity_appointments(
+            conn, str(user.get("role") or ""), user.get("id")
+        )
+    return {
+        "items": items,
+        "options": signature_identity_service.identity_options(),
+    }
+
+
+@router.put("/api/profile/identities", response_class=JSONResponse)
+async def api_update_profile_identities(request: Request, user: dict = Depends(get_current_user)):
+    from ..services import signature_identity_service
+
+    data = await request.json()
+    raw_items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(raw_items, list):
+        raise HTTPException(status_code=400, detail="任职身份格式不正确。")
+    with get_db_connection() as conn:
+        try:
+            items = signature_identity_service.set_identity_appointments(
+                conn, str(user.get("role") or ""), user.get("id"), raw_items
+            )
+            conn.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "success", "message": "任职身份已保存。", "items": items}
+
+
 @router.put("/api/profile/mood", response_class=JSONResponse)
 async def api_update_profile_mood(request: Request, user: dict = Depends(get_current_user)):
     data = await request.json()

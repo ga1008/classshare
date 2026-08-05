@@ -737,12 +737,17 @@ def update_basic_profile(conn, user: dict, payload: dict[str, Any]) -> dict[str,
         ),
     )
     if role == "teacher" and "identity_category" in payload:
+        # Legacy single-select clients: map onto the appointments model so the
+        # multi-identity editor and this path never diverge.
         identity = signature_identity_service.normalize_identity_category(payload.get("identity_category"))
         current = signature_identity_service.get_account_identity(conn, role, user_id)
         if identity != current:
-            # The account side was edited last: identity flows to bound signatures.
-            signature_identity_service.set_account_identity(conn, role, user_id, identity)
-            signature_identity_service.propagate_account_identity(conn, role, user_id, identity)
+            signature_identity_service.set_identity_appointments(
+                conn,
+                role,
+                user_id,
+                [{"identity_category": identity}] if identity else [],
+            )
     return get_user_profile(conn, user)
 
 

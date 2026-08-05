@@ -905,6 +905,84 @@ function initPortfolioPanel() {
     });
 }
 
+function initIdentityEditor() {
+    const container = document.querySelector('[data-profile-identity-editor]');
+    if (!container) {
+        return;
+    }
+    const state = { items: [], options: [] };
+
+    const render = () => {
+        const optionHtml = (selected) => state.options
+            .map((option) => `<option value="${escapeHtml(option.key)}" ${option.key === selected ? 'selected' : ''}>${escapeHtml(option.label)}</option>`)
+            .join('');
+        const rows = state.items.map((item, index) => `
+            <div class="profile-identity-row" data-identity-row="${index}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+                <select class="form-control" data-identity-field="identity_category" style="flex:1;min-width:120px;">${optionHtml(item.identity_category)}</select>
+                <input type="date" class="form-control" data-identity-field="term_start" value="${escapeHtml(item.term_start || '')}" title="任期开始（可空）" style="flex:1;min-width:130px;">
+                <input type="date" class="form-control" data-identity-field="term_end" value="${escapeHtml(item.term_end || '')}" title="任期结束（可空，到期自动降级）" style="flex:1;min-width:130px;">
+                ${item.status === 'expired' ? '<span style="color:#92400e;font-size:0.78rem;font-weight:700;">已到期</span>' : ''}
+                <button type="button" class="btn btn-ghost btn-sm" data-identity-remove aria-label="移除">移除</button>
+            </div>
+        `).join('');
+        container.innerHTML = `
+            ${rows || '<div class="profile-identity-empty" style="color:var(--text-muted);margin-bottom:8px;">尚未登记任职身份。</div>'}
+            <div style="display:flex;gap:8px;">
+                <button type="button" class="btn btn-outline btn-sm" data-identity-add ${state.items.length >= 4 ? 'disabled' : ''}>添加身份</button>
+                <button type="button" class="btn btn-primary btn-sm" data-identity-save>保存任职身份</button>
+            </div>
+        `;
+        bind();
+    };
+
+    const readRows = () => Array.from(container.querySelectorAll('[data-identity-row]')).map((row) => ({
+        identity_category: row.querySelector('[data-identity-field="identity_category"]')?.value || '',
+        term_start: row.querySelector('[data-identity-field="term_start"]')?.value || '',
+        term_end: row.querySelector('[data-identity-field="term_end"]')?.value || '',
+    }));
+
+    const bind = () => {
+        container.querySelector('[data-identity-add]')?.addEventListener('click', () => {
+            state.items = [...readRows(), { identity_category: 'teacher', term_start: '', term_end: '', status: 'active' }];
+            render();
+        });
+        container.querySelectorAll('[data-identity-remove]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const index = Number(button.closest('[data-identity-row]')?.dataset.identityRow || -1);
+                state.items = readRows().filter((_item, i) => i !== index);
+                render();
+            });
+        });
+        container.querySelector('[data-identity-save]')?.addEventListener('click', async () => {
+            const saveButton = container.querySelector('[data-identity-save]');
+            setButtonBusy(saveButton, true, '保存中');
+            try {
+                const response = await apiFetch('/api/profile/identities', {
+                    method: 'PUT',
+                    body: { items: readRows() },
+                });
+                state.items = response.items || [];
+                render();
+                showToast(response.message || '任职身份已保存', 'success');
+            } catch (error) {
+                showToast(error.message || '保存失败', 'error');
+                setButtonBusy(container.querySelector('[data-identity-save]'), false);
+            }
+        });
+    };
+
+    (async () => {
+        try {
+            const payload = await apiFetch('/api/profile/identities');
+            state.items = payload.items || [];
+            state.options = (payload.options || []).filter((option) => option.key);
+            render();
+        } catch (error) {
+            container.innerHTML = `<div class="profile-identity-empty">${escapeHtml(error.message || '任职身份加载失败')}</div>`;
+        }
+    })();
+}
+
 function initActiveNavScroll() {
     const active = document.querySelector('.profile-nav__link.is-active');
     if (active && typeof active.scrollIntoView === 'function') {
@@ -917,6 +995,7 @@ if (root) {
     initCharts();
     initAvatarUpload();
     initBasicForm();
+    initIdentityEditor();
     initMoodEditor();
     initPasswordForm();
     initEmailConfigPanel();

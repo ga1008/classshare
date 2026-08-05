@@ -554,26 +554,12 @@
                                     <input id="profile-nickname" name="nickname" class="form-control" value="{{ profile.nickname }}" maxlength="40">
                                 </div>
                                 {% if profile.role == 'teacher' %}
-                                <div class="form-group">
-                                    <label class="form-label" for="profile-identity-category">职务身份</label>
-                                    <select id="profile-identity-category" name="identity_category" class="form-control">
-                                        {% for key, label in [
-                                            ('', '未设置'),
-                                            ('principal', '校长'),
-                                            ('vice_principal', '副校长'),
-                                            ('dean', '院长'),
-                                            ('vice_dean', '副院长'),
-                                            ('department_head', '系主任'),
-                                            ('vice_department_head', '副系主任'),
-                                            ('teacher', '教师'),
-                                            ('academic_affairs', '教务老师'),
-                                            ('counselor', '辅导员'),
-                                            ('other', '其他'),
-                                        ] %}
-                                        <option value="{{ key }}" {% if profile.identity_category == key %}selected{% endif %}>{{ label }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <small class="form-hint">与你绑定的电子签名双向同步，用于按职务筛选签名。</small>
+                                <div class="form-group profile-form-grid__wide">
+                                    <label class="form-label">职务身份（可兼任，最多 4 个）</label>
+                                    <div id="profile-identity-editor" data-profile-identity-editor>
+                                        <div class="profile-identity-loading">正在加载任职身份…</div>
+                                    </div>
+                                    <small class="form-hint">与你绑定的电子签名双向同步；可设置任期起止日期，到期自动降级。主身份取职级最高的在任身份。</small>
                                 </div>
                                 {% endif %}
                                 <div class="form-group">
