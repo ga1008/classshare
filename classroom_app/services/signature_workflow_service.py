@@ -65,7 +65,8 @@ def direct_authorization_mode(actor: dict[str, Any], signature: Any) -> str:
         return "self"
     if _same_identity(signature["owner_role"], signature["owner_id"], actor):
         return "owner"
-    if actor.get("role") == "teacher" and str(signature["owner_role"] or "") == "system":
+    # 仅批语章（同意/已阅…）对教师直通；system-owned 个人签名须走申请。
+    if actor.get("role") == "teacher" and signature_service.is_stamp_signature(signature):
         return "platform"
     return ""
 
@@ -912,8 +913,12 @@ def create_claim_request(
     if actor.get("role") not in REQUESTER_ROLES:
         raise signature_service.SignatureServiceError(403, "仅教师或学生账号可以申请认领签名。")
     signature = _signature_row(conn, signature_id)
-    if str(signature["owner_role"] or "") == "system" or str(signature["scope_level"] or "") == "platform":
-        raise signature_service.SignatureServiceError(400, "平台公共签章不可认领。")
+    # system-owned 个人签名（autoCorrecting 迁入）可以认领；批语章不可以。
+    if (
+        str(signature["scope_level"] or "") == "platform"
+        or signature_service.is_stamp_signature(signature)
+    ):
+        raise signature_service.SignatureServiceError(400, "平台公共签章/批语章不可认领。")
     if _same_identity(signature["subject_role"], signature["subject_id"], actor):
         raise signature_service.SignatureServiceError(400, "该签名已绑定你的账号，无需认领。")
     if signature_service.can_claim_signature(actor, signature):

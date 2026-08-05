@@ -103,6 +103,7 @@ async def api_upload_signature(
     subject_id: int | None = Form(None),
     scope_level: str = Form(""),
     identity_category: str = Form(""),
+    signature_kind: str = Form(""),
     description: str = Form(""),
     user: dict = Depends(get_current_user),
 ):
@@ -118,6 +119,7 @@ async def api_upload_signature(
                 subject_id=subject_id,
                 scope_level=scope_level,
                 identity_category=identity_category,
+                signature_kind=signature_kind,
                 description=description,
             )
             conn.commit()

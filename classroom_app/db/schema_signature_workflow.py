@@ -140,8 +140,33 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
             # Set only when a super admin confirms the identity; any change made
             # through self-service paths clears it back to 0.
             "identity_verified": "INTEGER NOT NULL DEFAULT 0",
+            # 'personal' = someone's autograph; 'stamp' = shared remark stamp
+            # (同意/已阅…) usable by material owners without any request flow.
+            "signature_kind": "TEXT NOT NULL DEFAULT 'personal'",
         },
         engine=engine,
+    )
+    # Platform-owned remark stamps (审核意见“同意” etc.) migrate to 'stamp'.
+    # CAUTION: autoCorrecting-imported PERSONAL autographs are also
+    # system-owned — only rows whose subject is not a real person qualify.
+    conn.execute(
+        """
+        UPDATE electronic_signatures
+        SET signature_kind = 'stamp'
+        WHERE owner_role = 'system'
+          AND COALESCE(subject_role, '') NOT IN ('teacher', 'student')
+          AND COALESCE(signature_kind, 'personal') <> 'stamp'
+        """
+    )
+    # Repair guard: a stamp must never point at a person's account/name-role.
+    # (Also fixes rows mislabelled by the earlier, broader migration.)
+    conn.execute(
+        """
+        UPDATE electronic_signatures
+        SET signature_kind = 'personal'
+        WHERE COALESCE(signature_kind, 'personal') = 'stamp'
+          AND COALESCE(subject_role, '') IN ('teacher', 'student')
+        """
     )
     # Accounts carry the same identity category so binding a signature can
     # sync 职务身份 in both directions.

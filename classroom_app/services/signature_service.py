@@ -312,6 +312,22 @@ def _bulk_request_states(
     return result
 
 
+def is_stamp_signature(row: sqlite3.Row | dict[str, Any]) -> bool:
+    """批语章（同意/已阅…）：共享文字签章，不属于任何个人。
+
+    显式 kind='stamp' 之外，system-owned 且签名主体不是真人的行也按批语章
+    对待（运行时兜底，不依赖启动迁移时机）；system-owned 的 autoCorrecting
+    个人签名（subject 为师生）绝不算批语章。
+    """
+    kind = row["signature_kind"] if "signature_kind" in row.keys() else "personal"
+    if str(kind or "personal") == "stamp":
+        return True
+    return (
+        str(row["owner_role"] or "") == "system"
+        and str(row["subject_role"] or "") not in {"teacher", "student"}
+    )
+
+
 def is_subject_bound(row: sqlite3.Row | dict[str, Any]) -> bool:
     """The signature is tied to a registered account that can review requests."""
     try:
@@ -326,7 +342,9 @@ def can_claim_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any]
     role, user_id = _actor_identity(actor)
     if role not in {"teacher", "student"} or user_id <= 0:
         return False
-    if is_subject_bound(row) or str(row["owner_role"] or "") == "system":
+    # autoCorrecting 迁入的个人签名虽是 system-owned，也应允许本人认领；
+    # 只有批语章绝对不可认领。
+    if is_subject_bound(row) or is_stamp_signature(row):
         return False
     subject_role = str(row["subject_role"] or "").strip().lower()
     if subject_role not in {role, "", "other"}:
@@ -345,9 +363,9 @@ def can_use_signature(
     # binding location.  This helper only represents unconditional direct use.
     if _is_owner(actor, row) or _is_subject(actor, row):
         return True
-    # Platform stamps (system-owned, e.g. 审核意见"同意") are shared assets any
-    # teacher may embed directly — they are not personal autographs.
-    return actor.get("role") == "teacher" and str(row["owner_role"] or "") == "system"
+    # 仅批语章（同意/已阅…）对教师免申请直用。收紧点：system-owned 的
+    # autoCorrecting 个人签名过去也全员直用——那是漏洞，现在必须走申请。
+    return actor.get("role") == "teacher" and is_stamp_signature(row)
 
 
 def can_request_signature_use(
@@ -783,6 +801,8 @@ def serialize_signature(
         "identity_category": identity_category,
         "identity_label": signature_identity_service.identity_label(identity_category),
         "identity_verified": bool(row["identity_verified"] if "identity_verified" in row.keys() else 0),
+        "signature_kind": "stamp" if is_stamp_signature(row) else "personal",
+        "kind_label": "批语章" if is_stamp_signature(row) else "",
         "owner_role": owner_role,
         "owner_role_label": _role_label(owner_role),
         "owner_id": row["owner_id"],
@@ -1289,9 +1309,14 @@ async def create_signature_from_upload(
     subject_id: int | None = None,
     scope_level: str = "",
     identity_category: str = "",
+    signature_kind: str = "",
     description: str = "",
 ) -> dict[str, Any]:
     actor = build_signature_actor(conn, user)
+    # 批语章只有超管能登记；它是共享资产，不绑定个人。
+    normalized_kind = "stamp" if (
+        str(signature_kind or "").strip().lower() == "stamp" and actor.get("is_super_admin")
+    ) else "personal"
     original_filename = file.filename or "signature.png"
     ext = _normalize_upload_extension(original_filename)
     data = await _read_upload_bytes(file)
@@ -1328,6 +1353,7 @@ async def create_signature_from_upload(
             """
             SELECT id FROM electronic_signatures
             WHERE status = 'active' AND deleted_at IS NULL
+              AND COALESCE(signature_kind, 'personal') <> 'stamp'
               AND LOWER(TRIM(COALESCE(subject_name, ''))) = LOWER(TRIM(?))
               AND LOWER(TRIM(COALESCE(school_code, ''))) = LOWER(TRIM(?))
               AND NOT (subject_role = ? AND COALESCE(subject_id, 0) = ?)
@@ -1366,19 +1392,26 @@ async def create_signature_from_upload(
         normalized_identity = signature_identity_service.get_account_identity(
             conn, normalized_subject_role, normalized_subject_id
         )
+    if normalized_kind == "stamp":
+        # 批语章不属于任何人：不绑定账号、不挂身份，签名人即批语文字本身。
+        normalized_subject_role = "other"
+        normalized_subject_id = None
+        clean_subject_name = clean_name
+        normalized_identity = ""
+        identity_verified = 0
 
     signature_id = execute_insert_returning_id(
         conn,
         """
         INSERT INTO electronic_signatures (
-            name, subject_name, subject_role, subject_id, identity_category, identity_verified, scope_level,
+            name, subject_name, subject_role, subject_id, identity_category, identity_verified, signature_kind, scope_level,
             owner_role, owner_id, owner_name_snapshot,
             uploaded_by_role, uploaded_by_id, uploaded_by_name_snapshot,
             school_code, school_name, college, department,
             file_hash, file_ext, mime_type, stored_path, file_size,
             description, metadata_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             clean_name,
@@ -1387,6 +1420,7 @@ async def create_signature_from_upload(
             normalized_subject_id,
             normalized_identity,
             identity_verified,
+            normalized_kind,
             normalized_scope,
             actor_role,
             actor_id,
@@ -1754,7 +1788,9 @@ def list_claim_candidates(
     where = [
         "s.status = 'active'",
         "s.deleted_at IS NULL",
-        "s.owner_role <> 'system'",
+        # system-owned personal autographs (autoCorrecting import) belong in
+        # the claim list — they are exactly the rows people need to claim.
+        "COALESCE(s.signature_kind, 'personal') <> 'stamp'",
         "COALESCE(s.scope_level, '') <> 'platform'",
         "LOWER(TRIM(COALESCE(s.school_code, ''))) = LOWER(TRIM(?))",
         "NOT (s.subject_role = ? AND COALESCE(s.subject_id, 0) = ?)",
@@ -1822,8 +1858,8 @@ def merge_duplicate_signatures(
     if not bool(actor.get("is_super_admin")):
         raise SignatureServiceError(403, "只有超级管理员可以归并签名。")
     primary = _get_signature_row(conn, primary_id)
-    if str(primary["owner_role"] or "") == "system":
-        raise SignatureServiceError(400, "平台公共签章不参与归并。")
+    if str(primary["owner_role"] or "") == "system" or is_stamp_signature(primary):
+        raise SignatureServiceError(400, "平台公共签章/批语章不参与归并。")
     primary_name = _clean_text(primary["subject_name"] or primary["name"], 80)
     normalized_ids: list[int] = []
     seen: set[int] = {int(primary_id)}
@@ -1845,8 +1881,8 @@ def merge_duplicate_signatures(
     merged = 0
     for duplicate_id in normalized_ids:
         duplicate = _get_signature_row(conn, duplicate_id)
-        if str(duplicate["owner_role"] or "") == "system":
-            raise SignatureServiceError(400, "平台公共签章不参与归并。")
+        if str(duplicate["owner_role"] or "") == "system" or is_stamp_signature(duplicate):
+            raise SignatureServiceError(400, "平台公共签章/批语章不参与归并。")
         duplicate_name = _clean_text(duplicate["subject_name"] or duplicate["name"], 80)
         if duplicate_name != primary_name:
             raise SignatureServiceError(400, f"“{duplicate_name}”与主签名姓名不一致，仅同名签名可归并。")

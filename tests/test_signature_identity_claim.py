@@ -412,6 +412,62 @@ class SignatureIdentityClaimTests(unittest.TestCase):
             )
         self.assertEqual(422, conflict.exception.status_code)
 
+    def test_stamp_signatures_bypass_requests_and_management_flows(self) -> None:
+        # A remark stamp registered by an admin (owner = teacher 9, not system).
+        cursor = self.conn.execute(
+            """
+            INSERT INTO electronic_signatures (
+                name, subject_name, subject_role, subject_id,
+                owner_role, owner_id, owner_name_snapshot, signature_kind
+            ) VALUES ('同意', '同意', 'other', NULL, 'teacher', 9, '平台管理员', 'stamp')
+            """
+        )
+        stamp_id = int(cursor.lastrowid)
+        stamp_row = self._signature(stamp_id)
+        # Any teacher may use it directly, no request needed.
+        self.assertTrue(
+            signature_service.can_use_signature(
+                {"role": "teacher", "id": 1, "is_super_admin": False}, stamp_row
+            )
+        )
+        self.assertEqual(
+            "platform",
+            signature_workflow_service.direct_authorization_mode(
+                {"role": "teacher", "id": 1}, stamp_row
+            ),
+        )
+        # Students do not embed remark stamps.
+        self.assertFalse(
+            signature_service.can_use_signature(
+                {"role": "student", "id": 1, "is_super_admin": False}, stamp_row
+            )
+        )
+        # Stamps never enter the claim or merge flows.
+        with self.assertRaises(signature_service.SignatureServiceError) as claim_guard:
+            signature_workflow_service.create_claim_request(
+                self.conn, {"role": "teacher", "id": 1}, stamp_id
+            )
+        self.assertEqual(400, claim_guard.exception.status_code)
+        with self.assertRaises(signature_service.SignatureServiceError) as merge_guard:
+            signature_service.merge_duplicate_signatures(
+                self.conn, {"role": "teacher", "id": 9}, stamp_id, [1]
+            )
+        self.assertEqual(400, merge_guard.exception.status_code)
+
+    def test_startup_migration_marks_system_rows_as_stamps(self) -> None:
+        cursor = self.conn.execute(
+            """
+            INSERT INTO electronic_signatures (
+                name, subject_name, subject_role, owner_role, owner_id, signature_kind
+            ) VALUES ('教学院长审核意见·同意', '同意', 'system', 'system', NULL, 'personal')
+            """
+        )
+        legacy_id = int(cursor.lastrowid)
+        schema_signature_workflow._SCHEMA_READY = False
+        with patch.object(schema_signature_workflow, "get_configured_db_engine", return_value="sqlite"):
+            schema_signature_workflow.ensure_signature_workflow_schema(self.conn)
+        self.assertEqual("stamp", self._signature(legacy_id)["signature_kind"])
+
     def test_sync_fills_signature_identity_from_account(self) -> None:
         self.conn.execute("UPDATE teachers SET identity_category = 'counselor' WHERE id = 2")
         result = signature_identity_service.sync_identity_for_signature(self.conn, 2)

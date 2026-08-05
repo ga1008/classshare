@@ -144,7 +144,14 @@ export class SignaturePointControl {
         const remaining = usable.filter((item) => !this.selectedIds.includes(Number(item.id)));
         const visible = this.filterCandidates(remaining, this.searchTerm, this.identityFilterOn);
         const hiddenCount = remaining.length - visible.length;
-        const options = visible.map((item) => `<option value="${item.id}">${esc(item.subject_name || item.name)}${item.identity_label ? ` · ${esc(item.identity_label)}${item.identity_verified ? '✓' : ''}` : ''} · ${esc(item.scope_label || '')}</option>`).join('');
+        const optionHtml = (item) => `<option value="${item.id}">${esc(item.subject_name || item.name)}${item.identity_label ? ` · ${esc(item.identity_label)}${item.identity_verified ? '✓' : ''}` : ''} · ${esc(item.signature_kind === 'stamp' ? '批语章' : (item.scope_label || ''))}</option>`;
+        const personalOptions = visible.filter((item) => item.signature_kind !== 'stamp');
+        const stampOptions = visible.filter((item) => item.signature_kind === 'stamp');
+        // 批语章单独分组：同意/已阅等共享签章无需申请、不受身份过滤。
+        const options = [
+            personalOptions.length ? `<optgroup label="个人签名">${personalOptions.map(optionHtml).join('')}</optgroup>` : '',
+            stampOptions.length ? `<optgroup label="批语章（无需申请）">${stampOptions.map(optionHtml).join('')}</optgroup>` : '',
+        ].join('');
         const flowBadge = this.state?.active_flow
             ? `<span class="spw-flow-badge">${esc(statusText[this.state.active_flow.status] || '申请处理中')}</span>`
             : '';
@@ -190,6 +197,18 @@ export class SignaturePointControl {
             const select = this.root.querySelector('[data-spw-available]');
             const id = Number(select?.value || 0);
             if (!id) return;
+            const usable = this.state?.usable_signatures || [];
+            const picked = usable.find((item) => Number(item.id) === id);
+            if (picked?.signature_kind === 'stamp') {
+                const hasPersonal = this.selectedIds.some((selectedId) => {
+                    const entry = usable.find((item) => Number(item.id) === Number(selectedId));
+                    return entry && entry.signature_kind !== 'stamp';
+                });
+                // 仅批语+线下盖章是合法场景，轻提示一次即可，不阻断。
+                if (!hasPersonal && !window.confirm('该签名点当前没有个人签名，仅使用批语章（配合线下盖章）？')) {
+                    return;
+                }
+            }
             this.selectedIds = uniqueIds([...this.selectedIds, id]);
             this.onChange(this.getSelectedIds());
             this.render();

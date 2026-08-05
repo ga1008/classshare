@@ -34,6 +34,9 @@ def identity_org_match(actor: dict[str, Any], item: dict[str, Any], accepted_ide
     """
     if not accepted_identities:
         return True
+    # 批语章（同意/已阅…）没有职务身份，永不被身份过滤挡住。
+    if str(item.get("signature_kind") or "personal") == "stamp":
+        return True
     identity = str(item.get("identity_category") or "")
     if identity not in accepted_identities:
         return False

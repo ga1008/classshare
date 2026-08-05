@@ -120,6 +120,8 @@ function cacheElements() {
         'signature-subject-account-input',
         'signature-scope-level-input',
         'signature-identity-input',
+        'signature-kind-field',
+        'signature-kind-input',
         'signature-name-input',
         'signature-description-input',
         'signature-edit-form',
@@ -313,7 +315,7 @@ function renderCard(item) {
                 <strong class="signature-card-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong>
                 <div class="signature-meta-line">
                     <span class="signature-chip${chipClass}">${escapeHtml(item.scope_label)}</span>
-                    ${item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}${item.identity_verified ? ' ✓' : ''}</span>` : `<span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>`}
+                    ${item.kind_label ? `<span class="signature-chip is-system">${escapeHtml(item.kind_label)}</span>` : (item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}${item.identity_verified ? ' ✓' : ''}</span>` : `<span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>`)}
                     ${item.is_owner ? '<span class="signature-chip is-owner">归属我</span>' : `<span class="signature-chip">${escapeHtml(item.owner_name || '未归属')}</span>`}
                 </div>
             </div>
@@ -349,7 +351,8 @@ function renderDetail(item) {
         els['signature-detail-chips'].innerHTML = `
             <span class="signature-chip${item.is_owner ? ' is-owner' : ''}">${escapeHtml(item.scope_label)}</span>
             <span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>
-            ${item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}${item.identity_verified ? '（已核验）' : '（未核验）'}</span>` : ''}
+            ${item.kind_label ? `<span class="signature-chip is-system">${escapeHtml(item.kind_label)} · 全员免申请</span>` : ''}
+            ${!item.kind_label && item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}${item.identity_verified ? '（已核验）' : '（未核验）'}</span>` : ''}
             ${item.is_owner ? '<span class="signature-chip is-owner">归属我</span>' : ''}
             ${item.owner_role === 'system' ? '<span class="signature-chip is-system">平台导入</span>' : ''}
             ${item.owner_role !== 'system' && !item.subject_bound ? '<span class="signature-chip">未绑定账号</span>' : ''}
@@ -961,6 +964,7 @@ async function submitUpload(event) {
             if (subjectTeacherId) formData.append('subject_id', String(subjectTeacherId));
             formData.append('scope_level', els['signature-scope-level-input']?.value || '');
             formData.append('identity_category', els['signature-identity-input']?.value || '');
+            formData.append('signature_kind', els['signature-kind-input']?.value || '');
             formData.append('description', els['signature-description-input']?.value?.trim() || '');
             try {
                 await apiFetch('/api/signatures/upload', {
@@ -993,7 +997,7 @@ async function submitUpload(event) {
 }
 
 function configureUploadFormForActor() {
-    ['signature-subject-role-field', 'signature-subject-name-field', 'signature-subject-account-field', 'signature-scope-level-field'].forEach((id) => {
+    ['signature-subject-role-field', 'signature-subject-name-field', 'signature-subject-account-field', 'signature-scope-level-field', 'signature-kind-field'].forEach((id) => {
         if (els[id]) els[id].hidden = !isSuperAdmin();
     });
     if (!isSuperAdmin() && els['signature-school-field']) {
