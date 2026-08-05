@@ -10,6 +10,7 @@ from .message_center_service import (
     MESSAGE_CATEGORY_PRIVATE,
     build_user_identity,
 )
+from . import signature_identity_service
 from .learning_progress_service import build_student_global_cultivation_profile
 from .portfolio_service import build_student_portfolio_context
 from .student_auth_service import build_student_security_summary
@@ -135,6 +136,8 @@ def _serialize_profile(row, *, role: str) -> dict[str, Any]:
         "qq": str(item.get("qq") or ""),
         "homepage_url": str(item.get("homepage_url") or ""),
         "nickname": str(item.get("nickname") or ""),
+        "identity_category": signature_identity_service.normalize_identity_category(item.get("identity_category")),
+        "identity_label": signature_identity_service.identity_label(item.get("identity_category")),
         "description": str(item.get("description") or "") if role == "teacher" else "",
         "profile_info": str(item.get("profile_info") or ""),
         "created_at": str(item.get("created_at") or ""),
@@ -179,7 +182,7 @@ def get_user_profile(conn, user: dict) -> dict[str, Any]:
         row = conn.execute(
             """
             SELECT id, name, email, phone, wechat, qq, homepage_url, password_updated_at, profile_info,
-                   nickname, description, avatar_file_hash, avatar_mime_type,
+                   nickname, description, identity_category, avatar_file_hash, avatar_mime_type,
                    avatar_updated_at, today_mood, today_mood_updated_at, created_at
             FROM teachers
             WHERE id = ?
@@ -733,6 +736,13 @@ def update_basic_profile(conn, user: dict, payload: dict[str, Any]) -> dict[str,
             user_id,
         ),
     )
+    if role == "teacher" and "identity_category" in payload:
+        identity = signature_identity_service.normalize_identity_category(payload.get("identity_category"))
+        current = signature_identity_service.get_account_identity(conn, role, user_id)
+        if identity != current:
+            # The account side was edited last: identity flows to bound signatures.
+            signature_identity_service.set_account_identity(conn, role, user_id, identity)
+            signature_identity_service.propagate_account_identity(conn, role, user_id, identity)
     return get_user_profile(conn, user)
 
 

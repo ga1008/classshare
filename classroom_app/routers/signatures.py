@@ -34,6 +34,7 @@ async def api_list_signatures(
     owner_role: str = "",
     subject_role: str = "",
     scope: str = "",
+    identity_category: str = "",
     function_point_key: str = "",
     limit: int = 200,
     user: dict = Depends(get_current_user),
@@ -48,6 +49,7 @@ async def api_list_signatures(
                 owner_role=owner_role,
                 subject_role=subject_role,
                 scope=scope,
+                identity_category=identity_category,
                 function_point_key=function_point_key,
                 limit=limit,
             )
@@ -95,6 +97,7 @@ async def api_upload_signature(
     subject_name: str = Form(""),
     subject_id: int | None = Form(None),
     scope_level: str = Form(""),
+    identity_category: str = Form(""),
     description: str = Form(""),
     user: dict = Depends(get_current_user),
 ):
@@ -109,6 +112,7 @@ async def api_upload_signature(
                 subject_name=subject_name,
                 subject_id=subject_id,
                 scope_level=scope_level,
+                identity_category=identity_category,
                 description=description,
             )
             conn.commit()
@@ -250,6 +254,55 @@ async def api_claim_signature(
             result = signature_workflow_service.claim_signature(conn, user, signature_id)
             conn.commit()
         return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.get("/claim-candidates", response_class=JSONResponse)
+async def api_signature_claim_candidates(
+    q: str = "",
+    limit: int = 200,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            return signature_service.list_claim_candidates(conn, user, q=q, limit=limit)
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/{signature_id:int}/claim-requests", response_class=JSONResponse)
+async def api_create_signature_claim_request(
+    signature_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    payload = await _json_body(request)
+    try:
+        with get_db_connection() as conn:
+            result = signature_workflow_service.create_claim_request(
+                conn,
+                user,
+                signature_id,
+                note=str(payload.get("note") or ""),
+            )
+            conn.commit()
+        return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/{signature_id:int}/image", response_class=JSONResponse)
+async def api_replace_signature_image(
+    signature_id: int,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    try:
+        with get_db_connection() as conn:
+            item = await signature_service.replace_signature_image(conn, user, signature_id, file)
+            conn.commit()
+        return {"status": "success", "signature": item}
     except signature_service.SignatureServiceError as exc:
         _raise_signature_error(exc)
 

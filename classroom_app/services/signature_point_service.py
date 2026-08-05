@@ -13,7 +13,7 @@ import sqlite3
 from typing import Any
 
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
-from . import signature_service, signature_workflow_service
+from . import signature_identity_service, signature_service, signature_workflow_service
 
 
 MAX_SIGNATURES_PER_POINT = 12
@@ -154,6 +154,11 @@ def get_point_state(
         material_type=material_type,
         material_id=material_id,
     )
+    point_row = signature_workflow_service._function_points(conn, [scope["function_point_key"]])[0]
+    required_identities = signature_identity_service.parse_required_identities(point_row["required_identities"])
+    accepted_identities = set(
+        signature_identity_service.expand_required_identities(point_row["required_identities"])
+    )
     listed = signature_service.list_signatures(conn, user, limit=500)
     grant_rows = conn.execute(
         """
@@ -193,6 +198,10 @@ def get_point_state(
                 "can_request": not can_use,
                 "needs_admin_review": needs_admin_review,
                 "signer_bound": signer_bound,
+                "identity_match": (
+                    not accepted_identities
+                    or str(item.get("identity_category") or "") in accepted_identities
+                ),
                 "authorization_mode": direct_mode or ("approval" if grant_item_id else ""),
                 "grant_item_id": grant_item_id,
             }
@@ -204,6 +213,10 @@ def get_point_state(
         "point": {
             "key": scope["function_point_key"],
             "label": scope["function_point_label"],
+            "required_identities": required_identities,
+            "required_identity_labels": [
+                signature_identity_service.identity_label(key) for key in required_identities
+            ],
         },
         "material": {
             "type": scope["material_type"],

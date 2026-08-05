@@ -15,6 +15,7 @@ from fastapi import UploadFile
 from ..config import SIGNATURES_DIR, SIGNATURES_LEGACY_DIRS
 from ..db.connection import execute_insert_returning_id
 from ..storage_paths import unique_paths
+from . import signature_identity_service
 from .message_center_service import is_super_admin_teacher
 from .organization_management_service import list_school_options
 from .organization_scope_service import (
@@ -531,6 +532,7 @@ def list_signatures(
     owner_role: str = "",
     subject_role: str = "",
     scope: str = "",
+    identity_category: str = "",
     function_point_key: str = "",
     limit: int = 200,
 ) -> dict[str, Any]:
@@ -568,6 +570,12 @@ def list_signatures(
     if normalized_subject_role in VALID_SUBJECT_ROLES:
         where.append("s.subject_role = ?")
         params.append(normalized_subject_role)
+
+    identity_keys = signature_identity_service.expand_identity_filter(identity_category)
+    if identity_keys:
+        placeholders = ", ".join("?" for _ in identity_keys)
+        where.append(f"COALESCE(s.identity_category, '') IN ({placeholders})")
+        params.extend(identity_keys)
 
     normalized_scope = str(scope or "").strip().lower()
     actor_role, actor_id = _actor_identity(actor)
@@ -684,6 +692,9 @@ def serialize_signature(
     row_id = int(row["id"])
     owner_role = str(row["owner_role"] or "")
     subject_role = str(row["subject_role"] or "")
+    identity_category = signature_identity_service.normalize_identity_category(
+        row["identity_category"] if "identity_category" in row.keys() else ""
+    )
     scope_level = str(row["scope_level"] or "")
     subject_name = row["subject_name"] or row["name"]
     is_owner = _is_owner(actor, row)
@@ -705,6 +716,8 @@ def serialize_signature(
         "subject_role": subject_role,
         "subject_id": row["subject_id"],
         "subject_role_label": _role_label(subject_role),
+        "identity_category": identity_category,
+        "identity_label": signature_identity_service.identity_label(identity_category),
         "owner_role": owner_role,
         "owner_role_label": _role_label(owner_role),
         "owner_id": row["owner_id"],
@@ -1027,6 +1040,15 @@ def update_signature_metadata(
         org_scope["college"] = normalize_org_text(payload.get("college", org_scope["college"]))
         org_scope["department"] = normalize_org_text(payload.get("department", org_scope["department"]))
 
+    previous_identity = signature_identity_service.normalize_identity_category(
+        row["identity_category"] if "identity_category" in row.keys() else ""
+    )
+    if "identity_category" in payload:
+        new_identity = signature_identity_service.normalize_identity_category(payload.get("identity_category"))
+    else:
+        new_identity = previous_identity
+    identity_changed = new_identity != previous_identity
+
     explicit_subject_id = payload.get("subject_id", payload.get("subject_teacher_id"))
     if (
         explicit_subject_id in (None, "")
@@ -1054,6 +1076,7 @@ def update_signature_metadata(
             subject_name = ?,
             subject_role = ?,
             subject_id = ?,
+            identity_category = ?,
             scope_level = ?,
             owner_role = ?,
             owner_id = ?,
@@ -1073,6 +1096,7 @@ def update_signature_metadata(
             clean_subject_name,
             subject_role,
             subject_id,
+            new_identity,
             requested_scope_level,
             owner_role,
             owner_id,
@@ -1088,6 +1112,11 @@ def update_signature_metadata(
             int(signature_id),
         ),
     )
+    if identity_changed and subject_id:
+        # The signature side was edited last: push identity to the account.
+        signature_identity_service.set_account_identity(conn, subject_role, subject_id, new_identity)
+    else:
+        signature_identity_service.sync_identity_for_signature(conn, int(signature_id))
     refreshed = _get_signature_row(conn, signature_id)
     return serialize_signature(refreshed, actor, conn)
 
@@ -1176,6 +1205,7 @@ async def create_signature_from_upload(
     subject_name: str = "",
     subject_id: int | None = None,
     scope_level: str = "",
+    identity_category: str = "",
     description: str = "",
 ) -> dict[str, Any]:
     actor = build_signature_actor(conn, user)
@@ -1186,8 +1216,6 @@ async def create_signature_from_upload(
     if ALLOWED_SIGNATURE_EXTENSIONS[ext] != mime_type:
         raise SignatureServiceError(400, "文件扩展名与图片内容不一致。")
 
-    file_hash = hashlib.sha256(data).hexdigest()
-    target_path = await _store_signature_bytes(file_hash, ext, data)
     actor_role, actor_id = _actor_identity(actor)
 
     if actor.get("is_super_admin"):
@@ -1198,14 +1226,39 @@ async def create_signature_from_upload(
         normalized_scope = "department" if actor_role == "teacher" else "personal"
 
     clean_name = _clean_text(name, 80) or _clean_text(Path(original_filename).stem, 80) or "电子签名"
-    if actor_role == "student" and not actor.get("is_super_admin"):
-        # A student account registers only its own autograph; impersonating a
-        # classmate's signature must go through a teacher-managed upload.
+    if not actor.get("is_super_admin"):
+        # 自助上传只登记本人签名：签名人=账号真实姓名，自动绑定本人账号。
+        # 他人签名必须走认领申请或超管上传。
         subject_id = actor_id
         clean_subject_name = _clean_text(actor.get("name"), 80) or clean_name
     else:
         clean_subject_name = _clean_text(subject_name, 80) or actor.get("name") or clean_name
     owner_scope = _owner_scope_for_upload(actor, normalized_scope)
+
+    if not actor.get("is_super_admin"):
+        duplicate = conn.execute(
+            """
+            SELECT id FROM electronic_signatures
+            WHERE status = 'active' AND deleted_at IS NULL
+              AND LOWER(TRIM(COALESCE(subject_name, ''))) = LOWER(TRIM(?))
+              AND LOWER(TRIM(COALESCE(school_code, ''))) = LOWER(TRIM(?))
+              AND NOT (subject_role = ? AND COALESCE(subject_id, 0) = ?)
+              AND NOT (owner_role = ? AND COALESCE(owner_id, 0) = ?)
+            ORDER BY id LIMIT 1
+            """,
+            (
+                clean_subject_name, normalize_school_code(owner_scope["school_code"]),
+                actor_role, actor_id, actor_role, actor_id,
+            ),
+        ).fetchone()
+        if duplicate:
+            raise SignatureServiceError(
+                409,
+                f"签名库中已存在“{clean_subject_name}”的签名，请通过“认领签名”申请归属，认领成功后可更换签名图片，无需重复上传。",
+            )
+
+    file_hash = hashlib.sha256(data).hexdigest()
+    target_path = await _store_signature_bytes(file_hash, ext, data)
     normalized_subject_id = (
         actor_id
         if normalized_subject_role == actor_role and clean_subject_name == _clean_text(actor.get("name"), 80)
@@ -1219,25 +1272,31 @@ async def create_signature_from_upload(
     )
     if subject_id not in (None, "") and normalized_subject_id:
         clean_subject_name = _subject_name_by_id(conn, normalized_subject_role, normalized_subject_id) or clean_subject_name
+    normalized_identity = signature_identity_service.normalize_identity_category(identity_category)
+    if not normalized_identity and normalized_subject_id:
+        normalized_identity = signature_identity_service.get_account_identity(
+            conn, normalized_subject_role, normalized_subject_id
+        )
 
     signature_id = execute_insert_returning_id(
         conn,
         """
         INSERT INTO electronic_signatures (
-            name, subject_name, subject_role, subject_id, scope_level,
+            name, subject_name, subject_role, subject_id, identity_category, scope_level,
             owner_role, owner_id, owner_name_snapshot,
             uploaded_by_role, uploaded_by_id, uploaded_by_name_snapshot,
             school_code, school_name, college, department,
             file_hash, file_ext, mime_type, stored_path, file_size,
             description, metadata_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             clean_name,
             clean_subject_name,
             normalized_subject_role,
             normalized_subject_id,
+            normalized_identity,
             normalized_scope,
             actor_role,
             actor_id,
@@ -1258,6 +1317,7 @@ async def create_signature_from_upload(
             _safe_json({"original_filename": original_filename}),
         ),
     )
+    signature_identity_service.sync_identity_for_signature(conn, signature_id)
     row, refreshed_actor = get_signature_row_for_actor(conn, user, signature_id)
     return serialize_signature(row, refreshed_actor, conn)
 
@@ -1454,6 +1514,113 @@ def delete_signature(conn: sqlite3.Connection, user: dict[str, Any], signature_i
             except OSError:
                 removed_file = False
     return {"id": int(signature_id), "removed_file": removed_file}
+
+
+async def replace_signature_image(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    signature_id: int,
+    file: UploadFile,
+) -> dict[str, Any]:
+    """Swap the image behind an owned/bound signature (认领后可更换签名图片)."""
+    actor = build_signature_actor(conn, user)
+    row = _get_signature_row(conn, signature_id)
+    if not (bool(actor.get("is_super_admin")) or _is_owner(actor, row) or _is_subject(actor, row)):
+        raise SignatureServiceError(403, "只有签名归属人、签名者本人或超管可以更换签名图片。")
+    original_filename = file.filename or "signature.png"
+    ext = _normalize_upload_extension(original_filename)
+    data = await _read_upload_bytes(file)
+    mime_type = _detect_mime(data, ext)
+    if ALLOWED_SIGNATURE_EXTENSIONS[ext] != mime_type:
+        raise SignatureServiceError(400, "文件扩展名与图片内容不一致。")
+    file_hash = hashlib.sha256(data).hexdigest()
+    target_path = await _store_signature_bytes(file_hash, ext, data)
+    conn.execute(
+        """
+        UPDATE electronic_signatures
+        SET file_hash = ?, file_ext = ?, mime_type = ?, stored_path = ?, file_size = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (
+            file_hash,
+            ext,
+            mime_type,
+            str(signature_relative_path(file_hash, ext)).replace("\\", "/"),
+            int(target_path.stat().st_size),
+            int(signature_id),
+        ),
+    )
+    refreshed = _get_signature_row(conn, signature_id)
+    return serialize_signature(refreshed, actor, conn)
+
+
+def list_claim_candidates(
+    conn: sqlite3.Connection,
+    user: dict[str, Any],
+    *,
+    q: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Name-only listing of same-school signatures a user may apply to claim.
+
+    Deliberately returns no image URLs: the claim picker shows names, identity
+    and binding state only, so browsing it never exposes autograph images.
+    """
+    actor = build_signature_actor(conn, user)
+    actor_role, actor_id = _actor_identity(actor)
+    scope = actor.get("scope") or {}
+    school_code = normalize_school_code(scope.get("school_code"))
+    where = [
+        "s.status = 'active'",
+        "s.deleted_at IS NULL",
+        "s.owner_role <> 'system'",
+        "COALESCE(s.scope_level, '') <> 'platform'",
+        "LOWER(TRIM(COALESCE(s.school_code, ''))) = LOWER(TRIM(?))",
+        "NOT (s.subject_role = ? AND COALESCE(s.subject_id, 0) = ?)",
+    ]
+    params: list[Any] = [school_code, actor_role, actor_id]
+    query = _clean_text(q, 80)
+    if query:
+        like = f"%{query}%"
+        where.append("(s.subject_name LIKE ? OR s.name LIKE ?)")
+        params.extend([like, like])
+    rows = conn.execute(
+        _base_signature_select()
+        + " WHERE "
+        + " AND ".join(f"({item})" for item in where)
+        + " ORDER BY s.subject_name COLLATE NOCASE ASC, s.id ASC LIMIT ?",
+        (*params, max(1, min(int(limit or 200), 500))),
+    ).fetchall()
+    pending_rows = conn.execute(
+        """
+        SELECT signature_id FROM signature_access_requests
+        WHERE requester_role = ? AND requester_id = ?
+          AND COALESCE(request_kind, 'use') = 'claim' AND status = 'pending'
+        """,
+        (actor_role, actor_id),
+    ).fetchall()
+    pending_ids = {int(row["signature_id"]) for row in pending_rows}
+    items = []
+    for row in rows:
+        identity = signature_identity_service.normalize_identity_category(
+            row["identity_category"] if "identity_category" in row.keys() else ""
+        )
+        items.append(
+            {
+                "id": int(row["id"]),
+                "subject_name": row["subject_name"] or row["name"] or "",
+                "identity_category": identity,
+                "identity_label": signature_identity_service.identity_label(identity),
+                "subject_bound": is_subject_bound(row),
+                "owner_name": row["owner_display_name"] or "",
+                "is_owner": _is_owner(actor, row),
+                "can_direct_claim": can_claim_signature(actor, row),
+                "has_pending_claim": int(row["id"]) in pending_ids,
+                "created_at": row["created_at"] or "",
+            }
+        )
+    return {"items": items, "actor": serialize_signature_actor(actor)}
 
 
 def create_signature_access_request(

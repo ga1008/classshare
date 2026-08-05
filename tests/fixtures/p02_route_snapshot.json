@@ -4512,6 +4512,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/signatures/claim-candidates",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_claim_candidates",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/signatures/delete",
     "methods": [
       "POST"
@@ -4656,11 +4664,27 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/signatures/{signature_id:int}/claim-requests",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_signature_claim_request",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/signatures/{signature_id:int}/image",
     "methods": [
       "GET"
     ],
     "name": "api_signature_image",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/{signature_id:int}/image",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_replace_signature_image",
     "include_in_schema": true
   },
   {

@@ -8,6 +8,9 @@ const state = {
     incoming: [],
     outgoing: [],
     usage: [],
+    claimCandidates: [],
+    claimPanelOpen: false,
+    claimSearch: '',
     busy: false,
 };
 
@@ -42,10 +45,38 @@ async function loadAll() {
 }
 
 function requestSummary(item) {
+    if (item.request_kind === 'claim') {
+        return '签名认领申请（批准后归属权转移并绑定申请人账号）';
+    }
     const points = (item.items || []).map((entry) => entry.function_point_label).filter(Boolean);
     const place = points.length ? points.join('、') : (item.context_label || '未注明位置');
     const material = item.context_label && points.length ? ` · ${item.context_label}` : '';
     return `${place}${material}`;
+}
+
+function renderClaimPanel() {
+    if (!state.claimPanelOpen) return '';
+    const rows = state.claimCandidates.map((item) => {
+        const chips = [
+            item.identity_label ? `<span class="psig-badge">${escapeHtml(item.identity_label)}</span>` : '',
+            item.subject_bound ? '<span class="psig-badge">已绑定他人账号</span>' : '<span class="psig-badge is-claim">未绑定账号</span>',
+        ].filter(Boolean).join('');
+        const action = item.has_pending_claim
+            ? '<span class="psig-badge">审批中</span>'
+            : `<button type="button" class="psig-link is-claim" data-psig-claim-apply="${item.id}">${item.can_direct_claim ? '直接认领' : '申请认领'}</button>`;
+        return `<article class="psig-item psig-item--claim">
+            <div class="psig-item__meta">
+                <strong>${escapeHtml(item.subject_name || '未命名签名')}</strong>
+                <span>${chips}</span>
+                <small>${item.owner_name ? `归属：${escapeHtml(item.owner_name)}` : '按姓名展示，不显示签名图片'}</small>
+            </div>
+            ${action}
+        </article>`;
+    }).join('');
+    return `<div class="psig-claim-panel" style="display:grid;gap:8px;margin-top:12px;">
+        <input type="search" class="form-control" data-psig-claim-search placeholder="输入姓名模糊搜索可认领签名" value="${escapeHtml(state.claimSearch)}">
+        ${rows || '<div class="psig-empty">没有可认领的签名。</div>'}
+    </div>`;
 }
 
 function renderSignatureCard(item) {
@@ -118,13 +149,15 @@ function render() {
                 <div><h3>我的签名</h3></div>
                 <div class="psig-upload">
                     <input type="file" accept="image/png,image/jpeg" data-psig-file hidden>
+                    <button type="button" class="btn btn-outline btn-sm" data-psig-claim-toggle>${state.claimPanelOpen ? '收起认领' : '认领签名'}</button>
                     <button type="button" class="btn btn-primary btn-sm" data-psig-upload>上传签名</button>
                 </div>
             </div>
-            <p class="psig-hint">上传白底或透明底的手写签名图片（PNG/JPG）。签名者固定为你本人，归属权在你手上；他人使用前必须经过你的批准。</p>
+            <p class="psig-hint">上传白底或透明底的手写签名图片（PNG/JPG）。签名者固定为你本人，归属权在你手上；他人使用前必须经过你的批准。若系统里已有你名字的签名，请使用“认领签名”而不是重复上传。</p>
             <div class="psig-grid">
-                ${state.signatures.map(renderSignatureCard).join('') || '<div class="psig-empty">还没有签名，点击右上角上传。</div>'}
+                ${state.signatures.map(renderSignatureCard).join('') || '<div class="psig-empty">还没有签名，点击右上角上传或认领。</div>'}
             </div>
+            ${renderClaimPanel()}
         </section>
 
         <section class="profile-band profile-reveal psig-card" ${pendingIncoming.length || settledIncoming.length ? '' : 'hidden'}>
@@ -242,6 +275,48 @@ async function deleteSignature(signatureId) {
     }
 }
 
+async function loadClaimCandidates() {
+    const params = new URLSearchParams();
+    if (state.claimSearch) params.set('q', state.claimSearch);
+    try {
+        const payload = await apiFetch(`/api/signatures/claim-candidates?${params.toString()}`, { silent: true });
+        state.claimCandidates = payload.items || [];
+    } catch (error) {
+        state.claimCandidates = [];
+        showToast(error.message || '加载可认领签名失败。', 'error');
+    }
+}
+
+async function toggleClaimPanel() {
+    state.claimPanelOpen = !state.claimPanelOpen;
+    if (state.claimPanelOpen) await loadClaimCandidates();
+    render();
+}
+
+let claimSearchTimer = null;
+
+async function applyClaim(signatureId) {
+    if (state.busy) return;
+    setBusy(true);
+    try {
+        const result = await apiFetch(`/api/signatures/${signatureId}/claim-requests`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        showToast(result.mode === 'direct'
+            ? '已直接认领并绑定到你的账号。'
+            : '认领申请已提交，归属人或管理员批准后签名将转移到你名下。', 'success');
+        await loadAll();
+        await loadClaimCandidates();
+        render();
+    } catch (error) {
+        showToast(error.message || '认领失败。', 'error');
+    } finally {
+        setBusy(false);
+    }
+}
+
 function bindEvents() {
     const fileInput = root.querySelector('[data-psig-file]');
     root.querySelector('[data-psig-upload]')?.addEventListener('click', () => fileInput?.click());
@@ -257,6 +332,25 @@ function bindEvents() {
     });
     root.querySelectorAll('[data-psig-cancel]').forEach((button) => {
         button.addEventListener('click', () => cancelRequest(Number(button.dataset.psigCancel)));
+    });
+    root.querySelector('[data-psig-claim-toggle]')?.addEventListener('click', toggleClaimPanel);
+    const claimSearch = root.querySelector('[data-psig-claim-search]');
+    claimSearch?.addEventListener('input', () => {
+        state.claimSearch = claimSearch.value || '';
+        window.clearTimeout(claimSearchTimer);
+        claimSearchTimer = window.setTimeout(async () => {
+            await loadClaimCandidates();
+            const active = document.activeElement === claimSearch;
+            render();
+            if (active) {
+                const restored = root.querySelector('[data-psig-claim-search]');
+                restored?.focus();
+                try { restored?.setSelectionRange(restored.value.length, restored.value.length); } catch { /* noop */ }
+            }
+        }, 260);
+    });
+    root.querySelectorAll('[data-psig-claim-apply]').forEach((button) => {
+        button.addEventListener('click', () => applyClaim(Number(button.dataset.psigClaimApply)));
     });
     root.querySelectorAll('[data-psig-review]').forEach((button) => {
         button.addEventListener('click', () => {

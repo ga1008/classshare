@@ -65,7 +65,7 @@ function cacheElements() {
         'signature-school-options',
         'signature-school-note',
         'signature-scope-filter',
-        'signature-subject-filter',
+        'signature-identity-filter',
         'signature-owner-filter',
         'signature-grid',
         'signature-result-summary',
@@ -79,7 +79,12 @@ function cacheElements() {
         'signature-download-link',
         'signature-request-btn',
         'signature-edit-btn',
+        'signature-replace-image-btn',
+        'signature-replace-image-input',
         'signature-delete-btn',
+        'signature-open-claim-btn',
+        'signature-claim-search-input',
+        'signature-claim-list',
         'signature-requests-refresh-btn',
         'signature-request-list',
         'signature-outgoing-request-list',
@@ -103,6 +108,7 @@ function cacheElements() {
         'signature-subject-name-input',
         'signature-subject-account-input',
         'signature-scope-level-input',
+        'signature-identity-input',
         'signature-name-input',
         'signature-description-input',
         'signature-edit-form',
@@ -110,6 +116,7 @@ function cacheElements() {
         'signature-edit-subject-name-input',
         'signature-edit-subject-input',
         'signature-edit-subject-role-input',
+        'signature-edit-identity-input',
         'signature-edit-scope-level-input',
         'signature-edit-school-field',
         'signature-edit-school-input',
@@ -159,7 +166,7 @@ function signatureQuery() {
     const params = new URLSearchParams();
     const search = els['signature-search-input']?.value?.trim();
     const scope = els['signature-scope-filter']?.value;
-    const subjectRole = els['signature-subject-filter']?.value;
+    const identityCategory = els['signature-identity-filter']?.value;
     const ownerRole = els['signature-owner-filter']?.value;
     const schoolCode = state.selectedSchoolCode
         || schoolCodeFromInput(els['signature-school-search-input']?.value)
@@ -167,7 +174,7 @@ function signatureQuery() {
     if (search) params.set('q', search);
     if (schoolCode) params.set('school_code', schoolCode);
     if (scope) params.set('scope', scope);
-    if (subjectRole) params.set('subject_role', subjectRole);
+    if (identityCategory) params.set('identity_category', identityCategory);
     if (ownerRole) params.set('owner_role', ownerRole);
     params.set('limit', '500');
     return params.toString();
@@ -295,7 +302,7 @@ function renderCard(item) {
                 <strong class="signature-card-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong>
                 <div class="signature-meta-line">
                     <span class="signature-chip${chipClass}">${escapeHtml(item.scope_label)}</span>
-                    <span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>
+                    ${item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}</span>` : `<span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>`}
                     ${item.is_owner ? '<span class="signature-chip is-owner">归属我</span>' : `<span class="signature-chip">${escapeHtml(item.owner_name || '未归属')}</span>`}
                 </div>
             </div>
@@ -331,6 +338,7 @@ function renderDetail(item) {
         els['signature-detail-chips'].innerHTML = `
             <span class="signature-chip${item.is_owner ? ' is-owner' : ''}">${escapeHtml(item.scope_label)}</span>
             <span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>
+            ${item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}</span>` : ''}
             ${item.is_owner ? '<span class="signature-chip is-owner">归属我</span>' : ''}
             ${item.owner_role === 'system' ? '<span class="signature-chip is-system">平台导入</span>' : ''}
             ${item.owner_role !== 'system' && !item.subject_bound ? '<span class="signature-chip">未绑定账号</span>' : ''}
@@ -339,6 +347,7 @@ function renderDetail(item) {
     if (els['signature-detail-list']) {
         els['signature-detail-list'].innerHTML = [
             ['签名人', item.subject_name || item.name],
+            ['职务身份', item.identity_label || '未设置'],
             ['归属人', item.owner_name || '平台导入'],
             ['上传者', item.uploaded_by_name || item.owner_name || '平台导入'],
             ['学校', item.school_name || '未记录'],
@@ -367,8 +376,18 @@ function renderDetail(item) {
     }
 }
 
+function canReplaceImage(item) {
+    if (!item) return false;
+    if (item.can_edit) return true;
+    return item.subject_role === state.actor?.role && Number(item.subject_id) === Number(state.actor?.id);
+}
+
 function setActionVisibility(canUse, canDelete, canEdit = false, canRequestUse = false, canClaim = false) {
     if (els['signature-claim-btn']) els['signature-claim-btn'].hidden = !canClaim;
+    if (els['signature-replace-image-btn']) {
+        const item = state.items.find((entry) => entry.id === state.selectedId);
+        els['signature-replace-image-btn'].hidden = !canReplaceImage(item);
+    }
     if (els['signature-download-link']) els['signature-download-link'].hidden = !canUse;
     if (els['signature-request-btn']) {
         els['signature-request-btn'].hidden = !canRequestUse;
@@ -378,6 +397,74 @@ function setActionVisibility(canUse, canDelete, canEdit = false, canRequestUse =
     }
     if (els['signature-edit-btn']) els['signature-edit-btn'].hidden = !canEdit;
     if (els['signature-delete-btn']) els['signature-delete-btn'].hidden = !canDelete;
+}
+
+async function loadClaimCandidates() {
+    const list = els['signature-claim-list'];
+    if (!list) return;
+    list.innerHTML = '<div class="signature-empty">正在加载可认领签名...</div>';
+    try {
+        const params = new URLSearchParams();
+        const query = els['signature-claim-search-input']?.value?.trim();
+        if (query) params.set('q', query);
+        const payload = await apiFetch(`/api/signatures/claim-candidates?${params.toString()}`, { method: 'GET', silent: true });
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (!items.length) {
+            list.innerHTML = '<div class="signature-empty">没有可认领的签名。</div>';
+            return;
+        }
+        list.innerHTML = items.map((item) => {
+            const chips = [
+                item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}</span>` : '',
+                item.subject_bound ? '<span class="signature-chip is-system">已绑定他人账号</span>' : '<span class="signature-chip">未绑定账号</span>',
+                item.owner_name ? `<span class="signature-chip">归属：${escapeHtml(item.owner_name)}</span>` : '',
+            ].filter(Boolean).join('');
+            const action = item.has_pending_claim
+                ? '<span class="signature-chip">认领申请审批中</span>'
+                : `<button type="button" class="btn ${item.can_direct_claim ? 'btn-primary' : 'btn-outline'} btn-sm" data-signature-claim-apply="${item.id}">${item.can_direct_claim ? '直接认领' : '申请认领'}</button>`;
+            return `
+                <article class="signature-request-item" data-signature-claim-id="${item.id}">
+                    <div class="signature-request-main">
+                        <p class="signature-request-title">${escapeHtml(item.subject_name || '未命名签名')}</p>
+                        <div class="signature-request-meta">${chips}</div>
+                    </div>
+                    <div class="signature-request-actions">${action}</div>
+                </article>
+            `;
+        }).join('');
+    } catch (error) {
+        list.innerHTML = `<div class="signature-empty">${escapeHtml(error.message || '加载失败，请稍后重试。')}</div>`;
+    }
+}
+
+async function applyClaim(signatureId, button) {
+    if (!signatureId) return;
+    if (button) button.disabled = true;
+    try {
+        const result = await apiFetch(`/api/signatures/${signatureId}/claim-requests`, { method: 'POST', body: {} });
+        if (result.mode === 'direct') {
+            showMessage('已直接认领并绑定到你的账号。', 'success');
+        } else {
+            showMessage('认领申请已提交，归属人或管理员批准后签名将转移到你名下。', 'success');
+        }
+        await loadClaimCandidates();
+        await loadSignatures({ keepSelection: true });
+    } catch (error) {
+        if (button) button.disabled = false;
+    }
+}
+
+async function replaceCurrentSignatureImage(file) {
+    if (!state.selectedId || !file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        await apiFetch(`/api/signatures/${state.selectedId}/image`, { method: 'POST', body: formData });
+        showMessage('签名图片已更换。', 'success');
+        await loadSignatures({ keepSelection: true });
+    } catch {
+        // apiFetch already surfaces the error.
+    }
 }
 
 async function claimCurrentSignature() {
@@ -472,11 +559,13 @@ function renderSignatureRequests() {
         return;
     }
     list.innerHTML = state.pendingRequests.map((item) => {
-        const signatureName = escapeHtml(item.signature_name || '未命名签名');
+        const isClaim = item.request_kind === 'claim';
+        const signatureName = escapeHtml((item.signature_name || '未命名签名') + (isClaim ? ' · 认领申请' : ''));
         const requester = escapeHtml(item.requester_name || `教师 ${item.requester_teacher_id}`);
         const pointLabels = (item.items || []).map((entry) => entry.function_point_label).filter(Boolean).join('、');
-        const material = item.context_label ? ` · ${item.context_label}` : '';
-        const meta = escapeHtml(`${requester} · ${pointLabels || '未登记功能点'}${material} · ${item.requested_at ? formatDate(item.requested_at) : ''}`);
+        const purpose = isClaim ? '申请认领签名（批准后归属权转移并绑定其账号）' : (pointLabels || '未登记功能点');
+        const material = !isClaim && item.context_label ? ` · ${item.context_label}` : '';
+        const meta = escapeHtml(`${requester} · ${purpose}${material} · ${item.requested_at ? formatDate(item.requested_at) : ''}`);
         const mine = (item.reviewers || []).find((reviewer) => (
             reviewer.role === state.actor?.role && Number(reviewer.id) === Number(state.actor?.id)
         ));
@@ -517,12 +606,15 @@ function renderOutgoingRequests() {
         consumed: '旧版授权已使用', rejected: '已拒绝', cancelled: '已结束',
     };
     list.innerHTML = state.outgoingRequests.map((item) => {
-        const points = (item.items || []).map((entry) => `${entry.function_point_label}（${entry.status}）`).join('、');
+        const isClaim = item.request_kind === 'claim';
+        const points = isClaim
+            ? '认领申请（批准后归属权转移并绑定我的账号）'
+            : (item.items || []).map((entry) => `${entry.function_point_label}（${entry.status}）`).join('、');
         return `
             <article class="signature-request-item" data-signature-request-id="${item.id}">
                 <div class="signature-request-main">
                     <p class="signature-request-title">${escapeHtml(item.signature_name || '未命名签名')} · ${escapeHtml(statusLabels[item.status] || item.status)}</p>
-                <div class="signature-request-meta">${escapeHtml(points || '未登记功能点')}${item.context_label ? ` · ${escapeHtml(item.context_label)}` : ''} · ${escapeHtml(item.requested_at ? formatDate(item.requested_at) : '')}</div>
+                <div class="signature-request-meta">${escapeHtml(points || '未登记功能点')}${!isClaim && item.context_label ? ` · ${escapeHtml(item.context_label)}` : ''} · ${escapeHtml(item.requested_at ? formatDate(item.requested_at) : '')}</div>
                 </div>
                 <div class="signature-request-actions">
                     ${item.status === 'pending' ? '<button type="button" class="btn btn-outline btn-sm" data-signature-request-action="cancel">撤销</button>' : ''}
@@ -574,6 +666,7 @@ async function openEditModal() {
         els['signature-edit-subject-input'].value = subject ? teacherOptionLabel(subject) : (item.subject_id ? String(item.subject_id) : '');
     }
     if (els['signature-edit-subject-role-input']) els['signature-edit-subject-role-input'].value = item.subject_role || 'teacher';
+    if (els['signature-edit-identity-input']) els['signature-edit-identity-input'].value = item.identity_category || '';
     const scopeLevel = item.scope_level === 'college' ? 'department' : (item.scope_level || 'department');
     if (els['signature-edit-scope-level-input']) els['signature-edit-scope-level-input'].value = scopeLevel;
     if (els['signature-edit-college-input']) els['signature-edit-college-input'].value = item.college || '';
@@ -613,6 +706,7 @@ async function submitEdit(event) {
             name: els['signature-edit-name-input']?.value?.trim() || '',
             subject_name: els['signature-edit-subject-name-input']?.value?.trim() || '',
             subject_role: els['signature-edit-subject-role-input']?.value || '',
+            identity_category: els['signature-edit-identity-input']?.value || '',
             scope_level: els['signature-edit-scope-level-input']?.value || '',
             college: els['signature-edit-college-input']?.value?.trim() || '',
             department: els['signature-edit-department-input']?.value?.trim() || '',
@@ -642,7 +736,7 @@ function resetFilters() {
     [
         'signature-search-input',
         'signature-scope-filter',
-        'signature-subject-filter',
+        'signature-identity-filter',
         'signature-owner-filter',
     ].forEach((id) => {
         if (els[id]) els[id].value = '';
@@ -672,6 +766,7 @@ async function submitUpload(event) {
     if (submitBtn) submitBtn.disabled = true;
     let successCount = 0;
     let failCount = 0;
+    let lastError = null;
     try {
         for (const file of files) {
             if (status) status.textContent = `正在上传 ${file.name}...`;
@@ -684,6 +779,7 @@ async function submitUpload(event) {
             const subjectTeacherId = ownerTeacherIdFromInput(els['signature-subject-account-input']?.value);
             if (subjectTeacherId) formData.append('subject_id', String(subjectTeacherId));
             formData.append('scope_level', els['signature-scope-level-input']?.value || '');
+            formData.append('identity_category', els['signature-identity-input']?.value || '');
             formData.append('description', els['signature-description-input']?.value?.trim() || '');
             try {
                 await apiFetch('/api/signatures/upload', {
@@ -693,15 +789,22 @@ async function submitUpload(event) {
                 });
                 successCount += 1;
             } catch (error) {
-                console.error('Signature upload failed:', error);
                 failCount += 1;
+                lastError = error;
             }
         }
-        if (status) status.textContent = `上传完成：成功 ${successCount}，失败 ${failCount}`;
-        showMessage(failCount ? `上传完成：${successCount} 成功，${failCount} 失败` : '签名上传成功', failCount ? 'warning' : 'success');
-        els['signature-upload-form']?.reset();
-        updateFileLabel();
-        closeModal('signature-upload-modal');
+        if (status) status.textContent = lastError ? String(lastError.message || '上传失败') : `上传完成：成功 ${successCount}，失败 ${failCount}`;
+        if (failCount && lastError) {
+            // 同名签名等业务原因必须原样透出（如“请通过认领获得归属”）。
+            showMessage(lastError.message || `上传完成：${successCount} 成功，${failCount} 失败`, 'warning');
+        } else {
+            showMessage('签名上传成功', 'success');
+        }
+        if (!failCount) {
+            els['signature-upload-form']?.reset();
+            updateFileLabel();
+            closeModal('signature-upload-modal');
+        }
         await loadSignatures({ keepSelection: false });
     } finally {
         if (submitBtn) submitBtn.disabled = false;
@@ -727,7 +830,7 @@ function bindEvents() {
     [
         'signature-search-input',
         'signature-scope-filter',
-        'signature-subject-filter',
+        'signature-identity-filter',
         'signature-owner-filter',
     ].forEach((id) => {
         const el = els[id];
@@ -774,6 +877,22 @@ function bindEvents() {
     });
     els['signature-edit-btn']?.addEventListener('click', openEditModal);
     els['signature-delete-btn']?.addEventListener('click', deleteCurrentSignature);
+    els['signature-open-claim-btn']?.addEventListener('click', () => {
+        openModal('signature-claim-modal');
+        loadClaimCandidates();
+    });
+    els['signature-claim-search-input']?.addEventListener('input', debounce(loadClaimCandidates, 260));
+    els['signature-claim-list']?.addEventListener('click', (event) => {
+        const button = event.target.closest?.('[data-signature-claim-apply]');
+        if (!button) return;
+        applyClaim(Number(button.dataset.signatureClaimApply || 0), button);
+    });
+    els['signature-replace-image-btn']?.addEventListener('click', () => els['signature-replace-image-input']?.click());
+    els['signature-replace-image-input']?.addEventListener('change', () => {
+        const file = els['signature-replace-image-input']?.files?.[0];
+        if (file) replaceCurrentSignatureImage(file);
+        if (els['signature-replace-image-input']) els['signature-replace-image-input'].value = '';
+    });
     const ownerDebounced = debounce(() => fetchOwnerTeachers(els['signature-edit-owner-input']?.value?.trim() || ''), 220);
     els['signature-edit-owner-input']?.addEventListener('input', ownerDebounced);
     els['signature-edit-subject-input']?.addEventListener('input', debounce(() => fetchOwnerTeachers(els['signature-edit-subject-input']?.value?.trim() || ''), 220));

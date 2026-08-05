@@ -480,6 +480,7 @@
 {% from "macros/app_topbar.html" import topbar_action %}
 <div class="materials-toolbar-group materials-header-actions">
     {{ topbar_action('上传签名', '新增签名', 'upload', button_id='signature-open-upload-btn', variant='solid', tone='teal') }}
+    {{ topbar_action('认领签名', '认领已有签名', 'pen', button_id='signature-open-claim-btn', variant='primary', tone='amber') }}
     {{ topbar_action('刷新', '更新列表', 'refresh', button_id='signature-refresh-btn', variant='primary', tone='cyan') }}
 </div>
 
@@ -508,12 +509,28 @@
                         <input type="search" class="form-control" id="signature-edit-subject-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="用于本人审批与使用权识别">
                     </label>
                     <label class="signature-field">
-                        <span>所属身份</span>
+                        <span>账号类型</span>
                         <select class="form-control" id="signature-edit-subject-role-input" name="subject_role">
                             <option value="teacher">教师</option>
                             <option value="student">学生</option>
                             <option value="other">其他</option>
                             <option value="system">平台</option>
+                        </select>
+                    </label>
+                    <label class="signature-field">
+                        <span>职务身份</span>
+                        <select class="form-control" id="signature-edit-identity-input" name="identity_category">
+                            <option value="">未设置</option>
+                            <option value="principal">校长</option>
+                            <option value="vice_principal">副校长</option>
+                            <option value="dean">院长</option>
+                            <option value="vice_dean">副院长</option>
+                            <option value="department_head">系主任</option>
+                            <option value="vice_department_head">副系主任</option>
+                            <option value="teacher">教师</option>
+                            <option value="academic_affairs">教务老师</option>
+                            <option value="counselor">辅导员</option>
+                            <option value="other">其他</option>
                         </select>
                     </label>
                     <label class="signature-field">
@@ -632,11 +649,15 @@
                     </select>
                 </label>
                 <label class="signature-field">
-                    <span>所属身份</span>
-                    <select class="form-control" id="signature-subject-filter">
-                        <option value="">全部身份</option>
+                    <span>职务身份</span>
+                    <select class="form-control" id="signature-identity-filter">
+                        <option value="">全部职务</option>
+                        <option value="principal">校长（含副）</option>
+                        <option value="dean">院长（含副）</option>
+                        <option value="department_head">系主任（含副）</option>
                         <option value="teacher">教师</option>
-                        <option value="student">学生</option>
+                        <option value="academic_affairs">教务老师</option>
+                        <option value="counselor">辅导员</option>
                         <option value="other">其他</option>
                     </select>
                 </label>
@@ -670,6 +691,8 @@
                 <a class="btn btn-outline btn-sm" id="signature-download-link" href="#" hidden>下载</a>
                 <button type="button" class="btn btn-outline btn-sm" id="signature-request-btn" hidden>申请使用</button>
                 <button type="button" class="btn btn-outline btn-sm" id="signature-edit-btn" hidden>编辑属性</button>
+                <button type="button" class="btn btn-outline btn-sm" id="signature-replace-image-btn" hidden>更换图片</button>
+                <input type="file" id="signature-replace-image-input" accept=".png,.jpg,.jpeg" hidden>
                 <button type="button" class="btn btn-danger btn-sm" id="signature-delete-btn" hidden>删除</button>
             </div>
         </aside>
@@ -716,8 +739,24 @@
                         <span>签名名称</span>
                         <input type="text" class="form-control" id="signature-name-input" name="name" maxlength="80" placeholder="例如：张海林-常用签名">
                     </label>
+                    <label class="signature-field" id="signature-identity-field">
+                        <span>职务身份</span>
+                        <select class="form-control" id="signature-identity-input" name="identity_category">
+                            <option value="">未设置</option>
+                            <option value="principal">校长</option>
+                            <option value="vice_principal">副校长</option>
+                            <option value="dean">院长</option>
+                            <option value="vice_dean">副院长</option>
+                            <option value="department_head">系主任</option>
+                            <option value="vice_department_head">副系主任</option>
+                            <option value="teacher">教师</option>
+                            <option value="academic_affairs">教务老师</option>
+                            <option value="counselor">辅导员</option>
+                            <option value="other">其他</option>
+                        </select>
+                    </label>
                     <label class="signature-field" id="signature-subject-role-field">
-                        <span>所属身份</span>
+                        <span>账号类型</span>
                         <select class="form-control" id="signature-subject-role-input" name="subject_role">
                             <option value="teacher">教师</option>
                             <option value="student">学生</option>
@@ -779,6 +818,32 @@
                 <button type="submit" class="btn btn-primary" id="signature-request-submit-btn">提交申请</button>
             </div>
         </form>
+    </div>
+</div>
+
+<div id="signature-claim-modal" class="modal-backdrop signature-upload-modal" style="display:none;">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">认领签名</h3>
+                    <p class="modal-subtitle">按姓名浏览签名库（不展示签名图片）。同名未绑定签名可直接认领；其余提交认领申请，由归属人或管理员审批，批准后归属权转移并自动绑定你的账号。</p>
+                </div>
+                <button type="button" class="modal-close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <label class="signature-field">
+                    <span>搜索姓名</span>
+                    <input type="search" class="form-control" id="signature-claim-search-input" placeholder="输入姓名模糊搜索" autocomplete="off">
+                </label>
+                <div class="signature-claim-list" id="signature-claim-list" style="display:grid;gap:8px;margin-top:12px;">
+                    <div class="signature-empty">正在加载可认领签名...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" data-dismiss="modal">关闭</button>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

@@ -1,6 +1,6 @@
 import { apiFetch } from './api.js';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
-import { SignaturePointControl } from './signature_point_workflow.js';
+import { SignaturePointControl } from './signature_point_workflow.js?v=identity-filter-1';
 
 const root = document.querySelector('[data-afm-root]');
 if (!root) throw new Error('Academic final-material root not found.');

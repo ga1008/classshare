@@ -16,36 +16,44 @@ from .connection import get_configured_db_engine
 _SCHEMA_READY = False
 
 
-SIGNATURE_FUNCTION_POINTS: tuple[tuple[str, str, str, str], ...] = (
+# (point_key, label, module_key, description, required_identities)
+# required_identities: comma-separated identity category keys; pickers default
+# to this filter (副职 automatically included) with a "show all" escape hatch.
+SIGNATURE_FUNCTION_POINTS: tuple[tuple[str, str, str, str, str], ...] = (
     (
         "academic_final_material.grade_register.teacher_signature",
         "期末成绩登记表 · 底部任课教师签字处",
         "academic_final_material",
         "期末成绩登记表底部教师签字处",
+        "teacher",
     ),
     (
         "academic_final_material.exam_analysis.department_review_signature",
         "试卷分析表 · 系（教研室）审核意见签名处",
         "academic_final_material",
         "试卷分析表系部审核栏签名处",
+        "department_head",
     ),
     (
         "academic_final_material.exam_analysis.dean_review_signature",
         "试卷分析表 · 教学院长审核意见签名处",
         "academic_final_material",
         "试卷分析表教学院长审核栏签名处",
+        "dean",
     ),
     (
         "assessment_plan.examiner_signature",
         "课程考核计划表 · 命题教师签名处",
         "assessment_plan",
         "课程考核计划表命题人签名处",
+        "teacher",
     ),
     (
         "assessment_plan.reviewer_signature",
         "课程考核计划表 · 系（教研室）主任审核签名处",
         "assessment_plan",
         "课程考核计划表审核人签名处",
+        "department_head",
     ),
 )
 
@@ -80,34 +88,36 @@ def _add_columns(conn: Any, table: str, definitions: dict[str, str], *, engine: 
 
 
 def _seed_function_points(conn: Any, *, engine: str) -> None:
-    for key, label, module_key, description in SIGNATURE_FUNCTION_POINTS:
+    for key, label, module_key, description, required_identities in SIGNATURE_FUNCTION_POINTS:
         if engine == "postgres":
             conn.execute(
                 """
                 INSERT INTO signature_function_points (
-                    point_key, label, module_key, description, is_enabled, updated_at
-                ) VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+                    point_key, label, module_key, description, required_identities, is_enabled, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
                 ON CONFLICT (point_key) DO UPDATE SET
                     label = EXCLUDED.label,
                     module_key = EXCLUDED.module_key,
                     description = EXCLUDED.description,
+                    required_identities = EXCLUDED.required_identities,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (key, label, module_key, description),
+                (key, label, module_key, description, required_identities),
             )
         else:
             conn.execute(
                 """
                 INSERT INTO signature_function_points (
-                    point_key, label, module_key, description, is_enabled, updated_at
-                ) VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+                    point_key, label, module_key, description, required_identities, is_enabled, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
                 ON CONFLICT(point_key) DO UPDATE SET
                     label = excluded.label,
                     module_key = excluded.module_key,
                     description = excluded.description,
+                    required_identities = excluded.required_identities,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (key, label, module_key, description),
+                (key, label, module_key, description, required_identities),
             )
 
 
@@ -124,15 +134,23 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
     _add_columns(
         conn,
         "electronic_signatures",
-        {"subject_id": "INTEGER"},
+        {
+            "subject_id": "INTEGER",
+            "identity_category": "TEXT NOT NULL DEFAULT ''",
+        },
         engine=engine,
     )
+    # Accounts carry the same identity category so binding a signature can
+    # sync 职务身份 in both directions.
+    _add_columns(conn, "teachers", {"identity_category": "TEXT NOT NULL DEFAULT ''"}, engine=engine)
+    _add_columns(conn, "students", {"identity_category": "TEXT NOT NULL DEFAULT ''"}, engine=engine)
     _add_columns(
         conn,
         "signature_access_requests",
         {
             "requester_role": "TEXT NOT NULL DEFAULT 'teacher'",
             "requester_id": "INTEGER",
+            "request_kind": "TEXT NOT NULL DEFAULT 'use'",
             "decided_at": timestamp_type,
             "cancelled_at": timestamp_type,
             "flow_id": "INTEGER",
@@ -171,6 +189,12 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
             updated_at {timestamp_type} NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
+    )
+    _add_columns(
+        conn,
+        "signature_function_points",
+        {"required_identities": "TEXT NOT NULL DEFAULT ''"},
+        engine=engine,
     )
     conn.execute(
         f"""
@@ -316,6 +340,7 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
             END,
             cancelled_at = COALESCE(cancelled_at, CURRENT_TIMESTAMP)
         WHERE status IN ('pending', 'approved')
+          AND COALESCE(request_kind, 'use') = 'use'
           AND NOT EXISTS (
               SELECT 1 FROM signature_access_request_items item
               WHERE item.request_id = signature_access_requests.id
@@ -325,11 +350,13 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
 
     conn.execute("DROP INDEX IF EXISTS idx_signature_access_requests_active_unique")
     conn.execute("DROP INDEX IF EXISTS idx_signature_access_requests_scoped_active_unique")
+    # request_kind participates so a pending claim request never collides with
+    # a pending multi-point use request (both carry empty point/material keys).
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_signature_access_requests_scoped_active_unique
         ON signature_access_requests (
-            signature_id, requester_role, requester_id, function_point_key,
+            signature_id, requester_role, requester_id, request_kind, function_point_key,
             material_type, material_id, material_revision
         )
         WHERE status = 'pending'

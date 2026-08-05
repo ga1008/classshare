@@ -8,7 +8,7 @@ import sqlite3
 from typing import Any
 
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
-from . import message_center_service, signature_service
+from . import message_center_service, signature_identity_service, signature_service
 
 
 REQUEST_STATUS_VALUES = {
@@ -74,7 +74,7 @@ def list_function_points(conn: Any, *, enabled_only: bool = True) -> list[dict[s
     where = "WHERE is_enabled = 1" if enabled_only else ""
     rows = conn.execute(
         f"""
-        SELECT point_key, label, module_key, description, is_enabled
+        SELECT point_key, label, module_key, description, required_identities, is_enabled
         FROM signature_function_points
         {where}
         ORDER BY module_key, point_key
@@ -86,6 +86,11 @@ def list_function_points(conn: Any, *, enabled_only: bool = True) -> list[dict[s
             "label": row["label"],
             "module_key": row["module_key"],
             "description": row["description"],
+            "required_identities": signature_identity_service.parse_required_identities(row["required_identities"]),
+            "required_identity_labels": [
+                signature_identity_service.identity_label(key)
+                for key in signature_identity_service.parse_required_identities(row["required_identities"])
+            ],
             "is_enabled": bool(row["is_enabled"]),
         }
         for row in rows
@@ -101,7 +106,7 @@ def _function_points(conn: Any, keys: list[str]) -> list[Any]:
     placeholders = ",".join("?" for _ in normalized)
     rows = conn.execute(
         f"""
-        SELECT point_key, label, module_key, description
+        SELECT point_key, label, module_key, description, required_identities
         FROM signature_function_points
         WHERE is_enabled = 1 AND point_key IN ({placeholders})
         """,
@@ -330,6 +335,7 @@ def create_access_request(
         """
         SELECT id FROM signature_access_requests
         WHERE signature_id = ? AND requester_role = ? AND requester_id = ?
+          AND COALESCE(request_kind, 'use') = 'use'
           AND function_point_key = ? AND material_type = ?
           AND material_id = ? AND material_revision = ?
           AND status = 'pending'
@@ -462,9 +468,11 @@ def _serialize_request_row(
     items: list[dict[str, Any]],
     reviewers: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    keys = row.keys() if hasattr(row, "keys") else ()
     return {
         "id": int(row["id"]),
         "signature_id": int(row["signature_id"]),
+        "request_kind": (row["request_kind"] if "request_kind" in keys else "") or "use",
         "signature_name": row["signature_name"] or "",
         "signature_subject_name": row["signature_subject_name"] or row["signature_name"] or "",
         "requester_role": row["requester_role"] or "teacher",
@@ -765,8 +773,13 @@ def review_access_request(
             """,
             (_clean(note, 300), int(actor["id"]) if actor["role"] == "teacher" else None, int(request_id)),
         )
-        title = "签名使用申请已批准"
-        body = f"{actor['name']} 已批准申请；该签名仅在当前材料版本对应签名点内不限次数使用。"
+        if str(request.get("request_kind") or "use") == "claim":
+            _apply_claim_transfer(conn, request)
+            title = "签名认领申请已批准"
+            body = f"{actor['name']} 已批准认领；签名归属权已转移并绑定到你的账号，身份属性已自动同步。"
+        else:
+            title = "签名使用申请已批准"
+            body = f"{actor['name']} 已批准申请；该签名仅在当前材料版本对应签名点内不限次数使用。"
     else:
         remaining = conn.execute(
             """
@@ -789,8 +802,12 @@ def review_access_request(
                 """,
                 (_clean(note, 300), int(actor["id"]) if actor["role"] == "teacher" else None, int(request_id)),
             )
-            title = "签名使用申请已拒绝"
-            body = "所有审批人均已拒绝，本次申请已结束。"
+            if str(request.get("request_kind") or "use") == "claim":
+                title = "签名认领申请已拒绝"
+                body = "所有审批人均已拒绝，本次认领申请已结束。"
+            else:
+                title = "签名使用申请已拒绝"
+                body = "所有审批人均已拒绝，本次申请已结束。"
         else:
             title = "一位审批人已拒绝签名申请"
             body = "另一位审批人仍可处理；任一人同意后申请即可生效。"
@@ -832,6 +849,161 @@ def cancel_access_request(conn: Any, user: dict[str, Any], request_id: int) -> d
     return {"status": "success", "request": get_request(conn, request_id)}
 
 
+def create_claim_request(
+    conn: Any,
+    user: dict[str, Any],
+    signature_id: int,
+    *,
+    note: str = "",
+) -> dict[str, Any]:
+    """Apply to claim a signature: reviewed by bound owner/signer plus admins.
+
+    Approval transfers ownership to the requester, binds the signature to the
+    requester's account and syncs identity attributes both ways.
+    """
+    actor = signature_service.build_signature_actor(conn, user)
+    if actor.get("role") not in REQUESTER_ROLES:
+        raise signature_service.SignatureServiceError(403, "仅教师或学生账号可以申请认领签名。")
+    signature = _signature_row(conn, signature_id)
+    if str(signature["owner_role"] or "") == "system" or str(signature["scope_level"] or "") == "platform":
+        raise signature_service.SignatureServiceError(400, "平台公共签章不可认领。")
+    if _same_identity(signature["subject_role"], signature["subject_id"], actor):
+        raise signature_service.SignatureServiceError(400, "该签名已绑定你的账号，无需认领。")
+    if signature_service.can_claim_signature(actor, signature):
+        # 同名且未绑定账号：直接认领，无需审批。
+        result = claim_signature(conn, user, signature_id)
+        return {**result, "mode": "direct"}
+    if get_configured_db_engine() == "postgres":
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtext(?))",
+            (f"signature-claim:{int(signature_id)}:{actor['role']}:{int(actor['id'])}",),
+        )
+    existing = conn.execute(
+        """
+        SELECT id FROM signature_access_requests
+        WHERE signature_id = ? AND requester_role = ? AND requester_id = ?
+          AND COALESCE(request_kind, 'use') = 'claim' AND status = 'pending'
+        LIMIT 1
+        """,
+        (int(signature_id), actor["role"], int(actor["id"])),
+    ).fetchone()
+    if existing:
+        raise signature_service.SignatureServiceError(409, "你已提交过该签名的认领申请，请等待审批。")
+    reviewers = _reviewer_identities(conn, signature)
+    for admin in _admin_identities(conn):
+        if not any(r["role"] == admin["role"] and r["id"] == admin["id"] for r in reviewers):
+            reviewers.append(admin)
+    reviewers = [r for r in reviewers if not (r["role"] == actor["role"] and r["id"] == int(actor["id"]))]
+    if not reviewers:
+        raise signature_service.SignatureServiceError(
+            422, "平台暂无可审批认领申请的账号，请联系管理员。"
+        )
+    try:
+        request_id = execute_insert_returning_id(
+            conn,
+            """
+            INSERT INTO signature_access_requests (
+                signature_id, requester_teacher_id, requester_role, requester_id,
+                owner_role, owner_id, status, request_note, request_kind,
+                context_type, context_id, context_label
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 'claim', 'signature_claim', ?, ?)
+            """,
+            (
+                int(signature_id),
+                int(actor["id"]) if actor["role"] == "teacher" else None,
+                actor["role"],
+                int(actor["id"]),
+                signature["owner_role"] or "",
+                signature["owner_id"],
+                _clean(note, 300),
+                str(int(signature_id)),
+                "签名认领申请",
+            ),
+            engine=get_configured_db_engine(),
+        )
+    except Exception as exc:
+        detail = str(exc).lower()
+        if isinstance(exc, sqlite3.IntegrityError) or (
+            get_configured_db_engine() == "postgres" and ("unique" in detail or "duplicate" in detail)
+        ):
+            raise signature_service.SignatureServiceError(409, "你已提交过该签名的认领申请，请等待审批。") from exc
+        raise
+    for reviewer in reviewers:
+        conn.execute(
+            """
+            INSERT INTO signature_access_request_reviewers (
+                request_id, reviewer_role, reviewer_id, reviewer_kind, reviewer_name_snapshot
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (request_id, reviewer["role"], reviewer["id"], reviewer["kind"], reviewer["name"]),
+        )
+    _notify(
+        conn,
+        recipients=reviewers,
+        actor=actor,
+        title="收到签名认领申请",
+        body=f"{actor['name']} 申请认领签名“{signature['subject_name'] or signature['name']}”。批准后签名归属权将转移并绑定其账号，身份属性自动同步。",
+        ref_type="signature_claim_request",
+        ref_id=str(request_id),
+        metadata={"request_id": request_id, "signature_id": int(signature_id), "request_kind": "claim"},
+    )
+    return {"status": "success", "mode": "request", "request": get_request(conn, request_id)}
+
+
+def _apply_claim_transfer(conn: Any, request: dict[str, Any]) -> None:
+    """Approved claim: transfer ownership, bind the account and sync identity."""
+    signature_id = int(request["signature_id"])
+    requester_role = str(request["requester_role"] or "")
+    requester_id = int(request["requester_id"] or 0)
+    requester_name = _identity_name(conn, requester_role, requester_id) or _clean(request["requester_name"], 80)
+    if requester_role not in {"teacher", "student"} or requester_id <= 0 or not requester_name:
+        raise signature_service.SignatureServiceError(422, "认领申请人账号无效，无法完成归属转移。")
+    cursor = conn.execute(
+        """
+        UPDATE electronic_signatures
+        SET owner_role = ?, owner_id = ?, owner_name_snapshot = ?,
+            subject_role = ?, subject_id = ?, subject_name = ?,
+            ownership_updated_at = CURRENT_TIMESTAMP,
+            ownership_updated_by_teacher_id = CASE WHEN ? = 'teacher' THEN ? ELSE ownership_updated_by_teacher_id END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND status = 'active' AND deleted_at IS NULL
+        """,
+        (
+            requester_role, requester_id, requester_name,
+            requester_role, requester_id, requester_name,
+            requester_role, requester_id,
+            signature_id,
+        ),
+    )
+    if int(cursor.rowcount or 0) != 1:
+        raise signature_service.SignatureServiceError(409, "签名已被删除或停用，无法完成认领。")
+    signature_identity_service.sync_identity_for_signature(conn, signature_id)
+    # Other users' pending claims on the same signature are now moot.
+    other_rows = conn.execute(
+        """
+        SELECT id FROM signature_access_requests
+        WHERE signature_id = ? AND COALESCE(request_kind, 'use') = 'claim'
+          AND status = 'pending' AND id <> ?
+        """,
+        (signature_id, int(request["id"])),
+    ).fetchall()
+    for row in other_rows:
+        other_id = int(row["id"])
+        conn.execute(
+            """
+            UPDATE signature_access_requests
+            SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP,
+                review_note = '该签名已被他人认领，申请自动结束。'
+            WHERE id = ? AND status = 'pending'
+            """,
+            (other_id,),
+        )
+        conn.execute(
+            "UPDATE signature_access_request_reviewers SET status = 'cancelled' WHERE request_id = ? AND status = 'pending'",
+            (other_id,),
+        )
+
+
 def claim_signature(conn: Any, user: dict[str, Any], signature_id: int) -> dict[str, Any]:
     """Bind an unbound signature bearing the actor's own name to their account."""
     actor = signature_service.build_signature_actor(conn, user)
@@ -850,6 +1022,7 @@ def claim_signature(conn: Any, user: dict[str, Any], signature_id: int) -> dict[
     )
     if int(cursor.rowcount or 0) != 1:
         raise signature_service.SignatureServiceError(409, "该签名刚刚已被认领，请刷新查看。")
+    signature_identity_service.sync_identity_for_signature(conn, int(signature_id))
     owner_role = str(signature["owner_role"] or "").strip().lower()
     try:
         owner_id = int(signature["owner_id"] or 0)

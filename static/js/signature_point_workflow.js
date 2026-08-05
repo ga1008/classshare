@@ -49,6 +49,11 @@ export class SignaturePointControl {
         this.state = null;
         this.loading = false;
         this.dialog = null;
+        this.searchTerm = '';
+        // 默认按签名点要求的职务身份过滤（如系主任含副系主任）；可一键显示全部。
+        this.identityFilterOn = true;
+        this.dialogSearchTerm = '';
+        this.dialogIdentityFilterOn = true;
         if (!this.root) throw new Error(`Signature point root missing: ${pointKey}`);
         this.root.classList.add('spw-point');
         this.root.innerHTML = '<div class="spw-loading">正在读取签名点权限…</div>';
@@ -97,6 +102,30 @@ export class SignaturePointControl {
         return (this.state?.signatures || []).find((item) => Number(item.id) === Number(id));
     }
 
+    requiredIdentityLabels() {
+        return this.state?.point?.required_identity_labels || [];
+    }
+
+    filterCandidates(items, searchTerm, identityOn) {
+        const term = String(searchTerm || '').trim().toLowerCase();
+        const hasIdentityRule = this.requiredIdentityLabels().length > 0;
+        return (items || []).filter((item) => {
+            if (identityOn && hasIdentityRule && !item.identity_match) return false;
+            if (!term) return true;
+            const haystack = `${item.subject_name || ''} ${item.name || ''} ${item.identity_label || ''}`.toLowerCase();
+            return haystack.includes(term);
+        });
+    }
+
+    identityToggleHtml(attr, isOn, hiddenCount) {
+        const labels = this.requiredIdentityLabels();
+        if (!labels.length) return '';
+        const text = isOn
+            ? `已按身份过滤：${labels.join('、')}（含副职）${hiddenCount ? ` · 隐藏 ${hiddenCount} 个` : ''} — 点击显示全部`
+            : '正在显示全部签名 — 点击恢复身份过滤';
+        return `<button type="button" class="spw-identity-toggle${isOn ? ' is-on' : ''}" ${attr}>${esc(text)}</button>`;
+    }
+
     render() {
         const usable = this.state?.usable_signatures || [];
         const selected = this.selectedIds.map((id, index) => {
@@ -113,7 +142,9 @@ export class SignaturePointControl {
             </li>`;
         }).join('');
         const remaining = usable.filter((item) => !this.selectedIds.includes(Number(item.id)));
-        const options = remaining.map((item) => `<option value="${item.id}">${esc(item.subject_name || item.name)} · ${esc(item.scope_label || '')}</option>`).join('');
+        const visible = this.filterCandidates(remaining, this.searchTerm, this.identityFilterOn);
+        const hiddenCount = remaining.length - visible.length;
+        const options = visible.map((item) => `<option value="${item.id}">${esc(item.subject_name || item.name)}${item.identity_label ? ` · ${esc(item.identity_label)}` : ''} · ${esc(item.scope_label || '')}</option>`).join('');
         const flowBadge = this.state?.active_flow
             ? `<span class="spw-flow-badge">${esc(statusText[this.state.active_flow.status] || '申请处理中')}</span>`
             : '';
@@ -124,11 +155,15 @@ export class SignaturePointControl {
             </div>
             <p class="spw-scope">授权仅对“${esc(this.state?.material?.label || '当前材料')}”当前版本有效；材料重建后自动失效。</p>
             <ul class="spw-selected-list">${selected || '<li class="spw-selected-empty">尚未选择签名</li>'}</ul>
+            <div class="spw-picker-tools">
+                <input type="search" data-spw-search placeholder="模糊搜索签名姓名…" value="${esc(this.searchTerm)}" ${remaining.length ? '' : 'disabled'}>
+                ${this.identityToggleHtml('data-spw-identity-toggle', this.identityFilterOn, hiddenCount)}
+            </div>
             <div class="spw-picker">
-                <select data-spw-available ${remaining.length ? '' : 'disabled'}>
-                    <option value="">${remaining.length ? '选择一个已获准签名…' : '暂无更多可用签名'}</option>${options}
+                <select data-spw-available ${visible.length ? '' : 'disabled'}>
+                    <option value="">${visible.length ? '选择一个已获准签名…' : (remaining.length ? '当前过滤条件下无可用签名' : '暂无更多可用签名')}</option>${options}
                 </select>
-                <button type="button" data-spw-add ${remaining.length ? '' : 'disabled'}>加入</button>
+                <button type="button" data-spw-add ${visible.length ? '' : 'disabled'}>加入</button>
             </div>
             <small class="spw-help">多人签名将按上方顺序等宽排布并保持原始比例。</small>`;
         this.bindRootEvents();
@@ -136,6 +171,21 @@ export class SignaturePointControl {
 
     bindRootEvents() {
         this.root.querySelector('[data-spw-apply]')?.addEventListener('click', () => this.openFlow());
+        const searchInput = this.root.querySelector('[data-spw-search]');
+        searchInput?.addEventListener('input', () => {
+            this.searchTerm = searchInput.value || '';
+            const caret = searchInput.selectionStart;
+            this.render();
+            const restored = this.root.querySelector('[data-spw-search]');
+            if (restored) {
+                restored.focus();
+                try { restored.setSelectionRange(caret, caret); } catch { /* type=search quirks */ }
+            }
+        });
+        this.root.querySelector('[data-spw-identity-toggle]')?.addEventListener('click', () => {
+            this.identityFilterOn = !this.identityFilterOn;
+            this.render();
+        });
         this.root.querySelector('[data-spw-add]')?.addEventListener('click', () => {
             const select = this.root.querySelector('[data-spw-available]');
             const id = Number(select?.value || 0);
@@ -201,26 +251,49 @@ export class SignaturePointControl {
             panel.querySelector('[data-spw-refresh]')?.addEventListener('click', () => this.refreshDialog());
         } else {
             const candidates = this.state?.requestable_signatures || [];
-            const options = candidates.map((item) => `<label><input type="checkbox" value="${item.id}"><span class="spw-candidate-order">—</span><span><strong>${esc(item.subject_name || item.name)}</strong><small>${esc(item.owner_name || item.scope_label || '')}${item.needs_admin_review ? ' · <em class="spw-admin-review">未绑定账号，由管理员审批</em>' : ''}</small></span></label>`).join('');
+            const visibleCandidates = this.filterCandidates(candidates, this.dialogSearchTerm, this.dialogIdentityFilterOn);
+            const hiddenCount = candidates.length - visibleCandidates.length;
+            if (!Array.isArray(this.dialogRequestOrder)) this.dialogRequestOrder = [];
+            const options = visibleCandidates.map((item) => {
+                const order = this.dialogRequestOrder.indexOf(Number(item.id));
+                return `<label><input type="checkbox" value="${item.id}" ${order >= 0 ? 'checked' : ''}><span class="spw-candidate-order">${order >= 0 ? order + 1 : '—'}</span><span><strong>${esc(item.subject_name || item.name)}</strong><small>${item.identity_label ? `${esc(item.identity_label)} · ` : ''}${esc(item.owner_name || item.scope_label || '')}${item.needs_admin_review ? ' · <em class="spw-admin-review">未绑定账号，由管理员审批</em>' : ''}</small></span></label>`;
+            }).join('');
             panel.innerHTML = `
                 <header><div><span>新建签名申请</span><h3>${esc(this.pointLabel)}</h3></div><button type="button" data-spw-close aria-label="关闭">×</button></header>
                 <div class="spw-dialog-body">
                     <p class="spw-flow-note">按需要嵌入的先后顺序勾选签名。申请获批后，它只会出现在当前材料、当前签名点的可用列表中。</p>
-                    <div class="spw-candidates" data-spw-candidates>${options || '<div class="spw-no-candidates">暂无可申请签名；本人签名和已获授权签名可直接在签名点中选择。</div>'}</div>
+                    <div class="spw-picker-tools">
+                        <input type="search" data-spw-dialog-search placeholder="模糊搜索签名姓名…" value="${esc(this.dialogSearchTerm)}">
+                        ${this.identityToggleHtml('data-spw-dialog-identity-toggle', this.dialogIdentityFilterOn, hiddenCount)}
+                    </div>
+                    <div class="spw-candidates" data-spw-candidates>${options || `<div class="spw-no-candidates">${candidates.length ? '当前过滤条件下没有匹配签名，可点击上方按钮显示全部。' : '暂无可申请签名；本人签名和已获授权签名可直接在签名点中选择。'}</div>`}</div>
                     <label class="spw-note"><span>申请说明（可选）</span><textarea maxlength="300" data-spw-note placeholder="说明材料用途或审批背景"></textarea></label>
                 </div>
                 <footer><button type="button" data-spw-refresh>刷新签名库</button><span></span><button type="button" class="is-primary" data-spw-create ${candidates.length ? '' : 'disabled'}>创建申请流程</button></footer>`;
             panel.querySelector('[data-spw-create]')?.addEventListener('click', () => this.createFlow());
             panel.querySelector('[data-spw-refresh]')?.addEventListener('click', () => this.refreshDialog());
-            const requestOrder = [];
+            const dialogSearch = panel.querySelector('[data-spw-dialog-search]');
+            dialogSearch?.addEventListener('input', () => {
+                this.dialogSearchTerm = dialogSearch.value || '';
+                const caret = dialogSearch.selectionStart;
+                this.renderFlowDialog();
+                const restored = this.dialog.querySelector('[data-spw-dialog-search]');
+                if (restored) {
+                    restored.focus();
+                    try { restored.setSelectionRange(caret, caret); } catch { /* type=search quirks */ }
+                }
+            });
+            panel.querySelector('[data-spw-dialog-identity-toggle]')?.addEventListener('click', () => {
+                this.dialogIdentityFilterOn = !this.dialogIdentityFilterOn;
+                this.renderFlowDialog();
+            });
             panel.querySelectorAll('[data-spw-candidates] input').forEach((input) => input.addEventListener('change', () => {
                 const id = Number(input.value);
-                const currentIndex = requestOrder.indexOf(id);
-                if (input.checked && currentIndex < 0) requestOrder.push(id);
-                if (!input.checked && currentIndex >= 0) requestOrder.splice(currentIndex, 1);
+                const currentIndex = this.dialogRequestOrder.indexOf(id);
+                if (input.checked && currentIndex < 0) this.dialogRequestOrder.push(id);
+                if (!input.checked && currentIndex >= 0) this.dialogRequestOrder.splice(currentIndex, 1);
                 panel.querySelectorAll('[data-spw-candidates] input').forEach((candidate) => {
-                    const order = requestOrder.indexOf(Number(candidate.value));
-                    candidate.dataset.spwRequestOrder = order >= 0 ? String(order) : '';
+                    const order = this.dialogRequestOrder.indexOf(Number(candidate.value));
                     const badge = candidate.closest('label')?.querySelector('.spw-candidate-order');
                     if (badge) badge.textContent = order >= 0 ? String(order + 1) : '—';
                 });
@@ -236,9 +309,8 @@ export class SignaturePointControl {
 
     async createFlow() {
         const panel = this.dialog.querySelector('[data-spw-dialog-panel]');
-        const signatureIds = Array.from(panel.querySelectorAll('[data-spw-candidates] input:checked'))
-            .sort((left, right) => Number(left.dataset.spwRequestOrder) - Number(right.dataset.spwRequestOrder))
-            .map((input) => Number(input.value));
+        // Order preserved across searches/filters: hidden-but-checked stay in.
+        const signatureIds = (this.dialogRequestOrder || []).slice();
         if (!signatureIds.length) {
             this.notify('请至少选择一个需要申请的签名。', 'error');
             return;
@@ -258,6 +330,7 @@ export class SignaturePointControl {
                 }),
                 silent: true,
             });
+            this.dialogRequestOrder = [];
             await this.load();
             this.renderFlowDialog();
             this.notify('签名申请流程已创建，审批人已收到通知。', 'success');
