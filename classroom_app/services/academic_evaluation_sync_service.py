@@ -255,7 +255,7 @@ def _semester_contract(semester: dict[str, Any]) -> dict[str, str]:
     ) or current_identity(china_now().date())
     return {
         "xnm": str(identity.start_year),
-        "xqm": "12" if int(identity.term) == 2 else "3",
+        "xqm": "12" if int(identity.term) == 2 else "16" if int(identity.term) == 3 else "3",
         "academic_year": f"{identity.start_year}-{identity.start_year + 1}",
         "academic_term": str(identity.term),
     }

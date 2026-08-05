@@ -570,8 +570,8 @@ class TermDerivationTests(unittest.TestCase):
     def test_previous_term_key(self):
         self.assertEqual(svc._previous_term_key("2025-2026", "2"), ("2025-2026", "1"))
         self.assertEqual(svc._previous_term_key("2025-2026", "1"), ("2024-2025", "2"))
+        self.assertEqual(svc._previous_term_key("2025-2026", "3"), ("2025-2026", "2"))
         self.assertIsNone(svc._previous_term_key("bad-year", "2"))
-        self.assertIsNone(svc._previous_term_key("2025-2026", "3"))
 
     def test_history_term_keys(self):
         self.assertEqual(
@@ -587,8 +587,8 @@ class AcademicHistoryConversionTests(unittest.TestCase):
     def test_academic_term_to_zf_params(self):
         self.assertEqual(svc._academic_term_to_zf_params("2024-2025", "2"), {"xnm": "2024", "xqm": "12"})
         self.assertEqual(svc._academic_term_to_zf_params("2024-2025", "1"), {"xnm": "2024", "xqm": "3"})
+        self.assertEqual(svc._academic_term_to_zf_params("2024-2025", "3"), {"xnm": "2024", "xqm": "16"})
         self.assertIsNone(svc._academic_term_to_zf_params("bad", "2"))
-        self.assertIsNone(svc._academic_term_to_zf_params("2024-2025", "3"))
 
     def test_sections_from_text(self):
         from classroom_app.services import academic_course_sync_service as acs

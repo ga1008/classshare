@@ -1,0 +1,77 @@
+<div class="academic-sync-dialog-backdrop" data-academic-sync-dialog hidden aria-hidden="true">
+    <section class="academic-sync-dialog" role="dialog" aria-modal="true" aria-labelledby="academicSyncDialogTitle" tabindex="-1">
+        <header class="academic-sync-dialog__header">
+            <div>
+                <span class="academic-sync-dialog__eyebrow">Academic setup sync</span>
+                <h3 id="academicSyncDialogTitle" data-academic-sync-title>同步教务课程与班级</h3>
+                <p data-academic-sync-lead>选择本平台已建立的学年学期，确认后一次同步课程、班级和学生。</p>
+            </div>
+            <button type="button" class="academic-sync-dialog__close" data-academic-sync-close aria-label="关闭教务同步浮窗">&times;</button>
+        </header>
+
+        <div class="academic-sync-dialog__body">
+            <section data-academic-sync-select-view>
+                <div class="academic-sync-dialog__step">
+                    <span>1</span>
+                    <div>
+                        <strong>选择学年学期</strong>
+                        <small>选项来自“学年学期”管理；不会按今天日期替你猜测。</small>
+                    </div>
+                </div>
+                <label class="academic-sync-dialog__semester-field">
+                    <span>需要同步的学年学期</span>
+                    <select class="form-control" data-academic-sync-semester></select>
+                </label>
+                <div class="academic-sync-dialog__term-card" data-academic-sync-term-preview hidden>
+                    <div>
+                        <small>本平台学期</small>
+                        <strong data-academic-sync-semester-name>—</strong>
+                        <span data-academic-sync-semester-range>—</span>
+                    </div>
+                    <div class="academic-sync-dialog__mapping" aria-label="教务查询参数">
+                        <span><small>学年起始年</small><code data-academic-sync-xnm>—</code></span>
+                        <i aria-hidden="true">→</i>
+                        <span><small>教务学期码</small><code data-academic-sync-xqm>—</code></span>
+                    </div>
+                </div>
+                <div class="academic-sync-dialog__empty" data-academic-sync-empty hidden>
+                    <strong>还没有可同步的学年学期</strong>
+                    <p>请先在学年学期管理中新建学期并填写起止日期，再回来同步。</p>
+                    <a class="btn btn-outline" href="/manage/teaching/semesters">前往学年学期管理</a>
+                </div>
+
+                <div class="academic-sync-dialog__step academic-sync-dialog__step--second">
+                    <span>2</span>
+                    <div>
+                        <strong>一次完成数据闭环</strong>
+                        <small>同一学期内按稳定教务键和真实名称幂等合并。</small>
+                    </div>
+                </div>
+                <div class="academic-sync-dialog__scope-grid">
+                    <article><b>课程</b><span>以“课程名称”建课，课程号用于去重；排课信息同步生成课次。</span></article>
+                    <article><b>班级</b><span>以“教学班组成”作为班级名称；“教学班名称”只保留为教务代号。</span></article>
+                    <article><b>学生</b><span>按学号合并学生并保留人工联系方式；缺席记录只标记复核，不自动删除。</span></article>
+                    <article><b>待完善</b><span>可靠信息自动填入；AI 仅补充高置信推理字段，无法确定的字段留空提示。</span></article>
+                </div>
+                <p class="academic-sync-dialog__safety">本操作只读取教务查询接口，不会向教务系统写入数据。同步完成后通常只需选择教材并复核少量空白字段，即可继续开设课堂。</p>
+            </section>
+
+            <section class="academic-sync-dialog__progress" data-academic-sync-progress-view hidden aria-live="polite">
+                <span class="academic-sync-dialog__spinner" aria-hidden="true"></span>
+                <strong>正在读取课程与全部班级名单</strong>
+                <p>将依次完成课程合并、班级合并、学生名单同步和排课课次生成，请勿重复提交。</p>
+            </section>
+
+            <section class="academic-sync-dialog__result" data-academic-sync-result-view hidden aria-live="polite">
+                <div data-academic-sync-result-summary></div>
+            </section>
+        </div>
+
+        <footer class="academic-sync-dialog__footer">
+            <button type="button" class="btn btn-outline" data-academic-sync-cancel>取消</button>
+            <button type="button" class="btn btn-primary" data-academic-sync-confirm>开始完整同步</button>
+            <button type="button" class="btn btn-outline" data-academic-sync-stay hidden>留在当前页</button>
+            <button type="button" class="btn btn-primary" data-academic-sync-reload hidden>刷新查看结果</button>
+        </footer>
+    </section>
+</div>

@@ -71,6 +71,7 @@ from ...services.academic_class_mapping_service import (
     resolve_offering_display_class_name,
     resolve_teaching_class_display_name_from_candidates,
 )
+from ...services.academic_roster_sync_service import build_academic_sync_semester_options
 from ...services.course_planning_service import (
     decorate_offering_sessions,
     load_course_lessons_by_course_id,

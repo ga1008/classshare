@@ -247,11 +247,19 @@ async def api_create_custom_class(
 
 @router.post("/classes/sync-current-academic", response_class=JSONResponse)
 async def api_sync_current_classes_from_academic_system(
+    request: Request,
     user: dict = Depends(get_current_teacher),
 ):
-    result = await sync_current_teacher_rosters_from_academic_system(int(user["id"]))
+    data = await _parse_optional_json_request(request)
+    semester_id = _parse_optional_int(data.get("semester_id"))
+    result = await sync_current_teacher_rosters_from_academic_system(
+        int(user["id"]),
+        semester_id=semester_id,
+    )
     if result.get("status") == "missing_credential":
         raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
+    if result.get("status") == "invalid_semester":
+        raise HTTPException(400, result.get("message") or "所选学年学期不可用。")
     if result.get("status") != "success":
         raise HTTPException(502, result.get("message") or "未能从教务系统同步班级和学生名单。")
     return result

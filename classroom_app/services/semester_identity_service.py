@@ -240,7 +240,7 @@ def identity_from_semester_record(
     if semester is None:
         return None
     try:
-        name = semester.get("name")
+        name = semester.get("name") or semester.get("semester_name")
         start_date = semester.get("start_date")
         end_date = semester.get("end_date")
     except AttributeError:

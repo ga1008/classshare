@@ -4,7 +4,6 @@ import html
 import json
 import os
 import re
-import sqlite3
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -15,11 +14,6 @@ import httpx
 from ..core import ai_client
 from ..database import get_db_connection
 from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
-from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
-from .academic_integration_service import (
-    load_teacher_academic_access_method,
-    open_authenticated_academic_client,
-)
 from .academic_service import china_now, parse_date_input
 from .course_planning_service import (
     SCHEDULE_SOURCE_ACADEMIC_SYNC,
@@ -1792,91 +1786,22 @@ def _upsert_courses_and_schedule_items(
     }
 
 
-async def sync_current_teacher_courses_from_academic_system(teacher_id: int) -> dict[str, Any]:
-    with get_db_connection() as conn:
-        access_payload = load_teacher_academic_access_method(conn, teacher_id, school_code="gxufl")
-        semester = _load_current_semester(conn, teacher_id, china_now().date())
+async def sync_current_teacher_courses_from_academic_system(
+    teacher_id: int,
+    semester_id: int | None = None,
+) -> dict[str, Any]:
+    """Run the shared course + class + roster workflow for the selected term.
 
-    if not access_payload:
-        return {
-            "status": "missing_credential",
-            "message": "请先在系统设置中配置并验证教务系统账号，再同步教务课程。",
-        }
+    The roster teaching-class endpoint is authoritative for this feature, so
+    the course-page button and class-page button cannot drift into two separate
+    query contracts or create only half of the teaching setup.
+    """
+    from .academic_roster_sync_service import sync_current_teacher_rosters_from_academic_system
 
-    if not semester:
-        semester_result = await prepare_current_semester_from_academic_system(teacher_id)
-        if semester_result.get("status") != "success":
-            return {
-                "status": "no_current_semester",
-                "message": semester_result.get("message") or "未能从教务系统识别当前学期，暂不能同步课程。",
-                "source_summary": semester_result.get("source_summary") or [],
-            }
-        with get_db_connection() as conn:
-            semester = _load_semester_by_id(conn, teacher_id, int(semester_result["semester_id"]))
-
-    if not semester:
-        return {
-            "status": "no_current_semester",
-            "message": "请先新建或从教务系统同步当前学期，再同步课程课表。",
-        }
-
-    try:
-        async with open_authenticated_academic_client(access_payload) as (client, profile, login_result):
-            items, source_summary = await _fetch_teacher_timetable(client, semester)
-    except (ValueError, httpx.HTTPError) as exc:
-        return {
-            "status": "academic_login_failed",
-            "message": f"教务系统登录或课表访问失败：{str(exc)[:180]}",
-        }
-
-    if not items:
-        return {
-            "status": "no_courses",
-            "message": "已登录教务系统，但没有解析到当前学期课表。请确认教务系统课表页面已能查询到本学期课程。",
-            "semester_id": int(semester["id"]),
-            "semester_name": str(semester.get("name") or ""),
-            "source_summary": source_summary,
-        }
-
-    with get_db_connection() as conn:
-        try:
-            result = _upsert_courses_and_schedule_items(
-                conn,
-                teacher_id=teacher_id,
-                semester=semester,
-                items=items,
-                source_summary=source_summary,
-            )
-            conn.commit()
-        except sqlite3.Error:
-            conn.rollback()
-            raise
-
-    warnings = result.get("warnings") or []
-
-    return {
-        "status": "success",
-        "message": (
-            f"已从教务系统同步 {result['course_count']} 门课程、{result['schedule_item_count']} 条课表安排，"
-            f"展开为 {result.get('occurrence_count') or 0} 次真实课次。"
-            f"已自动更新 {result.get('offering_update_count') or 0} 个已开设课堂的时间轴。"
-            "请继续补充教材、课堂设置和本平台班级绑定。"
-        ),
-        "semester_id": int(semester["id"]),
-        "semester_name": str(semester.get("name") or ""),
-        "created_count": result["created_count"],
-        "updated_count": result["updated_count"],
-        "course_count": result["course_count"],
-        "schedule_item_count": result["schedule_item_count"],
-        "occurrence_count": result.get("occurrence_count") or 0,
-        "offering_update_count": result.get("offering_update_count") or 0,
-        "courses": result["courses"],
-        "warnings": warnings,
-        "follow_up_items": [*warnings[:3], *FOLLOW_UP_ITEMS],
-        "source_summary": source_summary,
-        "login_display_name": login_result.get("display_name") if isinstance(login_result, dict) else "",
-        "school_name": profile.school_name,
-    }
+    return await sync_current_teacher_rosters_from_academic_system(
+        teacher_id,
+        semester_id=semester_id,
+    )
 
 
 def summarize_academic_course_sync_item(row: Any) -> dict[str, Any]:

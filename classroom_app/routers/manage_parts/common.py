@@ -424,6 +424,13 @@ async def _parse_json_request(request: Request, *, error_message: str = "请求�
     return payload
 
 
+async def _parse_optional_json_request(request: Request, *, error_message: str = "请求数据格式错误") -> dict[str, Any]:
+    """Keep legacy body-less POST callers working while validating supplied JSON."""
+    if not (await request.body()).strip():
+        return {}
+    return await _parse_json_request(request, error_message=error_message)
+
+
 def _prepare_course_payload(
     data: dict[str, Any],
     *,

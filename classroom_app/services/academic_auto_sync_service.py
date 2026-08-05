@@ -4,7 +4,6 @@ import time
 from typing import Any, Awaitable, Callable
 
 from .academic_service import china_now
-from .academic_course_sync_service import sync_current_teacher_courses_from_academic_system
 from .academic_classroom_sync_service import sync_teaching_places_from_academic_system
 from .academic_course_exam_sync_service import (
     ensure_course_exam_schema,
@@ -186,28 +185,6 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
     ensure_course_exam_schema(conn)
     ensure_academic_evaluation_schema(conn)
     term_params = _current_term_params()
-    common_query_params = {"gnmkdm": "N2150"}
-    timetable_body: dict[str, Any] = {
-        **term_params,
-        "kzlx": "ck",
-        "djsktkb": "0",
-        "xsdm": "",
-        "ccdm": "",
-        "xsewkbnr": "0",
-        "xszd[kch]": "true",
-        "xszd[jxbmc]": "true",
-        "xszd[jxbzc]": "true",
-        "xszd[cd]": "true",
-        "xszd[zxs]": "true",
-        "xszd[xf]": "true",
-        "xszd[xq]": "true",
-        "xszd[jxbrs]": "true",
-        "xszd[kcxzmc]": "true",
-        "xszd[kcxzjc]": "true",
-        "xszd[khfs]": "true",
-        "xszd[ksfs]": "true",
-        "xszd[zhxs]": "true",
-    }
     course_stat = _sync_stat(conn, "teacher_academic_course_sync_items", int(teacher_id))
     occurrence_row = conn.execute(
         """
@@ -250,10 +227,10 @@ def build_academic_sync_capabilities(conn, teacher_id: int) -> list[dict[str, An
                 {"label": "真实课次", "value": occurrence_count},
             ],
             "request_template": _request_template(
-                url="https://jwxt.gxufl.com/kbcx/jskbcx_cxJsKb1.html",
-                params=common_query_params,
-                referer="https://jwxt.gxufl.com/kbcx/jskbcx_cxJskbcxIndex.html?doType=details&gnmkdm=N2150&layout=default",
-                body=timetable_body,
+                url="https://jwxt.gxufl.com/xsxkjk/xsxkcx_cxJxbxxList.html",
+                params={"doType": "query", "gnmkdm": "N255005"},
+                referer="https://jwxt.gxufl.com/xsxkjk/xsxkcx_cxXsxkIndex.html?gnmkdm=N255005&layout=default",
+                body=_jqgrid_probe_body(term_params=term_params, show_count=500, sort_name=" "),
             ),
             "safe_note": "只读取教师课表和课程字段，不向教务系统写入信息。",
         },
@@ -493,6 +470,31 @@ async def _run_stage(
     )
 
 
+async def _run_course_roster_stages(teacher_id: int) -> list[dict[str, Any]]:
+    """Run the shared course/class/roster transaction once and keep stage-compatible output."""
+    try:
+        result = await sync_current_teacher_rosters_from_academic_system(int(teacher_id))
+    except Exception as exc:
+        result = {
+            "status": "failed",
+            "message": f"课程、班级与学生名单自动同步异常：{str(exc)[:180]}",
+        }
+    return [
+        _stage_payload(
+            key="courses",
+            label="课程课表",
+            result=result,
+            counts=_compact_course_counts(result),
+        ),
+        _stage_payload(
+            key="rosters",
+            label="班级学生名单",
+            result=result,
+            counts=_compact_roster_counts(result),
+        ),
+    ]
+
+
 def _summarize_auto_sync(stages: list[dict[str, Any]]) -> tuple[str, str]:
     healthy_statuses = {"success", "fresh", "no_data", "already_synced"}
     success_count = sum(1 for item in stages if item.get("status") in healthy_statuses)
@@ -581,25 +583,11 @@ async def sync_teacher_dashboard_reminders(teacher_id: int) -> dict[str, Any]:
 async def sync_teacher_academic_data_after_credential_verified(teacher_id: int) -> dict[str, Any]:
     """Run the post-credential sync chain without making credential persistence transactional.
 
-    Course sync runs first so roster memberships can attach to freshly synced
-    academic courses when course codes match. Every stage preserves its own
-    existing-data alignment rules and can fail independently.
+    Courses, classes, and rosters share one remote read and one local transaction,
+    while the remaining independent academic feeds keep their stage isolation.
     """
     stages = [
-        await _run_stage(
-            teacher_id=teacher_id,
-            key="courses",
-            label="课程课表",
-            runner=sync_current_teacher_courses_from_academic_system,
-            count_builder=_compact_course_counts,
-        ),
-        await _run_stage(
-            teacher_id=teacher_id,
-            key="rosters",
-            label="班级学生名单",
-            runner=sync_current_teacher_rosters_from_academic_system,
-            count_builder=_compact_roster_counts,
-        ),
+        *(await _run_course_roster_stages(teacher_id)),
         await _run_stage(
             teacher_id=teacher_id,
             key="invigilations",

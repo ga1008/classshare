@@ -434,6 +434,9 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                 for student in class_item["students"]
                 if student.get("enrollment_status") == STUDENT_STATUS_ACTIVE
             ]
+        semester_calendar = build_semester_calendar_payload(
+            load_teacher_semester_rows(conn, int(user["id"]))
+        )
 
     missing_email_total = sum(int(item.get("missing_email_count") or 0) for item in my_classes)
     active_class_count = sum(1 for item in my_classes if int(item.get("offering_count") or 0) > 0)
@@ -464,6 +467,10 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                 "department_options": collect_department_options(
                     (item.get("department") for item in my_classes),
                 ),
+                "academic_sync_semesters": build_academic_sync_semester_options(
+                    semester_calendar.get("semesters") or []
+                ),
+                "academic_sync_default_semester_id": semester_calendar.get("default_semester_id"),
             },
         ),
     )
@@ -553,6 +560,7 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
             }
             for item in (serialize_textbook_row(row) for row in _load_teacher_textbook_rows(conn, int(user["id"])))
         ]
+        semester_calendar = build_semester_calendar_payload(semesters)
 
     course_stats = {
         "course_count": len(my_courses),
@@ -575,7 +583,11 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
                 "courses_json": my_courses,
                 "textbooks_json": textbooks,
                 "course_stats": course_stats,
-                "semester_calendar": build_semester_calendar_payload(semesters),
+                "semester_calendar": semester_calendar,
+                "academic_sync_semesters": build_academic_sync_semester_options(
+                    semester_calendar.get("semesters") or []
+                ),
+                "academic_sync_default_semester_id": semester_calendar.get("default_semester_id"),
                 "department_options": collect_department_options(
                     (item.get("department") for item in my_courses),
                 ),

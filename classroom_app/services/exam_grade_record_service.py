@@ -1303,7 +1303,8 @@ def _parse_excel_metadata(ws: Any, header_row: int) -> dict[str, Any]:
     semester_identity = parse_semester_identity(combined)
     if semester_identity is not None:
         fields["academic_year"] = f"{semester_identity.start_year}-{semester_identity.end_year}"
-        fields["semester"] = "第一学期" if semester_identity.term == 1 else "第二学期"
+        term_labels = {1: "第一学期", 2: "第二学期", 3: "第三学期"}
+        fields["semester"] = term_labels[semester_identity.term]
     return _compact_dict(fields)
 
 

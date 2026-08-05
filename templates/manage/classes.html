@@ -426,32 +426,18 @@
     </section>
 </div>
 
-<div class="class-academic-sync-backdrop" id="classAcademicSyncModal" hidden aria-hidden="true">
-    <section class="class-academic-sync-modal" role="dialog" aria-modal="true" aria-labelledby="classAcademicSyncTitle" tabindex="-1">
-        <div class="class-student-modal-head">
-            <div>
-                <span>Academic Roster Sync</span>
-                <h3 id="classAcademicSyncTitle">教务班级同步结果</h3>
-                <p id="classAcademicSyncLead">正在对齐教务系统的教学班、行政班和学生名单。</p>
-            </div>
-            <button type="button" class="class-student-drawer-close" id="classAcademicSyncClose" aria-label="关闭教务同步结果">&times;</button>
-        </div>
-        <div class="class-academic-sync-body" id="classAcademicSyncSummary"></div>
-        <div class="class-student-modal-actions">
-            <button type="button" class="btn btn-outline" id="classAcademicSyncDismiss">稍后查看</button>
-            <button type="button" class="btn btn-primary" id="classAcademicSyncReload">刷新名单</button>
-        </div>
-    </section>
-</div>
+{% include "partials/academic_sync_dialog.html" %}
 
 <script>
     window.MANAGE_CLASSES_DATA = {
-        classes: {{ my_classes | tojson }}
+        classes: {{ my_classes | tojson }},
+        academicSyncSemesters: {{ academic_sync_semesters | tojson }},
+        academicSyncDefaultSemesterId: {{ academic_sync_default_semester_id | tojson }}
     };
 </script>
 {% endblock %}
 
 {% block scripts %}
 <script type="module" src="{{ asset_url('js/base_resource_modes.js') }}"></script>
-<script type="module" src="/static/js/manage_classes.js?v=class-custom-roster-20260702"></script>
+<script type="module" src="{{ asset_url('js/manage_classes.js') }}"></script>
 {% endblock %}

@@ -10,6 +10,7 @@ class CanonicalNameTests(unittest.TestCase):
     def test_canonical_name(self):
         self.assertEqual(sis.canonical_semester_name(2025, 2), "2025-2026第二学期")
         self.assertEqual(sis.canonical_semester_name(2025, 1), "2025-2026第一学期")
+        self.assertEqual(sis.canonical_semester_name(2025, 3), "2025-2026第三学期")
         self.assertEqual(sis.canonical_semester_name("2024", "1"), "2024-2025第一学期")
 
     def test_identity_properties(self):
@@ -65,13 +66,29 @@ class ConversionTests(unittest.TestCase):
     def test_identity_from_year_term(self):
         self.assertEqual(sis.identity_from_year_term("2025-2026", "2").code, "2025-2026-2")
         self.assertEqual(sis.identity_from_year_term("2025-2026", "1").code, "2025-2026-1")
+        self.assertEqual(sis.identity_from_year_term("2025-2026", "3").code, "2025-2026-3")
         self.assertIsNone(sis.identity_from_year_term("", "2"))
         self.assertIsNone(sis.identity_from_year_term("2025-2026", ""))
 
     def test_identity_from_xnm_xqm(self):
         self.assertEqual(sis.identity_from_xnm_xqm("2024", "12").code, "2024-2025-2")
         self.assertEqual(sis.identity_from_xnm_xqm("2024", "3").code, "2024-2025-1")
+        self.assertEqual(sis.identity_from_xnm_xqm("2024", "16").code, "2024-2025-3")
         self.assertIsNone(sis.identity_from_xnm_xqm("", "12"))
+
+    def test_zf_params_use_verified_codes_without_ordinal_fallbacks(self):
+        for term, expected_xqm in ((1, "3"), (2, "12"), (3, "16")):
+            with self.subTest(term=term):
+                params = sis.zf_term_params_from_semester(
+                    {"name": sis.canonical_semester_name(2024, term)}
+                )
+                self.assertEqual(params, {"xnm": "2024", "xqm": expected_xqm})
+
+    def test_zf_params_accept_legacy_semester_name_key(self):
+        self.assertEqual(
+            sis.zf_term_params_from_semester({"semester_name": "2024-2025第三学期"}),
+            {"xnm": "2024", "xqm": "16"},
+        )
 
     def test_infer_from_dates(self):
         self.assertEqual(sis.infer_identity_from_dates("2026-03-09").code, "2025-2026-2")

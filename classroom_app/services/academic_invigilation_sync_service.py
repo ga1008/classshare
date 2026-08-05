@@ -27,6 +27,7 @@ from .academic_integration_service import (
 from .academic_service import china_now, parse_date_input
 from .message_center_service import create_todo_notification
 from .organization_scope_service import load_teacher_org_scope
+from .semester_identity_service import zf_term_params_from_semester
 
 
 ACADEMIC_INVIGILATION_SOURCE = "gxufl_jwxt"
@@ -114,40 +115,9 @@ def _parse_int(value: Any) -> int:
         return 0
 
 
-def _semester_year_start(semester: dict[str, Any]) -> int:
-    name = str(semester.get("name") or "")
-    match = re.search(r"(20\d{2})\s*[-—至]\s*(20\d{2})", name)
-    if match:
-        return int(match.group(1))
-    start_date = parse_date_input(semester.get("start_date"))
-    if start_date:
-        return start_date.year if start_date.month >= 8 else start_date.year - 1
-    today = china_now().date()
-    return today.year if today.month >= 8 else today.year - 1
-
-
-def _semester_term_number(semester: dict[str, Any]) -> int:
-    name = str(semester.get("name") or "")
-    if re.search(r"(第\s*)?2\s*(学期|期|semester)", name, flags=re.IGNORECASE):
-        return 2
-    if re.search(r"(第\s*)?1\s*(学期|期|semester)", name, flags=re.IGNORECASE):
-        return 1
-    start_date = parse_date_input(semester.get("start_date"))
-    if start_date and start_date.month in {1, 2, 3, 4, 5, 6, 7}:
-        return 2
-    return 1
-
-
 def _term_param_candidates(semester: dict[str, Any]) -> list[dict[str, str]]:
-    year_start = _semester_year_start(semester)
-    term_number = _semester_term_number(semester)
-    year_values = [str(year_start), f"{year_start}-{year_start + 1}"]
-    term_values = ["12", "2"] if term_number == 2 else ["3", "1"]
-    candidates: list[dict[str, str]] = []
-    for xnm in year_values:
-        for xqm in term_values:
-            candidates.append({"xnm": xnm, "xqm": xqm})
-    return candidates
+    params = zf_term_params_from_semester(semester)
+    return [params] if params else []
 
 
 def _ajax_headers(client: httpx.AsyncClient, *, referer: str = ZF_INVIGILATION_INDEX_PATH) -> dict[str, str]:

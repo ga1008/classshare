@@ -142,6 +142,13 @@ class AcademicExamRosterCacheTests(unittest.TestCase):
         self.assertFalse(result["cache_hit"])
         self.assertIn("未覆盖任何成绩数据", result["message"])
 
+    def test_exam_title_preserves_third_term(self):
+        title = service._format_semester_exam_title(
+            {"academic_year": "2024", "academic_term": "16"},
+            {"semester_name": "2024-2025第三学期"},
+        )
+        self.assertEqual(title, "2024-2025学年第三学期期末考试")
+
 
 if __name__ == "__main__":
     unittest.main()

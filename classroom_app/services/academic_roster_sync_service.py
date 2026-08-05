@@ -3,7 +3,6 @@ from __future__ import annotations
 import html
 import json
 import re
-import sqlite3
 import time
 from dataclasses import dataclass, field
 from datetime import date
@@ -24,7 +23,7 @@ from .academic_integration_service import (
     load_teacher_academic_access_method,
     open_authenticated_academic_client,
 )
-from .academic_service import china_now, parse_date_input
+from .academic_service import china_now
 from .department_service import infer_department_from_text, normalize_department
 from .organization_scope_service import apply_teacher_scope_to_org, load_teacher_org_scope
 from .student_lifecycle_service import STUDENT_STATUS_ACTIVE, STUDENT_STATUS_SUSPENDED
@@ -36,6 +35,25 @@ ZF_STUDENT_ROSTER_INDEX_PATH = "/xsxkjk/xsxkcx_cxXsxkIndex.html?gnmkdm=N255005&l
 ZF_TEACHING_CLASS_LIST_PATH = "/xsxkjk/xsxkcx_cxJxbxxList.html?doType=query&gnmkdm=N255005"
 ZF_TEACHING_CLASS_STUDENT_LIST_PATH = "/xsxkjk/xsxkcx_cxJxbxsList.html?doType=query&gnmkdm=N255005"
 ROSTER_PAGE_SIZE = 500
+
+# Verified against the GXUFL ZFSoft V9 student-roster page. ``nd`` and ``time``
+# are frontend cache/sequence markers and are not business filters; the two
+# endpoint-specific business inputs are the selected term and, for a roster,
+# the stable teaching-class id.
+ACADEMIC_QUERY_PARAMETER_CONTRACT = {
+    "doType": "URL query switch selecting the jqGrid query response",
+    "gnmkdm": "ZF menu/permission code; N255005 identifies student-roster query",
+    "xnm": "academic-year start year, for example 2024 for 2024-2025",
+    "xqm": "ZF term code: 3=first, 12=second, 16=third",
+    "jxb_id": "stable teaching-class id; required only by the student-list endpoint",
+    "_search": "jqGrid advanced-search switch; false for an unfiltered list",
+    "nd": "millisecond cache-busting nonce; not a business filter",
+    "queryModel.showCount": "page size",
+    "queryModel.currentPage": "one-based page number",
+    "queryModel.sortName": "optional jqGrid sort field",
+    "queryModel.sortOrder": "jqGrid sort direction",
+    "time": "frontend request sequence/timing marker; not a business filter",
+}
 
 
 FOLLOW_UP_ITEMS = [
@@ -111,19 +129,6 @@ def _parse_int(value: Any) -> int:
         return int(match.group(0))
     except ValueError:
         return 0
-
-
-def _semester_year_start(semester: dict[str, Any]) -> int:
-    identity = identity_from_semester_record(semester)
-    if identity:
-        return identity.start_year
-    today = china_now().date()
-    return today.year if today.month >= 8 else today.year - 1
-
-
-def _semester_term_number(semester: dict[str, Any]) -> int:
-    identity = identity_from_semester_record(semester)
-    return identity.term if identity else 1
 
 
 def _term_param_candidates(semester: dict[str, Any]) -> list[dict[str, str]]:
@@ -222,11 +227,9 @@ def _class_name_for_student(row: dict[str, Any], roster: AcademicTeachingClassRo
         for candidate in composition_names:
             if row_class_name == candidate or row_class_name in candidate or candidate in row_class_name:
                 return candidate
-    if row_class_name:
-        return row_class_name
     if composition_names:
         return composition_names[0]
-    return ""
+    return row_class_name
 
 
 def _student_from_row(row: dict[str, Any], roster: AcademicTeachingClassRoster) -> AcademicRosterStudent | None:
@@ -319,18 +322,25 @@ async def _fetch_teaching_classes(
             form = _jqgrid_form(page=page, show_count=ROSTER_PAGE_SIZE, extra=term_params)
             payload = await _fetch_json(client, ZF_TEACHING_CLASS_LIST_PATH, form)
             rows, total_count, total_page = _extract_items(payload)
+            matching_rows = [
+                row
+                for row in rows
+                if _normalize_space(row.get("XNM")) == term_params["xnm"]
+                and _normalize_space(row.get("XQM")) == term_params["xqm"]
+            ]
             sources.append(
                 {
                     "path": ZF_TEACHING_CLASS_LIST_PATH,
                     "method": "POST",
                     "params": {**term_params, "page": page, "showCount": ROSTER_PAGE_SIZE},
                     "parser": "teaching_class_list",
-                    "item_count": len(rows),
+                    "item_count": len(matching_rows),
+                    "rejected_term_mismatch_count": len(rows) - len(matching_rows),
                     "total_count": total_count,
                     "total_page": total_page,
                 }
             )
-            all_rows.extend(rows)
+            all_rows.extend(matching_rows)
             if page >= total_page:
                 break
         if all_rows:
@@ -386,17 +396,24 @@ async def _fetch_roster_students(
 
 
 def _load_current_semester(conn, teacher_id: int, today: date) -> dict[str, Any] | None:
+    teacher_scope = load_teacher_org_scope(conn, teacher_id)
     row = conn.execute(
         """
         SELECT *
         FROM academic_semesters
-        WHERE teacher_id = ?
+        WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
           AND date(start_date) <= date(?)
           AND date(end_date) >= date(?)
-        ORDER BY start_date DESC, id DESC
+        ORDER BY CASE WHEN teacher_id = ? THEN 0 ELSE 1 END, updated_at DESC, id DESC
         LIMIT 1
         """,
-        (int(teacher_id), today.isoformat(), today.isoformat()),
+        (
+            teacher_scope["school_code"],
+            teacher_scope["school_code"],
+            today.isoformat(),
+            today.isoformat(),
+            int(teacher_id),
+        ),
     ).fetchone()
     return dict(row) if row else None
 
@@ -1008,6 +1025,8 @@ def _upsert_membership(
 def _mark_stale_students(
     conn,
     *,
+    teacher_id: int,
+    semester_id: int,
     class_ids: set[int],
     synced_at: str,
 ) -> int:
@@ -1020,9 +1039,33 @@ def _mark_stale_students(
         SET academic_sync_message = '本次教务名单同步未再次出现，请人工复核是否退选、转班或不属于当前任课名单。'
         WHERE class_id IN ({placeholders})
           AND academic_source = ?
-          AND (academic_sync_at IS NULL OR academic_sync_at < ?)
+          AND EXISTS (
+                SELECT 1
+                FROM teacher_academic_roster_memberships previous_membership
+                WHERE previous_membership.student_id = students.id
+                  AND previous_membership.teacher_id = ?
+                  AND previous_membership.semester_id = ?
+                  AND previous_membership.synced_at < ?
+          )
+          AND NOT EXISTS (
+                SELECT 1
+                FROM teacher_academic_roster_memberships current_membership
+                WHERE current_membership.student_id = students.id
+                  AND current_membership.teacher_id = ?
+                  AND current_membership.semester_id = ?
+                  AND current_membership.synced_at >= ?
+          )
         """,
-        [*sorted(class_ids), ACADEMIC_ROSTER_SOURCE, synced_at],
+        [
+            *sorted(class_ids),
+            ACADEMIC_ROSTER_SOURCE,
+            int(teacher_id),
+            int(semester_id),
+            synced_at,
+            int(teacher_id),
+            int(semester_id),
+            synced_at,
+        ],
     )
     return int(cursor.rowcount or 0)
 
@@ -1187,7 +1230,13 @@ def _persist_rosters(
             }
         )
 
-    stats["stale_students"] = _mark_stale_students(conn, class_ids=touched_class_ids, synced_at=synced_at)
+    stats["stale_students"] = _mark_stale_students(
+        conn,
+        teacher_id=teacher_id,
+        semester_id=int(semester["id"]),
+        class_ids=touched_class_ids,
+        synced_at=synced_at,
+    )
     mapping_result = refresh_teaching_class_mappings_from_roster(
         conn,
         teacher_id=int(teacher_id),
@@ -1231,6 +1280,7 @@ async def sync_current_teacher_rosters_from_academic_system(
     teacher_id: int,
     semester_id: int | None = None,
 ) -> dict[str, Any]:
+    """Build the ZFSoft jqGrid form while keeping business filters in ``extra``."""
     with get_db_connection() as conn:
         access_payload = load_teacher_academic_access_method(conn, teacher_id, school_code="gxufl")
         semester = (
@@ -1313,12 +1363,13 @@ async def sync_current_teacher_rosters_from_academic_system(
                 synced_at=synced_at,
             )
             conn.commit()
-        except sqlite3.Error:
+        except Exception:
             conn.rollback()
             raise
 
     warnings = list(dict.fromkeys([*(course_result.get("warnings") or []), *(roster_result.get("warnings") or [])]))
     term_params = zf_term_params_from_semester(semester) or {}
+    semester_identity = identity_from_semester_record(semester)
     return {
         "status": "success",
         "message": (
@@ -1330,7 +1381,7 @@ async def sync_current_teacher_rosters_from_academic_system(
         "semester_id": int(semester["id"]),
         "semester_name": str(semester.get("name") or ""),
         "academic_year": f"{term_params.get('xnm', '')}-{int(term_params.get('xnm') or 0) + 1}" if term_params.get("xnm") else "",
-        "academic_term": int(identity_from_semester_record(semester).term) if identity_from_semester_record(semester) else 0,
+        "academic_term": int(semester_identity.term) if semester_identity else 0,
         "xnm": term_params.get("xnm", ""),
         "xqm": term_params.get("xqm", ""),
         "synced_at": synced_at,
@@ -1371,6 +1422,7 @@ async def sync_current_teacher_rosters_from_academic_system(
             "class_name_field": "JXBZC",
             "teaching_class_list_path": ZF_TEACHING_CLASS_LIST_PATH,
             "student_roster_path": ZF_TEACHING_CLASS_STUDENT_LIST_PATH,
+            "parameter_roles": ACADEMIC_QUERY_PARAMETER_CONTRACT,
         },
         "source_summary": source_summary,
     }

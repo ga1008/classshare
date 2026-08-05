@@ -87,11 +87,13 @@ def _derive_week1_monday(synced_at_iso: str, cur_week: int) -> str:
 
 
 def _previous_term_key(year: str, term: str) -> tuple[str, str] | None:
-    """('2025-2026','2') → ('2025-2026','1')；('2025-2026','1') → ('2024-2025','2')。"""
+    """Walk backwards through verified first/second/third academic terms."""
     matched = re.fullmatch(r"(\d{4})-(\d{4})", str(year or "").strip())
     term_text = str(term or "").strip()
     if not matched:
         return None
+    if term_text == "3":
+        return (str(year).strip(), "2")
     if term_text == "2":
         return (str(year).strip(), "1")
     if term_text == "1":
@@ -130,12 +132,12 @@ _HISTORY_EMPTY_STOP = 2
 
 
 def _academic_term_to_zf_params(year: str, term: str) -> dict[str, str] | None:
-    """('2024-2025','2') → {'xnm':'2024','xqm':'12'}。ZF: xqm 3=一学期,12=二学期。"""
+    """Map local term numbers to verified ZF codes: 1=3, 2=12, 3=16."""
     matched = re.match(r"(\d{4})", str(year or "").strip())
     term_text = str(term or "").strip()
-    if not matched or term_text not in ("1", "2"):
+    if not matched or term_text not in ("1", "2", "3"):
         return None
-    return {"xnm": matched.group(1), "xqm": "12" if term_text == "2" else "3"}
+    return {"xnm": matched.group(1), "xqm": {"1": "3", "2": "12", "3": "16"}[term_text]}
 
 
 def _sections_from_text(section_text: Any, acs: Any) -> list[int]:

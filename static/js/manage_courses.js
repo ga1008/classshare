@@ -1,6 +1,7 @@
 ﻿import { apiFetch } from '/static/js/api.js';
 import { closeModal, openModal, showMessage } from '/static/js/ui.js';
 import { initLearningMaterialSelector } from '/static/js/learning_material_selector.js';
+import { initAcademicSyncDialog } from '/static/js/academic_sync_dialog.js';
 
 const pageData = window.COURSE_PAGE_DATA || {};
 const courses = Array.isArray(pageData.courses) ? pageData.courses : [];
@@ -716,48 +717,8 @@ async function handleAiGenerateLessons() {
     }
 }
 
-async function handleAcademicCourseSync(triggerButton) {
-    const buttons = elements.academicSyncButtons || [];
-    const originalLabels = new Map(buttons.map((button) => [button, button.textContent]));
-    buttons.forEach((button) => {
-        button.disabled = true;
-        button.textContent = '同步中...';
-    });
-    if (triggerButton) {
-        triggerButton.textContent = '正在读取教务课表...';
-    }
-
-    try {
-        const result = await apiFetch('/api/manage/courses/sync-current-academic', {
-            method: 'POST',
-            silent: true,
-        });
-        const followUp = Array.isArray(result.follow_up_items) && result.follow_up_items.length
-            ? ` 后续请补充：${result.follow_up_items.slice(0, 3).join('、')}。`
-            : '';
-        const baseMessage = result.message
-            || `已同步 ${result.course_count || 0} 门课程、${result.schedule_item_count || 0} 条课表安排。`;
-        showMessage(
-            `${baseMessage}${followUp}`,
-            'success',
-            5200,
-        );
-        setTimeout(() => {
-            window.location.assign('/manage/teaching/courses?academic_course_sync=1');
-        }, 900);
-    } catch (error) {
-        showMessage(error.message || '同步教务课程失败，请确认账号已验证且教务课表可访问。', 'error', 5200);
-    } finally {
-        buttons.forEach((button) => {
-            button.disabled = false;
-            button.textContent = originalLabels.get(button) || '从教务系统同步';
-        });
-    }
-}
-
 function bindEvents() {
     elements.openButtons.forEach((button) => button.addEventListener('click', openCreateModal));
-    elements.academicSyncButtons.forEach((button) => button.addEventListener('click', () => handleAcademicCourseSync(button)));
     elements.aiOpenBtn?.addEventListener('click', () => setAiDialogOpen(true));
     elements.aiCloseBtn?.addEventListener('click', () => setAiDialogOpen(false));
     elements.aiCancelBtn?.addEventListener('click', () => setAiDialogOpen(false));
@@ -905,6 +866,12 @@ function syncCardTabState() {
 }
 
 bindEvents();
+initAcademicSyncDialog({
+    buttons: elements.academicSyncButtons,
+    endpoint: '/api/manage/courses/sync-current-academic',
+    semesters: pageData.academicSyncSemesters,
+    defaultSemesterId: pageData.academicSyncDefaultSemesterId,
+});
 syncCardTabState();
 ensureOneLessonRow();
 updateAiMeta();

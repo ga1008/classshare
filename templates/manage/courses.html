@@ -1494,13 +1494,16 @@
 </template>
 
 {% include "partials/learning_material_selector.html" %}
+{% include "partials/academic_sync_dialog.html" %}
 
 <script>
     window.COURSE_PAGE_DATA = {
         courses: {{ courses_json | tojson }},
         textbooks: {{ textbooks_json | tojson }},
         departments: {{ department_options | tojson }},
-        semesterCalendar: {{ (semester_calendar | default({})) | tojson }}
+        semesterCalendar: {{ (semester_calendar | default({})) | tojson }},
+        academicSyncSemesters: {{ academic_sync_semesters | tojson }},
+        academicSyncDefaultSemesterId: {{ academic_sync_default_semester_id | tojson }}
     };
 </script>
 {% endblock %}
