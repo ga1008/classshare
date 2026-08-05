@@ -51,6 +51,15 @@ const elements = {
     resultSummary: document.getElementById('courseResultSummary'),
 };
 
+// The manage workspace uses transformed page layers for navigation motion.
+// A fixed modal nested inside such a layer is positioned against that layer
+// instead of the viewport, which caused the course dialog to drift after a
+// card click.  Portal the complete dialog to <body> while preserving all
+// existing ids and event bindings.
+if (elements.modal && elements.modal.parentElement !== document.body) {
+    document.body.appendChild(elements.modal);
+}
+
 let currentGroupMode = 'none';
 let courseGroupSectionSerial = 0;
 let courseGroupResizeFrame = 0;

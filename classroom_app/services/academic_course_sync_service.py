@@ -38,6 +38,8 @@ ZF_LAB_TIMETABLE_LIST_PATH = "/jssygl/sykbcx_cxSykbcxList.html?doType=query&gnmk
 ZF_LAB_TIMETABLE_QUERY_PATH = "/jssygl/sykbcx_cxKfxSykbcxIndex.html?doType=query&gnmkdm=N2150"
 ZF_TIMETABLE_WEEK_SLOTS_PATH = "/kbcx/jskbcx_cxRsd.html?gnmkdm=N2150"
 ZF_TIMETABLE_SECTION_SLOTS_PATH = "/kbcx/jskbcx_cxRjc.html?gnmkdm=N2150"
+ZF_PUBLIC_COURSE_INDEX_PATH = "/kckgl/kcjbxxwh_cxKcjbxxIndex.html?gnmkdm=N151005&layout=default"
+ZF_PUBLIC_COURSE_QUERY_PATH = "/kckgl/kcjbxxwh_cxKcjbxxIndex.html?doType=query&gnmkdm=N151005"
 
 FOLLOW_UP_ITEMS = [
     "补充课程简介、教学目标和平台内使用说明",
@@ -129,6 +131,9 @@ class AcademicCourseScheduleItem:
     teacher_org_name: str = ""
     course_name: str = ""
     course_code: str = ""
+    course_internal_id: str = ""
+    course_code_source: str = ""
+    teaching_class_id: str = ""
     teaching_class_name: str = ""
     time_text: str = ""
     weeks_text: str = ""
@@ -504,7 +509,11 @@ def _parse_schedule_items_from_json(payload: Any, source_url: str) -> list[Acade
     context = _payload_context(payload)
     for raw in _candidate_course_dicts(payload):
         course_name = _first_text(raw, "kcmc", "kcmc_zw", "courseName", "course_name", "name")
-        course_code = _first_text(raw, "kch", "kch_id", "kcdm", "kcbh", "courseCode")
+        # GXUFL's ``kch`` is the human-facing, stable course number (for
+        # example E020185B3).  ``kch_id`` is only an internal database id and
+        # must never be promoted to the local course unique key.
+        course_code = _first_text(raw, "kch", "kcdm", "kcbh", "courseCode")
+        course_internal_id = _first_text(raw, "kch_id", "kch_id_id")
         if not course_name:
             course_name = _first_text(raw, "ktmc", "jxbmc", "jxb")
         if not course_name or not any(
@@ -547,6 +556,9 @@ def _parse_schedule_items_from_json(payload: Any, source_url: str) -> list[Acade
             teacher_org_name=context.get("teacher_org_name", "")[:160],
             course_name=course_name[:160],
             course_code=course_code[:80],
+            course_internal_id=course_internal_id[:120],
+            course_code_source="teacher_timetable.kch" if _first_text(raw, "kch") else "",
+            teaching_class_id=_first_text(raw, "jxb_id", "teachingClassId")[:120],
             teaching_class_name=_first_text(raw, "jxbmc", "jxb", "jxb_id", "teachingClassName")[:180],
             time_text=time_text[:180],
             weeks_text=_first_text(raw, "zcd", "skzcmc", "zc", "weeks", "weeks_text")[:180],
@@ -633,6 +645,16 @@ def build_schedule_items_from_teaching_class_rosters(
         course_name = _normalize_space(getattr(roster, "course_name", ""))
         if not course_name:
             continue
+        roster_raw = dict(getattr(roster, "raw_json", {}) or {})
+        timetable_row = dict(roster_raw.get("authoritative_timetable_row") or {})
+        public_course_row = dict(roster_raw.get("public_course_row") or {})
+        course_identity = dict(roster_raw.get("course_identity") or {})
+        course_hour_text = _first_text(timetable_row, "kcxszc") or _first_text(public_course_row, "fxzxs", "xsxxxx")
+        course_total_hours_text = _first_text(timetable_row, "kczxs", "zxs") or _first_text(public_course_row, "zxs")
+        credits = _parse_float(_first_text(timetable_row, "xf") or _first_text(public_course_row, "xf"))
+        course_nature = _first_text(timetable_row, "kcxzjc") or _first_text(public_course_row, "kcxzmc", "kclbmc")
+        exam_method = _first_text(timetable_row, "khfsmc", "khfs")
+        exam_mode = _first_text(timetable_row, "ksfsmc", "ksfs")
         schedule_parts = _split_teaching_schedule(getattr(roster, "schedule_text", ""))
         location_parts = _split_teaching_schedule(getattr(roster, "location_text", ""))
         if not schedule_parts:
@@ -641,11 +663,13 @@ def build_schedule_items_from_teaching_class_rosters(
             location = ""
             if location_parts:
                 location = location_parts[min(schedule_index, len(location_parts) - 1)]
+            if not location:
+                location = _first_text(timetable_row, "cdmc", "jxdd")
             weeks_match = re.search(r"[\{｛]([^\}｝]+)[\}｝]", schedule_text)
             weeks_text = _normalize_space(weeks_match.group(1) if weeks_match else "")
             section_parts = _schedule_section_parts(schedule_text) if schedule_text else [""]
             for section_text in section_parts:
-                raw_row = dict(getattr(roster, "raw_json", {}) or {})
+                raw_row = dict(roster_raw)
                 items.append(
                     AcademicCourseScheduleItem(
                         academic_year=_normalize_space(getattr(roster, "academic_year", ""))[:24],
@@ -655,21 +679,44 @@ def build_schedule_items_from_teaching_class_rosters(
                         teacher_name=_normalize_space(getattr(roster, "teacher_name", ""))[:80],
                         course_name=course_name[:160],
                         course_code=_normalize_space(getattr(roster, "course_code", ""))[:80],
+                        course_internal_id=_normalize_space(getattr(roster, "course_internal_id", ""))[:120],
+                        course_code_source=_normalize_space(getattr(roster, "course_code_source", ""))[:80],
+                        teaching_class_id=_normalize_space(getattr(roster, "teaching_class_id", ""))[:120],
                         teaching_class_name=_normalize_space(getattr(roster, "teaching_class_name", ""))[:180],
                         time_text=schedule_text[:180],
                         weeks_text=weeks_text[:180],
                         weekday=_parse_weekday(schedule_text),
                         weekday_label=_weekday_label(_parse_weekday(schedule_text)),
                         section_text=section_text[:40],
+                        campus=_first_text(timetable_row, "xqmc", "xq")[:120],
+                        campus_id=_first_text(timetable_row, "xqh_id", "xqdm")[:80],
                         location=location[:220],
+                        classroom_id=_first_text(timetable_row, "cd_id")[:120],
+                        classroom_code=_first_text(timetable_row, "cdbh")[:80],
+                        classroom_type=_first_text(timetable_row, "cdlbmc")[:120],
                         class_composition=_normalize_space(getattr(roster, "class_composition", ""))[:260],
+                        course_nature=course_nature[:80],
+                        exam_method=exam_method[:80],
+                        exam_mode=exam_mode[:80],
+                        course_hour_text=course_hour_text[:160],
+                        weekly_hours_text=_first_text(timetable_row, "zhxs")[:80],
+                        total_hours_text=_first_text(timetable_row, "zxs")[:80],
+                        course_total_hours_text=course_total_hours_text[:80],
+                        major_direction=_first_text(timetable_row, "fx")[:120],
+                        course_note=_first_text(timetable_row, "xkbz")[:180],
+                        online_info=_first_text(timetable_row, "zxxx")[:180],
+                        course_topic_name=_first_text(timetable_row, "ktmc")[:160],
+                        block_level=_first_text(timetable_row, "bklxdjmc")[:120],
+                        credits=credits,
                         teaching_class_student_count=max(
                             int(getattr(roster, "declared_student_count", 0) or 0),
                             int(getattr(roster, "selected_student_count", 0) or 0),
+                            _parse_int(_first_text(timetable_row, "jxbrs")),
                         ),
                         student_count=max(
                             int(getattr(roster, "declared_student_count", 0) or 0),
                             int(getattr(roster, "selected_student_count", 0) or 0),
+                            _parse_int(_first_text(timetable_row, "xkrs")),
                         ),
                         raw_text=_normalize_space(
                             " ".join(
@@ -686,7 +733,13 @@ def build_schedule_items_from_teaching_class_rosters(
                                 )
                             )
                         )[:1600],
-                        raw_json={"row": raw_row, "contract": "gxufl_student_roster_teaching_class"},
+                        raw_json={
+                            "row": raw_row,
+                            "timetable_row": timetable_row,
+                            "public_course_row": public_course_row,
+                            "course_identity": course_identity,
+                            "contract": "gxufl_student_roster_teaching_class",
+                        },
                         source_url=source_url,
                     )
                 )
@@ -837,6 +890,206 @@ def _ajax_headers(client: httpx.AsyncClient, *, accept: str = "application/json,
         "Origin": str(client.base_url).rstrip("/"),
         "Referer": str(client.base_url).rstrip("/") + ZF_TEACHER_TIMETABLE_INDEX_PATH,
     }
+
+
+def _public_course_ajax_headers(client: httpx.AsyncClient) -> dict[str, str]:
+    headers = _ajax_headers(client)
+    headers["Referer"] = str(client.base_url).rstrip("/") + ZF_PUBLIC_COURSE_INDEX_PATH
+    return headers
+
+
+def _public_department_options(page_html: str) -> list[dict[str, str]]:
+    """Read the stable department ids behind the public-query select.
+
+    The visible prefix (for example ``E02``) is not the POST value.  GXUFL
+    currently mixes short legacy ids and long opaque ids, so values are always
+    taken from the authenticated page instead of being guessed or hard-coded.
+    """
+    select_match = re.search(
+        r"<select\b[^>]*\bid\s*=\s*(['\"])kkbm_id_cx\1[^>]*>(.*?)</select>",
+        page_html or "",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not select_match:
+        return []
+    options: list[dict[str, str]] = []
+    for option_match in re.finditer(
+        r"<option\b[^>]*\bvalue\s*=\s*(['\"])(.*?)\1[^>]*>(.*?)</option>",
+        select_match.group(2),
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        value = _normalize_space(html.unescape(option_match.group(2)))
+        label = _strip_html(option_match.group(3))
+        if not value or not label or label in {"全部", "--请选择--"}:
+            continue
+        prefix_match = re.match(r"^([A-Z]{1,3}\d{1,2})(.+)$", label, flags=re.IGNORECASE)
+        options.append(
+            {
+                "value": value[:160],
+                "label": label[:180],
+                "display_code": _normalize_space(prefix_match.group(1) if prefix_match else "")[:24],
+                "department": _normalize_space(prefix_match.group(2) if prefix_match else label)[:160],
+            }
+        )
+    return options
+
+
+def _match_public_department_option(
+    options: list[dict[str, str]],
+    candidates: list[Any],
+) -> dict[str, str] | None:
+    candidate_tokens: list[str] = []
+    for candidate in candidates:
+        normalized = normalize_department(candidate) or _normalize_space(candidate)
+        token = _normalize_course_match_text(normalized)
+        if token and token not in candidate_tokens:
+            candidate_tokens.append(token)
+    for token in candidate_tokens:
+        exact = [
+            option
+            for option in options
+            if _normalize_course_match_text(option.get("department")) == token
+        ]
+        if len(exact) == 1:
+            return exact[0]
+    for token in candidate_tokens:
+        contained = [
+            option
+            for option in options
+            if token and token in _normalize_course_match_text(option.get("label"))
+        ]
+        if len(contained) == 1:
+            return contained[0]
+    return None
+
+
+def _select_public_course_candidate(
+    course_name: str,
+    rows: list[dict[str, Any]],
+    *,
+    department_name: str = "",
+    expected_course_code: str = "",
+) -> tuple[dict[str, Any] | None, str, int]:
+    """Select only an exact, unique official course number.
+
+    The public endpoint is a fuzzy search and may return sibling courses such
+    as ``服务器配置与管理实验``.  Exact names, the requested department and
+    enabled rows are filtered first; multiple remaining course numbers are
+    deliberately reported as ambiguous instead of guessed.
+    """
+    target_name = _normalize_course_match_text(course_name)
+    target_department = _normalize_course_match_text(department_name)
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        if _normalize_course_match_text(row.get("kcmc")) != target_name:
+            continue
+        if target_department and target_department not in _normalize_course_match_text(row.get("kkbmmc")):
+            continue
+        status = _normalize_space(row.get("tkbj"))
+        if status and status not in {"0", "启用"}:
+            continue
+        official_code = _normalize_space(row.get("kch"))
+        if not official_code:
+            continue
+        candidates.append(dict(row))
+
+    codes = list(dict.fromkeys(_normalize_space(row.get("kch")) for row in candidates))
+    expected_code = _normalize_space(expected_course_code)
+    if expected_code:
+        expected_rows = [
+            row
+            for row in candidates
+            if _normalize_space(row.get("kch")).casefold() == expected_code.casefold()
+        ]
+        if expected_rows:
+            return expected_rows[0], "exact_code_confirmed", len(codes)
+        if codes:
+            return None, "official_code_conflict", len(codes)
+    if len(codes) == 1:
+        return next(row for row in candidates if _normalize_space(row.get("kch")) == codes[0]), "exact_unique_code", 1
+    if len(codes) > 1:
+        return None, "ambiguous_official_codes", len(codes)
+    return None, "no_exact_candidate", 0
+
+
+async def _fetch_public_course_rows(
+    client: httpx.AsyncClient,
+    *,
+    course_name: str,
+    department_option: dict[str, str],
+    sources: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    form = {
+        "xb_id": "",
+        "kkbm_id": department_option.get("value") or "",
+        "kcglbm_id": "",
+        "kclbdm": "",
+        "kcgsdm": "",
+        "qynj": "",
+        "tkbj": "0",
+        # Despite its name, GXUFL's combined search box posts the entered
+        # course name through ``kch``.
+        "kch": course_name,
+        "szzt": "",
+        "kcfzr": "",
+        "kkxyxskz": "0",
+        "kclxdm": "",
+        "kcxzdm": "",
+        "kcmc": "",
+        "kcdm": "",
+        "zyshrsffp": "-1",
+        "kcfzrsffp": "-1",
+        "tyapbkbj": "",
+        "sfsjkbj_cx": "",
+        "_search": "false",
+        "nd": str(int(china_now().timestamp() * 1000)),
+        "queryModel.showCount": "100",
+        "queryModel.currentPage": "1",
+        "queryModel.sortName": "kcmc",
+        "queryModel.sortOrder": "asc",
+        "time": "1",
+    }
+    try:
+        response = await client.post(
+            ZF_PUBLIC_COURSE_QUERY_PATH,
+            data=form,
+            headers=_public_course_ajax_headers(client),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rows: list[dict[str, Any]] = []
+        if isinstance(payload, dict):
+            for key in ("items", "rows", "kbList"):
+                if isinstance(payload.get(key), list):
+                    rows = [dict(row) for row in payload[key] if isinstance(row, dict)]
+                    break
+        elif isinstance(payload, list):
+            rows = [dict(row) for row in payload if isinstance(row, dict)]
+        sources.append(
+            {
+                "path": ZF_PUBLIC_COURSE_QUERY_PATH,
+                "method": "POST",
+                "course_name": course_name,
+                "department": department_option.get("label") or "",
+                "department_value": department_option.get("value") or "",
+                "status_code": response.status_code,
+                "item_count": len(rows),
+                "url": str(response.url),
+            }
+        )
+        return rows
+    except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
+        sources.append(
+            {
+                "path": ZF_PUBLIC_COURSE_QUERY_PATH,
+                "method": "POST",
+                "course_name": course_name,
+                "department": department_option.get("label") or "",
+                "status": "failed",
+                "message": str(exc)[:180],
+            }
+        )
+        return []
 
 
 def _build_timetable_form(term_params: dict[str, str], field_keys: list[str]) -> dict[str, Any]:
@@ -1007,8 +1260,10 @@ async def _fetch_teacher_timetable(
                 "url": source_url,
             }
         )
-        if items:
-            return items, sources
+        # The index can contain the page's default/current term.  It is useful
+        # as an access check only; the selected local semester must always be
+        # queried explicitly below so a modal selection cannot silently sync a
+        # different term.
     except httpx.HTTPError as exc:
         sources.append(
             {
@@ -1064,6 +1319,233 @@ async def _fetch_teacher_timetable(
     return [], sources
 
 
+def _timetable_item_row(item: AcademicCourseScheduleItem) -> dict[str, Any]:
+    raw_json = item.raw_json if isinstance(item.raw_json, dict) else {}
+    row = raw_json.get("row") if isinstance(raw_json, dict) else None
+    return dict(row) if isinstance(row, dict) else {}
+
+
+def _timetable_match_for_roster(
+    roster: Any,
+    *,
+    by_teaching_class_id: dict[str, list[AcademicCourseScheduleItem]],
+    by_signature: dict[tuple[str, str, str], list[AcademicCourseScheduleItem]],
+) -> AcademicCourseScheduleItem | None:
+    teaching_class_id = _normalize_space(getattr(roster, "teaching_class_id", "")).casefold()
+    candidates = by_teaching_class_id.get(teaching_class_id, []) if teaching_class_id else []
+    if not candidates:
+        signature = (
+            _normalize_course_match_text(getattr(roster, "course_name", "")),
+            _normalize_course_match_text(getattr(roster, "teaching_class_name", "")),
+            _normalize_course_match_text(getattr(roster, "class_composition", "")),
+        )
+        candidates = by_signature.get(signature, [])
+    if not candidates:
+        return None
+    exact_name = _normalize_course_match_text(getattr(roster, "course_name", ""))
+    named = [item for item in candidates if _normalize_course_match_text(item.course_name) == exact_name]
+    candidates = named or candidates
+    return next((item for item in candidates if item.course_code), candidates[0])
+
+
+async def enrich_rosters_with_authoritative_course_data(
+    client: httpx.AsyncClient,
+    semester: dict[str, Any],
+    rosters: list[Any],
+    *,
+    teacher_department: str = "",
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Resolve real course numbers and richer metadata without guessing.
+
+    Resolution order is deliberately strict:
+
+    1. same-semester teacher timetable, preferably the stable ``jxb_id``;
+    2. exact course name + verified department id in the public course query;
+    3. unresolved (left blank and surfaced to the teacher).
+    """
+    sources: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    timetable_items, timetable_sources = await _fetch_teacher_timetable(client, semester)
+    sources.extend(timetable_sources)
+
+    by_teaching_class_id: dict[str, list[AcademicCourseScheduleItem]] = {}
+    by_signature: dict[tuple[str, str, str], list[AcademicCourseScheduleItem]] = {}
+    for item in timetable_items:
+        teaching_class_id = _normalize_space(item.teaching_class_id).casefold()
+        if teaching_class_id:
+            by_teaching_class_id.setdefault(teaching_class_id, []).append(item)
+        signature = (
+            _normalize_course_match_text(item.course_name),
+            _normalize_course_match_text(item.teaching_class_name),
+            _normalize_course_match_text(item.class_composition),
+        )
+        by_signature.setdefault(signature, []).append(item)
+
+    timetable_match_count = 0
+    unresolved: list[Any] = []
+    for roster in rosters:
+        roster.course_code = ""
+        roster.course_code_source = ""
+        raw_json = dict(getattr(roster, "raw_json", {}) or {})
+        item = _timetable_match_for_roster(
+            roster,
+            by_teaching_class_id=by_teaching_class_id,
+            by_signature=by_signature,
+        )
+        if item and item.course_code:
+            roster.course_code = _normalize_space(item.course_code)
+            roster.course_code_source = "teacher_timetable.kch"
+            raw_json["authoritative_timetable_row"] = _timetable_item_row(item)
+            timetable_match_count += 1
+        else:
+            unresolved.append(roster)
+        raw_json["course_identity"] = {
+            "official_course_code": roster.course_code,
+            "official_course_code_source": roster.course_code_source,
+            "roster_course_internal_id": _normalize_space(getattr(roster, "course_internal_id", "")),
+            "teaching_class_id": _normalize_space(getattr(roster, "teaching_class_id", "")),
+        }
+        roster.raw_json = raw_json
+
+    sources.append(
+        {
+            "path": ZF_TEACHER_TIMETABLE_QUERY_PATH,
+            "parser": "course_identity_reconciliation",
+            "roster_count": len(rosters),
+            "matched_count": timetable_match_count,
+            "unresolved_count": len(unresolved),
+            "match_key": "jxb_id_then_exact_signature",
+            "course_code_field": "kch",
+        }
+    )
+
+    if rosters:
+        options: list[dict[str, str]] = []
+        try:
+            response = await client.get(
+                ZF_PUBLIC_COURSE_INDEX_PATH,
+                headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
+            )
+            response.raise_for_status()
+            options = _public_department_options(response.text)
+            sources.append(
+                {
+                    "path": ZF_PUBLIC_COURSE_INDEX_PATH,
+                    "method": "GET",
+                    "status_code": response.status_code,
+                    "department_option_count": len(options),
+                    "url": str(response.url),
+                }
+            )
+        except httpx.HTTPError as exc:
+            sources.append(
+                {
+                    "path": ZF_PUBLIC_COURSE_INDEX_PATH,
+                    "method": "GET",
+                    "status": "failed",
+                    "message": str(exc)[:180],
+                }
+            )
+
+        query_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        public_verified_count = 0
+        public_resolved_count = 0
+        for roster in rosters:
+            raw_json = dict(getattr(roster, "raw_json", {}) or {})
+            timetable_row = dict(raw_json.get("authoritative_timetable_row") or {})
+            inferred_department = infer_department_from_text(
+                getattr(roster, "college", ""),
+                getattr(roster, "class_composition", ""),
+                getattr(roster, "course_name", ""),
+            )
+            option = _match_public_department_option(
+                options,
+                [
+                    _first_text(timetable_row, "bkmc", "kkbmmc"),
+                    teacher_department,
+                    inferred_department,
+                ],
+            )
+            if not option:
+                if not _normalize_space(getattr(roster, "course_code", "")):
+                    warnings.append(
+                        f"课程“{getattr(roster, 'course_name', '')}”未能确认公共查询所需的开课系别，课程号已留空。"
+                    )
+                continue
+            cache_key = (
+                _normalize_course_match_text(getattr(roster, "course_name", "")),
+                option.get("value") or "",
+            )
+            if cache_key not in query_cache:
+                query_cache[cache_key] = await _fetch_public_course_rows(
+                    client,
+                    course_name=_normalize_space(getattr(roster, "course_name", "")),
+                    department_option=option,
+                    sources=sources,
+                )
+            existing_course_code = _normalize_space(getattr(roster, "course_code", ""))
+            candidate, reason, candidate_count = _select_public_course_candidate(
+                getattr(roster, "course_name", ""),
+                query_cache[cache_key],
+                department_name=option.get("department") or "",
+                expected_course_code=existing_course_code,
+            )
+            if not candidate:
+                if reason == "official_code_conflict":
+                    warnings.append(
+                        f"课程“{getattr(roster, 'course_name', '')}”的教师课表课程号 {existing_course_code} 与公共课程查询结果冲突；已保留本学期教师课表编号，未静默覆盖。"
+                    )
+                elif not existing_course_code:
+                    warnings.append(
+                        f"课程“{getattr(roster, 'course_name', '')}”公共查询结果{('存在 ' + str(candidate_count) + ' 个不同课程号') if candidate_count else '无精确匹配'}，未自动写入课程号。"
+                    )
+                continue
+            public_course_code = _normalize_space(candidate.get("kch"))
+            if existing_course_code:
+                public_verified_count += 1
+            else:
+                roster.course_code = public_course_code
+                roster.course_code_source = "public_course.kch"
+                public_resolved_count += 1
+            raw_json["public_course_row"] = dict(candidate)
+            raw_json["course_identity"] = {
+                **dict(raw_json.get("course_identity") or {}),
+                "official_course_code": roster.course_code,
+                "official_course_code_source": roster.course_code_source,
+                "public_course_record_id": _normalize_space(candidate.get("kch_id")),
+                "public_course_verified": bool(existing_course_code),
+                "match_reason": reason,
+                "department_option": dict(option),
+            }
+            roster.raw_json = raw_json
+
+        sources.append(
+            {
+                "path": ZF_PUBLIC_COURSE_QUERY_PATH,
+                "parser": "public_course_cross_check",
+                "verified_count": public_verified_count,
+                "resolved_fallback_count": public_resolved_count,
+                "query_count": len(query_cache),
+                "course_code_field": "kch",
+                "internal_record_field": "kch_id",
+            }
+        )
+
+    unresolved_names = sorted(
+        {
+            _normalize_space(getattr(roster, "course_name", ""))
+            for roster in rosters
+            if not _normalize_space(getattr(roster, "course_code", ""))
+        }
+    )
+    if unresolved_names:
+        warnings.append(
+            f"{len(unresolved_names)} 门课程尚未取得唯一、可信的真实课程号，系统未使用名单内部 ID 代替："
+            + "、".join(unresolved_names[:8])
+        )
+    return sources, list(dict.fromkeys(warnings))
+
+
 def _load_current_semester(conn, teacher_id: int, today: date) -> dict[str, Any] | None:
     teacher_scope = load_teacher_org_scope(conn, teacher_id)
     row = conn.execute(
@@ -1105,6 +1587,8 @@ def _load_semester_by_id(conn, teacher_id: int, semester_id: int) -> dict[str, A
 def _course_group_key(item: AcademicCourseScheduleItem) -> str:
     if item.course_code:
         return f"code:{item.course_code.casefold()}"
+    if item.course_internal_id:
+        return f"unresolved-internal:{item.course_internal_id.casefold()}"
     return f"name:{item.course_name.casefold()}"
 
 
@@ -1145,6 +1629,56 @@ def _course_row_with_match(row: Any, match_mode: str) -> dict[str, Any]:
     return row_dict
 
 
+def _existing_course_code_is_repairable(row: Any) -> bool:
+    """Return whether a prior GXUFL course code came from the old roster bug."""
+    item = dict(row)
+    existing_code = _normalize_space(item.get("academic_course_code"))
+    if not existing_code:
+        return True
+    if _normalize_space(item.get("academic_source")) != ACADEMIC_COURSE_SOURCE:
+        return False
+    metadata = _safe_json_loads(item.get("academic_metadata_json"), {})
+    if not isinstance(metadata, dict):
+        return False
+    trusted_sources = {
+        _normalize_space(value)
+        for value in (metadata.get("course_code_sources") or [])
+        if _normalize_space(value)
+    }
+    if trusted_sources & {"teacher_timetable.kch", "public_course.kch"}:
+        return False
+    source_paths = {
+        _normalize_space(source.get("path"))
+        for source in (metadata.get("source_summary") or [])
+        if isinstance(source, dict)
+    }
+    if ZF_TEACHER_TIMETABLE_QUERY_PATH in source_paths or ZF_PUBLIC_COURSE_QUERY_PATH in source_paths:
+        return False
+    internal_ids = {
+        _normalize_space(value)
+        for value in (metadata.get("roster_course_internal_ids") or [])
+        if _normalize_space(value)
+    }
+    if existing_code in internal_ids:
+        return True
+    return bool(source_paths) and source_paths.issubset(
+        {
+            "/xsxkjk/xsxkcx_cxXsxkIndex.html?gnmkdm=N255005&layout=default",
+            "/xsxkjk/xsxkcx_cxJxbxxList.html?doType=query&gnmkdm=N255005",
+            "/xsxkjk/xsxkcx_cxJxbxsList.html?doType=query&gnmkdm=N255005",
+        }
+    )
+
+
+def _name_match_is_safe(row: Any, incoming_code: str) -> bool:
+    existing_code = _normalize_space(dict(row).get("academic_course_code"))
+    if not existing_code:
+        return True
+    if incoming_code and existing_code.casefold() == incoming_code.casefold():
+        return True
+    return _existing_course_code_is_repairable(row)
+
+
 def _find_existing_course(
     conn,
     teacher_id: int,
@@ -1175,10 +1709,14 @@ def _find_existing_course(
         """,
         (int(teacher_id), item.course_name),
     ).fetchall()
-    if len(exact_rows) == 1:
-        return _course_row_with_match(exact_rows[0], "exact_name"), "exact_name", 0
-    if len(exact_rows) > 1:
-        return None, "ambiguous_name", len(exact_rows)
+    safe_exact_rows = [row for row in exact_rows if _name_match_is_safe(row, item.course_code)]
+    if len(safe_exact_rows) == 1:
+        match_mode = "legacy_code_repair" if _normalize_space(dict(safe_exact_rows[0]).get("academic_course_code")) else "exact_name"
+        return _course_row_with_match(safe_exact_rows[0], match_mode), match_mode, 0
+    if len(safe_exact_rows) > 1:
+        return None, "ambiguous_name", len(safe_exact_rows)
+    if exact_rows:
+        return None, "distinct_academic_code", len(exact_rows)
 
     target_name = _normalize_course_match_text(item.course_name)
     if target_name:
@@ -1195,6 +1733,7 @@ def _find_existing_course(
             row
             for row in rows
             if _normalize_course_match_text(row["name"]) == target_name
+            and _name_match_is_safe(row, item.course_code)
         ]
         if len(normalized_matches) == 1:
             return _course_row_with_match(normalized_matches[0], "normalized_name"), "normalized_name", 0
@@ -1215,6 +1754,18 @@ def _course_metadata(
     weeks = sorted({item.weeks_text for item in items if item.weeks_text})
     classroom_types = sorted({item.classroom_type for item in items if item.classroom_type})
     teacher_names = sorted({item.teacher_name for item in items if item.teacher_name})
+    course_codes = sorted({item.course_code for item in items if item.course_code})
+    course_code_sources = sorted({item.course_code_source for item in items if item.course_code_source})
+    roster_course_internal_ids = sorted({item.course_internal_id for item in items if item.course_internal_id})
+    teaching_class_ids = sorted({item.teaching_class_id for item in items if item.teaching_class_id})
+    public_course_record_ids = sorted(
+        {
+            _normalize_space((item.raw_json.get("course_identity") or {}).get("public_course_record_id"))
+            for item in items
+            if isinstance(item.raw_json, dict) and isinstance(item.raw_json.get("course_identity"), dict)
+        }
+        - {""}
+    )
     return {
         "source": ACADEMIC_COURSE_SOURCE,
         "semester_id": int(semester["id"]),
@@ -1224,6 +1775,11 @@ def _course_metadata(
         "teaching_classes": teaching_classes[:24],
         "classroom_types": classroom_types[:12],
         "teacher_names": teacher_names[:8],
+        "official_course_codes": course_codes[:8],
+        "course_code_sources": course_code_sources[:8],
+        "roster_course_internal_ids": roster_course_internal_ids[:24],
+        "public_course_record_ids": public_course_record_ids[:8],
+        "teaching_class_ids": teaching_class_ids[:24],
         "weeks": weeks[:24],
         "source_summary": source_summary[-8:],
         "follow_up_items": FOLLOW_UP_ITEMS,
@@ -1506,7 +2062,7 @@ def _upsert_courses_and_schedule_items(
     warnings: list[str] = []
     unresolved_course_fields: list[dict[str, Any]] = []
     synced_at = _now_iso()
-    sync_message = "已同步本学期教务课表；请继续补充教材、课堂设置和本平台班级绑定。"
+    sync_message = "已按教师课表或公共课程信息核验真实课程号并同步本学期排课；请继续补充教材、课堂设置和本平台班级绑定。"
 
     begin_immediate_transaction(conn)
     conn.execute(
@@ -1523,7 +2079,7 @@ def _upsert_courses_and_schedule_items(
         existing, match_mode, ambiguous_count = _find_existing_course(conn, teacher_id, first_item)
         if ambiguous_count > 0:
             warnings.append(
-                f"课程“{first_item.course_name}”在本系统已有 {ambiguous_count} 个相似课程，未自动绑定其中任意一个，已创建独立教务同步课程。"
+                f"课程“{first_item.course_name}”在本系统已有 {ambiguous_count} 个同名但课程号不同或无法唯一确认的课程，未强行合并，已按真实课程号独立同步。"
             )
         credits = next((item.credits for item in group_items if item.credits > 0), 0.0)
         total_hours = max(
@@ -1570,6 +2126,10 @@ def _upsert_courses_and_schedule_items(
             if not str(existing.get("college") or "").strip():
                 updates["college"] = org_scope["college"]
             if not str(existing.get("description") or "").strip():
+                updates["description"] = _course_description(first_item, len(group_items))
+            elif str(existing.get("description") or "").strip().startswith("从教务系统同步："):
+                # Repair the former auto-generated description that exposed
+                # KCH_ID/JXB internal ids as if they were course numbers.
                 updates["description"] = _course_description(first_item, len(group_items))
             if not float(existing.get("credits") or 0) and credits > 0:
                 updates["credits"] = credits

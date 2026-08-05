@@ -17,6 +17,7 @@ from .academic_class_mapping_service import refresh_teaching_class_mappings_from
 from .academic_course_sync_service import (
     _upsert_courses_and_schedule_items,
     build_schedule_items_from_teaching_class_rosters,
+    enrich_rosters_with_authoritative_course_data,
     infer_missing_course_metadata_with_ai,
 )
 from .academic_integration_service import (
@@ -90,6 +91,8 @@ class AcademicTeachingClassRoster:
     academic_term: str = ""
     academic_term_name: str = ""
     course_code: str = ""
+    course_internal_id: str = ""
+    course_code_source: str = ""
     course_name: str = ""
     class_composition: str = ""
     college: str = ""
@@ -265,7 +268,10 @@ def _teaching_class_from_row(row: dict[str, Any]) -> AcademicTeachingClassRoster
         academic_year_name=_normalize_space(row.get("XNMMC")),
         academic_term=_normalize_space(row.get("XQM")),
         academic_term_name=_normalize_space(row.get("XQMMC")),
-        course_code=_normalize_space(row.get("KCH_ID")),
+        # KCH_ID on the roster page is an internal course reference, not the
+        # official course number.  The latter is resolved from teacher
+        # timetable ``kch`` (or an unambiguous public-course match).
+        course_internal_id=_normalize_space(row.get("KCH_ID")),
         course_name=_normalize_space(row.get("KCMC")),
         class_composition=_normalize_space(row.get("JXBZC")),
         college=_normalize_space(row.get("XBXX")),
@@ -1283,6 +1289,7 @@ async def sync_current_teacher_rosters_from_academic_system(
     """Build the ZFSoft jqGrid form while keeping business filters in ``extra``."""
     with get_db_connection() as conn:
         access_payload = load_teacher_academic_access_method(conn, teacher_id, school_code="gxufl")
+        teacher_scope = load_teacher_org_scope(conn, teacher_id)
         semester = (
             _load_semester_by_id(conn, teacher_id, int(semester_id))
             if semester_id is not None
@@ -1321,6 +1328,15 @@ async def sync_current_teacher_rosters_from_academic_system(
     try:
         async with open_authenticated_academic_client(access_payload) as (client, profile, login_result):
             rosters, source_summary = await _fetch_all_rosters(client, semester)
+            identity_warnings: list[str] = []
+            if rosters:
+                identity_sources, identity_warnings = await enrich_rosters_with_authoritative_course_data(
+                    client,
+                    semester,
+                    rosters,
+                    teacher_department=str(teacher_scope.get("department") or ""),
+                )
+                source_summary.extend(identity_sources)
     except (ValueError, httpx.HTTPError) as exc:
         return {
             "status": "academic_login_failed",
@@ -1367,7 +1383,15 @@ async def sync_current_teacher_rosters_from_academic_system(
             conn.rollback()
             raise
 
-    warnings = list(dict.fromkeys([*(course_result.get("warnings") or []), *(roster_result.get("warnings") or [])]))
+    warnings = list(
+        dict.fromkeys(
+            [
+                *identity_warnings,
+                *(course_result.get("warnings") or []),
+                *(roster_result.get("warnings") or []),
+            ]
+        )
+    )
     term_params = zf_term_params_from_semester(semester) or {}
     semester_identity = identity_from_semester_record(semester)
     return {
