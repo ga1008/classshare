@@ -170,6 +170,31 @@ class AcademicSyncReconciliationTests(unittest.TestCase):
         self.assertEqual(class_item["local_id"], self.class_id)
         self.assertEqual(class_item["status"], "conflict")
         self.assertEqual(course_item["impacts"][0]["textbook_id"], self.textbook_id)
+        self.assertEqual(course_item["course_group_key"], "code:e020185b3")
+        self.assertEqual(class_item["course_group_keys"], ["code:e020185b3"])
+        offering_item = next(item for item in preview["items"] if item["entity_type"] == "offering")
+        self.assertEqual(offering_item["course_group_key"], "code:e020185b3")
+
+    def test_apply_rejects_incomplete_conflict_resolution_before_ai_or_writes(self):
+        roster = self.roster()
+        with database.get_db_connection() as conn:
+            preview = reconciliation.build_academic_sync_preview(
+                conn,
+                teacher_id=self.teacher_id,
+                semester=self.semester(),
+                rosters=[roster],
+            )
+        plan_id = self._store_plan(preview, roster)
+        with patch.object(
+            reconciliation,
+            "infer_missing_course_metadata_with_ai",
+            new=AsyncMock(side_effect=AssertionError("AI must not run before resolution validation")),
+        ):
+            result = asyncio.run(
+                reconciliation.apply_teacher_academic_sync_plan(self.teacher_id, plan_id, {})
+            )
+        self.assertEqual(result["status"], "resolution_required")
+        self.assertTrue(result["unresolved_items"])
 
     def test_confirmed_merge_keeps_course_class_offering_and_textbook_ids(self):
         roster = self.roster()
@@ -188,7 +213,7 @@ class AcademicSyncReconciliationTests(unittest.TestCase):
                 {
                     "key": item["key"],
                     "action": item["recommended_action"],
-                    "remote_fields": fields,
+                    "field_choices": {field: "remote" for field in fields},
                 }
             )
         with patch.object(

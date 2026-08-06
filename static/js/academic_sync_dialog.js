@@ -60,7 +60,6 @@ function renderResult(result) {
             ${resultCard('学生', count(result, 'roster_student_count'), `新增 ${count(result, 'students_created')} · 更新/复用 ${count(result, 'students_updated') + count(result, 'students_reused')}`)}
             ${resultCard('真实课次', count(result, 'occurrence_count'), `课堂排课更新 ${count(result, 'offering_update_count')} · AI 补充 ${aiAccepted}`)}
         </div>
-        <p class="academic-sync-dialog__integrity-result">课程、班级、课堂和教材使用原有稳定 ID；未选择的冲突字段已保留本地版本。</p>
         ${rosterHighlights(result?.rosters)}
         ${resultList('需要教师补充或复核', result?.warnings, 'is-warning')}
         ${unresolved ? `<p class="academic-sync-dialog__unresolved">有 ${unresolved} 门课程包含可靠来源未提供的空白字段，已保留为空，未让 AI 猜测事实。</p>` : ''}
@@ -70,9 +69,9 @@ function renderResult(result) {
 
 const statusLabels = {
     conflict: '需要确认',
-    update: '可合并更新',
+    update: '可自动合并',
     new: '将新建',
-    unchanged: '无变化',
+    unchanged: '无需变更',
 };
 
 const actionLabels = {
@@ -81,77 +80,198 @@ const actionLabels = {
     skip: '本次跳过',
 };
 
-function diffSummary(preview) {
-    const summary = preview?.summary || {};
+function buildCourseGroups(preview) {
+    const items = Array.isArray(preview?.items) ? preview.items : [];
+    const groupsByKey = new Map();
+    items.filter((item) => item.entity_type === 'course').forEach((course) => {
+        const key = String(course.course_group_key || course.source_group_key || course.key);
+        groupsByKey.set(key, { key, course, items: [course] });
+    });
+
+    items.filter((item) => item.entity_type !== 'course').forEach((item) => {
+        let keys = Array.isArray(item.course_group_keys) ? item.course_group_keys : [];
+        if (!keys.length && item.course_group_key) keys = [item.course_group_key];
+        if (!keys.length) {
+            const impactCourseNames = new Set((item.impacts || []).map((impact) => String(impact.course_name || '')));
+            keys = [...groupsByKey.values()]
+                .filter((group) => impactCourseNames.has(String(group.course.title || '')))
+                .map((group) => group.key);
+        }
+        keys.forEach((rawKey) => {
+            const group = groupsByKey.get(String(rawKey));
+            if (group && !group.items.some((candidate) => candidate.key === item.key)) group.items.push(item);
+        });
+    });
+
+    return [...groupsByKey.values()];
+}
+
+function initialiseResolutionStates(preview) {
+    const states = new Map();
+    (preview?.items || []).forEach((item) => {
+        const choices = {};
+        (item.fields || []).forEach((field) => {
+            choices[field.name] = item.requires_confirmation
+                ? null
+                : (field.default_remote ? 'remote' : 'local');
+        });
+        states.set(String(item.key), {
+            action: item.requires_confirmation ? '' : String(item.recommended_action || 'skip'),
+            actionConfirmed: !item.requires_confirmation,
+            choices,
+        });
+    });
+    return states;
+}
+
+function itemPendingCount(item, states) {
+    if (!item.requires_confirmation) return 0;
+    const state = states.get(String(item.key));
+    if (!state?.actionConfirmed || !state.action) return Math.max(1, (item.fields || []).length);
+    if (state.action !== 'merge') return 0;
+    return (item.fields || []).filter((field) => !['local', 'remote'].includes(state.choices[field.name])).length;
+}
+
+function groupReviewStatus(group, states) {
+    const reviewItems = group.items.filter((item) => item.requires_confirmation);
+    const pendingCount = reviewItems.reduce((sum, item) => sum + itemPendingCount(item, states), 0);
+    if (pendingCount) return { key: 'pending', label: '待确认', pendingCount };
+    if (reviewItems.length) return { key: 'reviewed', label: '已确认', pendingCount: 0 };
+    return { key: 'automatic', label: '自动合并', pendingCount: 0 };
+}
+
+function unresolvedChoiceCount(groups, states) {
+    const uniqueItems = new Map();
+    groups.forEach((group) => group.items.forEach((item) => uniqueItems.set(String(item.key), item)));
+    return [...uniqueItems.values()].reduce((sum, item) => sum + itemPendingCount(item, states), 0);
+}
+
+function miniCourseSummary(groups, states) {
+    const pending = groups.filter((group) => groupReviewStatus(group, states).key === 'pending').length;
+    const reviewed = groups.filter((group) => groupReviewStatus(group, states).key === 'reviewed').length;
+    const automatic = Math.max(0, groups.length - pending - reviewed);
     return `
-        ${resultCard('课程', count(summary, 'course_count'), '按真实课程号与稳定来源键匹配')}
-        ${resultCard('班级', count(summary, 'class_count'), '按行政班编号、名单重合度匹配')}
-        ${resultCard('已有课堂', count(summary, 'offering_count'), '教材与课堂 ID 始终保留')}
-        ${resultCard('需确认', count(summary, 'conflict_count'), `${count(summary, 'student_count')} 条学生关系待同步`)}
+        <span class="academic-sync-summary-tag"><small>课程</small><strong>${groups.length}</strong></span>
+        <span class="academic-sync-summary-tag is-pending"><small>待确认</small><strong>${pending}</strong></span>
+        <span class="academic-sync-summary-tag is-reviewed"><small>已确认</small><strong>${reviewed}</strong></span>
+        <span class="academic-sync-summary-tag is-automatic"><small>自动合并</small><strong>${automatic}</strong></span>
     `;
 }
 
-function renderField(item, field) {
-    const checked = field.default_remote ? 'checked' : '';
-    const disabled = item.recommended_action === 'skip' ? 'disabled' : '';
+function renderCourseNav(groups, states, activeKey) {
+    const sorted = [...groups].sort((left, right) => {
+        const order = { pending: 0, reviewed: 1, automatic: 2 };
+        return order[groupReviewStatus(left, states).key] - order[groupReviewStatus(right, states).key];
+    });
+    const sections = [
+        { key: 'pending', title: '待确认', groups: sorted.filter((group) => groupReviewStatus(group, states).key === 'pending') },
+        { key: 'ready', title: '已准备', groups: sorted.filter((group) => groupReviewStatus(group, states).key !== 'pending') },
+    ];
+    return sections.filter((section) => section.groups.length).map((section) => `
+        <section class="academic-sync-course-section is-${section.key}">
+            <h5><span>${section.title}</span><b>${section.groups.length}</b></h5>
+            <div>${section.groups.map((group) => {
+                const status = groupReviewStatus(group, states);
+                const differenceCount = group.items.reduce((sum, item) => sum + (item.fields || []).length, 0);
+                return `
+                    <button type="button" class="academic-sync-course-item is-${status.key} ${group.key === activeKey ? 'is-active' : ''}" data-academic-sync-course-key="${escapeHtml(group.key)}">
+                        <span><strong>${escapeHtml(group.course.title || '未命名课程')}</strong><small>${escapeHtml(group.course.subtitle || '课程号待核验')}</small></span>
+                        <i>${escapeHtml(status.label)}${status.pendingCount ? ` · ${status.pendingCount}` : ''}</i>
+                        <em>${differenceCount} 处差异</em>
+                    </button>
+                `;
+            }).join('')}</div>
+        </section>
+    `).join('');
+}
+
+function renderCourseHeader(group, states) {
+    const status = groupReviewStatus(group, states);
+    const visibleItems = group.items.filter((item) => item.status !== 'unchanged');
     return `
-        <label class="academic-sync-diff-field" data-academic-sync-field>
-            <span class="academic-sync-diff-field__label">${escapeHtml(field.label)}</span>
-            <span class="academic-sync-diff-field__value is-local"><small>本地</small><b>${escapeHtml(field.local)}</b></span>
-            <span class="academic-sync-diff-field__arrow" aria-hidden="true">→</span>
-            <span class="academic-sync-diff-field__value is-remote"><small>教务</small><b>${escapeHtml(field.remote)}</b></span>
-            <span class="academic-sync-diff-field__choice">
-                <input type="checkbox" data-academic-sync-remote-field="${escapeHtml(field.name)}" ${checked} ${disabled}>
-                <span>采用教务值</span>
-            </span>
-        </label>
+        <div>
+            <span>当前课程</span>
+            <strong>${escapeHtml(group.course.title || '未命名课程')}</strong>
+            <small>${escapeHtml(group.course.subtitle || '课程号待核验')}</small>
+        </div>
+        <div>
+            <span class="academic-sync-review-detail__count">${visibleItems.length} 组差异</span>
+            <span class="academic-sync-review-detail__status is-${status.key}">${escapeHtml(status.label)}</span>
+        </div>
     `;
 }
 
-function renderDiffItem(item) {
+function actionOptions(item, state) {
     const allowedActions = Array.isArray(item.allowed_actions) ? item.allowed_actions : ['skip'];
-    const actionOptions = allowedActions.map((action) => `
-        <option value="${escapeHtml(action)}" ${action === item.recommended_action ? 'selected' : ''}>${escapeHtml(actionLabels[action] || action)}</option>
+    const placeholder = item.requires_confirmation && !state.action
+        ? '<option value="" selected disabled>请选择处理方式</option>'
+        : '';
+    return placeholder + allowedActions.map((action) => `
+        <option value="${escapeHtml(action)}" ${action === state.action ? 'selected' : ''}>${escapeHtml(actionLabels[action] || action)}</option>
     `).join('');
-    const impacts = Array.isArray(item.impacts) ? item.impacts : [];
-    const impactRows = impacts.slice(0, 4).map((impact) => `
-        <li>
-            <b>${escapeHtml(impact.course_name || item.title)} · ${escapeHtml(impact.class_name || '')}</b>
-            <span>课堂 #${escapeHtml(impact.offering_id || '—')} · 教材：${escapeHtml(impact.textbook_title || '未选择')} · ${escapeHtml(impact.session_count || 0)} 次课</span>
-        </li>
-    `).join('');
+}
+
+function renderField(item, field, state) {
+    const choice = state.choices[field.name];
+    const choicesDisabled = Boolean(state.action && state.action !== 'merge');
+    const fieldKey = `${item.key}:${field.name}`;
     return `
-        <article class="academic-sync-diff-item is-${escapeHtml(item.status || 'update')}" data-academic-sync-diff-item data-key="${escapeHtml(item.key)}">
+        <div class="academic-sync-diff-field ${choice ? 'is-confirmed' : 'is-unresolved'}" data-academic-sync-field-row data-item-key="${escapeHtml(item.key)}" data-field-name="${escapeHtml(field.name)}" tabindex="0" role="group" aria-label="${escapeHtml(field.label)}差异，点击空白处查看完整对比">
+            <span class="academic-sync-diff-field__label"><b>${escapeHtml(field.label)}</b><small>展开完整对比 ↗</small></span>
+            <button type="button" class="academic-sync-diff-field__value is-local ${choice === 'local' ? 'is-selected' : ''}" data-academic-sync-choice="local" data-item-key="${escapeHtml(item.key)}" data-field-name="${escapeHtml(field.name)}" aria-pressed="${choice === 'local'}" ${choicesDisabled ? 'disabled' : ''}>
+                <small>本地</small><b>${escapeHtml(field.local)}</b><span>${choice === 'local' ? '已采用' : '采用本地'}</span>
+            </button>
+            <span class="academic-sync-diff-field__versus" aria-hidden="true">VS</span>
+            <button type="button" class="academic-sync-diff-field__value is-remote ${choice === 'remote' ? 'is-selected' : ''}" data-academic-sync-choice="remote" data-item-key="${escapeHtml(item.key)}" data-field-name="${escapeHtml(field.name)}" aria-pressed="${choice === 'remote'}" ${choicesDisabled ? 'disabled' : ''}>
+                <small>教务</small><b>${escapeHtml(field.remote)}</b><span>${choice === 'remote' ? '已采用' : '采用教务'}</span>
+            </button>
+            <span class="academic-sync-diff-field__resolution ${choice ? 'is-done' : ''}" data-field-key="${escapeHtml(fieldKey)}">${choice ? '已确认' : '请选择一侧'}</span>
+        </div>
+    `;
+}
+
+function renderDiffItem(item, states) {
+    const state = states.get(String(item.key));
+    const impacts = Array.isArray(item.impacts) ? item.impacts : [];
+    const impactLabel = impacts.length ? `影响 ${impacts.length} 个课堂` : '无既有课堂';
+    const impactHelp = escapeHtml(item.impact_message || '不会改变既有课堂关系。');
+    return `
+        <article class="academic-sync-diff-item is-${escapeHtml(item.status || 'update')} ${state.action === 'skip' ? 'is-skipped' : ''}" data-academic-sync-diff-item data-key="${escapeHtml(item.key)}">
             <header>
                 <div>
                     <span class="academic-sync-diff-item__type">${escapeHtml(item.entity_label || item.entity_type)}</span>
                     <strong>${escapeHtml(item.title)}</strong>
                     <small>${escapeHtml(item.subtitle || '')}</small>
                 </div>
-                <span class="academic-sync-diff-item__status">${escapeHtml(statusLabels[item.status] || item.status)}</span>
+                <div class="academic-sync-diff-item__badges">
+                    <span class="academic-sync-diff-item__impact-tag ${item.requires_confirmation ? 'is-warning' : ''}" tabindex="0" data-explain data-explain-title="关系影响" data-explain-text="${impactHelp}" data-explain-placement="left">${impactLabel}</span>
+                    <span class="academic-sync-diff-item__status">${escapeHtml(statusLabels[item.status] || item.status)}</span>
+                </div>
             </header>
             <div class="academic-sync-diff-item__toolbar">
-                <label><span>本次处理</span><select data-academic-sync-action>${actionOptions}</select></label>
-                ${item.local_id ? `<span>本地 ID ${escapeHtml(item.local_id)} 将被保留</span>` : '<span>尚无本地对象</span>'}
+                <label><span>本次处理</span><select data-academic-sync-action>${actionOptions(item, state)}</select></label>
+                ${item.local_id ? `<span>保留本地 ID ${escapeHtml(item.local_id)}</span>` : '<span>尚无本地对象</span>'}
             </div>
             <div class="academic-sync-diff-item__fields">
-                ${(item.fields || []).map((field) => renderField(item, field)).join('') || '<p class="academic-sync-diff-item__empty">身份信息一致，无字段需要覆盖。</p>'}
-            </div>
-            <div class="academic-sync-diff-item__impact ${item.requires_confirmation ? 'is-warning' : ''}">
-                <strong>${item.requires_confirmation ? '关联影响，需要确认' : '关系检查'}</strong>
-                <p>${escapeHtml(item.impact_message || '不会改变既有课堂关系。')}</p>
-                ${impactRows ? `<ul>${impactRows}</ul>` : ''}
+                ${(item.fields || []).map((field) => renderField(item, field, state)).join('') || '<p class="academic-sync-diff-item__empty">身份信息一致，无字段需要覆盖。</p>'}
             </div>
         </article>
     `;
 }
 
-function renderDiff(preview) {
-    const items = Array.isArray(preview?.items) ? preview.items : [];
-    const visibleItems = items.filter((item) => item.status !== 'unchanged');
+function renderCourseDiff(group, states) {
+    const visibleItems = group.items.filter((item) => item.status !== 'unchanged');
     return visibleItems.length
-        ? visibleItems.map(renderDiffItem).join('')
-        : '<div class="academic-sync-dialog__no-diff"><strong>本地数据与教务数据一致</strong><p>仍可确认同步学生名单和最新排课时间戳。</p></div>';
+        ? visibleItems.map((item) => renderDiffItem(item, states)).join('')
+        : '<div class="academic-sync-dialog__no-diff"><strong>本课程无需变更</strong><p>学生名单和同步时间仍会按安全默认规则更新。</p></div>';
+}
+
+function renderDiffLines(value, marker) {
+    const normalized = String(value ?? '').replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    const lines = (normalized || '（空）').split('\n');
+    return lines.map((line, index) => `
+        <div class="academic-sync-detail-line"><span>${index + 1}</span><i>${marker}</i><code>${escapeHtml(line || ' ')}</code></div>
+    `).join('');
 }
 
 export function initAcademicSyncDialog({
@@ -175,7 +295,10 @@ export function initAcademicSyncDialog({
     const resultView = root.querySelector('[data-academic-sync-result-view]');
     const resultSummary = root.querySelector('[data-academic-sync-result-summary]');
     const diffSummaryNode = root.querySelector('[data-academic-sync-diff-summary]');
+    const courseList = root.querySelector('[data-academic-sync-course-list]');
+    const courseHeader = root.querySelector('[data-academic-sync-course-header]');
     const diffList = root.querySelector('[data-academic-sync-diff-list]');
+    const reviewState = root.querySelector('[data-academic-sync-review-state]');
     const progressTitle = root.querySelector('[data-academic-sync-progress-title]');
     const progressCopy = root.querySelector('[data-academic-sync-progress-copy]');
     const select = root.querySelector('[data-academic-sync-semester]');
@@ -188,10 +311,24 @@ export function initAcademicSyncDialog({
     const stay = root.querySelector('[data-academic-sync-stay]');
     const reload = root.querySelector('[data-academic-sync-reload]');
     const close = root.querySelector('[data-academic-sync-close]');
+    const detailBackdrop = root.querySelector('[data-academic-sync-detail]');
+    const detailDialog = root.querySelector('.academic-sync-detail-dialog');
+    const detailTitle = root.querySelector('[data-academic-sync-detail-title]');
+    const detailSubtitle = root.querySelector('[data-academic-sync-detail-subtitle]');
+    const detailLocal = root.querySelector('[data-academic-sync-detail-local]');
+    const detailRemote = root.querySelector('[data-academic-sync-detail-remote]');
+    const detailClose = root.querySelector('[data-academic-sync-detail-close]');
+    const detailCancel = root.querySelector('[data-academic-sync-detail-cancel]');
+    const detailLocalChoice = root.querySelector('[data-academic-sync-detail-local-choice]');
+    const detailRemoteChoice = root.querySelector('[data-academic-sync-detail-remote-choice]');
     let activeTrigger = null;
     let running = false;
     let succeeded = false;
     let currentPlan = null;
+    let courseGroups = [];
+    let resolutionStates = new Map();
+    let activeCourseKey = '';
+    let detailContext = null;
 
     const semesterMap = new Map((Array.isArray(semesters) ? semesters : []).map((item) => [String(item.id), item]));
     select.innerHTML = [...semesterMap.values()].map((item) => `
@@ -200,6 +337,8 @@ export function initAcademicSyncDialog({
     if (defaultSemesterId && semesterMap.has(String(defaultSemesterId))) select.value = String(defaultSemesterId);
 
     const selectedSemester = () => semesterMap.get(String(select.value || '')) || null;
+    const currentGroup = () => courseGroups.find((group) => group.key === activeCourseKey) || courseGroups[0] || null;
+    const currentItem = (key) => (currentPlan?.items || []).find((item) => String(item.key) === String(key)) || null;
 
     function updatePreview() {
         const semester = selectedSemester();
@@ -224,15 +363,49 @@ export function initAcademicSyncDialog({
         cancel.hidden = view !== 'select';
         back.hidden = view !== 'diff';
         apply.hidden = view !== 'diff';
+        reviewState.hidden = view !== 'diff';
         stay.hidden = view !== 'result';
         reload.hidden = view !== 'result';
         close.disabled = view === 'progress';
+        root.classList.toggle('is-reviewing', view === 'diff');
+    }
+
+    function renderReview() {
+        if (!courseGroups.length) {
+            diffSummaryNode.innerHTML = '';
+            courseList.innerHTML = '';
+            courseHeader.innerHTML = '<strong>没有可显示的课程</strong>';
+            diffList.innerHTML = '<div class="academic-sync-dialog__no-diff">本次教务快照没有返回课程。</div>';
+            apply.disabled = true;
+            reviewState.textContent = '没有可合并的课程';
+            return;
+        }
+        const pendingGroups = courseGroups.filter((group) => groupReviewStatus(group, resolutionStates).key === 'pending');
+        if (!activeCourseKey || !courseGroups.some((group) => group.key === activeCourseKey)) {
+            activeCourseKey = (pendingGroups[0] || courseGroups[0]).key;
+        }
+        const group = currentGroup();
+        diffSummaryNode.innerHTML = miniCourseSummary(courseGroups, resolutionStates);
+        courseList.innerHTML = renderCourseNav(courseGroups, resolutionStates, activeCourseKey);
+        courseHeader.innerHTML = renderCourseHeader(group, resolutionStates);
+        diffList.innerHTML = renderCourseDiff(group, resolutionStates);
+        const unresolved = unresolvedChoiceCount(courseGroups, resolutionStates);
+        apply.disabled = running || unresolved > 0;
+        apply.textContent = '确认合并';
+        apply.title = unresolved ? `还需确认 ${unresolved} 处差异` : '所有待确认差异均已选择';
+        reviewState.textContent = unresolved
+            ? `还需确认 ${unresolved} 处差异`
+            : '全部课程已准备，可以确认合并';
+        reviewState.classList.toggle('is-ready', unresolved === 0);
     }
 
     function openDialog(trigger) {
         activeTrigger = trigger || null;
         succeeded = false;
         currentPlan = null;
+        courseGroups = [];
+        resolutionStates = new Map();
+        activeCourseKey = '';
         title.textContent = '同步教务课程、班级与课堂关系';
         lead.textContent = '先比较教务快照与本地课堂，再逐项选择采用本地或教务字段。';
         setView('select');
@@ -246,8 +419,19 @@ export function initAcademicSyncDialog({
         });
     }
 
+    function closeDetail({ restoreFocus = true } = {}) {
+        if (detailBackdrop.hidden) return;
+        const trigger = detailContext?.trigger;
+        detailBackdrop.hidden = true;
+        detailBackdrop.setAttribute('aria-hidden', 'true');
+        root.classList.remove('has-detail-diff');
+        detailContext = null;
+        if (restoreFocus) trigger?.focus?.({ preventScroll: true });
+    }
+
     function closeDialog({ refresh = false } = {}) {
         if (running) return;
+        closeDetail({ restoreFocus: false });
         if (refresh) return window.location.reload();
         root.classList.remove('is-open');
         root.setAttribute('aria-hidden', 'true');
@@ -280,45 +464,96 @@ export function initAcademicSyncDialog({
         title.textContent = `正在比较 ${semester.name}`;
         lead.textContent = `使用 xnm=${semester.xnm}、xqm=${semester.xqm} 读取教务快照，全程暂不写入本地数据。`;
         progressTitle.textContent = '读取课程、教学班和全部学生名单';
-        progressCopy.textContent = '随后会追踪到已有课堂、教材和课次，生成可逐字段选择的差异。';
+        progressCopy.textContent = '随后会追踪到已有课堂、教材和课次，生成课程级差异列表。';
         try {
             currentPlan = await apiFetch(previewEndpoint, {
                 method: 'POST', body: { semester_id: Number(semester.id) }, silent: true,
             });
-            diffSummaryNode.innerHTML = diffSummary(currentPlan);
-            diffList.innerHTML = renderDiff(currentPlan);
+            resolutionStates = initialiseResolutionStates(currentPlan);
+            courseGroups = buildCourseGroups(currentPlan);
+            const firstPending = courseGroups.find((group) => groupReviewStatus(group, resolutionStates).key === 'pending');
+            activeCourseKey = (firstPending || courseGroups[0])?.key || '';
             title.textContent = '确认同步差异';
             lead.textContent = currentPlan.requires_confirmation
-                ? '检测到会影响既有课堂的属性或排课变化。请像代码版本对比一样，逐项选择要采用的教务字段。'
-                : '已完成全链路比对。系统给出了安全默认值，你仍可逐项调整。';
+                ? '待确认课程已置顶。逐项点击左侧保留本地，或点击右侧采用教务；点击差异空白处可查看完整对比。'
+                : '全部课程均可按安全默认值自动合并，你仍可逐门检查或调整。';
             setView('diff');
-            apply.focus({ preventScroll: true });
+            renderReview();
+            requestAnimationFrame(() => courseList.querySelector('[data-academic-sync-course-key]')?.focus({ preventScroll: true }));
         } catch (error) {
             showFailure(error);
         } finally {
             running = false;
             close.disabled = false;
             setButtonsBusy(false);
+            if (!diffView.hidden) renderReview();
         }
     }
 
+    function setFieldChoice(itemKey, fieldName, choice) {
+        const item = currentItem(itemKey);
+        const state = resolutionStates.get(String(itemKey));
+        if (!item || !state || !['local', 'remote'].includes(choice)) return;
+        if (!state.action || state.action !== 'merge') {
+            if (!(item.allowed_actions || []).includes('merge')) return;
+            state.action = 'merge';
+            state.actionConfirmed = true;
+        }
+        state.choices[fieldName] = choice;
+        renderReview();
+    }
+
+    function openFieldDetail(itemKey, fieldName, trigger) {
+        const item = currentItem(itemKey);
+        const field = (item?.fields || []).find((candidate) => String(candidate.name) === String(fieldName));
+        if (!item || !field) return;
+        detailContext = { itemKey: String(itemKey), fieldName: String(fieldName), trigger };
+        detailTitle.textContent = field.label || '字段差异';
+        detailSubtitle.textContent = `${item.entity_label || item.entity_type} · ${item.title}`;
+        detailLocal.innerHTML = renderDiffLines(field.local, '−');
+        detailRemote.innerHTML = renderDiffLines(field.remote, '+');
+        detailBackdrop.hidden = false;
+        detailBackdrop.setAttribute('aria-hidden', 'false');
+        root.classList.add('has-detail-diff');
+        requestAnimationFrame(() => detailDialog.focus({ preventScroll: true }));
+    }
+
+    function chooseFromDetail(choice) {
+        if (!detailContext) return;
+        const context = { ...detailContext };
+        setFieldChoice(context.itemKey, context.fieldName, choice);
+        closeDetail({ restoreFocus: false });
+        requestAnimationFrame(() => {
+            Array.from(diffList.querySelectorAll('[data-academic-sync-field-row]'))
+                .find((node) => node.dataset.itemKey === context.itemKey && node.dataset.fieldName === context.fieldName)
+                ?.focus?.({ preventScroll: true });
+        });
+    }
+
     function collectResolution() {
-        return Array.from(diffList.querySelectorAll('[data-academic-sync-diff-item]')).map((node) => ({
-            key: node.dataset.key,
-            action: node.querySelector('[data-academic-sync-action]')?.value || 'skip',
-            remote_fields: Array.from(node.querySelectorAll('[data-academic-sync-remote-field]:checked')).map((input) => input.dataset.academicSyncRemoteField),
-        }));
+        return (currentPlan?.items || []).map((item) => {
+            const state = resolutionStates.get(String(item.key));
+            const fieldChoices = { ...(state?.choices || {}) };
+            return {
+                key: item.key,
+                action: state?.action || item.recommended_action || 'skip',
+                field_choices: fieldChoices,
+                remote_fields: Object.entries(fieldChoices)
+                    .filter(([, choice]) => choice === 'remote')
+                    .map(([name]) => name),
+            };
+        });
     }
 
     async function applyDiff() {
-        if (!currentPlan?.plan_id || running) return;
+        if (!currentPlan?.plan_id || running || unresolvedChoiceCount(courseGroups, resolutionStates) > 0) return;
         running = true;
         setButtonsBusy(true);
         setView('progress');
         title.textContent = '正在应用已确认的同步方案';
         lead.textContent = '使用同一份教务快照原地合并，保持已有课堂的课程、班级与教材关系。';
         progressTitle.textContent = '写入课程、班级、名单与排课';
-        progressCopy.textContent = '未勾选的字段保留本地版本；关联学习记录的停排课次不会物理删除。';
+        progressCopy.textContent = '明确选择本地的字段不会被覆盖；停排课次只标记取消，不会破坏历史关联。';
         try {
             const result = await apiFetch(applyEndpoint, {
                 method: 'POST',
@@ -327,7 +562,7 @@ export function initAcademicSyncDialog({
             });
             succeeded = true;
             title.textContent = '教务同步完成';
-            lead.textContent = '同步已按确认方案落库，并完成课堂关系完整性保护。';
+            lead.textContent = '同步已按确认方案落库，课程、班级与课堂关联保持完整。';
             resultSummary.innerHTML = renderResult(result);
             setView('result');
             showMessage(result.message || '教务数据同步完成', 'success', 5200);
@@ -351,27 +586,71 @@ export function initAcademicSyncDialog({
         showMessage(error.message || '教务同步失败', 'error', 5200);
     }
 
+    courseList.addEventListener('click', (event) => {
+        const button = event.target.closest?.('[data-academic-sync-course-key]');
+        if (!button) return;
+        activeCourseKey = String(button.dataset.academicSyncCourseKey || '');
+        renderReview();
+        requestAnimationFrame(() => courseHeader.querySelector('strong')?.focus?.({ preventScroll: true }));
+    });
+
     diffList.addEventListener('change', (event) => {
         const action = event.target.closest?.('[data-academic-sync-action]');
         if (!action) return;
-        const item = action.closest('[data-academic-sync-diff-item]');
-        item.querySelectorAll('[data-academic-sync-remote-field]').forEach((input) => {
-            input.disabled = action.value === 'skip';
-        });
-        item.classList.toggle('is-skipped', action.value === 'skip');
+        const itemNode = action.closest('[data-academic-sync-diff-item]');
+        const state = resolutionStates.get(String(itemNode?.dataset.key || ''));
+        if (!state) return;
+        state.action = String(action.value || '');
+        state.actionConfirmed = Boolean(action.value);
+        renderReview();
     });
+
+    diffList.addEventListener('click', (event) => {
+        const choice = event.target.closest?.('[data-academic-sync-choice]');
+        if (choice) {
+            setFieldChoice(choice.dataset.itemKey, choice.dataset.fieldName, choice.dataset.academicSyncChoice);
+            return;
+        }
+        const row = event.target.closest?.('[data-academic-sync-field-row]');
+        if (row && !event.target.closest('button, select, input, a')) {
+            openFieldDetail(row.dataset.itemKey, row.dataset.fieldName, row);
+        }
+    });
+
+    diffList.addEventListener('keydown', (event) => {
+        const row = event.target.closest?.('[data-academic-sync-field-row]');
+        if (row && event.target === row && ['Enter', ' '].includes(event.key)) {
+            event.preventDefault();
+            openFieldDetail(row.dataset.itemKey, row.dataset.fieldName, row);
+        }
+    });
+
     triggers.forEach((button) => button.addEventListener('click', () => openDialog(button)));
     select.addEventListener('change', updatePreview);
     confirm.addEventListener('click', loadDiff);
     apply.addEventListener('click', applyDiff);
-    back.addEventListener('click', () => { currentPlan = null; setView('select'); updatePreview(); });
+    back.addEventListener('click', () => {
+        currentPlan = null;
+        courseGroups = [];
+        resolutionStates = new Map();
+        activeCourseKey = '';
+        setView('select');
+        updatePreview();
+    });
     cancel.addEventListener('click', () => closeDialog());
     close.addEventListener('click', () => closeDialog());
     stay.addEventListener('click', () => closeDialog());
     reload.addEventListener('click', () => succeeded ? closeDialog({ refresh: true }) : setView('select'));
+    detailClose.addEventListener('click', () => closeDetail());
+    detailCancel.addEventListener('click', () => closeDetail());
+    detailLocalChoice.addEventListener('click', () => chooseFromDetail('local'));
+    detailRemoteChoice.addEventListener('click', () => chooseFromDetail('remote'));
+    detailBackdrop.addEventListener('click', (event) => { if (event.target === detailBackdrop) closeDetail(); });
     root.addEventListener('click', (event) => { if (event.target === root) closeDialog(); });
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && !root.hidden && !running) closeDialog();
+        if (event.key !== 'Escape' || root.hidden || running) return;
+        if (!detailBackdrop.hidden) closeDetail();
+        else closeDialog();
     });
     updatePreview();
     return { open: openDialog, close: closeDialog };

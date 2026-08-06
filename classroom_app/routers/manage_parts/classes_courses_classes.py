@@ -298,7 +298,7 @@ async def api_apply_academic_setup_sync(
         int(plan_id),
         {"items": data.get("items") or []},
     )
-    if result.get("status") in {"invalid_plan", "expired_plan", "stale_plan"}:
+    if result.get("status") in {"invalid_plan", "expired_plan", "stale_plan", "resolution_required"}:
         raise HTTPException(409, result.get("message") or "同步方案已失效。")
     if result.get("status") != "success":
         raise HTTPException(502, result.get("message") or "未能应用教务同步方案。")

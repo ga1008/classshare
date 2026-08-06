@@ -143,6 +143,14 @@ def _source_keys_for_course(items: list[Any]) -> list[str]:
     return list(dict.fromkeys(keys))
 
 
+def _roster_course_group_key(roster: AcademicTeachingClassRoster) -> str:
+    if _text(roster.course_code):
+        return f"code:{_text(roster.course_code).casefold()}"
+    if _text(roster.course_internal_id):
+        return f"unresolved-internal:{_text(roster.course_internal_id).casefold()}"
+    return f"name:{_text(roster.course_name).casefold()}"
+
+
 def _load_binding_target(
     conn: Any,
     *,
@@ -323,6 +331,7 @@ def _course_preview_items(conn: Any, *, teacher_id: int, semester: dict[str, Any
             {
                 "key": f"course:{hashlib.sha1(group_key.encode('utf-8')).hexdigest()[:16]}",
                 "source_group_key": group_key,
+                "course_group_key": group_key,
                 "entity_type": "course",
                 "entity_label": "课程",
                 "status": status,
@@ -351,12 +360,22 @@ def _course_preview_items(conn: Any, *, teacher_id: int, semester: dict[str, Any
 def _class_groups(rosters: list[AcademicTeachingClassRoster]) -> OrderedDict[str, dict[str, Any]]:
     grouped: OrderedDict[str, dict[str, Any]] = OrderedDict()
     for roster in rosters:
+        course_group_key = _roster_course_group_key(roster)
         declared_names = _class_names_from_composition(roster.class_composition)
         for name in declared_names:
-            grouped.setdefault(
+            group = grouped.setdefault(
                 name,
-                {"name": name, "codes": set(), "students": set(), "college": roster.college, "grade": "", "major": ""},
+                {
+                    "name": name,
+                    "codes": set(),
+                    "students": set(),
+                    "course_group_keys": set(),
+                    "college": roster.college,
+                    "grade": "",
+                    "major": "",
+                },
             )
+            group["course_group_keys"].add(course_group_key)
         for student in roster.students:
             group = grouped.setdefault(
                 student.class_name,
@@ -364,11 +383,13 @@ def _class_groups(rosters: list[AcademicTeachingClassRoster]) -> OrderedDict[str
                     "name": student.class_name,
                     "codes": set(),
                     "students": set(),
+                    "course_group_keys": set(),
                     "college": student.college or roster.college,
                     "grade": student.grade,
                     "major": student.major,
                 },
             )
+            group["course_group_keys"].add(course_group_key)
             if student.class_code:
                 group["codes"].add(student.class_code)
             if student.student_number:
@@ -479,6 +500,7 @@ def _class_preview_items(conn: Any, *, teacher_id: int, semester: dict[str, Any]
             {
                 "key": f"class:{hashlib.sha1(class_name.casefold().encode('utf-8')).hexdigest()[:16]}",
                 "source_group_key": class_name,
+                "course_group_keys": sorted(group["course_group_keys"]),
                 "entity_type": "class",
                 "entity_label": "班级",
                 "status": status,
@@ -591,6 +613,7 @@ def _offering_preview_items(conn: Any, *, semester: dict[str, Any], course_items
                 {
                     "key": f"offering:{int(offering['offering_id'])}",
                     "source_group_key": str(offering["offering_id"]),
+                    "course_group_key": course_item["source_group_key"],
                     "entity_type": "offering",
                     "entity_label": "课堂排课",
                     "status": "conflict" if ambiguous or linked_count else "update",
@@ -781,12 +804,59 @@ def _resolved_item(item: dict[str, Any], overrides: dict[str, dict[str, Any]]) -
     if action not in allowed_actions:
         action = str(item.get("recommended_action") or "skip")
     available_fields = {str(field["name"]): field for field in item.get("fields") or []}
-    if "remote_fields" in override:
+    field_choices = override.get("field_choices")
+    if isinstance(field_choices, dict):
+        remote_fields = [
+            name
+            for name in available_fields
+            if str(field_choices.get(name) or "") == "remote"
+        ]
+    elif "remote_fields" in override:
         remote_fields = [str(name) for name in (override.get("remote_fields") or []) if str(name) in available_fields]
     else:
         remote_fields = [name for name, field in available_fields.items() if field.get("default_remote")]
     target_id = None if action == "create" else int(override.get("target_id") or item.get("local_id") or 0) or None
     return {"action": action, "target_id": target_id, "remote_fields": remote_fields}
+
+
+def _resolution_errors(
+    preview: dict[str, Any],
+    overrides: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
+    for item in preview.get("items") or []:
+        if not item.get("requires_confirmation"):
+            continue
+        key = str(item.get("key") or "")
+        override = overrides.get(key)
+        allowed_actions = {str(action) for action in (item.get("allowed_actions") or [])}
+        action = str((override or {}).get("action") or "")
+        missing_fields: list[str] = []
+        if not override or action not in allowed_actions:
+            errors.append({"key": key, "title": item.get("title"), "missing_fields": []})
+            continue
+        if action == "merge":
+            fields = [str(field.get("name") or "") for field in (item.get("fields") or [])]
+            field_choices = override.get("field_choices")
+            if isinstance(field_choices, dict):
+                missing_fields = [
+                    name for name in fields
+                    if str(field_choices.get(name) or "") not in {"local", "remote"}
+                ]
+            elif "remote_fields" not in override:
+                # Older clients express explicit local choices by omitting the
+                # field from remote_fields. Presence of the list therefore
+                # remains a compatible, explicit confirmation signal.
+                missing_fields = fields
+        if missing_fields:
+            errors.append(
+                {
+                    "key": key,
+                    "title": item.get("title"),
+                    "missing_fields": missing_fields,
+                }
+            )
+    return errors
 
 
 def _local_preview_drift(conn: Any, preview: dict[str, Any]) -> list[str]:
@@ -902,6 +972,18 @@ async def apply_teacher_academic_sync_plan(
 
     if not snapshot or not preview:
         return {"status": "invalid_plan", "message": "同步方案数据不完整，请重新生成。"}
+    overrides = {
+        str(item.get("key")): dict(item)
+        for item in ((resolution_payload or {}).get("items") or [])
+        if isinstance(item, dict) and item.get("key")
+    }
+    resolution_errors = _resolution_errors(preview, overrides)
+    if resolution_errors:
+        return {
+            "status": "resolution_required",
+            "message": "仍有同步差异尚未逐项确认，请选择保留本地值或采用教务值后再合并。",
+            "unresolved_items": resolution_errors,
+        }
     rosters = _deserialize_rosters(snapshot.get("rosters") or [])
     semester = dict(snapshot.get("semester") or {})
     schedule_items = build_schedule_items_from_teaching_class_rosters(
@@ -909,11 +991,6 @@ async def apply_teacher_academic_sync_plan(
         source_url=ZF_TEACHING_CLASS_LIST_PATH,
     )
     ai_enrichment, ai_summary = await infer_missing_course_metadata_with_ai(schedule_items)
-    overrides = {
-        str(item.get("key")): dict(item)
-        for item in ((resolution_payload or {}).get("items") or [])
-        if isinstance(item, dict) and item.get("key")
-    }
     course_decisions: dict[str, dict[str, Any]] = {}
     class_decisions: dict[str, dict[str, Any]] = {}
     skip_offering_ids: list[int] = []
