@@ -296,26 +296,42 @@ def replace_offering_sessions(
     *,
     offering_id: int,
     sessions: list[dict[str, Any]],
-) -> None:
+    preserve_removed: bool = False,
+) -> dict[str, int]:
     keep_order_indexes = [
         int(item["order_index"])
         for item in sessions
         if item.get("order_index") not in (None, "")
     ]
+    removed_count = 0
     if keep_order_indexes:
         placeholders = ",".join("?" for _ in keep_order_indexes)
-        conn.execute(
-            f"""
-            DELETE FROM class_offering_sessions
-            WHERE class_offering_id = ?
-              AND order_index NOT IN ({placeholders})
-            """,
-            (int(offering_id), *keep_order_indexes),
-        )
+        where_sql = f"class_offering_id = ? AND order_index NOT IN ({placeholders})"
+        where_params = (int(offering_id), *keep_order_indexes)
     else:
-        conn.execute("DELETE FROM class_offering_sessions WHERE class_offering_id = ?", (offering_id,))
+        where_sql = "class_offering_id = ?"
+        where_params = (int(offering_id),)
+    if preserve_removed:
+        cursor = conn.execute(
+            f"""
+            UPDATE class_offering_sessions
+            SET schedule_status = 'cancelled',
+                schedule_note = CASE
+                    WHEN TRIM(COALESCE(schedule_note, '')) = '' THEN '本次教务同步已停排，保留课次以维护既有课堂记录'
+                    WHEN schedule_note LIKE '%本次教务同步已停排%' THEN schedule_note
+                    ELSE schedule_note || '；本次教务同步已停排，保留课次以维护既有课堂记录'
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE {where_sql}
+            """,
+            where_params,
+        )
+        removed_count = int(cursor.rowcount or 0)
+    else:
+        cursor = conn.execute(f"DELETE FROM class_offering_sessions WHERE {where_sql}", where_params)
+        removed_count = int(cursor.rowcount or 0)
     if not sessions:
-        return
+        return {"removed_count": removed_count, "upserted_count": 0, "preserved_count": removed_count if preserve_removed else 0}
 
     conn.executemany(
         """
@@ -421,6 +437,11 @@ def replace_offering_sessions(
             for item in sessions
         ],
     )
+    return {
+        "removed_count": removed_count,
+        "upserted_count": len(sessions),
+        "preserved_count": removed_count if preserve_removed else 0,
+    }
 
 
 def load_course_lessons_by_course_id(
@@ -618,6 +639,7 @@ def load_academic_course_occurrences(
     teacher_id: int,
     semester_id: int,
     course_id: int,
+    teaching_class_id: str = "",
     teaching_class_name: str = "",
 ) -> list[dict[str, Any]]:
     where_parts = [
@@ -626,8 +648,12 @@ def load_academic_course_occurrences(
         "course_id = ?",
     ]
     params: list[Any] = [int(teacher_id), int(semester_id), int(course_id)]
+    normalized_class_id = _normalize_text(teaching_class_id)
     normalized_class_name = _normalize_text(teaching_class_name)
-    if normalized_class_name:
+    if normalized_class_id:
+        where_parts.append("teaching_class_id = ?")
+        params.append(normalized_class_id)
+    elif normalized_class_name:
         where_parts.append("teaching_class_name = ?")
         params.append(normalized_class_name)
 
@@ -672,6 +698,7 @@ def summarize_academic_teaching_classes(
         SELECT academic_year,
                academic_term,
                course_code,
+               teaching_class_id,
                teaching_class_name,
                class_composition,
                COUNT(*) AS session_count,
@@ -680,7 +707,7 @@ def summarize_academic_teaching_classes(
                SUM(CASE WHEN COALESCE(is_non_periodic, 0) <> 0 THEN 1 ELSE 0 END) AS non_periodic_count
         FROM teacher_academic_course_session_occurrences
         WHERE teacher_id = ? AND semester_id = ? AND course_id = ?
-        GROUP BY academic_year, academic_term, course_code, teaching_class_name, class_composition
+        GROUP BY academic_year, academic_term, course_code, teaching_class_id, teaching_class_name, class_composition
         ORDER BY session_count DESC, teaching_class_name
         """,
         (int(teacher_id), int(semester_id), int(course_id)),
@@ -700,6 +727,7 @@ def summarize_academic_teaching_classes(
         )
         results.append(
             {
+                "teaching_class_id": str(row["teaching_class_id"] or "").strip(),
                 "teaching_class_name": teaching_class_name,
                 "class_display_name": class_display_name,
                 "display_teaching_class_name": class_display_name,
@@ -720,6 +748,7 @@ def select_academic_teaching_class_for_offering(
     semester_id: int,
     course_id: int,
     class_row: Any | None = None,
+    preferred_teaching_class_id: str = "",
     preferred_teaching_class_name: str = "",
 ) -> tuple[str, list[dict[str, Any]], list[str], list[dict[str, Any]]]:
     class_options = summarize_academic_teaching_classes(
@@ -730,6 +759,19 @@ def select_academic_teaching_class_for_offering(
     )
     if not class_options:
         return "", [], ["教务系统暂未同步到该课程的逐次上课安排。"], []
+
+    preferred_id = _normalize_text(preferred_teaching_class_id)
+    if preferred_id:
+        for option in class_options:
+            if option["teaching_class_id"] == preferred_id:
+                selected_name = option["teaching_class_name"]
+                return selected_name, load_academic_course_occurrences(
+                    conn,
+                    teacher_id=teacher_id,
+                    semester_id=semester_id,
+                    course_id=course_id,
+                    teaching_class_id=preferred_id,
+                ), [], class_options
 
     preferred = _normalize_text(preferred_teaching_class_name)
     if preferred:

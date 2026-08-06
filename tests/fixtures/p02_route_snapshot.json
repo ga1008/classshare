@@ -2320,6 +2320,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/academic-sync/apply",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_apply_academic_setup_sync",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic-sync/preview",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_preview_academic_setup_sync",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/ai/ai-generate",
     "methods": [
       "POST"

@@ -877,7 +877,8 @@ function syncCardTabState() {
 bindEvents();
 initAcademicSyncDialog({
     buttons: elements.academicSyncButtons,
-    endpoint: '/api/manage/courses/sync-current-academic',
+    previewEndpoint: '/api/manage/academic-sync/preview',
+    applyEndpoint: '/api/manage/academic-sync/apply',
     semesters: pageData.academicSyncSemesters,
     defaultSemesterId: pageData.academicSyncDefaultSemesterId,
 });

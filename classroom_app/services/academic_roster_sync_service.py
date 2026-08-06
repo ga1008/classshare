@@ -565,6 +565,7 @@ def _upsert_class(
     synced_at: str,
     stats: dict[str, int],
     warnings: list[str],
+    decision: dict[str, Any] | None = None,
 ) -> int | None:
     class_name = student.class_name.strip()
     department = normalize_department(student.college) or normalize_department(student.major) or infer_department_from_text(class_name)
@@ -574,19 +575,53 @@ def _upsert_class(
         college=student.college,
         department=department,
     )
-    row = conn.execute(
-        """
-        SELECT *
-        FROM classes
-        WHERE lower(TRIM(name)) = lower(TRIM(?))
-        ORDER BY
-            CASE WHEN created_by_teacher_id = ? THEN 0 ELSE 1 END,
-            CASE WHEN lower(TRIM(COALESCE(school_code, ''))) = lower(TRIM(?)) THEN 0 ELSE 1 END,
-            id
-        LIMIT 1
-        """,
-        (class_name, int(teacher_id), org_scope["school_code"]),
-    ).fetchone()
+    decision = decision or {}
+    if decision.get("action") == "skip":
+        return None
+    target_id = int(decision.get("target_id") or 0)
+    row = None
+    if target_id:
+        row = conn.execute(
+            "SELECT * FROM classes WHERE id = ? AND created_by_teacher_id = ?",
+            (target_id, int(teacher_id)),
+        ).fetchone()
+    force_create = decision.get("action") == "create"
+    if row is None and student.class_code and not force_create:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM classes
+            WHERE academic_source = ?
+              AND academic_class_code = ?
+              AND (
+                    created_by_teacher_id = ?
+                    OR lower(TRIM(COALESCE(school_code, ''))) = lower(TRIM(?))
+                  )
+            ORDER BY CASE WHEN created_by_teacher_id = ? THEN 0 ELSE 1 END, id
+            LIMIT 1
+            """,
+            (
+                ACADEMIC_ROSTER_SOURCE,
+                student.class_code,
+                int(teacher_id),
+                org_scope["school_code"],
+                int(teacher_id),
+            ),
+        ).fetchone()
+    if row is None and not force_create:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM classes
+            WHERE lower(TRIM(name)) = lower(TRIM(?))
+            ORDER BY
+                CASE WHEN created_by_teacher_id = ? THEN 0 ELSE 1 END,
+                CASE WHEN lower(TRIM(COALESCE(school_code, ''))) = lower(TRIM(?)) THEN 0 ELSE 1 END,
+                id
+            LIMIT 1
+            """,
+            (class_name, int(teacher_id), org_scope["school_code"]),
+        ).fetchone()
     message = f"由教务系统同步：{student.college or student.major or class_name}"
     metadata = _json_dumps(_class_metadata(student, rosters))
     if row is None:
@@ -632,40 +667,48 @@ def _upsert_class(
         stats["class_conflicts"] += 1
         return None
 
+    selected_fields = set(decision.get("remote_fields") or []) if decision else set()
+    updates: dict[str, Any] = {
+        "academic_source": ACADEMIC_ROSTER_SOURCE,
+        "academic_sync_at": synced_at,
+        "academic_sync_message": message,
+        "academic_metadata_json": metadata,
+    }
+    remote_values = {
+        "name": class_name,
+        "department": department,
+        "academic_class_code": student.class_code,
+        "academic_class_name": class_name,
+        "academic_college": student.college,
+        "academic_grade": student.grade,
+        "academic_major": student.major,
+    }
+    if decision:
+        for field_name in selected_fields:
+            if field_name in remote_values:
+                updates[field_name] = remote_values[field_name]
+    else:
+        updates.update(
+            {
+                "academic_class_code": student.class_code,
+                "academic_class_name": class_name,
+                "academic_college": student.college,
+                "academic_grade": student.grade,
+                "academic_major": student.major,
+            }
+        )
+        if not _normalize_space(row["department"]) and department:
+            updates["department"] = department
+    if not _normalize_space(row["school_code"]):
+        updates["school_code"] = org_scope["school_code"]
+    if not _normalize_space(row["school_name"]):
+        updates["school_name"] = org_scope["school_name"]
+    if not _normalize_space(row["college"]):
+        updates["college"] = org_scope["college"]
+    assignments = ", ".join(f"{column} = ?" for column in updates)
     conn.execute(
-        """
-        UPDATE classes
-        SET department = CASE WHEN TRIM(COALESCE(department, '')) = '' THEN ? ELSE department END,
-            school_code = CASE WHEN TRIM(COALESCE(school_code, '')) = '' THEN ? ELSE school_code END,
-            school_name = CASE WHEN TRIM(COALESCE(school_name, '')) = '' THEN ? ELSE school_name END,
-            college = CASE WHEN TRIM(COALESCE(college, '')) = '' THEN ? ELSE college END,
-            academic_source = ?,
-            academic_class_code = ?,
-            academic_class_name = ?,
-            academic_college = ?,
-            academic_grade = ?,
-            academic_major = ?,
-            academic_sync_at = ?,
-            academic_sync_message = ?,
-            academic_metadata_json = ?
-        WHERE id = ?
-        """,
-        (
-            department,
-            org_scope["school_code"],
-            org_scope["school_name"],
-            org_scope["college"],
-            ACADEMIC_ROSTER_SOURCE,
-            student.class_code,
-            class_name,
-            student.college,
-            student.grade,
-            student.major,
-            synced_at,
-            message,
-            metadata,
-            int(row["id"]),
-        ),
+        f"UPDATE classes SET {assignments} WHERE id = ?",
+        (*updates.values(), int(row["id"])),
     )
     stats["classes_updated"] += 1
     return int(row["id"])
@@ -1084,6 +1127,8 @@ def _persist_rosters(
     rosters: list[AcademicTeachingClassRoster],
     source_summary: list[dict[str, Any]],
     synced_at: str,
+    reconciliation: dict[str, Any] | None = None,
+    course_identity_map: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     stats = {
         "classes_created": 0,
@@ -1106,6 +1151,9 @@ def _persist_rosters(
     student_class_cache: dict[str, int] = {}
     course_count = len({roster.course_code or roster.course_name for roster in rosters if roster.course_code or roster.course_name})
     roster_results: list[dict[str, Any]] = []
+    reconciliation = reconciliation or {}
+    class_decisions = reconciliation.get("class_decisions") or {}
+    course_identity_map = course_identity_map or {}
 
     rosters_by_class_name: dict[str, list[AcademicTeachingClassRoster]] = {}
     for roster in rosters:
@@ -1142,13 +1190,19 @@ def _persist_rosters(
             synced_at=synced_at,
             stats=stats,
             warnings=warnings,
+            decision=dict(class_decisions.get(class_name) or {}),
         )
         class_cache[class_name] = class_id
         if class_id:
             touched_class_ids.add(int(class_id))
 
     for roster in rosters:
-        course_id = _find_course_id(conn, teacher_id, roster)
+        course_id = (
+            course_identity_map.get(f"code:{roster.course_code.casefold()}")
+            or course_identity_map.get(f"internal:{roster.course_internal_id.casefold()}")
+            or course_identity_map.get(f"name:{roster.course_name.casefold()}")
+            or _find_course_id(conn, teacher_id, roster)
+        )
         source_url = str(source_summary[-1].get("path") if source_summary else ZF_TEACHING_CLASS_STUDENT_LIST_PATH)
         sync_item_id = _upsert_roster_item(
             conn,
@@ -1171,6 +1225,7 @@ def _persist_rosters(
                     synced_at=synced_at,
                     stats=stats,
                     warnings=warnings,
+                    decision=dict(class_decisions.get(student.class_name) or {}),
                 )
                 class_cache[student.class_name] = class_id
             else:
@@ -1261,6 +1316,7 @@ def _persist_rosters(
         "roster_student_count": sum(len(roster.students) for roster in rosters),
         "touched_class_count": len(touched_class_ids),
         "class_mapping_count": int(mapping_result.get("mapping_count") or 0),
+        "class_ids_by_name": {name: int(class_id) for name, class_id in class_cache.items() if class_id},
         "rosters": roster_results,
         "warnings": warnings,
     }
@@ -1282,7 +1338,7 @@ async def _fetch_all_rosters(
     return rosters, sources
 
 
-async def sync_current_teacher_rosters_from_academic_system(
+async def _sync_current_teacher_rosters_without_reconciliation(
     teacher_id: int,
     semester_id: int | None = None,
 ) -> dict[str, Any]:
@@ -1450,3 +1506,25 @@ async def sync_current_teacher_rosters_from_academic_system(
         },
         "source_summary": source_summary,
     }
+
+
+async def sync_current_teacher_rosters_from_academic_system(
+    teacher_id: int,
+    semester_id: int | None = None,
+) -> dict[str, Any]:
+    """Synchronize safely, pausing whenever a mutable identity could affect a classroom.
+
+    The explicit preview/apply API uses the same reconciliation service.  This
+    wrapper also protects background and legacy callers: conflict-free imports
+    still complete automatically, while identity or linked-session changes are
+    staged for teacher review instead of silently creating parallel resources.
+    """
+    if semester_id is None:
+        with get_db_connection() as conn:
+            semester = _load_current_semester(conn, teacher_id, china_now().date())
+        if not semester:
+            return await _sync_current_teacher_rosters_without_reconciliation(teacher_id, semester_id=None)
+        semester_id = int(semester["id"])
+    from .academic_sync_reconciliation_service import run_protected_teacher_academic_sync
+
+    return await run_protected_teacher_academic_sync(int(teacher_id), int(semester_id))

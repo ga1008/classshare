@@ -319,6 +319,7 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
         "class_kind": "TEXT NOT NULL DEFAULT 'administrative'",
     },
     "class_offerings": {
+        "academic_teaching_class_id": "TEXT NOT NULL DEFAULT ''",
         "cultivation_weights_json": "TEXT NOT NULL DEFAULT ''",
         "cultivation_weights_version": "TEXT NOT NULL DEFAULT 'default-v1'",
         "cultivation_weights_updated_at": "TEXT",
@@ -368,6 +369,14 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
     "teacher_academic_teaching_class_mappings": {
         "teaching_class_aliases_json": "TEXT NOT NULL DEFAULT '[]'",
         "admin_class_aliases_json": "TEXT NOT NULL DEFAULT '[]'",
+    },
+    "teacher_academic_course_sync_items": {
+        "course_internal_id": "TEXT NOT NULL DEFAULT ''",
+        "teaching_class_id": "TEXT NOT NULL DEFAULT ''",
+    },
+    "teacher_academic_course_session_occurrences": {
+        "course_internal_id": "TEXT NOT NULL DEFAULT ''",
+        "teaching_class_id": "TEXT NOT NULL DEFAULT ''",
     },
 }
 
@@ -530,6 +539,44 @@ POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """,
+    "teacher_academic_entity_bindings": """
+        CREATE TABLE IF NOT EXISTS teacher_academic_entity_bindings (
+            id SERIAL PRIMARY KEY,
+            teacher_id INTEGER NOT NULL REFERENCES teachers (id) ON DELETE CASCADE,
+            semester_scope INTEGER NOT NULL DEFAULT 0,
+            source_system TEXT NOT NULL DEFAULT 'gxufl_jwxt',
+            entity_type TEXT NOT NULL,
+            source_key TEXT NOT NULL,
+            local_entity_id INTEGER NOT NULL,
+            source_label TEXT NOT NULL DEFAULT '',
+            aliases_json TEXT NOT NULL DEFAULT '[]',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            binding_status TEXT NOT NULL DEFAULT 'active',
+            confirmed_at TEXT,
+            first_seen_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (teacher_id, semester_scope, source_system, entity_type, source_key)
+        )
+    """,
+    "teacher_academic_sync_plans": """
+        CREATE TABLE IF NOT EXISTS teacher_academic_sync_plans (
+            id SERIAL PRIMARY KEY,
+            teacher_id INTEGER NOT NULL REFERENCES teachers (id) ON DELETE CASCADE,
+            semester_id INTEGER NOT NULL REFERENCES academic_semesters (id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'pending',
+            source_fingerprint TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL DEFAULT '{}',
+            preview_json TEXT NOT NULL DEFAULT '{}',
+            resolution_json TEXT NOT NULL DEFAULT '{}',
+            result_json TEXT NOT NULL DEFAULT '{}',
+            expires_at TEXT NOT NULL,
+            applied_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
 }
 
 
@@ -559,6 +606,8 @@ REQUIRED_POSTGRES_TABLES = (
     "teacher_calendar_events",
     "teacher_academic_course_sync_items",
     "teacher_academic_course_session_occurrences",
+    "teacher_academic_entity_bindings",
+    "teacher_academic_sync_plans",
     "teacher_academic_roster_sync_items",
     "teacher_academic_roster_memberships",
     "teacher_academic_teaching_class_mappings",

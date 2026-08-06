@@ -1875,6 +1875,7 @@ def _insert_academic_occurrences(
             {insert_verb} teacher_academic_course_session_occurrences (
                 teacher_id, semester_id, course_id, sync_item_id,
                 academic_year, academic_term, course_name, course_code,
+                course_internal_id, teaching_class_id,
                 teaching_class_name, class_composition, session_date,
                 week_index, weekday, weekday_label, section_text,
                 section_start, section_end, section_count, time_text,
@@ -1885,7 +1886,7 @@ def _insert_academic_occurrences(
             )
             VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
             )
             {conflict_clause}
             """,
@@ -1898,6 +1899,8 @@ def _insert_academic_occurrences(
                 item.academic_term or str(semester.get("term_number") or ""),
                 item.course_name,
                 item.course_code,
+                item.course_internal_id,
+                item.teaching_class_id,
                 item.teaching_class_name,
                 item.class_composition,
                 session_date,
@@ -1941,6 +1944,8 @@ def _sync_existing_offering_academic_sessions(
     semester: dict[str, Any],
     course_ids: list[int],
     synced_at: str,
+    skip_offering_ids: set[int] | None = None,
+    preserve_teaching_class_name_ids: set[int] | None = None,
 ) -> tuple[int, list[str]]:
     normalized_course_ids = sorted({int(course_id) for course_id in course_ids if int(course_id) > 0})
     if not normalized_course_ids:
@@ -1973,6 +1978,12 @@ def _sync_existing_offering_academic_sessions(
 
     for row in rows:
         offering = dict(row)
+        if int(offering["id"]) in (skip_offering_ids or set()):
+            warnings.append(
+                f"{offering.get('course_name') or '课程'} / {offering.get('class_name') or '班级'}："
+                "已按本次差异选择保留现有课堂排课，课程、班级和教材关联均未改变。"
+            )
+            continue
         class_row = {
             "name": offering.get("class_name") or "",
             "department": offering.get("class_department") or "",
@@ -1984,6 +1995,7 @@ def _sync_existing_offering_academic_sessions(
             semester_id=int(semester["id"]),
             course_id=int(offering["course_id"]),
             class_row=class_row,
+            preferred_teaching_class_id=str(offering.get("academic_teaching_class_id") or ""),
             preferred_teaching_class_name=str(offering.get("academic_teaching_class_name") or ""),
         )
         if selection_warnings:
@@ -1994,6 +2006,12 @@ def _sync_existing_offering_academic_sessions(
             continue
         if not occurrences:
             continue
+        selected_class_id = str(occurrences[0].get("teaching_class_id") or "")
+        selected_class_name_to_store = (
+            str(offering.get("academic_teaching_class_name") or "")
+            if int(offering["id"]) in (preserve_teaching_class_name_ids or set())
+            else selected_class
+        )
 
         plan = build_academic_offering_session_plan(
             course_lessons=lesson_map.get(int(offering["course_id"]), []),
@@ -2002,15 +2020,22 @@ def _sync_existing_offering_academic_sessions(
             course_name=str(offering.get("course_name") or ""),
             teaching_class_name=selected_class,
         )
-        replace_offering_sessions(
+        replace_result = replace_offering_sessions(
             conn,
             offering_id=int(offering["id"]),
             sessions=plan["sessions"],
+            preserve_removed=True,
         )
+        if int(replace_result.get("preserved_count") or 0):
+            warnings.append(
+                f"{offering.get('course_name') or '课程'} / {offering.get('class_name') or '班级'}："
+                f"{replace_result['preserved_count']} 个教务已停排课次保留原 ID 并标记取消，既有材料与学习记录未断开。"
+            )
         conn.execute(
             """
             UPDATE class_offerings
             SET schedule_source = ?,
+                academic_teaching_class_id = ?,
                 academic_teaching_class_name = ?,
                 academic_schedule_sync_at = ?,
                 academic_schedule_sync_message = ?,
@@ -2021,7 +2046,8 @@ def _sync_existing_offering_academic_sessions(
             """,
             (
                 SCHEDULE_SOURCE_ACADEMIC_SYNC,
-                selected_class,
+                selected_class_id,
+                selected_class_name_to_store,
                 synced_at,
                 f"已同步教务实际排课 {plan.get('session_count') or 0} 次。",
                 plan.get("schedule_info") or "",
@@ -2049,6 +2075,7 @@ def _upsert_courses_and_schedule_items(
     source_summary: list[dict[str, Any]],
     ai_enrichment: dict[str, dict[str, Any]] | None = None,
     ai_enrichment_summary: dict[str, Any] | None = None,
+    reconciliation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     grouped: "OrderedDict[str, list[AcademicCourseScheduleItem]]" = OrderedDict()
     for item in items:
@@ -2063,20 +2090,65 @@ def _upsert_courses_and_schedule_items(
     unresolved_course_fields: list[dict[str, Any]] = []
     synced_at = _now_iso()
     sync_message = "已按教师课表或公共课程信息核验真实课程号并同步本学期排课；请继续补充教材、课堂设置和本平台班级绑定。"
+    reconciliation = reconciliation or {}
+    course_decisions = reconciliation.get("course_decisions") or {}
+    skip_offering_ids = {
+        int(value)
+        for value in (reconciliation.get("skip_offering_ids") or [])
+        if str(value).strip().isdigit()
+    }
+    preserve_teaching_class_name_ids = {
+        int(value)
+        for value in (reconciliation.get("preserve_teaching_class_name_ids") or [])
+        if str(value).strip().isdigit()
+    }
 
     begin_immediate_transaction(conn)
-    conn.execute(
-        "DELETE FROM teacher_academic_course_sync_items WHERE teacher_id = ? AND semester_id = ?",
-        (int(teacher_id), int(semester["id"])),
-    )
-    conn.execute(
-        "DELETE FROM teacher_academic_course_session_occurrences WHERE teacher_id = ? AND semester_id = ?",
-        (int(teacher_id), int(semester["id"])),
-    )
+    if not course_decisions:
+        conn.execute(
+            "DELETE FROM teacher_academic_course_sync_items WHERE teacher_id = ? AND semester_id = ?",
+            (int(teacher_id), int(semester["id"])),
+        )
+        conn.execute(
+            "DELETE FROM teacher_academic_course_session_occurrences WHERE teacher_id = ? AND semester_id = ?",
+            (int(teacher_id), int(semester["id"])),
+        )
 
     for group_items in grouped.values():
         first_item = group_items[0]
-        existing, match_mode, ambiguous_count = _find_existing_course(conn, teacher_id, first_item)
+        group_key = _course_group_key(first_item)
+        decision = dict(course_decisions.get(group_key) or {})
+        if decision.get("action") == "skip":
+            course_results.append(
+                {
+                    "course_id": None,
+                    "course_name": first_item.course_name,
+                    "course_code": first_item.course_code,
+                    "group_key": group_key,
+                    "schedule_item_count": len(group_items),
+                    "occurrence_count": 0,
+                    "action": "skipped_by_user",
+                    "match_mode": "reconciliation_skip",
+                    "ambiguous_existing_count": 0,
+                    "missing_fields": [],
+                }
+            )
+            continue
+        existing = None
+        target_id = int(decision.get("target_id") or 0)
+        if target_id:
+            target_row = conn.execute(
+                "SELECT * FROM courses WHERE id = ? AND created_by_teacher_id = ?",
+                (target_id, int(teacher_id)),
+            ).fetchone()
+            if target_row:
+                existing = _course_row_with_match(target_row, "confirmed_reconciliation")
+        if existing:
+            match_mode, ambiguous_count = "confirmed_reconciliation", 0
+        elif decision.get("action") != "create":
+            existing, match_mode, ambiguous_count = _find_existing_course(conn, teacher_id, first_item)
+        else:
+            match_mode, ambiguous_count = "confirmed_create", 0
         if ambiguous_count > 0:
             warnings.append(
                 f"课程“{first_item.course_name}”在本系统已有 {ambiguous_count} 个同名但课程号不同或无法唯一确认的课程，未强行合并，已按真实课程号独立同步。"
@@ -2110,14 +2182,21 @@ def _upsert_courses_and_schedule_items(
 
         if existing:
             course_id = int(existing["id"])
+            selected_fields = set(decision.get("remote_fields") or []) if decision else set()
             updates: dict[str, Any] = {
                 "academic_source": ACADEMIC_COURSE_SOURCE,
-                "academic_course_code": first_item.course_code,
                 "academic_sync_at": synced_at,
                 "academic_sync_message": sync_message,
                 "academic_metadata_json": _json_dumps(metadata),
             }
-            if not str(existing.get("department") or "").strip() and department:
+            if not decision or "academic_course_code" in selected_fields:
+                updates["academic_course_code"] = first_item.course_code
+            if decision and "name" in selected_fields and first_item.course_name:
+                updates["name"] = first_item.course_name
+            if department and (
+                (decision and "department" in selected_fields)
+                or (not decision and not str(existing.get("department") or "").strip())
+            ):
                 updates["department"] = department
             if not str(existing.get("school_code") or "").strip():
                 updates["school_code"] = org_scope["school_code"]
@@ -2125,15 +2204,24 @@ def _upsert_courses_and_schedule_items(
                 updates["school_name"] = org_scope["school_name"]
             if not str(existing.get("college") or "").strip():
                 updates["college"] = org_scope["college"]
-            if not str(existing.get("description") or "").strip():
+            if decision:
+                if "description" in selected_fields:
+                    updates["description"] = _course_description(first_item, len(group_items))
+            elif not str(existing.get("description") or "").strip():
                 updates["description"] = _course_description(first_item, len(group_items))
             elif str(existing.get("description") or "").strip().startswith("从教务系统同步："):
                 # Repair the former auto-generated description that exposed
                 # KCH_ID/JXB internal ids as if they were course numbers.
                 updates["description"] = _course_description(first_item, len(group_items))
-            if not float(existing.get("credits") or 0) and credits > 0:
+            if credits > 0 and (
+                (decision and "credits" in selected_fields)
+                or (not decision and not float(existing.get("credits") or 0))
+            ):
                 updates["credits"] = credits
-            if not int(existing.get("total_hours") or 0) and total_hours > 0:
+            if total_hours > 0 and (
+                (decision and "total_hours" in selected_fields)
+                or (not decision and not int(existing.get("total_hours") or 0))
+            ):
                 updates["total_hours"] = total_hours
 
             assignments = ", ".join(f"{column} = ?" for column in updates)
@@ -2178,6 +2266,17 @@ def _upsert_courses_and_schedule_items(
 
         if course_id not in affected_course_ids:
             affected_course_ids.append(course_id)
+        if course_decisions:
+            conn.execute(
+                "DELETE FROM teacher_academic_course_session_occurrences "
+                "WHERE teacher_id = ? AND semester_id = ? AND course_id = ?",
+                (int(teacher_id), int(semester["id"]), int(course_id)),
+            )
+            conn.execute(
+                "DELETE FROM teacher_academic_course_sync_items "
+                "WHERE teacher_id = ? AND semester_id = ? AND course_id = ?",
+                (int(teacher_id), int(semester["id"]), int(course_id)),
+            )
         group_occurrence_count = 0
         for item in group_items:
             if get_configured_db_engine() == "postgres":
@@ -2198,7 +2297,8 @@ def _upsert_courses_and_schedule_items(
                     teacher_id, semester_id, course_id,
                     academic_year, academic_year_name, academic_term, academic_term_name,
                     teacher_name, teacher_org_id, teacher_org_name,
-                    course_name, course_code, teaching_class_name, time_text,
+                    course_name, course_code, course_internal_id, teaching_class_id,
+                    teaching_class_name, time_text,
                     weeks_text, weekday, weekday_label, section_text,
                     campus, campus_id, location, classroom_id, classroom_code, classroom_type, class_composition,
                     course_nature, exam_method, exam_mode, course_hour_text, credits, student_count,
@@ -2209,7 +2309,7 @@ def _upsert_courses_and_schedule_items(
                 )
                 VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
                 )
                 {conflict_clause}
                 """,
@@ -2226,6 +2326,8 @@ def _upsert_courses_and_schedule_items(
                     item.teacher_org_name,
                     item.course_name,
                     item.course_code,
+                    item.course_internal_id,
+                    item.teaching_class_id,
                     item.teaching_class_name,
                     item.time_text,
                     item.weeks_text,
@@ -2293,6 +2395,9 @@ def _upsert_courses_and_schedule_items(
                 "course_id": course_id,
                 "course_name": first_item.course_name,
                 "course_code": first_item.course_code,
+                "group_key": group_key,
+                "course_internal_ids": sorted({item.course_internal_id for item in group_items if item.course_internal_id}),
+                "teaching_class_ids": sorted({item.teaching_class_id for item in group_items if item.teaching_class_id}),
                 "schedule_item_count": len(group_items),
                 "occurrence_count": group_occurrence_count,
                 "action": action,
@@ -2325,6 +2430,8 @@ def _upsert_courses_and_schedule_items(
         semester=semester,
         course_ids=affected_course_ids,
         synced_at=synced_at,
+        skip_offering_ids=skip_offering_ids,
+        preserve_teaching_class_name_ids=preserve_teaching_class_name_ids,
     )
     warnings.extend(offering_warnings)
     if unresolved_course_fields:

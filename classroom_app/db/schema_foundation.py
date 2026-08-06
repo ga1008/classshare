@@ -573,6 +573,8 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
             teacher_org_name TEXT NOT NULL DEFAULT '',
             course_name TEXT NOT NULL DEFAULT '',
             course_code TEXT NOT NULL DEFAULT '',
+            course_internal_id TEXT NOT NULL DEFAULT '',
+            teaching_class_id TEXT NOT NULL DEFAULT '',
             teaching_class_name TEXT NOT NULL DEFAULT '',
             time_text TEXT NOT NULL DEFAULT '',
             weeks_text TEXT NOT NULL DEFAULT '',
@@ -631,6 +633,8 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
         "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN teacher_name TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN teacher_org_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN teacher_org_name TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN course_internal_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN teaching_class_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN time_text TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN campus_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE teacher_academic_course_sync_items ADD COLUMN classroom_id TEXT NOT NULL DEFAULT ''",
@@ -664,6 +668,8 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
             academic_term TEXT NOT NULL DEFAULT '',
             course_name TEXT NOT NULL DEFAULT '',
             course_code TEXT NOT NULL DEFAULT '',
+            course_internal_id TEXT NOT NULL DEFAULT '',
+            teaching_class_id TEXT NOT NULL DEFAULT '',
             teaching_class_name TEXT NOT NULL DEFAULT '',
             class_composition TEXT NOT NULL DEFAULT '',
             session_date TEXT NOT NULL,
@@ -705,6 +711,70 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
             )
         )
         '''
+    )
+    for statement in (
+        "ALTER TABLE teacher_academic_course_session_occurrences ADD COLUMN course_internal_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE teacher_academic_course_session_occurrences ADD COLUMN teaching_class_id TEXT NOT NULL DEFAULT ''",
+    ):
+        try:
+            conn.execute(statement)
+        except sqlite3.OperationalError:
+            pass
+
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS teacher_academic_entity_bindings
+        (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER NOT NULL,
+            semester_scope INTEGER NOT NULL DEFAULT 0,
+            source_system TEXT NOT NULL DEFAULT 'gxufl_jwxt',
+            entity_type TEXT NOT NULL,
+            source_key TEXT NOT NULL,
+            local_entity_id INTEGER NOT NULL,
+            source_label TEXT NOT NULL DEFAULT '',
+            aliases_json TEXT NOT NULL DEFAULT '[]',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            binding_status TEXT NOT NULL DEFAULT 'active',
+            confirmed_at TEXT,
+            first_seen_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+            UNIQUE (teacher_id, semester_scope, source_system, entity_type, source_key)
+        )
+        '''
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_academic_entity_bindings_local "
+        "ON teacher_academic_entity_bindings (teacher_id, entity_type, local_entity_id)"
+    )
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS teacher_academic_sync_plans
+        (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER NOT NULL,
+            semester_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            source_fingerprint TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL DEFAULT '{}',
+            preview_json TEXT NOT NULL DEFAULT '{}',
+            resolution_json TEXT NOT NULL DEFAULT '{}',
+            result_json TEXT NOT NULL DEFAULT '{}',
+            expires_at TEXT NOT NULL,
+            applied_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+            FOREIGN KEY (semester_id) REFERENCES academic_semesters (id) ON DELETE CASCADE
+        )
+        '''
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_academic_sync_plans_teacher_status "
+        "ON teacher_academic_sync_plans (teacher_id, status, created_at DESC)"
     )
 
     conn.execute(
@@ -1340,6 +1410,7 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
         pass
     for statement in (
         "ALTER TABLE class_offerings ADD COLUMN schedule_source TEXT NOT NULL DEFAULT 'fixed_cycle'",
+        "ALTER TABLE class_offerings ADD COLUMN academic_teaching_class_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE class_offerings ADD COLUMN academic_teaching_class_name TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE class_offerings ADD COLUMN academic_schedule_sync_at TEXT",
         "ALTER TABLE class_offerings ADD COLUMN academic_schedule_sync_message TEXT DEFAULT ''",

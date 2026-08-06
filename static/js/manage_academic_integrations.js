@@ -131,6 +131,7 @@ function formatStatusTime(item) {
 function autoSyncStatusLabel(status) {
     if (status === 'success') return '已完成';
     if (status === 'partial_success') return '部分完成';
+    if (status === 'review_required' || status === 'conflict_required') return '待确认差异';
     if (status === 'failed') return '未完成';
     if (status === 'missing_credential') return '缺少凭据';
     if (status === 'no_current_semester') return '缺少当前学期';
@@ -502,7 +503,8 @@ async function syncAcademicCapability(button) {
             stages: [stage],
         });
         closeSyncModal();
-        showMessage(stage.message, stage.status === 'failed' ? 'warning' : 'success');
+        const needsReview = ['failed', 'review_required', 'conflict_required'].includes(stage.status);
+        showMessage(stage.message, needsReview ? 'warning' : 'success');
     } catch (error) {
         showMessage(error.message || '同步失败。', 'error');
     } finally {

@@ -114,6 +114,8 @@ async def api_sync_current_courses_from_academic_system(
         raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
     if result.get("status") == "invalid_semester":
         raise HTTPException(400, result.get("message") or "所选学年学期不可用。")
+    if result.get("status") == "conflict_required":
+        return JSONResponse(status_code=409, content=result)
     if result.get("status") != "success":
         raise HTTPException(502, result.get("message") or "未能从教务系统同步课程。")
     return result

@@ -260,8 +260,48 @@ async def api_sync_current_classes_from_academic_system(
         raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
     if result.get("status") == "invalid_semester":
         raise HTTPException(400, result.get("message") or "所选学年学期不可用。")
+    if result.get("status") == "conflict_required":
+        return JSONResponse(status_code=409, content=result)
     if result.get("status") != "success":
         raise HTTPException(502, result.get("message") or "未能从教务系统同步班级和学生名单。")
+    return result
+
+
+@router.post("/academic-sync/preview", response_class=JSONResponse)
+async def api_preview_academic_setup_sync(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    data = await _parse_optional_json_request(request)
+    semester_id = _parse_optional_int(data.get("semester_id"))
+    if not semester_id:
+        raise HTTPException(400, "请选择需要同步的学年学期。")
+    result = await create_teacher_academic_sync_preview(int(user["id"]), int(semester_id))
+    if result.get("status") in {"missing_credential", "invalid_semester"}:
+        raise HTTPException(400, result.get("message") or "无法生成教务同步预览。")
+    if result.get("status") not in {"ready", "review_required"}:
+        raise HTTPException(502, result.get("message") or "无法读取教务同步数据。")
+    return result
+
+
+@router.post("/academic-sync/apply", response_class=JSONResponse)
+async def api_apply_academic_setup_sync(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    data = await _parse_optional_json_request(request)
+    plan_id = _parse_optional_int(data.get("plan_id"))
+    if not plan_id:
+        raise HTTPException(400, "同步方案已失效，请重新生成差异预览。")
+    result = await apply_teacher_academic_sync_plan(
+        int(user["id"]),
+        int(plan_id),
+        {"items": data.get("items") or []},
+    )
+    if result.get("status") in {"invalid_plan", "expired_plan", "stale_plan"}:
+        raise HTTPException(409, result.get("message") or "同步方案已失效。")
+    if result.get("status") != "success":
+        raise HTTPException(502, result.get("message") or "未能应用教务同步方案。")
     return result
 
 

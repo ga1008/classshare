@@ -715,7 +715,8 @@ function bindEvents() {
 bindEvents();
 initAcademicSyncDialog({
     buttons: elements.academicSyncButtons,
-    endpoint: '/api/manage/classes/sync-current-academic',
+    previewEndpoint: '/api/manage/academic-sync/preview',
+    applyEndpoint: '/api/manage/academic-sync/apply',
     semesters: data.academicSyncSemesters,
     defaultSemesterId: data.academicSyncDefaultSemesterId,
 });

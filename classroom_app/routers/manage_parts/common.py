@@ -177,6 +177,10 @@ from ...services.academic_classroom_sync_service import (
     sync_teaching_places_from_academic_system,
 )
 from ...services.academic_course_sync_service import sync_current_teacher_courses_from_academic_system
+from ...services.academic_sync_reconciliation_service import (
+    apply_teacher_academic_sync_plan,
+    create_teacher_academic_sync_preview,
+)
 from ...services.academic_exam_roster_sync_service import (
     build_exam_roster_signature_workbook,
     load_classroom_exam_roster_status,
@@ -513,6 +517,7 @@ def _prepare_offering_payload(
     if requested_schedule_source not in {SCHEDULE_SOURCE_ACADEMIC_SYNC, SCHEDULE_SOURCE_FIXED_CYCLE}:
         requested_schedule_source = ""
     preferred_teaching_class_name = str(data.get("academic_teaching_class_name") or "").strip()
+    preferred_teaching_class_id = str(data.get("academic_teaching_class_id") or "").strip()
     academic_teaching_class_name, academic_occurrences, academic_warnings, academic_class_options = (
         select_academic_teaching_class_for_offering(
             conn,
@@ -520,6 +525,7 @@ def _prepare_offering_payload(
             semester_id=semester_id,
             course_id=course_id,
             class_row=class_row,
+            preferred_teaching_class_id=preferred_teaching_class_id,
             preferred_teaching_class_name=preferred_teaching_class_name,
         )
     )
@@ -603,6 +609,15 @@ def _prepare_offering_payload(
         }
     plan["academic_teaching_class_options"] = academic_class_options
     plan["academic_teaching_class_display_name"] = academic_teaching_class_display_name
+    selected_academic_option = next(
+        (
+            item
+            for item in academic_class_options
+            if item.get("teaching_class_name") == academic_teaching_class_name
+        ),
+        {},
+    )
+    academic_teaching_class_id = str(selected_academic_option.get("teaching_class_id") or preferred_teaching_class_id)
 
     return {
         "offering_id": offering_id,
@@ -618,6 +633,7 @@ def _prepare_offering_payload(
         "weekly_schedule": weekly_schedule,
         "weekly_schedule_json": json.dumps(weekly_schedule, ensure_ascii=False),
         "schedule_source": SCHEDULE_SOURCE_ACADEMIC_SYNC if use_academic_schedule else SCHEDULE_SOURCE_FIXED_CYCLE,
+        "academic_teaching_class_id": academic_teaching_class_id,
         "academic_teaching_class_name": academic_teaching_class_name,
         "academic_teaching_class_display_name": academic_teaching_class_display_name,
         "academic_teaching_class_options": academic_class_options,

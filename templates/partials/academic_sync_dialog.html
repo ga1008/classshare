@@ -58,8 +58,17 @@
 
             <section class="academic-sync-dialog__progress" data-academic-sync-progress-view hidden aria-live="polite">
                 <span class="academic-sync-dialog__spinner" aria-hidden="true"></span>
-                <strong>正在读取课程与全部班级名单</strong>
-                <p>将依次完成课程合并、班级合并、学生名单同步和排课课次生成，请勿重复提交。</p>
+                <strong data-academic-sync-progress-title>正在读取课程与全部班级名单</strong>
+                <p data-academic-sync-progress-copy>系统会先生成差异方案，不会在比较完成前修改本地课堂。</p>
+            </section>
+
+            <section class="academic-sync-dialog__diff" data-academic-sync-diff-view hidden>
+                <div class="academic-sync-dialog__diff-summary" data-academic-sync-diff-summary></div>
+                <div class="academic-sync-dialog__integrity-note">
+                    <strong>课堂关系保护已开启</strong>
+                    <span>合并会原地保留课程、班级、课堂和教材 ID；学生不自动删除；有学习记录的停排课次只标记取消。</span>
+                </div>
+                <div class="academic-sync-dialog__diff-list" data-academic-sync-diff-list></div>
             </section>
 
             <section class="academic-sync-dialog__result" data-academic-sync-result-view hidden aria-live="polite">
@@ -69,7 +78,9 @@
 
         <footer class="academic-sync-dialog__footer">
             <button type="button" class="btn btn-outline" data-academic-sync-cancel>取消</button>
-            <button type="button" class="btn btn-primary" data-academic-sync-confirm>开始完整同步</button>
+            <button type="button" class="btn btn-primary" data-academic-sync-confirm>读取并比较</button>
+            <button type="button" class="btn btn-outline" data-academic-sync-back hidden>返回选择学期</button>
+            <button type="button" class="btn btn-primary" data-academic-sync-apply hidden>按所选差异同步</button>
             <button type="button" class="btn btn-outline" data-academic-sync-stay hidden>留在当前页</button>
             <button type="button" class="btn btn-primary" data-academic-sync-reload hidden>刷新查看结果</button>
         </footer>

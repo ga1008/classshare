@@ -308,6 +308,27 @@ class AcademicRosterFetchSafetyTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AcademicAutoSyncContractTests(unittest.IsolatedAsyncioTestCase):
+    def test_conflict_required_is_reported_as_review_required(self):
+        stage = auto_sync._stage_payload(
+            key="courses",
+            label="课程课表",
+            result={
+                "status": "conflict_required",
+                "message": "检测到差异",
+                "requires_confirmation": True,
+                "plan_id": 27,
+                "semester_name": "2025-2026学年第一学期",
+            },
+            counts={},
+        )
+
+        self.assertTrue(stage["requires_confirmation"])
+        self.assertEqual(stage["plan_id"], 27)
+        status, message = auto_sync._summarize_auto_sync([stage])
+        self.assertEqual(status, "review_required")
+        self.assertIn("暂停", message)
+        self.assertIn("逐项比较", message)
+
     async def test_course_and_roster_stage_views_share_one_remote_sync(self):
         shared_result = {
             "status": "success",

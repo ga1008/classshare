@@ -439,6 +439,8 @@ def _stage_payload(
         "label": label,
         "status": str(result.get("status") or "unknown"),
         "message": str(result.get("message") or ""),
+        "requires_confirmation": bool(result.get("requires_confirmation")),
+        "plan_id": result.get("plan_id"),
         "semester_id": result.get("semester_id"),
         "semester_name": str(result.get("semester_name") or ""),
         "counts": counts,
@@ -496,6 +498,17 @@ async def _run_course_roster_stages(teacher_id: int) -> list[dict[str, Any]]:
 
 
 def _summarize_auto_sync(stages: list[dict[str, Any]]) -> tuple[str, str]:
+    review_stages = [item for item in stages if item.get("status") == "conflict_required"]
+    if review_stages:
+        semester_name = next((str(item.get("semester_name") or "") for item in review_stages), "")
+        semester_note = f"（{semester_name}）" if semester_name else ""
+        return (
+            "review_required",
+            (
+                f"教务账号已验证并保存。课程、班级或排课数据{semester_note}与既有课堂存在差异，"
+                "系统已暂停相关写入；请到课程或班级页面打开“教务同步”，逐项比较并确认合并内容。"
+            ),
+        )
     healthy_statuses = {"success", "fresh", "no_data", "already_synced"}
     success_count = sum(1 for item in stages if item.get("status") in healthy_statuses)
     if success_count == len(stages):

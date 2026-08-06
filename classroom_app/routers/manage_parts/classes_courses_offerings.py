@@ -36,6 +36,7 @@ async def api_preview_class_offering(
         "planned_section_count": planned_section_count,
         "course_total_hours": int(payload["course_row"]["total_hours"] or 0),
         "schedule_source": payload["schedule_source"],
+        "academic_teaching_class_id": payload["academic_teaching_class_id"],
         "academic_teaching_class_name": payload["academic_teaching_class_name"],
         "academic_teaching_class_display_name": payload["academic_teaching_class_display_name"],
         "academic_teaching_class_options": payload["academic_teaching_class_options"],
@@ -73,6 +74,7 @@ async def api_save_class_offering(
                         first_class_date = ?,
                         weekly_schedule_json = ?,
                         schedule_source = ?,
+                        academic_teaching_class_id = ?,
                         academic_teaching_class_name = ?,
                         academic_schedule_sync_at = ?,
                         academic_schedule_sync_message = ?
@@ -88,6 +90,7 @@ async def api_save_class_offering(
                         payload["first_class_date"].isoformat() if payload["first_class_date"] else "",
                         payload["weekly_schedule_json"],
                         payload["schedule_source"],
+                        payload["academic_teaching_class_id"],
                         payload["academic_teaching_class_name"],
                         datetime.now().isoformat(timespec="seconds")
                         if payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
@@ -116,11 +119,12 @@ async def api_save_class_offering(
                         first_class_date,
                         weekly_schedule_json,
                         schedule_source,
+                        academic_teaching_class_id,
                         academic_teaching_class_name,
                         academic_schedule_sync_at,
                         academic_schedule_sync_message
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         payload["class_id"],
@@ -133,6 +137,7 @@ async def api_save_class_offering(
                         payload["first_class_date"].isoformat() if payload["first_class_date"] else "",
                         payload["weekly_schedule_json"],
                         payload["schedule_source"],
+                        payload["academic_teaching_class_id"],
                         payload["academic_teaching_class_name"],
                         datetime.now().isoformat(timespec="seconds")
                         if payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC

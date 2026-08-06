@@ -325,6 +325,7 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         first_class_date = ?,
                         weekly_schedule_json = ?,
                         schedule_source = ?,
+                        academic_teaching_class_id = ?,
                         academic_teaching_class_name = ?,
                         academic_schedule_sync_at = ?,
                         academic_schedule_sync_message = ?
@@ -338,6 +339,7 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         offering_payload["first_class_date"].isoformat() if offering_payload["first_class_date"] else "",
                         offering_payload["weekly_schedule_json"],
                         offering_payload["schedule_source"],
+                        offering_payload["academic_teaching_class_id"],
                         offering_payload["academic_teaching_class_name"],
                         datetime.now().isoformat(timespec="seconds")
                         if offering_payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
@@ -365,11 +367,12 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         first_class_date,
                         weekly_schedule_json,
                         schedule_source,
+                        academic_teaching_class_id,
                         academic_teaching_class_name,
                         academic_schedule_sync_at,
                         academic_schedule_sync_message
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         class_id,
@@ -382,6 +385,7 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                         offering_payload["first_class_date"].isoformat() if offering_payload["first_class_date"] else "",
                         offering_payload["weekly_schedule_json"],
                         offering_payload["schedule_source"],
+                        offering_payload["academic_teaching_class_id"],
                         offering_payload["academic_teaching_class_name"],
                         datetime.now().isoformat(timespec="seconds")
                         if offering_payload["schedule_source"] == SCHEDULE_SOURCE_ACADEMIC_SYNC
