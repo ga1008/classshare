@@ -1161,11 +1161,6 @@ def update_signature_metadata(
         org_scope["college"] = normalize_org_text(payload.get("college", org_scope["college"]))
         org_scope["department"] = normalize_org_text(payload.get("department", org_scope["department"]))
 
-    # 超系部身份（院长/校长/教务老师…）不挂系部；只有教师/系主任/副系主任
-    # 保留系部归属。清空后可见范围按组织层级放大（同学院/全校）。
-    if not signature_identity_service.identity_requires_department(new_identity):
-        org_scope["department"] = ""
-
     previous_identity = signature_identity_service.normalize_identity_category(
         row["identity_category"] if "identity_category" in row.keys() else ""
     )
@@ -1182,6 +1177,12 @@ def update_signature_metadata(
         new_verified = 0
     else:
         new_verified = previous_verified
+
+    # 超系部身份（院长/校长/教务老师…）不挂系部；只有教师/系主任/副系主任
+    # 保留系部归属。清空后可见范围按组织层级放大（同学院/全校）。
+    # NOTE: 必须位于 new_identity 解析之后（曾因顺序错误导致保存 500）。
+    if not signature_identity_service.identity_requires_department(new_identity):
+        org_scope["department"] = ""
 
     explicit_subject_id = payload.get("subject_id", payload.get("subject_teacher_id"))
     if (
@@ -1216,7 +1217,7 @@ def update_signature_metadata(
             owner_role = ?,
             owner_id = ?,
             owner_name_snapshot = ?,
-            ownership_updated_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE ownership_updated_at END,
+            ownership_updated_at = CASE WHEN ? = 1 THEN CAST(CURRENT_TIMESTAMP AS TEXT) ELSE ownership_updated_at END,
             ownership_updated_by_teacher_id = CASE WHEN ? = 1 THEN ? ELSE ownership_updated_by_teacher_id END,
             school_code = ?,
             school_name = ?,

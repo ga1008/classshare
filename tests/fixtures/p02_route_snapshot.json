@@ -3064,6 +3064,46 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/system/monitor/ai-insight",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_monitor_ai_insight",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/monitor/memory/optimize",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_optimize_monitor_memory",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/monitor/processes",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_monitor_processes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/monitor/processes/{pid:int}/terminate",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_terminate_monitor_process",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/monitor/snapshot",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_monitor_snapshot",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/system/organizations/colleges",
     "methods": [
       "POST"
@@ -5582,6 +5622,14 @@
     ],
     "name": "redirect_manage_legacy_system_gongwen_integrations",
     "include_in_schema": false
+  },
+  {
+    "path": "/manage/system/monitor",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_monitor_page",
+    "include_in_schema": true
   },
   {
     "path": "/manage/system/organizations",
