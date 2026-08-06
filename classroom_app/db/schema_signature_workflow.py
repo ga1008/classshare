@@ -143,6 +143,11 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
             # 'personal' = someone's autograph; 'stamp' = shared remark stamp
             # (同意/已阅…) usable by material owners without any request flow.
             "signature_kind": "TEXT NOT NULL DEFAULT 'personal'",
+            # Org columns exist in the real DDL; adding them here keeps narrow
+            # test fixtures compatible with the migrations below.
+            "school_code": "TEXT NOT NULL DEFAULT ''",
+            "college": "TEXT NOT NULL DEFAULT ''",
+            "department": "TEXT NOT NULL DEFAULT ''",
         },
         engine=engine,
     )
@@ -156,6 +161,18 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
         WHERE owner_role = 'system'
           AND COALESCE(subject_role, '') NOT IN ('teacher', 'student')
           AND COALESCE(signature_kind, 'personal') <> 'stamp'
+        """
+    )
+    # Above-department identities carry no department affiliation (mirror of
+    # signature_identity_service.DEPARTMENT_SCOPED_IDENTITIES — only
+    # teacher/department_head/vice_department_head keep a department).
+    conn.execute(
+        """
+        UPDATE electronic_signatures
+        SET department = ''
+        WHERE COALESCE(identity_category, '') NOT IN
+              ('', 'teacher', 'department_head', 'vice_department_head')
+          AND COALESCE(department, '') <> ''
         """
     )
     # Repair guard: a stamp must never point at a person's account/name-role.

@@ -464,6 +464,48 @@ class SignatureIdentityClaimTests(unittest.TestCase):
             schema_signature_workflow.ensure_signature_workflow_schema(self.conn)
         self.assertEqual("stamp", self._signature(legacy_id)["signature_kind"])
 
+    def test_identity_department_scope_rules(self) -> None:
+        self.assertTrue(signature_identity_service.identity_requires_department(""))
+        self.assertTrue(signature_identity_service.identity_requires_department("teacher"))
+        self.assertTrue(signature_identity_service.identity_requires_department("vice_department_head"))
+        for above in ("dean", "vice_dean", "principal", "academic_affairs", "counselor", "other"):
+            self.assertFalse(signature_identity_service.identity_requires_department(above))
+
+    def test_propagate_above_department_identity_clears_department(self) -> None:
+        self.conn.execute("UPDATE electronic_signatures SET department = '软件工程系' WHERE id = 2")
+        signature_identity_service.propagate_account_identity(self.conn, "teacher", 2, "dean")
+        self.assertEqual("", self._signature(2)["department"])
+        # Department-scoped identity keeps the department untouched.
+        self.conn.execute("UPDATE electronic_signatures SET department = '软件工程系' WHERE id = 2")
+        signature_identity_service.propagate_account_identity(self.conn, "teacher", 2, "department_head")
+        self.assertEqual("软件工程系", self._signature(2)["department"])
+
+    def test_view_scope_widens_as_org_fields_empty(self) -> None:
+        actor = {
+            "role": "teacher",
+            "id": 42,
+            "is_super_admin": False,
+            "scope": {
+                "school_code": "gxufl",
+                "school_name": "示例大学",
+                "college": "数字科技学院",
+                "department": "软件工程系",
+            },
+            "memberships": [],
+        }
+        base = {
+            "id": 500, "owner_role": "teacher", "owner_id": 7, "subject_role": "teacher",
+            "subject_id": None, "scope_level": "department", "school_code": "gxufl",
+        }
+        dean_row = {**base, "college": "数字科技学院", "department": ""}
+        self.assertTrue(signature_service.can_view_signature(actor, dean_row))
+        other_college_dean = {**base, "college": "外国语学院", "department": ""}
+        self.assertFalse(signature_service.can_view_signature(actor, other_college_dean))
+        school_level = {**base, "college": "", "department": ""}
+        self.assertTrue(signature_service.can_view_signature(actor, school_level))
+        other_department = {**base, "college": "数字科技学院", "department": "网络工程系"}
+        self.assertFalse(signature_service.can_view_signature(actor, other_department))
+
     def test_sync_fills_signature_identity_from_account(self) -> None:
         self.conn.execute("UPDATE teachers SET identity_category = 'counselor' WHERE id = 2")
         result = signature_identity_service.sync_identity_for_signature(self.conn, 2)

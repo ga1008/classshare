@@ -27,6 +27,20 @@ IDENTITY_CATEGORIES: tuple[tuple[str, str], ...] = (
 
 IDENTITY_LABELS: dict[str, str] = dict(IDENTITY_CATEGORIES)
 
+# Only these identities belong to a department; anyone above department
+# level (dean, principal, 教务老师, 辅导员…) carries no department affiliation.
+DEPARTMENT_SCOPED_IDENTITIES: frozenset[str] = frozenset(
+    {"teacher", "department_head", "vice_department_head"}
+)
+
+
+def identity_requires_department(value: Any) -> bool:
+    """Empty identity keeps whatever department it has; a set identity only
+    keeps a department when it is department-scoped."""
+    key = normalize_identity_category(value)
+    return not key or key in DEPARTMENT_SCOPED_IDENTITIES
+
+
 # A signature point that needs a 系主任 also accepts 副系主任, etc.
 IDENTITY_FILTER_GROUPS: dict[str, tuple[str, ...]] = {
     "principal": ("principal", "vice_principal"),
@@ -144,10 +158,16 @@ def sync_identity_for_signature(conn: Any, signature_id: int) -> dict[str, str]:
         conn.execute(
             """
             UPDATE electronic_signatures
-            SET identity_category = ?, identity_verified = 0, updated_at = CURRENT_TIMESTAMP
+            SET identity_category = ?, identity_verified = 0,
+                department = CASE WHEN ? = 1 THEN department ELSE '' END,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
-            (account_identity, int(signature_id)),
+            (
+                account_identity,
+                1 if identity_requires_department(account_identity) else 0,
+                int(signature_id),
+            ),
         )
         return {"signature": account_identity}
     return {}
@@ -419,11 +439,19 @@ def propagate_account_identity(conn: Any, role: str, user_id: Any, identity: str
     cursor = conn.execute(
         """
         UPDATE electronic_signatures
-        SET identity_category = ?, identity_verified = 0, updated_at = CURRENT_TIMESTAMP
+        SET identity_category = ?, identity_verified = 0,
+            department = CASE WHEN ? = 1 THEN department ELSE '' END,
+            updated_at = CURRENT_TIMESTAMP
         WHERE subject_role = ? AND subject_id = ?
           AND status = 'active' AND deleted_at IS NULL
           AND COALESCE(identity_category, '') <> ?
         """,
-        (normalized_identity, table_role, normalized_id, normalized_identity),
+        (
+            normalized_identity,
+            1 if identity_requires_department(normalized_identity) else 0,
+            table_role,
+            normalized_id,
+            normalized_identity,
+        ),
     )
     return int(cursor.rowcount or 0)

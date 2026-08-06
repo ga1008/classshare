@@ -390,6 +390,22 @@ function renderDetail(item) {
     }
 }
 
+const DEPARTMENT_SCOPED_IDENTITIES = new Set(['', 'teacher', 'department_head', 'vice_department_head']);
+
+function syncEditDepartmentWithIdentity() {
+    const identity = els['signature-edit-identity-input']?.value || '';
+    const departmentInput = els['signature-edit-department-input'];
+    if (!departmentInput) return;
+    const keepsDepartment = DEPARTMENT_SCOPED_IDENTITIES.has(identity);
+    departmentInput.disabled = !keepsDepartment;
+    if (!keepsDepartment) {
+        departmentInput.value = '';
+        departmentInput.placeholder = '该身份超越系部，不归属系部';
+    } else {
+        departmentInput.placeholder = '';
+    }
+}
+
 function canReplaceImage(item) {
     if (!item) return false;
     if (item.can_edit) return true;
@@ -851,6 +867,7 @@ async function openEditModal() {
     }
     if (els['signature-edit-subject-role-input']) els['signature-edit-subject-role-input'].value = item.subject_role || 'teacher';
     if (els['signature-edit-identity-input']) els['signature-edit-identity-input'].value = item.identity_category || '';
+    syncEditDepartmentWithIdentity();
     const scopeLevel = item.scope_level === 'college' ? 'department' : (item.scope_level || 'department');
     if (els['signature-edit-scope-level-input']) els['signature-edit-scope-level-input'].value = scopeLevel;
     if (els['signature-edit-college-input']) els['signature-edit-college-input'].value = item.college || '';
@@ -1097,6 +1114,7 @@ function bindEvents() {
     els['signature-edit-subject-input']?.addEventListener('input', debounce(() => fetchOwnerTeachers(els['signature-edit-subject-input']?.value?.trim() || ''), 220));
     els['signature-subject-account-input']?.addEventListener('input', debounce(() => fetchOwnerTeachers(els['signature-subject-account-input']?.value?.trim() || ''), 220));
     els['signature-edit-school-input']?.addEventListener('change', () => fetchOwnerTeachers(''));
+    els['signature-edit-identity-input']?.addEventListener('change', syncEditDepartmentWithIdentity);
 }
 
 document.addEventListener('click', (event) => {

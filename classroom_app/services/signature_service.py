@@ -237,7 +237,15 @@ def can_view_signature(actor: dict[str, Any], row: sqlite3.Row | dict[str, Any])
     if role == "teacher":
         if str(row["owner_role"] or "") == "system" or str(row["scope_level"] or "") == "platform":
             return True
-        return _same_department(actor, row)
+        # 组织字段越空可见范围越大：有系部→同系可见；无系部（院长等超系部
+        # 身份）→同学院可见；连学院也空（校级）→全校教师可见。
+        row_department = normalize_department(row["department"] if "department" in row.keys() else "")
+        if row_department:
+            return _same_department(actor, row)
+        row_college = normalize_college(row["college"] if "college" in row.keys() else "")
+        if row_college:
+            return _same_college(actor, row)
+        return _same_school(actor, row)
     return False
 
 
@@ -509,9 +517,29 @@ def _visibility_sql(actor: dict[str, Any], selected_school_code: str = "") -> tu
     else:
         clauses.append("(s.owner_role = 'teacher' AND s.owner_id = ?)")
         params.append(user_id)
+    college_pairs = sorted(
+        {
+            (normalize_school_code(item.get("school_code")), normalize_college(item.get("college")))
+            for item in memberships
+            if normalize_school_code(item.get("school_code")) and normalize_college(item.get("college"))
+        }
+    )
     for item_school_code, department in department_pairs:
         clauses.append("(s.school_code = ? AND s.department = ? AND s.owner_role IN ('teacher', 'student', 'system'))")
         params.extend([item_school_code, department])
+    # 无系部的签名（院长等超系部身份）按学院可见；连学院也空的按学校可见。
+    for item_school_code, college in college_pairs:
+        clauses.append(
+            "(s.school_code = ? AND COALESCE(s.department, '') = '' AND s.college = ?"
+            " AND s.owner_role IN ('teacher', 'student', 'system'))"
+        )
+        params.extend([item_school_code, college])
+    for item_school_code in school_codes:
+        clauses.append(
+            "(s.school_code = ? AND COALESCE(s.department, '') = '' AND COALESCE(s.college, '') = ''"
+            " AND s.owner_role IN ('teacher', 'student', 'system'))"
+        )
+        params.append(item_school_code)
     # can_view_signature grants teachers same-school access to platform assets;
     # the list query must agree or platform stamps vanish from pickers.
     for item_school_code in school_codes:
@@ -1133,6 +1161,11 @@ def update_signature_metadata(
         org_scope["college"] = normalize_org_text(payload.get("college", org_scope["college"]))
         org_scope["department"] = normalize_org_text(payload.get("department", org_scope["department"]))
 
+    # 超系部身份（院长/校长/教务老师…）不挂系部；只有教师/系主任/副系主任
+    # 保留系部归属。清空后可见范围按组织层级放大（同学院/全校）。
+    if not signature_identity_service.identity_requires_department(new_identity):
+        org_scope["department"] = ""
+
     previous_identity = signature_identity_service.normalize_identity_category(
         row["identity_category"] if "identity_category" in row.keys() else ""
     )
@@ -1399,6 +1432,8 @@ async def create_signature_from_upload(
         clean_subject_name = clean_name
         normalized_identity = ""
         identity_verified = 0
+    if not signature_identity_service.identity_requires_department(normalized_identity):
+        owner_scope = {**owner_scope, "department": ""}
 
     signature_id = execute_insert_returning_id(
         conn,
