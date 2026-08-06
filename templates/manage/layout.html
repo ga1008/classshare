@@ -580,7 +580,11 @@
         /* Page float-in / float-out transition (MPA-friendly). */
         @media (prefers-reduced-motion: no-preference) {
             .manage-content:not(.is-embedded) {
-                animation: managePageEnter 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+                /* fill-mode 必须是 backwards：both/forwards 会在动画结束后
+                   永久保留 transform 填充值（恒等矩阵也算 transformed），
+                   使本容器成为 position:fixed 的 containing block，
+                   页面内的 modal-backdrop 会被劫持而不再相对视口居中。 */
+                animation: managePageEnter 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards;
             }
 
             .manage-main.is-leaving .manage-content {
