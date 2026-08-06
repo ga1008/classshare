@@ -146,8 +146,12 @@
     .monitor-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; color: var(--mb-muted); font-size: 0.7rem; }
     .monitor-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 
-    .monitor-donut-wrap { display: flex; align-items: center; gap: 14px; }
-    .monitor-donut-list { display: grid; gap: 6px; font-size: 0.74rem; color: var(--mb-muted); min-width: 0; flex: 1; }
+    .monitor-donut-wrap { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    /* The generic .monitor-chart { width:100% } would blow the donut up to the
+       full panel width and squeeze the legend off-screen — pin it instead. */
+    .monitor-donut-wrap .monitor-chart { width: 118px; height: 118px; flex: 0 0 118px; }
+    .monitor-donut-list { display: grid; gap: 6px; font-size: 0.74rem; color: var(--mb-muted); min-width: 140px; flex: 1; }
+    .monitor-donut-list span { overflow-wrap: anywhere; }
     .monitor-donut-list b { color: var(--mb-text); font-variant-numeric: tabular-nums; }
 
     .monitor-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; color: var(--mb-text); }
