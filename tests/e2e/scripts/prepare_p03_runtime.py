@@ -498,6 +498,20 @@ def prepare(runtime_root: Path) -> dict[str, Any]:
             password_hash=password_hash,
             super_admin=False,
         )
+        # Mark the super-admin bootstrap as done, pointing at the QA super
+        # teacher.  Without the marker, app startup falls back to promoting
+        # the lowest-id teacher (qa_p03_teacher), silently making the regular
+        # QA teacher a super admin.
+        conn.execute(
+            """
+            INSERT INTO system_settings (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            ("teacher_accounts.initial_super_admin_seeded", f"teacher:{super_teacher_id}"),
+        )
 
         class_id = _ensure_class(conn, name="P03 QA Class", teacher_id=teacher_id)
         other_class_id = _ensure_class(conn, name="P03 QA Other Class", teacher_id=other_teacher_id)

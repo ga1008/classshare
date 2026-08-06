@@ -321,7 +321,15 @@
             box-shadow: 0 8px 18px -10px rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.8);
         }
 
-        /* Admin group: amber accent so privileged tools read as distinct. */
+        /* Admin domain: amber accent so privileged tools read as distinct.
+           The 管理 tab keeps a faint amber tint even when inactive. */
+        .manage-domain-tab--admin { color: #b45309; border-color: rgba(245, 158, 11, 0.3); }
+        .manage-domain-tab--admin:hover,
+        .manage-domain-tab--admin:focus-visible {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.4);
+            color: #92400e;
+        }
         .manage-nav-group--admin .manage-nav-group-toggle { color: #b45309; }
         .manage-nav-group--admin .manage-nav-group-toggle:hover { background: rgba(245, 158, 11, 0.09); }
         .manage-nav-group--admin.is-open .manage-nav-group-toggle__count,
@@ -722,7 +730,7 @@
                 {% for domain in manage_nav.domains %}
                 <button
                     type="button"
-                    class="manage-domain-tab{% if domain.active %} is-active{% endif %}"
+                    class="manage-domain-tab manage-domain-tab--{{ domain.key }}{% if domain.active %} is-active{% endif %}"
                     data-domain-tab="{{ domain.key }}"
                     role="tab"
                     aria-selected="{{ 'true' if domain.active else 'false' }}"
@@ -783,38 +791,6 @@
                     {% endfor %}
                 </div>
                 {% endfor %}
-
-                {% if manage_nav.admin_groups %}
-                <div class="manage-nav-admin" data-manage-domain="admin">
-                    {% for group in manage_nav.admin_groups %}
-                    <div class="manage-nav-group manage-nav-group--admin{% if group.active %} is-active is-open{% endif %}" data-nav-group="admin:{{ group.label }}">
-                        <button type="button" class="manage-nav-group-toggle" aria-expanded="{{ 'true' if group.active else 'false' }}">
-                            <span class="manage-nav-group-toggle__label">{{ group.label }}</span>
-                            <span class="manage-nav-group-toggle__count">{{ group['items']|length }}</span>
-                            <svg class="manage-nav-group-toggle__chevron" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
-                        </button>
-                        <div class="manage-nav-group-items">
-                            <div class="manage-nav-group-items-inner">
-                                {% for item in group['items'] %}
-                                <a
-                                    href="{{ item.href }}"
-                                    class="manage-nav-item{% if item.active %} active{% endif %}"
-                                    data-nav-text="{{ item.search_text }}"
-                                    data-nav-domain="{{ item.domain }}"
-                                    {{ explain_attrs(item.label, item.help_text, placement='right') }}
-                                >
-                                    <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
-                                    <span class="manage-nav-item__copy">
-                                        <span class="manage-nav-item__label">{{ item.label }}</span>
-                                    </span>
-                                </a>
-                                {% endfor %}
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% endif %}
 
                 <div class="manage-nav-empty" id="manageNavEmpty">没有匹配的菜单项</div>
             </nav>
@@ -937,9 +913,6 @@
                     tab.setAttribute('aria-selected', active ? 'true' : 'false');
                 });
                 domainPanels.forEach((panel) => {
-                    if (panel.classList.contains('manage-nav-admin')) {
-                        return;
-                    }
                     const active = panel.dataset.manageDomain === nextDomain;
                     panel.hidden = !active;
                     panel.classList.toggle('is-active', active);
@@ -1025,9 +998,6 @@
                         group.classList.toggle('is-empty', !hasVisible);
                     });
                     domainPanels.forEach((panel) => {
-                        if (panel.classList.contains('manage-nav-admin')) {
-                            return;
-                        }
                         if (!q) {
                             const active = panel.dataset.manageDomain === (nav.dataset.activeDomain || initialDomain);
                             panel.hidden = !active;
@@ -1042,7 +1012,7 @@
                     if (!q) {
                         setActiveDomain(nav.dataset.activeDomain || initialDomain);
                     } else if (visibleDomains.size > 0) {
-                        const firstDomain = Array.from(visibleDomains).find((domain) => domain !== 'admin');
+                        const firstDomain = Array.from(visibleDomains)[0];
                         if (firstDomain) {
                             domainTabs.forEach((tab) => {
                                 const active = tab.dataset.domainTab === firstDomain;

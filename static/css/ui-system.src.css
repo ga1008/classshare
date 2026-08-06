@@ -48300,7 +48300,9 @@ body.has-teaching-session-modal {
 
 .manage-domain-tabs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* Teachers see 3 domain tabs; super admins get a 4th 管理 tab. */
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     gap: 6px;
     padding: 12px 14px 4px;
 }

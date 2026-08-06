@@ -110,7 +110,9 @@ class ManageNavServiceTests(unittest.TestCase):
         admin_nav = build_manage_nav({"id": 1, "role": "teacher"}, "life_tips", is_super_admin=True)
         admin_keys = [
             item["key"]
-            for group in admin_nav["admin_groups"]
+            for domain in admin_nav["domains"]
+            if domain["key"] == "admin"
+            for group in domain["groups"]
             for item in group["items"]
         ]
         self.assertIn("life_tips", admin_keys)
@@ -134,12 +136,17 @@ class ManageNavServiceTests(unittest.TestCase):
     def test_manage_nav_filters_admin_items_and_marks_active_domain(self):
         teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "classrooms", is_super_admin=False)
         self.assertEqual("academic", teacher_nav["active_domain"])
-        self.assertEqual([], teacher_nav["admin_groups"])
+        # Regular teachers keep the clean three-domain shell: no admin tab.
+        self.assertEqual(list(MANAGE_DOMAIN_ORDER), [domain["key"] for domain in teacher_nav["domains"]])
         self.assertTrue(any(domain["key"] == "academic" and domain["active"] for domain in teacher_nav["domains"]))
 
         admin_nav = build_manage_nav({"id": 1, "role": "teacher"}, "system_users", is_super_admin=True)
         self.assertEqual("admin", admin_nav["active_domain"])
-        self.assertTrue(admin_nav["admin_groups"])
+        # Super admins get the admin domain as a fourth tab, rendered last.
+        self.assertEqual([*MANAGE_DOMAIN_ORDER, "admin"], [domain["key"] for domain in admin_nav["domains"]])
+        admin_domain = admin_nav["domains"][-1]
+        self.assertTrue(admin_domain["active"])
+        self.assertTrue(admin_domain["groups"])
         self.assertIn("system_users", admin_nav["hrefs"])
 
     def test_manage_legacy_redirects_are_derived_from_registry(self):

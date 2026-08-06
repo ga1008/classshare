@@ -584,8 +584,15 @@ def build_manage_nav(
     ]
     hrefs = {item.key: item.href for item in visible_items}
 
+    # The admin domain renders as a fourth tab, but only for super admins —
+    # regular teachers keep the clean three-domain shell.
+    domain_order = list(MANAGE_DOMAIN_ORDER)
+    admin_items = [item for item in visible_items if item.domain == MANAGE_ADMIN_DOMAIN]
+    if admin_items:
+        domain_order.append(MANAGE_ADMIN_DOMAIN)
+
     domains = []
-    for domain_key in MANAGE_DOMAIN_ORDER:
+    for domain_key in domain_order:
         domain_items = [item for item in visible_items if item.domain == domain_key]
         meta = MANAGE_DOMAIN_META[domain_key]
         first_href = domain_items[0].href if domain_items else "#"
@@ -598,15 +605,11 @@ def build_manage_nav(
             "groups": groups,
         })
 
-    admin_items = [item for item in visible_items if item.domain == MANAGE_ADMIN_DOMAIN]
-    admin_groups = _group_template_items(admin_items, active_key=normalized_active_key)
-
     return {
         "active_key": normalized_active_key,
         "active_domain": active_domain,
         "active_item": _item_to_template_dict(active_item, active_key=normalized_active_key) if active_item else None,
         "domains": domains,
-        "admin_groups": admin_groups,
         "hrefs": hrefs,
         "domain_meta": MANAGE_DOMAIN_META,
     }

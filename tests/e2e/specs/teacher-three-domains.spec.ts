@@ -43,6 +43,27 @@ test.describe('P03 teacher three-domain management shell', () => {
     await expectNoBrowserErrors(errors, testInfo);
   });
 
+  test('super admin gets a fourth 管理 tab scoped to platform tools', async ({ page }, testInfo) => {
+    const fixture = readFixture();
+    const errors = collectBrowserErrors(page);
+
+    await loginTeacher(page, fixture, fixture.superTeacher);
+    await page.goto('/manage/teaching', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+    await expect(page.locator('.manage-domain-tab')).toHaveCount(4);
+
+    await page.locator('.manage-domain-tab[data-domain-tab="admin"]').click();
+    await expect(page.locator('.manage-layout')).toHaveAttribute('data-manage-domain', 'admin');
+    await expect(page.locator('#manage-domain-admin .manage-nav-item').first()).toBeVisible();
+
+    await page.goto('/manage/system/users', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+    await expect(page.locator('.manage-layout')).toHaveAttribute('data-manage-domain', 'admin');
+    await expect(page.locator('.manage-domain-tab[data-domain-tab="admin"]')).toHaveClass(/is-active/);
+
+    await expectNoBrowserErrors(errors, testInfo);
+  });
+
   test('legacy management URLs redirect to their canonical domain paths', async ({ page }) => {
     const fixture = readFixture();
 
