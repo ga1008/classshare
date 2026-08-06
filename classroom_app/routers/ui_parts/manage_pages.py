@@ -1046,6 +1046,23 @@ async def get_manage_system_diagnostics_page(request: Request, user: dict = Depe
     )
 
 
+@router.get("/manage/system/monitor", response_class=HTMLResponse)
+async def get_manage_system_monitor_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """在线服务器监控大屏：资源、进程树、访问压力与 AI 解读。"""
+    with get_db_connection() as conn:
+        _ensure_manage_super_admin(conn, user)
+    return templates.TemplateResponse(
+        request,
+        "manage/system/monitor.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="监控大屏",
+            active_page="system_monitor",
+        ),
+    )
+
+
 @router.get("/manage/system/ai-usage", response_class=HTMLResponse)
 async def get_manage_system_ai_usage_page(request: Request, user: dict = Depends(get_current_teacher)):
     """AI usage and budget dashboard for super-admins."""

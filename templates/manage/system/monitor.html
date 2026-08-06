@@ -1,0 +1,338 @@
+{% extends "manage/layout.html" %}
+
+{% block extra_head %}
+<style>
+    .monitor-board {
+        --mb-bg: #0b1220;
+        --mb-panel: rgba(20, 30, 52, 0.86);
+        --mb-panel-border: rgba(96, 128, 190, 0.22);
+        --mb-text: #e7edf9;
+        --mb-muted: #8aa0c5;
+        --mb-accent: #38bdf8;
+        --mb-good: #34d399;
+        --mb-warn: #fbbf24;
+        --mb-bad: #fb7185;
+        position: relative;
+        margin: calc(var(--spacing-6) * -1);
+        padding: 22px 24px 30px;
+        min-height: calc(100vh - 78px);
+        background:
+            radial-gradient(1100px 480px at 12% -8%, rgba(56, 189, 248, 0.12), transparent 60%),
+            radial-gradient(900px 420px at 95% 4%, rgba(129, 140, 248, 0.12), transparent 55%),
+            var(--mb-bg);
+        color: var(--mb-text);
+    }
+
+    .monitor-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+
+    .monitor-head h1 {
+        margin: 0;
+        font-size: 1.28rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--mb-text);
+    }
+
+    .monitor-live-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: var(--mb-good);
+        box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+        animation: monitorPulse 2.2s ease-out infinite;
+    }
+
+    @keyframes monitorPulse {
+        0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
+        70% { box-shadow: 0 0 0 9px rgba(52, 211, 153, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    }
+
+    .monitor-head__meta {
+        color: var(--mb-muted);
+        font-size: 0.78rem;
+        display: grid;
+        gap: 2px;
+    }
+
+    .monitor-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .monitor-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 34px;
+        padding: 0 13px;
+        border-radius: 9px;
+        border: 1px solid rgba(96, 128, 190, 0.35);
+        background: rgba(30, 44, 74, 0.7);
+        color: var(--mb-text);
+        font-size: 0.82rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+    }
+
+    .monitor-btn:hover { background: rgba(45, 64, 104, 0.85); border-color: rgba(56, 189, 248, 0.5); transform: translateY(-1px); }
+    .monitor-btn:disabled { opacity: 0.55; cursor: wait; transform: none; }
+    .monitor-btn--accent { background: linear-gradient(135deg, rgba(56, 189, 248, 0.24), rgba(129, 140, 248, 0.24)); border-color: rgba(56, 189, 248, 0.45); }
+    .monitor-btn--danger:hover { border-color: rgba(251, 113, 133, 0.6); }
+    .monitor-btn.is-on { border-color: var(--mb-good); color: var(--mb-good); }
+
+    .monitor-grid { display: grid; gap: 14px; }
+
+    .monitor-tiles {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .monitor-panel {
+        background: var(--mb-panel);
+        border: 1px solid var(--mb-panel-border);
+        border-radius: 14px;
+        padding: 14px 16px;
+        backdrop-filter: blur(8px);
+        min-width: 0;
+    }
+
+    .monitor-tile { display: grid; gap: 8px; }
+    .monitor-tile__label { color: var(--mb-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; }
+    .monitor-tile__value { font-size: 1.42rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; color: var(--mb-text); }
+    .monitor-tile__value small { font-size: 0.72rem; color: var(--mb-muted); font-weight: 600; margin-left: 3px; }
+    .monitor-tile__sub { color: var(--mb-muted); font-size: 0.7rem; min-height: 0.9em; }
+    .monitor-tile__bar { height: 5px; border-radius: 999px; background: rgba(96, 128, 190, 0.18); overflow: hidden; }
+    .monitor-tile__bar i { display: block; height: 100%; border-radius: inherit; background: var(--mb-accent); transition: width 0.5s ease, background 0.5s ease; }
+
+    .monitor-row {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+        gap: 14px;
+    }
+
+    .monitor-row--thirds { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .monitor-panel h2 {
+        margin: 0 0 10px;
+        font-size: 0.85rem;
+        font-weight: 800;
+        color: var(--mb-text);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .monitor-panel h2 span.hint { color: var(--mb-muted); font-size: 0.68rem; font-weight: 600; }
+
+    .monitor-chart { width: 100%; display: block; }
+    .monitor-chart text { font-family: inherit; }
+
+    .monitor-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; color: var(--mb-muted); font-size: 0.7rem; }
+    .monitor-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+    .monitor-donut-wrap { display: flex; align-items: center; gap: 14px; }
+    .monitor-donut-list { display: grid; gap: 6px; font-size: 0.74rem; color: var(--mb-muted); min-width: 0; flex: 1; }
+    .monitor-donut-list b { color: var(--mb-text); font-variant-numeric: tabular-nums; }
+
+    .monitor-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; color: var(--mb-text); }
+    .monitor-table th {
+        text-align: left;
+        color: var(--mb-muted);
+        font-weight: 700;
+        font-size: 0.68rem;
+        letter-spacing: 0.05em;
+        padding: 4px 8px;
+        border-bottom: 1px solid rgba(96, 128, 190, 0.2);
+        white-space: nowrap;
+    }
+    .monitor-table td { padding: 6px 8px; border-bottom: 1px solid rgba(96, 128, 190, 0.1); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .monitor-table td.route-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+    .monitor-table tr:hover td { background: rgba(56, 189, 248, 0.05); }
+
+    .route-bar { position: relative; z-index: 0; }
+    .route-bar::before {
+        content: "";
+        position: absolute;
+        inset: 3px auto 3px 0;
+        width: calc(var(--route-ratio, 0) * 100%);
+        background: linear-gradient(90deg, rgba(56, 189, 248, 0.18), rgba(56, 189, 248, 0.04));
+        border-radius: 4px;
+        z-index: -1;
+    }
+
+    .monitor-proc-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .monitor-proc-toolbar input {
+        height: 30px;
+        padding: 0 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(96, 128, 190, 0.3);
+        background: rgba(11, 18, 32, 0.7);
+        color: var(--mb-text);
+        font-size: 0.78rem;
+        min-width: 200px;
+    }
+    .monitor-proc-toolbar input:focus { outline: none; border-color: var(--mb-accent); }
+
+    .proc-tree { max-height: 430px; overflow: auto; scrollbar-width: thin; }
+    .proc-row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 84px 58px 88px; gap: 8px; align-items: center; padding: 4px 8px; border-radius: 8px; font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+    .proc-row:hover { background: rgba(56, 189, 248, 0.07); }
+    .proc-row--head { color: var(--mb-muted); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; position: sticky; top: 0; background: var(--mb-panel); z-index: 2; }
+    .proc-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .proc-name__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .proc-name .twisty { flex: 0 0 auto; width: 16px; height: 16px; border: none; background: none; color: var(--mb-muted); cursor: pointer; padding: 0; font-size: 0.7rem; }
+    .proc-self-badge { flex: 0 0 auto; font-size: 0.6rem; padding: 1px 6px; border-radius: 999px; background: rgba(56, 189, 248, 0.16); color: var(--mb-accent); font-weight: 700; }
+    .proc-kill {
+        height: 24px; padding: 0 9px; border-radius: 7px; font-size: 0.68rem; font-weight: 700;
+        border: 1px solid rgba(251, 113, 133, 0.35); background: rgba(251, 113, 133, 0.08); color: var(--mb-bad); cursor: pointer;
+    }
+    .proc-kill:hover { background: rgba(251, 113, 133, 0.18); }
+    .proc-kill:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .monitor-loss-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 10px; }
+    .monitor-loss-stats > div { background: rgba(11, 18, 32, 0.55); border-radius: 10px; padding: 9px 11px; display: grid; gap: 3px; }
+    .monitor-loss-stats span { color: var(--mb-muted); font-size: 0.66rem; font-weight: 700; }
+    .monitor-loss-stats b { font-size: 1.05rem; font-variant-numeric: tabular-nums; color: var(--mb-text); }
+
+    .monitor-errors { display: grid; gap: 5px; font-size: 0.7rem; color: var(--mb-muted); max-height: 120px; overflow: auto; scrollbar-width: thin; }
+    .monitor-errors code { color: var(--mb-bad); font-size: 0.68rem; }
+
+    .monitor-insight { display: none; }
+    .monitor-insight.is-visible { display: block; }
+    .monitor-insight__body { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 16px; align-items: start; }
+    .monitor-insight__lists { display: grid; gap: 10px; }
+    .monitor-insight__lists h3 { margin: 0 0 4px; font-size: 0.72rem; color: var(--mb-muted); font-weight: 800; letter-spacing: 0.05em; }
+    .monitor-insight__lists ul { margin: 0; padding-left: 18px; font-size: 0.78rem; display: grid; gap: 3px; }
+    .monitor-insight__summary { grid-column: 1 / -1; font-size: 0.86rem; line-height: 1.5; color: var(--mb-text); background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--mb-accent); padding: 8px 12px; border-radius: 0 8px 8px 0; }
+
+    .monitor-empty { color: var(--mb-muted); font-size: 0.76rem; text-align: center; padding: 18px 0; }
+
+    @media (max-width: 1180px) {
+        .monitor-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .monitor-row, .monitor-row--thirds { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 640px) {
+        .monitor-board { margin: calc(var(--spacing-4) * -1); padding: 14px; }
+        .monitor-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .monitor-insight__body { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+{% endblock %}
+
+{% block content %}
+<div class="monitor-board" id="monitorBoard">
+    <div class="monitor-head">
+        <div>
+            <h1><span class="monitor-live-dot" aria-hidden="true"></span>在线服务器监控大屏</h1>
+            <div class="monitor-head__meta">
+                <span id="monitorMeta">正在连接监控数据…</span>
+                <span id="monitorBoot"></span>
+            </div>
+        </div>
+        <div class="monitor-actions">
+            <button type="button" class="monitor-btn is-on" id="monitorAutoBtn" title="每 5 秒自动刷新">自动刷新：开</button>
+            <button type="button" class="monitor-btn" id="monitorRefreshBtn">立即刷新</button>
+            <button type="button" class="monitor-btn monitor-btn--danger" id="monitorMemBtn">内存一键优化</button>
+            <button type="button" class="monitor-btn monitor-btn--accent" id="monitorAiBtn">AI 解读大屏</button>
+        </div>
+    </div>
+
+    <div class="monitor-grid">
+        <section class="monitor-panel monitor-insight" id="monitorInsight" aria-live="polite">
+            <h2>AI 运行状况解读 <span class="hint" id="monitorInsightAt"></span></h2>
+            <div class="monitor-insight__body">
+                <svg class="monitor-chart" id="insightGauge" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="健康评分"></svg>
+                <div class="monitor-insight__lists" id="insightLists"></div>
+                <div class="monitor-insight__summary" id="insightSummary"></div>
+            </div>
+        </section>
+
+        <div class="monitor-tiles" id="monitorTiles"></div>
+
+        <div class="monitor-row">
+            <section class="monitor-panel">
+                <h2>CPU / 内存趋势 <span class="hint">最近 15 分钟 · 5s 采样</span></h2>
+                <svg class="monitor-chart" id="trendChart" viewBox="0 0 760 220" preserveAspectRatio="none" role="img" aria-label="CPU 与内存趋势图"></svg>
+                <div class="monitor-legend">
+                    <span><i style="background:#38bdf8"></i>CPU %</span>
+                    <span><i style="background:#a78bfa"></i>内存 %</span>
+                </div>
+            </section>
+            <section class="monitor-panel">
+                <h2>访问压力 <span class="hint">每 5s 请求数</span></h2>
+                <svg class="monitor-chart" id="pressureChart" viewBox="0 0 360 160" preserveAspectRatio="none" role="img" aria-label="访问压力柱状图"></svg>
+                <div class="monitor-legend">
+                    <span><i style="background:#38bdf8"></i>请求</span>
+                    <span><i style="background:#fb7185"></i>错误</span>
+                </div>
+            </section>
+        </div>
+
+        <div class="monitor-row monitor-row--thirds">
+            <section class="monitor-panel">
+                <h2>状态码分布</h2>
+                <div class="monitor-donut-wrap">
+                    <svg class="monitor-chart" id="statusDonut" viewBox="0 0 120 120" width="118" height="118" role="img" aria-label="HTTP 状态码分布"></svg>
+                    <div class="monitor-donut-list" id="statusDonutList"></div>
+                </div>
+            </section>
+            <section class="monitor-panel">
+                <h2>内存构成</h2>
+                <div class="monitor-donut-wrap">
+                    <svg class="monitor-chart" id="memoryDonut" viewBox="0 0 120 120" width="118" height="118" role="img" aria-label="内存构成"></svg>
+                    <div class="monitor-donut-list" id="memoryDonutList"></div>
+                </div>
+            </section>
+            <section class="monitor-panel">
+                <h2>连接丢失统计 <span class="hint">WebSocket</span></h2>
+                <div class="monitor-loss-stats" id="lossStats"></div>
+                <div class="monitor-errors" id="lossErrors"></div>
+            </section>
+        </div>
+
+        <section class="monitor-panel">
+            <h2>热点路由 · 资源占用分析 <span class="hint">按请求量排序</span></h2>
+            <div style="overflow-x:auto;">
+                <table class="monitor-table" id="routesTable">
+                    <thead>
+                        <tr><th>路由</th><th>请求数</th><th>均值 ms</th><th>P95 ms</th><th>最大 ms</th><th>错误</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="monitor-panel">
+            <h2>进程树 <span class="hint" id="procMeta"></span></h2>
+            <div class="monitor-proc-toolbar">
+                <input type="search" id="procSearch" placeholder="搜索进程名 / PID / 命令行…" autocomplete="off">
+                <button type="button" class="monitor-btn" id="procRefreshBtn" style="height:30px;">刷新进程</button>
+            </div>
+            <div class="proc-tree" id="procTree"></div>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/manage_system_monitor.js?v=monitor-20260806"></script>
+{% endblock %}

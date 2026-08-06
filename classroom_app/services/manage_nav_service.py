@@ -470,6 +470,17 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         required_flag="super_admin",
     ),
     ManageNavItem(
+        key="system_monitor",
+        domain=MANAGE_ADMIN_DOMAIN,
+        group="平台管理",
+        label="监控大屏",
+        icon="gauge",
+        href="/manage/system/monitor",
+        search_text="监控大屏 服务器监控 进程 内存优化 CPU 访问量 连接 monitor dashboard",
+        ai_hint="监控大屏：超管实时查看服务器 CPU/内存/磁盘、进程树管理、内存一键优化、平台访问量与连接丢失统计，可调用快速 AI 解读运行状况。",
+        required_flag="super_admin",
+    ),
+    ManageNavItem(
         key="system_diagnostics",
         domain=MANAGE_ADMIN_DOMAIN,
         group="平台管理",
