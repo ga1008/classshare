@@ -194,9 +194,14 @@ def _build_avatar_url(role: str, user_pk: Any, avatar_hash: str = "") -> str:
 
 
 def _generate_summary(content_md: str, limit: int = MAX_SUMMARY_LENGTH) -> str:
-    text = re.sub(r"[#*`>\-\[\]()!|~]", " ", str(content_md or ""))
+    # Markdown structures must be removed BEFORE punctuation stripping, or the
+    # image/link syntax breaks apart and its URL leaks into the summary text.
+    text = str(content_md or "")
     text = re.sub(r"!\[.*?\]\(.*?\)", "", text)
+    text = re.sub(r"^\s*>\s*配图来源[:：].*$", "", text, flags=re.MULTILINE)
     text = re.sub(r"\[([^\]]*)\]\([^\)]*\)", r"\1", text)
+    text = re.sub(r"/api/blog/image/[0-9a-fA-F]{16,}", "", text)
+    text = re.sub(r"[#*`>\-\[\]()!|~]", " ", text)
     text = " ".join(text.split())
     if len(text) <= limit:
         return text

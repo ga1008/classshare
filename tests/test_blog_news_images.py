@@ -46,6 +46,57 @@ class BlogNewsImageSelectionTests(unittest.TestCase):
         self.assertEqual("https://cdn.example.com/story.jpg", media[0]["url"])
         self.assertNotIn("logo.png", " ".join(item["url"] for item in media))
 
+    def test_page_parser_excludes_recommendation_and_hot_video_containers(self):
+        parser = crawler._NewsPageParser("https://news.example.com/posts/7")
+        parser.feed(
+            """
+            <main><article>
+                <img src="/media/real-story.jpg" width="1280" height="720" alt="story photo">
+                <div class="content_tj hot-video">
+                    <img src="/media/trending-dog.jpg" width="1280" height="720" alt="trending clip">
+                </div>
+                <ul class="related-news">
+                    <li><img src="/media/other-article.jpg" width="1280" height="720"></li>
+                </ul>
+            </article></main>
+            """
+        )
+
+        urls = [item["url"] for item in crawler._normalize_media(parser.media)]
+
+        self.assertIn("https://news.example.com/media/real-story.jpg", urls)
+        self.assertNotIn("https://news.example.com/media/trending-dog.jpg", urls)
+        self.assertNotIn("https://news.example.com/media/other-article.jpg", urls)
+
+    def test_page_parser_recovers_after_excluded_container_closes(self):
+        parser = crawler._NewsPageParser("https://news.example.com/posts/8")
+        parser.feed(
+            """
+            <div class="sidebar"><img src="/media/sidebar.jpg" width="1280" height="720"></div>
+            <main><article><img src="/media/body.jpg" width="1280" height="720" alt="body"></article></main>
+            """
+        )
+
+        urls = [item["url"] for item in crawler._normalize_media(parser.media)]
+
+        self.assertEqual(["https://news.example.com/media/body.jpg"], urls)
+
+    def test_og_image_outranks_generic_body_images(self):
+        media = crawler._normalize_media(
+            [
+                {"type": "image", "url": "https://cdn.example.com/random-body.jpg", "source": "page-img"},
+                {
+                    "type": "image",
+                    "url": "https://cdn.example.com/declared-cover.jpg",
+                    "source": "page-meta",
+                    "width": 1280,
+                    "height": 720,
+                },
+            ]
+        )
+
+        self.assertEqual("https://cdn.example.com/declared-cover.jpg", media[0]["url"])
+
     def test_news_cover_dimensions_reject_pixels_avatars_and_square_logos(self):
         self.assertFalse(is_suitable_news_cover_dimensions(1, 1))
         self.assertFalse(is_suitable_news_cover_dimensions(100, 100))
@@ -72,7 +123,10 @@ class BlogNewsImageDownloadTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        with patch.object(crawler, "_download_and_store_image", download):
+        with (
+            patch.object(crawler, "_download_and_store_image", download),
+            patch.object(crawler, "_image_hash_already_curated", return_value=False),
+        ):
             slots = await crawler._build_local_image_slots(
                 candidate,
                 {"max_images_per_post": 1, "max_image_bytes": 6 * 1024 * 1024},
@@ -83,6 +137,42 @@ class BlogNewsImageDownloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(slots))
         self.assertEqual("{{image_1}}", slots[0]["token"])
         self.assertEqual("https://cdn.example.com/second.jpg", slots[0]["source_url"])
+
+    async def test_image_slot_builder_rejects_image_already_used_by_previous_post(self):
+        stored_first = {
+            "file_hash": "d" * 64,
+            "filename": "furniture.jpg",
+            "mime_type": "image/jpeg",
+            "file_size": 1234,
+            "image_width": 1280,
+            "image_height": 720,
+        }
+        stored_second = {**stored_first, "file_hash": "e" * 64, "filename": "unique.jpg"}
+        download = AsyncMock(side_effect=[stored_first, stored_second])
+        candidate = {
+            "title": "A useful story",
+            "media": [
+                {"type": "image", "url": "https://cdn.example.com/trending-thumb.jpg"},
+                {"type": "image", "url": "https://cdn.example.com/own-photo.jpg"},
+            ],
+        }
+
+        with (
+            patch.object(crawler, "_download_and_store_image", download),
+            patch.object(
+                crawler,
+                "_image_hash_already_curated",
+                side_effect=lambda file_hash: file_hash == "d" * 64,
+            ),
+        ):
+            slots = await crawler._build_local_image_slots(
+                candidate,
+                {"max_images_per_post": 1, "max_image_bytes": 6 * 1024 * 1024},
+                client=object(),
+            )
+
+        self.assertEqual(1, len(slots))
+        self.assertEqual("https://cdn.example.com/own-photo.jpg", slots[0]["source_url"])
 
 
 class BlogNewsCoverPresentationTests(unittest.TestCase):
@@ -120,6 +210,23 @@ class BlogNewsCoverPresentationTests(unittest.TestCase):
         self.assertNotIn(file_hash, cleaned)
         self.assertNotIn("配图来源", cleaned)
         self.assertIn("Main analysis.", cleaned)
+
+    def test_summary_never_leaks_image_urls_or_credit_lines(self):
+        file_hash = "f" * 64
+        content = (
+            "今天不讲虚的，讲一个真家伙。\n\n"
+            f"![新闻配图](/api/blog/image/{file_hash})\n\n"
+            "> 配图来源：[example.com](https://example.com/photo.jpg)\n\n"
+            "正文继续分析。"
+        )
+
+        summary = blog_service._generate_summary(content)
+
+        self.assertNotIn("/api/blog/image", summary)
+        self.assertNotIn(file_hash, summary)
+        self.assertNotIn("配图来源", summary)
+        self.assertIn("今天不讲虚的", summary)
+        self.assertIn("正文继续分析", summary)
 
 
 if __name__ == "__main__":
