@@ -7,9 +7,7 @@
 // 本机局域网 IP：开发者工具与同 Wi-Fi 真机都能直连（后端绑 0.0.0.0）。
 // 换网络后 ipconfig 查新 IP 更新这里。
 const DEV_API_BASE = "http://192.168.5.19:8000";
-// TODO(备案就绪): 换成 https://<备案域名>，并删除下面的联调临时值。
-// 当前为真机联调临时指向本机局域网（手机需同 Wi-Fi + 小程序里打开调试模式）。
-const PROD_API_BASE = "http://192.168.5.19:8000";
+const PROD_API_BASE = "https://guardianangel.net.cn";
 
 export const API_BASE: string = import.meta.env.DEV ? DEV_API_BASE : PROD_API_BASE;
 
