@@ -20,6 +20,10 @@ from ...services.assignment_lifecycle_service import (
 )
 from ...services.dashboard_service import _load_student_offerings
 from ...services.exam_json_service import strip_exam_scoring_for_student
+from ...services.group_assignment_service import (
+    get_student_display_state,
+    get_student_group_context,
+)
 from ...services.learning_progress_service import student_can_access_assignment
 from ...services.todo_service import (
     TODO_SOURCE_ACADEMIC_EXAM,
@@ -163,6 +167,8 @@ def mp_task_detail(assignment_id: str, user: dict = Depends(get_current_mp_stude
         submission = dict(submission_row) if submission_row else None
         if submission and int(submission.get("is_absence_score") or 0):
             submission = None
+
+        group_payload = _build_group_payload(conn, assignment_id, int(user["id"]))
         conn.commit()
 
     course_row_fields = {
@@ -186,6 +192,44 @@ def mp_task_detail(assignment_id: str, user: dict = Depends(get_current_mp_stude
             "assignment": course_row_fields,
             "paper": paper_payload,
             "submission": _serialize_my_submission(submission),
+            "group": group_payload,
         },
         "error": None,
     }
+
+
+def _build_group_payload(conn: Any, assignment_id: str, student_id: int) -> Optional[dict[str, Any]]:
+    """小组作业载荷：展示状态 + 组员名单 + 我的互评分。
+
+    互评红线：只回传本人打出的分，绝不外露他人互评与均分明细。
+    小组信息是锦上添花，任何失败都不阻断详情页。
+    """
+    try:
+        state = get_student_display_state(conn, assignment_id, student_id)
+        if not state:
+            return None
+        payload: dict[str, Any] = dict(state)
+        payload["peers"] = []
+        payload["my_ratings"] = {}
+        if state.get("in_group"):
+            context = get_student_group_context(conn, assignment_id, student_id) or {}
+            payload["peers"] = context.get("peers", [])
+            group = context.get("group") or {}
+            if group.get("id"):
+                rows = conn.execute(
+                    """
+                    SELECT reviewee_student_id, contribution_points
+                    FROM peer_reviews
+                    WHERE group_id = ? AND assignment_id = ? AND reviewer_student_id = ?
+                    """,
+                    (int(group["id"]), str(assignment_id), student_id),
+                ).fetchall()
+                payload["my_ratings"] = {
+                    str(row["reviewee_student_id"]): row["contribution_points"]
+                    for row in rows
+                    if row["contribution_points"] is not None
+                }
+        return payload
+    except Exception as exc:
+        print(f"[WECHAT_MP] 小组载荷加载失败 assignment={assignment_id}: {exc}")
+        return None

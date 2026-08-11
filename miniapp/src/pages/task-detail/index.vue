@@ -62,6 +62,16 @@ interface DetailData {
     submitted_at: string;
     answers: Array<{ question_id?: string; question?: string; answer?: string }>;
   } | null;
+  group: {
+    is_group: boolean;
+    in_group: boolean;
+    group_name: string;
+    revealed: boolean;
+    final_score: number | null;
+    pending: boolean;
+    peers: Array<{ student_id: number; name: string; avatar_url?: string }>;
+    my_ratings: Record<string, number>;
+  } | null;
 }
 
 const CHECKBOX_SEP = "|||";
@@ -105,6 +115,78 @@ const isAnswerMode = computed(
 const answeredCount = computed(
   () => allQuestions.value.filter((q) => (answers[q.id] || "").trim()).length,
 );
+
+/** 组员互评（20 分制）本地评分表 */
+const peerRatings = reactive<Record<string, number>>({});
+const peerSaving = ref(false);
+
+const showPeerEval = computed(
+  () =>
+    Boolean(
+      detail.value?.submission &&
+        detail.value.group?.in_group &&
+        (detail.value.group?.peers?.length ?? 0) > 0,
+    ),
+);
+
+/** 小组作业的成绩展示：揭晓前隐藏个人分，揭晓后显示综合表现分 */
+const scoreDisplay = computed(() => {
+  const group = detail.value?.group;
+  const submission = detail.value?.submission;
+  if (!submission) return { value: "—", label: "待批改", note: "" };
+  if (group?.is_group) {
+    if (group.revealed && group.final_score !== null && group.final_score !== undefined) {
+      return { value: String(group.final_score), label: "综合表现分", note: "作业分×0.8 + 组员互评均分" };
+    }
+    if (group.pending) {
+      return { value: "…", label: "待揭晓", note: "已批改，等待全组完成后统一揭晓" };
+    }
+    return { value: "—", label: "待批改", note: `小组：${group.group_name || "未分组"}` };
+  }
+  if (submission.score !== null && submission.score !== undefined) {
+    return { value: String(submission.score), label: "得分", note: "" };
+  }
+  return { value: "—", label: "待批改", note: "" };
+});
+
+function initPeerRatings(): void {
+  const group = detail.value?.group;
+  if (!group?.in_group) return;
+  for (const peer of group.peers) {
+    const key = String(peer.student_id);
+    const existing = group.my_ratings?.[key];
+    peerRatings[key] = typeof existing === "number" ? existing : 15;
+  }
+}
+
+function onPeerSlider(peerId: number, event: { detail: { value: number } }): void {
+  peerRatings[String(peerId)] = event.detail.value;
+}
+
+async function submitPeerRatings(): Promise<void> {
+  if (peerSaving.value || !detail.value?.group) return;
+  peerSaving.value = true;
+  try {
+    await request({
+      path: `/api/assignments/${assignmentId.value}/peer-eval`,
+      method: "POST",
+      data: {
+        ratings: detail.value.group.peers.map((peer) => ({
+          reviewee_student_id: peer.student_id,
+          points: peerRatings[String(peer.student_id)] ?? 15,
+        })),
+      },
+    });
+    uni.showToast({ title: "互评已提交", icon: "success" });
+  } catch (error: unknown) {
+    uni.showToast({
+      title: error instanceof Error ? error.message : "提交失败",
+      icon: "none",
+    });
+  } finally {
+    peerSaving.value = false;
+  }
+}
 
 const countdownLabel = computed(() => {
   const total = remainingSeconds.value;
@@ -394,6 +476,7 @@ async function loadDetail(): Promise<void> {
     remainingSeconds.value = detail.value.assignment.remaining_seconds;
     if (detail.value.submission) {
       restoreFromAnswersList(detail.value.submission.answers || []);
+      initPeerRatings();
     } else if (detail.value.assignment.is_accepting_submissions) {
       await restoreDrafts();
       startCountdown();
@@ -526,18 +609,37 @@ onUnload(() => {
       <template v-if="detail.submission">
         <view class="result-card">
           <view class="result-card__score-row">
-            <text class="result-card__score">
-              {{ detail.submission.score !== null && detail.submission.score !== undefined ? detail.submission.score : "—" }}
-            </text>
-            <text class="result-card__score-label">
-              {{ detail.submission.score !== null && detail.submission.score !== undefined ? "得分" : "待批改" }}
-            </text>
+            <text class="result-card__score">{{ scoreDisplay.value }}</text>
+            <text class="result-card__score-label">{{ scoreDisplay.label }}</text>
           </view>
+          <text v-if="scoreDisplay.note" class="result-card__meta">{{ scoreDisplay.note }}</text>
           <text class="result-card__meta">提交于 {{ detail.submission.submitted_at }}</text>
           <view v-if="detail.submission.feedback_md" class="result-card__feedback">
             <text class="result-card__feedback-title">教师批语</text>
             <text class="result-card__feedback-text">{{ detail.submission.feedback_md }}</text>
           </view>
+        </view>
+
+        <!-- 组员互评（20 分制，仅教师可见结果） -->
+        <view v-if="showPeerEval" class="peer-card">
+          <text class="section-title">组员互评 · {{ detail.group?.group_name }}</text>
+          <text class="peer-card__hint">给每位组员的本次贡献打分（0-20 分），仅教师可见，可随时修改。</text>
+          <view v-for="peer in detail.group?.peers" :key="peer.student_id" class="peer-row">
+            <text class="peer-row__name">{{ peer.name }}</text>
+            <slider
+              class="peer-row__slider"
+              :value="peerRatings[String(peer.student_id)] ?? 15"
+              :min="0"
+              :max="20"
+              :step="1"
+              show-value
+              activeColor="#4a7dff"
+              @change="onPeerSlider(peer.student_id, $event as never)"
+            />
+          </view>
+          <button class="peer-card__submit" :loading="peerSaving" @tap="submitPeerRatings">
+            提交互评
+          </button>
         </view>
 
         <view v-if="detail.submission.answers?.length" class="answers-review">
@@ -979,6 +1081,55 @@ onUnload(() => {
   font-size: 26rpx;
   color: #334155;
   line-height: 1.7;
+}
+
+.peer-card {
+  background: #ffffff;
+  border-radius: 32rpx;
+  padding: 36rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+  box-shadow: 0 8rpx 32rpx rgba(15, 23, 42, 0.05);
+}
+
+.peer-card__hint {
+  font-size: 22rpx;
+  color: #94a3b8;
+  line-height: 1.6;
+}
+
+.peer-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.peer-row__name {
+  flex: 0 0 140rpx;
+  font-size: 28rpx;
+  color: #16213a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.peer-row__slider {
+  flex: 1;
+  margin: 0;
+}
+
+.peer-card__submit {
+  min-height: 84rpx;
+  border-radius: 999rpx;
+  background: #4a7dff;
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 8rpx 0 0;
 }
 
 .answers-review {
