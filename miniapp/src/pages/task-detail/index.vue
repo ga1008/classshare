@@ -352,22 +352,53 @@ function chooseImages(count: number): Promise<Array<{ path: string; size: number
   });
 }
 
-async function addPhotos(q: Question): Promise<void> {
-  if (uploadingQid.value) return;
-  const picked = await chooseImages(3);
-  if (!picked.length) return;
+/** 从聊天记录选文件（md/txt/代码/文档等，微信小程序唯一的通用文件入口） */
+function chooseChatFiles(count: number): Promise<Array<{ path: string; size: number; name: string }>> {
+  return new Promise((resolve) => {
+    uni.chooseMessageFile({
+      count,
+      type: "file",
+      success: (res) => {
+        resolve(
+          (res.tempFiles || []).map((file) => ({
+            path: file.path,
+            size: file.size || 0,
+            name: file.name || "file.bin",
+          })),
+        );
+      },
+      fail: () => resolve([]),
+    });
+  });
+}
+
+function guessMime(name: string): string {
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  const map: Record<string, string> = {
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+    pdf: "application/pdf", txt: "text/plain", md: "text/markdown",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    zip: "application/zip",
+  };
+  return map[ext] || "application/octet-stream";
+}
+
+async function uploadEntries(
+  q: Question,
+  entries: Array<{ path: string; size: number; name: string; kind: "image" | "file" }>,
+): Promise<void> {
   uploadingQid.value = q.id;
   try {
-    for (const [index, item] of picked.entries()) {
-      const ext = item.path.split(".").pop() || "jpg";
-      const relativePath = `mp_${q.id}_${Date.now()}_${index}.${ext}`;
+    for (const item of entries) {
+      const relativePath = item.name;
       const manifest = JSON.stringify([
         {
           relative_path: relativePath,
-          file_name: relativePath,
+          file_name: item.name,
           question_id: q.id,
-          kind: "image",
-          mime_type: `image/${ext === "png" ? "png" : "jpeg"}`,
+          kind: item.kind,
+          mime_type: guessMime(item.name),
           file_size: item.size,
         },
       ]);
@@ -384,7 +415,7 @@ async function addPhotos(q: Question): Promise<void> {
       const uploaded = (questionFiles[q.id] || []).find(
         (file) => file.relative_path === relativePath,
       );
-      if (uploaded) {
+      if (uploaded && item.kind === "image") {
         localPreview[uploaded.relative_path] = item.path;
       }
     }
@@ -399,6 +430,30 @@ async function addPhotos(q: Question): Promise<void> {
   } finally {
     uploadingQid.value = "";
   }
+}
+
+async function addPhotos(q: Question): Promise<void> {
+  if (uploadingQid.value) return;
+  const picked = await chooseImages(3);
+  if (!picked.length) return;
+  await uploadEntries(
+    q,
+    picked.map((item, index) => ({
+      ...item,
+      name: `mp_${q.id}_${Date.now()}_${index}.${item.path.split(".").pop() || "jpg"}`,
+      kind: "image" as const,
+    })),
+  );
+}
+
+async function addChatFiles(q: Question): Promise<void> {
+  if (uploadingQid.value) return;
+  const picked = await chooseChatFiles(3);
+  if (!picked.length) return;
+  await uploadEntries(
+    q,
+    picked.map((item) => ({ ...item, kind: "file" as const })),
+  );
 }
 
 async function clearFiles(q: Question): Promise<void> {
@@ -758,13 +813,21 @@ onUnload(() => {
                     <text>{{ uploadingQid === q.id ? "上传中…" : "📷 拍照/选图" }}</text>
                   </view>
                   <view
+                    class="upload-btn"
+                    :class="{ 'upload-btn--busy': uploadingQid === q.id }"
+                    @tap="addChatFiles(q)"
+                  >
+                    <text>📁 选择文件</text>
+                  </view>
+                  <view
                     v-if="(questionFiles[q.id] || []).length"
                     class="upload-btn upload-btn--danger"
                     @tap="clearFiles(q)"
                   >
-                    <text>清空附件</text>
+                    <text>清空</text>
                   </view>
                 </view>
+                <text class="attach-hint">文件请先发送到微信任意聊天（如"文件传输助手"），再从聊天记录中选取</text>
               </view>
             </view>
           </view>
@@ -807,13 +870,21 @@ onUnload(() => {
                 <text>{{ uploadingQid === PLAIN_FILE_QID ? "上传中…" : "📷 拍照/选图" }}</text>
               </view>
               <view
+                class="upload-btn"
+                :class="{ 'upload-btn--busy': uploadingQid === PLAIN_FILE_QID }"
+                @tap="addChatFiles(plainFileQuestion)"
+              >
+                <text>📁 选择文件</text>
+              </view>
+              <view
                 v-if="(questionFiles[PLAIN_FILE_QID] || []).length"
                 class="upload-btn upload-btn--danger"
                 @tap="clearFiles(plainFileQuestion)"
               >
-                <text>清空附件</text>
+                <text>清空</text>
               </view>
             </view>
+            <text class="attach-hint">代码/文档等文件请先发送到微信任意聊天（如"文件传输助手"），再从聊天记录中选取</text>
           </view>
         </view>
       </template>
