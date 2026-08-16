@@ -10,9 +10,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from ...db.connection import get_db_connection
+from ...services.submission_preview_service import ensure_submission_file_access
 from .deps import get_current_mp_teacher
 
 router = APIRouter(prefix="/teacher")
@@ -88,3 +89,34 @@ def mp_teacher_tasks(user: dict = Depends(get_current_mp_teacher)):
             }
         )
     return {"success": True, "data": {"tasks": tasks}, "error": None}
+
+
+@router.get("/submission/{submission_id}/files")
+def mp_teacher_submission_files(
+    submission_id: int, user: dict = Depends(get_current_mp_teacher)
+):
+    """批阅面板的附件清单。逐文件复用 ensure_submission_file_access
+    （教师需对该作业有管理权），下载走既有 /submissions/download/{id}。"""
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            "SELECT id FROM submission_files WHERE submission_id = ? ORDER BY id",
+            (int(submission_id),),
+        ).fetchall()
+        files = []
+        for row in rows:
+            try:
+                info = ensure_submission_file_access(conn, int(row["id"]), user)
+            except HTTPException:
+                raise
+            mime_type = str(info.get("mime_type") or "")
+            files.append(
+                {
+                    "id": info["id"],
+                    "file_name": info.get("original_filename") or f"附件{info['id']}",
+                    "mime_type": mime_type,
+                    "file_size": info.get("file_size"),
+                    "is_image": mime_type.startswith("image/"),
+                }
+            )
+        conn.commit()
+    return {"success": True, "data": {"files": files}, "error": None}

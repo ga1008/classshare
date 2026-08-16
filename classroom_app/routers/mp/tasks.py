@@ -107,15 +107,31 @@ def _parse_submission_answers(raw: Any) -> list[dict[str, Any]]:
     return answers if isinstance(answers, list) else []
 
 
-def _serialize_my_submission(submission: Optional[dict]) -> Optional[dict[str, Any]]:
+def _serialize_my_submission(conn: Any, submission: Optional[dict]) -> Optional[dict[str, Any]]:
     if not submission:
         return None
+    file_rows = conn.execute(
+        "SELECT id, original_filename, mime_type, file_size FROM submission_files "
+        "WHERE submission_id = ? ORDER BY id",
+        (int(submission["id"]),),
+    ).fetchall()
+    files = [
+        {
+            "id": row["id"],
+            "file_name": row["original_filename"] or f"附件{row['id']}",
+            "mime_type": row["mime_type"] or "",
+            "file_size": row["file_size"],
+            "is_image": str(row["mime_type"] or "").startswith("image/"),
+        }
+        for row in file_rows
+    ]
     return {
         "status": submission.get("status"),
         "score": submission.get("score"),
         "feedback_md": submission.get("feedback_md") or "",
         "submitted_at": submission.get("submitted_at"),
         "answers": _parse_submission_answers(submission.get("answers_json")),
+        "files": files,
         "is_returned": submission_is_returned(submission),
         "resubmission_state": submission_resubmission_state(submission),
         "resubmission_due_at": submission.get("resubmission_due_at"),
@@ -169,6 +185,7 @@ def mp_task_detail(assignment_id: str, user: dict = Depends(get_current_mp_stude
             submission = None
 
         group_payload = _build_group_payload(conn, assignment_id, int(user["id"]))
+        submission_payload = _serialize_my_submission(conn, submission)
         conn.commit()
 
     course_row_fields = {
@@ -191,7 +208,7 @@ def mp_task_detail(assignment_id: str, user: dict = Depends(get_current_mp_stude
         "data": {
             "assignment": course_row_fields,
             "paper": paper_payload,
-            "submission": _serialize_my_submission(submission),
+            "submission": submission_payload,
             "group": group_payload,
         },
         "error": None,

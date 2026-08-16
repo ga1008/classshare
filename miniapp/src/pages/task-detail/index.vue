@@ -15,6 +15,7 @@ import { onHide, onLoad, onUnload } from "@dcloudio/uni-app";
 import { computed, reactive, ref } from "vue";
 
 import { request, uploadFile } from "../../utils/api";
+import { previewProtectedFile } from "../../utils/preview";
 
 interface Question {
   id: string;
@@ -61,6 +62,12 @@ interface DetailData {
     feedback_md: string;
     submitted_at: string;
     answers: Array<{ question_id?: string; question?: string; answer?: string }>;
+    files: Array<{
+      id: number;
+      file_name: string;
+      mime_type: string;
+      is_image: boolean;
+    }>;
   } | null;
   group: {
     is_group: boolean;
@@ -546,6 +553,23 @@ async function submit(): Promise<void> {
   }
 }
 
+function previewDraftFile(file: DraftFile): void {
+  void previewProtectedFile({
+    path: `/api/assignments/${assignmentId.value}/draft-files/${file.id}`,
+    fileName: file.file_name,
+    mimeType: file.mime_type,
+    localPath: localPreview[file.relative_path],
+  });
+}
+
+function previewSubmissionFile(file: { id: number; file_name: string; mime_type: string }): void {
+  void previewProtectedFile({
+    path: `/submissions/download/${file.id}`,
+    fileName: file.file_name,
+    mimeType: file.mime_type,
+  });
+}
+
 function onTextInput(qid: string, event: { detail: { value: string } }): void {
   answers[qid] = event.detail.value;
   saveLocalDraft();
@@ -642,6 +666,21 @@ onUnload(() => {
           </button>
         </view>
 
+        <view v-if="detail.submission.files?.length" class="answers-review">
+          <text class="section-title">我的附件</text>
+          <view class="files-row files-row--padded">
+            <view
+              v-for="file in detail.submission.files"
+              :key="file.id"
+              class="file-chip"
+              @tap="previewSubmissionFile(file)"
+            >
+              <text class="file-chip__icon">{{ file.is_image ? "🖼️" : "📄" }}</text>
+              <text class="file-chip__name">{{ file.file_name }}</text>
+            </view>
+          </view>
+        </view>
+
         <view v-if="detail.submission.answers?.length" class="answers-review">
           <text class="section-title">我的作答</text>
           <view v-for="(item, index) in detail.submission.answers" :key="index" class="review-item">
@@ -702,8 +741,9 @@ onUnload(() => {
                       class="file-thumb"
                       :src="localPreview[file.relative_path]"
                       mode="aspectFill"
+                      @tap="previewDraftFile(file)"
                     />
-                    <view v-else class="file-chip">
+                    <view v-else class="file-chip" @tap="previewDraftFile(file)">
                       <text class="file-chip__icon">{{ file.is_image ? "🖼️" : "📄" }}</text>
                       <text class="file-chip__name">{{ file.file_name }}</text>
                     </view>
@@ -750,8 +790,9 @@ onUnload(() => {
                   class="file-thumb"
                   :src="localPreview[file.relative_path]"
                   mode="aspectFill"
+                  @tap="previewDraftFile(file)"
                 />
-                <view v-else class="file-chip">
+                <view v-else class="file-chip" @tap="previewDraftFile(file)">
                   <text class="file-chip__icon">{{ file.is_image ? "🖼️" : "📄" }}</text>
                   <text class="file-chip__name">{{ file.file_name }}</text>
                 </view>
@@ -972,6 +1013,12 @@ onUnload(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 16rpx;
+}
+
+.files-row--padded {
+  background: #ffffff;
+  border-radius: 24rpx;
+  padding: 24rpx;
 }
 
 .file-thumb {

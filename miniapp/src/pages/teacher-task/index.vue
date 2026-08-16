@@ -9,9 +9,17 @@
  * - POST /api/assignments/{id}/submissions/zero-unsubmitted 缺交记零
  */
 import { onLoad, onPullDownRefresh } from "@dcloudio/uni-app";
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { previewProtectedFile } from "../../utils/preview";
+
+interface SubmissionFile {
+  id: number;
+  file_name: string;
+  mime_type: string;
+  is_image: boolean;
+}
 
 interface SubmissionEntry {
   id: number | null;
@@ -99,6 +107,28 @@ async function loadData(): Promise<void> {
   }
 }
 
+const filesBySubmission = reactive<Record<number, SubmissionFile[]>>({});
+
+async function loadSubmissionFiles(submissionId: number): Promise<void> {
+  if (filesBySubmission[submissionId]) return;
+  try {
+    const data = await request<{ files: SubmissionFile[] }>({
+      path: `/api/mp/teacher/submission/${submissionId}/files`,
+    });
+    filesBySubmission[submissionId] = data.files;
+  } catch {
+    filesBySubmission[submissionId] = [];
+  }
+}
+
+function previewFile(file: SubmissionFile): void {
+  void previewProtectedFile({
+    path: `/submissions/download/${file.id}`,
+    fileName: file.file_name,
+    mimeType: file.mime_type,
+  });
+}
+
 function toggleGrade(entry: SubmissionEntry): void {
   if (!entry.id) return;
   if (expandedId.value === entry.id) {
@@ -108,6 +138,9 @@ function toggleGrade(entry: SubmissionEntry): void {
   expandedId.value = entry.id;
   gradeScore.value = entry.score !== null && entry.score !== undefined ? String(entry.score) : "";
   gradeFeedback.value = entry.feedback_md || "";
+  if (entry.file_count) {
+    void loadSubmissionFiles(entry.id);
+  }
 }
 
 async function saveGrade(entry: SubmissionEntry): Promise<void> {
@@ -320,7 +353,19 @@ onPullDownRefresh(() => {
                 <text class="answer-item__a">{{ item.answer || "（未作答）" }}</text>
               </view>
             </view>
-            <text v-else class="grade-panel__no-answers">无文字作答{{ entry.file_count ? "，附件请在网页端查看" : "" }}</text>
+            <text v-else class="grade-panel__no-answers">无文字作答</text>
+
+            <view v-if="entry.file_count && filesBySubmission[entry.id!]?.length" class="file-list">
+              <view
+                v-for="file in filesBySubmission[entry.id!]"
+                :key="file.id"
+                class="file-chip"
+                @tap.stop="previewFile(file)"
+              >
+                <text>{{ file.is_image ? "🖼️" : "📄" }}</text>
+                <text class="file-chip__name">{{ file.file_name }}</text>
+              </view>
+            </view>
 
             <view class="grade-panel__form">
               <input
@@ -567,6 +612,30 @@ onPullDownRefresh(() => {
 .grade-panel__no-answers {
   font-size: 24rpx;
   color: #94a3b8;
+}
+
+.file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  background: #f1f5f9;
+  border-radius: 14rpx;
+  padding: 14rpx 20rpx;
+  font-size: 24rpx;
+  color: #334155;
+}
+
+.file-chip__name {
+  max-width: 400rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .grade-panel__form {
