@@ -1145,6 +1145,7 @@
     {% include "partials/teacher_onboarding_modal.html" %}
     {% endif %}
     {% block scripts %}{% endblock %}
+    <script type="module" src="{{ asset_url('js/ls_date_picker.js') }}"></script>
     <script type="module" src="/static/js/feedback.js"></script>
     {% if not embedded_mode %}
     <script type="module" src="/static/js/teacher_onboarding.js"></script>

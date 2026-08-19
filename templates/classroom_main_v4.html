@@ -2489,7 +2489,7 @@
                 </div>
                 <div class="form-group" id="assignment-deadline-group">
                     <label class="form-label" for="assignment-due-at">截止时间</label>
-                    <input type="datetime-local" id="assignment-due-at" class="form-control">
+                    <input type="datetime-local" id="assignment-due-at" class="form-control" data-dp-pair="#assignment-starts-at" data-dp-role="end">
                 </div>
                 <div id="assignment-countdown-group">
                     <div class="form-group">
@@ -2498,7 +2498,7 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="assignment-starts-at">开始时间（可选）</label>
-                        <input type="datetime-local" id="assignment-starts-at" class="form-control">
+                        <input type="datetime-local" id="assignment-starts-at" class="form-control" data-dp-pair="#assignment-due-at" data-dp-role="start">
                         <p class="form-hint">留空表示发布后从当前时间开始计时。</p>
                     </div>
                 </div>
@@ -2515,7 +2515,7 @@
                     <div class="late-policy-fields">
                         <div class="form-group">
                             <label class="form-label" for="assignment-late-submission-until">二次截止时间（可选）</label>
-                            <input type="datetime-local" id="assignment-late-submission-until" class="form-control">
+                            <input type="datetime-local" id="assignment-late-submission-until" class="form-control" data-dp-pair="#assignment-due-at" data-dp-role="end">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="assignment-late-penalty-strategy">扣分策略</label>
@@ -2605,7 +2605,7 @@
                 </div>
                 <div class="form-group" id="exam-deadline-group">
                     <label class="form-label" for="exam-due-at">截止时间</label>
-                    <input type="datetime-local" id="exam-due-at" class="form-control">
+                    <input type="datetime-local" id="exam-due-at" class="form-control" data-dp-pair="#exam-starts-at" data-dp-role="end">
                 </div>
                 <div id="exam-countdown-group">
                     <div class="form-group">
@@ -2614,7 +2614,7 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="exam-starts-at">开始时间（可选）</label>
-                        <input type="datetime-local" id="exam-starts-at" class="form-control">
+                        <input type="datetime-local" id="exam-starts-at" class="form-control" data-dp-pair="#exam-due-at" data-dp-role="start">
                         <p class="form-hint">留空表示发布后从当前时间开始计时。</p>
                     </div>
                 </div>
@@ -2631,7 +2631,7 @@
                     <div class="late-policy-fields">
                         <div class="form-group">
                             <label class="form-label" for="exam-late-submission-until">二次截止时间（可选）</label>
-                            <input type="datetime-local" id="exam-late-submission-until" class="form-control">
+                            <input type="datetime-local" id="exam-late-submission-until" class="form-control" data-dp-pair="#exam-due-at" data-dp-role="end">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="exam-late-penalty-strategy">扣分策略</label>

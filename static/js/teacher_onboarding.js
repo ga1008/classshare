@@ -1212,11 +1212,11 @@ if (modal) {
             </div>
             <div class="onboarding-field">
                 <label>开始日期</label>
-                <input name="start_date" type="date" required value="${todayIso()}">
+                <input name="start_date" type="date" required value="${todayIso()}" data-dp-pair="[name='end_date']" data-dp-role="start">
             </div>
             <div class="onboarding-field">
                 <label>结束日期</label>
-                <input name="end_date" type="date" required>
+                <input name="end_date" type="date" required data-dp-pair="[name='start_date']" data-dp-role="end">
             </div>
             <div class="teacher-onboarding-submodal-actions">
                 <button type="button" class="btn btn-outline" data-submodal-close-local>取消</button>

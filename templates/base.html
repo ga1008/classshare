@@ -87,6 +87,7 @@
     {% endif %}
 
     <script type="module" src="/static/js/auth.js"></script>
+    <script type="module" src="{{ asset_url('js/ls_date_picker.js') }}"></script>
     {% if user_info is defined and user_info %}
     <script type="module" src="/static/js/cultivation_identity.js?v=20260803-scene3"></script>
     <script type="module" src="/static/js/message_center_bell.js"></script>
