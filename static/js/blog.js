@@ -692,6 +692,13 @@ class BlogCenter {
             return;
         }
 
+        const tocLink = event.target.closest('[data-blog-toc-target]');
+        if (tocLink) {
+            event.preventDefault();
+            document.getElementById(tocLink.dataset.blogTocTarget)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+        }
+
         const tagButton = event.target.closest('[data-blog-tag]');
         if (tagButton) {
             const tag = tagButton.dataset.blogTag || '';
@@ -1251,6 +1258,7 @@ class BlogCenter {
     showView(viewName) {
         if (this.state.currentView === 'detail' && viewName !== 'detail') {
             this.stopReadingSession();
+            this.teardownDetailToc();
         }
         $$('[data-blog-view]', this.shell).forEach((view) => {
             view.hidden = view.dataset.blogView !== viewName;
@@ -1765,6 +1773,7 @@ class BlogCenter {
             container.innerHTML = this.detailHtml(post);
             this.renderCommentDraftState();
             this.initCommentComposer();
+            this.buildDetailToc();
             this.startReadingSession(postId);
         } catch (error) {
             if (error?.name === 'AbortError') return;
@@ -2762,6 +2771,38 @@ class BlogCenter {
             `).join('');
             attachmentPreview.hidden = !this.commentDraft.attachments.length;
         }
+    }
+
+    teardownDetailToc() {
+        this.tocObserver?.disconnect();
+        this.tocObserver = null;
+        const toc = $('[data-blog-toc]', this.shell);
+        if (toc) toc.hidden = true;
+        $('[data-blog-toc-list]', this.shell)?.replaceChildren();
+    }
+
+    buildDetailToc() {
+        this.teardownDetailToc();
+        const toc = $('[data-blog-toc]', this.shell);
+        const list = $('[data-blog-toc-list]', this.shell);
+        const body = $('.blog-detail__body', this.shell);
+        if (!toc || !list || !body) return;
+        const headings = $$('h2, h3', body).filter((node) => node.textContent.trim());
+        if (headings.length < 2) return;
+        list.innerHTML = headings.map((heading, index) => {
+            if (!heading.id) heading.id = `blog-toc-${index}`;
+            return `<a class="blog-toc__item blog-toc__item--${heading.tagName.toLowerCase()}" href="#${escapeHtml(heading.id)}" data-blog-toc-target="${escapeHtml(heading.id)}">${escapeHtml(heading.textContent.trim())}</a>`;
+        }).join('');
+        this.tocObserver = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                if (!entry.isIntersecting) return;
+                $$('[data-blog-toc-target]', list).forEach((link) => {
+                    link.classList.toggle('is-active', link.dataset.blogTocTarget === entry.target.id);
+                });
+            });
+        }, { rootMargin: '-15% 0px -65% 0px' });
+        headings.forEach((heading) => this.tocObserver.observe(heading));
+        toc.hidden = false;
     }
 
     refreshCurrentList() {
