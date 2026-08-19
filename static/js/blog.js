@@ -5,6 +5,10 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const POSTS_PAGE_SIZE = 20;
 
+// 与 tools/generate_blog_covers.py 的产物保持一致
+const STOCK_COVER_SECTIONS = new Set(['general', 'technology', 'humanities', 'computer', 'ai', 'career']);
+const STOCK_COVER_VARIANTS = 4;
+
 const ROLE_LABELS = {
     teacher: '教师',
     student: '学生',
@@ -1129,29 +1133,20 @@ class BlogCenter {
         return `<span class="blog-section-badge ${escapeHtml(className)}" style="--section-accent:${this.sectionAccent(section)}"><span>${escapeHtml(section.icon || '•')}</span>${escapeHtml(section.short_name || section.name || '')}</span>`;
     }
 
-    postCoverFallbackHtml(post = {}, variant = 'card') {
-        const section = this.sectionByKey(post.section_key) || {};
-        const automatedNews = post.author?.role === 'assistant';
-        const label = automatedNews ? '栏目封面 · 非新闻原图' : '精选内容封面';
-        return `
-            <div class="blog-cover-art blog-cover-art--${escapeHtml(variant)}" style="--cover-accent:${this.sectionAccent(section)}" role="img" aria-label="${escapeHtml(label)}">
-                <span class="blog-cover-art__grid" aria-hidden="true"></span>
-                <span class="blog-cover-art__eyebrow">${escapeHtml(label)}</span>
-                <span class="blog-cover-art__icon" aria-hidden="true">${escapeHtml(section.icon || '✦')}</span>
-                <span class="blog-cover-art__channel">${escapeHtml(section.short_name || section.name || '博客')}</span>
-                <span class="blog-cover-art__signal" aria-hidden="true">LS / ${escapeHtml(String(post.id || '00').padStart(2, '0'))}</span>
-            </div>
-        `;
+    postCoverFallbackHtml(post = {}) {
+        // 通用板块封面：预生成的纸感 SVG，按文章 id 稳定随机取一张，
+        // 未知板块回落到中性 default 组（文件清单见 tools/generate_blog_covers.py）。
+        const sectionKey = String(post.section_key || '').trim().toLowerCase();
+        const coverKey = STOCK_COVER_SECTIONS.has(sectionKey) ? sectionKey : 'default';
+        const coverIndex = (Math.abs(Number(post.id) || 0) % STOCK_COVER_VARIANTS) + 1;
+        return `<img class="blog-cover-image blog-cover-image--stock" src="/static/img/blog-covers/${coverKey}-${coverIndex}.svg" alt="" loading="lazy" decoding="async">`;
     }
 
-    postCoverMediaHtml(post = {}, variant = 'card', { genericFallback = false } = {}) {
+    postCoverMediaHtml(post = {}) {
         if (post.cover_image_hash) {
             return `<img class="blog-cover-image" src="/api/blog/image/${escapeHtml(post.cover_image_hash)}" alt="" loading="lazy" decoding="async">`;
         }
-        if (post.cover_image_kind === 'editorial' || post.author?.role === 'assistant' || genericFallback) {
-            return this.postCoverFallbackHtml(post, variant);
-        }
-        return '';
+        return this.postCoverFallbackHtml(post);
     }
 
     opportunityDeadlineLabel(opportunity = {}) {
@@ -1534,7 +1529,7 @@ class BlogCenter {
     }
 
     spotlightPostHtml(post, index) {
-        const cover = this.postCoverMediaHtml(post, 'spotlight', { genericFallback: true });
+        const cover = this.postCoverMediaHtml(post);
         return `
             <button type="button" class="blog-spotlight-card${index === 0 ? ' blog-spotlight-card--lead' : ''}" data-blog-open-post="${post.id}">
                 <div class="blog-spotlight-card__media">${cover}</div>
@@ -2879,7 +2874,7 @@ class BlogCenter {
         const tags = (post.tags || []).map((tag) => (
             `<button type="button" class="blog-tag" data-blog-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
         )).join('');
-        const coverMedia = this.postCoverMediaHtml(post, 'card');
+        const coverMedia = this.postCoverMediaHtml(post);
         const cover = coverMedia ? `<div class="blog-post-card__media">${coverMedia}</div>` : '';
         const likedClass = post.is_liked ? ' is-active--like' : '';
         const bookmarkedClass = post.is_bookmarked ? ' is-active--bookmark' : '';
@@ -2963,7 +2958,7 @@ class BlogCenter {
             `<button type="button" class="blog-tag" data-blog-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
         )).join('');
         const editorialCover = post.cover_image_kind === 'editorial'
-            ? `<div class="blog-detail__editorial-cover">${this.postCoverFallbackHtml(post, 'detail')}</div>`
+            ? `<div class="blog-detail__editorial-cover">${this.postCoverFallbackHtml(post)}</div>`
             : '';
 
         return `
