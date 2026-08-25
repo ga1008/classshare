@@ -28016,7 +28016,9 @@ body.has-chat-image-preview-open {
     min-width: max-content;
     border: 1px solid rgba(148, 163, 184, 0.24);
     border-radius: var(--radius-sm);
-    overflow: hidden;
+    /* 不能用 overflow: hidden —— 它会让 board 自己成为 sticky 的吸附容器，
+       左侧「学期/月份/周次/星期」列就再也吸不住外层滚动视口了 */
+    clip-path: inset(0 round var(--radius-sm));
     background: #fff;
     transition: grid-template-columns 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -28027,6 +28029,7 @@ body.has-chat-image-preview-open {
     z-index: 6;
     background: linear-gradient(180deg, var(--gray-50), #eef2f7);
     border-right: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 8px 0 14px -12px rgba(15, 23, 42, 0.4);
 }
 
 .semester-header-cell,
@@ -54184,4 +54187,104 @@ html.scene-cover-collapsing .main-content {
         opacity: 1;
         transform: none;
     }
+}
+
+/* ============================================================
+   学期日历 2026-08-25 改进：学期归属带 + 当前学期凸显
+   ============================================================ */
+
+/* 顶部「学期」归属带：合并列标出当前学期与前后相邻学期 */
+.semester-band-cell {
+    display: block;
+    min-height: 46px;
+    padding: 11px 12px;
+    border-right: 1px solid rgba(148, 163, 184, 0.16);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    text-align: center;
+    font-weight: 700;
+    font-size: var(--text-sm);
+    white-space: nowrap;
+}
+
+.semester-band-cell.semester-sticky-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+}
+
+/* 标签自身横向 sticky：无论滚到学期哪一段，名称都留在可视区内 */
+.semester-band-cell__label {
+    display: inline-block;
+    position: sticky;
+    left: 148px;
+    right: 16px;
+}
+
+.semester-band-cell.is-current {
+    color: #3730a3;
+    background: linear-gradient(180deg, hsl(227 100% 93% / 0.96), hsl(226 100% 96% / 0.98));
+    box-shadow:
+        inset 0 -2px 0 hsl(var(--ls-primary) / 0.45),
+        inset 0 0 0 1px hsl(var(--ls-primary) / 0.14);
+}
+
+.semester-band-cell.is-neighbor {
+    color: var(--text-secondary);
+    background: linear-gradient(180deg, rgba(241, 245, 249, 0.92), rgba(248, 250, 252, 0.82));
+    cursor: pointer;
+    transition: background-color 180ms ease, color 180ms ease;
+}
+
+.semester-band-cell.is-neighbor:hover,
+.semester-band-cell.is-neighbor:focus-visible {
+    color: var(--primary-hover);
+    background: linear-gradient(180deg, rgba(224, 231, 255, 0.8), rgba(238, 242, 255, 0.9));
+    outline: none;
+}
+
+.semester-band-cell.is-neighbor .semester-band-cell__label::after {
+    content: ' ⇄';
+    font-size: 0.82em;
+    opacity: 0.7;
+}
+
+.semester-band-cell.is-gap {
+    color: var(--text-muted);
+    font-weight: 600;
+    background: rgba(248, 250, 252, 0.7);
+}
+
+/* 学期范围左右边界：用描边 + 外投影把当前学期从衔接周里"抬"出来 */
+.semester-header-cell.is-semester-edge-start,
+.semester-day-cell.is-semester-edge-start {
+    border-left: 2px solid hsl(var(--ls-primary) / 0.38);
+    box-shadow: -16px 0 22px -16px rgba(15, 23, 42, 0.4);
+}
+
+.semester-header-cell.is-semester-edge-end,
+.semester-day-cell.is-semester-edge-end {
+    border-right: 2px solid hsl(var(--ls-primary) / 0.38);
+    box-shadow: 16px 0 22px -16px rgba(15, 23, 42, 0.4);
+}
+
+/* 衔接周整体压暗：斜纹 + 降饱和，和学期内形成明显层次 */
+.semester-day-cell.is-padding-week {
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(226, 232, 240, 0.55) 0 10px,
+        rgba(248, 250, 252, 0.75) 10px 20px
+    );
+}
+
+.semester-day-cell.is-padding-week .date-number,
+.semester-day-cell.is-padding-week .date-meta,
+.semester-day-cell.is-padding-week .semester-mini-tag {
+    opacity: 0.55;
+}
+
+.semester-mini-tag.today {
+    background: hsl(var(--ls-primary) / 0.16);
+    color: var(--primary-hover);
+    font-weight: 700;
 }

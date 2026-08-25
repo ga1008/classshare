@@ -1,5 +1,5 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
-import { initSemesterCalendar } from '/static/js/semester_calendar.js?v=calendar-sync-20260805';
+import { initSemesterCalendar } from '/static/js/semester_calendar.js?v=semester-band-20260825';
 import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260707';
 
 const root = document.querySelector('[data-dashboard-root]');
@@ -586,6 +586,19 @@ if (root) {
     initSemesterCalendar(semesterCalendarRoot, window.DASHBOARD_SEMESTER_CALENDAR || {}, {
         showTodos: true,
         onMessage: (message, tone) => showMessage(message, tone || 'info'),
+    });
+
+    // 顶部「学期日历」按钮：平滑滚动到学期日历区块，而不是瞬间锚点跳转
+    document.querySelectorAll('a[href="#dashboard-semester"]').forEach((link) => {
+        link.addEventListener('click', (event) => {
+            const target = document.getElementById('dashboard-semester');
+            if (!target) return;
+            event.preventDefault();
+            const reduceMotion = window.matchMedia
+                && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+            window.history.replaceState(null, '', '#dashboard-semester');
+        });
     });
 
     function getScheduleDeckPanel() {

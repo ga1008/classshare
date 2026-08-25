@@ -508,6 +508,40 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         return state.semesters.find((item) => item.id === Number(semesterId)) || null;
     }
 
+    function findSemesterForWeek(week, excludeSemesterId) {
+        const weekStartIso = formatIsoDate(week.start);
+        const weekEndIso = formatIsoDate(week.end);
+        return state.semesters.find((item) => {
+            if (item.id === excludeSemesterId) return false;
+            const startIso = String(item.start_date || '');
+            const endIso = String(item.end_date || '');
+            if (!startIso || !endIso) return false;
+            return compareIsoDate(endIso, weekStartIso) >= 0 && compareIsoDate(startIso, weekEndIso) <= 0;
+        }) || null;
+    }
+
+    function computeSemesterBandSegments(semester, model) {
+        const segments = [];
+        (model?.weeks || []).forEach((week, index) => {
+            let segment;
+            if (!week.isPaddingWeek) {
+                segment = { kind: 'current', label: semester.name || '当前学期', semesterId: semester.id };
+            } else {
+                const neighbor = findSemesterForWeek(week, semester.id);
+                segment = neighbor
+                    ? { kind: 'neighbor', label: neighbor.name || '相邻学期', semesterId: neighbor.id }
+                    : { kind: 'gap', label: '假期 / 学期衔接', semesterId: null };
+            }
+            const last = segments[segments.length - 1];
+            if (last && last.kind === segment.kind && last.label === segment.label) {
+                last.span += 1;
+                return;
+            }
+            segments.push({ ...segment, start: index, span: 1 });
+        });
+        return segments;
+    }
+
     function getCalendarPaddingWeeks() {
         const viewportWidth = elements.scroll?.clientWidth || window.innerWidth || 1024;
         const centerSpaceNeeded = Math.max(0, (viewportWidth / 2) - 176);
@@ -1551,20 +1585,58 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         board.innerHTML = '';
         activeWeekKey = resolveActiveWeekKey(semester, model);
         board.style.gridTemplateColumns = `132px ${getWeekColumns(model)}`;
-        board.style.gridTemplateRows = '52px 52px repeat(7, minmax(58px, auto))';
+        board.style.gridTemplateRows = '46px 52px 52px repeat(7, minmax(58px, auto))';
+
+        const realWeekIndexes = model.weeks
+            .map((week, index) => (week.isPaddingWeek ? -1 : index))
+            .filter((index) => index >= 0);
+        const firstRealIndex = realWeekIndexes[0] ?? -1;
+        const lastRealIndex = realWeekIndexes[realWeekIndexes.length - 1] ?? -1;
+        const edgeClasses = (weekIndex) => {
+            const classes = [];
+            if (weekIndex === firstRealIndex) classes.push('is-semester-edge-start');
+            if (weekIndex === lastRealIndex) classes.push('is-semester-edge-end');
+            return classes;
+        };
 
         const fragment = document.createDocumentFragment();
-        createCell(fragment, 'semester-header-cell semester-sticky-cell', '月份', 1, 1);
-        model.monthGroups.forEach((group) => {
-            createCell(fragment, 'semester-header-cell month', group.label, 1, group.start + 2, group.span);
+        createCell(fragment, 'semester-band-cell semester-sticky-cell', '学期', 1, 1);
+        computeSemesterBandSegments(semester, model).forEach((segment) => {
+            const bandCell = createCell(
+                fragment,
+                `semester-band-cell is-${segment.kind}`,
+                null,
+                1,
+                segment.start + 2,
+                segment.span,
+            );
+            const label = document.createElement('span');
+            label.className = 'semester-band-cell__label';
+            label.textContent = segment.label;
+            bandCell.appendChild(label);
+            if (segment.kind === 'neighbor' && segment.semesterId != null) {
+                bandCell.dataset.semesterSwitch = String(segment.semesterId);
+                bandCell.tabIndex = 0;
+                bandCell.setAttribute('role', 'button');
+                bandCell.title = `切换查看 ${segment.label}`;
+            } else if (segment.kind === 'current') {
+                bandCell.title = `${segment.label}（当前查看）`;
+            }
         });
 
-        createCell(fragment, 'semester-header-cell semester-sticky-cell', '周次', 2, 1);
+        createCell(fragment, 'semester-header-cell semester-sticky-cell', '月份', 2, 1);
+        model.monthGroups.forEach((group) => {
+            createCell(fragment, 'semester-header-cell month', group.label, 2, group.start + 2, group.span);
+        });
+
+        createCell(fragment, 'semester-header-cell semester-sticky-cell', '周次', 3, 1);
         model.weeks.forEach((week, index) => {
             const weekKey = getWeekKey(week);
-            const classes = ['semester-header-cell'];
+            const classes = ['semester-header-cell', ...edgeClasses(index)];
             if (week.isPaddingWeek) {
                 classes.push('is-padding-week');
+            } else {
+                classes.push('is-in-semester');
             }
             if (week.isCurrentWeek) {
                 classes.push('is-current-week');
@@ -1576,7 +1648,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                 fragment,
                 classes.join(' '),
                 week.isPaddingWeek ? '' : getWeekDisplayLabel(week),
-                2,
+                3,
                 index + 2,
             );
             if (!week.isPaddingWeek) {
@@ -1589,13 +1661,14 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         });
 
         for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
-            createCell(fragment, 'semester-weekday-cell semester-sticky-cell', dayLabels[dayIndex], dayIndex + 3, 1);
+            createCell(fragment, 'semester-weekday-cell semester-sticky-cell', dayLabels[dayIndex], dayIndex + 4, 1);
 
             model.weeks.forEach((week, weekIndex) => {
                 const day = week.days[dayIndex];
                 const weekKey = getWeekKey(week);
-                const cellClasses = ['semester-day-cell'];
+                const cellClasses = ['semester-day-cell', ...edgeClasses(weekIndex)];
                 if (week.isPaddingWeek) cellClasses.push('is-padding-week');
+                else cellClasses.push('is-in-semester');
                 if (day.isCurrentWeek) cellClasses.push('is-current-week');
                 if (weekKey === activeWeekKey) cellClasses.push('is-active-week');
                 if (day.isWeekend) cellClasses.push('is-weekend');
@@ -1604,7 +1677,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                 if (day.isToday) cellClasses.push('is-today');
                 if (!day.inSemester) cellClasses.push('is-outside');
 
-                const cell = createCell(fragment, cellClasses.join(' '), '', dayIndex + 3, weekIndex + 2);
+                const cell = createCell(fragment, cellClasses.join(' '), '', dayIndex + 4, weekIndex + 2);
                 cell.dataset.date = day.isoDate;
                 if (!week.isPaddingWeek) {
                     cell.dataset.weekKey = weekKey;
@@ -1619,6 +1692,13 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                 meta.className = 'date-meta';
                 meta.textContent = day.label;
                 cell.appendChild(meta);
+
+                if (day.isToday) {
+                    const todayTag = document.createElement('div');
+                    todayTag.className = 'semester-mini-tag today';
+                    todayTag.textContent = '今天';
+                    cell.appendChild(todayTag);
+                }
 
                 if (day.holidayInfo?.label) {
                     const tag = document.createElement('div');
@@ -1685,6 +1765,21 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         setActiveWeekKey(todayWeekKey, { center: true, behavior: 'smooth' });
     }
 
+    function activateBoardTarget(node) {
+        if (!node) return false;
+        const bandNode = node.closest('[data-semester-switch]');
+        if (bandNode && elements.board?.contains(bandNode)) {
+            setActiveSemester(Number(bandNode.dataset.semesterSwitch || 0));
+            return true;
+        }
+        const weekNode = node.closest('[data-week-key]');
+        if (weekNode && elements.board?.contains(weekNode)) {
+            setActiveWeekKey(weekNode.dataset.weekKey || '', { center: true, behavior: 'smooth' });
+            return true;
+        }
+        return false;
+    }
+
     function bindDragScroll() {
         if (!elements.scroll) {
             return;
@@ -1729,6 +1824,15 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             if (didDrag) {
                 ignoreClickUntil = Date.now() + 180;
                 scheduleSnapToNearest(60);
+            } else if (event?.type === 'pointerup') {
+                /* setPointerCapture 会把后续 click 重定向到滚动容器本身，
+                   board 上的 click 监听收不到 —— 未拖动的抬起在这里按落点命中处理 */
+                const handled = activateBoardTarget(
+                    document.elementFromPoint(event.clientX, event.clientY),
+                );
+                if (handled) {
+                    ignoreClickUntil = Date.now() + 180;
+                }
             }
         };
 
@@ -1773,12 +1877,23 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
     elements.todoAddBtn?.addEventListener('click', openTodoModal);
     elements.board?.addEventListener('click', (event) => {
         if (Date.now() < ignoreClickUntil) return;
+        const bandNode = event.target.closest('[data-semester-switch]');
+        if (bandNode) {
+            setActiveSemester(Number(bandNode.dataset.semesterSwitch || 0));
+            return;
+        }
         const weekNode = event.target.closest('[data-week-key]');
         if (!weekNode) return;
         setActiveWeekKey(weekNode.dataset.weekKey || '', { center: true, behavior: 'smooth' });
     });
     elements.board?.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
+        const bandNode = event.target.closest('[data-semester-switch]');
+        if (bandNode) {
+            event.preventDefault();
+            setActiveSemester(Number(bandNode.dataset.semesterSwitch || 0));
+            return;
+        }
         const weekNode = event.target.closest('[data-week-key]');
         if (!weekNode) return;
         event.preventDefault();
