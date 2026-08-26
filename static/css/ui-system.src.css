@@ -54380,3 +54380,20 @@ html.scene-cover-collapsing .main-content {
     --manage-domain-accent-dark: #7e22ce;
     --manage-domain-accent-rgb: 147, 51, 234;
 }
+
+/* 壳页导航按钮：图标 + 两字文案 */
+.ls-render-shell-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.ls-render-shell-nav-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    line-height: 1;
+    font-size: 0.9em;
+}

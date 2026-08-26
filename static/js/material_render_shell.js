@@ -14,13 +14,37 @@ function initTopbar() {
     const collapseBtn = document.getElementById('render-shell-collapse');
     const expandBtn = document.getElementById('render-shell-expand');
     const backBtn = document.getElementById('render-shell-back');
+    const homeBtn = document.getElementById('render-shell-home');
+    const forwardBtn = document.getElementById('render-shell-forward');
+    const frameEl = document.getElementById('render-shell-frame');
 
+    // 返回/前进走会话历史：iframe 内的链接跳转会进入同一份历史栈，
+    // 因此先逐步回退包内导航，退无可退时自然离开壳页回到平台上一页。
     backBtn?.addEventListener('click', () => {
         if (window.history.length > 1) {
             window.history.back();
         } else {
             window.location.href = '/dashboard';
         }
+    });
+    forwardBtn?.addEventListener('click', () => {
+        window.history.forward();
+    });
+    homeBtn?.addEventListener('click', () => {
+        const nodeId = Number(shellConfig.nodeId || 0);
+        if (!frameEl || !nodeId) return;
+        // 包默认入口（main.html）；已在首页时改为强制刷新。
+        const homeSrc = `/materials/render/${nodeId}/`;
+        try {
+            const currentPath = String(frameEl.contentWindow?.location?.pathname || '');
+            if (currentPath === homeSrc) {
+                frameEl.contentWindow?.location?.reload();
+                return;
+            }
+        } catch {
+            /* 读取失败则直接重设 src。 */
+        }
+        frameEl.src = homeSrc;
     });
     collapseBtn?.addEventListener('click', () => {
         if (topbar) topbar.hidden = true;

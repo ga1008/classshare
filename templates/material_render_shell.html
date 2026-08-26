@@ -36,15 +36,20 @@
 {% block body %}
 <div class="ls-render-shell" id="render-shell-root">
     <div class="ls-render-shell-topbar" id="render-shell-topbar">
-        <button type="button" class="btn btn-ghost btn-sm ls-render-shell-back" id="render-shell-back">← 返回</button>
-        <div class="ls-render-shell-title">
-            <strong>{{ shell.material_name }}</strong>
-            {% if shell.is_html_package and shell.lesson_number %}
-            <span class="ls-render-shell-badge" id="render-shell-badge">第 {{ shell.lesson_number }} 次课</span>
-            {% elif shell.is_html_package %}
-            <span class="ls-render-shell-badge" id="render-shell-badge">课程首页</span>
-            {% endif %}
-        </div>
+        <button type="button" class="btn btn-ghost btn-sm ls-render-shell-nav-btn" id="render-shell-back" title="返回上一页">
+            <span class="ls-render-shell-nav-icon" aria-hidden="true">&lt;</span><span>返回</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm ls-render-shell-nav-btn" id="render-shell-home" title="回到课程首页">
+            <svg class="ls-render-shell-nav-icon" aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></svg><span>首页</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm ls-render-shell-nav-btn" id="render-shell-forward" title="前进">
+            <span>前进</span><span class="ls-render-shell-nav-icon" aria-hidden="true">&gt;</span>
+        </button>
+        {% if shell.is_html_package and shell.lesson_number %}
+        <span class="ls-render-shell-badge" id="render-shell-badge">第 {{ shell.lesson_number }} 次课</span>
+        {% elif shell.is_html_package %}
+        <span class="ls-render-shell-badge" id="render-shell-badge">课程首页</span>
+        {% endif %}
         <button type="button" class="btn btn-ghost btn-sm" id="render-shell-collapse" title="收起工具条">收起</button>
     </div>
     <button type="button" class="ls-render-shell-expand" id="render-shell-expand" hidden title="展开工具条">☰</button>
