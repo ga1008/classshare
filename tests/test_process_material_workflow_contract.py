@@ -1013,7 +1013,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn('data-ordinary-grade-step-index="3"', template)
         self.assertIn('id="classroom-final-material-prompt-step"', template)
         self.assertIn("第 5 步", template)
-        self.assertIn("ordinary-grade-floor-20260729", island)
+        self.assertIn("html-package-20260826", island)
 
     def test_ordinary_grade_floor_policy_is_teacher_controlled_and_auditable(self):
         script = Path("static/js/classroom_materials.js").read_text(encoding="utf-8")
@@ -1824,7 +1824,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("summary.source_file_name", script)
         self.assertIn("summary.content_quality_label", script)
         self.assertIn("renderAiImportDetailSummary(detail)", script)
-        self.assertIn("ux-declutter-20260804", island)
+        self.assertIn("html-package-20260826", island)
         self.assertIn(".materials-ai-import-summary", styles)
 
     def test_classroom_material_detail_surfaces_ai_import_summary(self):

@@ -40,9 +40,9 @@
         <div class="ls-render-shell-title">
             <strong>{{ shell.material_name }}</strong>
             {% if shell.is_html_package and shell.lesson_number %}
-            <span class="ls-render-shell-badge">第 {{ shell.lesson_number }} 次课</span>
+            <span class="ls-render-shell-badge" id="render-shell-badge">第 {{ shell.lesson_number }} 次课</span>
             {% elif shell.is_html_package %}
-            <span class="ls-render-shell-badge">课程首页</span>
+            <span class="ls-render-shell-badge" id="render-shell-badge">课程首页</span>
             {% endif %}
         </div>
         <button type="button" class="btn btn-ghost btn-sm" id="render-shell-collapse" title="收起工具条">收起</button>

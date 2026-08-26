@@ -5382,7 +5382,7 @@ async function executeRepositoryAction(action, command = '') {
             result.status === 'success' ? 'success' : 'error',
         );
         if (state.repository.autoBindCandidates.length) {
-            showToast(`发现 ${state.repository.autoBindCandidates.length} 个 README，可确认后自动绑定到已分配课堂`, 'info', 5200);
+            showToast(`发现 ${state.repository.autoBindCandidates.length} 个入口文档（README/main/lesson_N），可确认后自动绑定到已分配课堂`, 'info', 5200);
             renderRepositoryAutoBindPanel();
         }
     } catch (error) {

@@ -30,7 +30,7 @@ DEFAULT_COMMIT_MESSAGE = "update by LS"
 GIT_COMMAND_TIMEOUT_SECONDS = 180
 LEARNING_README_NAME = "readme.md"
 # 可自动绑定课次的 HTML 入口文件名（与 README.md 兼容）。
-LEARNING_HTML_INDEX_NAMES = {"index.html", "index.htm"}
+LEARNING_HTML_INDEX_NAMES = {"index.html", "index.htm", "main.html", "main.htm"}
 
 _repo_locks: dict[int, asyncio.Lock] = {}
 _repo_locks_guard = asyncio.Lock()
@@ -711,10 +711,14 @@ def _is_changed_readme_candidate(entry: dict) -> bool:
     if str(entry.get("status") or "") not in {"inserted", "updated"}:
         return False
     name_lower = PurePosixPath(relative_path).name.lower()
-    # 兼容 Markdown README 与 HTML 入口（index.html / index.htm）。
+    # 兼容 Markdown README 与 HTML 入口（index/main.html），以及 HTML 包课次入口 lesson_N.html。
     if name_lower == LEARNING_README_NAME and str(entry.get("preview_type") or "") == "markdown":
         return True
-    return name_lower in LEARNING_HTML_INDEX_NAMES
+    if name_lower in LEARNING_HTML_INDEX_NAMES:
+        return True
+    from .html_package_service import lesson_number_from_entry_name
+
+    return lesson_number_from_entry_name(name_lower) > 0
 
 
 def _serialize_changed_entry(

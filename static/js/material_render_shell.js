@@ -32,6 +32,25 @@ function initTopbar() {
     });
 }
 
+function initPackageBadgeSync() {
+    // HTML 包内部导航（首页↔课次）时，同步壳页徽章与文档标题（iframe 同源可读）。
+    if (!shellConfig.isHtmlPackage) return;
+    const badge = document.getElementById('render-shell-badge');
+    const frameEl = document.getElementById('render-shell-frame');
+    if (!badge || !frameEl) return;
+    frameEl.addEventListener('load', () => {
+        try {
+            const framePath = String(frameEl.contentWindow?.location?.pathname || '');
+            const match = framePath.match(/lesson[_-]?0*(\d{1,3})\.html?$/i);
+            badge.textContent = match ? `第 ${Number(match[1])} 次课` : '课程首页';
+            const frameTitle = frameEl.contentDocument?.title;
+            if (frameTitle) document.title = frameTitle;
+        } catch {
+            /* 跨源或未就绪时保持原徽章。 */
+        }
+    });
+}
+
 function loadTeacherWhiteboardWhenIdle() {
     if (viewerContext.userRole !== 'teacher') return;
     const loadWhiteboard = () => {
@@ -114,5 +133,6 @@ function initLearningProgressHeartbeat() {
 }
 
 initTopbar();
+initPackageBadgeSync();
 loadTeacherWhiteboardWhenIdle();
 initLearningProgressHeartbeat();
