@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -14,6 +15,12 @@ from fastapi import HTTPException, UploadFile
 from ..core import ai_client
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from .file_service import global_file_write_path, resolve_global_file_path
+from .html_package_service import (
+    build_package_outline_text,
+    extract_html_text,
+    find_html_package_root,
+    load_material_file_text,
+)
 from .materials_git_service import refresh_root_git_metadata
 from .materials_service import (
     attach_learning_material_briefs,
@@ -772,8 +779,9 @@ async def _call_generation_ai(
     *,
     user_message: str,
     file_texts: list[dict[str, str]],
+    system_prompt: str | None = None,
 ) -> dict[str, Any]:
-    system_prompt = (
+    default_system_prompt = (
         "你是一名高校课程材料架构师，负责为具体课时生成可直接落库的 Markdown 学习文档。\n"
         "你必须严格返回 JSON 对象，不要输出 Markdown 代码块，也不要输出额外解释。\n"
         "输出 JSON 结构如下：\n"
@@ -796,7 +804,7 @@ async def _call_generation_ai(
         "7. 不能覆盖历史文档，不要复用已有课时的文件路径。"
     )
     payload = {
-        "system_prompt": system_prompt,
+        "system_prompt": system_prompt or default_system_prompt,
         "messages": [],
         "new_message": user_message,
         "base64_urls": [],
@@ -885,6 +893,223 @@ def _normalize_generated_nodes(result_payload: dict[str, Any]) -> tuple[str, lis
     normalized_nodes.sort(key=lambda item: (0 if item["type"] == "folder" else 1, item["path"].count("/"), item["path"]))
     selected_bind_path = next(node["path"] for node in file_nodes if node.get("bind"))
     return selected_bind_path, normalized_nodes
+
+
+HTML_PACKAGE_GENERATION_MAX_FILES = 10
+HTML_PACKAGE_TEXT_ASSET_EXTENSIONS = {"html", "htm", "css", "js", "mjs", "svg", "json", "txt", "md"}
+_HTML_LESSON_DIR_RE = re.compile(r"^lesson[_-]?0*(\d{1,3})$", re.IGNORECASE)
+_HTML_LESSON_ENTRY_RE = re.compile(r"^lesson[_-]?0*(\d{1,3})\.html?$", re.IGNORECASE)
+
+
+def _detect_html_package_generation_context(
+    conn,
+    *,
+    teacher_id: int,
+    class_offering_id: int,
+    previous_session_rows,
+) -> dict[str, Any] | None:
+    """判断本课堂的学习文档是否走 HTML 包体系（看最近课次与课程首页的绑定）。"""
+    candidate_ids: list[int] = []
+    for row in reversed(list(previous_session_rows or [])):
+        try:
+            material_id = int(row["learning_material_id"] or 0)
+        except (TypeError, ValueError, KeyError):
+            material_id = 0
+        if material_id > 0:
+            candidate_ids.append(material_id)
+    home_row = conn.execute(
+        "SELECT home_learning_material_id FROM class_offerings WHERE id = ? LIMIT 1",
+        (int(class_offering_id),),
+    ).fetchone()
+    if home_row:
+        try:
+            home_id = int(home_row["home_learning_material_id"] or 0)
+        except (TypeError, ValueError):
+            home_id = 0
+        if home_id > 0:
+            candidate_ids.append(home_id)
+
+    seen: set[int] = set()
+    for material_id in candidate_ids:
+        if material_id in seen:
+            continue
+        seen.add(material_id)
+        material = conn.execute(
+            "SELECT * FROM course_materials WHERE id = ? LIMIT 1",
+            (material_id,),
+        ).fetchone()
+        if not material or int(material["teacher_id"] or 0) != int(teacher_id):
+            continue
+        package = find_html_package_root(conn, material)
+        if package:
+            return package
+    return None
+
+
+def _build_html_package_reference_texts(conn, package: dict[str, Any], *, lesson_number: int) -> list[dict[str, str]]:
+    """HTML 包生成的参考材料：包结构 + 首页文字 + 最近课次完整 HTML + 更早课次文字。"""
+    file_texts: list[dict[str, str]] = [
+        {"name": "package_structure.txt", "content": build_package_outline_text(package)}
+    ]
+    main_entry = package.get("main_entry")
+    if main_entry:
+        main_text = extract_html_text(load_material_file_text(conn, main_entry), max_chars=4000)
+        if main_text:
+            file_texts.append({"name": "main.html.txt", "content": f"课程首页 main.html 的文字内容：\n{main_text}"})
+
+    lessons = sorted(package.get("lessons") or [], key=lambda item: int(item["number"]))
+    prior = [item for item in lessons if int(item["number"]) < int(lesson_number)] or lessons
+    if prior:
+        latest = prior[-1]
+        latest_html, _truncated = _truncate_text(load_material_file_text(conn, latest["entry"]), limit=16000)
+        if latest_html:
+            file_texts.append(
+                {
+                    "name": f"lesson_{latest['number']}.html",
+                    "content": f"最近一次课（第 {latest['number']} 次课）入口页完整源码，请沿用其结构与风格：\n{latest_html}",
+                }
+            )
+        for earlier in prior[-3:-1]:
+            earlier_text = extract_html_text(load_material_file_text(conn, earlier["entry"]), max_chars=3000)
+            if earlier_text:
+                file_texts.append(
+                    {"name": f"lesson_{earlier['number']}.txt", "content": f"第 {earlier['number']} 次课文字内容：\n{earlier_text}"}
+                )
+    return file_texts[:MAX_AI_FILE_TEXT_ITEMS]
+
+
+def _build_html_package_generation_prompts(
+    *,
+    classroom: dict[str, Any],
+    session: dict[str, Any],
+    task: dict[str, Any],
+    package: dict[str, Any],
+    lesson_number: int,
+) -> tuple[str, str]:
+    entry_path = f"lesson_{lesson_number}/lesson_{lesson_number}.html"
+    shared_dirs = package.get("shared_dirs") or []
+    shared_hint = (
+        f"共享资源目录：{'、'.join(shared_dirs)}，课次页面用 ../{shared_dirs[0]}/... 相对路径引用。"
+        if shared_dirs
+        else "本包暂无共享资源目录，样式/脚本直接内联或放在本课次文件夹内。"
+    )
+    system_prompt = (
+        "你是一名高校课程材料工程师，负责为 HTML 包形式的课程学习文档生成新的课次页面。\n"
+        "HTML 包规范：包根目录有 main.html 首页；每次课一个 lesson_N 文件夹，"
+        "文件夹内有入口 lesson_N.html 以及本课次配套资源；共享资源在根目录独立文件夹。\n"
+        "你必须严格返回 JSON 对象（不要 Markdown 代码块、不要解释）：\n"
+        "{\n"
+        '  "summary": "一句话说明生成策略",\n'
+        '  "files": [\n'
+        f'    {{"path": "{entry_path}", "content": "<!DOCTYPE html>...完整 HTML 文档..."}},\n'
+        f'    {{"path": "lesson_{lesson_number}/assets/extra.css", "content": "...可选的配套文本资源..."}}\n'
+        "  ]\n"
+        "}\n\n"
+        "硬性规则（违反任何一条都会被后端拒收）：\n"
+        f"1. 必须且只能有一个入口文件，路径精确为 {entry_path}。\n"
+        f"2. 所有文件路径都必须位于 lesson_{lesson_number}/ 目录内，禁止绝对路径、盘符、..、修改其他课次或共享目录。\n"
+        "3. 入口必须是完整 HTML 文档（含 <!DOCTYPE html>、<html>、<head>、<body>），视觉风格、导航结构与既有课次保持一致。\n"
+        f"4. 只允许文本类资源（{'、'.join(sorted(HTML_PACKAGE_TEXT_ASSET_EXTENSIONS))}），禁止二进制/图片文件；文件总数不超过 {HTML_PACKAGE_GENERATION_MAX_FILES} 个。\n"
+        f"5. {shared_hint}\n"
+        "6. 页面内容默认使用中文，结构完整、可直接课堂投屏使用。"
+    )
+
+    message_parts = [
+        f"请为第 {lesson_number} 次课生成 HTML 包课次页面（{task.get('document_type') or '课堂学习文档'}）。",
+        "",
+        "【课堂信息】",
+        f"- 课程：{classroom.get('course_name')}",
+        f"- 班级：{classroom.get('class_name')}",
+        f"- 教师：{classroom.get('teacher_name')}",
+        f"- 学期：{classroom.get('semester_name') or '未设置'}",
+        "",
+        "【当前课时】",
+        f"- 课时序号：第 {lesson_number} 次课",
+        f"- 标题：{session.get('title')}",
+        f"- 日期：{session.get('session_date')}",
+        f"- 内容要求：\n{session.get('content') or '未填写课时内容'}",
+    ]
+    requirement = str(task.get("requirement_text") or "").strip()
+    if requirement:
+        message_parts.extend(["", "【教师补充要求】", requirement])
+    message_parts.extend(
+        [
+            "",
+            "包结构、课程首页文字与最近课次的完整源码在附加文件中，请严格沿用同一套视觉与导航。",
+            "请只返回 JSON。",
+        ]
+    )
+    return system_prompt, "\n".join(message_parts)
+
+
+def _normalize_generated_html_package_nodes(
+    result_payload: dict[str, Any],
+    *,
+    lesson_number: int,
+) -> tuple[str, list[dict[str, Any]]]:
+    """严格校验 AI 输出的 HTML 包课次文件，不合规范直接拒收（任务置为失败）。"""
+    raw_files = result_payload.get("files")
+    if not isinstance(raw_files, list) or not raw_files:
+        raise HTTPException(500, "AI 输出不符合 HTML 包规范：缺少 files 数组。")
+    if len(raw_files) > HTML_PACKAGE_GENERATION_MAX_FILES:
+        raise HTTPException(500, f"AI 输出不符合 HTML 包规范：文件数量超过 {HTML_PACKAGE_GENERATION_MAX_FILES} 个。")
+
+    canonical_dir = f"lesson_{lesson_number}"
+    canonical_entry = f"{canonical_dir}/lesson_{lesson_number}.html"
+    entry_path = ""
+    file_nodes: list[dict[str, Any]] = []
+    seen_paths: set[str] = set()
+
+    for raw_file in raw_files:
+        if not isinstance(raw_file, dict):
+            raise HTTPException(500, "AI 输出不符合 HTML 包规范：files 中存在非对象元素。")
+        raw_path = _safe_text(raw_file.get("path"))
+        content = str(raw_file.get("content") or "")
+        if not raw_path or not content.strip():
+            raise HTTPException(500, "AI 输出不符合 HTML 包规范：存在空路径或空内容的文件。")
+        if len(content) > MAX_GENERATED_FILE_CHARS:
+            content = content[:MAX_GENERATED_FILE_CHARS].rstrip()
+
+        normalized = normalize_material_path(raw_path)
+        segments = [seg for seg in normalized.split("/") if seg]
+        if len(segments) < 2:
+            raise HTTPException(500, f"AI 输出不符合 HTML 包规范：文件 {normalized} 不在课次文件夹内。")
+        dir_match = _HTML_LESSON_DIR_RE.match(segments[0])
+        if not dir_match or int(dir_match.group(1)) != int(lesson_number):
+            raise HTTPException(500, f"AI 输出不符合 HTML 包规范：文件 {normalized} 不在 {canonical_dir}/ 目录内。")
+        segments[0] = canonical_dir
+
+        ext = segments[-1].rsplit(".", 1)[-1].lower() if "." in segments[-1] else ""
+        if ext not in HTML_PACKAGE_TEXT_ASSET_EXTENSIONS:
+            raise HTTPException(500, f"AI 输出不符合 HTML 包规范：不允许的文件类型 {segments[-1]}。")
+
+        entry_match = _HTML_LESSON_ENTRY_RE.match(segments[-1]) if len(segments) == 2 else None
+        if entry_match:
+            if int(entry_match.group(1)) != int(lesson_number):
+                raise HTTPException(500, f"AI 输出不符合 HTML 包规范：入口文件编号与第 {lesson_number} 次课不符。")
+            segments[-1] = f"lesson_{lesson_number}.html"
+
+        final_path = "/".join(segments)
+        if final_path in seen_paths:
+            raise HTTPException(500, f"AI 输出不符合 HTML 包规范：文件路径重复 {final_path}。")
+        seen_paths.add(final_path)
+
+        is_entry = final_path == canonical_entry
+        if is_entry:
+            if entry_path:
+                raise HTTPException(500, "AI 输出不符合 HTML 包规范：入口文件出现多次。")
+            lowered = content.lower()
+            if "<html" not in lowered or "</html>" not in lowered:
+                raise HTTPException(500, "AI 输出不符合 HTML 包规范：入口不是完整的 HTML 文档。")
+            entry_path = final_path
+        file_nodes.append({"type": "file", "path": final_path, "content": content, "bind": is_entry})
+
+    if not entry_path:
+        raise HTTPException(500, f"AI 输出不符合 HTML 包规范：缺少入口文件 {canonical_entry}。")
+
+    nodes: list[dict[str, Any]] = [{"type": "folder", "path": canonical_dir}]
+    nodes.extend(sorted(file_nodes, key=lambda item: (item["path"].count("/"), item["path"])))
+    return entry_path, nodes
 
 
 def _get_child_row(conn, *, teacher_id: int, parent_id: int | None, name: str):
@@ -987,7 +1212,9 @@ def _create_file_row(
     now: str,
 ) -> dict[str, Any]:
     file_hash, file_size = _store_markdown_bytes(content)
-    file_profile = infer_material_profile(name, "text/markdown")
+    # 按文件名推断类型：.md 仍由类型注册表命中 Markdown；HTML 包生成的
+    # .html/.css/.js 等文本资产按文本类落库（与手工上传行为一致）。
+    file_profile = infer_material_profile(name, "text/markdown" if name.lower().endswith((".md", ".markdown")) else None)
     db_engine = get_configured_db_engine()
     file_id = execute_insert_returning_id(
         conn,
@@ -1338,6 +1565,30 @@ async def run_generation_task(task_id: int) -> None:
                 """,
                 (int(task_row["class_offering_id"]), int(task_row["order_index"] or 0)),
             ).fetchall()
+            # HTML 包体系检测：若本课堂学习文档走 HTML 包，切换到包规范生成模式。
+            html_package = _detect_html_package_generation_context(
+                conn,
+                teacher_id=int(task_row["teacher_id"]),
+                class_offering_id=int(task_row["class_offering_id"]),
+                previous_session_rows=previous_session_rows,
+            )
+            html_lesson_number = int(task_row["order_index"] or 0)
+            html_file_texts: list[dict[str, str]] = []
+            if html_package:
+                if html_lesson_number <= 0:
+                    raise HTTPException(500, "当前课次缺少序号，无法按 HTML 包规范生成课次页面。")
+                if html_lesson_number in (html_package.get("lesson_by_number") or {}):
+                    raise HTTPException(
+                        500,
+                        f"HTML 包中第 {html_lesson_number} 次课的入口 lesson_{html_lesson_number}.html 已存在，"
+                        "请先删除旧课次文件夹或改用手动编辑。",
+                    )
+                html_file_texts = _build_html_package_reference_texts(
+                    conn,
+                    html_package,
+                    lesson_number=html_lesson_number,
+                )
+
             previous_docs = attach_learning_material_briefs(
                 conn,
                 [dict(row) for row in previous_session_rows],
@@ -1401,32 +1652,54 @@ async def run_generation_task(task_id: int) -> None:
                 previous_docs=normalized_previous_docs,
             )
 
-        file_texts = _build_reference_file_texts(
-            previous_docs=reference_docs,
-            example_documents=example_documents,
-        )
-        user_message = _build_generation_user_message(
-            classroom=classroom_context,
-            session=session_context,
-            task=task_context,
-            previous_docs=reference_docs,
-            structure_candidates=structure_candidates,
-        )
-        ai_result = await _call_generation_ai(user_message=user_message, file_texts=file_texts)
-        target_parent_key = _safe_text(ai_result.get("target_parent_key")).lower() or "teacher_root"
-        fallback_parent = next(
-            (candidate for candidate in structure_candidates if candidate["key"] != "teacher_root"),
-            structure_candidates[0],
-        )
-        base_parent = next(
-            (candidate for candidate in structure_candidates if candidate["key"] == target_parent_key),
-            fallback_parent,
-        )
-        ai_result = _rebase_generation_result_to_parent(
-            ai_result,
-            base_parent_path=_safe_text(base_parent.get("parent_path")),
-        )
-        bind_path, nodes = _normalize_generated_nodes(ai_result)
+        if html_package:
+            html_system_prompt, html_user_message = _build_html_package_generation_prompts(
+                classroom=classroom_context,
+                session=session_context,
+                task=task_context,
+                package=html_package,
+                lesson_number=html_lesson_number,
+            )
+            ai_result = await _call_generation_ai(
+                user_message=html_user_message,
+                file_texts=html_file_texts,
+                system_prompt=html_system_prompt,
+            )
+            bind_path, nodes = _normalize_generated_html_package_nodes(
+                ai_result,
+                lesson_number=html_lesson_number,
+            )
+            base_parent_key = "html_package_root"
+            base_parent_id = int(html_package["root_node_id"])
+        else:
+            file_texts = _build_reference_file_texts(
+                previous_docs=reference_docs,
+                example_documents=example_documents,
+            )
+            user_message = _build_generation_user_message(
+                classroom=classroom_context,
+                session=session_context,
+                task=task_context,
+                previous_docs=reference_docs,
+                structure_candidates=structure_candidates,
+            )
+            ai_result = await _call_generation_ai(user_message=user_message, file_texts=file_texts)
+            target_parent_key = _safe_text(ai_result.get("target_parent_key")).lower() or "teacher_root"
+            fallback_parent = next(
+                (candidate for candidate in structure_candidates if candidate["key"] != "teacher_root"),
+                structure_candidates[0],
+            )
+            base_parent = next(
+                (candidate for candidate in structure_candidates if candidate["key"] == target_parent_key),
+                fallback_parent,
+            )
+            ai_result = _rebase_generation_result_to_parent(
+                ai_result,
+                base_parent_path=_safe_text(base_parent.get("parent_path")),
+            )
+            bind_path, nodes = _normalize_generated_nodes(ai_result)
+            base_parent_key = base_parent["key"]
+            base_parent_id = base_parent["parent_id"]
 
         with get_db_connection() as conn:
             generated_material = persist_generated_materials(
@@ -1434,16 +1707,17 @@ async def run_generation_task(task_id: int) -> None:
                 teacher_id=int(task_row["teacher_id"]),
                 class_offering_id=int(task_row["class_offering_id"]),
                 session_id=int(task_row["session_id"]),
-                base_parent_id=base_parent["parent_id"],
+                base_parent_id=base_parent_id,
                 nodes=nodes,
             )
 
             result_payload = {
                 "summary": _safe_text(ai_result.get("summary"), max_length=300),
-                "target_parent_key": base_parent["key"],
+                "target_parent_key": base_parent_key,
                 "bind_path": bind_path,
                 "created_bind_material_path": generated_material["material_path"],
                 "node_count": len(nodes),
+                "generation_mode": "html_package" if html_package else "markdown",
             }
             now = _now_iso()
             conn.execute(

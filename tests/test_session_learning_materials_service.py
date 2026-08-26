@@ -61,9 +61,9 @@ class SessionLearningMaterialsServiceTests(unittest.TestCase):
         svc.add_material(self.conn, 5, 10, 200, 1)
         entries = svc.build_material_entries(self.conn, 5, 10, teacher_id=1)
         self.assertEqual([e["material_id"] for e in entries], [100, 200])
-        # md -> markdown viewer, html folder -> render route
+        # md -> markdown viewer, html folder -> 全屏渲染壳页
         self.assertEqual(entries[0]["open_url"], "/materials/view/100")
-        self.assertEqual(entries[1]["open_url"], "/materials/render/200/")
+        self.assertEqual(entries[1]["open_url"], "/materials/render-view/200")
         self.assertTrue(entries[1]["is_renderable"])
 
     def test_first_add_mirrors_primary(self):

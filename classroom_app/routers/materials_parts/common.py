@@ -1251,7 +1251,7 @@ def _normalize_positive_id_list(values: list[int] | tuple[int, ...] | None) -> l
     return result
 
 
-HTML_INDEX_CANDIDATE_NAMES = {"index.html", "index.htm"}
+HTML_INDEX_CANDIDATE_NAMES = {"index.html", "index.htm", "main.html", "main.htm"}
 
 
 def _is_readme_material_row(row: dict) -> bool:
@@ -1260,10 +1260,15 @@ def _is_readme_material_row(row: dict) -> bool:
     if str(row.get("node_type") or "") != "file":
         return False
     name_lower = str(row.get("name") or "").strip().lower()
-    # README.md（Markdown）或 HTML 入口（index.html / index.htm）均可自动绑定课次。
+    # README.md（Markdown）、HTML 入口（index/main.html）或 HTML 包课次入口
+    # （lesson_N.html）均可自动绑定课次/首页。
     if name_lower == "readme.md" and str(row.get("preview_type") or "") == "markdown":
         return True
-    return name_lower in HTML_INDEX_CANDIDATE_NAMES
+    if name_lower in HTML_INDEX_CANDIDATE_NAMES:
+        return True
+    from ...services.html_package_service import lesson_number_from_entry_name
+
+    return lesson_number_from_entry_name(name_lower) > 0
 
 
 def _relative_material_path(root_path: str | None, material_path: str | None) -> str:
@@ -1428,6 +1433,27 @@ async def _run_ai_material_session_assignment(
             desired_ids = _load_assigned_offering_ids_for_material_scope(conn, dict(material), int(user["id"]))
         if not desired_ids:
             raise HTTPException(400, "请先把仓库或材料分配到至少一个课堂，再执行自动绑定。")
+
+        # HTML 包直接按规范确定性绑定（main.html → 首页，lesson_N → 第 N 次课），
+        # 不走 AI 猜测，避免生成/同步流程绑错入口。
+        from ...services.html_package_service import apply_package_session_bindings, parse_html_package
+
+        package = parse_html_package(conn, material)
+        if package:
+            offering_map = _load_teacher_offering_map(conn, int(user["id"]), desired_ids)
+            invalid_ids = set(desired_ids) - set(offering_map)
+            if invalid_ids:
+                raise HTTPException(403, "包含无权分配的课堂")
+            result = apply_package_session_bindings(
+                conn,
+                package=package,
+                offering_ids=desired_ids,
+                teacher_id=int(user["id"]),
+            )
+            conn.commit()
+            result["target_classroom_count"] = len(desired_ids)
+            result["candidate_count"] = len(package.get("lessons") or []) + 1
+            return result
 
         offering_map = _load_teacher_offering_map(conn, int(user["id"]), desired_ids)
         invalid_ids = set(desired_ids) - set(offering_map)

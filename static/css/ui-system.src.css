@@ -54288,3 +54288,88 @@ html.scene-cover-collapsing .main-content {
     color: var(--primary-hover);
     font-weight: 700;
 }
+
+/* ============ HTML 材料全屏渲染壳页（material_render_shell.html） ============ */
+.ls-render-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: hsl(var(--ls-background, 0 0% 100%));
+}
+
+.ls-render-shell-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+    background: #fff;
+}
+
+.ls-render-shell-topbar {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px 6px 6px;
+    border-radius: 999px;
+    background: hsl(var(--ls-card, 0 0% 100%) / 0.92);
+    border: 1px solid hsl(var(--ls-border, 220 13% 91%));
+    box-shadow: 0 8px 24px hsl(220 40% 10% / 0.12);
+    backdrop-filter: blur(8px);
+    max-width: min(72vw, 560px);
+}
+
+.ls-render-shell-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: 0.9rem;
+}
+
+.ls-render-shell-title strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ls-render-shell-badge {
+    flex: none;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    background: hsl(var(--ls-primary) / 0.12);
+    color: var(--primary-hover, hsl(var(--ls-primary)));
+}
+
+.ls-render-shell-expand {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 40;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid hsl(var(--ls-border, 220 13% 91%));
+    background: hsl(var(--ls-card, 0 0% 100%) / 0.92);
+    box-shadow: 0 6px 18px hsl(220 40% 10% / 0.14);
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+.ls-render-shell-expand[hidden] {
+    display: none !important;
+}
+
+@media (max-width: 640px) {
+    .ls-render-shell-topbar {
+        max-width: calc(100vw - 88px);
+    }
+}

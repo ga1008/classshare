@@ -151,8 +151,8 @@
                 </div>
             </div>
             <div class="materials-viewer-actions">
-                {% if material.is_renderable and material.render_url %}
-                <a href="{{ material.render_url }}" class="btn btn-primary" target="_blank" rel="noopener">{{ material.render_label or '渲染' }}</a>
+                {% if material.is_renderable and (material.render_shell_url or material.render_url) %}
+                <a href="{{ material.render_shell_url or material.render_url }}" class="btn btn-primary" target="_blank" rel="noopener">{{ material.render_label or '渲染' }}</a>
                 {% endif %}
                 {% if material.can_edit_source %}
                 <button type="button" class="btn btn-outline" id="viewer-edit-source-btn">编辑源码</button>

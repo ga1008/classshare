@@ -3,6 +3,7 @@ from .generation_helpers import *
 from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
+from ...services.html_package_service import apply_package_session_bindings, parse_html_package
 from ...services.material_render_service import attach_render_metadata
 from ...services.materials_service import is_bindable_learning_material
 from ...services.session_learning_materials_service import (
@@ -343,6 +344,26 @@ async def ai_assign_material_to_sessions(
 
     with get_db_connection() as conn:
         material = ensure_teacher_material_owner(conn, material_id, user["id"])
+
+        # HTML 包不需要 AI 猜测：main.html → 首页，lesson_N 入口 → 第 N 次课。
+        package = parse_html_package(conn, material)
+        if package:
+            offering_rows = conn.execute(
+                "SELECT id FROM class_offerings WHERE teacher_id = ?",
+                (user["id"],),
+            ).fetchall()
+            allowed_ids = {int(row["id"]) for row in offering_rows}
+            invalid_ids = set(desired_ids) - allowed_ids
+            if invalid_ids:
+                raise HTTPException(403, "包含无权分配的课堂")
+            result = apply_package_session_bindings(
+                conn,
+                package=package,
+                offering_ids=desired_ids,
+                teacher_id=int(user["id"]),
+            )
+            conn.commit()
+            return result
 
         # 获取该材料下的所有文件（含子目录递归）
         subtree_rows = _collect_subtree_rows(conn, material, include_internal=False)

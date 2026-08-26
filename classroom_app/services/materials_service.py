@@ -285,8 +285,10 @@ def build_learning_material_brief(row, render_target: dict | None = None) -> dic
     material_id = int(item.get("id") or 0)
     markdown_viewer_url = f"/materials/view/{material_id}" if material_id > 0 else ""
     render_url = str((render_target or {}).get("render_url") or "")
-    # 课次/首页绑定材料的"打开"入口：HTML 直接渲染，其余沿用 Markdown 阅读器。
-    open_url = render_url or markdown_viewer_url
+    shell_url = str((render_target or {}).get("shell_url") or "")
+    # 课次/首页绑定材料的"打开"入口：HTML 走全屏渲染壳页（带工具栏/AI 助手），
+    # 其余沿用 Markdown 阅读器。
+    open_url = shell_url or render_url or markdown_viewer_url
     return {
         "id": material_id,
         "parent_id": int(item["parent_id"]) if item.get("parent_id") is not None else None,
@@ -298,6 +300,7 @@ def build_learning_material_brief(row, render_target: dict | None = None) -> dic
         "viewer_url": open_url,
         "markdown_viewer_url": markdown_viewer_url,
         "render_url": render_url,
+        "shell_url": shell_url,
         "render_kind": str((render_target or {}).get("kind") or ""),
         "is_renderable": bool(render_target),
     }
@@ -669,6 +672,25 @@ def get_learning_material_assignment_anchor(conn, material_row):
     parent_id = material_row["parent_id"]
     if not parent_id:
         return material_row
+
+    # HTML 包成员（main.html / lesson_N.html）锚定到包根：学生打开课次页面时，
+    # 页面会相对引用包内其他课次与共享资源目录，必须整包分配给课堂。
+    from .html_package_service import find_html_package_root, is_package_entry_candidate_name
+
+    if is_package_entry_candidate_name(material_row["name"]):
+        package = find_html_package_root(conn, material_row)
+        if package and int(package.get("root_node_id") or 0) > 0:
+            package_root = conn.execute(
+                """
+                SELECT id, parent_id, root_id, name, material_path, preview_type, node_type
+                FROM course_materials
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (int(package["root_node_id"]),),
+            ).fetchone()
+            if package_root:
+                return package_root
 
     parent = conn.execute(
         """

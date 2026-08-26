@@ -19,11 +19,19 @@ from __future__ import annotations
 
 from typing import Iterable, Protocol
 
+from urllib.parse import quote
+
+from .html_package_service import (
+    find_html_package_root,
+    is_package_entry_candidate_name,
+    package_relative_path,
+)
 from .materials_service import is_git_internal_material_path, normalize_material_path
 
 
 HTML_EXTENSIONS = {"html", "htm"}
-HTML_INDEX_BASENAMES = ("index.html", "index.htm", "index.xhtml")
+# main.html 是 HTML 包规范的首页入口，优先级最高；index.* 兼容普通前端项目。
+HTML_INDEX_BASENAMES = ("main.html", "main.htm", "index.html", "index.htm", "index.xhtml")
 
 
 def _row_get(row, key, default=None):
@@ -135,14 +143,40 @@ class HtmlRenderer:
         node_id = int(_row_get(material_row, "id") or 0)
         if node_id <= 0:
             return None
+
+        # HTML 包入口（main.html / lesson_N.html / lesson_N 目录）锚定到包根渲染：
+        # URL 变成 /materials/render/{包根}/{相对路径}，浏览器可自行解析
+        # ../common/... 之类的共享资源引用，服务端不需要放行目录穿越。
+        render_node_id = node_id
+        render_subpath = ""
+        if is_package_entry_candidate_name(_row_get(material_row, "name")):
+            package = find_html_package_root(conn, material_row)
+            if package and int(package.get("root_node_id") or 0) > 0:
+                package_root_id = int(package["root_node_id"])
+                relpath = package_relative_path(package, entry_row.get("material_path"))
+                if package_root_id != node_id and relpath:
+                    render_node_id = package_root_id
+                    render_subpath = relpath
+
+        if render_subpath:
+            encoded = quote(render_subpath)
+            render_url = f"/materials/render/{render_node_id}/{encoded}"
+            shell_url = f"/materials/render-view/{render_node_id}?path={encoded}"
+        else:
+            render_url = f"/materials/render/{render_node_id}/"
+            shell_url = f"/materials/render-view/{render_node_id}"
+
         return {
             "kind": self.kind,
             "label": self.label,
-            "node_id": node_id,
+            "node_id": render_node_id,
+            "source_node_id": node_id,
             "entry_id": int(entry_row.get("id") or 0),
             "entry_path": str(entry_row.get("material_path") or ""),
             "entry_name": str(entry_row.get("name") or ""),
-            "render_url": f"/materials/render/{node_id}/",
+            "render_subpath": render_subpath,
+            "render_url": render_url,
+            "shell_url": shell_url,
         }
 
 
@@ -168,12 +202,14 @@ def attach_render_metadata(conn, items: list[dict]) -> list[dict]:
             item["render_kind"] = target["kind"]
             item["render_label"] = target["label"]
             item["render_url"] = target["render_url"]
+            item["render_shell_url"] = target.get("shell_url") or ""
             item["render_entry_id"] = target["entry_id"]
         else:
             item["is_renderable"] = False
             item["render_kind"] = ""
             item["render_label"] = ""
             item["render_url"] = ""
+            item["render_shell_url"] = ""
             item["render_entry_id"] = 0
     return items
 

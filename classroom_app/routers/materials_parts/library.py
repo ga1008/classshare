@@ -14,6 +14,99 @@ from ...services.ordinary_grade_record_service import classify_ordinary_grade_as
 
 router = APIRouter()
 
+# zip 自动解压护栏：压缩包 ≤200MB，解压后总量 ≤500MB、单文件 ≤100MB、条目 ≤3000。
+ZIP_UPLOAD_MAX_COMPRESSED_BYTES = 200 * 1024 * 1024
+ZIP_UPLOAD_MAX_TOTAL_BYTES = 500 * 1024 * 1024
+ZIP_UPLOAD_MAX_FILE_BYTES = 100 * 1024 * 1024
+ZIP_UPLOAD_MAX_ENTRY_COUNT = 3000
+_ZIP_IGNORED_SEGMENTS = {"__macosx", ".ds_store", ".git", "thumbs.db"}
+
+
+def _decode_zip_member_name(info: zipfile.ZipInfo) -> str:
+    """zip 条目名编码兜底：无 UTF-8 标记时按 GBK 还原中文文件名。"""
+    name = info.filename
+    if info.flag_bits & 0x800:
+        return name
+    try:
+        return name.encode("cp437").decode("gbk")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return name
+
+
+def _extract_zip_upload_entries(zip_name: str, payload: bytes) -> list[dict]:
+    """把上传的 zip 解压成上传条目列表（内存解压 + 路径/体积护栏）。
+
+    返回 [{"relative_path": str, "payload": bytes, "content_type": None}]。
+    """
+    if len(payload) > ZIP_UPLOAD_MAX_COMPRESSED_BYTES:
+        raise HTTPException(400, f"压缩包 {zip_name} 超过 {ZIP_UPLOAD_MAX_COMPRESSED_BYTES // (1024 * 1024)}MB 限制")
+
+    import io
+
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(payload))
+    except zipfile.BadZipFile:
+        raise HTTPException(400, f"压缩包 {zip_name} 无法解析，请确认是有效的 .zip 文件")
+
+    stem = Path(zip_name).stem.strip() or "archive"
+    raw_entries: list[tuple[str, zipfile.ZipInfo]] = []
+    total_bytes = 0
+    with archive:
+        for info in archive.infolist():
+            if info.is_dir():
+                continue
+            member_name = _decode_zip_member_name(info).replace("\\", "/").strip("/")
+            if not member_name:
+                continue
+            segments = [seg for seg in member_name.split("/") if seg and seg != "."]
+            if not segments:
+                continue
+            if any(seg == ".." for seg in segments):
+                raise HTTPException(400, f"压缩包 {zip_name} 含有非法路径（..）")
+            if any(seg.lower() in _ZIP_IGNORED_SEGMENTS for seg in segments):
+                continue
+            if re.match(r"^[a-zA-Z]:", segments[0]):
+                raise HTTPException(400, f"压缩包 {zip_name} 含有非法路径（盘符）")
+            if info.file_size > ZIP_UPLOAD_MAX_FILE_BYTES:
+                raise HTTPException(400, f"压缩包内文件 {member_name} 超过单文件大小限制")
+            total_bytes += int(info.file_size)
+            if total_bytes > ZIP_UPLOAD_MAX_TOTAL_BYTES:
+                raise HTTPException(400, f"压缩包 {zip_name} 解压后总体积超过限制")
+            raw_entries.append(("/".join(segments), info))
+            if len(raw_entries) > ZIP_UPLOAD_MAX_ENTRY_COUNT:
+                raise HTTPException(400, f"压缩包 {zip_name} 文件数量超过 {ZIP_UPLOAD_MAX_ENTRY_COUNT} 限制")
+
+        if not raw_entries:
+            raise HTTPException(400, f"压缩包 {zip_name} 中没有可导入的文件")
+
+        # 若 zip 内已有唯一顶层目录则直接使用；否则用压缩包名做顶层目录。
+        top_levels = {path.split("/", 1)[0] for path, _info in raw_entries}
+        wrap_with_stem = len(top_levels) != 1
+
+        entries: list[dict] = []
+        for member_path, info in raw_entries:
+            relative_path = f"{stem}/{member_path}" if wrap_with_stem else member_path
+            with archive.open(info) as handle:
+                data = handle.read(ZIP_UPLOAD_MAX_FILE_BYTES + 1)
+            if len(data) > ZIP_UPLOAD_MAX_FILE_BYTES:
+                raise HTTPException(400, f"压缩包内文件 {member_path} 超过单文件大小限制")
+            entries.append({"relative_path": relative_path, "payload": data, "content_type": None})
+    return entries
+
+
+def _save_payload_bytes_globally(payload: bytes) -> dict:
+    """按内容哈希落盘（与 save_file_globally 同一存储布局），返回 {hash, size}。"""
+    file_hash = hashlib.sha256(payload).hexdigest()
+    target_path = global_file_write_path(file_hash)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    if not target_path.exists():
+        existing = resolve_global_file_path(file_hash)
+        if existing and existing != target_path:
+            target_path.write_bytes(existing.read_bytes())
+        else:
+            target_path.write_bytes(payload)
+    return {"hash": file_hash, "size": target_path.stat().st_size}
+
 
 def _serialize_material_attributes(conn, material, user: dict) -> dict[str, Any]:
     child_count = conn.execute(
@@ -681,10 +774,28 @@ async def upload_materials(
         raise HTTPException(400, "上传文件与清单数量不匹配")
 
     prepared_entries = []
+    extracted_zip_count = 0
     for index, file in enumerate(files):
         manifest_item = manifest_items[index] if index < len(manifest_items) else {}
         raw_path = manifest_item.get("relative_path") or file.filename
         normalized_path = normalize_material_path(raw_path, fallback_name=file.filename or f"file-{index + 1}")
+
+        # 顶层上传的 .zip 自动解压导入（文件夹上传里的 zip 保持原样存档）。
+        if "/" not in normalized_path and normalized_path.lower().endswith(".zip"):
+            payload = await file.read()
+            zip_entries = _extract_zip_upload_entries(normalized_path, payload)
+            extracted_zip_count += 1
+            for zip_entry in zip_entries:
+                prepared_entries.append(
+                    {
+                        "file": None,
+                        "payload": zip_entry["payload"],
+                        "relative_path": normalize_material_path(zip_entry["relative_path"]),
+                        "content_type": None,
+                    }
+                )
+            continue
+
         prepared_entries.append(
             {
                 "file": file,
@@ -692,6 +803,9 @@ async def upload_materials(
                 "content_type": manifest_item.get("content_type") or file.content_type,
             }
         )
+
+    if not prepared_entries:
+        raise HTTPException(400, "没有可导入的材料")
 
     with get_db_connection() as conn:
         base_parent = None
@@ -780,10 +894,16 @@ async def upload_materials(
                 else:
                     inherited_root_id = created_roots[parent_path]
 
-            file_profile = infer_material_profile(file.filename or full_segments[-1], entry["content_type"])
-            file_info = await save_file_globally(file)
+            file_profile = infer_material_profile(
+                (file.filename if file else "") or full_segments[-1],
+                entry["content_type"],
+            )
+            if file is not None:
+                file_info = await save_file_globally(file)
+            else:
+                file_info = await asyncio.to_thread(_save_payload_bytes_globally, entry["payload"])
             if not file_info:
-                raise HTTPException(500, f"保存材料失败: {file.filename}")
+                raise HTTPException(500, f"保存材料失败: {full_segments[-1]}")
 
             file_id = _insert_material_file_row(
                 conn,
@@ -830,11 +950,15 @@ async def upload_materials(
             ).fetchall()
             created_items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, created_rows, user=user)]
 
+    message = f"已导入 {uploaded_file_count} 个文件"
+    if extracted_zip_count:
+        message += f"（含 {extracted_zip_count} 个压缩包自动解压）"
     return {
         "status": "success",
-        "message": f"已导入 {uploaded_file_count} 个文件",
+        "message": message,
         "uploaded_file_count": uploaded_file_count,
         "uploaded_folder_count": uploaded_folder_count,
+        "extracted_zip_count": extracted_zip_count,
         "created_items": created_items,
     }
 

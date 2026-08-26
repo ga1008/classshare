@@ -43,7 +43,8 @@ export function isRenderable(item) {
 }
 
 export function getRenderUrl(item) {
-    return isRenderable(item) ? String(item.render_url || '') : '';
+    // 优先走全屏渲染壳页（带返回/白板/AI 助手），无壳页时退回裸渲染路由。
+    return isRenderable(item) ? String(item.render_shell_url || item.render_url || '') : '';
 }
 
 export function getRenderLabel(item) {

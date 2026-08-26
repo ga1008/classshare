@@ -1,11 +1,14 @@
 import mimetypes
 
+from urllib.parse import quote
+
 from .common import *
 from .generation_helpers import *
 from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
 from ...services.learning_progress_service import get_material_mastery_check_context
+from ...services.html_package_service import find_html_package_root, lesson_number_from_entry_name
 from ...services.material_render_service import attach_render_metadata, resolve_render_file, resolve_render_target
 from ...services.document_render_service import DocumentRenderError, document_render_service
 
@@ -299,6 +302,70 @@ async def _serve_rendered_material(material_id: int, subpath: str, user: dict) -
         file_path,
         media_type=media_type,
         headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.get("/materials/render-view/{material_id}", response_class=HTMLResponse)
+async def material_render_shell_page(
+    request: Request,
+    material_id: int,
+    path: str = Query(default=""),
+    class_offering_id: int | None = Query(default=None),
+    session_id: int | None = Query(default=None),
+    user: dict = Depends(get_current_user),
+):
+    """HTML 材料的全屏渲染壳页：iframe 直渲 + 浮动工具栏（返回/白板）+ AI 助手。
+
+    HTML 包课次入口通过 ``?path=lesson_N/lesson_N.html`` 定位；页面内的相对
+    路径跳转与静态资源加载全部走 ``/materials/render/{id}/...`` 通道。
+    """
+    subpath = str(path or "").strip().strip("/")
+    with get_db_connection() as conn:
+        node = ensure_user_material_access(conn, material_id, user)
+        if not resolve_render_target(conn, node):
+            raise HTTPException(400, "当前材料不支持直接渲染")
+        target_row = resolve_render_file(conn, node, subpath)
+        if not target_row:
+            raise HTTPException(404, "未找到要渲染的入口文件")
+        ensure_user_material_access(conn, int(target_row["id"]), user)
+
+        lesson_number = 0
+        lesson_count = 0
+        is_html_package = False
+        package = find_html_package_root(conn, node if node["node_type"] == "folder" else target_row)
+        if package:
+            is_html_package = True
+            lesson_count = len(package.get("lessons") or [])
+            lesson_number = lesson_number_from_entry_name(str(target_row["name"] or ""))
+
+    iframe_src = (
+        f"/materials/render/{material_id}/{quote(subpath)}"
+        if subpath
+        else f"/materials/render/{material_id}/"
+    )
+    return templates.TemplateResponse(
+        request,
+        "material_render_shell.html",
+        {
+            "request": request,
+            "user_info": user,
+            "shell": {
+                "node_id": int(material_id),
+                "entry_material_id": int(target_row["id"]),
+                "entry_name": str(target_row["name"] or ""),
+                "material_name": str(node["name"] or ""),
+                "material_path": str(node["material_path"] or ""),
+                "iframe_src": iframe_src,
+                "subpath": subpath,
+                "lesson_number": lesson_number,
+                "lesson_count": lesson_count,
+                "is_html_package": is_html_package,
+            },
+            "learning_context": {
+                "class_offering_id": class_offering_id,
+                "session_id": session_id,
+            },
+        },
     )
 
 

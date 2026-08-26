@@ -5912,6 +5912,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/materials/render-view/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "material_render_shell_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/materials/render/{material_id}",
     "methods": [
       "GET"

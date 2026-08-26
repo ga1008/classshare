@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}{{ shell.entry_name or shell.material_name }} | 课程材料{% endblock %}
+
+{% block head %}
+<script>
+    window.MATERIAL_VIEWER = {
+        id: {{ shell.entry_material_id | tojson }},
+        name: {{ (shell.entry_name or shell.material_name) | tojson }},
+        material_path: {{ shell.material_path | tojson }},
+        is_html_package: {{ shell.is_html_package | tojson }}
+    };
+    window.MATERIAL_VIEWER_CONTEXT = {
+        userId: {{ user_info.id | tojson }},
+        userRole: {{ user_info.role | tojson }},
+        materialId: {{ shell.entry_material_id | tojson }},
+        materialName: {{ (shell.entry_name or shell.material_name) | tojson }},
+        classOfferingId: {{ learning_context.class_offering_id | tojson }},
+        sessionId: {{ learning_context.session_id | tojson }}
+    };
+    window.MATERIAL_RENDER_SHELL = {
+        nodeId: {{ shell.node_id | tojson }},
+        entryMaterialId: {{ shell.entry_material_id | tojson }},
+        iframeSrc: {{ shell.iframe_src | tojson }},
+        isHtmlPackage: {{ shell.is_html_package | tojson }},
+        lessonNumber: {{ shell.lesson_number | tojson }},
+        classOfferingId: {{ learning_context.class_offering_id | tojson }},
+        sessionId: {{ learning_context.session_id | tojson }}
+    };
+    window.MATERIAL_VIEWER_ASSETS = {
+        teacherWhiteboard: "{{ asset_url('js/teacher_whiteboard.js') }}"
+    };
+</script>
+{% endblock %}
+
+{% block body %}
+<div class="ls-render-shell" id="render-shell-root">
+    <div class="ls-render-shell-topbar" id="render-shell-topbar">
+        <button type="button" class="btn btn-ghost btn-sm ls-render-shell-back" id="render-shell-back">← 返回</button>
+        <div class="ls-render-shell-title">
+            <strong>{{ shell.material_name }}</strong>
+            {% if shell.is_html_package and shell.lesson_number %}
+            <span class="ls-render-shell-badge">第 {{ shell.lesson_number }} 次课</span>
+            {% elif shell.is_html_package %}
+            <span class="ls-render-shell-badge">课程首页</span>
+            {% endif %}
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="render-shell-collapse" title="收起工具条">收起</button>
+    </div>
+    <button type="button" class="ls-render-shell-expand" id="render-shell-expand" hidden title="展开工具条">☰</button>
+    <iframe id="render-shell-frame"
+            class="ls-render-shell-frame"
+            src="{{ shell.iframe_src }}"
+            title="{{ shell.material_name }}"
+            allowfullscreen></iframe>
+</div>
+{% include "partials/ai_workspace_widget.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/material_render_shell.js') }}"></script>
+<script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
+<script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
+{% endblock %}
