@@ -566,6 +566,7 @@ def _upsert_class(
     stats: dict[str, int],
     warnings: list[str],
     decision: dict[str, Any] | None = None,
+    empty_roster: bool = False,
 ) -> int | None:
     class_name = student.class_name.strip()
     department = normalize_department(student.college) or normalize_department(student.major) or infer_department_from_text(class_name)
@@ -623,6 +624,12 @@ def _upsert_class(
             (class_name, int(teacher_id), org_scope["school_code"]),
         ).fetchone()
     message = f"由教务系统同步：{student.college or student.major or class_name}"
+    if empty_roster:
+        message = (
+            f"由教务系统同步：{student.college or student.major or class_name}"
+            "（教务系统暂无该教学班的学生名单，通常是学期初选课名单尚未生成；"
+            "待教务名单生成后重新执行教务同步即可自动补齐学生）"
+        )
     metadata = _json_dumps(_class_metadata(student, rosters))
     if row is None:
         class_id = execute_insert_returning_id(
@@ -1071,6 +1078,40 @@ def _upsert_membership(
     )
 
 
+def summarize_empty_teaching_classes(
+    rosters: list[AcademicTeachingClassRoster],
+) -> list[dict[str, Any]]:
+    """List teaching classes whose academic student roster came back empty.
+
+    This is expected early in a semester: the timetable already carries the
+    class composition (JXBZC) and a head count, but the selection module has
+    not generated per-student rows yet, so every roster query returns zero.
+    """
+    return [
+        {
+            "course_name": roster.course_name,
+            "teaching_class_name": roster.teaching_class_name,
+            "class_composition": roster.class_composition,
+            "selected_student_count": roster.selected_student_count,
+        }
+        for roster in rosters
+        if not roster.students
+    ]
+
+
+def build_empty_roster_warnings(empty_teaching_classes: list[dict[str, Any]]) -> list[str]:
+    warnings: list[str] = []
+    for empty in empty_teaching_classes:
+        label = empty.get("teaching_class_name") or empty.get("course_name") or "未命名教学班"
+        composition = empty.get("class_composition") or "对应班级"
+        warnings.append(
+            f"教学班「{label}」在教务系统中暂无学生名单（选课人数为 0，学期初教务处通常还没生成选课名单）。"
+            f"系统已按教学班组成保留「{composition}」空班级；待教务名单生成后重新执行“教务同步”即可自动补齐学生，"
+            "也可先用“名单模板”手动导入。"
+        )
+    return warnings
+
+
 def _mark_stale_students(
     conn,
     *,
@@ -1174,6 +1215,7 @@ def _persist_rosters(
             ),
             None,
         )
+        has_roster_students = sample_student is not None
         if sample_student is None:
             sample_roster = related_rosters[0]
             sample_student = AcademicRosterStudent(
@@ -1191,6 +1233,7 @@ def _persist_rosters(
             stats=stats,
             warnings=warnings,
             decision=dict(class_decisions.get(class_name) or {}),
+            empty_roster=not has_roster_students,
         )
         class_cache[class_name] = class_id
         if class_id:
@@ -1291,6 +1334,9 @@ def _persist_rosters(
             }
         )
 
+    empty_teaching_classes = summarize_empty_teaching_classes(rosters)
+    warnings.extend(build_empty_roster_warnings(empty_teaching_classes))
+
     stats["stale_students"] = _mark_stale_students(
         conn,
         teacher_id=teacher_id,
@@ -1315,6 +1361,8 @@ def _persist_rosters(
         "teaching_class_count": len(rosters),
         "roster_student_count": sum(len(roster.students) for roster in rosters),
         "touched_class_count": len(touched_class_ids),
+        "empty_teaching_class_count": len(empty_teaching_classes),
+        "empty_teaching_classes": empty_teaching_classes,
         "class_mapping_count": int(mapping_result.get("mapping_count") or 0),
         "class_ids_by_name": {name: int(class_id) for name, class_id in class_cache.items() if class_id},
         "rosters": roster_results,
@@ -1487,6 +1535,8 @@ async def _sync_current_teacher_rosters_without_reconciliation(
         "teaching_class_count": roster_result["teaching_class_count"],
         "roster_student_count": roster_result["roster_student_count"],
         "touched_class_count": roster_result["touched_class_count"],
+        "empty_teaching_class_count": roster_result.get("empty_teaching_class_count") or 0,
+        "empty_teaching_classes": roster_result.get("empty_teaching_classes") or [],
         "class_mapping_count": roster_result["class_mapping_count"],
         "class_conflicts": roster_result["class_conflicts"],
         "student_conflicts": roster_result["student_conflicts"],

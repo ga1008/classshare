@@ -1149,6 +1149,8 @@ async def apply_teacher_academic_sync_plan(
                 "teaching_class_count": roster_result["teaching_class_count"],
                 "roster_student_count": roster_result["roster_student_count"],
                 "touched_class_count": roster_result["touched_class_count"],
+                "empty_teaching_class_count": roster_result.get("empty_teaching_class_count") or 0,
+                "empty_teaching_classes": roster_result.get("empty_teaching_classes") or [],
                 "class_mapping_count": roster_result["class_mapping_count"],
                 "class_conflicts": roster_result["class_conflicts"],
                 "student_conflicts": roster_result["student_conflicts"],

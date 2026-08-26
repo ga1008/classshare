@@ -87,6 +87,38 @@ class AcademicRosterSourceContractTests(unittest.TestCase):
         )
         self.assertEqual(student.class_name, "软工2301班")
 
+    def test_empty_roster_teaching_classes_are_reported_with_actionable_warning(self):
+        populated = roster_sync._teaching_class_from_row(teaching_class_row())
+        populated.students = [
+            roster_sync.AcademicRosterStudent(
+                student_number="2400000001",
+                name="测试学生",
+                class_name="软工2301班",
+            )
+        ]
+        empty = roster_sync._teaching_class_from_row(
+            teaching_class_row(
+                JXB_ID="TEST-JXB-2026-0001",
+                KCMC="数据结构",
+                JXBMC="数据结构-0001",
+                JXBZC="网工2501班",
+                RS="0",
+                YSKXS="0",
+            )
+        )
+
+        summaries = roster_sync.summarize_empty_teaching_classes([populated, empty])
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0]["teaching_class_name"], "数据结构-0001")
+        self.assertEqual(summaries[0]["class_composition"], "网工2501班")
+
+        warnings = roster_sync.build_empty_roster_warnings(summaries)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("数据结构-0001", warnings[0])
+        self.assertIn("网工2501班", warnings[0])
+        self.assertIn("教务同步", warnings[0])
+        self.assertIn("暂无学生名单", warnings[0])
+
     def test_teaching_class_rows_generate_course_schedule_and_occurrence_inputs(self):
         roster = roster_sync._teaching_class_from_row(teaching_class_row())
         items = course_sync.build_schedule_items_from_teaching_class_rosters(

@@ -33709,6 +33709,14 @@ body.has-academic-modal {
     font-weight: 700;
 }
 
+.class-student-empty-hint {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--gray-500);
+}
+
 .class-card-actions {
     display: flex;
     flex-wrap: wrap;

@@ -218,6 +218,9 @@
                         {% endif %}
                         {% endif %}
                     </div>
+                    {% if class_item.can_view_content and not class_item.student_count and class_item.is_academic_synced %}
+                    <p class="class-student-empty-hint">教务系统暂未提供该班学生名单（学期初选课名单常未生成），待教务名单生成后重新“教务同步”即可补齐，也可先用名单模板导入。</p>
+                    {% endif %}
 
                     <div class="class-card-actions">
                         <button type="button" class="btn btn-outline btn-sm" data-resource-attributes data-resource-type="class" data-resource-id="{{ class_item.id }}">属性</button>
