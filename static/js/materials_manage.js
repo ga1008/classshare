@@ -135,6 +135,7 @@ function getInitialLibraryState() {
             || initial.document_type
             || initial.type
         ),
+        libraryView: ['learning', 'postclass'].includes(String(initial.library_view || '')) ? String(initial.library_view) : '',
         scopeLevel: normalizeScopeFilter(params.get('scope_level')),
         school: normalizeKeyword(params.get('school')),
         department: normalizeKeyword(params.get('department')),
@@ -201,6 +202,7 @@ const state = {
     filters: {
         keyword: initialLibraryState.keyword,
         documentType: initialLibraryState.documentType,
+        libraryView: initialLibraryState.libraryView,
         scopeLevel: initialLibraryState.scopeLevel,
         school: initialLibraryState.school,
         department: initialLibraryState.department,
@@ -3023,6 +3025,9 @@ function buildLibraryQuery(parentId) {
     }
     if (state.filters.documentType) {
         params.set('document_type', state.filters.documentType);
+    }
+    if (state.filters.libraryView) {
+        params.set('library_view', state.filters.libraryView);
     }
     if (state.filters.scopeLevel && state.filters.scopeLevel !== 'all') {
         params.set('scope_level', state.filters.scopeLevel);

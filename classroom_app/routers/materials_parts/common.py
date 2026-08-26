@@ -450,6 +450,55 @@ def _normalize_material_org_filter(value: str | None) -> str:
     return " ".join(str(value or "").split())[:80]
 
 
+_MATERIAL_LIBRARY_VIEWS = {"learning", "postclass"}
+
+# 课后材料 = 上传解析（AI解析/导入 包及其源文件、解析稿）或课堂生成任务落库的材料。
+# 学习文档视图排除它们；课后材料视图只保留它们。分类完全由既有关联推导，无需迁移数据。
+_MATERIAL_POSTCLASS_MEMBERSHIP_SQL = """
+    (EXISTS (
+        SELECT 1
+        FROM material_ai_import_records pcr
+        WHERE COALESCE(pcr.parse_status, '') = 'completed'
+          AND (
+                pcr.package_material_id = m.id
+                OR pcr.source_material_id = m.id
+                OR pcr.parsed_material_id = m.id
+          )
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM session_material_generation_tasks pct
+        WHERE pct.generated_material_id = m.id
+    ))
+"""
+
+# 课后材料首页只列「包根 + 课堂生成材料」；包内的源文件/解析稿跟随包浏览进入。
+_MATERIAL_POSTCLASS_ROOT_SQL = """
+    (EXISTS (
+        SELECT 1
+        FROM material_ai_import_records pcr
+        WHERE COALESCE(pcr.parse_status, '') = 'completed'
+          AND (
+                pcr.package_material_id = m.id
+                OR (
+                    pcr.package_material_id IS NULL
+                    AND (pcr.source_material_id = m.id OR pcr.parsed_material_id = m.id)
+                )
+          )
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM session_material_generation_tasks pct
+        WHERE pct.generated_material_id = m.id
+    ))
+"""
+
+
+def _normalize_material_library_view(value: str | None) -> str:
+    view = str(value or "").strip().lower()
+    return view if view in _MATERIAL_LIBRARY_VIEWS else ""
+
+
 def _normalize_material_document_type_filter(value: str | None) -> str:
     document_type = str(value or "").strip().lower()
     if not document_type:
@@ -759,9 +808,11 @@ def _list_material_rows_for_parent(
     document_type: str = "",
     sort_by: str = MATERIAL_LIBRARY_DEFAULT_SORT_BY,
     sort_order: str = MATERIAL_LIBRARY_DEFAULT_SORT_ORDER,
+    library_view: str = "",
 ):
     keyword = _normalize_material_keyword(keyword)
     document_type = _normalize_material_document_type_filter(document_type)
+    library_view = _normalize_material_library_view(library_view)
     sort_by, sort_order = _normalize_material_sort(sort_by, sort_order)
 
     visible_sql, visible_params = _material_visibility_condition(conn, int(teacher_id))
@@ -773,6 +824,9 @@ def _list_material_rows_for_parent(
             keyword_pattern = f"%{keyword}%"
             conditions.append("(m.name LIKE ? COLLATE NOCASE OR m.material_path LIKE ? COLLATE NOCASE)")
             params.extend([keyword_pattern, keyword_pattern])
+        elif library_view == "postclass":
+            # 课后材料首页是一张扁平清单：包根与课堂生成材料，不限层级。
+            pass
         else:
             conditions.append("m.parent_id IS NULL")
     else:
@@ -807,6 +861,15 @@ def _list_material_rows_for_parent(
         )
         params.append(document_type)
 
+    if library_view == "learning":
+        # 学习文档视图：剔除课后材料（导入解析包与课堂生成材料），任何层级都不出现。
+        conditions.append(f"NOT {_MATERIAL_POSTCLASS_MEMBERSHIP_SQL}")
+    elif library_view == "postclass" and parent_row is None:
+        # 课后材料视图：顶层只保留包根 + 课堂生成材料；进入包内（parent_id）时不再过滤。
+        conditions.append(
+            _MATERIAL_POSTCLASS_MEMBERSHIP_SQL if keyword else _MATERIAL_POSTCLASS_ROOT_SQL
+        )
+
     order_clause = _build_material_order_clause(sort_by, sort_order)
     query = f"""
         SELECT m.*,
@@ -820,10 +883,15 @@ def _list_material_rows_for_parent(
     return _attach_material_assignment_facets(conn, rows)
 
 
-def _get_teacher_material_stats(conn, teacher_id: int, *, document_type: str = "") -> dict:
+def _get_teacher_material_stats(conn, teacher_id: int, *, document_type: str = "", library_view: str = "") -> dict:
     normalized_document_type = _normalize_material_document_type_filter(document_type)
+    normalized_library_view = _normalize_material_library_view(library_view)
     material_conditions = ["m.teacher_id = ?"]
     material_params: list[Any] = [teacher_id]
+    if normalized_library_view == "learning":
+        material_conditions.append(f"NOT {_MATERIAL_POSTCLASS_MEMBERSHIP_SQL}")
+    elif normalized_library_view == "postclass":
+        material_conditions.append(_MATERIAL_POSTCLASS_MEMBERSHIP_SQL)
     if normalized_document_type:
         # Final-material pages catalogue the final package, not the canonical
         # source/readme files that the package keeps for internal processing.

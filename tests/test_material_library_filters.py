@@ -56,6 +56,10 @@ class MaterialLibraryFilterTests(unittest.TestCase):
                 source_material_id INTEGER,
                 parsed_material_id INTEGER
             );
+            CREATE TABLE session_material_generation_tasks (
+                id INTEGER PRIMARY KEY,
+                generated_material_id INTEGER
+            );
             """
         )
         self.conn.executemany(
@@ -158,6 +162,54 @@ class MaterialLibraryFilterTests(unittest.TestCase):
         self.assertEqual(0, stats["file_count"])
         self.assertEqual(1, stats["assigned_material_count"])
         self.assertEqual(1, stats["classroom_count"])
+
+
+class MaterialLibraryViewSplitTests(MaterialLibraryFilterTests):
+    """学习文档 / 课后材料拆分：分类由导入记录与课堂生成任务推导。"""
+
+    def _seed_split_materials(self) -> None:
+        self.conn.executemany(
+            """
+            INSERT INTO course_materials
+                (id, parent_id, teacher_id, material_path, node_type, file_size, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (11, None, 1, "AI解析-评学表", "folder", 0, "2026-08-01T10:00:00"),
+                (12, 11, 1, "AI解析-评学表/readme.md", "file", 128, "2026-08-01T10:00:00"),
+                (21, None, 1, "Python课程学习文档", "folder", 0, "2026-08-02T10:00:00"),
+                (31, None, 1, "课堂总结-第3课.md", "file", 64, "2026-08-03T10:00:00"),
+            ],
+        )
+        self.conn.execute(
+            """
+            INSERT INTO material_ai_import_records
+                (id, document_type, parse_status, package_material_id, source_material_id, parsed_material_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (1, "evaluation_sheet", "completed", 11, 12, 12),
+        )
+        self.conn.execute(
+            "INSERT INTO session_material_generation_tasks (id, generated_material_id) VALUES (?, ?)",
+            (1, 31),
+        )
+
+    def test_learning_view_stats_exclude_postclass_materials(self) -> None:
+        self._seed_split_materials()
+        stats = _get_teacher_material_stats(self.conn, 1, library_view="learning")
+        self.assertEqual(1, stats["total_count"])
+        self.assertEqual(1, stats["folder_count"])
+
+    def test_postclass_view_stats_only_include_postclass_materials(self) -> None:
+        self._seed_split_materials()
+        stats = _get_teacher_material_stats(self.conn, 1, library_view="postclass")
+        # 包根 + 包内解析稿 + 课堂生成材料 = 3
+        self.assertEqual(3, stats["total_count"])
+
+    def test_default_view_keeps_everything(self) -> None:
+        self._seed_split_materials()
+        stats = _get_teacher_material_stats(self.conn, 1)
+        self.assertEqual(4, stats["total_count"])
 
 
 if __name__ == "__main__":

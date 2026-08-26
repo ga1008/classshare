@@ -287,7 +287,11 @@ def _render_manage_materials_page(
     initial_ai_generate: dict[str, Any] | None = None,
     initial_ai_import: dict[str, Any] | None = None,
     initial_library_filter: dict[str, Any] | None = None,
+    library_view: str = "",
 ):
+    normalized_library_view = _normalize_material_library_view(library_view)
+    if normalized_library_view:
+        initial_library_filter = {**(initial_library_filter or {}), "library_view": normalized_library_view}
     with get_db_connection() as conn:
         offerings = conn.execute(
             """
@@ -355,6 +359,7 @@ def _render_manage_materials_page(
             conn,
             user["id"],
             document_type=str((initial_library_filter or {}).get("document_type") or ""),
+            library_view=normalized_library_view,
         )
 
     source_counts: dict[int, dict[str, int]] = {}
@@ -401,7 +406,28 @@ def _render_manage_materials_page(
 @router.get("/manage/teaching/materials", response_class=HTMLResponse)
 @router.get("/manage/materials", response_class=HTMLResponse)
 async def manage_materials_page(request: Request, user: dict = Depends(get_current_teacher)):
-    return _render_manage_materials_page(request, user)
+    # 内容资产 → 材料：只保留上课使用的学习文档；课后材料在过程材料的「课后材料」页。
+    return _render_manage_materials_page(
+        request,
+        user,
+        page_heading="学习文档与 Git 教学仓库",
+        page_lead="批量上传、目录浏览、模糊搜索与排序，保留课堂分配、AI 解析与仓库同步；课堂生成与上传解析的材料已移至「课后材料」。",
+        library_view="learning",
+    )
+
+
+@router.get("/manage/teaching/postclass-materials", response_class=HTMLResponse)
+async def manage_postclass_materials_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """过程材料 → 课后材料：课堂生成 + 上传解析（AI解析/导入）材料包的统一入口。"""
+    return _render_manage_materials_page(
+        request,
+        user,
+        page_title="课后材料",
+        active_page="postclass_materials",
+        page_heading="课后材料",
+        page_lead="集中管理课堂结束后生成的材料与上传解析（AI解析/导入）的材料包；上课用的学习文档请到内容资产的「材料」。",
+        library_view="postclass",
+    )
 
 
 @router.get("/manage/teaching/grading-rubrics", response_class=HTMLResponse)
@@ -477,6 +503,7 @@ async def get_teacher_material_library(
     parent_id: int | None = Query(default=None),
     keyword: str = Query(default=""),
     document_type: str = Query(default=""),
+    library_view: str = Query(default=""),
     scope_level: str = Query(default="all"),
     school: str = Query(default=""),
     department: str = Query(default=""),
@@ -489,6 +516,7 @@ async def get_teacher_material_library(
 ):
     normalized_keyword = _normalize_material_keyword(keyword)
     normalized_document_type_filter = _normalize_material_document_type_filter(document_type)
+    normalized_library_view = _normalize_material_library_view(library_view)
     normalized_scope_filter = _normalize_material_scope_filter(scope_level)
     normalized_school_filter = _normalize_material_org_filter(school)
     normalized_department_filter = _normalize_material_org_filter(department)
@@ -514,6 +542,7 @@ async def get_teacher_material_library(
             document_type=normalized_document_type_filter,
             sort_by=normalized_sort_by,
             sort_order=normalized_sort_order,
+            library_view=normalized_library_view,
         )
         facets = _build_material_filter_facets(all_rows, int(user["id"]))
         rows = _apply_material_library_filters(
@@ -537,6 +566,7 @@ async def get_teacher_material_library(
             conn,
             user["id"],
             document_type=normalized_document_type_filter,
+            library_view=normalized_library_view,
         )
         overview = _build_teacher_library_overview(
             current_folder,
@@ -556,6 +586,7 @@ async def get_teacher_material_library(
         "filters": {
             "keyword": normalized_keyword,
             "document_type": normalized_document_type_filter,
+            "library_view": normalized_library_view,
             "scope_level": normalized_scope_filter,
             "school": normalized_school_filter,
             "department": normalized_department_filter,

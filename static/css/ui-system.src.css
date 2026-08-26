@@ -54373,3 +54373,10 @@ html.scene-cover-collapsing .main-content {
         max-width: calc(100vw - 88px);
     }
 }
+
+/* ── 材料域（/manage/library）主题色：紫（2026-08-26 材料中心） ─────────── */
+.manage-domain-library {
+    --manage-domain-accent: #9333ea;
+    --manage-domain-accent-dark: #7e22ce;
+    --manage-domain-accent-rgb: 147, 51, 234;
+}

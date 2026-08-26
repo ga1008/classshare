@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 
-MANAGE_DOMAIN_ORDER = ("teaching", "academic", "teacher")
+MANAGE_DOMAIN_ORDER = ("teaching", "academic", "library")
 MANAGE_ADMIN_DOMAIN = "admin"
+MANAGE_LIBRARY_DOMAIN = "library"
 
 MANAGE_DOMAIN_META: dict[str, dict[str, str]] = {
     "teaching": {
@@ -22,21 +23,41 @@ MANAGE_DOMAIN_META: dict[str, dict[str, str]] = {
         "description": "整合课表、考试、监考、教室、公文和学校事务数据。",
         "accent": "#0f766e",
     },
-    "teacher": {
-        "label": "教师",
-        "short_label": "教师",
-        "title": "教师域",
-        "description": "照看我自己的资料、安全、通知、签名和对接凭据。",
-        "accent": "#b45309",
+    MANAGE_LIBRARY_DOMAIN: {
+        "label": "材料",
+        "short_label": "材料",
+        "title": "材料中心",
+        "description": "汇聚全平台材料与公文：按分类勾选，模糊搜索或让 AI 理解需求后检索。",
+        "accent": "#9333ea",
     },
     MANAGE_ADMIN_DOMAIN: {
-        "label": "平台管理",
+        "label": "管理",
         "short_label": "管理",
-        "title": "平台管理",
-        "description": "超管教师维护用户、组织、预算、诊断与平台工具。",
+        "title": "管理域",
+        "description": "个人资料、签名、凭据与账号安全；超管教师另见平台维护工具。",
         "accent": "#d97706",
     },
 }
+
+
+# 材料中心左栏的分类多选按钮（材料域没有传统菜单，只有这份分类清单）。
+# key 与 material_hub_service 的检索器一一对应；此处保持零依赖，供导航渲染使用。
+MATERIAL_HUB_CATEGORIES: tuple[dict[str, str], ...] = (
+    {"key": "learning_docs", "label": "学习文档", "hint": "课程材料库中上课使用的学习文档与文件夹"},
+    {"key": "postclass", "label": "课后材料", "hint": "课堂生成与上传解析归档的课后材料包"},
+    {"key": "lesson_plans", "label": "教案", "hint": "整学期教案（封面 + 每课次表格）"},
+    {"key": "assessment_plans", "label": "考核计划表", "hint": "课程考核计划表"},
+    {"key": "grading_rubrics", "label": "评分细则表", "hint": "课程考核评分细则"},
+    {"key": "ordinary_grade_records", "label": "平时成绩表", "hint": "学生平时成绩记录表"},
+    {"key": "exam_grade_records", "label": "考核登分表", "hint": "期末考核登分表"},
+    {"key": "final_grade_transcripts", "label": "期末成绩单", "hint": "学生成绩录入模板"},
+    {"key": "teacher_evaluations", "label": "教师评学表", "hint": "教师评学表（10 项指标）"},
+    {"key": "academic_grade_registers", "label": "成绩登记表", "hint": "教务期末成绩登记表"},
+    {"key": "academic_exam_analyses", "label": "试卷分析表", "hint": "教务试卷分析表"},
+    {"key": "exam_papers", "label": "试卷", "hint": "教师试卷库"},
+    {"key": "textbooks", "label": "教材", "hint": "课程教材与参考书"},
+    {"key": "gongwen", "label": "公文", "hint": "校园公文通同步的公文"},
+)
 
 
 @dataclass(frozen=True)
@@ -174,8 +195,8 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         label="材料",
         icon="folder",
         href="/manage/teaching/materials",
-        search_text="材料 资料 文件 course material",
-        ai_hint="材料：整理课程文档、文件夹和可分发给课堂的学习资料。",
+        search_text="材料 学习文档 资料 文件 course material learning",
+        ai_hint="材料：整理上课使用的学习文档、HTML 包与文件夹；课堂生成或上传解析的课后材料请到过程材料的「课后材料」。",
         legacy_hrefs=("/manage/materials",),
     ),
     ManageNavItem(
@@ -250,6 +271,17 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         ai_hint="教师评学表：空白新建 / 完整表单填写（可按课堂自动带入）/ 按教学班级用快速 AI 归集全学期表现自动评分并撰写学习情况分析 / 导入文件解析，10 项指标合计 100、总分自动计算综合评价，支持渲染预览、导出与原版一致的 Word、系部院校级公开与一键继承。",
         nav_note="按班级生成/导入解析，补全后导出 Word/PDF",
         nav_badge="10项评分",
+    ),
+    ManageNavItem(
+        key="postclass_materials",
+        domain="teaching",
+        group="过程材料",
+        label="课后材料",
+        icon="folder",
+        href="/manage/teaching/postclass-materials",
+        search_text="课后材料 课堂生成 上传解析 AI解析 导入 归档 postclass archive",
+        ai_hint="课后材料：集中查看课堂结束后生成的材料与上传解析（AI解析/导入）的材料包，与上课用的学习文档分开管理。",
+        nav_note="课堂生成 + 上传解析归档",
     ),
     ManageNavItem(
         key="academic_grade_registers",
@@ -351,8 +383,18 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/system/gongwen-integrations",),
     ),
     ManageNavItem(
+        key="material_hub",
+        domain=MANAGE_LIBRARY_DOMAIN,
+        group="材料中心",
+        label="材料检索",
+        icon="folder",
+        href="/manage/library",
+        search_text="材料中心 材料检索 全部材料 搜索 AI 搜索 公文 教案 试卷 教材 library hub search",
+        ai_hint="材料检索：按分类勾选（学习文档/课后材料/教案/过程材料/期末材料/试卷/教材/公文等），支持模糊搜索标题、内容、属性、标签、归属人与归属层级，也可让 AI 理解需求后筛选。",
+    ),
+    ManageNavItem(
         key="teacher_profile",
-        domain="teacher",
+        domain=MANAGE_ADMIN_DOMAIN,
         group="我的资料",
         label="我的概览",
         icon="user",
@@ -362,7 +404,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
     ),
     ManageNavItem(
         key="signatures",
-        domain="teacher",
+        domain=MANAGE_ADMIN_DOMAIN,
         group="我的资料",
         label="我的签名",
         icon="pen",
@@ -373,7 +415,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
     ),
     ManageNavItem(
         key="teacher_credentials",
-        domain="teacher",
+        domain=MANAGE_ADMIN_DOMAIN,
         group="账号与安全",
         label="对接凭据",
         icon="link",
@@ -383,7 +425,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
     ),
     ManageNavItem(
         key="system_password_resets",
-        domain="teacher",
+        domain=MANAGE_ADMIN_DOMAIN,
         group="账号与安全",
         label="账号找回",
         icon="lock",
@@ -623,6 +665,7 @@ def build_manage_nav(
         "domains": domains,
         "hrefs": hrefs,
         "domain_meta": MANAGE_DOMAIN_META,
+        "library_categories": [dict(category) for category in MATERIAL_HUB_CATEGORIES],
     }
 
 
@@ -645,7 +688,9 @@ def iter_manage_legacy_redirects() -> list[dict[str, str]]:
 def iter_platform_manage_routes(*, include_admin: bool = False) -> list[dict[str, str]]:
     routes: list[dict[str, str]] = []
     for item in MANAGE_NAV_ITEMS:
-        if item.domain == MANAGE_ADMIN_DOMAIN and not include_admin:
+        # 管理域同时容纳个人事务（全员可见）与平台维护（超管专属），
+        # 平台知识按权限标记过滤，而不是按域整体排除。
+        if item.required_flag == "super_admin" and not include_admin:
             continue
         domain_label = MANAGE_DOMAIN_META[item.domain]["label"]
         routes.append({
@@ -660,7 +705,7 @@ def build_dashboard_domain_cards() -> list[dict[str, Any]]:
     card_items = {
         "teaching": ("offerings", "materials", "ai"),
         "academic": ("academic_overview", "classrooms", "gongwen"),
-        "teacher": ("teacher_profile", "teacher_credentials", "system_password_resets"),
+        "library": ("material_hub", "postclass_materials", "lesson_plans"),
     }
     cards: list[dict[str, Any]] = []
     for domain_key in MANAGE_DOMAIN_ORDER:

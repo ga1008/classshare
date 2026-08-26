@@ -1,0 +1,183 @@
+{% extends "manage/layout.html" %}
+
+{% block title %}材料中心{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('学习文档', '内容资产材料库', 'folder', href='/manage/teaching/materials', variant='solid', tone='teal') }}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .mh-shell { display: grid; gap: var(--spacing-lg); }
+    .mh-hero { display: flex; flex-wrap: wrap; gap: var(--spacing-md); align-items: flex-end; justify-content: space-between; }
+    .mh-hero h1 { margin: 0; font-size: 1.4rem; font-weight: 850; color: var(--text-primary); }
+    .mh-hero p { margin: 6px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
+    .mh-hero .mh-hero-count { color: #7e22ce; font-weight: 800; }
+
+    /* 搜索/筛选卡 */
+    .mh-search-card {
+        border: 1px solid rgba(147, 51, 234, 0.18);
+        border-radius: var(--radius-lg);
+        background: linear-gradient(180deg, rgba(250, 245, 255, 0.85), #fff 55%);
+        box-shadow: var(--shadow-sm);
+        padding: var(--spacing-lg);
+        display: grid;
+        gap: var(--spacing-sm);
+    }
+    .mh-search-row { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); align-items: center; }
+    .mh-search-input { position: relative; flex: 1 1 300px; min-width: 220px; }
+    .mh-search-input svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+    .mh-search-input input {
+        width: 100%;
+        padding: 11px 14px 11px 38px;
+        border: 1px solid rgba(148, 163, 184, 0.32);
+        border-radius: 12px;
+        background: #fff;
+        font-size: 0.92rem;
+        color: var(--text-primary);
+        transition: border-color 0.16s ease, box-shadow 0.16s ease;
+    }
+    .mh-search-input input:focus { outline: none; border-color: #9333ea; box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.14); }
+    .mh-scope-select { width: auto; min-width: 118px; border-radius: 10px; }
+    .mh-btn-search, .mh-btn-ai {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 10px 18px; border: none; border-radius: 11px;
+        font-size: 0.9rem; font-weight: 800; cursor: pointer;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+    }
+    .mh-btn-search { background: #0f766e; color: #fff; box-shadow: 0 10px 22px -14px rgba(15, 118, 110, 0.9); }
+    .mh-btn-ai { background: linear-gradient(135deg, #9333ea, #6d28d9); color: #fff; box-shadow: 0 10px 22px -14px rgba(124, 58, 237, 0.9); }
+    .mh-btn-search:hover, .mh-btn-ai:hover { transform: translateY(-1px); }
+    .mh-btn-search:active, .mh-btn-ai:active { transform: scale(0.97); }
+    .mh-btn-search[disabled], .mh-btn-ai[disabled] { opacity: 0.55; cursor: not-allowed; transform: none; }
+    .mh-hint { color: var(--text-muted); font-size: 0.78rem; }
+
+    /* 搜索状态条 */
+    .mh-status {
+        display: none;
+        align-items: center; gap: 10px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        background: rgba(147, 51, 234, 0.07);
+        color: #6d28d9;
+        font-size: 0.86rem; font-weight: 700;
+    }
+    .mh-status.is-visible { display: flex; animation: mhFadeIn 0.2s ease; }
+    .mh-status .mh-spinner {
+        width: 15px; height: 15px; flex: 0 0 auto;
+        border: 2.4px solid rgba(147, 51, 234, 0.25);
+        border-top-color: #9333ea;
+        border-radius: 999px;
+        animation: mhSpin 0.8s linear infinite;
+    }
+    .mh-ai-note {
+        display: none;
+        align-items: center; flex-wrap: wrap; gap: 8px;
+        padding: 9px 14px; border-radius: 10px;
+        background: rgba(16, 185, 129, 0.08);
+        color: #047857; font-size: 0.84rem; font-weight: 650;
+    }
+    .mh-ai-note.is-visible { display: flex; animation: mhFadeIn 0.25s ease; }
+    .mh-ai-note .mh-kw { padding: 2px 9px; border-radius: 999px; background: rgba(16, 185, 129, 0.14); font-weight: 800; }
+
+    /* 结果 */
+    .mh-results { display: grid; gap: var(--spacing-lg); }
+    .mh-group { border: 1px solid rgba(148, 163, 184, 0.2); border-radius: var(--radius-lg); background: #fff; box-shadow: var(--shadow-sm); overflow: hidden; animation: mhRise 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+    .mh-group:nth-child(2) { animation-delay: 0.04s; }
+    .mh-group:nth-child(3) { animation-delay: 0.08s; }
+    .mh-group:nth-child(4) { animation-delay: 0.12s; }
+    .mh-group:nth-child(n+5) { animation-delay: 0.16s; }
+    .mh-group-head {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px var(--spacing-lg);
+        border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+        background: rgba(250, 245, 255, 0.5);
+    }
+    .mh-group-head strong { font-size: 0.96rem; font-weight: 850; color: var(--text-primary); }
+    .mh-group-head .mh-group-count { padding: 1px 9px; border-radius: 999px; background: rgba(147, 51, 234, 0.1); color: #7e22ce; font-size: 0.74rem; font-weight: 800; }
+    .mh-items { display: grid; }
+    .mh-item {
+        display: grid; gap: 4px;
+        padding: 12px var(--spacing-lg);
+        border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+        text-decoration: none;
+        transition: background 0.14s ease;
+    }
+    .mh-item:last-child { border-bottom: none; }
+    .mh-item:hover { background: rgba(250, 245, 255, 0.7); }
+    .mh-item-title { color: var(--text-primary); font-weight: 750; font-size: 0.92rem; }
+    .mh-item:hover .mh-item-title { color: #7e22ce; }
+    .mh-item-title mark { background: rgba(250, 204, 21, 0.45); border-radius: 3px; padding: 0 1px; }
+    .mh-item-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .mh-chip { display: inline-flex; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 800; background: rgba(100, 116, 139, 0.1); color: #475569; }
+    .mh-chip.cat { background: rgba(147, 51, 234, 0.1); color: #7e22ce; }
+    .mh-chip.lvl-private { background: rgba(100, 116, 139, 0.12); color: #475569; }
+    .mh-chip.lvl-department { background: rgba(244, 63, 94, 0.1); color: #be123c; }
+    .mh-chip.lvl-college { background: rgba(217, 119, 6, 0.12); color: #b45309; }
+    .mh-chip.lvl-school { background: rgba(14, 165, 233, 0.12); color: #0369a1; }
+    .mh-chip.lvl-public { background: rgba(16, 185, 129, 0.12); color: #047857; }
+    .mh-item-owner { color: var(--text-muted); font-size: 0.76rem; }
+    .mh-item-snippet { color: var(--text-secondary); font-size: 0.8rem; line-height: 1.55; }
+    .mh-item-snippet mark { background: rgba(250, 204, 21, 0.4); border-radius: 3px; padding: 0 1px; }
+
+    .mh-empty { padding: var(--spacing-2xl); text-align: center; color: var(--text-muted); border: 1px dashed rgba(148, 163, 184, 0.4); border-radius: var(--radius-lg); background: rgba(248, 250, 252, 0.6); animation: mhFadeIn 0.3s ease; }
+    .mh-empty strong { display: block; color: var(--text-primary); font-size: 1rem; margin-bottom: 6px; }
+
+    @keyframes mhSpin { to { transform: rotate(360deg); } }
+    @keyframes mhFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes mhRise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) {
+        .mh-group, .mh-status.is-visible, .mh-ai-note.is-visible, .mh-empty { animation: none; }
+        .mh-status .mh-spinner { animation-duration: 1.6s; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="mh-shell">
+    <div class="mh-hero">
+        <div>
+            <h1 data-explain data-explain-title="材料中心" data-explain-text="汇聚学习文档、课后材料、教案、过程材料、期末材料、试卷、教材与公文。左侧勾选分类，这里模糊搜索或 AI 搜索。">材料中心</h1>
+            <p>左侧勾选材料分类，支持模糊搜索标题、内容、标签、归属人与归属层级，或让 AI 理解你的需求。<span class="mh-hero-count" id="mh-total"></span></p>
+        </div>
+    </div>
+
+    <div class="mh-search-card">
+        <div class="mh-search-row">
+            <div class="mh-search-input">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                <input type="search" id="mh-query" placeholder="搜索标题 / 内容 / 标签 / 归属人，或用自然语言描述需求…" autocomplete="off" maxlength="200">
+            </div>
+            <select class="form-control mh-scope-select" id="mh-scope" aria-label="归属层级筛选">
+                <option value="all">全部范围</option>
+                <option value="private">本人</option>
+                <option value="department">本系部</option>
+                <option value="college">本院级</option>
+                <option value="school">本校</option>
+                <option value="public">完全公开</option>
+            </select>
+            <button type="button" class="mh-btn-search" id="mh-search-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                搜索
+            </button>
+            <button type="button" class="mh-btn-ai" id="mh-ai-btn" title="AI 会先理解你的需求，再提炼关键词与分类进行检索">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3"></path><path d="M18.4 5.6 16.3 7.7"></path><path d="M21 12h-3"></path><path d="M12 21v-3"></path><path d="M5.6 18.4l2.1-2.1"></path><path d="M3 12h3"></path><path d="M5.6 5.6l2.1 2.1"></path><circle cx="12" cy="12" r="4"></circle></svg>
+                AI 搜索
+            </button>
+        </div>
+        <span class="mh-hint">普通搜索按关键词模糊匹配；AI 搜索适合「上学期网络工程的平时成绩」这类自然语言需求。搜索期间按钮会暂时锁定，避免重复提交。</span>
+        <div class="mh-status" id="mh-status" role="status" aria-live="polite">
+            <span class="mh-spinner" aria-hidden="true"></span>
+            <span id="mh-status-text">正在搜索…</span>
+        </div>
+        <div class="mh-ai-note" id="mh-ai-note"></div>
+    </div>
+
+    <div class="mh-results" id="mh-results"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/material_hub.js') }}"></script>
+{% endblock %}

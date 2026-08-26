@@ -10,7 +10,8 @@ import {
 const domainPages = [
   { path: '/manage/teaching', domain: 'teaching', title: '教学流程工作台' },
   { path: '/manage/academic', domain: 'academic', title: '教务总览' },
-  { path: '/manage/me', domain: 'teacher', title: '我的概览' },
+  { path: '/manage/library', domain: 'library', title: '材料中心' },
+  { path: '/manage/me', domain: 'admin', title: '我的概览' },
 ];
 
 const legacyRedirects = [
@@ -85,7 +86,8 @@ test.describe('P03 teacher three-domain management shell', () => {
     await page.goto('/manage/academic', { waitUntil: 'domcontentloaded' });
     await page.locator('.mobile-toggle').click();
     await expect(page.locator('.manage-domain-tabs')).toBeVisible();
-    await expect(page.locator('.manage-domain-tab')).toHaveCount(3);
+    // 教学 / 教务 / 材料 / 管理（管理域承载个人事务，全员可见）
+    await expect(page.locator('.manage-domain-tab')).toHaveCount(4);
 
     await page.goto('/logout', { waitUntil: 'domcontentloaded' });
     await loginStudent(page, fixture);

@@ -350,6 +350,118 @@
         .manage-nav-group--admin .manage-nav-item:hover { background: rgba(245, 158, 11, 0.1); color: #92400e; }
         .manage-nav-group--admin .manage-nav-item:hover .manage-nav-item__icon { background: rgba(245, 158, 11, 0.18); color: #b45309; }
 
+        /* ── 材料域左栏：分类多选按钮列表（无传统菜单） ───────────────── */
+        .manage-cat-rail {
+            display: grid;
+            gap: 3px;
+            padding: 4px 4px 10px;
+        }
+
+        .manage-cat-rail__enter {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin: 2px 4px 8px;
+            padding: 9px 12px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #9333ea, #7e22ce);
+            color: #fff;
+            font-size: 0.86rem;
+            font-weight: 800;
+            text-decoration: none;
+            box-shadow: 0 10px 24px -14px rgba(147, 51, 234, 0.8);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .manage-cat-rail__enter:hover { transform: translateY(-1px); box-shadow: 0 14px 28px -14px rgba(147, 51, 234, 0.9); }
+
+        .manage-cat-rail__actions {
+            display: flex;
+            gap: 6px;
+            padding: 2px 4px 6px;
+        }
+
+        .manage-cat-rail__action {
+            flex: 1;
+            padding: 6px 8px;
+            border: 1px solid rgba(147, 51, 234, 0.24);
+            border-radius: 8px;
+            background: rgba(147, 51, 234, 0.06);
+            color: #7e22ce;
+            font-size: 0.76rem;
+            font-weight: 800;
+            cursor: pointer;
+            transition: background var(--transition-fast), transform 0.15s ease;
+        }
+
+        .manage-cat-rail__action:hover { background: rgba(147, 51, 234, 0.14); }
+        .manage-cat-rail__action:active { transform: scale(0.97); }
+
+        .manage-cat-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 8px 10px;
+            border: none;
+            border-radius: 10px;
+            background: transparent;
+            color: var(--text-secondary);
+            font: inherit;
+            font-size: 0.88rem;
+            font-weight: 650;
+            text-align: left;
+            cursor: pointer;
+            transition: background var(--transition-fast), color var(--transition-fast), transform 0.14s ease;
+        }
+
+        .manage-cat-item:hover { background: rgba(147, 51, 234, 0.08); color: var(--text-primary); }
+        .manage-cat-item:active { transform: scale(0.985); }
+
+        .manage-cat-item__box {
+            flex: 0 0 auto;
+            width: 18px;
+            height: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            border: 1.6px solid rgba(148, 163, 184, 0.55);
+            background: #fff;
+            color: #fff;
+            transition: background 0.16s ease, border-color 0.16s ease;
+        }
+
+        .manage-cat-item__box svg { opacity: 0; transform: scale(0.4); transition: opacity 0.16s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+        .manage-cat-item.is-checked { color: var(--text-primary); }
+        .manage-cat-item.is-checked .manage-cat-item__box {
+            background: #9333ea;
+            border-color: #9333ea;
+        }
+        .manage-cat-item.is-checked .manage-cat-item__box svg { opacity: 1; transform: scale(1); }
+
+        .manage-cat-item__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .manage-cat-item__count {
+            flex: 0 0 auto;
+            min-width: 20px;
+            padding: 1px 6px;
+            border-radius: 999px;
+            background: rgba(147, 51, 234, 0.1);
+            color: #7e22ce;
+            font-size: 0.68rem;
+            font-weight: 800;
+            text-align: center;
+        }
+
+        .manage-sidebar.is-collapsed .manage-cat-rail__actions,
+        .manage-sidebar.is-collapsed .manage-cat-item__label,
+        .manage-sidebar.is-collapsed .manage-cat-item__count,
+        .manage-sidebar.is-collapsed .manage-cat-rail__enter { display: none; }
+        .manage-sidebar.is-collapsed .manage-cat-item { justify-content: center; }
+
         .manage-nav-empty {
             display: none;
             padding: 18px 14px;
@@ -766,6 +878,32 @@
                     data-manage-domain="{{ domain.key }}"
                     {% if not domain.active %}hidden{% endif %}
                 >
+                    {% if domain.key == 'library' %}
+                    {# 材料域：无传统菜单，左栏是分类多选按钮列表（默认全选 + 全选/全部取消）。 #}
+                    <div class="manage-cat-rail" id="libraryCategoryRail" data-hub-active="{{ '1' if active_page == 'material_hub' else '0' }}">
+                        {% if active_page != 'material_hub' %}
+                        <a class="manage-cat-rail__enter" href="/manage/library">进入材料中心 →</a>
+                        {% endif %}
+                        <div class="manage-cat-rail__actions">
+                            <button type="button" class="manage-cat-rail__action" data-cat-action="all">全选</button>
+                            <button type="button" class="manage-cat-rail__action" data-cat-action="none">全部取消</button>
+                        </div>
+                        {% for category in manage_nav.library_categories %}
+                        <button
+                            type="button"
+                            class="manage-cat-item is-checked"
+                            data-cat-key="{{ category.key }}"
+                            {{ explain_attrs(category.label, category.hint, placement='right') }}
+                        >
+                            <span class="manage-cat-item__box" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+                            </span>
+                            <span class="manage-cat-item__label">{{ category.label }}</span>
+                            <span class="manage-cat-item__count" data-cat-count hidden></span>
+                        </button>
+                        {% endfor %}
+                    </div>
+                    {% else %}
                     {% for group in domain.groups %}
                     <div class="manage-nav-group manage-nav-group--{{ domain.key }}{% if group.active %} is-active is-open{% endif %}" data-nav-group="{{ domain.key }}:{{ group.label }}">
                         <button type="button" class="manage-nav-group-toggle" aria-expanded="{{ 'true' if group.active else 'false' }}">
@@ -793,6 +931,7 @@
                         </div>
                     </div>
                     {% endfor %}
+                    {% endif %}
                 </div>
                 {% endfor %}
 
@@ -1039,6 +1178,20 @@
             }
         };
         initManageSidebar();
+
+        // 材料域分类多选：材料中心页由 material_hub.js 接管；
+        // 在其他页面点分类按钮 → 带着该分类直接进入材料中心。
+        const libraryCatRail = document.getElementById('libraryCategoryRail');
+        if (libraryCatRail && libraryCatRail.dataset.hubActive !== '1') {
+            libraryCatRail.addEventListener('click', (event) => {
+                const action = event.target.closest('[data-cat-action]');
+                if (action) { window.location.href = '/manage/library'; return; }
+                const item = event.target.closest('[data-cat-key]');
+                if (item) {
+                    window.location.href = `/manage/library?cats=${encodeURIComponent(item.dataset.catKey)}`;
+                }
+            });
+        }
 
         window.handleFormSubmit = async function(event, successCallback) {
             event.preventDefault();

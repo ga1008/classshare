@@ -136,18 +136,44 @@ class ManageNavServiceTests(unittest.TestCase):
     def test_manage_nav_filters_admin_items_and_marks_active_domain(self):
         teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "classrooms", is_super_admin=False)
         self.assertEqual("academic", teacher_nav["active_domain"])
-        # Regular teachers keep the clean three-domain shell: no admin tab.
-        self.assertEqual(list(MANAGE_DOMAIN_ORDER), [domain["key"] for domain in teacher_nav["domains"]])
+        # 管理域承载个人事务（原教师域菜单），对所有教师可见，排在最后。
+        self.assertEqual([*MANAGE_DOMAIN_ORDER, "admin"], [domain["key"] for domain in teacher_nav["domains"]])
         self.assertTrue(any(domain["key"] == "academic" and domain["active"] for domain in teacher_nav["domains"]))
+        teacher_admin_keys = [
+            item["key"]
+            for domain in teacher_nav["domains"]
+            if domain["key"] == "admin"
+            for group in domain["groups"]
+            for item in group["items"]
+        ]
+        # 个人事务可见；平台维护（超管专属）不可见。
+        for personal_key in ("teacher_profile", "signatures", "teacher_credentials", "system_password_resets"):
+            self.assertIn(personal_key, teacher_admin_keys)
+        self.assertNotIn("system_users", teacher_admin_keys)
 
         admin_nav = build_manage_nav({"id": 1, "role": "teacher"}, "system_users", is_super_admin=True)
         self.assertEqual("admin", admin_nav["active_domain"])
-        # Super admins get the admin domain as a fourth tab, rendered last.
         self.assertEqual([*MANAGE_DOMAIN_ORDER, "admin"], [domain["key"] for domain in admin_nav["domains"]])
         admin_domain = admin_nav["domains"][-1]
         self.assertTrue(admin_domain["active"])
         self.assertTrue(admin_domain["groups"])
         self.assertIn("system_users", admin_nav["hrefs"])
+
+    def test_library_domain_hosts_material_hub_and_categories(self):
+        by_key = {item.key: item for item in MANAGE_NAV_ITEMS}
+        self.assertEqual("library", by_key["material_hub"].domain)
+        self.assertEqual("/manage/library", by_key["material_hub"].href)
+        self.assertEqual("teaching", by_key["postclass_materials"].domain)
+        self.assertEqual("过程材料", by_key["postclass_materials"].group)
+
+        nav = build_manage_nav({"id": 1, "role": "teacher"}, "material_hub", is_super_admin=False)
+        self.assertEqual("library", nav["active_domain"])
+        categories = nav["library_categories"]
+        keys = [category["key"] for category in categories]
+        self.assertIn("learning_docs", keys)
+        self.assertIn("postclass", keys)
+        self.assertIn("gongwen", keys)
+        self.assertEqual(len(keys), len(set(keys)))
 
     def test_manage_legacy_redirects_are_derived_from_registry(self):
         redirects = iter_manage_legacy_redirects()

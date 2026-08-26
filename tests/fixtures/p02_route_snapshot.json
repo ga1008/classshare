@@ -3576,6 +3576,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/materials/hub/ai-search",
+    "methods": [
+      "POST"
+    ],
+    "name": "material_hub_ai_search",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/hub/search",
+    "methods": [
+      "GET"
+    ],
+    "name": "material_hub_search",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/materials/library",
     "methods": [
       "GET"
@@ -5432,6 +5448,14 @@
     "include_in_schema": false
   },
   {
+    "path": "/manage/library",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_material_hub_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/materials",
     "methods": [
       "GET"
@@ -5845,6 +5869,14 @@
       "GET"
     ],
     "name": "manage_polls_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/postclass-materials",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_postclass_materials_page",
     "include_in_schema": true
   },
   {
