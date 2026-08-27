@@ -323,6 +323,51 @@ class SignaturePointServiceTests(unittest.TestCase):
         ]
         self.assertEqual(1, len(aggregate_queries), aggregate_queries)
 
+    def test_identity_filter_never_hides_own_or_fallback_teacher_signatures(self) -> None:
+        # “期末成绩登记表·任课教师签字处”要求教师身份；本人签名（可直用）与
+        # 未登记任何身份的教师签名都必须通过默认身份过滤。
+        listed = {
+            "items": [
+                {
+                    # 本人签名：账号/签名都没登记身份，靠 can_use 恒匹配。
+                    "id": 1, "name": "本人签名", "subject_name": "申请教师",
+                    "owner_role": "teacher", "owner_id": 1,
+                    "subject_role": "teacher", "subject_id": 1,
+                    "identity_category": "",
+                },
+                {
+                    # 他人教师签名：两侧无身份登记，按“教师”兜底匹配。
+                    "id": 2, "name": "乙签名", "subject_name": "乙签名者",
+                    "owner_role": "teacher", "owner_id": 4,
+                    "subject_role": "teacher", "subject_id": 5,
+                    "identity_category": "",
+                },
+                {
+                    # 明确登记了非教师身份：仍被“教师”过滤隐藏。
+                    "id": 3, "name": "教务签名", "subject_name": "教务老师",
+                    "owner_role": "teacher", "owner_id": 4,
+                    "subject_role": "teacher", "subject_id": 6,
+                    "identity_category": "academic_affairs",
+                },
+            ]
+        }
+        with patch.object(signature_service, "list_signatures", return_value=listed):
+            state = signature_point_service.get_point_state(
+                self.conn,
+                self.user,
+                function_point_key="academic_final_material.grade_register.teacher_signature",
+                material_type="academic_final_material",
+                material_id="88",
+            )
+        by_id = {item["id"]: item for item in state["signatures"]}
+        self.assertEqual(["teacher"], state["point"]["required_identities"])
+        self.assertTrue(by_id[1]["can_use"])
+        self.assertEqual("self", by_id[1]["authorization_mode"])
+        self.assertTrue(by_id[1]["identity_match"])
+        self.assertFalse(by_id[2]["can_use"])
+        self.assertTrue(by_id[2]["identity_match"])
+        self.assertFalse(by_id[3]["identity_match"])
+
     def test_postgres_binding_replacement_takes_scope_lock_before_delete(self) -> None:
         conn = MagicMock()
         scope = {

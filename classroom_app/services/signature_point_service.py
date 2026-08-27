@@ -228,6 +228,20 @@ def get_point_state(
         # Unbound signatures stay requestable — platform admins review them —
         # so a colleague without an account never blocks an official document.
         needs_admin_review = not owner_bound and not signer_bound
+        subject_role = str(item.get("subject_role") or "")
+        try:
+            subject_id = int(item.get("subject_id") or 0)
+        except (TypeError, ValueError):
+            subject_id = 0
+        account_candidates = account_identity_map.get((subject_role, subject_id), [])
+        # 教师签名且账号/签名两侧都没登记职务身份时按“教师”兜底——任课教师
+        # 不该因为从未填过身份而被“教师”签名点的默认过滤藏起来。
+        if (
+            not account_candidates
+            and subject_role == "teacher"
+            and not str(item.get("identity_category") or "").strip()
+        ):
+            account_candidates = ["teacher"]
         signatures.append(
             {
                 **item,
@@ -235,15 +249,15 @@ def get_point_state(
                 "can_request": not can_use,
                 "needs_admin_review": needs_admin_review,
                 "signer_bound": signer_bound,
-                # 绑定签名按签名者账号的全部有效任职身份匹配（兼任场景）；
-                # 未绑定签名只看签名自身的身份属性。
+                # 本人/归属/已获批的签名恒匹配——已可直接使用的签名绝不能被
+                # 默认身份过滤隐藏；其余绑定签名按签名者账号的全部有效任职
+                # 身份匹配（兼任场景），未绑定签名只看签名自身的身份属性。
                 "identity_match": (
-                    identity_org_match(actor, item, accepted_identities)
+                    can_use
+                    or identity_org_match(actor, item, accepted_identities)
                     or any(
                         identity_org_match(actor, {**item, "identity_category": candidate}, accepted_identities)
-                        for candidate in account_identity_map.get(
-                            (str(item.get("subject_role") or ""), int(item.get("subject_id") or 0)), []
-                        )
+                        for candidate in account_candidates
                     )
                 ),
                 "authorization_mode": direct_mode or ("approval" if grant_item_id else ""),
