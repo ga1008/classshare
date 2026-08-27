@@ -153,10 +153,11 @@ test.describe('material-scoped signature points', () => {
 
       const examiner = page.locator('[data-ap-signature-point="examiner"]');
       const examinerSelect = examiner.locator('[data-spw-available]');
+      // 选中即加入：change 事件直接把签名加进已选列表，无需再点“加入”。
       await examinerSelect.selectOption('11');
-      await examiner.locator('[data-spw-add]').click();
-      await examinerSelect.selectOption('12');
-      await examiner.locator('[data-spw-add]').click();
+      await expect(examiner.locator('[data-spw-selected="11"]')).toBeVisible();
+      await examiner.locator('[data-spw-available]').selectOption('12');
+      await expect(examiner.locator('[data-spw-selected="12"]')).toBeVisible();
       const bindingResponse = page.waitForResponse((response) => (
         response.url().includes(`/api/assessment-plans/${planId}/signature`)
         && response.request().method() === 'PUT'

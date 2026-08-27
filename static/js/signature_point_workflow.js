@@ -106,6 +106,24 @@ export class SignaturePointControl {
         return this.state?.point?.required_identity_labels || [];
     }
 
+    bindImeSafeSearch(input, applyTerm) {
+        // 输入过滤会整体重渲染并销毁输入框 DOM；若在输入法组合（拼音）期间
+        // 重渲染，IME 组合被打断，中文永远打不出来。组合中只记录不渲染，
+        // compositionend 后再应用过滤并恢复焦点/光标。
+        let composing = false;
+        const apply = () => {
+            const caret = input.selectionStart;
+            const restored = applyTerm(input.value || '');
+            if (restored) {
+                restored.focus();
+                try { restored.setSelectionRange(caret, caret); } catch { /* type=search quirks */ }
+            }
+        };
+        input.addEventListener('compositionstart', () => { composing = true; });
+        input.addEventListener('compositionend', () => { composing = false; apply(); });
+        input.addEventListener('input', () => { if (!composing) apply(); });
+    }
+
     filterCandidates(items, searchTerm, identityOn) {
         const term = String(searchTerm || '').trim().toLowerCase();
         const hasIdentityRule = this.requiredIdentityLabels().length > 0;
@@ -168,9 +186,8 @@ export class SignaturePointControl {
             </div>
             <div class="spw-picker">
                 <select data-spw-available ${visible.length ? '' : 'disabled'}>
-                    <option value="">${visible.length ? '选择一个已获准签名…' : (remaining.length ? '当前过滤条件下无可用签名' : '暂无更多可用签名')}</option>${options}
+                    <option value="">${visible.length ? '选择签名（选中即加入）…' : (remaining.length ? '当前过滤条件下无可用签名' : '暂无更多可用签名')}</option>${options}
                 </select>
-                <button type="button" data-spw-add ${visible.length ? '' : 'disabled'}>加入</button>
             </div>
             <small class="spw-help">多人签名将按上方顺序等宽排布并保持原始比例。</small>`;
         this.bindRootEvents();
@@ -179,21 +196,20 @@ export class SignaturePointControl {
     bindRootEvents() {
         this.root.querySelector('[data-spw-apply]')?.addEventListener('click', () => this.openFlow());
         const searchInput = this.root.querySelector('[data-spw-search]');
-        searchInput?.addEventListener('input', () => {
-            this.searchTerm = searchInput.value || '';
-            const caret = searchInput.selectionStart;
-            this.render();
-            const restored = this.root.querySelector('[data-spw-search]');
-            if (restored) {
-                restored.focus();
-                try { restored.setSelectionRange(caret, caret); } catch { /* type=search quirks */ }
-            }
-        });
+        if (searchInput) {
+            this.bindImeSafeSearch(searchInput, (term) => {
+                this.searchTerm = term;
+                this.render();
+                return this.root.querySelector('[data-spw-search]');
+            });
+        }
         this.root.querySelector('[data-spw-identity-toggle]')?.addEventListener('click', () => {
             this.identityFilterOn = !this.identityFilterOn;
             this.render();
         });
-        this.root.querySelector('[data-spw-add]')?.addEventListener('click', () => {
+        // 选中即加入：多余的“加入”按钮曾让人选完就以为已生效，直接点保存
+        // 导致什么都没提交。
+        this.root.querySelector('[data-spw-available]')?.addEventListener('change', () => {
             const select = this.root.querySelector('[data-spw-available]');
             const id = Number(select?.value || 0);
             if (!id) return;
@@ -206,6 +222,7 @@ export class SignaturePointControl {
                 });
                 // 仅批语+线下盖章是合法场景，轻提示一次即可，不阻断。
                 if (!hasPersonal && !window.confirm('该签名点当前没有个人签名，仅使用批语章（配合线下盖章）？')) {
+                    select.value = '';
                     return;
                 }
             }
@@ -292,16 +309,13 @@ export class SignaturePointControl {
             panel.querySelector('[data-spw-create]')?.addEventListener('click', () => this.createFlow());
             panel.querySelector('[data-spw-refresh]')?.addEventListener('click', () => this.refreshDialog());
             const dialogSearch = panel.querySelector('[data-spw-dialog-search]');
-            dialogSearch?.addEventListener('input', () => {
-                this.dialogSearchTerm = dialogSearch.value || '';
-                const caret = dialogSearch.selectionStart;
-                this.renderFlowDialog();
-                const restored = this.dialog.querySelector('[data-spw-dialog-search]');
-                if (restored) {
-                    restored.focus();
-                    try { restored.setSelectionRange(caret, caret); } catch { /* type=search quirks */ }
-                }
-            });
+            if (dialogSearch) {
+                this.bindImeSafeSearch(dialogSearch, (term) => {
+                    this.dialogSearchTerm = term;
+                    this.renderFlowDialog();
+                    return this.dialog.querySelector('[data-spw-dialog-search]');
+                });
+            }
             panel.querySelector('[data-spw-dialog-identity-toggle]')?.addEventListener('click', () => {
                 this.dialogIdentityFilterOn = !this.dialogIdentityFilterOn;
                 this.renderFlowDialog();

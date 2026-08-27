@@ -365,9 +365,18 @@ function bindEvents() {
     });
     root.querySelector('[data-psig-claim-toggle]')?.addEventListener('click', toggleClaimPanel);
     const claimSearch = root.querySelector('[data-psig-claim-search]');
+    // 输入法组合（拼音）期间不能触发重渲染：render 会销毁输入框、打断 IME
+    // 组合导致中文输不进去。组合中只记录，compositionend 后再搜索。
+    let claimComposing = false;
+    claimSearch?.addEventListener('compositionstart', () => { claimComposing = true; });
+    claimSearch?.addEventListener('compositionend', () => {
+        claimComposing = false;
+        claimSearch.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     claimSearch?.addEventListener('input', () => {
         state.claimSearch = claimSearch.value || '';
         window.clearTimeout(claimSearchTimer);
+        if (claimComposing) return;
         claimSearchTimer = window.setTimeout(async () => {
             await loadClaimCandidates();
             const active = document.activeElement === claimSearch;
