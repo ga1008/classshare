@@ -1,6 +1,6 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml } from './ui.js';
-import { SignaturePointControl } from './signature_point_workflow.js?v=stamp-group-1';
+import { SignaturePointControl } from './signature_point_workflow.js?v=confirm-flow-1';
 import {
     closePendingPreviewWindow,
     isPreviewLinkBusy,
@@ -129,8 +129,34 @@ function assessmentExportBlocker() {
     return `考核项分值合计为 ${formatScore(total)}，调整到 100 后才能导出。`;
 }
 
+function signatureGateReason() {
+    const controls = Object.values(state.signaturePoints);
+    if (controls.some((control) => control.isUpdating?.())) return '后台正在更新签名与文档，请稍候。';
+    if (controls.some((control) => control.isDirty?.())) return '有签名修改未确认，请先在签名区点击“确认并更新文档”。';
+    return '';
+}
+
+function updateSignatureGate() {
+    const reason = signatureGateReason();
+    [
+        document.getElementById('ap-save'),
+        document.getElementById('ap-refresh-preview'),
+    ].filter(Boolean).forEach((button) => {
+        const blocked = Boolean(reason) || state.saving;
+        button.disabled = blocked;
+        button.classList.toggle('lp-btn--disabled', blocked);
+        if (reason) {
+            button.title = reason;
+        } else {
+            button.removeAttribute('title');
+        }
+    });
+    setExportButtons();
+}
+
 function setExportButtons({ busy = false } = {}) {
-    const reason = assessmentExportBlocker();
+    const signatureReason = signatureGateReason();
+    const reason = signatureReason || assessmentExportBlocker();
     const disabled = busy || state.saving || Boolean(reason);
     const title = (busy || state.saving) ? '正在保存当前修改，请稍候。' : reason;
     [
@@ -183,6 +209,14 @@ function setEditorBusy(busy) {
     setPreviewLinkBusy(document.getElementById('ap-open-preview'), state.saving);
     setSavePreviewButtonsBusy(state.saving);
     setExportButtons({ busy: state.saving });
+    if (!state.saving) {
+        // 解除全局禁用会把签名点内部按钮也强制启用；让签名点自行重渲染
+        // 恢复各自的禁用态，再同步一次签名门控。
+        Object.values(state.signaturePoints).forEach((control) => {
+            try { control.render(); } catch { /* 未加载完成的点无需重渲染 */ }
+        });
+        updateSignatureGate();
+    }
 }
 
 function renderTotal() {
@@ -259,10 +293,15 @@ function renderImportDetails() {
 // ---------------------------------------------------------------------------
 // Material-scoped signature points
 // ---------------------------------------------------------------------------
-const signatureBindTimers = Object.create(null);
-function scheduleSignatureBinding(role, ids) {
-    window.clearTimeout(signatureBindTimers[role]);
-    signatureBindTimers[role] = window.setTimeout(() => bindSignature(role, ids), 300);
+// 签名确认即提交：选择/排序只改工作区，点击签名区“确认并更新文档”
+// 才写入绑定并刷新预览，避免半成品选择被静默落库。
+async function commitSignatureBinding(role, ids) {
+    setSaveState('is-saving', '更新签名中');
+    try {
+        await applySignatureBinding(role, ids);
+    } finally {
+        restoreSaveState();
+    }
 }
 
 async function initSignaturePoints() {
@@ -278,12 +317,14 @@ async function initSignaturePoints() {
             materialType: 'assessment_plan',
             materialId: state.id,
             initialSelectedIds,
-            onChange: (ids) => scheduleSignatureBinding(role, ids),
+            onConfirm: (ids) => commitSignatureBinding(role, ids),
+            onStateChange: updateSignatureGate,
             notify: showToast,
         });
         state.signaturePoints[role] = control;
         await control.load();
     }));
+    updateSignatureGate();
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +344,11 @@ async function persistContent() {
 
 async function saveContent() {
     if (state.saving) return;
+    const signatureReason = signatureGateReason();
+    if (signatureReason) {
+        showToast(signatureReason, 'warning');
+        return;
+    }
     setEditorBusy(true);
     setSaveState('is-saving', '保存中');
     try {
@@ -324,6 +370,11 @@ async function saveContent() {
 
 async function refreshPreview() {
     if (state.saving) return;
+    const signatureReason = signatureGateReason();
+    if (signatureReason) {
+        showToast(signatureReason, 'warning');
+        return;
+    }
     setEditorBusy(true);
     setSaveState('is-saving', '保存中');
     try {
@@ -381,6 +432,12 @@ async function openSavedPreview(event) {
         event.preventDefault();
         return;
     }
+    const signatureReason = signatureGateReason();
+    if (signatureReason) {
+        event.preventDefault();
+        showToast(signatureReason, 'warning');
+        return;
+    }
     if (!state.dirty) return;
     event.preventDefault();
     const previewWindow = openPendingPreviewWindow(showToast);
@@ -419,22 +476,6 @@ async function applySignatureBinding(role, signatureIds) {
     state.examinerSignatureIds = res.examiner_signature_ids || [];
     state.reviewerSignatureIds = res.reviewer_signature_ids || [];
     reloadPreview();
-}
-
-async function bindSignature(role, signatureIds) {
-    if (state.saving) return;
-    setEditorBusy(true);
-    setSaveState('is-saving', '更新签名中');
-    try {
-        await applySignatureBinding(role, signatureIds);
-        showToast('签名已更新，预览已刷新', 'success');
-    } catch (err) {
-        showToast(err.message || '绑定签名失败', 'error');
-        await state.signaturePoints[role]?.load();
-    } finally {
-        setEditorBusy(false);
-        restoreSaveState();
-    }
 }
 
 async function uploadSignature(role) {

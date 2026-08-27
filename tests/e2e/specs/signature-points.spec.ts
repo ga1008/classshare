@@ -153,20 +153,34 @@ test.describe('material-scoped signature points', () => {
 
       const examiner = page.locator('[data-ap-signature-point="examiner"]');
       const examinerSelect = examiner.locator('[data-spw-available]');
-      // 选中即加入：change 事件直接把签名加进已选列表，无需再点“加入”。
+      // 选中即加入：change 事件直接把签名加进已选列表；此时进入“待确认”
+      // 状态（橙框），页面保存/刷新按钮被门控禁用。
       await examinerSelect.selectOption('11');
       await expect(examiner.locator('[data-spw-selected="11"]')).toBeVisible();
       await examiner.locator('[data-spw-available]').selectOption('12');
       await expect(examiner.locator('[data-spw-selected="12"]')).toBeVisible();
+      await expect(examiner.locator('[data-spw-area]')).toHaveClass(/is-dirty/);
+      await expect(page.locator('#ap-save')).toBeDisabled();
+      await examiner.locator('[data-spw-selected="12"] [data-spw-move="up"]').click();
+      await expect(examiner.locator('[data-spw-selected]').nth(0)).toContainText('命题教师乙');
+      await expect(examiner.locator('[data-spw-selected]').nth(1)).toContainText('命题教师甲');
+      // 排序调整不落库；点击“确认并更新文档”才 PUT 绑定并转为已生效（绿框）。
+      expect(boundByPoint[examinerPoint]).toEqual([]);
       const bindingResponse = page.waitForResponse((response) => (
         response.url().includes(`/api/assessment-plans/${planId}/signature`)
         && response.request().method() === 'PUT'
       ));
-      await examiner.locator('[data-spw-selected="12"] [data-spw-move="up"]').click();
+      await examiner.locator('[data-spw-confirm]').click();
       await bindingResponse;
-      await expect(examiner.locator('[data-spw-selected]').nth(0)).toContainText('命题教师乙');
-      await expect(examiner.locator('[data-spw-selected]').nth(1)).toContainText('命题教师甲');
       expect(boundByPoint[examinerPoint]).toEqual([12, 11]);
+      await expect(examiner.locator('[data-spw-area]')).toHaveClass(/is-confirmed/);
+      await expect(page.locator('#ap-save')).toBeEnabled();
+      {
+        const artifactDir = path.join(process.cwd(), '.codex-temp', 'signature-workflow-qa');
+        fs.mkdirSync(artifactDir, { recursive: true });
+        await examiner.scrollIntoViewIfNeeded();
+        await examiner.screenshot({ path: path.join(artifactDir, 'signature-point-confirmed.png') });
+      }
 
       const reviewer = page.locator('[data-ap-signature-point="reviewer"]');
       await reviewer.locator('[data-spw-apply]').click();

@@ -1,6 +1,6 @@
 import { apiFetch } from './api.js';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
-import { SignaturePointControl } from './signature_point_workflow.js?v=stamp-group-1';
+import { SignaturePointControl } from './signature_point_workflow.js?v=confirm-flow-1';
 
 const root = document.querySelector('[data-afm-root]');
 if (!root) throw new Error('Academic final-material root not found.');
@@ -364,7 +364,43 @@ function signatureIds(fields, pluralKey, legacyKey) {
         : (fields[legacyKey] ? [fields[legacyKey]] : []);
 }
 
-async function ensureSignaturePoint({ key, label, root, selectedIds, materialId }) {
+// 签名确认即提交：只 PATCH 当前签名点的 ids，后台同步重建文档，
+// 返回即代表预览/下载已是最新内容。
+async function commitPointSignatures(idsKey, ids) {
+    await request(`/api/academic-final-materials/${encodeURIComponent(state.currentBatchId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_type: type, [idsKey]: ids }),
+    }, 30000);
+    loadItems({ notify: false });
+}
+
+function updateEditorGate() {
+    const controls = Object.values(state.signaturePoints);
+    const dirty = controls.some((control) => control.isDirty?.());
+    const updating = controls.some((control) => control.isUpdating?.());
+    const save = $('[data-afm-save]');
+    if (save) {
+        save.disabled = dirty || updating;
+        save.title = updating
+            ? '后台正在更新文档，请稍候。'
+            : (dirty ? '有签名修改未确认，请先在签名区点击“确认并更新文档”。' : '');
+    }
+    if (els.previewCurrent) {
+        els.previewCurrent.disabled = updating;
+        els.previewCurrent.title = updating ? '后台正在更新文档，完成后即可预览。' : '';
+    }
+    const status = $('[data-afm-editor-status]');
+    if (status) {
+        status.classList.toggle('is-updating', updating);
+        status.classList.toggle('is-dirty', !updating && dirty);
+        status.innerHTML = updating
+            ? '<span class="afm-spinner" style="width:14px;height:14px;border-width:2px"></span>后台正在更新文档…'
+            : (dirty ? '签名修改待确认' : '');
+    }
+}
+
+async function ensureSignaturePoint({ key, label, root, selectedIds, materialId, idsKey }) {
     let control = state.signaturePoints[key];
     if (!control) {
         control = new SignaturePointControl({
@@ -374,6 +410,8 @@ async function ensureSignaturePoint({ key, label, root, selectedIds, materialId 
             materialType: 'academic_final_material',
             materialId,
             initialSelectedIds: selectedIds,
+            onConfirm: (ids) => commitPointSignatures(idsKey, ids),
+            onStateChange: updateEditorGate,
             notify: message,
         });
         state.signaturePoints[key] = control;
@@ -419,6 +457,7 @@ async function openEditor(batchId) {
                 root: els.teacherSignaturePoint,
                 selectedIds: signatureIds(fields, 'teacher_signature_ids', 'teacher_signature_id'),
                 materialId: record.id,
+                idsKey: 'teacher_signature_ids',
             });
         } else {
             $$('[data-afm-field]', els.analysisFields).forEach((input) => {
@@ -432,6 +471,7 @@ async function openEditor(batchId) {
                     root: els.departmentSignaturePoint,
                     selectedIds: signatureIds(fields, 'department_signature_ids', 'department_signature_id'),
                     materialId: record.id,
+                    idsKey: 'department_signature_ids',
                 }),
                 ensureSignaturePoint({
                     key: 'academic_final_material.exam_analysis.dean_review_signature',
@@ -439,10 +479,12 @@ async function openEditor(batchId) {
                     root: els.deanSignaturePoint,
                     selectedIds: signatureIds(fields, 'dean_signature_ids', 'dean_signature_id'),
                     materialId: record.id,
+                    idsKey: 'dean_signature_ids',
                 }),
             ]);
             enhancePromptPoolInput(els.regeneratePrompt);
         }
+        updateEditorGate();
     } catch (error) {
         els.editorDialog.close();
         message(error.message || '读取材料失败。', 'error');

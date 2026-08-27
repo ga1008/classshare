@@ -295,3 +295,10 @@
     .afm-section-heading { align-items: flex-start; flex-direction: column; }
     .afm-section-heading p { text-align: left; }
 }
+
+/* 编辑浮窗签名状态位：待确认(琥珀) / 后台更新中(琥珀+spinner) */
+.afm-editor-status { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 750; transition: color .3s ease; }
+.afm-editor-status.is-dirty { color: #b45309; }
+.afm-editor-status.is-updating { color: #b45309; animation: afmStatusIn .25s ease; }
+.afm-editor-status .afm-spinner { border-color: rgba(180, 83, 9, .25); border-top-color: #b45309; }
+@keyframes afmStatusIn { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }

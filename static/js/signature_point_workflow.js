@@ -27,6 +27,10 @@ function uniqueIds(values) {
     return result.slice(0, 12);
 }
 
+function sameIds(a, b) {
+    return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
 export class SignaturePointControl {
     constructor({
         root,
@@ -36,6 +40,8 @@ export class SignaturePointControl {
         materialId,
         initialSelectedIds = [],
         onChange = () => {},
+        onConfirm = null,
+        onStateChange = () => {},
         notify = () => {},
     }) {
         this.root = typeof root === 'string' ? document.querySelector(root) : root;
@@ -43,8 +49,14 @@ export class SignaturePointControl {
         this.pointLabel = pointLabel;
         this.materialType = materialType;
         this.materialId = String(materialId || '');
-        this.selectedIds = uniqueIds(initialSelectedIds);
+        // confirmedIds = 服务端已生效的绑定；selectedIds = 工作区。两者不一致
+        // 即“待确认”，只有点击“确认”并成功回写后台后才收敛。
+        this.confirmedIds = uniqueIds(initialSelectedIds);
+        this.selectedIds = [...this.confirmedIds];
+        this.updating = false;
         this.onChange = onChange;
+        this.onConfirm = onConfirm;
+        this.onStateChange = onStateChange;
         this.notify = notify;
         this.state = null;
         this.loading = false;
@@ -70,8 +82,9 @@ export class SignaturePointControl {
 
     async setMaterial(materialId, initialSelectedIds = []) {
         this.materialId = String(materialId || '');
-        this.selectedIds = uniqueIds(initialSelectedIds);
-        await this.load();
+        this.confirmedIds = uniqueIds(initialSelectedIds);
+        this.selectedIds = [...this.confirmedIds];
+        await this.load({ preserveSelection: false });
     }
 
     async load({ preserveSelection = true } = {}) {
@@ -81,11 +94,17 @@ export class SignaturePointControl {
             const state = await apiFetch(this.endpoint(), { silent: true });
             this.state = state;
             this.pointLabel = state.point?.label || this.pointLabel;
-            const serverSelected = uniqueIds(state.selected_signature_ids);
             const usableIds = new Set((state.usable_signatures || []).map((item) => Number(item.id)));
-            const current = preserveSelection ? this.selectedIds : [];
-            this.selectedIds = uniqueIds(serverSelected.length ? serverSelected : current).filter((id) => usableIds.has(id));
+            const serverSelected = uniqueIds(state.selected_signature_ids).filter((id) => usableIds.has(id));
+            const wasDirty = this.isDirty();
+            // 服务端有绑定则以其为准；否则沿用宿主注入的初始值（老记录兜底）。
+            this.confirmedIds = serverSelected.length
+                ? serverSelected
+                : uniqueIds(this.confirmedIds).filter((id) => usableIds.has(id));
+            const working = preserveSelection && wasDirty ? this.selectedIds : this.confirmedIds;
+            this.selectedIds = uniqueIds(working).filter((id) => usableIds.has(id));
             this.render();
+            this.emitState();
         } catch (error) {
             this.root.innerHTML = `<div class="spw-error"><strong>${esc(this.pointLabel)}</strong><span>${esc(error.message || '签名点加载失败')}</span><button type="button" data-spw-retry>重试</button></div>`;
             this.root.querySelector('[data-spw-retry]')?.addEventListener('click', () => this.load());
@@ -96,6 +115,43 @@ export class SignaturePointControl {
 
     getSelectedIds() {
         return [...this.selectedIds];
+    }
+
+    isDirty() {
+        return !sameIds(this.selectedIds, this.confirmedIds);
+    }
+
+    isUpdating() {
+        return Boolean(this.updating);
+    }
+
+    emitState() {
+        this.onStateChange({ dirty: this.isDirty(), updating: this.isUpdating(), selectedIds: this.getSelectedIds() });
+    }
+
+    applySelection(ids) {
+        this.selectedIds = uniqueIds(ids);
+        this.onChange(this.getSelectedIds());
+        this.render();
+        this.emitState();
+    }
+
+    async confirmSelection() {
+        if (!this.isDirty() || this.updating) return;
+        this.updating = true;
+        this.render();
+        this.emitState();
+        try {
+            if (this.onConfirm) await this.onConfirm(this.getSelectedIds());
+            this.confirmedIds = [...this.selectedIds];
+            this.notify('签名已确认，文档已同步更新。', 'success');
+        } catch (error) {
+            this.notify(error.message || '文档更新失败，签名尚未生效。', 'error');
+        } finally {
+            this.updating = false;
+            this.render();
+            this.emitState();
+        }
     }
 
     signatureById(id) {
@@ -144,18 +200,39 @@ export class SignaturePointControl {
         return `<button type="button" class="spw-identity-toggle${isOn ? ' is-on' : ''}" ${attr}>${esc(text)}</button>`;
     }
 
+    areaState() {
+        if (this.updating) return 'updating';
+        if (this.isDirty()) return 'dirty';
+        return this.selectedIds.length ? 'confirmed' : 'neutral';
+    }
+
+    areaBadgeHtml() {
+        switch (this.areaState()) {
+            case 'updating':
+                return '<span class="spw-state is-updating"><span class="spw-spinner" aria-hidden="true"></span>后台正在更新文档…</span>';
+            case 'dirty':
+                return '<span class="spw-state is-dirty">修改待确认</span>';
+            case 'confirmed':
+                return '<span class="spw-state is-confirmed">已生效 ✓</span>';
+            default:
+                return '<span class="spw-state is-neutral">尚未选择签名</span>';
+        }
+    }
+
     render() {
         const usable = this.state?.usable_signatures || [];
+        const busy = this.updating;
         const selected = this.selectedIds.map((id, index) => {
             const signature = this.signatureById(id);
             if (!signature) return '';
-            return `<li data-spw-selected="${id}">
+            return `<li data-spw-selected="${id}" draggable="${busy ? 'false' : 'true'}">
+                <span class="spw-drag" aria-hidden="true" title="拖动排序">⠿</span>
                 <span class="spw-order">${index + 1}</span>
                 <span><strong>${esc(signature.subject_name || signature.name)}</strong><small>${esc(signature.scope_label || '')}</small></span>
                 <span class="spw-order-actions">
-                    <button type="button" data-spw-move="up" aria-label="上移" ${index === 0 ? 'disabled' : ''}>↑</button>
-                    <button type="button" data-spw-move="down" aria-label="下移" ${index === this.selectedIds.length - 1 ? 'disabled' : ''}>↓</button>
-                    <button type="button" data-spw-remove aria-label="移除">×</button>
+                    <button type="button" data-spw-move="up" aria-label="上移" ${index === 0 || busy ? 'disabled' : ''}>↑</button>
+                    <button type="button" data-spw-move="down" aria-label="下移" ${index === this.selectedIds.length - 1 || busy ? 'disabled' : ''}>↓</button>
+                    <button type="button" data-spw-remove aria-label="移除" ${busy ? 'disabled' : ''}>×</button>
                 </span>
             </li>`;
         }).join('');
@@ -173,23 +250,37 @@ export class SignaturePointControl {
         const flowBadge = this.state?.active_flow
             ? `<span class="spw-flow-badge">${esc(statusText[this.state.active_flow.status] || '申请处理中')}</span>`
             : '';
+        const areaState = this.areaState();
+        const dirty = this.isDirty();
         this.root.innerHTML = `
             <div class="spw-head">
                 <div><span>独立签名点</span><strong>${esc(this.pointLabel)}</strong></div>
-                <div>${flowBadge}<button type="button" class="spw-apply" data-spw-apply>申请签名</button></div>
+                <div>${flowBadge}<button type="button" class="spw-apply" data-spw-apply ${busy ? 'disabled' : ''}>申请签名</button></div>
             </div>
             <p class="spw-scope">授权仅对“${esc(this.state?.material?.label || '当前材料')}”当前版本有效；材料重建后自动失效。</p>
-            <ul class="spw-selected-list">${selected || '<li class="spw-selected-empty">尚未选择签名</li>'}</ul>
+            <div class="spw-selected is-${areaState}" data-spw-area>
+                <div class="spw-selected-head">
+                    <span class="spw-selected-title">已选签名${this.selectedIds.length ? ` · ${this.selectedIds.length}` : ''}</span>
+                    ${this.areaBadgeHtml()}
+                </div>
+                <ul class="spw-selected-list" data-spw-list>${selected || '<li class="spw-selected-empty">从下方挑选签名，可拖动调整顺序</li>'}</ul>
+                <div class="spw-selected-actions">
+                    <button type="button" data-spw-clear ${this.selectedIds.length && !busy ? '' : 'disabled'}>全部取消</button>
+                    ${dirty && !busy ? '<button type="button" data-spw-revert>还原</button>' : ''}
+                    <span class="spw-selected-actions__spacer"></span>
+                    <button type="button" class="spw-confirm" data-spw-confirm ${dirty && !busy ? '' : 'disabled'}>${busy ? '正在更新…' : '确认并更新文档'}</button>
+                </div>
+            </div>
             <div class="spw-picker-tools">
-                <input type="search" data-spw-search placeholder="模糊搜索签名姓名…" value="${esc(this.searchTerm)}" ${remaining.length ? '' : 'disabled'}>
+                <input type="search" data-spw-search placeholder="模糊搜索签名姓名…" value="${esc(this.searchTerm)}" ${remaining.length && !busy ? '' : 'disabled'}>
                 ${this.identityToggleHtml('data-spw-identity-toggle', this.identityFilterOn, hiddenCount)}
             </div>
             <div class="spw-picker">
-                <select data-spw-available ${visible.length ? '' : 'disabled'}>
-                    <option value="">${visible.length ? '选择签名（选中即加入）…' : (remaining.length ? '当前过滤条件下无可用签名' : '暂无更多可用签名')}</option>${options}
+                <select data-spw-available ${visible.length && !busy ? '' : 'disabled'}>
+                    <option value="">${visible.length ? '选择签名…' : (remaining.length ? '当前过滤条件下无可用签名' : '暂无更多可用签名')}</option>${options}
                 </select>
             </div>
-            <small class="spw-help">多人签名将按上方顺序等宽排布并保持原始比例。</small>`;
+            <small class="spw-help">多人签名将按上方顺序等宽排布并保持原始比例；调整后点击“确认并更新文档”生效。</small>`;
         this.bindRootEvents();
     }
 
@@ -210,6 +301,7 @@ export class SignaturePointControl {
         // 选中即加入：多余的“加入”按钮曾让人选完就以为已生效，直接点保存
         // 导致什么都没提交。
         this.root.querySelector('[data-spw-available]')?.addEventListener('change', () => {
+            if (this.updating) return;
             const select = this.root.querySelector('[data-spw-available]');
             const id = Number(select?.value || 0);
             if (!id) return;
@@ -226,25 +318,84 @@ export class SignaturePointControl {
                     return;
                 }
             }
-            this.selectedIds = uniqueIds([...this.selectedIds, id]);
-            this.onChange(this.getSelectedIds());
-            this.render();
+            this.applySelection([...this.selectedIds, id]);
         });
-        this.root.querySelectorAll('[data-spw-selected]').forEach((row) => {
+        this.root.querySelector('[data-spw-clear]')?.addEventListener('click', () => {
+            if (this.updating) return;
+            this.applySelection([]);
+        });
+        this.root.querySelector('[data-spw-revert]')?.addEventListener('click', () => {
+            if (this.updating) return;
+            this.applySelection([...this.confirmedIds]);
+        });
+        this.root.querySelector('[data-spw-confirm]')?.addEventListener('click', () => this.confirmSelection());
+        this.bindListEvents();
+    }
+
+    bindListEvents() {
+        const list = this.root.querySelector('[data-spw-list]');
+        if (!list) return;
+        list.querySelectorAll('[data-spw-selected]').forEach((row) => {
             const id = Number(row.dataset.spwSelected || 0);
             row.querySelector('[data-spw-remove]')?.addEventListener('click', () => {
-                this.selectedIds = this.selectedIds.filter((item) => item !== id);
-                this.onChange(this.getSelectedIds());
-                this.render();
+                if (this.updating) return;
+                this.applySelection(this.selectedIds.filter((item) => item !== id));
             });
             row.querySelectorAll('[data-spw-move]').forEach((button) => button.addEventListener('click', () => {
+                if (this.updating) return;
                 const index = this.selectedIds.indexOf(id);
                 const next = button.dataset.spwMove === 'up' ? index - 1 : index + 1;
                 if (index < 0 || next < 0 || next >= this.selectedIds.length) return;
-                [this.selectedIds[index], this.selectedIds[next]] = [this.selectedIds[next], this.selectedIds[index]];
-                this.onChange(this.getSelectedIds());
-                this.render();
+                const reordered = [...this.selectedIds];
+                [reordered[index], reordered[next]] = [reordered[next], reordered[index]];
+                this.applySelection(reordered);
             }));
+        });
+        // 拖拽排序：dragover 阶段只挪 DOM 不重渲染（重渲染会杀掉拖拽会话），
+        // dragend 时按 DOM 顺序回读 selectedIds 再统一重渲染。↑↓ 按钮保留，
+        // 作为触屏与键盘用户的等价操作。
+        let draggingRow = null;
+        list.querySelectorAll('[data-spw-selected]').forEach((row) => {
+            row.addEventListener('dragstart', (event) => {
+                if (this.updating) {
+                    event.preventDefault();
+                    return;
+                }
+                draggingRow = row;
+                row.classList.add('is-dragging');
+                event.dataTransfer.effectAllowed = 'move';
+                try { event.dataTransfer.setData('text/plain', row.dataset.spwSelected); } catch { /* 某些浏览器要求 setData 才能拖动 */ }
+            });
+            row.addEventListener('dragend', () => {
+                if (!draggingRow) return;
+                draggingRow.classList.remove('is-dragging');
+                draggingRow = null;
+                const order = Array.from(list.querySelectorAll('[data-spw-selected]'))
+                    .map((item) => Number(item.dataset.spwSelected || 0));
+                if (sameIds(uniqueIds(order), this.selectedIds)) {
+                    this.render();
+                    return;
+                }
+                this.applySelection(order);
+            });
+        });
+        list.addEventListener('dragover', (event) => {
+            if (!draggingRow) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            const siblings = Array.from(list.querySelectorAll('[data-spw-selected]:not(.is-dragging)'));
+            const next = siblings.find((item) => {
+                const rect = item.getBoundingClientRect();
+                return event.clientY <= rect.top + rect.height / 2;
+            });
+            if (next) {
+                list.insertBefore(draggingRow, next);
+            } else {
+                list.appendChild(draggingRow);
+            }
+        });
+        list.addEventListener('drop', (event) => {
+            if (draggingRow) event.preventDefault();
         });
     }
 
