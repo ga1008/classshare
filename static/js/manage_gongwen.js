@@ -80,6 +80,7 @@ const refs = {
     reader: document.getElementById('gw-reader'),
     readerClose: document.getElementById('gw-reader-close'),
     readerRefresh: document.getElementById('gw-reader-refresh'),
+    readerPackage: document.getElementById('gw-reader-package'),
     readerSn: document.getElementById('gw-reader-sn'),
     readerTitle: document.getElementById('gw-reader-title'),
     readerMeta: document.getElementById('gw-reader-meta'),
@@ -127,8 +128,49 @@ function fileButtons(doc) {
     if (doc.attachment_url || doc.has_local_attachment) {
         buttons.push(`<a class="btn btn-outline btn-sm" href="/api/manage/gongwen/documents/${doc.id}/file?which=attachment" target="_blank" rel="noopener">附件</a>`);
     }
+    if (doc.file_url || doc.has_local_file || doc.attachment_url || doc.has_local_attachment) {
+        buttons.push(`<button type="button" class="btn btn-outline btn-sm" data-package="${doc.id}" title="正文与全部附件打包为 zip，并按「文号 标题」重命名">打包</button>`);
+    }
     buttons.push(`<button type="button" class="btn btn-ghost btn-sm" data-scope-edit="${doc.id}">归属</button>`);
     return buttons.join('');
+}
+
+// ---------------- 打包下载（正文 + 全部附件 → 重命名 zip） ----------------
+
+async function downloadPackage(docId, button) {
+    setBusy(button, true, '打包中…');
+    try {
+        const response = await fetch(`/api/manage/gongwen/documents/${docId}/package`, { credentials: 'same-origin' });
+        if (!response.ok) {
+            let detail = '打包下载失败，请稍后重试。';
+            try { detail = (await response.json()).detail || detail; } catch { /* 非 JSON 错误体 */ }
+            throw new Error(detail);
+        }
+        const blob = await response.blob();
+        // Content-Disposition: attachment; filename*=utf-8''… → 还原可读 zip 名。
+        let filename = `公文${docId}.zip`;
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const starMatch = disposition.match(/filename\*=utf-8''([^;]+)/i);
+        const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+        if (starMatch) {
+            try { filename = decodeURIComponent(starMatch[1]); } catch { /* 保底名 */ }
+        } else if (plainMatch) {
+            filename = plainMatch[1];
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        showMessage(`已开始下载：${filename}`, 'success');
+    } catch (error) {
+        showMessage(error.message || '打包下载失败，请稍后重试。', 'error');
+    } finally {
+        setBusy(button, false);
+    }
 }
 
 const PARSE_LABELS = { done: '已解析', pending: '未解析', idle: '未解析', parsing: '解析中', failed: '解析失败' };
@@ -821,6 +863,11 @@ refs.prev?.addEventListener('click', () => goPage(-1));
 refs.next?.addEventListener('click', () => goPage(1));
 
 refs.tbody?.addEventListener('click', (event) => {
+    const packageBtn = event.target.closest('[data-package]');
+    if (packageBtn) {
+        downloadPackage(packageBtn.dataset.package, packageBtn);
+        return;
+    }
     const scopeBtn = event.target.closest('[data-scope-edit]');
     if (scopeBtn) {
         const doc = state.documents.find((d) => String(d.id) === String(scopeBtn.dataset.scopeEdit));
@@ -833,6 +880,7 @@ refs.tbody?.addEventListener('click', (event) => {
 
 refs.readerClose?.addEventListener('click', closeReader);
 refs.readerRefresh?.addEventListener('click', () => { if (state.readerId) openReader(state.readerId, true); });
+refs.readerPackage?.addEventListener('click', () => { if (state.readerId) downloadPackage(state.readerId, refs.readerPackage); });
 refs.reader?.addEventListener('click', (event) => { if (event.target === refs.reader) closeReader(); });
 refs.readerBody?.addEventListener('click', (event) => {
     const full = event.target.closest('[data-fullscreen]');

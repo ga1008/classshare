@@ -2640,6 +2640,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/gongwen/documents/{document_id}/package",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_download_gongwen_document_package",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/gongwen/documents/{document_id}/parts/{part_index}/text",
     "methods": [
       "POST"

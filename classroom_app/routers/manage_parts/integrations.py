@@ -805,6 +805,35 @@ async def api_update_gongwen_part_text(
     return {"status": "success", "message": "解析文本已保存。", "part": part}
 
 
+@router.get("/gongwen/documents/{document_id}/package")
+async def api_download_gongwen_document_package(
+    document_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """打包下载：正文 + 全部附件（含压缩包解压文件）打成一个 zip，
+    文件与 zip 均以「文号 标题」重命名，替代上游的哈希文件名。"""
+    from starlette.background import BackgroundTask
+
+    from ...services.gongwen_package_service import build_gongwen_package
+
+    with get_db_connection() as conn:
+        scope, is_admin = _gongwen_viewer(conn, user)
+    try:
+        package = await build_gongwen_package(scope, int(document_id), is_super_admin=is_admin)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    zip_path = Path(package["zip_path"])
+    return FileResponse(
+        str(zip_path),
+        filename=package["download_name"],
+        media_type="application/zip",
+        content_disposition_type="attachment",
+        background=BackgroundTask(lambda: zip_path.unlink(missing_ok=True)),
+    )
+
+
 @router.get("/gongwen/documents/{document_id}/file")
 async def api_download_gongwen_document_file(
     document_id: int,
@@ -838,6 +867,7 @@ async def api_download_gongwen_document_file(
     which = "attachment" if str(which) == "attachment" else "primary"
     with get_db_connection() as conn:
         scope, is_admin = _gongwen_viewer(conn, user)
+        document = get_visible_gongwen_document(conn, scope, int(document_id), is_super_admin=is_admin)
     result = await ensure_local_attachment(scope, int(document_id), which, is_super_admin=is_admin)
     status = result.get("status")
     if status == "not_found":
@@ -845,8 +875,11 @@ async def api_download_gongwen_document_file(
     if status == "no_file":
         raise HTTPException(status_code=404, detail="该公文暂无可下载的附件。")
     if status == "local":
+        from ...services.gongwen_package_service import readable_file_name
+
         path = Path(result["local_path"])
-        disposition = "inline" if int(inline or 0) else "attachment"
-        return FileResponse(str(path), filename=path.name, content_disposition_type=disposition)
+        # 上游文件名是一串哈希 → 下载时改用「文号 标题（正文/附件）」可读名。
+        filename = readable_file_name(document, which, path.name) if document else path.name
+        return FileResponse(str(path), filename=filename, content_disposition_type=disposition)
     # status == "redirect": cache failed but the CDN file is public.
     return RedirectResponse(url=str(result.get("remote_url")), status_code=302)
