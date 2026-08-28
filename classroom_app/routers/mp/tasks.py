@@ -1,7 +1,8 @@
 """小程序"作业考试"列表：学生视角的作业/考试任务流.
 
-复用 todo_service.build_classroom_todo_overview（Web 待办同源），
-按 offering 聚合后只保留作业/考试类条目，分 pending / completed。
+直查 assignments（与教师端列表同口径的单一真源），LEFT JOIN 我的
+提交分三桶：进行中（可作答未交）/ 已完成（已提交）/ 已截止（未交）。
+首页统计复用同一查询（load_student_task_buckets），保证数字对齐。
 """
 
 from __future__ import annotations
@@ -14,88 +15,97 @@ from fastapi import APIRouter, Depends, HTTPException
 from ...db.connection import get_db_connection
 from ...services.assignment_lifecycle_service import (
     close_overdue_assignments,
+    enrich_assignment_runtime_view,
     refresh_assignment_runtime_status,
     submission_is_returned,
     submission_resubmission_state,
 )
-from ...services.dashboard_service import _load_student_offerings
 from ...services.exam_json_service import strip_exam_scoring_for_student
 from ...services.group_assignment_service import (
     get_student_display_state,
     get_student_group_context,
 )
 from ...services.learning_progress_service import student_can_access_assignment
-from ...services.todo_service import (
-    TODO_SOURCE_ACADEMIC_EXAM,
-    TODO_SOURCE_ASSIGNMENT,
-    TODO_SOURCE_STAGE,
-    build_classroom_todo_overview,
-)
 from .deps import get_current_mp_student
 
 router = APIRouter(prefix="/tasks")
 
-_TASK_SOURCE_TYPES = {TODO_SOURCE_ASSIGNMENT, TODO_SOURCE_STAGE, TODO_SOURCE_ACADEMIC_EXAM}
+TASK_LIMIT = 200
+
+_SUB_STATUS_LABELS = {
+    "submitted": "待批改",
+    "grading": "AI批改中",
+    "grading_review": "待确认",
+    "graded": "已批改",
+}
 
 
-def _project_task(item: dict[str, Any], offering: dict[str, Any]) -> dict[str, Any]:
-    metadata = item.get("metadata") or {}
-    is_exam = item.get("source_type") != TODO_SOURCE_ASSIGNMENT or bool(metadata.get("is_exam"))
-    return {
-        "id": item.get("id"),
-        "source_type": item.get("source_type"),
-        "source_id": item.get("source_id"),
-        "is_exam": is_exam,
-        "title": item.get("title"),
-        "subtitle": item.get("subtitle"),
-        "status": item.get("status"),
-        "status_label": item.get("status_label"),
-        "tone": item.get("tone"),
-        "is_completed": bool(item.get("is_completed")),
-        "no_deadline": bool(item.get("no_deadline")),
-        "due_at": item.get("due_at"),
-        "deadline_label": item.get("deadline_label"),
-        "relative_due_label": item.get("relative_due_label"),
-        "link_url": item.get("link_url"),
-        "offering_id": offering.get("id"),
-        "course_name": offering.get("course_name"),
-        "teacher_name": offering.get("teacher_name"),
-    }
+def load_student_task_buckets(conn: Any, student_id: int) -> dict[str, list[dict[str, Any]]]:
+    """学生的作业/考试三桶列表。首页统计与列表页共用（数字必须对齐）。"""
+    close_overdue_assignments(conn)
+    rows = conn.execute(
+        """
+        SELECT a.*, o.id AS offering_id,
+               c.name AS course_name, t.name AS teacher_name,
+               s.id AS sub_id, s.status AS sub_status, s.score AS sub_score,
+               COALESCE(s.is_absence_score, 0) AS sub_is_absence
+        FROM assignments a
+        JOIN class_offerings o ON o.id = a.class_offering_id
+        JOIN courses c ON c.id = o.course_id
+        JOIN teachers t ON t.id = o.teacher_id
+        LEFT JOIN submissions s
+            ON s.assignment_id = a.id AND s.student_pk_id = ?
+        WHERE o.class_id = (SELECT class_id FROM students WHERE id = ?)
+          AND a.status != 'new'
+          AND NOT EXISTS (
+              SELECT 1 FROM learning_stage_exam_attempts lsea
+              WHERE lsea.assignment_id = a.id
+          )
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT ?
+        """,
+        (int(student_id), int(student_id), TASK_LIMIT),
+    ).fetchall()
+
+    buckets: dict[str, list[dict[str, Any]]] = {"pending": [], "completed": [], "expired": []}
+    for row in rows:
+        item = dict(row)
+        runtime = enrich_assignment_runtime_view(item)
+        submitted = bool(item.get("sub_id")) and not int(item.get("sub_is_absence") or 0)
+        sub_status = str(item.get("sub_status") or "")
+        task = {
+            "source_type": "assignment",
+            "source_id": item["id"],
+            "is_exam": bool(item.get("exam_paper_id")),
+            "title": item.get("title"),
+            "course_name": item.get("course_name") or "",
+            "teacher_name": item.get("teacher_name") or "",
+            "due_at": runtime.get("due_at") or "",
+            "no_deadline": not runtime.get("due_at"),
+            "remaining_seconds": runtime.get("remaining_seconds"),
+            "is_accepting": bool(runtime.get("is_accepting_submissions")),
+            "score": item.get("sub_score"),
+        }
+        if submitted:
+            task["status_label"] = _SUB_STATUS_LABELS.get(sub_status, sub_status or "已提交")
+            buckets["completed"].append(task)
+        elif task["is_accepting"]:
+            task["status_label"] = "进行中"
+            buckets["pending"].append(task)
+        else:
+            task["status_label"] = "已截止未交"
+            buckets["expired"].append(task)
+
+    buckets["pending"].sort(key=lambda t: (t["no_deadline"], t["due_at"] or "9999"))
+    return buckets
 
 
 @router.get("")
 def mp_tasks(user: dict = Depends(get_current_mp_student)):
-    pending: list[dict[str, Any]] = []
-    completed: list[dict[str, Any]] = []
     with get_db_connection() as conn:
-        offerings = _load_student_offerings(conn, int(user["id"]))
-        for offering in offerings:
-            try:
-                overview = build_classroom_todo_overview(
-                    conn,
-                    class_offering_id=int(offering["id"]),
-                    user=user,
-                )
-            except Exception as exc:
-                # 单个课程失败不拖垮整个列表。
-                print(f"[WECHAT_MP] 任务列表加载失败 offering={offering.get('id')}: {exc}")
-                continue
-            for item in overview.get("items", []):
-                if not isinstance(item, dict):
-                    continue
-                if str(item.get("source_type") or "") not in _TASK_SOURCE_TYPES:
-                    continue
-                task = _project_task(item, offering)
-                (completed if task["is_completed"] else pending).append(task)
+        buckets = load_student_task_buckets(conn, int(user["id"]))
         conn.commit()
-
-    pending.sort(key=lambda t: (t["no_deadline"], t["due_at"] or "9999"))
-    completed.sort(key=lambda t: t["due_at"] or "", reverse=True)
-    return {
-        "success": True,
-        "data": {"pending": pending, "completed": completed},
-        "error": None,
-    }
+    return {"success": True, "data": buckets, "error": None}
 
 
 def _parse_submission_answers(raw: Any) -> list[dict[str, Any]]:

@@ -396,7 +396,6 @@ onPullDownRefresh(() => {
 .page {
   min-height: 100vh;
   padding: 28rpx 28rpx calc(env(safe-area-inset-bottom) + 40rpx);
-  background: #f4f6fb;
   display: flex;
   flex-direction: column;
   gap: 24rpx;

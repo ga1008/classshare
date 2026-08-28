@@ -1,29 +1,27 @@
 <script setup lang="ts">
 /**
- * 作业考试列表：大卡片 + 进行中/已完成分段。
- * 数据源 /api/mp/tasks（todo_service 同源）。教师端视图在 P3 接入。
+ * 作业考试：学生三分段（进行中/已完成/已截止）大卡列表 + 教师进度列表。
+ * 数据源 /api/mp/tasks（assignments 直查单一真源，与首页统计对齐）。
  */
 import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { formatDueLabel, relativeDueLabel } from "../../utils/format";
 import { useAuthStore } from "../../stores/auth";
 
 interface TaskItem {
-  id: string;
   source_type: string;
-  source_id: number | string;
+  source_id: number;
   is_exam: boolean;
   title: string;
-  subtitle: string;
-  status_label: string;
-  tone: string;
-  is_completed: boolean;
-  no_deadline: boolean;
-  deadline_label: string;
-  relative_due_label: string;
   course_name: string;
   teacher_name: string;
+  due_at: string;
+  no_deadline: boolean;
+  is_accepting: boolean;
+  status_label: string;
+  score: number | null;
 }
 
 interface TeacherTask {
@@ -41,17 +39,28 @@ interface TeacherTask {
   pending_grade_count: number;
 }
 
+type Segment = "pending" | "completed" | "expired";
+
+const SEGMENTS: Array<{ key: Segment; label: string }> = [
+  { key: "pending", label: "进行中" },
+  { key: "completed", label: "已完成" },
+  { key: "expired", label: "已截止" },
+];
+
+const EMPTY_COPY: Record<Segment, string> = {
+  pending: "🎉 没有进行中的任务",
+  completed: "还没有完成的任务",
+  expired: "没有错过的任务，很棒",
+};
+
 const auth = useAuthStore();
-const segment = ref<"pending" | "completed">("pending");
-const pendingTasks = ref<TaskItem[]>([]);
-const completedTasks = ref<TaskItem[]>([]);
+const segment = ref<Segment>("pending");
+const buckets = ref<Record<Segment, TaskItem[]>>({ pending: [], completed: [], expired: [] });
 const teacherTasks = ref<TeacherTask[]>([]);
 const loading = ref(false);
 const failed = ref(false);
 
-const visibleTasks = computed(() =>
-  segment.value === "pending" ? pendingTasks.value : completedTasks.value,
-);
+const visibleTasks = computed(() => buckets.value[segment.value] ?? []);
 
 async function loadTasks(): Promise<void> {
   loading.value = true;
@@ -62,11 +71,7 @@ async function loadTasks(): Promise<void> {
       teacherTasks.value = data.tasks;
       return;
     }
-    const data = await request<{ pending: TaskItem[]; completed: TaskItem[] }>({
-      path: "/api/mp/tasks",
-    });
-    pendingTasks.value = data.pending;
-    completedTasks.value = data.completed;
+    buckets.value = await request<Record<Segment, TaskItem[]>>({ path: "/api/mp/tasks" });
   } catch (error: unknown) {
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
@@ -78,20 +83,12 @@ async function loadTasks(): Promise<void> {
   }
 }
 
-function openTeacherTask(task: TeacherTask): void {
-  uni.navigateTo({ url: `/pages/teacher-task/index?id=${task.id}` });
+function openTask(task: TaskItem): void {
+  uni.navigateTo({ url: `/pages/task-detail/index?id=${task.source_id}` });
 }
 
-function openTask(task: TaskItem): void {
-  if (task.source_type === "assignment") {
-    uni.navigateTo({ url: `/pages/task-detail/index?id=${task.source_id}` });
-    return;
-  }
-  // 破境试炼/教务考试暂在网页端进行。
-  uni.showToast({
-    title: "该类型任务请在网页端完成",
-    icon: "none",
-  });
+function openTeacherTask(task: TeacherTask): void {
+  uni.navigateTo({ url: `/pages/teacher-task/index?id=${task.id}` });
 }
 
 onShow(() => {
@@ -105,6 +102,7 @@ onPullDownRefresh(() => {
 
 <template>
   <view class="tasks">
+    <!-- 教师视图 -->
     <template v-if="auth.isTeacher">
       <view v-if="loading && !teacherTasks.length" class="empty"><text>加载中…</text></view>
       <view v-else-if="failed" class="empty" @tap="loadTasks"><text>加载失败，点击重试</text></view>
@@ -113,80 +111,76 @@ onPullDownRefresh(() => {
       <view
         v-for="task in teacherTasks"
         :key="task.id"
-        class="task-card"
+        class="glass-card press task-card"
         @tap="openTeacherTask(task)"
       >
         <view class="task-card__top">
-          <text class="task-card__badge" :class="task.is_exam ? 'task-card__badge--exam' : ''">
+          <text class="badge" :class="task.is_exam ? 'badge--exam' : 'badge--hw'">
             {{ task.is_exam ? "考试" : "作业" }}
           </text>
           <text class="task-card__status">{{ task.status_label }}</text>
         </view>
         <text class="task-card__title">{{ task.title }}</text>
-        <text class="task-card__course">{{ task.course_name }} · {{ task.class_name }}</text>
-        <view class="teacher-progress">
-          <view class="teacher-progress__bar">
+        <text class="task-card__meta">{{ task.course_name }} · {{ task.class_name }}</text>
+        <view class="progress-row">
+          <view class="progress-bar">
             <view
-              class="teacher-progress__fill"
+              class="progress-bar__fill"
               :style="{ width: `${task.student_total ? Math.round((task.submitted_count / task.student_total) * 100) : 0}%` }"
             />
           </view>
-          <text class="teacher-progress__text">已交 {{ task.submitted_count }}/{{ task.student_total }}</text>
-          <text v-if="task.pending_grade_count" class="teacher-progress__pending">
+          <text class="progress-row__text">已交 {{ task.submitted_count }}/{{ task.student_total }}</text>
+          <text v-if="task.pending_grade_count" class="progress-row__pending">
             待批 {{ task.pending_grade_count }}
           </text>
         </view>
       </view>
     </template>
 
+    <!-- 学生视图 -->
     <template v-else>
-      <view class="segment">
+      <view class="segment glass-chip">
         <view
+          v-for="item in SEGMENTS"
+          :key="item.key"
           class="segment__item"
-          :class="{ 'segment__item--active': segment === 'pending' }"
-          @tap="segment = 'pending'"
+          :class="{ 'segment__item--active': segment === item.key }"
+          @tap="segment = item.key"
         >
-          <text>进行中 {{ pendingTasks.length }}</text>
-        </view>
-        <view
-          class="segment__item"
-          :class="{ 'segment__item--active': segment === 'completed' }"
-          @tap="segment = 'completed'"
-        >
-          <text>已完成 {{ completedTasks.length }}</text>
+          <text>{{ item.label }} {{ buckets[item.key]?.length ?? 0 }}</text>
         </view>
       </view>
 
-      <view v-if="loading && !visibleTasks.length" class="empty">
-        <text>加载中…</text>
-      </view>
-      <view v-else-if="failed" class="empty" @tap="loadTasks">
-        <text>加载失败，点击重试</text>
-      </view>
+      <view v-if="loading && !visibleTasks.length" class="empty"><text>加载中…</text></view>
+      <view v-else-if="failed" class="empty" @tap="loadTasks"><text>加载失败，点击重试</text></view>
       <view v-else-if="!visibleTasks.length" class="empty">
-        <text>{{ segment === "pending" ? "🎉 没有进行中的任务" : "还没有已完成的任务" }}</text>
+        <text>{{ EMPTY_COPY[segment] }}</text>
       </view>
 
       <view
         v-for="task in visibleTasks"
-        :key="task.id"
-        class="task-card"
+        :key="task.source_id"
+        class="glass-card press task-card"
         @tap="openTask(task)"
       >
         <view class="task-card__top">
-          <text class="task-card__badge" :class="task.is_exam ? 'task-card__badge--exam' : ''">
+          <text class="badge" :class="task.is_exam ? 'badge--exam' : 'badge--hw'">
             {{ task.is_exam ? "考试" : "作业" }}
           </text>
-          <text v-if="task.status_label" class="task-card__status">{{ task.status_label }}</text>
+          <text
+            v-if="segment === 'completed' && task.score !== null && task.score !== undefined"
+            class="task-card__score"
+          >{{ task.score }} 分</text>
+          <text v-else class="task-card__status">{{ task.status_label }}</text>
         </view>
         <text class="task-card__title">{{ task.title }}</text>
-        <text class="task-card__course">{{ task.course_name }} · {{ task.teacher_name }}</text>
+        <text class="task-card__meta">{{ task.course_name }} · {{ task.teacher_name }}</text>
         <view class="task-card__bottom">
-          <text class="task-card__deadline">{{ task.deadline_label }}</text>
+          <text class="task-card__due">{{ formatDueLabel(task.due_at) }}</text>
           <text
-            v-if="!task.is_completed"
+            v-if="segment === 'pending' && !task.no_deadline"
             class="task-card__relative"
-          >{{ task.relative_due_label }}</text>
+          >{{ relativeDueLabel(task.due_at) }}</text>
         </view>
       </view>
     </template>
@@ -196,49 +190,21 @@ onPullDownRefresh(() => {
 <style scoped>
 .tasks {
   min-height: 100vh;
-  padding: 32rpx 32rpx calc(env(safe-area-inset-bottom) + 32rpx);
-  background: #f4f6fb;
+  padding: 28rpx 30rpx calc(env(safe-area-inset-bottom) + 32rpx);
   display: flex;
   flex-direction: column;
-  gap: 28rpx;
+  gap: 26rpx;
 }
 
-.teacher-progress {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  margin-top: 8rpx;
-}
-
-.teacher-progress__bar {
-  flex: 1;
-  height: 12rpx;
-  border-radius: 999rpx;
-  background: #eef2f7;
-  overflow: hidden;
-}
-
-.teacher-progress__fill {
-  height: 100%;
-  border-radius: 999rpx;
-  background: #4a7dff;
-}
-
-.teacher-progress__text {
-  font-size: 24rpx;
-  color: #64748b;
-}
-
-.teacher-progress__pending {
-  font-size: 24rpx;
-  font-weight: 700;
-  color: #e0662f;
+.empty {
+  padding: 110rpx 40rpx;
+  text-align: center;
+  color: #8b96b3;
+  font-size: 28rpx;
 }
 
 .segment {
   display: flex;
-  background: #e8ecf5;
-  border-radius: 24rpx;
   padding: 8rpx;
 }
 
@@ -248,86 +214,119 @@ onPullDownRefresh(() => {
   justify-content: center;
   align-items: center;
   min-height: 76rpx;
-  border-radius: 18rpx;
-  font-size: 28rpx;
-  color: #64748b;
+  border-radius: 999rpx;
+  font-size: 27rpx;
+  color: #66718f;
+  transition: all 160ms ease;
 }
 
 .segment__item--active {
-  background: #ffffff;
-  color: #16213a;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1b2540;
   font-weight: 600;
-  box-shadow: 0 4rpx 12rpx rgba(15, 23, 42, 0.08);
-}
-
-.empty {
-  padding: 96rpx 0;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 28rpx;
+  box-shadow: 0 6rpx 18rpx rgba(80, 100, 180, 0.14);
 }
 
 .task-card {
-  background: #ffffff;
-  border-radius: 32rpx;
-  padding: 36rpx 36rpx 32rpx;
+  padding: 34rpx 36rpx 30rpx;
   display: flex;
   flex-direction: column;
   gap: 14rpx;
-  box-shadow: 0 8rpx 32rpx rgba(15, 23, 42, 0.05);
 }
 
 .task-card__top {
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  justify-content: space-between;
 }
 
-.task-card__badge {
+.badge {
   font-size: 22rpx;
-  color: #4a7dff;
-  background: rgba(74, 125, 255, 0.12);
-  border-radius: 10rpx;
-  padding: 4rpx 14rpx;
+  font-weight: 600;
+  border-radius: 12rpx;
+  padding: 6rpx 16rpx;
 }
 
-.task-card__badge--exam {
-  color: #e0662f;
-  background: rgba(224, 102, 47, 0.12);
+.badge--hw {
+  color: #2f5ee0;
+  background: rgba(74, 125, 255, 0.14);
+}
+
+.badge--exam {
+  color: #d05a1f;
+  background: rgba(224, 102, 47, 0.14);
 }
 
 .task-card__status {
-  font-size: 22rpx;
-  color: #94a3b8;
+  font-size: 23rpx;
+  color: #8b96b3;
+}
+
+.task-card__score {
+  font-size: 30rpx;
+  font-weight: 800;
+  color: #1b2540;
 }
 
 .task-card__title {
   font-size: 32rpx;
-  font-weight: 600;
-  color: #16213a;
+  font-weight: 650;
+  color: #1b2540;
   line-height: 1.5;
 }
 
-.task-card__course {
+.task-card__meta {
   font-size: 24rpx;
-  color: #94a3b8;
+  color: #8b96b3;
 }
 
 .task-card__bottom {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 6rpx;
+  margin-top: 4rpx;
 }
 
-.task-card__deadline {
+.task-card__due {
   font-size: 24rpx;
-  color: #64748b;
+  color: #66718f;
 }
 
 .task-card__relative {
-  font-size: 26rpx;
-  font-weight: 600;
-  color: #e0662f;
+  font-size: 25rpx;
+  font-weight: 700;
+  color: #d05a1f;
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 6rpx;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 12rpx;
+  border-radius: 999rpx;
+  background: rgba(120, 140, 200, 0.16);
+  overflow: hidden;
+}
+
+.progress-bar__fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #5b8cff, #4a7dff);
+}
+
+.progress-row__text {
+  font-size: 24rpx;
+  color: #66718f;
+}
+
+.progress-row__pending {
+  font-size: 24rpx;
+  font-weight: 700;
+  color: #d05a1f;
 }
 </style>
