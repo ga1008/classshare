@@ -265,10 +265,25 @@ def mp_me(user: dict = Depends(get_current_mp_user)):
 
 @router.post("/logout")
 def mp_logout(request: Request):
+    """退出登录 = 注销会话 + 解除微信绑定。
+
+    该端点只有"退出登录"按钮调用（401 清理不走这里），且产品文案
+    承诺"退出后重新绑定"，因此必须一并撤销绑定——否则下次进入
+    openid 仍命中旧绑定，会静默登回原账号，无法换绑。
+    """
     token = extract_bearer_token(request)
     revoked = False
     if token:
         with get_db_connection() as conn:
-            revoked = wechat_mp_service.revoke_mp_session(conn, token)
+            session = wechat_mp_service.resolve_mp_session(conn, token)
+            if session:
+                wechat_mp_service.revoke_binding(
+                    conn,
+                    user_role=str(session["user_role"]),
+                    user_pk=int(session["user_pk"]),
+                )
+                revoked = True
+            else:
+                revoked = wechat_mp_service.revoke_mp_session(conn, token)
             conn.commit()
     return {"success": True, "data": {"revoked": revoked}, "error": None}
