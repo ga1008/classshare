@@ -63,13 +63,21 @@ data-afm-open-sync {{ explain_attrs(
     </header>
 
     <div class="afm-toolbar">
-        <label class="afm-semester-filter" {{ explain_attrs(
-            '学期筛选',
-            '期末材料按学期归档。默认显示当前日期所在学期；假期期间默认显示刚结束的上一学期，可切换到任意学期或全部。',
-            placement='bottom'
-        ) }}>
-            <select data-afm-semester-filter aria-label="按学期筛选"></select>
-        </label>
+        <div class="afm-toolbar__filters">
+            <label class="afm-semester-filter" {{ explain_attrs(
+                '学期筛选',
+                '期末材料按学期归档。默认显示当前日期所在学期；假期期间默认显示刚结束的上一学期，可切换到任意学期或全部。',
+                placement='bottom'
+            ) }}>
+                <select data-afm-semester-filter aria-label="按学期筛选"></select>
+            </label>
+            <label class="afm-semester-filter">
+                <select data-afm-course-filter aria-label="按课程筛选"></select>
+            </label>
+            <label class="afm-semester-filter">
+                <select data-afm-class-filter aria-label="按班级筛选"></select>
+            </label>
+        </div>
         <label class="afm-search">
             <span aria-hidden="true">⌕</span>
             <input type="search" data-afm-search placeholder="搜索课程、班级或学期">

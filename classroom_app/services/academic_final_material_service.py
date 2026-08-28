@@ -1304,7 +1304,8 @@ def list_teacher_final_material_batches(
         SELECT b.*,
                r.document_type_label,
                r.updated_at AS record_updated_at,
-               r.content_quality_status
+               r.content_quality_status,
+               r.export_payload_json AS record_export_payload_json
         FROM academic_final_material_batches b
         LEFT JOIN material_ai_import_records r ON r.id = b.{record_column}
         WHERE b.teacher_id = ?
@@ -1315,6 +1316,19 @@ def list_teacher_final_material_batches(
     items = []
     for row in rows:
         item = serialize_batch(row)
+        # 文档字段里的班级/任课教师来自教务报表本身，比批次的教学班名
+        # 更贴近正式表格；解析失败时前端回退教学班名。
+        record_payload = _json_loads(item.pop("record_export_payload_json", None), {})
+        record_fields = record_payload.get("fields")
+        if not isinstance(record_fields, dict):
+            nested = record_payload.get("export_payload")
+            record_fields = nested.get("fields") if isinstance(nested, dict) and isinstance(nested.get("fields"), dict) else {}
+        item.update(
+            {
+                "record_class_name": _normalize_space(record_fields.get("class_name")),
+                "record_teacher_name": _normalize_space(record_fields.get("teacher_name")),
+            }
+        )
         record_id = item.get("grade_record_id") if document_type == ACADEMIC_GRADE_REGISTER_TYPE else item.get("analysis_record_id")
         item.update(
             {

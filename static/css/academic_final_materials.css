@@ -147,8 +147,11 @@
 .afm-search input { width: 100%; height: 42px; border: 0; outline: 0; background: transparent; color: var(--afm-ink); font: inherit; font-size: 13px; }
 .afm-toolbar__summary { color: var(--afm-muted); font-size: 12px; font-weight: 700; }
 
+.afm-toolbar { flex-wrap: wrap; }
+.afm-toolbar__filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .afm-semester-filter { display: flex; align-items: center; }
 .afm-semester-filter select {
+    max-width: 250px;
     height: 44px;
     padding: 0 34px 0 13px;
     border: 1px solid var(--afm-line);
