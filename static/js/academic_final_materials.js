@@ -24,6 +24,8 @@ const state = {
     currentPreviewUrl: '',
     pendingClassOfferingId: 0,
     pendingExamCandidates: [],
+    defaultSemester: null,
+    semesterValue: null,
 };
 
 const els = {
@@ -31,8 +33,11 @@ const els = {
     empty: $('[data-afm-empty]'),
     summary: $('[data-afm-summary]'),
     search: $('[data-afm-search]'),
+    semesterFilter: $('[data-afm-semester-filter]'),
     syncDialog: $('[data-afm-sync-dialog]'),
     syncForm: $('[data-afm-sync-form]'),
+    syncFilters: $('[data-afm-sync-filters]'),
+    syncSemester: $('[data-afm-sync-semester]'),
     courseSearch: $('[data-afm-course-search]'),
     courseList: $('[data-afm-course-list]'),
     force: $('[data-afm-force]'),
@@ -118,30 +123,89 @@ function formatTime(value) {
     return date.toLocaleString('zh-CN', { hour12: false });
 }
 
+function itemSemesterKey(item) {
+    return item.semester_code || 'none';
+}
+
+// 学期下拉：全部学期 + 各学期（新学期在前）+ 未设学期；默认学期即使暂无
+// 材料也保留选项，保证"默认当前学期/假期回退上学期"始终可见可选。
+function renderSemesterSelect(select, entries, selected) {
+    if (!select) return;
+    const merged = new Map(entries);
+    const fallback = state.defaultSemester;
+    if (fallback?.code && !merged.has(fallback.code)) {
+        merged.set(fallback.code, fallback.label || fallback.code);
+    }
+    const codes = [...merged.keys()].filter((key) => key !== 'none').sort().reverse();
+    const options = [
+        ['', '全部学期'],
+        ...codes.map((code) => [code, merged.get(code) || code]),
+        ...(merged.has('none') ? [['none', '未设学期']] : []),
+    ];
+    const html = options
+        .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
+        .join('');
+    // 轮询会周期性重渲染；选项与选中值都没变时跳过重建，避免打断正在
+    // 展开的下拉。
+    if (select.dataset.optionsSig !== html) {
+        select.innerHTML = html;
+        select.dataset.optionsSig = html;
+    }
+    select.value = selected ?? '';
+    if (select.value !== (selected ?? '')) select.value = '';
+}
+
+function semesterEntries(list) {
+    const map = new Map();
+    list.forEach((item) => {
+        const key = itemSemesterKey(item);
+        if (key === 'none') {
+            map.set('none', '未设学期');
+        } else if (!map.has(key)) {
+            map.set(key, item.semester_label || key);
+        }
+    });
+    return map;
+}
+
 function filteredItems() {
+    const semester = String(els.semesterFilter?.value || '');
+    let items = state.items;
+    if (semester) items = items.filter((item) => itemSemesterKey(item) === semester);
     const query = String(els.search?.value || '').trim().toLocaleLowerCase();
-    if (!query) return state.items;
-    return state.items.filter((item) => [
+    if (!query) return items;
+    return items.filter((item) => [
         item.course_name,
         item.teaching_class_name,
+        item.semester_label,
         item.academic_year,
         item.academic_term,
     ].join(' ').toLocaleLowerCase().includes(query));
 }
 
 function renderCards() {
+    renderSemesterSelect(els.semesterFilter, semesterEntries(state.items), state.semesterValue);
     const items = filteredItems();
-    els.grid.hidden = !items.length;
-    els.empty.hidden = Boolean(items.length) || Boolean(state.items.length);
+    els.grid.hidden = !items.length && !state.items.length;
+    els.empty.hidden = Boolean(state.items.length);
     const isDocumentComplete = (item) => Boolean(
         isGrade ? item.edit_state?.grade_complete : item.edit_state?.analysis_complete
     );
-    const ready = state.items.filter((item) => (
+    const ready = items.filter((item) => (
         item.sync_status === 'completed' && item.record_id && isDocumentComplete(item)
     )).length;
     els.summary.textContent = state.items.length
-        ? `共 ${state.items.length} 门课堂 · ${ready} 份已可预览下载`
+        ? `共 ${items.length} 门课堂 · ${ready} 份已可预览下载`
         : '暂无同步记录';
+    if (!items.length && state.items.length) {
+        els.grid.innerHTML = `
+            <div class="afm-filter-empty">
+                <strong>当前学期暂无${escapeHtml(typeLabel)}</strong>
+                <p>该学期还没有同步记录，可切换学期或查看全部。</p>
+                <button type="button" class="afm-btn afm-btn--ghost" data-afm-clear-semester>查看全部学期</button>
+            </div>`;
+        return;
+    }
     els.grid.innerHTML = items.map((item) => {
         const readyItem = item.sync_status === 'completed' && item.record_id;
         const documentComplete = readyItem && isDocumentComplete(item);
@@ -176,7 +240,7 @@ function renderCards() {
                     )}</span>
                 </div>
                 <div class="afm-card__meta">
-                    <div><span>学年学期</span><strong>${escapeHtml([item.academic_year, item.academic_term].filter(Boolean).join(' ') || '同步后识别')}</strong></div>
+                    <div><span>学年学期</span><strong>${escapeHtml(item.semester_label || '同步后识别')}</strong></div>
                     <div><span>最近同步</span><strong>${escapeHtml(formatTime(item.synced_at))}</strong></div>
                     <div><span>成绩状态</span><strong>${escapeHtml(item.grade_entry_status || '待教务确认')}</strong></div>
                     <div><span>双表校验</span><strong>${item.validation_status === 'passed' ? '✓ 已通过' : escapeHtml(item.validation_status || '待校验')}</strong></div>
@@ -204,7 +268,7 @@ function openExamCourseConfirmation(item) {
     if (!item?.class_offering_id || !Array.isArray(candidates) || !candidates.length) return;
     state.pendingClassOfferingId = Number(item.class_offering_id);
     state.pendingExamCandidates = candidates;
-    els.courseSearch.hidden = true;
+    if (els.syncFilters) els.syncFilters.hidden = true;
     els.syncSubmit.textContent = '确认教务课程并继续';
     els.syncSubmit.dataset.label = '确认教务课程并继续';
     els.syncSubmit.disabled = true;
@@ -231,6 +295,10 @@ async function loadItems({ notify = true } = {}) {
     try {
         const data = await request(`/api/academic-final-materials?document_type=${encodeURIComponent(type)}`);
         state.items = Array.isArray(data.items) ? data.items : [];
+        if (data.default_semester?.code) state.defaultSemester = data.default_semester;
+        if (state.semesterValue === null) {
+            state.semesterValue = state.defaultSemester?.code || '';
+        }
         renderCards();
         promptForPendingConfirmation();
         if (state.items.some((item) => activeSyncStatuses.has(item.sync_status))) {
@@ -259,13 +327,16 @@ function candidateStateLabel(candidate) {
 }
 
 function renderCandidates() {
+    const semester = String(els.syncSemester?.value || '');
     const query = String(els.courseSearch.value || '').trim().toLocaleLowerCase();
-    const items = state.candidates.filter((item) => !query || [
-        item.course_name,
-        item.class_name,
-        item.teaching_class_name,
-        item.semester,
-    ].join(' ').toLocaleLowerCase().includes(query));
+    const items = state.candidates
+        .filter((item) => !semester || itemSemesterKey(item) === semester)
+        .filter((item) => !query || [
+            item.course_name,
+            item.class_name,
+            item.teaching_class_name,
+            item.semester,
+        ].join(' ').toLocaleLowerCase().includes(query));
     els.courseList.innerHTML = items.length ? items.map((item) => `
         <label class="afm-course-option">
             <input type="radio" name="afm-course" value="${item.class_offering_id}">
@@ -275,7 +346,7 @@ function renderCandidates() {
             </span>
             <em>${escapeHtml(candidateStateLabel(item))}</em>
         </label>
-    `).join('') : '<div class="afm-empty" style="min-height:150px"><strong>没有匹配的课堂</strong><p>可先在课堂管理中创建或同步课程。</p></div>';
+    `).join('') : '<div class="afm-empty" style="min-height:150px"><strong>该学期没有匹配的课堂</strong><p>可切换学期，或先在课堂管理中创建、同步课程。</p></div>';
 }
 
 function renderExamCourseCandidates() {
@@ -297,16 +368,30 @@ function renderExamCourseCandidates() {
 async function openSync(preselect = '') {
     state.pendingClassOfferingId = 0;
     state.pendingExamCandidates = [];
+    if (els.syncFilters) els.syncFilters.hidden = false;
     els.courseSearch.hidden = false;
+    els.courseSearch.value = '';
     els.syncSubmit.textContent = '确认并同步两份表';
     els.syncSubmit.dataset.label = '确认并同步两份表';
     els.syncSubmit.disabled = true;
-    els.syncHint.textContent = '请选择一个课堂。';
+    els.syncHint.textContent = '请先选择学期，再选择要同步的课堂。';
     els.syncDialog.showModal();
     els.courseList.innerHTML = '<div class="afm-loading" style="min-height:160px"><span class="afm-spinner"></span><p>读取课堂列表…</p></div>';
     try {
         const data = await request('/api/academic-final-materials/candidates');
         state.candidates = Array.isArray(data.items) ? data.items : [];
+        if (data.default_semester?.code) state.defaultSemester = data.default_semester;
+        // 默认选中"当前/上一"学期；若被重同步的课堂不属于该学期，则跟随课堂学期，
+        // 保证预选课堂始终可见。
+        let syncSemester = state.defaultSemester?.code || '';
+        const preselected = preselect
+            ? state.candidates.find((item) => Number(item.class_offering_id) === Number(preselect))
+            : null;
+        if (preselected) syncSemester = itemSemesterKey(preselected) === 'none' ? '' : preselected.semester_code;
+        else if (syncSemester && !state.candidates.some((item) => itemSemesterKey(item) === syncSemester)) {
+            syncSemester = '';
+        }
+        renderSemesterSelect(els.syncSemester, semesterEntries(state.candidates), syncSemester);
         renderCandidates();
         if (preselect) {
             const input = $(`input[name="afm-course"][value="${CSS.escape(String(preselect))}"]`, els.courseList);
@@ -569,6 +654,11 @@ $('[data-afm-close-preview]')?.addEventListener('click', () => {
 els.syncForm.addEventListener('submit', submitSync);
 els.editorForm.addEventListener('submit', saveEditor);
 els.search.addEventListener('input', renderCards);
+els.semesterFilter?.addEventListener('change', () => {
+    state.semesterValue = els.semesterFilter.value;
+    renderCards();
+});
+els.syncSemester?.addEventListener('change', renderCandidates);
 els.courseSearch.addEventListener('input', renderCandidates);
 els.courseList.addEventListener('change', (event) => {
     if (!event.target.matches('input[name="afm-course"], input[name="afm-exam-course"]')) return;
@@ -583,6 +673,12 @@ els.courseList.addEventListener('change', (event) => {
         : '将同时同步成绩登记表与试卷分析表。';
 });
 els.grid.addEventListener('click', (event) => {
+    const clearSemester = event.target.closest('[data-afm-clear-semester]');
+    if (clearSemester) {
+        state.semesterValue = '';
+        renderCards();
+        return;
+    }
     const edit = event.target.closest('[data-afm-edit]');
     if (edit) return openEditor(edit.dataset.afmEdit);
     const preview = event.target.closest('[data-afm-preview]');

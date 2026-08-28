@@ -27,6 +27,7 @@ from ...services.academic_final_material_service import (
     ACADEMIC_GRADE_REGISTER_LABEL,
     ACADEMIC_GRADE_REGISTER_TYPE,
     academic_final_material_record_urls,
+    batch_semester_parts,
     build_content_markdown,
     build_exam_analysis_export_payload,
     build_grade_register_export_payload,
@@ -35,6 +36,7 @@ from ...services.academic_final_material_service import (
     list_teacher_final_material_batches,
     list_teacher_final_material_candidates,
     reclaim_stale_academic_final_material_batches,
+    resolve_default_semester_selection,
     serialize_batch,
     sync_paired_reports_from_academic_system,
     upsert_batch_state,
@@ -592,7 +594,8 @@ async def manage_academic_exam_analyses(request: Request, user: dict = Depends(g
 async def api_academic_final_material_candidates(user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         candidates = list_teacher_final_material_candidates(conn, int(user["id"]))
-    return {"status": "success", "items": candidates}
+        default_semester = resolve_default_semester_selection(conn, int(user["id"]))
+    return {"status": "success", "items": candidates, "default_semester": default_semester}
 
 
 @router.get("/api/academic-final-materials", response_class=JSONResponse)
@@ -607,7 +610,8 @@ async def api_academic_final_material_list(
         if reclaimed:
             conn.commit()
         items = list_teacher_final_material_batches(conn, int(user["id"]), document_type=document_type)
-    return {"status": "success", "items": items}
+        default_semester = resolve_default_semester_selection(conn, int(user["id"]))
+    return {"status": "success", "items": items, "default_semester": default_semester}
 
 
 @router.get("/api/academic-final-materials/{batch_id}", response_class=JSONResponse)
@@ -645,9 +649,15 @@ async def _run_academic_final_material_sync(
     if not validation.get("passed"):
         validation, recognition_warnings, recognition_ai_used = await _ai_assist_metadata_validation(result)
         result["validation"] = validation
+    course_info = result.get("course") or {}
+    # 教务返回的是原始 xnm/xqm 码（如 "2025"/"12"）；落库前统一成平台
+    # 规范学年学期（"2025-2026"/"第二学期"），避免卡片显示原始代码。
+    _semester_code, _semester_label, display_year, display_term = batch_semester_parts(
+        course_info.get("academic_year"), course_info.get("academic_term")
+    )
     common_batch_values = {
-        "academic_year": str((result.get("course") or {}).get("academic_year") or ""),
-        "academic_term": str((result.get("course") or {}).get("academic_term") or ""),
+        "academic_year": display_year or str(course_info.get("academic_year") or ""),
+        "academic_term": display_term or str(course_info.get("academic_term") or ""),
         "exam_course_key": str((result.get("course") or {}).get("key") or ""),
         "course_code": str((result.get("course") or {}).get("course_code") or ""),
         "course_name": str((result.get("course") or {}).get("course_name") or ""),
@@ -709,6 +719,15 @@ async def _run_academic_final_material_sync(
         validation,
         defaults=analysis_defaults,
     )
+    # 报表 RTF 偶发缺失学年学期表头时，用教务课程的规范学期兜底，
+    # 保证材料属性始终携带完整学期信息。
+    for payload in (grade_payload, analysis_payload):
+        payload_fields = payload.get("fields") or {}
+        if display_year and not str(payload_fields.get("academic_year") or "").strip():
+            payload_fields["academic_year"] = display_year
+        if display_term and not str(payload_fields.get("semester") or "").strip():
+            payload_fields["semester"] = display_term
+        payload["fields"] = payload_fields
     analysis_text, ai_warnings, ai_used = await _ai_review_and_analysis(
         grade_payload,
         analysis_payload,

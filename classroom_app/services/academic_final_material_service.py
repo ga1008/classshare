@@ -19,6 +19,7 @@ import html
 import json
 import math
 import re
+import sqlite3
 import statistics
 import time
 import unicodedata
@@ -51,6 +52,14 @@ from .academic_integration_service import (
     open_authenticated_academic_client,
 )
 from .academic_service import china_now
+from .semester_identity_service import (
+    current_identity,
+    identity_from_semester_record,
+    identity_from_xnm_xqm,
+    identity_from_year_term,
+    parse_semester_identity,
+    semester_group,
+)
 from .deployment_cache_service import get_deployment_release_id
 from .file_service import resolve_global_file_path
 from .signature_service import resolve_signature_file_path
@@ -1063,10 +1072,70 @@ def reclaim_stale_academic_final_material_batches(conn: Any, teacher_id: int) ->
     return max(0, int(cursor.rowcount or 0))
 
 
+def batch_semester_parts(academic_year: Any, academic_term: Any) -> tuple[str, str, str, str]:
+    """Normalize a batch's stored semester into canonical display parts.
+
+    Historical rows persisted the raw ZF codes (``"2025"``/``"12"``) straight
+    from the sync request, so read-time normalization must accept every shape
+    that ever reached the column: raw xnm/xqm codes, canonical
+    ``"2025-2026"``/``"第二学期"`` pairs, and free text.
+
+    Returns ``(code, label, display_year, display_term)`` where ``code`` is the
+    stable filter key (``2025-2026-2``) and empty strings mean "unresolvable".
+    """
+    identity = (
+        identity_from_xnm_xqm(academic_year, academic_term)
+        or identity_from_year_term(academic_year, academic_term)
+        or parse_semester_identity(f"{academic_year or ''} {academic_term or ''}")
+    )
+    if identity is None:
+        raw = " ".join(str(value or "").strip() for value in (academic_year, academic_term)).strip()
+        return ("", raw, str(academic_year or ""), str(academic_term or ""))
+    year_range, _term = identity.as_year_term()
+    term_label = f"第{'一二三'[identity.term - 1]}学期"
+    return (identity.code, identity.canonical_name, year_range, term_label)
+
+
+def resolve_default_semester_selection(conn: Any, teacher_id: int) -> dict[str, str]:
+    """今天所在学期；假期（不在任何学期日期区间内）则回退到最近结束的学期。"""
+    today = china_now().date().isoformat()
+    rows = conn.execute(
+        """
+        SELECT name, start_date, end_date
+        FROM academic_semesters
+        ORDER BY CASE WHEN teacher_id = ? THEN 0 ELSE 1 END, date(start_date) DESC
+        LIMIT 40
+        """,
+        (int(teacher_id),),
+    ).fetchall()
+    containing = None
+    latest_ended = None
+    for row in rows:
+        start = str(row["start_date"] or "")[:10]
+        end = str(row["end_date"] or "")[:10]
+        if not start or not end:
+            continue
+        if start <= today <= end and containing is None:
+            containing = row
+        if end < today and (latest_ended is None or end > str(latest_ended["end_date"] or "")[:10]):
+            latest_ended = row
+    identity = identity_from_semester_record(dict(containing) if containing else (dict(latest_ended) if latest_ended else None))
+    if identity is None:
+        identity = current_identity()
+    return {"code": identity.code, "label": identity.canonical_name}
+
+
 def serialize_batch(row: Any) -> dict[str, Any]:
     item = dict(row)
+    semester_code, semester_label, display_year, display_term = batch_semester_parts(
+        item.get("academic_year"), item.get("academic_term")
+    )
     return {
         **item,
+        "semester_code": semester_code,
+        "semester_label": semester_label,
+        "academic_year_display": display_year,
+        "academic_term_display": display_term,
         "validation": _json_loads(item.get("validation_json"), {}),
         "edit_state": _json_loads(item.get("edit_state_json"), {}),
         "sync_options": _json_loads(item.get("sync_options_json"), {}),
@@ -1170,6 +1239,7 @@ def list_teacher_final_material_candidates(conn: Any, teacher_id: int) -> list[d
         SELECT o.id AS class_offering_id,
                o.semester,
                o.semester_id,
+               s.name AS semester_record_name,
                o.academic_teaching_class_name,
                c.name AS course_name,
                c.academic_course_code AS course_code,
@@ -1185,6 +1255,7 @@ def list_teacher_final_material_candidates(conn: Any, teacher_id: int) -> list[d
         FROM class_offerings o
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
+        LEFT JOIN academic_semesters s ON s.id = o.semester_id
         LEFT JOIN academic_final_material_batches b
           ON b.teacher_id = o.teacher_id AND b.class_offering_id = o.id
         WHERE o.teacher_id = ?
@@ -1195,14 +1266,20 @@ def list_teacher_final_material_candidates(conn: Any, teacher_id: int) -> list[d
         """,
         (int(teacher_id),),
     ).fetchall()
-    return [
-        {
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        semester_code, semester_label = semester_group(
+            row["semester_record_name"], row["semester"], unset_label="未设置学期"
+        )
+        items.append({
             "class_offering_id": int(row["class_offering_id"]),
             "course_name": row["course_name"] or "",
             "course_code": row["course_code"] or "",
             "class_name": row["academic_class_name"] or row["class_name"] or "",
             "teaching_class_name": row["academic_teaching_class_name"] or "",
-            "semester": row["semester"] or "",
+            "semester": semester_label if semester_code != "none" else (row["semester"] or ""),
+            "semester_code": "" if semester_code == "none" else semester_code,
+            "semester_label": semester_label,
             "credits": row["credits"],
             "batch_id": row["batch_id"] or "",
             "sync_status": row["sync_status"] or "not_synced",
@@ -1210,9 +1287,8 @@ def list_teacher_final_material_candidates(conn: Any, teacher_id: int) -> list[d
             "grade_entry_status": row["grade_entry_status"] or "",
             "synced_at": row["synced_at"] or "",
             "last_error": row["last_error"] or "",
-        }
-        for row in rows
-    ]
+        })
+    return items
 
 
 def list_teacher_final_material_batches(

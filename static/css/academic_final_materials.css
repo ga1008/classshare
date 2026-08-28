@@ -147,6 +147,37 @@
 .afm-search input { width: 100%; height: 42px; border: 0; outline: 0; background: transparent; color: var(--afm-ink); font: inherit; font-size: 13px; }
 .afm-toolbar__summary { color: var(--afm-muted); font-size: 12px; font-weight: 700; }
 
+.afm-semester-filter { display: flex; align-items: center; }
+.afm-semester-filter select {
+    height: 44px;
+    padding: 0 34px 0 13px;
+    border: 1px solid var(--afm-line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .9);
+    color: var(--afm-ink);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.afm-sync-filters { display: flex; gap: 10px; margin: 17px 24px 12px; }
+.afm-sync-filters .afm-search--dialog { margin: 0; flex: 1; }
+.afm-sync-filters .afm-semester-filter select { height: 42px; }
+.afm-filter-empty {
+    grid-column: 1 / -1;
+    display: grid;
+    place-items: center;
+    gap: 8px;
+    min-height: 150px;
+    padding: 20px;
+    border: 1px dashed var(--afm-line);
+    border-radius: 14px;
+    color: var(--afm-muted);
+    text-align: center;
+}
+.afm-filter-empty strong { color: var(--afm-ink); font-size: 14px; }
+.afm-filter-empty button { margin-top: 2px; }
+
 .afm-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -286,6 +317,8 @@
     .afm-dialog__panel { max-height: calc(100vh - 12px); border-radius: 17px; }
     .afm-dialog__header, .afm-dialog__footer { padding-left: 16px; padding-right: 16px; }
     .afm-search--dialog { margin-left: 16px; margin-right: 16px; }
+    .afm-sync-filters { margin-left: 16px; margin-right: 16px; flex-wrap: wrap; }
+    .afm-semester-filter select { width: 100%; }
     .afm-course-list { padding-left: 16px; padding-right: 16px; }
     .afm-force { margin-left: 16px; margin-right: 16px; }
     .afm-dialog__footer { flex-wrap: wrap; }

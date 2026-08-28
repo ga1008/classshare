@@ -28,6 +28,7 @@ from classroom_app.services.academic_final_material_service import (
     ACADEMIC_EXAM_ANALYSIS_TYPE,
     ACADEMIC_GRADE_REGISTER_TYPE,
     academic_final_material_record_urls,
+    batch_semester_parts,
     build_exam_analysis_export_payload,
     build_grade_register_export_payload,
     is_grade_entry_submitted,
@@ -37,6 +38,7 @@ from classroom_app.services.academic_final_material_service import (
     parse_grade_register_rtf,
     repair_legacy_grade_register_roster_order,
     reclaim_stale_academic_final_material_batches,
+    resolve_default_semester_selection,
     upsert_batch_state,
     validate_paired_reports,
 )
@@ -655,6 +657,91 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
         self.assertNotIn("正在读取已同步课程", template)
         self.assertIn("activeSyncStatuses", script)
         self.assertIn("schedulePolling", script)
+
+    def test_batch_semester_parts_normalizes_raw_zf_codes(self) -> None:
+        # 历史批次直接落库了教务 xnm/xqm 原始码（曾在前端显示为“2025 12”）。
+        code, label, year, term = batch_semester_parts("2025", "12")
+        self.assertEqual("2025-2026-2", code)
+        self.assertEqual("2025-2026第二学期", label)
+        self.assertEqual("2025-2026", year)
+        self.assertEqual("第二学期", term)
+        code, label, year, term = batch_semester_parts("2024", "3")
+        self.assertEqual("2024-2025-1", code)
+        self.assertEqual("第一学期", term)
+
+    def test_batch_semester_parts_accepts_canonical_and_rejects_garbage(self) -> None:
+        code, label, year, term = batch_semester_parts("2025-2026", "第二学期")
+        self.assertEqual("2025-2026-2", code)
+        self.assertEqual("2025-2026第二学期", label)
+        code, label, _year, _term = batch_semester_parts("", "")
+        self.assertEqual("", code)
+        self.assertEqual("", label)
+
+    def test_serialize_batch_exposes_normalized_semester_fields(self) -> None:
+        schema_academic_final_materials._SCHEMA_READY = False
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            batch = upsert_batch_state(
+                conn,
+                teacher_id=5,
+                class_offering_id=6,
+                values={"academic_year": "2025", "academic_term": "12"},
+            )
+            self.assertEqual("2025-2026-2", batch["semester_code"])
+            self.assertEqual("2025-2026第二学期", batch["semester_label"])
+        finally:
+            conn.close()
+            schema_academic_final_materials._SCHEMA_READY = False
+
+    def _semester_conn(self, rows) -> sqlite3.Connection:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE academic_semesters
+            (id INTEGER PRIMARY KEY, teacher_id INTEGER, name TEXT, start_date TEXT, end_date TEXT)
+            """
+        )
+        conn.executemany(
+            "INSERT INTO academic_semesters (teacher_id, name, start_date, end_date) VALUES (?, ?, ?, ?)",
+            rows,
+        )
+        return conn
+
+    def test_default_semester_prefers_the_term_containing_today(self) -> None:
+        today = datetime.now()
+        conn = self._semester_conn([
+            (1, "2031-2032第一学期", (today - timedelta(days=10)).date().isoformat(), (today + timedelta(days=80)).date().isoformat()),
+            (1, "2030-2031第二学期", (today - timedelta(days=300)).date().isoformat(), (today - timedelta(days=150)).date().isoformat()),
+        ])
+        try:
+            selection = resolve_default_semester_selection(conn, 1)
+            self.assertEqual("2031-2032第一学期", selection["label"])
+            self.assertEqual("2031-2032-1", selection["code"])
+        finally:
+            conn.close()
+
+    def test_default_semester_falls_back_to_latest_ended_term_during_vacation(self) -> None:
+        today = datetime.now()
+        conn = self._semester_conn([
+            (1, "2030-2031第一学期", (today - timedelta(days=400)).date().isoformat(), (today - timedelta(days=260)).date().isoformat()),
+            (1, "2030-2031第二学期", (today - timedelta(days=200)).date().isoformat(), (today - timedelta(days=30)).date().isoformat()),
+        ])
+        try:
+            selection = resolve_default_semester_selection(conn, 1)
+            self.assertEqual("2030-2031第二学期", selection["label"])
+        finally:
+            conn.close()
+
+    def test_default_semester_uses_month_heuristic_without_calendar_rows(self) -> None:
+        conn = self._semester_conn([])
+        try:
+            selection = resolve_default_semester_selection(conn, 1)
+            self.assertTrue(selection["code"])
+            self.assertIn("学期", selection["label"])
+        finally:
+            conn.close()
 
 
 class AcademicFinalMaterialBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
