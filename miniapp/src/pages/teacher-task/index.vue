@@ -265,19 +265,19 @@ onPullDownRefresh(() => {
 
       <!-- 统计大数字 -->
       <view class="stats">
-        <view class="stat">
+        <view class="stat glass-card">
           <text class="stat__value">{{ data.stats.total_submissions }}/{{ data.stats.total_students }}</text>
           <text class="stat__label">已提交</text>
         </view>
-        <view class="stat">
+        <view class="stat glass-card">
           <text class="stat__value stat__value--warn">{{ data.stats.pending_grade_count }}</text>
           <text class="stat__label">待批改</text>
         </view>
-        <view class="stat">
+        <view class="stat glass-card">
           <text class="stat__value">{{ data.stats.graded_count }}</text>
           <text class="stat__label">已批改</text>
         </view>
-        <view class="stat">
+        <view class="stat glass-card">
           <text class="stat__value">{{ data.stats.average_score }}</text>
           <text class="stat__label">平均分</text>
         </view>
@@ -294,7 +294,7 @@ onPullDownRefresh(() => {
       </view>
 
       <!-- 分段 -->
-      <view class="segment">
+      <view class="segment glass-chip">
         <view
           class="segment__item"
           :class="{ 'segment__item--active': segment === 'submitted' }"
@@ -317,14 +317,14 @@ onPullDownRefresh(() => {
 
       <!-- 未交名单 -->
       <view v-if="segment === 'unsubmitted'" class="name-grid">
-        <view v-for="entry in visibleEntries" :key="entry.student_pk_id" class="name-chip">
+        <view v-for="entry in visibleEntries" :key="entry.student_pk_id" class="name-chip glass-chip">
           <text>{{ entry.student_name }}</text>
         </view>
       </view>
 
       <!-- 已交列表（点开批阅） -->
       <template v-else>
-        <view v-for="entry in visibleEntries" :key="entry.student_pk_id" class="sub-card">
+        <view v-for="entry in visibleEntries" :key="entry.student_pk_id" class="sub-card glass-card">
           <view class="sub-card__row" @tap="toggleGrade(entry)">
             <view class="sub-card__who">
               <text class="sub-card__name">{{ entry.student_name }}</text>
@@ -381,7 +381,7 @@ onPullDownRefresh(() => {
                 :maxlength="-1"
                 auto-height
               />
-              <button class="grade-panel__save" :loading="saving" @tap="saveGrade(entry)">
+              <button class="grade-panel__save glass-btn-primary" :loading="saving" @tap="saveGrade(entry)">
                 保存评分
               </button>
             </view>
@@ -426,14 +426,11 @@ onPullDownRefresh(() => {
 
 .stat {
   flex: 1;
-  background: #ffffff;
-  border-radius: 24rpx;
   padding: 26rpx 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8rpx;
-  box-shadow: 0 6rpx 24rpx rgba(15, 23, 42, 0.04);
 }
 
 .stat__value {
@@ -462,8 +459,9 @@ onPullDownRefresh(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 20rpx;
-  background: #4a7dff;
+  border-radius: 22rpx;
+  background: linear-gradient(135deg, #5b8cff 0%, #4a7dff 100%);
+  box-shadow: 0 10rpx 26rpx rgba(74, 125, 255, 0.3);
   color: #ffffff;
   font-size: 26rpx;
   font-weight: 600;
@@ -475,14 +473,15 @@ onPullDownRefresh(() => {
 
 .action-btn--secondary {
   flex: 0 0 220rpx;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px);
+  border: 1rpx solid rgba(229, 72, 77, 0.25);
+  box-shadow: none;
   color: #dc2626;
 }
 
 .segment {
   display: flex;
-  background: #e8ecf5;
-  border-radius: 24rpx;
   padding: 8rpx;
 }
 
@@ -498,7 +497,9 @@ onPullDownRefresh(() => {
 }
 
 .segment__item--active {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 6rpx 18rpx rgba(80, 100, 180, 0.14);
+  border-radius: 999rpx;
   color: #16213a;
   font-weight: 600;
 }
@@ -510,18 +511,13 @@ onPullDownRefresh(() => {
 }
 
 .name-chip {
-  background: #ffffff;
-  border-radius: 999rpx;
   padding: 16rpx 32rpx;
   font-size: 26rpx;
   color: #334155;
 }
 
 .sub-card {
-  background: #ffffff;
-  border-radius: 28rpx;
   padding: 28rpx 32rpx;
-  box-shadow: 0 6rpx 24rpx rgba(15, 23, 42, 0.04);
 }
 
 .sub-card__row {
@@ -663,9 +659,6 @@ onPullDownRefresh(() => {
 
 .grade-panel__save {
   min-height: 80rpx;
-  border-radius: 999rpx;
-  background: #4a7dff;
-  color: #ffffff;
   font-size: 28rpx;
   font-weight: 600;
   display: flex;

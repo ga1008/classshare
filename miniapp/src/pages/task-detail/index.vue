@@ -669,7 +669,7 @@ onUnload(() => {
 
     <template v-else-if="detail">
       <!-- 头部信息 -->
-      <view class="head-card">
+      <view class="head-card glass-card">
         <view class="head-card__top">
           <text class="head-card__badge" :class="{ 'head-card__badge--exam': detail.assignment.is_exam }">
             {{ detail.assignment.is_exam ? "考试" : "作业" }}
@@ -686,7 +686,7 @@ onUnload(() => {
 
       <!-- 结果视图 -->
       <template v-if="detail.submission">
-        <view class="result-card">
+        <view class="result-card glass-card">
           <view class="result-card__score-row">
             <text class="result-card__score">{{ scoreDisplay.value }}</text>
             <text class="result-card__score-label">{{ scoreDisplay.label }}</text>
@@ -700,7 +700,7 @@ onUnload(() => {
         </view>
 
         <!-- 组员互评（20 分制，仅教师可见结果） -->
-        <view v-if="showPeerEval" class="peer-card">
+        <view v-if="showPeerEval" class="peer-card glass-card">
           <text class="section-title">组员互评 · {{ detail.group?.group_name }}</text>
           <text class="peer-card__hint">给每位组员的本次贡献打分（0-20 分），仅教师可见，可随时修改。</text>
           <view v-for="peer in detail.group?.peers" :key="peer.student_id" class="peer-row">
@@ -716,7 +716,7 @@ onUnload(() => {
               @change="onPeerSlider(peer.student_id, $event as never)"
             />
           </view>
-          <button class="peer-card__submit" :loading="peerSaving" @tap="submitPeerRatings">
+          <button class="peer-card__submit glass-btn-primary" :loading="peerSaving" @tap="submitPeerRatings">
             提交互评
           </button>
         </view>
@@ -749,7 +749,7 @@ onUnload(() => {
       <template v-else-if="isAnswerMode && detail.paper">
         <view v-for="(page, pageIndex) in detail.paper.pages" :key="pageIndex" class="page-block">
           <text v-if="page.name" class="section-title">{{ page.name }}</text>
-          <view v-for="(q, qIndex) in page.questions" :key="q.id" class="question-card">
+          <view v-for="(q, qIndex) in page.questions" :key="q.id" class="question-card glass-card">
             <view class="question-card__head">
               <text class="question-card__no">{{ qIndex + 1 }}</text>
               <text class="question-card__text">{{ q.text }}</text>
@@ -836,7 +836,7 @@ onUnload(() => {
 
       <!-- 作答模式：普通作业 -->
       <template v-else-if="isAnswerMode">
-        <view class="question-card">
+        <view class="question-card glass-card">
           <textarea
             class="textarea-input textarea-input--large"
             :value="plainAnswer"
@@ -902,7 +902,7 @@ onUnload(() => {
           </text>
           <text v-if="draftSavedAt" class="submit-bar__draft">草稿已存 {{ draftSavedAt }}</text>
         </view>
-        <button class="submit-bar__btn" :loading="submitting" @tap="submit">提交</button>
+        <button class="submit-bar__btn glass-btn-primary" :loading="submitting" @tap="submit">提交</button>
       </view>
     </template>
   </view>
@@ -932,13 +932,10 @@ onUnload(() => {
 }
 
 .head-card {
-  background: #ffffff;
-  border-radius: 32rpx;
   padding: 36rpx;
   display: flex;
   flex-direction: column;
   gap: 14rpx;
-  box-shadow: 0 8rpx 32rpx rgba(15, 23, 42, 0.05);
 }
 
 .head-card__top {
@@ -986,13 +983,10 @@ onUnload(() => {
 }
 
 .question-card {
-  background: #ffffff;
-  border-radius: 28rpx;
   padding: 32rpx;
   display: flex;
   flex-direction: column;
   gap: 24rpx;
-  box-shadow: 0 6rpx 24rpx rgba(15, 23, 42, 0.04);
 }
 
 .question-card__head {
@@ -1028,7 +1022,8 @@ onUnload(() => {
 }
 
 .option {
-  border: 2rpx solid #e2e8f0;
+  border: 2rpx solid rgba(140, 158, 210, 0.28);
+  background: rgba(255, 255, 255, 0.4);
   border-radius: 20rpx;
   padding: 24rpx 28rpx;
   font-size: 28rpx;
@@ -1038,7 +1033,7 @@ onUnload(() => {
 
 .option--selected {
   border-color: #4a7dff;
-  background: rgba(74, 125, 255, 0.08);
+  background: linear-gradient(135deg, rgba(91, 140, 255, 0.14), rgba(74, 125, 255, 0.08));
   color: #1d4ed8;
   font-weight: 600;
 }
@@ -1086,7 +1081,7 @@ onUnload(() => {
 }
 
 .files-row--padded {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.55);
   border-radius: 24rpx;
   padding: 24rpx;
 }
@@ -1147,13 +1142,10 @@ onUnload(() => {
 }
 
 .result-card {
-  background: #ffffff;
-  border-radius: 32rpx;
   padding: 40rpx 36rpx;
   display: flex;
   flex-direction: column;
   gap: 16rpx;
-  box-shadow: 0 8rpx 32rpx rgba(15, 23, 42, 0.05);
 }
 
 .result-card__score-row {
@@ -1201,13 +1193,10 @@ onUnload(() => {
 }
 
 .peer-card {
-  background: #ffffff;
-  border-radius: 32rpx;
   padding: 36rpx;
   display: flex;
   flex-direction: column;
   gap: 20rpx;
-  box-shadow: 0 8rpx 32rpx rgba(15, 23, 42, 0.05);
 }
 
 .peer-card__hint {
@@ -1238,9 +1227,6 @@ onUnload(() => {
 
 .peer-card__submit {
   min-height: 84rpx;
-  border-radius: 999rpx;
-  background: #4a7dff;
-  color: #ffffff;
   font-size: 28rpx;
   font-weight: 600;
   display: flex;
@@ -1256,7 +1242,8 @@ onUnload(() => {
 }
 
 .review-item {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1rpx solid rgba(255, 255, 255, 0.7);
   border-radius: 24rpx;
   padding: 28rpx;
   display: flex;
@@ -1281,7 +1268,10 @@ onUnload(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border-top: 1rpx solid rgba(255, 255, 255, 0.8);
   padding: 20rpx 32rpx calc(env(safe-area-inset-bottom) + 20rpx);
   display: flex;
   align-items: center;
@@ -1310,9 +1300,6 @@ onUnload(() => {
 .submit-bar__btn {
   min-width: 240rpx;
   min-height: 88rpx;
-  border-radius: 999rpx;
-  background: #4a7dff;
-  color: #ffffff;
   font-size: 30rpx;
   font-weight: 600;
   display: flex;
