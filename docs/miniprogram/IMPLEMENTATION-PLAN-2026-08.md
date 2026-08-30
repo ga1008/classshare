@@ -146,7 +146,7 @@
 - [x] **tabBar 图标**（2026-08-31）：`scripts/make_tab_icons.py` 生成 10 张 81px 线性双态 PNG（today/tasks/classroom/me/work），选中色 #5B6EE0。
 - [x] **前端工程规约固化**（2026-08-31）：`miniapp/README.md`（技术栈硬约束/API 红线/页面模板/UI 令牌/发布纪律）。
 - [ ] **运营欠账清理**（用户操作项）：体验版提审发布（可直接跳过 v0.9.6 提审 v0.10.0）；核对备案主体名（SentimentRoom→LanShare蓝享）；上线稳定后删两个测试账号。
-- [ ] 出口标准：4 tab 真机可跑（type-check + build 已过；待真机验收）→ 上传体验版 v0.10.0。
+- [x] 出口标准（部分）：type-check + build 过，**体验版 v0.10.0 已上传**（2026-08-31，commit 51cdb49e）；待真机验收 + 用户提审发布。
 
 ### M1 通知触达（版本 v0.11.x）——移动端价值最大项
 
