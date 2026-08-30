@@ -15,7 +15,103 @@
 > 注入合班组成（全部 AI 消费方共享）；附件 zip 按 班级/学生 分目录、成绩 xlsx 增班级列。
 > 范围调整：官方平时成绩表/考核登分表保持课堂全量口径——与教务登分表（按教学班）天然一致，
 > 不做拆分变体，避免触碰 export_payload 回放链）。
-> 剩余：P4 历史双开课堂合并向导（高危，单独评审）。
+> 剩余：P4 历史双开课堂合并向导（方案见下方 §9，评审中）。
+
+---
+
+## 9. P4 历史双开课堂「合并向导」方案（2026-08-31 评审稿）
+
+### 9.0 目标与边界
+
+**问题**：合班能力上线前，教师为同一门合班课按行政班开了 N 个课堂（本地真实
+案例：动态web程序设计 #6/#7、计算机网络 #4/#5、计算机网络实验 #8/#9），
+作业双发、批改割裂、与教务登分口径错位。P0-P3 对增量场景已解决；存量双开
+课堂需要一次性合并为一个合班课堂。
+
+**边界**：
+- 仅合并**同教师 + 同课程 + 同学期**的课堂；班级集合必须互不重叠；
+- 一次合并一组（1 个主课堂 + N 个被并课堂），不做跨课程/跨学期合并；
+- **不可逆操作**（提供数据快照兜底，不承诺一键回滚）；
+- 仅课堂本人教师可发起（超管可代操作待定），显式二次确认。
+
+### 9.1 迁移面盘点（真实库实测）
+
+`class_offering_id`/`offering_id` 列共挂 **62 张表**（information_schema 实测）。
+逐表手写迁移不可维护，采用**目录驱动引擎 + 全表登记守卫**：
+
+- `offering_merge_service.py` 维护 `MERGE_RULES: {table: strategy}` 目录；
+- 预检步骤扫描 information_schema，发现**未登记**的 offering 列表 → 拒绝执行
+  并报表名（新功能加表时强制登记）；配套源码单测断言目录覆盖全部现存表。
+
+### 9.2 策略分类（每表归入其一）
+
+| 策略 | 语义 | 适用表（代表） |
+|---|---|---|
+| **REPOINT** | `UPDATE SET class_offering_id = target` 直迁 | chat_logs、behavior_events、cultivation_score_events、growth/portfolio/path/certificates 明细、private_messages 域、course_files、live_* 互动、help_signals、todos、peer_reviews、group_assignment_member_results、group_schemes/study_groups、lesson/assessment/evaluation 文档、ai_chat_sessions、ai_usage_log、checkin_students… |
+| **REPOINT_STUDENT_UNIQUE** | 同 REPOINT，但表含 UNIQUE(offering, student, …)；双开班级学生集互斥 ⇒ 理论零冲突；预检仍逐表探测冲突，有冲突即中止并列出学生 | learning_progress_snapshots、learning_stage_status、learning_certificates、learning_material_progress、cultivation_weekly_snapshots、score_event_archives、behavior_states/profiles、retake_students、attendance_student_advice、emoji_usage_stats、custom_emojis |
+| **DEDUP_SKIP** | 迁移时按唯一键去重（重复行归档后删除）——语义上"同一事物发给了两个课堂" | poll_assignments(poll,offering)、course_material_assignments(material,offering)、smart_attendance_daily_tasks(…,task_date)、class_offering_learning_materials |
+| **KEEP_TARGET** | offering 级单例配置：保留主课堂行，被并行归档删除 | ai_class_configs、discussion_mood_snapshots、chat_log_migrations、academic_final_material_batches |
+| **SESSION_MAP** | 课堂课次结构：不迁移 source 课次行；按 `order_index` 建 source_session→target_session 映射，改写全部挂 `session_id` 的引用（材料绑定、生成任务、学习记录），无对应 order 的引用挂到最近课次并记入报告 | class_offering_sessions 及其引用族 |
+| **REBUILD_CACHE** | 可重建缓存：直接删除，下次同步/访问重建 | teacher_academic_course_exam_items、exam_roster_items/students、smart_classroom_schedule_items、checkin_sessions（若按日期唯一冲突则并入 DEDUP_SKIP） |
+| **ASSIGNMENT_COEXIST** | 见 9.3 | assignments（及其 submissions 树随 assignment 不动） |
+
+### 9.3 作业域：并存模式（P4.0）vs 配对合并（P4.1）
+
+双开课堂通常有**两份同名作业**（各自有提交与成绩）。
+
+- **P4.0 并存模式（默认，先做）**：source 作业 REPOINT 到主课堂并在标题后
+  缀「（原软工2402班）」，submissions/成绩/批改记录随 assignment 原样保留。
+  零数据风险；代价是课堂里出现两份同名作业，教师可自行归档。成绩材料链
+  按 student 维度聚合，不受影响。
+- **P4.1 配对合并（可选增强，单独开工）**：按「标题 + 试卷 id + 用途」自动
+  配对 + 教师逐对确认，把 source 作业的 submissions repoint 到 target 作业
+  （学生集互斥 ⇒ UNIQUE(assignment,student) 不冲突），删除 source 作业；
+  配置差异（截止/批改方式/分值）一律取 target 并在预览中亮出。错题归集、
+  成绩表缓存在合并后标记刷新。
+
+### 9.4 向导 UX（开设课堂页内）
+
+1. **检测卡**：offerings 页发现「同课程+同学期+多个课堂且班级互斥」时展示
+   合并建议卡（若课程 metadata 的教学班组成证实合班，标注"教务确认合班"；
+   否则标注"请自行确认确为合班"）。
+2. **第 1 步 选主课堂**：默认推荐课次多/材料多/id 小者为主课堂；展示每个课
+   堂的班级、人数、作业数、材料数、课次数。
+3. **第 2 步 预检与预览**：只读 dry-run，输出每域迁移行数、DEDUP 将丢弃的
+   重复项、SESSION_MAP 对齐情况、冲突（若有 → 阻断）。
+4. **第 3 步 确认执行**：红色高危样式；需勾选"我已知晓不可逆"并输入主课堂
+   班级名确认；执行后展示结果报告（各表行数 + 快照编号），并深链主课堂。
+
+### 9.5 安全机制
+
+- **快照兜底**：执行前把 source 课堂在全部挂表的行导出 JSON，存
+  `offering_merge_archives`（merge_id、teacher、payload_json、created_at）；
+  恢复属人工操作（文档写明步骤），不做一键回滚。
+- **原子性**：合并全程单事务，任一表失败整体回滚——与结课的"单条失败不
+  拖垮"相反，合并必须 all-or-nothing。
+- **收尾同事务**：迁移完成 → 删除 source offering 行（此时已无子行，且释放
+  UNIQUE(class,course,semester) 锚点）→ `replace_offering_class_links` 把
+  source 班级挂入主课堂（source='merge'）→ 重算 is_combined/display 缓存。
+- **审计**：`offering_merge_logs`（操作者、来源/目标、各表计数、耗时、快照 id）。
+- 新表均为 engine-aware runtime schema（仿 polls，不进 REQUIRED）。
+
+### 9.6 测试计划
+
+- 引擎单测：目录全覆盖守卫（information_schema 对照）、dry-run 与执行结果
+  一致性、学生重叠预检中止、DEDUP 归档计数、SESSION_MAP 改写、
+  快照完整性（快照行数 = 迁移+归档行数）、事务原子性（注入失败断言无半迁移）；
+- 端到端：双开夹具（两课堂各带作业/提交/材料/课次/分组/互动）合并后：
+  学生端可见性、成绩导出全量、时间轴完整、审计与快照可读；
+- 真 PG 全链路后按 deploy-workflow 上线；上线后先在本地库对
+  动态web #6/#7 演练一次再开放生产使用。
+
+### 9.7 评审待决（需用户拍板）
+
+1. **作业默认策略**：P4.0 仅并存（推荐）？还是首版就带配对合并？
+2. **合并入口限制**：仅允许"教务确认合班"的课程？（推荐：都放开，无教务
+   佐证时加更重的确认文案）
+3. **source 课堂处置**：物理删除（推荐，快照兜底）vs 保留 `merged_into`
+   占位（占 UNIQUE 锚点、需全站状态过滤，不推荐）。
+4. **超管代操作**是否需要（推荐首版仅课堂教师本人）。
 > 背景案例：新同步的「Python程序设计」由多个行政班合班上课；班级本身分开管理，其他课程各自独立，仅这门课合上。
 
 ---
