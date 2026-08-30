@@ -13,6 +13,7 @@ const elements = {
     offeringIdInput: document.getElementById('offeringIdInput'),
     semesterSelect: document.getElementById('offeringSemesterSelect'),
     classSelect: document.getElementById('offeringClassSelect'),
+    extraClassList: document.getElementById('offeringExtraClassList'),
     courseSelect: document.getElementById('offeringCourseSelect'),
     textbookSelect: document.getElementById('offeringTextbookSelect'),
     scheduleSourceSelect: document.getElementById('offeringScheduleSourceSelect'),
@@ -395,11 +396,35 @@ function renderPreview(previewResponse) {
     }
 }
 
+function extraClassCheckboxes() {
+    return Array.from(elements.extraClassList?.querySelectorAll('input[type="checkbox"]') || []);
+}
+
+function selectedClassIds() {
+    const primary = elements.classSelect?.value || '';
+    const ids = primary ? [primary] : [];
+    extraClassCheckboxes().forEach((box) => {
+        if (box.checked && box.value && !ids.includes(box.value)) ids.push(box.value);
+    });
+    return ids;
+}
+
+/** 主班级不允许在合班勾选组里重复出现：置灰并取消勾选。 */
+function syncPrimaryClassState() {
+    const primary = elements.classSelect?.value || '';
+    extraClassCheckboxes().forEach((box) => {
+        const isPrimary = Boolean(primary) && box.value === primary;
+        if (isPrimary) box.checked = false;
+        box.closest('.offering-extra-class-item')?.classList.toggle('is-primary-class', isPrimary);
+    });
+}
+
 function collectFormPayload() {
     return {
         offering_id: elements.offeringIdInput?.value || '',
         semester_id: elements.semesterSelect?.value || '',
         class_id: elements.classSelect?.value || '',
+        class_ids: selectedClassIds(),
         course_id: elements.courseSelect?.value || '',
         textbook_id: elements.textbookSelect?.value || '',
         schedule_source: selectedScheduleSource(),
@@ -453,6 +478,8 @@ function toggleEditorState(isEditing, title = '') {
 function resetForm() {
     if (elements.offeringIdInput) elements.offeringIdInput.value = '';
     if (elements.classSelect) elements.classSelect.value = '';
+    extraClassCheckboxes().forEach((box) => { box.checked = false; });
+    syncPrimaryClassState();
     if (elements.courseSelect) elements.courseSelect.value = '';
     if (elements.textbookSelect) elements.textbookSelect.value = '';
     if (elements.scheduleSourceSelect) elements.scheduleSourceSelect.value = 'academic_sync';
@@ -479,6 +506,12 @@ function populateForm(offering) {
     if (elements.offeringIdInput) elements.offeringIdInput.value = String(offering.id || '');
     if (elements.semesterSelect) elements.semesterSelect.value = String(offering.semester_id || '');
     if (elements.classSelect) elements.classSelect.value = String(offering.class_id || '');
+    const linkedClassIds = (Array.isArray(offering.class_ids) ? offering.class_ids : [])
+        .map((value) => String(value));
+    extraClassCheckboxes().forEach((box) => {
+        box.checked = linkedClassIds.includes(box.value) && box.value !== String(offering.class_id || '');
+    });
+    syncPrimaryClassState();
     if (elements.courseSelect) elements.courseSelect.value = String(offering.course_id || '');
     if (elements.textbookSelect) elements.textbookSelect.value = String(offering.textbook_id || '');
     if (elements.scheduleSourceSelect) elements.scheduleSourceSelect.value = offering.schedule_source || 'fixed_cycle';
@@ -588,10 +621,33 @@ function applySmartSchedulePrefill(params) {
             missing.push(`学期（${year} 第${term}学期，请先在学期管理中创建）`);
         }
     }
-    // 教学班组成可能是逗号分隔的多个行政班，逐个尝试。
+    // 教学班组成可能是逗号分隔的多个行政班：第一个匹配到的作主班级，其余自动勾选为合班班级。
     const classCandidates = rawClassName.split(/[,，、]/).map((part) => part.trim()).filter(Boolean);
     if (classCandidates.length && !selectOptionByText(elements.classSelect, classCandidates)) {
         missing.push(`班级（${classCandidates[0]}，请先在班级管理中创建）`);
+    }
+    if (classCandidates.length > 1) {
+        const primaryValue = elements.classSelect?.value || '';
+        const unmatchedExtras = [];
+        classCandidates.forEach((candidate) => {
+            const box = extraClassCheckboxes().find((item) => {
+                const label = (item.closest('.offering-extra-class-item')?.textContent || '').trim();
+                return label && (label === candidate || label.includes(candidate) || candidate.includes(label));
+            });
+            if (box && box.value !== primaryValue) {
+                box.checked = true;
+            } else if (!box) {
+                unmatchedExtras.push(candidate);
+            }
+        });
+        syncPrimaryClassState();
+        const matchedExtraCount = extraClassCheckboxes().filter((item) => item.checked).length;
+        if (matchedExtraCount) {
+            showMessage(`检测到教学班由多个行政班合成，已自动勾选 ${matchedExtraCount} 个合班班级，请核对。`, 'info');
+        }
+        if (unmatchedExtras.length) {
+            missing.push(`合班班级（${unmatchedExtras.join('、')}，请先在班级管理中创建后再勾选）`);
+        }
     }
     if (courseName && !selectOptionByText(elements.courseSelect, courseName)) {
         missing.push(`课程（${courseName}，请先在课程管理中创建）`);
@@ -648,8 +704,16 @@ function bindEvents() {
                 updateScheduleMode({ preserveSelection: node !== elements.courseSelect });
                 renderCourseSummary();
             }
+            if (node === elements.classSelect) {
+                syncPrimaryClassState();
+            }
             schedulePreviewRefresh();
         });
+    });
+
+    elements.extraClassList?.addEventListener('change', () => {
+        syncPrimaryClassState();
+        schedulePreviewRefresh();
     });
 
     elements.weeklyScheduleContainer?.addEventListener('click', (event) => {

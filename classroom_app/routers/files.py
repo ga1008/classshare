@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from ..config import UPLOAD_CHUNK_SIZE_BYTES, CHUNKED_UPLOADS_DIR
 from ..dependencies import verify_token, get_current_user, get_current_teacher, normalize_ip
 # 导入聊天管理器
+from ..services.offering_membership_service import student_belongs_to_offering
 from ..services.chat_handler import (
     load_older_history_payload,
     manager,
@@ -369,7 +370,11 @@ def _ensure_websocket_room_access_sync(class_offering_id: int, user: dict, user_
             """,
             (user_pk,),
         ).fetchone()
-        if not student_class or int(student_class["class_id"]) != int(offering["class_id"]):
+        if not student_class or not student_belongs_to_offering(
+            conn,
+            student_class_id=int(student_class["class_id"] or 0),
+            offering=offering,
+        ):
             raise HTTPException(status_code=403, detail="Permission denied")
 
 

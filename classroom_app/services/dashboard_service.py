@@ -10,6 +10,10 @@ from typing import Any
 from ..db.connection import get_configured_db_engine
 from .academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 from .message_center_service import CATEGORY_LABELS, get_message_center_summary
+from .offering_membership_service import (
+    offering_student_where,
+    student_offering_where_by_student_id,
+)
 from .academic_service import (
     build_semester_calendar_payload,
     china_now,
@@ -2922,7 +2926,7 @@ def _dashboard_current_semester_key(semester_rows: list[dict[str, Any]]) -> str:
 
 def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
-        """
+        f"""
         SELECT o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info,
                o.first_class_date, o.weekly_schedule_json, o.created_at,
                c.name AS course_name, c.description AS course_description, c.credits AS course_credits,
@@ -2936,7 +2940,7 @@ def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
         LEFT JOIN students s
-               ON s.class_id = o.class_id
+               ON {offering_student_where(offering_alias="o", student_alias="s")}
               AND COALESCE(s.enrollment_status, 'active') = 'active'
         WHERE o.teacher_id = ?
         GROUP BY o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info,
@@ -2951,7 +2955,7 @@ def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
 
 def _load_student_offerings(conn, student_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
-        """
+        f"""
         SELECT o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info, o.created_at,
                c.name AS course_name, c.description AS course_description, c.credits AS course_credits,
                cl.name AS class_name, cl.description AS class_description,
@@ -2960,12 +2964,7 @@ def _load_student_offerings(conn, student_id: int) -> list[dict[str, Any]]:
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
         JOIN teachers t ON t.id = o.teacher_id
-        WHERE o.class_id = (
-            SELECT class_id
-            FROM students
-            WHERE id = ?
-              AND COALESCE(enrollment_status, 'active') = 'active'
-        )
+        WHERE {student_offering_where_by_student_id(offering_alias="o", require_active=True)}
         ORDER BY o.id DESC
         """,
         (student_id,),
@@ -3200,7 +3199,7 @@ def _load_recent_activity(conn, user: dict, limit: int = 6) -> list[dict[str, An
 
 def _load_student_priority_items(conn, student_id: int, limit: int = 4) -> list[dict[str, Any]]:
     rows = conn.execute(
-        """
+        f"""
         SELECT a.id AS assignment_id,
                a.title,
                a.exam_paper_id,
@@ -3222,12 +3221,7 @@ def _load_student_priority_items(conn, student_id: int, limit: int = 4) -> list[
         LEFT JOIN submissions s
             ON s.assignment_id = a.id
            AND s.student_pk_id = ?
-        WHERE o.class_id = (
-            SELECT class_id
-            FROM students
-            WHERE id = ?
-              AND COALESCE(enrollment_status, 'active') = 'active'
-        )
+        WHERE {student_offering_where_by_student_id(offering_alias="o", require_active=True)}
           AND a.status = 'published'
           AND s.id IS NULL
         ORDER BY a.created_at DESC, a.id DESC

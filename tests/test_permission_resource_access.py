@@ -1,4 +1,6 @@
 import sqlite3
+
+from classroom_app.db.schema_offering_class_links import ensure_offering_class_links_schema
 import unittest
 
 from classroom_app.services.learning_progress_service import student_can_access_assignment
@@ -108,6 +110,7 @@ class PermissionResourceAccessTests(unittest.TestCase):
             );
             """
         )
+        ensure_offering_class_links_schema(self.conn, force=True, engine="sqlite")
         self.conn.executemany(
             """
             INSERT INTO teachers (id, school_code, school_name, college, department)

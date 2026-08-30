@@ -70,6 +70,62 @@ def student_offering_where(*, offering_alias: str = "o") -> str:
     )
 
 
+def student_offering_where_by_student_id(
+    *, offering_alias: str = "o", require_active: bool = False
+) -> str:
+    """SQL fragment matching offerings visible to one student. Binds a single
+    ``?`` — the student's primary-key id. ``require_active`` additionally gates
+    on the student's enrollment status (matching the legacy discovery SQL)."""
+    active_clause = (
+        "AND COALESCE(st_m.enrollment_status, 'active') = 'active' " if require_active else ""
+    )
+    return (
+        f"EXISTS (SELECT 1 FROM students st_m WHERE st_m.id = ? {active_clause}AND ("
+        f"st_m.class_id = {offering_alias}.class_id "
+        f"OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m "
+        f"WHERE cocl_m.offering_id = {offering_alias}.id "
+        f"AND cocl_m.class_id = st_m.class_id)))"
+    )
+
+
+def student_belongs_to_offering(conn: Any, *, student_class_id: int, offering: Any) -> bool:
+    """Python-level access check: is the student's class linked to the offering?
+
+    Primary-class equality short-circuits without touching the link table, so
+    single-class offerings behave exactly as before.
+    """
+    offering_row = dict(offering)
+    class_id = int(student_class_id or 0)
+    if class_id <= 0:
+        return False
+    if int(offering_row.get("class_id") or 0) == class_id:
+        return True
+    ensure_offering_class_links_schema(conn)
+    row = conn.execute(
+        "SELECT 1 FROM class_offering_class_links WHERE offering_id = ? AND class_id = ? LIMIT 1",
+        (int(offering_row["id"]), class_id),
+    ).fetchone()
+    return bool(row)
+
+
+def count_offering_active_students(conn: Any, offering_id: int) -> int:
+    """Active student head-count across every linked class."""
+    ensure_offering_class_links_schema(conn)
+    class_ids = offering_class_ids(conn, offering_id)
+    if not class_ids:
+        return 0
+    placeholders = ",".join("?" for _ in class_ids)
+    row = conn.execute(
+        f"""
+        SELECT COUNT(*) AS n FROM students s
+        WHERE s.class_id IN ({placeholders})
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
+        """,
+        tuple(class_ids),
+    ).fetchone()
+    return int(row["n"])
+
+
 def offering_class_ids(conn: Any, offering_id: int) -> list[int]:
     """All linked class ids, primary first; falls back to the legacy column."""
     ensure_offering_class_links_schema(conn)

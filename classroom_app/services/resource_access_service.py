@@ -336,7 +336,7 @@ def _student_in_course(conn: sqlite3.Connection, student_id: int, course_id: int
         """
         SELECT 1
         FROM class_offerings o
-        JOIN students s ON s.class_id = o.class_id
+        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         WHERE o.course_id = ?
           AND s.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'
@@ -352,7 +352,7 @@ def _student_in_classroom(conn: sqlite3.Connection, student_id: int, class_offer
         """
         SELECT 1
         FROM class_offerings o
-        JOIN students s ON s.class_id = o.class_id
+        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         WHERE o.id = ?
           AND s.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'

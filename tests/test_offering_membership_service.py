@@ -18,7 +18,7 @@ class OfferingMembershipServiceTests(unittest.TestCase):
         config.DB_ENGINE = "sqlite"
         config.DB_PATH = Path(self.temp_dir.name) / "classroom.db"
         database.DB_PATH = config.DB_PATH
-        schema_offering_class_links._SCHEMA_READY = False
+        schema_offering_class_links._READY_KEYS.clear()
         init_database()
         with database.get_db_connection() as conn:
             self.teacher_id = execute_insert_returning_id(
@@ -49,10 +49,10 @@ class OfferingMembershipServiceTests(unittest.TestCase):
         # init_database above already consumed the reset and ran ensure before
         # the fixture offering existed — reset again so each test exercises the
         # ensure+backfill path against the fully seeded database.
-        schema_offering_class_links._SCHEMA_READY = False
+        schema_offering_class_links._READY_KEYS.clear()
 
     def tearDown(self):
-        schema_offering_class_links._SCHEMA_READY = False
+        schema_offering_class_links._READY_KEYS.clear()
         config.DB_ENGINE = self.original_engine
         config.DB_PATH = self.original_path
         database.DB_PATH = self.original_database_path
@@ -98,7 +98,7 @@ class OfferingMembershipServiceTests(unittest.TestCase):
         with database.get_db_connection() as conn:
             membership.offering_class_ids(conn, self.offering_id)
             first = self._links(conn, self.offering_id)
-            schema_offering_class_links._SCHEMA_READY = False
+            schema_offering_class_links._READY_KEYS.clear()
             membership.offering_class_ids(conn, self.offering_id)
             second = self._links(conn, self.offering_id)
             conn.commit()
@@ -267,6 +267,39 @@ class OfferingMembershipServiceTests(unittest.TestCase):
                     teacher_id=self.teacher_id,
                     class_ids=[999999],
                 )
+
+    def test_student_dashboard_discovers_combined_offering(self):
+        from classroom_app.services.dashboard_service import _load_student_offerings
+
+        with database.get_db_connection() as conn:
+            membership.replace_offering_class_links(
+                conn,
+                offering_id=self.offering_id,
+                teacher_id=self.teacher_id,
+                class_ids=[self.class_a, self.class_b],
+            )
+            conn.commit()
+            offerings_for_b = _load_student_offerings(conn, self.student_b)
+            offerings_for_withdrawn = _load_student_offerings(conn, self.student_b2)
+        self.assertEqual([int(item["id"]) for item in offerings_for_b], [self.offering_id])
+        self.assertEqual(offerings_for_withdrawn, [])
+
+    def test_teacher_offering_rows_expose_combined_fields(self):
+        from classroom_app.routers.ui_parts.common import _load_teacher_offering_rows
+
+        with database.get_db_connection() as conn:
+            membership.replace_offering_class_links(
+                conn,
+                offering_id=self.offering_id,
+                teacher_id=self.teacher_id,
+                class_ids=[self.class_a, self.class_b],
+            )
+            conn.commit()
+            rows = _load_teacher_offering_rows(conn, self.teacher_id)
+        offering = next(item for item in rows if int(item["id"]) == self.offering_id)
+        self.assertEqual(offering["is_combined"], 1)
+        self.assertEqual(offering["class_ids"], [self.class_a, self.class_b])
+        self.assertEqual(offering["class_name"], "网工2401·网工2402")
 
     def test_primary_switch_keeps_invariant(self):
         with database.get_db_connection() as conn:

@@ -68,15 +68,19 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
                         (int(stage_target["student_id"]),),
                     )
                 else:
+                    roster_class_ids = offering_class_ids(conn, int(offering["id"])) or [
+                        int(offering["class_id"])
+                    ]
+                    roster_placeholders = ",".join("?" for _ in roster_class_ids)
                     students_cursor = conn.execute(
-                        """
+                        f"""
                         SELECT id, student_id_number, name
                         FROM students
-                        WHERE class_id = ?
+                        WHERE class_id IN ({roster_placeholders})
                           AND COALESCE(enrollment_status, 'active') = 'active'
                         ORDER BY student_id_number
                         """,
-                        (offering['class_id'],),
+                        tuple(roster_class_ids),
                     )
                 roster = [dict(row) for row in students_cursor]
                 total_students = len(roster)

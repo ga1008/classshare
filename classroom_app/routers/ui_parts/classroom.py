@@ -31,7 +31,10 @@ def classroom_main(
                       (
                           SELECT COUNT(*)
                           FROM students s
-                          WHERE s.class_id = o.class_id
+                          WHERE (s.class_id = o.class_id
+                                 OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m
+                                            WHERE cocl_m.offering_id = o.id
+                                              AND cocl_m.class_id = s.class_id))
                             AND COALESCE(s.enrollment_status, 'active') = 'active'
                       ) as class_student_count
                FROM class_offerings o

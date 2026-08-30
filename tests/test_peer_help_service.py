@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+
+from classroom_app.db.schema_offering_class_links import ensure_offering_class_links_schema
 import unittest
 
 from classroom_app.services.peer_help_service import mark_chat_message_useful
@@ -103,6 +105,7 @@ def _build_conn() -> sqlite3.Connection:
         VALUES (103, 1, '8', 'Helper', 'student', 'Here is another example.', 101, '2026-06-09T09:03:00', '09:03')
         """
     )
+    ensure_offering_class_links_schema(conn, force=True, engine="sqlite")
     conn.commit()
     return conn
 

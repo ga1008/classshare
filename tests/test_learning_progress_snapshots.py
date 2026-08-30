@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from classroom_app.db.schema_cultivation_progress import ensure_cultivation_progress_schema
+from classroom_app.db.schema_offering_class_links import ensure_offering_class_links_schema
 from classroom_app.services import learning_progress_service as service
 
 
@@ -159,6 +160,7 @@ class LearningProgressSnapshotTests(unittest.TestCase):
             )
             """
         )
+        ensure_offering_class_links_schema(self.conn, force=True, engine="sqlite")
 
     def tearDown(self):
         self.conn.close()

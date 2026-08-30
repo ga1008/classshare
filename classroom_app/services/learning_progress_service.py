@@ -1846,7 +1846,7 @@ def capture_cultivation_weekly_snapshots(
             """
             SELECT s.id
             FROM students s
-            JOIN class_offerings o ON o.class_id = s.class_id
+            JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             WHERE o.id = ?
               AND COALESCE(s.enrollment_status, 'active') = 'active'
             ORDER BY s.id
@@ -2111,7 +2111,7 @@ def build_class_cultivation_trend_summary(
             """
             SELECT s.id, s.name, s.student_id_number
             FROM students s
-            JOIN class_offerings o ON o.class_id = s.class_id
+            JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             WHERE o.id = ?
               AND COALESCE(s.enrollment_status, 'active') = 'active'
             """,
@@ -2207,7 +2207,7 @@ def create_cultivation_weekly_reports(
                    prev.components_json AS previous_components_json,
                    prev.level_key AS previous_level_key
             FROM students s
-            JOIN class_offerings o ON o.class_id = s.class_id
+            JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             JOIN cultivation_weekly_snapshots cur
               ON cur.class_offering_id = o.id
              AND cur.student_id = s.id
@@ -2754,11 +2754,14 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
         JOIN teachers t ON t.id = o.teacher_id
-        WHERE o.class_id = (
-            SELECT class_id
-            FROM students
-            WHERE id = ?
-              AND COALESCE(enrollment_status, 'active') = 'active'
+        WHERE EXISTS (
+            SELECT 1 FROM students st_m
+            WHERE st_m.id = ?
+              AND COALESCE(st_m.enrollment_status, 'active') = 'active'
+              AND (st_m.class_id = o.class_id
+                   OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m
+                              WHERE cocl_m.offering_id = o.id
+                                AND cocl_m.class_id = st_m.class_id))
         )
         ORDER BY o.id DESC
         """,

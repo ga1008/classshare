@@ -24,17 +24,24 @@ async def export_submission_attachments(
         if int(assignment.get("class_offering_id") or 0) != int(class_offering_id):
             raise HTTPException(400, "作业与当前班级课堂不匹配")
 
-        class_id = offering["class_id"]
-        class_info = conn.execute(
-            "SELECT name FROM classes WHERE id = ?", (class_id,)
-        ).fetchone()
-        if not class_info:
-            raise HTTPException(404, "未找到班级")
-        class_name = str(class_info["name"] or "").strip()
+        class_ids = offering_class_ids(conn, int(offering["id"])) or [int(offering["class_id"])]
+        class_name = (
+            str(offering["combined_class_names"] or "").strip()
+            if "combined_class_names" in offering.keys()
+            else ""
+        )
+        if not class_name:
+            class_info = conn.execute(
+                "SELECT name FROM classes WHERE id = ?", (offering["class_id"],)
+            ).fetchone()
+            if not class_info:
+                raise HTTPException(404, "未找到班级")
+            class_name = str(class_info["name"] or "").strip()
 
         # 获取所有已提交学生的附件记录
+        class_placeholders = ",".join("?" for _ in class_ids)
         rows = conn.execute(
-            """
+            f"""
             SELECT sf.stored_path, sf.relative_path, sf.original_filename,
                    s.student_pk_id, stu.name AS student_name,
                    stu.student_id_number
@@ -45,13 +52,13 @@ async def export_submission_attachments(
               AND s.student_pk_id IN (
                   SELECT id
                   FROM students
-                  WHERE class_id = ?
+                  WHERE class_id IN ({class_placeholders})
                     AND COALESCE(enrollment_status, 'active') = 'active'
               )
               AND s.status != 'unsubmitted'
             ORDER BY stu.student_id_number, sf.relative_path
             """,
-            (assignment_id, class_id),
+            (assignment_id, *class_ids),
         ).fetchall()
 
     if not rows:
@@ -122,29 +129,31 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
         if int(assignment.get("class_offering_id") or 0) != int(class_offering_id):
             raise HTTPException(400, "作业与当前班级课堂不匹配")
         class_id = offering['class_id']
+        class_ids = offering_class_ids(conn, int(offering["id"])) or [int(class_id)]
+        class_placeholders = ",".join("?" for _ in class_ids)
 
         class_info = conn.execute("SELECT * FROM classes WHERE id = ?", (class_id,)).fetchone()
         if not class_info:
             raise HTTPException(404, "未找到班级")
 
-        # 1. 获取班级所有学生
+        # 1. 获取课堂全部班级的学生
         roster_cursor = conn.execute(
-            """
+            f"""
             SELECT id, student_id_number, name
             FROM students
-            WHERE class_id = ?
+            WHERE class_id IN ({class_placeholders})
               AND COALESCE(enrollment_status, 'active') = 'active'
             """,
-            (class_id,),
+            tuple(class_ids),
         )
         roster_df = pd.DataFrame(roster_cursor, columns=['student_pk_id', '学号', '姓名'])
 
         if roster_df.empty:
             raise HTTPException(404, "此班级没有学生，无法导出。")
 
-        # 2. 获取这个班级学生的此项作业成绩
+        # 2. 获取这些学生的此项作业成绩
         grades_cursor = conn.execute(
-            """SELECT student_pk_id,
+            f"""SELECT student_pk_id,
                       student_name,
                       score,
                       CASE
@@ -157,10 +166,10 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
                   AND student_pk_id IN (
                       SELECT id
                       FROM students
-                      WHERE class_id = ?
+                      WHERE class_id IN ({class_placeholders})
                         AND COALESCE(enrollment_status, 'active') = 'active'
                   )""",
-            (assignment_id, class_id)
+            (assignment_id, *class_ids)
         )
         grades_df = pd.DataFrame(grades_cursor, columns=['student_pk_id', '提交姓名', '分数', '状态', '评语'])
 

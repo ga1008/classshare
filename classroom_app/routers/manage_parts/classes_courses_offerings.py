@@ -149,6 +149,13 @@ async def api_save_class_offering(
                 )
                 action_text = "开设"
 
+            replace_offering_class_links(
+                conn,
+                offering_id=offering_id,
+                teacher_id=int(user["id"]),
+                class_ids=payload["class_ids"],
+                primary_class_id=payload["class_id"],
+            )
             replace_offering_sessions(
                 conn,
                 offering_id=offering_id,
@@ -166,6 +173,8 @@ async def api_save_class_offering(
             )
             conn.commit()
     except CoursePlanningError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except OfferingMembershipError as exc:
         raise HTTPException(400, str(exc)) from exc
     except sqlite3.IntegrityError:
         raise HTTPException(400, "保存失败，该班级课程在当前学期可能已存在。")
@@ -189,8 +198,14 @@ async def api_create_class_offering(
         course_id: int = Form(...),
         semester_id: int = Form(...),
         textbook_id: int = Form(...),
+        class_ids: str = Form(""),
         user: dict = Depends(get_current_teacher)
 ):
+    linked_class_ids = [class_id]
+    for raw_value in str(class_ids or "").split(","):
+        raw_value = raw_value.strip()
+        if raw_value.isdigit() and int(raw_value) not in linked_class_ids:
+            linked_class_ids.append(int(raw_value))
     try:
         with get_db_connection() as conn:
             _, _, semester_row, textbook_row = _validate_teacher_owned_selection(
@@ -223,7 +238,16 @@ async def api_create_class_offering(
                     textbook_id,
                 ),
             )
+            replace_offering_class_links(
+                conn,
+                offering_id=offering_id,
+                teacher_id=int(user["id"]),
+                class_ids=linked_class_ids,
+                primary_class_id=class_id,
+            )
             conn.commit()
+    except OfferingMembershipError as exc:
+        raise HTTPException(400, str(exc)) from exc
     except sqlite3.IntegrityError:
         raise HTTPException(400, "创建失败，该班级课程在当前学期可能已存在。")
     except Exception as e:
@@ -253,6 +277,10 @@ async def api_delete_class_offering(offering_id: int, user: dict = Depends(get_c
             # 1. 删除 chat_logs (通过外键)
             # 2. 删除 ai_class_configs (通过外键)
             # 3. 删除 class_offering
+            conn.execute(
+                "DELETE FROM class_offering_class_links WHERE offering_id = ?",
+                (offering_id,),
+            )
             conn.execute("DELETE FROM class_offerings WHERE id = ?", (offering_id,))
             conn.commit()
 
@@ -538,6 +566,8 @@ async def api_list_offerings(user: dict = Depends(get_current_teacher)):
                    SELECT o.id,
                           COALESCE(s.name, o.semester) AS semester,
                           c.name AS class_name,
+                          COALESCE(o.is_combined, 0) AS is_combined,
+                          COALESCE(o.combined_class_names, '') AS combined_class_names,
                           co.name AS course_name,
                           tb.title AS textbook_title
                    FROM class_offerings o
@@ -551,6 +581,9 @@ async def api_list_offerings(user: dict = Depends(get_current_teacher)):
                 (user['id'],)
             )
             offerings = [dict(row) for row in cursor]
+            for offering in offerings:
+                if offering.get("is_combined") and offering.get("combined_class_names"):
+                    offering["class_name"] = offering["combined_class_names"]
         return {"status": "success", "offerings": offerings}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

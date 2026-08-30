@@ -79,6 +79,7 @@ from ...services.course_planning_service import (
 )
 from ...services.department_service import collect_department_options, normalize_department
 from ...services.class_kind_service import class_kind_label, is_custom_class_kind, normalize_class_kind
+from ...services.offering_membership_service import count_offering_active_students
 from ...services.organization_scope_service import load_teacher_org_memberships, load_teacher_org_scope, normalize_school_code, organization_label
 from ...services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
 from ...services.life_tip_service import build_login_tip_payload_for_student
@@ -366,17 +367,8 @@ def _attach_teacher_assignment_card_metrics(
         return
 
     total_students = _safe_int(classroom.get("class_student_count"))
-    if total_students <= 0 and classroom.get("class_id"):
-        count_row = conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM students
-            WHERE class_id = ?
-              AND COALESCE(enrollment_status, 'active') = 'active'
-            """,
-            (classroom.get("class_id"),),
-        ).fetchone()
-        total_students = _safe_int(_row_first_value(count_row))
+    if total_students <= 0 and classroom.get("id"):
+        total_students = count_offering_active_students(conn, int(classroom["id"]))
 
     assignment_ids = [_safe_int(item.get("id")) for item in assignments if item.get("id") is not None]
     assignment_ids = [assignment_id for assignment_id in assignment_ids if assignment_id > 0]
@@ -1066,6 +1058,8 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                o.academic_teaching_class_name,
                o.academic_schedule_sync_at,
                o.academic_schedule_sync_message,
+               COALESCE(o.is_combined, 0) AS is_combined,
+               COALESCE(o.combined_class_names, '') AS combined_class_names,
                COALESCE(s.name, o.semester) AS semester,
                c.name AS class_name,
                c.academic_class_name AS academic_class_name,
@@ -1101,6 +1095,8 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
                  o.academic_teaching_class_name,
                  o.academic_schedule_sync_at,
                  o.academic_schedule_sync_message,
+                 o.is_combined,
+                 o.combined_class_names,
                  s.name,
                  s.start_date,
                  o.created_at,
@@ -1117,10 +1113,32 @@ def _load_teacher_offering_rows(conn, teacher_id: int):
         """,
         (teacher_id,),
     ).fetchall()
+    offering_ids = [int(row["id"]) for row in rows]
+    links_by_offering: dict[int, list[int]] = {}
+    if offering_ids:
+        link_placeholders = ",".join("?" for _ in offering_ids)
+        link_rows = conn.execute(
+            f"""
+            SELECT offering_id, class_id
+            FROM class_offering_class_links
+            WHERE offering_id IN ({link_placeholders})
+            ORDER BY is_primary DESC, id
+            """,
+            tuple(offering_ids),
+        ).fetchall()
+        for link_row in link_rows:
+            links_by_offering.setdefault(int(link_row["offering_id"]), []).append(
+                int(link_row["class_id"])
+            )
     offerings = []
     for row in rows:
         item = dict(row)
         item["weekly_schedule"] = _safe_parse_json_list(item.get("weekly_schedule_json"))
+        item["is_combined"] = int(item.get("is_combined") or 0)
+        item["combined_class_names"] = str(item.get("combined_class_names") or "")
+        item["class_ids"] = links_by_offering.get(int(item["id"])) or [int(item["class_id"])]
+        if item["is_combined"] and item["combined_class_names"]:
+            item["class_name"] = item["combined_class_names"]
         item["scheduled_session_count"] = int(item.get("scheduled_session_count") or 0)
         item["academic_session_count"] = int(item.get("academic_session_count") or 0)
         item["non_periodic_session_count"] = int(item.get("non_periodic_session_count") or 0)

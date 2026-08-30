@@ -414,6 +414,33 @@
         line-height: 1.6;
     }
 
+    .offering-extra-class-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        padding: 10px 12px;
+        border: 1px dashed var(--border-color, rgba(120, 120, 140, 0.35));
+        border-radius: 10px;
+        max-height: 132px;
+        overflow-y: auto;
+        margin-bottom: 6px;
+    }
+
+    .offering-extra-class-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.9rem;
+        color: var(--text-secondary, inherit);
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .offering-extra-class-item.is-primary-class {
+        opacity: 0.45;
+        pointer-events: none;
+    }
+
     @media (max-width: 1100px) {
         .offering-preview-shell {
             grid-template-columns: 1fr;
@@ -528,6 +555,19 @@
                             </select>
                             <a href="/manage/teaching/classes" class="academic-link-btn">新增班级</a>
                         </div>
+                    </div>
+
+                    <div class="form-group full-span">
+                        <label class="form-label">合班班级（可选）</label>
+                        <div class="offering-extra-class-list" id="offeringExtraClassList">
+                            {% for class_item in my_classes %}
+                            <label class="offering-extra-class-item" data-class-id="{{ class_item.id }}">
+                                <input type="checkbox" value="{{ class_item.id }}">
+                                <span>{{ class_item.name }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <div class="offering-inline-help">多个行政班合上同一门课时勾选其余班级；名单、作业、考试和成绩会覆盖全部所选班级。上方“班级”即主班级，无需勾选。</div>
                     </div>
 
                     <div class="form-group">
@@ -680,6 +720,7 @@
                             <p>{{ offering.schedule_info or '暂未配置首次上课日期和每周上课安排。' }}</p>
                         </div>
                         <div class="academic-badge-row">
+                            {% if offering.is_combined %}<span class="academic-badge is-accent">合班 · {{ offering.class_ids|length }} 班</span>{% endif %}
                             {% if offering.course_department %}<span class="academic-badge is-accent">{{ offering.course_department }}</span>{% endif %}
                             {% if offering.class_department %}<span class="academic-badge">{{ offering.class_department }}</span>{% endif %}
                             {% if offering.textbook_title %}<span class="academic-badge is-success">{{ offering.textbook_title }}</span>{% endif %}

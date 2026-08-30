@@ -47,6 +47,11 @@ from ...services.course_planning_service import (
 from ...services.file_handler import save_upload_file
 from ...services.file_service import save_file_globally
 from ...services.department_service import infer_department_from_text, normalize_department
+from ...services.offering_membership_service import (
+    OfferingMembershipError,
+    offering_class_links,
+    replace_offering_class_links,
+)
 from ...services.class_kind_service import (
     CLASS_KIND_ADMINISTRATIVE,
     CLASS_KIND_CUSTOM,
@@ -489,6 +494,19 @@ def _prepare_offering_payload(
     semester_id = _parse_optional_int(data.get("semester_id"))
     textbook_id = _parse_optional_int(data.get("textbook_id"))
 
+    # 合班课堂：class_ids 为课堂绑定的全部行政班；class_id 保持主班级语义。
+    class_ids: list[int] = []
+    raw_class_ids = data.get("class_ids")
+    if isinstance(raw_class_ids, list):
+        for raw_value in raw_class_ids:
+            parsed = _parse_optional_int(raw_value)
+            if parsed and parsed not in class_ids:
+                class_ids.append(parsed)
+    if not class_id and class_ids:
+        class_id = class_ids[0]
+    if class_id and class_id not in class_ids:
+        class_ids.insert(0, class_id)
+
     if not class_id or not course_id or not semester_id or not textbook_id:
         raise CoursePlanningError("请完整选择学期、班级、课程和教材")
 
@@ -500,6 +518,9 @@ def _prepare_offering_payload(
         semester_id=semester_id,
         textbook_id=textbook_id,
     )
+    for extra_class_id in class_ids:
+        if extra_class_id != class_id:
+            _ensure_teacher_can_use_class(conn, class_id=extra_class_id, teacher_id=teacher_id)
 
     course_lessons = load_course_lessons_by_course_id(conn, [course_id]).get(course_id, [])
     course_lessons = attach_learning_material_briefs(
@@ -622,6 +643,7 @@ def _prepare_offering_payload(
     return {
         "offering_id": offering_id,
         "class_id": class_id,
+        "class_ids": class_ids,
         "course_id": course_id,
         "semester_id": semester_id,
         "textbook_id": textbook_id,

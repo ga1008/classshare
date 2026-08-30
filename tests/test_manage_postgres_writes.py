@@ -410,7 +410,10 @@ class ManagePostgresWriteTests(unittest.TestCase):
             classes_courses_offerings,
             "execute_insert_returning_id",
             return_value=701,
-        ) as insert_helper:
+        ) as insert_helper, patch.object(
+            classes_courses_offerings,
+            "replace_offering_class_links",
+        ) as replace_links:
             result = run_async(
                 classes_courses_offerings.api_create_class_offering(
                     FakeRequest({}),
@@ -426,6 +429,8 @@ class ManagePostgresWriteTests(unittest.TestCase):
         self.assertEqual(701, result["class_offering_id"])
         self.assertTrue(conn.committed)
         self.assertEqual(1, insert_helper.call_count)
+        replace_links.assert_called_once()
+        self.assertEqual([5], replace_links.call_args.kwargs["class_ids"])
 
     def test_semester_create_uses_insert_returning_helper(self):
         conn = FakeConnection()

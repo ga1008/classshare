@@ -59,7 +59,7 @@ def _load_student_offerings(conn: sqlite3.Connection, student_id: int) -> list[d
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
         JOIN teachers t ON t.id = o.teacher_id
-        JOIN students s ON s.class_id = o.class_id
+        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         WHERE s.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'
         ORDER BY o.created_at DESC, o.id DESC

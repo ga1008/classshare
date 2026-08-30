@@ -41,6 +41,10 @@ from ...schemas.homework_contracts import (
     SubmissionMutationResponse,
 )
 from ...services.behavior_tracking_service import record_behavior_event
+from ...services.offering_membership_service import (
+    offering_class_ids,
+    student_belongs_to_offering,
+)
 from ...services.message_center_service import (
     create_assignment_published_notifications,
     create_student_grading_notification,
@@ -521,7 +525,14 @@ def _get_student_for_assignment(conn, assignment: dict[str, Any], student_pk_id:
     if str(student_dict.get("enrollment_status") or "active").strip().lower() != "active":
         raise HTTPException(400, "该学生已休学，不需要完成当前课堂任务")
     offering_class_id = assignment.get("offering_class_id")
-    if offering_class_id and int(student_dict.get("class_id") or 0) != int(offering_class_id):
+    if offering_class_id and not student_belongs_to_offering(
+        conn,
+        student_class_id=int(student_dict.get("class_id") or 0),
+        offering={
+            "id": int(assignment.get("class_offering_id") or 0),
+            "class_id": int(offering_class_id),
+        },
+    ):
         raise HTTPException(400, "该学生不属于当前作业对应班级")
     return student_dict
 

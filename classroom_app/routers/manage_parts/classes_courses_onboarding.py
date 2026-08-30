@@ -397,6 +397,13 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
                 )
                 offering_action = "开设"
 
+            replace_offering_class_links(
+                conn,
+                offering_id=offering_id,
+                teacher_id=int(teacher_id),
+                class_ids=offering_payload.get("class_ids") or [int(class_id)],
+                primary_class_id=int(class_id),
+            )
             replace_offering_sessions(
                 conn,
                 offering_id=offering_id,
@@ -463,6 +470,9 @@ async def api_complete_teacher_onboarding(request: Request, user: dict = Depends
             mark_teacher_onboarding_dismissed(conn, teacher_id, "completed")
             conn.commit()
         except CoursePlanningError as exc:
+            conn.rollback()
+            raise HTTPException(400, str(exc)) from exc
+        except OfferingMembershipError as exc:
             conn.rollback()
             raise HTTPException(400, str(exc)) from exc
         except sqlite3.IntegrityError as exc:
