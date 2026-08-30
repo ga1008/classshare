@@ -123,6 +123,16 @@ async def export_submission_attachments(
     )
 
 
+def _rows_as_value_tuples(cursor) -> list[tuple]:
+    """Engine-neutral rows for pandas: psycopg dict rows would otherwise be
+    re-indexed by DataFrame(columns=...) into an all-NaN frame."""
+    rows = cursor.fetchall()
+    return [
+        tuple(row.values()) if isinstance(row, dict) else tuple(row)
+        for row in rows
+    ]
+
+
 @router.get("/assignments/{assignment_id}/export/{class_offering_id}", response_class=FileResponse)
 async def export_grades_for_class(assignment_id: str, class_offering_id: int, user: dict = Depends(get_current_teacher)):
     """V4.0: 导出此作业在指定班级课堂的成绩"""
@@ -155,7 +165,10 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
             """,
             tuple(class_ids),
         )
-        roster_df = pd.DataFrame(roster_cursor, columns=['student_pk_id', '学号', '姓名', '班级'])
+        roster_df = pd.DataFrame(
+            _rows_as_value_tuples(roster_cursor),
+            columns=['student_pk_id', '学号', '姓名', '班级'],
+        )
         # 单班课堂保持原有列结构；合班时保留「班级」列并按班排序方便拆分。
         if len(class_ids) <= 1:
             roster_df = roster_df.drop(columns=['班级'])
@@ -183,7 +196,10 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
                   )""",
             (assignment_id, *class_ids)
         )
-        grades_df = pd.DataFrame(grades_cursor, columns=['student_pk_id', '提交姓名', '分数', '状态', '评语'])
+        grades_df = pd.DataFrame(
+            _rows_as_value_tuples(grades_cursor),
+            columns=['student_pk_id', '提交姓名', '分数', '状态', '评语'],
+        )
 
     final_df = roster_df.merge(grades_df, on='student_pk_id', how='left')
 

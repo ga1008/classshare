@@ -1,4 +1,5 @@
 from .common import *
+from ...services.offering_membership_service import student_belongs_to_offering
 from ...services.ordinary_grade_record_service import ordinary_grade_assignment_kind_info
 from ...services.session_learning_materials_service import attach_learning_material_counts
 
@@ -50,6 +51,10 @@ def classroom_main(
         if not offering: raise HTTPException(404, "未找到此课堂")
 
         offering_data = dict(offering)
+        combined_display_name = str(offering_data.get("combined_class_names") or "").strip()
+        if combined_display_name:
+            offering_data["primary_class_name"] = offering_data.get("class_name")
+            offering_data["class_name"] = combined_display_name
         offering_data["semester"] = offering_data.get("semester_display") or offering_data.get("semester")
         offering_data = attach_home_learning_material_briefs(
             conn,
@@ -70,7 +75,11 @@ def classroom_main(
             ).fetchone()
             if (
                 not student_class
-                or student_class['class_id'] != offering_data['class_id']
+                or not student_belongs_to_offering(
+                    conn,
+                    student_class_id=int(student_class['class_id'] or 0),
+                    offering=offering_data,
+                )
                 or normalize_student_enrollment_status(student_class["enrollment_status"]) != STUDENT_STATUS_ACTIVE
             ):
                 raise HTTPException(403, "您未加入此课堂")
