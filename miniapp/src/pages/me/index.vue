@@ -7,8 +7,42 @@ import { computed } from "vue";
 
 import { request } from "../../utils/api";
 import { useAuthStore, type MpUser } from "../../stores/auth";
+import { applyRoleTabs, resetRoleTabs } from "../../utils/tabs";
 
 const auth = useAuthStore();
+
+/** 功能列表：M3/M5 里程碑逐项点亮；未上线项点击给提示。 */
+interface FeatureEntry {
+  icon: string;
+  title: string;
+  desc: string;
+  url?: string;
+}
+
+const featureEntries = computed<FeatureEntry[]>(() => {
+  if (auth.user?.role === "teacher") {
+    return [
+      { icon: "📅", title: "本周课表", desc: "今天在哪上课，一眼看到" },
+      { icon: "📣", title: "催交中心", desc: "未交汇总，一键提醒" },
+      { icon: "🔔", title: "消息中心", desc: "平台通知都在这里" },
+    ];
+  }
+  return [
+    { icon: "🏆", title: "成绩单", desc: "学期成绩概览" },
+    { icon: "📖", title: "错题本", desc: "错过的题再看一遍" },
+    { icon: "⚔️", title: "修为与积分", desc: "修炼进度与积分余额" },
+    { icon: "🔔", title: "消息中心", desc: "平台通知都在这里" },
+    { icon: "🤖", title: "AI 助手", desc: "随时随地问学业问题" },
+  ];
+});
+
+function openFeature(entry: FeatureEntry): void {
+  if (entry.url) {
+    uni.navigateTo({ url: entry.url });
+    return;
+  }
+  uni.showToast({ title: "即将上线，敬请期待", icon: "none" });
+}
 
 const infoRows = computed(() => {
   const user = auth.user;
@@ -48,11 +82,17 @@ async function handleLogout(): Promise<void> {
   });
   if (!confirmed) return;
   await auth.logout();
+  resetRoleTabs();
   uni.reLaunch({ url: "/pages/welcome/index" });
 }
 
 onShow(() => {
-  void ensureSession();
+  void ensureSession().then(() => {
+    applyRoleTabs(auth.user?.role);
+    if (auth.user?.role === "teacher") {
+      uni.setNavigationBarTitle({ title: "工作台" });
+    }
+  });
 });
 </script>
 
@@ -77,6 +117,23 @@ onShow(() => {
       <view v-for="row in infoRows" :key="row.label" class="info-row">
         <text class="info-row__label">{{ row.label }}</text>
         <text class="info-row__value">{{ row.value }}</text>
+      </view>
+    </view>
+
+    <view class="glass-card features">
+      <view
+        v-for="entry in featureEntries"
+        :key="entry.title"
+        class="feature-row press"
+        @tap="openFeature(entry)"
+      >
+        <text class="feature-row__icon">{{ entry.icon }}</text>
+        <view class="feature-row__body">
+          <text class="feature-row__title">{{ entry.title }}</text>
+          <text class="feature-row__desc">{{ entry.desc }}</text>
+        </view>
+        <text v-if="!entry.url" class="feature-row__badge">即将上线</text>
+        <text v-else class="feature-row__arrow">›</text>
       </view>
     </view>
 
@@ -174,6 +231,61 @@ onShow(() => {
   font-size: 27rpx;
   font-weight: 600;
   color: #1b2540;
+}
+
+.features {
+  padding: 8rpx 32rpx;
+}
+
+.feature-row {
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  padding: 26rpx 4rpx;
+}
+
+.feature-row + .feature-row {
+  border-top: 1rpx solid rgba(130, 148, 200, 0.14);
+}
+
+.feature-row__icon {
+  font-size: 40rpx;
+  flex-shrink: 0;
+}
+
+.feature-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.feature-row__title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1b2540;
+}
+
+.feature-row__desc {
+  font-size: 22rpx;
+  color: #9aa6bf;
+}
+
+.feature-row__badge {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  color: #b08a2e;
+  background: rgba(240, 195, 90, 0.16);
+  border: 1rpx solid rgba(240, 195, 90, 0.35);
+  border-radius: 999rpx;
+  padding: 6rpx 16rpx;
+}
+
+.feature-row__arrow {
+  flex-shrink: 0;
+  font-size: 36rpx;
+  color: #aab3c9;
 }
 
 .note {

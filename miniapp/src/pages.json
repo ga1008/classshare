@@ -30,6 +30,13 @@
 			}
 		},
 		{
+			"path": "pages/classroom/index",
+			"style": {
+				"navigationBarTitleText": "课堂",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
 			"path": "pages/me/index",
 			"style": {
 				"navigationBarTitleText": "我的"
@@ -57,21 +64,33 @@
 	],
 	"tabBar": {
 		"color": "#94a3b8",
-		"selectedColor": "#16213a",
+		"selectedColor": "#5b6ee0",
 		"backgroundColor": "#ffffff",
 		"borderStyle": "white",
 		"list": [
 			{
 				"pagePath": "pages/home/index",
-				"text": "首页"
+				"text": "今天",
+				"iconPath": "static/tab/today.png",
+				"selectedIconPath": "static/tab/today-active.png"
 			},
 			{
 				"pagePath": "pages/tasks/index",
-				"text": "作业考试"
+				"text": "任务",
+				"iconPath": "static/tab/tasks.png",
+				"selectedIconPath": "static/tab/tasks-active.png"
+			},
+			{
+				"pagePath": "pages/classroom/index",
+				"text": "课堂",
+				"iconPath": "static/tab/classroom.png",
+				"selectedIconPath": "static/tab/classroom-active.png"
 			},
 			{
 				"pagePath": "pages/me/index",
-				"text": "我的"
+				"text": "我的",
+				"iconPath": "static/tab/me.png",
+				"selectedIconPath": "static/tab/me-active.png"
 			}
 		]
 	},

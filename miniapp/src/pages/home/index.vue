@@ -8,6 +8,7 @@ import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
 import { useAuthStore } from "../../stores/auth";
+import { applyRoleTabs } from "../../utils/tabs";
 
 interface AgendaEvent {
   kind: string;
@@ -66,6 +67,7 @@ async function loadHome(): Promise<void> {
   failed.value = false;
   try {
     home.value = await request<HomeData>({ path: "/api/mp/home" });
+    applyRoleTabs(home.value.role);
   } catch (error: unknown) {
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
@@ -88,6 +90,7 @@ function openAgenda(event: AgendaEvent): void {
 }
 
 onShow(() => {
+  applyRoleTabs(auth.user?.role);
   void loadHome();
   void loadGreeting();
 });
