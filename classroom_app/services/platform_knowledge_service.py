@@ -102,7 +102,7 @@ def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
         """
         SELECT COUNT(DISTINCT s.id)
         FROM students s
-        JOIN class_offerings co ON co.class_id = s.class_id
+        JOIN class_offerings co ON (s.class_id = co.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = co.id AND cocl_m.class_id = s.class_id))
         WHERE co.teacher_id = ?
         """,
         (teacher_id,),

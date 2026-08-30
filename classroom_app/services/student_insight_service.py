@@ -168,7 +168,7 @@ def _load_teacher_student_row(conn, *, teacher_id: int, student_id: int) -> dict
               OR EXISTS (
                   SELECT 1
                   FROM class_offerings o
-                  WHERE o.class_id = s.class_id
+                  WHERE (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
                     AND o.teacher_id = ?
               )
           )

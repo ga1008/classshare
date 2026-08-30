@@ -218,7 +218,7 @@ def _class_student_ids(conn: sqlite3.Connection, class_offering_ids: list[int]) 
         f"""
         SELECT DISTINCT s.id AS id
         FROM class_offerings o
-        JOIN students s ON s.class_id = o.class_id
+        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         WHERE o.id IN ({placeholders})
           AND COALESCE(s.enrollment_status, 'active') = 'active'
         """,
@@ -1051,7 +1051,7 @@ def list_class_candidates(conn: sqlite3.Connection, class_offering_id: int, user
         """
         SELECT s.id AS id, s.name AS name, s.student_id_number AS student_id_number
         FROM class_offerings o
-        JOIN students s ON s.class_id = o.class_id
+        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         WHERE o.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'
         ORDER BY s.student_id_number, s.id

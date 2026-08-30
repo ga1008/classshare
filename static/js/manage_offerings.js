@@ -409,6 +409,42 @@ function selectedClassIds() {
     return ids;
 }
 
+let lastCombinedAutofillCourseId = 0;
+
+/** 教务同步课程带有教学班组成（合班）时，选课后自动匹配主班级并勾选其余班级。 */
+function applyCombinedClassAutofill() {
+    if (elements.offeringIdInput?.value) return; // 编辑既有课堂时不自动改动
+    const courseId = Number(elements.courseSelect?.value || 0);
+    if (!courseId || courseId === lastCombinedAutofillCourseId) return;
+    const course = courseMap.get(courseId);
+    const names = (course?.academic_metadata?.combined_admin_classes || [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+    if (names.length < 2) return;
+    lastCombinedAutofillCourseId = courseId;
+
+    if (!elements.classSelect?.value) {
+        selectOptionByText(elements.classSelect, names);
+    }
+    const primaryValue = elements.classSelect?.value || '';
+    let matchedCount = 0;
+    names.forEach((candidate) => {
+        const box = extraClassCheckboxes().find((item) => {
+            const label = (item.closest('.offering-extra-class-item')?.textContent || '').trim();
+            return label && (label === candidate || label.includes(candidate) || candidate.includes(label));
+        });
+        if (box && box.value !== primaryValue && !box.checked) {
+            box.checked = true;
+            matchedCount += 1;
+        }
+    });
+    syncPrimaryClassState();
+    if (matchedCount) {
+        showMessage(`该课程为合班课（教学班组成：${names.join('、')}），已自动勾选 ${matchedCount} 个合班班级，可调整后保存。`, 'info');
+        schedulePreviewRefresh();
+    }
+}
+
 /** 主班级不允许在合班勾选组里重复出现：置灰并取消勾选。 */
 function syncPrimaryClassState() {
     const primary = elements.classSelect?.value || '';
@@ -703,6 +739,9 @@ function bindEvents() {
             if (node === elements.courseSelect || node === elements.semesterSelect || node === elements.scheduleSourceSelect) {
                 updateScheduleMode({ preserveSelection: node !== elements.courseSelect });
                 renderCourseSummary();
+            }
+            if (node === elements.courseSelect) {
+                applyCombinedClassAutofill();
             }
             if (node === elements.classSelect) {
                 syncPrimaryClassState();

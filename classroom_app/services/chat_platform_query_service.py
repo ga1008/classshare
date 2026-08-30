@@ -453,7 +453,7 @@ def _view_assignment_submission_status(conn, teacher_id: int, params: dict[str, 
         """
         SELECT st.name AS 未交学生
         FROM class_offerings co
-        JOIN students st ON st.class_id = co.class_id
+        JOIN students st ON (st.class_id = co.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = co.id AND cocl_m.class_id = st.class_id))
         WHERE co.id = ?
           AND st.id NOT IN (SELECT s.student_pk_id FROM submissions s WHERE s.assignment_id = ?)
         ORDER BY st.name
@@ -465,7 +465,7 @@ def _view_assignment_submission_status(conn, teacher_id: int, params: dict[str, 
         """
         SELECT COUNT(*)
         FROM class_offerings co
-        JOIN students st ON st.class_id = co.class_id
+        JOIN students st ON (st.class_id = co.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = co.id AND cocl_m.class_id = st.class_id))
         WHERE co.id = ?
         """,
         (assignment["class_offering_id"] or 0,),

@@ -900,7 +900,7 @@ def build_classroom_ai_context(conn, class_offering_id: int) -> dict[str, Any]:
                (
                    SELECT COUNT(*)
                    FROM students st
-                   WHERE st.class_id = o.class_id
+                   WHERE (st.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = st.class_id))
                      AND COALESCE(st.enrollment_status, 'active') = 'active'
                ) AS class_student_count,
                tb.title AS textbook_title,

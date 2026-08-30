@@ -6,6 +6,8 @@ patched to a no-op so the tests stay focused on the grouping logic.
 
 import os
 import sqlite3
+
+from classroom_app.db.schema_offering_class_links import ensure_offering_class_links_schema
 import unittest
 from unittest.mock import patch
 
@@ -39,6 +41,7 @@ class SchemeRedistributionTests(unittest.TestCase):
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS class_offerings (id INTEGER PRIMARY KEY, class_id INTEGER, teacher_id INTEGER, course_id INTEGER)"
         )
+        ensure_offering_class_links_schema(self.conn, force=True, engine="sqlite")
         self.conn.execute("CREATE TABLE IF NOT EXISTS courses (id INTEGER PRIMARY KEY, name TEXT)")
         self.conn.execute("CREATE TABLE IF NOT EXISTS classes (id INTEGER PRIMARY KEY, name TEXT)")
         self.conn.execute("CREATE TABLE IF NOT EXISTS assignments (id TEXT PRIMARY KEY, title TEXT)")

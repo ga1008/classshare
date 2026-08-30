@@ -352,6 +352,97 @@ class AcademicSyncReconciliationTests(unittest.TestCase):
         self.assertEqual(kept["schedule_status"], "cancelled")
         self.assertIn("保留课次", kept["schedule_note"])
 
+    def test_combined_class_preview_flags_missing_admin_classes(self):
+        roster = self.roster()
+        roster.class_composition = "软工2406班,软工2407班"
+        with database.get_db_connection() as conn:
+            conn.execute(
+                "UPDATE class_offerings SET academic_teaching_class_id = ? WHERE id = ?",
+                ("JXB-STABLE-1", self.offering_id),
+            )
+            conn.commit()
+            preview = reconciliation.build_academic_sync_preview(
+                conn,
+                teacher_id=self.teacher_id,
+                semester=self.semester(),
+                rosters=[roster],
+            )
+        offering_item = next(item for item in preview["items"] if item["entity_type"] == "offering")
+        self.assertEqual(offering_item["missing_admin_classes"], ["软工2407班"])
+        self.assertTrue(offering_item["requires_confirmation"])
+        linked_field = next(
+            field for field in offering_item["fields"] if field["name"] == "linked_classes"
+        )
+        self.assertIn("软工2407班", linked_field["remote"])
+
+    def test_apply_links_missing_admin_classes_to_offering(self):
+        roster = self.roster()
+        roster.class_composition = "软工2406班,软工2407班"
+        roster.students.append(
+            AcademicRosterStudent(
+                student_number="2400000002",
+                name="学生乙",
+                class_name="软工2407班",
+                class_code="NEW-CLASS-2",
+                college="数字科技学院",
+                grade="2024",
+                major="软件工程",
+            )
+        )
+        with database.get_db_connection() as conn:
+            preview = reconciliation.build_academic_sync_preview(
+                conn,
+                teacher_id=self.teacher_id,
+                semester=self.semester(),
+                rosters=[roster],
+            )
+        plan_id = self._store_plan(preview, roster)
+        resolutions = []
+        for item in preview["items"]:
+            fields = [field["name"] for field in item.get("fields") or []]
+            resolutions.append(
+                {
+                    "key": item["key"],
+                    "action": item["recommended_action"] if item["recommended_action"] != "skip" else "merge",
+                    "field_choices": {field: "remote" for field in fields},
+                }
+            )
+        with patch.object(
+            reconciliation,
+            "infer_missing_course_metadata_with_ai",
+            new=AsyncMock(return_value=({}, {"status": "disabled", "accepted_count": 0})),
+        ):
+            result = asyncio.run(
+                reconciliation.apply_teacher_academic_sync_plan(
+                    self.teacher_id,
+                    plan_id,
+                    {"items": resolutions},
+                )
+            )
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["offering_link_update_count"], 1)
+        with database.get_db_connection() as conn:
+            links = conn.execute(
+                """
+                SELECT l.class_id, l.is_primary, l.source, c.name AS class_name
+                FROM class_offering_class_links l
+                JOIN classes c ON c.id = l.class_id
+                WHERE l.offering_id = ?
+                ORDER BY l.is_primary DESC, c.name
+                """,
+                (self.offering_id,),
+            ).fetchall()
+            offering = dict(
+                conn.execute(
+                    "SELECT * FROM class_offerings WHERE id = ?", (self.offering_id,)
+                ).fetchone()
+            )
+        class_names = [row["class_name"] for row in links]
+        self.assertIn("软工2406班", class_names)
+        self.assertIn("软工2407班", class_names)
+        self.assertEqual(sum(1 for row in links if row["is_primary"]), 1)
+        self.assertEqual(offering["is_combined"], 1)
+
     def test_conflict_free_course_upsert_keeps_legacy_auto_sync_path_working(self):
         roster = self.roster()
         items = course_sync.build_schedule_items_from_teaching_class_rosters(

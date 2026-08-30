@@ -435,7 +435,7 @@ EXAMPLE_QUERIES: tuple[dict[str, str], ...] = (
     },
     {
         "purpose": "某作业未提交的学生名单",
-        "sql": "SELECT st.id, st.name FROM students st JOIN class_offerings co ON co.class_id = st.class_id WHERE co.id = :class_offering_id AND st.id NOT IN (SELECT s.student_pk_id FROM submissions s WHERE s.assignment_id = :assignment_id) ORDER BY st.name LIMIT 100",
+        "sql": "SELECT st.id, st.name FROM students st JOIN class_offerings co ON (st.class_id = co.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = co.id AND cocl_m.class_id = st.class_id)) WHERE co.id = :class_offering_id AND st.id NOT IN (SELECT s.student_pk_id FROM submissions s WHERE s.assignment_id = :assignment_id) ORDER BY st.name LIMIT 100",
     },
     {
         "purpose": "按关键词检索公文（标题/正文/摘要）",

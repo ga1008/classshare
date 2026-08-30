@@ -38,6 +38,12 @@ from .academic_roster_sync_service import (
     _persist_rosters,
 )
 from .academic_service import china_now
+from .offering_membership_service import (
+    OfferingMembershipError,
+    offering_class_ids,
+    offering_class_links,
+    replace_offering_class_links,
+)
 from .department_service import infer_department_from_text, normalize_department
 from .organization_scope_service import load_teacher_org_scope
 from .semester_identity_service import identity_from_semester_record, zf_term_params_from_semester
@@ -585,7 +591,27 @@ def _offering_preview_items(conn: Any, *, semester: dict[str, Any], course_items
             changed = bool(candidates and remote_count != current_count)
             identity_changed = bool(candidates and preferred_name and remote_teaching_name != preferred_name)
             ambiguous = not candidates and bool(incoming)
-            if not changed and not identity_changed and not ambiguous and preferred_id:
+            # 合班检测：教学班组成申报的行政班超出课堂当前 link 的班级。
+            declared_admin_classes: list[str] = []
+            for item in candidates:
+                for name in _class_names_from_composition(item.class_composition):
+                    if name not in declared_admin_classes:
+                        declared_admin_classes.append(name)
+            current_class_names = [
+                _text(link.get("class_name"))
+                for link in offering_class_links(conn, int(offering["offering_id"]))
+            ]
+            current_normalized = {name.casefold() for name in current_class_names if name}
+            missing_admin_classes = (
+                [
+                    name
+                    for name in declared_admin_classes
+                    if name.casefold() not in current_normalized
+                ]
+                if len(declared_admin_classes) > 1
+                else []
+            )
+            if not changed and not identity_changed and not ambiguous and not missing_admin_classes and preferred_id:
                 continue
             field_diffs = [
                 {
@@ -609,6 +635,17 @@ def _offering_preview_items(conn: Any, *, semester: dict[str, Any], course_items
                         "identity_field": True,
                     },
                 )
+            if missing_admin_classes:
+                field_diffs.append(
+                    {
+                        "name": "linked_classes",
+                        "label": "合班班级",
+                        "local": "、".join(current_class_names) or "仅主班级",
+                        "remote": f"教务教学班组成：{'、'.join(declared_admin_classes)}（缺 {'、'.join(missing_admin_classes)}）",
+                        "default_remote": True,
+                        "identity_field": False,
+                    }
+                )
             results.append(
                 {
                     "key": f"offering:{int(offering['offering_id'])}",
@@ -625,7 +662,11 @@ def _offering_preview_items(conn: Any, *, semester: dict[str, Any], course_items
                     "recommended_action": "merge" if candidates else "skip",
                     "allowed_actions": ["merge", "skip"],
                     "fields": field_diffs,
-                    "requires_confirmation": bool(ambiguous or linked_count or changed or identity_changed),
+                    "declared_admin_classes": declared_admin_classes,
+                    "missing_admin_classes": missing_admin_classes,
+                    "requires_confirmation": bool(
+                        ambiguous or linked_count or changed or identity_changed or missing_admin_classes
+                    ),
                     "impacts": [offering],
                     "impact_message": (
                         f"已有 {linked_count} 条课次材料、生成任务或学习记录；同步会保留原课次 ID，取消的课次仅标记停排。"
@@ -995,6 +1036,7 @@ async def apply_teacher_academic_sync_plan(
     class_decisions: dict[str, dict[str, Any]] = {}
     skip_offering_ids: list[int] = []
     preserve_teaching_class_name_ids: list[int] = []
+    offering_link_requests: dict[int, list[str]] = {}
     resolved_items: list[dict[str, Any]] = []
     preview_by_key = {str(item["key"]): item for item in preview.get("items") or []}
     for item in preview_by_key.values():
@@ -1010,6 +1052,14 @@ async def apply_teacher_academic_sync_plan(
             if any(field.get("name") == "teaching_class_name" for field in item.get("fields") or []) \
                     and "teaching_class_name" not in decision["remote_fields"]:
                 preserve_teaching_class_name_ids.append(int(item["local_id"]))
+            if (
+                decision["action"] != "skip"
+                and "linked_classes" in decision["remote_fields"]
+                and item.get("declared_admin_classes")
+            ):
+                offering_link_requests[int(item["local_id"])] = [
+                    _text(name) for name in item.get("declared_admin_classes") or [] if _text(name)
+                ]
 
     reconciliation = {
         "course_decisions": course_decisions,
@@ -1108,12 +1158,65 @@ async def apply_teacher_academic_sync_plan(
                         confirmed=bool(preview_item.get("requires_confirmation") and decision.get("action") == "merge"),
                     )
 
+            # 合班挂班：按教师确认的教学班组成，把缺失行政班挂入既有课堂。
+            # 单个课堂失败只降级为提示，不拖垮整场同步。
+            offering_link_warnings: list[str] = []
+            offering_link_update_count = 0
+            class_ids_by_name = {
+                _text(name).casefold(): int(class_id)
+                for name, class_id in (roster_result.get("class_ids_by_name") or {}).items()
+                if class_id
+            }
+            for offering_id, declared_names in offering_link_requests.items():
+                resolved_ids: list[int] = []
+                unresolved_names: list[str] = []
+                academic_names: dict[int, str] = {}
+                for name in declared_names:
+                    class_id = class_ids_by_name.get(name.casefold())
+                    if not class_id:
+                        row = conn.execute(
+                            "SELECT id FROM classes WHERE created_by_teacher_id = ? AND name = ? LIMIT 1",
+                            (int(teacher_id), name),
+                        ).fetchone()
+                        class_id = int(row["id"]) if row else 0
+                    if class_id:
+                        if class_id not in resolved_ids:
+                            resolved_ids.append(class_id)
+                            academic_names[class_id] = name
+                    else:
+                        unresolved_names.append(name)
+                existing_ids = offering_class_ids(conn, offering_id)
+                merged_ids = [*existing_ids, *[cid for cid in resolved_ids if cid not in existing_ids]]
+                if unresolved_names:
+                    offering_link_warnings.append(
+                        f"课堂 #{offering_id}：教学班组成中的 {'、'.join(unresolved_names)} 未能对应到本地班级，未自动挂入。"
+                    )
+                if len(merged_ids) <= len(existing_ids):
+                    continue
+                try:
+                    replace_offering_class_links(
+                        conn,
+                        offering_id=offering_id,
+                        teacher_id=int(teacher_id),
+                        class_ids=merged_ids,
+                        source="academic_sync",
+                        academic_class_names=academic_names,
+                    )
+                    offering_link_update_count += 1
+                except OfferingMembershipError as exc:
+                    offering_link_warnings.append(f"课堂 #{offering_id}：合班班级未能挂入——{exc}")
+            if offering_link_update_count:
+                offering_link_warnings.append(
+                    f"已按教务教学班组成为 {offering_link_update_count} 个课堂补挂合班班级，学生名单与课堂可见范围已扩大。"
+                )
+
             warnings = list(
                 dict.fromkeys(
                     [
                         *(snapshot.get("identity_warnings") or []),
                         *(course_result.get("warnings") or []),
                         *(roster_result.get("warnings") or []),
+                        *offering_link_warnings,
                     ]
                 )
             )
@@ -1135,6 +1238,7 @@ async def apply_teacher_academic_sync_plan(
                 "schedule_item_count": course_result["schedule_item_count"],
                 "occurrence_count": course_result.get("occurrence_count") or 0,
                 "offering_update_count": course_result.get("offering_update_count") or 0,
+                "offering_link_update_count": offering_link_update_count,
                 "courses": course_result.get("courses") or [],
                 "unresolved_course_fields": course_result.get("unresolved_course_fields") or [],
                 "ai_enrichment": course_result.get("ai_enrichment") or ai_summary,

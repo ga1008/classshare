@@ -1,6 +1,8 @@
 import asyncio
 import io
 import sqlite3
+
+from classroom_app.db.schema_offering_class_links import ensure_offering_class_links_schema
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +61,7 @@ class AgentBridgeServiceTests(unittest.TestCase):
         ensure_assignment_schema(conn)
         ensure_classroom_activity_schema(conn)
         ensure_materials_integrations_schema(conn)
+        ensure_offering_class_links_schema(conn, force=True, engine="sqlite")
         with patch.object(schema_gongwen, "get_configured_db_engine", return_value="sqlite"):
             schema_gongwen.ensure_gongwen_schema(conn)
         conn.execute(

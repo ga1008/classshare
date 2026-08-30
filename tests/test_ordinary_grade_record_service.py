@@ -1,6 +1,8 @@
 import asyncio
 import io
 import sqlite3
+
+from classroom_app.db.schema_offering_class_links import ensure_offering_class_links_schema
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,6 +46,7 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
         self.conn.row_factory = sqlite3.Row
         self._create_schema()
         self._seed_data()
+        ensure_offering_class_links_schema(self.conn, force=True, engine="sqlite")
 
     def tearDown(self) -> None:
         self.conn.close()

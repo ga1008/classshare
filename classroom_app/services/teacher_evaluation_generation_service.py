@@ -93,7 +93,7 @@ def build_class_performance_summary(conn: Any, class_offering_id: int) -> dict[s
         """
         SELECT COUNT(*) AS n
         FROM students st
-        JOIN class_offerings o ON o.class_id = st.class_id
+        JOIN class_offerings o ON (st.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = st.class_id))
         WHERE o.id = ? AND COALESCE(st.enrollment_status, 'active') = 'active'
         """,
         (oid,),

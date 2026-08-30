@@ -2,6 +2,8 @@ import contextlib
 import json
 import os
 import sqlite3
+
+from classroom_app.db.schema_offering_class_links import ensure_offering_class_links_schema
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -44,6 +46,7 @@ def _open_platform_query_conn():
     ensure_foundation_schema(conn)
     ensure_assignment_schema(conn)
     ensure_classroom_activity_schema(conn)
+    ensure_offering_class_links_schema(conn, force=True, engine="sqlite")
     conn.execute(
         """
         INSERT INTO teachers (id, name, email, hashed_password, school_code, school_name, is_active)

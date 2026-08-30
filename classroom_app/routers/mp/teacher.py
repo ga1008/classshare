@@ -128,7 +128,7 @@ def mp_teacher_tasks(user: dict = Depends(get_current_mp_teacher)):
                    c.name AS course_name,
                    cl.name AS class_name,
                    (SELECT COUNT(*) FROM students s
-                     WHERE s.class_id = o.class_id
+                     WHERE (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
                        AND COALESCE(s.enrollment_status, 'active') = 'active') AS student_total,
                    (SELECT COUNT(*) FROM submissions sub
                      WHERE sub.assignment_id = a.id

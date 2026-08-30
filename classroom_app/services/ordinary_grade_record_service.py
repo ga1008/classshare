@@ -1159,7 +1159,7 @@ def _load_roster(conn, *, class_offering_id: int, context: dict[str, Any]) -> li
                s.student_id_number,
                s.name
         FROM students s
-        JOIN class_offerings o ON o.class_id = s.class_id
+        JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         WHERE o.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'
         ORDER BY s.student_id_number, s.id

@@ -37,7 +37,7 @@ def _load_my_offering_ids(conn: Any, *, role: str, user_pk: int) -> list[int]:
         rows = conn.execute(
             """
             SELECT o.id FROM class_offerings o
-            JOIN students s ON s.class_id = o.class_id
+            JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             WHERE s.id = ? AND COALESCE(s.enrollment_status, 'active') = 'active'
             """,
             (int(user_pk),),
@@ -56,7 +56,7 @@ def _search_classrooms(conn: Any, *, role: str, user_pk: int, pattern: str) -> l
             """
             SELECT o.id, c.name AS course_name, cl.name AS class_name
             FROM class_offerings o
-            JOIN students s ON s.class_id = o.class_id
+            JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             JOIN courses c ON c.id = o.course_id
             JOIN classes cl ON cl.id = o.class_id
             WHERE s.id = ?

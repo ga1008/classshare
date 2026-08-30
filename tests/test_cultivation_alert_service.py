@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+
+from classroom_app.db.schema_offering_class_links import ensure_offering_class_links_schema
 import unittest
 from unittest.mock import patch
 
@@ -163,6 +165,7 @@ class CultivationAlertServiceTests(unittest.TestCase):
         self.conn.execute("INSERT INTO teachers (id, name, username) VALUES (30, 'Teacher Wang', 'wang')")
         self.conn.execute("INSERT INTO classes (id, name, created_by_teacher_id) VALUES (10, 'Class A', 30)")
         self.conn.execute("INSERT INTO courses (id, name, sect_name) VALUES (20, 'Course', 'Sect')")
+        ensure_offering_class_links_schema(self.conn, force=True, engine="sqlite")
         self.conn.execute("INSERT INTO class_offerings (id, class_id, course_id, teacher_id, course_name) VALUES (1, 10, 20, 30, 'Course')")
         self.conn.executemany(
             "INSERT INTO students (id, class_id, name, student_id_number, enrollment_status) VALUES (?, 10, ?, ?, 'active')",

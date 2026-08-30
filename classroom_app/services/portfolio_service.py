@@ -940,7 +940,7 @@ def _load_learning_evidence(conn: sqlite3.Connection, student_id: int) -> dict[s
                COUNT(DISTINCT lc.id) AS certificate_count,
                COALESCE(MAX(lc.tier), 0) AS highest_tier
         FROM students s
-        LEFT JOIN class_offerings o ON o.class_id = s.class_id
+        LEFT JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         LEFT JOIN learning_material_progress lmp
                ON lmp.class_offering_id = o.id AND lmp.student_id = s.id
         LEFT JOIN learning_certificates lc

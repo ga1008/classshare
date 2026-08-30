@@ -1748,6 +1748,29 @@ def _find_existing_course(
     return None, "new", 0
 
 
+def _admin_class_names_from_composition(value: Any) -> list[str]:
+    """Mirror the roster-side JXBZC splitter (kept local: roster imports us)."""
+    text = _normalize_space(value)
+    if not text or text in {"无", "未分班"}:
+        return []
+    parts = [
+        _normalize_space(part)
+        for part in re.split(r"[,，、;；+＋/]", text)
+        if _normalize_space(part)
+    ]
+    return list(dict.fromkeys(parts or [text]))
+
+
+def _combined_admin_classes(items: list[AcademicCourseScheduleItem]) -> list[str]:
+    """Administrative classes composing the course's teaching classes (合班信号)."""
+    names: list[str] = []
+    for item in items:
+        for name in _admin_class_names_from_composition(item.class_composition):
+            if name not in names:
+                names.append(name)
+    return names
+
+
 def _course_metadata(
     *,
     semester: dict[str, Any],
@@ -1785,6 +1808,7 @@ def _course_metadata(
         "roster_course_internal_ids": roster_course_internal_ids[:24],
         "public_course_record_ids": public_course_record_ids[:8],
         "teaching_class_ids": teaching_class_ids[:24],
+        "combined_admin_classes": _combined_admin_classes(items)[:24],
         "weeks": weeks[:24],
         "source_summary": source_summary[-8:],
         "follow_up_items": FOLLOW_UP_ITEMS,

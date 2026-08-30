@@ -381,7 +381,7 @@ def _load_student_recent_items(conn, student_id: int, role: str) -> list[dict[st
         SELECT a.id, a.title, a.status, a.due_at, a.created_at,
                sub.status AS submission_status, sub.score
         FROM students stu
-        JOIN class_offerings o ON o.class_id = stu.class_id
+        JOIN class_offerings o ON (stu.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = stu.class_id))
         JOIN assignments a ON a.class_offering_id = o.id
         LEFT JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_pk_id = stu.id
         WHERE stu.id = ?
@@ -476,7 +476,7 @@ def _build_teacher_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
             """
             SELECT COUNT(DISTINCT s.id)
             FROM students s
-            JOIN class_offerings o ON o.class_id = s.class_id
+            JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             WHERE o.teacher_id = ?
               AND COALESCE(s.enrollment_status, 'active') = 'active'
             """,
@@ -574,7 +574,7 @@ def _build_student_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
                SUM(CASE WHEN sub.score IS NOT NULL OR sub.status = 'graded' THEN 1 ELSE 0 END) AS graded_count,
                AVG(CASE WHEN sub.score IS NOT NULL THEN sub.score END) AS avg_score
         FROM students stu
-        JOIN class_offerings o ON o.class_id = stu.class_id
+        JOIN class_offerings o ON (stu.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = stu.class_id))
         JOIN assignments a ON a.class_offering_id = o.id
         LEFT JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_pk_id = stu.id
         WHERE stu.id = ?

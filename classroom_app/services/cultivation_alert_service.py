@@ -119,7 +119,7 @@ def _load_active_students(conn, class_offering_id: int) -> list[dict[str, Any]]:
             """
             SELECT s.id, s.name, s.student_id_number
             FROM students s
-            JOIN class_offerings o ON o.class_id = s.class_id
+            JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             WHERE o.id = ?
               AND COALESCE(s.enrollment_status, 'active') = 'active'
             ORDER BY s.student_id_number, s.id
@@ -148,7 +148,7 @@ def _load_assignment_signal_by_student(conn, class_offering_id: int, now_dt: dat
                       AND a.due_at != ''
                      THEN a.due_at ELSE NULL END) AS nearest_due_at
         FROM students s
-        JOIN class_offerings o ON o.class_id = s.class_id
+        JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         LEFT JOIN assignments a
           ON a.class_offering_id = o.id
          AND COALESCE(a.status, 'new') != 'new'

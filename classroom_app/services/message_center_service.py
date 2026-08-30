@@ -921,7 +921,7 @@ def _load_scoped_student_contact(conn, student_id: int, class_offering_id: Optio
         FROM class_offerings o
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
-        JOIN students s ON s.class_id = o.class_id
+        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         WHERE o.id = ?
           AND s.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'
@@ -1114,7 +1114,7 @@ def _load_teacher_contact_catalog(conn, teacher_id: int) -> dict[str, dict[str, 
         FROM class_offerings o
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
-        JOIN students s ON s.class_id = o.class_id
+        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         WHERE o.teacher_id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'
         ORDER BY c.name, cl.name, s.student_id_number, s.id
@@ -3595,7 +3595,7 @@ def create_assignment_published_notifications(
             """
             SELECT s.id
             FROM class_offerings o
-            JOIN students s ON s.class_id = o.class_id
+            JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             WHERE o.id = ?
               AND COALESCE(s.enrollment_status, 'active') = 'active'
             ORDER BY s.id
@@ -3607,7 +3607,7 @@ def create_assignment_published_notifications(
             """
             SELECT DISTINCT s.id
             FROM class_offerings o
-            JOIN students s ON s.class_id = o.class_id
+            JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             WHERE o.course_id = ? AND o.teacher_id = ?
               AND COALESCE(s.enrollment_status, 'active') = 'active'
             ORDER BY s.id
@@ -3689,7 +3689,7 @@ def create_assignment_due_reminder_notifications(
         """
         SELECT s.id
         FROM class_offerings o
-        JOIN students s ON s.class_id = o.class_id
+        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         WHERE o.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'
           AND NOT EXISTS (
@@ -3761,7 +3761,7 @@ def create_poll_published_notifications(conn, poll_id: int | str) -> int:
             SELECT s.id AS student_id, o.id AS class_offering_id
             FROM poll_assignments pa
             JOIN class_offerings o ON o.id = pa.class_offering_id
-            JOIN students s ON s.class_id = o.class_id
+            JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             WHERE pa.poll_id = ?
               AND COALESCE(s.enrollment_status, 'active') = 'active'
             ORDER BY s.id, o.id

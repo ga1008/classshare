@@ -206,7 +206,7 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
                (
                    SELECT COUNT(*)
                    FROM students roster
-                   WHERE roster.class_id = o.class_id
+                   WHERE (roster.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = roster.class_id))
                      AND COALESCE(roster.enrollment_status, 'active') = 'active'
                ) AS roster_count,
                COUNT(DISTINCT CASE WHEN scored_student.id IS NOT NULL THEN s.student_pk_id ELSE NULL END) AS submission_count,
@@ -218,7 +218,7 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
         LEFT JOIN submissions s ON s.assignment_id = a.id
         LEFT JOIN students scored_student
                ON scored_student.id = s.student_pk_id
-              AND scored_student.class_id = o.class_id
+              AND (scored_student.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = scored_student.class_id))
               AND COALESCE(scored_student.enrollment_status, 'active') = 'active'
         WHERE a.class_offering_id = ?
           AND o.teacher_id = ?
@@ -808,7 +808,7 @@ def _load_roster(conn, *, class_offering_id: int) -> list[dict[str, Any]]:
                s.student_id_number,
                s.name
         FROM students s
-        JOIN class_offerings o ON o.class_id = s.class_id
+        JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
         WHERE o.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'
         ORDER BY s.student_id_number, s.id

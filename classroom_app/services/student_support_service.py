@@ -65,7 +65,7 @@ def teacher_can_access_student(conn, *, teacher_id: int, student_id: int) -> boo
               OR EXISTS (
                   SELECT 1
                   FROM class_offerings o
-                  WHERE o.class_id = s.class_id
+                  WHERE (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
                     AND o.teacher_id = ?
               )
           )
@@ -170,7 +170,7 @@ def load_student_teacher_names(conn, student_id: int) -> list[str]:
             UNION
             SELECT DISTINCT t.name AS name
             FROM students s
-            JOIN class_offerings o ON o.class_id = s.class_id
+            JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             JOIN teachers t ON t.id = o.teacher_id
             WHERE s.id = ?
         )
@@ -206,7 +206,7 @@ def _load_student_course_signal_rows(conn, student_id: int, *, current_class_off
                COALESCE(MAX(be.created_at), '') AS last_behavior_at,
                COALESCE(SUM(CASE WHEN be.action_type = 'ai_question' THEN 1 ELSE 0 END), 0) AS ai_question_count
         FROM students stu
-        JOIN class_offerings o ON o.class_id = stu.class_id
+        JOIN class_offerings o ON (stu.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = stu.class_id))
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
         JOIN teachers t ON t.id = o.teacher_id
