@@ -406,10 +406,10 @@ def _student_overlap_candidate(conn: Any, *, teacher_id: int, student_numbers: s
     placeholders = ",".join("?" for _ in student_numbers)
     rows = conn.execute(
         f"""
-        SELECT c.*, COUNT(DISTINCT s.student_number) AS overlap_count
+        SELECT c.*, COUNT(DISTINCT s.student_id_number) AS overlap_count
         FROM classes c
         JOIN students s ON s.class_id = c.id
-        WHERE c.created_by_teacher_id = ? AND s.student_number IN ({placeholders})
+        WHERE c.created_by_teacher_id = ? AND s.student_id_number IN ({placeholders})
         GROUP BY c.id
         ORDER BY overlap_count DESC, c.id DESC
         """,
