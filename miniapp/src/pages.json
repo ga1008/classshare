@@ -47,6 +47,12 @@
 				"navigationBarTitleText": "提交进度",
 				"enablePullDownRefresh": true
 			}
+		},
+		{
+			"path": "pages/teacher-grade/index",
+			"style": {
+				"navigationBarTitleText": "批阅"
+			}
 		}
 	],
 	"tabBar": {

@@ -1,100 +1,67 @@
 <script setup lang="ts">
 /**
- * 教师端提交进度 + 移动批阅。
+ * 教师端提交进度总览。
  *
- * 数据与动作全部复用既有 Web API（bearer 直通）：
- * - GET  /api/assignments/{id}/submissions  统计 + 已交/未交全名单 + 答案
- * - POST /api/submissions/{id}/grade        打分（后端自动套迟交策略）
+ * 数据源 GET /api/mp/teacher/assignment/{id}/grading（服务端聚合，
+ * 与批阅页共用）；批量动作复用既有 Web API：
  * - POST /api/assignments/{id}/submissions/batch-grade  AI 批量批改
  * - POST /api/assignments/{id}/submissions/zero-unsubmitted 缺交记零
+ * 单份批阅在独立的 teacher-grade 页完成。
  */
-import { onLoad, onPullDownRefresh } from "@dcloudio/uni-app";
-import { computed, reactive, ref } from "vue";
+import { onLoad, onPullDownRefresh, onShow } from "@dcloudio/uni-app";
+import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
-import { previewProtectedFile } from "../../utils/preview";
 
-interface SubmissionFile {
-  id: number;
-  file_name: string;
-  mime_type: string;
-  is_image: boolean;
-}
-
-interface SubmissionEntry {
-  id: number | null;
+interface GradeEntry {
+  submission_id: number | null;
   student_pk_id: number;
   student_name: string;
   student_id_number: string;
   status: string;
+  status_label: string;
   score: number | null;
-  feedback_md: string | null;
-  submitted_at: string | null;
-  answers_json: string | null;
-  file_count: number;
-  is_late_submission: number;
-  is_absence_score: number;
+  is_late: boolean;
+  is_absence_zero: boolean;
+  files: Array<{ id: number }>;
 }
 
-interface SubmissionsResponse {
-  status: string;
+interface GradingResponse {
+  assignment: { id: number; title: string; is_exam: boolean; course_name: string; class_name: string };
   stats: {
     total_students: number;
-    total_submissions: number;
-    unsubmitted_count: number;
+    submitted_count: number;
     graded_count: number;
     pending_grade_count: number;
-    grading_count: number;
     average_score: number;
   };
-  submissions: SubmissionEntry[];
-  assignment: { id: number | string; title: string; exam_paper_id?: string | null };
+  entries: GradeEntry[];
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  submitted: "待批改",
-  grading: "AI批改中",
-  grading_review: "待确认",
-  graded: "已批改",
-  unsubmitted: "未提交",
-};
-
 const assignmentId = ref("");
-const data = ref<SubmissionsResponse | null>(null);
+const data = ref<GradingResponse | null>(null);
 const loading = ref(true);
 const failed = ref(false);
 const segment = ref<"submitted" | "unsubmitted">("submitted");
-const expandedId = ref<number | null>(null);
-const gradeScore = ref("");
-const gradeFeedback = ref("");
-const saving = ref(false);
 const batchRunning = ref(false);
+const needsRefresh = ref(false);
 
 const submittedEntries = computed(
-  () => (data.value?.submissions ?? []).filter((entry) => entry.status !== "unsubmitted"),
+  () => (data.value?.entries ?? []).filter((entry) => entry.status !== "unsubmitted"),
 );
 const unsubmittedEntries = computed(
-  () => (data.value?.submissions ?? []).filter((entry) => entry.status === "unsubmitted"),
+  () => (data.value?.entries ?? []).filter((entry) => entry.status === "unsubmitted"),
 );
 const visibleEntries = computed(() =>
   segment.value === "submitted" ? submittedEntries.value : unsubmittedEntries.value,
 );
 
-function parseAnswers(entry: SubmissionEntry): Array<{ question?: string; answer?: string; attachments?: unknown[] }> {
-  try {
-    const parsed = JSON.parse(entry.answers_json || "{}") as { answers?: [] };
-    return Array.isArray(parsed.answers) ? parsed.answers : [];
-  } catch {
-    return [];
-  }
-}
-
 async function loadData(): Promise<void> {
   loading.value = true;
   failed.value = false;
   try {
-    data.value = await request<SubmissionsResponse>({
-      path: `/api/assignments/${assignmentId.value}/submissions`,
+    data.value = await request<GradingResponse>({
+      path: `/api/mp/teacher/assignment/${assignmentId.value}/grading`,
     });
   } catch (error: unknown) {
     failed.value = true;
@@ -107,68 +74,12 @@ async function loadData(): Promise<void> {
   }
 }
 
-const filesBySubmission = reactive<Record<number, SubmissionFile[]>>({});
-
-async function loadSubmissionFiles(submissionId: number): Promise<void> {
-  if (filesBySubmission[submissionId]) return;
-  try {
-    const data = await request<{ files: SubmissionFile[] }>({
-      path: `/api/mp/teacher/submission/${submissionId}/files`,
-    });
-    filesBySubmission[submissionId] = data.files;
-  } catch {
-    filesBySubmission[submissionId] = [];
-  }
-}
-
-function previewFile(file: SubmissionFile): void {
-  void previewProtectedFile({
-    path: `/submissions/download/${file.id}`,
-    fileName: file.file_name,
-    mimeType: file.mime_type,
+function openGrade(entry: GradeEntry): void {
+  if (!entry.submission_id) return;
+  needsRefresh.value = true;
+  uni.navigateTo({
+    url: `/pages/teacher-grade/index?id=${assignmentId.value}&sid=${entry.submission_id}`,
   });
-}
-
-function toggleGrade(entry: SubmissionEntry): void {
-  if (!entry.id) return;
-  if (expandedId.value === entry.id) {
-    expandedId.value = null;
-    return;
-  }
-  expandedId.value = entry.id;
-  gradeScore.value = entry.score !== null && entry.score !== undefined ? String(entry.score) : "";
-  gradeFeedback.value = entry.feedback_md || "";
-  if (entry.file_count) {
-    void loadSubmissionFiles(entry.id);
-  }
-}
-
-async function saveGrade(entry: SubmissionEntry): Promise<void> {
-  if (!entry.id || saving.value) return;
-  const score = Number(gradeScore.value);
-  if (!Number.isFinite(score) || score < 0 || score > 100) {
-    uni.showToast({ title: "请输入 0-100 的分数", icon: "none" });
-    return;
-  }
-  saving.value = true;
-  try {
-    await request({
-      path: `/api/submissions/${entry.id}/grade`,
-      method: "POST",
-      data: { score, feedback_md: gradeFeedback.value },
-    });
-    uni.showToast({ title: "已保存", icon: "success" });
-    expandedId.value = null;
-    await loadData();
-  } catch (error: unknown) {
-    uni.showModal({
-      title: "保存失败",
-      content: error instanceof Error ? error.message : "网络异常，请重试。",
-      showCancel: false,
-    });
-  } finally {
-    saving.value = false;
-  }
 }
 
 async function runBatchAiGrading(): Promise<void> {
@@ -207,9 +118,9 @@ async function runBatchAiGrading(): Promise<void> {
 }
 
 async function zeroUnsubmitted(): Promise<void> {
-  const count = unsubmittedEntries.value.length;
+  const count = unsubmittedEntries.value.filter((entry) => !entry.is_absence_zero).length;
   if (!count) {
-    uni.showToast({ title: "没有未提交的学生", icon: "none" });
+    uni.showToast({ title: "没有可记零的学生", icon: "none" });
     return;
   }
   const confirmed = await new Promise<boolean>((resolve) => {
@@ -247,6 +158,14 @@ onLoad((query) => {
   }
 });
 
+onShow(() => {
+  // 从批阅页返回后刷新计数与分数
+  if (needsRefresh.value && data.value) {
+    needsRefresh.value = false;
+    void loadData();
+  }
+});
+
 onPullDownRefresh(() => {
   void loadData();
 });
@@ -261,23 +180,31 @@ onPullDownRefresh(() => {
       <!-- 任务标题 -->
       <view class="title-block">
         <text class="title-block__title">{{ data.assignment.title }}</text>
+        <text class="title-block__meta">
+          {{ data.assignment.course_name }} · {{ data.assignment.class_name }}
+        </text>
       </view>
 
       <!-- 统计大数字 -->
-      <view class="stats">
-        <view class="stat glass-card">
-          <text class="stat__value">{{ data.stats.total_submissions }}/{{ data.stats.total_students }}</text>
+      <view class="stats glass-card">
+        <view class="stat">
+          <text class="stat__value">{{ data.stats.submitted_count }}<text class="stat__sub">/{{ data.stats.total_students }}</text></text>
           <text class="stat__label">已提交</text>
         </view>
-        <view class="stat glass-card">
-          <text class="stat__value stat__value--warn">{{ data.stats.pending_grade_count }}</text>
+        <view class="stat__divider" />
+        <view class="stat">
+          <text class="stat__value" :class="{ 'stat__value--warn': data.stats.pending_grade_count }">
+            {{ data.stats.pending_grade_count }}
+          </text>
           <text class="stat__label">待批改</text>
         </view>
-        <view class="stat glass-card">
+        <view class="stat__divider" />
+        <view class="stat">
           <text class="stat__value">{{ data.stats.graded_count }}</text>
           <text class="stat__label">已批改</text>
         </view>
-        <view class="stat glass-card">
+        <view class="stat__divider" />
+        <view class="stat">
           <text class="stat__value">{{ data.stats.average_score }}</text>
           <text class="stat__label">平均分</text>
         </view>
@@ -285,10 +212,14 @@ onPullDownRefresh(() => {
 
       <!-- 批量操作 -->
       <view class="actions">
-        <view class="action-btn" :class="{ 'action-btn--busy': batchRunning }" @tap="runBatchAiGrading">
+        <view
+          class="action-btn press"
+          :class="{ 'action-btn--busy': batchRunning }"
+          @tap="runBatchAiGrading"
+        >
           <text>🤖 AI 批改待批 {{ data.stats.pending_grade_count }} 份</text>
         </view>
-        <view class="action-btn action-btn--secondary" @tap="zeroUnsubmitted">
+        <view class="action-btn action-btn--secondary press" @tap="zeroUnsubmitted">
           <text>缺交记零</text>
         </view>
       </view>
@@ -317,74 +248,45 @@ onPullDownRefresh(() => {
 
       <!-- 未交名单 -->
       <view v-if="segment === 'unsubmitted'" class="name-grid">
-        <view v-for="entry in visibleEntries" :key="entry.student_pk_id" class="name-chip glass-chip">
+        <view
+          v-for="entry in visibleEntries"
+          :key="entry.student_pk_id"
+          class="name-chip glass-chip"
+          :class="{ 'name-chip--zeroed': entry.is_absence_zero }"
+        >
           <text>{{ entry.student_name }}</text>
+          <text v-if="entry.is_absence_zero" class="name-chip__zero">已记零</text>
         </view>
       </view>
 
-      <!-- 已交列表（点开批阅） -->
+      <!-- 已交列表（点击进入批阅页） -->
       <template v-else>
-        <view v-for="entry in visibleEntries" :key="entry.student_pk_id" class="sub-card glass-card">
-          <view class="sub-card__row" @tap="toggleGrade(entry)">
-            <view class="sub-card__who">
-              <text class="sub-card__name">{{ entry.student_name }}</text>
-              <text class="sub-card__meta">
-                {{ entry.student_id_number }}{{ entry.file_count ? ` · 附件${entry.file_count}` : "" }}{{ entry.is_late_submission ? " · 迟交" : "" }}
-              </text>
-            </view>
-            <view class="sub-card__right">
-              <text v-if="entry.score !== null && entry.score !== undefined" class="sub-card__score">
-                {{ entry.score }}
-              </text>
-              <text
-                class="sub-card__status"
-                :class="{ 'sub-card__status--pending': entry.status === 'submitted' }"
-              >
-                {{ STATUS_LABELS[entry.status] || entry.status }}
-              </text>
-            </view>
+        <view
+          v-for="entry in visibleEntries"
+          :key="entry.student_pk_id"
+          class="sub-card glass-card press"
+          @tap="openGrade(entry)"
+        >
+          <view class="sub-card__avatar">
+            <text>{{ entry.student_name.slice(0, 1) }}</text>
           </view>
-
-          <!-- 批阅展开区 -->
-          <view v-if="expandedId === entry.id" class="grade-panel" @tap.stop>
-            <view v-if="parseAnswers(entry).length" class="grade-panel__answers">
-              <view v-for="(item, index) in parseAnswers(entry)" :key="index" class="answer-item">
-                <text class="answer-item__q">{{ index + 1 }}. {{ item.question }}</text>
-                <text class="answer-item__a">{{ item.answer || "（未作答）" }}</text>
-              </view>
-            </view>
-            <text v-else class="grade-panel__no-answers">无文字作答</text>
-
-            <view v-if="entry.file_count && filesBySubmission[entry.id!]?.length" class="file-list">
-              <view
-                v-for="file in filesBySubmission[entry.id!]"
-                :key="file.id"
-                class="file-chip"
-                @tap.stop="previewFile(file)"
-              >
-                <text>{{ file.is_image ? "🖼️" : "📄" }}</text>
-                <text class="file-chip__name">{{ file.file_name }}</text>
-              </view>
-            </view>
-
-            <view class="grade-panel__form">
-              <input
-                v-model="gradeScore"
-                class="grade-panel__score"
-                type="digit"
-                placeholder="分数 0-100"
-              />
-              <textarea
-                v-model="gradeFeedback"
-                class="grade-panel__feedback"
-                placeholder="评语（可选）"
-                :maxlength="-1"
-                auto-height
-              />
-              <button class="grade-panel__save glass-btn-primary" :loading="saving" @tap="saveGrade(entry)">
-                保存评分
-              </button>
-            </view>
+          <view class="sub-card__who">
+            <text class="sub-card__name">{{ entry.student_name }}</text>
+            <text class="sub-card__meta">
+              {{ entry.student_id_number }}{{ entry.files.length ? ` · 附件${entry.files.length}` : "" }}{{ entry.is_late ? " · 迟交" : "" }}
+            </text>
+          </view>
+          <view class="sub-card__right">
+            <text
+              v-if="entry.score !== null && entry.score !== undefined"
+              class="sub-card__score"
+            >{{ entry.score }}</text>
+            <text
+              v-else
+              class="sub-card__status"
+              :class="{ 'sub-card__status--pending': entry.status === 'submitted' }"
+            >{{ entry.status_label }}</text>
+            <text class="sub-card__arrow">›</text>
           </view>
         </view>
       </template>
@@ -398,54 +300,75 @@ onPullDownRefresh(() => {
   padding: 28rpx 28rpx calc(env(safe-area-inset-bottom) + 40rpx);
   display: flex;
   flex-direction: column;
-  gap: 24rpx;
+  gap: 22rpx;
 }
 
 .empty {
   padding: 100rpx 40rpx;
   text-align: center;
-  color: #94a3b8;
+  color: #8b96b3;
   font-size: 28rpx;
 }
 
 .title-block {
   padding: 8rpx 4rpx 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
 }
 
 .title-block__title {
   font-size: 36rpx;
   font-weight: 700;
-  color: #16213a;
+  color: #1b2540;
   line-height: 1.4;
+}
+
+.title-block__meta {
+  font-size: 24rpx;
+  color: #8b96b3;
 }
 
 .stats {
   display: flex;
-  gap: 16rpx;
+  align-items: center;
+  padding: 30rpx 10rpx;
 }
 
 .stat {
   flex: 1;
-  padding: 26rpx 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8rpx;
 }
 
+.stat__divider {
+  width: 1rpx;
+  height: 52rpx;
+  background: rgba(120, 140, 200, 0.18);
+}
+
 .stat__value {
-  font-size: 34rpx;
-  font-weight: 700;
-  color: #16213a;
+  font-size: 38rpx;
+  font-weight: 800;
+  color: #1b2540;
+  line-height: 1.1;
+}
+
+.stat__sub {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #8b96b3;
 }
 
 .stat__value--warn {
-  color: #e0662f;
+  color: #d05a1f;
 }
 
 .stat__label {
   font-size: 22rpx;
-  color: #94a3b8;
+  color: #8b96b3;
 }
 
 .actions {
@@ -455,11 +378,11 @@ onPullDownRefresh(() => {
 
 .action-btn {
   flex: 1;
-  min-height: 84rpx;
+  min-height: 88rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 22rpx;
+  border-radius: 999rpx;
   background: linear-gradient(135deg, #5b8cff 0%, #4a7dff 100%);
   box-shadow: 0 10rpx 26rpx rgba(74, 125, 255, 0.3);
   color: #ffffff;
@@ -472,9 +395,10 @@ onPullDownRefresh(() => {
 }
 
 .action-btn--secondary {
-  flex: 0 0 220rpx;
+  flex: 0 0 210rpx;
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1rpx solid rgba(229, 72, 77, 0.25);
   box-shadow: none;
   color: #dc2626;
@@ -491,16 +415,16 @@ onPullDownRefresh(() => {
   justify-content: center;
   align-items: center;
   min-height: 72rpx;
-  border-radius: 18rpx;
+  border-radius: 999rpx;
   font-size: 28rpx;
-  color: #64748b;
+  color: #66718f;
+  transition: all 160ms ease;
 }
 
 .segment__item--active {
   background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 6rpx 18rpx rgba(80, 100, 180, 0.14);
-  border-radius: 999rpx;
-  color: #16213a;
+  color: #1b2540;
   font-weight: 600;
 }
 
@@ -511,159 +435,92 @@ onPullDownRefresh(() => {
 }
 
 .name-chip {
-  padding: 16rpx 32rpx;
+  padding: 16rpx 30rpx;
   font-size: 26rpx;
   color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.name-chip--zeroed {
+  opacity: 0.65;
+}
+
+.name-chip__zero {
+  font-size: 20rpx;
+  color: #dc2626;
 }
 
 .sub-card {
-  padding: 28rpx 32rpx;
-}
-
-.sub-card__row {
+  padding: 26rpx 30rpx;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 20rpx;
+  gap: 22rpx;
+}
+
+.sub-card__avatar {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 24rpx;
+  background: linear-gradient(135deg, #6a7bff 0%, #8b5cf6 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 32rpx;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .sub-card__who {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 8rpx;
+  min-width: 0;
 }
 
 .sub-card__name {
   font-size: 30rpx;
   font-weight: 600;
-  color: #16213a;
+  color: #1b2540;
 }
 
 .sub-card__meta {
   font-size: 22rpx;
-  color: #94a3b8;
-}
-
-.sub-card__right {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-}
-
-.sub-card__score {
-  font-size: 40rpx;
-  font-weight: 800;
-  color: #16213a;
-}
-
-.sub-card__status {
-  font-size: 22rpx;
-  color: #94a3b8;
-}
-
-.sub-card__status--pending {
-  color: #e0662f;
-  font-weight: 600;
-}
-
-.grade-panel {
-  margin-top: 24rpx;
-  border-top: 2rpx solid #f1f5f9;
-  padding-top: 24rpx;
-  display: flex;
-  flex-direction: column;
-  gap: 20rpx;
-}
-
-.grade-panel__answers {
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
-  max-height: 600rpx;
-  overflow-y: auto;
-}
-
-.answer-item {
-  background: #f8fafc;
-  border-radius: 16rpx;
-  padding: 20rpx;
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
-.answer-item__q {
-  font-size: 24rpx;
-  color: #64748b;
-  line-height: 1.5;
-}
-
-.answer-item__a {
-  font-size: 26rpx;
-  color: #16213a;
-  line-height: 1.6;
-}
-
-.grade-panel__no-answers {
-  font-size: 24rpx;
-  color: #94a3b8;
-}
-
-.file-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14rpx;
-}
-
-.file-chip {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  background: #f1f5f9;
-  border-radius: 14rpx;
-  padding: 14rpx 20rpx;
-  font-size: 24rpx;
-  color: #334155;
-}
-
-.file-chip__name {
-  max-width: 400rpx;
+  color: #8b96b3;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.grade-panel__form {
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
-}
-
-.grade-panel__score {
-  border: 2rpx solid #e2e8f0;
-  border-radius: 16rpx;
-  padding: 18rpx 24rpx;
-  font-size: 30rpx;
-}
-
-.grade-panel__feedback {
-  width: 100%;
-  box-sizing: border-box;
-  border: 2rpx solid #e2e8f0;
-  border-radius: 16rpx;
-  padding: 20rpx 24rpx;
-  font-size: 26rpx;
-  line-height: 1.6;
-  min-height: 120rpx;
-}
-
-.grade-panel__save {
-  min-height: 80rpx;
-  font-size: 28rpx;
-  font-weight: 600;
+.sub-card__right {
   display: flex;
   align-items: center;
-  justify-content: center;
-  margin: 0;
+  gap: 14rpx;
+  flex-shrink: 0;
+}
+
+.sub-card__score {
+  font-size: 40rpx;
+  font-weight: 800;
+  color: #1b2540;
+}
+
+.sub-card__status {
+  font-size: 23rpx;
+  color: #8b96b3;
+}
+
+.sub-card__status--pending {
+  color: #d05a1f;
+  font-weight: 600;
+}
+
+.sub-card__arrow {
+  font-size: 36rpx;
+  color: #b0b9cf;
+  line-height: 1;
 }
 </style>

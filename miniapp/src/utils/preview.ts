@@ -19,6 +19,11 @@ function docFileType(fileName: string): string | null {
   return DOC_EXTENSIONS.includes(ext) ? ext : null;
 }
 
+/** 带 bearer 下载受保护文件，返回本地临时路径（用于缩略图等内联展示）。 */
+export function downloadProtectedTempFile(path: string): Promise<string> {
+  return downloadAuthed(path);
+}
+
 function downloadAuthed(path: string): Promise<string> {
   const header: Record<string, string> = {};
   const token = getStoredToken();

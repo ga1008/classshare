@@ -4008,6 +4008,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/mp/teacher/assignment/{assignment_id}/grading",
+    "methods": [
+      "GET"
+    ],
+    "name": "mp_teacher_grading",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/mp/teacher/submission/{submission_id}/files",
     "methods": [
       "GET"
