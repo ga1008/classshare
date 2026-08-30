@@ -16,6 +16,7 @@ from ..database import get_db_connection
 from ..db.connection import get_configured_db_engine
 from ..db.errors import DatabaseProgrammingError
 from .assignment_lifecycle_service import close_overdue_assignments, refresh_assignment_runtime_status
+from .offering_membership_service import count_offering_active_students
 
 
 PROMPT_VERSION = "wrong-question-summary-v4"
@@ -500,13 +501,10 @@ def _load_summary_source(assignment_id: str, teacher_id: int) -> dict[str, Any]:
 
 
 def _count_assignment_students(conn, assignment: dict[str, Any]) -> int:
+    offering_id = int(assignment.get("class_offering_id") or 0)
+    if offering_id:
+        return count_offering_active_students(conn, offering_id)
     class_id = assignment.get("offering_class_id")
-    if not class_id and assignment.get("class_offering_id"):
-        offering = conn.execute(
-            "SELECT class_id FROM class_offerings WHERE id = ?",
-            (assignment["class_offering_id"],),
-        ).fetchone()
-        class_id = offering["class_id"] if offering else None
     if not class_id:
         return 0
     row = conn.execute(

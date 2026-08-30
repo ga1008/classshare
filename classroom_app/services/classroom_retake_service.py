@@ -29,6 +29,7 @@ from fastapi import HTTPException
 
 from ..db.schema_retake import ensure_retake_schema
 from .classroom_closeout_service import apply_absence_scores, refresh_learning_state
+from .offering_membership_service import offering_class_ids
 
 DEFAULT_RETAKE_ORDINARY_SCORE = 70.0
 RETAKE_FEEDBACK_TEMPLATE = "重修/免修学生：未参加本次任务，按教师确认的默认平时分 {score} 分记录。"
@@ -71,18 +72,23 @@ def _offering_row(conn, class_offering_id: int) -> dict[str, Any]:
     return dict(row)
 
 
-def _roster_rows(conn, class_id: int) -> list[dict[str, Any]]:
+def _roster_rows(conn, offering: Any) -> list[dict[str, Any]]:
+    offering_row = dict(offering)
+    class_ids = offering_class_ids(conn, int(offering_row["id"])) or [
+        int(offering_row["class_id"])
+    ]
+    placeholders = ",".join("?" for _ in class_ids)
     return [
         dict(row)
         for row in conn.execute(
-            """
+            f"""
             SELECT s.id, s.student_id_number, s.name
             FROM students s
-            WHERE s.class_id = ?
+            WHERE s.class_id IN ({placeholders})
               AND COALESCE(s.enrollment_status, 'active') = 'active'
             ORDER BY s.student_id_number, s.id
             """,
-            (int(class_id),),
+            tuple(class_ids),
         ).fetchall()
     ]
 
@@ -145,7 +151,7 @@ def detect_retake_candidates(conn, *, class_offering_id: int) -> dict[str, Any]:
     （前两位 + 位数）不同的学生被列为重修插班生候选。仅建议，不生效。"""
     ensure_retake_schema(conn)
     offering = _offering_row(conn, class_offering_id)
-    roster = _roster_rows(conn, offering["class_id"])
+    roster = _roster_rows(conn, offering)
     existing = {
         int(row["student_id"]): dict(row)
         for row in conn.execute(
@@ -290,7 +296,7 @@ def confirm_retake_student(
     作业/测验补上默认分占位（已参加的真实分数保持不变）。"""
     ensure_retake_schema(conn)
     offering = _offering_row(conn, class_offering_id)
-    roster = {int(student["id"]): student for student in _roster_rows(conn, offering["class_id"])}
+    roster = {int(student["id"]): student for student in _roster_rows(conn, offering)}
     student = roster.get(int(student_id))
     if not student:
         raise HTTPException(404, "该学生不在本课堂的在读名单中，无法设置为重修/插班生。")

@@ -934,12 +934,32 @@ def build_classroom_ai_context(conn, class_offering_id: int) -> dict[str, Any]:
     recent_material_names = _safe_fetch_recent_material_names(conn, class_offering_id)
     recent_assignment_titles = _safe_fetch_recent_assignment_titles(conn, class_offering_id)
 
+    # 合班课堂：AI 上下文按全部 link 班级描述（人数/组成），供开课配置、
+    # 课堂助教、评学表等所有消费方共享。
+    from .offering_membership_service import offering_class_links
+
+    class_links = offering_class_links(conn, int(snapshot["id"]))
+    combined_line = ""
+    if len(class_links) > 1:
+        snapshot["is_combined"] = True
+        snapshot["class_links"] = class_links
+        snapshot["class_name"] = "、".join(
+            str(link.get("class_name") or "") for link in class_links if link.get("class_name")
+        )
+        combined_line = "合班组成：" + "、".join(
+            f"{link.get('class_name')}（{int(link.get('student_count') or 0)} 人）"
+            for link in class_links
+            if link.get("class_name")
+        )
+
     classroom_lines = [
         f"课堂编号：{snapshot.get('id')}",
         f"课程名称：{snapshot.get('course_name') or '未命名课程'}",
         f"授课班级：{snapshot.get('class_name') or '未命名班级'}",
         f"任课教师：{snapshot.get('teacher_name') or '未命名教师'}",
     ]
+    if combined_line:
+        classroom_lines.append(combined_line)
 
     if snapshot.get("semester_name"):
         classroom_lines.append(f"所属学期：{snapshot['semester_name']}")

@@ -30,6 +30,7 @@ from .assignment_lifecycle_service import (
     close_overdue_assignments,
 )
 from .assignment_reminder_service import cancel_assignment_due_reminders
+from .offering_membership_service import offering_class_ids
 
 # 结课卡片类别。作业与测验共用 assignments 表，靠 exam_paper_id 区分展示。
 KIND_ASSIGNMENT = "assignment"
@@ -123,20 +124,22 @@ def _offering_row(conn, class_offering_id: int) -> Optional[dict[str, Any]]:
     return dict(row) if row else None
 
 
-def _active_student_rows(conn, class_id: Any) -> list[dict[str, Any]]:
-    if class_id is None:
+def _active_student_rows(conn, class_ids: Any) -> list[dict[str, Any]]:
+    normalized_ids = [int(value) for value in (class_ids or []) if value]
+    if not normalized_ids:
         return []
+    placeholders = ",".join("?" for _ in normalized_ids)
     return [
         dict(row)
         for row in conn.execute(
-            """
+            f"""
             SELECT s.id, s.student_id_number, s.name
             FROM students s
-            WHERE s.class_id = ?
+            WHERE s.class_id IN ({placeholders})
               AND COALESCE(s.enrollment_status, 'active') = 'active'
             ORDER BY s.student_id_number, s.name
             """,
-            (int(class_id),),
+            tuple(normalized_ids),
         )
     ]
 
@@ -221,7 +224,10 @@ def _open_assignment_cards(conn, offering: dict[str, Any]) -> list[dict[str, Any
     if not rows:
         return []
 
-    student_rows = _active_student_rows(conn, offering.get("class_id"))
+    student_rows = _active_student_rows(
+        conn,
+        offering_class_ids(conn, int(offering["id"])) or [offering.get("class_id")],
+    )
     cards: list[dict[str, Any]] = []
     for row in rows:
         assignment = dict(row)
@@ -472,7 +478,11 @@ def apply_absence_scores(
 
     now_iso = _now_iso()
 
-    students = _active_student_rows(conn, class_id)
+    offering_id_for_roster = int(assignment.get("class_offering_id") or 0)
+    roster_class_ids = (
+        offering_class_ids(conn, offering_id_for_roster) if offering_id_for_roster else []
+    ) or [class_id]
+    students = _active_student_rows(conn, roster_class_ids)
     by_student = _pick_primary_submission(_submission_rows(conn, assignment_id))
     affected: set[int] = set()
 

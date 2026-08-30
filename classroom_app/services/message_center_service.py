@@ -22,6 +22,7 @@ from .chat_image_derivatives import (
     run_chat_image_processing,
 )
 from .file_service import resolve_global_file_path, save_file_globally
+from .offering_membership_service import offering_class_ids, student_belongs_to_offering
 from .psych_profile_service import (
     build_explicit_user_profile_prompt,
     compose_classroom_chat_system_prompt,
@@ -904,7 +905,11 @@ def _load_accessible_classroom_private_scope(conn, user: dict, class_offering_id
         """,
         (current_user_pk,),
     ).fetchone()
-    if student_row is None or int(student_row["class_id"]) != int(offering["class_id"]):
+    if student_row is None or not student_belongs_to_offering(
+        conn,
+        student_class_id=int(student_row["class_id"] or 0),
+        offering=offering,
+    ):
         return None
     return offering
 
@@ -1383,15 +1388,17 @@ def list_classroom_private_message_contacts(conn, user: dict, class_offering_id:
     if offering is None:
         raise PermissionError("permission denied")
 
+    contact_class_ids = offering_class_ids(conn, int(offering["id"])) or [int(offering["class_id"])]
+    contact_placeholders = ",".join("?" for _ in contact_class_ids)
     students = conn.execute(
-        """
+        f"""
         SELECT id, name, student_id_number
         FROM students
-        WHERE class_id = ?
+        WHERE class_id IN ({contact_placeholders})
           AND COALESCE(enrollment_status, 'active') = 'active'
         ORDER BY student_id_number, id
         """,
-        (int(offering["class_id"]),),
+        tuple(contact_class_ids),
     ).fetchall()
     blocked_map = _load_blocked_identity_map(conn, current_identity)
     contact_by_key: dict[str, dict[str, Any]] = {}
@@ -4324,15 +4331,17 @@ def create_discussion_mention_notifications(
         },
     }
 
+    recipient_class_ids = offering_class_ids(conn, int(offering["id"])) or [int(offering["class_id"])]
+    recipient_placeholders = ",".join("?" for _ in recipient_class_ids)
     student_rows = conn.execute(
-        """
+        f"""
         SELECT id, name
         FROM students
-        WHERE class_id = ?
+        WHERE class_id IN ({recipient_placeholders})
           AND COALESCE(enrollment_status, 'active') = 'active'
         ORDER BY id
         """,
-        (int(offering["class_id"]),),
+        tuple(recipient_class_ids),
     ).fetchall()
     for row in student_rows:
         identity = build_user_identity("student", row["id"])

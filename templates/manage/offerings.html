@@ -558,7 +558,14 @@
                     </div>
 
                     <div class="form-group full-span">
-                        <label class="form-label">合班班级（可选）</label>
+                        <div class="manage-pagehead__title-row">
+                            <label class="form-label">合班班级（可选）</label>
+                            {{ explain_button(
+                                '合班课堂',
+                                '当多个行政班合上同一门课（教务的“教学班组成”含多个班）时，在这里勾选其余班级即可只开一个课堂：全部班级的学生共享同一份课次、作业、考试与互动，成绩与名单自动覆盖所选班级并可按班区分。上方“班级”是主班级；同一课程每个班级只能属于一个课堂。教务同步检测到合班时也会自动建议勾选。',
+                                label='合班班级说明'
+                            ) }}
+                        </div>
                         <div class="offering-extra-class-list" id="offeringExtraClassList">
                             {% for class_item in my_classes %}
                             <label class="offering-extra-class-item" data-class-id="{{ class_item.id }}">
@@ -720,7 +727,7 @@
                             <p>{{ offering.schedule_info or '暂未配置首次上课日期和每周上课安排。' }}</p>
                         </div>
                         <div class="academic-badge-row">
-                            {% if offering.is_combined %}<span class="academic-badge is-accent">合班 · {{ offering.class_ids|length }} 班</span>{% endif %}
+                            {% if offering.is_combined %}<span class="academic-badge is-accent" data-explain-title="合班课堂" data-explain-text="该课堂由 {{ offering.class_ids|length }} 个行政班合上（{{ offering.combined_class_names }}）：名单、作业、考试、互动与成绩覆盖全部班级，学生名单按班分节展示。">合班 · {{ offering.class_ids|length }} 班</span>{% endif %}
                             {% if offering.course_department %}<span class="academic-badge is-accent">{{ offering.course_department }}</span>{% endif %}
                             {% if offering.class_department %}<span class="academic-badge">{{ offering.class_department }}</span>{% endif %}
                             {% if offering.textbook_title %}<span class="academic-badge is-success">{{ offering.textbook_title }}</span>{% endif %}

@@ -17,6 +17,7 @@ from ..database import get_db_connection
 from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
 from .exam_json_service import EXAM_JSON_TEMPLATE, normalize_exam_json_payload, normalize_exam_scoring_payload
 from .ai_gateway_service import ai_gateway_post
+from .offering_membership_service import offering_class_ids
 from .material_mastery_check_service import (
     grade_material_mastery_check,
     normalize_material_mastery_check_payload,
@@ -1495,15 +1496,17 @@ def _active_student_ids_for_offering(conn, class_offering_id: int) -> list[int]:
     offering = _load_offering(conn, int(class_offering_id))
     if not offering:
         return []
+    class_ids = offering_class_ids(conn, int(class_offering_id)) or [offering["class_id"]]
+    placeholders = ",".join("?" for _ in class_ids)
     rows = conn.execute(
-        """
+        f"""
         SELECT id
         FROM students
-        WHERE class_id = ?
+        WHERE class_id IN ({placeholders})
           AND COALESCE(enrollment_status, 'active') = 'active'
         ORDER BY student_id_number, id
         """,
-        (offering["class_id"],),
+        tuple(class_ids),
     ).fetchall()
     return [int(row["id"]) for row in rows]
 
@@ -2555,8 +2558,10 @@ def _class_learning_score_rows(
     offering = _load_offering(conn, int(class_offering_id))
     if not offering:
         return []
+    score_class_ids = offering_class_ids(conn, int(class_offering_id)) or [offering["class_id"]]
+    score_placeholders = ",".join("?" for _ in score_class_ids)
     rows = conn.execute(
-        """
+        f"""
         SELECT s.id,
                s.name,
                s.student_id_number,
@@ -2566,11 +2571,11 @@ def _class_learning_score_rows(
         LEFT JOIN learning_progress_snapshots lps
                ON lps.class_offering_id = ?
               AND lps.student_id = s.id
-        WHERE s.class_id = ?
+        WHERE s.class_id IN ({score_placeholders})
           AND COALESCE(s.enrollment_status, 'active') = 'active'
         ORDER BY s.student_id_number, s.id
         """,
-        (int(class_offering_id), offering["class_id"]),
+        (int(class_offering_id), *score_class_ids),
     ).fetchall()
     score_rows: list[dict[str, Any]] = []
     for row in rows:
@@ -2971,15 +2976,18 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
     if not offering:
         return {"student_count": 0, "average_score": 0, "distribution": [], "students": []}
     weight_settings = get_class_cultivation_weight_settings(conn, int(class_offering_id))
+    overview_class_ids = offering_class_ids(conn, int(class_offering_id)) or [offering["class_id"]]
+    overview_placeholders = ",".join("?" for _ in overview_class_ids)
     rows = conn.execute(
-        """
-        SELECT id, name, student_id_number
-        FROM students
-        WHERE class_id = ?
-          AND COALESCE(enrollment_status, 'active') = 'active'
-        ORDER BY student_id_number, id
+        f"""
+        SELECT s.id, s.name, s.student_id_number, c.name AS class_name
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        WHERE s.class_id IN ({overview_placeholders})
+          AND COALESCE(s.enrollment_status, 'active') = 'active'
+        ORDER BY c.name, s.student_id_number, s.id
         """,
-        (offering["class_id"],),
+        tuple(overview_class_ids),
     ).fetchall()
     student_ids = [int(row["id"]) for row in rows]
     behavior_state_by_student: dict[int, dict[str, Any]] = {}
@@ -3146,6 +3154,7 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
             "id": student_id,
             "name": student["name"],
             "student_id_number": student.get("student_id_number"),
+            "class_name": student.get("class_name") or "",
             "score": progress["score"],
             "progress_percent": progress["progress_percent"],
             "current_level": progress["current_level"],
@@ -3196,8 +3205,16 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
         })
     roster_students = sorted(
         students,
-        key=lambda item: (str(item.get("student_id_number") or ""), str(item.get("name") or ""), int(item["id"])),
+        key=lambda item: (
+            str(item.get("class_name") or ""),
+            str(item.get("student_id_number") or ""),
+            str(item.get("name") or ""),
+            int(item["id"]),
+        ),
     )
+    roster_class_names = list(dict.fromkeys(
+        str(item.get("class_name") or "") for item in roster_students if item.get("class_name")
+    ))
     students.sort(key=lambda item: (item["score"], item["certificate_count"]), reverse=True)
     average_material_percent = round(material_percent_total / student_count) if student_count else 0
     average_material_mastery_percent = round(material_mastery_percent_total / student_count) if student_count else 0
@@ -3270,6 +3287,8 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
         "distribution": distribution_items,
         "students": students[:12],
         "roster_students": roster_students,
+        "roster_class_names": roster_class_names,
+        "is_combined_roster": len(roster_class_names) > 1,
         "levels": [dict(level, pass_score=PASSING_STAGE_SCORE) for level in LEARNING_LEVELS],
     }
 

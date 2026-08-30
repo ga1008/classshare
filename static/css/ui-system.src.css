@@ -22909,6 +22909,29 @@ body.has-chat-image-preview-open {
     white-space: nowrap;
 }
 
+/* 合班课堂：学生名单按行政班分节的小节眉头 */
+.classroom-page .learning-roster-class-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 4px 10px;
+    border-left: 3px solid hsl(var(--ls-teal) / 0.55);
+    background: hsl(var(--ls-teal) / 0.06);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+}
+
+.classroom-page .learning-roster-class-head:first-child {
+    margin-top: 0;
+}
+
+.classroom-page .learning-roster-class-head span {
+    color: var(--gray-500);
+    font-size: var(--text-xs);
+}
+
 .classroom-page .learning-exam-roster-panel {
     grid-area: overview-exam;
     display: grid;

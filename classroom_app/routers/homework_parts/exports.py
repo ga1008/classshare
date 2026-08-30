@@ -44,10 +44,12 @@ async def export_submission_attachments(
             f"""
             SELECT sf.stored_path, sf.relative_path, sf.original_filename,
                    s.student_pk_id, stu.name AS student_name,
-                   stu.student_id_number
+                   stu.student_id_number,
+                   cls.name AS student_class_name
             FROM submission_files sf
             JOIN submissions s ON s.id = sf.submission_id
             JOIN students stu ON stu.id = s.student_pk_id
+            LEFT JOIN classes cls ON cls.id = stu.class_id
             WHERE s.assignment_id = ?
               AND s.student_pk_id IN (
                   SELECT id
@@ -83,11 +85,16 @@ async def export_submission_attachments(
 
             student_pk_id = int(row["student_pk_id"])
 
-            # Resolve folder name once per student
+            # Resolve folder name once per student；合班时按行政班分一级目录
             if student_pk_id not in student_folder_map:
                 student_name = str(row["student_name"] or "").strip() or "未知"
                 student_id_number = str(row["student_id_number"] or "").strip() or "无学号"
                 folder = _sanitize_zip_path(f"{student_name}-{student_id_number}")
+                if len(class_ids) > 1:
+                    class_folder = _sanitize_zip_path(
+                        str(row["student_class_name"] or "").strip() or "未分班"
+                    )
+                    folder = f"{class_folder}/{folder}"
 
                 if folder in used_folder_names:
                     base = folder
@@ -139,14 +146,19 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
         # 1. 获取课堂全部班级的学生
         roster_cursor = conn.execute(
             f"""
-            SELECT id, student_id_number, name
-            FROM students
-            WHERE class_id IN ({class_placeholders})
-              AND COALESCE(enrollment_status, 'active') = 'active'
+            SELECT s.id, s.student_id_number, s.name, cls.name AS class_name
+            FROM students s
+            LEFT JOIN classes cls ON cls.id = s.class_id
+            WHERE s.class_id IN ({class_placeholders})
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
+            ORDER BY cls.name, s.student_id_number, s.id
             """,
             tuple(class_ids),
         )
-        roster_df = pd.DataFrame(roster_cursor, columns=['student_pk_id', '学号', '姓名'])
+        roster_df = pd.DataFrame(roster_cursor, columns=['student_pk_id', '学号', '姓名', '班级'])
+        # 单班课堂保持原有列结构；合班时保留「班级」列并按班排序方便拆分。
+        if len(class_ids) <= 1:
+            roster_df = roster_df.drop(columns=['班级'])
 
         if roster_df.empty:
             raise HTTPException(404, "此班级没有学生，无法导出。")
@@ -175,7 +187,10 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
 
     final_df = roster_df.merge(grades_df, on='student_pk_id', how='left')
 
-    export_filename = f"成绩_{class_info['name']}_{assignment['title']}.xlsx"
+    export_class_label = str(class_info['name'] or '').strip()
+    if len(class_ids) > 1 and "combined_class_names" in offering.keys() and str(offering["combined_class_names"] or "").strip():
+        export_class_label = str(offering["combined_class_names"]).strip()
+    export_filename = f"成绩_{export_class_label}_{assignment['title']}.xlsx"
     # 确保作业目录存在
     assignment_dir = _build_assignment_storage_dir(assignment['course_id'], assignment['id'])
     assignment_dir.mkdir(parents=True, exist_ok=True)

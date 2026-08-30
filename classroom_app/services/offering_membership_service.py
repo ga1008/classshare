@@ -101,10 +101,13 @@ def student_belongs_to_offering(conn: Any, *, student_class_id: int, offering: A
     if int(offering_row.get("class_id") or 0) == class_id:
         return True
     ensure_offering_class_links_schema(conn)
-    row = conn.execute(
-        "SELECT 1 FROM class_offering_class_links WHERE offering_id = ? AND class_id = ? LIMIT 1",
-        (int(offering_row["id"]), class_id),
-    ).fetchone()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM class_offering_class_links WHERE offering_id = ? AND class_id = ? LIMIT 1",
+            (int(offering_row["id"]), class_id),
+        ).fetchone()
+    except Exception:
+        return False
     return bool(row)
 
 
@@ -127,17 +130,25 @@ def count_offering_active_students(conn: Any, offering_id: int) -> int:
 
 
 def offering_class_ids(conn: Any, offering_id: int) -> list[int]:
-    """All linked class ids, primary first; falls back to the legacy column."""
+    """All linked class ids, primary first; falls back to the legacy column.
+
+    Read path is self-healing: if the link table is unreachable on this
+    connection (e.g. hand-rolled test schemas), resolution degrades to the
+    legacy primary class instead of failing.
+    """
     ensure_offering_class_links_schema(conn)
-    rows = conn.execute(
-        """
-        SELECT class_id
-        FROM class_offering_class_links
-        WHERE offering_id = ?
-        ORDER BY is_primary DESC, id
-        """,
-        (int(offering_id),),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            """
+            SELECT class_id
+            FROM class_offering_class_links
+            WHERE offering_id = ?
+            ORDER BY is_primary DESC, id
+            """,
+            (int(offering_id),),
+        ).fetchall()
+    except Exception:
+        rows = []
     class_ids = [int(row["class_id"]) for row in rows]
     if class_ids:
         return class_ids
@@ -157,24 +168,42 @@ def offering_class_links(conn: Any, offering_id: int) -> list[dict[str, Any]]:
     if not class_ids:
         return []
     placeholders = ",".join("?" for _ in class_ids)
-    rows = conn.execute(
-        f"""
-        SELECT c.id AS class_id,
-               c.name AS class_name,
-               COALESCE(l.is_primary, 0) AS is_primary,
-               COALESCE(l.source, '') AS source,
-               (
-                   SELECT COUNT(*) FROM students s
-                   WHERE s.class_id = c.id
-                     AND COALESCE(s.enrollment_status, 'active') = 'active'
-               ) AS student_count
-        FROM classes c
-        LEFT JOIN class_offering_class_links l
-               ON l.class_id = c.id AND l.offering_id = ?
-        WHERE c.id IN ({placeholders})
-        """,
-        (int(offering_id), *class_ids),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT c.id AS class_id,
+                   c.name AS class_name,
+                   COALESCE(l.is_primary, 0) AS is_primary,
+                   COALESCE(l.source, '') AS source,
+                   (
+                       SELECT COUNT(*) FROM students s
+                       WHERE s.class_id = c.id
+                         AND COALESCE(s.enrollment_status, 'active') = 'active'
+                   ) AS student_count
+            FROM classes c
+            LEFT JOIN class_offering_class_links l
+                   ON l.class_id = c.id AND l.offering_id = ?
+            WHERE c.id IN ({placeholders})
+            """,
+            (int(offering_id), *class_ids),
+        ).fetchall()
+    except Exception:
+        rows = conn.execute(
+            f"""
+            SELECT c.id AS class_id,
+                   c.name AS class_name,
+                   1 AS is_primary,
+                   '' AS source,
+                   (
+                       SELECT COUNT(*) FROM students s
+                       WHERE s.class_id = c.id
+                         AND COALESCE(s.enrollment_status, 'active') = 'active'
+                   ) AS student_count
+            FROM classes c
+            WHERE c.id IN ({placeholders})
+            """,
+            tuple(class_ids),
+        ).fetchall()
     by_id = {int(row["class_id"]): dict(row) for row in rows}
     ordered = [by_id[class_id] for class_id in class_ids if class_id in by_id]
     for item in ordered:

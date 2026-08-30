@@ -115,7 +115,10 @@ def ensure_offering_class_links_schema(
                 pass
 
     _backfill_primary_links(conn)
-    _READY_KEYS.add(ready_key)
+    if not force:
+        # force 走的是测试夹具的 ad-hoc 连接（如 :memory:），不能把
+        # 「当前配置数据库已就绪」写进进程级缓存，否则会污染后续连接。
+        _READY_KEYS.add(ready_key)
 
 
 def _backfill_primary_links(conn: Any) -> None:

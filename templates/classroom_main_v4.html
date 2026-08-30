@@ -1356,8 +1356,7 @@
                         <input type="search" data-learning-roster-search placeholder="输入姓名或学号">
                     </label>
                 </div>
-                <div class="learning-roster-list" data-learning-roster-list>
-                    {% for item in roster_students %}
+                {% macro learning_roster_student_row(item) %}
                     <a
                         class="learning-roster-student"
                         href="/manage/students/{{ item.id }}"
@@ -1365,7 +1364,7 @@
                         data-student-insight-url="/manage/students/{{ item.id }}?embed=1"
                         data-student-name="{{ item.name }}"
                         data-learning-roster-item
-                        data-search-text="{{ (item.name ~ ' ' ~ (item.student_id_number or '') ~ ' ' ~ item.current_level.level_name ~ ' ' ~ (item.status_tags | join(' '))) | lower }}"
+                        data-search-text="{{ (item.name ~ ' ' ~ (item.student_id_number or '') ~ ' ' ~ (item.class_name or '') ~ ' ' ~ item.current_level.level_name ~ ' ' ~ (item.status_tags | join(' '))) | lower }}"
                     >
                         <span class="learning-roster-student__identity">
                             <strong>{{ item.name }}</strong>
@@ -1388,9 +1387,21 @@
                             {% if item.has_teacher_note %}<b>备注</b>{% endif %}
                         </span>
                     </a>
-                    {% else %}
+                {% endmacro %}
+                <div class="learning-roster-list" data-learning-roster-list>
+                    {% if not roster_students %}
                     <div class="learning-roster-empty">当前课堂还没有学生名单。</div>
-                    {% endfor %}
+                    {% elif lo.is_combined_roster %}
+                        {% for class_group in roster_students | groupby('class_name') %}
+                        <div class="learning-roster-class-head">
+                            <strong>{{ class_group.grouper or '未分班' }}</strong>
+                            <span>{{ class_group.list | length }} 人</span>
+                        </div>
+                        {% for item in class_group.list %}{{ learning_roster_student_row(item) }}{% endfor %}
+                        {% endfor %}
+                    {% else %}
+                        {% for item in roster_students %}{{ learning_roster_student_row(item) }}{% endfor %}
+                    {% endif %}
                 </div>
                 <p class="learning-roster-empty" data-learning-roster-empty hidden>没有匹配的学生。</p>
             </div>

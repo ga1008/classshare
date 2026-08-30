@@ -301,6 +301,24 @@ class OfferingMembershipServiceTests(unittest.TestCase):
         self.assertEqual(offering["class_ids"], [self.class_a, self.class_b])
         self.assertEqual(offering["class_name"], "网工2401·网工2402")
 
+    def test_class_learning_overview_groups_roster_by_class(self):
+        from classroom_app.services.learning_progress_service import build_class_learning_overview
+
+        with database.get_db_connection() as conn:
+            membership.replace_offering_class_links(
+                conn,
+                offering_id=self.offering_id,
+                teacher_id=self.teacher_id,
+                class_ids=[self.class_a, self.class_b],
+            )
+            conn.commit()
+            overview = build_class_learning_overview(conn, self.offering_id)
+        self.assertTrue(overview["is_combined_roster"])
+        self.assertEqual(overview["roster_class_names"], ["网工2401", "网工2402"])
+        roster = overview["roster_students"]
+        self.assertEqual([item["class_name"] for item in roster], ["网工2401", "网工2402"])
+        self.assertEqual({item["name"] for item in roster}, {"学生甲", "学生乙"})
+
     def test_primary_switch_keeps_invariant(self):
         with database.get_db_connection() as conn:
             membership.replace_offering_class_links(
