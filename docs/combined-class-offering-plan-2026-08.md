@@ -5,7 +5,12 @@
 > **P1 上线**（d752dca8：学生发现/名单/鉴权/统计/导出等核心链路切 membership 并集；
 > 课堂表单多选班级 + 防重 + 合班徽标 + 智慧课表深链多班自动勾选；
 > ensure 守卫改按 engine+DB 路径记忆并支持 force/engine 供手搓 schema 测试夹具）。
-> 下一步 P2：长尾查询收敛 + 守卫单测 + 同步 offering_add_classes 建议 + 开课自动填写。
+> **P2 上线**（27dab784：长尾 41 处旧 join 全量收敛；守卫单测
+> test_no_legacy_offering_class_joins 禁止裸等值复发；课程 metadata 增
+> combined_admin_classes；同步差异预览新增 linked_classes 字段差异（合班缺班检测），
+> 教师确认后 apply 自动把缺失行政班挂入课堂（source=academic_sync，失败仅降级提示）；
+> 开课表单选择合班课程自动匹配主班级并勾选其余班级）。
+> 剩余：P3 增强（按行政班拆分导出/学生列表分节/说明浮窗/AI 上下文）、P4 合并向导（单独评审）。
 > 背景案例：新同步的「Python程序设计」由多个行政班合班上课；班级本身分开管理，其他课程各自独立，仅这门课合上。
 
 ---
