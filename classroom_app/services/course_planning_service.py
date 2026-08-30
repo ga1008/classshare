@@ -24,6 +24,7 @@ WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "�
 HOME_TIMELINE_ENTRY_ORDER = "home"
 SCHEDULE_SOURCE_FIXED_CYCLE = "fixed_cycle"
 SCHEDULE_SOURCE_ACADEMIC_SYNC = "academic_sync"
+LESSON_SOURCE_ACADEMIC_SYNC = "academic_sync"
 
 
 class CoursePlanningError(ValueError):
@@ -471,6 +472,64 @@ def load_course_lessons_by_course_id(
         item["learning_material_id"] = int(item["learning_material_id"]) if item.get("learning_material_id") else None
         grouped[int(item["course_id"])].append(item)
     return dict(grouped)
+
+
+def build_academic_course_lessons_from_occurrences(
+    occurrences: list[dict[str, Any]],
+    *,
+    course_name: str = "",
+) -> list[dict[str, Any]]:
+    """按教务实际排课为课程生成占位「课堂设置」课次。
+
+    每个 occurrence（一次真实上课）对应一条课次；标题与内容都是可被教师
+    后续覆盖的占位文本，节数取教务排课节数，保证与总学时口径一致。
+    """
+    sorted_occurrences = sorted(
+        occurrences,
+        key=lambda item: (
+            str(item.get("session_date") or ""),
+            _coerce_int(item.get("section_start")),
+            _coerce_int(item.get("id")),
+        ),
+    )
+
+    lessons: list[dict[str, Any]] = []
+    for occurrence in sorted_occurrences[:MAX_COURSE_LESSON_COUNT]:
+        order_index = len(lessons) + 1
+        session_date = parse_date_input(occurrence.get("session_date"))
+        week_index = _coerce_int(occurrence.get("week_index"))
+        weekday = _coerce_int(occurrence.get("weekday"), session_date.weekday() if session_date else 0)
+        section_text = _normalize_text(occurrence.get("section_text"))
+        location = " ".join(
+            part
+            for part in [_normalize_text(occurrence.get("campus")), _normalize_text(occurrence.get("location"))]
+            if part
+        )
+        teaching_class_name = _normalize_text(occurrence.get("teaching_class_name"))
+        class_composition = _normalize_text(occurrence.get("class_composition"))
+        schedule_parts = [
+            session_date.isoformat() if session_date else "",
+            f"第{week_index}周" if week_index > 0 else "",
+            weekday_label(weekday),
+            f"第{section_text}节" if section_text else "",
+        ]
+        content_lines = [
+            f"第 {order_index} 次课，按教务实际排课自动生成，请补充本次课要讲的知识点、实验内容或案例任务。",
+            "上课时间：" + " ".join(part for part in schedule_parts if part),
+            f"上课地点：{location}" if location else "",
+            f"教学班：{class_composition or teaching_class_name}" if (class_composition or teaching_class_name) else "",
+        ]
+        lessons.append(
+            {
+                "order_index": order_index,
+                "title": f"{course_name or '课程'} 第 {order_index} 次课"[:MAX_LESSON_TITLE_LENGTH],
+                "content": "\n".join(line for line in content_lines if line)[:MAX_LESSON_CONTENT_LENGTH],
+                "section_count": min(MAX_SECTION_COUNT, max(1, _coerce_int(occurrence.get("section_count"), 1))),
+                "source_type": LESSON_SOURCE_ACADEMIC_SYNC,
+                "learning_material_id": None,
+            }
+        )
+    return lessons
 
 
 def serialize_course_row(

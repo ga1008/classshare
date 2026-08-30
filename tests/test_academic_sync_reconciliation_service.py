@@ -376,6 +376,91 @@ class AcademicSyncReconciliationTests(unittest.TestCase):
         self.assertEqual(result["course_count"], 1)
         self.assertEqual(result["courses"][0]["course_id"], self.course_id)
 
+    def _run_course_upsert(self):
+        roster = self.roster()
+        items = course_sync.build_schedule_items_from_teaching_class_rosters(
+            [roster],
+            source_url="/academic-test",
+        )
+        with database.get_db_connection() as conn:
+            conn.execute(
+                "UPDATE courses SET academic_course_code = ? WHERE id = ?",
+                ("E020185B3", self.course_id),
+            )
+            conn.commit()
+            result = course_sync._upsert_courses_and_schedule_items(
+                conn,
+                teacher_id=self.teacher_id,
+                semester=self.semester(),
+                items=items,
+                source_summary=[],
+            )
+            conn.commit()
+        return result
+
+    def test_sync_generates_course_lessons_from_academic_schedule(self):
+        result = self._run_course_upsert()
+
+        self.assertEqual(result["lesson_generated_course_count"], 1)
+        with database.get_db_connection() as conn:
+            lessons = [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT * FROM course_lessons WHERE course_id = ? ORDER BY order_index",
+                    (self.course_id,),
+                ).fetchall()
+            ]
+        # 星期一第4-5节{1-3周} → 3 次实际上课，每次 2 节
+        self.assertEqual(len(lessons), 3)
+        for index, lesson in enumerate(lessons, start=1):
+            self.assertEqual(lesson["order_index"], index)
+            self.assertEqual(lesson["section_count"], 2)
+            self.assertEqual(lesson["source_type"], "academic_sync")
+            self.assertIn(f"第 {index} 次课", lesson["title"])
+            self.assertIn("上课时间", lesson["content"])
+        self.assertTrue(
+            any("自动生成课堂设置占位课次" in message for message in result["warnings"])
+        )
+
+    def test_sync_preserves_teacher_authored_course_lessons(self):
+        with database.get_db_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO course_lessons (course_id, order_index, title, content, section_count, source_type)
+                VALUES (?, 1, '教师自编第一课', '教师维护的内容', 2, 'manual')
+                """,
+                (self.course_id,),
+            )
+            conn.commit()
+
+        result = self._run_course_upsert()
+
+        self.assertEqual(result["lesson_generated_course_count"], 0)
+        with database.get_db_connection() as conn:
+            lessons = [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT * FROM course_lessons WHERE course_id = ? ORDER BY order_index",
+                    (self.course_id,),
+                ).fetchall()
+            ]
+        self.assertEqual(len(lessons), 1)
+        self.assertEqual(lessons[0]["title"], "教师自编第一课")
+
+    def test_resync_rebuilds_untouched_placeholder_lessons(self):
+        first = self._run_course_upsert()
+        self.assertEqual(first["lesson_generated_course_count"], 1)
+
+        second = self._run_course_upsert()
+
+        self.assertEqual(second["lesson_generated_course_count"], 1)
+        with database.get_db_connection() as conn:
+            lesson_count = conn.execute(
+                "SELECT COUNT(*) AS n FROM course_lessons WHERE course_id = ?",
+                (self.course_id,),
+            ).fetchone()["n"]
+        self.assertEqual(int(lesson_count), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

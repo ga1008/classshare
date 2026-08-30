@@ -16,11 +16,16 @@ from ..database import get_db_connection
 from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
 from .academic_service import china_now, parse_date_input
 from .course_planning_service import (
+    LESSON_SOURCE_ACADEMIC_SYNC,
     SCHEDULE_SOURCE_ACADEMIC_SYNC,
+    build_academic_course_lessons_from_occurrences,
     build_academic_offering_session_plan,
+    load_academic_course_occurrences,
     load_course_lessons_by_course_id,
+    replace_course_lessons,
     replace_offering_sessions,
     select_academic_teaching_class_for_offering,
+    summarize_academic_teaching_classes,
 )
 from .department_service import DEPARTMENT_PRESETS, infer_department_from_text, normalize_department
 from .learning_progress_service import normalize_course_sect_name
@@ -1937,6 +1942,77 @@ def _insert_academic_occurrences(
     return count
 
 
+def _course_lessons_are_replaceable(lessons: list[dict[str, Any]]) -> bool:
+    """自动生成的课次仅在从未被教师接管时才允许随新排课重建。
+
+    教师在编辑课程里保存后 source_type 会变回 manual，AI 拆课为 ai；
+    另外只要占位课次被绑定了课堂文档，也视为已被教师接管，不再覆盖。
+    """
+    for lesson in lessons:
+        if _normalize_space(lesson.get("source_type")) != LESSON_SOURCE_ACADEMIC_SYNC:
+            return False
+        if lesson.get("learning_material_id"):
+            return False
+    return True
+
+
+def _generate_course_lessons_from_academic_schedule(
+    conn,
+    *,
+    teacher_id: int,
+    semester: dict[str, Any],
+    course_names_by_id: dict[int, str],
+) -> tuple[int, list[str]]:
+    """把教务实际排课落成课程的「课堂设置」课次，补齐同步闭环。
+
+    以排课次数最多的教学班为课程模板基准（与学时推导口径一致），
+    每次真实上课生成一条占位课次；已有人工/AI 课堂设置的课程绝不触碰。
+    """
+    course_ids = sorted(course_names_by_id)
+    if not course_ids:
+        return 0, []
+    lesson_map = load_course_lessons_by_course_id(conn, course_ids)
+    generated_count = 0
+    warnings: list[str] = []
+    for course_id in course_ids:
+        existing_lessons = lesson_map.get(course_id, [])
+        if existing_lessons and not _course_lessons_are_replaceable(existing_lessons):
+            continue
+        class_options = summarize_academic_teaching_classes(
+            conn,
+            teacher_id=teacher_id,
+            semester_id=int(semester["id"]),
+            course_id=course_id,
+        )
+        if not class_options:
+            continue
+        template_class = class_options[0]
+        occurrences = load_academic_course_occurrences(
+            conn,
+            teacher_id=teacher_id,
+            semester_id=int(semester["id"]),
+            course_id=course_id,
+            teaching_class_id=template_class.get("teaching_class_id") or "",
+            teaching_class_name=template_class.get("teaching_class_name") or "",
+        )
+        course_name = course_names_by_id.get(course_id, "")
+        lessons = build_academic_course_lessons_from_occurrences(occurrences, course_name=course_name)
+        if not lessons:
+            continue
+        replace_course_lessons(conn, course_id=course_id, lessons=lessons)
+        generated_count += 1
+        if len(class_options) > 1:
+            warnings.append(
+                f"{course_name or '课程'}：存在 {len(class_options)} 个教学班，课堂设置已按排课最多的"
+                f"“{template_class.get('class_display_name') or template_class.get('teaching_class_name')}”生成 {len(lessons)} 次课；其余教学班按各自实际排课对齐。"
+            )
+    if generated_count:
+        warnings.append(
+            f"已为 {generated_count} 门课程按教务实际排课自动生成课堂设置占位课次，请补充每次课的教学内容。"
+        )
+    return generated_count, warnings
+
+
 def _sync_existing_offering_academic_sessions(
     conn,
     *,
@@ -2424,6 +2500,18 @@ def _upsert_courses_and_schedule_items(
                 }
             )
 
+    lesson_generated_course_count, lesson_warnings = _generate_course_lessons_from_academic_schedule(
+        conn,
+        teacher_id=teacher_id,
+        semester=semester,
+        course_names_by_id={
+            int(result["course_id"]): str(result.get("course_name") or "")
+            for result in course_results
+            if result.get("course_id")
+        },
+    )
+    warnings.extend(lesson_warnings)
+
     offering_update_count, offering_warnings = _sync_existing_offering_academic_sessions(
         conn,
         teacher_id=teacher_id,
@@ -2445,6 +2533,7 @@ def _upsert_courses_and_schedule_items(
         "course_count": len(grouped),
         "schedule_item_count": len(items),
         "occurrence_count": occurrence_count,
+        "lesson_generated_course_count": lesson_generated_course_count,
         "offering_update_count": offering_update_count,
         "courses": course_results,
         "unresolved_course_fields": unresolved_course_fields,
