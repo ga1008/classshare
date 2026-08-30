@@ -4024,6 +4024,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/mp/teacher/submission/{submission_id}/review",
+    "methods": [
+      "GET"
+    ],
+    "name": "mp_teacher_submission_review",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/mp/teacher/tasks",
     "methods": [
       "GET"

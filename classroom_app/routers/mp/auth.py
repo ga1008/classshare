@@ -68,6 +68,20 @@ def _ensure_student_active(student_row) -> None:
         )
 
 
+def _external_base_url(request: Request) -> str:
+    """对外可达的 base_url。
+
+    生产在 nginx 后面而 uvicorn 未开 proxy_headers，request.base_url 的
+    scheme 是 http；小程序图片域名只允许 https，必须按 X-Forwarded-Proto
+    还原真实协议（局域网直连开发时无此头，保持原样）。
+    """
+    base = str(request.base_url)
+    proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    if proto == "https" and base.startswith("http://"):
+        base = "https://" + base[len("http://"):]
+    return base
+
+
 def _absolutize_tip_images(login_tip: Optional[dict], base_url: str) -> Optional[dict]:
     """小程序不共享站点 origin，登录载荷里的 /static/... 图片补成绝对地址。"""
     if not login_tip or not isinstance(login_tip.get("tips"), list):
@@ -131,7 +145,7 @@ def mp_login(request: Request, payload: MpLoginRequest):
 
     openid = identity["openid"]
     unionid = identity.get("unionid", "")
-    base_url = str(request.base_url)
+    base_url = _external_base_url(request)
     with get_db_connection() as conn:
         binding = wechat_mp_service.find_active_binding(conn, openid)
         if not binding:
@@ -176,7 +190,7 @@ def mp_bind_student(request: Request, payload: MpStudentBindRequest):
     if not name or not student_id_number:
         raise HTTPException(status_code=400, detail="请填写完整的姓名和学号。")
 
-    base_url = str(request.base_url)
+    base_url = _external_base_url(request)
     with get_db_connection() as conn:
         student_row = get_student_auth_record_by_identity(conn, name, student_id_number)
         if not student_row:
@@ -227,7 +241,7 @@ def mp_bind_teacher(request: Request, payload: MpTeacherBindRequest):
     if not email or not payload.password:
         raise HTTPException(status_code=400, detail="请填写完整的邮箱和密码。")
 
-    base_url = str(request.base_url)
+    base_url = _external_base_url(request)
     with get_db_connection() as conn:
         teacher = conn.execute(
             """

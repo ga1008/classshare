@@ -16,6 +16,8 @@ interface AgendaEvent {
   subtitle: string;
   hour_label: string;
   relative_label: string;
+  /** completed=已过期 / current=今天 / upcoming=未来（dashboard_agenda_events 自带） */
+  status?: string;
   href?: string;
 }
 
@@ -42,7 +44,14 @@ const greeting = ref("");
 const loading = ref(false);
 const failed = ref(false);
 
-const todayAgenda = computed(() => (home.value?.agenda ?? []).slice(0, 8));
+/** 议程只默认展示今天与未来；过期项收进"历史"折叠区，别糊满首页。 */
+const showHistory = ref(false);
+const activeAgenda = computed(() =>
+  (home.value?.agenda ?? []).filter((event) => event.status !== "completed").slice(0, 8),
+);
+const pastAgenda = computed(() =>
+  (home.value?.agenda ?? []).filter((event) => event.status === "completed"),
+);
 
 const dateLine = computed(() => {
   const now = new Date();
@@ -110,19 +119,19 @@ onPullDownRefresh(() => {
     <view class="glass-card agenda">
       <view class="agenda__head">
         <text class="agenda__title">今天要做的事</text>
-        <text v-if="home" class="agenda__count glass-chip">{{ todayAgenda.length }} 项</text>
+        <text v-if="home" class="agenda__count glass-chip">{{ activeAgenda.length }} 项</text>
       </view>
 
       <view v-if="loading && !home" class="agenda__empty"><text>加载中…</text></view>
       <view v-else-if="failed" class="agenda__empty" @tap="loadHome">
         <text>加载失败，点击重试</text>
       </view>
-      <view v-else-if="!todayAgenda.length" class="agenda__empty">
+      <view v-else-if="!activeAgenda.length" class="agenda__empty">
         <text>🎉 暂无待办，好好休息</text>
       </view>
 
       <view
-        v-for="(event, index) in todayAgenda"
+        v-for="(event, index) in activeAgenda"
         :key="index"
         class="agenda-item press"
         @tap="openAgenda(event)"
@@ -139,6 +148,32 @@ onPullDownRefresh(() => {
           <text class="agenda-item__hour">{{ event.hour_label }}</text>
         </view>
       </view>
+
+      <view v-if="pastAgenda.length" class="agenda__history-toggle press" @tap="showHistory = !showHistory">
+        <text>{{ showHistory ? "收起历史" : `历史 ${pastAgenda.length} 条` }}</text>
+        <text class="agenda__history-arrow">{{ showHistory ? "▴" : "▾" }}</text>
+      </view>
+
+      <template v-if="showHistory">
+        <view
+          v-for="(event, index) in pastAgenda"
+          :key="`past-${index}`"
+          class="agenda-item agenda-item--past press"
+          @tap="openAgenda(event)"
+        >
+          <view class="agenda-item__icon glass-chip">
+            <text>{{ KIND_ICONS[event.kind] || "🗓️" }}</text>
+          </view>
+          <view class="agenda-item__body">
+            <text class="agenda-item__title">{{ event.title }}</text>
+            <text v-if="event.subtitle" class="agenda-item__subtitle">{{ event.subtitle }}</text>
+          </view>
+          <view class="agenda-item__when">
+            <text class="agenda-item__relative">{{ event.relative_label }}</text>
+            <text class="agenda-item__hour">{{ event.hour_label }}</text>
+          </view>
+        </view>
+      </template>
     </view>
 
     <view v-if="home?.stats?.length" class="stats">
@@ -169,6 +204,24 @@ onPullDownRefresh(() => {
   flex-direction: column;
   gap: 10rpx;
   padding: 12rpx 8rpx 0;
+}
+
+.agenda__history-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  padding: 16rpx 0 4rpx;
+  font-size: 24rpx;
+  color: #8b96b3;
+}
+
+.agenda__history-arrow {
+  font-size: 22rpx;
+}
+
+.agenda-item--past {
+  opacity: 0.55;
 }
 
 .hero__date {

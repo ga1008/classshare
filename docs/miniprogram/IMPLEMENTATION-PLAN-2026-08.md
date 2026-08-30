@@ -146,7 +146,14 @@
 - [x] **tabBar 图标**（2026-08-31）：`scripts/make_tab_icons.py` 生成 10 张 81px 线性双态 PNG（today/tasks/classroom/me/work），选中色 #5B6EE0。
 - [x] **前端工程规约固化**（2026-08-31）：`miniapp/README.md`（技术栈硬约束/API 红线/页面模板/UI 令牌/发布纪律）。
 - [ ] **运营欠账清理**（用户操作项）：体验版提审发布（可直接跳过 v0.9.6 提审 v0.10.0）；核对备案主体名（SentimentRoom→LanShare蓝享）；上线稳定后删两个测试账号。
-- [x] 出口标准（部分）：type-check + build 过，**体验版 v0.10.0 已上传**（2026-08-31，commit 51cdb49e）；待真机验收 + 用户提审发布。
+- [x] 出口标准（部分）：type-check + build 过，**体验版 v0.10.0 已上传**（2026-08-31，commit 51cdb49e）；真机验收通过，用户提审中。
+
+#### M0.1 真机反馈修复批（v0.10.1，2026-08-31）
+
+- [x] **欢迎屏背景图丢失**：根因是 uvicorn 未开 proxy_headers，`request.base_url` 拼出 `http://` 图片地址被小程序拒载；mp/auth.py 新增 `_external_base_url` 尊重 `X-Forwarded-Proto`（需部署后端生效）。
+- [x] **首页议程历史折叠**：过期事项（`status=completed`，dashboard_agenda_events 自带）默认隐藏，"历史 N 条"按钮展开，半透明弱化显示。
+- [x] **批阅页逐题重构**：新端点 `GET /api/mp/teacher/submission/{id}/review`（复用 `build_deterministic_grading_evidence` 逐题客观判定：满分/0分/未作答/与标准不符/需人工；试卷题干+选项+标准答案；answers_json 内嵌附件清单按题归属，匹配不上归"整卷附件"兜底）。前端：顶部试卷信息+醒目最终分+迟交罚分说明、左侧可收起题目列表（判定着色圆点）、主区单题视图（学生答案/标准答案分块）、右侧本题附件面板、退回待重交禁改分。打分仍走既有 grade 端点（迟交罚分/AI job 冲正/修订台账/小组分联动服务端不动）。单测 `tests/test_wechat_mp_submission_review.py`，路由快照已重生成。
+- [ ] 部署后端 + 上传体验版 v0.10.1 + 真机验收。
 
 ### M1 通知触达（版本 v0.11.x）——移动端价值最大项
 

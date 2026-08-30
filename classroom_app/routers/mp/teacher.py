@@ -16,6 +16,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...db.connection import get_db_connection
+from ...services.deterministic_exam_grading import build_deterministic_grading_evidence
 from ...services.submission_preview_service import ensure_submission_file_access
 from .deps import get_current_mp_teacher
 
@@ -92,6 +93,207 @@ def _parse_answers(answers_json: str | None) -> list[dict]:
             }
         )
     return items
+
+
+_QUESTION_TYPE_LABELS = {
+    "radio": "单选",
+    "checkbox": "多选",
+    "text": "填空",
+    "textarea": "问答",
+}
+
+_VERDICT_LABELS = {
+    "full": "满分",
+    "zero": "0分",
+    "blank": "未作答",
+    "doubt": "与标准不符",
+    "manual": "需人工评判",
+}
+
+
+def _flatten_paper_questions(questions_json: str | None) -> list[dict]:
+    """exam_papers.questions_json → 顺序展开的题目列表（教师视角，含答案）。"""
+    try:
+        data = json.loads(questions_json or "{}")
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    questions: list[dict] = []
+    for page in data.get("pages") or []:
+        if not isinstance(page, dict):
+            continue
+        for raw in page.get("questions") or []:
+            if not isinstance(raw, dict):
+                continue
+            text = ""
+            for key in ("text", "title", "question", "content"):
+                value = raw.get(key)
+                if isinstance(value, str) and value.strip():
+                    text = value.strip()
+                    break
+            options = raw.get("options") if isinstance(raw.get("options"), list) else []
+            try:
+                points = float(raw.get("points") or (raw.get("grading") or {}).get("points") or 0)
+            except (TypeError, ValueError):
+                points = 0.0
+            answer = raw.get("answer")
+            if isinstance(answer, list):
+                answer_text = "、".join(str(item) for item in answer if str(item).strip())
+            else:
+                answer_text = str(answer or "").strip()
+            questions.append(
+                {
+                    "id": str(raw.get("id") or f"q{len(questions) + 1}"),
+                    "type": str(raw.get("type") or "").strip().lower(),
+                    "text": text,
+                    "options": [str(opt) for opt in options],
+                    "points": points,
+                    "answer_text": answer_text,
+                }
+            )
+    return questions
+
+
+def _verdict_from_evidence(item: dict | None) -> str:
+    """确定性判定 → 前端着色语义。主观题/无法判定一律 manual。"""
+    if not item:
+        return "manual"
+    fixed = item.get("fixed_score")
+    if fixed is not None:
+        if str(item.get("reason") or "") == "blank_without_attachment":
+            return "blank"
+        max_score = float(item.get("max_score") or 0)
+        if max_score > 0 and float(fixed) >= max_score:
+            return "full"
+        return "zero"
+    reason = str(item.get("reason") or "")
+    if reason in ("partial_or_wrong_checkbox_requires_rubric", "numeric_mismatch_requires_rubric"):
+        return "doubt"
+    return "manual"
+
+
+def _serialize_review_file(row: dict) -> dict:
+    mime_type = str(row.get("mime_type") or "")
+    return {
+        "id": row["id"],
+        "file_name": row.get("original_filename") or f"附件{row['id']}",
+        "mime_type": mime_type,
+        "file_size": row.get("file_size"),
+        "is_image": mime_type.startswith("image/"),
+    }
+
+
+def build_submission_review(
+    questions_json: str | None,
+    answers_json: str | None,
+    file_rows: list[dict],
+) -> dict:
+    """批阅页逐题视图：题干/选项/标准答案 + 学生作答 + 客观判定 + 按题附件。
+
+    附件归属：answers_json 里作答条目内嵌的 attachments（relative_path/
+    file_name）与 submission_files 按文件名匹配；匹配不上的（含 Web 端
+    历史提交、普通作业整卷附件）统一归入 paper_files 兜底，绝不丢附件。
+    """
+    paper_questions = _flatten_paper_questions(questions_json)
+
+    try:
+        parsed = json.loads(answers_json or "{}")
+    except (TypeError, ValueError):
+        parsed = {}
+    raw_answers = parsed.get("answers") if isinstance(parsed, dict) else None
+    answer_entries = [item for item in raw_answers if isinstance(item, dict)] if isinstance(raw_answers, list) else []
+
+    answers_by_id: dict[str, dict] = {}
+    for idx, entry in enumerate(answer_entries, start=1):
+        key = str(entry.get("question_id") or entry.get("id") or idx).strip().casefold()
+        answers_by_id.setdefault(key, entry)
+
+    # 附件名 → question_id（answers_json 内嵌清单是唯一可靠的按题归属来源）
+    attachment_owner: dict[str, str] = {}
+    for entry in answer_entries:
+        qid = str(entry.get("question_id") or "").strip()
+        for att in entry.get("attachments") or []:
+            if not isinstance(att, dict):
+                continue
+            for key in ("relative_path", "file_name"):
+                name = str(att.get(key) or "").strip().casefold()
+                if name:
+                    attachment_owner[name] = qid
+
+    files_by_question: dict[str, list[dict]] = {}
+    paper_files: list[dict] = []
+    for row in file_rows:
+        serialized = _serialize_review_file(row)
+        owner = ""
+        for key in ("relative_path", "original_filename"):
+            name = str(row.get(key) or "").strip().casefold()
+            if name and name in attachment_owner:
+                owner = attachment_owner[name]
+                break
+        if owner:
+            files_by_question.setdefault(owner, []).append(serialized)
+        else:
+            paper_files.append(serialized)
+
+    evidence = build_deterministic_grading_evidence(questions_json, answers_json)
+    evidence_by_id = {
+        str(item.get("question_id") or "").casefold(): item
+        for item in (evidence.get("questions") or [])
+    }
+
+    questions: list[dict] = []
+    if paper_questions:
+        for no, question in enumerate(paper_questions, start=1):
+            qid = question["id"]
+            answer_entry = answers_by_id.get(qid.casefold())
+            if answer_entry is None and no <= len(answer_entries):
+                answer_entry = answer_entries[no - 1]
+            student_answer = str((answer_entry or {}).get("answer") or "")
+            verdict = _verdict_from_evidence(evidence_by_id.get(qid.casefold()))
+            questions.append(
+                {
+                    "no": no,
+                    "question_id": qid,
+                    "type": question["type"],
+                    "type_label": _QUESTION_TYPE_LABELS.get(question["type"], "题目"),
+                    "text": question["text"],
+                    "options": question["options"],
+                    "points": question["points"],
+                    "standard_answer": question["answer_text"],
+                    "student_answer": student_answer,
+                    "verdict": verdict,
+                    "verdict_label": _VERDICT_LABELS.get(verdict, verdict),
+                    "attachments": files_by_question.get(qid, []),
+                }
+            )
+    else:
+        # 普通作业 / 无试卷：作答条目直接成题（一律人工评判）
+        for no, entry in enumerate(answer_entries, start=1):
+            qid = str(entry.get("question_id") or "").strip()
+            questions.append(
+                {
+                    "no": no,
+                    "question_id": qid or f"a{no}",
+                    "type": "textarea",
+                    "type_label": "作答",
+                    "text": str(entry.get("question") or f"作答 {no}"),
+                    "options": [],
+                    "points": 0,
+                    "standard_answer": "",
+                    "student_answer": str(entry.get("answer") or ""),
+                    "verdict": "manual",
+                    "verdict_label": _VERDICT_LABELS["manual"],
+                    "attachments": files_by_question.get(qid, []) if qid else [],
+                }
+            )
+
+    total_points = sum(float(q["points"]) for q in questions)
+    return {
+        "questions": questions,
+        "paper_files": paper_files,
+        "total_points": total_points,
+    }
 
 
 def _get_teacher_assignment(conn, assignment_id: int, teacher_id: int) -> dict:
@@ -308,6 +510,104 @@ def mp_teacher_grading(assignment_id: int, user: dict = Depends(get_current_mp_t
                 "average_score": average,
             },
             "entries": entries,
+        },
+        "error": None,
+    }
+
+
+@router.get("/submission/{submission_id}/review")
+def mp_teacher_submission_review(
+    submission_id: int, user: dict = Depends(get_current_mp_teacher)
+):
+    """批阅页逐题视图聚合：题目/标准答案/学生作答/客观判定/按题附件。
+
+    只读投影。打分仍走既有 POST /api/submissions/{id}/grade（迟交罚分、
+    AI job 冲正、修订台账、小组分联动全在该端点内，绝不在 mp 侧复制）。
+    """
+    teacher_id = int(user["id"])
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT s.id, s.status, s.score, s.feedback_md, s.submitted_at,
+                   s.answers_json,
+                   COALESCE(s.is_late_submission, 0) AS is_late_submission,
+                   COALESCE(s.is_absence_score, 0) AS is_absence_score,
+                   COALESCE(s.resubmission_allowed, 0) AS resubmission_allowed,
+                   s.score_before_late_penalty,
+                   COALESCE(s.late_penalty_points, 0) AS late_penalty_points,
+                   a.id AS assignment_id, a.title AS assignment_title, a.exam_paper_id,
+                   c.name AS course_name, cl.name AS class_name,
+                   st.name AS student_name, st.student_id_number
+            FROM submissions s
+            JOIN assignments a ON a.id = s.assignment_id
+            JOIN class_offerings o ON o.id = a.class_offering_id
+            JOIN courses c ON c.id = o.course_id
+            JOIN classes cl ON cl.id = o.class_id
+            JOIN students st ON st.id = s.student_pk_id
+            WHERE s.id = ? AND o.teacher_id = ?
+            """,
+            (int(submission_id), teacher_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="提交不存在或无权查看")
+        submission = dict(row)
+
+        questions_json = None
+        if submission.get("exam_paper_id"):
+            paper_row = conn.execute(
+                "SELECT questions_json FROM exam_papers WHERE id = ?",
+                (submission["exam_paper_id"],),
+            ).fetchone()
+            if paper_row:
+                questions_json = paper_row["questions_json"]
+
+        file_rows = [
+            dict(item)
+            for item in conn.execute(
+                """
+                SELECT id, original_filename, relative_path, mime_type, file_size
+                FROM submission_files
+                WHERE submission_id = ?
+                ORDER BY id
+                """,
+                (int(submission_id),),
+            ).fetchall()
+        ]
+        conn.commit()
+
+    review = build_submission_review(
+        questions_json, submission.get("answers_json"), file_rows
+    )
+    status = str(submission.get("status") or "")
+    return {
+        "success": True,
+        "data": {
+            "assignment": {
+                "id": submission["assignment_id"],
+                "title": submission.get("assignment_title") or "",
+                "is_exam": bool(submission.get("exam_paper_id")),
+                "course_name": submission.get("course_name") or "",
+                "class_name": submission.get("class_name") or "",
+            },
+            "student": {
+                "name": submission.get("student_name") or "",
+                "student_id_number": submission.get("student_id_number") or "",
+            },
+            "submission": {
+                "id": submission["id"],
+                "status": status,
+                "status_label": _SUBMISSION_STATUS_LABELS.get(status, status),
+                "score": submission.get("score"),
+                "score_before_late_penalty": submission.get("score_before_late_penalty"),
+                "late_penalty_points": submission.get("late_penalty_points"),
+                "is_late": bool(int(submission.get("is_late_submission") or 0)),
+                "is_absence_zero": bool(int(submission.get("is_absence_score") or 0)),
+                "resubmission_allowed": bool(int(submission.get("resubmission_allowed") or 0)),
+                "submitted_at": submission.get("submitted_at") or "",
+                "feedback_md": submission.get("feedback_md") or "",
+                "feedback_blocks": _parse_feedback_blocks(submission.get("feedback_md")),
+            },
+            **review,
         },
         "error": None,
     }
