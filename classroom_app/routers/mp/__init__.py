@@ -12,6 +12,7 @@ from . import home as _home
 from . import life_tips as _life_tips
 from . import tasks as _tasks
 from . import teacher as _teacher
+from . import todos as _todos
 
 router = APIRouter(prefix="/api/mp")
 router.include_router(_auth.router)
@@ -19,3 +20,4 @@ router.include_router(_home.router)
 router.include_router(_life_tips.router)
 router.include_router(_tasks.router)
 router.include_router(_teacher.router)
+router.include_router(_todos.router)

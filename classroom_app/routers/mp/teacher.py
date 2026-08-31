@@ -16,7 +16,10 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...db.connection import get_db_connection
-from ...services.deterministic_exam_grading import build_deterministic_grading_evidence
+from ...services.deterministic_exam_grading import (
+    _choice_set,
+    build_deterministic_grading_evidence,
+)
 from ...services.submission_preview_service import ensure_submission_file_access
 from .deps import get_current_mp_teacher
 
@@ -104,11 +107,69 @@ _QUESTION_TYPE_LABELS = {
 
 _VERDICT_LABELS = {
     "full": "满分",
+    "partial": "部分正确",
     "zero": "0分",
     "blank": "未作答",
-    "doubt": "与标准不符",
-    "manual": "需人工评判",
+    "doubt": "待评判",
+    "manual": "人工评判",
 }
+
+_CHECKBOX_SEP = "|||"
+
+
+def _normalize_answer_entries(answer_entries: list[dict]) -> list[dict]:
+    """多选答案是完整选项文本用 ||| 连接的字符串；确定性判卷的分词器
+    会把长文本拆碎导致永不匹配（v0.10.1 线上 bug）。先拆成列表再喂。"""
+    normalized: list[dict] = []
+    for entry in answer_entries:
+        item = dict(entry)
+        answer = item.get("answer")
+        if isinstance(answer, str) and _CHECKBOX_SEP in answer:
+            item["answer"] = [part for part in answer.split(_CHECKBOX_SEP) if part.strip()]
+        normalized.append(item)
+    return normalized
+
+
+def _format_points(value: float) -> str:
+    return f"{value:g}"
+
+
+def _judge_question(
+    question: dict,
+    answer_entry: dict | None,
+    evidence_item: dict | None,
+) -> tuple[str, float | None]:
+    """(verdict, earned)。earned 仅在客观可确定时给出，绝不猜测主观分。
+
+    verdict: full 满分 / partial 部分正确(多选漏选) / zero 0分(答错或含错选)
+    / blank 未作答 / doubt 待评判(填空不匹配) / manual 人工评判(主观题)。
+    """
+    if evidence_item is not None and evidence_item.get("fixed_score") is not None:
+        fixed = float(evidence_item["fixed_score"])
+        max_score = float(evidence_item.get("max_score") or 0)
+        if str(evidence_item.get("reason") or "") == "blank_without_attachment":
+            return "blank", 0.0
+        if max_score > 0 and fixed >= max_score:
+            return "full", fixed
+        return "zero", fixed
+
+    qtype = str(question.get("type") or "").strip().lower()
+    if qtype == "checkbox":
+        options = question.get("options") or []
+        expected = _choice_set(question.get("answer_text"), options)
+        actual_raw = (answer_entry or {}).get("answer")
+        actual = _choice_set(actual_raw, options)
+        if expected and actual:
+            if actual == expected:
+                # 理论上 evidence 已 fixed；兜底一致性
+                return "full", float(question.get("points") or 0)
+            if actual.issubset(expected):
+                return "partial", None
+            return "zero", None
+        return "manual", None
+    if qtype == "text":
+        return "doubt", None
+    return "manual", None
 
 
 def _flatten_paper_questions(questions_json: str | None) -> list[dict]:
@@ -155,24 +216,6 @@ def _flatten_paper_questions(questions_json: str | None) -> list[dict]:
     return questions
 
 
-def _verdict_from_evidence(item: dict | None) -> str:
-    """确定性判定 → 前端着色语义。主观题/无法判定一律 manual。"""
-    if not item:
-        return "manual"
-    fixed = item.get("fixed_score")
-    if fixed is not None:
-        if str(item.get("reason") or "") == "blank_without_attachment":
-            return "blank"
-        max_score = float(item.get("max_score") or 0)
-        if max_score > 0 and float(fixed) >= max_score:
-            return "full"
-        return "zero"
-    reason = str(item.get("reason") or "")
-    if reason in ("partial_or_wrong_checkbox_requires_rubric", "numeric_mismatch_requires_rubric"):
-        return "doubt"
-    return "manual"
-
-
 def _serialize_review_file(row: dict) -> dict:
     mime_type = str(row.get("mime_type") or "")
     return {
@@ -204,8 +247,10 @@ def build_submission_review(
     raw_answers = parsed.get("answers") if isinstance(parsed, dict) else None
     answer_entries = [item for item in raw_answers if isinstance(item, dict)] if isinstance(raw_answers, list) else []
 
+    normalized_entries = _normalize_answer_entries(answer_entries)
+
     answers_by_id: dict[str, dict] = {}
-    for idx, entry in enumerate(answer_entries, start=1):
+    for idx, entry in enumerate(normalized_entries, start=1):
         key = str(entry.get("question_id") or entry.get("id") or idx).strip().casefold()
         answers_by_id.setdefault(key, entry)
 
@@ -236,7 +281,10 @@ def build_submission_review(
         else:
             paper_files.append(serialized)
 
-    evidence = build_deterministic_grading_evidence(questions_json, answers_json)
+    # ||| 归一化后的答案喂确定性判卷（v0.10.1 的多选永不匹配 bug 修复点）
+    evidence = build_deterministic_grading_evidence(
+        questions_json, {"answers": normalized_entries}
+    )
     evidence_by_id = {
         str(item.get("question_id") or "").casefold(): item
         for item in (evidence.get("questions") or [])
@@ -247,10 +295,18 @@ def build_submission_review(
         for no, question in enumerate(paper_questions, start=1):
             qid = question["id"]
             answer_entry = answers_by_id.get(qid.casefold())
-            if answer_entry is None and no <= len(answer_entries):
-                answer_entry = answer_entries[no - 1]
-            student_answer = str((answer_entry or {}).get("answer") or "")
-            verdict = _verdict_from_evidence(evidence_by_id.get(qid.casefold()))
+            if answer_entry is None and no <= len(normalized_entries):
+                answer_entry = normalized_entries[no - 1]
+            raw_answer = (answer_entry or {}).get("answer")
+            if isinstance(raw_answer, list):
+                student_answer = "、".join(str(part) for part in raw_answer)
+            else:
+                student_answer = str(raw_answer or "")
+            verdict, earned = _judge_question(
+                question, answer_entry, evidence_by_id.get(qid.casefold())
+            )
+            points = float(question["points"] or 0)
+            earned_text = _format_points(earned) if earned is not None else "—"
             questions.append(
                 {
                     "no": no,
@@ -264,6 +320,8 @@ def build_submission_review(
                     "student_answer": student_answer,
                     "verdict": verdict,
                     "verdict_label": _VERDICT_LABELS.get(verdict, verdict),
+                    "earned": earned,
+                    "score_display": f"{earned_text}/{_format_points(points)}" if points else "",
                     "attachments": files_by_question.get(qid, []),
                 }
             )
@@ -284,6 +342,8 @@ def build_submission_review(
                     "student_answer": str(entry.get("answer") or ""),
                     "verdict": "manual",
                     "verdict_label": _VERDICT_LABELS["manual"],
+                    "earned": None,
+                    "score_display": "",
                     "attachments": files_by_question.get(qid, []) if qid else [],
                 }
             )

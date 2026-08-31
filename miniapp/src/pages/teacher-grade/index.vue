@@ -52,8 +52,10 @@ interface ReviewQuestion {
   points: number;
   standard_answer: string;
   student_answer: string;
-  verdict: "full" | "zero" | "blank" | "doubt" | "manual";
+  verdict: "full" | "partial" | "zero" | "blank" | "doubt" | "manual";
   verdict_label: string;
+  earned: number | null;
+  score_display: string;
   attachments: GradeFile[];
 }
 
@@ -82,9 +84,10 @@ const QUICK_SCORES = [60, 70, 80, 85, 90, 95, 100];
 
 const VERDICT_COLORS: Record<string, string> = {
   full: "#1e9e6a",
+  partial: "#d97706",
   zero: "#e5484d",
-  blank: "#e5484d",
-  doubt: "#d97706",
+  blank: "#8b5cf6",
+  doubt: "#0284c7",
   manual: "#8b96b3",
 };
 
@@ -409,7 +412,7 @@ onLoad((query) => {
               class="verdict-chip"
               :style="{ color: VERDICT_COLORS[currentQuestion.verdict], borderColor: VERDICT_COLORS[currentQuestion.verdict] }"
             >
-              {{ currentQuestion.verdict_label }}
+              <template v-if="currentQuestion.score_display">{{ currentQuestion.score_display }} · </template>{{ currentQuestion.verdict_label }}
             </text>
           </view>
 
@@ -579,8 +582,10 @@ onLoad((query) => {
             <text class="drawer__dot" :style="{ background: VERDICT_COLORS[q.verdict] }" />
             <text class="drawer__no">{{ q.no }}</text>
             <view class="drawer__body">
-              <text class="drawer__type">{{ q.type_label }}<template v-if="q.points"> · {{ q.points }}分</template></text>
-              <text class="drawer__verdict" :style="{ color: VERDICT_COLORS[q.verdict] }">{{ q.verdict_label }}</text>
+              <text class="drawer__type">{{ q.type_label }}</text>
+              <text class="drawer__verdict" :style="{ color: VERDICT_COLORS[q.verdict] }">
+                <template v-if="q.score_display">{{ q.score_display }} · </template>{{ q.verdict_label }}
+              </text>
             </view>
             <text v-if="q.attachments.length" class="drawer__attach">📎{{ q.attachments.length }}</text>
           </view>

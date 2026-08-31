@@ -19,6 +19,21 @@ interface AgendaEvent {
   /** completed=已过期 / current=今天 / upcoming=未来（dashboard_agenda_events 自带） */
   status?: string;
   href?: string;
+  /** 手动私人待办（可编辑），来自 _attach_manual */
+  is_manual?: boolean;
+  todo_id?: number;
+  notes?: string;
+  due_at_raw?: string;
+  reminder_enabled?: boolean;
+}
+
+interface TodoDraft {
+  id: number;
+  title: string;
+  notes: string;
+  date: string;
+  time: string;
+  reminder: boolean;
 }
 
 interface HomeData {
@@ -89,13 +104,80 @@ async function loadHome(): Promise<void> {
 }
 
 function openAgenda(event: AgendaEvent): void {
+  // 私人待办 → 编辑弹层（可改内容与提醒时间，重新加入提醒）
+  if (event.is_manual && event.todo_id) {
+    openTodoEditor(event);
+    return;
+  }
   // 作业/考试类议程直达作答页；href 形如 /assignment/12 或 /exam/take/12
   const match = /\/(?:assignment|exam\/take)\/(\d+)/.exec(event.href || "");
   if (match) {
     uni.navigateTo({ url: `/pages/task-detail/index?id=${match[1]}` });
+  }
+  // 其余事件（上课/监考等）小程序暂无对应页面，不再盲跳任务列表
+}
+
+// ---------- 私人待办编辑 ----------
+
+const editingTodo = ref<TodoDraft | null>(null);
+const todoSaving = ref(false);
+
+function openTodoEditor(event: AgendaEvent): void {
+  const raw = String(event.due_at_raw || "").replace("T", " ");
+  const date = /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(0, 10) : "";
+  const timeMatch = /(\d{2}:\d{2})/.exec(raw.slice(10));
+  editingTodo.value = {
+    id: Number(event.todo_id),
+    title: event.title || "",
+    notes: event.notes || "",
+    date,
+    time: timeMatch ? timeMatch[1] : "09:00",
+    reminder: event.reminder_enabled !== false,
+  };
+}
+
+async function submitTodo(extra: Record<string, unknown> = {}): Promise<void> {
+  const draft = editingTodo.value;
+  if (!draft || todoSaving.value) return;
+  if (!draft.title.trim()) {
+    uni.showToast({ title: "标题不能为空", icon: "none" });
     return;
   }
-  uni.switchTab({ url: "/pages/tasks/index" });
+  todoSaving.value = true;
+  try {
+    const data: Record<string, unknown> = {
+      title: draft.title.trim(),
+      notes: draft.notes,
+      reminder_enabled: draft.reminder,
+      ...extra,
+    };
+    if (draft.date) {
+      data.due_at = `${draft.date}T${draft.time || "09:00"}`;
+    }
+    await request({ path: `/api/mp/todos/${draft.id}/update`, method: "POST", data });
+    editingTodo.value = null;
+    uni.showToast({ title: "已更新", icon: "success" });
+    void loadHome();
+  } catch (error: unknown) {
+    uni.showToast({
+      title: error instanceof Error ? error.message : "保存失败，请重试",
+      icon: "none",
+    });
+  } finally {
+    todoSaving.value = false;
+  }
+}
+
+function completeTodo(): void {
+  void submitTodo({ completed: true });
+}
+
+function onTodoDateChange(e: { detail: { value: string } }): void {
+  if (editingTodo.value) editingTodo.value.date = e.detail.value;
+}
+
+function onTodoTimeChange(e: { detail: { value: string } }): void {
+  if (editingTodo.value) editingTodo.value.time = e.detail.value;
 }
 
 onShow(() => {
@@ -176,6 +258,44 @@ onPullDownRefresh(() => {
       </template>
     </view>
 
+    <!-- 私人待办编辑弹层 -->
+    <view v-if="editingTodo" class="todo-mask" @tap="editingTodo = null" />
+    <view v-if="editingTodo" class="todo-editor glass-card">
+      <text class="todo-editor__title">编辑待办</text>
+      <input v-model="editingTodo.title" class="todo-editor__input" placeholder="待办标题" />
+      <textarea
+        v-model="editingTodo.notes"
+        class="todo-editor__notes"
+        placeholder="备注（可选）"
+        :maxlength="500"
+        auto-height
+      />
+      <view class="todo-editor__row">
+        <picker mode="date" :value="editingTodo.date" @change="onTodoDateChange">
+          <view class="todo-editor__picker press">
+            <text>📅 {{ editingTodo.date || "选择日期" }}</text>
+          </view>
+        </picker>
+        <picker mode="time" :value="editingTodo.time" @change="onTodoTimeChange">
+          <view class="todo-editor__picker press">
+            <text>🕘 {{ editingTodo.time }}</text>
+          </view>
+        </picker>
+      </view>
+      <view class="todo-editor__row todo-editor__row--between">
+        <text class="todo-editor__label">到期提醒</text>
+        <switch :checked="editingTodo.reminder" color="#5b6ee0" @change="editingTodo.reminder = !editingTodo.reminder" />
+      </view>
+      <view class="todo-editor__actions">
+        <button class="todo-editor__btn todo-editor__btn--done" :disabled="todoSaving" @tap="completeTodo">
+          标记完成
+        </button>
+        <button class="todo-editor__btn glass-btn-primary" :loading="todoSaving" :disabled="todoSaving" @tap="submitTodo()">
+          保存
+        </button>
+      </view>
+    </view>
+
     <view v-if="home?.stats?.length" class="stats">
       <view
         v-for="(stat, index) in home.stats.slice(0, 4)"
@@ -222,6 +342,101 @@ onPullDownRefresh(() => {
 
 .agenda-item--past {
   opacity: 0.55;
+}
+
+/* 待办编辑弹层 */
+.todo-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 90;
+}
+
+.todo-editor {
+  position: fixed;
+  left: 40rpx;
+  right: 40rpx;
+  top: 20%;
+  z-index: 100;
+  padding: 34rpx 34rpx 30rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.todo-editor__title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #1b2540;
+}
+
+.todo-editor__input {
+  border: 2rpx solid rgba(120, 140, 200, 0.28);
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 16rpx;
+  padding: 18rpx 22rpx;
+  font-size: 28rpx;
+  color: #1b2540;
+}
+
+.todo-editor__notes {
+  width: 100%;
+  box-sizing: border-box;
+  border: 2rpx solid rgba(120, 140, 200, 0.22);
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 16rpx;
+  padding: 18rpx 22rpx;
+  font-size: 25rpx;
+  color: #334155;
+  min-height: 120rpx;
+}
+
+.todo-editor__row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.todo-editor__row--between {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.todo-editor__picker {
+  border-radius: 999rpx;
+  background: rgba(120, 140, 200, 0.1);
+  padding: 14rpx 26rpx;
+  font-size: 25rpx;
+  color: #2f3d5e;
+}
+
+.todo-editor__label {
+  font-size: 26rpx;
+  color: #334155;
+}
+
+.todo-editor__actions {
+  display: flex;
+  gap: 16rpx;
+  padding-top: 6rpx;
+}
+
+.todo-editor__btn {
+  flex: 1;
+  min-height: 80rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  font-size: 27rpx;
+  font-weight: 600;
+  margin: 0;
+}
+
+.todo-editor__btn--done {
+  background: rgba(30, 158, 106, 0.1);
+  border: 2rpx solid rgba(30, 158, 106, 0.3);
+  color: #1e9e6a;
 }
 
 .hero__date {

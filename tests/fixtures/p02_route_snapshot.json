@@ -4064,6 +4064,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/mp/todos/{todo_id}/update",
+    "methods": [
+      "POST"
+    ],
+    "name": "mp_update_todo",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/points",
     "methods": [
       "GET"

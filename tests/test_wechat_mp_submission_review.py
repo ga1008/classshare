@@ -5,7 +5,8 @@ import unittest
 
 from classroom_app.routers.mp.teacher import (
     _flatten_paper_questions,
-    _verdict_from_evidence,
+    _judge_question,
+    _normalize_answer_entries,
     build_submission_review,
 )
 
@@ -106,28 +107,40 @@ class FlattenPaperQuestionsTests(unittest.TestCase):
 
 
 class VerdictTests(unittest.TestCase):
-    def test_fixed_full_and_zero(self):
+    _CHECKBOX_Q = {
+        "type": "checkbox",
+        "options": ["A. 甲", "B. 乙", "C. 丙"],
+        "answer_text": "A、B",
+        "points": 10,
+    }
+
+    def test_fixed_full_and_zero_carry_earned(self):
         self.assertEqual(
-            _verdict_from_evidence({"fixed_score": 40.0, "max_score": 40, "reason": "exact_radio_match"}),
-            "full",
+            _judge_question({}, {}, {"fixed_score": 40.0, "max_score": 40, "reason": "exact_radio_match"}),
+            ("full", 40.0),
         )
         self.assertEqual(
-            _verdict_from_evidence({"fixed_score": 0.0, "max_score": 40, "reason": "wrong_radio_choice"}),
-            "zero",
+            _judge_question({}, {}, {"fixed_score": 0.0, "max_score": 40, "reason": "wrong_radio_choice"}),
+            ("zero", 0.0),
+        )
+        self.assertEqual(
+            _judge_question({}, {}, {"fixed_score": 0.0, "max_score": 30, "reason": "blank_without_attachment"}),
+            ("blank", 0.0),
         )
 
-    def test_blank_and_doubt_and_manual(self):
-        self.assertEqual(
-            _verdict_from_evidence({"fixed_score": 0.0, "max_score": 30, "reason": "blank_without_attachment"}),
-            "blank",
-        )
-        self.assertEqual(
-            _verdict_from_evidence(
-                {"fixed_score": None, "max_score": 30, "reason": "partial_or_wrong_checkbox_requires_rubric"}
-            ),
-            "doubt",
-        )
-        self.assertEqual(_verdict_from_evidence(None), "manual")
+    def test_checkbox_subset_is_partial_and_wrong_pick_is_zero(self):
+        partial = _judge_question(self._CHECKBOX_Q, {"answer": ["A. 甲"]}, None)
+        self.assertEqual(partial, ("partial", None))
+        wrong = _judge_question(self._CHECKBOX_Q, {"answer": ["A. 甲", "C. 丙"]}, None)
+        self.assertEqual(wrong, ("zero", None))
+
+    def test_text_mismatch_is_doubt_and_subjective_is_manual(self):
+        self.assertEqual(_judge_question({"type": "text"}, {"answer": "别的"}, None), ("doubt", None))
+        self.assertEqual(_judge_question({"type": "textarea"}, {"answer": "论述"}, None), ("manual", None))
+
+    def test_normalize_splits_checkbox_separator(self):
+        entries = _normalize_answer_entries([{"question_id": "q2", "answer": "A. 甲|||B. 乙"}])
+        self.assertEqual(entries[0]["answer"], ["A. 甲", "B. 乙"])
 
 
 class BuildSubmissionReviewTests(unittest.TestCase):
@@ -137,13 +150,16 @@ class BuildSubmissionReviewTests(unittest.TestCase):
         self.assertEqual(len(questions), 3)
 
         q1, q2, q3 = questions
-        # 单选答对 → 满分绿标；标准答案对教师可见
+        # 单选答对 → 满分 + "40/40" 得分展示；标准答案对教师可见
         self.assertEqual(q1["verdict"], "full")
+        self.assertEqual(q1["score_display"], "40/40")
         self.assertEqual(q1["standard_answer"], "A")
-        # 多选漏选 → 存疑（需按评分指导人工判）
-        self.assertEqual(q2["verdict"], "doubt")
+        # 多选漏选（只选 A）→ 部分正确，得分未定
+        self.assertEqual(q2["verdict"], "partial")
+        self.assertEqual(q2["score_display"], "—/30")
         # 问答题 → 人工评判
         self.assertEqual(q3["verdict"], "manual")
+        self.assertEqual(q3["score_display"], "—/30")
 
         # q3 的图片附件按 answers_json 内嵌清单归到本题
         self.assertEqual([f["id"] for f in q3["attachments"]], [11])
@@ -151,6 +167,25 @@ class BuildSubmissionReviewTests(unittest.TestCase):
         # 匹配不上的附件进整卷兜底，绝不丢
         self.assertEqual([f["id"] for f in review["paper_files"]], [12])
         self.assertEqual(review["total_points"], 100)
+
+    def test_checkbox_pipe_joined_full_answer_scores_full(self):
+        """线上 bug 回归：多选完整选项文本用 ||| 连接必须判满分。"""
+        answers = json.dumps(
+            {
+                "answers": [
+                    {"question_id": "q1", "answer": "A. 三层网关", "attachments": []},
+                    {"question_id": "q2", "answer": "A. 甲|||B. 乙", "attachments": []},
+                    {"question_id": "q3", "answer": "见附件", "attachments": []},
+                ]
+            },
+            ensure_ascii=False,
+        )
+        review = build_submission_review(_paper(), answers, [])
+        q2 = review["questions"][1]
+        self.assertEqual(q2["verdict"], "full")
+        self.assertEqual(q2["score_display"], "30/30")
+        # 学生答案展示为顿号连接，不能出现 |||
+        self.assertNotIn("|||", q2["student_answer"])
 
     def test_plain_assignment_without_paper(self):
         answers = json.dumps({"answers": [{"question": "作答", "answer": "我的回答"}]})
