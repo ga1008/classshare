@@ -176,7 +176,7 @@
 - [ ] 订阅额度管理表 `mp_subscribe_grants`（runtime 建表仿 polls）：一次性订阅制下记录每 openid×模板的可用次数，发送即扣减。
 - [ ] 对接统一 scheduler（既有 scheduler-and-reminders 机制）：作业截止前 24h/2h 扫描待办 → 给已授权学生发提醒；批改完成事件挂钩 grading 流程；教师"一键催交"按钮（teacher-task 页）→ 给未交学生发模板消息。
 - [ ] 前端：在"提交作业成功""进入任务列表"等自然节点调 `wx.requestSubscribeMessage` 请求授权（微信规定必须由点击触发，设计好请求时机与频控）；"我的"页加通知开关说明。
-- [ ] 消息中心只读页：`/api/mp` 聚合 `message_center_service` 未读/列表投影；home 议程卡带未读角标。
+- [x] 消息中心只读页（2026-08-31，v0.11.0，零 mp 后端——既有 `/api/message-center/{items,read,summary}` bearer 直通）：`pages/messages` 全部/未读分段+单条/全部已读+作业深链；home 顶部铃铛未读角标；"我的"页消息中心入口点亮（双角色）。
 - [ ] 出口标准：真机收到三类订阅消息；催交端到端可用；消息中心可读。
 
 ### M2 课堂现场（版本 v0.12.x）——第二核心场景
