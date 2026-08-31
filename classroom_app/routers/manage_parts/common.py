@@ -181,7 +181,11 @@ from ...services.academic_classroom_sync_service import (
     query_free_classrooms_from_academic_system,
     sync_teaching_places_from_academic_system,
 )
-from ...services.academic_course_sync_service import sync_current_teacher_courses_from_academic_system
+from ...services.academic_course_sync_service import (
+    _admin_class_names_from_composition,
+    _normalize_course_match_text,
+    sync_current_teacher_courses_from_academic_system,
+)
 from ...services.academic_sync_reconciliation_service import (
     apply_teacher_academic_sync_plan,
     create_teacher_academic_sync_preview,
@@ -480,6 +484,74 @@ def _prepare_course_payload(
     }
 
 
+def _academic_class_name_map(conn, teacher_id: int) -> dict[int, set[str]]:
+    """教师全部教务课程的「行政班组成」归一名集合（course_id → names）。"""
+    rows = conn.execute(
+        """
+        SELECT DISTINCT course_id, class_composition, teaching_class_name
+        FROM teacher_academic_course_session_occurrences
+        WHERE teacher_id = ?
+        """,
+        (int(teacher_id),),
+    ).fetchall()
+    mapping: dict[int, set[str]] = {}
+    for row in rows:
+        course_id = int(row["course_id"] or 0)
+        if not course_id:
+            continue
+        names = mapping.setdefault(course_id, set())
+        for source in (row["class_composition"], row["teaching_class_name"]):
+            for name in _admin_class_names_from_composition(source):
+                normalized = _normalize_course_match_text(name)
+                if normalized:
+                    names.add(normalized)
+    return mapping
+
+
+def _validate_academic_class_course_match(
+    conn, *, teacher_id: int, course_id: int, class_ids: list[int]
+) -> None:
+    """同名不同号的教务课程防错配：所选班级若明确属于另一门教务课程的
+    排课组成、且不属于当前课程，则拦截并指引到正确课程——否则平时成绩、
+    考核登分与考试对接会按错误课程号走。仅对教务同步课程启用。"""
+    course = conn.execute(
+        "SELECT name, academic_source, academic_course_code FROM courses WHERE id = ?",
+        (int(course_id),),
+    ).fetchone()
+    if not course or not str(course["academic_source"] or "").strip():
+        return
+    class_name_map = _academic_class_name_map(conn, teacher_id)
+    current_names = class_name_map.get(int(course_id)) or set()
+    if not current_names:
+        return
+    for class_id in class_ids:
+        class_row = conn.execute(
+            "SELECT name FROM classes WHERE id = ?", (int(class_id),)
+        ).fetchone()
+        if not class_row:
+            continue
+        class_name = str(class_row["name"] or "").strip()
+        normalized = _normalize_course_match_text(class_name)
+        if not normalized or normalized in current_names:
+            continue
+        for other_course_id, names in class_name_map.items():
+            if other_course_id == int(course_id) or normalized not in names:
+                continue
+            other = conn.execute(
+                "SELECT name, academic_course_code FROM courses WHERE id = ?",
+                (other_course_id,),
+            ).fetchone()
+            if not other:
+                continue
+            raise CoursePlanningError(
+                f"班级「{class_name}」在教务系统中属于课程《{other['name']}》"
+                f"（课程号 {other['academic_course_code'] or '未知'}）的排课，"
+                f"而当前课程《{course['name']}》（课程号 {course['academic_course_code'] or '未知'}）"
+                "的教务排课不包含该班级。同名课程可能由不同开课单位分别编码，"
+                "请改用对应课程号的课程开设课堂，避免教务成绩与考试对接错位。"
+            )
+
+
 def _prepare_offering_payload(
     conn,
     *,
@@ -522,6 +594,9 @@ def _prepare_offering_payload(
         if extra_class_id != class_id:
             _ensure_teacher_can_use_class(conn, class_id=extra_class_id, teacher_id=teacher_id)
 
+    _validate_academic_class_course_match(
+        conn, teacher_id=teacher_id, course_id=course_id, class_ids=class_ids
+    )
     course_lessons = load_course_lessons_by_course_id(conn, [course_id]).get(course_id, [])
     course_lessons = attach_learning_material_briefs(
         conn,

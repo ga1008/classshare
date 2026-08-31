@@ -981,6 +981,25 @@ def _load_teacher_course_rows(conn, teacher_id: int):
             if part
         ).lower()
         result.append(item)
+
+    # 同名不同号（不同开课单位分别编码）的课程标注：避免被误判为重复课程。
+    by_name: dict[str, list[dict]] = {}
+    for item in result:
+        key = str(item.get("name") or "").strip().casefold()
+        if key:
+            by_name.setdefault(key, []).append(item)
+    for group in by_name.values():
+        if len(group) < 2:
+            continue
+        for item in group:
+            item["same_name_siblings"] = [
+                {
+                    "course_code": str(other.get("academic_course_code") or ""),
+                    "department": str(other.get("department") or ""),
+                }
+                for other in group
+                if other is not item
+            ]
     return result
 
 

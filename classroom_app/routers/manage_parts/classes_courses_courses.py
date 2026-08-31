@@ -286,7 +286,11 @@ async def api_create_course(
 
 
 @router.delete("/courses/{course_id}", response_class=JSONResponse)
-async def api_delete_course(course_id: int, user: dict = Depends(get_current_teacher)):
+async def api_delete_course(
+    course_id: int,
+    confirm_academic: int = 0,
+    user: dict = Depends(get_current_teacher),
+):
     """删除一个课程 (及其所有文件和课堂关联)"""
     try:
         with get_db_connection() as conn:
@@ -299,6 +303,30 @@ async def api_delete_course(course_id: int, user: dict = Depends(get_current_tea
                 f"课程“{course_row['name']}”",
                 build_course_delete_blockers(conn, int(course_id)),
             )
+            # 教务同步课程保护：有真实排课时要求显式二次确认——
+            # 同名课程往往由不同开课单位分别编码，看似"重复"实为两门课；
+            # 误删会丢课堂设置，且下次同步会重新建课。
+            if not int(confirm_academic or 0):
+                academic_stats = conn.execute(
+                    """
+                    SELECT COUNT(*) AS occurrence_count,
+                           COUNT(DISTINCT teaching_class_name) AS teaching_class_count
+                    FROM teacher_academic_course_session_occurrences
+                    WHERE course_id = ?
+                    """,
+                    (int(course_id),),
+                ).fetchone()
+                occurrence_count = int(academic_stats["occurrence_count"] or 0)
+                if occurrence_count:
+                    course_code = str(course_row["academic_course_code"] or "") if "academic_course_code" in course_row.keys() else ""
+                    raise HTTPException(
+                        409,
+                        f"课程“{course_row['name']}”{('（课程号 ' + course_code + '）') if course_code else ''}"
+                        f"关联 {int(academic_stats['teaching_class_count'] or 0)} 个教务教学班、"
+                        f"{occurrence_count} 次真实排课。若因“同名课程”想删除：请先核对课程号——"
+                        "同名课程可能由不同开课单位分别编码，并非重复；删除后下次教务同步仍会重新创建该课程，"
+                        "且已生成的课堂设置会丢失。确认仍要删除吗？",
+                    )
 
             conn.execute("DELETE FROM courses WHERE id = ?", (course_id,))
 

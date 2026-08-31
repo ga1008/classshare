@@ -153,6 +153,12 @@
         color: #0369a1;
     }
 
+    .course-status-pill.is-warn {
+        border-color: rgba(245, 158, 11, 0.32);
+        background: rgba(254, 243, 199, 0.78);
+        color: #92400e;
+    }
+
     .course-card-hours {
         flex: 0 0 auto;
         color: var(--text-muted);
@@ -1223,11 +1229,21 @@
                     <div class="course-card-head">
                         <div class="course-card-statusline">
                             <span class="course-status-pill is-{{ course.coverage_status }}">{{ course.coverage_label }}</span>
+                            {% if course.academic_course_code %}
+                            <span class="course-status-pill is-synced">{{ course.academic_course_code }}</span>
+                            {% endif %}
                             {% if course.academic_is_synced %}
                             <span class="course-status-pill is-synced">教务已同步</span>
                             {% endif %}
                             {% if course.is_shared_course %}
                             <span class="course-status-pill is-synced">系内共享</span>
+                            {% endif %}
+                            {% if course.same_name_siblings %}
+                            <span class="course-status-pill is-warn"
+                                  data-explain-title="同名课程，并非重复"
+                                  data-explain-text="教务系统中同一门课可由不同开课单位分别编码：本课程为 {{ course.academic_course_code or '本地课程' }}（{{ course.department or '未设置系别' }}），另有同名课程 {{ course.same_name_siblings | map(attribute='course_code') | select | join('、') }}。两门课各自对接教务的排课、考试与成绩，请按班级归属分别使用，不要删除其中任何一门。">
+                                同名 · 非重复
+                            </span>
                             {% endif %}
                         </div>
                         <span class="course-card-hours">{{ course.total_hours }} 学时</span>

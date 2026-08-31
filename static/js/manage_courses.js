@@ -685,6 +685,23 @@ async function handleDeleteCourse(button) {
         showMessage(result.message || '课程已删除', 'success');
         window.location.reload();
     } catch (error) {
+        if (error?.status === 409) {
+            // 教务排课保护：展示服务端详情后允许显式二次确认
+            const reconfirmed = window.confirm(`${error.message}`);
+            if (reconfirmed) {
+                try {
+                    const result = await apiFetch(
+                        `/api/manage/courses/${courseId}?confirm_academic=1`,
+                        { method: 'DELETE', silent: true },
+                    );
+                    showMessage(result.message || '课程已删除', 'success');
+                    window.location.reload();
+                } catch (retryError) {
+                    showMessage(retryError.message || '删除课程失败', 'error');
+                }
+            }
+            return;
+        }
         showMessage(error.message || '删除课程失败', 'error');
     }
 }

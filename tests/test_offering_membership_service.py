@@ -354,6 +354,54 @@ class OfferingMembershipServiceTests(unittest.TestCase):
             }
             self.assertFalse(_can_view_post(conn, viewer_b, plain_post))
 
+    def test_academic_class_course_match_validator(self):
+        from classroom_app.routers.manage_parts.common import _validate_academic_class_course_match
+        from classroom_app.services.course_planning_service import CoursePlanningError
+
+        with database.get_db_connection() as conn:
+            course_b = execute_insert_returning_id(
+                conn,
+                """
+                INSERT INTO courses (name, created_by_teacher_id, academic_source, academic_course_code)
+                VALUES ('Python程序设计', ?, 'gxufl_jwxt', 'E040016B1')
+                """,
+                (self.teacher_id,),
+            )
+            conn.execute(
+                "UPDATE courses SET academic_source = 'gxufl_jwxt', academic_course_code = 'E030054B1' WHERE id = ?",
+                (self.course_id,),
+            )
+            for course_id, composition in (
+                (self.course_id, "网工2401"),
+                (course_b, "网工2402"),
+            ):
+                conn.execute(
+                    """
+                    INSERT INTO teacher_academic_course_session_occurrences (
+                        teacher_id, semester_id, course_id, course_name, teaching_class_name,
+                        class_composition, session_date, week_index, weekday, section_text,
+                        section_start, section_end, section_count, schedule_source, synced_at
+                    ) VALUES (?, ?, ?, 'Python程序设计', ?, ?, '2026-09-07', 1, 0, '1-2', 1, 2, 2, 'academic_sync', '2026-08-31T08:00:00')
+                    """,
+                    (self.teacher_id, self.semester_id, course_id, composition, composition),
+                )
+            conn.commit()
+
+            # 正确归属：课程A + 班A 放行
+            _validate_academic_class_course_match(
+                conn, teacher_id=self.teacher_id, course_id=self.course_id, class_ids=[self.class_a]
+            )
+            # 错配：课程A + 班B（属于课程B 的教务排课）→ 拦截并指引
+            with self.assertRaises(CoursePlanningError) as ctx:
+                _validate_academic_class_course_match(
+                    conn, teacher_id=self.teacher_id, course_id=self.course_id, class_ids=[self.class_b]
+                )
+            self.assertIn("E040016B1", str(ctx.exception))
+            # 教务无记录的班级（本地自建班）不拦截
+            _validate_academic_class_course_match(
+                conn, teacher_id=self.teacher_id, course_id=self.course_id, class_ids=[self.class_c]
+            )
+
     def test_primary_switch_keeps_invariant(self):
         with database.get_db_connection() as conn:
             membership.replace_offering_class_links(
