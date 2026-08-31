@@ -54997,6 +54997,11 @@ html.scene-cover-collapsing .main-content {
     justify-content: flex-end;
 }
 
+/* display:flex 会盖掉 [hidden] 的 UA display:none，必须显式补回 */
+.offering-hub-drawer-backdrop[hidden] {
+    display: none;
+}
+
 .offering-hub-drawer {
     width: min(1080px, 94vw);
     height: 100%;
