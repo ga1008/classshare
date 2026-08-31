@@ -723,111 +723,20 @@
 
     <section id="offeringBootstrapSection" hidden></section>
 
-    <section class="academic-card offering-merge-section" id="offeringMergeSection" hidden>
-        <div class="academic-card-header">
-            <div class="manage-pagehead__title-row">
-                <h3 class="academic-card-title">检测到疑似双开课堂</h3>
-                {{ explain_button(
-                    '双开课堂合并',
-                    '合班能力上线前，同一门合班课可能按行政班开了多个课堂。合并会把被并课堂的作业（标题加“原XX班”后缀）、提交、成绩、材料、互动、修为等全部数据迁入主课堂，并把班级挂为合班；执行前会生成完整数据快照并要求输入主课堂班级名确认。该操作不可逆，请在预检通过后谨慎执行。',
-                    label='合并说明'
-                ) }}
-            </div>
-        </div>
-        <div class="academic-card-body" id="offeringMergeCandidates"></div>
-    </section>
-
-    <section class="academic-card">
-        <div class="academic-card-header">
+    {% if not embedded_mode %}
+    <section class="academic-card offering-hub-pointer">
+        <div class="academic-card-body offering-hub-pointer__body">
             <div>
-                <h3 class="academic-card-title">已设置的课堂</h3>
-                <p class="academic-card-subtitle">点击编辑后会回填到上方表单，可重新生成时间轴和课堂内容映射。</p>
+                <h3 class="academic-card-title">已开设 {{ my_offerings | length }} 个课堂</h3>
+                <p class="academic-card-subtitle">课堂列表、授课进度与配置治理已移至「课堂运行 &gt; 课堂」；疑似双开课堂的合并向导在「课堂运行 &gt; 课堂合并」。</p>
             </div>
-        </div>
-        <div class="academic-card-body">
-            <div class="offering-list-grid" id="offeringList">
-                {% for offering in my_offerings %}
-                <article class="offering-list-card" id="offering-card-{{ offering.id }}">
-                    <div class="offering-list-card-top">
-                        <div>
-                            <div class="academic-card-kicker">{{ offering.semester or '未绑定学期' }}</div>
-                            <h3 class="academic-card-title">{{ offering.course_name }} / {{ offering.class_name }}</h3>
-                            <p>{{ offering.schedule_info or '暂未配置首次上课日期和每周上课安排。' }}</p>
-                        </div>
-                        <div class="academic-badge-row">
-                            {% if offering.academic_teaching_class_name and not offering.textbook_id %}<span class="academic-badge" data-explain-title="待绑教材" data-explain-text="该课堂由教务一键开设，暂未绑定教材。教材用于 AI 助教的知识依据与课程大纲生成；点击“编辑”选择教材即可补齐。">待绑教材</span>{% endif %}
-                            {% if offering.is_combined %}<span class="academic-badge is-accent" data-explain-title="合班课堂" data-explain-text="该课堂由 {{ offering.class_ids|length }} 个行政班合上（{{ offering.combined_class_names }}）：名单、作业、考试、互动与成绩覆盖全部班级，学生名单按班分节展示。">合班 · {{ offering.class_ids|length }} 班</span>{% endif %}
-                            {% if offering.course_department %}<span class="academic-badge is-accent">{{ offering.course_department }}</span>{% endif %}
-                            {% if offering.class_department %}<span class="academic-badge">{{ offering.class_department }}</span>{% endif %}
-                            {% if offering.textbook_title %}<span class="academic-badge is-success">{{ offering.textbook_title }}</span>{% endif %}
-                            <span class="academic-badge {% if offering.schedule_source == 'academic_sync' %}is-success{% else %}is-muted{% endif %}">
-                                {{ offering.schedule_source_label }}
-                            </span>
-                            {% if offering.academic_teaching_class_display_name or offering.academic_teaching_class_name %}
-                                <span class="academic-badge">{{ offering.academic_teaching_class_display_name or offering.academic_teaching_class_name }}</span>
-                            {% endif %}
-                            {% if offering.first_class_date %}<span class="academic-badge">{{ offering.first_class_date }}</span>{% endif %}
-                            <span class="academic-badge {% if offering.scheduled_session_count %}is-accent{% else %}is-muted{% endif %}">
-                                {{ offering.scheduled_session_count }} 次课
-                            </span>
-                        </div>
-                    </div>
-
-                    <div class="academic-meta-list">
-                        <div class="academic-meta-row">
-                            <span class="academic-meta-label">排课起点</span>
-                            <span class="academic-meta-value">{{ offering.first_class_date or '未设置' }}</span>
-                        </div>
-                        <div class="academic-meta-row">
-                            <span class="academic-meta-label">排课方式</span>
-                            <span class="academic-meta-value">
-                                {% if offering.schedule_source == 'academic_sync' %}
-                                教务 {{ offering.academic_session_count }} 次{% if offering.non_periodic_session_count %}，含 {{ offering.non_periodic_session_count }} 次非周期课{% endif %}
-                                {% elif offering.weekly_schedule %}
-                                固定 {{ offering.weekly_schedule | length }} 个上课日 / 周
-                                {% else %}
-                                未设置
-                                {% endif %}
-                            </span>
-                        </div>
-                        <div class="academic-meta-row">
-                            <span class="academic-meta-label">时间范围</span>
-                            <span class="academic-meta-value">
-                                {% if offering.scheduled_start_date and offering.scheduled_end_date %}
-                                {{ offering.scheduled_start_date }} 至 {{ offering.scheduled_end_date }}
-                                {% else %}
-                                预览未生成
-                                {% endif %}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div class="offering-list-card-actions">
-                        <div class="academic-action-group">
-                            <button type="button" class="btn btn-outline btn-sm" data-action="edit-offering" data-offering-id="{{ offering.id }}">编辑</button>
-                            <a href="/classroom/{{ offering.id }}" class="btn btn-ghost btn-sm">进入课堂</a>
-                            <a href="/manage/teaching/ai" class="btn btn-ghost btn-sm">配置 AI</a>
-                        </div>
-                        <button
-                            type="button"
-                            class="btn btn-danger btn-sm"
-                            data-action="delete-offering"
-                            data-offering-id="{{ offering.id }}"
-                            data-offering-name="{{ offering.course_name }} / {{ offering.class_name }}"
-                        >
-                            删除
-                        </button>
-                    </div>
-                </article>
-                {% else %}
-                <div class="academic-empty">
-                    <strong>还没有开设任何课堂</strong>
-                    完成课程与排课配置后，自动生成课堂时间轴。
-                </div>
-                {% endfor %}
+            <div class="academic-action-group">
+                <a class="btn btn-primary" href="/manage/teaching/classroom-hub">前往课堂管理</a>
+                <a class="btn btn-outline" href="/manage/teaching/offering-merge">课堂合并</a>
             </div>
         </div>
     </section>
+    {% endif %}
 </div>
 
 <template id="weeklyScheduleRowTemplate">
@@ -869,5 +778,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_offerings.js?v=20260831-p40"></script>
+<script type="module" src="/static/js/manage_offerings.js?v=20260831-p2hub"></script>
 {% endblock %}

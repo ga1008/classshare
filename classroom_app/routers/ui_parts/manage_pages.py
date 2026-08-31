@@ -3,6 +3,7 @@ from datetime import timedelta
 from ...db.connection import get_configured_db_engine
 from ...dependencies import require_teacher_domain
 from ...services.ai_usage_budget_service import build_ai_usage_dashboard
+from ...services.offering_hub_service import build_offering_hub_context
 from ...services.profile_service import build_profile_page_context
 
 
@@ -741,6 +742,51 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
                     (item.get("department") for item in my_courses),
                 ),
             },
+        ),
+    )
+
+
+@router.get("/manage/teaching/classroom-hub", response_class=HTMLResponse)
+async def get_manage_offering_hub_page(request: Request, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        semester_rows = load_teacher_semester_rows(conn, int(user["id"]))
+        my_semesters = [serialize_semester_row(row) for row in semester_rows]
+        default_semester_id = choose_default_semester_id(my_semesters)
+        my_offerings = _load_teacher_offering_rows(conn, int(user["id"]))
+        hub_context = build_offering_hub_context(
+            conn,
+            int(user["id"]),
+            my_offerings,
+            my_semesters,
+            default_semester_id,
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "manage/offering_hub.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="课堂",
+            active_page="offering_hub",
+            extra={
+                **hub_context,
+                "default_semester_id": default_semester_id,
+            },
+        ),
+    )
+
+
+@router.get("/manage/teaching/offering-merge", response_class=HTMLResponse)
+async def get_manage_offering_merge_page(request: Request, user: dict = Depends(get_current_teacher)):
+    return templates.TemplateResponse(
+        request,
+        "manage/offering_merge.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="课堂合并",
+            active_page="offering_merge",
         ),
     )
 

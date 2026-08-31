@@ -1,0 +1,54 @@
+{% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('课堂', '课堂运行总台', 'list', href='/manage/teaching/classroom-hub', variant='solid', tone='slate') }}
+{{ topbar_action('开设课堂', '创建/编辑课堂', 'plus', href='/manage/teaching/offerings', variant='primary', tone='blue') }}
+{% endblock %}
+
+{% block content %}
+<div class="academic-shell offering-merge-shell">
+    <section class="manage-pagehead">
+        <div class="manage-pagehead__intro">
+            <div>
+                <div class="manage-pagehead__title-row">
+                    <h2>课堂合并</h2>
+                    {{ explain_button(
+                        '双开课堂合并',
+                        '合班能力上线前，同一门合班课可能按行政班开了多个课堂。合并会把被并课堂的作业（标题加“原XX班”后缀）、提交、成绩、材料、互动、修为等全部数据迁入主课堂，并把班级挂为合班；执行前会生成完整数据快照并要求输入主课堂班级名确认。该操作不可逆，请在预检通过后谨慎执行。',
+                        placement='bottom',
+                        label='合并说明'
+                    ) }}
+                </div>
+            </div>
+            <div class="manage-pagehead__actions">
+                <a class="btn btn-outline" href="/manage/teaching/classroom-hub">返回课堂管理</a>
+            </div>
+        </div>
+    </section>
+
+    <section class="academic-card offering-merge-section" id="offeringMergeSection">
+        <div class="academic-card-header">
+            <div>
+                <h3 class="academic-card-title">疑似双开课堂检测</h3>
+                <p class="academic-card-subtitle">按「同课程 + 同学期 + 多个课堂」自动检测；逐组预检后，输入主课堂班级名确认执行。</p>
+            </div>
+        </div>
+        <div class="academic-card-body" id="offeringMergeCandidates">
+            <div class="academic-empty" id="offeringMergeLoading">
+                <strong>正在检测…</strong>
+                正在按课程与学期扫描你名下的课堂。
+            </div>
+            <div class="academic-empty" id="offeringMergeEmpty" hidden>
+                <strong>没有发现疑似双开课堂</strong>
+                同一门课在同一学期只对应一个课堂，无需合并。历史合班需求请直接在「开设课堂」编辑课堂的班级组成。
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_offering_merge.js') }}"></script>
+{% endblock %}

@@ -54746,3 +54746,312 @@ html.scene-cover-collapsing .main-content {
     grid-column: 2 / -1;
     text-align: left;
 }
+
+/* ============================================================
+   课堂运行总台（offering hub, /manage/teaching/classroom-hub）
+   复用 class-* 版式，仅补页面特有元素。
+   ============================================================ */
+
+.offering-hub-card .class-card-metrics {
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+}
+
+.offering-hub-metrics strong {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.offering-hub-metrics .is-warning-text {
+    color: #b45309;
+}
+
+.offering-hub-progress {
+    display: block;
+    margin-top: 6px;
+    height: 5px;
+    border-radius: 999px;
+    background: hsl(var(--ls-border) / 0.9);
+    overflow: hidden;
+}
+
+.offering-hub-progress b {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, hsl(var(--ls-teal) / 0.85), hsl(var(--ls-primary) / 0.85));
+}
+
+.offering-hub-detail {
+    margin-top: 4px;
+    padding: 12px 14px;
+    border-radius: var(--radius-xl, 14px);
+    background: hsl(var(--ls-muted, 220 14% 96%) / 0.7);
+    border: 1px dashed hsl(var(--ls-border) / 0.9);
+}
+
+.offering-hub-detail dl {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+}
+
+.offering-hub-detail dl > div {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+}
+
+.offering-hub-detail dt {
+    font-size: var(--text-xs);
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.offering-hub-detail dd {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+}
+
+/* 右栏：待办 / 一键开课 / 本周课次 */
+.offering-hub-aside {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.offering-hub-aside-block {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.offering-hub-aside-block + .offering-hub-aside-block {
+    padding-top: 16px;
+    border-top: 1px solid hsl(var(--ls-border) / 0.8);
+}
+
+.offering-hub-candidate-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.offering-hub-candidate-list li {
+    display: grid;
+    gap: 2px;
+    padding: 10px 12px;
+    border-radius: var(--radius-xl, 14px);
+    background: hsl(var(--ls-teal) / 0.08);
+    border: 1px solid hsl(var(--ls-teal) / 0.22);
+}
+
+.offering-hub-candidate-list strong {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+}
+
+.offering-hub-candidate-list span {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.offering-hub-todo-list {
+    display: grid;
+    gap: 8px;
+}
+
+.offering-hub-todo {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: var(--radius-xl, 14px);
+    border: 1px solid hsl(var(--ls-warning) / 0.35);
+    background: hsl(var(--ls-warning) / 0.08);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.offering-hub-todo:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px hsl(var(--ls-warning) / 0.18);
+}
+
+.offering-hub-todo b {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: #b45309;
+}
+
+.offering-hub-todo.is-done {
+    border-color: hsl(var(--ls-border) / 0.9);
+    background: hsl(var(--ls-muted, 220 14% 96%) / 0.6);
+    color: var(--text-muted);
+    cursor: default;
+}
+
+.offering-hub-todo.is-done b {
+    color: var(--text-muted);
+}
+
+.offering-hub-agenda {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+    max-height: 340px;
+    overflow-y: auto;
+}
+
+.offering-hub-agenda li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 8px 10px;
+    border-radius: var(--radius-xl, 14px);
+    border: 1px solid hsl(var(--ls-border) / 0.8);
+    background: #fff;
+}
+
+.offering-hub-agenda li.is-today {
+    border-color: hsl(var(--ls-primary) / 0.45);
+    background: hsl(var(--ls-primary) / 0.06);
+}
+
+.offering-hub-agenda li.is-past {
+    opacity: 0.55;
+}
+
+.offering-hub-agenda-day {
+    display: grid;
+    place-items: center;
+    gap: 1px;
+    min-width: 46px;
+    font-size: var(--text-xs);
+    font-weight: 800;
+    color: var(--text-secondary);
+}
+
+.offering-hub-agenda-day i {
+    font-style: normal;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.offering-hub-agenda-body {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+}
+
+.offering-hub-agenda-body strong {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.offering-hub-agenda-body span {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.offering-hub-agenda-empty {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.offering-hub-empty-actions {
+    margin-top: 10px;
+}
+
+/* 课堂运行 P2：offerings 页指路卡 + hub 页内编辑抽屉 */
+.offering-hub-pointer__body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.offering-hub-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    background: rgba(15, 23, 42, 0.42);
+    backdrop-filter: blur(2px);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.offering-hub-drawer {
+    width: min(1080px, 94vw);
+    height: 100%;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -18px 0 48px rgba(15, 23, 42, 0.25);
+    animation: offeringHubDrawerIn 0.22s ease backwards;
+}
+
+@keyframes offeringHubDrawerIn {
+    from { transform: translateX(28px); opacity: 0.4; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .offering-hub-drawer { animation: none; }
+}
+
+.offering-hub-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid hsl(var(--ls-border) / 0.9);
+}
+
+.offering-hub-drawer-head span {
+    font-size: var(--text-xs);
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.offering-hub-drawer-head h3 {
+    margin: 2px 0 0;
+    font-size: var(--text-md);
+    color: var(--text-primary);
+}
+
+.offering-hub-drawer-tools {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.offering-hub-drawer iframe {
+    flex: 1;
+    width: 100%;
+    border: 0;
+    background: hsl(var(--ls-muted, 220 14% 96%) / 0.6);
+}
+
+body.offering-hub-drawer-open {
+    overflow: hidden;
+}

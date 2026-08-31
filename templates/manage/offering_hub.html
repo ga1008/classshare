@@ -1,0 +1,341 @@
+{% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
+
+{% block extra_head %}
+{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('开设课堂', '创建/编辑课堂', 'plus', href='/manage/teaching/offerings', variant='solid', tone='slate') }}
+{{ topbar_action('AI 助教', '课堂 AI 配置', 'robot', href='/manage/teaching/ai', variant='solid', tone='teal') }}
+{{ topbar_action('课时统计', '3D 课表与课时', 'calendar', href='/manage/teaching/course-schedule', variant='primary', tone='blue') }}
+{% endblock %}
+
+{% block content %}
+{% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
+{% set _active_count = hub_offerings | selectattr('run_status', 'equalto', 'active') | list | length %}
+{% set _finished_count = hub_offerings | selectattr('run_status', 'equalto', 'finished') | list | length %}
+{% set _combined_count = hub_offerings | selectattr('is_combined') | list | length %}
+{% set _missing_textbook_count = hub_offerings | rejectattr('has_textbook') | list | length %}
+{% set _missing_ai_count = hub_offerings | rejectattr('has_ai_config') | list | length %}
+<div class="academic-shell offering-hub-shell">
+    <section class="manage-pagehead">
+        <div class="manage-pagehead__intro">
+            <div>
+                <div class="manage-pagehead__title-row">
+                    <h2>课堂</h2>
+                    {{ explain_button(
+                        '课堂',
+                        '课堂是课程与班级在某个学期的具体授课过程，作业、考试、互动、成绩都发生在课堂里。这里集中查看授课进度与配置缺口。',
+                        placement='bottom',
+                        label='课堂说明'
+                    ) }}
+                </div>
+            </div>
+            <div class="manage-pagehead__actions">
+                <a class="btn btn-outline" href="/manage/teaching/ai">配置 AI 助教</a>
+                <a class="btn btn-outline" href="/manage/teaching/course-schedule">课时统计</a>
+                <a class="btn btn-primary" href="/manage/teaching/offerings">去开设课堂</a>
+            </div>
+        </div>
+        <div class="manage-pagehead__insights">
+            <span class="manage-pagehead__sub">信息归集{% if hub_default_semester_name %} · {{ hub_default_semester_name }}{% endif %}</span>
+            <div class="insight-board">
+                {{ insight_meter('本学期课堂', hub_stats.current_offering_count, 100,
+                    '覆盖 ' ~ hub_stats.current_class_count ~ ' 个班级 · ' ~ hub_stats.current_student_count ~ ' 名学生',
+                    'indigo', '个',
+                    ('共 ' ~ hub_stats.total_offering_count ~ ' 个课堂') if hub_stats.total_offering_count != hub_stats.current_offering_count else '') }}
+                {{ insight_ring('配置完备率', hub_stats.config_complete_count, hub_stats.current_offering_count,
+                    ('教材、AI 助教与课次排期全部就绪的课堂。' if hub_stats.config_complete_count == hub_stats.current_offering_count
+                     else (hub_stats.current_offering_count - hub_stats.config_complete_count) ~ ' 个课堂存在配置缺口，见右侧待办。'),
+                    ('emerald' if hub_stats.config_complete_count == hub_stats.current_offering_count else 'amber'),
+                    hub_stats.config_complete_count ~ ' / ' ~ hub_stats.current_offering_count ~ ' 个') }}
+                {{ insight_ring('授课进度', hub_stats.session_done, hub_stats.session_total,
+                    '本周还有 ' ~ hub_stats.week_session_count ~ ' 次课。', 'teal',
+                    hub_stats.session_done ~ ' / ' ~ hub_stats.session_total ~ ' 次') }}
+                {{ insight_bars('课堂按课程', hub_course_distribution,
+                    (_combined_count ~ ' 个合班课堂。') if _combined_count else '', 'violet') }}
+            </div>
+        </div>
+    </section>
+
+    <section class="class-control-panel offering-hub-controls" aria-label="课堂筛选与搜索">
+        <div class="class-control-main">
+            <label class="academic-search class-search" for="offeringHubSearchInput">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                <input id="offeringHubSearchInput" type="search" class="form-control" placeholder="搜索课程、班级或教学班">
+            </label>
+            <div class="class-filter-fields">
+                <label class="academic-filter-field" for="offeringHubSemesterFilter">
+                    <span>学期</span>
+                    <select id="offeringHubSemesterFilter" class="form-control">
+                        <option value="all">全部学期</option>
+                        {% for option in hub_semester_options %}
+                        <option value="{{ option.value }}"{% if option.is_default %} selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="academic-filter-field" for="offeringHubStatusFilter">
+                    <span>状态</span>
+                    <select id="offeringHubStatusFilter" class="form-control">
+                        <option value="all">全部状态</option>
+                        <option value="active">进行中</option>
+                        <option value="upcoming">未开始</option>
+                        <option value="finished">课次已结束</option>
+                        <option value="unscheduled">未排课</option>
+                        <option value="combined">合班课堂</option>
+                        <option value="missing-textbook">缺教材</option>
+                        <option value="missing-ai">缺 AI 配置</option>
+                    </select>
+                </label>
+                <label class="academic-filter-field" for="offeringHubSortSelect">
+                    <span>排序</span>
+                    <select id="offeringHubSortSelect" class="form-control">
+                        <option value="next-session">按下次上课时间</option>
+                        <option value="course">按课程与班级</option>
+                        <option value="progress-desc">进度从高到低</option>
+                        <option value="students-desc">学生数从多到少</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+        <div class="filter-chips offering-hub-chips" data-filter-chips data-filter-target="#offeringHubStatusFilter" aria-label="按状态快速筛选">
+            <button type="button" class="filter-chip is-active" data-value="all">全部<span class="filter-chip__count">{{ hub_offerings | length }}</span></button>
+            <button type="button" class="filter-chip" data-value="active">进行中<span class="filter-chip__count">{{ _active_count }}</span></button>
+            {% if _combined_count %}
+            <button type="button" class="filter-chip" data-value="combined">合班<span class="filter-chip__count">{{ _combined_count }}</span></button>
+            {% endif %}
+            {% if _missing_textbook_count %}
+            <button type="button" class="filter-chip" data-value="missing-textbook">缺教材<span class="filter-chip__count">{{ _missing_textbook_count }}</span></button>
+            {% endif %}
+            {% if _missing_ai_count %}
+            <button type="button" class="filter-chip" data-value="missing-ai">缺 AI 配置<span class="filter-chip__count">{{ _missing_ai_count }}</span></button>
+            {% endif %}
+            {% if _finished_count %}
+            <button type="button" class="filter-chip" data-value="finished">课次已结束<span class="filter-chip__count">{{ _finished_count }}</span></button>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="class-workbench offering-hub-workbench">
+        <div class="class-board" aria-label="课堂列表">
+            <div class="class-board-head">
+                <div>
+                    <h3>课堂资产</h3>
+                    <p><span id="offeringHubResultCount">{{ hub_offerings | length }}</span> 个课堂符合当前条件</p>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" id="offeringHubFilterResetBtn">清除筛选</button>
+            </div>
+
+            <div class="class-card-list offering-hub-card-list" id="offeringHubList">
+                {% for offering in hub_offerings %}
+                <article
+                    class="class-manage-card offering-hub-card"
+                    data-offering-card
+                    data-offering-id="{{ offering.id }}"
+                    data-semester-key="{{ offering.semester_id or offering.semester }}"
+                    data-status="{{ offering.run_status }}"
+                    data-combined="{{ 1 if offering.is_combined else 0 }}"
+                    data-missing="{{ offering.config_missing | join(' ') }}"
+                    data-next-date="{{ offering.next_session.date if offering.next_session else '' }}"
+                    data-progress="{{ offering.session_percent }}"
+                    data-student-count="{{ offering.student_count }}"
+                    data-course-name="{{ offering.course_name }}"
+                    data-class-name="{{ offering.class_name }}"
+                    data-search="{{ (offering.course_name ~ ' ' ~ (offering.course_sect_name or '') ~ ' ' ~ offering.class_name ~ ' ' ~ (offering.linked_class_names | join(' ')) ~ ' ' ~ offering.academic_teaching_class_name ~ ' ' ~ offering.semester) | lower }}"
+                >
+                    <div class="class-card-top">
+                        <div class="class-card-title-block">
+                            <span class="class-card-kicker">{{ offering.semester }}{% if offering.course_department %} · {{ offering.course_department }}{% endif %}</span>
+                            <h4>{{ offering.course_name }} — {{ offering.class_name }}</h4>
+                            <div class="academic-badge-row class-card-badges">
+                                <span class="academic-badge is-{{ 'success' if offering.run_status == 'active' else ('info' if offering.run_status == 'upcoming' else 'muted') }}">{{ offering.run_status_label }}</span>
+                                {% if offering.is_combined %}<span class="academic-badge is-accent">合班 ×{{ offering.class_count }}</span>{% endif %}
+                                {% if offering.academic_teaching_class_display_name %}<span class="academic-badge">{{ offering.academic_teaching_class_display_name }}</span>{% endif %}
+                                <span class="academic-badge">{{ offering.schedule_source_label }}</span>
+                            </div>
+                            <p>
+                                {% if offering.next_session %}
+                                下次课：{{ offering.next_session.date }}（{{ offering.next_session.weekday_label }} · {{ offering.next_session.relative_label }}）
+                                {%- if offering.next_session.section_text %} {{ offering.next_session.section_text }}{% endif %}
+                                {%- if offering.next_session.location %} · {{ offering.next_session.location }}{% endif %}
+                                {% elif offering.run_status == 'finished' %}
+                                全部课次已结束，可进入课堂检查收尾事项。
+                                {% elif offering.run_status == 'unscheduled' %}
+                                尚未生成课次排期，请到「开设课堂」补齐排课信息。
+                                {% else %}
+                                暂无即将到来的课次。
+                                {% endif %}
+                            </p>
+                        </div>
+                        <div class="class-card-status{% if not offering.is_config_complete %} is-warning{% else %} is-ok{% endif %}">
+                            {% if offering.is_config_complete %}
+                            配置齐全
+                            {% else %}
+                            {% set _labels = [] %}
+                            {% if 'textbook' in offering.config_missing %}{% set _labels = _labels + ['教材'] %}{% endif %}
+                            {% if 'ai' in offering.config_missing %}{% set _labels = _labels + ['AI'] %}{% endif %}
+                            {% if 'sessions' in offering.config_missing %}{% set _labels = _labels + ['排期'] %}{% endif %}
+                            缺{{ _labels | join('、') }}
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="class-card-metrics offering-hub-metrics">
+                        <div>
+                            <span>学生</span>
+                            <strong>{{ offering.student_count }} 人 · {{ offering.class_count }} 班</strong>
+                        </div>
+                        <div>
+                            <span>课次进度</span>
+                            <strong>{{ offering.session_done }}/{{ offering.session_total }} 次</strong>
+                            <i class="offering-hub-progress"><b style="width: {{ offering.session_percent }}%"></b></i>
+                        </div>
+                        <div>
+                            <span>教材</span>
+                            <strong{% if not offering.has_textbook %} class="is-warning-text"{% endif %}>{{ offering.textbook_title or '未绑定' }}</strong>
+                        </div>
+                        <div>
+                            <span>AI 助教</span>
+                            <strong{% if not offering.has_ai_config %} class="is-warning-text"{% endif %}>{{ '已配置' if offering.has_ai_config else '未配置' }}</strong>
+                        </div>
+                        <div>
+                            <span>进行中活动</span>
+                            <strong>作业 {{ offering.activity.assignment_open }} · 投票 {{ offering.activity.poll_active }} · 分组 {{ offering.activity.group_active }}</strong>
+                        </div>
+                    </div>
+
+                    <div class="offering-hub-detail" data-offering-detail hidden>
+                        <dl>
+                            <div><dt>班级组成</dt><dd>{{ offering.linked_class_names | join('、') if offering.linked_class_names else offering.class_name }}</dd></div>
+                            {% if offering.scheduled_start_date %}
+                            <div><dt>排课区间</dt><dd>{{ offering.scheduled_start_date }} 至 {{ offering.scheduled_end_date }}</dd></div>
+                            {% endif %}
+                            <div><dt>活动累计</dt><dd>作业 {{ offering.activity.assignment_total }} 项（含考试 {{ offering.activity.exam_total }} 项）</dd></div>
+                            {% if offering.academic_schedule_sync_message %}
+                            <div><dt>教务排期</dt><dd>{{ offering.academic_schedule_sync_message }}</dd></div>
+                            {% endif %}
+                        </dl>
+                    </div>
+
+                    <div class="class-card-actions">
+                        <a class="btn btn-primary btn-sm" href="/classroom/{{ offering.id }}">进入课堂</a>
+                        <a class="btn btn-outline btn-sm" href="/manage/teaching/offerings?offering_id={{ offering.id }}" data-action="edit-config" data-offering-title="{{ offering.course_name }} — {{ offering.class_name }}">编辑配置</a>
+                        <a class="btn btn-outline btn-sm" href="/manage/teaching/ai">AI 助教</a>
+                        <button type="button" class="btn btn-ghost btn-sm" data-action="toggle-detail">明细</button>
+                        <button
+                            type="button"
+                            class="btn btn-ghost btn-sm text-danger"
+                            data-action="delete-offering"
+                            data-offering-id="{{ offering.id }}"
+                            data-offering-name="{{ offering.course_name }} — {{ offering.class_name }}"
+                        >
+                            删除
+                        </button>
+                    </div>
+                </article>
+                {% else %}
+                <div class="academic-empty" id="offeringHubInitialEmpty">
+                    <strong>还没有课堂</strong>
+                    先完成教务同步，再到「开设课堂」一键把课程与班级组合成课堂。
+                    <div class="offering-hub-empty-actions">
+                        <a class="btn btn-primary btn-sm" href="/manage/teaching/offerings">去开设课堂</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="academic-empty class-filter-empty" id="offeringHubFilterEmpty" hidden>
+                <strong>没有匹配的课堂</strong>
+                换一个关键词或清除筛选后再看。
+            </div>
+        </div>
+
+        <aside class="class-import-panel offering-hub-aside">
+            {% if hub_bootstrap %}
+            <div class="offering-hub-aside-block offering-hub-bootstrap">
+                <div class="class-import-head">
+                    <span>Quick Start</span>
+                    <h3>还有 {{ hub_bootstrap.summary.candidate_count }} 个教学班可开课</h3>
+                    <p>教务排课已就绪，涉及 {{ hub_bootstrap.summary.course_count }} 门课程 · {{ hub_bootstrap.summary.student_count }} 名学生。</p>
+                </div>
+                <ul class="offering-hub-candidate-list">
+                    {% for candidate in hub_bootstrap.top_candidates %}
+                    <li>
+                        <strong>{{ candidate.course_name }}</strong>
+                        <span>{{ candidate.class_names | join('、') }} · {{ candidate.student_count }} 人</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                <a class="btn btn-primary" href="/manage/teaching/offerings">一键开设课堂</a>
+            </div>
+            {% endif %}
+
+            <div class="offering-hub-aside-block">
+                <div class="class-import-head">
+                    <span>To-do</span>
+                    <h3>课堂待办</h3>
+                    <p>点击待办直接过滤对应课堂。</p>
+                </div>
+                <div class="offering-hub-todo-list">
+                    <button type="button" class="offering-hub-todo{% if not hub_todo.missing_textbook %} is-done{% endif %}" data-todo-status="missing-textbook" {% if not hub_todo.missing_textbook %}disabled{% endif %}>
+                        <b>{{ hub_todo.missing_textbook }}</b><span>个课堂缺教材</span>
+                    </button>
+                    <button type="button" class="offering-hub-todo{% if not hub_todo.missing_ai %} is-done{% endif %}" data-todo-status="missing-ai" {% if not hub_todo.missing_ai %}disabled{% endif %}>
+                        <b>{{ hub_todo.missing_ai }}</b><span>个课堂缺 AI 配置</span>
+                    </button>
+                    <button type="button" class="offering-hub-todo{% if not hub_todo.unscheduled %} is-done{% endif %}" data-todo-status="unscheduled" {% if not hub_todo.unscheduled %}disabled{% endif %}>
+                        <b>{{ hub_todo.unscheduled }}</b><span>个课堂未排课</span>
+                    </button>
+                    <button type="button" class="offering-hub-todo{% if not hub_todo.finished %} is-done{% endif %}" data-todo-status="finished" {% if not hub_todo.finished %}disabled{% endif %}>
+                        <b>{{ hub_todo.finished }}</b><span>个课堂课次已结束，待收尾</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="offering-hub-aside-block">
+                <div class="class-import-head">
+                    <span>This Week</span>
+                    <h3>本周课次</h3>
+                    <p>{{ hub_week_agenda | length }} 次课，按时间排列。</p>
+                </div>
+                {% if hub_week_agenda %}
+                <ul class="offering-hub-agenda">
+                    {% for entry in hub_week_agenda %}
+                    <li class="{% if entry.is_today %}is-today{% elif entry.is_past %}is-past{% endif %}">
+                        <span class="offering-hub-agenda-day">{{ entry.weekday_label }}<i>{{ entry.date[5:] }}</i></span>
+                        <span class="offering-hub-agenda-body">
+                            <strong>{{ entry.course_name }}</strong>
+                            <span>{{ entry.class_name }}{% if entry.section_text %} · {{ entry.section_text }}{% endif %}{% if entry.location %} · {{ entry.location }}{% endif %}</span>
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="offering-hub-agenda-empty">本周暂无排课。</p>
+                {% endif %}
+            </div>
+        </aside>
+    </section>
+</div>
+
+<div class="offering-hub-drawer-backdrop" id="offeringHubEditDrawer" hidden aria-hidden="true">
+    <aside class="offering-hub-drawer" role="dialog" aria-modal="true" aria-labelledby="offeringHubDrawerTitle" tabindex="-1">
+        <div class="offering-hub-drawer-head">
+            <div>
+                <span>Edit Offering</span>
+                <h3 id="offeringHubDrawerTitle">编辑课堂配置</h3>
+            </div>
+            <div class="offering-hub-drawer-tools">
+                <a class="btn btn-outline btn-sm" id="offeringHubDrawerOpenFull" href="/manage/teaching/offerings">整页打开</a>
+                <button type="button" class="class-student-drawer-close" id="offeringHubDrawerClose" aria-label="关闭编辑抽屉">&times;</button>
+            </div>
+        </div>
+        <iframe id="offeringHubDrawerFrame" title="课堂配置编辑器"></iframe>
+    </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_offering_hub.js') }}"></script>
+{% endblock %}

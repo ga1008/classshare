@@ -5848,6 +5848,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/teaching/classroom-hub",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_offering_hub_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/teaching/course-schedule",
     "methods": [
       "GET"
@@ -5917,6 +5925,14 @@
       "GET"
     ],
     "name": "manage_materials_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/teaching/offering-merge",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_offering_merge_page",
     "include_in_schema": true
   },
   {
