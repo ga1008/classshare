@@ -463,6 +463,18 @@
             overflow-y: hidden;
         }
     }
+    /* 双开课堂合并向导 */
+    .offering-merge-section { border-left: 3px solid hsl(var(--ls-amber, 38 92% 50%) / 0.6); }
+    .offering-merge-group { display: grid; gap: 8px; padding: 12px 0; }
+    .offering-merge-group + .offering-merge-group { border-top: 1px dashed hsl(var(--ls-ink, 220 15% 20%) / 0.15); }
+    .offering-merge-group__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .offering-merge-hint { margin: 0; color: var(--gray-500); font-size: var(--text-sm); }
+    .offering-merge-option { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); }
+    .offering-merge-preview { padding: 10px 12px; border-radius: var(--radius-sm); background: hsl(var(--ls-amber, 38 92% 50%) / 0.06); display: grid; gap: 8px; }
+    .offering-merge-table { width: 100%; font-size: var(--text-xs); border-collapse: collapse; }
+    .offering-merge-table th, .offering-merge-table td { text-align: left; padding: 3px 8px; border-bottom: 1px solid hsl(var(--ls-ink, 220 15% 20%) / 0.08); }
+    .offering-merge-confirm { display: grid; gap: 8px; max-width: 420px; }
+    .offering-merge-ack { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); }
 </style>
 {% endblock %}
 
@@ -709,6 +721,20 @@
         </article>
     </section>
 
+    <section class="academic-card offering-merge-section" id="offeringMergeSection" hidden>
+        <div class="academic-card-header">
+            <div class="manage-pagehead__title-row">
+                <h3 class="academic-card-title">检测到疑似双开课堂</h3>
+                {{ explain_button(
+                    '双开课堂合并',
+                    '合班能力上线前，同一门合班课可能按行政班开了多个课堂。合并会把被并课堂的作业（标题加“原XX班”后缀）、提交、成绩、材料、互动、修为等全部数据迁入主课堂，并把班级挂为合班；执行前会生成完整数据快照并要求输入主课堂班级名确认。该操作不可逆，请在预检通过后谨慎执行。',
+                    label='合并说明'
+                ) }}
+            </div>
+        </div>
+        <div class="academic-card-body" id="offeringMergeCandidates"></div>
+    </section>
+
     <section class="academic-card">
         <div class="academic-card-header">
             <div>
@@ -840,5 +866,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_offerings.js"></script>
+<script type="module" src="/static/js/manage_offerings.js?v=20260831-p40"></script>
 {% endblock %}

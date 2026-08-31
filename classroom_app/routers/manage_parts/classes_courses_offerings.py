@@ -1,7 +1,63 @@
 from .common import *
 
+from ...services.offering_merge_service import (
+    OfferingMergeError,
+    build_merge_preview,
+    execute_offering_merge,
+    find_merge_candidates,
+)
+
 
 router = APIRouter()
+
+
+@router.get("/class_offerings/merge/candidates", response_class=JSONResponse)
+async def api_offering_merge_candidates(user: dict = Depends(get_current_teacher)):
+    """检测当前教师的历史双开课堂（同课程+同学期多课堂且班级互斥）。"""
+    with get_db_connection() as conn:
+        candidates = find_merge_candidates(conn, int(user["id"]))
+    return {"status": "success", "candidates": candidates}
+
+
+@router.post("/class_offerings/merge/preview", response_class=JSONResponse)
+async def api_offering_merge_preview(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    data = await _parse_json_request(request)
+    try:
+        with get_db_connection() as conn:
+            preview = build_merge_preview(
+                conn,
+                teacher_id=int(user["id"]),
+                target_offering_id=int(data.get("target_offering_id") or 0),
+                source_offering_ids=[int(v) for v in (data.get("source_offering_ids") or [])],
+            )
+    except OfferingMergeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"status": "success", "preview": preview}
+
+
+@router.post("/class_offerings/merge/execute", response_class=JSONResponse)
+async def api_offering_merge_execute(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    """执行合并：单事务，失败整体回滚；快照与审计在同事务内落库。"""
+    data = await _parse_json_request(request)
+    try:
+        with get_db_connection() as conn:
+            result = execute_offering_merge(
+                conn,
+                teacher_id=int(user["id"]),
+                target_offering_id=int(data.get("target_offering_id") or 0),
+                source_offering_ids=[int(v) for v in (data.get("source_offering_ids") or [])],
+                confirm_class_name=str(data.get("confirm_class_name") or ""),
+            )
+            conn.commit()
+    except OfferingMergeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return result
 
 @router.post("/class_offerings/preview", response_class=JSONResponse)
 async def api_preview_class_offering(

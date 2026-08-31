@@ -26,6 +26,7 @@ from .schema_materials_integrations import ensure_materials_integrations_schema
 from .schema_academic_final_materials import ensure_academic_final_material_schema
 from .schema_academic_evaluations import ensure_academic_evaluation_schema
 from .schema_offering_class_links import ensure_offering_class_links_schema
+from .schema_offering_merge import ensure_offering_merge_schema
 from .schema_polls import ensure_poll_schema
 from .schema_resume import ensure_resume_schema
 from .schema_scheduler import ensure_scheduler_schema
@@ -143,6 +144,16 @@ def init_database():
             print("[DB] PostgreSQL offering class-link table ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL offering class-link schema step skipped: {exc}")
+        try:
+            offering_merge_conn = get_db_connection()
+            try:
+                ensure_offering_merge_schema(offering_merge_conn)
+                offering_merge_conn.commit()
+            finally:
+                offering_merge_conn.close()
+            print("[DB] PostgreSQL offering merge tables ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL offering merge schema step skipped: {exc}")
         # Agent task extension columns follow the same runtime-managed pattern.
         try:
             agent_ext_conn = get_db_connection()
@@ -253,6 +264,7 @@ def init_database():
             ensure_study_group_scheme_schema(conn)
             ensure_poll_schema(conn)
             ensure_offering_class_links_schema(conn)
+            ensure_offering_merge_schema(conn)
             ensure_materials_integrations_schema(conn)
             ensure_learning_blog_signature_schema(conn)
             ensure_signature_workflow_schema(conn)

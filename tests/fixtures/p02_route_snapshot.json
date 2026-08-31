@@ -2368,6 +2368,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/class_offerings/merge/candidates",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_offering_merge_candidates",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/class_offerings/merge/execute",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_offering_merge_execute",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/class_offerings/merge/preview",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_offering_merge_preview",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/class_offerings/preview",
     "methods": [
       "POST"

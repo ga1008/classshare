@@ -331,6 +331,7 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "schema_lesson_plans.py",
             "schema_life_tips.py",
             "schema_offering_class_links.py",
+            "schema_offering_merge.py",
             "schema_polls.py",
             "schema_prompt_pool.py",
             "schema_resume.py",
