@@ -171,11 +171,12 @@
 ### M1 通知触达（版本 v0.11.x）——移动端价值最大项
 
 前置（用户操作）：mp 后台"订阅消息"申请模板（教育类目），至少三个：①作业/考试截止提醒 ②批改完成/成绩发布 ③教师催交/课堂通知。模板 ID 写入 env。
+✅ 已选用（2026-08-31）：班级作业提醒 `8LGiFyiq…`（thing10/thing11/date8/thing3）、作业催交通知 `1HlhCJsP…`（thing1/thing4/time2/thing3）、作业批改完成通知 `Fft4anTP…`（thing6/number7/phrase3/thing4）；ID 内置于 `wechat_mp_subscribe_service.TEMPLATES`，env `WECHAT_MP_TMPL_*` 可覆盖。
 
-- [ ] 后端 `wechat_mp_service` 增订阅消息发送能力：access_token 缓存、`send_subscribe_message(openid, template, data)`、失败静默降级+记日志。
-- [ ] 订阅额度管理表 `mp_subscribe_grants`（runtime 建表仿 polls）：一次性订阅制下记录每 openid×模板的可用次数，发送即扣减。
-- [ ] 对接统一 scheduler（既有 scheduler-and-reminders 机制）：作业截止前 24h/2h 扫描待办 → 给已授权学生发提醒；批改完成事件挂钩 grading 流程；教师"一键催交"按钮（teacher-task 页）→ 给未交学生发模板消息。
-- [ ] 前端：在"提交作业成功""进入任务列表"等自然节点调 `wx.requestSubscribeMessage` 请求授权（微信规定必须由点击触发，设计好请求时机与频控）；"我的"页加通知开关说明。
+- [x] 发送管线（2026-08-31，v0.11.1，commit 39fd9dbf）：`wechat_mp_subscribe_service`——模板注册表（env 可覆盖）、stable_token 进程内缓存、字段清洗（thing≤20/phrase≤5/number/中文日期）、`send_subscribe_message`（尽力而为，43101 拒收清零额度）。
+- [x] 额度台账 `mp_subscribe_grants` + 发送去重 `mp_subscribe_sends`（runtime 建表；grant 上报+1、发送-1；dedupe_key 原子占位）。
+- [x] scheduler 截止扫描：`mp_deadline_reminder_scan` 30 分钟一轮（24h/2h 两档、合班 membership 口径、作业×学生×档位幂等），app 启动注册；批改完成挂钩 `create_student_grading_notification`（非阻塞）；教师"📣 催交"按钮（teacher-task 页）→ `POST /api/mp/teacher/assignment/{id}/nudge`（每人每天一次）。
+- [x] 前端：提交作业的点击手势内拉 `wx.requestSubscribeMessage`（三模板一并请求，accept 上报 `/api/mp/subscribe/report`）；模板配置 home onShow 预取保证手势内零等待。
 - [x] 消息中心只读页（2026-08-31，v0.11.0，零 mp 后端——既有 `/api/message-center/{items,read,summary}` bearer 直通）：`pages/messages` 全部/未读分段+单条/全部已读+作业深链；home 顶部铃铛未读角标；"我的"页消息中心入口点亮（双角色）。
 - [ ] 出口标准：真机收到三类订阅消息；催交端到端可用；消息中心可读。
 
