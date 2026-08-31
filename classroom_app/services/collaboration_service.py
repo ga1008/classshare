@@ -1192,6 +1192,7 @@ def create_group_submission_blog_draft(
             content_md=content_md,
             visibility=VISIBILITY_CLASS,
             visible_class_id=int(group["class_id"]),
+            visible_class_offering_id=int(group["class_offering_id"]),
             tags=["小组协作", "成果复盘"],
             status=POST_STATUS_DRAFT,
         )

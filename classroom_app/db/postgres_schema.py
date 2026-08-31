@@ -358,6 +358,7 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
         "revealed_at": "TEXT",
     },
     "blog_posts": {
+        "visible_class_offering_id": "INTEGER",
         "section_key": "TEXT NOT NULL DEFAULT 'general'",
     },
     "blog_news_crawler_items": {

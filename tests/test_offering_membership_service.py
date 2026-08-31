@@ -319,6 +319,41 @@ class OfferingMembershipServiceTests(unittest.TestCase):
         self.assertEqual([item["class_name"] for item in roster], ["网工2401", "网工2402"])
         self.assertEqual({item["name"] for item in roster}, {"学生甲", "学生乙"})
 
+    def test_blog_class_post_visible_across_combined_offering(self):
+        from classroom_app.services.blog_service import _can_view_post
+
+        with database.get_db_connection() as conn:
+            membership.replace_offering_class_links(
+                conn,
+                offering_id=self.offering_id,
+                teacher_id=self.teacher_id,
+                class_ids=[self.class_a, self.class_b],
+            )
+            conn.commit()
+            post = {
+                "status": "published",
+                "visibility": "class_visible",
+                "visible_class_id": self.class_a,
+                "visible_class_offering_id": self.offering_id,
+                "author_identity": "teacher:%d" % self.teacher_id,
+            }
+            viewer_b = {"id": self.student_b, "role": "student", "name": "学生乙"}
+            self.assertTrue(_can_view_post(conn, viewer_b, post))
+            # 未挂进课堂的班级学生不可见
+            stranger = self._create_student(conn, "2400000009", "学生丁", self.class_c)
+            conn.commit()
+            viewer_c = {"id": stranger, "role": "student", "name": "学生丁"}
+            self.assertFalse(_can_view_post(conn, viewer_c, post))
+            # 无课堂维度的普通班级帖不外溢到合班另一班
+            plain_post = {
+                "status": "published",
+                "visibility": "class_visible",
+                "visible_class_id": self.class_a,
+                "visible_class_offering_id": None,
+                "author_identity": "teacher:%d" % self.teacher_id,
+            }
+            self.assertFalse(_can_view_post(conn, viewer_b, plain_post))
+
     def test_primary_switch_keeps_invariant(self):
         with database.get_db_connection() as conn:
             membership.replace_offering_class_links(

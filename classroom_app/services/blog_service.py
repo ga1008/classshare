@@ -351,8 +351,19 @@ def _build_post_visibility_sql(
             OR {prefix}author_identity = ?
             OR (
                 {prefix}visibility = '{VISIBILITY_CLASS}'
-                AND {prefix}visible_class_id IN (
-                    SELECT class_id FROM students WHERE id = ?
+                AND (
+                    {prefix}visible_class_id IN (
+                        SELECT class_id FROM students WHERE id = ?
+                    )
+                    OR (
+                        {prefix}visible_class_offering_id IS NOT NULL
+                        AND EXISTS (
+                            SELECT 1 FROM class_offering_class_links cocl_m
+                            JOIN students st_m ON st_m.id = ?
+                            WHERE cocl_m.offering_id = {prefix}visible_class_offering_id
+                              AND cocl_m.class_id = st_m.class_id
+                        )
+                    )
                 )
             )
             OR (
@@ -361,7 +372,7 @@ def _build_post_visibility_sql(
             )
         )
         """.strip(),
-        [viewer_identity, viewer_user_pk, f'%"{viewer_identity}"%'],
+        [viewer_identity, viewer_user_pk, viewer_user_pk, f'%"{viewer_identity}"%'],
     )
 
 
@@ -764,6 +775,7 @@ def create_post(
     author_display_mode: str = AUTHOR_DISPLAY_REAL,
     visibility: str = VISIBILITY_PUBLIC,
     visible_class_id: Optional[int] = None,
+    visible_class_offering_id: Optional[int] = None,
     visible_user_identities: Optional[list[str]] = None,
     allow_comments: bool = True,
     tags: Optional[list[str]] = None,
@@ -783,6 +795,11 @@ def create_post(
         visibility=visibility,
         visible_class_id=visible_class_id,
         visible_user_identities=visible_user_identities,
+    )
+    normalized_offering_id = (
+        _safe_int(visible_class_offering_id)
+        if normalized_visibility == VISIBILITY_CLASS
+        else None
     )
     normalized_tags = _normalize_tags(tags or [])
     normalized_section_key = resolve_blog_section_key(
@@ -806,9 +823,9 @@ def create_post(
             author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
             author_avatar_hash, author_avatar_mime,
             section_key, title, content_md, summary, cover_image_hash,
-            status, visibility, visible_class_id, visible_user_identities_json,
+            status, visibility, visible_class_id, visible_class_offering_id, visible_user_identities_json,
             allow_comments, system_tags_json, tags_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             author_snapshot["identity"],
@@ -826,6 +843,7 @@ def create_post(
             normalized_status,
             normalized_visibility,
             normalized_class_id,
+            normalized_offering_id,
             json.dumps(normalized_identities, ensure_ascii=False),
             1 if allow_comments else 0,
             json.dumps(author_snapshot["system_tags"], ensure_ascii=False),
@@ -2263,14 +2281,30 @@ def _can_view_post(conn, user: dict, post: dict) -> bool:
         return True
     if visibility == VISIBILITY_CLASS:
         class_id = _safe_int(post.get("visible_class_id"))
-        if class_id is None:
+        offering_id = _safe_int(post.get("visible_class_offering_id"))
+        if class_id is None and offering_id is None:
             return False
         if role == "student":
-            row = conn.execute(
-                "SELECT 1 FROM students WHERE id = ? AND class_id = ? LIMIT 1",
-                (user_pk, class_id),
-            ).fetchone()
-            return row is not None
+            if class_id is not None:
+                row = conn.execute(
+                    "SELECT 1 FROM students WHERE id = ? AND class_id = ? LIMIT 1",
+                    (user_pk, class_id),
+                ).fetchone()
+                if row is not None:
+                    return True
+            if offering_id is not None:
+                row = conn.execute(
+                    """
+                    SELECT 1 FROM class_offering_class_links cocl_m
+                    JOIN students st_m ON st_m.id = ?
+                    WHERE cocl_m.offering_id = ? AND cocl_m.class_id = st_m.class_id
+                    LIMIT 1
+                    """,
+                    (user_pk, offering_id),
+                ).fetchone()
+                if row is not None:
+                    return True
+            return False
         return _is_teacher(user)
     if visibility == VISIBILITY_SELECTED:
         return f'"{identity}"' in str(post.get("visible_user_identities_json") or "[]")
@@ -2631,6 +2665,7 @@ def _serialize_post_detail(
             "is_liked": bool(is_liked),
             "is_bookmarked": bool(is_bookmarked),
             "visible_class_id": _safe_int(row.get("visible_class_id")),
+            "visible_class_offering_id": _safe_int(row.get("visible_class_offering_id")),
             "visible_user_identities": visible_user_identities if isinstance(visible_user_identities, list) else [],
             "permissions": {
                 "can_edit": is_author,

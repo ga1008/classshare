@@ -519,6 +519,11 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE blog_posts ADD COLUMN section_key TEXT NOT NULL DEFAULT 'general'")
     except sqlite3.OperationalError:
         pass
+    try:
+        # 合班课堂成果帖：按课堂（link 班级并集）而非单一班级判定可见
+        conn.execute("ALTER TABLE blog_posts ADD COLUMN visible_class_offering_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS blog_media_assets (
