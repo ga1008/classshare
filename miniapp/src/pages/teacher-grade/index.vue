@@ -56,6 +56,8 @@ interface ReviewQuestion {
   verdict_label: string;
   earned: number | null;
   score_display: string;
+  deduction: string;
+  evaluation: string;
   attachments: GradeFile[];
 }
 
@@ -432,6 +434,19 @@ onLoad((query) => {
           <view v-if="currentQuestion.standard_answer" class="answer-block answer-block--standard">
             <text class="answer-block__label">标准答案</text>
             <text class="answer-block__text">{{ currentQuestion.standard_answer }}</text>
+          </view>
+
+          <view
+            v-if="currentQuestion.deduction || currentQuestion.evaluation"
+            class="answer-block answer-block--grading"
+          >
+            <text class="answer-block__label">本题批改</text>
+            <text v-if="currentQuestion.deduction" class="answer-block__text answer-block__text--deduction">
+              扣分点：{{ currentQuestion.deduction }}
+            </text>
+            <text v-if="currentQuestion.evaluation" class="answer-block__text">
+              评价：{{ currentQuestion.evaluation }}
+            </text>
           </view>
 
           <view
@@ -857,6 +872,15 @@ onLoad((query) => {
 .answer-block--standard {
   background: rgba(47, 94, 224, 0.07);
   border: 1rpx solid rgba(47, 94, 224, 0.16);
+}
+
+.answer-block--grading {
+  background: rgba(240, 195, 90, 0.1);
+  border: 1rpx solid rgba(240, 195, 90, 0.3);
+}
+
+.answer-block__text--deduction {
+  color: #b4231f;
 }
 
 .answer-block__label {

@@ -8,6 +8,7 @@ from classroom_app.routers.mp.teacher import (
     _judge_question,
     _normalize_answer_entries,
     build_submission_review,
+    parse_question_feedback,
 )
 
 
@@ -143,6 +144,35 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(entries[0]["answer"], ["A. 甲", "B. 乙"])
 
 
+class ParseQuestionFeedbackTests(unittest.TestCase):
+    _FEEDBACK = (
+        "## 总览评语\n"
+        "完成质量良好。\n\n"
+        "### 第 1 题\n"
+        "- 本题得分：5/5\n"
+        "- 扣分点：无\n"
+        "- 评价：准确\n\n"
+        "### 第 3 题\n"
+        "- **本题得分**：14/16\n"
+        "- 扣分点：NAT outbound接口书写与实际配置不符\n"
+        "- 评价：后续注意核对配置细节\n"
+    )
+
+    def test_parses_sections_with_scores(self):
+        parsed = parse_question_feedback(self._FEEDBACK)
+        self.assertEqual(set(parsed.keys()), {1, 3})
+        self.assertEqual(parsed[1]["score"], 5.0)
+        self.assertEqual(parsed[1]["max_score"], 5.0)
+        self.assertEqual(parsed[3]["score"], 14.0)
+        self.assertEqual(parsed[3]["max_score"], 16.0)
+        self.assertIn("NAT outbound", parsed[3]["deduction"])
+        self.assertEqual(parsed[3]["evaluation"], "后续注意核对配置细节")
+
+    def test_unstructured_feedback_returns_empty(self):
+        self.assertEqual(parse_question_feedback("整体不错，继续努力。"), {})
+        self.assertEqual(parse_question_feedback(None), {})
+
+
 class BuildSubmissionReviewTests(unittest.TestCase):
     def test_exam_review_verdicts_and_attachment_attribution(self):
         review = build_submission_review(_paper(), _answers(), _FILE_ROWS)
@@ -186,6 +216,23 @@ class BuildSubmissionReviewTests(unittest.TestCase):
         self.assertEqual(q2["score_display"], "30/30")
         # 学生答案展示为顿号连接，不能出现 |||
         self.assertNotIn("|||", q2["student_answer"])
+
+    def test_graded_feedback_scores_override_objective_prediction(self):
+        """已批改时逐题评语里的实际得分优先：主观题也要有 14/16 式展示。"""
+        feedback = (
+            "## 总览评语\n好。\n\n"
+            "### 第 2 题\n- 本题得分：18/30\n- 扣分点：漏选\n\n"
+            "### 第 3 题\n- 本题得分：30/30\n- 扣分点：无\n- 评价：完整\n"
+        )
+        review = build_submission_review(_paper(), _answers(), _FILE_ROWS, feedback_md=feedback)
+        q2, q3 = review["questions"][1], review["questions"][2]
+        self.assertEqual(q2["verdict"], "partial")
+        self.assertEqual(q2["score_display"], "18/30")
+        self.assertEqual(q2["deduction"], "漏选")
+        # 主观题拿到实际满分 → full + 30/30 + 评价透出
+        self.assertEqual(q3["verdict"], "full")
+        self.assertEqual(q3["score_display"], "30/30")
+        self.assertEqual(q3["evaluation"], "完整")
 
     def test_plain_assignment_without_paper(self):
         answers = json.dumps({"answers": [{"question": "作答", "answer": "我的回答"}]})

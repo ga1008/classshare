@@ -116,6 +116,63 @@ _VERDICT_LABELS = {
 
 _CHECKBOX_SEP = "|||"
 
+# 与 Web 端 static/js/grading_feedback.js 同口径的逐题评语解析：
+# AI/教师评语里 "### 第 N 题" 小节下的 本题得分/扣分点/评价 行。
+_Q_HEADING_RE = re.compile(
+    r"^#{1,6}\s*(?:第\s*)?(\d+)\s*(?:题|问|小题)?(?:\s*[：:.\-、]\s*(.*))?$", re.I
+)
+_Q_ALT_HEADING_RE = re.compile(
+    r"^#{1,6}\s*(?:q|question)\s*\.?\s*(\d+)(?:\s*[：:.\-、]\s*(.*))?$", re.I
+)
+_FB_LABEL_RE = re.compile(
+    r"^(本题得分|得分|score|扣分点描述|扣分点|失分点|评价|评语|evaluation)\s*[：:]\s*(.*)$",
+    re.I,
+)
+_FB_BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)、])\s*")
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+def parse_question_feedback(feedback_md: str | None) -> dict[int, dict]:
+    """feedback_md → {题号: {score, max_score, deduction, evaluation}}。
+
+    只认已成结构的小节，解析不出就返回空——批阅视图会退回客观判定，
+    绝不因评语格式异常丢内容。
+    """
+    sections: dict[int, dict] = {}
+    current_no: int | None = None
+    for raw_line in str(feedback_md or "").splitlines():
+        stripped = raw_line.strip()
+        heading = _Q_HEADING_RE.match(stripped) or _Q_ALT_HEADING_RE.match(stripped)
+        if heading:
+            current_no = int(heading.group(1))
+            sections.setdefault(
+                current_no,
+                {"score": None, "max_score": None, "deduction": "", "evaluation": ""},
+            )
+            continue
+        if current_no is None:
+            continue
+        normalized = _FB_BULLET_PREFIX_RE.sub("", stripped).replace("**", "").strip()
+        labeled = _FB_LABEL_RE.match(normalized)
+        if not labeled:
+            continue
+        label = labeled.group(1).lower()
+        value = labeled.group(2).strip()
+        section = sections[current_no]
+        if label in ("本题得分", "得分", "score"):
+            numbers = _NUMBER_RE.findall(value)
+            section["score"] = float(numbers[0]) if numbers else None
+            section["max_score"] = float(numbers[1]) if len(numbers) > 1 else None
+        elif label in ("评价", "评语", "evaluation"):
+            section["evaluation"] = value
+        else:
+            section["deduction"] = value
+    return {
+        no: section
+        for no, section in sections.items()
+        if section["score"] is not None or section["deduction"] or section["evaluation"]
+    }
+
 
 def _normalize_answer_entries(answer_entries: list[dict]) -> list[dict]:
     """多选答案是完整选项文本用 ||| 连接的字符串；确定性判卷的分词器
@@ -231,6 +288,7 @@ def build_submission_review(
     questions_json: str | None,
     answers_json: str | None,
     file_rows: list[dict],
+    feedback_md: str | None = None,
 ) -> dict:
     """批阅页逐题视图：题干/选项/标准答案 + 学生作答 + 客观判定 + 按题附件。
 
@@ -290,6 +348,8 @@ def build_submission_review(
         for item in (evidence.get("questions") or [])
     }
 
+    feedback_by_no = parse_question_feedback(feedback_md)
+
     questions: list[dict] = []
     if paper_questions:
         for no, question in enumerate(paper_questions, start=1):
@@ -306,6 +366,17 @@ def build_submission_review(
                 question, answer_entry, evidence_by_id.get(qid.casefold())
             )
             points = float(question["points"] or 0)
+            # 实际批改的逐题分（AI/教师评语解析）优先于客观预测
+            feedback = feedback_by_no.get(no) or {}
+            if feedback.get("score") is not None:
+                earned = float(feedback["score"])
+                max_ref = points or float(feedback.get("max_score") or 0)
+                if max_ref and earned >= max_ref:
+                    verdict = "full"
+                elif earned <= 0:
+                    verdict = "zero"
+                else:
+                    verdict = "partial"
             earned_text = _format_points(earned) if earned is not None else "—"
             questions.append(
                 {
@@ -322,6 +393,8 @@ def build_submission_review(
                     "verdict_label": _VERDICT_LABELS.get(verdict, verdict),
                     "earned": earned,
                     "score_display": f"{earned_text}/{_format_points(points)}" if points else "",
+                    "deduction": str(feedback.get("deduction") or ""),
+                    "evaluation": str(feedback.get("evaluation") or ""),
                     "attachments": files_by_question.get(qid, []),
                 }
             )
@@ -344,6 +417,8 @@ def build_submission_review(
                     "verdict_label": _VERDICT_LABELS["manual"],
                     "earned": None,
                     "score_display": "",
+                    "deduction": "",
+                    "evaluation": "",
                     "attachments": files_by_question.get(qid, []) if qid else [],
                 }
             )
@@ -636,7 +711,10 @@ def mp_teacher_submission_review(
         conn.commit()
 
     review = build_submission_review(
-        questions_json, submission.get("answers_json"), file_rows
+        questions_json,
+        submission.get("answers_json"),
+        file_rows,
+        feedback_md=submission.get("feedback_md"),
     )
     status = str(submission.get("status") or "")
     return {
