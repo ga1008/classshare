@@ -767,7 +767,7 @@ async def get_manage_offering_hub_page(request: Request, user: dict = Depends(ge
         _build_manage_template_context(
             request,
             user,
-            page_title="课堂",
+            page_title="课堂管理",
             active_page="offering_hub",
             extra={
                 **hub_context,

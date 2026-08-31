@@ -126,11 +126,11 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         key="offering_hub",
         domain="teaching",
         group="课堂运行",
-        label="课堂",
+        label="课堂管理",
         icon="presentation",
         href="/manage/teaching/classroom-hub",
         search_text="课堂 课堂管理 运行 进度 教材 AI offering hub",
-        ai_hint="课堂：集中查看与治理本学期全部课堂——授课进度、下次课、教材/AI 配置缺口、活动资产与本周课次日程。",
+        ai_hint="课堂管理：集中查看与治理本学期全部课堂——授课进度、下次课、教材/AI 配置缺口、活动资产与本周课次日程。",
     ),
     ManageNavItem(
         key="offering_merge",
