@@ -4032,6 +4032,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/mp/subscribe/config",
+    "methods": [
+      "GET"
+    ],
+    "name": "mp_subscribe_config",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/mp/subscribe/report",
+    "methods": [
+      "POST"
+    ],
+    "name": "mp_subscribe_report",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/mp/tasks",
     "methods": [
       "GET"
@@ -4053,6 +4069,14 @@
       "GET"
     ],
     "name": "mp_teacher_grading",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/mp/teacher/assignment/{assignment_id}/nudge",
+    "methods": [
+      "POST"
+    ],
+    "name": "mp_teacher_nudge",
     "include_in_schema": true
   },
   {

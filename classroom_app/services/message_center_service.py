@@ -4007,7 +4007,32 @@ def create_student_grading_notification(
         },
         created_at=timestamp,
     )
-    return 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=True) else 0
+    created = 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=True) else 0
+
+    # 小程序订阅消息（批改完成）：尽力而为，任何失败不影响站内通知。
+    if created and submission["score"] is not None:
+        try:
+            from .wechat_mp_subscribe_service import (
+                build_graded_values,
+                send_subscribe_message,
+            )
+
+            send_subscribe_message(
+                conn,
+                user_role="student",
+                user_pk=int(submission["student_pk_id"]),
+                template_key="graded",
+                values=build_graded_values(
+                    submission["assignment_title"],
+                    submission["score"],
+                    feedback_preview,
+                ),
+                page="pages/tasks/index",
+                dedupe_key=f"graded:{submission['id']}:{timestamp}",
+            )
+        except Exception as exc:
+            print(f"[MP_SUBSCRIBE] graded push failed: {exc}")
+    return created
 
 
 def create_learning_progress_notification(

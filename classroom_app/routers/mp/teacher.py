@@ -435,7 +435,8 @@ def _get_teacher_assignment(conn, assignment_id: int, teacher_id: int) -> dict:
     row = conn.execute(
         """
         SELECT a.id, a.title, a.status, a.due_at, a.exam_paper_id,
-               o.class_id, c.name AS course_name, cl.name AS class_name
+               o.id AS offering_id, o.class_id,
+               c.name AS course_name, cl.name AS class_name
         FROM assignments a
         JOIN class_offerings o ON o.id = a.class_offering_id
         JOIN courses c ON c.id = o.course_id
@@ -648,6 +649,71 @@ def mp_teacher_grading(assignment_id: int, user: dict = Depends(get_current_mp_t
         },
         "error": None,
     }
+
+
+@router.post("/assignment/{assignment_id}/nudge")
+def mp_teacher_nudge(assignment_id: int, user: dict = Depends(get_current_mp_teacher)):
+    """一键催交：给未提交学生发"作业催交通知"订阅消息。
+
+    额度制（学生须先在小程序里允许过该模板）；同一作业同一学生每天
+    最多推一次（dedupe 按日）。缺交记零占位视为未提交。
+    """
+    from datetime import date
+
+    from ...services.wechat_mp_subscribe_service import (
+        build_nudge_values,
+        send_subscribe_message,
+    )
+
+    teacher_id = int(user["id"])
+    with get_db_connection() as conn:
+        assignment = _get_teacher_assignment(conn, assignment_id, teacher_id)
+        rows = conn.execute(
+            """
+            SELECT s.id
+            FROM students s
+            WHERE (
+                s.class_id = ?
+                OR EXISTS (
+                    SELECT 1 FROM class_offering_class_links cocl
+                    WHERE cocl.offering_id = ? AND cocl.class_id = s.class_id
+                )
+            )
+              AND COALESCE(s.enrollment_status, 'active') = 'active'
+              AND NOT EXISTS (
+                  SELECT 1 FROM submissions sub
+                  WHERE sub.assignment_id = ?
+                    AND sub.student_pk_id = s.id
+                    AND COALESCE(sub.is_absence_score, 0) = 0
+              )
+            """,
+            (assignment["class_id"], assignment["offering_id"], assignment_id),
+        ).fetchall()
+
+        values = build_nudge_values(
+            assignment["title"], assignment.get("course_name"), assignment.get("due_at")
+        )
+        today = date.today().isoformat()
+        stats = {"total_unsubmitted": len(rows), "pushed": 0, "no_grant": 0, "skipped": 0}
+        for row in rows:
+            student_id = int(row["id"])
+            status = send_subscribe_message(
+                conn,
+                user_role="student",
+                user_pk=student_id,
+                template_key="nudge",
+                values=values,
+                page="pages/tasks/index",
+                dedupe_key=f"nudge:{assignment_id}:{student_id}:{today}",
+            )
+            if status == "sent":
+                stats["pushed"] += 1
+            elif status == "no_grant":
+                stats["no_grant"] += 1
+            else:
+                stats["skipped"] += 1
+        conn.commit()
+    return {"success": True, "data": stats, "error": None}
 
 
 @router.get("/submission/{submission_id}/review")

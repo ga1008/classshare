@@ -209,6 +209,9 @@ async def startup_event():
             cultivation_archive_task_id = ensure_cultivation_score_event_archive_task(align_conn)
             cultivation_alert_task_id = ensure_cultivation_alert_task(align_conn)
             signature_reminder_task_id = ensure_signature_reminder_task(align_conn)
+            from .services.wechat_mp_subscribe_service import ensure_deadline_scan_task
+
+            mp_deadline_scan_task_id = ensure_deadline_scan_task(align_conn)
             align_conn.commit()
         interrupted_wrong_summary_jobs = expire_interrupted_wrong_summary_jobs()
         if repair_report.paths_repaired > 0 or repair_report.paths_still_missing > 0:

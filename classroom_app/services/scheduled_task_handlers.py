@@ -587,3 +587,24 @@ def handle_signature_request_reminder(task: dict[str, Any]) -> str:
 
 
 register_task_handler(TASK_KIND_SIGNATURE_REQUEST_REMINDER, handle_signature_request_reminder)
+
+
+from .wechat_mp_subscribe_service import (  # noqa: E402
+    DEADLINE_SCAN_TASK_KIND,
+    run_deadline_reminder_scan,
+)
+
+
+def handle_mp_deadline_reminder_scan(task: dict[str, Any]) -> str:
+    """小程序作业截止订阅消息扫描（30 分钟一轮，dedupe 幂等）。"""
+    with get_db_connection() as conn:
+        stats = run_deadline_reminder_scan(conn)
+        conn.commit()
+    return (
+        f"mp deadline scan: candidates={stats.get('candidates', 0)} "
+        f"sent={stats.get('sent', 0)} no_grant={stats.get('no_grant', 0)} "
+        f"skipped={stats.get('skipped', 0)}"
+    )
+
+
+register_task_handler(DEADLINE_SCAN_TASK_KIND, handle_mp_deadline_reminder_scan)

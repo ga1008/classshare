@@ -117,6 +117,47 @@ async function runBatchAiGrading(): Promise<void> {
   }
 }
 
+const nudging = ref(false);
+
+async function nudgeUnsubmitted(): Promise<void> {
+  if (nudging.value) return;
+  const count = unsubmittedEntries.value.length;
+  if (!count) {
+    uni.showToast({ title: "没有未提交的学生", icon: "none" });
+    return;
+  }
+  const confirmed = await new Promise<boolean>((resolve) => {
+    uni.showModal({
+      title: "一键催交",
+      content: `给 ${count} 名未提交学生发送微信催交提醒？（仅送达已在小程序允许通知的学生，每人每天最多一次）`,
+      success: (res) => resolve(Boolean(res.confirm)),
+      fail: () => resolve(false),
+    });
+  });
+  if (!confirmed) return;
+  nudging.value = true;
+  try {
+    const data = await request<{ pushed: number; no_grant: number; total_unsubmitted: number }>({
+      path: `/api/mp/teacher/assignment/${assignmentId.value}/nudge`,
+      method: "POST",
+      data: {},
+    });
+    const skipped = data.total_unsubmitted - data.pushed;
+    uni.showModal({
+      title: "催交完成",
+      content: `已推送 ${data.pushed} 人${skipped > 0 ? `；${skipped} 人未订阅通知或今日已提醒` : ""}。`,
+      showCancel: false,
+    });
+  } catch (error: unknown) {
+    uni.showToast({
+      title: error instanceof Error ? error.message : "催交失败",
+      icon: "none",
+    });
+  } finally {
+    nudging.value = false;
+  }
+}
+
 async function zeroUnsubmitted(): Promise<void> {
   const count = unsubmittedEntries.value.filter((entry) => !entry.is_absence_zero).length;
   if (!count) {
@@ -218,6 +259,13 @@ onPullDownRefresh(() => {
           @tap="runBatchAiGrading"
         >
           <text>🤖 AI 批改待批 {{ data.stats.pending_grade_count }} 份</text>
+        </view>
+        <view
+          class="action-btn action-btn--secondary press"
+          :class="{ 'action-btn--busy': nudging }"
+          @tap="nudgeUnsubmitted"
+        >
+          <text>📣 催交</text>
         </view>
         <view class="action-btn action-btn--secondary press" @tap="zeroUnsubmitted">
           <text>缺交记零</text>

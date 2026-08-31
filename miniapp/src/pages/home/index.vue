@@ -8,6 +8,7 @@ import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
 import { useAuthStore } from "../../stores/auth";
+import { prefetchSubscribeConfig } from "../../utils/subscribe";
 import { applyRoleTabs } from "../../utils/tabs";
 
 interface AgendaEvent {
@@ -201,6 +202,7 @@ onShow(() => {
   void loadHome();
   void loadGreeting();
   void loadUnread();
+  void prefetchSubscribeConfig();
 });
 
 onPullDownRefresh(() => {

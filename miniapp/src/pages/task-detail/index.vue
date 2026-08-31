@@ -16,6 +16,7 @@ import { computed, reactive, ref } from "vue";
 
 import { request, uploadFile } from "../../utils/api";
 import { previewProtectedFile } from "../../utils/preview";
+import { requestSubscribe } from "../../utils/subscribe";
 
 interface Question {
   id: string;
@@ -556,6 +557,8 @@ async function loadDetail(): Promise<void> {
 
 async function submit(): Promise<void> {
   if (submitting.value || !detail.value) return;
+  // 手势内拉订阅授权：为批改结果/下次截止提醒/催交囤一次性额度
+  requestSubscribe(["graded", "deadline", "nudge"]);
   const hasAnyFiles = Object.values(questionFiles).some((files) => files.length > 0);
   const hasContent = detail.value.paper
     ? answeredCount.value > 0 || hasAnyFiles
