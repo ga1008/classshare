@@ -24,14 +24,14 @@ const featureEntries = computed<FeatureEntry[]>(() => {
     return [
       { icon: "📅", title: "本周课表", desc: "今天在哪上课，一眼看到" },
       { icon: "📣", title: "催交中心", desc: "未交汇总，一键提醒" },
-      { icon: "🔔", title: "消息中心", desc: "平台通知都在这里" },
+      { icon: "🔔", title: "消息中心", desc: "平台通知都在这里", url: "/pages/messages/index" },
     ];
   }
   return [
     { icon: "🏆", title: "成绩单", desc: "学期成绩概览" },
     { icon: "📖", title: "错题本", desc: "错过的题再看一遍" },
     { icon: "⚔️", title: "修为与积分", desc: "修炼进度与积分余额" },
-    { icon: "🔔", title: "消息中心", desc: "平台通知都在这里" },
+    { icon: "🔔", title: "消息中心", desc: "平台通知都在这里", url: "/pages/messages/index" },
     { icon: "🤖", title: "AI 助手", desc: "随时随地问学业问题" },
   ];
 });

@@ -43,6 +43,13 @@
 			}
 		},
 		{
+			"path": "pages/messages/index",
+			"style": {
+				"navigationBarTitleText": "消息中心",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
 			"path": "pages/task-detail/index",
 			"style": {
 				"navigationBarTitleText": "作答"

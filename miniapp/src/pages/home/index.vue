@@ -58,6 +58,22 @@ const home = ref<HomeData | null>(null);
 const greeting = ref("");
 const loading = ref(false);
 const failed = ref(false);
+const unreadTotal = ref(0);
+
+async function loadUnread(): Promise<void> {
+  try {
+    const data = await request<{ summary?: { unread_total?: number } }>({
+      path: "/api/message-center/summary",
+    });
+    unreadTotal.value = Number(data.summary?.unread_total || 0);
+  } catch {
+    /* 未读数是锦上添花，失败静默 */
+  }
+}
+
+function openMessages(): void {
+  uni.navigateTo({ url: "/pages/messages/index" });
+}
 
 /** 议程只默认展示今天与未来；过期项收进"历史"折叠区，别糊满首页。 */
 const showHistory = ref(false);
@@ -184,17 +200,27 @@ onShow(() => {
   applyRoleTabs(auth.user?.role);
   void loadHome();
   void loadGreeting();
+  void loadUnread();
 });
 
 onPullDownRefresh(() => {
   void loadHome();
+  void loadUnread();
 });
 </script>
 
 <template>
   <view class="home">
     <view class="hero">
-      <text class="hero__date">{{ dateLine }}</text>
+      <view class="hero__top">
+        <text class="hero__date">{{ dateLine }}</text>
+        <view class="hero__bell press" @tap="openMessages">
+          <text>🔔</text>
+          <view v-if="unreadTotal" class="hero__badge">
+            <text>{{ unreadTotal > 99 ? "99+" : unreadTotal }}</text>
+          </view>
+        </view>
+      </view>
       <text class="hero__hello">{{ greeting || `你好，${auth.user?.name || home?.user?.name || ""}` }}</text>
     </view>
 
@@ -437,6 +463,38 @@ onPullDownRefresh(() => {
   background: rgba(30, 158, 106, 0.1);
   border: 2rpx solid rgba(30, 158, 106, 0.3);
   color: #1e9e6a;
+}
+
+.hero__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hero__bell {
+  position: relative;
+  font-size: 34rpx;
+  padding: 4rpx 10rpx;
+}
+
+.hero__badge {
+  position: absolute;
+  top: -8rpx;
+  right: -10rpx;
+  min-width: 30rpx;
+  height: 30rpx;
+  border-radius: 999rpx;
+  background: #e5484d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8rpx;
+}
+
+.hero__badge text {
+  font-size: 18rpx;
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .hero__date {
