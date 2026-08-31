@@ -1213,6 +1213,161 @@ def _term_status(anchor: dict[str, Any], today: date) -> str:
     return "current"
 
 
+def _offering_sections_from_text(section_text, fallback_count=2):
+    """'3-4' / '3' → [3, 4]；无法解析时按节数从第 1 节起兜底。"""
+    text_value = _clean_text(section_text)
+    match = re.search(r"(\d{1,2})\s*[-~－—]\s*(\d{1,2})", text_value)
+    if match:
+        start, end = int(match.group(1)), int(match.group(2))
+        if end < start:
+            start, end = end, start
+        return list(range(start, end + 1))
+    match = re.search(r"\d{1,2}", text_value)
+    if match:
+        return [int(match.group(0))]
+    return list(range(1, max(1, int(fallback_count or 1)) + 1))
+
+
+def _load_platform_offering_terms(conn, teacher_id: int) -> list[dict[str, Any]]:
+    """平台课堂真实排课（教务同步开设的课堂）派生的学期条目。
+
+    智慧课堂课表未同步的学期（例如刚用一键开课建好课堂的新学期）也能
+    出现在 3D 课表的学期下拉里；(year, term) 与智慧课表口径一致，锚点
+    经 _resolve_term_anchor 命中平台学期设置。
+    """
+    try:
+        rows = conn.execute(
+            """
+            SELECT s.id AS semester_id, s.name AS semester_name,
+                   COUNT(cos.id) AS item_count,
+                   MAX(COALESCE(cos.week_index, 0)) AS max_week
+            FROM class_offering_sessions cos
+            JOIN class_offerings o ON o.id = cos.class_offering_id
+            JOIN academic_semesters s ON s.id = o.semester_id
+            WHERE o.teacher_id = ?
+            GROUP BY s.id, s.name
+            """,
+            (int(teacher_id),),
+        ).fetchall()
+    except Exception:  # noqa: BLE001 — 课堂/学期表不可用时静默降级（回退源尽力而为）
+        return []
+    entries: list[dict[str, Any]] = []
+    for row in rows:
+        key = _parse_platform_semester_name(row["semester_name"])
+        if key is None:
+            continue
+        year, term = key
+        entries.append(
+            {
+                "year": year,
+                "term": term,
+                "label": _term_label(year, term),
+                "cur_week": 0,
+                "max_week": _coerce_int(row["max_week"]),
+                "item_count": _coerce_int(row["item_count"]),
+                "week1_monday_date": "",
+                "synced_at": "",
+                "schedule_source": "platform_offerings",
+            }
+        )
+    return entries
+
+
+def _load_platform_offering_schedule_items(
+    conn, teacher_id: int, *, semester_id: int, year: str, term: str
+) -> list[dict[str, Any]]:
+    """平台课堂课次 → 3D 课表条目（智慧课表该学期无数据时的回退源）。
+
+    按 (课堂, 星期, 节次, 地点) 聚合逐次排课为周次列表；weekday 从平台
+    0=周一 转为课表 1=周一 口径；班级名优先合班显示名。
+    """
+    if semester_id <= 0:
+        return []
+    try:
+        rows = conn.execute(
+            """
+            SELECT cos.class_offering_id, cos.weekday, cos.week_index,
+                   COALESCE(cos.academic_section_text, '') AS section_text,
+                   COALESCE(cos.slot_section_count, cos.section_count, 2) AS slot_sections,
+                   COALESCE(cos.academic_location, '') AS location,
+                   c.name AS course_name,
+                   COALESCE(c.academic_course_code, '') AS course_code,
+                   COALESCE(NULLIF(o.combined_class_names, ''), cl.name) AS class_label_name
+            FROM class_offering_sessions cos
+            JOIN class_offerings o ON o.id = cos.class_offering_id
+            JOIN courses c ON c.id = o.course_id
+            JOIN classes cl ON cl.id = o.class_id
+            WHERE o.teacher_id = ? AND o.semester_id = ?
+              AND COALESCE(cos.schedule_status, 'scheduled') != 'cancelled'
+            ORDER BY cos.weekday, cos.week_index
+            """,
+            (int(teacher_id), int(semester_id)),
+        ).fetchall()
+    except Exception:  # noqa: BLE001 — 课堂表不可用时静默降级（回退源尽力而为）
+        return []
+    grouped: dict[tuple, dict[str, Any]] = {}
+    for row in rows:
+        weekday = _coerce_int(row["weekday"]) + 1  # 平台 0=周一 → 课表 1=周一
+        group_key = (
+            _coerce_int(row["class_offering_id"]),
+            weekday,
+            _clean_text(row["section_text"]),
+            _clean_text(row["location"]),
+        )
+        entry = grouped.get(group_key)
+        if entry is None:
+            sections = _offering_sections_from_text(row["section_text"], _coerce_int(row["slot_sections"], 2))
+            entry = {
+                "offering_id": _coerce_int(row["class_offering_id"]),
+                "course_name": _clean_text(row["course_name"]),
+                "course_code": _clean_text(row["course_code"]),
+                "class_label_name": _clean_text(row["class_label_name"]),
+                "weekday": weekday,
+                "sections": sections,
+                "location": _clean_text(row["location"]),
+                "weeks": [],
+            }
+            grouped[group_key] = entry
+        week_index = _coerce_int(row["week_index"])
+        if week_index > 0 and week_index not in entry["weeks"]:
+            entry["weeks"].append(week_index)
+
+    items: list[dict[str, Any]] = []
+    for index, entry in enumerate(grouped.values(), start=1):
+        weeks = sorted(entry["weeks"])
+        offering_id = entry["offering_id"]
+        item = {
+            "id": -index,  # 合成条目：负数 id 与智慧课表落库行区分
+            "remote_id": "",
+            "course_name": entry["course_name"],
+            "course_code": entry["course_code"],
+            "classroom": entry["location"],
+            "classroom_short": _short_classroom(entry["location"]),
+            "teaching_class_name": entry["class_label_name"],
+            "local_class_name": entry["class_label_name"],
+            "class_offering_id": offering_id,
+            "classroom_url": "/classroom/%d" % offering_id,
+            "academic_year": year,
+            "academic_term": term,
+            "weekday": entry["weekday"],
+            "weekday_label": _weekday_label(entry["weekday"]),
+            "sections": entry["sections"],
+            "section_label": _section_label(entry["sections"]),
+            "weeks": weeks,
+            "week_text": ("%d-%d周" % (weeks[0], weeks[-1])) if weeks else "",
+            "single_or_double": "NONE",
+            "single_or_double_label": "",
+            "student_count": 0,
+            "hours_per_meeting": len(entry["sections"]),
+            "total_hours": len(entry["sections"]) * len(weeks),
+            "synced_at": "",
+        }
+        _apply_class_label(item)
+        items.append(item)
+    items.sort(key=lambda item: (item["weekday"], item["sections"][0] if item["sections"] else 0))
+    return items
+
+
 def build_teacher_course_schedule_overview(
     conn,
     teacher_id: int,
@@ -1251,6 +1406,11 @@ def build_teacher_course_schedule_overview(
         }
         for meta in meta_rows
     ]
+    # 平台课堂排课派生的学期并入（智慧课表未同步的新学期也能选中）。
+    existing_term_keys = {(entry["year"], entry["term"]) for entry in terms}
+    for platform_entry in _load_platform_offering_terms(conn, int(teacher_id)):
+        if (platform_entry["year"], platform_entry["term"]) not in existing_term_keys:
+            terms.append(platform_entry)
     for entry in terms:
         anchor = _resolve_term_anchor(entry, platform_anchors)
         entry["anchor_source"] = anchor["anchor_source"]
@@ -1297,6 +1457,21 @@ def build_teacher_course_schedule_overview(
         (int(teacher_id), SMART_PLATFORM_CODE, selected["year"], selected["term"]),
     ).fetchall()
     all_items = [_serialize_item(row) for row in rows]
+    if not all_items:
+        # 该学期没有智慧课堂课表数据（例如刚通过一键开课建好课堂的新学期）
+        # → 回退到平台课堂的真实排课，保证 3D 课表随开课即时可用。
+        fallback_anchor = selected.get("_anchor") or {}
+        all_items = _load_platform_offering_schedule_items(
+            conn,
+            int(teacher_id),
+            semester_id=_coerce_int(fallback_anchor.get("semester_id")),
+            year=selected["year"],
+            term=selected["term"],
+        )
+        if all_items and not _coerce_int(selected.get("max_week")):
+            selected["max_week"] = max(
+                (max(item["weeks"], default=0) for item in all_items), default=0
+            )
 
     # 读取时用教务名单关系把教学班代号解析成真实行政班名（存量课表自愈，
     # 必须在下面 offering 匹配之前完成，好让宽松匹配用上真实班级名）。

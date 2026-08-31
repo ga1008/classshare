@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from classroom_app import config, database
-from classroom_app.db import schema_offering_class_links
+from classroom_app.db import schema_offering_class_links, schema_smart_schedule
 from classroom_app.db.connection import execute_insert_returning_id
 from classroom_app.db.schema import init_database
 from classroom_app.routers.manage_parts.classes_courses_offerings import _bootstrap_create_offering
@@ -20,6 +20,7 @@ class OfferingBootstrapTests(unittest.TestCase):
         config.DB_PATH = Path(self.temp_dir.name) / "classroom.db"
         database.DB_PATH = config.DB_PATH
         schema_offering_class_links._READY_KEYS.clear()
+        schema_smart_schedule._SCHEMA_READY = False
         init_database()
         with database.get_db_connection() as conn:
             self.teacher_id = execute_insert_returning_id(
@@ -59,6 +60,7 @@ class OfferingBootstrapTests(unittest.TestCase):
 
     def tearDown(self):
         schema_offering_class_links._READY_KEYS.clear()
+        schema_smart_schedule._SCHEMA_READY = False
         config.DB_ENGINE = self.original_engine
         config.DB_PATH = self.original_path
         database.DB_PATH = self.original_database_path
@@ -178,6 +180,38 @@ class OfferingBootstrapTests(unittest.TestCase):
         self.assertIn((self.course_b, "JXB-B1"), keys)
         single = next(c for c in refreshed["candidates"] if c["course_id"] == self.course_b)
         self.assertIsNone(single["suggested_textbook"])
+
+
+    def test_schedule_overview_falls_back_to_platform_offerings(self):
+        from classroom_app.services.smart_classroom_schedule_sync_service import (
+            build_teacher_course_schedule_overview,
+        )
+
+        with database.get_db_connection() as conn:
+            payload = self._candidates(conn)
+            combined = next(c for c in payload["candidates"] if c["is_combined"])
+            _bootstrap_create_offering(
+                conn,
+                teacher_id=self.teacher_id,
+                semester_id=self.semester_id,
+                candidate=combined,
+                textbook_id=None,
+            )
+            conn.commit()
+            overview = build_teacher_course_schedule_overview(conn, self.teacher_id)
+
+        # 智慧课表从未同步，但平台课堂排课应派生出学期并选中（当前学期）
+        self.assertTrue(overview["has_data"])
+        selected = overview["selected_term"]
+        self.assertEqual((selected["year"], selected["term"]), ("2026-2027", "1"))
+        self.assertEqual(selected.get("schedule_source"), "platform_offerings")
+        lessons = [
+            lesson
+            for week in overview["weeks"]
+            for lesson in week.get("lessons", [])
+        ]
+        self.assertTrue(lessons)
+        self.assertTrue(any("/classroom/" in str(lesson.get("classroom_url") or "") for lesson in lessons))
 
 
 if __name__ == "__main__":
