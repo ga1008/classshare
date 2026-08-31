@@ -2360,6 +2360,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/class_offerings/bootstrap/candidates",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_offering_bootstrap_candidates",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/class_offerings/bootstrap/execute",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_offering_bootstrap_execute",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/class_offerings/create",
     "methods": [
       "POST"

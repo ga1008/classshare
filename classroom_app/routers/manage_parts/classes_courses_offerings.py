@@ -1,5 +1,10 @@
 from .common import *
 
+from ...services.offering_bootstrap_service import build_offering_bootstrap_candidates
+from ...services.offering_membership_service import (
+    OfferingMembershipError,
+    replace_offering_class_links,
+)
 from ...services.offering_merge_service import (
     OfferingMergeError,
     build_merge_preview,
@@ -9,6 +14,177 @@ from ...services.offering_merge_service import (
 
 
 router = APIRouter()
+
+
+@router.get("/class_offerings/bootstrap/candidates", response_class=JSONResponse)
+async def api_offering_bootstrap_candidates(
+    semester_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """一键开课候选：每个尚未开课的教务教学班一条（课程/班级/排课均已就绪）。"""
+    with get_db_connection() as conn:
+        payload = build_offering_bootstrap_candidates(
+            conn, teacher_id=int(user["id"]), semester_id=int(semester_id)
+        )
+    return {"status": "success", **payload}
+
+
+def _bootstrap_create_offering(
+    conn,
+    *,
+    teacher_id: int,
+    semester_id: int,
+    candidate: dict[str, Any],
+    textbook_id: int | None,
+) -> dict[str, Any]:
+    """按候选创建单个课堂：payload 校验/时间轴 → INSERT → 合班 links → 课次落库。"""
+    payload = _prepare_offering_payload(
+        conn,
+        teacher_id=teacher_id,
+        data={
+            "class_id": candidate["primary_class_id"],
+            "class_ids": candidate["class_ids"],
+            "course_id": candidate["course_id"],
+            "semester_id": semester_id,
+            "textbook_id": textbook_id,
+            "schedule_source": SCHEDULE_SOURCE_ACADEMIC_SYNC,
+            "academic_teaching_class_id": candidate.get("teaching_class_id") or "",
+            "academic_teaching_class_name": candidate.get("teaching_class_name") or "",
+        },
+        require_schedule=True,
+        allow_missing_lessons=True,
+        allow_missing_textbook=True,
+    )
+    semester_name = str(payload["semester_row"]["name"] or "").strip()
+    offering_id = execute_insert_returning_id(
+        conn,
+        """
+        INSERT INTO class_offerings (
+            class_id, course_id, teacher_id, semester, semester_id, textbook_id,
+            schedule_info, first_class_date, weekly_schedule_json, schedule_source,
+            academic_teaching_class_id, academic_teaching_class_name,
+            academic_schedule_sync_at, academic_schedule_sync_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(candidate["primary_class_id"]),
+            int(candidate["course_id"]),
+            int(teacher_id),
+            semester_name,
+            int(semester_id),
+            textbook_id,
+            payload["plan"]["schedule_info"],
+            payload["first_class_date"].isoformat() if payload["first_class_date"] else "",
+            "[]",
+            SCHEDULE_SOURCE_ACADEMIC_SYNC,
+            payload["academic_teaching_class_id"],
+            payload["academic_teaching_class_name"],
+            datetime.now().isoformat(timespec="seconds"),
+            "一键开课：使用教务实际排课生成时间轴。",
+        ),
+    )
+    replace_offering_class_links(
+        conn,
+        offering_id=int(offering_id),
+        teacher_id=int(teacher_id),
+        class_ids=[int(v) for v in candidate["class_ids"]],
+        primary_class_id=int(candidate["primary_class_id"]),
+        source="academic_sync",
+    )
+    replace_offering_sessions(
+        conn,
+        offering_id=int(offering_id),
+        sessions=payload["plan"]["sessions"],
+    )
+    return {
+        "offering_id": int(offering_id),
+        "session_count": int(payload["plan"].get("session_count") or 0),
+    }
+
+
+@router.post("/class_offerings/bootstrap/execute", response_class=JSONResponse)
+async def api_offering_bootstrap_execute(
+    request: Request,
+    user: dict = Depends(get_current_teacher),
+):
+    """批量创建所选课堂：逐项隔离（单项失败不拖垮整批），幂等（已开的跳过）。"""
+    data = await _parse_json_request(request)
+    semester_id = _parse_optional_int(data.get("semester_id"))
+    raw_selections = data.get("selections") if isinstance(data.get("selections"), list) else []
+    if not semester_id or not raw_selections:
+        raise HTTPException(400, "请选择学期和至少一个待开设的教学班")
+
+    teacher_id = int(user["id"])
+    results: list[dict[str, Any]] = []
+    created_count = 0
+    with get_db_connection() as conn:
+        # 服务端重算候选为真源：过期/已开的提交自动降级为 skipped。
+        fresh = build_offering_bootstrap_candidates(
+            conn, teacher_id=teacher_id, semester_id=int(semester_id)
+        )
+        candidate_map = {
+            (int(item["course_id"]), str(item["teaching_class_id"] or item["teaching_class_name"])): item
+            for item in fresh["candidates"]
+        }
+        for raw in raw_selections:
+            if not isinstance(raw, dict):
+                continue
+            key = (
+                _parse_optional_int(raw.get("course_id")) or 0,
+                str(raw.get("teaching_class_id") or raw.get("teaching_class_name") or ""),
+            )
+            label = str(raw.get("label") or raw.get("teaching_class_name") or "教学班")
+            candidate = candidate_map.get(key)
+            if not candidate:
+                results.append(
+                    {
+                        "key": list(key),
+                        "label": label,
+                        "status": "skipped",
+                        "message": "该教学班已有课堂或候选已失效，未重复创建。",
+                    }
+                )
+                continue
+            textbook_id = _parse_optional_int(raw.get("textbook_id"))
+            try:
+                created = _bootstrap_create_offering(
+                    conn,
+                    teacher_id=teacher_id,
+                    semester_id=int(semester_id),
+                    candidate=candidate,
+                    textbook_id=textbook_id,
+                )
+                created_count += 1
+                results.append(
+                    {
+                        "key": list(key),
+                        "label": f"{candidate['course_name']} · {'·'.join(candidate['class_names'])}",
+                        "status": "created",
+                        "offering_id": created["offering_id"],
+                        "session_count": created["session_count"],
+                        "has_textbook": bool(textbook_id),
+                        "message": f"已创建，含 {created['session_count']} 次真实排课。",
+                    }
+                )
+            except (CoursePlanningError, OfferingMembershipError, sqlite3.IntegrityError) as exc:
+                results.append(
+                    {
+                        "key": list(key),
+                        "label": label,
+                        "status": "failed",
+                        "message": str(exc),
+                    }
+                )
+        conn.commit()
+
+    return {
+        "status": "success",
+        "created_count": created_count,
+        "skipped_count": sum(1 for item in results if item["status"] == "skipped"),
+        "failed_count": sum(1 for item in results if item["status"] == "failed"),
+        "results": results,
+        "message": f"已创建 {created_count} 个课堂。",
+    }
 
 
 @router.get("/class_offerings/merge/candidates", response_class=JSONResponse)

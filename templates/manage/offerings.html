@@ -721,6 +721,8 @@
         </article>
     </section>
 
+    <section id="offeringBootstrapSection" hidden></section>
+
     <section class="academic-card offering-merge-section" id="offeringMergeSection" hidden>
         <div class="academic-card-header">
             <div class="manage-pagehead__title-row">
@@ -753,6 +755,7 @@
                             <p>{{ offering.schedule_info or '暂未配置首次上课日期和每周上课安排。' }}</p>
                         </div>
                         <div class="academic-badge-row">
+                            {% if offering.academic_teaching_class_name and not offering.textbook_id %}<span class="academic-badge" data-explain-title="待绑教材" data-explain-text="该课堂由教务一键开设，暂未绑定教材。教材用于 AI 助教的知识依据与课程大纲生成；点击“编辑”选择教材即可补齐。">待绑教材</span>{% endif %}
                             {% if offering.is_combined %}<span class="academic-badge is-accent" data-explain-title="合班课堂" data-explain-text="该课堂由 {{ offering.class_ids|length }} 个行政班合上（{{ offering.combined_class_names }}）：名单、作业、考试、互动与成绩覆盖全部班级，学生名单按班分节展示。">合班 · {{ offering.class_ids|length }} 班</span>{% endif %}
                             {% if offering.course_department %}<span class="academic-badge is-accent">{{ offering.course_department }}</span>{% endif %}
                             {% if offering.class_department %}<span class="academic-badge">{{ offering.class_department }}</span>{% endif %}

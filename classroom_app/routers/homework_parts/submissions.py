@@ -54,7 +54,7 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
         roster = []
         stage_target = get_stage_exam_target(conn, assignment_id)
         if assignment['class_offering_id']:
-            offering = conn.execute("SELECT class_id FROM class_offerings WHERE id = ?",
+            offering = conn.execute("SELECT id, class_id FROM class_offerings WHERE id = ?",
                                     (assignment['class_offering_id'],)).fetchone()
             if offering:
                 if stage_target:

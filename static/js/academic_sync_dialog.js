@@ -63,6 +63,7 @@ function renderResult(result) {
         ${rosterHighlights(result?.rosters)}
         ${resultList('需要教师补充或复核', result?.warnings, 'is-warning')}
         ${unresolved ? `<p class="academic-sync-dialog__unresolved">有 ${unresolved} 门课程包含可靠来源未提供的空白字段，已保留为空，未让 AI 猜测事实。</p>` : ''}
+        <div data-offering-bootstrap-slot hidden></div>
         ${resultList('接下来', result?.remaining_setup || result?.follow_up_items)}
     `;
 }
@@ -566,6 +567,16 @@ export function initAcademicSyncDialog({
             resultSummary.innerHTML = renderResult(result);
             setView('result');
             showMessage(result.message || '教务数据同步完成', 'success', 5200);
+            // 同步完成即检测可一键开设的课堂（候选为空时槽位保持隐藏）
+            try {
+                const slot = resultSummary.querySelector('[data-offering-bootstrap-slot]');
+                if (slot && result?.semester_id) {
+                    const { mountOfferingBootstrap } = await import('/static/js/offering_bootstrap.js?v=20260831-obs');
+                    await mountOfferingBootstrap(slot, { semesterId: result.semester_id, variant: 'sync-dialog' });
+                }
+            } catch (bootstrapError) {
+                // 一键开课检测失败不影响同步结果展示
+            }
         } catch (error) {
             showFailure(error);
         } finally {

@@ -374,12 +374,15 @@ def _validate_teacher_owned_selection(
     class_id: int,
     course_id: int,
     semester_id: int,
-    textbook_id: int,
-) -> tuple[sqlite3.Row, sqlite3.Row, sqlite3.Row, sqlite3.Row]:
+    textbook_id: int | None,
+    allow_missing_textbook: bool = False,
+) -> tuple[sqlite3.Row, sqlite3.Row, sqlite3.Row, sqlite3.Row | None]:
     class_row = _ensure_teacher_can_use_class(conn, class_id=class_id, teacher_id=teacher_id)
     course_row = _ensure_teacher_can_use_course(conn, course_id=course_id, teacher_id=teacher_id)
     semester_row = _ensure_teacher_can_use_semester(conn, semester_id=semester_id, teacher_id=teacher_id)
-    textbook_row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=teacher_id)
+    textbook_row = None
+    if textbook_id or not allow_missing_textbook:
+        textbook_row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=teacher_id)
     return class_row, course_row, semester_row, textbook_row
 
 
@@ -559,6 +562,7 @@ def _prepare_offering_payload(
     data: dict[str, Any],
     require_schedule: bool,
     allow_missing_lessons: bool,
+    allow_missing_textbook: bool = False,
 ) -> dict[str, Any]:
     offering_id = _parse_optional_int(data.get("offering_id"))
     class_id = _parse_optional_int(data.get("class_id"))
@@ -579,7 +583,7 @@ def _prepare_offering_payload(
     if class_id and class_id not in class_ids:
         class_ids.insert(0, class_id)
 
-    if not class_id or not course_id or not semester_id or not textbook_id:
+    if not class_id or not course_id or not semester_id or (not textbook_id and not allow_missing_textbook):
         raise CoursePlanningError("请完整选择学期、班级、课程和教材")
 
     class_row, course_row, semester_row, textbook_row = _validate_teacher_owned_selection(
@@ -589,6 +593,7 @@ def _prepare_offering_payload(
         course_id=course_id,
         semester_id=semester_id,
         textbook_id=textbook_id,
+        allow_missing_textbook=allow_missing_textbook,
     )
     for extra_class_id in class_ids:
         if extra_class_id != class_id:

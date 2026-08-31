@@ -931,9 +931,22 @@ async function initMergeWizard() {
     });
 }
 
+async function initBootstrapPanel() {
+    const container = document.getElementById('offeringBootstrapSection');
+    const semesterId = Number(elements.semesterSelect?.value || config.defaultSemesterId || 0);
+    if (!container || !semesterId) return;
+    try {
+        const { mountOfferingBootstrap } = await import('/static/js/offering_bootstrap.js?v=20260831-obs');
+        await mountOfferingBootstrap(container, { semesterId, variant: 'page' });
+    } catch (error) {
+        // 检测失败静默：不影响开课主流程
+    }
+}
+
 bindEvents();
 resetForm();
 applyQueryDefaults();
 renderCourseSummary();
 schedulePreviewRefresh();
 initMergeWizard();
+initBootstrapPanel();
