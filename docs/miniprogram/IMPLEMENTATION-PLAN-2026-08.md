@@ -153,7 +153,8 @@
 - [x] **欢迎屏背景图丢失**：根因是 uvicorn 未开 proxy_headers，`request.base_url` 拼出 `http://` 图片地址被小程序拒载；mp/auth.py 新增 `_external_base_url` 尊重 `X-Forwarded-Proto`（需部署后端生效）。
 - [x] **首页议程历史折叠**：过期事项（`status=completed`，dashboard_agenda_events 自带）默认隐藏，"历史 N 条"按钮展开，半透明弱化显示。
 - [x] **批阅页逐题重构**：新端点 `GET /api/mp/teacher/submission/{id}/review`（复用 `build_deterministic_grading_evidence` 逐题客观判定：满分/0分/未作答/与标准不符/需人工；试卷题干+选项+标准答案；answers_json 内嵌附件清单按题归属，匹配不上归"整卷附件"兜底）。前端：顶部试卷信息+醒目最终分+迟交罚分说明、左侧可收起题目列表（判定着色圆点）、主区单题视图（学生答案/标准答案分块）、右侧本题附件面板、退回待重交禁改分。打分仍走既有 grade 端点（迟交罚分/AI job 冲正/修订台账/小组分联动服务端不动）。单测 `tests/test_wechat_mp_submission_review.py`，路由快照已重生成。
-- [ ] 部署后端 + 上传体验版 v0.10.1 + 真机验收。
+- [x] 部署后端（2026-08-31，含合班课堂 P4.0 同批上线；review 端点生产 401 验证通过）+ **体验版 v0.10.1 已上传**；待真机验收。
+- 备注：**v0.10.0 已审核通过并正式上线**（2026-08-31 10:24）。M0 全部出口标准达成。
 
 ### M1 通知触达（版本 v0.11.x）——移动端价值最大项
 
