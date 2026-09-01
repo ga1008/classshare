@@ -315,4 +315,18 @@ body.article-page { overflow: auto; height: auto; background: var(--bg); }
 }
 .article-flow .a-head h1 { margin: 8px 0 6px; }
 .article-flow .a-head .lesson-badge { font-size: .9em; padding: 4px 18px; letter-spacing: 2px; }
+
+/* 手机上（学生主要阅读场景）多列压缩会把短句折成一字一行，统一降为单栏。
+   幻灯模式不受影响——它靠虚拟画布整体缩放，版式必须保持投影一致。 */
+@media (max-width: 640px) {
+  .article-flow .grid-2,
+  .article-flow .grid-3,
+  .article-flow .grid-4 { grid-template-columns: 1fr; gap: 14px; }
+  .article-flow .s-timeline { flex-direction: column; gap: 10px; }
+  .article-flow .s-timeline .tl-item { text-align: left; padding: 0 0 0 26px; }
+  .article-flow .s-timeline .tl-item::before { left: 6px; transform: none; top: 6px; }
+  .article-flow .s-timeline .tl-item::after { display: none; }
+  .article-flow .a-slide { padding: 18px 16px; }
+  .article-flow table.nice { display: block; overflow-x: auto; }
+}
 .article-topbar { display: flex; justify-content: space-between; align-items: center; max-width: 880px; margin: 10px auto 0; padding: 0 16px; font-size: .9em; }
