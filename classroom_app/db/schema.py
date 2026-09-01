@@ -28,6 +28,7 @@ from .schema_academic_evaluations import ensure_academic_evaluation_schema
 from .schema_offering_class_links import ensure_offering_class_links_schema
 from .schema_offering_merge import ensure_offering_merge_schema
 from .schema_polls import ensure_poll_schema
+from .schema_course_doc_packs import ensure_course_doc_pack_schema
 from .schema_resume import ensure_resume_schema
 from .schema_scheduler import ensure_scheduler_schema
 from .schema_gongwen import ensure_gongwen_schema
@@ -131,6 +132,18 @@ def init_database():
             print("[DB] PostgreSQL poll tables ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL poll schema step skipped: {exc}")
+        # The LessonDoc course doc pack tables (课程学习文档包) follow the
+        # same runtime-managed, engine-aware pattern.
+        try:
+            doc_pack_conn = get_db_connection()
+            try:
+                ensure_course_doc_pack_schema(doc_pack_conn)
+                doc_pack_conn.commit()
+            finally:
+                doc_pack_conn.close()
+            print("[DB] PostgreSQL course doc pack tables ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL course doc pack schema step skipped: {exc}")
         # The offering↔class link table (合班课堂) follows the same
         # runtime-managed, engine-aware pattern; ensure also backfills a
         # primary link per existing offering (idempotent).
@@ -263,6 +276,7 @@ def init_database():
             ensure_classroom_activity_schema(conn)
             ensure_study_group_scheme_schema(conn)
             ensure_poll_schema(conn)
+            ensure_course_doc_pack_schema(conn)
             ensure_offering_class_links_schema(conn)
             ensure_offering_merge_schema(conn)
             ensure_materials_integrations_schema(conn)

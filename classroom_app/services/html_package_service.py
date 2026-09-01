@@ -254,8 +254,23 @@ _TAG_RE = re.compile(r"<[^>]+>")
 
 
 def extract_html_text(raw_html: str, *, max_chars: int = 12000) -> str:
-    """把 HTML 压成纯文本（去 script/style/标签，解实体，压空白）。"""
+    """把 HTML 压成纯文本（去 script/style/标签，解实体，压空白）。
+
+    LessonDoc 2.0 壳页的正文全部在内嵌 JSON 里（会被 script 剥除规则清空），
+    检测到标志时改抽 JSON 文本字段；失败静默回落旧路径。
+    """
     text = str(raw_html or "")
+    if 'data-lessondoc="' in text[:2000]:
+        try:
+            from .lessondoc import extract_deck_text, extract_embedded_json
+
+            payload = extract_embedded_json(text)
+            if payload:
+                extracted = extract_deck_text(payload, max_chars=max_chars)
+                if extracted:
+                    return extracted
+        except Exception:
+            pass
     text = _SCRIPT_STYLE_RE.sub(" ", text)
     text = _COMMENT_RE.sub(" ", text)
     text = re.sub(r"</(p|div|li|tr|h[1-6]|section|article|br)\s*>", "\n", text, flags=re.IGNORECASE)

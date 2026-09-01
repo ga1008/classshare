@@ -334,10 +334,23 @@ def _serialize_material_items(conn, rows, user: dict | None = None) -> list[dict
     items = attach_learning_document_metadata(conn, items)
     items = attach_git_repository_metadata(conn, items)
     items = attach_render_metadata(conn, items)
+    items = _attach_lessondoc_pack_metadata(conn, items)
     return [
         _decorate_material_download_policy(_decorate_material_ownership(conn, item, user))
         for item in items
     ]
+
+
+def _attach_lessondoc_pack_metadata(conn, items: list[dict]) -> list[dict]:
+    """LessonDoc 学习文档包元数据（惰性导入避免服务层循环依赖）。"""
+    try:
+        from ...services.lessondoc.pack_service import attach_pack_metadata
+
+        return attach_pack_metadata(conn, items)
+    except Exception:
+        for item in items:
+            item.setdefault("lessondoc_pack", None)
+        return items
 
 
 def _decorate_learning_document_item(item: dict) -> dict:

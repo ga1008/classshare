@@ -98,6 +98,54 @@ async function handleDelete(button) {
     }
 }
 
+/**
+ * 一键绑定学习文档包：先按课程查包，命中唯一包直接绑；无包引导去课程页生成。
+ * 绑定本身复用 POST /api/lessondoc/packs/{id}/bind（确定性：首页 + lesson_N ↔ 第 N 次课）。
+ */
+async function handleBindLessonDoc(button) {
+    const offeringId = Number(button.dataset.offeringId || 0);
+    const courseId = Number(button.dataset.courseId || 0);
+    if (!offeringId || !courseId) return;
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = '查询中…';
+    try {
+        const listed = await apiFetch(`/api/lessondoc/packs?course_id=${courseId}`);
+        const packs = listed?.packs || [];
+        if (!packs.length) {
+            showMessage('本课程还没有学习文档包，先去「内容资产 → 课程」生成', 'warning');
+            window.open(`/manage/teaching/courses?lessondoc=${courseId}`, '_blank', 'noopener');
+            return;
+        }
+        const pack = packs[0];
+        if (!pack.ready_count) {
+            showMessage('该学习文档包还没有已生成的课次，请先生成再绑定', 'warning');
+            return;
+        }
+        const confirmed = window.confirm(
+            `把学习文档包（${pack.ready_count}/${pack.total_count} 课就绪）绑定到这个课堂？\n`
+            + '课程首页会挂到课堂主页，每个已生成课次自动对应同序号的课次。'
+        );
+        if (!confirmed) return;
+        button.textContent = '绑定中…';
+        const result = await apiFetch(`/api/lessondoc/packs/${pack.id}/bind`, {
+            method: 'POST',
+            body: { class_offering_ids: [offeringId] },
+        });
+        const binding = result?.binding || {};
+        showMessage(
+            `绑定完成：首页 ${binding.total_home_assignments ?? 0} 处，课次 ${binding.total_assignments ?? 0} 处`,
+            'success'
+        );
+        window.location.reload();
+    } catch (error) {
+        // apiFetch 已弹出错误 toast
+    } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+    }
+}
+
 // -- 页内编辑抽屉：iframe 复用「开设课堂」编辑器的 embed 模式，避免复制表单逻辑 --
 const drawerBackdrop = document.getElementById('offeringHubEditDrawer');
 const drawerFrame = document.getElementById('offeringHubDrawerFrame');
@@ -175,6 +223,11 @@ function bindEvents() {
                 detail.hidden = !detail.hidden;
                 toggleButton.textContent = detail.hidden ? '明细' : '收起';
             }
+            return;
+        }
+        const bindDocButton = event.target.closest('[data-action="bind-lessondoc"]');
+        if (bindDocButton) {
+            handleBindLessonDoc(bindDocButton);
             return;
         }
         const deleteButton = event.target.closest('[data-action="delete-offering"]');

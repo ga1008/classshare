@@ -172,6 +172,30 @@ def _item(
     }
 
 
+def _lessondoc_pack_root_ids(conn, material_ids: list[int]) -> set[int]:
+    """这批材料里哪些是 LessonDoc 学习文档包的包根（用于结果卡徽标）。
+
+    单条 SQL；任何异常降级为空集，检索结果绝不因徽标失败而缺失。
+    """
+    if not material_ids:
+        return set()
+    try:
+        from ..db.schema_course_doc_packs import ensure_course_doc_pack_schema
+
+        ensure_course_doc_pack_schema(conn)
+        placeholders = ",".join("?" for _ in material_ids)
+        rows = conn.execute(
+            f"""
+            SELECT root_material_id FROM course_doc_packs
+            WHERE status = 'active' AND root_material_id IN ({placeholders})
+            """,
+            material_ids,
+        ).fetchall()
+        return {int(row["root_material_id"]) for row in rows}
+    except Exception:
+        return set()
+
+
 def _search_course_materials(conn, ctx: dict[str, Any], terms: list[str], *, postclass: bool) -> list[dict[str, Any]]:
     visibility_sql, visibility_params = _scope_visibility_condition(
         "m", ctx["scope"], ctx["teacher_id"], is_super_admin=ctx["is_super_admin"]
@@ -199,6 +223,7 @@ def _search_course_materials(conn, ctx: dict[str, Any], terms: list[str], *, pos
     ).fetchall()
     category = "postclass" if postclass else "learning_docs"
     base_page = "/manage/teaching/postclass-materials" if postclass else "/manage/teaching/materials"
+    pack_root_ids = _lessondoc_pack_root_ids(conn, [int(row["id"]) for row in rows])
     items = []
     for row in rows:
         data = dict(row)
@@ -214,7 +239,10 @@ def _search_course_materials(conn, ctx: dict[str, Any], terms: list[str], *, pos
                 updated_at=data.get("updated_at") or "",
                 url=f"{base_page}?parent_id={anchor_id}",
                 snippet=_snippet(data.get("material_path") or "", terms),
-                meta=["文件夹" if is_folder else str(data.get("preview_type") or "文件")],
+                meta=[
+                    "文件夹" if is_folder else str(data.get("preview_type") or "文件"),
+                    "学习文档包" if int(data["id"]) in pack_root_ids else "",
+                ],
             )
         )
     return items

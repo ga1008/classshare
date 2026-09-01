@@ -1201,6 +1201,13 @@ async def delete_material(
 
         subtree_rows = _collect_subtree_rows(conn, material)
         file_hashes = {row["file_hash"] for row in subtree_rows if row["node_type"] == "file" and row["file_hash"]}
+        # LessonDoc 学习文档包:包根被删时把 pack 登记置 archived(留审计,不删行)。
+        try:
+            from ...services.lessondoc.pack_service import archive_pack_for_material
+
+            archive_pack_for_material(conn, material_id)
+        except Exception:
+            pass
         conn.execute("DELETE FROM course_materials WHERE id = ?", (material_id,))
         conn.commit()
 

@@ -1,0 +1,79 @@
+/* ============================================================
+   LessonDoc 2.0 — themes.css(命名主题集)
+   机制:<html data-theme="teal"> 覆盖 course.css :root 的主色族。
+   默认(无 data-theme 或 data-theme="sky")即 sky,与 cnet-course
+   范例逐像素一致。dark 为修饰符:data-theme="teal dark"。
+   引擎按 URL ?theme= > localStorage > deck JSON > course.json
+   的优先级设置本属性(见 deck-engine.js)。
+   ============================================================ */
+
+/* ---- sky(默认,天蓝;理工通用) ---- 变量继承 course.css :root,无需覆盖 */
+
+/* ---- teal(青绿;Python/数据类) ---- */
+[data-theme~="teal"] {
+  --primary: #0d9488;
+  --primary-dark: #115e59;
+  --primary-soft: #ccfbf1;
+  --title-grad-end: #1e3a5f;
+}
+
+/* ---- violet(紫;AI/前沿课程) ---- */
+[data-theme~="violet"] {
+  --primary: #7c3aed;
+  --primary-dark: #5b21b6;
+  --primary-soft: #ede9fe;
+  --title-grad-end: #1e1b4b;
+}
+
+/* ---- amber(暖橙;文科/人文) ---- */
+[data-theme~="amber"] {
+  --primary: #d97706;
+  --primary-dark: #92400e;
+  --primary-soft: #fef3c7;
+  --warn: #ea580c;             /* callout 警示与主色区分 */
+  --title-grad-end: #431407;
+}
+
+/* ---- rose(玫红;艺术/设计) ---- */
+[data-theme~="rose"] {
+  --primary: #e11d48;
+  --primary-dark: #9f1239;
+  --primary-soft: #ffe4e6;
+  --title-grad-end: #4c0519;
+}
+
+/* ---- slate(素黑白;打印友好/极简) ---- */
+[data-theme~="slate"] {
+  --primary: #475569;
+  --primary-dark: #1e293b;
+  --primary-soft: #e2e8f0;
+  --title-grad-end: #0f172a;
+}
+
+/* ---- dark 修饰符(深色阅读环境;卡片反白保持内容可读) ---- */
+[data-theme~="dark"] {
+  --bg: #0b1220;
+  --card: #111a2c;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --line: #263349;
+  --stage-bg: #05080f;
+  --hud-bg: rgba(3, 7, 15, .85);
+  --overview-bg: rgba(2, 5, 12, .97);
+  --out-bg: #16213a;
+  --ok-soft: #0c2a1a;
+  --err-soft: #35151a;
+  --warn-soft: #33230b;
+  --lab-bg: #33230b;
+  --lab-border: #7c5c14;
+  --lab-fg: #fcd34d;
+  --shadow: 0 1px 3px rgba(0, 0, 0, .5);
+  --dg-fill: #16213a;
+  --dg-line: #64748b;
+}
+[data-theme~="dark"] .slide { box-shadow: 0 12px 48px rgba(0, 0, 0, .85); }
+[data-theme~="dark"] .quiz .quiz-opts button { background: var(--bg); }
+[data-theme~="dark"] .s-card { background: var(--bg); }
+
+/* 主题切换的柔和过渡(舞台与卡片) */
+body, .slide, .s-card, .callout { transition: background-color .25s ease, color .25s ease, border-color .25s ease; }

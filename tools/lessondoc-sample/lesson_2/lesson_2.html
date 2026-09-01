@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lessondoc="2.0" data-doc-kind="lesson" data-lesson="2">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>第2课 · ★实验:看见你身边的网络</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/slides.css">
+  <link rel="stylesheet" href="../assets/themes.css">
+</head>
+<body class="slides-page">
+  <noscript>本文档需要启用 JavaScript 才能查看。</noscript>
+  <script type="application/json" id="lessondoc-data">
+  {
+    "spec": "lessondoc/2.0",
+    "kind": "lesson",
+    "lesson": 2,
+    "course": "《计算机网络原理》",
+    "title": "看见你身边的网络",
+    "subtitle": "ipconfig · ping · tracert 三件套实验",
+    "badge": "第 2 课 · ★实验课",
+    "slides": [
+      { "layout": "title" },
+      { "layout": "content", "section": "实验准备", "title": "今天要跑通的三条命令",
+        "blocks": [
+          { "type": "diagram", "kind": "flow", "direction": "h", "caption": "实验流水线",
+            "nodes": [
+              { "id": "a", "label": "ipconfig 看配置" },
+              { "id": "b", "label": "ping 测连通" },
+              { "id": "c", "label": "tracert 追路径" },
+              { "id": "d", "label": "写实验报告", "tone": "ok" }
+            ],
+            "edges": [
+              { "from": "a", "to": "b", "label": "拿到网关IP" },
+              { "from": "b", "to": "c", "label": "选一个目标" },
+              { "from": "c", "to": "d" }
+            ] }
+        ] },
+      { "layout": "content", "section": "第一步", "title": "ipconfig:我的电脑长什么样",
+        "blocks": [
+          { "type": "code", "lang": "bat", "code": "ipconfig /all",
+            "output": "   IPv4 地址 . . . . . . : 192.168.1.23\n   子网掩码  . . . . . . : 255.255.255.0\n   默认网关. . . . . . . : 192.168.1.1" },
+          { "type": "callout", "tone": "think", "md": "找到你的 **IPv4 地址** 和 **默认网关**,记在实验报告里。", "step": 1 }
+        ] },
+      { "layout": "grid", "section": "第二步", "title": "ping:一次往返看三个数字",
+        "areas": [
+          { "area": "1/1/9/8", "blocks": [
+            { "type": "diagram", "kind": "sequence", "caption": "ping 的往返:请求 + 应答 = RTT",
+              "actors": [ { "id": "me", "label": "🖥 我的电脑" }, { "id": "gw", "label": "📡 网关" } ],
+              "messages": [
+                { "from": "me", "to": "gw", "label": "① Echo Request" },
+                { "from": "gw", "to": "me", "label": "② Echo Reply", "dashed": true }
+              ] }
+          ] },
+          { "area": "1/8/5/13", "blocks": [
+            { "type": "cards", "cols": 1, "items": [
+              { "title": "时间=2ms", "text": "一次往返耗时(RTT)。", "step": 1 },
+              { "title": "TTL=64", "text": "还能再穿过多少跳路由。", "step": 2 }
+            ] }
+          ] },
+          { "area": "5/8/9/13", "blocks": [
+            { "type": "callout", "tone": "warn", "md": "ping 不通 ≠ 网断了,对方可能**禁 ping**。", "step": 3 }
+          ] }
+        ] },
+      { "layout": "content", "section": "第三步", "title": "猜一猜再验证",
+        "blocks": [
+          { "type": "reveal", "items": [
+            { "label": "从教室到 www.gxufl.edu.cn,要经过几跳路由?", "md": "校园网通常 **3—6 跳**;用 `tracert` 亲眼数一数。" },
+            { "label": "为什么有些跳显示 * * * ?", "md": "该路由器**不回应**探测包(出于安全策略),不代表断了。" }
+          ] }
+        ] },
+      { "layout": "content", "section": "实验任务", "title": "实验任务清单", "sub": "完成后勾选,截图贴进实验报告",
+        "blocks": [
+          { "type": "tasklist", "items": [
+            { "text": "用 ipconfig /all 记录本机 IPv4、掩码、网关", "step": 1 },
+            { "text": "ping 默认网关 4 次,记录平均 RTT", "step": 2 },
+            { "text": "tracert 一个校外网站,数出跳数", "step": 3 },
+            { "text": "在 lanshare 平台提交实验报告", "step": 4 }
+          ] },
+          { "type": "media", "kind": "image", "src": "media/screenshot-sample.png",
+            "caption": "(占位演示:缺失媒体应显示占位卡而非破版)", "step": 5 }
+        ] },
+      { "layout": "content", "section": "随堂测验", "title": "随堂测验", "sub": "点击选项即时判分",
+        "blocks": [
+          { "type": "quiz", "q": "ping 输出里的 TTL 表示?", "answer": "C",
+            "options": [
+              { "k": "A", "text": "总耗时" },
+              { "k": "B", "text": "传输速率" },
+              { "k": "C", "text": "剩余可穿越的路由跳数" },
+              { "k": "D", "text": "丢包率" }
+            ],
+            "explain": "TTL(Time To Live)每过一跳路由器减 1,减到 0 分组被丢弃。" }
+        ] },
+      { "layout": "end", "title": "实验小结",
+        "summary": "三条命令 = 网络体检三件套:配置(ipconfig)、连通(ping)、路径(tracert)。",
+        "nextUp": "下节课 · 第3课:数据通信基础 —— 信号是怎样在线路上跑的" }
+    ]
+  }
+  </script>
+  <script src="../assets/course.js"></script>
+  <script src="../assets/slides.js"></script>
+  <script src="../assets/deck-engine.js"></script>
+</body>
+</html>

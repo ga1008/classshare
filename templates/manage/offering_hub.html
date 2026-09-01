@@ -203,6 +203,14 @@
                             <span>进行中活动</span>
                             <strong>作业 {{ offering.activity.assignment_open }} · 投票 {{ offering.activity.poll_active }} · 分组 {{ offering.activity.group_active }}</strong>
                         </div>
+                        <div>
+                            <span>学习文档</span>
+                            {% if offering.lessondoc_pack %}
+                            <strong>学习文档包 {{ offering.lessondoc_pack.ready_count }}/{{ offering.lessondoc_pack.total_count }} 课就绪</strong>
+                            {% else %}
+                            <strong class="is-warning-text">未绑定文档包</strong>
+                            {% endif %}
+                        </div>
                     </div>
 
                     <div class="offering-hub-detail" data-offering-detail hidden>
@@ -222,6 +230,18 @@
                         <a class="btn btn-primary btn-sm" href="/classroom/{{ offering.id }}">进入课堂</a>
                         <a class="btn btn-outline btn-sm" href="/manage/teaching/offerings?offering_id={{ offering.id }}" data-action="edit-config" data-offering-title="{{ offering.course_name }} — {{ offering.class_name }}">编辑配置</a>
                         <a class="btn btn-outline btn-sm" href="/manage/teaching/ai">AI 助教</a>
+                        {% if offering.lessondoc_pack %}
+                        <a class="btn btn-outline btn-sm" href="{{ offering.lessondoc_pack.render_shell_url }}" target="_blank" rel="noopener">学习文档</a>
+                        {% else %}
+                        <button
+                            type="button"
+                            class="btn btn-outline btn-sm"
+                            data-action="bind-lessondoc"
+                            data-offering-id="{{ offering.id }}"
+                            data-course-id="{{ offering.course_id }}"
+                            title="把本课程的学习文档包绑定到这个课堂（首页 + 各课次一次绑齐）"
+                        >绑定学习文档</button>
+                        {% endif %}
                         <button type="button" class="btn btn-ghost btn-sm" data-action="toggle-detail">明细</button>
                         <button
                             type="button"

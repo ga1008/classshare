@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lessondoc="2.0" data-doc-kind="lesson" data-lesson="1">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>第1课 · 概述:互联网的组成与工作方式</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/slides.css">
+  <link rel="stylesheet" href="../assets/themes.css">
+</head>
+<body class="slides-page">
+  <noscript>本文档需要启用 JavaScript 才能查看。</noscript>
+  <script type="application/json" id="lessondoc-data">
+  {
+    "spec": "lessondoc/2.0",
+    "kind": "lesson",
+    "lesson": 1,
+    "course": "《计算机网络原理》",
+    "title": "概述:互联网的组成与工作方式",
+    "subtitle": "边缘与核心 · 分组交换 · 三种交换方式",
+    "badge": "第 1 课 · 理论课",
+    "slides": [
+      { "layout": "title" },
+      { "layout": "content", "section": "开场", "title": "本课学习目标",
+        "blocks": [
+          { "type": "cards", "cols": 2, "items": [
+            { "icon": "①", "title": "说清互联网的两大作用", "text": "连通性与共享,一句话讲给外行听。", "step": 1 },
+            { "icon": "②", "title": "分清边缘与核心", "text": "你的手机在哪一侧?路由器在哪一侧?", "step": 2 },
+            { "icon": "③", "title": "理解分组交换", "text": "为什么不打电话式占线,而要切分组?", "step": 3 },
+            { "icon": "④", "title": "对比三种交换方式", "text": "电路/报文/分组,各自的代价。", "step": 4 }
+          ] }
+        ] },
+      { "layout": "content", "section": "开场", "title": "本课地图",
+        "blocks": [
+          { "type": "timeline", "items": [
+            { "title": "一 · 互联网的作用", "text": "连通性\n共享" },
+            { "title": "二 · 组成结构", "text": "边缘 / 核心" },
+            { "title": "三 · 分组交换", "text": "存储转发" },
+            { "title": "四 · 三种交换对比", "text": "表格分析" },
+            { "title": "五 · 随堂测验", "text": "2 题" }
+          ] },
+          { "type": "callout", "tone": "think", "md": "💡 一条主线:**数据怎样从你的手机到达服务器**。", "step": 1 }
+        ] },
+      { "layout": "section", "no": "01", "title": "互联网改变了什么", "hint": "先看作用,再看结构" },
+      { "layout": "two-col", "section": "互联网的作用", "title": "两大基本特点", "ratio": "3:2",
+        "left": [
+          { "type": "svg", "viewBox": "0 0 420 210", "caption": "连通性:任意两台主机可以互通",
+            "body": "<g font-size='13' text-anchor='middle'><circle cx='70' cy='60' r='30' fill='var(--dg-primary-soft)' stroke='var(--dg-primary)' stroke-width='2'/><text x='70' y='65'>🖥 A</text><circle cx='350' cy='60' r='30' fill='var(--dg-primary-soft)' stroke='var(--dg-primary)' stroke-width='2'/><text x='350' y='65'>🖥 B</text><circle cx='210' cy='150' r='34' fill='var(--dg-fill)' stroke='var(--dg-warn)' stroke-width='2.5'/><text x='210' y='155'>☁ 互联网</text><line x1='95' y1='80' x2='185' y2='135' stroke='var(--dg-line)' stroke-width='2'/><line x1='325' y1='80' x2='235' y2='135' stroke='var(--dg-line)' stroke-width='2'/></g>" }
+        ],
+        "right": [
+          { "type": "cards", "cols": 1, "items": [
+            { "title": "连通性", "text": "任何两台入网主机都能交换数据,仿佛直连。", "step": 1 },
+            { "title": "共享", "text": "信息共享、算力共享、服务共享。", "tone": "ok", "step": 2 }
+          ] },
+          { "type": "callout", "tone": "warn", "md": "注意用词:小写 *internet* 是互连网络的统称,大写 *Internet* 特指全球互联网。", "step": 3 }
+        ] },
+      { "layout": "section", "no": "02", "title": "边缘与核心", "hint": "谁在用网络,谁在撑网络" },
+      { "layout": "content", "section": "组成结构", "title": "互联网的两大部分",
+        "blocks": [
+          { "type": "diagram", "kind": "arch", "caption": "边缘部分使用服务,核心部分提供转发",
+            "layers": [
+              { "label": "边缘部分", "nodes": [ { "label": "🖥 主机A" }, { "label": "📱 手机" }, { "label": "🖥 服务器", "tone": "ok" } ] },
+              { "label": "核心部分", "nodes": [ { "id": "r1", "label": "路由器R1", "tone": "warn" }, { "id": "r2", "label": "路由器R2", "tone": "warn" } ] }
+            ],
+            "links": [ { "from": "🖥 主机A", "to": "r1" }, { "from": "📱 手机", "to": "r1" }, { "from": "🖥 服务器", "to": "r2" }, { "from": "r1", "to": "r2" } ] }
+        ] },
+      { "layout": "content", "section": "分组交换", "title": "存储转发:一步一步看",
+        "sub": "点「下一步」观察分组的旅程",
+        "blocks": [
+          { "type": "stepper",
+            "stage": { "type": "svg", "viewBox": "0 0 640 150",
+              "body": "<g font-size='12' text-anchor='middle'><rect x='15' y='45' width='80' height='40' rx='8' fill='var(--dg-fill)' stroke='var(--dg-primary)' stroke-width='2'/><text x='55' y='70'>主机 A</text><rect x='190' y='45' width='80' height='40' rx='8' fill='var(--dg-fill)' stroke='var(--dg-warn)' stroke-width='2'/><text x='230' y='70'>R1</text><rect x='365' y='45' width='80' height='40' rx='8' fill='var(--dg-fill)' stroke='var(--dg-warn)' stroke-width='2'/><text x='405' y='70'>R2</text><rect x='540' y='45' width='85' height='40' rx='8' fill='var(--dg-fill)' stroke='var(--dg-ok)' stroke-width='2'/><text x='582' y='70'>主机 B</text><line x1='95' y1='65' x2='190' y2='65' stroke='var(--dg-line)' stroke-width='2'/><line x1='270' y1='65' x2='365' y2='65' stroke='var(--dg-line)' stroke-width='2'/><line x1='445' y1='65' x2='540' y2='65' stroke='var(--dg-line)' stroke-width='2'/><g id='pkt' visibility='hidden'><rect x='110' y='30' width='40' height='20' rx='4' fill='var(--dg-primary)'/><text x='130' y='44' fill='#fff'>分组</text></g><text id='note' x='320' y='135' fill='var(--dg-primary-dark)'></text></g>" },
+            "steps": [
+              { "text": "主机 A 把要发的分组交给链路,发往路由器 R1。",
+                "show": ["#pkt"],
+                "set": [ { "target": "#pkt", "attr": "transform", "value": "translate(0,0)" },
+                         { "target": "#note", "attr": "textContent", "value": "分组在 A→R1 的链路上传输" } ] },
+              { "text": "R1 先把整个分组完整收下,放进缓存——这一步叫「存储」。",
+                "set": [ { "target": "#pkt", "attr": "transform", "value": "translate(105,0)" },
+                         { "target": "#note", "attr": "textContent", "value": "分组暂存在 R1 缓存,查转发表" } ] },
+              { "text": "查表后 R1 把分组转发给 R2——这一步叫「转发」。",
+                "set": [ { "target": "#pkt", "attr": "transform", "value": "translate(280,0)" },
+                         { "target": "#note", "attr": "textContent", "value": "分组在 R1→R2 链路上传输" } ] },
+              { "text": "R2 重复同样动作,最终分组到达主机 B。",
+                "set": [ { "target": "#pkt", "attr": "transform", "value": "translate(455,0)" },
+                         { "target": "#note", "attr": "textContent", "value": "分组抵达主机 B,旅程结束" } ] }
+            ] }
+        ] },
+      { "layout": "content", "section": "三种交换对比", "title": "电路 / 报文 / 分组",
+        "sub": "逐行对比(按 → 逐行显示)",
+        "blocks": [
+          { "type": "table", "rowStep": true,
+            "head": ["问题", "电路交换", "报文交换", "分组交换"],
+            "rows": [
+              ["要先建立连接?", "要(占线)", "不要", "不要"],
+              ["数据单位", "比特流", "整份报文", "小分组"],
+              ["中间节点", "直通", "存储转发(慢)", "存储转发(快)"],
+              ["线路利用率", "低", "中", "**高**"]
+            ] },
+          { "type": "callout", "tone": "ok", "md": "互联网选择了**分组交换**:线路利用率高,单个分组丢了只重传一小块。", "step": 5 }
+        ] },
+      { "layout": "content", "section": "三次握手预告", "title": "连接是怎样建立的(预告)",
+        "blocks": [
+          { "type": "diagram", "kind": "sequence", "caption": "TCP 三次握手(第5章详讲,今天混个脸熟)",
+            "actors": [ { "id": "c", "label": "🖥 客户端" }, { "id": "s", "label": "☁ 服务器" } ],
+            "messages": [
+              { "from": "c", "to": "s", "label": "① SYN 我想建立连接", "step": 1 },
+              { "from": "s", "to": "c", "label": "② SYN+ACK 可以,你确认下", "step": 2 },
+              { "from": "c", "to": "s", "label": "③ ACK 确认!开始传数据", "step": 3 }
+            ] }
+        ] },
+      { "layout": "center", "section": "小结",
+        "blocks": [
+          { "type": "bigmark", "mark": "📦", "line": "把大文件切成小分组,\n是互联网最聪明的决定。" }
+        ] },
+      { "layout": "content", "section": "随堂测验", "title": "随堂测验 1 / 2", "sub": "点击选项即时判分",
+        "blocks": [
+          { "type": "quiz", "q": "互联网的两大基本特点是?", "answer": "B",
+            "options": [
+              { "k": "A", "text": "高速与安全" },
+              { "k": "B", "text": "连通性与共享" },
+              { "k": "C", "text": "免费与开放" },
+              { "k": "D", "text": "集中与统一" }
+            ],
+            "explain": "教材开篇即讲:连通性(任意主机互通)与共享(信息/资源共享)。" }
+        ] },
+      { "layout": "content", "section": "随堂测验", "title": "随堂测验 2 / 2",
+        "blocks": [
+          { "type": "quiz", "q": "路由器收下整个分组、查表后再发出,这个机制叫?", "answer": "C",
+            "options": [
+              { "k": "A", "text": "电路直通" },
+              { "k": "B", "text": "即收即转" },
+              { "k": "C", "text": "存储转发" },
+              { "k": "D", "text": "流水线转发" }
+            ],
+            "explain": "存储(完整收下入缓存)+ 转发(查转发表后发往下一跳)。" }
+        ] },
+      { "layout": "content", "section": "课后作业", "title": "课后作业", "sub": "截止:下次课前 · 在 lanshare 平台完成提交",
+        "blocks": [
+          { "type": "cards", "cols": 2, "items": [
+            { "icon": "✍", "title": "概念题", "text": "用自己的话解释「存储转发」,不超过 100 字。" },
+            { "icon": "🔍", "title": "观察题", "text": "数一数你家里接入互联网的设备,判断它们都在边缘还是核心。" }
+          ] },
+          { "type": "details", "summary": "提交要求(点开查看)", "blocks": [
+            { "type": "tasklist", "items": ["在 lanshare 平台「作业」区提交", "文字作答,无需附件", "下次课前完成"] }
+          ] }
+        ] },
+      { "layout": "end", "title": "本课小结",
+        "summary": "互联网 = 边缘(用网络)+ 核心(撑网络);核心用分组交换,机制是存储转发。",
+        "nextUp": "下节课 · 第2课(★实验):看见你身边的网络 —— 亲手敲 ipconfig / ping / tracert" }
+    ]
+  }
+  </script>
+  <script src="../assets/course.js"></script>
+  <script src="../assets/slides.js"></script>
+  <script src="../assets/deck-engine.js"></script>
+</body>
+</html>

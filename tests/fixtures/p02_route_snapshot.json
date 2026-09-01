@@ -2296,6 +2296,94 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/lessondoc/classrooms/{class_offering_id}/pack",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_lessondoc_pack_for_classroom",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_lessondoc_packs",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_lessondoc_pack",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs/import-legacy",
+    "methods": [
+      "POST"
+    ],
+    "name": "import_legacy_package",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs/{pack_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_lessondoc_pack",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs/{pack_id}/bind",
+    "methods": [
+      "POST"
+    ],
+    "name": "bind_lessondoc_pack",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs/{pack_id}/generate-batch",
+    "methods": [
+      "POST"
+    ],
+    "name": "generate_lessondoc_batch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs/{pack_id}/lessons/{lesson_no}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_lessondoc_lesson",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs/{pack_id}/lessons/{lesson_no}/generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "generate_lessondoc_lesson",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs/{pack_id}/refresh-assets",
+    "methods": [
+      "POST"
+    ],
+    "name": "refresh_lessondoc_assets",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs/{pack_id}/theme",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_lessondoc_pack_theme",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/life-tips/manage/create",
     "methods": [
       "POST"

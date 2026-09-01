@@ -1,0 +1,509 @@
+"""LessonDoc 2.0 服务层单测:降级校验矩阵 / 渲染↔抽取往返 / 包骨架落库。
+
+夹具约定:内存 sqlite + 手搓最小 course_materials 表;文件存储与引擎探测
+均 monkeypatch,不落盘、不依赖真实 DB 配置。手搓 schema 场景必须 reset
+`schema_course_doc_packs._SCHEMA_READY`(跨套件污染惯犯,见教学域守则)。
+"""
+
+import json
+import sqlite3
+import unittest
+from unittest import mock
+
+from classroom_app.db import schema_course_doc_packs
+from classroom_app.services.html_package_service import extract_html_text
+from classroom_app.services.lessondoc import (
+    LessonDocValidationError,
+    extract_embedded_json,
+    is_lessondoc_html,
+    render_home_html,
+    render_lesson_html,
+    validate_deck,
+    validate_manifest,
+)
+from classroom_app.services.lessondoc import pack_service
+
+
+def _deck(**overrides):
+    base = {
+        "spec": "lessondoc/2.0",
+        "kind": "lesson",
+        "lesson": 1,
+        "course": "《测试课程》",
+        "title": "第一课",
+        "slides": [
+            {"layout": "title"},
+            {
+                "layout": "content",
+                "section": "开场",
+                "title": "目标",
+                "blocks": [{"type": "text", "md": "hello **world**"}],
+            },
+        ],
+    }
+    base.update(overrides)
+    return base
+
+
+def _manifest(**overrides):
+    base = {
+        "spec": "lessondoc/2.0",
+        "kind": "home",
+        "course": {"name": "测试课程", "totalHours": 8, "sessionCount": 4},
+        "theme": "sky",
+        "stages": [{"label": "阶段一", "lessons": [1, 2]}],
+        "lessons": [
+            {"n": 1, "title": "第一课", "status": "ready", "topics": ["a"]},
+            {"n": 2, "title": "第二课", "status": "pending"},
+        ],
+    }
+    base.update(overrides)
+    return base
+
+
+class TestValidateDeck(unittest.TestCase):
+    def test_fatal_not_object(self):
+        with self.assertRaises(LessonDocValidationError):
+            validate_deck(["not", "a", "dict"])
+
+    def test_fatal_bad_spec(self):
+        with self.assertRaises(LessonDocValidationError):
+            validate_deck(_deck(spec="lessondoc/9.9"))
+        with self.assertRaises(LessonDocValidationError):
+            validate_deck(_deck(spec=None))
+
+    def test_fatal_empty_slides(self):
+        with self.assertRaises(LessonDocValidationError):
+            validate_deck(_deck(slides=[]))
+
+    def test_fatal_lesson_mismatch(self):
+        with self.assertRaises(LessonDocValidationError):
+            validate_deck(_deck(lesson=3), expected_lesson=1)
+
+    def test_missing_lesson_backfilled_from_expected(self):
+        deck, warnings = validate_deck(_deck(lesson=None), expected_lesson=7)
+        self.assertEqual(deck["lesson"], 7)
+        self.assertTrue(any("补齐" in w for w in warnings))
+
+    def test_unknown_block_becomes_placeholder(self):
+        payload = _deck()
+        payload["slides"][1]["blocks"].append({"type": "hologram", "x": 1})
+        deck, warnings = validate_deck(payload)
+        blocks = deck["slides"][1]["blocks"]
+        self.assertEqual(blocks[-1]["type"], "callout")
+        self.assertIn("hologram", blocks[-1]["md"])
+        self.assertTrue(any("未知内容块类型" in w for w in warnings))
+
+    def test_unknown_layout_falls_back_to_content(self):
+        payload = _deck()
+        payload["slides"][1]["layout"] = "hexagon"
+        deck, warnings = validate_deck(payload)
+        self.assertEqual(deck["slides"][1]["layout"], "content")
+        self.assertTrue(any("未知版式" in w for w in warnings))
+
+    def test_broken_block_dropped_not_fatal(self):
+        payload = _deck()
+        payload["slides"][1]["blocks"] = [
+            {"type": "quiz", "q": "", "options": []},          # 缺题干/选项 → 丢弃
+            {"type": "text", "md": "survivor"},
+        ]
+        deck, warnings = validate_deck(payload)
+        blocks = deck["slides"][1]["blocks"]
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0]["md"], "survivor")
+        self.assertTrue(any("quiz" in w for w in warnings))
+
+    def test_table_truncated_and_warned(self):
+        payload = _deck()
+        payload["slides"][1]["blocks"] = [
+            {"type": "table", "head": ["a"], "rows": [[str(i)] for i in range(20)]}
+        ]
+        deck, warnings = validate_deck(payload)
+        self.assertEqual(len(deck["slides"][1]["blocks"][0]["rows"]), 12)
+        self.assertTrue(any("截断" in w for w in warnings))
+
+    def test_quiz_answer_repaired(self):
+        payload = _deck()
+        payload["slides"][1]["blocks"] = [
+            {
+                "type": "quiz",
+                "q": "1+1?",
+                "options": [{"k": "A", "text": "2"}, {"k": "B", "text": "3"}],
+                "answer": "Z",
+                "explain": "x",
+            }
+        ]
+        deck, warnings = validate_deck(payload)
+        self.assertEqual(deck["slides"][1]["blocks"][0]["answer"], "A")
+        self.assertTrue(any("答案不在选项" in w for w in warnings))
+
+    def test_svg_sanitized(self):
+        payload = _deck()
+        payload["slides"][1]["blocks"] = [
+            {
+                "type": "svg",
+                "viewBox": "0 0 100 100",
+                "body": "<rect fill='#0284c7' onclick=\"alert(1)\"/>"
+                        "<script>evil()</script><text fill='#16a34a'>ok</text>",
+            }
+        ]
+        deck, warnings = validate_deck(payload)
+        body = deck["slides"][1]["blocks"][0]["body"]
+        self.assertNotIn("<script", body)
+        self.assertNotIn("onclick", body)
+        self.assertNotIn("#0284c7", body)
+        self.assertIn("var(--dg-", body)
+        self.assertIn("var(--dg-ok)", body)
+        self.assertTrue(any("硬编码颜色" in w for w in warnings))
+
+    def test_svg_colors_mapped_by_luminance(self):
+        """浅底与深字不能被兜底成同一个主色，否则手写包迁移后图会糊成一片。"""
+        payload = _deck()
+        payload["slides"][1]["blocks"] = [
+            {
+                "type": "svg",
+                "viewBox": "0 0 100 100",
+                "body": (
+                    "<ellipse fill='#e0f2fe'/>"      # 浅蓝底衬
+                    "<text fill='#075985'>深蓝字</text>"
+                    "<rect fill='#0284c7'/>"         # 主色
+                    "<rect fill='#fff'/>"            # 接近白
+                    "<text fill='#64748b'>灰</text>"
+                ),
+            }
+        ]
+        deck, _ = validate_deck(payload)
+        body = deck["slides"][1]["blocks"][0]["body"]
+        self.assertIn("var(--dg-primary-soft)", body)   # #e0f2fe
+        self.assertIn("var(--dg-primary-dark)", body)   # #075985
+        self.assertIn("var(--dg-fill)", body)           # #fff
+        self.assertIn("var(--dg-muted)", body)          # #64748b
+        self.assertNotIn("#", body)
+
+    def test_media_remote_src_dropped(self):
+        payload = _deck()
+        payload["slides"][1]["blocks"] = [
+            {"type": "media", "kind": "image", "src": "https://evil.example/x.png"},
+            {"type": "media", "kind": "image", "src": "media/ok.png"},
+        ]
+        deck, warnings = validate_deck(payload)
+        blocks = deck["slides"][1]["blocks"]
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0]["src"], "media/ok.png")
+        self.assertTrue(any("media 路径不合规" in w for w in warnings))
+
+    def test_slides_over_limit_truncated(self):
+        payload = _deck()
+        filler = {"layout": "content", "title": "x", "blocks": [{"type": "text", "md": "y"}]}
+        payload["slides"] = [dict(filler) for _ in range(50)]
+        deck, warnings = validate_deck(payload)
+        self.assertEqual(len(deck["slides"]), 40)
+        self.assertTrue(any("超过" in w for w in warnings))
+
+    def test_theme_normalized(self):
+        deck, _ = validate_deck(_deck(theme="TEAL dark"))
+        self.assertEqual(deck["theme"], "teal dark")
+        deck2, warnings2 = validate_deck(_deck(theme="neon"))
+        self.assertNotIn("theme", deck2)
+        self.assertTrue(any("未知主题" in w for w in warnings2))
+
+
+class TestValidateManifest(unittest.TestCase):
+    def test_fatal_missing_course_name(self):
+        with self.assertRaises(LessonDocValidationError):
+            validate_manifest(_manifest(course={"credits": 2}))
+
+    def test_lessons_deduped_and_sorted(self):
+        manifest, warnings = validate_manifest(
+            _manifest(
+                lessons=[
+                    {"n": 2, "title": "b"},
+                    {"n": 1, "title": "a"},
+                    {"n": 2, "title": "dup"},
+                    {"n": 0, "title": "bad"},
+                ]
+            )
+        )
+        self.assertEqual([l["n"] for l in manifest["lessons"]], [1, 2])
+        self.assertTrue(any("重复" in w or "无效" in w for w in warnings))
+
+    def test_missing_stage_coverage_backfilled(self):
+        manifest, warnings = validate_manifest(
+            _manifest(stages=[{"label": "s1", "lessons": [1]}])
+        )
+        labels = [s["label"] for s in manifest["stages"]]
+        self.assertIn("其他课次", labels)
+        self.assertTrue(any("未被任何阶段覆盖" in w for w in warnings))
+
+
+class TestRenderRoundtrip(unittest.TestCase):
+    def test_lesson_roundtrip_lossless(self):
+        deck, _ = validate_deck(_deck())
+        html = render_lesson_html(deck)
+        self.assertTrue(is_lessondoc_html(html))
+        self.assertIn('data-doc-kind="lesson"', html)
+        extracted = extract_embedded_json(html)
+        self.assertEqual(extracted, deck)
+
+    def test_home_roundtrip_lossless(self):
+        manifest, _ = validate_manifest(_manifest())
+        html = render_home_html(manifest)
+        self.assertIn('data-doc-kind="home"', html)
+        self.assertEqual(extract_embedded_json(html), manifest)
+
+    def test_embedded_script_close_escaped(self):
+        payload = _deck()
+        payload["slides"][1]["blocks"] = [
+            {"type": "code", "code": "print('</script>')"}
+        ]
+        deck, _ = validate_deck(payload)
+        html = render_lesson_html(deck)
+        # 内容中的 </script> 不能提前闭合数据节点
+        self.assertEqual(extract_embedded_json(html)["slides"][1]["blocks"][0]["code"],
+                         "print('</script>')")
+
+    def test_extract_html_text_uses_lessondoc_branch(self):
+        deck, _ = validate_deck(_deck())
+        html = render_lesson_html(deck)
+        text = extract_html_text(html)
+        self.assertIn("hello **world**", text)
+        self.assertIn("第一课", text)
+
+    def test_extract_from_plain_html_unaffected(self):
+        text = extract_html_text("<html><body><p>普通页面</p></body></html>")
+        self.assertIn("普通页面", text)
+
+
+class _PackFixture(unittest.TestCase):
+    """内存 sqlite + monkeypatch 文件存储/引擎探测的包操作夹具."""
+
+    def setUp(self):
+        schema_course_doc_packs.reset_schema_ready_for_tests()
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(
+            """
+            CREATE TABLE course_materials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NOT NULL,
+                parent_id INTEGER,
+                root_id INTEGER,
+                material_path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                node_type TEXT NOT NULL,
+                mime_type TEXT DEFAULT '',
+                preview_type TEXT DEFAULT '',
+                ai_capability TEXT DEFAULT 'none',
+                file_ext TEXT DEFAULT '',
+                file_hash TEXT,
+                file_size INTEGER DEFAULT 0,
+                ai_parse_status TEXT DEFAULT 'idle',
+                ai_optimize_status TEXT DEFAULT 'idle',
+                created_at TEXT,
+                updated_at TEXT
+            );
+            CREATE TABLE class_offerings (
+                id INTEGER PRIMARY KEY,
+                teacher_id INTEGER NOT NULL,
+                home_learning_material_id INTEGER
+            );
+            CREATE TABLE class_offering_sessions (
+                id INTEGER PRIMARY KEY,
+                class_offering_id INTEGER NOT NULL,
+                order_index INTEGER NOT NULL,
+                learning_material_id INTEGER
+            );
+            """
+        )
+        self.blob_store = {}
+
+        def fake_store(content: str):
+            key = f"hash-{len(self.blob_store)}-{len(content)}"
+            self.blob_store[key] = content
+            return key, len(content.encode("utf-8"))
+
+        def fake_load(conn, material_row):
+            return self.blob_store.get(material_row["file_hash"] or "", "")
+
+        patches = [
+            mock.patch(
+                "classroom_app.services.session_material_generation_service._store_markdown_bytes",
+                side_effect=fake_store,
+            ),
+            mock.patch.object(pack_service, "_load_file_text", side_effect=fake_load),
+            mock.patch.object(pack_service, "get_configured_db_engine", return_value="sqlite"),
+            mock.patch.object(
+                schema_course_doc_packs, "get_configured_db_engine", return_value="sqlite"
+            ),
+            mock.patch(
+                "classroom_app.services.session_material_generation_service.get_configured_db_engine",
+                return_value="sqlite",
+            ),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(self.conn.close)
+        self.addCleanup(schema_course_doc_packs.reset_schema_ready_for_tests)
+
+    def _create_pack(self):
+        return pack_service.create_pack_skeleton(
+            conn=self.conn,
+            teacher_id=9,
+            course_id=42,
+            manifest=_manifest(),
+            theme="teal",
+        )
+
+
+class TestPackSkeleton(_PackFixture):
+    def test_skeleton_shape(self):
+        result = self._create_pack()
+        pack = result["pack"]
+        self.assertEqual(pack["course_id"], 42)
+        self.assertEqual(pack["theme"], "teal")
+        root_id = result["root_material_id"]
+
+        rows = self.conn.execute(
+            "SELECT name, node_type, parent_id FROM course_materials ORDER BY id"
+        ).fetchall()
+        names = [r["name"] for r in rows]
+        # 根目录 + assets + 6 引擎文件 + README + course.json + main.html
+        self.assertIn("assets", names)
+        self.assertIn("deck-engine.js", names)
+        self.assertIn("themes.css", names)
+        self.assertIn("README.md", names)
+        self.assertIn("course.json", names)
+        self.assertIn("main.html", names)
+        root_row = self.conn.execute(
+            "SELECT * FROM course_materials WHERE id = ?", (root_id,)
+        ).fetchone()
+        self.assertEqual(root_row["node_type"], "folder")
+        self.assertEqual(root_row["root_id"], root_id)
+
+        lessons = pack_service.list_pack_lessons(self.conn, pack["id"])
+        self.assertEqual([l["lesson_no"] for l in lessons], [1, 2])
+        self.assertTrue(all(l["gen_status"] == "pending" for l in lessons))
+
+        # main.html 是合法 LessonDoc 壳且清单可反读
+        home_row = self.conn.execute(
+            "SELECT * FROM course_materials WHERE name = 'main.html'"
+        ).fetchone()
+        html = self.blob_store[home_row["file_hash"]]
+        self.assertTrue(is_lessondoc_html(html))
+        manifest = pack_service.read_manifest(self.conn, pack)
+        self.assertEqual(manifest["course"]["name"], "测试课程")
+
+    def test_duplicate_pack_name_rejected(self):
+        self._create_pack()
+        with self.assertRaises(pack_service.LessonDocPackError):
+            self._create_pack()
+
+    def test_write_lesson_files_create_and_overwrite(self):
+        result = self._create_pack()
+        pack = result["pack"]
+        warnings = pack_service.write_lesson_files(self.conn, pack, 2, _deck(lesson=2))
+        self.assertEqual(warnings, [])
+        entry = self.conn.execute(
+            "SELECT * FROM course_materials WHERE name = 'lesson_2.html'"
+        ).fetchone()
+        self.assertIsNotNone(entry)
+        folder = self.conn.execute(
+            "SELECT * FROM course_materials WHERE id = ?", (entry["parent_id"],)
+        ).fetchone()
+        self.assertEqual(folder["name"], "lesson_2")
+        first_hash = entry["file_hash"]
+
+        # 覆盖写不新增行
+        pack_service.write_lesson_files(self.conn, pack, 2, _deck(lesson=2, title="改版"))
+        rows = self.conn.execute(
+            "SELECT * FROM course_materials WHERE name = 'lesson_2.html'"
+        ).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertNotEqual(rows[0]["file_hash"], first_hash)
+        self.assertIn("改版", self.blob_store[rows[0]["file_hash"]])
+
+    def test_lesson_state_upsert_and_status_guard(self):
+        pack = self._create_pack()["pack"]
+        pack_service.update_lesson_state(
+            self.conn, pack_id=pack["id"], lesson_no=1, gen_status="ready",
+            warnings=["w1"], last_task_id=77,
+        )
+        lesson = pack_service.list_pack_lessons(self.conn, pack["id"])[0]
+        self.assertEqual(lesson["gen_status"], "ready")
+        self.assertEqual(lesson["warnings"], ["w1"])
+        self.assertEqual(lesson["last_task_id"], 77)
+        with self.assertRaises(pack_service.LessonDocPackError):
+            pack_service.update_lesson_state(
+                self.conn, pack_id=pack["id"], lesson_no=1, gen_status="exploded"
+            )
+
+    def test_archive_on_material_delete(self):
+        result = self._create_pack()
+        pack = result["pack"]
+        changed = pack_service.archive_pack_for_material(self.conn, result["root_material_id"])
+        self.assertTrue(changed)
+        self.assertEqual(pack_service.get_pack(self.conn, pack["id"])["status"], "archived")
+        # 非包根材料不受影响
+        self.assertFalse(pack_service.archive_pack_for_material(self.conn, 999999))
+
+    def test_refresh_assets_counts(self):
+        pack = self._create_pack()["pack"]
+        updated = pack_service.refresh_pack_assets(self.conn, pack)
+        self.assertEqual(updated, 6)
+
+
+class TestFindPackForOffering(_PackFixture):
+    """课堂 → pack 反查(课堂页/课堂管理页共用)。"""
+
+    def _bind_offering(self, *, home_material_id=None, session_material_id=None):
+        self.conn.execute(
+            "INSERT INTO class_offerings (id, teacher_id, home_learning_material_id) VALUES (77, 9, ?)",
+            (home_material_id,),
+        )
+        self.conn.execute(
+            "INSERT INTO class_offering_sessions (id, class_offering_id, order_index, learning_material_id)"
+            " VALUES (701, 77, 1, ?)",
+            (session_material_id,),
+        )
+
+    def _entry_id(self, name):
+        row = self.conn.execute(
+            "SELECT id FROM course_materials WHERE name = ? LIMIT 1", (name,)
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    def test_found_via_home_material(self):
+        result = self._create_pack()
+        pack = result["pack"]
+        pack_service.write_lesson_files(self.conn, pack, 1, _deck(lesson=1))
+        self._bind_offering(home_material_id=self._entry_id("main.html"))
+        found = pack_service.find_pack_for_offering(self.conn, class_offering_id=77)
+        self.assertIsNotNone(found)
+        self.assertEqual(found["id"], pack["id"])
+
+    def test_found_via_session_material(self):
+        result = self._create_pack()
+        pack = result["pack"]
+        pack_service.write_lesson_files(self.conn, pack, 1, _deck(lesson=1))
+        self._bind_offering(session_material_id=self._entry_id("lesson_1.html"))
+        found = pack_service.find_pack_for_offering(self.conn, class_offering_id=77)
+        self.assertIsNotNone(found)
+        self.assertEqual(found["id"], pack["id"])
+
+    def test_unbound_offering_returns_none(self):
+        self._create_pack()
+        self._bind_offering()
+        self.assertIsNone(pack_service.find_pack_for_offering(self.conn, class_offering_id=77))
+
+    def test_archived_pack_not_returned(self):
+        result = self._create_pack()
+        pack = result["pack"]
+        pack_service.write_lesson_files(self.conn, pack, 1, _deck(lesson=1))
+        self._bind_offering(home_material_id=self._entry_id("main.html"))
+        pack_service.archive_pack_for_material(self.conn, result["root_material_id"])
+        self.assertIsNone(pack_service.find_pack_for_offering(self.conn, class_offering_id=77))
+
+
+if __name__ == "__main__":
+    unittest.main()

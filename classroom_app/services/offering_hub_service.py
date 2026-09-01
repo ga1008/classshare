@@ -154,6 +154,62 @@ def _ai_configured_ids(conn: Any, offering_ids: list[int]) -> set[int]:
     return {int(row["class_offering_id"]) for row in rows}
 
 
+def _lessondoc_pack_map(conn: Any, offering_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """课堂 → 已绑定的 LessonDoc 学习文档包（一次 SQL，避免逐课堂上溯）。
+
+    判定口径与 ``pack_service.find_pack_for_offering`` 一致但走批量 join：
+    课堂首页/课次的主材料只要落在某个 active pack 的子树内即算已绑定
+    （``course_materials.root_id`` 对包根成立，因为建包时整棵树同根）。
+    任何异常都降级为「全部未绑定」——运营总台不能因为附加信息失败而打不开。
+    """
+    if not offering_ids:
+        return {}
+    try:
+        from ..db.schema_course_doc_packs import ensure_course_doc_pack_schema
+
+        ensure_course_doc_pack_schema(conn)
+        rows = conn.execute(
+            f"""
+            SELECT o.id AS offering_id,
+                   p.id AS pack_id,
+                   p.root_material_id,
+                   p.theme,
+                   SUM(CASE WHEN l.gen_status IS NOT NULL AND l.gen_status != 'excluded'
+                            THEN 1 ELSE 0 END) AS total_count,
+                   SUM(CASE WHEN l.gen_status = 'ready' THEN 1 ELSE 0 END) AS ready_count
+            FROM class_offerings o
+            JOIN course_materials m
+              ON m.id = COALESCE(
+                   o.home_learning_material_id,
+                   (SELECT s.learning_material_id
+                      FROM class_offering_sessions s
+                     WHERE s.class_offering_id = o.id
+                       AND s.learning_material_id IS NOT NULL
+                     ORDER BY s.order_index LIMIT 1)
+                 )
+            JOIN course_doc_packs p
+              ON p.root_material_id = m.root_id AND p.status = 'active'
+            LEFT JOIN course_doc_pack_lessons l ON l.pack_id = p.id
+            WHERE o.id IN ({_placeholders(offering_ids)})
+            GROUP BY o.id, p.id, p.root_material_id, p.theme
+            """,
+            tuple(offering_ids),
+        ).fetchall()
+    except Exception:
+        return {}
+    return {
+        int(row["offering_id"]): {
+            "pack_id": int(row["pack_id"]),
+            "root_material_id": int(row["root_material_id"]),
+            "theme": row["theme"],
+            "ready_count": int(row["ready_count"] or 0),
+            "total_count": int(row["total_count"] or 0),
+            "render_shell_url": f"/materials/render-view/{int(row['root_material_id'])}",
+        }
+        for row in rows
+    }
+
+
 def _activity_counts(conn: Any, offering_ids: list[int]) -> dict[int, dict[str, int]]:
     if not offering_ids:
         return {}
@@ -250,6 +306,7 @@ def enrich_offerings_for_hub(conn: Any, teacher_id: int, offerings: list[dict[st
     next_map = _next_sessions(conn, offering_ids, today_iso)
     ai_ids = _ai_configured_ids(conn, offering_ids)
     activity_map = _activity_counts(conn, offering_ids)
+    doc_pack_map = _lessondoc_pack_map(conn, offering_ids)
     all_class_ids = sorted({cid for item in offerings for cid in (item.get("class_ids") or [])})
     class_names = _class_name_map(conn, all_class_ids)
 
@@ -293,6 +350,7 @@ def enrich_offerings_for_hub(conn: Any, teacher_id: int, offerings: list[dict[st
                 "run_status_tone": RUN_STATUS_TONES[status],
                 "activity": activity,
                 "activity_open_total": activity["assignment_open"] + activity["poll_active"] + activity["group_active"],
+                "lessondoc_pack": doc_pack_map.get(offering_id),
             }
         )
     return enriched

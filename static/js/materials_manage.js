@@ -2314,6 +2314,17 @@ function renderList() {
         const repositoryBadge = visualMeta.badge
             ? `<span class="materials-repo-badge" style="--repo-color:${visualMeta.color};">${escapeHtml(visualMeta.badge)}</span>`
             : '';
+        // LessonDoc 学习文档包：包根文件夹显示规格徽标 + 就绪进度，并给出课次管理入口。
+        const lessondocPack = item.lessondoc_pack || null;
+        const lessondocBadge = lessondocPack
+            ? `<span class="materials-repo-badge" style="--repo-color:#7c3aed;">学习文档包 ${escapeHtml(String(lessondocPack.spec_version || '').replace('lessondoc/', '') || '2.0')}</span>`
+            : '';
+        const lessondocProgress = lessondocPack
+            ? `<span class="materials-meta-item">${escapeHtml(String(lessondocPack.ready_count))} / ${escapeHtml(String(lessondocPack.total_count))} 课就绪</span>`
+            : '';
+        const lessondocAction = lessondocPack
+            ? `<button type="button" class="btn btn-outline btn-sm" data-action="lessondoc-manage" data-pack-id="${lessondocPack.pack_id}">管理课次</button>`
+            : '';
         const assignedCourses = Array.isArray(item.assigned_course_names) ? item.assigned_course_names.filter(Boolean) : [];
         const assignedClasses = Array.isArray(item.assigned_class_names) ? item.assigned_class_names.filter(Boolean) : [];
         // 材料自身的学年学期/课程/班级（来自解析结果），与"已分配到哪些课堂"是两回事：
@@ -2343,7 +2354,7 @@ function renderList() {
                         <div class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</div>
                         <div class="materials-name-copy">
                             <strong title="${escapeHtml(item.name)}">${highlightText(item.name, state.filters.keyword)}</strong>
-                            <div class="materials-name-badges">${generatedBadge}${repositoryBadge}</div>
+                            <div class="materials-name-badges">${generatedBadge}${repositoryBadge}${lessondocBadge}</div>
                             <span title="${escapeHtml(item.material_path || '')}">${highlightText(item.material_path || '', state.filters.keyword)}</span>
                         </div>
                     </div>
@@ -2351,6 +2362,7 @@ function renderList() {
                         <span class="materials-type-pill">${escapeHtml(getMaterialTypeLabel(item))}</span>
                         <span class="materials-meta-item">${escapeHtml(materialMetaText)}</span>
                         ${item.assignment_count ? `<span class="materials-meta-item">已分配 ${escapeHtml(String(item.assignment_count))} 次</span>` : ''}
+                        ${lessondocProgress}
                         ${assignmentMeta}
                         ${scopeBadge}
                         ${sharedBadge}
@@ -2367,6 +2379,7 @@ function renderList() {
                     <button type="button" class="btn btn-ghost btn-sm" data-resource-attributes data-resource-type="material" data-resource-id="${item.id}">属性</button>
                     ${primaryActionHtml}
                     ${renderAction}
+                    ${lessondocAction}
                     ${refreshAction}
                     ${documentAction}
                     ${repositoryAction}
@@ -3122,6 +3135,18 @@ function openFolder(materialId, trackHistory = true) {
 
 function previewMaterial(materialId) {
     window.open(`/materials/view/${materialId}`, '_blank', 'noopener');
+}
+
+/** 学习文档包课次管理：按需加载向导模块（课程页与材料页共用同一套面板）。 */
+async function openLessonDocManager(packId) {
+    if (!packId) throw new Error('缺少学习文档包编号');
+    if (typeof window.openLessonDocPackManager !== 'function') {
+        await import('/static/js/lessondoc_wizard.js');
+    }
+    if (typeof window.openLessonDocPackManager !== 'function') {
+        throw new Error('学习文档包模块加载失败');
+    }
+    await window.openLessonDocPackManager(packId);
 }
 
 async function refreshGeneratedFinalMaterial(materialId, button) {
@@ -6643,6 +6668,14 @@ function bindEvents() {
         }
         if (action === 'refresh-final-material') {
             refreshGeneratedFinalMaterial(materialId, event.target.closest('[data-action]'));
+            return;
+        }
+        if (action === 'lessondoc-manage') {
+            // 学习文档包课次管理：复用课程页那套向导（管理面板 + 绑定/主题/引擎）。
+            const packId = event.target.closest('[data-action]')?.dataset.packId;
+            openLessonDocManager(packId).catch((error) => {
+                showToast(error.message || '打开学习文档包失败', 'error');
+            });
             return;
         }
 

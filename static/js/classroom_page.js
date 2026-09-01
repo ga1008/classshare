@@ -1989,6 +1989,8 @@ function initTeachingTimeline() {
     const selectHomeMaterialBtn = document.getElementById('teachingTimelineSelectHomeMaterialBtn');
     const selectMaterialBtn = document.getElementById('teachingTimelineSelectMaterialBtn');
     const aiMaterialBtn = document.getElementById('teachingTimelineAiMaterialBtn');
+    const lessonDocRewriteBtn = document.getElementById('teachingTimelineLessonDocRewriteBtn');
+    const lessonDocNextBtn = document.getElementById('teachingTimelineLessonDocNextBtn');
     const openHomeMaterialBtn = document.getElementById('teachingTimelineOpenHomeMaterialBtn');
     const openMaterialBtn = document.getElementById('teachingTimelineOpenMaterialBtn');
     const sessionModal = document.getElementById('teachingSessionModal');
@@ -2509,7 +2511,115 @@ function initTeachingTimeline() {
         if (detailActions) {
             detailActions.hidden = examEntry;
         }
+        syncLessonDocButtons(session, { homeEntry, examEntry });
     };
+
+    // ---- LessonDoc 学习文档包：课堂绑定了包时，AI 入口分流为「重写本课 / 生成下次课」----
+    const lessonDocOfferingId = Number(window.APP_CONFIG?.classOfferingId || 0);
+    let lessonDocPack = null;          // null = 未查询或未绑定
+    let lessonDocBusy = false;
+
+    const lessonDocLessonState = (lessonNo) => {
+        if (!lessonDocPack || !lessonNo) return null;
+        return (lessonDocPack.lessons || []).find((item) => Number(item.lesson_no) === Number(lessonNo)) || null;
+    };
+
+    function syncLessonDocButtons(session, { homeEntry, examEntry } = {}) {
+        if (!lessonDocRewriteBtn && !lessonDocNextBtn) return;
+        const available = Boolean(lessonDocPack) && !homeEntry && !examEntry;
+        const orderIndex = Number(session?.order_index || 0);
+        const currentState = lessonDocLessonState(orderIndex);
+        const anyBusy = lessonDocBusy
+            || (lessonDocPack?.lessons || []).some((item) => ['queued', 'running'].includes(item.gen_status));
+
+        if (lessonDocRewriteBtn) {
+            const canRewrite = available && currentState && currentState.gen_status !== 'excluded';
+            lessonDocRewriteBtn.hidden = !canRewrite;
+            lessonDocRewriteBtn.disabled = !canRewrite || anyBusy;
+            lessonDocRewriteBtn.textContent = currentState?.gen_status === 'ready'
+                ? 'AI 重写本课'
+                : 'AI 生成本课';
+        }
+        if (lessonDocNextBtn) {
+            const nextLesson = lessonDocPack?.next_pending_lesson || null;
+            const canNext = available && Boolean(nextLesson);
+            lessonDocNextBtn.hidden = !canNext;
+            lessonDocNextBtn.disabled = !canNext || anyBusy;
+            lessonDocNextBtn.textContent = nextLesson ? `AI 生成第 ${nextLesson} 课` : 'AI 生成下次课';
+        }
+        if (aiMaterialBtn && available) {
+            // 包模式下旧的通用生成入口容易与包内生成冲突（会往包外落散文件），隐藏之。
+            aiMaterialBtn.hidden = true;
+        }
+    }
+
+    async function loadLessonDocPack() {
+        if (!isTeacher || !lessonDocOfferingId) return;
+        try {
+            const response = await fetch(`/api/lessondoc/classrooms/${lessonDocOfferingId}/pack`, {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            lessonDocPack = data?.pack || null;
+            syncTeacherActionState(getSessionByOrder(selectedOrder));
+        } catch (error) {
+            lessonDocPack = null;   // 静默降级：拿不到包信息就维持原有 AI 入口
+        }
+    }
+
+    async function runLessonDocGeneration(lessonNo, mode) {
+        if (!lessonDocPack || !lessonNo || lessonDocBusy) return;
+        const promptLabel = mode === 'rewrite'
+            ? `第${lessonNo}课 AI 重写：请输入改进要求（可留空）`
+            : `第${lessonNo}课 AI 生成：补充提示（可留空）`;
+        const hint = window.prompt(promptLabel, '');
+        if (hint === null) return;
+        lessonDocBusy = true;
+        syncTeacherActionState(getSessionByOrder(selectedOrder));
+        try {
+            const response = await fetch(
+                `/api/lessondoc/packs/${lessonDocPack.id}/lessons/${lessonNo}/generate`,
+                {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        mode,
+                        user_hint: hint,
+                        class_offering_id: lessonDocOfferingId,
+                    }),
+                },
+            );
+            const data = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw new Error(data?.detail?.message || data?.detail || '生成任务提交失败');
+            }
+            showToast(data?.message || '生成任务已提交，助教正在编写…', 'success');
+            pollLessonDocPack();
+        } catch (error) {
+            showToast(error.message || '生成任务提交失败', 'error');
+        } finally {
+            lessonDocBusy = false;
+            syncTeacherActionState(getSessionByOrder(selectedOrder));
+        }
+    }
+
+    let lessonDocPollTimer = null;
+    function pollLessonDocPack() {
+        if (lessonDocPollTimer) return;
+        lessonDocPollTimer = window.setInterval(async () => {
+            await loadLessonDocPack();
+            const busy = (lessonDocPack?.lessons || []).some(
+                (item) => ['queued', 'running'].includes(item.gen_status),
+            );
+            if (!busy) {
+                window.clearInterval(lessonDocPollTimer);
+                lessonDocPollTimer = null;
+            }
+        }, 6000);
+    }
 
     const animateToScrollLeft = (targetScrollLeft, options = {}) => {
         const target = clampScrollLeft(targetScrollLeft);
@@ -3092,6 +3202,22 @@ function initTeachingTimeline() {
     aiMaterialBtn?.addEventListener('click', () => {
         sessionMaterialAssistant?.openForCurrentSession();
     });
+
+    lessonDocRewriteBtn?.addEventListener('click', () => {
+        const session = getSessionByOrder(selectedOrder);
+        const lessonNo = Number(session?.order_index || 0);
+        if (!lessonNo) return;
+        const state = lessonDocLessonState(lessonNo);
+        runLessonDocGeneration(lessonNo, state?.gen_status === 'ready' ? 'rewrite' : 'generate');
+    });
+
+    lessonDocNextBtn?.addEventListener('click', () => {
+        const nextLesson = Number(lessonDocPack?.next_pending_lesson || 0);
+        if (!nextLesson) return;
+        runLessonDocGeneration(nextLesson, 'generate');
+    });
+
+    if (isTeacher) loadLessonDocPack();
 
     window.requestAnimationFrame(() => {
         setActiveSession(selectedOrder, {
