@@ -158,18 +158,48 @@
     var W, H;
     if (horiz) { W = layers.length * GX + 20; H = maxCross * GY + 30; }
     else { W = maxCross * GX + 20; H = layers.length * GY + 30; }
-    layers.forEach(function (L, d) {
-      L.forEach(function (n, k) {
-        var off = (maxCross - L.length) / 2;
-        if (horiz) { n._x = 20 + d * GX; n._y = 22 + (k + off) * GY; }
-        else { n._x = 20 + (k + off) * GX; n._y = 18 + d * GY; }
+    /* 横向节点过多时自动折行:12 个节点排成一条线会被画布缩放压到看不清字,
+       折成每行 ≤6 个后宽度减半、字号翻倍。只在单链(每层 1 个节点)时折行,
+       多分支图折行会让连线含义混乱。 */
+    var PER_ROW = 6;
+    var wrap = horiz && maxCross === 1 && layers.length > PER_ROW;
+    var rowGap = NH + 46;
+    if (wrap) {
+      var rowCount = Math.ceil(layers.length / PER_ROW);
+      W = Math.min(PER_ROW, layers.length) * GX + 20;
+      H = rowCount * rowGap + 30;
+      layers.forEach(function (L, d) {
+        var row = Math.floor(d / PER_ROW), col = d % PER_ROW;
+        L.forEach(function (n) { n._x = 20 + col * GX; n._y = 22 + row * rowGap; });
       });
-    });
+    } else {
+      layers.forEach(function (L, d) {
+        L.forEach(function (n, k) {
+          var off = (maxCross - L.length) / 2;
+          if (horiz) { n._x = 20 + d * GX; n._y = 22 + (k + off) * GY; }
+          else { n._x = 20 + (k + off) * GX; n._y = 18 + d * GY; }
+        });
+      });
+    }
     var suf = "f" + (++_dgSeq);
     var out = arrowDefs(suf);
     edges.forEach(function (e) {
       var a = byId[String(e.from)], b = byId[String(e.to)];
       var x1, y1, x2, y2;
+      if (wrap && b._y > a._y) {
+        /* 折行处:从上一行行末底部绕到下一行行首左侧,不横穿整图 */
+        var midY = a._y + NH + (rowGap - NH) / 2;
+        var sx = a._x + a._w / 2, sy = a._y + NH;
+        var ex = b._x - 2, ey = b._y + NH / 2;
+        out += '<path d="M ' + sx + ' ' + sy + ' V ' + midY + ' H ' + (ex - 14) +
+          ' V ' + ey + ' H ' + ex + '" fill="none" stroke="var(--dg-line)" stroke-width="2"' +
+          ' marker-end="url(#ldarr' + suf + ')"/>';
+        if (e.label) {
+          out += '<text x="' + (sx + 6) + '" y="' + (midY - 5) +
+            '" font-size="12" fill="var(--dg-muted)">' + esc(e.label) + "</text>";
+        }
+        return;
+      }
       if (horiz) { x1 = a._x + a._w; y1 = a._y + NH / 2; x2 = b._x - 2; y2 = b._y + NH / 2; }
       else { x1 = a._x + a._w / 2; y1 = a._y + NH; x2 = b._x + b._w / 2; y2 = b._y - 2; }
       out += '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 +
