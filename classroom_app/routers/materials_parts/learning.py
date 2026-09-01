@@ -6,6 +6,7 @@ from .rewrite_helpers import *
 from ...services.html_package_service import apply_package_session_bindings, parse_html_package
 from ...services.material_render_service import attach_render_metadata
 from ...services.materials_service import is_bindable_learning_material
+from ...db.schema_session_learning_materials import ensure_session_learning_materials_schema
 from ...services.session_learning_materials_service import (
     AI_BLURB_GENERATE_LIMIT,
     add_material as add_session_learning_material,
@@ -175,7 +176,14 @@ class MaterialLearningBindingsUpdateRequest(BaseModel):
 
 
 def _load_material_learning_binding_context(conn, material_id: int, teacher_id: int) -> dict:
-    """教师全部课堂 + 课次 + 该材料当前绑定到的目标（session_id=0 表示首页）。"""
+    """教师全部课堂 + 课次 + 该材料当前绑定到的目标（session_id=0 表示首页）。
+
+    `class_offering_learning_materials` 是懒建的 runtime 表（只在
+    session_learning_materials_service 的公开函数里 ensure）。本函数直接查它，
+    在**从未走过那些服务函数的全新环境**里会 `no such table` 报 500，所以这里
+    先 ensure 一次（幂等，命中模块级 _SCHEMA_READY 后近乎零开销）。
+    """
+    ensure_session_learning_materials_schema(conn)
     offering_rows = conn.execute(
         """
         SELECT o.id, o.semester, c.name AS class_name, co.name AS course_name
