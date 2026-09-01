@@ -534,6 +534,43 @@ POST /api/lessondoc/packs/import-legacy      （P4）旧包升级
 2. 部署（走 deploy-workflow；`static/lessondoc/` 纳入同步清单）、推送。
 3. 更新记忆 `lessondoc-template-system.md` + MEMORY.md 索引；本文档回填实际口径。
 
+---
+
+## 11. 后续改进路线（P0—P4 已完成后的下一批）
+
+按「风险优先 → 高频需求 → 补齐有损 → 体验打磨」排序。每项标注依据，**不是凭空规划**。
+
+### R1 学生侧端到端验证（风险最高，建议下一步就做）
+**依据**：P0—P4 全程用**教师账号**验证，学生视角一次都没跑过。未知面包括：学生打开 lessondoc 包的权限链（`course_material_assignments` 锚定包根是否让学生能取到 `assets/`）、学习进度心跳是否正常计时、测验作答在学生端的表现、手机上 article 模式的实际可读性。
+**做法**：QA 环境用学生账号走「课堂首页→打开学习文档→翻页→答题→切 article→手机宽度」全流程，重点验权限与进度记录。
+**成本**：小（半天）。**风险**：不做的话，可能开学第一天才发现学生打不开。
+
+### R2 单页 / 单块重写（教师最高频需求）
+**依据**：现在改内容的最小粒度是**整课重写**（`mode=rewrite` 重生成 24 页）。教师发现第 7 页讲错了一个概念，只能整课重来——既慢又可能把讲对的页也改坏。
+**做法**：`POST /api/lessondoc/packs/{id}/lessons/{n}/slides/{index}/rewrite`，只把该页 JSON + 前后页上下文喂给 AI，返回单页 deck 片段替换。前端在壳页加「改这一页」入口（教师可见）。
+**成本**：中。**收益**：把「AI 生成」从一次性变成可迭代，这是能不能长期用下去的关键。
+
+### R3 补齐迁移有损（stepper 解说词 / 阶段分组）
+**依据**：cnet-course 迁移实测的两条已知有损。
+- **stepper**：静态舞台图已保留，缺 `steps`。可把舞台 SVG（含元素 id）+ 该页上下文喂 AI，让它生成 steps 数组——这正是 AI 擅长的补全。
+- **阶段分组**：迁移后合并为「全部课次」。在建包向导里加分组编辑（拖拽或按课次号区间划分），顺带也解决新建包时的分组需求。
+**成本**：小—中。
+
+### R4 批量生成的可观测性与韧性
+**依据**：32 课顺序生成耗时长（为保证 summary 衔接是有意为之），但目前教师只能看轮询状态，不知道「还要多久」「卡在哪一课」；中途失败要手动补。
+**做法**：① 批量任务返回预估时长与当前进度；② 失败课次自动重试一次；③ 支持「从第 N 课继续」断点续跑。
+**成本**：中。
+
+### R5 引擎版本治理
+**依据**：包内 `assets/` 是生成时刻的引擎副本（离线红线决定的）。引擎升级后老包不会自动更新，虽有「刷新引擎」按钮但要教师逐包手点。
+**做法**：材料页对 `assets_fingerprint` 与当前引擎不一致的包显示「引擎可更新」提示，支持一键批量刷新。
+**成本**：小。
+
+### R6 内容质量的持续打磨（长期）
+**依据**：真实 AI 验收一次通过，但样本只有 1 课 1 门课。
+**做法**：多跑几门不同学科（文科/理科/实验课）各 1—2 课，把 AI 常犯的结构问题回灌进 `docs/lessondoc-authoring-guide.md` 的 AI 摘要节——**该文件是提示词真源，改它等于改 AI 行为**。flow 折行就是这么发现并修掉的。
+**成本**：持续投入，按需。
+
 ### 明确不做（YAGNI）
 - 不做协作编辑/版本 diff（git 已覆盖）；不做运行时 fetch 拆分 JSON（离线红线）；不做 graphviz 级图布局；不做学生答题持久化（现有测验/作业系统职责）；不动 `_normalize_generated_html_package_nodes` 旧分支；不强迁存量手写包（教师主动点升级才做）。
 
@@ -552,11 +589,15 @@ POST /api/lessondoc/packs/import-legacy      （P4）旧包升级
 
 ## 10. 上线前 checklist
 
-- [ ] p02 路由快照重生成
-- [ ] `RUNTIME_ENSURED_SCHEMA_MODULES` 豁免登记；`_SCHEMA_READY` 在手搓 schema 测试夹具中 reset
-- [ ] 新表无 class_offering_id → 确认 MERGE_RULES 守卫单测绿
-- [ ] 双层绑定镜像（单列+列表）在 bind 路径验证
-- [ ] `.git` 路径过滤在所有新遍历点
-- [ ] island `?v=` bump + 契约测试同步
-- [ ] 真 PostgreSQL 本地验证后再部署
-- [ ] cnet-course 原样包回归（旧通道零回归）
+- [x] p02 路由快照重生成（796 条，含 11 条 `/api/lessondoc/*`）
+- [x] `RUNTIME_ENSURED_SCHEMA_MODULES` 豁免登记；`_SCHEMA_READY` 有 `reset_schema_ready_for_tests()` 且测试夹具已调用
+- [x] 新表无 class_offering_id → MERGE_RULES 守卫单测绿
+- [x] 双层绑定镜像（单列+列表）在 bind 路径验证（实测 main.html→home_learning_material_id，课堂侧列表可读）
+- [x] `.git` 路径过滤：新增查询均为按 id 精确匹配或 join，不做子树遍历；迁移走 `parse_html_package`（自带过滤）
+- [x] island `?v=` bump + 契约测试同步（`lessondoc-20260901`）
+- [x] 真 PostgreSQL 本地验证（本地库 ensure 建表 + 真实 AI 生成跑通）
+- [x] cnet-course 原样包回归（旧通道零回归，见下）
+
+**旧上传链路回归实测（2026-09-01，干净 QA 环境，旧式手写包）**：zip 自动解压（1→6 文件）✓ / 列表元数据 `is_renderable=True` 且 `lessondoc_pack=None` 不误判 ✓ / 包内浏览 ✓ / 确定性绑定 `binding_mode=html_package` ✓ / 课堂侧读取与包根锚定 `open_url` ✓ / 渲染四通道全 200 ✓ / 目录穿越仍拒绝(400) ✓ / 删除链路（影响预览 2 引用→解除→清理 6 文件）✓。
+
+期间暴露一个**既有缺陷**（非本次引入，该函数自 `f1ac1a93` 起就缺 ensure）：`_load_material_learning_binding_context` 直接查懒建表 `class_offering_learning_materials`，全新环境首次访问 `/api/materials/{id}/learning-bindings` 报 500 → 已补幂等 ensure（commit `397aec4c`）。
