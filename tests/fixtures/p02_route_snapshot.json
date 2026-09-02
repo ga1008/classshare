@@ -4128,6 +4128,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/mp/classroom/live",
+    "methods": [
+      "GET"
+    ],
+    "name": "mp_classroom_live",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/mp/home",
     "methods": [
       "GET"

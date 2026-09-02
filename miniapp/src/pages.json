@@ -43,6 +43,13 @@
 			}
 		},
 		{
+			"path": "pages/live/index",
+			"style": {
+				"navigationBarTitleText": "课堂现场",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
 			"path": "pages/messages/index",
 			"style": {
 				"navigationBarTitleText": "消息中心",

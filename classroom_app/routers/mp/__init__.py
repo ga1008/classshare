@@ -8,6 +8,7 @@ Auth is bearer-token based (``mp_sessions``), not cookie based — see
 from fastapi import APIRouter
 
 from . import auth as _auth
+from . import classroom as _classroom
 from . import home as _home
 from . import life_tips as _life_tips
 from . import subscribe as _subscribe
@@ -17,6 +18,7 @@ from . import todos as _todos
 
 router = APIRouter(prefix="/api/mp")
 router.include_router(_auth.router)
+router.include_router(_classroom.router)
 router.include_router(_home.router)
 router.include_router(_life_tips.router)
 router.include_router(_subscribe.router)
