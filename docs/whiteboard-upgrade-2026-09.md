@@ -1,6 +1,6 @@
 # 讲课白板升级方案（2026-09）
 
-> 状态：**P0–P6 已完成（2026-09-02），仅剩部署**。真源在本文；勾选框反映当前进度。
+> 状态：**P0–P6 全部完成并已上线（2026-09-03）**。真源在本文；勾选框反映当前进度。
 > 涉及模块：`static/js/teacher_whiteboard.js`（拆分为 `static/js/whiteboard/`）、`static/css/ui-system.src.css` 的 teacher_whiteboard 段、新增后端 `material_whiteboards` 表 + 服务 + 路由。
 
 ---
@@ -408,7 +408,7 @@ CREATE INDEX IF NOT EXISTS idx_material_whiteboards_owner
 - [x] 动效/间距/深浅对比走查；`prefers-reduced-motion`；键盘可达性（Tab 循环、aria）。
 - [x] `npm run build:css`；Playwright e2e：`tests/e2e/specs/whiteboard.spec.ts`（开 → 画 → 浮窗收回 → 橡皮 → 清屏确认 → Ctrl+S → 新建守卫 → 历史切换 → 导出下载 → 清缓存刷新云端恢复），运行：`P03_PORT=8031 P03_AI_PORT=8032 P03_RUNTIME_ROOT=<abs>/.codex-temp/p03-runtime-wb npx playwright test tests/e2e/specs/whiteboard.spec.ts --project=chromium`。
 - [x] 更新本文勾选、新增 memory「whiteboard-system」并在 `MEMORY.md` 登记。
-- [ ] 按 memory「deploy-workflow」部署并线上抽验。
+- [x] 按 memory「deploy-workflow」部署并线上抽验（2026-09-03 00:33 release `20260903-003328`，commit `c59c4b99`；线上 shim/子模块 200、白板 API 未登录 401）。
 
 ---
 
