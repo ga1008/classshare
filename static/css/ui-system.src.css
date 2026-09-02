@@ -38502,7 +38502,7 @@ body.has-academic-sync-dialog {
 
 .twb-status-dot[data-status="error"],
 [data-status="error"] > .twb-status-dot {
-    background: hsl(var(--ls-danger));
+    background: hsl(var(--ls-destructive));
 }
 
 .twb-status-dot[data-status="saving"],
@@ -38609,9 +38609,9 @@ body.has-academic-sync-dialog {
 .twb-clear-btn:hover,
 .twb-clear-btn:focus-visible,
 .twb-clear-btn.is-open {
-    background: hsl(var(--ls-danger) / 0.08);
-    color: hsl(var(--ls-danger));
-    border-color: hsl(var(--ls-danger) / 0.2);
+    background: hsl(var(--ls-destructive) / 0.08);
+    color: hsl(var(--ls-destructive));
+    border-color: hsl(var(--ls-destructive) / 0.2);
 }
 
 .twb-clear-btn:disabled {
@@ -38933,8 +38933,8 @@ body.has-academic-sync-dialog {
 }
 
 .twb-btn--danger {
-    background: hsl(var(--ls-danger));
-    border-color: hsl(var(--ls-danger));
+    background: hsl(var(--ls-destructive));
+    border-color: hsl(var(--ls-destructive));
     color: #fff;
 }
 
@@ -38984,8 +38984,8 @@ body.has-academic-sync-dialog {
 
 .twb-icon-btn.is-danger:hover,
 .twb-icon-btn.is-danger:focus-visible {
-    background: hsl(var(--ls-danger) / 0.1);
-    color: hsl(var(--ls-danger));
+    background: hsl(var(--ls-destructive) / 0.1);
+    color: hsl(var(--ls-destructive));
 }
 
 .twb-input {
@@ -39375,7 +39375,7 @@ body.has-academic-sync-dialog {
 }
 
 .twb-export-size.is-over {
-    color: hsl(var(--ls-danger));
+    color: hsl(var(--ls-destructive));
 }
 
 .twb-dialog-buttons {
