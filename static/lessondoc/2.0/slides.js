@@ -122,7 +122,8 @@
       history.replaceState(null, "", "#/" + (cur + 1));
     }
     updateHud();
-    requestAnimationFrame(function () { fitSlide(sl); });
+    /* setTimeout 而非 rAF:后台标签页 rAF 不触发,溢出保险会失效 */
+    setTimeout(function () { fitSlide(sl); }, 0);
   }
   function next() { if (!stepFragment(slides[cur], 1)) { if (cur < slides.length - 1) goTo(cur + 1, false); } }
   function prev() { if (!stepFragment(slides[cur], -1)) { if (cur > 0) goTo(cur - 1, true); } }

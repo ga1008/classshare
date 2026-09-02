@@ -107,6 +107,13 @@ grid 的 `area` 用 CSS grid-area 语法 `"行起/列起/行止/列止"`(1 起,�
    - **理科**:svg(推导示意)、stepper(算法/证明步骤)、code(计算示例)、bignum(关键常数)
    - **工科**:arch(系统分层)、sequence(协议交互)、flow(工艺流程)、tasklist(实验步骤)、code+output
 6. 实验课(badge 带★):必有 tasklist 页 + 实验报告要求页(details 或 cards)。
+7. **R6 三科实测回灌(2026-09-02,文科/理科/实验课各 1 课真 AI 生成后归纳)**:
+   - `svg.body` 只写 `<svg>` 里面的内容,**不要再套 `<svg …>` 外壳**、不要 width/height、不要整幅背景 rect(校验会剥壳,但别依赖它)。
+   - 同页有文字时 svg 用**宽扁 viewBox(宽:高 ≥ 2:1)**,否则满宽缩放后图太高顶出画布。
+   - 例题/推导/证明用 `stepper` 或 `cards(step)`,**禁止连续堆 3 个以上 text 块**当步骤用。
+   - 测验页 **title 必填**(如「第 2 题 · 手法判断」),空标题页面顶部会空一块。
+   - 作业页用 `tasklist`(每项一条可勾任务),不要用 text 写编号列表。
+   - 多行文本(诗歌原文/分步说明)可以在 `md` 里用 `\n`,引擎按换行显示。
 
 ## 6. 三科示范页
 
@@ -170,6 +177,7 @@ diagram{kind:flow{direction,nodes:[{id,label,tone?}],edges:[{from,to,label?}]} |
 svg{viewBox,body,caption} 自由手绘,颜色只许 var(--dg-primary/--dg-primary-dark/--dg-primary-soft/--dg-ok/--dg-warn/--dg-err/--dg-muted/--dg-line/--dg-fill/--dg-text),禁 script/事件属性,元素可 class="fragment" data-step 分幕
 stepper{stage:svg块(动元素挂id),steps:[{text,show?,hide?,set:[{target:"#id",attr,value}]}]} attr:"textContent" 改文字。
 
-硬规则:一课18—25页;结构=封面→学习目标(cards×4,①②③④,逐step)→本课地图(timeline)→[section分隔+内容页]×3~6→随堂测验(每题一页,4~6题,首题sub="点击选项即时判分")→课后作业页(sub含"在 lanshare 平台完成提交")→end(summary+nextUp)。一页一概念;重难点必配 diagram/svg 且带caption;大表拆页;多用step分步;实验课必有tasklist页。禁止:其他提交渠道、具体班级/学生/学校信息、网络图片URL、十六进制颜色。
+硬规则:一课18—25页;结构=封面→学习目标(cards×4,①②③④,逐step)→本课地图(timeline)→[section分隔+内容页]×3~6→随堂测验(每题一页,4~6题,每页title如"第2题 · 考点",首题sub="点击选项即时判分")→课后作业页(tasklist,sub含"在 lanshare 平台完成提交")→end(summary+nextUp)。一页一概念;重难点必配 diagram/svg 且带caption;大表拆页;多用step分步;实验课必有tasklist页。禁止:其他提交渠道、具体班级/学生/学校信息、网络图片URL、十六进制颜色。
+版式细则:svg.body 只写 <svg> 内部元素(不套 <svg> 外壳、不写 width/height、不画整幅背景);同页有文字时 svg viewBox 取宽扁比例(宽:高≥2:1);例题/推导/证明用 stepper 或 cards(step),不要连续堆 3 个以上 text 块;多行文本在 md 里用 \n 换行。
 学科手法:文科重timeline/cards对比/reveal设问;理科重svg推导/stepper步骤/code;工科重arch/sequence/flow/tasklist/code+output。
 <!-- AI-SUMMARY-END -->

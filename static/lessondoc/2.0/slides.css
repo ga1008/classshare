@@ -58,6 +58,8 @@ body.slides-page {
   border: 1px solid var(--line); border-radius: 6px; padding: 1px 8px;
 }
 .slide svg { max-width: 100%; height: auto; }
+/* 图示高度上限:text+svg 同页时满宽缩放的图会顶出画布,与其整体缩小字号不如先压图高 */
+.slide figure > svg, .slide .stepper .stage > figure > svg { max-height: 400px; }
 .slide figure { margin: 8px 0; text-align: center; }
 .slide figcaption { font-size: 19px; color: var(--muted); margin-top: 6px; }
 

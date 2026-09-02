@@ -30,6 +30,10 @@ _HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 _SCRIPT_RE = re.compile(r"<\s*script[\s\S]*?<\s*/\s*script\s*>", re.IGNORECASE)
 _FOREIGN_RE = re.compile(r"<\s*foreignObject[\s\S]*?<\s*/\s*foreignObject\s*>", re.IGNORECASE)
 _EVENT_ATTR_RE = re.compile(r"\son[a-zA-Z]+\s*=\s*(\"[^\"]*\"|'[^']*')")
+_SVG_WRAPPER_RE = re.compile(
+    r"^\s*(?P<open><\s*svg\b[^>]*>)(?P<inner>[\s\S]*?)<\s*/\s*svg\s*>\s*$", re.IGNORECASE
+)
+_VIEWBOX_ATTR_RE = re.compile(r"viewBox\s*=\s*[\"']([\d.\s-]+)[\"']", re.IGNORECASE)
 _JS_HREF_RE = re.compile(r"(href|xlink:href)\s*=\s*([\"'])\s*javascript:[^\"']*\2", re.IGNORECASE)
 
 # 十六进制色 → 语义变量。先按色相认语义色(成功/警告/错误/中性),
@@ -227,7 +231,17 @@ def _validate_block(block: Any, warnings: list[str], *, where: str, depth: int =
             _warn(warnings, f"{where}: media 路径不合规('{src[:80]}'),已丢弃(只允许包内相对路径)")
             return None
     elif btype == "svg":
-        out["body"] = sanitize_svg_body(out.get("body"), warnings, where=where)
+        body = _as_str(out.get("body"))
+        # AI 常把 body 写成完整 <svg ...>…</svg>;引擎会再套一层,剥壳并沿用其 viewBox
+        wrapper = _SVG_WRAPPER_RE.match(body)
+        if wrapper:
+            if not _as_str(out.get("viewBox")).strip():
+                vb = _VIEWBOX_ATTR_RE.search(wrapper.group("open") or "")
+                if vb:
+                    out["viewBox"] = vb.group(1)
+            body = wrapper.group("inner")
+            _warn(warnings, f"{where}: svg body 含外层 <svg> 壳,已剥除")
+        out["body"] = sanitize_svg_body(body, warnings, where=where)
         if not out["body"].strip():
             _warn(warnings, f"{where}: svg 块为空,已丢弃")
             return None
@@ -344,6 +358,19 @@ def _validate_slide(slide: Any, warnings: list[str], *, index: int) -> dict[str,
     return out
 
 
+def _backfill_quiz_titles(slides: list[dict[str, Any]], warnings: list[str]) -> None:
+    """测验页 AI 常漏 title,页面顶部就空了一块;按出现顺序补「第 N 题」."""
+    n = 0
+    for i, slide in enumerate(slides):
+        blocks = slide.get("blocks") or []
+        if not any(isinstance(b, dict) and b.get("type") == "quiz" for b in blocks):
+            continue
+        n += 1
+        if not _as_str(slide.get("title")).strip():
+            slide["title"] = f"第 {n} 题"
+            _warn(warnings, f"slides[{i}]: 测验页缺标题,已补「第 {n} 题」")
+
+
 def _check_spec_header(payload: Any, *, what: str) -> None:
     if not isinstance(payload, dict):
         raise LessonDocValidationError(f"{what} 不是 JSON 对象")
@@ -392,6 +419,7 @@ def validate_deck(
             slides.append(cleaned)
     if not slides:
         raise LessonDocValidationError("所有页均无法通过校验")
+    _backfill_quiz_titles(slides, warnings)
     deck["slides"] = slides
 
     theme = _as_str(deck.get("theme")).strip().lower()

@@ -135,6 +135,33 @@ class TestValidateDeck(unittest.TestCase):
         self.assertTrue(any("推断为 svg" in w for w in warnings))
         self.assertTrue(any("推断为 diagram" in w for w in warnings))
 
+    def test_svg_outer_wrapper_stripped_and_viewbox_adopted(self):
+        """R6 实测：AI 把 body 写成完整 <svg> 文档,引擎会再套一层 → 剥壳并沿用 viewBox。"""
+        payload = _deck()
+        payload["slides"][1]["blocks"] = [
+            {"type": "svg", "body": "<svg width='900' height='400' viewBox='0 0 900 400' xmlns='x'>"
+                                    "<rect x='1' y='2' width='3' height='4'/></svg>"},
+            {"type": "svg", "viewBox": "0 0 10 10", "body": "<circle r='1'/>"},
+        ]
+        deck, warnings = validate_deck(payload)
+        a, b = deck["slides"][1]["blocks"]
+        self.assertEqual(a["viewBox"], "0 0 900 400")
+        self.assertNotIn("<svg", a["body"])
+        self.assertIn("<rect", a["body"])
+        self.assertEqual(b["body"], "<circle r='1'/>")           # 无壳的原样
+        self.assertEqual(sum("外层 <svg> 壳" in w for w in warnings), 1)
+
+    def test_quiz_page_missing_title_backfilled(self):
+        payload = _deck()
+        quiz = {"type": "quiz", "q": "Q?", "options": [{"k": "A", "text": "a"}, {"k": "B", "text": "b"}], "answer": "A"}
+        payload["slides"].insert(2, {"layout": "content", "section": "随堂测验", "blocks": [quiz]})
+        payload["slides"].insert(3, {"layout": "content", "section": "随堂测验", "title": "自定义题", "blocks": [quiz]})
+        payload["slides"].insert(4, {"layout": "content", "section": "随堂测验", "blocks": [quiz]})
+        deck, warnings = validate_deck(payload)
+        titles = [s.get("title") for s in deck["slides"][2:5]]
+        self.assertEqual(titles, ["第 1 题", "自定义题", "第 3 题"])
+        self.assertEqual(sum("测验页缺标题" in w for w in warnings), 2)
+
     def test_table_truncated_and_warned(self):
         payload = _deck()
         payload["slides"][1]["blocks"] = [
