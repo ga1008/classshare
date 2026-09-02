@@ -3984,6 +3984,46 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/materials/{material_id}/whiteboards",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_material_whiteboards",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/whiteboards/{board_key}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_material_whiteboard",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/whiteboards/{board_key}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_whiteboard",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/whiteboards/{board_key}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "rename_material_whiteboard",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/whiteboards/{board_key}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "save_material_whiteboard",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/message-center/bootstrap",
     "methods": [
       "GET"

@@ -53,7 +53,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['frontend/src/**/*.test.ts'],
+    include: ['frontend/src/**/*.test.ts', 'static/js/whiteboard/**/*.test.js'],
     exclude: ['node_modules', 'dist', 'static/dist', '.codex-temp', 'data', 'venv'],
   },
 });

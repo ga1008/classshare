@@ -97,6 +97,7 @@ from .routers import achievements
 from .routers import points_shop
 from .routers import global_search
 from .routers import polls
+from .routers import material_whiteboards
 from .routers import classroom_closeout
 from .routers import classroom_retake
 from .routers import lesson_plans
@@ -610,6 +611,7 @@ app.include_router(global_search.router)
 app.include_router(resume_console.router)
 app.include_router(classroom_interactions.router)
 app.include_router(polls.router)
+app.include_router(material_whiteboards.router)
 app.include_router(classroom_closeout.router)
 app.include_router(classroom_retake.router)
 app.include_router(lesson_plans.router)

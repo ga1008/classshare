@@ -28,6 +28,7 @@ from .schema_academic_evaluations import ensure_academic_evaluation_schema
 from .schema_offering_class_links import ensure_offering_class_links_schema
 from .schema_offering_merge import ensure_offering_merge_schema
 from .schema_polls import ensure_poll_schema
+from .schema_material_whiteboards import ensure_material_whiteboard_schema
 from .schema_course_doc_packs import ensure_course_doc_pack_schema
 from .schema_resume import ensure_resume_schema
 from .schema_scheduler import ensure_scheduler_schema
@@ -132,6 +133,18 @@ def init_database():
             print("[DB] PostgreSQL poll tables ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL poll schema step skipped: {exc}")
+        # Material whiteboards (材料白板) follow the same runtime-managed,
+        # engine-aware pattern.
+        try:
+            whiteboard_conn = get_db_connection()
+            try:
+                ensure_material_whiteboard_schema(whiteboard_conn)
+                whiteboard_conn.commit()
+            finally:
+                whiteboard_conn.close()
+            print("[DB] PostgreSQL material whiteboard table ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL material whiteboard schema step skipped: {exc}")
         # The LessonDoc course doc pack tables (课程学习文档包) follow the
         # same runtime-managed, engine-aware pattern.
         try:
@@ -276,6 +289,7 @@ def init_database():
             ensure_classroom_activity_schema(conn)
             ensure_study_group_scheme_schema(conn)
             ensure_poll_schema(conn)
+            ensure_material_whiteboard_schema(conn)
             ensure_course_doc_pack_schema(conn)
             ensure_offering_class_links_schema(conn)
             ensure_offering_merge_schema(conn)
