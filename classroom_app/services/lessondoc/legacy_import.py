@@ -205,8 +205,8 @@ def _extract_stepper_stage(node, warnings: list[str], *, where: str) -> dict[str
     """步骤演示的解说词写在页面内联 JS 里，静态 HTML 抽不到 → 只保留舞台图。"""
     _warn(
         warnings,
-        f"{where}: 步骤演示的解说词与动画写在页面内联脚本里，迁移后只保留了静态舞台图，"
-        "需要人工按 stepper 规范补 steps",
+        f"{where}: 步骤演示的解说词与动画写在页面内联脚本里，迁移后只保留了静态舞台图。"
+        "补全方法：打开该页点工具条「✏ 改这一页」，要求 AI「把这张静态图改成分步演示(stepper)」即可",
     )
     stage_el = node.find_class("stage")
     target = stage_el[0] if stage_el else node

@@ -114,6 +114,53 @@ function defaultLessonRows(course) {
     return Array.from({ length: count }, (_, i) => ({ n: i + 1, title: `第${i + 1}次课` }));
 }
 
+/**
+ * 「阶段名: 起-止」多行文本 → stages 数组。解析宽容：
+ * 分隔符支持 : ：；范围支持 1-4 / 1~4 / 1—4 / 单个数字 / 逗号顿号列举。
+ * @param {string} text
+ * @returns {{label: string, lessons: number[]}[]}
+ */
+function parseStagesText(text) {
+    const stages = [];
+    for (const rawLine of String(text || '').split('\n')) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        const m = line.match(/^(.+?)[:：]\s*(.+)$/);
+        if (!m) continue;
+        const label = m[1].trim();
+        const lessons = [];
+        for (const part of m[2].split(/[,，、\s]+/)) {
+            if (!part) continue;
+            const range = part.match(/^(\d+)\s*[-~—～]\s*(\d+)$/);
+            if (range) {
+                const lo = Number(range[1]); const hi = Number(range[2]);
+                for (let n = Math.min(lo, hi); n <= Math.max(lo, hi); n += 1) lessons.push(n);
+            } else if (/^\d+$/.test(part)) {
+                lessons.push(Number(part));
+            }
+        }
+        if (label && lessons.length) stages.push({ label, lessons });
+    }
+    return stages;
+}
+
+/** stages 数组 → 可编辑的多行文本（连续段压缩为 起-止）。 */
+function stagesToText(stages) {
+    return (stages || []).map((stage) => {
+        const nums = [...(stage.lessons || [])].sort((a, b) => a - b);
+        const parts = [];
+        let start = nums[0];
+        for (let i = 1; i <= nums.length; i += 1) {
+            if (i === nums.length || nums[i] !== nums[i - 1] + 1) {
+                const end = nums[i - 1];
+                parts.push(start === end ? String(start) : `${start}-${end}`);
+                start = nums[i];
+            }
+        }
+        return `${stage.label}: ${parts.join(', ')}`;
+    }).join('\n');
+}
+
 function renderCreateView(course) {
     const rows = defaultLessonRows(course);
     const themeCards = THEMES.map((theme, i) => `
@@ -147,12 +194,18 @@ function renderCreateView(course) {
             <div style="margin-top:6px;">${themeCards}</div>
         </div>
         <div style="margin-bottom:12px;">
-            <strong>③ 课程级生成提示(可选)</strong>
+            <strong>③ 阶段分组(可选)</strong>
+            <span style="color:#64748b;font-size:.88em;">每行一条「阶段名: 起-止」,决定首页导图与卡片墙的分组;留空=不分组</span>
+            <textarea data-ld-stages rows="3" style="width:100%;margin-top:6px;font-family:var(--mono,monospace);"
+                placeholder="总纲·概述: 1-4&#10;物理层: 5-6&#10;数据链路层: 7-10"></textarea>
+        </div>
+        <div style="margin-bottom:12px;">
+            <strong>④ 课程级生成提示(可选)</strong>
             <textarea data-ld-course-hint rows="2" style="width:100%;margin-top:6px;"
                 placeholder="对整门课的编写要求,如:面向外语院校学生,弱化数学推导,多用生活类比"></textarea>
         </div>
         <div>
-            <strong>④ 立即生成范围</strong>
+            <strong>⑤ 立即生成范围</strong>
             <select data-ld-scope style="margin-left:8px;">
                 <option value="first2" selected>首页 + 前 2 课(推荐)</option>
                 <option value="all">全部课次(耗时较长)</option>
@@ -180,6 +233,7 @@ function renderCreateView(course) {
                 theme: modalEl.querySelector('input[name="ldTheme"]:checked')?.value || 'sky',
                 course_hint: modalEl.querySelector('[data-ld-course-hint]').value.trim(),
                 lessons: lessonRows,
+                stages: parseStagesText(modalEl.querySelector('[data-ld-stages]')?.value),
                 generate_scope: modalEl.querySelector('[data-ld-scope]').value,
             };
             const result = await api('/api/lessondoc/packs', {
@@ -245,7 +299,12 @@ async function renderManageView(packSummary, course) {
         <div style="display:flex;gap:8px;margin-bottom:10px;">
             <button class="btn btn-primary btn-sm" data-ld-batch>补齐待生成课次</button>
             <button class="btn btn-outline btn-sm" data-ld-bind>绑定课堂</button>
+            <button class="btn btn-outline btn-sm" data-ld-stages-edit
+                title="调整首页导图与卡片墙的阶段分组（每行一条「阶段名: 起-止」）">编辑分组</button>
         </div>
+        <div data-ld-batch-progress style="display:none;margin-bottom:10px;padding:8px 12px;
+            background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;font-size:.9em;"></div>
+        <div data-ld-stages-panel style="display:none;margin-bottom:10px;border:1px solid #e2e8f0;border-radius:10px;padding:12px;"></div>
         <div style="max-height:340px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;">
             <table style="width:100%;border-collapse:collapse;font-size:.92em;">
                 <tbody data-ld-lessons>${(pack.lessons || []).map(lessonRowHtml).join('')}</tbody>
@@ -256,6 +315,25 @@ async function renderManageView(packSummary, course) {
 
     const packId = pack.id;
 
+    function syncBatchProgress(lessons, readyCount, totalCount) {
+        // R4 可观测性：批量生成时给出「当前在写第几课 + 预计剩余时长」。
+        const bar = modalEl?.querySelector('[data-ld-batch-progress]');
+        if (!bar) return;
+        const running = (lessons || []).find((l) => l.gen_status === 'running');
+        const pendingCount = (lessons || []).filter(
+            (l) => ['pending', 'queued', 'running'].includes(l.gen_status)).length;
+        if (!running && !(lessons || []).some((l) => l.gen_status === 'queued')) {
+            bar.style.display = 'none';
+            return;
+        }
+        const AVG_SECONDS_PER_LESSON = 90;   // 真实 AI 单课实测约 60-120s
+        const etaMinutes = Math.max(1, Math.round(pendingCount * AVG_SECONDS_PER_LESSON / 60));
+        bar.style.display = 'block';
+        bar.textContent = `⏳ 批量生成中：${running ? `第 ${running.lesson_no} 课编写中` : '排队衔接下一课'}`
+            + ` · 已就绪 ${readyCount}/${totalCount} · 预计还需约 ${etaMinutes} 分钟`
+            + '（失败课次会自动重试一次，可关闭窗口稍后回来看）';
+    }
+
     async function reload() {
         try {
             const data = await api(`/api/lessondoc/packs/${packId}`);
@@ -264,6 +342,7 @@ async function renderManageView(packSummary, course) {
             const progress = modalEl?.querySelector('[data-ld-progress]');
             if (tbody) tbody.innerHTML = (fresh.lessons || []).map(lessonRowHtml).join('');
             if (progress) progress.textContent = `${fresh.ready_count} / ${fresh.total_count} 课就绪`;
+            syncBatchProgress(fresh.lessons, fresh.ready_count, fresh.total_count);
             const busy = (fresh.lessons || []).some((l) => l.gen_status === 'queued' || l.gen_status === 'running');
             if (!busy && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
             if (busy && !pollTimer) pollTimer = setInterval(reload, 5000);
@@ -306,6 +385,8 @@ async function renderManageView(packSummary, course) {
                 notify(result.message);
                 await reload();
                 if (!pollTimer) pollTimer = setInterval(reload, 5000);
+            } else if (event.target.closest('[data-ld-stages-edit]')) {
+                await openStagesPanel(packId);
             } else if (event.target.closest('[data-ld-refresh-assets]')) {
                 const result = await api(`/api/lessondoc/packs/${packId}/refresh-assets`, { method: 'POST' });
                 // 刷新后指纹已一致，重开面板让「引擎可更新」高亮消失
@@ -328,6 +409,41 @@ async function renderManageView(packSummary, course) {
             notify(result.message);
         } catch (error) { notify(error.message, true); }
     });
+}
+
+/** 编辑阶段分组面板（R3）：预填现有分组文本 → PUT stages → 首页自动重渲。 */
+async function openStagesPanel(packId) {
+    const panel = modalEl?.querySelector('[data-ld-stages-panel]');
+    if (!panel) return;
+    if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    panel.innerHTML = '正在读取当前分组…';
+    try {
+        const detail = await api(`/api/lessondoc/packs/${packId}`);
+        const stages = detail.pack?.manifest?.stages || [];
+        const lessonCount = (detail.pack?.manifest?.lessons || []).length;
+        panel.innerHTML = `
+            <strong>阶段分组</strong>
+            <p style="color:#64748b;font-size:.85em;margin:4px 0 8px;">
+                每行一条「阶段名: 起-止」（支持 1-4 / 5,7 / 单个数字）。未覆盖的课次会自动归入「其他课次」；
+                清空 = 恢复单一「全部课次」。保存后课程首页立即重渲，共 ${lessonCount} 个课次。
+            </p>
+            <textarea data-ld-stages-text rows="4" style="width:100%;font-family:var(--mono,monospace);">${esc(stagesToText(stages))}</textarea>
+            <button class="btn btn-primary btn-sm" data-ld-stages-save style="margin-top:8px;">保存分组</button>`;
+        panel.querySelector('[data-ld-stages-save]').addEventListener('click', async () => {
+            try {
+                const parsed = parseStagesText(panel.querySelector('[data-ld-stages-text]').value);
+                const result = await api(`/api/lessondoc/packs/${packId}/stages`, {
+                    method: 'PUT', body: JSON.stringify({ stages: parsed }),
+                });
+                notify(result.message + ((result.warnings || []).length
+                    ? `（${result.warnings.length} 条提示）` : ''));
+                panel.style.display = 'none';
+            } catch (error) { notify(error.message, true); }
+        });
+    } catch (error) {
+        panel.innerHTML = `<span style="color:#dc2626;">${esc(error.message)}</span>`;
+    }
 }
 
 async function openBindPanel(pack) {

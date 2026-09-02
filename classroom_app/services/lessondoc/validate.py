@@ -262,6 +262,14 @@ def _validate_block(block: Any, warnings: list[str], *, where: str, depth: int =
             out["answer"] = first
     elif btype == "stepper":
         stage = out.get("stage")
+        # AI 常漏写 stage.type——形状可辨认时推断补全,别把舞台图换成占位卡
+        if isinstance(stage, dict) and not _as_str(stage.get("type")).strip():
+            if stage.get("body"):
+                stage = {**stage, "type": "svg"}
+                _warn(warnings, f"{where}.stage: 缺 type,按形状推断为 svg")
+            elif stage.get("kind") in spec.DIAGRAM_KINDS or stage.get("nodes") or stage.get("layers"):
+                stage = {**stage, "type": "diagram"}
+                _warn(warnings, f"{where}.stage: 缺 type,按形状推断为 diagram")
         stage_clean = (
             _validate_block(stage, warnings, where=f"{where}.stage", depth=depth + 1)
             if stage is not None

@@ -2392,6 +2392,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/lessondoc/packs/{pack_id}/stages",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_lessondoc_pack_stages",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/lessondoc/packs/{pack_id}/theme",
     "methods": [
       "PUT"

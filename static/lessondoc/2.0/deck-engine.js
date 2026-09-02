@@ -603,9 +603,10 @@
         })(s)
       };
     });
-    /* makeStepper 由 course.js 提供;延后一拍确保 SVG 已插入文档 */
+    /* makeStepper 由 course.js 提供;延后一拍确保 SVG 已插入文档。
+       用 setTimeout 而非 requestAnimationFrame:后台标签页 rAF 不触发,控件会被吞 */
     if (steps.length && window.makeStepper) {
-      requestAnimationFrame(function () { window.makeStepper(root.id, steps); });
+      setTimeout(function () { window.makeStepper(root.id, steps); }, 0);
     }
     return root;
   };

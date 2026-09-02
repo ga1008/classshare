@@ -384,6 +384,39 @@ async def update_lessondoc_pack_theme(
     return {"status": "success", "message": "默认主题已更新", "warnings": warnings}
 
 
+class StagesRequest(BaseModel):
+    stages: list[StageItem]
+
+
+@router.put("/api/lessondoc/packs/{pack_id}/stages", response_class=JSONResponse)
+async def update_lessondoc_pack_stages(
+    pack_id: int,
+    payload: StagesRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    """编辑阶段分组(R3):替换 manifest.stages 并重渲首页。
+
+    validate_manifest 兜底:未覆盖的课次自动归入「其他课次」并告警;
+    传空数组 = 恢复单一「全部课次」分组。
+    """
+    with get_db_connection() as conn:
+        begin_immediate_transaction(conn)
+        pack = _load_owned_pack(conn, pack_id, user["id"])
+        manifest = pack_service.read_manifest(conn, pack)
+        manifest["stages"] = [
+            {"label": s.label.strip() or "阶段", "lessons": list(s.lessons)}
+            for s in payload.stages
+            if s.lessons
+        ]
+        try:
+            warnings = pack_service.write_manifest(conn, pack, manifest)
+        except LessonDocValidationError as exc:
+            conn.rollback()
+            raise HTTPException(400, str(exc))
+        conn.commit()
+    return {"status": "success", "message": "阶段分组已更新，课程首页已重渲", "warnings": warnings}
+
+
 @router.put("/api/lessondoc/packs/{pack_id}/lessons/{lesson_no}", response_class=JSONResponse)
 async def update_lessondoc_lesson(
     pack_id: int,

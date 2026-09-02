@@ -113,6 +113,28 @@ class TestValidateDeck(unittest.TestCase):
         self.assertEqual(blocks[0]["md"], "survivor")
         self.assertTrue(any("quiz" in w for w in warnings))
 
+    def test_stepper_stage_missing_type_inferred(self):
+        """AI 漏写 stage.type 时按形状推断,舞台图不被占位卡吞掉。"""
+        payload = _deck()
+        payload["slides"][1]["blocks"] = [
+            {
+                "type": "stepper",
+                "stage": {"viewBox": "0 0 100 50", "body": "<rect id='a' width='10' height='10'/>"},
+                "steps": [{"text": "第一步", "show": ["a"]}],
+            },
+            {
+                "type": "stepper",
+                "stage": {"kind": "flow", "nodes": ["甲", "乙"]},
+                "steps": [{"text": "第一步"}],
+            },
+        ]
+        deck, warnings = validate_deck(payload)
+        blocks = deck["slides"][1]["blocks"]
+        self.assertEqual(blocks[0]["stage"]["type"], "svg")
+        self.assertEqual(blocks[1]["stage"]["type"], "diagram")
+        self.assertTrue(any("推断为 svg" in w for w in warnings))
+        self.assertTrue(any("推断为 diagram" in w for w in warnings))
+
     def test_table_truncated_and_warned(self):
         payload = _deck()
         payload["slides"][1]["blocks"] = [
@@ -300,6 +322,25 @@ class _PackFixture(unittest.TestCase):
                 ai_parse_status TEXT DEFAULT 'idle',
                 ai_optimize_status TEXT DEFAULT 'idle',
                 created_at TEXT,
+                updated_at TEXT
+            );
+            CREATE TABLE session_material_generation_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                class_offering_id INTEGER NOT NULL DEFAULT 0,
+                session_id INTEGER NOT NULL DEFAULT 0,
+                teacher_id INTEGER NOT NULL,
+                trigger_mode TEXT DEFAULT 'guided',
+                status TEXT DEFAULT 'queued',
+                document_type TEXT DEFAULT '',
+                requirement_text TEXT DEFAULT '',
+                request_payload_json TEXT DEFAULT '{}',
+                result_payload_json TEXT,
+                generated_material_id INTEGER,
+                generated_material_path TEXT,
+                error_message TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                started_at TEXT,
+                completed_at TEXT,
                 updated_at TEXT
             );
             CREATE TABLE class_offerings (
@@ -548,6 +589,63 @@ class TestSlideRewrite(_PackFixture):
             self._run({"layout": "content", "blocks": [{"type": "text", "md": ""}]})
         self.assertIn("原页面未改动", str(ctx.exception.detail))
         self.assertEqual(self._current_deck(), before)
+
+
+class TestBatchRetry(_PackFixture):
+    """R4 韧性：批量生成中单课失败自动重试一次；重试成功不再重试。"""
+
+    def setUp(self):
+        super().setUp()
+        import contextlib
+        from classroom_app.services.lessondoc import generate as generate_module
+
+        self.generate = generate_module
+
+        @contextlib.contextmanager
+        def fake_conn():
+            yield self.conn
+
+        p = mock.patch("classroom_app.database.get_db_connection", fake_conn)
+        p.start(); self.addCleanup(p.stop)
+        self.pack = self._create_pack()["pack"]
+
+    def _run_batch(self, statuses_per_call):
+        """mock run_lessondoc_task：按调用序号把课次置为给定状态。"""
+        import asyncio
+        calls = []
+
+        async def fake_run(pack_id, lesson_no, **kwargs):
+            status = statuses_per_call[min(len(calls), len(statuses_per_call) - 1)]
+            calls.append((lesson_no, status))
+            pack_service.update_lesson_state(
+                self.conn, pack_id=pack_id, lesson_no=lesson_no, gen_status=status)
+            # 领取产生的 queued 任务清掉，模拟真实执行完毕
+            self.conn.execute("UPDATE session_material_generation_tasks SET status='completed'")
+            self.conn.commit()
+
+        with mock.patch.object(self.generate, "run_lessondoc_task", side_effect=fake_run):
+            asyncio.run(self.generate.run_lessondoc_batch(
+                pack_id=self.pack["id"], lesson_nos=[1],
+                teacher_id=self.pack["teacher_id"]))
+        return calls
+
+    def test_failed_lesson_retried_once_then_succeeds(self):
+        calls = self._run_batch(["failed", "ready"])
+        self.assertEqual([c[1] for c in calls], ["failed", "ready"])   # 恰好重试一次
+        lesson = pack_service.list_pack_lessons(self.conn, self.pack["id"])[0]
+        self.assertEqual(lesson["gen_status"], "ready")
+
+    def test_persistent_failure_stops_after_one_retry(self):
+        calls = self._run_batch(["failed", "failed"])
+        self.assertEqual(len(calls), 2)                                # 不无限重试
+        lesson = pack_service.list_pack_lessons(self.conn, self.pack["id"])[0]
+        self.assertEqual(lesson["gen_status"], "failed")               # 留给断点续跑
+
+    def test_ready_lesson_skipped_entirely(self):
+        pack_service.update_lesson_state(
+            self.conn, pack_id=self.pack["id"], lesson_no=1, gen_status="ready")
+        calls = self._run_batch(["ready"])
+        self.assertEqual(calls, [])                                    # 已就绪不重跑
 
 
 class TestFindPackForOffering(_PackFixture):

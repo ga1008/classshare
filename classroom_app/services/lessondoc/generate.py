@@ -393,28 +393,45 @@ async def run_lessondoc_task(
         print(f"[LESSONDOC] generation failed (pack {pack_id} lesson {lesson_no}): {error_message}")
 
 
+def _lesson_status(conn, pack_id: int, lesson_no: int) -> str:
+    row = conn.execute(
+        "SELECT gen_status FROM course_doc_pack_lessons WHERE pack_id = ? AND lesson_no = ? LIMIT 1",
+        (int(pack_id), int(lesson_no)),
+    ).fetchone()
+    return str(row["gen_status"]) if row else "pending"
+
+
 async def run_lessondoc_batch(*, pack_id: int, lesson_nos: list[int], teacher_id: int) -> None:
     """顺序补齐多课次:逐课创建任务并等待完成(前课 summary 进入后课上下文)。
-    单课失败不阻断队列(与平台任务隔离口径一致)。"""
+
+    韧性口径(R4):单课失败不阻断队列;失败课次**自动重试一次**(AI 偶发
+    输出不合规是常态,一次重试能消化大半);重试仍失败则留 failed 状态,
+    教师再点「补齐待生成课次」即断点续跑(候选=pending/failed,天然跳过
+    已完成课次)。"""
     from ...database import get_db_connection
 
     for lesson_no in lesson_nos:
-        try:
-            with get_db_connection() as conn:
-                pack = pack_service.get_pack(conn, int(pack_id))
-                if not pack or pack.get("status") != "active" or int(pack["teacher_id"]) != int(teacher_id):
-                    return
-                lessons = {l["lesson_no"]: l for l in pack_service.list_pack_lessons(conn, pack["id"])}
-                state = lessons.get(int(lesson_no))
-                if state is not None and state.get("gen_status") in {"ready", "excluded", "queued", "running"}:
-                    continue
-                task = create_lessondoc_task(conn, pack=pack, lesson_no=int(lesson_no))
-                conn.commit()
-            if not task.get("already_running"):
-                await run_lessondoc_task(int(pack_id), int(lesson_no))
-        except Exception as exc:  # pragma: no cover — 单课失败继续
-            print(f"[LESSONDOC] batch item lesson_{lesson_no} failed: {exc}")
-            await asyncio.sleep(0)
+        for attempt in range(2):   # 首跑 + 失败自动重试一次
+            try:
+                with get_db_connection() as conn:
+                    pack = pack_service.get_pack(conn, int(pack_id))
+                    if not pack or pack.get("status") != "active" or int(pack["teacher_id"]) != int(teacher_id):
+                        return
+                    status = _lesson_status(conn, int(pack_id), int(lesson_no))
+                    if status in {"ready", "excluded", "queued", "running"}:
+                        break
+                    task = create_lessondoc_task(conn, pack=pack, lesson_no=int(lesson_no))
+                    conn.commit()
+                if not task.get("already_running"):
+                    await run_lessondoc_task(int(pack_id), int(lesson_no))
+                with get_db_connection() as conn:
+                    if _lesson_status(conn, int(pack_id), int(lesson_no)) != "failed":
+                        break   # ready(或被排除等) → 下一课
+                if attempt == 0:
+                    print(f"[LESSONDOC] batch lesson_{lesson_no} failed, retrying once")
+            except Exception as exc:  # pragma: no cover — 单课异常继续
+                print(f"[LESSONDOC] batch item lesson_{lesson_no} failed: {exc}")
+                await asyncio.sleep(0)
 
 
 # ---------------------------------------------------------------- 单页重写(R2)
