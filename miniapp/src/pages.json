@@ -50,6 +50,27 @@
 			}
 		},
 		{
+			"path": "pages/report-card/index",
+			"style": {
+				"navigationBarTitleText": "成绩单",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/wrong-book/index",
+			"style": {
+				"navigationBarTitleText": "错题本",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/growth/index",
+			"style": {
+				"navigationBarTitleText": "修为与积分",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
 			"path": "pages/messages/index",
 			"style": {
 				"navigationBarTitleText": "消息中心",
