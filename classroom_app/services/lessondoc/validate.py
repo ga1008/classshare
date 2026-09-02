@@ -455,6 +455,11 @@ def validate_manifest(payload: Any) -> tuple[dict[str, Any], list[str]]:
             stage = dict(stage)
             ns = [n for n in stage.get("lessons") or [] if _as_int(n, 0) in seen]
             ns = [_as_int(n, 0) for n in ns]
+            # 同一课次只能属于一个阶段(先到先得),否则首页导图/卡片墙会重复渲染
+            overlap = sorted({n for n in ns if n in covered})
+            ns = [n for n in dict.fromkeys(ns) if n not in covered]
+            if overlap:
+                _warn(warnings, f"stages[{i}] 的课次 {overlap} 已属于前面的阶段,已去重")
             if not ns:
                 _warn(warnings, f"stages[{i}] 未覆盖任何有效课次,已丢弃")
                 continue

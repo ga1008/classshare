@@ -3144,7 +3144,7 @@ function previewMaterial(materialId) {
 async function openLessonDocManager(packId) {
     if (!packId) throw new Error('缺少学习文档包编号');
     if (typeof window.openLessonDocPackManager !== 'function') {
-        await import('/static/js/lessondoc_wizard.js?v=lessondoc-20260902b');
+        await import('/static/js/lessondoc_wizard.js?v=lessondoc-20260902c');
     }
     if (typeof window.openLessonDocPackManager !== 'function') {
         throw new Error('学习文档包模块加载失败');

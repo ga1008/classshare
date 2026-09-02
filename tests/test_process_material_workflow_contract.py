@@ -1824,7 +1824,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("summary.source_file_name", script)
         self.assertIn("summary.content_quality_label", script)
         self.assertIn("renderAiImportDetailSummary(detail)", script)
-        self.assertIn("lessondoc-20260902b", island)
+        self.assertIn("lessondoc-20260902c", island)
         self.assertIn(".materials-ai-import-summary", styles)
 
     def test_classroom_material_detail_surfaces_ai_import_summary(self):

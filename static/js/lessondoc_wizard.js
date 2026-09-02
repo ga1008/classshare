@@ -314,14 +314,16 @@ async function renderManageView(packSummary, course) {
     `, `<button class="btn btn-outline" data-ld-close>关闭</button>`);
 
     const packId = pack.id;
+    let idleReads = 0;
 
     function syncBatchProgress(lessons, readyCount, totalCount) {
         // R4 可观测性：批量生成时给出「当前在写第几课 + 预计剩余时长」。
         const bar = modalEl?.querySelector('[data-ld-batch-progress]');
         if (!bar) return;
         const running = (lessons || []).find((l) => l.gen_status === 'running');
+        // failed 也计入：批量中失败的课次会自动重试一次
         const pendingCount = (lessons || []).filter(
-            (l) => ['pending', 'queued', 'running'].includes(l.gen_status)).length;
+            (l) => ['pending', 'queued', 'running', 'failed'].includes(l.gen_status)).length;
         if (!running && !(lessons || []).some((l) => l.gen_status === 'queued')) {
             bar.style.display = 'none';
             return;
@@ -344,7 +346,9 @@ async function renderManageView(packSummary, course) {
             if (progress) progress.textContent = `${fresh.ready_count} / ${fresh.total_count} 课就绪`;
             syncBatchProgress(fresh.lessons, fresh.ready_count, fresh.total_count);
             const busy = (fresh.lessons || []).some((l) => l.gen_status === 'queued' || l.gen_status === 'running');
-            if (!busy && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            // 批量重试时课次会瞬间 failed→queued，连续两次空闲才停轮询，免得误停
+            idleReads = busy ? 0 : idleReads + 1;
+            if (idleReads >= 2 && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
             if (busy && !pollTimer) pollTimer = setInterval(reload, 5000);
         } catch (e) { /* 弹窗可能已关闭 */ }
     }

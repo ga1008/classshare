@@ -47,8 +47,8 @@ class LessonPlanItem(BaseModel):
 
 
 class StageItem(BaseModel):
-    label: str = ""
-    lessons: list[int] = Field(default_factory=list)
+    label: str = Field(default="", max_length=60)
+    lessons: list[int] = Field(default_factory=list, max_length=200)
 
 
 class CreatePackRequest(BaseModel):
@@ -158,6 +158,7 @@ def _load_textbook_brief(conn, *, course_id: int, teacher_id: int) -> dict[str, 
 
 
 def _pack_summary(conn, pack: dict[str, Any]) -> dict[str, Any]:
+    pack_service.reclaim_stale_lessons(conn, pack["id"])
     lessons = pack_service.list_pack_lessons(conn, pack["id"])
     ready = sum(1 for l in lessons if l["gen_status"] == "ready")
     total = sum(1 for l in lessons if l["gen_status"] != "excluded")
@@ -385,7 +386,7 @@ async def update_lessondoc_pack_theme(
 
 
 class StagesRequest(BaseModel):
-    stages: list[StageItem]
+    stages: list[StageItem] = Field(max_length=50)
 
 
 @router.put("/api/lessondoc/packs/{pack_id}/stages", response_class=JSONResponse)
@@ -538,6 +539,7 @@ async def generate_lessondoc_batch(
 ):
     with get_db_connection() as conn:
         pack = _load_owned_pack(conn, pack_id, user["id"])
+        pack_service.reclaim_stale_lessons(conn, pack["id"])
         lessons = pack_service.list_pack_lessons(conn, pack["id"])
         candidates = [
             l["lesson_no"]

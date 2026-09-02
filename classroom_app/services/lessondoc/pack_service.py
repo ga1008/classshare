@@ -14,7 +14,7 @@ html_package_service 的文本读取一律**函数内惰性导入**。
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from ...db.schema_course_doc_packs import ensure_course_doc_pack_schema
@@ -235,6 +235,45 @@ def list_pack_lessons(conn, pack_id: int) -> list[dict[str, Any]]:
             item["warnings"] = []
         result.append(item)
     return result
+
+
+STALE_LESSON_SECONDS = 900          # 单课 AI 超时 600s + 余量
+STALE_LESSON_WARNING = "生成中断(服务重启或超时),请重新生成"
+
+
+def reclaim_stale_lessons(conn, pack_id: int, *, max_age_seconds: int = STALE_LESSON_SECONDS) -> list[int]:
+    """把长期停在 queued/running 的课次判为 failed,返回被回收的课次号.
+
+    生成任务是进程内 asyncio 任务,服务重启即消失,但库里的 queued/running
+    不会自己变——不回收的话单课生成被去重拒绝、批量又只挑 pending/failed,
+    教师无路可走。按 updated_at 过期判定,进程无关,不会误杀别处正跑的任务。
+    """
+    ensure_course_doc_pack_schema(conn)
+    cutoff = (datetime.now() - timedelta(seconds=int(max_age_seconds))).isoformat()
+    rows = conn.execute(
+        """
+        SELECT lesson_no FROM course_doc_pack_lessons
+        WHERE pack_id = ? AND gen_status IN ('queued', 'running') AND updated_at < ?
+        ORDER BY lesson_no
+        """,
+        (int(pack_id), cutoff),
+    ).fetchall()
+    stale = [int(r["lesson_no"]) for r in rows]
+    if not stale:
+        return []
+    now = _now_iso()
+    for lesson_no in stale:
+        conn.execute(
+            """
+            UPDATE course_doc_pack_lessons
+            SET gen_status = 'failed', warnings_json = ?, updated_at = ?
+            WHERE pack_id = ? AND lesson_no = ? AND gen_status IN ('queued', 'running')
+            """,
+            (json.dumps([STALE_LESSON_WARNING], ensure_ascii=False), now, int(pack_id), lesson_no),
+        )
+    conn.commit()
+    print(f"[LESSONDOC] pack {pack_id} reclaimed stale lessons: {stale}")
+    return stale
 
 
 def update_lesson_state(

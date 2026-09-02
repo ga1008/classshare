@@ -257,6 +257,14 @@ class TestValidateManifest(unittest.TestCase):
         self.assertIn("其他课次", labels)
         self.assertTrue(any("未被任何阶段覆盖" in w for w in warnings))
 
+    def test_overlapping_stage_lessons_deduped_first_wins(self):
+        manifest, warnings = validate_manifest(
+            _manifest(stages=[{"label": "A", "lessons": [1, 2]}, {"label": "B", "lessons": [2, 1]}])
+        )
+        self.assertEqual([s["lessons"] for s in manifest["stages"]], [[1, 2]])
+        self.assertTrue(any("已属于前面的阶段" in w for w in warnings))
+        self.assertTrue(any("未覆盖任何有效课次,已丢弃" in w for w in warnings))
+
 
 class TestRenderRoundtrip(unittest.TestCase):
     def test_lesson_roundtrip_lossless(self):
@@ -511,6 +519,53 @@ class TestPackSkeleton(_PackFixture):
         self.assertTrue(outdated())             # 指纹漂移 → 可更新
         pack_service.refresh_pack_assets(self.conn, result["pack"])
         self.assertFalse(outdated())            # 刷新引擎后恢复一致
+
+
+class TestStaleLessonReclaim(_PackFixture):
+    """服务重启后卡在 queued/running 的课次要能被回收，否则教师无路可走。"""
+
+    def _age(self, pack_id, lesson_no, seconds):
+        from datetime import datetime, timedelta
+        old = (datetime.now() - timedelta(seconds=seconds)).isoformat()
+        self.conn.execute(
+            "UPDATE course_doc_pack_lessons SET updated_at = ? WHERE pack_id = ? AND lesson_no = ?",
+            (old, pack_id, lesson_no))
+        self.conn.commit()
+
+    def test_stale_running_becomes_failed_and_regenerable(self):
+        from classroom_app.services.lessondoc import generate as generate_module
+        pack = self._create_pack()["pack"]
+        pid = pack["id"]
+        pack_service.update_lesson_state(self.conn, pack_id=pid, lesson_no=1, gen_status="running")
+        pack_service.update_lesson_state(self.conn, pack_id=pid, lesson_no=2, gen_status="queued")
+        pack_service.update_lesson_state(self.conn, pack_id=pid, lesson_no=3, gen_status="running")
+        self._age(pid, 1, 3600)                 # 1 小时前 → 过期
+        self._age(pid, 2, 3600)
+        self._age(pid, 3, 60)                   # 1 分钟前 → 仍在跑，不能误杀
+
+        reclaimed = pack_service.reclaim_stale_lessons(self.conn, pid)
+        self.assertEqual(reclaimed, [1, 2])
+        lessons = {l["lesson_no"]: l for l in pack_service.list_pack_lessons(self.conn, pid)}
+        self.assertEqual(lessons[1]["gen_status"], "failed")
+        self.assertEqual(lessons[2]["gen_status"], "failed")
+        self.assertEqual(lessons[3]["gen_status"], "running")
+        self.assertIn(pack_service.STALE_LESSON_WARNING, lessons[1]["warnings"])
+
+        # 回收后单课生成不再被"already_running"去重拒绝
+        task = generate_module.create_lessondoc_task(self.conn, pack=pack, lesson_no=1)
+        self.assertFalse(task["already_running"])
+        # 未过期的 running 仍被去重保护
+        task3 = generate_module.create_lessondoc_task(self.conn, pack=pack, lesson_no=3)
+        self.assertTrue(task3["already_running"])
+
+    def test_create_task_reclaims_stale_itself(self):
+        from classroom_app.services.lessondoc import generate as generate_module
+        pack = self._create_pack()["pack"]
+        pack_service.update_lesson_state(self.conn, pack_id=pack["id"], lesson_no=1, gen_status="running")
+        self._age(pack["id"], 1, 3600)
+        task = generate_module.create_lessondoc_task(self.conn, pack=pack, lesson_no=1)
+        self.assertFalse(task["already_running"])
+        self.assertEqual(task["status"], "queued")
 
 
 class TestSlideRewrite(_PackFixture):

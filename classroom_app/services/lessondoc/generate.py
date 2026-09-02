@@ -89,6 +89,7 @@ def create_lessondoc_task(
     pack lessons 上,与课堂无关)。
     """
     mode = mode if mode in {MODE_GENERATE, MODE_REWRITE} else MODE_GENERATE
+    pack_service.reclaim_stale_lessons(conn, int(pack["id"]))
     lessons = {l["lesson_no"]: l for l in pack_service.list_pack_lessons(conn, int(pack["id"]))}
     state = lessons.get(int(lesson_no))
     if state is not None and state.get("gen_status") in {"queued", "running"}:
