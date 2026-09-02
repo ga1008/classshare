@@ -452,6 +452,103 @@ class TestPackSkeleton(_PackFixture):
         updated = pack_service.refresh_pack_assets(self.conn, pack)
         self.assertEqual(updated, 6)
 
+    def test_assets_outdated_flag_lifecycle(self):
+        """R5 引擎版本治理：新包不过期 → 引擎升级(指纹漂移)后过期 → 刷新恢复。"""
+        result = self._create_pack()
+        root_id = result["root_material_id"]
+
+        def outdated():
+            items = [{"id": root_id, "node_type": "folder"}]
+            pack_service.attach_pack_metadata(self.conn, items)
+            return items[0]["lessondoc_pack"]["assets_outdated"]
+
+        self.assertFalse(outdated())            # 建包时写入当前指纹
+        self.conn.execute(
+            "UPDATE course_doc_packs SET assets_fingerprint = 'stale' WHERE id = ?",
+            (result["pack"]["id"],),
+        )
+        self.assertTrue(outdated())             # 指纹漂移 → 可更新
+        pack_service.refresh_pack_assets(self.conn, result["pack"])
+        self.assertFalse(outdated())            # 刷新引擎后恢复一致
+
+
+class TestSlideRewrite(_PackFixture):
+    """R2 单页重写：替换成功 / AI 包壳剥离 / 坏结果拒绝且原文件不动。"""
+
+    def setUp(self):
+        super().setUp()
+        import contextlib
+        from classroom_app.services.lessondoc import generate as generate_module
+
+        self.generate = generate_module
+
+        @contextlib.contextmanager
+        def fake_conn():
+            yield self.conn
+
+        p = mock.patch("classroom_app.database.get_db_connection", fake_conn)
+        p.start(); self.addCleanup(p.stop)
+
+        result = self._create_pack()
+        self.pack = result["pack"]
+        pack_service.write_lesson_files(self.conn, self.pack, 1, _deck(lesson=1))
+
+    def _run(self, ai_return, slide_no=2, hint="改得更生动"):
+        import asyncio
+        with mock.patch.object(self.generate, "_call_lessondoc_ai",
+                               mock.AsyncMock(return_value=ai_return)):
+            return asyncio.run(self.generate.rewrite_slide_with_ai(
+                pack_id=self.pack["id"], lesson_no=1, slide_no=slide_no, user_hint=hint))
+
+    def _current_deck(self):
+        return self.generate._load_lesson_deck(self.conn, self.pack, 1)
+
+    def test_unwrap_slide_payload_shapes(self):
+        """AI 返回的常见包装形态都要能剥出目标页。"""
+        unwrap = self.generate._unwrap_slide_payload
+        page = {"layout": "content", "blocks": [{"type": "text", "md": "x"}]}
+        other = {"layout": "title"}
+        self.assertEqual(unwrap(page, slide_index=1), page)                       # 裸对象
+        self.assertEqual(unwrap({"slide": page}, slide_index=1), page)            # 单键包装
+        self.assertEqual(unwrap({"result": page}, slide_index=1), page)           # 任意键包装
+        self.assertEqual(unwrap({"slides": [page]}, slide_index=1), page)         # 单元素数组
+        self.assertEqual(unwrap({"slides": [other, page, other]}, slide_index=1), page)  # 整 deck 取对应页
+        self.assertIsNone(unwrap({"nonsense": True}, slide_index=1))              # 垃圾
+        self.assertIsNone(unwrap("text", slide_index=1))                          # 非 dict
+
+    def test_rewrite_replaces_only_target_slide(self):
+        before = self._current_deck()
+        new_page = {"layout": "content", "section": "改", "title": "重写后的标题",
+                    "blocks": [{"type": "text", "md": "重写后的内容"}]}
+        result = self._run(new_page)
+        after = self._current_deck()
+        self.assertEqual(result["slide_no"], 2)
+        self.assertEqual(len(after["slides"]), len(before["slides"]))   # 页数不变
+        self.assertEqual(after["slides"][1]["title"], "重写后的标题")     # 目标页已换
+        self.assertEqual(after["slides"][0], before["slides"][0])        # 其余页不动
+
+    def test_wrapped_payload_unwrapped(self):
+        page = {"layout": "content", "title": "剥壳页",
+                "blocks": [{"type": "text", "md": "内容"}]}
+        self._run({"slides": [page]})
+        self.assertEqual(self._current_deck()["slides"][1]["title"], "剥壳页")
+
+    def test_garbage_rejected_and_file_untouched(self):
+        from fastapi import HTTPException
+        before = self._current_deck()
+        with self.assertRaises(HTTPException):
+            self._run({"nonsense": True})
+        self.assertEqual(self._current_deck(), before)
+
+    def test_dropped_slide_rejected_and_file_untouched(self):
+        from fastapi import HTTPException
+        before = self._current_deck()
+        # content 版式且无任何有效块 → validate 整页丢弃 → 页数变少 → 必须拒绝
+        with self.assertRaises(HTTPException) as ctx:
+            self._run({"layout": "content", "blocks": [{"type": "text", "md": ""}]})
+        self.assertIn("原页面未改动", str(ctx.exception.detail))
+        self.assertEqual(self._current_deck(), before)
+
 
 class TestFindPackForOffering(_PackFixture):
     """课堂 → pack 反查(课堂页/课堂管理页共用)。"""

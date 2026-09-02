@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from ..database import get_db_connection
 from ..db.connection import begin_immediate_transaction
 from ..dependencies import get_current_teacher
+from ..services.lessondoc import assets as lessondoc_assets
 from ..services.lessondoc import generate as lessondoc_generate
 from ..services.lessondoc import pack_service, spec
 from ..services.lessondoc.pack_service import LessonDocPackError
@@ -176,6 +177,9 @@ def _pack_summary(conn, pack: dict[str, Any]) -> dict[str, Any]:
         "total_count": total,
         "updated_at": pack["updated_at"],
         "render_shell_url": f"/materials/render-view/{int(pack['root_material_id'])}",
+        # 引擎版本治理(R5):指纹不一致 → 管理面板高亮「刷新引擎」
+        "assets_outdated": str(pack.get("assets_fingerprint") or "")
+        != lessondoc_assets.assets_fingerprint(),
         "lessons": lessons,
     }
 
@@ -326,6 +330,24 @@ async def get_lessondoc_pack_for_classroom(
         return {"status": "success", "pack": summary}
 
 
+@router.get("/api/lessondoc/packs/by-root/{root_material_id}", response_class=JSONResponse)
+async def get_lessondoc_pack_by_root(
+    root_material_id: int,
+    user: dict = Depends(get_current_teacher),
+):
+    """按包根材料反查 pack(壳页「改这一页」入口用:壳页只知道 nodeId)。
+
+    非 lessondoc 包返回 pack=null(旧手写包没有登记行),前端据此隐藏入口。
+    """
+    with get_db_connection() as conn:
+        pack = pack_service.get_pack_by_root(conn, int(root_material_id))
+        if pack is None or pack.get("status") != "active":
+            return {"status": "success", "pack": None}
+        if int(pack["teacher_id"]) != int(user["id"]):
+            return {"status": "success", "pack": None}
+        return {"status": "success", "pack": {"id": pack["id"], "theme": pack["theme"]}}
+
+
 @router.get("/api/lessondoc/packs/{pack_id}", response_class=JSONResponse)
 async def get_lessondoc_pack(
     pack_id: int,
@@ -439,6 +461,39 @@ async def generate_lessondoc_lesson(
         "status": "success",
         "message": "已在队列中,助教正在思考…" if task.get("already_running") else "生成任务已提交",
         "task": task,
+    }
+
+
+class SlideRewriteRequest(BaseModel):
+    user_hint: str = Field(default="", max_length=3000)
+
+
+@router.post(
+    "/api/lessondoc/packs/{pack_id}/lessons/{lesson_no}/slides/{slide_no}/rewrite",
+    response_class=JSONResponse,
+)
+async def rewrite_lessondoc_slide(
+    pack_id: int,
+    lesson_no: int,
+    slide_no: int,
+    payload: SlideRewriteRequest,
+    user: dict = Depends(get_current_teacher),
+):
+    """单页重写(R2):同步执行,教师改完立即刷新即见。slide_no 与页码一致(1 起)。"""
+    with get_db_connection() as conn:
+        _load_owned_pack(conn, pack_id, user["id"])
+    result = await lessondoc_generate.rewrite_slide_with_ai(
+        pack_id=int(pack_id),
+        lesson_no=int(lesson_no),
+        slide_no=int(slide_no),
+        user_hint=payload.user_hint,
+    )
+    warnings = result.get("warnings") or []
+    return {
+        "status": "success",
+        "message": f"第 {slide_no} 页已重写"
+        + (f"({len(warnings)} 处内容被降级,详见告警)" if warnings else ""),
+        "warnings": warnings,
     }
 
 

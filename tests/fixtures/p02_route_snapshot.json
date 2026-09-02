@@ -2320,6 +2320,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/lessondoc/packs/by-root/{root_material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_lessondoc_pack_by_root",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/lessondoc/packs/import-legacy",
     "methods": [
       "POST"
@@ -2365,6 +2373,14 @@
       "POST"
     ],
     "name": "generate_lessondoc_lesson",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/packs/{pack_id}/lessons/{lesson_no}/slides/{slide_no}/rewrite",
+    "methods": [
+      "POST"
+    ],
+    "name": "rewrite_lessondoc_slide",
     "include_in_schema": true
   },
   {

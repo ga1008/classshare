@@ -2318,6 +2318,9 @@ function renderList() {
         const lessondocPack = item.lessondoc_pack || null;
         const lessondocBadge = lessondocPack
             ? `<span class="materials-repo-badge" style="--repo-color:#7c3aed;">学习文档包 ${escapeHtml(String(lessondocPack.spec_version || '').replace('lessondoc/', '') || '2.0')}</span>`
+                + (lessondocPack.assets_outdated
+                    ? '<span class="materials-repo-badge" style="--repo-color:#d97706;" title="平台渲染引擎已升级，进「管理课次」点「刷新引擎」即可更新（不影响已生成内容）">引擎可更新</span>'
+                    : '')
             : '';
         const lessondocProgress = lessondocPack
             ? `<span class="materials-meta-item">${escapeHtml(String(lessondocPack.ready_count))} / ${escapeHtml(String(lessondocPack.total_count))} 课就绪</span>`
@@ -3141,7 +3144,7 @@ function previewMaterial(materialId) {
 async function openLessonDocManager(packId) {
     if (!packId) throw new Error('缺少学习文档包编号');
     if (typeof window.openLessonDocPackManager !== 'function') {
-        await import('/static/js/lessondoc_wizard.js');
+        await import('/static/js/lessondoc_wizard.js?v=lessondoc-20260902');
     }
     if (typeof window.openLessonDocPackManager !== 'function') {
         throw new Error('学习文档包模块加载失败');

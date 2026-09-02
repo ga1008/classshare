@@ -23,7 +23,7 @@ import httpx
 from fastapi import HTTPException
 
 from ...core import ai_client
-from . import pack_service, render
+from . import pack_service, render, validate
 from .validate import LessonDocValidationError
 
 MODE_GENERATE = "generate"
@@ -250,7 +250,14 @@ def build_generation_context(
 
 # ---------------------------------------------------------------- AI 调用
 
-async def _call_lessondoc_ai(*, system_prompt: str, user_message: str) -> dict[str, Any]:
+async def _call_lessondoc_ai(
+    *,
+    system_prompt: str,
+    user_message: str,
+    task_priority: str = "background",
+    task_label: str = "lessondoc_generate",
+    timeout: float = 600.0,
+) -> dict[str, Any]:
     payload = {
         "system_prompt": system_prompt,
         "messages": [],
@@ -260,11 +267,11 @@ async def _call_lessondoc_ai(*, system_prompt: str, user_message: str) -> dict[s
         "model_capability": "thinking",
         "task_type": "deep_text_reasoning",
         "response_format": "json",
-        "task_priority": "background",
-        "task_label": "lessondoc_generate",
+        "task_priority": task_priority,
+        "task_label": task_label,
     }
     try:
-        response = await ai_client.post("/api/ai/chat", json=payload, timeout=600.0)
+        response = await ai_client.post("/api/ai/chat", json=payload, timeout=timeout)
         response.raise_for_status()
         data = response.json()
         parsed = data.get("response_json")
@@ -408,3 +415,161 @@ async def run_lessondoc_batch(*, pack_id: int, lesson_nos: list[int], teacher_id
         except Exception as exc:  # pragma: no cover — 单课失败继续
             print(f"[LESSONDOC] batch item lesson_{lesson_no} failed: {exc}")
             await asyncio.sleep(0)
+
+
+# ---------------------------------------------------------------- 单页重写(R2)
+
+def _looks_like_slide(value: Any) -> bool:
+    return isinstance(value, dict) and (
+        "layout" in value or "blocks" in value or "left" in value or "areas" in value
+    )
+
+
+def _unwrap_slide_payload(raw: Any, *, slide_index: int) -> dict[str, Any] | None:
+    """从 AI 返回中提取单个 Slide。AI 有随机性,常见形态都要接得住:
+
+    1. 裸 Slide 对象(理想);
+    2. ``{"slides": [...]}`` 整 deck——若长度>目标下标取对应页,单元素取 [0];
+    3. 任意单键包装(``{"slide": {...}}`` / ``{"result": {...}}`` …)。
+    识别不了返回 None,由调用方带纠错提示重试。
+    """
+    if _looks_like_slide(raw):
+        return raw
+    if not isinstance(raw, dict):
+        return None
+    slides = raw.get("slides")
+    if isinstance(slides, list) and slides:
+        candidate = None
+        if len(slides) == 1:
+            candidate = slides[0]
+        elif 0 <= slide_index < len(slides):
+            candidate = slides[slide_index]
+        if _looks_like_slide(candidate):
+            return candidate
+    for value in raw.values():   # 单键/多键包装:取第一个像 Slide 的值
+        if _looks_like_slide(value):
+            return value
+    return None
+
+def build_slide_rewrite_context(
+    conn,
+    *,
+    pack: dict[str, Any],
+    lesson_no: int,
+    slide_no: int,
+    user_hint: str,
+) -> tuple[str, str, dict[str, Any]]:
+    """单页重写的提示词。返回 (system_prompt, user_message, 现有 deck)。
+
+    与整课生成的差别:AI 只输出**一个 Slide 对象**;上下文给足当前页 + 前后
+    相邻页(衔接)+ 课程要点,预算远小于整课(交互式场景要快)。
+    """
+    deck = _load_lesson_deck(conn, pack, lesson_no)
+    if not deck or not isinstance(deck.get("slides"), list):
+        raise HTTPException(404, "该课次还没有可编辑的学习文档")
+    slides = deck["slides"]
+    index = int(slide_no) - 1
+    if index < 0 or index >= len(slides):
+        raise HTTPException(404, f"第 {slide_no} 页不存在(本课共 {len(slides)} 页)")
+
+    system_prompt = (
+        load_guide_summary()
+        + "\n\n本次任务是【单页重写】:只输出**一个 Slide 对象**的 JSON"
+        "(即 slides 数组中的一个元素,含 layout 等字段),不要输出整个 deck、"
+        "不要输出数组、不要输出 spec/lesson 等顶层字段。"
+    )
+    sections = [
+        f"课程:{deck.get('course') or ''}|课次:第 {lesson_no} 课「{deck.get('title') or ''}」"
+        f"|目标页:第 {slide_no} 页(共 {len(slides)} 页)",
+        "【当前页(重写对象,保留讲对的内容,按要求改进)】\n"
+        + json.dumps(slides[index], ensure_ascii=False),
+    ]
+    if index > 0:
+        sections.append("【前一页(衔接参照,不要重复其内容)】\n"
+                        + json.dumps(slides[index - 1], ensure_ascii=False)[:3000])
+    if index + 1 < len(slides):
+        sections.append("【后一页(衔接参照)】\n"
+                        + json.dumps(slides[index + 1], ensure_ascii=False)[:3000])
+    if user_hint.strip():
+        sections.append("【教师改进要求(必须遵守)】\n" + _safe_text(user_hint, 2000))
+    else:
+        sections.append("【教师未给具体要求】请在保持知识点不变的前提下优化"
+                        "表达与版式(多用图示/分步,精简文字)。")
+    sections.append(f"输出第 {slide_no} 页重写后的单个 Slide JSON 对象。")
+    return system_prompt, "\n\n".join(sections), deck
+
+
+async def rewrite_slide_with_ai(
+    *,
+    pack_id: int,
+    lesson_no: int,
+    slide_no: int,
+    user_hint: str = "",
+) -> dict[str, Any]:
+    """同步单页重写:AI 产单页 → 替换 → 全量校验 → 落盘。返回 {warnings, slide}。
+
+    刻意不走任务队列:单页调用轻量(交互式优先级,240s 上限),教师期待
+    改完立即看到;失败直接抛 HTTPException,不留任何状态残留。
+    """
+    from ...database import get_db_connection
+
+    with get_db_connection() as conn:
+        pack = pack_service.get_pack(conn, int(pack_id))
+        if not pack or pack.get("status") != "active":
+            raise HTTPException(404, "学习文档包不存在或已归档")
+        system_prompt, user_message, deck = build_slide_rewrite_context(
+            conn, pack=pack, lesson_no=int(lesson_no), slide_no=int(slide_no),
+            user_hint=user_hint,
+        )
+
+    new_slide: dict[str, Any] | None = None
+    last_shape = ""
+    for attempt in range(2):
+        message = user_message
+        if attempt:  # 第二次:附上纠错指令(AI 有随机性,偶发输出包装/整 deck)
+            message += (
+                f"\n\n【格式纠正】你上一次输出的顶层结构是 {last_shape},不符合要求。"
+                "必须只输出单个 Slide 对象(顶层含 layout 字段),不要任何包装。"
+            )
+        raw = await _call_lessondoc_ai(
+            system_prompt=system_prompt,
+            user_message=message,
+            task_priority="interactive",
+            task_label="lessondoc_slide_rewrite",
+            timeout=240.0,
+        )
+        new_slide = _unwrap_slide_payload(raw, slide_index=int(slide_no) - 1)
+        if new_slide is not None:
+            break
+        last_shape = "/".join(sorted(raw.keys())[:6]) if isinstance(raw, dict) else type(raw).__name__
+    if new_slide is None:
+        raise HTTPException(
+            500, f"AI 两次都未返回可用的单页内容(实际输出键:{last_shape}),请换个说法重试"
+        )
+
+    index = int(slide_no) - 1
+    original_count = len(deck["slides"])
+    deck["slides"][index] = new_slide
+
+    # 落盘前先在内存全量校验:若新页被降级丢弃(总页数变少),直接拒绝,
+    # 原文件纹丝不动——绝不能悄悄少一页。
+    try:
+        clean_preview, _ = validate.validate_deck(deck, expected_lesson=int(lesson_no))
+    except Exception as exc:
+        raise HTTPException(500, f"重写结果不符合 LessonDoc 规范:{exc}(原页面未改动)")
+    if len(clean_preview.get("slides") or []) != original_count:
+        raise HTTPException(
+            500, "重写后的页面未通过校验(整页被降级丢弃),原页面未改动,请换个说法重试"
+        )
+
+    with get_db_connection() as conn:
+        pack = pack_service.get_pack(conn, int(pack_id))
+        if not pack or pack.get("status") != "active":
+            raise HTTPException(410, "学习文档包已被删除")
+        warnings = pack_service.write_lesson_files(conn, pack, int(lesson_no), deck)
+        pack_service.update_lesson_state(
+            conn, pack_id=int(pack_id), lesson_no=int(lesson_no),
+            warnings=warnings if warnings else None,
+        )
+        conn.commit()
+    return {"warnings": warnings, "slide_no": int(slide_no)}

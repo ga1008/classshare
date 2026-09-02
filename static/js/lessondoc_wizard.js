@@ -238,7 +238,9 @@ async function renderManageView(packSummary, course) {
             <label style="font-size:.9em;">主题
                 <select data-ld-theme>${themeOptions}</select>
             </label>
-            <button class="btn btn-ghost btn-sm" data-ld-refresh-assets title="把包内引擎更新到平台最新版本">刷新引擎</button>
+            <button class="btn ${pack.assets_outdated ? 'btn-primary' : 'btn-ghost'} btn-sm" data-ld-refresh-assets
+                title="${pack.assets_outdated ? '平台渲染引擎已升级，点击把包内副本更新到最新（不影响已生成内容）' : '把包内引擎更新到平台最新版本'}">
+                ${pack.assets_outdated ? '⬆ 引擎可更新' : '刷新引擎'}</button>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:10px;">
             <button class="btn btn-primary btn-sm" data-ld-batch>补齐待生成课次</button>
@@ -306,6 +308,9 @@ async function renderManageView(packSummary, course) {
                 if (!pollTimer) pollTimer = setInterval(reload, 5000);
             } else if (event.target.closest('[data-ld-refresh-assets]')) {
                 const result = await api(`/api/lessondoc/packs/${packId}/refresh-assets`, { method: 'POST' });
+                // 刷新后指纹已一致，重开面板让「引擎可更新」高亮消失
+                const fresh = await api(`/api/lessondoc/packs/${packId}`);
+                await renderManageView(fresh.pack, course);
                 notify(result.message);
             } else if (event.target.closest('[data-ld-bind]')) {
                 await openBindPanel(pack);

@@ -75,6 +75,96 @@ function initPackageBadgeSync() {
     });
 }
 
+async function initSlideRewriteEntry() {
+    // LessonDoc 单页重写（R2）：仅教师 + LessonDoc 包时在工具条注入「改这一页」。
+    // 壳页只知道 nodeId，先按包根反查 pack；旧手写包（无登记行）不显示入口。
+    if (viewerContext.userRole !== 'teacher' || !shellConfig.isHtmlPackage) return;
+    const nodeId = Number(shellConfig.nodeId || 0);
+    const topbar = document.getElementById('render-shell-topbar');
+    const collapseBtn = document.getElementById('render-shell-collapse');
+    const frameEl = document.getElementById('render-shell-frame');
+    if (!nodeId || !topbar || !frameEl) return;
+
+    let packId = 0;
+    try {
+        const resp = await fetch(`/api/lessondoc/packs/by-root/${nodeId}`, {
+            credentials: 'same-origin', headers: { Accept: 'application/json' },
+        });
+        if (!resp.ok) return;
+        packId = Number((await resp.json())?.pack?.id || 0);
+    } catch {
+        return; // 探测失败静默——入口缺席不影响阅读
+    }
+    if (!packId) return;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-ghost btn-sm';
+    btn.id = 'render-shell-slide-rewrite';
+    btn.textContent = '✏ 改这一页';
+    btn.title = '让 AI 只重写当前显示的这一页（其余页面不动）';
+    topbar.insertBefore(btn, collapseBtn || null);
+
+    const currentLocation = () => {
+        try {
+            const win = frameEl.contentWindow;
+            const path = String(win?.location?.pathname || '');
+            const lessonMatch = path.match(/lesson[_-]?0*(\d{1,3})\.html?$/i);
+            const pageMatch = String(win?.location?.hash || '').match(/^#\/(\d+)/);
+            return {
+                lessonNo: lessonMatch ? Number(lessonMatch[1]) : 0,
+                slideNo: pageMatch ? Number(pageMatch[1]) : 1,
+            };
+        } catch {
+            return { lessonNo: 0, slideNo: 1 };
+        }
+    };
+
+    btn.addEventListener('click', async () => {
+        const { lessonNo, slideNo } = currentLocation();
+        if (!lessonNo) {
+            window.alert('请先进入某个课次页面，再重写当前页（课程首页不支持单页重写）。');
+            return;
+        }
+        const hint = window.prompt(
+            `重写第 ${lessonNo} 课·第 ${slideNo} 页：\n请输入改进要求（留空 = 优化表达与版式）`, '');
+        if (hint === null) return;
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'AI 编写中…';
+        try {
+            const resp = await fetch(
+                `/api/lessondoc/packs/${packId}/lessons/${lessonNo}/slides/${slideNo}/rewrite`,
+                {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_hint: hint }),
+                },
+            );
+            const data = await resp.json().catch(() => null);
+            if (!resp.ok) {
+                const message = data?.detail?.message || data?.detail || '重写失败，请重试';
+                throw new Error(typeof message === 'string' ? message : '重写失败，请重试');
+            }
+            // 刷新 iframe 并保持当前页码，改动立即可见
+            try {
+                frameEl.contentWindow?.location?.reload();
+            } catch {
+                frameEl.src = String(frameEl.getAttribute('src') || '');
+            }
+            const warnCount = (data?.warnings || []).length;
+            btn.textContent = warnCount ? `✓ 已重写(${warnCount}处降级)` : '✓ 已重写';
+            window.setTimeout(() => { btn.textContent = originalText; }, 3000);
+        } catch (error) {
+            window.alert(error?.message || '重写失败，请重试');
+            btn.textContent = originalText;
+        } finally {
+            btn.disabled = false;
+        }
+    });
+}
+
 function loadTeacherWhiteboardWhenIdle() {
     if (viewerContext.userRole !== 'teacher') return;
     const loadWhiteboard = () => {
@@ -158,5 +248,6 @@ function initLearningProgressHeartbeat() {
 
 initTopbar();
 initPackageBadgeSync();
+initSlideRewriteEntry();
 loadTeacherWhiteboardWhenIdle();
 initLearningProgressHeartbeat();

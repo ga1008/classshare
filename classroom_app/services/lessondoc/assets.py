@@ -39,10 +39,26 @@ def load_all_assets() -> dict[str, str]:
     return {name: read_asset_text(name) for name in spec.ASSET_FILES}
 
 
+_fingerprint_cache: str | None = None
+
+
 def assets_fingerprint() -> str:
-    """全部资产的联合 sha256(用于判断包内引擎是否过期)."""
+    """全部资产的联合 sha256(用于判断包内引擎是否过期)。
+
+    进程内缓存:引擎文件只随部署变化,列表页逐请求重算 6 个文件的 sha 纯属
+    浪费。开发环境改引擎后需重启进程才刷新——与静态资源的常规行为一致。
+    """
+    global _fingerprint_cache
+    if _fingerprint_cache is not None:
+        return _fingerprint_cache
     digest = hashlib.sha256()
     for name in spec.ASSET_FILES:
         digest.update(name.encode("utf-8"))
         digest.update(read_asset_text(name).encode("utf-8"))
-    return digest.hexdigest()
+    _fingerprint_cache = digest.hexdigest()
+    return _fingerprint_cache
+
+
+def reset_fingerprint_cache_for_tests() -> None:
+    global _fingerprint_cache
+    _fingerprint_cache = None

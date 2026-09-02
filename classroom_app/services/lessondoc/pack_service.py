@@ -141,16 +141,19 @@ def attach_pack_metadata(conn, items: list[dict[str, Any]]) -> list[dict[str, An
         rows = conn.execute(
             f"""
             SELECT p.id, p.root_material_id, p.theme, p.spec_version,
+                   p.assets_fingerprint,
                    SUM(CASE WHEN l.gen_status IS NOT NULL AND l.gen_status != 'excluded'
                             THEN 1 ELSE 0 END) AS total_count,
                    SUM(CASE WHEN l.gen_status = 'ready' THEN 1 ELSE 0 END) AS ready_count
             FROM course_doc_packs p
             LEFT JOIN course_doc_pack_lessons l ON l.pack_id = p.id
             WHERE p.status = 'active' AND p.root_material_id IN ({placeholders})
-            GROUP BY p.id, p.root_material_id, p.theme, p.spec_version
+            GROUP BY p.id, p.root_material_id, p.theme, p.spec_version,
+                     p.assets_fingerprint
             """,
             folder_ids,
         ).fetchall()
+        current_fp = assets_module.assets_fingerprint()
         by_root = {int(row["root_material_id"]): row for row in rows}
         for item in items:
             row = by_root.get(int(item["id"])) if item.get("id") is not None else None
@@ -162,6 +165,9 @@ def attach_pack_metadata(conn, items: list[dict[str, Any]]) -> list[dict[str, An
                 "spec_version": row["spec_version"],
                 "ready_count": int(row["ready_count"] or 0),
                 "total_count": int(row["total_count"] or 0),
+                # 引擎版本治理(R5):包内 assets 是生成时刻的副本,平台引擎
+                # 升级后指纹不再一致 → 前端提示「引擎可更新」。
+                "assets_outdated": str(row["assets_fingerprint"] or "") != current_fp,
             }
     except Exception:
         pass
