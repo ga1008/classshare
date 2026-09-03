@@ -320,3 +320,18 @@ footer.site { text-align: center; color: var(--muted); font-size: .84em; padding
 }
 html.ld-editing .ld-appearance { display: none !important; }
 .ld-home { position: relative; min-height: 100vh; }
+/* Shared sizing/editing primitives also belong to course home pages. */
+.ld-flow-slot { position:relative;flex-shrink:0;box-sizing:border-box; }
+.ld-pos { position:absolute;box-sizing:border-box;transform-origin:center center; }
+.ld-pos > *,.ld-scaled-inner > * { margin:0;max-width:100%; }
+.ld-pos > p,.ld-pos > .callout,.ld-pos > figure { margin:0; }
+.ld-pos > figure > svg,.ld-pos > figure > img,.ld-scaled-inner > figure > svg,.ld-scaled-inner > figure > img { max-height:100%; }
+.ld-pos > .ld-btn,.ld-scaled-inner > .ld-btn { white-space:nowrap; }
+.ld-scaled-inner { position:absolute;left:0;top:0;transform-origin:0 0;max-width:none!important; }
+.ld-edit-layer { position:absolute;inset:0;z-index:1001;pointer-events:none; }
+.ld-edit-layer > [data-lde-handle] { pointer-events:auto;touch-action:none;user-select:none; }
+.ld-edit-layer > svg { pointer-events:none; }
+.ld-selected { outline:2px solid var(--primary)!important;outline-offset:2px; }
+.ld-selected.ld-pos { outline:none!important; }
+html.ld-editing:not(.ld-trial) .ld-hidden { display:block!important;opacity:.35; }
+html.ld-editing:not(.ld-trial) .ld-pos,html.ld-editing:not(.ld-trial) .ld-scaled-inner { transition:none!important; }

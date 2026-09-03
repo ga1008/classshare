@@ -410,6 +410,12 @@
       }
       return chain.length ? { id: chain[0], chain: chain } : null;
     },
+    flowOrigin: function (id) {
+      var node = this.slideEl() && this.slideEl().querySelector(blockNodeSelector(id));
+      var slot = node && node.closest(".ld-flow-slot");
+      if (!slot) return {x: 0, y: 0};
+      var rect = slot.getBoundingClientRect(); return this.toCanvas(rect.left, rect.top);
+    },
     layer: function () {
       var sl = this.slideEl();
       if (!sl) return null;
@@ -445,10 +451,21 @@
       var sr = sl.getBoundingClientRect();
       var out = {};
       Array.prototype.forEach.call(body.querySelectorAll("[data-ld-id]"), function (n) {
-        if (n.closest(".ld-pos")) return;
+        if (n.closest(".ld-pos") && !n.classList.contains("ld-flow-object")) return;
         var parentBlock = n.parentElement && n.parentElement.closest("[data-ld-id]");
         if (parentBlock && body.contains(parentBlock)) return;      /* 只取顶层流式块 */
         var b = n.getBoundingClientRect();
+        if (n.classList.contains("ld-flow-object")) {
+          var slot = n.parentElement.getBoundingClientRect();
+          out[n.getAttribute("data-ld-id")] = {
+            x: (slot.left - sr.left) / g.scale + parseFloat(n.style.left || 0),
+            y: (slot.top - sr.top) / g.scale + parseFloat(n.style.top || 0),
+            w: parseFloat(n.style.width), h: parseFloat(n.style.height),
+            r: parseFloat((n.style.transform.match(/rotate\(([-\d.]+)/) || [0, 0])[1]),
+            z: parseFloat(n.style.zIndex || 0)
+          };
+          return;
+        }
         out[n.getAttribute("data-ld-id")] = {
           x: Math.round((b.left - sr.left) / g.scale), y: Math.round((b.top - sr.top) / g.scale),
           w: Math.round(b.width / g.scale), h: Math.round(b.height / g.scale)

@@ -4,12 +4,16 @@ import {el,button,field,panelSection,popovers} from './ui.js';
 import {gradientField,percent,TEXT_STYLE_BLOCKS} from './appearance_controls.js';
 import {changeGlobal,alignSelection,flowDestinations,moveFlow} from './object_commands.js';
 import {renderTable,renderQuiz,renderCodewalk,DIAGRAM_DEFAULTS} from './content_controls.js';
+import {sizeFrame} from './resize_commands.js';
 
 export class PropsPanel {
     constructor(root,store,callbacks) {this.root=root;this.store=store;this.callbacks=callbacks;this.selection='';}
     updateSelected(path,value,label='修改属性') {
         const ids=[...this.store.ui.selection];
-        this.store.command(label,model=>{for(const id of ids){const item=locate(model,id);if(item)setAt(item.block,path,clone(value));}},{coalesce:ids.join(',')+':'+path.join('.')});
+        this.store.command(label,model=>{for(const id of ids){const item=locate(model,id);if(!item)continue;
+            const actual=path[0]==='sizeFrame'?[item.block.frame?'frame':'flowFrame',...path.slice(1)]:path;
+            if(path[0]==='sizeFrame'&&['w','h'].includes(path[1])&&!item.block.natural&&item.block.type!=='group')item.block.natural={w:sizeFrame(item.block).w,h:sizeFrame(item.block).h};
+            setAt(item.block,actual,clone(value));}},{coalesce:ids.join(',')+':'+path.join('.')});
     }
     render(force=false) {
         const key=this.store.ui.selection.join(',')+':'+this.store.ui.slide;
@@ -42,7 +46,7 @@ export class PropsPanel {
         }
         if(this.store.ui.groupPath.length)this.root.append(button('退出组合层级',()=>{this.store.ui.groupPath.pop();this.store.select([]);}));
         const add=(body,label,path,options={})=>{
-            const values=blocks.map(b=>at(b,path)),mixed=values.some(v=>!equal(v,values[0]));
+            const values=blocks.map(b=>path[0]==='sizeFrame'?sizeFrame(b)?.[path[1]]:at(b,path)),mixed=values.some(v=>!equal(v,values[0]));
             body.append(field(label,mixed?null:values[0],v=>this.updateSelected(path,v,label),{...options,mixed}));
         };
         const identity=panelSection('元素');this.root.append(identity.root);
@@ -55,9 +59,16 @@ export class PropsPanel {
                 identity.body.append(field('在本页排除',blocks.every(b=>b.excludeSlides?.includes(sid)),value=>this.store.command('调整本页全局显隐',model=>{for(const id of this.store.ui.selection){const b=locate(model,id).block,ids=new Set(b.excludeSlides||[]);if(value)ids.add(sid);else ids.delete(sid);b.excludeSlides=[...ids];}}),{type:'checkbox'}));
             }
         }
-        if(blocks.every(b=>b.frame)) {
+        const container=selected.length===1&&selected[0].ancestors.find(b=>b.type!=='group');
+        if(container){
+            this.root.append(el('p','lde-muted','此内容随外层容器排版。选择容器后可整体缩放，内部内容仍可编辑。'),button('选中外层容器',()=>this.store.select([container.id])));
+        }else if(blocks.every(b=>sizeFrame(b))) {
             const pos=panelSection('位置与大小');this.root.append(pos.root);pos.body.classList.add('lde-field-grid');
-            for(const[k,t,min,max]of[['x','横坐标',-200,1480],['y','纵坐标',-200,920],['w','宽度',8,1680],['h','高度',8,1680],['r','旋转角度',-180,180],['z','叠放顺序',-100,1000]])add(pos.body,t,['frame',k],{type:'number',min,max});
+            for(const[k,t,min,max]of[['x','横坐标',-200,1480],['y','纵坐标',-200,920],['w','宽度',8,1680],['h','高度',8,1680],['r','旋转角度',-180,180],['z','叠放顺序',-100,1000]])add(pos.body,t,['sizeFrame',k],{type:'number',min,max,defaultValue:['r','z'].includes(k)?0:undefined});
+            this.root.append(el('p','lde-muted','拖动四角等比缩放；拖动边中点单独调整宽或高。'));
+            if(first.flowFrame&&blocks.length===1)this.root.append(button('恢复自动排版',()=>this.callbacks.restoreFlow()));
+        }else if(blocks.length===1){
+            this.root.append(button('转换为可缩放元素',()=>this.callbacks.resize(),'lde-button lde-primary'),el('p','lde-muted','保留原内容与交互，在当前位置启用八个缩放控制点。可随时恢复自动排版。'));
         }
         const style=panelSection('文字与外观',{open:false});this.root.append(style.root);
         add(style.body,'字体',['style','font'],{choices:{sans:'无衬线',serif:'衬线',kai:'楷体',mono:'等宽',rounded:'圆体'},visual:'font'});

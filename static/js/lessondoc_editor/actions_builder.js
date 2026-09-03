@@ -14,7 +14,7 @@ export function openActions(store,api,onError) {
                 row.append(field('第 '+(index+1)+' 步',step.do,value=>{steps[index]={do:value};render();},{choices:store.model.kind==='home'?Object.fromEntries(Object.entries(kinds).filter(([k])=>!['goto','next','prev'].includes(k))):kinds}));
                 if(!['goto','next','prev'].includes(step.do)){
                     const targets={};const scope=store.model.kind==='home'?store.model:store.model.slides[store.ui.slide];
-                    const collect=b=>{if(['run','reset'].includes(step.do)&&b.type!=='codewalk')return;if(['move','moveTo'].includes(step.do)&&!b.frame)return;targets[b.id]=(b.name||REGISTRY[b.type]?.label||b.type)+' · '+(b.md||b.label||b.title||b.id).slice(0,25);};
+                    const collect=b=>{if(['run','reset'].includes(step.do)&&b.type!=='codewalk')return;if(['move','moveTo'].includes(step.do)&&!b.frame&&!b.flowFrame)return;targets[b.id]=(b.name||REGISTRY[b.type]?.label||b.type)+' · '+(b.md||b.label||b.title||b.id).slice(0,25);};
                     walkBlocks(scope,collect);walkBlocks({globals:store.model.globals},collect);
                     row.append(field('目标元素',step.target||'',value=>step.target=value,{choices:{'':'请选择目标',...targets}}));
                 }

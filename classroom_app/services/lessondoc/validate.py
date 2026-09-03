@@ -410,6 +410,13 @@ def _apply_common_block_fields(out: dict[str, Any], warnings: list[str], *, wher
                 children = out.get("children") or []
                 out["natural"] = {"w": max(1, max(c["frame"]["x"] + c["frame"]["w"] for c in children)),
                                   "h": max(1, max(c["frame"]["y"] + c["frame"]["h"] for c in children))}
+    if "flowFrame" in out:
+        flow_frame = clean_frame(out.get("flowFrame"), warnings, where=where + ".flowFrame")
+        if flow_frame and out.get("natural") and out.get("type") != "group" and not out.get("frame"):
+            out["flowFrame"] = flow_frame
+        else:
+            out.pop("flowFrame", None)
+            _warn(warnings, f"{where}: 可缩放流式元素缺少有效内部尺寸或与定位框冲突,已忽略 flowFrame")
     if "hidden" in out:
         if out.get("hidden"):
             out["hidden"] = True

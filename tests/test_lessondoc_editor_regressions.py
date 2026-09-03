@@ -17,6 +17,36 @@ def deck(*slides, **fields):
 
 
 class EditorModelRegressions(unittest.TestCase):
+    def test_flow_sizing_survives_validation_in_lessons_home_and_templates(self):
+        from classroom_app.services.lessondoc.custom_elements import normalize_element
+        block = dict(id="scaled", type="text", md="可编辑正文", natural=dict(w=600, h=120),
+                     flowFrame=dict(x=-12, y=8, w=300, h=60, r=25), actions=[dict(do="toggle", target="scaled")])
+        submitted = ensure_editor_ids(deck(dict(layout="content", blocks=[block])))
+        clean, warnings = validate_deck(submitted)
+        sized = clean["slides"][0]["blocks"][0]
+        self.assertEqual(sized["flowFrame"], block["flowFrame"])
+        self.assertEqual(validate_deck(clean)[0], clean)
+        self.assertFalse(any(d["destructive"] for d in normalization_diagnostics(submitted, clean, warnings)))
+        manifest = dict(spec="lessondoc/2.0", kind="home", course=dict(name="test"), lessons=[dict(n=1)],
+                        stages=[dict(lessons=[1])], home=dict(sections=[dict(key="blocks", title="说明", blocks=[block])]))
+        home, _ = validate_manifest(manifest)
+        self.assertEqual(home["home"]["sections"][0]["blocks"][0]["flowFrame"], block["flowFrame"])
+        template, _ = normalize_element(block)
+        self.assertEqual(template["frame"], block["flowFrame"])
+        self.assertEqual(template["natural"], block["natural"])
+        self.assertEqual(template["actions"], block["actions"])
+        self.assertNotIn("flowFrame", template)
+
+    def test_flow_sizing_requires_valid_natural_dimensions_and_excludes_positioned_frames(self):
+        base = dict(type="text", md="保留内容", flowFrame=dict(x=0, y=0, w=300, h=60))
+        for extra in ({}, {"natural": dict(w=-1, h=120)}, {"natural": dict(w=600, h=120), "frame": dict(x=10, y=10, w=300, h=60)}):
+            clean, warnings = validate_deck(deck(dict(layout="content", blocks=[dict(base, **extra)])))
+            self.assertNotIn("flowFrame", clean["slides"][0]["blocks"][0])
+            self.assertTrue(warnings)
+        invalid = dict(base, natural=dict(w=600, h=120), flowFrame=dict(x=-9999, y=9999, w=1, h=9000))
+        clean, _ = validate_deck(deck(dict(layout="content", blocks=[invalid])))
+        self.assertEqual(clean["slides"][0]["blocks"][0]["flowFrame"], dict(x=-200, y=920, w=8, h=1680))
+
     def test_scaled_content_dimensions_are_finite_bounded_and_idempotent(self):
         submitted = ensure_editor_ids(deck({"layout": "canvas", "objects": [
             {"type": "text", "md": "缩放后正文", "frame": {"x": 20, "y": 30, "w": 600, "h": 200}, "natural": {"w": 300, "h": 100}}

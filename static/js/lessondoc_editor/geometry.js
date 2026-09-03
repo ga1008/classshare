@@ -32,13 +32,31 @@ export function movedFrame(frame, delta, ancestors = [], { snap = true } = {}) {
     return {...frame,x:Math.max(-200,Math.min(1480,snap?Math.round(x/8)*8:x)),y:Math.max(-200,Math.min(920,snap?Math.round(y/8)*8:y))};
 }
 // Resize keeps the opposite corner fixed even for rotated frames.
-export function resizedFrame(frame, point, ancestors = [], { uniform = false, center = false } = {}) {
+export function resizedFrame(frame, point, ancestors = [], { uniform = false, center = false, handle = 'se' } = {}) {
     const p = transform(inverse(multiply(parentMatrix(ancestors), frameMatrix(frame))), point);
-    let w = Math.max(8, Math.min(1680, p.x)), h = Math.max(8, Math.min(1680, p.y));
-    if (uniform) { const scale = Math.max(8/frame.w,8/frame.h,Math.min(1680/frame.w,1680/frame.h,Math.max(w/frame.w,h/frame.h))); w=frame.w*scale; h=frame.h*scale; }
-    if (center) return {...frame,w,h,x:frame.x+(frame.w-w)/2,y:frame.y+(frame.h-h)/2};
-    const origin=transform(frameMatrix(frame),{x:0,y:0}), r=(frame.r||0)*Math.PI/180, c=Math.cos(r),s=Math.sin(r);
-    return {...frame,w,h,x:origin.x-w/2+c*w/2-s*h/2,y:origin.y-h/2+s*w/2+c*h/2};
+    const sx=handle.includes('e')?1:handle.includes('w')?-1:0,sy=handle.includes('s')?1:handle.includes('n')?-1:0;
+    const ax=center?.5:sx===1?0:sx===-1?1:.5,ay=center?.5:sy===1?0:sy===-1?1:.5;
+    const anchor={x:frame.w*ax,y:frame.h*ay},factor=center?2:1;
+    let w=sx?(p.x-anchor.x)*sx*factor:frame.w,h=sy?(p.y-anchor.y)*sy*factor:frame.h;
+    if(uniform){
+        const vx=sx*frame.w/factor,vy=sy*frame.h/factor;
+        const scale=Math.max(8/frame.w,8/frame.h,Math.min(1680/frame.w,1680/frame.h,((p.x-anchor.x)*vx+(p.y-anchor.y)*vy)/(vx*vx+vy*vy)));
+        w=frame.w*scale;h=frame.h*scale;
+    }else{w=Math.max(8,Math.min(1680,w));h=Math.max(8,Math.min(1680,h));}
+    const fixed=transform(frameMatrix(frame),anchor),r=(frame.r||0)*Math.PI/180,c=Math.cos(r),s=Math.sin(r);
+    const target={...frame,w,h,x:fixed.x-w/2-c*(ax-.5)*w+s*(ay-.5)*h,y:fixed.y-h/2-s*(ax-.5)*w-c*(ay-.5)*h};
+    // Interpolate to the first position limit, preserving the anchor and ratio.
+    let progress=1;
+    for(const [key,min,max]of[['x',-200,1480],['y',-200,920]]){const delta=target[key]-frame[key];if(delta>0)progress=Math.min(progress,(max-frame[key])/delta);if(delta<0)progress=Math.min(progress,(min-frame[key])/delta);}
+    progress=Math.max(0,progress);for(const key of ['x','y','w','h'])target[key]=frame[key]+(target[key]-frame[key])*progress;
+    return target;
+}
+
+export const RESIZE_HANDLES={nw:[0,0],n:[.5,0],ne:[1,0],e:[1,.5],se:[1,1],s:[.5,1],sw:[0,1],w:[0,.5]};
+export function resizeCursor(handle,matrix=identity()) {
+    const [x,y]=RESIZE_HANDLES[handle],v={x:x-.5,y:y-.5};
+    const angle=Math.atan2(matrix[1]*v.x+matrix[3]*v.y,matrix[0]*v.x+matrix[2]*v.y)*180/Math.PI;
+    return ['ew-resize','nwse-resize','ns-resize','nesw-resize'][((Math.round(angle/45)%4)+4)%4];
 }
 
 // Stop the whole gesture at the first legal boundary. Applying one progress

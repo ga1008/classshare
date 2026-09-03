@@ -22,6 +22,8 @@ def normalize_elements(elements):
         raise editor.EditorError("INVALID_ELEMENT", "请选择 1—40 个元素", 422)
     models = copy.deepcopy(elements)
     for i, model in enumerate(models):
+        if isinstance(model, dict) and model.get("flowFrame"):
+            model["frame"] = model.pop("flowFrame")
         if isinstance(model, dict) and not model.get("frame"):
             model["frame"] = dict(x=80, y=80 + i * 24, w=600, h=320)
     wrapper = dict(spec="lessondoc/2.0", kind="lesson", lesson=1, title="元素", slides=[dict(id="s_template", layout="canvas", objects=models)])

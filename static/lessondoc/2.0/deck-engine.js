@@ -275,7 +275,7 @@
     wrap.style.height = num(f.h, 120) + "px";
     if (f.r) wrap.style.transform = "rotate(" + num(f.r, 0) + "deg)";
     if (f.z != null) wrap.style.zIndex = String(num(f.z, 0));
-    var inner = renderBlock(b);
+    var inner = renderBlock(b, true);
     var id = b && b.id ? String(b.id).replace(/[^\w-]/g, "") : "";
     if (id) {
       wrap.setAttribute(opts.global ? "data-ld-gid" : "data-ld-id", id);
@@ -972,8 +972,18 @@
     node.setAttribute("data-step", String(num(step, 0)));
   }
 
-  function renderBlock(b) {
+  function renderBlock(b, positioned) {
     if (!b || typeof b !== "object") return brokenCard("空内容块");
+    if (!positioned && !ARTICLE_MODE && b.flowFrame && b.natural) {
+      // Keep the original flow slot; scale/move the editable content inside it.
+      // Identity, media and delegated interactions remain on the original block.
+      var slot = el("div", "ld-flow-slot");
+      slot.setAttribute("data-ld-flow-slot", String(b.id || ""));
+      slot.style.width = b.natural.w + "px"; slot.style.height = b.natural.h + "px";
+      var sized = Object.assign({}, b, {frame: b.flowFrame});
+      var object = renderPositioned(sized); object.classList.add("ld-flow-object");
+      slot.appendChild(object); return slot;
+    }
     var fn = BLOCKS[String(b.type)];
     try {
       if (!fn) return brokenCard("未知内容块类型:" + esc(String(b.type)));

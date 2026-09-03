@@ -4,6 +4,7 @@ import {createApi,jsonRequest,ApiError} from './api.js';
 import {Drafts} from './drafts.js';
 import {EditorBridge} from './bridge.js';
 import {CanvasController} from './canvas_controller.js';
+import {sizeFrame,enableResizing,adaptSizing,commitFrames} from './resize_commands.js';
 import {movedSelection,offsetPastedElements} from './geometry.js';
 import {PropsPanel} from './props_panel.js';
 import {REGISTRY,makeBlock,LAYOUTS} from './registry.js';
@@ -62,8 +63,7 @@ function insert(block,{point,targetId}={}) {
     store.command('插入'+(REGISTRY[block.type]?.label||'元素'),model=>{
         const scope=!home&&(['title','section'].includes(slide.layout)||block.type==='group')?'overlay':'page';
         const positioned=!home&&(slide.layout==='canvas'||scope==='overlay');
-        const instance=clone(block);if(positioned&&!instance.frame)instance.frame={x:100,y:120,w:600,h:260};
-        if(home)delete instance.frame;
+        const instance=adaptSizing(clone(block),positioned);if(positioned&&!instance.frame)instance.frame={x:100,y:120,w:600,h:260};
         if(positioned&&point){instance.frame.x=point.x-instance.frame.w/2;instance.frame.y=point.y-instance.frame.h/2;offsetPastedElements([instance]);}
         const target=targetId&&locate(model,targetId),targetList=target&&!target.block.frame?at(model,target.path.slice(0,-1)):null;
         if(!positioned&&Array.isArray(targetList))targetList.splice(target.path.at(-1)+1,0,instance);
@@ -92,7 +92,9 @@ async function paste() {
     const candidate=clone(before),home=candidate.kind==='home',page=candidate.slides?.[slideIndex];
     for(const [index,block] of elements.entries()){
         if(home&&block.type==='group')throw new Error('首页使用流式内容，请复制组合中的具体元素。');
-        if(home||(!value.elements[index].frame&&page?.layout!=='canvas'&&!['title','section'].includes(page?.layout)&&block.type!=='group'))delete block.frame;
+        const positioned=!home&&(!!value.elements[index].frame||page?.layout==='canvas'||['title','section'].includes(page?.layout)||block.type==='group');
+        adaptSizing(block,positioned);
+        if(positioned&&!block.frame)block.frame={x:100,y:120,w:600,h:260};
         insertionList(candidate,store.ui.slide,home?(store.ui.homeTarget||'page'):block.frame?'overlay':'page').push(block);
     }
     offsetPastedElements(elements);
@@ -174,7 +176,7 @@ function shortcuts(event) {
     else if(mod&&key==='x'){event.preventDefault();guard(()=>copy(true))();}
     else if(mod&&key==='v'){event.preventDefault();guard(paste)();}
     else if(['Delete','Backspace'].includes(event.key)){event.preventDefault();guard(remove)();}
-    else if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)&&store.ui.selection.length){event.preventDefault();const step=event.shiftKey?10:1,delta={x:event.key==='ArrowLeft'?-step:event.key==='ArrowRight'?step:0,y:event.key==='ArrowUp'?-step:event.key==='ArrowDown'?step:0};store.command('移动元素',model=>{for(const[id,frame]of movedSelection(rootSelection(model,store.ui.selection),delta))locate(model,id).block.frame=frame;},{coalesce:'nudge'});}
+    else if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)&&store.ui.selection.length){event.preventDefault();const step=event.shiftKey?10:1,delta={x:event.key==='ArrowLeft'?-step:event.key==='ArrowRight'?step:0,y:event.key==='ArrowUp'?-step:event.key==='ArrowDown'?step:0};store.command('移动元素',model=>{const items=rootSelection(model,store.ui.selection).filter(item=>!item.ancestors.some(b=>b.type!=='group'));commitFrames(model,items,movedSelection(items.map(item=>({...item,block:{...item.block,frame:sizeFrame(item.block)}})),delta));},{coalesce:'nudge'});}
 }
 function toggleTrial() {bridge.trial(!store.ui.trial);$('preview').textContent=store.ui.trial?'返回编辑':'预览当前修改';document.getElementById('lessondoc-editor').classList.toggle('is-trial',store.ui.trial);renderStatus();}
 async function inspectRemote() {
@@ -188,6 +190,8 @@ async function boot() {
     $('document').value=String(config.lessonNo);
     const ai=guard(async(mode)=>{await save();if(store.dirty)throw new Error('请先保存当前修改后再使用 AI。');openAiPanel(store,api,mode,error);});
     props=new PropsPanel($('props'),store,{copy:guard(copy),remove:guard(remove),deletePage:guard(()=>pageCommand(store,'delete')),source,layout,template,ai,html:guard(convert=>openHtmlEditor(store,api,config,bridge,{convert})),background:()=>openBackground(store,api,config,error),
+        resize:guard(()=>{const id=store.ui.selection[0],rect=bridge.api.rects([id])[id];store.command('转换为可缩放元素',model=>enableResizing(model,id,rect));props.render(true);}),
+        restoreFlow:guard(()=>{store.command('恢复自动排版',model=>{const b=locate(model,store.ui.selection[0]).block;delete b.flowFrame;delete b.natural;});props.render(true);}),
         group:guard(()=>{let id;store.command('组合元素',model=>{id=groupSelection(model,store.ui.selection);});store.select([id]);}),
         ungroup:guard(()=>{let ids;store.command('拆开组合',model=>{ids=ungroupSelection(model,store.ui.selection[0]);});store.select(ids);}),
         actions:()=>openActions(store,api,error),home:()=>openHomeEditor(store,api,error,config),error,media:id=>openMedia(config,resource=>store.command('更换素材',model=>{const b=locate(model,id).block;Object.assign(b,{src:resource.src,kind:resource.kind});}),error)});

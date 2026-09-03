@@ -40,6 +40,23 @@ class TestEditorSave(_PackFixture):
     def history(self):
         return editor.list_revisions(self.conn, pack_id=self.pack["id"], teacher_id=9, lesson_no=1)
 
+    def test_flow_sizing_persists_through_save_reload_and_history_restore(self):
+        initial = self.fill()
+        block = initial["document"]["slides"][1]["blocks"][0]
+        block.update(id="resizable", natural=dict(w=600, h=120), flowFrame=dict(x=0, y=0, w=300, h=60))
+        saved = self.save(initial)
+        self.assertEqual(self.load()["document"], saved["document"])
+        changed = self.load()
+        changed["document"]["slides"][1]["blocks"][0]["flowFrame"]["w"] = 450
+        self.save(changed)
+        self.assertEqual(self.load()["document"]["slides"][1]["blocks"][0]["flowFrame"]["w"], 450)
+        prior = editor.preview_revision(self.conn, pack_id=self.pack["id"], teacher_id=9, lesson_no=1, revision_id=self.history()[0]["id"])
+        self.assertEqual(prior["document"]["slides"][1]["blocks"][0]["flowFrame"]["w"], 300)
+        restored = editor.restore_revision(self.conn, pack_id=self.pack["id"], teacher_id=9, lesson_no=1,
+                                           revision_id=self.history()[0]["id"], expected_revision=self.load()["revision"], operation_id="restore_sizing")
+        self.conn.commit()
+        self.assertEqual(restored["document"], saved["document"])
+
     def test_first_save_publishes_and_home_projection_matches(self):
         initial = self.fill()
         self.assertEqual(initial["state"], "absent")

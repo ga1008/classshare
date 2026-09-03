@@ -50,5 +50,5 @@ export const FIELD_LABELS = {
 };
 export const FIELD_OPTIONS = {tone:{primary:'主题',info:'信息',think:'思考',ok:'成功',warn:'提醒',err:'错误'},variant:{primary:'实心',outline:'描边',ghost:'轻量',link:'链接'},size:{sm:'小',md:'中',lg:'大'}};
 export function contentFields(block) {
-    return Object.keys({...REGISTRY[block.type]?.defaults,...block}).filter((key)=>!['type','id','name','frame','natural','style','hidden','actions','once','skipCovers','excludeSlides'].includes(key));
+    return Object.keys({...REGISTRY[block.type]?.defaults,...block}).filter((key)=>!['type','id','name','frame','flowFrame','natural','style','hidden','actions','once','skipCovers','excludeSlides'].includes(key));
 }

@@ -342,15 +342,7 @@ body.article-page { overflow: auto; height: auto; background: var(--bg); }
 .slide-bg-tint { position: absolute; inset: 0; }
 
 /* 定位块:frame 坐标相对 .slide 左上角(1280×720 画布单位) */
-.ld-pos { position: absolute; box-sizing: border-box; transform-origin: center center; }
-.ld-pos > * { margin: 0; max-width: 100%; }
-.ld-pos > p, .ld-pos > .callout, .ld-pos > figure { margin: 0; }
-.ld-pos > figure > svg, .ld-pos > figure > img { max-height: 100%; }
-.ld-pos > .ld-btn { white-space: nowrap; }
-.ld-scaled-inner { position: absolute; transform-origin: 0 0; max-width: none !important; }
-.ld-scaled-inner > * { margin: 0; max-width: 100%; }
-.ld-scaled-inner > figure > svg, .ld-scaled-inner > figure > img { max-height: 100%; }
-.ld-scaled-inner > .ld-btn { white-space: nowrap; }
+/* Shared positioning and scaling primitives live in course.css. */
 
 /* 自由版式:slide-body 只是占位,元素全部绝对定位 */
 .slide--canvas .slide-body { pointer-events: none; }
@@ -379,6 +371,3 @@ html.ld-editing .slide-chrome-head, html.ld-editing .slide-chrome-foot { pointer
 html.ld-editing:not(.ld-trial) .fragment,
 html.ld-editing:not(.ld-trial) .frag-exited { opacity: 1 !important; transform: none !important; transition: none; }
 html.ld-editing:not(.ld-trial) .ld-hidden { display: block !important; opacity: .35; outline: 1px dashed var(--muted); }
-.ld-edit-layer { position: absolute; inset: 0; z-index: 1000; pointer-events: none; }
-.ld-edit-layer > * { pointer-events: auto; }
-.ld-selected { outline: 2px solid var(--primary) !important; outline-offset: 2px; }
