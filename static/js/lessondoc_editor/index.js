@@ -16,7 +16,8 @@ import {openBackground} from './background_editor.js';
 import {openAiPanel} from './ai_panel.js';
 import {openHtmlEditor} from './html_editor.js';
 import {openMedia,openTemplates} from './media_picker.js';
-import {el,button,field,dialog,downloadJson,reportError} from './ui.js';
+import {el,button,field,dialog,downloadJson,reportError,choiceSample} from './ui.js';
+import {configureColorPicker} from '../ui_color_picker.js';
 
 const config=JSON.parse(document.getElementById('lessondoc-editor-config').textContent);
 const $=id=>document.getElementById('lde-'+id),api=createApi(config.packId,config.lessonNo);
@@ -120,12 +121,12 @@ function layout() {
     const index=store.ui.slide;dialog('页面版式',({body,foot,close})=>{
         body.append(el('p','lde-muted','转换保留现有元素。自由画布转流式后按从上到下排序；可用撤销恢复原位置。'));
         const grid=el('div','lde-palette');body.append(grid);
-        for(const [kind,label]of Object.entries(LAYOUTS))grid.append(button(label,guard(async()=>{
+        for(const [kind,label]of Object.entries(LAYOUTS)){const item=button('',guard(async()=>{
             const serial=store.serial,candidate=clone(store.model),converted=convertLayout(candidate.slides[index],kind,bridge.api.measureFlowFrames(index));candidate.slides[index]=converted;
             const check=await api.validate(candidate);if(!check.valid)throw new Error(check.warnings.join('\n'));
             if(serial!==store.serial||index!==store.ui.slide)throw new Error('预检期间正文或当前页已变化，请重新转换。');
             store.command('转换版式',model=>model.slides[index]=check.document.slides[index]);store.select([]);close();
-        })));
+        }),'lde-button lde-layout-choice');item.append(choiceSample('layout',kind),el('span','',label));item.setAttribute('aria-label',label);grid.append(item);}
         foot.append(button('取消',close));
     });
 }
@@ -155,13 +156,15 @@ function template() {
 }
 function resizeStage() {
     const value=$('zoom').value,wrap=$('frame-wrap');
-    if(value==='fit'||store?.model.kind==='home'){wrap.style.width='100%';wrap.style.height='100%';}
+    const fit=$('zoom').dataset.fit==='true'||store?.model.kind==='home';$('zoom-value').value=fit?'适应':Math.round(Number(value)*100)+'%';$('zoom-fit').setAttribute('aria-pressed',String(fit));$('zoom').setAttribute('aria-valuetext',$('zoom-value').value);$('zoom').disabled=store?.model.kind==='home';
+    if(fit){wrap.style.width='100%';wrap.style.height='100%';}
     else{wrap.style.width=Math.round(1280*Number(value)/.97)+'px';wrap.style.height=Math.round(720*Number(value)/.97)+'px';}
 }
 function isTyping(event) {return event.isComposing||event.target.closest?.('input,textarea,select,[contenteditable="true"]');}
 function shortcuts(event) {
     if(!store)return;const mod=event.ctrlKey||event.metaKey,key=event.key.toLowerCase();
     if(mod&&key==='s'){event.preventDefault();save();return;}
+    if(event.target.closest?.('.ls-popover'))return;
     if(isTyping(event))return;
     if(event.key==='Escape'){if(store.ui.trial){toggleTrial();return;}if(store.ui.groupPath.length){store.ui.groupPath.pop();store.select([]);}else store.select([]);return;}
     if(store.ui.trial)return;
@@ -187,8 +190,9 @@ async function boot() {
     props=new PropsPanel($('props'),store,{copy:guard(copy),remove:guard(remove),deletePage:guard(()=>pageCommand(store,'delete')),source,layout,template,ai,html:guard(convert=>openHtmlEditor(store,api,config,bridge,{convert})),background:()=>openBackground(store,api,config,error),
         group:guard(()=>{let id;store.command('组合元素',model=>{id=groupSelection(model,store.ui.selection);});store.select([id]);}),
         ungroup:guard(()=>{let ids;store.command('拆开组合',model=>{ids=ungroupSelection(model,store.ui.selection[0]);});store.select(ids);}),
-        actions:()=>openActions(store,api,error),home:()=>openHomeEditor(store,api,error),error,media:id=>openMedia(config,resource=>store.command('更换素材',model=>{const b=locate(model,id).block;Object.assign(b,{src:resource.src,kind:resource.kind});}),error)});
+        actions:()=>openActions(store,api,error),home:()=>openHomeEditor(store,api,error,config),error,media:id=>openMedia(config,resource=>store.command('更换素材',model=>{const b=locate(model,id).block;Object.assign(b,{src:resource.src,kind:resource.kind});}),error)});
     bridge=new EditorBridge($('frame'),store,error);await bridge.connect();new CanvasController(bridge,store,error,guard(addType));
+    configureColorPicker({userId:config.userId,resolveColor:color=>color?.startsWith('#')?color:bridge.window.getComputedStyle(bridge.document.documentElement).getPropertyValue('--'+color).trim()});
     store.subscribe(event=>{
         // Deletions and server normalization may invalidate selected objects or page indexes.
         store.ui.slide=Math.max(0,Math.min(store.ui.slide,(store.model.slides?.length||1)-1));
@@ -199,6 +203,7 @@ async function boot() {
         if(event.type==='page'){const url=new URL(location.href);const slide=store.model.slides?.[store.ui.slide];if(slide){url.searchParams.set('slide_id',slide.id);historyReplace(url);}props.render(true);}
     });
     renderStatus();renderPalette();renderLayers();renderPageRail($('pages'),store,error);renderHomeTarget();props.render(true);resizeStage();
+    $('zoom').addEventListener('input',()=>{$('zoom').dataset.fit='false';resizeStage();});$('zoom-fit').addEventListener('click',()=>{$('zoom').dataset.fit='true';resizeStage();});
     if(config.lessonNo)for(const[op,label]of[['previous','前移'],['next','后移'],['duplicate','复制页'],['delete','删页']])$('page-actions').append(button(label,guard(()=>pageCommand(store,op))));
     $('search').addEventListener('input',renderPalette);$('save').addEventListener('click',()=>save());$('undo').addEventListener('click',()=>store.undo());$('redo').addEventListener('click',()=>store.redo());$('history').addEventListener('click',guard(history));$('preview').addEventListener('click',toggleTrial);$('source').addEventListener('click',()=>source());$('templates').addEventListener('click',()=>openTemplates(config,insert,error));$('zoom').addEventListener('change',resizeStage);
     $('document').addEventListener('change',()=>{const value=$('document').value;location.href='/materials/lessondoc-editor/'+config.packId+'?lesson='+value+'&return_to='+encodeURIComponent(config.returnUrl);$('document').value=String(config.lessonNo);});

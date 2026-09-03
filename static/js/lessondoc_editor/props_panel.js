@@ -1,6 +1,7 @@
 import {at,clone,equal,locate,setAt,freshInstance,insertionList} from './model.js';
 import {REGISTRY,FIELD_LABELS,FIELD_OPTIONS,contentFields,THEMES} from './registry.js';
-import {el,button,field,panelSection} from './ui.js';
+import {el,button,field,panelSection,popovers} from './ui.js';
+import {gradientField,percent,TEXT_STYLE_BLOCKS} from './appearance_controls.js';
 import {changeGlobal,alignSelection,flowDestinations,moveFlow} from './object_commands.js';
 import {renderTable,renderQuiz,renderCodewalk,DIAGRAM_DEFAULTS} from './content_controls.js';
 
@@ -12,7 +13,10 @@ export class PropsPanel {
     }
     render(force=false) {
         const key=this.store.ui.selection.join(',')+':'+this.store.ui.slide;
-        if(!force&&key===this.selection&&this.root.contains(document.activeElement))return;
+        if(!force&&key===this.selection&&(this.root.contains(document.activeElement)||popovers.popoverManager.hasAnchorWithin(this.root)))return;
+        popovers.popoverManager.closeAnchoredWithin(this.root);
+        const expanded=key===this.selection?new Set([...this.root.querySelectorAll('details[open]')].map(node=>node.querySelector('summary').textContent)):new Set();
+        queueMicrotask(()=>{if(key===this.selection)for(const node of this.root.querySelectorAll('details'))if(expanded.has(node.querySelector('summary').textContent))node.open=true;});
         this.selection=key;this.root.replaceChildren();
         const selected=this.store.ui.selection.map(id=>locate(this.store.model,id)).filter(Boolean);
         if(!selected.length){this.renderPage();return;}
@@ -56,15 +60,25 @@ export class PropsPanel {
             for(const[k,t,min,max]of[['x','横坐标',-200,1480],['y','纵坐标',-200,920],['w','宽度',8,1680],['h','高度',8,1680],['r','旋转角度',-180,180],['z','叠放顺序',-100,1000]])add(pos.body,t,['frame',k],{type:'number',min,max});
         }
         const style=panelSection('文字与外观',{open:false});this.root.append(style.root);
-        add(style.body,'字体',['style','font'],{choices:{sans:'无衬线',serif:'衬线',kai:'楷体',mono:'等宽',rounded:'圆体'}});
-        add(style.body,'字号',['style','size'],{type:'number',min:12,max:160});add(style.body,'字重',['style','weight'],{choices:{400:'常规',500:'中等',600:'半粗',700:'粗体',800:'特粗'}});
-        add(style.body,'文字颜色',['style','color']);add(style.body,'背景颜色',['style','bg']);add(style.body,'对齐',['style','align'],{choices:{left:'左对齐',center:'居中',right:'右对齐'}});
-        add(style.body,'内边距',['style','padding'],{type:'number',min:0,max:120});add(style.body,'不透明度',['style','opacity'],{type:'number',min:0,max:1,step:.05});
-        add(style.body,'圆角',['style','border','radius'],{type:'number',min:0,max:120});add(style.body,'边框宽度',['style','border','width'],{type:'number',min:0,max:12});add(style.body,'边框颜色',['style','border','color']);
-        add(style.body,'斜体',['style','italic'],{type:'checkbox'});add(style.body,'行高',['style','lineHeight'],{type:'number',min:.9,max:3,step:.1});add(style.body,'字距',['style','letterSpacing'],{type:'number',min:-2,max:20,step:.1});
-        add(style.body,'阴影',['style','shadow'],{choices:{none:'无',soft:'柔和',hard:'硬阴影',glow:'发光'}});
-        add(style.body,'描边颜色',['style','stroke','color']);add(style.body,'描边宽度',['style','stroke','width'],{type:'number',min:0,max:6});
-        for(const[key,title]of[['gradient','文字渐变'],['bgGradient','背景渐变']]){const part=panelSection(title,{open:false});style.body.append(part.root);add(part.body,'起始颜色',['style',key,'from']);add(part.body,'结束颜色',['style',key,'to']);add(part.body,'角度',['style',key,'angle'],{type:'number',min:0,max:360});}
+        add(style.body,'字体',['style','font'],{choices:{sans:'无衬线',serif:'衬线',kai:'楷体',mono:'等宽',rounded:'圆体'},visual:'font'});
+        add(style.body,'字号',['style','size'],{type:'number',min:12,max:160,defaultValue:26,unit:' px'});add(style.body,'字重',['style','weight'],{choices:{400:'常规',500:'中等',600:'半粗',700:'粗体',800:'特粗'},visual:'weight'});
+        add(style.body,'文字颜色',['style','color'],{type:'color'});add(style.body,'背景颜色',['style','bg'],{type:'color'});add(style.body,'对齐',['style','align'],{choices:{left:'左对齐',center:'居中',right:'右对齐'},visual:'align'});
+        add(style.body,'内边距',['style','padding'],{type:'number',min:0,max:120,unit:' px'});add(style.body,'不透明度',['style','opacity'],{type:'number',min:0,max:1,step:.01,defaultValue:1,format:percent});
+        add(style.body,'圆角',['style','border','radius'],{type:'number',min:0,max:120,unit:' px'});add(style.body,'边框宽度',['style','border','width'],{type:'number',min:0,max:12,unit:' px'});add(style.body,'边框颜色',['style','border','color'],{type:'color'});
+        add(style.body,'斜体',['style','italic'],{type:'checkbox'});add(style.body,'行高',['style','lineHeight'],{type:'number',min:.9,max:3,step:.1,defaultValue:1.5});add(style.body,'字距',['style','letterSpacing'],{type:'number',min:-2,max:20,step:.1,defaultValue:0});
+        const textStyle=blocks.every(b=>TEXT_STYLE_BLOCKS.has(b.type));
+        add(style.body,'阴影',['style','shadow'],{choices:{none:'无',soft:'柔和',hard:'硬阴影',glow:'发光'},visual:textStyle?'shadow':'box-shadow'});
+        add(style.body,'描边颜色',['style','stroke','color'],{type:'color'});add(style.body,'描边宽度',['style','stroke','width'],{type:'number',min:0,max:6,unit:' px'});
+        for(const[key,title]of[['gradient','文字渐变'],['bgGradient','背景渐变']]){
+            if(key==='gradient'&&!textStyle)continue;
+            const part=panelSection(title,{open:!!first.style?.[key]});style.body.append(part.root);
+            part.body.append(gradientField('启用'+title,first.style?.[key],value=>{
+                const wasEnabled=!!locate(this.store.model,first.id)?.block.style?.[key];
+                const otherEnabled=!!locate(this.store.model,first.id)?.block.style?.[key==='gradient'?'bgGradient':'gradient'];
+                this.store.command(title,model=>{for(const id of this.store.ui.selection){const block=locate(model,id).block;setAt(block,['style',key],clone(value));if(value)delete block.style[key==='gradient'?'bgGradient':'gradient'];}},{coalesce:blocks.map(b=>b.id).join(',')+':style.'+key});
+                if(wasEnabled!==!!value||(otherEnabled&&value))this.render(true);
+            },{text:key==='gradient'}));
+        }
         style.body.append(button('重置外观',()=>{this.store.command('重置元素外观',model=>{for(const id of this.store.ui.selection)delete locate(model,id).block.style;});this.render(true);}));
         if(blocks.length===1) {
             const content=panelSection('内容');this.root.append(content.root);
@@ -110,7 +124,8 @@ export class PropsPanel {
                 parent.append(el('p','lde-muted','切换类型会替换为该类型的示例结构，可撤销。'));return;
             }
         }
-        parent.append(field(label,value,change,{multiline,live:multiline,type:typeof value==='boolean'?'checkbox':typeof value==='number'?'number':'text',choices}));
+        const key=path.at(-1),numeric=key==='cols'?{min:1,max:4}:key==='maxWidth'?{min:80,max:1280,unit:' px'}:{};
+        parent.append(field(label,value,change,{multiline,live:multiline,type:typeof value==='boolean'?'checkbox':typeof value==='number'?'number':'text',choices,visual:['tone','variant','size'].includes(key)?key:null,...numeric}));
     }
     arrayCommand(id,path,index,operation) {
         try{this.store.command('调整条目',model=>{
@@ -129,7 +144,7 @@ export class PropsPanel {
         this.root.append(el('h2','lde-panel-heading',home?'课程首页':'页面设置'));
         const write=(path,value)=>this.store.command('修改页面',d=>setAt(d,path,value),{coalesce:path.join('.')});
         this.root.append(field(home?'展示课程名称':'课次标题',home?model.course.name:model.title,v=>write(home?['course','name']:['title'],v),{live:true}));
-        this.root.append(field('主题',model.theme||'sky',v=>write(['theme'],v),{choices:THEMES}));
+        this.root.append(field('主题',model.theme||'sky',v=>write(['theme'],v),{choices:THEMES,visual:'theme'}));
         this.root.append(button('背景',()=>this.callbacks.background()));
         if(slide){
             const prefix=['slides',this.store.ui.slide];

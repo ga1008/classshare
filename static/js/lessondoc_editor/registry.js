@@ -48,7 +48,7 @@ export const FIELD_LABELS = {
     root:'根节点',from:'起点',to:'终点',id:'标识',steps:'步骤',stage:'舞台',set:'属性变化',show:'显示目标',hide:'隐藏目标',
     target:'目标',attr:'属性',href:'包内链接',collapsed:'初始折叠',step:'出现次序',rowStep:'逐行出现',
 };
-export const FIELD_OPTIONS = {tone:['primary','info','think','ok','warn','err'],variant:['primary','outline','ghost','link'],size:['sm','md','lg']};
+export const FIELD_OPTIONS = {tone:{primary:'主题',info:'信息',think:'思考',ok:'成功',warn:'提醒',err:'错误'},variant:{primary:'实心',outline:'描边',ghost:'轻量',link:'链接'},size:{sm:'小',md:'中',lg:'大'}};
 export function contentFields(block) {
     return Object.keys({...REGISTRY[block.type]?.defaults,...block}).filter((key)=>!['type','id','name','frame','natural','style','hidden','actions','once','skipCovers','excludeSlides'].includes(key));
 }

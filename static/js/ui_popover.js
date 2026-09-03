@@ -17,13 +17,18 @@ function reducedMotion() {
 
 class PopoverManager {
     constructor() {
-        this.current = null;
+        this.stack = [];
         this.layerEl = null;
         this.boundPointerDown = (event) => this.handleDocumentPointerDown(event);
-        this.boundResize = () => this.closeAll('resize');
+        this.boundResize = () => {
+            if(this.stack[0]?.options.preserveOnResize)this.stack.forEach(item=>item.reposition());
+            else this.closeAll('resize');
+        };
         this.boundBlur = () => this.closeAll('blur');
         this.listening = false;
     }
+
+    get current() { return this.stack.at(-1) || null; }
 
     layer() {
         if (this.layerEl?.isConnected) return this.layerEl;
@@ -61,22 +66,37 @@ class PopoverManager {
     }
 
     open(popover) {
-        if (this.current && this.current !== popover) this.current.close('replaced');
-        this.current = popover;
+        // Nested controls opt in. Existing root popovers still replace one another.
+        const parent = popover.options.parent === 'anchor'
+            ? this.stack.findLast(item => item.panel.contains(popover.anchor)) : null;
+        if (parent) {
+            while (this.current !== parent) this.current.close('replaced');
+        } else this.closeAll('replaced');
+        popover.parent = parent;
+        this.stack.push(popover);
+        popover.panel.style.zIndex = String(this.stack.length + 1);
         this.listen();
     }
 
     released(popover) {
-        if (this.current === popover) this.current = null;
+        const index = this.stack.indexOf(popover);
+        if (index < 0) return;
+        while (this.current !== popover) this.current.close('parent-closed');
+        this.stack.pop();
         if (!this.current) this.unlisten();
     }
 
     closeAll(reason = 'manual') {
-        if (this.current) this.current.close(reason);
+        while (this.current) this.current.close(reason);
     }
 
     isOpen() {
         return Boolean(this.current);
+    }
+
+    hasAnchorWithin(root) { return this.stack.some(item => root.contains(item.anchor)); }
+    closeAnchoredWithin(root) {
+        for (const item of [...this.stack].reverse()) if (root.contains(item.anchor)) item.close('anchor-removed');
     }
 }
 
@@ -146,11 +166,15 @@ function createPopover(options) {
     }
 
     function focusFirst() {
-        const target = panel.querySelector('[data-autofocus], input:not([type=hidden]), button, [tabindex]:not([tabindex="-1"])');
+        const target = panel.querySelector('[data-autofocus]') || panel.querySelector('input:not([type=hidden]), button, [tabindex]:not([tabindex="-1"])');
         (target || panel).focus?.({ preventScroll: true });
     }
 
     function trapTab(event) {
+        if (popoverManager.current !== api) return;
+        if (event.key === 'Escape') {
+            event.preventDefault(); event.stopPropagation(); api.close('escape'); return;
+        }
         if (event.key !== 'Tab') return;
         const focusables = Array.from(panel.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'))
             .filter((el) => el.offsetParent !== null);
@@ -211,7 +235,7 @@ function createPopover(options) {
             panel.hidden = true;
             backdrop?.remove();
             backdrop = null;
-            if (!popoverManager.isOpen() && lastFocus && typeof lastFocus.focus === 'function' && document.contains(lastFocus)) {
+            if ((!popoverManager.isOpen() || popoverManager.current === api.parent) && reason !== 'outside' && lastFocus && typeof lastFocus.focus === 'function' && document.contains(lastFocus)) {
                 lastFocus.focus({ preventScroll: true });
             }
         };

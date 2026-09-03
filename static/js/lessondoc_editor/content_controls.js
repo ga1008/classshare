@@ -1,5 +1,6 @@
 import {clone,locate} from './model.js';
 import {el,button,field,panelSection} from './ui.js';
+import {seconds} from './appearance_controls.js';
 
 export function renderTable(root,block,commit,refresh,onError) {
     const cols=Math.max(block.head?.length||0,...(block.rows||[]).map(r=>r.length),1);
@@ -39,14 +40,14 @@ export function moveCodewalkLine(block,from,to) {
 }
 export function renderCodewalk(root,block,commit,refresh,onError) {
     for(const[key,label]of[['title','演示标题'],['lang','语言'],['runLabel','运行按钮文字']])root.append(field(label,block[key]||'',v=>commit('修改代码演示',b=>b[key]=v)));
-    root.append(field('每步毫秒',block.speedMs??900,v=>commit('调整速度',b=>b.speedMs=v),{type:'number',min:200,max:5000}));
+    root.append(field('每步时长',block.speedMs??900,v=>commit('调整速度',b=>b.speedMs=v),{type:'number',min:200,max:5000,step:50,format:seconds}));
     for(const[key,label]of[['loop','循环'],['autoStart','自动播放'],['arrow','显示箭头'],['showOutput','显示输出'],['showNotes','显示注释']])root.append(field(label,block[key]??!['loop','autoStart'].includes(key),v=>commit('修改演示选项',b=>b[key]=v),{type:'checkbox'}));
     let sourceCount=0;
     block.lines.forEach((raw,index)=>{
         const line=typeof raw==='string'?{code:raw}:raw,ref=line.code==null&&line.ref!=null,label=ref?'执行轨迹 → 第 '+(line.ref+1)+' 行':'源码第 '+(++sourceCount)+' 行';
         const part=panelSection(label,{open:index<4});root.append(part.root);
         const update=(key,value)=>commit('编辑代码轨迹',b=>{if(typeof b.lines[index]==='string')b.lines[index]={code:b.lines[index]};b.lines[index][key]=value;});
-        if(ref)part.body.append(field('引用源码行',line.ref+1,v=>update('ref',v-1),{type:'number',min:1,max:sourceCount}));
+        if(ref){const sources=block.lines.slice(0,index).filter(line=>typeof line==='string'||line.code!=null);part.body.append(field('引用源码行',line.ref,v=>update('ref',Number(v)),{choices:Object.fromEntries(sources.map((line,i)=>[i,(i+1)+' · '+(typeof line==='string'?line:line.code).slice(0,42)]))}));}
         else part.body.append(field('源码',line.code||'',v=>update('code',v),{multiline:true,rows:2}));
         part.body.append(field('本步输出',line.out||'',v=>update('out',v),{multiline:true,rows:2}),field('本步注释',line.note||'',v=>update('note',v),{multiline:true,rows:2}));
         for(const[direction,title]of[[-1,'上移'],[1,'下移']])part.body.append(button(title,()=>{try{commit('移动执行轨迹',b=>moveCodewalkLine(b,index,index+direction));refresh();}catch(e){onError(e);}}));

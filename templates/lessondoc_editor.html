@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}学习文档编辑器 · LanShare{% endblock %}
-{% block css %}<link rel="stylesheet" href="{{ asset_url('css/lessondoc_editor.css') }}">{% endblock %}
+{% block css %}<link rel="stylesheet" href="{{ asset_url('css/lessondoc_editor.css') }}"><link rel="stylesheet" href="{{ asset_url('css/ui_color_picker.css') }}">{% endblock %}
 {% block body_class %}lde-page{% endblock %}
 {% block body %}
 <main id="lessondoc-editor" class="lde-app" aria-label="学习文档编辑器">
@@ -22,7 +22,7 @@
             <div class="lde-panel-heading"><h2>本页元素</h2><button type="button" id="lde-source" class="lde-icon-button" aria-label="查看文档 JSON">{ }</button></div><div id="lde-layers" class="lde-layers"></div>
         </aside>
         <section class="lde-center" aria-label="编辑画布">
-            <div class="lde-canvas-toolbar"><span id="lde-context">准备画布</span><div id="lde-page-actions" class="lde-inline-actions"></div><label class="lde-zoom">缩放 <select id="lde-zoom" aria-label="画布缩放"><option value="fit">适应</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option></select></label></div>
+            <div class="lde-canvas-toolbar"><span id="lde-context">准备画布</span><div id="lde-page-actions" class="lde-inline-actions"></div><div class="lde-zoom"><button id="lde-zoom-fit" type="button" class="lde-button" aria-pressed="true">适应</button><input id="lde-zoom" type="range" min="0.25" max="1.5" step="0.05" value="0.75" data-fit="true" aria-label="画布缩放"><output id="lde-zoom-value">适应</output></div></div>
             <div id="lde-stage" class="lde-stage" tabindex="0" aria-label="画布。使用元素列表选择内容，方向键移动。"><div id="lde-frame-wrap" class="lde-frame-wrap"><iframe id="lde-frame" title="学习文档编辑画布" src="{{ '/materials/lessondoc-editor/' ~ editor_config.packId ~ '/preview?lesson=' ~ editor_config.lessonNo }}" referrerpolicy="same-origin"></iframe></div></div>
             <nav id="lde-pages" class="lde-page-rail" aria-label="页面列表"></nav>
         </section>
