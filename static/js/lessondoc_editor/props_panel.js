@@ -138,5 +138,11 @@ export class PropsPanel {
             this.root.append(button('本页转静态 HTML',()=>this.callbacks.html(true)));
         }else this.root.append(button('首页内容与区块',()=>this.callbacks.home()));
         this.root.append(el('p','lde-muted','在画布或元素列表中选择内容，即可修改文字与外观。按住 Shift 多选；双击组合进入内部。'));
+        if(slide){
+            const footer=el('div','lde-page-delete'),remove=button('删除此页面',()=>this.callbacks.deletePage(),'lde-button lde-danger');
+            remove.disabled=model.slides.length<=1;
+            const hint=model.slides.length<=1?'至少保留一页，可清空本页内容。':'删除后其余页面自动前移，可撤销恢复。';
+            remove.title=hint;footer.append(el('p','lde-muted',hint),remove);this.root.append(footer);
+        }
     }
 }

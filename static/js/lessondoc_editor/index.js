@@ -184,7 +184,7 @@ async function boot() {
     try{drafts=new Drafts(config.userId,config.packId,config.lessonNo);}catch{warn('浏览器无法存储本地草稿，请及时保存或下载恢复稿。');}
     $('document').value=String(config.lessonNo);
     const ai=guard(async(mode)=>{await save();if(store.dirty)throw new Error('请先保存当前修改后再使用 AI。');openAiPanel(store,api,mode,error);});
-    props=new PropsPanel($('props'),store,{copy:guard(copy),remove:guard(remove),source,layout,template,ai,html:guard(convert=>openHtmlEditor(store,api,config,bridge,{convert})),background:()=>openBackground(store,api,config,error),
+    props=new PropsPanel($('props'),store,{copy:guard(copy),remove:guard(remove),deletePage:guard(()=>pageCommand(store,'delete')),source,layout,template,ai,html:guard(convert=>openHtmlEditor(store,api,config,bridge,{convert})),background:()=>openBackground(store,api,config,error),
         group:guard(()=>{let id;store.command('组合元素',model=>{id=groupSelection(model,store.ui.selection);});store.select([id]);}),
         ungroup:guard(()=>{let ids;store.command('拆开组合',model=>{ids=ungroupSelection(model,store.ui.selection[0]);});store.select(ids);}),
         actions:()=>openActions(store,api,error),home:()=>openHomeEditor(store,api,error),error,media:id=>openMedia(config,resource=>store.command('更换素材',model=>{const b=locate(model,id).block;Object.assign(b,{src:resource.src,kind:resource.kind});}),error)});
