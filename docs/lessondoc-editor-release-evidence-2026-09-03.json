@@ -1,6 +1,6 @@
 {
   "date": "2026-09-03",
-  "stage": "local_acceptance_complete",
+  "stage": "released",
   "historical_audit_unchanged": true,
   "backend": {
     "total": 1668,
@@ -131,6 +131,147 @@
     "Feature switch pauses new editor writes; rollback must retain the current runtime and validators."
   ],
   "release": {
-    "status": "pending"
+    "status": "complete",
+    "source_commit": "54363b127e9543fea15eb686848e8f73ab2d8442",
+    "git_branch": "dev",
+    "source_commit_pushed": true,
+    "release_id": "20260903-203549-cd53fdd64398",
+    "finished_at": "2026-09-03T21:01:39+08:00",
+    "site": "https://guardianangel.net.cn",
+    "dry_run": "passed",
+    "migration": {
+      "status": "ok",
+      "before_tables": 195,
+      "after_tables": 198,
+      "quick_check": "ok",
+      "production_data_modified": false
+    },
+    "postgres_preflight": "passed",
+    "manifest_files": 1685,
+    "manifest_sha256": "187119cd3fc6266ce6b8df64c7854b773e45ec41bddb90ce8120adb81c50bc2d",
+    "protected_paths_in_manifest": 0,
+    "code_backup": "/tmp/lanshare-deploy-backups/code-20260903-203557.tgz",
+    "database_backup": "/tmp/lanshare-deploy-backups/db-20260903-203557.sql.gz",
+    "database_backup_size": "29 MB",
+    "backup_retention": 3,
+    "services": [
+      {
+        "service": "agent-worker",
+        "state": "running",
+        "health": ""
+      },
+      {
+        "service": "ai",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "app",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "blog-crawler",
+        "state": "running",
+        "health": ""
+      },
+      {
+        "service": "deepseek-runtime",
+        "state": "running",
+        "health": ""
+      },
+      {
+        "service": "mailer",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "nginx",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "postgres",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "scheduler",
+        "state": "running",
+        "health": "healthy"
+      }
+    ],
+    "main_health": "ok",
+    "ai_health": "ok",
+    "grading_queue": {
+      "pending": 0,
+      "max_pending": 200,
+      "max_concurrent": 4
+    },
+    "background_tasks": {
+      "aggregate_ok": false,
+      "historical_failures_before": 476,
+      "historical_failures_after": 476,
+      "current_item_statuses": {
+        "ai_grading": "ok",
+        "material_ai_import": "ok",
+        "session_material_generation": "ok",
+        "private_message_ai_reply": "ok",
+        "email_outbox": "ok",
+        "blog_news_crawler": "ok",
+        "agent_task": "ok",
+        "scheduled_task": "ok",
+        "behavior_write_pipeline": "ok"
+      },
+      "stale_count": 0
+    },
+    "recent_error_logs": false,
+    "code_files_verified": 107,
+    "schema_tables": [
+      "lessondoc_custom_elements",
+      "lessondoc_doc_revisions",
+      "lessondoc_save_operations"
+    ],
+    "validator_idempotent": true,
+    "editor_enabled": "true",
+    "public": {
+      "login_status": 200,
+      "release_match": true,
+      "first_clear_site_data": "\"cache\"",
+      "second_clear_site_data": null,
+      "assets": {
+        "static/js/lessondoc_editor/index.js": {
+          "status": 200,
+          "sha256_match": true
+        },
+        "static/js/lessondoc_editor/ai_panel.js": {
+          "status": 200,
+          "sha256_match": true
+        },
+        "static/js/ui_popover.js": {
+          "status": 200,
+          "sha256_match": true
+        },
+        "static/lessondoc/2.0/interact.js": {
+          "status": 200,
+          "sha256_match": true
+        },
+        "static/css/lessondoc_editor.css": {
+          "status": 200,
+          "sha256_match": true
+        }
+      }
+    },
+    "cleanup": {
+      "test_services_stopped": true,
+      "release_worktree_removed": true,
+      "qa_directory_removed": false,
+      "qa_directory": ".codex-temp/lessondoc-editor",
+      "deletion_rejected_by": "automatic approval review",
+      "reason": "blocked by policy",
+      "directory_preserved": true,
+      "preexisting_qa_runtime_preserved": true,
+      "unrelated_user_files_preserved": true
+    }
   }
 }

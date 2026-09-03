@@ -93,9 +93,17 @@ E0-R 的净化、幂等 CSS、稳定 ID、引用检查、输入预算、交互�
 
 真实 PostgreSQL 验收可复跑：`python tools/validate_lessondoc_editor_postgres.py --run-local`。脚本只允许本机地址，创建唯一 schema 并使用仅含该 schema 的 search_path；不访问 public 业务表，最终核验 schema 已清理。
 
-## 发布前剩余步骤
+## 发布结果与运维边界
 
-1. 从明确文件清单提交，建立干净发布工作区，执行部署 DryRun、正式部署、容器内和公网健康及版本校验，再推送 Git。
-2. 停止本轮测试服务，清理本轮临时文件；保留原有 QA runtime、用户证书/图片及先前被自动审批阻止清理的旧临时目录。
+- 2026-09-03 21:01 完成部署；功能代码提交 `54363b127e9543fea15eb686848e8f73ab2d8442` 已推送 `origin/dev`。之后的文档提交仅补记发布证据，不改变部署代码。
+- 线上版本：`20260903-203549-cd53fdd64398`。干净工作区发布 1,685 个文件，清单不含配置、运行数据、本地证书、用户图片或测试临时目录。
+- DryRun、隔离副本迁移和 PostgreSQL 部署预检通过；新增 3 个表，不更改原有表列。已保存代码备份及 29 MB PostgreSQL 备份，保留最近 3 份。
+- 9 个 Compose 服务全部运行，配置了健康检查的 6 个服务均 healthy。主服务和 AI 健康接口正常，AI 的 grading_queue 保留且 pending=0；新容器近期日志无错误。
+- 容器内 107 个本轮文件哈希全部一致（构建生成的 Tailwind CSS 单独由生产构建验证）；3 个新表存在，真实 Python 3.12 环境下 HTML/CSS 校验幂等。
+- 公网登录页面 200；5 个关键编辑器/共享运行时资源与提交内容哈希一致。公网和容器内版本一致；首次 HTML 仅返回 `Clear-Site-Data: "cache"`，同会话第二次不再返回，不清除 storage/cookies。
+- 后台汇总 `ok=false` 来自已有历史失败计数：切换前后均为 476，各当前任务项均为 ok、stale=0。未将历史计数归零或作为新增发布失败。
+- 暂停编辑：设置 `LESSONDOC_EDITOR_ENABLED=false` 并重新创建应用容器，暂停可视化页面和新编辑写入。保留当前运行时、校验器和新增表，已编辑的文档继续可读；不得直接替换为不认识新模型的旧引擎。
+- 备份：`/tmp/lanshare-deploy-backups/code-20260903-203557.tgz` 与 `/tmp/lanshare-deploy-backups/db-20260903-203557.sql.gz`。本轮没有执行生产正文或素材数据修复。
+- 本轮 4 个本地验收服务均已停止，独立发布工作区已删除并核验。删除 `.codex-temp/lessondoc-editor` 被自动审批拒绝，仅返回 `blocked by policy`，因此保留该目录并停止删除；该目录未进入提交和部署包。原有 `p03-runtime`、用户图片/证书及前轮被拒绝清理的审计临时目录均保留。
 
-功能与本地验收完成。独立证据见 `docs/lessondoc-editor-release-evidence-2026-09-03.json`；改造前审计 JSON 原样保留。远程发布与推送结果随后补记。
+本轮施工、业务闭环验收、部署和代码推送均已完成。独立证据见 `docs/lessondoc-editor-release-evidence-2026-09-03.json`；改造前审计 JSON 原样保留。静态 HTML 的交互损失、已删除素材的历史恢复、模拟 AI 验收范围和本机性能测试范围均在证据中明确保留。
