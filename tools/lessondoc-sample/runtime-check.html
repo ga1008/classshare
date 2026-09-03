@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>LessonDoc 运行时回归验收</title>
+<style>body{font:16px system-ui;background:#f3f6fa;color:#13233b;padding:24px}button{padding:10px 20px}iframe{width:960px;height:540px;border:1px solid #ccd5e2;display:block;margin-top:20px}li{margin:8px 0}.fail{color:#be123c}.pass{color:#047857}</style>
+<h1>LessonDoc 运行时回归验收</h1><button id="run">运行验收</button><p id="status">尚未运行</p><ol id="results"></ol><button id="performance">测量大课文档</button><pre id="performance-result"></pre><iframe title="学习文档测试画布"></iframe>
+<script>
+const frame = document.querySelector('iframe');
+const results = document.querySelector('#results');
+const clone = value => JSON.parse(JSON.stringify(value));
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+function report(name, pass, detail='') {
+  const li = document.createElement('li'); li.className = pass ? 'pass' : 'fail';
+  li.textContent = (pass ? 'PASS ' : 'FAIL ') + name + (detail ? ': ' + detail : ''); results.append(li);
+}
+const model = {spec:'lessondoc/2.0',kind:'lesson',lesson:1,title:'运行时回归',slides:[
+  {id:'s1',layout:'content',title:'可交互内容',blocks:[
+    {type:'tabs',id:'tabs1',tabs:[{label:'标签一',blocks:[{type:'text',md:'正文一'}]},{label:'标签二',blocks:[{type:'text',md:'正文二'}]}]},
+    {type:'quiz',id:'quiz1',q:'验收题',options:[{k:'A',text:'正确'},{k:'B',text:'错误'}],answer:'A'},
+    {type:'html',id:'html1',body:'<p class="color">局部样式</p>&lt;img src=missing onerror=void(0)&gt;',css:'.color{color:rgb(255,0,0)}'},
+    {type:'text',id:'exit1',md:'退场内容',exitStep:1}
+  ],overlays:[{type:'codewalk',id:'cw1',frame:{x:720,y:160,w:470,h:260},loop:true,speedMs:220,lines:[{code:'first()',out:'1'},{code:'second()',out:'2'}]},
+    {type:'button',id:'run1',label:'启动定位演示',frame:{x:750,y:470,w:240,h:55},actions:[{do:'run',target:'cw1'}]}]},
+  {id:'s2',layout:'content',title:'图示输入不变',blocks:[
+    {type:'diagram',kind:'flow',id:'flow1',nodes:[{id:'a',label:'甲'},{id:'b',label:'乙'}],edges:[{from:'a',to:'b'}]},
+    {type:'diagram',kind:'arch',id:'arch1',layers:[{label:'层',nodes:[{id:'c',label:'丙'}]}]},
+    {type:'stepper',id:'step1',stage:{type:'svg',body:'<g id="dot"><circle r="10" cx="30" cy="30"/></g>'},steps:[{text:'第一步',hide:['#dot']},{text:'第二步',show:['#dot']}]}]},
+  {id:'s3',layout:'canvas',objects:[{type:'codewalk',id:'auto1',frame:{x:100,y:100,w:500,h:400},autoStart:true,loop:true,speedMs:250,lines:[{code:'auto()'}]}]}
+],globals:[{type:'group',id:'global1',frame:{x:1050,y:600,w:200,h:60},natural:{w:200,h:60},children:[{type:'text',id:'globalChild',frame:{x:0,y:0,w:200,h:60},md:'全局标识'}]}]};
+document.querySelector('#performance').onclick=async()=>{
+  const button=document.querySelector('#performance'),output=document.querySelector('#performance-result');button.disabled=true;output.textContent='正在测量 40 页 / 1600 个对象…';
+  try{
+    const large={spec:'lessondoc/2.0',kind:'lesson',lesson:1,title:'性能验收',slides:Array.from({length:40},(_,page)=>({id:'p'+page,layout:'canvas',objects:Array.from({length:40},(_,index)=>({id:'p'+page+'b'+index,type:'text',md:'独立对象 '+index,frame:{x:40+(index%5)*240,y:60+Math.floor(index/5)*80,w:210,h:68}}))}))};
+    const start=performance.now(),win=await load(large),fullMs=performance.now()-start;win.LESSONDOC.edit.mount({slide:0});
+    const samples=[];for(let i=0;i<100;i++){const page=clone(large.slides[0]);page.objects[0].md='第 '+i+' 次增量修改';const t=performance.now();win.LESSONDOC.edit.patchSlide(page,0);samples.push(performance.now()-t);if(i%10===0)await delay(0);}
+    const ids=[...win.document.querySelectorAll('[id]')].map(node=>node.id);samples.sort((a,b)=>a-b);
+    output.textContent=JSON.stringify({pages:40,objects:1600,patches:100,fullLoadMs:+fullMs.toFixed(2),patchMeanMs:+(samples.reduce((a,b)=>a+b)/samples.length).toFixed(2),patchP95Ms:+samples[94].toFixed(2),uniqueDomIds:ids.length===new Set(ids).size,slideCount:win.document.querySelectorAll('.slide').length},null,2);
+  }catch(error){output.textContent=error.stack;}finally{button.disabled=false;}
+};
+function load(data) {
+  return new Promise(resolve => {
+    const build = Date.now();
+    frame.onload = () => resolve(frame.contentWindow);
+    frame.srcdoc = '<!doctype html><html><head><base href="'+new URL('.',location.href).href+'"><link rel="stylesheet" href="assets/course.css?v='+build+'"><link rel="stylesheet" href="assets/slides.css?v='+build+'"><link rel="stylesheet" href="assets/themes.css?v='+build+'"></head><body><script type="application/json" id="lessondoc-data">'+JSON.stringify(data).replace(/<\//g,'<\\/')+'<\/script><script src="assets/course.js?v='+build+'"><\/script><script src="assets/slides.js?v='+build+'"><\/script><script src="assets/deck-engine.js?v='+build+'"><\/script><script src="assets/interact.js?v='+build+'"><\/script></body></html>';
+  });
+}
+document.querySelector('#run').onclick = async () => {
+  results.replaceChildren(); document.querySelector('#status').textContent='验收进行中';
+  try {
+    const before = JSON.stringify(model), win = await load(model), doc = win.document, ld = win.LESSONDOC;
+    await delay(80);
+    report('初始 DOM 正常',!!ld.edit && !doc.querySelector('.ld-broken'));
+    report('图示渲染不修改模型',JSON.stringify(ld.data) === before);
+    const ids = [...doc.querySelectorAll('[id]')].map(n=>n.id);
+    report('全局组跨页 DOM 标识唯一',ids.length === new Set(ids).size);
+    report('隐藏页自动演示不启动',!doc.querySelector('[data-ld-id="auto1"] .codewalk').__ldPlayer.playing);
+    report('HTML 转义文本保持文本',!doc.querySelector('.ld-html-body img'));
+    const color = () => win.getComputedStyle(doc.querySelector('.color')).color;
+    report('局部 CSS 正常应用',color()==='rgb(255, 0, 0)',color());
+    doc.querySelector('.tab-nav button:nth-child(2)').click();
+    report('首次选项卡可切换',doc.querySelector('.tab-panel:nth-child(2)').classList.contains('active'));
+    for(let i=0;i<100;i++)ld.edit.patchSlide(clone(model.slides[0]),0);
+    doc.querySelector('.tab-nav button:nth-child(2)').click();
+    doc.querySelector('.quiz-opts button').click();
+    report('100 次替换页面后选项卡仍可切换',doc.querySelector('.tab-panel:nth-child(2)').classList.contains('active'));
+    report('100 次替换页面后测验仍可答题',doc.querySelector('.quiz').classList.contains('answered'));
+    report('替换页面后 CSS 保持',color()==='rgb(255, 0, 0)');
+    const player = doc.querySelector('[data-ld-id="cw1"] .codewalk').__ldPlayer;
+    doc.querySelector('[data-ld-id="run1"]').click();
+    report('按钮可启动定位 codewalk',player.playing);
+    ld.edit.mount({slide:0});
+    report('进入编辑态暂停播放器',!player.playing);
+    doc.querySelector('[data-cw="run"]').click();
+    report('编辑态点击不启动播放器',!player.playing);
+    report('编辑坐标固定为 1280×720',ld.edit.geometry().width===1280 && ld.edit.geometry().height===720);
+    report('退场元素在编辑态可见',win.getComputedStyle(doc.querySelector('[data-ld-id="exit1"]')).opacity==='1');
+    ld.edit.render(model,0);
+    const submitted = clone(model.slides[0]); ld.edit.patchSlide(submitted,0); submitted.title='外部后改';
+    report('桥接输入与运行时隔离',JSON.stringify(model)===before && ld.data.slides[0].title!=='外部后改',JSON.stringify({parentUnchanged:JSON.stringify(model)===before,title:ld.data.slides[0].title}));
+    report('旧播放器已销毁',player.destroyed && player.timer===null);
+    ld.edit.unmount(); win.SLIDES.goTo(1); await delay(50);
+    const stepper = doc.querySelector('[data-ld-id="step1"]');
+    stepper.querySelector('.next').click();
+    report('SVG 标识重命名后步骤动作仍正确',stepper.querySelector('[data-ld-origin-id="dot"]').getAttribute('visibility')==='visible');
+    win.SLIDES.goTo(2); await delay(40);
+    const auto = doc.querySelector('[data-ld-id="auto1"] .codewalk').__ldPlayer;
+    report('进入页面才启动自动演示',auto.playing);
+    win.SLIDES.goTo(0);
+    report('离开页面暂停自动演示',!auto.playing);
+    ld.disposeRuntime(doc);
+    const home={spec:'lessondoc/2.0',kind:'home',course:{name:'首页验收'},lessons:[{n:1,title:'一',status:'ready',topics:['主题一','主题二']}],stages:[{label:'阶段',lessons:[1]}],home:{style:{heroGradient:{from:'#fff',to:'#123456'},cardRadius:24},sections:[{key:'mindmap',collapsedDepth:1},{key:'blocks',blocks:[{type:'text',id:'home1',md:'首页正文'}]}]}};
+    const hw=await load(home), hd=hw.document; await delay(50); hw.LESSONDOC.edit.mount();
+    hw.LESSONDOC.edit.render(home); hw.LESSONDOC.edit.render(home);
+    report('首页重渲染只有一个受控根',hd.querySelectorAll('.ld-home').length===1 && hd.querySelectorAll('.ld-appearance').length===1);
+    report('首页样式正常应用',hd.querySelector('.hero').style.backgroundImage.includes('gradient') && hd.querySelector('.lesson-card').style.borderRadius==='24px');
+    report('首页区块保留可编辑标识',hd.querySelectorAll('[data-ld-section]').length>=5);
+    report('首页几何使用实际长页高度',hw.LESSONDOC.edit.geometry().height>720);
+    const failures=results.querySelectorAll('.fail').length;
+    document.querySelector('#status').textContent=failures ? '验收失败：'+failures+' 项' : '全部通过：'+results.children.length+' 项';
+  } catch(error) { report('运行时异常',false,error.stack); document.querySelector('#status').textContent='验收异常'; }
+};
+</script></html>

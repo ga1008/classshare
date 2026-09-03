@@ -10,54 +10,170 @@
 <body>
   <noscript>本文档需要启用 JavaScript 才能查看。</noscript>
   <script type="application/json" id="lessondoc-data">
-  {
-    "spec": "lessondoc/2.0",
-    "kind": "home",
-    "theme": "sky",
-    "course": {
-      "name": "计算机网络原理",
-      "code": "SAMPLE-001",
-      "credits": 3,
-      "totalHours": 64,
-      "sessionCount": 32,
-      "perSessionSections": 2,
-      "assessment": "平时 40% + 期末 60%",
-      "intro": "从「网线里跑的是什么」讲到「整个互联网如何协作」——一门解释你每天都在用的系统的课。"
+{
+  "spec": "lessondoc/2.0",
+  "kind": "home",
+  "theme": "sky",
+  "course": {
+    "name": "计算机网络原理",
+    "code": "SAMPLE-001",
+    "credits": 3,
+    "totalHours": 64,
+    "sessionCount": 32,
+    "perSessionSections": 2,
+    "assessment": "平时 40% + 期末 60%",
+    "intro": "从「网线里跑的是什么」讲到「整个互联网如何协作」——一门解释你每天都在用的系统的课。"
+  },
+  "textbook": {
+    "title": "计算机网络(第8版)",
+    "author": "谢希仁",
+    "publisher": "电子工业出版社"
+  },
+  "stages": [
+    {
+      "label": "总纲 · 概述",
+      "lessons": [
+        1,
+        2
+      ]
     },
-    "textbook": { "title": "计算机网络(第8版)", "author": "谢希仁", "publisher": "电子工业出版社" },
-    "stages": [
-      { "label": "总纲 · 概述", "lessons": [1, 2] },
-      { "label": "物理层", "lessons": [3] }
-    ],
-    "lessons": [
-      { "n": 1, "title": "概述:互联网的组成与工作方式", "lab": false,
-        "topics": ["边缘/核心", "分组交换"], "status": "ready",
-        "summary": "互联网两大特点(连通性/共享)、边缘与核心、三种交换方式对比。" },
-      { "n": 2, "title": "★实验:看见你身边的网络", "lab": true,
-        "topics": ["ipconfig", "ping", "tracert"], "status": "ready",
-        "summary": "命令行观察本机网络配置,ping 往返与路由追踪实验。" },
-      { "n": 3, "title": "数据通信基础", "lab": false,
-        "topics": ["信道", "调制", "香农定理"], "status": "pending" }
-    ],
-    "conventions": {
-      "submit": "作业/实验报告一律在 lanshare 平台完成提交",
-      "aiPolicy": "允许用 AI 辅助理解,禁止直接抄答案"
+    {
+      "label": "物理层",
+      "lessons": [
+        3
+      ]
+    }
+  ],
+  "lessons": [
+    {
+      "n": 1,
+      "title": "概述:互联网的组成与工作方式",
+      "lab": false,
+      "topics": [
+        "边缘/核心",
+        "分组交换"
+      ],
+      "status": "ready",
+      "summary": "互联网两大特点(连通性/共享)、边缘与核心、三种交换方式对比。"
     },
-    "tabs": [
-      { "label": "环境准备", "blocks": [
-        { "type": "text", "md": "自带笔记本可装 **Wireshark**;机房电脑已预装全部软件。" },
-        { "type": "tasklist", "items": ["能打开命令行(Win+R → cmd)", "浏览器为较新版本 Chrome/Edge"] }
-      ] },
-      { "label": "AI 使用约定", "blocks": [
-        { "type": "callout", "tone": "think", "md": "**可以**:让 AI 解释概念、检查思路。**不可以**:直接抄 AI 生成的实验报告。" }
-      ] },
-      { "label": "考核方式", "blocks": [
-        { "type": "table", "head": ["项目", "占比"], "rows": [["平时(作业+实验+互动)", "40%"], ["期末考试", "60%"]] }
-      ] }
+    {
+      "n": 2,
+      "title": "★实验:看见你身边的网络",
+      "lab": true,
+      "topics": [
+        "ipconfig",
+        "ping",
+        "tracert"
+      ],
+      "status": "ready",
+      "summary": "命令行观察本机网络配置,ping 往返与路由追踪实验。"
+    },
+    {
+      "n": 3,
+      "title": "数据通信基础",
+      "lab": false,
+      "topics": [
+        "信道",
+        "调制",
+        "香农定理"
+      ],
+      "status": "ready",
+      "summary": "编辑器 2.1 能力示范:样式/自由排版/动作/代码步进/html 块。"
+    }
+  ],
+  "conventions": {
+    "submit": "作业/实验报告一律在 lanshare 平台完成提交",
+    "aiPolicy": "允许用 AI 辅助理解,禁止直接抄答案"
+  },
+  "tabs": [
+    {
+      "label": "环境准备",
+      "blocks": [
+        {
+          "type": "text",
+          "md": "自带笔记本可装 **Wireshark**;机房电脑已预装全部软件。"
+        },
+        {
+          "type": "tasklist",
+          "items": [
+            "能打开命令行(Win+R → cmd)",
+            "浏览器为较新版本 Chrome/Edge"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "AI 使用约定",
+      "blocks": [
+        {
+          "type": "callout",
+          "tone": "think",
+          "md": "**可以**:让 AI 解释概念、检查思路。**不可以**:直接抄 AI 生成的实验报告。"
+        }
+      ]
+    },
+    {
+      "label": "考核方式",
+      "blocks": [
+        {
+          "type": "table",
+          "head": [
+            "项目",
+            "占比"
+          ],
+          "rows": [
+            [
+              "平时(作业+实验+互动)",
+              "40%"
+            ],
+            [
+              "期末考试",
+              "60%"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "home": {
+    "sections": [
+      {
+        "key": "hero"
+      },
+      {
+        "key": "mindmap"
+      },
+      {
+        "key": "nav"
+      },
+      {
+        "key": "blocks",
+        "title": "课程说明",
+        "blocks": [
+          {
+            "type": "callout",
+            "tone": "think",
+            "md": "本示范包第 3 课演示 LessonDoc 2.1 编辑器模型;首页这一区块由 home.sections.blocks 渲染。"
+          },
+          {
+            "type": "button",
+            "label": "进入第 3 课",
+            "variant": "outline"
+          }
+        ]
+      },
+      {
+        "key": "tabs"
+      },
+      {
+        "key": "footer"
+      }
     ]
   }
+}
   </script>
   <script src="assets/course.js"></script>
   <script src="assets/deck-engine.js"></script>
+  <script src="assets/interact.js"></script>
 </body>
 </html>

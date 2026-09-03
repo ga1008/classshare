@@ -332,6 +332,12 @@ export function enhancePromptPoolInput(input, options = {}) {
         record(prompt = input.value) {
             return recordPromptForInput(input, prompt);
         },
+        destroy() {
+            document.removeEventListener('pointerdown', onOutsidePointer);
+            window.clearTimeout(debounceTimers.get(input));
+            debounceTimers.delete(input);
+            controller.hide();
+        },
     };
     input[CONTROLLER_KEY] = controller;
 
@@ -371,7 +377,7 @@ export function enhancePromptPoolInput(input, options = {}) {
     checkbox?.addEventListener('change', () => {
         shareRow.classList.toggle('is-off', !checkbox.checked);
     });
-    document.addEventListener('pointerdown', (event) => {
+    function onOutsidePointer(event) {
         if (
             event.target === input
             || panel.contains(event.target)
@@ -384,7 +390,8 @@ export function enhancePromptPoolInput(input, options = {}) {
             return;
         }
         controller.hide();
-    });
+    }
+    document.addEventListener('pointerdown', onOutsidePointer);
     panel.addEventListener('mousedown', (event) => {
         if (event.target.closest('[data-prompt-pool-use-index]')) event.preventDefault();
     });

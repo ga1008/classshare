@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,7 @@ import httpx
 from fastapi import HTTPException
 
 from ...core import ai_client
-from . import pack_service, render, validate
+from . import editor_service, pack_service, render, validate
 from .validate import LessonDocValidationError
 
 MODE_GENERATE = "generate"
@@ -90,6 +91,14 @@ def create_lessondoc_task(
     """
     mode = mode if mode in {MODE_GENERATE, MODE_REWRITE} else MODE_GENERATE
     pack_service.reclaim_stale_lessons(conn, int(pack["id"]))
+    # Stale-task reclamation may commit; take the short pack lock afterwards.
+    try:
+        pack = editor_service._lock_pack(conn, int(pack["id"]), int(pack["teacher_id"]))
+        state = editor_service._lesson_state(conn, pack, int(lesson_no))
+    except editor_service.EditorError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    if state["gen_status"] == "excluded":
+        raise HTTPException(409, "该课次已被排除，请先恢复")
     lessons = {l["lesson_no"]: l for l in pack_service.list_pack_lessons(conn, int(pack["id"]))}
     state = lessons.get(int(lesson_no))
     if state is not None and state.get("gen_status") in {"queued", "running"}:
@@ -119,20 +128,7 @@ def create_lessondoc_task(
 # ---------------------------------------------------------------- 上下文构建
 
 def _find_lesson_entry_row(conn, pack: dict[str, Any], lesson_no: int):
-    folder = pack_service._find_child(
-        conn,
-        teacher_id=int(pack["teacher_id"]),
-        parent_id=int(pack["root_material_id"]),
-        name=f"lesson_{int(lesson_no)}",
-    )
-    if folder is None:
-        return None
-    return pack_service._find_child(
-        conn,
-        teacher_id=int(pack["teacher_id"]),
-        parent_id=int(folder["id"]),
-        name=f"lesson_{int(lesson_no)}.html",
-    )
+    return pack_service.find_lesson_entry(conn, pack, lesson_no)
 
 
 def _load_lesson_deck(conn, pack: dict[str, Any], lesson_no: int) -> dict[str, Any] | None:
@@ -305,15 +301,6 @@ def _claim_lesson(conn, *, pack_id: int, lesson_no: int) -> bool:
     return claimed
 
 
-def _derive_summary(deck: dict[str, Any]) -> str:
-    for slide in reversed(deck.get("slides") or []):
-        if isinstance(slide, dict) and slide.get("layout") == "end":
-            summary = _safe_text(slide.get("summary"), 120)
-            if summary:
-                return summary
-    return _safe_text(deck.get("subtitle"), 120)
-
-
 async def run_lessondoc_task(
     pack_id: int,
     lesson_no: int,
@@ -326,6 +313,7 @@ async def run_lessondoc_task(
 
     pack_id = int(pack_id)
     lesson_no = int(lesson_no)
+    claim_stamp = None
     try:
         with get_db_connection() as conn:
             if lesson_no <= 0:
@@ -335,6 +323,8 @@ async def run_lessondoc_task(
             pack = pack_service.get_pack(conn, pack_id)
             if not pack or pack.get("status") != "active":
                 raise HTTPException(410, "学习文档包不存在或已归档。")
+            claim_stamp = editor_service._lesson_state(conn, pack, lesson_no)["updated_at"]
+            base_revision = editor_service.lesson_revision(conn, pack, lesson_no)
             if not user_hint:
                 states = {l["lesson_no"]: l for l in pack_service.list_pack_lessons(conn, pack_id)}
                 user_hint = str((states.get(lesson_no) or {}).get("user_hint") or "")
@@ -349,31 +339,13 @@ async def run_lessondoc_task(
             if not pack or pack.get("status") != "active":
                 raise HTTPException(410, "学习文档包已被删除,生成结果无处落地。")
             try:
-                warnings = pack_service.write_lesson_files(conn, pack, lesson_no, ai_result)
-            except LessonDocValidationError as exc:
+                editor_service.save_document(conn, pack_id=pack_id, teacher_id=int(pack["teacher_id"]), lesson_no=lesson_no,
+                                                     document=ai_result, expected_revision=base_revision, operation_id="generate_" + uuid.uuid4().hex,
+                                                     source="ai_generate", allow_loss=True, generation_claim=claim_stamp)
+            except (LessonDocValidationError, editor_service.EditorError) as exc:
+                if isinstance(exc, editor_service.EditorError) and exc.status == 409:
+                    raise
                 raise HTTPException(500, f"AI 输出不符合 LessonDoc 规范:{exc}")
-
-            # 回填清单:status=ready + summary(供后续课次上下文引用)+ 重渲首页
-            manifest = pack_service.read_manifest(conn, pack)
-            summary = _derive_summary(ai_result)
-            for lesson in manifest.get("lessons") or []:
-                if isinstance(lesson, dict) and int(lesson.get("n") or 0) == lesson_no:
-                    lesson["status"] = "ready"
-                    if summary:
-                        lesson["summary"] = summary
-                    title = _safe_text(ai_result.get("title"), 120)
-                    if title:
-                        lesson["title"] = title
-            manifest_warnings = pack_service.write_manifest(conn, pack, manifest)
-            all_warnings = list(warnings) + [w for w in manifest_warnings if w not in warnings]
-
-            pack_service.update_lesson_state(
-                conn,
-                pack_id=pack_id,
-                lesson_no=lesson_no,
-                gen_status="ready",
-                warnings=all_warnings,
-            )
             conn.commit()
     except Exception as exc:
         error_message = exc.detail if isinstance(exc, HTTPException) else str(exc)
@@ -381,13 +353,9 @@ async def run_lessondoc_task(
             from ...database import get_db_connection as _get_conn
 
             with _get_conn() as conn:
-                pack_service.update_lesson_state(
-                    conn,
-                    pack_id=pack_id,
-                    lesson_no=lesson_no,
-                    gen_status="failed",
-                    warnings=[_safe_text(error_message, 200)],
-                )
+                if claim_stamp is not None:
+                    conn.execute("UPDATE course_doc_pack_lessons SET gen_status='failed',warnings_json=?,updated_at=? WHERE pack_id=? AND lesson_no=? AND gen_status='running' AND updated_at=?",
+                                 (json.dumps([_safe_text(error_message, 200)], ensure_ascii=False), _now_iso(), pack_id, lesson_no, claim_stamp))
                 conn.commit()
         except Exception as inner_exc:  # pragma: no cover
             print(f"[LESSONDOC] failed to persist error state: {inner_exc}")
@@ -535,6 +503,7 @@ async def rewrite_slide_with_ai(
         pack = pack_service.get_pack(conn, int(pack_id))
         if not pack or pack.get("status") != "active":
             raise HTTPException(404, "学习文档包不存在或已归档")
+        base_revision = editor_service.lesson_revision(conn, pack, int(lesson_no))
         system_prompt, user_message, deck = build_slide_rewrite_context(
             conn, pack=pack, lesson_no=int(lesson_no), slide_no=int(slide_no),
             user_hint=user_hint,
@@ -567,6 +536,8 @@ async def rewrite_slide_with_ai(
 
     index = int(slide_no) - 1
     original_count = len(deck["slides"])
+    if deck["slides"][index].get("id"):
+        new_slide["id"] = deck["slides"][index]["id"]
     deck["slides"][index] = new_slide
 
     # 落盘前先在内存全量校验:若新页被降级丢弃(总页数变少),直接拒绝,
@@ -584,10 +555,11 @@ async def rewrite_slide_with_ai(
         pack = pack_service.get_pack(conn, int(pack_id))
         if not pack or pack.get("status") != "active":
             raise HTTPException(410, "学习文档包已被删除")
-        warnings = pack_service.write_lesson_files(conn, pack, int(lesson_no), deck)
-        pack_service.update_lesson_state(
-            conn, pack_id=int(pack_id), lesson_no=int(lesson_no),
-            warnings=warnings if warnings else None,
-        )
+        try:
+            saved = editor_service.save_document(conn, pack_id=int(pack_id), teacher_id=int(pack["teacher_id"]), lesson_no=int(lesson_no),
+                                                 document=deck, expected_revision=base_revision, operation_id="rewrite_" + uuid.uuid4().hex,
+                                                 source="ai_rewrite", allow_loss=True)
+        except editor_service.EditorError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
         conn.commit()
-    return {"warnings": warnings, "slide_no": int(slide_no)}
+    return {"warnings": saved["warnings"], "slide_no": int(slide_no), "revision": saved["revision"]}

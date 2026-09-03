@@ -23,9 +23,11 @@
 
   var deck, slides, cur = 0, ratio, canvasW = 1280;
   var progressEl, pageEl, overviewEl;
+  var locked = false;          /* 编辑态:禁用键盘/触屏/hash 翻页,不写 hash */
 
   /* ---------- 布局:等比缩放虚拟画布 ---------- */
   function currentCanvasW() {
+    if (locked) return 1280;
     if (ratio === "fit") {
       var w = Math.round(CANVAS_H * window.innerWidth / Math.max(1, window.innerHeight));
       return Math.max(640, Math.min(2400, w));
@@ -34,6 +36,7 @@
   }
 
   function layout() {
+    if (!slides || !slides.length) return;
     canvasW = currentCanvasW();
     var s = Math.min(window.innerWidth / canvasW, window.innerHeight / CANVAS_H) * 0.97;
     slides.forEach(function (sl) {
@@ -51,7 +54,7 @@
 
   /* ---------- 内容溢出保险:整体缩小 .slide-body ---------- */
   function fitSlide(sl) {
-    if (!sl) return;
+    if (!sl || locked) return;
     var body = sl.querySelector(".slide-body");
     if (!body || body.dataset.fitted) return;
     /* 需要可见才能测量 */
@@ -118,11 +121,13 @@
       f.classList.toggle("visible", !!showAllFragments);
     });
     applyExitMarkers(sl);
-    if (location.hash !== "#/" + (cur + 1)) {
+    if (!locked && location.protocol !== "about:" && location.hash !== "#/" + (cur + 1)) {
       history.replaceState(null, "", "#/" + (cur + 1));
     }
     updateHud();
-    requestAnimationFrame(function () { fitSlide(sl); });
+    document.dispatchEvent(new CustomEvent("lessondoc:slidechange", { detail: { index: cur } }));
+    /* setTimeout 而非 rAF:后台标签页 rAF 不触发,溢出保险会失效 */
+    setTimeout(function () { fitSlide(sl); }, 0);
   }
   function next() { if (!stepFragment(slides[cur], 1)) { if (cur < slides.length - 1) goTo(cur + 1, false); } }
   function prev() { if (!stepFragment(slides[cur], -1)) { if (cur > 0) goTo(cur - 1, true); } }
@@ -139,6 +144,9 @@
       var bare = sl.classList.contains("slide--title") || sl.classList.contains("slide--section") ||
                  sl.classList.contains("slide--end");
       if (bare) return;
+      /* 幂等:重渲/单页替换后再次调用只更新页码,不重复注入 */
+      var existingFoot = sl.querySelector(":scope > .slide-chrome-foot .foot-no");
+      if (existingFoot) { existingFoot.textContent = (i + 1) + " / " + slides.length; return; }
       var head = document.createElement("div");
       head.className = "slide-chrome-head";
       head.innerHTML = '<span class="sec-name"></span><span class="head-course"></span>';
@@ -257,6 +265,7 @@
     return tag === "input" || tag === "textarea" || tag === "select" || t.isContentEditable;
   }
   function onKey(e) {
+    if (locked) return;
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     var t = e.target;
     if (isFormTarget(t)) return;                       /* 输入焦点在表单内不翻页 */
@@ -289,7 +298,7 @@
       x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
     }, { passive: true });
     document.addEventListener("touchend", function (e) {
-      if (x0 === null || overviewEl.classList.contains("open")) return;
+      if (locked || x0 === null || overviewEl.classList.contains("open")) return;
       var t = e.changedTouches[0];
       var dx = t.clientX - x0, dy = t.clientY - y0;
       x0 = null;
@@ -301,36 +310,71 @@
 
   /* ---------- hash ---------- */
   function pageFromHash() {
+    var total = slides ? slides.length : document.querySelectorAll(".deck > section.slide").length;
     var m = /^#\/(\d+)/.exec(location.hash);
-    return m ? Math.max(0, Math.min(slides.length - 1, parseInt(m[1], 10) - 1)) : 0;
+    return m ? Math.max(0, Math.min(Math.max(0, total - 1), parseInt(m[1], 10) - 1)) : 0;
   }
 
   /* ---------- 初始化 ---------- */
-  function init() {
+  /* 绑定(或重新绑定)当前 .deck 下的幻灯片:重渲/单页替换后可重复调用 */
+  function bindDeck(start, showAll) {
     deck = document.querySelector(".deck");
-    if (!deck) return;
+    if (!deck) return false;
     slides = Array.prototype.slice.call(deck.querySelectorAll(":scope > section.slide"));
-    if (!slides.length) return;
+    if (!slides.length) return false;
+    slides.forEach(function (sl) { sl.classList.remove("active"); });
+    cur = Math.max(0, Math.min(slides.length - 1, start || 0));
+    injectChrome();
+    goTo(cur, !!showAll);
+    layout();
+    return true;
+  }
 
+  function init() {
+    if (!document.querySelector(".deck")) return;
     try { ratio = localStorage.getItem(STORE_KEY) || "16:9"; } catch (e) { ratio = "16:9"; }
     if (ratio !== "fit" && !RATIOS[ratio]) ratio = "16:9";
 
-    injectChrome();
     buildHud();
     buildOverview();
     bindTouch();
 
     var start = pageFromHash();
-    goTo(start, start > 0);         /* 分享/刷新到中间页时,该页 fragment 全部展开 */
-    layout();
+    if (!bindDeck(start, start > 0)) return;   /* 分享/刷新到中间页时,该页 fragment 全部展开 */
 
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", layout);
     window.addEventListener("hashchange", function () {
+      if (locked) return;
       var p = pageFromHash();
       if (p !== cur) goTo(p, true);
     });
   }
+
+  /* 2.1 对外接口:动作运行时(goto/next/prev)与编辑桥接(reinit/setLocked)使用 */
+  window.SLIDES = {
+    goTo: function (n) { if (slides && slides.length) goTo(n, true); },
+    next: function () { if (slides && slides.length) next(); },
+    prev: function () { if (slides && slides.length) prev(); },
+    current: function () { return cur; },
+    count: function () { return slides ? slides.length : 0; },
+    reinit: function (index) { return bindDeck(index || 0, true); },
+    refreshSlide: function (index) {
+      if (!deck || !slides) return false;
+      var node = deck.querySelectorAll(":scope > section.slide")[index];
+      if (!node) return false;
+      slides[index] = node;
+      injectChrome();
+      node.style.width = canvasW + "px";
+      var scale = Math.min(window.innerWidth / canvasW, window.innerHeight / CANVAS_H) * 0.97;
+      node.style.transform = "translate(-50%, -50%) scale(" + scale + ")";
+      node.classList.toggle("active", index === cur);
+      fitSlide(node);
+      return true;
+    },
+    setLocked: function (v) { locked = !!v; layout(); },
+    isLocked: function () { return locked; }
+  };
 
   document.addEventListener("DOMContentLoaded", init);
 })();

@@ -104,6 +104,15 @@ LEGACY_HOME = """
 
 
 class TestLegacyLessonExtraction(unittest.TestCase):
+    def test_direct_media_retains_paths_and_video_poster(self):
+        raw='<section class="slide"><div class="slide-body"><img src="../assets/a.png" alt="示意图"><audio><source src="../assets/a.mp3"></audio><video src="../assets/a.mp4" poster="../assets/poster.png"></video></div></section>'
+        deck,warnings=extract_deck_from_legacy_html(raw,lesson_no=1)
+        blocks=deck['slides'][0]['blocks']
+        self.assertEqual([b['kind'] for b in blocks],['image','audio','video'])
+        self.assertEqual(blocks[0]['caption'],'示意图')
+        self.assertEqual(blocks[2]['poster'],'../assets/poster.png')
+        self.assertEqual(sum('需要随包' in w for w in warnings),3)
+
     def setUp(self):
         self.deck, self.warnings = extract_deck_from_legacy_html(
             LEGACY_LESSON, lesson_no=3, course_name="计算机网络原理"

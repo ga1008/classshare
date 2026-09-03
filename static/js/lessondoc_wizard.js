@@ -1,3 +1,5 @@
+import {openLessonDocPrompt} from './lessondoc_prompt.js';
+import {parseStagesText,stagesToText} from './lessondoc_stages.js';
 /**
  * LessonDoc 学习文档包向导(课程页入口)。
  *
@@ -120,47 +122,6 @@ function defaultLessonRows(course) {
  * @param {string} text
  * @returns {{label: string, lessons: number[]}[]}
  */
-function parseStagesText(text) {
-    const stages = [];
-    for (const rawLine of String(text || '').split('\n')) {
-        const line = rawLine.trim();
-        if (!line) continue;
-        const m = line.match(/^(.+?)[:：]\s*(.+)$/);
-        if (!m) continue;
-        const label = m[1].trim();
-        const lessons = [];
-        for (const part of m[2].split(/[,，、\s]+/)) {
-            if (!part) continue;
-            const range = part.match(/^(\d+)\s*[-~—～]\s*(\d+)$/);
-            if (range) {
-                const lo = Number(range[1]); const hi = Number(range[2]);
-                for (let n = Math.min(lo, hi); n <= Math.max(lo, hi); n += 1) lessons.push(n);
-            } else if (/^\d+$/.test(part)) {
-                lessons.push(Number(part));
-            }
-        }
-        if (label && lessons.length) stages.push({ label, lessons });
-    }
-    return stages;
-}
-
-/** stages 数组 → 可编辑的多行文本（连续段压缩为 起-止）。 */
-function stagesToText(stages) {
-    return (stages || []).map((stage) => {
-        const nums = [...(stage.lessons || [])].sort((a, b) => a - b);
-        const parts = [];
-        let start = nums[0];
-        for (let i = 1; i <= nums.length; i += 1) {
-            if (i === nums.length || nums[i] !== nums[i - 1] + 1) {
-                const end = nums[i - 1];
-                parts.push(start === end ? String(start) : `${start}-${end}`);
-                start = nums[i];
-            }
-        }
-        return `${stage.label}: ${parts.join(', ')}`;
-    }).join('\n');
-}
-
 function renderCreateView(course) {
     const rows = defaultLessonRows(course);
     const themeCards = THEMES.map((theme, i) => `
@@ -252,7 +213,7 @@ function renderCreateView(course) {
 
 /* ---------------------------------------------------------------- 管理面板 */
 
-function lessonRowHtml(lesson) {
+function lessonRowHtml(lesson,packId) {
     const [label, color] = STATUS_LABELS[lesson.gen_status] || [lesson.gen_status, '#64748b'];
     const warningBadge = (lesson.warnings || []).length
         ? `<span title="${esc(lesson.warnings.join('\n'))}" style="cursor:help;color:#d97706;">⚠${lesson.warnings.length}</span>`
@@ -273,7 +234,7 @@ function lessonRowHtml(lesson) {
             <td style="padding:6px 10px;"><span style="color:${color};font-weight:600;">${label}</span> ${warningBadge}</td>
             <td style="color:#64748b;font-size:.85em;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:6px 10px;"
                 title="${esc(lesson.user_hint || '')}">${esc(lesson.user_hint || '')}</td>
-            <td style="text-align:right;white-space:nowrap;padding:6px 10px;">${actions}</td>
+            <td style="text-align:right;white-space:nowrap;padding:6px 10px;"><a class="btn btn-outline btn-sm" href="/materials/lessondoc-editor/${Number(packId)}?lesson=${lesson.lesson_no}&return_to=${encodeURIComponent(location.pathname+location.search)}">编辑</a>${actions}</td>
         </tr>`;
 }
 
@@ -289,6 +250,7 @@ async function renderManageView(packSummary, course) {
             <span class="academic-badge is-accent">lessondoc ${esc(String(pack.spec_version || '2.0').replace('lessondoc/', ''))}</span>
             <strong data-ld-progress>${pack.ready_count} / ${pack.total_count} 课就绪</strong>
             <a class="btn btn-outline btn-sm" href="${esc(pack.render_shell_url)}" target="_blank" rel="noopener">打开首页</a>
+            <a class="btn btn-outline btn-sm" href="/materials/lessondoc-editor/${pack.id}?lesson=0&return_to=${encodeURIComponent(location.pathname+location.search)}">编辑首页</a>
             <label style="font-size:.9em;">主题
                 <select data-ld-theme>${themeOptions}</select>
             </label>
@@ -307,7 +269,7 @@ async function renderManageView(packSummary, course) {
         <div data-ld-stages-panel style="display:none;margin-bottom:10px;border:1px solid #e2e8f0;border-radius:10px;padding:12px;"></div>
         <div style="max-height:340px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;">
             <table style="width:100%;border-collapse:collapse;font-size:.92em;">
-                <tbody data-ld-lessons>${(pack.lessons || []).map(lessonRowHtml).join('')}</tbody>
+                <tbody data-ld-lessons>${(pack.lessons || []).map(lesson=>lessonRowHtml(lesson,pack.id)).join('')}</tbody>
             </table>
         </div>
         <div data-ld-bind-panel style="display:none;margin-top:12px;border:1px solid #e2e8f0;border-radius:10px;padding:12px;"></div>
@@ -342,7 +304,7 @@ async function renderManageView(packSummary, course) {
             const fresh = data.pack;
             const tbody = modalEl?.querySelector('[data-ld-lessons]');
             const progress = modalEl?.querySelector('[data-ld-progress]');
-            if (tbody) tbody.innerHTML = (fresh.lessons || []).map(lessonRowHtml).join('');
+            if (tbody) tbody.innerHTML = (fresh.lessons || []).map(lesson=>lessonRowHtml(lesson,packId)).join('');
             if (progress) progress.textContent = `${fresh.ready_count} / ${fresh.total_count} 课就绪`;
             syncBatchProgress(fresh.lessons, fresh.ready_count, fresh.total_count);
             const busy = (fresh.lessons || []).some((l) => l.gen_status === 'queued' || l.gen_status === 'running');
@@ -364,17 +326,13 @@ async function renderManageView(packSummary, course) {
             if (gen) {
                 const n = Number(gen.dataset.n);
                 const isRewrite = gen.dataset.rewrite === '1';
-                const hint = prompt(
-                    isRewrite ? `第${n}课 AI 重写:请输入改进要求(可留空)` : `第${n}课 AI 生成:补充提示(可留空)`,
-                    '');
-                if (hint === null) return;
-                const result = await api(`/api/lessondoc/packs/${packId}/lessons/${n}/generate`, {
-                    method: 'POST',
-                    body: JSON.stringify({ mode: isRewrite ? 'rewrite' : 'generate', user_hint: hint }),
+                openLessonDocPrompt({title:isRewrite ? `第 ${n} 课 AI 重写` : `第 ${n} 课 AI 生成`,
+                    featureKey:isRewrite?'lessondoc-lesson-rewrite':'lessondoc-lesson-generate',
+                    description:'补充教学目标、内容要求或改进方向。生成在后台继续，可在课次列表查看进度。',
+                    submit:hint=>api(`/api/lessondoc/packs/${packId}/lessons/${n}/generate`, {
+                        method:'POST',body:JSON.stringify({mode:isRewrite?'rewrite':'generate',user_hint:hint})}),
+                    onSuccess:async(result)=>{notify(result.message);await reload();if(!pollTimer)pollTimer=setInterval(reload,5000);}
                 });
-                notify(result.message);
-                await reload();
-                if (!pollTimer) pollTimer = setInterval(reload, 5000);
             } else if (exclude || restore) {
                 const n = Number((exclude || restore).dataset.n);
                 await api(`/api/lessondoc/packs/${packId}/lessons/${n}`, {

@@ -15,6 +15,8 @@ import re
 from typing import Any
 
 from . import spec
+from .validate_html import sanitize_html_body
+from lxml import html as lxml_html
 
 _DATA_SCRIPT_RE = re.compile(
     r"<script[^>]*id=[\"']" + re.escape(spec.DATA_SCRIPT_ID) + r"[\"'][^>]*>([\s\S]*?)</script>",
@@ -47,18 +49,24 @@ def _shell(
     asset_prefix: str,
     lesson_no: int | None = None,
     include_slides_assets: bool,
+    base_href: str | None = None,
+    asset_version: str = "",
 ) -> str:
+    def asset_url(name):
+        return _esc_attr(asset_prefix + name + ("?v=" + asset_version if asset_version else ""))
     head_links = [
-        f'<link rel="stylesheet" href="{asset_prefix}course.css">',
+        f'<link rel="stylesheet" href="{asset_url("course.css")}">',
     ]
     if include_slides_assets:
-        head_links.append(f'<link rel="stylesheet" href="{asset_prefix}slides.css">')
-    head_links.append(f'<link rel="stylesheet" href="{asset_prefix}themes.css">')
+        head_links.append(f'<link rel="stylesheet" href="{asset_url("slides.css")}">')
+    head_links.append(f'<link rel="stylesheet" href="{asset_url("themes.css")}">')
 
-    scripts = [f'<script src="{asset_prefix}course.js"></script>']
+    scripts = [f'<script src="{asset_url("course.js")}"></script>']
     if include_slides_assets:
-        scripts.append(f'<script src="{asset_prefix}slides.js"></script>')
-    scripts.append(f'<script src="{asset_prefix}deck-engine.js"></script>')
+        scripts.append(f'<script src="{asset_url("slides.js")}"></script>')
+    scripts.append(f'<script src="{asset_url("deck-engine.js")}"></script>')
+    # 2.1 行为运行时(动作/codewalk/编辑桥接);旧壳页缺此行时由 deck-engine 自动注入
+    scripts.append(f'<script src="{asset_url("interact.js")}"></script>')
 
     lesson_attr = f' data-lesson="{int(lesson_no)}"' if lesson_no else ""
     body_class = ' class="slides-page"' if include_slides_assets else ""
@@ -69,6 +77,7 @@ def _shell(
         '  <meta charset="utf-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"  <title>{_esc_attr(title)}</title>\n"
+        + (f'  <base href="{_esc_attr(base_href)}">\n' if base_href else "")
         + "".join(f"  {link}\n" for link in head_links)
         + "</head>\n"
         f"<body{body_class}>\n"
@@ -108,6 +117,17 @@ def render_home_html(manifest: dict[str, Any]) -> str:
     )
 
 
+def render_editor_preview(document, *, root_material_id, lesson_no, asset_version):
+    """Platform scripts only; package-relative media still uses the authorized route."""
+    prefix = f"/materials/render/{int(root_material_id)}/"
+    if lesson_no:
+        prefix += f"lesson_{int(lesson_no)}/"
+    return _shell(kind=spec.DOC_KIND_LESSON if lesson_no else spec.DOC_KIND_HOME,
+                  title=document.get("title") or (document.get("course") or {}).get("name") or "文档预览",
+                  payload=document, asset_prefix="/static/lessondoc/2.0/", lesson_no=lesson_no or None,
+                  include_slides_assets=bool(lesson_no), base_href=prefix, asset_version=asset_version)
+
+
 def is_lessondoc_html(html_text: str) -> bool:
     """判断一段 HTML 是否为 LessonDoc 壳(带 data-lessondoc 标志)."""
     if not html_text:
@@ -126,7 +146,7 @@ def extract_embedded_json(html_text: str) -> dict[str, Any] | None:
     raw = match.group(1).replace("<\\/", "</")
     try:
         payload = json.loads(raw)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         return None
     return payload if isinstance(payload, dict) else None
 
@@ -135,11 +155,15 @@ def extract_embedded_json(html_text: str) -> dict[str, Any] | None:
 
 _TEXT_FIELDS = ("md", "text", "title", "sub", "subtitle", "label", "value",
                 "q", "question", "explain", "summary", "nextUp", "hint",
-                "caption", "code", "output", "line", "mark", "note")
+                "caption", "code", "output", "out", "line", "mark", "note")
 
 
 def _collect_text(value: Any, out: list[str]) -> None:
     if isinstance(value, dict):
+        if value.get("type") == "html":
+            body = sanitize_html_body(value.get("body"), [], where="text")
+            if body:
+                out.append(lxml_html.fragment_fromstring(body, create_parent="div").text_content().strip())
         for key in _TEXT_FIELDS:
             v = value.get(key)
             if isinstance(v, str) and v.strip():
@@ -147,7 +171,7 @@ def _collect_text(value: Any, out: list[str]) -> None:
         for key in ("blocks", "left", "right", "items", "slides", "steps",
                     "tabs", "areas", "options", "rows", "head", "children",
                     "nodes", "edges", "actors", "messages", "layers", "links",
-                    "lessons", "stages", "stage"):
+                    "lessons", "stages", "stage", "objects", "overlays", "globals", "lines", "sections", "home"):
             if key in value:
                 _collect_text(value[key], out)
     elif isinstance(value, list):
@@ -172,6 +196,8 @@ def extract_deck_text(payload: dict[str, Any], *, max_chars: int = 12000) -> str
     _collect_text(payload.get("lessons"), parts)
     _collect_text(payload.get("stages"), parts)
     _collect_text(payload.get("tabs"), parts)
+    _collect_text(payload.get("globals"), parts)
+    _collect_text(payload.get("home"), parts)
     seen: set[str] = set()
     unique: list[str] = []
     for part in parts:

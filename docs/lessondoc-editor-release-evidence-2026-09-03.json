@@ -1,0 +1,136 @@
+{
+  "date": "2026-09-03",
+  "stage": "local_acceptance_complete",
+  "historical_audit_unchanged": true,
+  "backend": {
+    "total": 1668,
+    "passed": 1654,
+    "skipped": 14,
+    "seconds": 66.47,
+    "isolation": "SQLite; preinitialized deferred points, streak and achievement tables",
+    "log_sha256": "8ec29892e0c6edb4631cc0d3006103e56b045a40f048f5fe6850489a7e7fb7b5"
+  },
+  "frontend": {
+    "files": 27,
+    "passed": 94,
+    "typecheck": "passed",
+    "production_build": "passed"
+  },
+  "postgresql": {
+    "version": 16,
+    "location": "local",
+    "checks": [
+      "same document concurrent save: one success and one conflict",
+      "idempotent retry",
+      "different lessons preserve both home projections",
+      "injected projection failure rolls back file and receipt",
+      "history restore"
+    ],
+    "temporary_schema_removed": true,
+    "runner": "tools/validate_lessondoc_editor_postgres.py --run-local"
+  },
+  "runtime": {
+    "checks_passed": 24,
+    "patch_cycles": 100,
+    "asset_sha256": {
+      "course.css": "23006ec5a14487f69fd54bb77dfa814e06dcd3b75bd8988959b9a273c83a58b7",
+      "slides.css": "6dc13ba0794959c183689047c25e6054f070d83088f4e591d1b426bbd5468574",
+      "themes.css": "3280ec263d050e34e5fdfb13e213bcce907355ee678da0a498c0b129d60a7cfb",
+      "course.js": "d6d3cf6db4eced01d936c9517004a93147700ded1a7aa62f3b58fb4be92d1deb",
+      "slides.js": "fcf1d53c2a4ecd5a9938f5117e92ad964e87b8a590860e76686aafc7425c27b1",
+      "deck-engine.js": "abbdf1b097247902151a0de87208c3e7e25c4f67de23cc82ca81561102ad2476",
+      "interact.js": "db66f5cb98d8be802d8bdfa73392606c8b988838b1985612ea63149818087864"
+    }
+  },
+  "performance": {
+    "pages": 40,
+    "objects": 1600,
+    "patch_cycles": 100,
+    "full_load_ms": 142.7,
+    "patch_mean_ms": 1.61,
+    "patch_p95_ms": 3.2,
+    "unique_ids": true,
+    "environment": "local Chromium browser, warm local runtime; not a concurrent server load benchmark"
+  },
+  "browser": {
+    "basic_edit_undo_redo_save": true,
+    "palette_native_drag_flow_and_cover": true,
+    "group_scale_rotate_ungroup": {
+      "position_error_px_lt": 0.005,
+      "width_height_unchanged": true
+    },
+    "home_edit_and_block_transfer": true,
+    "html_sanitization_and_static_conversion": {
+      "origin_error_px": 0.0116,
+      "no_duplicate_footer_or_editor_layer": true,
+      "size_color_preserved": true
+    },
+    "media_upload_template_rename_insert": true,
+    "history_restore": true,
+    "corrupt_document_recovery": true,
+    "reader_stable_slide_link": true,
+    "whiteboard_pen_text_popovers": true,
+    "ai_original_candidate_visual_switch_and_apply": true,
+    "ai_backend": "local mock; acceptance does not evaluate actual model output quality",
+    "prompt_pool_opt_out_verified_in_database": true,
+    "narrow_viewport": {
+      "width": 390,
+      "height": 844,
+      "body_scroll_width": 390,
+      "drawers_work": true
+    },
+    "student_heartbeat": {
+      "duration_seconds": 45,
+      "active_seconds": 45,
+      "http_status": 200
+    }
+  },
+  "legacy_and_permissions": {
+    "pack_id": 7,
+    "root_id": 10012,
+    "media_count": 1,
+    "media_http_status": 200,
+    "original_unchanged": true,
+    "prompt_pool_opt_out": true,
+    "class_offering_id": 972,
+    "otherStudent": {
+      "read": 303,
+      "editor": 403,
+      "editor_api": 403
+    },
+    "otherTeacher": {
+      "read": 303,
+      "editor": 403,
+      "editor_api": 403
+    },
+    "student": {
+      "read": 200,
+      "editor": 403,
+      "editor_api": 403
+    }
+  },
+  "export": {
+    "zip_files": 20,
+    "runtime_assets": true,
+    "editor_not_bundled": true,
+    "media_retained": true,
+    "extracted_home_and_lesson_browser_verified": true,
+    "image_natural_width": 640,
+    "all_seven_asset_urls_package_local": true,
+    "transport": "isolated local static HTTP server; file protocol not separately exercised"
+  },
+  "host_diagnostic": {
+    "message": "MutationObserver.observe parameter 1 is not of type Node",
+    "attribution": "CDP exceptionThrown matched Electron Isolated Context, isDefault=false; stack includes node:electron/js2c/sandbox_bundle",
+    "default_page_context_error": false
+  },
+  "limits": [
+    "Static HTML conversion cannot preserve dynamic player state or interactive execution.",
+    "History restores document JSON and reports missing resources; deleted media bytes are not independently archived.",
+    "AI acceptance uses deterministic local mock output.",
+    "Feature switch pauses new editor writes; rollback must retain the current runtime and validators."
+  ],
+  "release": {
+    "status": "pending"
+  }
+}

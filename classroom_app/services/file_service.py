@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
+import os
 import shutil
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Optional
@@ -42,6 +44,32 @@ def resolve_global_file_path(file_hash: str) -> Path | None:
 
 def global_file_write_path(file_hash: str) -> Path:
     return _build_sharded_path(GLOBAL_FILES_DIR, _normalize_file_hash(file_hash))
+
+
+def store_file_object_globally(file_object) -> dict:
+    """Store a bounded, verified seekable stream without exposing a partial hash file."""
+    file_object.seek(0)
+    digest, size = hashlib.sha256(), 0
+    while chunk := file_object.read(HASH_CHUNK_SIZE):
+        digest.update(chunk)
+        size += len(chunk)
+    file_hash = digest.hexdigest()
+    existing = resolve_global_file_path(file_hash)
+    if existing:
+        return {"hash": file_hash, "size": size, "path": str(existing)}
+    target = global_file_write_path(file_hash)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=target.parent, prefix=".upload-", delete=False) as output:
+            temporary_name = output.name
+            file_object.seek(0)
+            shutil.copyfileobj(file_object, output, WRITE_CHUNK_SIZE)
+        os.replace(temporary_name, target)
+    finally:
+        if temporary_name and os.path.exists(temporary_name):
+            os.unlink(temporary_name)
+    return {"hash": file_hash, "size": size, "path": str(target)}
 
 
 def _build_sharded_path(root: Path, file_hash: str) -> Path:

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from pathlib import PurePosixPath
 from typing import Any
 
 from ...db.schema_course_doc_packs import ensure_course_doc_pack_schema
@@ -33,6 +34,10 @@ def _now_iso() -> str:
 
 class LessonDocPackError(ValueError):
     """包操作的业务错误(调用方转 4xx)."""
+
+
+class LessonDocWriteConflict(LessonDocPackError):
+    """A material reference changed after it was read inside a pack transaction."""
 
 
 # ---------------------------------------------------------------- 行辅助(惰性导入)
@@ -54,13 +59,28 @@ def _load_file_text(conn, material_row) -> str | None:
     return load_material_file_text(conn, material_row)
 
 
-def _update_file_content(conn, material_id: int, content: str, now: str) -> None:
+def _update_file_content(conn, material_id: int, content: str, now: str, *, expected_hash) -> None:
     _, _, _, store = _row_helpers()
     file_hash, file_size = store(content)
-    conn.execute(
-        "UPDATE course_materials SET file_hash = ?, file_size = ?, updated_at = ? WHERE id = ?",
-        (file_hash, file_size, now, int(material_id)),
+    cursor = conn.execute(
+        """UPDATE course_materials SET file_hash = ?, file_size = ?, updated_at = ?,
+           ai_parse_status = 'idle', ai_parse_result_json = NULL,
+           ai_optimize_status = 'idle', ai_optimized_markdown = NULL,
+           check_questions_json = '', check_questions_status = 'idle',
+           check_questions_error = '', check_questions_generated_at = NULL
+           WHERE id = ? AND COALESCE(file_hash, '') = ?""",
+        (file_hash, file_size, now, int(material_id), str(expected_hash or "")),
     )
+    if cursor.rowcount != 1:
+        raise LessonDocWriteConflict("材料已被其他操作修改，请刷新后重试")
+
+
+def find_lesson_entry(conn, pack: dict[str, Any], lesson_no: int):
+    """Canonical file locator, shared by generation and the editor."""
+    folder = _find_child(conn, teacher_id=int(pack["teacher_id"]), parent_id=int(pack["root_material_id"]), name=f"lesson_{int(lesson_no)}")
+    if folder is None:
+        return None
+    return _find_child(conn, teacher_id=int(pack["teacher_id"]), parent_id=int(folder["id"]), name=f"lesson_{int(lesson_no)}.html")
 
 
 def _find_child(conn, *, teacher_id: int, parent_id: int, name: str):
@@ -92,6 +112,29 @@ def get_pack_by_root(conn, root_material_id: int) -> dict[str, Any] | None:
         (int(root_material_id),),
     ).fetchone()
     return _serialize_pack(row) if row else None
+
+
+def registered_material_context(conn, material):
+    """Find registration without parsing the package or requiring generated lessons."""
+    current, seen = dict(material), set()
+    for _ in range(32):
+        if current["id"] in seen:
+            break
+        seen.add(current["id"])
+        pack = get_pack_by_root(conn, int(current["id"]))
+        if pack:
+            try:
+                relative = PurePosixPath(material["material_path"]).relative_to(PurePosixPath(current["material_path"])).as_posix()
+            except ValueError:
+                return None
+            return {"pack": pack, "relative_path": relative}
+        if not current.get("parent_id"):
+            break
+        parent = conn.execute("SELECT * FROM course_materials WHERE id=? AND teacher_id=?", (current["parent_id"], material["teacher_id"])).fetchone()
+        if parent is None:
+            break
+        current = dict(parent)
+    return None
 
 
 def get_pack(conn, pack_id: int) -> dict[str, Any] | None:
@@ -398,14 +441,14 @@ def write_manifest(conn, pack: dict[str, Any], manifest: dict[str, Any]) -> list
     if manifest_row is None:
         _create_pack_file(conn, pack, name=MANIFEST_FILE_NAME, content=manifest_text, now=now)
     else:
-        _update_file_content(conn, int(manifest_row["id"]), manifest_text, now)
+        _update_file_content(conn, int(manifest_row["id"]), manifest_text, now, expected_hash=manifest_row["file_hash"])
 
     home_html = render.render_home_html(clean)
     home_row = _find_child(conn, teacher_id=teacher_id, parent_id=root_id_val, name="main.html")
     if home_row is None:
         _create_pack_file(conn, pack, name="main.html", content=home_html, now=now)
     else:
-        _update_file_content(conn, int(home_row["id"]), home_html, now)
+        _update_file_content(conn, int(home_row["id"]), home_html, now, expected_hash=home_row["file_hash"])
 
     conn.execute(
         "UPDATE course_doc_packs SET manifest_cache_json = ?, updated_at = ? WHERE id = ?",
@@ -479,7 +522,7 @@ def write_lesson_files(conn, pack: dict[str, Any], lesson_no: int, deck: dict[st
             parent_path=str(folder_row["material_path"]),
         )
     else:
-        _update_file_content(conn, int(entry_row["id"]), html_text, now)
+        _update_file_content(conn, int(entry_row["id"]), html_text, now, expected_hash=entry_row["file_hash"])
     return warnings
 
 
@@ -634,7 +677,7 @@ def refresh_pack_assets(conn, pack: dict[str, Any]) -> int:
                 parent_path=str(assets_row["material_path"]),
             )
         else:
-            _update_file_content(conn, int(file_row["id"]), asset_text, now)
+            _update_file_content(conn, int(file_row["id"]), asset_text, now, expected_hash=file_row["file_hash"])
         updated += 1
     conn.execute(
         "UPDATE course_doc_packs SET assets_fingerprint = ?, updated_at = ? WHERE id = ?",

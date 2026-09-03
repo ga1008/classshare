@@ -766,13 +766,13 @@ def _collect_readme_auto_bind_candidates(changed_entries: list[dict]) -> list[di
     return candidates
 
 
-def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[dict, list[str], list[dict]]:
+def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path, *, protected_paths=frozenset()) -> tuple[dict, list[str], list[dict]]:
     existing_rows = _fetch_subtree_rows(conn, root_row)
     existing_map = {
         _get_repo_root_relative_path(root_row["material_path"], row["material_path"]): row
         for row in existing_rows
     }
-    scanned_entries = _scan_workspace_entries(workspace_dir)
+    scanned_entries = [entry for entry in _scan_workspace_entries(workspace_dir) if entry["relative_path"] not in protected_paths]
     scanned_map = {entry["relative_path"]: entry for entry in scanned_entries}
     now = _now_iso()
 
@@ -788,7 +788,7 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path) -> tuple[
     deleted_paths = [
         path
         for path in existing_map
-        if path and path not in scanned_map
+        if path and path not in scanned_map and path not in protected_paths
     ]
     for relative_path in sorted(deleted_paths, key=lambda item: item.count("/"), reverse=True):
         row = existing_map[relative_path]
@@ -1208,6 +1208,7 @@ async def execute_material_repository_action(
     custom_command: str = "",
 ) -> dict:
     normalized_action = str(action or "").strip().lower()
+    from .lessondoc import editor_service, git_sync, pack_service
     if normalized_action not in {"update", "commit_push", "custom"}:
         raise HTTPException(400, "不支持的仓库操作")
 
@@ -1229,6 +1230,7 @@ async def execute_material_repository_action(
                 ).fetchone()
                 if not root_row:
                     raise HTTPException(404, "仓库材料不存在")
+                lessondoc_baseline = git_sync.capture(conn, dict(root_row), _fetch_subtree_rows(conn, root_row))
                 _export_repository_workspace(conn, dict(root_row), workspace_dir)
 
             message = ""
@@ -1284,6 +1286,10 @@ async def execute_material_repository_action(
                 execution_log.append(await _run_git_command(_parse_custom_command(custom_command), workspace_dir, credential))
                 message = "Git 命令执行完成" if execution_log[-1]["returncode"] == 0 else "Git 命令执行失败"
 
+            try:
+                lessondoc_prepared = git_sync.prepare(workspace_dir, lessondoc_baseline)
+            except editor_service.EditorError as exc:
+                raise HTTPException(exc.status, str(exc)) from exc
             removable_hashes: list[str] = []
             readme_candidates: list[dict] = []
             with conn_factory() as conn:
@@ -1293,11 +1299,24 @@ async def execute_material_repository_action(
                 ).fetchone()
                 if not latest_root_row:
                     raise HTTPException(404, "仓库材料不存在")
+                try:
+                    git_sync.lock_and_check(conn, dict(latest_root_row), _fetch_subtree_rows, lessondoc_baseline)
+                except editor_service.EditorError as exc:
+                    raise HTTPException(exc.status, str(exc)) from exc
                 sync_summary, removable_hashes, changed_entries = _sync_workspace_to_repository(
                     conn,
                     dict(latest_root_row),
                     workspace_dir,
+                    protected_paths=lessondoc_prepared["protected"],
                 )
+                try:
+                    document_entries, document_warnings = git_sync.apply(conn, lessondoc_prepared)
+                except (editor_service.EditorError, pack_service.LessonDocWriteConflict) as exc:
+                    raise HTTPException(getattr(exc, "status", 409), str(exc)) from exc
+                changed_entries.extend(document_entries)
+                for entry in document_entries:
+                    sync_summary[entry["status"]] += 1
+                sync_summary["lessondoc_warnings"] = document_warnings
                 readme_candidates = (
                     _collect_readme_auto_bind_candidates(changed_entries)
                     if normalized_action == "update"

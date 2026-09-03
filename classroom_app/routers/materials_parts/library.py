@@ -1244,10 +1244,12 @@ async def ai_rewrite_material(
 
 @router.get("/api/materials/{material_id}/content", response_class=JSONResponse)
 async def get_material_content(material_id: int, user: dict = Depends(get_current_teacher)):
+    from ...services.lessondoc import source_edit
     with get_db_connection() as conn:
         material = ensure_user_material_access(conn, material_id, user)
         if not is_editable_material(material):
             raise HTTPException(400, "当前仅支持编辑文本类材料")
+        registered = source_edit.context(conn, material)
 
     content, encoding = await _load_material_text_content(material, prefer_optimized=False)
     return {
@@ -1257,6 +1259,8 @@ async def get_material_content(material_id: int, user: dict = Depends(get_curren
             "name": material["name"],
             "preview_type": material["preview_type"],
             "updated_at": material["updated_at"],
+            "revision": registered["revision"] if registered else material["file_hash"],
+            "source_revision": material["file_hash"],
         },
         "content": content,
         "encoding": encoding,
@@ -1269,15 +1273,31 @@ async def update_material_content(
     payload: MaterialContentUpdateRequest,
     user: dict = Depends(get_current_teacher),
 ):
+    from ...services.lessondoc import editor_service, pack_service, source_edit
     normalized_encoding = str(payload.encoding or "utf-8").strip().lower()
     if normalized_encoding not in TEXT_CONTENT_ENCODINGS:
         raise HTTPException(400, "当前文本编码暂不支持保存")
 
+    # Validation/rendering of a whole LessonDoc can be substantial; keep it off
+    # the async event loop and open the transaction in that same worker.
+    document_result = await asyncio.to_thread(_save_registered_document_source, material_id, payload, user)
+    if document_result is not None:
+        return document_result
     with get_db_connection() as conn:
         material = ensure_teacher_material_owner(conn, material_id, user["id"])
         if not is_editable_material(material):
             raise HTTPException(400, "当前仅支持编辑文本类材料")
 
+        registration = source_edit.context(conn, material)
+        if registration and registration["lesson_no"] is not None:
+            raise HTTPException(409, "材料结构已更新，请重新打开源码")
+        try:
+            saved = source_edit.save(conn, material=material, teacher_id=user["id"], content=payload.content, revision=payload.revision,
+                                     source_revision=payload.source_revision, operation_id=payload.operation_id)
+        except (editor_service.EditorError, pack_service.LessonDocWriteConflict) as exc:
+            raise HTTPException(getattr(exc, "status", 409), str(exc)) from exc
+        if payload.revision is not None and material["file_hash"] != payload.revision:
+            raise HTTPException(409, "材料源码已被修改，请重新读取后再保存")
         payload_bytes = payload.content.encode(normalized_encoding)
         old_hash = material["file_hash"]
         new_hash = hashlib.sha256(payload_bytes).hexdigest()
@@ -1290,13 +1310,15 @@ async def update_material_content(
                     "id": material["id"],
                     "name": material["name"],
                     "updated_at": material["updated_at"],
+                    "revision": old_hash,
+                    "source_revision": old_hash,
                 },
             }
 
         await _write_material_file(new_hash, payload_bytes)
 
         updated_at = datetime.now().isoformat()
-        conn.execute(
+        cursor = conn.execute(
             """
             UPDATE course_materials
             SET file_hash = ?,
@@ -1310,10 +1332,14 @@ async def update_material_content(
                 ai_optimize_status = 'idle',
                 ai_optimized_markdown = NULL,
                 updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND file_hash = ?
             """,
-            (new_hash, len(payload_bytes), updated_at, material_id),
+            (new_hash, len(payload_bytes), updated_at, material_id, old_hash),
         )
+        if cursor.rowcount != 1:
+            raise HTTPException(409, "材料源码已被修改，请重新读取后再保存")
+        if saved and saved.get("engine_asset"):
+            conn.execute("UPDATE course_doc_packs SET assets_fingerprint='' WHERE id=?", (saved["pack_id"],))
         conn.commit()
 
         should_remove_old_file = bool(old_hash and old_hash != new_hash and _count_global_file_references(conn, old_hash) <= 0)
@@ -1329,6 +1355,33 @@ async def update_material_content(
             "id": material_id,
             "name": material["name"],
             "updated_at": updated_at,
+            "revision": new_hash,
+            "source_revision": new_hash,
             "viewer_url": f"/materials/view/{material_id}",
         },
     }
+
+
+def _save_registered_document_source(material_id, payload, user):
+    from ...services.lessondoc import editor_service, pack_service, source_edit
+    with get_db_connection() as conn:
+        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        registered = source_edit.context(conn, material)
+        if not registered or registered["lesson_no"] is None:
+            return None
+        if not is_editable_material(material):
+            raise HTTPException(400, "当前仅支持编辑文本类材料")
+        try:
+            saved = source_edit.save(conn, material=material, teacher_id=user["id"], content=payload.content,
+                                     revision=payload.revision, source_revision=payload.source_revision, operation_id=payload.operation_id)
+        except (editor_service.EditorError, pack_service.LessonDocWriteConflict) as exc:
+            raise HTTPException(getattr(exc, "status", 409), str(exc)) from exc
+        if saved is None or saved.get("raw_asset"):
+            raise HTTPException(409, "材料结构已更新，请重新打开源码")
+        updated = conn.execute("SELECT * FROM course_materials WHERE id=?", (material_id,)).fetchone()
+        registered = source_edit.context(conn, updated)
+        normalized_content = pack_service._load_file_text(conn, updated)
+        conn.commit()
+        return {"status": "success", "message": "学习文档源码已保存", "unchanged": saved["unchanged"], "warnings": saved["warnings"],
+                "content": normalized_content, "material": {"id": material_id, "name": updated["name"], "updated_at": updated["updated_at"],
+                "revision": registered["revision"], "source_revision": updated["file_hash"], "viewer_url": f"/materials/view/{material_id}"}}

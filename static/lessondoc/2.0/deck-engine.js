@@ -51,6 +51,7 @@
     return w;
   }
   function num(v, dflt) { var n = parseFloat(v); return isFinite(n) ? n : dflt; }
+  function copyModel(value) { return JSON.parse(JSON.stringify(value)); }
   function qs(name) {
     var m = new RegExp("[?&]" + name + "=([^&#]*)").exec(location.search);
     return m ? decodeURIComponent(m[1].replace(/\+/g, " ")) : "";
@@ -65,15 +66,278 @@
   }
   /* SVG 逃生舱消毒:剥 script/foreignObject/事件属性/js 协议 */
   function sanitizeSvg(body) {
-    var t = String(body == null ? "" : body);
-    t = t.replace(/<\s*script[\s\S]*?<\s*\/\s*script\s*>/gi, "");
-    t = t.replace(/<\s*foreignObject[\s\S]*?<\s*\/\s*foreignObject\s*>/gi, "");
-    t = t.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, "");
-    t = t.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, "");
-    t = t.replace(/(href|xlink:href)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, "");
-    return t;
+    return sanitizeMarkup(body, true);
   }
   function brokenCard(msg) { return el("div", "ld-broken", "⚠ " + esc(msg || "此内容块加载失败")); }
+  /* html 块二次消毒(服务端已白名单过滤;这里再剥一遍危险标签,双保险) */
+  function sanitizeHtml(body) {
+    return sanitizeMarkup(body, false);
+  }
+  function mediaSrcOk(src) {
+    src = String(src || "");
+    for (var i = 0; i < 4; i++) {
+      var decoded;
+      try { decoded = decodeURIComponent(src); } catch (e) { return false; }
+      if (decoded === src) break;
+      src = decoded;
+    }
+    if (i === 4 || !src || src !== src.trim() || /[\x00-\x1f\x7f\\]/.test(src) || /^[a-z][a-z0-9+.-]*:/i.test(src) || src[0] === "/" || src[0] === "#") return false;
+    var path = src.split(/[?#]/)[0];
+    if (path.indexOf("../assets/") === 0) path = path.slice(10);
+    return !!path && path.split("/").every(function (p) { return !!p && p !== ".."; });
+  }
+  var HTML_TAGS = "div span p h1 h2 h3 h4 h5 h6 ul ol li table thead tbody tr th td b i em strong u s small sub sup code pre img br hr blockquote a figure figcaption".split(" ");
+  var SVG_TAGS = "svg g a path rect circle ellipse line polyline polygon text tspan defs marker lineargradient radialgradient stop title desc clippath mask pattern use".split(" ");
+  var SAFE_ATTRS = "class style src href alt title width height colspan rowspan viewbox d x y x1 y1 x2 y2 cx cy r rx ry points fill stroke stroke-width stroke-dasharray stroke-linecap stroke-linejoin opacity fill-opacity stroke-opacity transform text-anchor font-size font-weight font-family id offset stop-color markerwidth markerheight refx refy orient marker-end marker-start visibility dominant-baseline gradientunits gradienttransform preserveaspectratio patternunits clip-path".split(" ");
+  // This property list is mirrored from css_policy.py and checked by the runtime tests.
+  var CSS_PROPS = "color background background-color background-image background-size background-position background-repeat opacity font font-family font-size font-style font-weight font-variant line-height letter-spacing word-spacing text-align text-decoration text-transform text-shadow text-indent white-space word-break overflow-wrap vertical-align display visibility width height min-width max-width min-height max-height box-sizing margin margin-top margin-right margin-bottom margin-left padding padding-top padding-right padding-bottom padding-left border border-width border-style border-color border-radius border-top border-right border-bottom border-left border-collapse border-spacing box-shadow outline outline-width outline-style outline-color outline-offset overflow overflow-x overflow-y position top right bottom left z-index transform transform-origin flex flex-grow flex-shrink flex-basis flex-direction flex-wrap align-items align-self align-content justify-content justify-items justify-self gap row-gap column-gap order grid grid-template-columns grid-template-rows grid-template-areas grid-area grid-column grid-row grid-auto-flow grid-auto-columns grid-auto-rows list-style-type list-style-position object-fit object-position aspect-ratio fill stroke stroke-width stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset fill-opacity stroke-opacity".split(" ");
+  function safeCssValue(value) {
+    var decoded = value.replace(/\\([0-9a-f]{1,6})\s?|\\([^\r\n])/gi, function (_, hex, ch) { return hex ? String.fromCodePoint(parseInt(hex, 16) || 65533) : ch; });
+    return !/[<>\\@]/.test(decoded) && !/(?:url|expression|image|image-set|cross-fade|paint|element)\s*\(|javascript\s*:|behavior\s*:|-moz-binding/i.test(decoded);
+  }
+  function cleanCssDeclarations(style) {
+    var result = [];
+    for (var i = 0; i < style.length; i++) {
+      var key = style[i], value = style.getPropertyValue(key);
+      if (CSS_PROPS.indexOf(key) < 0 || !safeCssValue(value)) continue;
+      if (key === "position" && ["relative", "absolute", "static"].indexOf(value.trim()) < 0) continue;
+      result.push(key + ":" + value + (style.getPropertyPriority(key) ? " !important" : ""));
+    }
+    return result.join(";");
+  }
+  function sanitizeMarkup(body, svgOnly) {
+    var template = document.createElement("template");
+    template.innerHTML = svgOnly ? "<svg>" + String(body || "") + "</svg>" : String(body || "");
+    var root = svgOnly ? template.content.firstElementChild : template.content;
+    Array.prototype.slice.call(root.querySelectorAll("*")).forEach(function (node) {
+      var tag = node.localName.toLowerCase();
+      if (SVG_TAGS.indexOf(tag) < 0 && (svgOnly || HTML_TAGS.indexOf(tag) < 0)) {
+        if (/^(script|style|iframe|object|embed|form|input|button|textarea|select|video|audio|source|base|template|noscript|foreignobject|math)$/.test(tag)) node.remove();
+        else node.replaceWith.apply(node, Array.prototype.slice.call(node.childNodes));
+        return;
+      }
+      Array.prototype.slice.call(node.attributes).forEach(function (attr) {
+        var key = attr.name.toLowerCase(), value = attr.value;
+        if (SAFE_ATTRS.indexOf(key) < 0) { node.removeAttribute(attr.name); return; }
+        if (key === "src" || key === "href") {
+          if (!(key === "href" && /^#[A-Za-z0-9_-]+$/.test(value)) && (svgOnly || !mediaSrcOk(value))) node.removeAttribute(attr.name);
+        } else if (key === "style") {
+          node.setAttribute("style", cleanCssDeclarations(node.style));
+        } else if (["fill", "stroke", "marker-end", "marker-start", "clip-path"].indexOf(key) >= 0 && !/^url\(\s*#[A-Za-z0-9_-]+\s*\)$/.test(value) && !safeCssValue(value)) node.removeAttribute(attr.name);
+      });
+    });
+    return svgOnly ? root.innerHTML : template.innerHTML;
+  }
+  function scopeCss(css, id) {
+    try {
+      var sheet = new CSSStyleSheet();
+      sheet.replaceSync(String(css));
+      var result = [];
+      Array.prototype.forEach.call(sheet.cssRules, function (rule) {
+        if (rule.type !== 1 || !rule.style) return;
+        var selectors = [], part = "", depth = 0, quote = "";
+        String(rule.selectorText).split("").forEach(function (c) {
+          if (quote) { part += c; if (c === quote) quote = ""; return; }
+          if (c === '"' || c === "'") quote = c;
+          if (c === "(" || c === "[") depth++;
+          if (c === ")" || c === "]") depth--;
+          if (c === "," && !depth) { selectors.push(part); part = ""; } else part += c;
+        });
+        selectors.push(part);
+        selectors = selectors.map(function (s) {
+          s = s.trim();
+          while (/^\.ld-html-[\w-]+\s+/.test(s)) s = s.replace(/^\.ld-html-[\w-]+\s+/, "");
+          return s;
+        }).filter(function (s) { return s && !/[{}@\\<&]/.test(s) && !/^[>+~]|:host|:root/.test(s); });
+        var body = cleanCssDeclarations(rule.style);
+        if (selectors.length && body) result.push(selectors.map(function (s) { return ".ld-html-" + id + " " + s; }).join(",") + "{" + body + "}");
+      });
+      return result.join("\n");
+    } catch (e) { return ""; }
+  }
+  function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
+  var domSequence = 0;
+  function namespaceDom(root) {
+    var prefix = "ld-dom-" + (++domSequence) + "-", ids = {};
+    var nodes = Array.prototype.slice.call(root.querySelectorAll("[id]"));
+    if (root.id) nodes.unshift(root);
+    nodes.forEach(function (node, index) {
+      var old = node.id, fresh = prefix + index;
+      if (!node.hasAttribute("data-ld-origin-id")) node.setAttribute("data-ld-origin-id", old);
+      if (!ids[old]) ids[old] = fresh;
+      node.id = fresh;
+    });
+    root.querySelectorAll("*").forEach(function (node) {
+      Array.prototype.slice.call(node.attributes).forEach(function (attr) {
+        if (attr.name === "id" || attr.name === "data-ld-origin-id") return;
+        var value = attr.value;
+        if (["href", "xlink:href", "data-exit-target"].indexOf(attr.name) >= 0 && value[0] === "#" && ids[value.slice(1)]) value = "#" + ids[value.slice(1)];
+        if (["fill", "stroke", "marker-end", "marker-start", "clip-path", "style"].indexOf(attr.name) >= 0) value = value.replace(/url\(\s*#([\w-]+)\s*\)/g, function (all, id) { return ids[id] ? "url(#" + ids[id] + ")" : all; });
+        if (value !== attr.value) node.setAttribute(attr.name, value);
+      });
+    });
+    root.querySelectorAll("style").forEach(function (style) {
+      try {
+        var sheet = new CSSStyleSheet();
+        sheet.replaceSync(style.textContent);
+        style.textContent = Array.prototype.map.call(sheet.cssRules, function (rule) {
+          if (rule.type !== 1) return "";
+          var selector = rule.selectorText.replace(/#([\w-]+)/g, function (all, id) { return ids[id] ? "#" + ids[id] : all; });
+          return selector + "{" + rule.style.cssText + "}";
+        }).join("\n");
+      } catch (e) { style.textContent = ""; }
+    });
+    return root;
+  }
+
+  /* ============================================================
+     2.1 样式层 / 定位层 / 背景(设计: docs/lessondoc-editor-2026-09.md §4)
+     ============================================================ */
+  var SEMANTIC_COLORS = {
+    primary: "var(--primary)", "primary-dark": "var(--primary-dark)", "primary-soft": "var(--primary-soft)",
+    ok: "var(--ok)", warn: "var(--warn)", err: "var(--err)", muted: "var(--muted)",
+    text: "var(--text)", white: "#ffffff", transparent: "transparent"
+  };
+  var STYLE_FONTS = {
+    sans: "var(--font)",
+    serif: '"Songti SC","SimSun","Noto Serif CJK SC",serif',
+    kai: '"KaiTi","STKaiti","Kaiti SC",serif',
+    mono: "var(--mono)",
+    rounded: '"Yuanti SC","YouYuan",system-ui,sans-serif'
+  };
+  var BOX_SHADOWS = { soft: "0 4px 14px rgba(0,0,0,.12)", hard: "4px 4px 0 rgba(0,0,0,.18)", glow: "0 0 18px var(--primary-soft)" };
+  var TEXT_SHADOWS = { soft: "0 2px 6px rgba(0,0,0,.18)", hard: "3px 3px 0 rgba(0,0,0,.2)", glow: "0 0 12px var(--primary)" };
+  /* 文本类块:size/gradient/stroke/shadow 按文字语义解释;其余按盒子语义 */
+  var TEXT_BLOCKS = {
+    text: 1, bigmark: 1, bignum: 1, cards: 1, timeline: 1, callout: 1, quiz: 1, reveal: 1,
+    button: 1, tasklist: 1, table: 1, details: 1, tabs: 1
+  };
+  function cssColor(c) {
+    if (!c) return "";
+    c = String(c);
+    if (SEMANTIC_COLORS[c]) return SEMANTIC_COLORS[c];
+    return /^#[0-9a-f]{3,8}$/i.test(c) ? c : "";
+  }
+  function gradientCss(g) {
+    if (!g || typeof g !== "object") return "";
+    var a = cssColor(g.from), b = cssColor(g.to);
+    if (!a || !b) return "";
+    return "linear-gradient(" + clamp(num(g.angle, 135), 0, 360) + "deg," + a + "," + b + ")";
+  }
+  function applyStyle(node, st, isText) {
+    if (!node || !st || typeof st !== "object") return;
+    var s = node.style;
+    if (st.font && STYLE_FONTS[st.font]) s.fontFamily = STYLE_FONTS[st.font];
+    if (st.size != null) { s.fontSize = clamp(num(st.size, 26), 12, 160) + "px"; node.classList.add("ld-fs"); }
+    if (st.weight) s.fontWeight = String(clamp(num(st.weight, 400), 100, 900));
+    if (st.italic) s.fontStyle = "italic";
+    var color = cssColor(st.color);
+    if (color) s.color = color;
+    var textGrad = isText ? gradientCss(st.gradient) : "";
+    if (textGrad) {
+      s.backgroundImage = textGrad;
+      s.webkitBackgroundClip = "text"; s.backgroundClip = "text";
+      s.color = "transparent"; s.webkitTextFillColor = "transparent";
+      node.classList.add("ld-grad-text");
+    }
+    if (st.stroke && typeof st.stroke === "object") {
+      s.webkitTextStroke = clamp(num(st.stroke.width, 1), 0, 6) + "px " + (cssColor(st.stroke.color) || "var(--text)");
+    }
+    if (st.shadow && st.shadow !== "none") {
+      if (isText) s.textShadow = TEXT_SHADOWS[st.shadow] || "";
+      else s.boxShadow = BOX_SHADOWS[st.shadow] || "";
+    }
+    if (st.align) s.textAlign = String(st.align);
+    if (st.lineHeight != null) s.lineHeight = String(clamp(num(st.lineHeight, 1.5), 0.9, 3));
+    if (st.letterSpacing != null) s.letterSpacing = clamp(num(st.letterSpacing, 0), -2, 20) + "px";
+    if (st.opacity != null) s.opacity = String(clamp(num(st.opacity, 1), 0, 1));
+    var bg = cssColor(st.bg);
+    if (bg) s.backgroundColor = bg;
+    if (!textGrad) {
+      var bgg = gradientCss(st.bgGradient);
+      if (bgg) s.backgroundImage = bgg;
+    }
+    if (st.border && typeof st.border === "object") {
+      s.border = clamp(num(st.border.width, 1), 0, 12) + "px " + (st.border.style === "dashed" ? "dashed" : "solid") +
+        " " + (cssColor(st.border.color) || "var(--muted)");
+      if (st.border.radius != null) s.borderRadius = clamp(num(st.border.radius, 0), 0, 120) + "px";
+    }
+    if (st.padding != null) s.padding = clamp(num(st.padding, 0), 0, 120) + "px";
+  }
+  /* 定位块:frame → 绝对定位包裹层;包裹层是可选中/可寻址单元(携带 data-ld-id) */
+  function renderPositioned(b, opts) {
+    opts = opts || {};
+    var f = (b && b.frame) || {};
+    var wrap = el("div", "ld-pos");
+    wrap.style.left = num(f.x, 0) + "px";
+    wrap.style.top = num(f.y, 0) + "px";
+    wrap.style.width = num(f.w, 320) + "px";
+    wrap.style.height = num(f.h, 120) + "px";
+    if (f.r) wrap.style.transform = "rotate(" + num(f.r, 0) + "deg)";
+    if (f.z != null) wrap.style.zIndex = String(num(f.z, 0));
+    var inner = renderBlock(b);
+    var id = b && b.id ? String(b.id).replace(/[^\w-]/g, "") : "";
+    if (id) {
+      wrap.setAttribute(opts.global ? "data-ld-gid" : "data-ld-id", id);
+      if (!opts.global) wrap.id = id;
+      var carrier = inner.getAttribute("data-ld-id") ? inner : inner.querySelector('[data-ld-id="' + id + '"]');
+      if (carrier) { carrier.removeAttribute("data-ld-id"); if (carrier.id === id) carrier.removeAttribute("id"); }
+    }
+    if (b && b.hidden) { wrap.classList.add("ld-hidden"); inner.classList.remove("ld-hidden"); }
+    /* 动作属性上提到包裹层:包裹层才是按 id 寻址/点击的单元(codewalk 例外,动作属于其运行按钮) */
+    if (inner.hasAttribute("data-ld-actions") && !inner.classList.contains("codewalk")) {
+      wrap.setAttribute("data-ld-actions", inner.getAttribute("data-ld-actions"));
+      wrap.classList.add("ld-actionable");
+      inner.removeAttribute("data-ld-actions");
+      inner.classList.remove("ld-actionable");
+      if (inner.getAttribute("data-ld-once") === "1") { wrap.setAttribute("data-ld-once", "1"); inner.removeAttribute("data-ld-once"); }
+    }
+    if (b.type !== "group" && b.natural && num(b.natural.w, 0) > 0 && num(b.natural.h, 0) > 0) {
+      var scaled = el("div", "ld-scaled-inner");
+      var nw = clamp(num(b.natural.w, 320), 1, 10000), nh = clamp(num(b.natural.h, 120), 1, 10000);
+      scaled.style.width = nw + "px"; scaled.style.height = nh + "px";
+      scaled.style.transform = "scale(" + (num(f.w, 320) / nw) + "," + (num(f.h, 120) / nh) + ")";
+      scaled.appendChild(inner); wrap.appendChild(scaled);
+    } else wrap.appendChild(inner);
+    return wrap;
+  }
+  function positionedToFlow(list, into) {
+    (list || []).slice().sort(function (a, b) {
+      return num(a && a.frame && a.frame.z, 0) - num(b && b.frame && b.frame.z, 0);
+    }).forEach(function (o) { if (o) into.appendChild(renderBlock(o)); });
+  }
+  /* 页面/首页背景层 */
+  function renderBg(bg) {
+    if (!bg || typeof bg !== "object") return null;
+    var node = el("div", "slide-bg"), any = false;
+    var c = cssColor(bg.color);
+    if (c) { node.style.backgroundColor = c; any = true; }
+    var g = gradientCss(bg.gradient);
+    if (g) { node.style.backgroundImage = g; any = true; }
+    var im = bg.image;
+    if (im && typeof im === "object" && mediaSrcOk(im.src)) {
+      var img = el("div", "slide-bg-img");
+      img.style.backgroundImage = 'url("' + String(im.src).replace(/["\\()]/g, "") + '")';
+      var fit = String(im.fit || "cover");
+      if (fit === "cover" || fit === "contain") img.style.backgroundSize = fit;
+      else if (fit === "stretch") img.style.backgroundSize = "100% 100%";
+      else if (fit === "tile") { img.style.backgroundSize = "auto"; img.style.backgroundRepeat = "repeat"; }
+      else img.style.backgroundSize = clamp(num(im.scale, 100), 10, 400) + "%";
+      img.style.backgroundPosition = clamp(num(im.x, 50), 0, 100) + "% " + clamp(num(im.y, 50), 0, 100) + "%";
+      if (im.rotate) img.style.transform = "rotate(" + clamp(num(im.rotate, 0), -180, 180) + "deg) scale(1.45)";
+      if (im.opacity != null) img.style.opacity = String(clamp(num(im.opacity, 1), 0, 1));
+      if (im.blur) img.style.filter = "blur(" + clamp(num(im.blur, 0), 0, 40) + "px)";
+      node.appendChild(img); any = true;
+    }
+    if (bg.tint && typeof bg.tint === "object" && cssColor(bg.tint.color)) {
+      var tint = el("div", "slide-bg-tint");
+      tint.style.backgroundColor = cssColor(bg.tint.color);
+      tint.style.opacity = String(clamp(num(bg.tint.opacity, 0.3), 0, 1));
+      node.appendChild(tint); any = true;
+    }
+    return any ? node : null;
+  }
+  var ARTICLE_MODE = false;
 
   /* ---------- 主题 ---------- */
   function packKey() {
@@ -129,6 +393,7 @@
 
   /* ---- flow:分层布局(方向 h/v) ---- */
   function renderFlow(cfg) {
+    cfg = copyModel(cfg);
     var nodes = (cfg.nodes || []).filter(function (n) { return n && (n.id != null || n.label); });
     if (!nodes.length) throw new Error("flow 无节点");
     var byId = {};
@@ -220,6 +485,7 @@
 
   /* ---- sequence:泳道时序图 ---- */
   function renderSequence(cfg) {
+    cfg = copyModel(cfg);
     var actors = (cfg.actors || []).filter(function (a) { return a && (a.id != null || a.label); });
     if (actors.length < 2) throw new Error("sequence 至少两个参与者");
     var byId = {};
@@ -270,6 +536,7 @@
 
   /* ---- arch:分层架构图 ---- */
   function renderArch(cfg) {
+    cfg = copyModel(cfg);
     var layers = (cfg.layers || []).filter(function (L) { return L && (L.nodes || []).length; });
     if (!layers.length) throw new Error("arch 无层");
     var FS = 13, NH = 42, LH = 86, PAD = 16, LABEL_W = 96;
@@ -326,7 +593,7 @@
       if (!node || !node.label) return;
       var li = document.createElement("li");
       if (node.collapsed) li.setAttribute("data-collapsed", "");
-      if (node.href) {
+      if (node.href && (mediaSrcOk(node.href) || /^#[A-Za-z0-9_-]+$/.test(node.href))) {
         var a = document.createElement("a");
         a.href = withQuery(String(node.href));
         a.textContent = node.label;
@@ -479,7 +746,7 @@
     if (b.kind === "video") {
       node = document.createElement("video");
       node.controls = true; node.src = src;
-      if (b.poster) node.poster = String(b.poster);
+      if (b.poster && mediaSrcOk(b.poster)) node.poster = String(b.poster);
       node.style.maxWidth = "100%"; node.style.maxHeight = "480px";
     } else if (b.kind === "audio") {
       node = document.createElement("audio");
@@ -597,7 +864,7 @@
               var t = safeQuery(stage, String(op.target));
               if (!t) return;
               if (op.attr === "textContent") t.textContent = String(op.value == null ? "" : op.value);
-              else if (op.attr) t.setAttribute(String(op.attr), String(op.value == null ? "" : op.value));
+              else if (/^(visibility|opacity|transform|fill|stroke|stroke-width|x|y|cx|cy|r|width|height|d|points)$/.test(String(op.attr)) && safeCssValue(String(op.value || ""))) t.setAttribute(String(op.attr), String(op.value == null ? "" : op.value));
             });
           };
         })(s)
@@ -606,13 +873,99 @@
     /* makeStepper 由 course.js 提供;延后一拍确保 SVG 已插入文档。
        用 setTimeout 而非 requestAnimationFrame:后台标签页 rAF 不触发,控件会被吞 */
     if (steps.length && window.makeStepper) {
-      setTimeout(function () { window.makeStepper(root.id, steps); }, 0);
+      setTimeout(function () { if (root.isConnected) window.makeStepper(root.id, steps); }, 0);
     }
     return root;
   };
   function safeQuery(scope, sel) {
-    try { return scope.querySelector(sel); } catch (e) { return null; }
+    try {
+      var original = sel.replace(/#([\w-]+)/g, '[data-ld-origin-id="$1"]');
+      return scope.querySelector(original) || scope.querySelector(sel);
+    } catch (e) { return null; }
   }
+
+  /* ---- 2.1 新块:button / codewalk / group / html ---- */
+  BLOCKS.button = function (b) {
+    var variant = ["primary", "outline", "ghost", "link"].indexOf(b.variant) >= 0 ? b.variant : "primary";
+    var size = ["sm", "md", "lg"].indexOf(b.size) >= 0 ? b.size : "md";
+    var btn = el("button", "ld-btn ld-btn--" + variant + " ld-btn--" + size,
+      (b.icon ? esc(b.icon) + " " : "") + md(b.label || "按钮"));
+    btn.type = "button";
+    return btn;
+  };
+
+  BLOCKS.codewalk = function (b) {
+    var root = el("div", "codewalk" + (b.arrow === false ? " no-arrow" : ""));
+    if (b.title || b.lang) {
+      root.appendChild(el("div", "cw-head",
+        '<span class="cw-title">' + md(b.title || "") + "</span>" +
+        (b.lang ? '<span class="cw-lang">' + esc(b.lang) + "</span>" : "")));
+    }
+    var code = el("div", "cw-code");
+    var steps = [], srcIdx = 0;
+    (b.lines || []).forEach(function (ln) {
+      if (ln == null) return;
+      if (typeof ln === "string") ln = { code: ln };
+      if (ln.ref != null && ln.code == null) {           /* 执行轨迹行:只驱动高亮/输出,不显示源码 */
+        var ref = num(ln.ref, 0);
+        if (ref >= 0 && ref < srcIdx) steps.push({ line: ref, out: ln.out || "", note: ln.note || "" });
+        return;
+      }
+      var row = el("div", "cw-line");
+      row.setAttribute("data-line", String(srcIdx));
+      row.appendChild(el("span", "cw-gutter", String(srcIdx + 1)));
+      var src = el("span", "cw-src");
+      src.textContent = String(ln.code == null ? "" : ln.code);
+      row.appendChild(src);
+      code.appendChild(row);
+      steps.push({ line: srcIdx, out: ln.out || "", note: ln.note || "" });
+      srcIdx++;
+    });
+    if (!srcIdx) throw new Error("codewalk 无代码行");
+    root.appendChild(code);
+    if (b.showOutput !== false) root.appendChild(el("div", "cw-out"));
+    if (b.showNotes !== false) root.appendChild(el("div", "cw-note"));
+    root.appendChild(el("div", "cw-bar",
+      '<button type="button" data-cw="run">' + esc(b.runLabel || "▶ 运行") + "</button>" +
+      '<button type="button" data-cw="pause">⏸ 暂停</button>' +
+      '<button type="button" data-cw="step">⏭ 单步</button>' +
+      '<button type="button" data-cw="reset">↺ 重置</button>' +
+      '<span class="cw-count"></span>'));
+    root.setAttribute("data-ld-cw", JSON.stringify({
+      steps: steps, loop: !!b.loop, speedMs: clamp(num(b.speedMs, 900), 200, 5000), autoStart: !!b.autoStart
+    }));
+    return root;
+  };
+
+  BLOCKS.group = function (b) {
+    if (ARTICLE_MODE) {                                  /* 长文模式:组展开为流式 */
+      var flat = el("div", "ld-group-flat");
+      positionedToFlow(b.children, flat);
+      return flat;
+    }
+    var nat = b.natural && num(b.natural.w, 0) > 0 && num(b.natural.h, 0) > 0 ? b.natural : { w: 1, h: 1 };
+    var f = b.frame || {};
+    var root = el("div", "ld-group");
+    var inner = el("div", "ld-group-inner");
+    inner.style.width = nat.w + "px";
+    inner.style.height = nat.h + "px";
+    inner.style.transform = "scale(" + (num(f.w, nat.w) / nat.w) + "," + (num(f.h, nat.h) / nat.h) + ")";
+    (b.children || []).forEach(function (c) { if (c) inner.appendChild(renderPositioned(c)); });
+    root.appendChild(inner);
+    return root;
+  };
+
+  BLOCKS.html = function (b) {
+    var id = String(b.id || "x").replace(/[^\w-]/g, "");
+    var root = el("div", "ld-html ld-html-" + id);
+    if (b.css) {
+      var st = document.createElement("style");
+      st.textContent = scopeCss(b.css, id);
+      root.appendChild(st);
+    }
+    root.appendChild(el("div", "ld-html-body", sanitizeHtml(b.body)));
+    return root;
+  };
 
   function markFragment(node, step) {
     node.classList.add("fragment");
@@ -626,8 +979,23 @@
       if (!fn) return brokenCard("未知内容块类型:" + esc(String(b.type)));
       var node = fn(b);
       if (!node) return brokenCard("内容块渲染为空:" + esc(String(b.type)));
+      if (b.type === "html" || b.type === "svg") namespaceDom(node);
       if (b.step != null && !node.classList.contains("fragment")) markFragment(node, b.step);
-      if (b.id && !node.id) node.id = String(b.id).replace(/[^\w-]/g, "");
+      if (b.id) {
+        var cleanId = String(b.id).replace(/[^\w-]/g, "");
+        if (cleanId) {
+          if (!node.id) node.id = cleanId;
+          node.setAttribute("data-ld-id", cleanId);
+        }
+      }
+      /* 2.1:样式层 / 初始隐藏 / 点击动作(interact.js 做事件委托) */
+      if (b.style) applyStyle(node, b.style, !!TEXT_BLOCKS[b.type]);
+      if (b.hidden) node.classList.add("ld-hidden");
+      if (b.actions && b.actions.length) {
+        node.setAttribute("data-ld-actions", JSON.stringify(b.actions));
+        node.classList.add("ld-actionable");
+        if (b.once) node.setAttribute("data-ld-once", "1");
+      }
       if (b.exitStep != null) {
         if (!node.id) node.id = "ld-x" + (++_dgSeq);
         var marker = el("span", "fragment");
@@ -715,6 +1083,14 @@
           });
           sec.appendChild(body);
           break;
+        case "canvas":  /* 2.1 自由排版页:全部元素带 frame 绝对定位 */
+          sec.className = "slide slide--canvas";
+          if (s.section) sec.setAttribute("data-section", s.section);
+          if (s.title) sec.appendChild(el("h2", "slide-title", md(s.title)));
+          if (s.sub) sec.appendChild(el("p", "slide-sub", md(s.sub)));
+          sec.appendChild(el("div", "slide-body ld-canvas-body"));
+          (s.objects || []).forEach(function (o) { if (o) sec.appendChild(renderPositioned(o)); });
+          break;
         default:  /* content */
           sec.className = "slide";
           if (s.section) sec.setAttribute("data-section", s.section);
@@ -725,6 +1101,11 @@
           sec.appendChild(body);
       }
       if (s.notes) sec.appendChild(el("div", "slide-notes", md(s.notes)));
+      /* 2.1:页面 id / 背景层 / 浮层 */
+      if (s.id) sec.setAttribute("data-ld-slide-id", String(s.id).replace(/[^\w-]/g, ""));
+      var bgNode = renderBg(s.bg || data.bg);
+      if (bgNode) sec.insertBefore(bgNode, sec.firstChild);
+      (s.overlays || []).forEach(function (o) { if (o) sec.appendChild(renderPositioned(o)); });
     } catch (e) {
       sec.className = "slide";
       sec.innerHTML = "";
@@ -736,21 +1117,60 @@
     return sec;
   }
 
-  function renderDeck(data) {
-    document.body.className = "slides-page";
-    var home = el("a", "slides-home", "⌂ 课程首页");
-    home.href = withQuery("../main.html");
-    document.body.appendChild(home);
+  /* 2.1 全局层:每页追加 globals(封面/章节/结尾默认跳过;excludeSlides 逐页排除) */
+  function applyGlobalsTo(sec, s, data) {
+    var globals = Array.isArray(data.globals) ? data.globals : [];
+    if (!globals.length) return;
+    var layout = String((s && s.layout) || "content");
+    var bare = layout === "title" || layout === "section" || layout === "end";
+    var sid = s && s.id ? String(s.id) : "";
+    globals.forEach(function (g) {
+      if (!g) return;
+      if (bare && g.skipCovers !== false) return;
+      if (sid && Array.isArray(g.excludeSlides) && g.excludeSlides.indexOf(sid) >= 0) return;
+      sec.appendChild(renderPositioned(g, { global: true }));
+    });
+  }
+  function buildSlide(s, data) {
+    var sec = renderSlide(s || {}, data);
+    applyGlobalsTo(sec, s, data);
+    return namespaceDom(sec);
+  }
+  function buildDeck(data) {
     var deck = el("div", "deck");
     deck.setAttribute("data-course", data.course || "");
     var slides = Array.isArray(data.slides) ? data.slides : [];
-    slides.forEach(function (s) { deck.appendChild(renderSlide(s || {}, data)); });
+    slides.forEach(function (s) { deck.appendChild(buildSlide(s, data)); });
     if (!slides.length) {
       var empty = el("section", "slide");
       empty.appendChild(el("h2", "slide-title", "本课次暂无内容"));
       deck.appendChild(empty);
     }
-    document.body.appendChild(deck);
+    return deck;
+  }
+  function renderDeck(data) {
+    document.body.className = "slides-page";
+    var home = el("a", "slides-home", "⌂ 课程首页");
+    home.href = withQuery("../main.html");
+    document.body.appendChild(home);
+    document.body.appendChild(buildDeck(data));
+  }
+  /* 编辑桥接用:整体重渲 / 单页替换(slides.js 随后 reinit 接管) */
+  function rerenderDeck(data) {
+    if (data.kind === "home") { renderHome(data); return; }
+    var old = document.querySelector(".deck");
+    var fresh = buildDeck(data);
+    if (old && old.parentNode) old.parentNode.replaceChild(fresh, old);
+    else document.body.appendChild(fresh);
+  }
+  function patchSlide(slideJson, index) {
+    var deck = document.querySelector(".deck");
+    if (!deck) return;
+    var data = (window.LESSONDOC && window.LESSONDOC.data) || {};
+    var sections = deck.querySelectorAll(":scope > section.slide");
+    var fresh = buildSlide(slideJson || {}, data);
+    if (sections[index]) deck.replaceChild(fresh, sections[index]);
+    else deck.appendChild(fresh);
   }
 
   /* ---------- article 版式族(同一份 JSON 的长文渲染) ---------- */
@@ -768,6 +1188,7 @@
     return parts.length ? "?" + parts.join("&") : "";
   }
   function renderArticle(data) {
+    ARTICLE_MODE = true;                     /* 定位块/组按流式渲染,globals 不渲染 */
     document.body.className = "article-page";
     var bar = el("div", "article-topbar");
     var back = el("a", null, "⌂ 课程首页"); back.href = withQuery("../main.html");
@@ -785,11 +1206,15 @@
     (data.slides || []).forEach(function (s) {
       if (!s) return;
       var layout = String(s.layout || "content");
-      if (layout === "title") return;                 /* 封面已并入 a-head */
+      if (layout === "title") {
+        if (s.overlays && s.overlays.length) positionedToFlow(s.overlays, flow);
+        return;
+      }
       if (layout === "section") {
         flow.appendChild(el("div", "a-sec",
           '<span class="sec-no">' + esc(s.no || "") + '</span><span class="sec-title">' + esc(s.title || "") + "</span>" +
           (s.hint ? '<div class="sec-hint">' + md(s.hint) + "</div>" : "")));
+        positionedToFlow(s.overlays, flow);
         return;
       }
       var card = el("div", "a-slide");
@@ -800,6 +1225,8 @@
         renderBlocks(s.right || [], card);
       } else if (layout === "grid") {
         (s.areas || []).forEach(function (a) { renderBlocks(a && a.blocks || [], card); });
+      } else if (layout === "canvas") {
+        positionedToFlow(s.objects, card);
       } else {
         renderBlocks(s.blocks || [], card);
         if (layout === "end") {
@@ -807,8 +1234,15 @@
           if (s.nextUp) card.appendChild(el("div", "callout think", md(s.nextUp)));
         }
       }
+      positionedToFlow(s.overlays, card);
       flow.appendChild(card);
     });
+    if (data.globals && data.globals.length) {
+      var globals = el("div", "a-slide ld-article-globals");
+      positionedToFlow(data.globals, globals);
+      flow.appendChild(globals);
+    }
+    namespaceDom(flow);
     document.body.appendChild(flow);
     buildHomeAppearance(data);
   }
@@ -818,106 +1252,172 @@
      ============================================================ */
   function lessonHref(n) { return withQuery("lesson_" + n + "/lesson_" + n + ".html"); }
 
+  var HOME_SECTION_ORDER = ["hero", "mindmap", "nav", "blocks", "tabs", "footer"];
+
   function renderHome(m) {
     document.body.className = "";
+    var oldHome = document.querySelector(".ld-home");
+    var homeRoot = el("div", "ld-home");
+    if (oldHome) oldHome.replaceWith(homeRoot);
+    else document.body.appendChild(homeRoot);
     var course = m.course || {};
     var lessons = Array.isArray(m.lessons) ? m.lessons : [];
     var byN = {};
     lessons.forEach(function (L) { if (L && L.n != null) byN[L.n] = L; });
-
-    /* --- hero --- */
-    var hero = el("header", "hero");
-    hero.innerHTML = "<h1>" + esc(course.name || "课程学习文档") + "</h1>" +
-      (course.intro ? "<p>" + md(course.intro) + "</p>" : "");
-    var statsEl = el("div", "stats");
-    [
-      { v: course.totalHours, l: "总学时" },
-      { v: course.sessionCount || lessons.length, l: "课次" },
-      { v: course.credits, l: "学分" },
-      { v: course.assessment, l: "考核", small: true }
-    ].forEach(function (s) {
-      if (s.v == null || s.v === "") return;
-      statsEl.appendChild(el("div", "stat",
-        "<b" + (s.small ? ' style="font-size:1em"' : "") + ">" + esc(s.v) + "</b><span>" + esc(s.l) + "</span>"));
-    });
-    hero.appendChild(statsEl);
-    document.body.appendChild(hero);
-
-    var wrap = el("div", "wrap");
-    document.body.appendChild(wrap);
-
-    /* --- 总览思维导图(stages × lessons 自动生成) --- */
     var stages = Array.isArray(m.stages) ? m.stages : [];
-    var mmSection = el("section", "section");
-    mmSection.appendChild(el("h2", null, "课程知识体系总览"));
-    mmSection.appendChild(el("p", "sub", "点击分支展开/收起,点击课次名进入对应课次"));
-    var mmCard = el("div", "card");
-    var mmChildren = stages.map(function (st) {
-      var ns = (st && st.lessons || []).filter(function (n) { return byN[n]; });
-      return {
-        label: st && st.label || "",
-        note: ns.length ? "第" + ns[0] + "—" + ns[ns.length - 1] + "课" : "",
-        children: ns.map(function (n) {
-          var L = byN[n];
-          return {
-            label: "第" + n + "课 " + (L.title || ""),
-            note: (L.topics || []).slice(0, 2).join(" · ") || (L.status !== "ready" ? "待发布" : ""),
-            href: L.status === "ready" ? lessonHref(n) : null
-          };
-        })
-      };
-    });
-    mmCard.appendChild(renderMindmap({ root: course.name || "课程", children: mmChildren }));
-    mmSection.appendChild(mmCard);
-    wrap.appendChild(mmSection);
+    var home = (m.home && typeof m.home === "object") ? m.home : {};
 
-    /* --- 课次导航(阶段分组卡片墙) --- */
-    var navSection = el("section", "section");
-    navSection.appendChild(el("h2", null, "课次导航"));
-    navSection.appendChild(el("p", "sub", "已发布课次可点击进入"));
-    stages.forEach(function (st) {
-      if (!st) return;
-      navSection.appendChild(el("h3", "mt-md", esc(st.label || "")));
-      var grid = el("div", "grid");
-      (st.lessons || []).forEach(function (n) {
-        var L = byN[n];
-        if (!L) return;
-        var ready = L.status === "ready";
-        var card = document.createElement(ready ? "a" : "div");
-        card.className = "lesson-card " + (ready ? "ready" : "pending");
-        if (ready) card.href = lessonHref(n);
-        var tags = (L.topics || []).slice(0, 3).map(function (t) {
-          return '<span class="tag">' + esc(t) + "</span>";
-        }).join("");
-        if (L.lab) tags = '<span class="tag lab">★ 上机</span>' + tags;
-        card.innerHTML = '<span class="no">第' + n + "课</span>" +
-          (ready ? "" : '<span class="badge-soon">待发布</span>') +
-          "<h4>" + esc(L.title || "") + "</h4>" +
-          '<div class="tags">' + tags + "</div>";
-        grid.appendChild(card);
-      });
-      navSection.appendChild(grid);
+    /* 2.1:home.sections 决定区块顺序/显隐/标题;缺省与 2.0 逐像素一致 */
+    var cfgByKey = {}, order = [];
+    (Array.isArray(home.sections) ? home.sections : []).forEach(function (sc) {
+      if (!sc || !sc.key || cfgByKey[sc.key] || HOME_SECTION_ORDER.indexOf(sc.key) < 0) return;
+      cfgByKey[sc.key] = sc; order.push(sc.key);
     });
-    wrap.appendChild(navSection);
+    HOME_SECTION_ORDER.forEach(function (k) { if (!cfgByKey[k]) { cfgByKey[k] = { key: k }; order.push(k); } });
 
-    /* --- 课程信息选项卡 --- */
-    var tabs = Array.isArray(m.tabs) ? m.tabs : [];
-    if (tabs.length) {
-      var infoSection = el("section", "section");
-      infoSection.appendChild(el("h2", null, "课程信息"));
-      infoSection.appendChild(renderBlock({ type: "tabs", tabs: tabs }));
-      wrap.appendChild(infoSection);
+    var homeBg = renderBg(home.bg);
+    if (homeBg) { homeBg.className = "home-bg"; homeRoot.appendChild(homeBg); }
+
+    /* 内容区块共用一个 .wrap;hero/footer 直挂 body 并「关闭」当前 wrap 以保持顺序 */
+    var wrap = null;
+    function contentWrap() {
+      if (!wrap) { wrap = el("div", "wrap"); homeRoot.appendChild(wrap); }
+      return wrap;
     }
+    function sectionTitle(cfg, dflt) { return esc(cfg.title || dflt); }
 
-    /* --- footer --- */
-    var tb = m.textbook || {};
-    var foot = el("footer", "site");
-    var tbText = tb.title ? "教材:《" + esc(tb.title) + "》" +
-      (tb.author ? " · " + esc(tb.author) : "") + (tb.publisher ? " · " + esc(tb.publisher) : "") : "";
-    foot.innerHTML = tbText + (tbText ? "<br>" : "") +
-      "LessonDoc " + esc(String(m.spec || "2.0").replace("lessondoc/", "")) + " · 本文档由课程学习文档模板生成";
-    document.body.appendChild(foot);
+    var builders = {
+      hero: function (cfg) {
+        wrap = null;
+        var hero = el("header", "hero");
+        hero.setAttribute("data-ld-section", "hero");
+        hero.innerHTML = "<h1>" + esc(cfg.title || course.name || "课程学习文档") + "</h1>" +
+          (course.intro ? "<p>" + md(course.intro) + "</p>" : "") +
+          (course.teacher || course.department ? "<p>" + [course.teacher, course.department].filter(Boolean).map(esc).join(" · ") + "</p>" : "");
+        if (home.style && (home.style.heroGradient || home.style.bgGradient)) {
+          var hg = gradientCss(home.style.heroGradient || home.style.bgGradient);
+          if (hg) hero.style.backgroundImage = hg;
+        }
+        var allowed = Array.isArray(cfg.stats) ? cfg.stats : null;
+        var statsEl = el("div", "stats");
+        [
+          { k: "totalHours", v: course.totalHours, l: "总学时" },
+          { k: "sessionCount", v: course.sessionCount || lessons.length, l: "课次" },
+          { k: "credits", v: course.credits, l: "学分" },
+          { k: "assessment", v: course.assessment, l: "考核", small: true }
+        ].forEach(function (s) {
+          if (s.v == null || s.v === "") return;
+          if (allowed && allowed.indexOf(s.k) < 0) return;
+          statsEl.appendChild(el("div", "stat",
+            "<b" + (s.small ? ' style="font-size:1em"' : "") + ">" + esc(s.v) + "</b><span>" + esc(s.l) + "</span>"));
+        });
+        hero.appendChild(statsEl);
+        homeRoot.appendChild(hero);
+      },
+      mindmap: function (cfg) {
+        var mmSection = el("section", "section");
+        mmSection.setAttribute("data-ld-section", "mindmap");
+        mmSection.appendChild(el("h2", null, sectionTitle(cfg, "课程知识体系总览")));
+        mmSection.appendChild(el("p", "sub", "点击分支展开/收起,点击课次名进入对应课次"));
+        var mmCard = el("div", "card");
+        var depth = num(cfg.collapsedDepth, 1);
+        var collapsedStages = depth === 0;
+        var mmChildren = stages.map(function (st) {
+          var ns = (st && st.lessons || []).filter(function (n) { return byN[n]; });
+          return {
+            label: st && st.label || "",
+            note: ns.length ? "第" + ns[0] + "—" + ns[ns.length - 1] + "课" : "",
+            collapsed: collapsedStages,
+            children: ns.map(function (n) {
+              var L = byN[n];
+              return {
+                label: "第" + n + "课 " + (L.title || ""),
+                note: (L.topics || []).slice(0, 2).join(" · ") || (L.status !== "ready" ? "待发布" : ""),
+                collapsed: depth <= 1,
+                children: cfg.collapsedDepth == null ? [] : (L.topics || []).map(function (topic) { return { label: topic }; }),
+                href: L.status === "ready" ? lessonHref(n) : null
+              };
+            })
+          };
+        });
+        mmCard.appendChild(renderMindmap({ root: course.name || "课程", children: mmChildren }));
+        mmSection.appendChild(mmCard);
+        contentWrap().appendChild(mmSection);
+      },
+      nav: function (cfg) {
+        var navSection = el("section", "section");
+        navSection.setAttribute("data-ld-section", "nav");
+        navSection.appendChild(el("h2", null, sectionTitle(cfg, "课次导航")));
+        navSection.appendChild(el("p", "sub", "已发布课次可点击进入"));
+        stages.forEach(function (st) {
+          if (!st) return;
+          navSection.appendChild(el("h3", "mt-md", esc(st.label || "")));
+          var grid = el("div", "grid");
+          (st.lessons || []).forEach(function (n) {
+            var L = byN[n];
+            if (!L) return;
+            var ready = L.status === "ready";
+            var card = document.createElement(ready ? "a" : "div");
+            card.className = "lesson-card " + (ready ? "ready" : "pending");
+            if (ready) card.href = lessonHref(n);
+            var tags = (L.topics || []).slice(0, 3).map(function (t) {
+              return '<span class="tag">' + esc(t) + "</span>";
+            }).join("");
+            if (L.lab) tags = '<span class="tag lab">★ 上机</span>' + tags;
+            card.innerHTML = '<span class="no">第' + n + "课</span>" +
+              (ready ? "" : '<span class="badge-soon">待发布</span>') +
+              "<h4>" + esc(L.title || "") + "</h4>" +
+              '<div class="tags">' + tags + "</div>";
+            grid.appendChild(card);
+          });
+          navSection.appendChild(grid);
+        });
+        contentWrap().appendChild(navSection);
+      },
+      blocks: function (cfg) {                    /* 2.1 首页可编辑区块 */
+        var blocks = Array.isArray(cfg.blocks) ? cfg.blocks : [];
+        if (!blocks.length) return;
+        var sec = el("section", "section home-blocks");
+        sec.setAttribute("data-ld-section", "blocks");
+        sec.appendChild(el("h2", null, sectionTitle(cfg, "课程说明")));
+        var card = el("div", "card");
+        renderBlocks(blocks, card);
+        sec.appendChild(card);
+        contentWrap().appendChild(sec);
+      },
+      tabs: function (cfg) {
+        var tabs = Array.isArray(m.tabs) ? m.tabs : [];
+        if (!tabs.length) return;
+        var infoSection = el("section", "section");
+        infoSection.setAttribute("data-ld-section", "tabs");
+        infoSection.appendChild(el("h2", null, sectionTitle(cfg, "课程信息")));
+        infoSection.appendChild(renderBlock({ type: "tabs", tabs: tabs }));
+        contentWrap().appendChild(infoSection);
+      },
+      footer: function (cfg) {
+        wrap = null;
+        var tb = m.textbook || {};
+        var foot = el("footer", "site");
+        foot.setAttribute("data-ld-section", "footer");
+        var tbText = tb.title ? "教材:《" + esc(tb.title) + "》" +
+          (tb.author ? " · " + esc(tb.author) : "") + (tb.publisher ? " · " + esc(tb.publisher) : "") : "";
+        foot.innerHTML = (cfg.title ? esc(cfg.title) + "<br>" : "") + tbText + (tbText ? "<br>" : "") +
+          "LessonDoc " + esc(String(m.spec || "2.0").replace("lessondoc/", "")) + " · 本文档由课程学习文档模板生成";
+        homeRoot.appendChild(foot);
+      }
+    };
+    order.forEach(function (key) {
+      var cfg = cfgByKey[key];
+      if (cfg.hidden) return;
+      try { builders[key](cfg); } catch (e) { homeRoot.appendChild(brokenCard("首页区块渲染失败:" + key)); }
+    });
 
+    if (home.style && home.style.cardRadius != null) {
+      homeRoot.querySelectorAll(".card, .lesson-card").forEach(function (card) { card.style.borderRadius = clamp(num(home.style.cardRadius, 18), 0, 120) + "px"; });
+    }
+    namespaceDom(homeRoot);
+    var appearance = document.querySelector(".ld-appearance");
+    if (appearance) appearance.remove();
     buildHomeAppearance(m);
   }
 
@@ -953,7 +1453,7 @@
   }
   function buildHomeAppearance() {
     var cur = document.documentElement.getAttribute("data-theme") || "sky";
-    var box = el("div", "slides-hud");   /* 复用 HUD 样式作为浮动外观条 */
+    var box = el("div", "slides-hud ld-appearance");
     box.innerHTML = '<span>外观</span><select class="ld-theme-sel">' + themeSelectHtml(cur) +
       '</select><button type="button" class="ld-dark-btn" title="深色切换">' +
       (/\bdark\b/.test(cur) ? "☀" : "🌙") + "</button>";
@@ -991,6 +1491,28 @@
     document.body.appendChild(wrap);
   }
 
+  /* 旧壳页(未显式引入 interact.js)由引擎按自身路径自动注入,保证动作/codewalk 可用 */
+  function ensureInteract() {
+    var cur = document.currentScript;
+    var source = cur && cur.getAttribute("src") || "";
+    var base = source.replace(/deck-engine\.js.*$/, "");
+    var query = source.indexOf("?") >= 0 ? source.slice(source.indexOf("?")) : "";
+    function load() {
+      if (window.__LESSONDOC_INTERACT__) return;
+      var present = Array.prototype.some.call(document.scripts, function (script) {
+        return /interact\.js(\?|$)/.test(script.getAttribute("src") || "");
+      });
+      if (present) return;
+      var script = document.createElement("script");
+      script.src = base + "interact.js" + query;
+      document.body.appendChild(script);
+    }
+    // The parser has not encountered the following explicit script yet. Waiting
+    // prevents the cached compatibility runtime racing the new explicit runtime.
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load);
+    else load();
+  }
+
   /* ---------- 入口 ---------- */
   function main() {
     var holder = document.getElementById("lessondoc-data");
@@ -1004,7 +1526,14 @@
       try { console.warn("[lessondoc] spec 版本不匹配:", data.spec); } catch (e) { /* noop */ }
     }
     applyTheme(data);
-    window.LESSONDOC = { data: data, renderBlock: renderBlock, renderBlocks: renderBlocks };
+    /* 与 interact.js 合并挂载(加载顺序无关):__engine 供编辑桥接重渲 */
+    var LD = window.LESSONDOC = window.LESSONDOC || {};
+    LD.data = data; LD.renderBlock = renderBlock; LD.renderBlocks = renderBlocks;
+    LD.__engine = {
+      rerender: rerenderDeck, patchSlide: patchSlide, renderSlide: renderSlide,
+      renderHome: renderHome, renderPositioned: renderPositioned, applyStyle: applyStyle, applyTheme: applyTheme
+    };
+    ensureInteract();
 
     var kind = String(data.kind || document.documentElement.getAttribute("data-doc-kind") || "lesson");
     if (kind === "home") {

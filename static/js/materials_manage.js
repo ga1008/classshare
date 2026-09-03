@@ -2325,8 +2325,8 @@ function renderList() {
         const lessondocProgress = lessondocPack
             ? `<span class="materials-meta-item">${escapeHtml(String(lessondocPack.ready_count))} / ${escapeHtml(String(lessondocPack.total_count))} 课就绪</span>`
             : '';
-        const lessondocAction = lessondocPack
-            ? `<button type="button" class="btn btn-outline btn-sm" data-action="lessondoc-manage" data-pack-id="${lessondocPack.pack_id}">管理课次</button>`
+        const lessondocAction = lessondocPack && item.can_manage !== false
+            ? `<a class="btn btn-outline btn-sm" data-action="lessondoc-edit" href="/materials/lessondoc-editor/${Number(lessondocPack.pack_id)}?lesson=0&return_to=${encodeURIComponent(location.pathname+location.search)}">编辑学习文档</a><button type="button" class="btn btn-outline btn-sm" data-action="lessondoc-manage" data-pack-id="${lessondocPack.pack_id}">管理课次</button>`
             : '';
         const assignedCourses = Array.isArray(item.assigned_course_names) ? item.assigned_course_names.filter(Boolean) : [];
         const assignedClasses = Array.isArray(item.assigned_class_names) ? item.assigned_class_names.filter(Boolean) : [];
@@ -2977,6 +2977,8 @@ async function loadWorkspaceContent(detail) {
             text,
             originalText: text,
             encoding: data.encoding || 'utf-8',
+            revision: data.material?.revision || null,
+            sourceRevision: data.material?.source_revision || null,
             loading: false,
             dirty: false,
             error: '',
@@ -3144,7 +3146,7 @@ function previewMaterial(materialId) {
 async function openLessonDocManager(packId) {
     if (!packId) throw new Error('缺少学习文档包编号');
     if (typeof window.openLessonDocPackManager !== 'function') {
-        await import('/static/js/lessondoc_wizard.js?v=lessondoc-20260902c');
+        await import('/static/js/lessondoc_wizard.js?v=lessondoc-editor-20260903');
     }
     if (typeof window.openLessonDocPackManager !== 'function') {
         throw new Error('学习文档包模块加载失败');
@@ -5005,14 +5007,30 @@ async function saveActiveMaterialContent() {
     const editor = refs.detail?.querySelector('[data-material-content-editor]');
     if (!editor) return;
     const materialId = Number(state.activeDetail.id);
+    const submittedText = String(editor.value || '');
+    const requestId = state.materialWorkspace.content.requestId;
     const result = await apiFetch(`/api/materials/${materialId}/content`, {
         method: 'PUT',
         body: {
-            content: String(editor.value || ''),
+            content: submittedText,
             encoding: state.materialWorkspace.content.encoding || 'utf-8',
+            revision: state.materialWorkspace.content.revision,
+            source_revision: state.materialWorkspace.content.sourceRevision,
+            operation_id: 'source_' + (crypto.randomUUID ? crypto.randomUUID().replaceAll('-', '') : Date.now().toString(36) + Math.random().toString(36).slice(2)),
         },
     });
     showToast(result.message || '材料内容已保存', 'success');
+    if (result.warnings?.length) showToast(result.warnings.join('；'), 'warning', 7000);
+    if (Number(state.activeDetail?.id) !== materialId || state.materialWorkspace.content.requestId !== requestId) return;
+    const currentEditor = refs.detail?.querySelector('[data-material-content-editor]');
+    if (currentEditor && String(currentEditor.value || '') !== submittedText) {
+        state.materialWorkspace.content.originalText = String(result.content ?? submittedText);
+        state.materialWorkspace.content.revision = result.material?.revision || null;
+        state.materialWorkspace.content.sourceRevision = result.material?.source_revision || null;
+        state.materialWorkspace.content.dirty = String(currentEditor.value || '') !== state.materialWorkspace.content.originalText;
+        showToast('提交的内容已保存，后续输入仍保留在编辑框中', 'info');
+        return;
+    }
     await refreshActiveWorkspace(materialId);
 }
 
@@ -6673,6 +6691,7 @@ function bindEvents() {
             refreshGeneratedFinalMaterial(materialId, event.target.closest('[data-action]'));
             return;
         }
+        if (action === 'lessondoc-edit') return;
         if (action === 'lessondoc-manage') {
             // 学习文档包课次管理：复用课程页那套向导（管理面板 + 绑定/主题/引擎）。
             const packId = event.target.closest('[data-action]')?.dataset.packId;

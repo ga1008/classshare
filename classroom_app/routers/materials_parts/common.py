@@ -136,6 +136,9 @@ class MaterialBatchDownloadRequest(BaseModel):
 class MaterialContentUpdateRequest(BaseModel):
     content: str = ""
     encoding: str | None = None
+    revision: str | None = Field(default=None, max_length=128)
+    source_revision: str | None = Field(default=None, max_length=128)
+    operation_id: str | None = Field(default=None, max_length=96)
 
 
 class MaterialScopeUpdateRequest(BaseModel):

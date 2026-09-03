@@ -332,3 +332,53 @@ body.article-page { overflow: auto; height: auto; background: var(--bg); }
   .article-flow table.nice { display: block; overflow-x: auto; }
 }
 .article-topbar { display: flex; justify-content: space-between; align-items: center; max-width: 880px; margin: 10px auto 0; padding: 0 16px; font-size: .9em; }
+
+/* ============================================================
+   LessonDoc 2.1 舞台层:背景 / 定位块 / 自由版式 / 分组 / 编辑态
+   ============================================================ */
+/* 背景层:负 z 序,画在 .slide 自身背景之上、内容之下(.slide 的 transform 建立层叠上下文) */
+.slide-bg { position: absolute; inset: 0; z-index: -1; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.slide-bg-img { position: absolute; inset: 0; background-repeat: no-repeat; background-size: cover; background-position: center; }
+.slide-bg-tint { position: absolute; inset: 0; }
+
+/* 定位块:frame 坐标相对 .slide 左上角(1280×720 画布单位) */
+.ld-pos { position: absolute; box-sizing: border-box; transform-origin: center center; }
+.ld-pos > * { margin: 0; max-width: 100%; }
+.ld-pos > p, .ld-pos > .callout, .ld-pos > figure { margin: 0; }
+.ld-pos > figure > svg, .ld-pos > figure > img { max-height: 100%; }
+.ld-pos > .ld-btn { white-space: nowrap; }
+.ld-scaled-inner { position: absolute; transform-origin: 0 0; max-width: none !important; }
+.ld-scaled-inner > * { margin: 0; max-width: 100%; }
+.ld-scaled-inner > figure > svg, .ld-scaled-inner > figure > img { max-height: 100%; }
+.ld-scaled-inner > .ld-btn { white-space: nowrap; }
+
+/* 自由版式:slide-body 只是占位,元素全部绝对定位 */
+.slide--canvas .slide-body { pointer-events: none; }
+
+/* 分组:内容按 natural 尺寸排版,整体 scale 到 frame */
+.ld-group { position: relative; width: 100%; height: 100%; }
+.ld-group-inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.ld-group-flat > * + * { margin-top: 10px; }
+
+/* 舞台字号档 */
+.slide .ld-btn { font-size: 24px; }
+.slide .ld-btn--sm { font-size: 20px; }
+.slide .ld-btn--lg { font-size: 30px; }
+.slide .codewalk { margin: 6px 0; padding: 14px 18px; }
+.slide .codewalk .cw-code { font-size: 21px; }
+.slide .codewalk .cw-out { font-size: 20px; }
+.slide .codewalk .cw-note { font-size: 21px; }
+.slide .codewalk .cw-bar button { font-size: 20px; padding: 6px 18px; }
+.slide .codewalk .cw-count { font-size: 18px; }
+.slide .ld-fs :is(h4, p, b, span, td, th, li, button, figcaption, summary, .quiz-q, .quiz-exp, .reveal-body) { font-size: inherit; }
+
+/* 编辑态(父页 LESSONDOC.edit.mount 后):隐藏系统 HUD,灰显页眉页脚,显示隐藏元素 */
+html.ld-editing .nav-arrow, html.ld-editing .slides-hud, html.ld-editing .slides-progress,
+html.ld-editing .slides-home, html.ld-editing .slides-overview { display: none !important; }
+html.ld-editing .slide-chrome-head, html.ld-editing .slide-chrome-foot { pointer-events: none; opacity: .55; }
+html.ld-editing:not(.ld-trial) .fragment,
+html.ld-editing:not(.ld-trial) .frag-exited { opacity: 1 !important; transform: none !important; transition: none; }
+html.ld-editing:not(.ld-trial) .ld-hidden { display: block !important; opacity: .35; outline: 1px dashed var(--muted); }
+.ld-edit-layer { position: absolute; inset: 0; z-index: 1000; pointer-events: none; }
+.ld-edit-layer > * { pointer-events: auto; }
+.ld-selected { outline: 2px solid var(--primary) !important; outline-offset: 2px; }

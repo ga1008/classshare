@@ -30,6 +30,7 @@ from .schema_offering_merge import ensure_offering_merge_schema
 from .schema_polls import ensure_poll_schema
 from .schema_material_whiteboards import ensure_material_whiteboard_schema
 from .schema_course_doc_packs import ensure_course_doc_pack_schema
+from .schema_lessondoc_editor import ensure_lessondoc_editor_schema, mark_schema_ready_after_commit
 from .schema_resume import ensure_resume_schema
 from .schema_scheduler import ensure_scheduler_schema
 from .schema_gongwen import ensure_gongwen_schema
@@ -151,7 +152,9 @@ def init_database():
             doc_pack_conn = get_db_connection()
             try:
                 ensure_course_doc_pack_schema(doc_pack_conn)
+                ensure_lessondoc_editor_schema(doc_pack_conn)
                 doc_pack_conn.commit()
+                mark_schema_ready_after_commit()
             finally:
                 doc_pack_conn.close()
             print("[DB] PostgreSQL course doc pack tables ensured")
@@ -291,6 +294,7 @@ def init_database():
             ensure_poll_schema(conn)
             ensure_material_whiteboard_schema(conn)
             ensure_course_doc_pack_schema(conn)
+            ensure_lessondoc_editor_schema(conn)
             ensure_offering_class_links_schema(conn)
             ensure_offering_merge_schema(conn)
             ensure_materials_integrations_schema(conn)
@@ -307,6 +311,7 @@ def init_database():
             ensure_academic_final_material_schema(conn)
             ensure_academic_evaluation_schema(conn)
             conn.commit()
+            mark_schema_ready_after_commit()
         except Exception:
             conn.rollback()
             raise

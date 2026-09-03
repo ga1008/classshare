@@ -38623,14 +38623,14 @@ body.has-academic-sync-dialog {
 }
 
 /* 浮窗层 */
-.twb-layer {
+:is(.twb-layer, .ls-layer) {
     position: fixed;
     inset: 0;
     z-index: 2460;
     pointer-events: none;
 }
 
-.twb-backdrop {
+:is(.twb-backdrop, .ls-backdrop) {
     position: absolute;
     inset: 0;
     background: rgba(15, 23, 42, 0.28);
@@ -38640,11 +38640,11 @@ body.has-academic-sync-dialog {
     pointer-events: auto;
 }
 
-.twb-backdrop.is-open {
+:is(.twb-backdrop, .ls-backdrop).is-open {
     opacity: 1;
 }
 
-.twb-popover {
+:is(.twb-popover, .ls-popover) {
     position: fixed;
     z-index: 1;
     min-width: 240px;
@@ -38663,28 +38663,28 @@ body.has-academic-sync-dialog {
     outline: none;
 }
 
-.twb-popover[hidden],
-.twb-layer [hidden],
+:is(.twb-popover, .ls-popover)[hidden],
+:is(.twb-layer, .ls-layer) [hidden],
 .twb-toolbar [hidden] {
     display: none !important;
 }
 
-.twb-popover.is-open {
+:is(.twb-popover, .ls-popover).is-open {
     opacity: 1;
     transform: translateY(0) scale(1);
     transition: opacity 160ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.twb-popover--flipped {
+:is(.twb-popover--flipped, .ls-popover--flipped) {
     transform-origin: bottom left;
     transform: translateY(6px) scale(0.98);
 }
 
-.twb-popover--panel {
+:is(.twb-popover--panel, .ls-popover--panel) {
     width: 360px;
 }
 
-.twb-popover--modal {
+:is(.twb-popover--modal, .ls-popover--modal) {
     left: 50% !important;
     top: 50% !important;
     width: min(92vw, 560px);
@@ -38695,11 +38695,11 @@ body.has-academic-sync-dialog {
     transform-origin: center;
 }
 
-.twb-popover--modal.is-open {
+:is(.twb-popover--modal, .ls-popover--modal).is-open {
     transform: translate(-50%, -50%) scale(1);
 }
 
-.twb-popover--sheet {
+:is(.twb-popover--sheet, .ls-popover--sheet) {
     left: 10px !important;
     right: 10px;
     top: auto !important;
@@ -38710,24 +38710,24 @@ body.has-academic-sync-dialog {
     transform-origin: bottom center;
 }
 
-.twb-popover--sheet.is-open {
+:is(.twb-popover--sheet, .ls-popover--sheet).is-open {
     transform: translateY(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .twb-popover,
-    .twb-backdrop,
+    :is(.twb-popover, .ls-popover),
+    :is(.twb-backdrop, .ls-backdrop),
     .twb-chip,
     .twb-status-dot {
         transition-duration: 80ms;
         animation: none;
     }
 
-    .twb-popover:not(.twb-popover--modal) {
+    :is(.twb-popover, .ls-popover):not(:is(.twb-popover--modal, .ls-popover--modal)) {
         transform: none !important;
     }
 
-    .twb-popover--modal {
+    :is(.twb-popover--modal, .ls-popover--modal) {
         transform: translate(-50%, -50%) !important;
     }
 }

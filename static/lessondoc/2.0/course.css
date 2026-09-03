@@ -252,3 +252,71 @@ footer.site { text-align: center; color: var(--muted); font-size: .84em; padding
   .stepper-bar { flex-wrap: wrap; }
   .stepper-desc { flex-basis: 100%; order: 3; }
 }
+
+/* ============================================================
+   LessonDoc 2.1 组件层(编辑器模型:按钮 / 代码步进 / html 块 / 隐藏态 / 首页背景)
+   舞台放大档见 slides.css 末尾。
+   ============================================================ */
+.ld-hidden { display: none !important; }
+.ld-actionable { cursor: pointer; }
+.ld-fs :is(h4, p, b, span, td, th, li, button, figcaption, summary) { font-size: inherit; }
+.ld-grad-text { display: inline-block; }
+
+/* 按钮块 */
+.ld-btn {
+  display: inline-flex; align-items: center; gap: .4em; border-radius: 10px; cursor: pointer;
+  font-family: var(--font); font-weight: 600; line-height: 1.2; transition: transform .12s, box-shadow .12s, background-color .15s;
+  border: 2px solid var(--primary); background: var(--primary); color: #fff; padding: .55em 1.3em; font-size: 1em;
+}
+.ld-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 0, 0, .14); }
+.ld-btn:active { transform: translateY(0); box-shadow: none; }
+.ld-btn--outline { background: var(--card); color: var(--primary-dark); }
+.ld-btn--ghost { background: transparent; border-color: transparent; color: var(--primary-dark); }
+.ld-btn--link { background: transparent; border-color: transparent; color: var(--primary); text-decoration: underline; padding-left: .2em; padding-right: .2em; }
+.ld-btn--sm { font-size: .85em; padding: .4em 1em; }
+.ld-btn--lg { font-size: 1.2em; padding: .7em 1.7em; border-radius: 14px; }
+
+/* 代码步进(codewalk) */
+.codewalk { background: var(--card); border: 1.5px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin: 12px 0; text-align: left; }
+.codewalk .cw-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.codewalk .cw-title { font-weight: 600; color: var(--primary-dark); }
+.codewalk .cw-lang { font-size: .78em; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; }
+.codewalk .cw-code { background: var(--code-bg); color: var(--code-fg); border-radius: 10px; padding: 10px 0; font-family: var(--mono); font-size: .9em; line-height: 1.55; overflow-x: auto; }
+.codewalk .cw-line { display: flex; align-items: stretch; padding: 1px 14px 1px 0; border-left: 4px solid transparent; transition: background-color .2s, border-color .2s; }
+.codewalk .cw-gutter { flex: none; width: 3.2em; text-align: right; padding-right: 1em; color: rgba(226, 232, 240, .45); user-select: none; position: relative; }
+.codewalk .cw-src { white-space: pre; flex: 1; }
+.codewalk .cw-line.active { background: rgba(255, 255, 255, .12); border-left-color: var(--warn); }
+.codewalk:not(.no-arrow) .cw-line.active .cw-gutter::before {
+  content: "➜"; position: absolute; left: .2em; color: var(--warn); font-family: var(--font);
+}
+.codewalk .cw-out { background: var(--out-bg); border-left: 4px solid var(--ok); border-radius: 0 8px 8px 0; padding: 6px 12px; font-family: var(--mono); font-size: .88em; min-height: 1.8em; max-height: 8.5em; overflow-y: auto; margin-top: 8px; white-space: pre-wrap; }
+.codewalk .cw-out:empty::before { content: "输出"; color: var(--muted); font-family: var(--font); font-size: .9em; }
+.codewalk .cw-out-line { animation: cwFadeIn .3s ease; }
+@keyframes cwFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.codewalk .cw-note { margin-top: 8px; background: var(--primary-soft); border-radius: 8px; padding: 6px 12px; font-size: .92em; min-height: 1.6em; color: var(--primary-dark); }
+.codewalk .cw-note:empty { display: none; }
+.codewalk .cw-bar { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.codewalk .cw-bar button {
+  border: 1.5px solid var(--primary); background: var(--card); color: var(--primary-dark);
+  border-radius: 8px; padding: 5px 14px; cursor: pointer; font-family: var(--font); font-weight: 600; font-size: .9em;
+}
+.codewalk .cw-bar button[data-cw="run"] { background: var(--primary); color: #fff; }
+.codewalk .cw-bar button:disabled { opacity: .35; cursor: default; }
+.codewalk .cw-count { margin-left: auto; font-size: .85em; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* 自定义 html 块 */
+.ld-html { position: relative; }
+.ld-html-body img { max-width: 100%; }
+
+/* 首页背景层与可编辑区块 */
+.home-bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.home-bg .slide-bg-img, .home-bg .slide-bg-tint { position: absolute; inset: 0; }
+.home-bg .slide-bg-img { background-repeat: no-repeat; background-size: cover; background-position: center; }
+.home-blocks .card > * + * { margin-top: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ld-btn, .codewalk .cw-line { transition: none; }
+  .codewalk .cw-out-line { animation: none; }
+}
+html.ld-editing .ld-appearance { display: none !important; }
+.ld-home { position: relative; min-height: 100vh; }

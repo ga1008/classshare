@@ -2304,6 +2304,142 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/lessondoc/editor/custom-elements",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_custom_elements",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/custom-elements",
+    "methods": [
+      "POST"
+    ],
+    "name": "post_custom_element",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/custom-elements/{element_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_custom_element",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/custom-elements/{element_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_custom_element",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/custom-elements/{element_id}/insert",
+    "methods": [
+      "POST"
+    ],
+    "name": "insert_custom_element",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/editability/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_editor_editability",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/legacy-context/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_legacy_context",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/packs/{pack_id}/ai-proposal",
+    "methods": [
+      "POST"
+    ],
+    "name": "propose_editor_improvement",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/packs/{pack_id}/copy-element",
+    "methods": [
+      "POST"
+    ],
+    "name": "copy_editor_element",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/packs/{pack_id}/document",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_editor_document",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/packs/{pack_id}/document",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_editor_document",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/packs/{pack_id}/media",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_editor_media",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/packs/{pack_id}/media",
+    "methods": [
+      "POST"
+    ],
+    "name": "upload_editor_media",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/packs/{pack_id}/revisions",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_editor_revisions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/packs/{pack_id}/revisions/{revision_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_editor_revision",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/packs/{pack_id}/revisions/{revision_id}/restore",
+    "methods": [
+      "POST"
+    ],
+    "name": "restore_editor_revision",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/lessondoc/editor/packs/{pack_id}/validate",
+    "methods": [
+      "POST"
+    ],
+    "name": "validate_editor_document",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/lessondoc/packs",
     "methods": [
       "GET"
@@ -6205,6 +6341,22 @@
       "GET"
     ],
     "name": "download_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/materials/lessondoc-editor/{pack_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_editor_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/materials/lessondoc-editor/{pack_id}/preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_editor_preview",
     "include_in_schema": true
   },
   {

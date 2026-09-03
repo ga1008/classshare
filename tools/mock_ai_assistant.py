@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import json
 import os
 import uuid
 from typing import Any
@@ -48,6 +50,17 @@ def _build_response_json(payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "success", "response_text": "", "tool_calls": []}
 
     if response_format == "json":
+        if task_label == "lessondoc_editor_proposal":
+            try:
+                current = json.loads(prompt.split("【当前内容】\n", 1)[1].split("\n【教师要求】\n", 1)[0])
+                proposal = copy.deepcopy(current)
+                if proposal.get("type") == "text":
+                    proposal["md"] = str(proposal.get("md") or "") + "\n\nAI 验收示例：先观察，再验证。"
+                elif proposal.get("layout"):
+                    proposal = {"layout": "content", "title": proposal.get("title", "AI 改进示例"), "blocks": [{"type": "text", "md": "AI 验收示例：用小步骤分解问题，并验证每一步。"}]}
+                return {"status": "success", "response_json": proposal}
+            except (ValueError, IndexError, TypeError):
+                return {"status": "success", "response_json": {"layout": "content", "blocks": [{"type": "text", "md": "AI 验收示例"}]}}
         if task_label == "wrong_summary_knowledge_analysis":
             return {
                 "status": "success",

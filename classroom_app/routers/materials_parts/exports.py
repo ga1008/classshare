@@ -351,6 +351,7 @@ async def material_render_shell_page(
             "user_info": user,
             "shell": {
                 "node_id": int(material_id),
+                "package_root_id": int(package["root_node_id"]) if package else int(material_id),
                 "entry_material_id": int(target_row["id"]),
                 "entry_name": str(target_row["name"] or ""),
                 "material_name": str(node["name"] or ""),

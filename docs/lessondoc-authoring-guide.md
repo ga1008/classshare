@@ -6,6 +6,10 @@
 
 ## 1. 文件形态
 
+2026-09 编辑模型补充：`html.css` 只保存局部规则（如 `.note{color:red}`），引擎负责隔离作用域；禁止 at-rule、联网 CSS 与活动 HTML/SVG。旧 `.ld-html-ID` 前缀在规范化时自动移除。模型 ID 使用 ASCII 字母、数字、下划线和短横线；`goto.slideId` 可稳定引用页面，保存时回填 `slide`。仅人工编辑器可使用 `empty:true` 标记真正留白页，AI 不生成空页。文档上限为 2 MiB、32 层结构、每页 160 个嵌套元素、全课 2000 个元素；既有各类条目限额继续生效。首页 `home.style` 支持 `heroGradient` 和 `cardRadius`；视频封面与所有媒体共用包内相对路径规则。
+
+定位块可有 `natural:{w,h}`，每个尺寸为 1—10000 的有限数值，表示内容的内部渲染尺寸。普通定位块按 frame/natural 缩放内部内容，组合已有同名语义；编辑器在拆组时保留它，以同时保持文字、padding、边框与组件的外观。AI 生成仍只使用流式内容，不生成 frame/natural；人工编辑保存时，未选正确答案的测验以及会截断源码/解释的 codewalk 必须先修正。
+
 每个课次一个 `lesson_N/lesson_N.html`:固定壳(引 `../assets/` 四件套)+ 内嵌
 `<script type="application/json" id="lessondoc-data">` 的 deck JSON。**JSON 是唯一真源**,
 HTML 其余部分由平台生成、不可手改。首页 `main.html` 同构,内嵌 course.json(manifest)。
@@ -92,6 +96,28 @@ grid 的 `area` 用 CSS grid-area 语法 `"行起/列起/行止/列止"`(1 起,�
     ] }
   ```
   每步 = 对舞台内 `#id` 元素的属性操作集(show/hide/set);`attr:"textContent"` 改文字。
+- `button` — `{label, icon?, variant:"primary"|"outline"|"ghost"|"link", size:"sm"|"md"|"lg", actions:[…]}`
+  点击执行动作序列(见下)。任何块都可挂 `actions`;`button` 只是长得像按钮的默认载体。
+- `codewalk` — 代码逐步执行演示(讲循环/递归/算法过程首选):
+  ```jsonc
+  { "type":"codewalk", "lang":"python", "title":"累加 1..3", "loop":false, "arrow":true, "speedMs":900,
+    "lines":[
+      { "code":"total = 0", "note":"准备累加器" },
+      { "code":"for i in range(1, 4):", "note":"i 依次取 1、2、3" },
+      { "code":"    total += i", "out":"total = 1", "note":"第一次循环" },
+      { "ref":2, "out":"total = 3", "note":"第二次循环" },      // ref:再次执行第 2 行(0 起),不重复贴源码
+      { "code":"print(total)", "out":"6" } ],
+    "actions":[ { "do":"show", "target":"b_summary" } ] }      // 点「运行」时的额外事件(可省)
+  ```
+  带 `code` 的行是源码行;只带 `ref` 的行是「执行轨迹」——循环体重复执行时逐次演示而不重复贴代码。
+  运行时:运行/暂停/单步/重置,当前行高亮 + 箭头,输出逐条追加,解说随步显示。≤60 行。
+
+### 动作(actions,任何块可挂,点击触发)
+`[{do, target?, …}]`,`do` ∈ show / hide / toggle / move(`dx`,`dy`) / moveTo(`x`,`y`) / goto(`slide` 1 起) / next / prev / run / reset;
+`target` 是本课内某块的 `id`(块需显式写 `id`);可选 `ms`(时长)、`ease`。被 show/toggle 的块通常先写 `"hidden": true`。
+示例:「看答案」按钮 → `{"type":"button","label":"看答案","actions":[{"do":"toggle","target":"b_ans"}]}` + 答案块 `{"type":"callout","id":"b_ans","hidden":true,"md":"…"}`。
+
+> **仅供人工编辑器使用的字段**(AI 生成时**不要**输出):`frame`(自由坐标)、`overlays`、`objects`/`layout:"canvas"`、`globals`、`style`、`bg`、`group`、`html`、`manifest.home`。完整契约见 `docs/lessondoc-editor-2026-09.md` §4。
 
 ## 5. 编排守则(硬规则)
 
@@ -176,6 +202,10 @@ text{md,≤240字,只许 **粗** `码` *斜*} cards{cols,items:[{icon?,title,tex
 diagram{kind:flow{direction,nodes:[{id,label,tone?}],edges:[{from,to,label?}]} | sequence{actors:[{id,label}],messages:[{from,to,label,step?,dashed?}]} | arch{layers:[{label,nodes}],links} | mindmap{root,children:[{label,note?,href?,children?}]},caption}
 svg{viewBox,body,caption} 自由手绘,颜色只许 var(--dg-primary/--dg-primary-dark/--dg-primary-soft/--dg-ok/--dg-warn/--dg-err/--dg-muted/--dg-line/--dg-fill/--dg-text),禁 script/事件属性,元素可 class="fragment" data-step 分幕
 stepper{stage:svg块(动元素挂id),steps:[{text,show?,hide?,set:[{target:"#id",attr,value}]}]} attr:"textContent" 改文字。
+button{label,icon?,variant:primary|outline|ghost|link,actions:[{do:show|hide|toggle|move(dx,dy)|goto(slide),target:块id}]} 目标块写 id,被 show/toggle 的块加 "hidden":true。
+codewalk{lang,title?,loop?,speedMs?,lines:[{code,out?,note?} 或 {ref:源码行号(0起),out?,note?}]} 代码逐步执行演示:讲循环/递归/算法过程时优先用它替代 stepper;ref 行表示再次执行某源码行(循环体重复执行不重复贴代码)。
+禁止输出 frame/overlays/objects/canvas/globals/style/bg/group/html/empty 等编辑器专用字段，不生成留白页。
+页面与块的 id 只用 ASCII 字母、数字、下划线、短横线；动作 target 必须指向实际存在的块，run/reset 只指向 codewalk。可使用 goto.slideId 稳定引用页面，slide 页码仍为 1 起。媒体、视频 poster 与导图 href 只用包内相对路径；共享素材在课次中写 ../assets/media/文件名，在首页中写 assets/media/文件名。SVG 禁止脚本、事件、外部资源和危险 set 属性。每课 JSON 不超过 2 MiB、32 层结构、2000 个元素；每页不超过 160 个嵌套元素，各块原有条目上限仍适用。
 
 硬规则:一课18—25页;结构=封面→学习目标(cards×4,①②③④,逐step)→本课地图(timeline)→[section分隔+内容页]×3~6→随堂测验(每题一页,4~6题,每页title如"第2题 · 考点",首题sub="点击选项即时判分")→课后作业页(tasklist,sub含"在 lanshare 平台完成提交")→end(summary+nextUp)。一页一概念;重难点必配 diagram/svg 且带caption;大表拆页;多用step分步;实验课必有tasklist页。禁止:其他提交渠道、具体班级/学生/学校信息、网络图片URL、十六进制颜色。
 版式细则:svg.body 只写 <svg> 内部元素(不套 <svg> 外壳、不写 width/height、不画整幅背景);同页有文字时 svg viewBox 取宽扁比例(宽:高≥2:1);例题/推导/证明用 stepper 或 cards(step),不要连续堆 3 个以上 text 块;多行文本在 md 里用 \n 换行。

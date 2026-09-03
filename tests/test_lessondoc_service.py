@@ -148,7 +148,7 @@ class TestValidateDeck(unittest.TestCase):
         self.assertEqual(a["viewBox"], "0 0 900 400")
         self.assertNotIn("<svg", a["body"])
         self.assertIn("<rect", a["body"])
-        self.assertEqual(b["body"], "<circle r='1'/>")           # 无壳的原样
+        self.assertEqual(b["body"], '<circle r="1"/>')          # 解析后规范化属性引号
         self.assertEqual(sum("外层 <svg> 壳" in w for w in warnings), 1)
 
     def test_quiz_page_missing_title_backfilled(self):
@@ -355,7 +355,13 @@ class _PackFixture(unittest.TestCase):
                 file_hash TEXT,
                 file_size INTEGER DEFAULT 0,
                 ai_parse_status TEXT DEFAULT 'idle',
+                ai_parse_result_json TEXT,
                 ai_optimize_status TEXT DEFAULT 'idle',
+                ai_optimized_markdown TEXT,
+                check_questions_json TEXT DEFAULT '',
+                check_questions_status TEXT DEFAULT 'idle',
+                check_questions_error TEXT DEFAULT '',
+                check_questions_generated_at TEXT,
                 created_at TEXT,
                 updated_at TEXT
             );
@@ -526,7 +532,8 @@ class TestPackSkeleton(_PackFixture):
     def test_refresh_assets_counts(self):
         pack = self._create_pack()["pack"]
         updated = pack_service.refresh_pack_assets(self.conn, pack)
-        self.assertEqual(updated, 6)
+        # 2.1 起共 7 个引擎资产(新增 interact.js);与 spec.ASSET_FILES 同步
+        self.assertEqual(updated, 7)
 
     def test_assets_outdated_flag_lifecycle(self):
         """R5 引擎版本治理：新包不过期 → 引擎升级(指纹漂移)后过期 → 刷新恢复。"""

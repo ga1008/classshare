@@ -256,6 +256,17 @@ def _extract_blocks(container, warnings: list[str], *, where: str) -> list[dict[
             block = {"type": "text", "md": _text(node)[:_MAX_TEXT_FALLBACK_CHARS]}
         elif tag == "figure":
             block = _extract_figure(node, warnings, where=where)
+        elif tag in ("img", "audio", "video"):
+            source = node.find("source")
+            src = str(node.get("src") or (source.get("src") if source is not None else "") or "")
+            if src:
+                block = {"type": "media", "kind": "image" if tag == "img" else tag, "src": src,
+                         "caption": str(node.get("alt") or "")}
+                if tag == "video" and node.get("poster"):
+                    block["poster"] = node.get("poster")
+                _warn(warnings, f"{where}: 媒体 {src} 需要随包一起迁移，请确认路径有效")
+            else:
+                _warn(warnings, f"{where}: <{tag}> 没有可迁移的素材地址，请人工补充")
         elif tag == "table" or "nice" in cls:
             block = _extract_table(node)
         elif tag in ("ul", "ol"):
@@ -277,6 +288,8 @@ def _extract_blocks(container, warnings: list[str], *, where: str) -> list[dict[
                 _warn(warnings, f"{where}: 未识别的结构 <{tag}> 已降级为纯文本，请人工回看")
                 block = {"type": "text", "md": text[:_MAX_TEXT_FALLBACK_CHARS]}
             else:
+                if tag not in ("script", "style"):
+                    _warn(warnings, f"{where}: 未识别的空文本结构 <{tag}> 未能迁移，请人工回看")
                 continue
         if "fragment" in cls and "step" not in block:
             block["step"] = 1

@@ -1,0 +1,98 @@
+{
+  "audit_date": "2026-09-03",
+  "repository_head": "5bcee8e9",
+  "includes_preexisting_uncommitted_E0_changes": true,
+  "business_code_changed_by_this_audit": false,
+  "verification_scope": "Local source review, targeted unit tests, static sample browser interaction, isolated runtime fixtures",
+  "unit_tests": {
+    "total": 110,
+    "passed": 110,
+    "failed": 0,
+    "modules": {
+      "tests.test_lessondoc_service": 48,
+      "tests.test_lessondoc_legacy_import": 14,
+      "tests.test_lessondoc_editor_model": 24,
+      "tests.test_html_package_service": 16,
+      "tests.test_material_render_service": 8
+    }
+  },
+  "syntax_checks": {
+    "command": "node --check",
+    "passed": [
+      "static/lessondoc/2.0/deck-engine.js",
+      "static/lessondoc/2.0/interact.js",
+      "static/lessondoc/2.0/slides.js"
+    ]
+  },
+  "sample_asset_parity": {
+    "all_equal": true,
+    "files": [
+      "course.css",
+      "course.js",
+      "deck-engine.js",
+      "interact.js",
+      "slides.css",
+      "slides.js",
+      "themes.css"
+    ]
+  },
+  "model_probes": {
+    "html_css_normalization_idempotent": false,
+    "html_css_first": ".ld-html-b_h .x{color:red}",
+    "html_css_second": ".ld-html-b_h .ld-html-b_h .x{color:red}",
+    "duplicate_html_id_reassigned_without_css_rescope": true,
+    "blank_pages_dropped": [
+      "content",
+      "canvas",
+      "two-col",
+      "grid"
+    ],
+    "overlay_only_pages_dropped": [
+      "two-col",
+      "grid"
+    ],
+    "new_container_only_text_extraction": "",
+    "manifest_documented_home_style_dropped": [
+      "heroGradient",
+      "cardRadius"
+    ],
+    "manifest_duplicate_ids_and_dangling_target_retained": true,
+    "python_clean_id_preserves_unicode": true
+  },
+  "browser_probes": {
+    "css_once": "rgb(255, 0, 0)",
+    "css_twice": "rgb(30, 41, 59)",
+    "escaped_tag_became_img": true,
+    "escaped_tag_retained_event": "void(0)",
+    "positioned_run_started": false,
+    "tabs_work_before_patch": true,
+    "exited_fragment_opacity": "0",
+    "edit_mode_run_started": true,
+    "old_player_still_running_after_patch": true,
+    "bridge_mutated_input": true,
+    "tabs_work_after_patch": false,
+    "render_mutated_diagram_input": true,
+    "home_render_api": "undefined"
+  },
+  "code_review_findings_not_race_tested": [
+    "AI slide rewrite loads the whole deck before waiting for AI and writes it back without a version comparison",
+    "Existing file update uses WHERE id only",
+    "Git material synchronization can modify the same file rows through another write path",
+    "AI guide now permits button/codewalk while existing generation does not auto-refresh older package assets",
+    "Editor page/API/services/schema and editor UI/e2e are not implemented"
+  ],
+  "not_verified_this_audit": [
+    "Full test suite result recorded by previous AI",
+    "Authenticated teacher/student editor end-to-end",
+    "Real PostgreSQL concurrency",
+    "Live AI generation",
+    "Production deployment",
+    "file:// offline execution"
+  ],
+  "report": "lessondoc-editor-audit-and-construction-2026-09-03.md",
+  "audit_http_servers_stopped": true,
+  "audit_browser_tabs_closed": true,
+  "audit_temp_fixture_removed": false,
+  "cleanup_blocker": "Automatic approval rejected both recursive and bounded per-file removal with blocked by policy; no further reason was returned",
+  "remaining_temp_directory": "C:\\Users\\AngelWei\\AppData\\Local\\Temp\\lanshare-lessondoc-audit-29vuevnp"
+}

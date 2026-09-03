@@ -17,6 +17,8 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
+from pathlib import PurePosixPath
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -28,11 +30,18 @@ from ..db.connection import begin_immediate_transaction
 from ..dependencies import get_current_teacher
 from ..services.lessondoc import assets as lessondoc_assets
 from ..services.lessondoc import generate as lessondoc_generate
-from ..services.lessondoc import pack_service, spec
+from ..services.lessondoc import editor_service, pack_service, spec, media as lessondoc_media
 from ..services.lessondoc.pack_service import LessonDocPackError
 from ..services.lessondoc.validate import LessonDocValidationError
 
 router = APIRouter()
+
+
+def _update_editor_settings(conn, **kwargs):
+    try:
+        return editor_service.update_settings(conn, **kwargs)
+    except editor_service.EditorError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
 
 
 # ---------------------------------------------------------------- 请求模型
@@ -365,7 +374,7 @@ async def get_lessondoc_pack(
 
 
 @router.put("/api/lessondoc/packs/{pack_id}/theme", response_class=JSONResponse)
-async def update_lessondoc_pack_theme(
+def update_lessondoc_pack_theme(
     pack_id: int,
     payload: ThemeRequest,
     user: dict = Depends(get_current_teacher),
@@ -375,12 +384,8 @@ async def update_lessondoc_pack_theme(
     if not any(p in spec.THEMES for p in parts):
         raise HTTPException(400, f"未知主题:{payload.theme}")
     with get_db_connection() as conn:
-        begin_immediate_transaction(conn)
-        pack = _load_owned_pack(conn, pack_id, user["id"])
-        manifest = pack_service.read_manifest(conn, pack)
-        manifest["theme"] = theme
-        warnings = pack_service.write_manifest(conn, pack, manifest)
-        pack_service.touch_pack(conn, pack["id"], theme=theme)
+        saved = _update_editor_settings(conn, pack_id=pack_id, teacher_id=user["id"], theme=theme)
+        warnings = saved["warnings"]
         conn.commit()
     return {"status": "success", "message": "默认主题已更新", "warnings": warnings}
 
@@ -390,7 +395,7 @@ class StagesRequest(BaseModel):
 
 
 @router.put("/api/lessondoc/packs/{pack_id}/stages", response_class=JSONResponse)
-async def update_lessondoc_pack_stages(
+def update_lessondoc_pack_stages(
     pack_id: int,
     payload: StagesRequest,
     user: dict = Depends(get_current_teacher),
@@ -401,57 +406,27 @@ async def update_lessondoc_pack_stages(
     传空数组 = 恢复单一「全部课次」分组。
     """
     with get_db_connection() as conn:
-        begin_immediate_transaction(conn)
-        pack = _load_owned_pack(conn, pack_id, user["id"])
-        manifest = pack_service.read_manifest(conn, pack)
-        manifest["stages"] = [
+        stages = [
             {"label": s.label.strip() or "阶段", "lessons": list(s.lessons)}
             for s in payload.stages
             if s.lessons
         ]
-        try:
-            warnings = pack_service.write_manifest(conn, pack, manifest)
-        except LessonDocValidationError as exc:
-            conn.rollback()
-            raise HTTPException(400, str(exc))
+        saved = _update_editor_settings(conn, pack_id=pack_id, teacher_id=user["id"], stages=stages)
+        warnings = saved["warnings"]
         conn.commit()
     return {"status": "success", "message": "阶段分组已更新，课程首页已重渲", "warnings": warnings}
 
 
 @router.put("/api/lessondoc/packs/{pack_id}/lessons/{lesson_no}", response_class=JSONResponse)
-async def update_lessondoc_lesson(
+def update_lessondoc_lesson(
     pack_id: int,
     lesson_no: int,
     payload: UpdateLessonRequest,
     user: dict = Depends(get_current_teacher),
 ):
     with get_db_connection() as conn:
-        begin_immediate_transaction(conn)
-        pack = _load_owned_pack(conn, pack_id, user["id"])
-        lessons = {l["lesson_no"]: l for l in pack_service.list_pack_lessons(conn, pack["id"])}
-        state = lessons.get(int(lesson_no))
-        if state is None:
-            raise HTTPException(404, "该课次不在此学习文档包中")
-        gen_status = None
-        if payload.excluded is not None:
-            if state["gen_status"] in {"queued", "running"}:
-                raise HTTPException(409, "课次正在生成中,无法调整排除状态")
-            gen_status = "excluded" if payload.excluded else (
-                "ready" if state["gen_status"] == "ready" else "pending"
-            )
-        pack_service.update_lesson_state(
-            conn,
-            pack_id=pack["id"],
-            lesson_no=int(lesson_no),
-            gen_status=gen_status,
-            user_hint=payload.user_hint,
-        )
-        if payload.title is not None and payload.title.strip():
-            manifest = pack_service.read_manifest(conn, pack)
-            for lesson in manifest.get("lessons") or []:
-                if isinstance(lesson, dict) and int(lesson.get("n") or 0) == int(lesson_no):
-                    lesson["title"] = payload.title.strip()
-            pack_service.write_manifest(conn, pack, manifest)
+        _update_editor_settings(conn, pack_id=pack_id, teacher_id=user["id"], lesson_no=int(lesson_no),
+                                title=payload.title, excluded=payload.excluded, user_hint=payload.user_hint)
         conn.commit()
     return {"status": "success", "message": "课次设置已更新"}
 
@@ -640,6 +615,9 @@ async def import_legacy_package(
 
         warnings: list[str] = []
         decks: list[tuple[int, dict[str, Any]]] = []
+        source_dirs = {}
+        source_pack = {"root_material_id": package["root_node_id"], "teacher_id": int(user["id"])}
+        source_root = conn.execute("SELECT material_path FROM course_materials WHERE id=?", (package["root_node_id"],)).fetchone()[0]
         lessons_meta: list[dict[str, Any]] = []
         for lesson in package.get("lessons") or []:
             lesson_no = int(lesson["number"])
@@ -656,6 +634,14 @@ async def import_legacy_package(
                 continue
             warnings.extend(f"第 {lesson_no} 课 · {w}" for w in deck_warnings)
             decks.append((lesson_no, deck))
+            source_dirs[lesson_no] = str(PurePosixPath(lesson["entry"]["material_path"]).parent.relative_to(PurePosixPath(source_root)))
+            def inspect_resource(src):
+                try:
+                    lessondoc_media.resolve_reference(conn, source_pack, lesson_no, src, relative_dir=source_dirs[lesson_no])
+                except editor_service.EditorError as exc:
+                    warnings.append(f"第 {lesson_no} 课 · {exc}")
+                return src
+            lessondoc_media.map_resources(deck, inspect_resource)
             lessons_meta.append(
                 {
                     "n": lesson_no,
@@ -686,6 +672,8 @@ async def import_legacy_package(
                 "preview": {"course": manifest.get("course"), "lessons": lessons_meta},
             }
 
+        for entry in manifest["lessons"]:
+            entry["status"] = "pending"
         try:
             result = pack_service.create_pack_skeleton(
                 conn,
@@ -702,42 +690,47 @@ async def import_legacy_package(
         warnings.extend(result["warnings"])
 
         for lesson_no, deck in decks:
+            conn.execute("SAVEPOINT lessondoc_import_item")
             try:
-                lesson_warnings = pack_service.write_lesson_files(conn, pack, lesson_no, deck)
-            except LessonDocValidationError as exc:
+                deck = lessondoc_media.copy_document_resources(conn, document=deck, source_pack=source_pack,
+                                                               target_pack=pack, lesson_no=lesson_no, source_dir=source_dirs[lesson_no])
+                saved = editor_service.save_document(conn, pack_id=pack["id"], teacher_id=int(user["id"]), lesson_no=lesson_no,
+                                                     document=deck, expected_revision=editor_service.ABSENT_REVISION,
+                                                     operation_id="import_" + uuid.uuid4().hex, source="import", allow_loss=True)
+                lesson_warnings = saved["warnings"]
+            except (LessonDocValidationError, editor_service.EditorError) as exc:
+                conn.execute("ROLLBACK TO SAVEPOINT lessondoc_import_item")
+                conn.execute("RELEASE SAVEPOINT lessondoc_import_item")
                 warnings.append(f"第 {lesson_no} 课写入失败：{exc}")
                 pack_service.update_lesson_state(
                     conn, pack_id=pack["id"], lesson_no=lesson_no, gen_status="failed",
                     warnings=[str(exc)],
                 )
                 continue
+            conn.execute("RELEASE SAVEPOINT lessondoc_import_item")
             warnings.extend(f"第 {lesson_no} 课 · {w}" for w in lesson_warnings)
-            pack_service.update_lesson_state(
-                conn, pack_id=pack["id"], lesson_no=lesson_no, gen_status="ready",
-                warnings=lesson_warnings,
-            )
         conn.commit()
         summary = _pack_summary(conn, pack)
 
     return {
         "status": "success",
-        "message": f"已迁移 {len(decks)} 个课次到新的学习文档包（原包保持不变）",
+        "message": f"新包已创建，{summary['ready_count']} / {len(decks)} 个课次已就绪；未完成的课次可在编辑器中继续处理（原包保持不变）",
         "pack": summary,
         "warnings": warnings,
     }
 
 
 @router.post("/api/lessondoc/packs/{pack_id}/refresh-assets", response_class=JSONResponse)
-async def refresh_lessondoc_assets(
+def refresh_lessondoc_assets(
     pack_id: int,
     user: dict = Depends(get_current_teacher),
 ):
     with get_db_connection() as conn:
-        begin_immediate_transaction(conn)
         pack = _load_owned_pack(conn, pack_id, user["id"])
         try:
+            pack = editor_service._lock_pack(conn, pack_id, user["id"])
             updated = pack_service.refresh_pack_assets(conn, pack)
-        except LessonDocPackError as exc:
+        except (LessonDocPackError, editor_service.EditorError) as exc:
             conn.rollback()
             raise HTTPException(409, str(exc))
         conn.commit()
