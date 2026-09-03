@@ -1,0 +1,157 @@
+{
+  "source_commit": "7a3ebfef02c22cf1c66933006766cf08c24c3f4c",
+  "release_id": "20260903-235317-fc5bdf1638e6",
+  "manifest_files": 1687,
+  "asset_checks": [
+    {
+      "path": "static/js/lessondoc_editor/page_rail.js",
+      "status": 200,
+      "sha256": "0b083403771a9db6d59b95464581f4901778afb87b551672f2c118df5e8a9d39"
+    },
+    {
+      "path": "static/css/lessondoc_editor.css",
+      "status": 200,
+      "sha256": "b43ba5769b944efb5ca8dc67135b0a23c9bae6535b78afa5124358d8f5c25d72"
+    }
+  ],
+  "first_html_cache_clear": "cache",
+  "second_html_cache_clear": null,
+  "public_html_status": 200,
+  "code_backup": "/tmp/lanshare-deploy-backups/code-20260903-235324.tgz",
+  "database_backup": "/tmp/lanshare-deploy-backups/db-20260903-235324.sql.gz",
+  "dry_run": "passed",
+  "migration_gate": "passed",
+  "postgres_preflight": "passed",
+  "deploy_exit": "DEPLOY_DONE",
+  "recent_logs": "NO_RECENT_ERROR_LOGS",
+  "containers": {
+    "agent-worker": {
+      "state": "running",
+      "health": ""
+    },
+    "ai": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "app": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "blog-crawler": {
+      "state": "running",
+      "health": ""
+    },
+    "deepseek-runtime": {
+      "state": "running",
+      "health": ""
+    },
+    "mailer": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "nginx": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "postgres": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "scheduler": {
+      "state": "running",
+      "health": "healthy"
+    }
+  },
+  "health": {
+    "main_status": "ok",
+    "release_id": "20260903-235317-fc5bdf1638e6",
+    "background_summary": {
+      "task_type_count": 9,
+      "total_queue_depth": 12,
+      "total_running_count": 0,
+      "total_failed_count": 477,
+      "total_stale_count": 0,
+      "active_worker_count": 4,
+      "problem_task_types": [
+        "ai_grading",
+        "material_ai_import",
+        "email_outbox",
+        "blog_news_crawler",
+        "agent_task",
+        "scheduled_task"
+      ]
+    },
+    "item_states": {
+      "ai_grading": "ok",
+      "material_ai_import": "ok",
+      "session_material_generation": "ok",
+      "private_message_ai_reply": "ok",
+      "email_outbox": "ok",
+      "blog_news_crawler": "ok",
+      "agent_task": "ok",
+      "scheduled_task": "ok",
+      "behavior_write_pipeline": "ok"
+    },
+    "failure_times": {
+      "scheduled_tasks": {
+        "count": 9,
+        "latest": "2026-09-03T22:19:17"
+      },
+      "email_outbox": {
+        "count": 456,
+        "latest": "2026-06-29T02:37:20"
+      }
+    }
+  },
+  "ai_health": {
+    "status": "ok",
+    "grading_queue": {
+      "pending": 0,
+      "max_pending": 200,
+      "max_concurrent": 4
+    }
+  },
+  "verification": {
+    "frontend_tests": {
+      "files": 28,
+      "passed": 99
+    },
+    "typecheck": "passed",
+    "production_build": "passed",
+    "browser_fixture_pages": 27,
+    "pointer_distance_px": [
+      42,
+      17,
+      0
+    ],
+    "pointer_strength": [
+      0.153893,
+      0.613597,
+      1
+    ],
+    "max_visible_insert_markers": 1,
+    "insert_middle_undo_redo_reload": "passed",
+    "insert_first_keyboard": "passed",
+    "insert_last_pointer": "passed",
+    "scroll_before_after_save": [
+      3500,
+      3500
+    ],
+    "preview_insertion_hidden": true,
+    "narrow_viewport_width": 390,
+    "narrow_document_width": 390,
+    "coarse_pointer_hit_width": 44,
+    "touch_injection": "unsupported by browser; layout only",
+    "qa_document_restored": true,
+    "qa_server_stopped": true
+  },
+  "cleanup": {
+    "status": "blocked by automatic approval review",
+    "reason": "blocked by policy",
+    "retained_temp_directories": [
+      "%TEMP%/lanshare-rail-release-7a3ebfef",
+      "%TEMP%/lanshare-page-rail-20260903"
+    ],
+    "excluded_from_git_and_deploy": true
+  }
+}
