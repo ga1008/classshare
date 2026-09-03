@@ -1,0 +1,161 @@
+{
+  "source_commit": "6419f099b753844b38e27a8593b063d354cdae0b",
+  "release_id": "20260904-011345-04825a5acd66",
+  "asset_checks": [
+    {
+      "path": "static/css/lessondoc_editor.css",
+      "status": 200,
+      "sha256": "38af6c6a2491a31d950cd1ed37ea04c0ea0511d2b0cb0461e4f7970df938f9b7"
+    },
+    {
+      "path": "static/css/ui_color_picker.css",
+      "status": 200,
+      "sha256": "96f423077ef6f5620f2aa0f2da8dc7658a4755fb3af6b5d0e9c3600c1e393317"
+    },
+    {
+      "path": "static/js/lessondoc_editor/actions_builder.js",
+      "status": 200,
+      "sha256": "00bf93701fcd15aa7b7227f1c5af60d1fd4ddb6c909cc542f3d04609566d227c"
+    },
+    {
+      "path": "static/js/lessondoc_editor/appearance_controls.js",
+      "status": 200,
+      "sha256": "f751f94b72dc22689d6471f396e41e02c77629126739b77b15740c439f8aa4ea"
+    },
+    {
+      "path": "static/js/lessondoc_editor/background_editor.js",
+      "status": 200,
+      "sha256": "deb6cbba4257c875a9174ea739190647fd46583e6a44a95472054e07e6d9da68"
+    },
+    {
+      "path": "static/js/lessondoc_editor/content_controls.js",
+      "status": 200,
+      "sha256": "5683fedd80c98fb691fbcd010db1f95d6855b492a90a2bc403b4850c02317727"
+    },
+    {
+      "path": "static/js/lessondoc_editor/home_controls.js",
+      "status": 200,
+      "sha256": "3535cc61f53c58cb00c1d4f39e38c6d533b97ecec48ed25bca4c8f3f5c7d8df7"
+    },
+    {
+      "path": "static/js/lessondoc_editor/home_editor.js",
+      "status": 200,
+      "sha256": "afbc0e5e8e8bdd1685c4a2a9efc79957d842c7ac9879a95a9151f6d79d6b8dfc"
+    },
+    {
+      "path": "static/js/lessondoc_editor/index.js",
+      "status": 200,
+      "sha256": "738b1610dcb59683e38b519f56c52f4269beaebf704d5c7c9b40ff777205dc78"
+    },
+    {
+      "path": "static/js/lessondoc_editor/props_panel.js",
+      "status": 200,
+      "sha256": "ce05f37b28d5d08e3f91f234ba0910adfed383ee8eb97d67cd526f51161253dd"
+    },
+    {
+      "path": "static/js/lessondoc_editor/registry.js",
+      "status": 200,
+      "sha256": "ed60a5d7c1d2a995b1dd67a20bd4521fb1d2a29383ab1649ce9e362ab93801fb"
+    },
+    {
+      "path": "static/js/lessondoc_editor/ui.js",
+      "status": 200,
+      "sha256": "b01f8d2cbdc0c5faa297b1480bea87cd56ef96386cf1794c9821bc188287e6b5"
+    },
+    {
+      "path": "static/js/ui_color_model.js",
+      "status": 200,
+      "sha256": "5415ebfbdf18d319cc9efba5cba6b27d3a3862f4b58e895417bed0c5e255d2db"
+    },
+    {
+      "path": "static/js/ui_color_picker.js",
+      "status": 200,
+      "sha256": "ea313a8af41dc2d6567d2d17aa46000edf128ab76a07cf4cee105697b2f514c3"
+    },
+    {
+      "path": "static/js/ui_popover.js",
+      "status": 200,
+      "sha256": "13fb79fb8dfacf9ae18954b9f65d989a481f4a86800e24155c05fd2821263561"
+    }
+  ],
+  "first_html_cache_clear": "\"cache\"",
+  "second_html_cache_clear": null,
+  "public_html_status": 200,
+  "manifest_files": 1698,
+  "dry_run": "passed",
+  "migration_gate": "passed",
+  "postgres_preflight": "passed",
+  "frontend_image_build": "passed",
+  "deploy_exit": "DEPLOY_DONE",
+  "recent_logs": "NO_RECENT_ERROR_LOGS",
+  "code_backup": "/tmp/lanshare-deploy-backups/code-20260904-011353.tgz",
+  "database_backup": "/tmp/lanshare-deploy-backups/db-20260904-011353.sql.gz",
+  "main_health": "ok",
+  "ai_health": "ok",
+  "template_sha256": "63979dcc58688a92107f9c5af7b3a261df447dd951a05f172b33c863f93290c2",
+  "background_tasks": {
+    "failed_before": 477,
+    "failed_after": 477,
+    "stale": 0,
+    "current_items": {
+      "ai_grading": "ok",
+      "material_ai_import": "ok",
+      "session_material_generation": "ok",
+      "private_message_ai_reply": "ok",
+      "email_outbox": "ok",
+      "blog_news_crawler": "ok",
+      "agent_task": "ok",
+      "scheduled_task": "ok",
+      "behavior_write_pipeline": "ok"
+    }
+  },
+  "containers": {
+    "agent-worker": {
+      "state": "running",
+      "health": ""
+    },
+    "ai": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "app": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "blog-crawler": {
+      "state": "running",
+      "health": ""
+    },
+    "deepseek-runtime": {
+      "state": "running",
+      "health": ""
+    },
+    "mailer": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "nginx": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "postgres": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "scheduler": {
+      "state": "running",
+      "health": "healthy"
+    }
+  },
+  "tests": {
+    "frontend": 114,
+    "frontend_files": 29,
+    "backend_editor": 73,
+    "syntax_files": 35,
+    "browser": "passed",
+    "qa_documents_restored": [
+      3,
+      0
+    ]
+  }
+}
