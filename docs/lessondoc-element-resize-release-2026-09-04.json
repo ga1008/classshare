@@ -1,0 +1,524 @@
+{
+  "source_commit": "4a182f4e98a7cd8bc27f8a64daf2527dfbbe08a5",
+  "release_id": "20260904-020326-7d8f75deedfd",
+  "asset_checks": [
+    {
+      "path": "static/js/lessondoc_editor/actions_builder.js",
+      "status": 200,
+      "sha256": "6278df8c1ffc3b09f1ea781ff74e809f6e4a7128a0ff49b8a7212900c303f159"
+    },
+    {
+      "path": "static/js/lessondoc_editor/canvas_controller.js",
+      "status": 200,
+      "sha256": "3346d6e62213b00278177d9a99f34b9d6fce8182102d0c03a9102fe9017e91f7"
+    },
+    {
+      "path": "static/js/lessondoc_editor/geometry.js",
+      "status": 200,
+      "sha256": "1473a7156877c84e8eb6affd91c1266df447ad129f647d4723b19421ae205844"
+    },
+    {
+      "path": "static/js/lessondoc_editor/index.js",
+      "status": 200,
+      "sha256": "b91755bd79120a56729b4928d74640cf2a45dad246092b7afcd1ea2bba493307"
+    },
+    {
+      "path": "static/js/lessondoc_editor/layout_conversion.js",
+      "status": 200,
+      "sha256": "2ce2fab8739d1b48a41f8b670386239febe5e87e4a1b39798d923b1fcd6eca07"
+    },
+    {
+      "path": "static/js/lessondoc_editor/props_panel.js",
+      "status": 200,
+      "sha256": "d42a4ca10703998daeb76fd5a5bcd83cda82eac7508fca986fb0f36abd0cad14"
+    },
+    {
+      "path": "static/js/lessondoc_editor/registry.js",
+      "status": 200,
+      "sha256": "38036591b665576b3bd0d5445df1761823521c4d4d905c87580af254cf185240"
+    },
+    {
+      "path": "static/js/lessondoc_editor/resize_commands.js",
+      "status": 200,
+      "sha256": "5f71a91bb9de8bc66fb085cdb92a02cfc75f391830e534c1d16145f86731cecc"
+    },
+    {
+      "path": "static/lessondoc/2.0/course.css",
+      "status": 200,
+      "sha256": "1ba586c58086a9785c2df649daa16c6eee47c4116dddab288243fba6d4195bac"
+    },
+    {
+      "path": "static/lessondoc/2.0/deck-engine.js",
+      "status": 200,
+      "sha256": "6f4df10f4ce05af103f15ee0e7bafd11a4468bed452df7f87422810464f5273f"
+    },
+    {
+      "path": "static/lessondoc/2.0/interact.js",
+      "status": 200,
+      "sha256": "0b332b8191b223c13d2706002061229b5953e131fbd1d45e0d21f35a5075829e"
+    },
+    {
+      "path": "static/lessondoc/2.0/slides.css",
+      "status": 200,
+      "sha256": "d65fbbbd69359e38933ab7198b5e9b52080d595c34d05a2874cc900607bc8b07"
+    }
+  ],
+  "backend_checks": {
+    "classroom_app/services/lessondoc/validate.py": "3d3fa8a702d27ae1b17f1a19ad3df410f5a57607fef4fa21ad80f66f9ccb1669",
+    "classroom_app/services/lessondoc/custom_elements.py": "2f98739d33d505c9e9f883a6c619b42818d075593d37048ca585c3d245629421"
+  },
+  "first_html_cache_clear": "\"cache\"",
+  "second_html_cache_clear": null,
+  "containers": [
+    {
+      "service": "agent-worker",
+      "state": "running",
+      "health": ""
+    },
+    {
+      "service": "ai",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "app",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "blog-crawler",
+      "state": "running",
+      "health": ""
+    },
+    {
+      "service": "deepseek-runtime",
+      "state": "running",
+      "health": ""
+    },
+    {
+      "service": "mailer",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "nginx",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "postgres",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "scheduler",
+      "state": "running",
+      "health": "healthy"
+    }
+  ],
+  "frontend_tests": 145,
+  "frontend_test_files": 30,
+  "backend_tests": 76,
+  "javascript_syntax_files": 36,
+  "browser_checks": [
+    {
+      "case": "corner-opposite-anchor-and-undo-redo",
+      "passed": true
+    },
+    {
+      "case": "short-flow-element-edge-hit-area",
+      "passed": true
+    },
+    {
+      "case": "flow-conversion-restore-nested-and-tabs-interaction",
+      "passed": true
+    },
+    {
+      "case": "文字",
+      "passed": true,
+      "before": [
+        851.37,
+        358.8
+      ],
+      "corner": [
+        888.54,
+        374.465
+      ],
+      "edge": [
+        859.617,
+        374.465
+      ]
+    },
+    {
+      "case": "卡片",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "醒目数字",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "醒目标记",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "时间线",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "表格",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "提示框",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "标签页",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "折叠详情",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "代码",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "图片 / 音视频",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "SVG 图形",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "结构图",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "小测验",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "任务清单",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "点击揭晓",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "分步演示",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "动作按钮",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "代码演示",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "组合",
+      "passed": true,
+      "before": [
+        560,
+        260
+      ],
+      "corner": [
+        596.646,
+        277.014
+      ],
+      "edge": [
+        567.724,
+        277.014
+      ]
+    },
+    {
+      "case": "HTML 片段",
+      "passed": true,
+      "before": [
+        720,
+        340
+      ],
+      "corner": [
+        756.541,
+        357.255
+      ],
+      "edge": [
+        727.618,
+        357.255
+      ]
+    },
+    {
+      "case": "scaled-group-child-edge",
+      "passed": true
+    },
+    {
+      "case": "rotated-html-corner",
+      "passed": true
+    },
+    {
+      "case": "home-scrolled-edge-resize",
+      "passed": true
+    },
+    {
+      "case": "eight-handles-browser-and-save-reload",
+      "passed": true
+    },
+    {
+      "case": "quarter-zoom-pointer-tracking",
+      "passed": true
+    },
+    {
+      "case": "scaled-codewalk-step-reset",
+      "passed": true
+    },
+    {
+      "case": "scaled-quiz-answer-explanation",
+      "passed": true
+    },
+    {
+      "case": "flow-to-canvas-validation-and-undo",
+      "passed": true
+    }
+  ],
+  "browser_errors": [],
+  "local_documents_restored_exactly": [
+    3,
+    0
+  ],
+  "deployment_manifest_count": 1702,
+  "manifest_excluded_task_data": true,
+  "migration_and_postgres_preflight": "ok",
+  "main_health": "ok",
+  "ai_health": "ok",
+  "ai_grading_queue_present": true,
+  "background_failed_before": 477,
+  "background_failed_after": 477,
+  "background_stale_after": 0,
+  "current_task_types_ok": true,
+  "code_backup": "/tmp/lanshare-deploy-backups/code-20260904-020333.tgz",
+  "db_backup": "/tmp/lanshare-deploy-backups/db-20260904-020333.sql.gz",
+  "deploy_done": true,
+  "no_recent_error_logs": true
+}
