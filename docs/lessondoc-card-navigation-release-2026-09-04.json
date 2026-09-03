@@ -1,0 +1,185 @@
+{
+  "source_commit": "e1061c2cebc5a876caeda6ef0d99aaa7ea054313",
+  "release_id": "20260904-002213-702c3fbdef26",
+  "manifest_files": 1690,
+  "asset_checks": [
+    {
+      "path": "static/js/lessondoc_editor/index.js",
+      "status": 200,
+      "sha256": "edd746f951195956d551db0ccc124f610be95ca4c2d3ef028891b7618651ba1b"
+    },
+    {
+      "path": "static/js/lessondoc_editor/page_rail.js",
+      "status": 200,
+      "sha256": "d289e9e9ec6e29da6c3714b9f0cac1570c8588e22f1f27dece17f4ae42b0ee72"
+    },
+    {
+      "path": "static/js/lessondoc_editor/page_rail_pointer.js",
+      "status": 200,
+      "sha256": "48a8bcce883938af22b19aa80ee1d3cfce665d32181599267d1c08a42cf34b20"
+    },
+    {
+      "path": "static/js/lessondoc_editor/props_panel.js",
+      "status": 200,
+      "sha256": "7753c29aa4960f9d02102e4220b5f6fca15b8cbc46ab5e91eb3249e8d364f294"
+    },
+    {
+      "path": "static/css/lessondoc_editor.css",
+      "status": 200,
+      "sha256": "b75dda4034198c194a2cf9495365434fd344b0c71b58262371c6d95e26ba4dfb"
+    }
+  ],
+  "first_html_cache_clear": "cache",
+  "second_html_cache_clear": null,
+  "public_html_status": 200,
+  "code_backup": "/tmp/lanshare-deploy-backups/code-20260904-002220.tgz",
+  "database_backup": "/tmp/lanshare-deploy-backups/db-20260904-002220.sql.gz",
+  "dry_run": "passed",
+  "migration_gate": "passed",
+  "postgres_preflight": "passed",
+  "deploy_exit": "DEPLOY_DONE",
+  "recent_logs": "NO_RECENT_ERROR_LOGS",
+  "main_health": "ok",
+  "ai_health": {
+    "status": "ok",
+    "grading_queue": {
+      "pending": 0,
+      "max_pending": 200,
+      "max_concurrent": 4
+    }
+  },
+  "background_tasks": {
+    "failed_before": 477,
+    "failed_after": 477,
+    "stale": 0,
+    "current_items": {
+      "ai_grading": "ok",
+      "material_ai_import": "ok",
+      "session_material_generation": "ok",
+      "private_message_ai_reply": "ok",
+      "email_outbox": "ok",
+      "blog_news_crawler": "ok",
+      "agent_task": "ok",
+      "scheduled_task": "ok",
+      "behavior_write_pipeline": "ok"
+    }
+  },
+  "containers": {
+    "agent-worker": {
+      "state": "running",
+      "health": ""
+    },
+    "ai": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "app": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "blog-crawler": {
+      "state": "running",
+      "health": ""
+    },
+    "deepseek-runtime": {
+      "state": "running",
+      "health": ""
+    },
+    "mailer": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "nginx": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "postgres": {
+      "state": "running",
+      "health": "healthy"
+    },
+    "scheduler": {
+      "state": "running",
+      "health": "healthy"
+    }
+  },
+  "verification": {
+    "frontend_tests": 106,
+    "frontend_test_files": 28,
+    "backend_model_regression_tests": 41,
+    "typecheck": "passed",
+    "syntax": "passed",
+    "production_build": "passed",
+    "drag_left": {
+      "pointer_delta": -300,
+      "scroll_before": 0,
+      "scroll_after": 300
+    },
+    "drag_right": {
+      "pointer_delta": 150,
+      "scroll_before": 300,
+      "scroll_after": 150
+    },
+    "gap_drag": {
+      "scroll_before": 150,
+      "scroll_after": 150,
+      "pages_before": 27,
+      "pages_after": 27
+    },
+    "drag_outside_release": {
+      "pointer_delta": -350,
+      "scroll_after": 350,
+      "selection_unchanged": true,
+      "drag_state_reset": true
+    },
+    "card_edge_hit": "switches page",
+    "gap_edge_hit": "inserts page",
+    "card_gap_jitter_px": 4,
+    "jitter_inserts_page": false,
+    "page_delete": {
+      "before": 27,
+      "after": 26,
+      "undo": 27,
+      "redo_reload": 26
+    },
+    "reference_cleanup": "confirmed in visible document JSON after save",
+    "page_limit": {
+      "count": 40,
+      "insert_disabled": true
+    },
+    "end_reversal": {
+      "pointer_delta": 20,
+      "scroll_before": 5312,
+      "scroll_after": 5292
+    },
+    "last_page": {
+      "count": 1,
+      "selected_index": 0,
+      "delete_disabled": true,
+      "saved": true
+    },
+    "keyboard_gap_insertion": "passed",
+    "preview_gap_click": "no mutation",
+    "blank_tail_click": "no mutation",
+    "property_context_switch": "passed",
+    "narrow_viewport": {
+      "width": 390,
+      "height": 844,
+      "document_width": 390,
+      "footer_delete": "passed"
+    },
+    "reduced_motion_transition": "0s",
+    "final_runtime_observation": "no exceptionThrown events",
+    "real_touch_hardware": "not tested",
+    "qa_document_restored": true,
+    "qa_server_stopped": true
+  },
+  "cleanup": {
+    "release_worktree_removed": true,
+    "qa_server_stopped": true,
+    "qa_document_restored": true,
+    "test_temp_cleanup": "blocked by automatic approval review",
+    "reason": "blocked by policy",
+    "retained_directory": "%TEMP%/lanshare-rail-drag-20260904",
+    "excluded_from_git_and_deploy": true
+  }
+}
