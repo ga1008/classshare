@@ -14,6 +14,13 @@ from .schema_ai_jobs import (
 
 
 POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    # Older exports lost this column-level UNIQUE; configuration saves use it
+    # as their ON CONFLICT target. Repair at startup, never during requests.
+    (
+        "idx_ai_class_configs_unique_offering",
+        "ai_class_configs",
+        ("class_offering_id",),
+    ),
     # The organization catalog and teacher membership writers use UPSERTs with
     # these conflict targets. SQLite keeps the UNIQUE declarations from
     # migrations.py, but the SQLite -> PostgreSQL exporter drops table-level

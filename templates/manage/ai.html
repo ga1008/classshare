@@ -104,6 +104,10 @@
                         </div>
                         <button type="submit" class="btn btn-primary" id="aiConfigSubmitBtn">保存 AI 配置</button>
                     </div>
+                    <div class="academic-field" role="status" aria-live="polite">
+                        <span id="aiConfigStatus">请选择课堂后加载配置。</span>
+                        <button type="button" class="btn btn-outline" id="aiConfigRetryBtn" hidden>重新加载</button>
+                    </div>
                     <div class="academic-field">
                         <label for="aiSystemPromptInput">系统提示词</label>
                         <textarea id="aiSystemPromptInput" name="system_prompt" class="form-control ai-textarea" data-prompt-pool-key="classroom_ai.system_prompt" placeholder="选择课堂后自动加载已有配置，也可点击重新生成默认草稿自动填充。"></textarea>

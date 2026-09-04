@@ -1,4 +1,7 @@
+import logging
+
 from .common import *
+from ...services.academic_service import build_textbook_prompt_context
 
 from ...services.offering_bootstrap_service import build_offering_bootstrap_candidates
 from ...services.offering_membership_service import (
@@ -14,6 +17,7 @@ from ...services.offering_merge_service import (
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/class_offerings/bootstrap/candidates", response_class=JSONResponse)
@@ -526,20 +530,28 @@ async def api_delete_class_offering(offering_id: int, user: dict = Depends(get_c
 
 @router.post("/ai/configure", response_class=JSONResponse)
 async def api_configure_ai_offering(
+        request: Request,
         class_offering_id: int = Form(...),
         system_prompt: str = Form(""),
         syllabus: str = Form(""),
-        textbook_id: str = Form(default=""),
+        textbook_id: str | None = Form(default=None),
         user: dict = Depends(get_current_teacher)
 ):
     """
     创建或更新一个特定课堂的 AI 配置，并同步更新教材绑定
     """
+    class_offering_id = _parse_config_id(class_offering_id, "课堂")
+    submitted_fields = await request.form()
     conn = get_db_connection()
     try:
-        _ensure_teacher_owned_offering(conn, class_offering_id, user["id"])
+        offering = _ensure_teacher_owned_offering(conn, class_offering_id, user["id"])
 
-        textbook_id_value = int(str(textbook_id).strip()) if str(textbook_id).strip() else None
+        # An omitted field preserves the binding for older API clients. An
+        # explicit empty field from the form means the teacher removed it.
+        textbook_id_value = (
+            offering["textbook_id"] if "textbook_id" not in submitted_fields
+            else _parse_config_id(textbook_id, "教材", optional=True)
+        )
         bound_textbook_id = None
         if textbook_id_value:
             textbook_row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id_value, teacher_id=user["id"])
@@ -573,13 +585,17 @@ async def api_configure_ai_offering(
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        raise HTTPException(status_code=400, detail=f"配置保存失败: {e}")
+        logger.exception("Classroom AI configuration integrity error: offering_id=%s", class_offering_id)
+        raise HTTPException(status_code=409, detail="课堂或教材信息已发生变化，请刷新后重新保存。") from e
     except HTTPException:
         conn.rollback()
         raise
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=f"服务器内部错误: {e}")
+        logger.exception("Classroom AI configuration save failed: offering_id=%s", class_offering_id)
+        if str(getattr(e, "sqlstate", "")).startswith("23"):
+            raise HTTPException(status_code=409, detail="课堂或教材信息已发生变化，请刷新后重新保存。") from e
+        raise HTTPException(status_code=500, detail="AI 配置保存失败，请稍后重试；若持续失败，请联系管理员。") from e
     finally:
         conn.close()
 
@@ -594,6 +610,7 @@ async def api_configure_ai_offering(
 @router.get("/ai/config/{class_offering_id}", response_class=JSONResponse)
 async def api_get_ai_config(class_offering_id: int, user: dict = Depends(get_current_teacher)):
     """获取一个特定课堂的 AI 配置"""
+    class_offering_id = _parse_config_id(class_offering_id, "课堂")
     conn = get_db_connection()
     try:
         offering = _ensure_teacher_owned_offering(conn, class_offering_id, user["id"])
@@ -605,13 +622,15 @@ async def api_get_ai_config(class_offering_id: int, user: dict = Depends(get_cur
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"服务器内部错误: {e}")
+        logger.exception("Classroom AI configuration load failed: offering_id=%s", class_offering_id)
+        raise HTTPException(status_code=500, detail="AI 配置加载失败，请刷新后重试。") from e
     finally:
         conn.close()
 
     config = dict(config_row) if config_row else {"system_prompt": "", "syllabus": ""}
     return {
         **config,
+        "has_config": config_row is not None,
         "textbook_id": int(offering["textbook_id"]) if offering["textbook_id"] else None,
         "semester_name": str(offering["semester_name"] or ""),
         "textbook": classroom_context.get("textbook") or None,
@@ -620,6 +639,20 @@ async def api_get_ai_config(class_offering_id: int, user: dict = Depends(get_cur
         "recent_material_names": classroom_context.get("recent_material_names") or [],
         "recent_assignment_titles": classroom_context.get("recent_assignment_titles") or [],
     }
+
+
+def _parse_config_id(value, label: str, *, optional: bool = False) -> int | None:
+    if optional and (value is None or str(value).strip() == ""):
+        return None
+    if isinstance(value, bool) or not str(value).strip().isascii() or not str(value).strip().isdigit():
+        raise HTTPException(400, f"无效的{label} ID")
+    digits = str(value).strip().lstrip("0")
+    if not digits or len(digits) > 19:
+        raise HTTPException(400, f"无效的{label} ID")
+    parsed = int(digits)
+    if parsed <= 0 or parsed > 9223372036854775807:
+        raise HTTPException(400, f"无效的{label} ID")
+    return parsed
 
 
 @router.post("/ai/ai-generate", response_class=JSONResponse)
@@ -633,35 +666,24 @@ async def api_ai_generate_config(
     except json.JSONDecodeError:
         raise HTTPException(400, "请求数据格式错误")
 
-    class_offering_id = data.get("class_offering_id")
-    textbook_id = data.get("textbook_id")
-
-    if not class_offering_id:
-        raise HTTPException(400, "请先选择一个课堂")
-    try:
-        class_offering_id = int(class_offering_id)
-    except (ValueError, TypeError):
-        raise HTTPException(400, "无效的课堂 ID")
-
-    if not textbook_id:
-        raise HTTPException(400, "请先选择一本教材，AI 生成需要教材信息作为知识依据")
-    try:
-        textbook_id = int(textbook_id)
-    except (ValueError, TypeError):
-        raise HTTPException(400, "无效的教材 ID")
+    if not isinstance(data, dict):
+        raise HTTPException(400, "请求数据必须是 JSON 对象")
+    class_offering_id = _parse_config_id(data.get("class_offering_id"), "课堂")
+    textbook_id = _parse_config_id(data.get("textbook_id"), "教材")
 
     # 获取课堂和教材上下文
     with get_db_connection() as conn:
         _ensure_teacher_owned_offering(conn, class_offering_id, user["id"])
-        _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=user["id"])
+        textbook_row = _ensure_teacher_can_use_textbook(conn, textbook_id=textbook_id, teacher_id=user["id"])
+        textbook = serialize_textbook_row(textbook_row)
         classroom_context = build_classroom_ai_context(conn, class_offering_id)
 
     if not classroom_context:
         raise HTTPException(404, "课堂信息不存在")
 
-    classroom_summary = classroom_context.get("classroom_summary") or ""
-    textbook_summary = classroom_context.get("textbook_summary") or ""
-    textbook = classroom_context.get("textbook") or {}
+    # Generation is a draft preview: use the selected, authorized textbook
+    # without changing the classroom's saved binding before explicit save.
+    textbook_summary = build_textbook_prompt_context(textbook)
     recent_materials = classroom_context.get("recent_material_names") or []
     recent_assignments = classroom_context.get("recent_assignment_titles") or []
 
@@ -754,31 +776,37 @@ async def api_ai_generate_config(
         response.raise_for_status()
         data = response.json()
     except httpx.ConnectError:
-        raise HTTPException(503, "AI 助手服务未运行，请先启动 ai_assistant.py。")
+        raise HTTPException(503, "AI 服务暂时无法连接，请稍后重试。")
     except httpx.TimeoutException:
         raise HTTPException(504, "AI 服务响应超时，请稍后重试。")
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(exc.response.status_code, f"AI 服务错误: {exc.response.text}")
+        logger.warning("Classroom AI generation upstream status=%s offering_id=%s", exc.response.status_code, class_offering_id)
+        if exc.response.status_code == 429:
+            raise HTTPException(429, "AI 服务繁忙或额度暂不可用，请稍后重试。") from exc
+        raise HTTPException(502, "AI 服务返回异常，请稍后重试。") from exc
     except Exception as exc:
-        raise HTTPException(500, f"AI 请求失败: {exc}")
+        logger.exception("Classroom AI generation request failed: offering_id=%s", class_offering_id)
+        raise HTTPException(502, "AI 服务返回异常，请稍后重试。") from exc
 
-    if data.get("status") != "success":
-        raise HTTPException(500, f"AI 返回异常: {data.get('detail', '未知错误')}")
+    if not isinstance(data, dict) or data.get("status") != "success":
+        raise HTTPException(502, "AI 服务返回异常，请稍后重试。")
 
     response_text = str(data.get("response_text") or "").strip()
     if not response_text:
-        raise HTTPException(500, "AI 未返回有效内容")
+        raise HTTPException(502, "AI 未返回有效内容，请重试。")
 
     try:
         parsed = _parse_ai_json(response_text)
     except json.JSONDecodeError:
-        raise HTTPException(500, "AI 返回的内容格式不正确，请重试")
+        raise HTTPException(502, "AI 返回的内容格式不正确，请重试")
 
-    generated_system_prompt = str(parsed.get("system_prompt") or "").strip()
-    generated_syllabus = str(parsed.get("syllabus") or "").strip()
-
-    if not generated_system_prompt and not generated_syllabus:
-        raise HTTPException(500, "AI 生成的内容为空，请重试")
+    if not isinstance(parsed, dict) or any(
+        not isinstance(parsed.get(key), str) or not parsed[key].strip()
+        for key in ("system_prompt", "syllabus")
+    ):
+        raise HTTPException(502, "AI 未返回完整的提示词和课程大纲，请重试。")
+    generated_system_prompt = parsed["system_prompt"].strip()
+    generated_syllabus = parsed["syllabus"].strip()
 
     return {
         "status": "success",

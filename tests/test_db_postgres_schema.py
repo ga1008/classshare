@@ -168,12 +168,17 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         report = ensure_postgres_runtime_constraints(conn)
 
         self.assertTrue(report["schema_writes_executed"])
+        self.assertIn("idx_ai_class_configs_unique_offering", report["created_indexes"])
         self.assertIn("idx_learning_stage_status_unique_stage", report["created_indexes"])
         self.assertIn(
             "idx_course_material_assignments_unique_target",
             report["created_indexes"],
         )
         created_sql = "\n".join(str(sql) for sql, _ in conn.executed_sql)
+        self.assertIn(
+            'CREATE UNIQUE INDEX IF NOT EXISTS "idx_ai_class_configs_unique_offering" '
+            'ON "ai_class_configs" ("class_offering_id")', created_sql,
+        )
         self.assertIn('CREATE UNIQUE INDEX IF NOT EXISTS "idx_learning_stage_status_unique_stage"', created_sql)
         self.assertIn(
             'CREATE UNIQUE INDEX IF NOT EXISTS "idx_course_material_assignments_unique_target" '
