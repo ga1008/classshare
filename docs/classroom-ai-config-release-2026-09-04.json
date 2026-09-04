@@ -1,0 +1,42 @@
+{
+  "status": "deployed_and_verified",
+  "date": "2026-09-04",
+  "source_commit": "367ddb3003d9809a12262800c62b55512825d6d2",
+  "release_id": "20260904-132547-c98d81ecb9d5",
+  "deployment": {
+    "entrypoint": "deployment/deploy_remote.ps1",
+    "dry_run_passed": true,
+    "isolated_committed_worktree": true,
+    "manifest_file_count": 1712,
+    "archive_size_mb": 29.66,
+    "code_backup": "/tmp/lanshare-deploy-backups/code-20260904-132556.tgz",
+    "database_backup": "/tmp/lanshare-deploy-backups/db-20260904-132556.sql.gz",
+    "unrelated_untracked_files_excluded": true
+  },
+  "verification": {
+    "public_https_status": 200,
+    "public_and_container_release_match": true,
+    "application_health": "ok",
+    "ai_health": "ok",
+    "database_engine": "postgres",
+    "unique_index_present": "idx_ai_class_configs_unique_offering",
+    "save_test_mode": "Deployed router TestClient with owner dependency and production PostgreSQL; outer transaction rolled back",
+    "classroom_id": 13,
+    "configuration_get_status": 200,
+    "configuration_post_status": 200,
+    "reload_and_runtime_reader_verified": true,
+    "existing_configuration_and_textbook_preserved": true,
+    "updated_browser_asset_served": true,
+    "nginx_generation_read_timeout_seconds": 210,
+    "current_background_task_items_all_ok": true,
+    "stale_tasks": 0,
+    "historical_failed_tasks": 480,
+    "recent_application_ai_mailer_error_logs": false
+  },
+  "cleanup": {
+    "deployment_worktree_removed": true,
+    "preflight_and_deploy_temp_removed": true,
+    "postflight_script_removed": true,
+    "prior_test_temp_cleanup_blocked": "The 9 original SQLite test directories (648 KiB) remain as recorded in the audit; previous automatic approval rejections were not bypassed."
+  }
+}

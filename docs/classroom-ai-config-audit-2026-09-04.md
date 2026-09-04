@@ -2,7 +2,7 @@
 
 ## 结论与发布状态
 
-本次保存 500 的根因是线上 PostgreSQL 的 `ai_class_configs.class_offering_id` 缺少唯一约束，导致 `ON CONFLICT(class_offering_id)` 无法执行。已完成本地修复、真实 PostgreSQL 验证、Chrome 表单交互验证和实际 AI 服务生成验证。**尚未部署这些改动到线上，线上原始保存错误需要发布并执行启动升级后才能解除。**
+本次保存 500 的根因是线上 PostgreSQL 的 `ai_class_configs.class_offering_id` 缺少唯一约束，导致 `ON CONFLICT(class_offering_id)` 无法执行。已完成本地修复、真实 PostgreSQL 验证、Chrome 表单交互验证和实际 AI 服务生成验证。**已于 2026-09-04 部署到线上，原先失败的保存接口已通过部署后验证。**源码提交为 `367ddb3003d9809a12262800c62b55512825d6d2`，发布标识为 `20260904-132547-c98d81ecb9d5`。
 
 ## 故障证据
 
@@ -53,14 +53,23 @@
 node tools/validate_classroom_ai_browser.cjs
 ```
 
-## 发布后的必要验收
+## 发布验收
 
-按项目发布约定，在获得部署指令后使用现有部署入口发布，确认启动升级创建 `idx_ai_class_configs_unique_offering`，Nginx 加载新的接口超时配置，再以真实教师登录验证“加载 → 编辑/生成 → 保存 → 重新加载 → 课堂提问”。当前工作区中原有的截图与证书相关未跟踪文件不属于本次改动，发布包必须排除这些文件。
+在用户明确部署指令后，从源码提交的独立工作区运行现有部署脚本；`-DryRun` 通过，发布包包含 1712 个文件，约 29.66 MB。原工作区中未跟踪的截图和证书文件没有进入提交或发布包。
+
+- 代码和 PostgreSQL 已备份，数据库备份文件为 `/tmp/lanshare-deploy-backups/db-20260904-132556.sql.gz`，约 29 MB。
+- 公网 HTTPS、Nginx HTTP 健康接口、应用容器均报告发布标识 `20260904-132547-c98d81ecb9d5`。应用、AI、PostgreSQL、Nginx、邮件和调度服务健康；其余 worker 均运行。
+- 线上 `idx_ai_class_configs_unique_offering` 已存在。
+- 在部署后的应用容器内，用 TestClient 调用真实管理路由和线上 PostgreSQL，使用课堂所有者作为测试依赖，复验课堂 13 的读取、保存、重新读取、共享运行时配置读取，全部通过，保存返回 200。测试事务最终回滚，并对比确认原配置和教材绑定保持不变。此项是路由/数据库验收，不冒充真实教师登录浏览器验收。
+- 公网返回的 `manage_ai.js` 包含此次状态及空值修复，活动 Nginx 配置中生成接口读取超时为 210 秒。
+- 最近应用/AI/邮件日志未发现错误。背景任务汇总仍包含 480 条历史失败记录，但所有当前任务类型状态为 `ok`，没有 stale 任务；未将历史记录当作本次发布故障。
+
+机器可读证据见 `docs/classroom-ai-config-release-2026-09-04.json`。
 
 本次证据覆盖已定位的故障和相关边界，不承诺外部模型服务永不超时或整个 AI 系统不存在任何缺陷。
 
 ## 临时数据清理状态
 
-独立 PostgreSQL schema 和 Nginx 校验临时文件已清理。本次没有在项目 `.codex-temp`、渲染输出目录或坚果云同步目录中创建临时数据副本。
+独立 PostgreSQL schema 和 Nginx 校验临时文件已清理。部署使用的 `.codex-temp/classroom-ai-release-20260904` 独立工作区、预检数据库副本、部署临时目录和线上验收脚本均已清理，并核实路径不存在。
 
 首次测试的 SQLite 连接清理顺序已修正，后续执行均能正常删除测试目录。首次失败留下的 9 个 `C:\Users\AngelWei\AppData\Local\Temp\lanshare-ai-config-*` 目录各只有一个 72 KiB 的 `test.db`，合计 648 KiB。清理操作被自动审批拒绝；改为核实文件后逐个非递归删除仍被拒绝，返回原因仅为 `blocked by policy`，因此保留原状，没有绕过限制。
