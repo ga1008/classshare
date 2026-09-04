@@ -1,5 +1,6 @@
 import re
 import sqlite3
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -8,6 +9,8 @@ from jose import JWTError, jwt
 from ..config import ALGORITHM, SECRET_KEY
 from ..db.connection import execute_insert_returning_id
 from ..dependencies import normalize_ip
+from .class_label_service import DEPARTMENT_SHORT_NAMES
+from .department_service import normalize_department
 
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_POLICY_HINT = "密码至少 8 位，且必须同时包含字母和数字。"
@@ -74,13 +77,65 @@ def get_student_auth_record_by_identity(
 ):
     return conn.execute(
         """
-        SELECT s.*, c.name AS class_name, c.created_by_teacher_id
+        SELECT s.*, c.name AS class_name, c.created_by_teacher_id,
+               c.department AS class_department
         FROM students s
         JOIN classes c ON c.id = s.class_id
         WHERE s.name = ? AND s.student_id_number = ?
         """,
         (name.strip(), student_id_number.strip()),
     ).fetchone()
+
+
+def _password_reset_class_label(value: str) -> str:
+    text = re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(value or ""))).casefold()
+    # 26级网工1班 / 网工2026级01班 -> 网工2601班; retain the program suffix for hints.
+    return re.sub(
+        r"^([^\d]*?)(?:20)?(\d{2})级([^\d]*?)(\d{1,2})(?=班|\(|$)",
+        lambda match: f"{match[1]}{match[3]}{match[2]}{int(match[4]):02d}",
+        text,
+    )
+
+
+def _password_reset_class_key(value: str, *, canonical: bool = False) -> str:
+    text = _password_reset_class_label(value)
+    text = re.sub(r"\(?(?:专升本|普通本科|普本)\)?", "", text).replace("班", "")
+    if canonical:
+        def normalize_major(match):
+            major = normalize_department(match[0])
+            for full, short in sorted(DEPARTMENT_SHORT_NAMES.items(), key=lambda item: -len(item[0])):
+                major = major.replace(full, short)
+            return major
+
+        text = re.sub(r"[a-z\u4e00-\u9fff]+", normalize_major, text)
+    return text.replace("系", "")
+
+
+def matches_password_reset_class(fragment: str, class_name: str, department: str = "") -> bool:
+    """Match only the identified student's class; never run a fuzzy roster query."""
+    raw_fragment = _password_reset_class_key(fragment)
+    if not raw_fragment or not re.fullmatch(r"[a-z0-9\u4e00-\u9fff]+", raw_fragment):
+        return False
+    for canonical in (False, True):
+        query = _password_reset_class_key(fragment, canonical=canonical)
+        if query and any(
+            query in _password_reset_class_key(value, canonical=canonical)
+            for value in (class_name, department)
+        ):
+            return True
+    return False
+
+
+def build_password_reset_class_hint(class_name: str) -> dict[str, str]:
+    """Show the class affixes without sending the hidden class number to the browser."""
+    label = _password_reset_class_label(class_name)
+    match = re.fullmatch(r"([^\d]*)\d(?:.*\d)?([^\d]*)", label)
+    if not match:
+        return {"prefix": "", "suffix": ""}
+    return {
+        "prefix": match[1].replace("(", "（").replace(")", "）"),
+        "suffix": match[2].replace("(", "（").replace(")", "）"),
+    }
 
 
 def get_student_auth_record_for_password_login(conn: sqlite3.Connection, identifier: str):

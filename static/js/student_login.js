@@ -243,6 +243,52 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (forgotForm) {
+        const nameInput = forgotForm.elements.namedItem('name');
+        const studentIdInput = forgotForm.elements.namedItem('student_id_number');
+        const classPrefix = document.getElementById('forgot-class-prefix');
+        const classSuffix = document.getElementById('forgot-class-suffix');
+        let hintTimer;
+        let hintController;
+        let hintVersion = 0;
+
+        function clearClassHint() {
+            hintVersion += 1;
+            window.clearTimeout(hintTimer);
+            hintController?.abort();
+            classPrefix.textContent = '';
+            classSuffix.textContent = '';
+        }
+
+        function scheduleClassHint() {
+            clearClassHint();
+            const name = nameInput.value.trim();
+            const studentId = studentIdInput.value.trim();
+            if (!name || !studentId) return;
+            const version = hintVersion;
+            hintTimer = window.setTimeout(async () => {
+                hintController = new AbortController();
+                const body = new FormData();
+                body.set('name', name);
+                body.set('student_id_number', studentId);
+                try {
+                    const hint = await apiFetch('/api/student/password/forgot/class-hint', {
+                        method: 'POST', body, signal: hintController.signal, silent: true,
+                    });
+                    if (version !== hintVersion) return;
+                    classPrefix.textContent = hint.prefix || '';
+                    classSuffix.textContent = hint.suffix || '';
+                } catch {
+                    // Optional hints must never prevent a recovery request.
+                }
+            }, 400);
+        }
+
+        nameInput.addEventListener('input', scheduleClassHint);
+        studentIdInput.addEventListener('input', scheduleClassHint);
+        nameInput.addEventListener('change', scheduleClassHint);
+        studentIdInput.addEventListener('change', scheduleClassHint);
+        forgotForm.addEventListener('reset', clearClassHint);
+
         forgotForm.addEventListener('submit', async (event) => {
             event.preventDefault();
             const submitButton = forgotForm.querySelector('button[type="submit"]');

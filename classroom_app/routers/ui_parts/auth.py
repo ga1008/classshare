@@ -1,4 +1,5 @@
 from .common import *
+from ...services.student_auth_service import build_password_reset_class_hint, matches_password_reset_class
 
 
 router = APIRouter()
@@ -246,26 +247,30 @@ def api_student_password_setup(
     )
 
 
+@router.post("/api/student/password/forgot/class-hint", response_class=JSONResponse)
+def api_student_password_forgot_class_hint(
+    name: str = Form(max_length=100),
+    student_id_number: str = Form(max_length=100),
+):
+    with get_db_connection() as conn:
+        student_row = get_student_auth_record_by_identity(conn, name, student_id_number)
+    hint = build_password_reset_class_hint(student_row["class_name"] if student_row else "")
+    return JSONResponse(hint, headers={"Cache-Control": "no-store"})
+
+
 @router.post("/api/student/password/forgot", response_class=JSONResponse)
 def api_student_password_forgot(
     request: Request,
     name: str = Form(),
     student_id_number: str = Form(),
-    class_name: str = Form(),
+    class_name: str = Form(max_length=100),
 ):
     """学生提交忘记密码申请，等待教师审核。"""
     with get_db_connection() as conn:
-        student_row = conn.execute(
-            """
-            SELECT s.*, c.name AS class_name, c.created_by_teacher_id
-            FROM students s
-            JOIN classes c ON c.id = s.class_id
-            WHERE s.name = ? AND s.student_id_number = ? AND c.name = ?
-            """,
-            (name.strip(), student_id_number.strip(), class_name.strip()),
-        ).fetchone()
-
-        if not student_row:
+        student_row = get_student_auth_record_by_identity(conn, name, student_id_number)
+        if not student_row or not matches_password_reset_class(
+            class_name, student_row["class_name"], student_row["class_department"] or ""
+        ):
             raise HTTPException(status_code=400, detail="提交失败：姓名、学号和班级名称不匹配。")
         _ensure_student_can_login(student_row)
         if not student_row["hashed_password"] and not student_row["password_reset_required"]:
