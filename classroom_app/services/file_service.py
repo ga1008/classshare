@@ -147,6 +147,18 @@ def cleanup_stale_uploads():
         print(f"[ERROR] cleanup stale uploads failed: {e}")
 
 
+def count_global_file_references(conn, file_hash: str) -> int:
+    """Count references checked by course-file and material cleanup paths."""
+    row = conn.execute(
+        """SELECT
+            (SELECT COUNT(*) FROM course_materials WHERE file_hash = ?) +
+            (SELECT COUNT(*) FROM course_files WHERE file_hash = ?) +
+            (SELECT COUNT(*) FROM class_offerings WHERE group_qr_file_hash = ?)""",
+        (file_hash, file_hash, file_hash),
+    ).fetchone()
+    return int(row[0])
+
+
 async def delete_global_file(file_hash: str) -> bool:
     try:
         for file_path in global_file_candidates(file_hash):

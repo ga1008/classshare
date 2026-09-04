@@ -52,6 +52,7 @@ from ..services.discussion_attachment_service import (
 )
 from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji_payloads
 from ..services.file_service import (
+    count_global_file_references,
     delete_global_file,
     global_file_write_path,
     get_file_lock,
@@ -1351,18 +1352,13 @@ async def delete_course_file(
         if not can_manage_scoped_resource(conn, file_data, user):
             raise HTTPException(403, "Permission denied")
 
-        ref_count = conn.execute(
-            "SELECT COUNT(*) FROM course_files WHERE file_hash = ?",
-            (file_data['file_hash'],)
-        ).fetchone()[0]
-
         # 删除数据库记录
         conn.execute("DELETE FROM course_files WHERE id = ?", (file_id,))
         conn.commit()
 
         # 仅当没有其他引用时才删除物理文件
         save_status = True
-        if ref_count <= 1:
+        if count_global_file_references(conn, file_data['file_hash']) <= 0:
             save_status = await delete_global_file(file_data['file_hash'])
 
         # 广播消息

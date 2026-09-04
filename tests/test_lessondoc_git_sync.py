@@ -17,6 +17,7 @@ class TestLessonDocGitSync(_PackFixture):
         self.addCleanup(schema_lessondoc_editor.reset_schema_ready_for_tests)
         schema_lessondoc_editor.ensure_lessondoc_editor_schema(self.conn)
         self.conn.execute("CREATE TABLE course_files(file_hash TEXT)")
+        self.conn.execute("ALTER TABLE class_offerings ADD COLUMN group_qr_file_hash TEXT NOT NULL DEFAULT ''")
         self.pack = self._create_pack()["pack"]
         self.first = editor.save_document(self.conn, pack_id=self.pack["id"], teacher_id=9, lesson_no=1, document=_deck(),
                                           expected_revision="absent", operation_id="initial_save")

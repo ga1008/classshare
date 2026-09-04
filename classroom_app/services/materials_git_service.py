@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from ..config import SECRET_KEY
 from ..db.connection import execute_insert_returning_id
 from .file_service import delete_global_file, global_file_write_path, resolve_global_file_path
+from .file_service import count_global_file_references as _count_global_file_references
 from .materials_service import infer_material_profile, is_git_internal_material_path, serialize_material_row
 
 
@@ -164,18 +165,6 @@ def _decrypt_secret(secret_encrypted: str | None) -> str:
         return _get_fernet().decrypt(str(secret_encrypted).encode("utf-8")).decode("utf-8")
     except (InvalidToken, ValueError):
         return ""
-
-
-def _count_global_file_references(conn, file_hash: str) -> int:
-    material_refs = conn.execute(
-        "SELECT COUNT(*) FROM course_materials WHERE file_hash = ?",
-        (file_hash,),
-    ).fetchone()[0]
-    course_refs = conn.execute(
-        "SELECT COUNT(*) FROM course_files WHERE file_hash = ?",
-        (file_hash,),
-    ).fetchone()[0]
-    return int(material_refs) + int(course_refs)
 
 
 def _load_file_bytes(file_hash: str) -> bytes:

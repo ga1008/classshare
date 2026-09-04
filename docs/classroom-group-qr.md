@@ -12,7 +12,7 @@
 - `GET /api/classrooms/{class_offering_id}/group-qr`：返回 `image_url`、`description`、`revision`。
 - 同路径 `POST`：multipart 表单，包含 `description`、当前 `revision`、可选 `file` 和 `remove_image`（默认 `false`）。省略图片时保留原图；`remove_image=true` 清空图片引用，与上传互斥；简介可清空。成功后返回新配置，版本冲突返回 409。
 - `GET /api/classrooms/{class_offering_id}/group-qr/image`：每次验证课堂访问权，响应为 `private, no-store`，并使用校验得到的图片 MIME。加 `?download=true` 时以附件方式下载，文件扩展名由真实格式决定。
-- 图片限静态 PNG/JPEG/WebP、5 MiB、1200 万像素；使用 Pillow 结构与完整解码验证，保留原图像素与边缘，沿用共享哈希存储的原子写入。简介限 1000 字，按纯文本显示；保存及读取统一 CRLF / CR 为 LF，长度按规范化后的内容计算。替换或移除图片不会直接删除共享哈希文件。
+- 图片限静态 PNG/JPEG/WebP、5 MiB、1200 万像素；使用 Pillow 结构与完整解码验证，保留原图像素与边缘，沿用共享哈希存储的原子写入。简介限 1000 字，按纯文本显示；保存及读取统一 CRLF / CR 为 LF，长度按规范化后的内容计算。替换或移除图片不会直接删除共享哈希文件；课程资源删除、材料删除及 Git 同步清理统一检查课堂二维码引用，避免删除仍在使用的原图。
 - 首屏由服务端提供初始信息，只在浮窗打开时重新读取，不增加轮询。同步路由在工作线程处理图片、文件及数据库操作，保存使用带版本条件的单条 UPDATE。
 
 ## 验证
@@ -36,4 +36,4 @@ npm run test:e2e -- tests/e2e/specs/classroom-group-qr.spec.ts --project=chromiu
 docker compose -f docker-compose.yml -f docker-compose.postgres.yml exec -T app python tools/validate_classroom_group_qr_postgres.py
 ```
 
-该脚本要求 PostgreSQL，只使用一条连接及一个最终回滚的事务；三张同名临时表以 `ON COMMIT DROP` 创建，`search_path` 排除 public，并在写入假数据前验证临时命名空间。图片存储定向到临时目录，退出时回滚、关闭连接并清理文件。覆盖上传、换行、版本冲突、师生及合班权限、移除和重新上传，不写入实际课堂或师生数据。
+该脚本要求 PostgreSQL，只使用一条连接及一个最终回滚的事务；五张同名临时表以 `ON COMMIT DROP` 创建，`search_path` 排除 public，并在写入假数据前验证临时命名空间。图片存储定向到临时目录，退出时回滚、关闭连接并清理文件。覆盖上传、换行、版本冲突、师生及合班权限、移除、重新上传和共享文件引用统计，不写入实际课堂或师生数据。

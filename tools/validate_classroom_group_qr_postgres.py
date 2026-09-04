@@ -83,9 +83,12 @@ def validate():
                 conn.execute("""CREATE TEMP TABLE class_offering_class_links (
                     offering_id BIGINT, class_id BIGINT
                 ) ON COMMIT DROP""")
+                conn.execute("CREATE TEMP TABLE course_materials (file_hash TEXT) ON COMMIT DROP")
+                conn.execute("CREATE TEMP TABLE course_files (file_hash TEXT) ON COMMIT DROP")
                 # Verify every unqualified service table resolves to this session's
                 # temporary namespace before any fixture write or service call.
-                for table in ("class_offerings", "students", "class_offering_class_links"):
+                for table in ("class_offerings", "students", "class_offering_class_links",
+                              "course_materials", "course_files"):
                     row = conn.execute("""SELECT relpersistence,
                         relnamespace = pg_my_temp_schema() AS session_local
                         FROM pg_catalog.pg_class WHERE oid = to_regclass(?)""", (table,)).fetchone()
@@ -117,6 +120,8 @@ def validate():
                        and first["description"] == "first line\nsecond line\nthird line")
                 reloaded = service.serialize_group_qr(service.load_group_qr_offering(conn, 11, teacher))
                 passed("reload_matches_saved_settings", reloaded == first)
+                first_hash = service.load_group_qr_offering(conn, 11, teacher)["group_qr_file_hash"]
+                qr_reference_count = file_service.count_global_file_references(conn, first_hash)
                 description_only = service.update_group_qr(conn, 11, teacher,
                     description="updated\r\nintroduction", revision=first["revision"])
                 passed("description_only_preserves_image", description_only["image_url"] == first["image_url"]
@@ -145,6 +150,8 @@ def validate():
                     remove_image=True)
                 passed("remove_preserves_introduction", not removed["image_url"]
                        and removed["description"] == description_only["description"])
+                passed("shared_file_reference_count", qr_reference_count == 1
+                       and file_service.count_global_file_references(conn, first_hash) == 0)
                 second = upload("JPEG", "navy", removed["revision"], removed["description"])
                 row = service.load_group_qr_offering(conn, 11, teacher)
                 passed("upload_after_removal", bool(second["image_url"])

@@ -1,3 +1,4 @@
+import asyncio
 import io
 import sqlite3
 import tempfile
@@ -6,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from threading import Barrier
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -83,6 +84,70 @@ class ClassroomGroupQRTests(unittest.TestCase):
         return self.client.post('/api/classrooms/11/group-qr',
             data={'description': description, 'revision': revision, 'remove_image': str(remove_image).lower()},
             files={'file': (name, content, mime)} if content is not None else None)
+
+    def shared_resource_fixture(self):
+        saved = self.save(content=image_bytes()).json()
+        with connect_fixture(self.db_path) as conn:
+            file_hash = conn.execute('SELECT group_qr_file_hash FROM class_offerings WHERE id=11').fetchone()[0]
+            conn.executescript('''
+                CREATE TABLE course_materials (
+                    id INTEGER PRIMARY KEY, teacher_id INTEGER, parent_id INTEGER, root_id INTEGER,
+                    material_path TEXT, name TEXT, node_type TEXT, file_hash TEXT, updated_at TEXT);
+                CREATE TABLE course_files (
+                    id INTEGER PRIMARY KEY, course_id INTEGER, file_name TEXT, file_hash TEXT);
+            ''')
+        return saved, file_hash
+
+    def test_course_file_deletion_preserves_qr_image_until_last_reference_is_removed(self):
+        from classroom_app.routers import files as file_routes
+        saved, file_hash = self.shared_resource_fixture()
+        with connect_fixture(self.db_path) as conn:
+            conn.execute("INSERT INTO course_files VALUES (501,10,'qr.png',?)", (file_hash,))
+        with patch.object(file_routes, 'get_db_connection', lambda: connect_fixture(self.db_path)), \
+             patch.object(file_routes, 'resolve_teacher_course_id', return_value=10), \
+             patch.object(file_routes, 'can_manage_scoped_resource', return_value=True), \
+             patch.object(file_routes, 'broadcast_file_update', new_callable=AsyncMock):
+            result = asyncio.run(file_routes.delete_course_file(10, 501, {'role': 'teacher', 'id': 1}))
+            self.assertEqual(result['status'], 'success')
+            self.assertEqual(self.client.get(saved['image_url']).status_code, 200)
+            self.save(description=saved['description'], revision=saved['revision'], remove_image=True)
+            with connect_fixture(self.db_path) as conn:
+                conn.execute("INSERT INTO course_files VALUES (502,10,'qr.png',?)", (file_hash,))
+            asyncio.run(file_routes.delete_course_file(10, 502, {'role': 'teacher', 'id': 1}))
+        self.assertIsNone(file_service.resolve_global_file_path(file_hash))
+
+    def test_material_deletion_preserves_shared_qr_image(self):
+        from classroom_app.routers.materials_parts import library
+        saved, file_hash = self.shared_resource_fixture()
+        with connect_fixture(self.db_path) as conn:
+            conn.execute("INSERT INTO course_materials VALUES (31,1,NULL,31,'qr.png','qr.png','file',?,NULL)",
+                         (file_hash,))
+        with patch.object(library, 'get_db_connection', lambda: connect_fixture(self.db_path)), \
+             patch.object(library, 'get_configured_db_engine', return_value='sqlite'), \
+             patch.object(library, 'build_material_delete_impact', return_value={'total_reference_count': 0}), \
+             patch('classroom_app.services.lessondoc.pack_service.archive_pack_for_material'):
+            result = asyncio.run(library.delete_material(31, unlink_references=False, impact_token='',
+                                                        user={'role': 'teacher', 'id': 1}))
+        self.assertEqual(result['removed_file_count'], 0)
+        self.assertEqual(self.client.get(saved['image_url']).status_code, 200)
+        with connect_fixture(self.db_path) as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM course_materials').fetchone()[0], 0)
+            self.assertEqual(file_service.count_global_file_references(conn, file_hash), 1)
+
+    def test_material_git_cleanup_preserves_shared_qr_image(self):
+        from classroom_app.services import materials_git_service as git_service
+        saved, file_hash = self.shared_resource_fixture()
+        workspace = self.root / 'empty-repository'
+        workspace.mkdir()
+        with connect_fixture(self.db_path) as conn:
+            conn.execute("INSERT INTO course_materials VALUES (30,1,NULL,30,'repo','repo','folder',NULL,NULL)")
+            conn.execute("INSERT INTO course_materials VALUES (31,1,30,30,'repo/qr.png','qr.png','file',?,NULL)",
+                         (file_hash,))
+            root = dict(conn.execute('SELECT * FROM course_materials WHERE id=30').fetchone())
+            summary, removable, _ = git_service._sync_workspace_to_repository(conn, root, workspace)
+            self.assertEqual(summary['deleted'], 1)
+            self.assertEqual(removable, [])
+        self.assertEqual(self.client.get(saved['image_url']).status_code, 200)
 
     def test_upload_reload_replace_and_description_only_preserves_image(self):
         original = image_bytes()

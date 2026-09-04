@@ -31,6 +31,7 @@ from ...schemas.materials_contracts import (
     MaterialRepositoryResponse,
 )
 from ...services.file_service import delete_global_file, global_file_write_path, resolve_global_file_path, save_file_globally
+from ...services.file_service import count_global_file_references as _count_global_file_references
 from ...services.download_policy import apply_download_policy, ensure_download_allowed
 from ...services.file_preview_service import TEXT_CONTENT_ENCODINGS
 from ...services.material_ai_import_service import (
@@ -1018,18 +1019,6 @@ def _build_teacher_library_overview(
         "sort_order": normalized_sort_order,
         "sort_label": MATERIAL_LIBRARY_SORT_LABELS[normalized_sort_by],
     }
-
-
-def _count_global_file_references(conn, file_hash: str) -> int:
-    material_refs = conn.execute(
-        "SELECT COUNT(*) FROM course_materials WHERE file_hash = ?",
-        (file_hash,),
-    ).fetchone()[0]
-    course_refs = conn.execute(
-        "SELECT COUNT(*) FROM course_files WHERE file_hash = ?",
-        (file_hash,),
-    ).fetchone()[0]
-    return int(material_refs) + int(course_refs)
 
 
 def _estimate_material_archive_size(conn, material_rows: list[dict]) -> int:
