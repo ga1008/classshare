@@ -117,7 +117,7 @@
         </div>
 
         <div class="student-cockpit__layout">
-            {% with agenda_widget_extra_class='agenda-reminder--cockpit', agenda_widget_title='待办与提醒' %}
+            {% with agenda_widget_extra_class='agenda-reminder--cockpit', agenda_widget_title='待办与提醒', agenda_widget_compact=true %}
                 {% include "partials/dashboard_agenda_widget.html" %}
             {% endwith %}
 
@@ -750,5 +750,5 @@
 {{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
 <script type="module" src="/static/js/dashboard.js?v=semester-band-20260825"></script>
 <script type="module" src="/static/js/dashboard_count_up.js?v=student-dashboard-polish-20260612"></script>
-<script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260714-modal-fix-v3"></script>
+<script type="module" src="/static/js/dashboard_agenda_widget.js?v=agenda-widget-20260904-scroll"></script>
 {% endblock %}

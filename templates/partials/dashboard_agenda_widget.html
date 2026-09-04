@@ -6,11 +6,13 @@
   Params:
     agenda_widget_extra_class  - placement modifier (e.g. spotlight / cockpit)
     agenda_widget_title        - eyebrow label (default 待办提醒)
+    agenda_widget_compact      - show five rows, then scroll (student cockpit)
 #}
 {% set _kind_labels = {'class': '上课', 'invigilation': '监考', 'exam': '考试', 'assignment': '作业', 'todo': '待办'} %}
 {% set _reminders = (dashboard_agenda_events | default([]) | rejectattr('status', 'equalto', 'completed') | sort(attribute='starts_at')) %}
+{% set _scrollable = agenda_widget_compact and _reminders|length > 5 %}
 <section
-    class="agenda-reminder {{ agenda_widget_extra_class | default('') }}"
+    class="agenda-reminder {{ agenda_widget_extra_class | default('') }}{% if agenda_widget_compact %} agenda-reminder--compact{% endif %}"
     data-agenda-reminder
     {% if agenda_widget_can_sync %}data-reminder-endpoint="/api/manage/system/exam-reminders/email"{% endif %}
     aria-label="{{ agenda_widget_title | default('待办提醒') }}"
@@ -19,7 +21,7 @@
         <div class="agenda-reminder__heading">
             <span class="agenda-reminder__eyebrow">{{ agenda_widget_title | default('待办提醒') }}</span>
             <strong class="agenda-reminder__lead">
-                {% if _reminders %}最近 {{ _reminders|length }} 项待跟进{% else %}暂无临近待办{% endif %}
+                {% if _reminders %}{{ _reminders|length }} 项待办{% else %}暂无临近待办{% endif %}
             </strong>
         </div>
         <div class="agenda-reminder__tools">
@@ -74,12 +76,14 @@
     {% endif %}
 
     {% if _reminders %}
-    <div class="agenda-reminder__list" role="list">
-        {% for ev in _reminders[:50] %}
+    <div class="agenda-reminder__list" role="list" data-agenda-list
+        {% if _scrollable %}tabindex="0" aria-label="待办列表，按时间从近到远排列，可上下滚动查看全部 {{ _reminders|length }} 项"{% endif %}>
+        {% for ev in _reminders %}
+        <div class="agenda-reminder__entry" role="listitem">
         <button
             type="button"
             class="agenda-reminder__item is-{{ ev.status }} kind-{{ ev.kind }}{% if loop.first %} is-next{% endif %}"
-            role="listitem"
+            aria-haspopup="dialog"
             data-agenda-item
             data-kind="{{ ev.kind }}"
             data-kind-label="{{ _kind_labels.get(ev.kind, '日程') }}"
@@ -124,8 +128,15 @@
             </span>
             <span class="agenda-reminder__when{% if ev.status == 'current' %} is-now{% endif %}">{{ ev.relative_label or ev.date_label }}</span>
         </button>
+        </div>
         {% endfor %}
     </div>
+    {% if _scrollable %}
+    <div class="agenda-reminder__footer">
+        <span>按时间从近到远</span>
+        <span class="agenda-reminder__scroll-hint" data-agenda-scroll-hint>向下滚动查看更多 ↓</span>
+    </div>
+    {% endif %}
     {% else %}
     <div class="agenda-reminder__empty" data-explain data-explain-title="近期安排" data-explain-text="监考、考试、作业截止和你新建的待办都会出现在这里，最紧要的排在最前面。">
         <strong>暂无近期安排</strong>

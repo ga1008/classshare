@@ -427,7 +427,27 @@ function initAgendaWidget() {
     if (event.key === 'Escape') close();
   });
   window.addEventListener('resize', close, { passive: true });
+  document.querySelectorAll('[data-agenda-list]').forEach((list) => {
+    list.addEventListener('scroll', () => {
+      // A body-level popover must not remain anchored to a scrolled-away row.
+      if (activeItem && list.contains(activeItem)) close();
+    }, { passive: true });
+  });
   window.addEventListener('scroll', () => { if (activeItem) positionPopover(pop, activeItem); }, { passive: true });
+}
+
+function initAgendaScrollHints() {
+  document.querySelectorAll('[data-agenda-reminder]').forEach((widget) => {
+    const list = widget.querySelector('[data-agenda-list]');
+    const hint = widget.querySelector('[data-agenda-scroll-hint]');
+    if (!list || !hint) return;
+    const update = () => {
+      const atEnd = list.scrollTop + list.clientHeight >= list.scrollHeight - 2;
+      hint.textContent = atEnd ? '已到底，向上查看 ↑' : '向下滚动查看更多 ↓';
+    };
+    list.addEventListener('scroll', update, { passive: true });
+    update();
+  });
 }
 
 // Bell → sync affordance: hovering the bell reveals a sync icon; clicking it
@@ -1106,6 +1126,7 @@ function initAgendaCalendarFeed() {
 }
 
 function initAgendaReminderWidget() {
+  initAgendaScrollHints();
   initAgendaWidget();
   initAgendaReminderSync();
   initAgendaTodoCreator();

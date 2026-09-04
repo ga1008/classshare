@@ -48006,7 +48006,7 @@ body.has-teaching-session-modal {
 
 .agenda-reminder--cockpit {
     grid-area: primary;
-    min-height: 276px;
+    align-self: start;
 }
 
 .agenda-reminder--spotlight {
@@ -48075,6 +48075,48 @@ body.has-teaching-session-modal {
 }
 .agenda-reminder__list::-webkit-scrollbar-thumb:hover {
     background: rgba(148, 163, 184, 0.6);
+}
+
+.agenda-reminder__entry {
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
+/* Five complete rows, including their gaps and focus-ring padding. Keep the
+   bound in CSS so long semester schedules stay compact before JS starts. */
+.agenda-reminder--compact {
+    --agenda-row-height: 4rem;
+}
+
+.agenda-reminder--compact .agenda-reminder__list {
+    flex: 0 1 auto;
+    max-height: calc(5 * var(--agenda-row-height) + 4 * 8px + 4px);
+    scrollbar-gutter: stable;
+}
+
+.agenda-reminder--compact .agenda-reminder__item {
+    height: var(--agenda-row-height);
+}
+
+.agenda-reminder__list:focus-visible {
+    outline: 2px solid #fbbf24;
+    outline-offset: 3px;
+    border-radius: var(--radius-md);
+}
+
+.agenda-reminder__footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    font-size: var(--text-xs);
+    color: #cbd5e1;
+}
+
+.agenda-reminder__scroll-hint {
+    color: #fcd34d;
 }
 
 .agenda-reminder__item {
