@@ -4,9 +4,12 @@ x-lanshare-service: &lanshare-service
   build:
     context: .
     dockerfile: Dockerfile
+    # No package downloads are allowed in an ordinary application build.
+    network: none
     args:
       APP_VERSION: ${LANSHARE_TAG:-dev}
-      PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+      LANSHARE_RUNTIME_BASE: ${LANSHARE_RUNTIME_BASE:-lanshare-runtime-deps:current}
+      LANSHARE_FRONTEND_BASE: ${LANSHARE_FRONTEND_BASE:-lanshare-frontend-deps:current}
   image: ${LANSHARE_IMAGE:-lanshare-app}:${LANSHARE_TAG:-latest}
   restart: unless-stopped
   init: true

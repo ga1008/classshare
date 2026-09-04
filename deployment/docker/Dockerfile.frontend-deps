@@ -1,0 +1,14 @@
+FROM node:22-bookworm-slim@sha256:b1e7fcc44bd47f2d186de26c1202345369e7f1028b08956e75cfb52ad8e483f9
+
+ARG DEPENDENCY_FINGERPRINT
+LABEL io.lanshare.dependencies.kind="frontend" \
+      io.lanshare.dependencies.fingerprint="${DEPENDENCY_FINGERPRINT}"
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+# Audit belongs in a separate dependency review, not the production image build.
+RUN npm ci --no-audit --no-fund --fetch-retries=2 --fetch-timeout=60000 \
+    && npm cache clean --force
+
+COPY deployment/docker/verify-dependencies.sh /usr/local/bin/lanshare-verify-dependencies
+COPY dependency-inputs.sha256 /opt/lanshare-dependencies/frontend.sha256

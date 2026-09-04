@@ -3,18 +3,68 @@
 ## Prerequisites
 
 - Docker Engine with Compose V2
-- The base image `lanshare_base` already exists locally
+- Python 3.10+ on the deployment host (standard library only)
+- Dependency images prepared with `python3 tools/deploy/dependency_images.py ensure`
 - A populated `docker.env` file
 
 If `docker.env` does not exist yet, copy `docker.env.example` and fill in the real secrets and AI provider keys.
 
 ## Start
 
-Build and start the full stack:
+Build the shared application image once, then start the stack. On the Linux
+deployment host, the build wrapper prepares dependency images only when needed:
 
-```powershell
-docker compose up -d --build
+```bash
+bash deployment/docker/build_app.sh
+docker compose up -d --no-build --pull never
 ```
+
+Pull the sidecar images specified by Compose explicitly when provisioning a new
+host. Normal releases reuse the installed images and do not refresh mutable tags.
+
+## Reusable dependency images
+
+- `DockerfileBase` produces `lanshare-runtime-deps:<fingerprint>` with locked Python
+  packages, LibreOffice, PDF/document tools, fonts and system libraries.
+- `deployment/docker/Dockerfile.frontend-deps` produces
+  `lanshare-frontend-deps:<fingerprint>` with Node and all locked npm dependencies.
+  Node and `node_modules` stay in the build stage, outside the application runtime.
+- Upstream Python/Node images are pinned by digest. The fingerprint includes the
+  relevant recipe, lockfiles and validation script, with Windows/Linux line endings
+  normalized. Business code and templates do not change dependency versions.
+- `ensure` reuses matching tagged images even if Docker's build cache was pruned.
+  It builds missing versions serially from a minimal allowlisted context and checks
+  their labels. `:current` aliases update only after both versions are ready.
+- Application builds use `network: none`; they only verify dependency inputs,
+  compile frontend assets and copy code. Stale dependency images fail the build
+  instead of silently shipping a mismatched environment.
+
+Inspect the expected versions without building or contacting Docker:
+
+```bash
+python3 tools/deploy/dependency_images.py plan
+```
+
+The existing local `deployment/deploy_remote.ps1` now calls the tracked
+`deployment/docker/build_app.sh` before recreating services. This wrapper serializes
+builds with `flock`, selects fingerprinted images and reports
+`DEPENDENCY_REUSED` / `APPLICATION_BUILD_SECONDS`. If using another deployment
+entrypoint, call the same wrapper rather than running dependency installation in
+the application Dockerfile.
+
+Dependency changes: update the appropriate lockfile or base recipe, review and
+test it, then deploy as usual. Only the affected base is rebuilt. For OS/security
+updates, update the pinned upstream digest or add a dated recipe change so the
+new base receives its own fingerprint; dependency updates remain an explicit
+maintenance action. npm vulnerability review is separate from production builds;
+the base installation uses `npm ci --no-audit --no-fund` to avoid waiting on the
+audit service during release.
+
+Keep the current and previous dependency tags for rollback. The deployment's
+`docker image prune -f` does not remove tagged bases; do not replace it with
+`docker image prune -a`. Remove older dependency tags explicitly after verifying
+they are not needed by retained application versions. Runtime data and secrets
+never belong in dependency images.
 
 The stack contains:
 
@@ -26,7 +76,7 @@ By default only port `80` is published. To change it:
 
 ```powershell
 $env:LANSHARE_HTTP_PORT = "8080"
-docker compose up -d --build
+docker compose up -d --no-build --pull never
 ```
 
 ## Runtime model
@@ -86,12 +136,12 @@ you have a backup. After migration, the app will prefer populated paths such as:
 
 1. Pull or copy the new project code.
 2. Review `docker.env` for any new variables.
-3. Rebuild the application image.
+3. Prepare/reuse dependency images and rebuild the application image once.
 4. Recreate the containers.
 
-```powershell
-docker compose build --pull
-docker compose up -d --remove-orphans
+```bash
+bash deployment/docker/build_app.sh
+docker compose up -d --no-build --pull never
 ```
 
 If you only changed Python or application code, the persistent directories are reused automatically.
@@ -134,6 +184,13 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d postgr
 
 The overlay keeps PostgreSQL on the internal Compose network and stores data
 under `data/postgres/`. Do not publish PostgreSQL ports on the public server.
+
+For an existing PostgreSQL deployment, pass the same Compose files to the build wrapper:
+
+```bash
+bash deployment/docker/build_app.sh docker compose -f docker-compose.yml -f docker-compose.postgres.yml
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --no-build --pull never
+```
 
 Before enabling `DB_ENGINE=postgres` in the real remote `docker.env`, complete
 all of the following:

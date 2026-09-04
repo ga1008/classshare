@@ -5,6 +5,7 @@ __pycache__/
 *.py[cod]
 
 .env
+*.env
 docker.env
 venv/
 .venv/
@@ -24,5 +25,22 @@ dist/
 build/
 static/dist/
 
-DockerfileBase
+.codex-temp/
+.codex_tmp*/
+.tmp_*/
+.claude/
+.pytest_cache/
+.preview_tmp/
+.sync_state/
+.deploy_tmp/
+*.log
+artifacts/
+test-results/
+tools/cert-*/
+tools/guardianangel.net.cn_nginx*/
+*.key
+*.pem
+*.crt
+*.csr
+*.zip
 settings.zip
