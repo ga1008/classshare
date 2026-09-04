@@ -157,6 +157,10 @@ REQUIRED_POSTGRES_COLUMNS = {
         "cultivation_weights_updated_by_teacher_id",
         "ai_weekly_budget_json",
         "ai_weekly_budget_updated_at",
+        "group_qr_file_hash",
+        "group_qr_mime_type",
+        "group_qr_description",
+        "group_qr_revision",
     ),
     "assignments": (
         "id",

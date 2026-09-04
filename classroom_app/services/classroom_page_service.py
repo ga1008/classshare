@@ -6,6 +6,7 @@ from .discussion_mood_service import get_discussion_mood_payload
 from .materials_service import get_effective_assignment_nodes
 from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
 from .prompt_utils import polite_address
+from .classroom_group_qr_service import serialize_group_qr
 
 
 def build_classroom_page_context(
@@ -95,6 +96,7 @@ def build_classroom_page_context(
 
     return {
         "theme": role,
+        "group_qr": serialize_group_qr(classroom),
         "hero": hero,
         "sections": sections,
         "assignment_stats": assignment_stats,

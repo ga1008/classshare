@@ -1288,6 +1288,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/group-qr",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_group_qr",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/group-qr",
+    "methods": [
+      "POST"
+    ],
+    "name": "save_group_qr",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/group-qr/image",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_group_qr_image",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/learning-home-material",
     "methods": [
       "PUT"
@@ -5261,6 +5285,14 @@
       "POST"
     ],
     "name": "api_student_password_forgot",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/student/password/forgot/class-hint",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_student_password_forgot_class_hint",
     "include_in_schema": true
   },
   {

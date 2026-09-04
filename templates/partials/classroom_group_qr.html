@@ -1,0 +1,75 @@
+{% set group_qr = classroom_page.group_qr %}
+{% set can_edit_group_qr = user_info.role == 'teacher' %}
+<button type="button" class="classroom-group-qr" data-group-qr-open
+        data-endpoint="/api/classrooms/{{ classroom.id }}/group-qr"
+        aria-haspopup="dialog" aria-controls="classroom-group-qr-dialog"
+        aria-label="{% if can_edit_group_qr %}查看或设置班群二维码{% else %}放大查看班群二维码{% endif %}">
+    <span class="classroom-group-qr__thumbnail">
+        <img data-group-qr-thumbnail {% if group_qr.image_url %}src="{{ group_qr.image_url }}"{% else %}hidden{% endif %} alt="班群二维码" width="104" height="104">
+        <span data-group-qr-placeholder {% if group_qr.image_url %}hidden{% endif %}>
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M15 14v3h3v4m3-7v3m-7 4h1M3 12h3m6-9v3m0 4v3h3"/></svg>
+        </span>
+    </span>
+    <strong>班群二维码</strong>
+    <small data-group-qr-hint>{% if group_qr.image_url %}点击放大{% elif can_edit_group_qr %}点击设置{% else %}暂未设置{% endif %}</small>
+</button>
+<script type="application/json" id="classroom-group-qr-data">{{ group_qr | tojson }}</script>
+<dialog id="classroom-group-qr-dialog" class="classroom-group-qr-dialog" aria-labelledby="classroom-group-qr-title" data-mode="{{ 'teacher' if can_edit_group_qr else 'student' }}">
+    <div class="classroom-group-qr-dialog__header">
+        <div><span class="classroom-group-qr-dialog__eyebrow">课堂联络</span><h2 id="classroom-group-qr-title">班群二维码</h2><p>{{ classroom.course_name }} · {{ classroom.class_name }}</p></div>
+        <button type="button" class="classroom-group-qr-dialog__close" data-group-qr-close aria-label="关闭班群二维码浮窗" autofocus>×</button>
+    </div>
+    <div class="classroom-group-qr-dialog__notice">
+        <p id="classroom-group-qr-status" class="classroom-group-qr-dialog__status" role="status" aria-live="polite"></p>
+        <button type="button" class="btn btn-secondary btn-sm" data-group-qr-retry hidden>重新加载</button>
+        {% if can_edit_group_qr %}
+        <div class="classroom-group-qr-dialog__guard" data-group-qr-discard-panel hidden role="group" aria-label="未保存修改">
+            <p>修改尚未保存，离开后将丢弃。</p>
+            <div><button type="button" class="btn btn-primary btn-sm" data-group-qr-keep>继续编辑</button><button type="button" class="btn btn-secondary btn-sm" data-group-qr-discard>放弃修改</button></div>
+        </div>
+        <div class="classroom-group-qr-dialog__guard" data-group-qr-conflict-panel hidden role="group" aria-label="处理更新冲突">
+            <p>其他页面已更新班群信息。你的草稿仍然保留，请选择要继续使用的内容。</p>
+            <details><summary>查看最新设置</summary><p data-group-qr-conflict-description></p></details>
+            <div><button type="button" class="btn btn-secondary btn-sm" data-group-qr-use-latest>采用最新设置</button><button type="button" class="btn btn-primary btn-sm" data-group-qr-keep-draft>保留我的修改</button></div>
+        </div>
+        {% endif %}
+    </div>
+    <div class="classroom-group-qr-dialog__body">
+        <div class="classroom-group-qr-dialog__visual">
+        <div class="classroom-group-qr-dialog__image">
+            <img data-group-qr-preview alt="班群二维码大图" hidden>
+            <div class="classroom-group-qr-dialog__empty" data-group-qr-empty>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M15 14v3h3v4m3-7v3m-7 4h1"/></svg>
+                <p data-group-qr-empty-text>教师尚未设置班群二维码</p>
+            </div>
+        </div>
+        <div class="classroom-group-qr-dialog__scan" data-group-qr-scan hidden><span>扫码加入班群</span><a class="btn btn-secondary btn-sm" data-group-qr-download download hidden>保存原图</a></div>
+        <p class="classroom-group-qr-dialog__help" data-group-qr-scan-help hidden>手机上可保存图片后，在微信或 QQ 中从相册识别。</p>
+        </div>
+        <div class="classroom-group-qr-dialog__details">
+        {% if can_edit_group_qr %}
+        <form data-group-qr-form>
+            <h3>班群设置</h3>
+            <p class="classroom-group-qr-dialog__help">上传清晰完整的二维码，学生即可在这里查看。</p>
+            <div class="classroom-group-qr-dialog__upload">
+                <button type="button" class="btn btn-secondary btn-sm" data-group-qr-upload>上传二维码</button>
+                <button type="button" class="classroom-group-qr-dialog__text-button" data-group-qr-remove hidden>移除图片</button>
+                <button type="button" class="classroom-group-qr-dialog__text-button" data-group-qr-undo-image hidden>恢复原图</button>
+                <input type="file" accept="image/png,image/jpeg,image/webp" data-group-qr-file hidden aria-label="选择班群二维码图片">
+            </div>
+            <p class="classroom-group-qr-dialog__help">PNG、JPG、WebP · 最大 5 MB</p>
+            <div class="classroom-group-qr-dialog__label"><label for="classroom-group-qr-description">班群简介</label><span data-group-qr-count>0 / 1000</span></div>
+            <textarea id="classroom-group-qr-description" class="form-control" name="description" rows="5" maxlength="1000" placeholder="例如：课程通知与答疑群，入群后请备注姓名。" aria-describedby="classroom-group-qr-status"></textarea>
+            <div class="classroom-group-qr-dialog__footer">
+                <button type="button" class="btn btn-secondary" data-group-qr-close>关闭</button>
+                <button type="submit" class="btn btn-primary" data-group-qr-save disabled>保存修改</button>
+            </div>
+        </form>
+        {% else %}
+        <div class="classroom-group-qr-dialog__description"><h3>班群简介</h3><p data-group-qr-description></p></div>
+        <p class="classroom-group-qr-dialog__help">若二维码已失效，请联系任课教师更新。</p>
+        <div class="classroom-group-qr-dialog__footer"><button type="button" class="btn btn-primary" data-group-qr-close>知道了</button></div>
+        {% endif %}
+        </div>
+    </div>
+</dialog>

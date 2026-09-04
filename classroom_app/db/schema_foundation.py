@@ -1420,6 +1420,10 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
         "ALTER TABLE class_offerings ADD COLUMN cultivation_weights_updated_by_teacher_id INTEGER",
         "ALTER TABLE class_offerings ADD COLUMN ai_weekly_budget_json TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE class_offerings ADD COLUMN ai_weekly_budget_updated_at TEXT",
+        "ALTER TABLE class_offerings ADD COLUMN group_qr_file_hash TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE class_offerings ADD COLUMN group_qr_mime_type TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE class_offerings ADD COLUMN group_qr_description TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE class_offerings ADD COLUMN group_qr_revision TEXT NOT NULL DEFAULT ''",
     ):
         try:
             conn.execute(statement)

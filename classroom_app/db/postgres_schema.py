@@ -333,6 +333,10 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
         "cultivation_weights_updated_by_teacher_id": "INTEGER",
         "ai_weekly_budget_json": "TEXT NOT NULL DEFAULT ''",
         "ai_weekly_budget_updated_at": "TEXT",
+        "group_qr_file_hash": "TEXT NOT NULL DEFAULT ''",
+        "group_qr_mime_type": "TEXT NOT NULL DEFAULT ''",
+        "group_qr_description": "TEXT NOT NULL DEFAULT ''",
+        "group_qr_revision": "TEXT NOT NULL DEFAULT ''",
     },
     "assignments": {
         "ordinary_grade_kind_override": "TEXT",

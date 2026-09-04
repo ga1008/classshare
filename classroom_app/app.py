@@ -100,6 +100,7 @@ from .routers import global_search
 from .routers import polls
 from .routers import material_whiteboards
 from .routers import classroom_closeout
+from .routers import classroom_group_qr
 from .routers import classroom_retake
 from .routers import lesson_plans
 from .routers import assessment_plans
@@ -616,6 +617,7 @@ app.include_router(classroom_interactions.router)
 app.include_router(polls.router)
 app.include_router(material_whiteboards.router)
 app.include_router(classroom_closeout.router)
+app.include_router(classroom_group_qr.router)
 app.include_router(classroom_retake.router)
 app.include_router(lesson_plans.router)
 app.include_router(assessment_plans.router)

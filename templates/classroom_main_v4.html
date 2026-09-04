@@ -6,6 +6,7 @@
 
 {% block css %}
 <link rel="stylesheet" href="{{ asset_url('css/ordinary_grade_kind_controls.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/classroom_group_qr.css') }}">
 {% if user_info.role == 'teacher' %}
 <link rel="stylesheet" href="{{ asset_url('css/classroom_closeout.css') }}">
 {% endif %}
@@ -527,7 +528,7 @@
 
 <main class="classroom-workspace">
     <section class="workspace-hero">
-        <div class="workspace-hero-main" id="hero-info-card">
+        <div class="workspace-hero-main has-group-qr" id="hero-info-card">
             <div class="workspace-hero-title-block">
                 <div class="workspace-hero-classline" aria-label="班级信息">
                     {% for item in hero.primary_meta %}
@@ -557,6 +558,7 @@
                     <span>课程详情</span>
                 </button>
             </div>
+            {% include "partials/classroom_group_qr.html" %}
         </div>
 
         <div class="workspace-hero-bottom">
@@ -2901,6 +2903,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script type="module" src="{{ asset_url('js/classroom_group_qr.js') }}"></script>
 <script src="/static/js/behavior_tracker.js"></script>
 <script type="module" src="/static/js/feedback.js"></script>
 {{ vite_entry_tags('frontend/src/islands/classroom-page.tsx') }}

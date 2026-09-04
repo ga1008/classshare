@@ -73,6 +73,7 @@ HASH_TABLE_COLUMNS = (
     ("app_feedback_attachments", "file_hash"),
     ("teachers", "avatar_file_hash"),
     ("students", "avatar_file_hash"),
+    ("class_offerings", "group_qr_file_hash"),
 )
 
 
