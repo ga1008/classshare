@@ -66,6 +66,22 @@ Keep the current and previous dependency tags for rollback. The deployment's
 they are not needed by retained application versions. Runtime data and secrets
 never belong in dependency images.
 
+## Disk space and backup retention
+
+The canonical `deployment/deploy_remote.ps1` keeps the latest **two code archives**
+and **two database backups** in `/tmp/lanshare-deploy-backups`. Its `-KeepBackups`
+parameter can override this when explicitly needed. PostgreSQL backups are full
+logical dumps; validate compressed backup integrity before removing older copies.
+Historical migration dumps of the same database also count toward retention.
+
+After a successful deployment, unused Docker build cache is pruned with a 2 GB
+retention budget, under the same build lock. Tagged runtime/frontend dependency
+images remain available even when their build cache is removed. Prune build cache
+through Docker; never remove files inside Docker/containerd storage directly.
+Do not use volume pruning or delete live database directories to reclaim space.
+
+## Services
+
 The stack contains:
 
 - `nginx`: only public entry point
