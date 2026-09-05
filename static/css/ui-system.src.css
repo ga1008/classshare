@@ -27153,6 +27153,9 @@ body.has-chat-image-preview-open {
 .semester-calendar-board {
     display: grid;
     gap: 0;
+    /* 网格必须拥有全部周列的实际宽度。仅依赖 min-width 会被宿主页的
+       通用 min-width:0 重置覆盖，导致 clip-path 在拖动后裁掉右侧日期。 */
+    width: max-content;
     min-width: max-content;
     border: 1px solid rgba(148, 163, 184, 0.24);
     border-radius: var(--radius-sm);

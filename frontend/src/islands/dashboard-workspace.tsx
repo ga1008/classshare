@@ -220,7 +220,7 @@ function DashboardWorkspace({ initial }: { initial: Workspace }) {
       {!open && error ? <p className="dw-error" role="status">{error}<button className="dw-link" type="button" onClick={() => window.dispatchEvent(new Event('lanshare:dashboard-workspace-refresh'))}>重试</button></p> : null}
     </section>
     <Dialog open={open} onOpenChange={(next) => { if (!next) scrollPosition.current = scroll.current?.scrollTop || 0; setOpen(next); }}>
-      <DialogContent className="dw-dialog" aria-describedby={undefined} onCloseAutoFocus={(event) => { event.preventDefault(); if (!handoff.current) (returnFocus.current || allButton.current)?.focus({ preventScroll: true }); }} onClickCapture={(event) => {
+      <DialogContent className={`dw-dialog${view === 'calendar' ? ' dw-dialog--calendar' : ''}`} aria-modal="true" aria-describedby={undefined} onCloseAutoFocus={(event) => { event.preventDefault(); if (!handoff.current) (returnFocus.current || allButton.current)?.focus({ preventScroll: true }); }} onClickCapture={(event) => {
         const trigger = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('[data-semester-todo-add]') : null;
         if (!trigger) return;
         event.preventDefault(); event.stopPropagation();

@@ -5,8 +5,9 @@
 {% set panel_empty_description = semester_calendar_empty_description | default('先创建或绑定学期后，这里会自动显示完整学期周历。') %}
 {% set panel_class = semester_calendar_panel_class | default('') %}
 {% set show_todos = semester_calendar_show_todos | default(false) %}
+{% set compact = semester_calendar_compact | default(false) %}
 
-<section class="semester-calendar-panel{% if panel_class %} {{ panel_class }}{% endif %}" data-semester-calendar-root{% if show_todos %} data-semester-calendar-todos="true"{% endif %}>
+<section class="semester-calendar-panel{% if panel_class %} {{ panel_class }}{% endif %}" data-semester-calendar-root{% if compact %} data-semester-calendar-compact="true"{% endif %}{% if show_todos %} data-semester-calendar-todos="true"{% endif %}>
     <div class="semester-calendar-panel__header">
         <div class="semester-calendar-panel__heading">
             <h3 class="semester-calendar-panel__title" data-explain data-explain-title="{{ panel_title }}" data-explain-text="{{ panel_subtitle }} 第一行是月份、第二行是周次；周末与节假日、当前周和今天会自动高亮。{{ panel_hint }}">{{ panel_title }}</h3>
@@ -14,16 +15,19 @@
         <div class="semester-calendar-panel__actions">
             {% if show_todos %}
             <span class="semester-calendar-chip is-todo" data-semester-todo-summary hidden></span>
+            {% if not compact %}
             <button type="button" class="btn btn-primary" data-semester-todo-add hidden>
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
                 新增待办
             </button>
+            {% endif %}
             {% endif %}
             <button type="button" class="btn btn-outline" data-semester-calendar-scroll-start>回到开头</button>
             <button type="button" class="btn btn-outline" data-semester-calendar-scroll-today>定位今天</button>
         </div>
     </div>
 
+    {% if compact %}<details class="semester-calendar-details"><summary>学期概览</summary>{% endif %}
     <div class="semester-calendar-panel__overview" data-semester-calendar-overview hidden>
         <article class="semester-calendar-overview-card">
             <span>日期范围</span>
@@ -46,9 +50,10 @@
             <small data-semester-calendar-holiday-note>--</small>
         </article>
     </div>
+    {% if compact %}</details>{% endif %}
 
     <div class="semester-calendar-panel__toolbar">
-        <label class="semester-calendar-panel__field">
+        <label class="semester-calendar-panel__field"{% if compact %} data-explain data-explain-title="{{ panel_title }}" data-explain-text="{{ panel_subtitle }} {{ panel_hint }} 周末、节假日、当前周和今天会自动高亮。"{% endif %}>
             <span>当前查看学期</span>
             <select class="form-control" data-semester-calendar-select></select>
         </label>

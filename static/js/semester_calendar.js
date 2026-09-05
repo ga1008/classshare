@@ -457,6 +457,8 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
     }
 
     const normalizedConfig = normalizeCalendarConfig(config);
+    const compact = root.dataset.semesterCalendarCompact === 'true';
+    const axisWidth = compact ? 72 : 132;
     let holidayLookup = normalizedConfig.holidayLookup;
     let todayIso = normalizedConfig.todayIso;
     const defaultSemesterId = Number(normalizedConfig.defaultSemesterId || options.initialSemesterId || 0) || null;
@@ -637,7 +639,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
 
     function applyActiveWeekVisuals(semester, model) {
         if (!elements.board || !model) return;
-        elements.board.style.gridTemplateColumns = `132px ${getWeekColumns(model)}`;
+        elements.board.style.gridTemplateColumns = `${axisWidth}px ${getWeekColumns(model)}`;
         elements.board.querySelectorAll('[data-week-key]').forEach((node) => {
             node.classList.toggle('is-active-week', node.dataset.weekKey === activeWeekKey);
         });
@@ -1602,8 +1604,10 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         const board = elements.board;
         board.innerHTML = '';
         activeWeekKey = resolveActiveWeekKey(semester, model);
-        board.style.gridTemplateColumns = `132px ${getWeekColumns(model)}`;
-        board.style.gridTemplateRows = '46px 52px 52px repeat(7, minmax(58px, auto))';
+        board.style.gridTemplateColumns = `${axisWidth}px ${getWeekColumns(model)}`;
+        board.style.gridTemplateRows = compact
+            ? '34px 44px 38px repeat(7, minmax(58px, auto))'
+            : '46px 52px 52px repeat(7, minmax(58px, auto))';
 
         const realWeekIndexes = model.weeks
             .map((week, index) => (week.isPaddingWeek ? -1 : index))
@@ -1642,7 +1646,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             }
         });
 
-        createCell(fragment, 'semester-header-cell semester-sticky-cell', '月份', 2, 1);
+        createCell(fragment, 'semester-header-cell semester-month-axis semester-sticky-cell', '月份', 2, 1);
         model.monthGroups.forEach((group) => {
             createCell(fragment, 'semester-header-cell month', group.label, 2, group.start + 2, group.span);
         });
@@ -1703,13 +1707,17 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
 
                 const number = document.createElement('div');
                 number.className = 'date-number';
-                number.textContent = String(day.date.getDate());
+                number.textContent = compact
+                    ? `${day.date.getMonth() + 1}/${day.date.getDate()}`
+                    : String(day.date.getDate());
                 cell.appendChild(number);
 
-                const meta = document.createElement('div');
-                meta.className = 'date-meta';
-                meta.textContent = day.label;
-                cell.appendChild(meta);
+                if (!compact) {
+                    const meta = document.createElement('div');
+                    meta.className = 'date-meta';
+                    meta.textContent = day.label;
+                    cell.appendChild(meta);
+                }
 
                 if (day.isToday) {
                     const todayTag = document.createElement('div');
@@ -1728,9 +1736,20 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                             : '',
                         day.holidayInfo.verification_note || '',
                     ].filter(Boolean);
-                    if (evidenceParts.length) tag.title = evidenceParts.join('\n');
+                    if (compact && day.holidayInfo.kind === 'workday') {
+                        const makeupDate = parseIsoDate(day.holidayInfo.makeup_for_date);
+                        tag.textContent = makeupDate
+                            ? `调休上课 · 补 ${makeupDate.getMonth() + 1}/${makeupDate.getDate()}`
+                            : '调休上课';
+                        tag.tabIndex = 0;
+                        tag.dataset.explain = '';
+                        tag.dataset.explainTitle = '调休安排';
+                        tag.dataset.explainText = [day.holidayInfo.label, ...evidenceParts].join('\n');
+                    } else if (evidenceParts.length) {
+                        tag.title = evidenceParts.join('\n');
+                    }
                     cell.appendChild(tag);
-                } else if (day.isWeekend) {
+                } else if (day.isWeekend && !(compact && day.isToday)) {
                     const tag = document.createElement('div');
                     tag.className = 'semester-mini-tag';
                     tag.textContent = '周末';

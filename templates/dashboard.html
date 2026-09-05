@@ -122,7 +122,7 @@
     </section>
 
     <div data-dw-calendar-storage hidden>
-    {% with semester_calendar_panel_title='学期日历', semester_calendar_panel_subtitle='查看学期周次、节假日与周内事项。', semester_calendar_panel_hint='可以左右拖动周历，或使用定位今天。', semester_calendar_panel_class='dw-semester-calendar', semester_calendar_show_todos=true, semester_calendar_empty_title='暂无可展示的学期日历', semester_calendar_empty_description='教师创建学期并绑定课堂后可查看。' %}{% include "partials/semester_calendar_panel.html" %}{% endwith %}
+    {% with semester_calendar_panel_title='学期日历', semester_calendar_panel_subtitle='查看学期周次、节假日与周内事项。', semester_calendar_panel_hint='可以左右拖动周历，或使用定位今天。', semester_calendar_panel_class='dw-semester-calendar', semester_calendar_compact=true, semester_calendar_show_todos=true, semester_calendar_empty_title='暂无可展示的学期日历', semester_calendar_empty_description='教师创建学期并绑定课堂后可查看。' %}{% include "partials/semester_calendar_panel.html" %}{% endwith %}
     </div>
 </section>
 {% if user_info.role == 'teacher' %}
