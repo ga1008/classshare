@@ -64,6 +64,9 @@ const DECK_CSS = `
 
 .cs-stage {
     position: relative;
+    /* 后排 3D 投影只能留在画布内，避免窄屏出现整页横向滚动。
+       clip 不创建滚动容器；头部控件和独立整周对话框不受此裁切影响。 */
+    overflow: clip;
     height: 460px;
     perspective: 1500px;
     perspective-origin: 50% 38%;

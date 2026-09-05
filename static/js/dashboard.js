@@ -1181,9 +1181,10 @@ if (root) {
 
     function readStorageValue(key) {
         try {
-            return window.localStorage.getItem(key) || '';
+            // null means no preference; '' is an explicit “全部学期” choice.
+            return window.localStorage.getItem(key);
         } catch (error) {
-            return '';
+            return null;
         }
     }
 

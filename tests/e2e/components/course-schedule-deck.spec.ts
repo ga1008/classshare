@@ -29,7 +29,7 @@ async function mountDeck(page: Page) {
           lesson('长课程',7,[8,9],${JSON.stringify(classes)},'/classroom/2'),
           lesson('超长课程',7,[10,11],${JSON.stringify(classes.repeat(10))},'/classroom/3'),
           lesson('待匹配课程',4,[4,5],'计算机2601班','')
-        ]}, {week_index:2,label:'第2周',lesson_count:0,total_hours:0,lessons:[]}]});
+        ]}, ...Array.from({length:7}, (_,index) => ({week_index:index+2,label:'第'+(index+2)+'周',lesson_count:0,total_hours:0,lessons:[]}))]});
       </script></html>` });
   });
   await page.goto('http://schedule.test/');
@@ -59,6 +59,25 @@ function expectContained(metrics: Awaited<ReturnType<typeof previewMetrics>>) {
   expect(metrics.bottom).toBeLessThanOrEqual(metrics.bodyBottom - 10);
   for (const line of metrics.lines) expect(line.height).toBeGreaterThanOrEqual(line.scrollHeight - 1);
 }
+
+test('populated 3D stacks stay inside their canvas on narrow screens without clipping navigation', async ({ page }) => {
+  await mountDeck(page);
+  await page.keyboard.press('Escape');
+  for (const width of [1440, 1024, 390]) {
+    await page.setViewportSize({ width, height: 980 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    for (const control of ['[data-csd-next]', '[data-csd-slider]']) {
+      await expect(page.locator(control)).toBeVisible();
+      const box = await page.locator(control).boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    }
+  }
+  await page.locator('.cs-card.is-active').click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('link', { name: /^长课程/ }).focus();
+  expectContained(await previewMetrics(page));
+});
 
 test('short courses stay compact while long Sunday cards wrap completely inside the timetable', async ({ page }, testInfo) => {
   await mountDeck(page);

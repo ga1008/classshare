@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
 import { loginStudent, loginTeacher, readFixture } from '../fixtures/p03';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+
+test.beforeAll(() => {
+  const python = process.platform === 'win32' ? 'venv/Scripts/python.exe' : 'venv/bin/python';
+  execFileSync(fs.existsSync(python) ? path.resolve(python) : 'python',
+    ['tests/e2e/scripts/prepare_schedule_fixture.py', readFixture().runtimeRoot]);
+});
 
 test('teacher defaults, explicit all and saved choices survive reload with aligned filters', async ({ page }) => {
   const errors: string[] = [];
@@ -9,7 +18,9 @@ test('teacher defaults, explicit all and saved choices survive reload with align
   await expect(page.locator('[data-group-mode="schedule3d"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.cs-stage')).toBeVisible();
   const currentSemester = await page.locator('[data-dashboard-root]').getAttribute('data-current-semester-key');
-  if (currentSemester) await expect(page.locator('[data-semester-filter]')).toHaveValue(currentSemester);
+  expect(currentSemester).toMatch(/^\d{4}-\d{4}-[123]$/);
+  await expect(page.locator('[data-semester-filter]')).toHaveValue(currentSemester!);
+  await expect(page.locator('.cs-lesson--mini').first()).toBeAttached();
   for (const width of [1440, 1024, 390]) {
     await page.setViewportSize({ width, height: 980 });
     const search = await page.locator('.dw-course-search').boundingBox();
