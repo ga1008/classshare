@@ -292,6 +292,7 @@ function normalizeTodoOverview(semester) {
 }
 
 function sourceLabel(todo) {
+    if (todo?.canonical_workspace && todo.type_label) return todo.type_label;
     const labels = {
         lesson: '课堂',
         assignment: '作业',
@@ -351,14 +352,16 @@ function academicEventParts(todo) {
 
 function findTodoById(semester, todoId) {
     const overview = normalizeTodoOverview(semester);
-    return overview.items.find((item) => String(item.id) === String(todoId)) || null;
+    const item = overview.items.find((entry) => String(entry.id) === String(todoId)) || null;
+    return item && overview.canonical_workspace ? { ...item, canonical_workspace: true } : item;
 }
 
 function getWeekTodos(semester, weekStart) {
     const weekKey = formatIsoDate(weekStart);
     const overview = normalizeTodoOverview(semester);
     const week = overview.weeks.find((item) => String(item.key) === weekKey);
-    return Array.isArray(week?.todos) ? week.todos : [];
+    const items = Array.isArray(week?.todos) ? week.todos : [];
+    return overview.canonical_workspace ? items.map((item) => ({ ...item, canonical_workspace: true })) : items;
 }
 
 function getWeekKey(week) {
@@ -383,11 +386,11 @@ function recalcTodoOverview(overview) {
     weeks.forEach((week) => {
         const todos = Array.isArray(week.todos) ? week.todos : [];
         week.todo_count = todos.length;
-        week.open_count = todos.filter((item) => !item.is_completed).length;
+        week.open_count = todos.filter((item) => overview.canonical_workspace ? item.is_actionable : !item.is_completed).length;
     });
     overview.summary = {
         total_count: items.length,
-        open_count: items.filter((item) => !item.is_completed).length,
+        open_count: items.filter((item) => overview.canonical_workspace ? item.is_actionable : !item.is_completed).length,
         manual_count: items.filter((item) => item.source_type === 'manual').length,
         due_soon_count: items.filter((item) => String(item.relative_due_label || '').includes('后截止')).length,
         no_deadline_count: items.filter((item) => item.no_deadline).length,
@@ -454,8 +457,8 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
     }
 
     const normalizedConfig = normalizeCalendarConfig(config);
-    const holidayLookup = normalizedConfig.holidayLookup;
-    const todayIso = normalizedConfig.todayIso;
+    let holidayLookup = normalizedConfig.holidayLookup;
+    let todayIso = normalizedConfig.todayIso;
     const defaultSemesterId = Number(normalizedConfig.defaultSemesterId || options.initialSemesterId || 0) || null;
     const showTodos = Boolean(
         options.showTodos
@@ -783,7 +786,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         if (elements.todoSummary) {
             elements.todoSummary.hidden = totalCount <= 0 && !canCreate;
             elements.todoSummary.textContent = totalCount > 0
-                ? `待办 ${totalCount} 项，未完成 ${openCount} 项`
+                ? (overview.canonical_workspace ? `日程 ${totalCount} 项，待处理 ${openCount} 项` : `待办 ${totalCount} 项，未完成 ${openCount} 项`)
                 : '可在当前学期添加个人待办';
         }
     }
@@ -923,7 +926,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
 
         const meta = document.createElement('div');
         meta.className = 'semester-week-todo-item-card__meta';
-        [todo.duration_label, todo.status_label || todo.relative_due_label, todo.deadline_label]
+        [todo.duration_label, todo.status_label || todo.relative_due_label, todo.canonical_workspace ? '' : todo.deadline_label]
             .filter(Boolean)
             .forEach((text) => {
                 const chip = document.createElement('span');
@@ -934,7 +937,9 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         const progress = document.createElement('div');
         progress.className = 'semester-week-todo-progress';
         const progressLabel = document.createElement('small');
-        progressLabel.textContent = todo.no_deadline
+        progressLabel.textContent = todo.canonical_workspace
+            ? (todo.is_schedule ? (todo.time_label || (todo.date_only ? '具体时刻待确认' : '时间待确认')) : (todo.deadline_label || '无截止日期'))
+            : todo.no_deadline
             ? '无截止日期'
             : (todo.due_time_label ? `${todo.due_time_label} 截止` : (todo.deadline_label || '截止时间待定'));
         const track = document.createElement('span');
@@ -945,7 +950,8 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         bar.style.setProperty('--todo-left', `${position.left.toFixed(3)}%`);
         bar.style.setProperty('--todo-width', `${position.width.toFixed(3)}%`);
         track.appendChild(bar);
-        progress.append(progressLabel, track);
+        if (todo.canonical_workspace && todo.is_schedule) progress.append(progressLabel);
+        else progress.append(progressLabel, track);
 
         const actions = document.createElement('div');
         actions.className = 'semester-week-todo-item-card__actions';
@@ -1025,9 +1031,10 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         title.textContent = activeWeek.range_label || `${formatIsoDate(activeWeek.start)} 至 ${formatIsoDate(activeWeek.end)}`;
         headCopy.append(kicker, title);
         const count = document.createElement('small');
-        const openCount = activeTodos.filter((todo) => !todo.is_completed).length;
+        const canonical = normalizeTodoOverview(semester).canonical_workspace;
+        const openCount = activeTodos.filter((todo) => canonical ? todo.is_actionable : !todo.is_completed).length;
         count.textContent = activeTodos.length
-            ? `${activeTodos.length} 项 / ${openCount} 项未完成`
+            ? `${activeTodos.length} 项 / ${openCount} 项${canonical ? '待处理' : '未完成'}`
             : '暂无待办';
         head.append(headCopy, count);
 
@@ -1110,15 +1117,16 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         elements.todoDetail.append(copy, actions);
     }
 
-    function createTodoBar(todo) {
+    function createTodoBar(todo, week) {
         const button = document.createElement('button');
         button.type = 'button';
         const isActive = String(todo.id || '') === String(activeTodoId || '');
         const compactEvent = isAcademicCalendarEvent(todo);
         button.className = `semester-calendar-todo-bar is-${sourceTone(todo)}${compactEvent ? ' is-compact-academic' : ''}${todo.is_completed ? ' is-completed' : ''}${isActive ? ' is-active' : ''}`;
         button.dataset.semesterTodoId = String(todo.id || '');
-        button.style.setProperty('--todo-left', `${Number(todo.bar_left || 0).toFixed(3)}%`);
-        button.style.setProperty('--todo-width', `${Math.max(8, Number(todo.bar_width || 0)).toFixed(3)}%`);
+        const position = todo.canonical_workspace ? getTodoMinutePosition(todo, week) : { left: Number(todo.bar_left || 0), width: Number(todo.bar_width || 0) };
+        button.style.setProperty('--todo-left', `${position.left.toFixed(3)}%`);
+        button.style.setProperty('--todo-width', `${Math.max(8, position.width).toFixed(3)}%`);
         button.title = [
             todo.title || '待办',
             todo.duration_label,
@@ -1153,7 +1161,9 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
 
         if (!compactEvent) {
             const meta = document.createElement('small');
-            meta.textContent = todo.no_deadline
+            meta.textContent = todo.canonical_workspace
+                ? (todo.is_schedule ? (todo.time_label || '时刻待确认') : (todo.deadline_label || '无截止'))
+                : todo.no_deadline
                 ? '无截止'
                 : (todo.due_time_label ? `${todo.due_time_label}截止` : sourceLabel(todo));
             button.appendChild(meta);
@@ -1180,7 +1190,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         const lane = document.createElement('div');
         lane.className = 'semester-calendar-gantt-lane';
         todos.forEach((todo) => {
-            lane.appendChild(createTodoBar(todo));
+            lane.appendChild(createTodoBar(todo, week));
         });
         cell.appendChild(lane);
 
@@ -1484,6 +1494,12 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
     async function refreshClassTodos(classOfferingId, nextOverview, nextTodoId = '') {
         const semester = getActiveSemester();
         if (!semester) return;
+        if (semester.todo_overview?.canonical_workspace && typeof options.refreshCalendar === 'function') {
+            await options.refreshCalendar();
+            activeTodoId = nextTodoId || activeTodoId;
+            renderCalendar();
+            return;
+        }
         const option = getTodoOption(classOfferingId);
         mergeClassTodoOverview(semester, classOfferingId, nextOverview, option);
         activeTodoId = nextTodoId || activeTodoId;
@@ -1531,8 +1547,9 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
     async function patchManualTodo(todo, body) {
         const classOfferingId = Number(todo?.class_offering_id || 0);
         const todoId = manualTodoId(todo);
-        if (!classOfferingId || !todoId) return;
-        const result = await apiFetch(`/api/classrooms/${classOfferingId}/todos/${todoId}`, {
+        const accountTodo = todo.canonical_workspace && options.actorRole === 'teacher';
+        if ((!classOfferingId && !accountTodo) || !todoId) return;
+        const result = await apiFetch(accountTodo ? `/api/todos/${todoId}` : `/api/classrooms/${classOfferingId}/todos/${todoId}`, {
             method: 'PATCH',
             body,
             silent: true,
@@ -1546,8 +1563,9 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         if (!confirmed) return;
         const classOfferingId = Number(todo?.class_offering_id || 0);
         const todoId = manualTodoId(todo);
-        if (!classOfferingId || !todoId) return;
-        const result = await apiFetch(`/api/classrooms/${classOfferingId}/todos/${todoId}`, {
+        const accountTodo = todo.canonical_workspace && options.actorRole === 'teacher';
+        if ((!classOfferingId && !accountTodo) || !todoId) return;
+        const result = await apiFetch(accountTodo ? `/api/todos/${todoId}` : `/api/classrooms/${classOfferingId}/todos/${todoId}`, {
             method: 'DELETE',
             silent: true,
         });
@@ -1845,16 +1863,28 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         }, { passive: true });
     }
 
-    function setSemesters(nextSemesters, { preserveSelection = true } = {}) {
+    function setSemesters(nextSemesters, { preserveSelection = true, preserveViewport = false, calendarConfig = null } = {}) {
         const previousActiveId = preserveSelection ? state.activeSemesterId : null;
+        const previousScrollLeft = elements.scroll?.scrollLeft || 0;
+        if (calendarConfig) {
+            const updatedConfig = normalizeCalendarConfig(calendarConfig);
+            todayIso = updatedConfig.todayIso || todayIso;
+            holidayLookup = updatedConfig.holidayLookup;
+            modelCache.clear();
+        }
         state.semesters = Array.isArray(nextSemesters) ? nextSemesters.map(normalizeSemester) : [];
         const fallbackSemesterId = defaultSemesterId ?? state.semesters[0]?.id ?? null;
         const nextActiveSemester = getSemesterById(previousActiveId) || getSemesterById(fallbackSemesterId);
         state.activeSemesterId = nextActiveSemester?.id ?? state.semesters[0]?.id ?? null;
-        activeTodoId = '';
-        scheduleWeekScroll(getSemesterActiveWeekKey(getActiveSemester()));
+        if (!preserveViewport) {
+            activeTodoId = '';
+            scheduleWeekScroll(getSemesterActiveWeekKey(getActiveSemester()));
+        }
         renderSelect();
         renderCalendar();
+        if (preserveViewport && elements.scroll) {
+            window.requestAnimationFrame(() => { elements.scroll.scrollLeft = previousScrollLeft; });
+        }
         if (onChange) {
             onChange(getActiveSemester());
         }

@@ -61,6 +61,12 @@ function dispatchPollCounts(snapshot) {
         badge.textContent = String(active);
         badge.hidden = active <= 0;
     }
+    const liveEntry = document.querySelector('[data-cw-live-polls]');
+    if (liveEntry) {
+        liveEntry.hidden = active <= 0;
+        liveEntry.querySelector('[data-cw-live-polls-label]').textContent = `${active} 项课堂投票进行中`;
+    }
+    window.dispatchEvent(new CustomEvent('classroom:activity-counts', { detail: { counts: { polls: active } } }));
     window.dispatchEvent(new CustomEvent('classroom:poll-counts', {
         detail: {
             counts: { polls: active },
@@ -654,7 +660,10 @@ export function initClassroomPolls(config = {}) {
         btn.addEventListener('click', () => setSectionView(btn.dataset.assignmentSectionTab));
     });
     // Establish the initial view explicitly so the poll panel starts hidden.
-    setSectionView('tasks');
+    if (document.querySelector('[data-assignment-section-tab]')) setSectionView('tasks');
+    document.addEventListener('classroom:activity-visible', event => {
+        if (event.detail?.activity === 'polls') refresh({ silent: true }).catch(() => {});
+    });
 
     refresh().catch(() => {});
     return { refresh, getSnapshot: () => state.snapshot };

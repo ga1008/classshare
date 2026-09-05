@@ -1,5 +1,4 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
-import { initSemesterCalendar } from '/static/js/semester_calendar.js?v=semester-band-20260825';
 import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260707';
 
 const root = document.querySelector('[data-dashboard-root]');
@@ -24,28 +23,6 @@ function toNumber(value) {
 // behaviour instead of triggering whole-card navigation.
 const INTERACTIVE_CARD_CHILD = 'a, button, input, select, textarea, label, [role="button"], [data-timeline-axis], [contenteditable="true"]';
 
-// Short labels for the agenda event types shown on each session row.
-const AGENDA_KIND_LABELS = {
-    class: '上课',
-    invigilation: '监考',
-    exam: '考试',
-    assignment: '作业',
-    todo: '待办',
-};
-
-function readAgendaEvents(root) {
-    const node = root.querySelector('[data-dashboard-agenda-events]');
-    if (!node) {
-        return [];
-    }
-    try {
-        const parsed = JSON.parse(node.textContent || '[]');
-        return Array.isArray(parsed) ? parsed.filter((item) => item && item.date_full_label) : [];
-    } catch (error) {
-        return [];
-    }
-}
-
 /**
  * Make each offering card fully clickable: a click (or Enter/Space when the
  * card is focused) anywhere outside an interactive child navigates to the
@@ -54,7 +31,7 @@ function readAgendaEvents(root) {
  */
 function setupOfferingCardNavigation(cards) {
     cards.forEach((card) => {
-        const enterLink = card.querySelector('.dashboard-offering-card__enter, a[href^="/classroom/"]');
+        const enterLink = card.querySelector('[data-offering-enter], a[href^="/classroom/"]');
         const href = enterLink && enterLink.getAttribute('href');
         if (!href) {
             return;
@@ -78,7 +55,6 @@ function setupOfferingCardNavigation(cards) {
 if (root) {
     const cards = Array.from(root.querySelectorAll('[data-offering-card]'));
     setupOfferingCardNavigation(cards);
-    const agendaEvents = readAgendaEvents(root);
     const filterButtons = Array.from(root.querySelectorAll('[data-filter-value]'));
     const groupModeButtons = Array.from(root.querySelectorAll('[data-group-mode]'));
     const searchForm = root.querySelector('[data-dashboard-search-form]');
@@ -90,11 +66,11 @@ if (root) {
     const offeringList = root.querySelector('[data-offering-list]');
     const emptySearch = root.querySelector('[data-empty-search]');
     const resetButton = root.querySelector('[data-reset-search]');
-    const semesterCalendarRoot = root.querySelector('[data-semester-calendar-root]');
+    const semesterCalendarRoot = document.querySelector('[data-semester-calendar-root]');
     const emptySearchChips = root.querySelector('[data-empty-search-chips]');
     const emptySearchSuggestions = root.querySelector('[data-empty-search-suggestions]');
     const dashboardRole = root.dataset.dashboardRole || 'teacher';
-    const storagePrefix = `dashboard:${dashboardRole}`;
+    const storagePrefix = `dashboard-workspace:${dashboardRole}`;
 
     const cardState = new Map();
     const collator = new Intl.Collator('zh-Hans-CN', { numeric: true, sensitivity: 'base' });
@@ -102,7 +78,6 @@ if (root) {
     const groupModeLabels = {
         department: '系别班级',
         course: '课程',
-        timeline: '时间轴',
         schedule3d: '3D课表',
         flat: '列表',
     };
@@ -126,8 +101,6 @@ if (root) {
     if (groupModeButtons.length && !allowedGroupModes.has(activeGroupMode)) {
         activeGroupMode = 'department';
     }
-    let activeTimelineKey = '';
-    let timelinePastExpanded = false;
     let groupSectionSerial = 0;
     let isComposing = false;
     let searchTimerId = 0;
@@ -148,7 +121,6 @@ if (root) {
             recentUserCount: toNumber(card.dataset.recentUserCount),
             recentLoginCount: toNumber(card.dataset.recentLoginCount),
             lastActivitySort: toNumber(card.dataset.lastActivitySort),
-            timelineItems: parseTimelineItems(card.dataset.timelineItems),
             semesterKey: String(card.dataset.semesterKey || ''),
             semesterLabel: String(card.dataset.semesterLabel || '未设学期'),
             visible: !card.hidden,
@@ -192,54 +164,11 @@ if (root) {
         });
     };
 
-    const revealElements = () => {
-        const targets = root.querySelectorAll('.dashboard-reveal');
-        targets.forEach((element, index) => {
-            element.style.setProperty('--reveal-index', String(Math.min(index, 8)));
-        });
-        root.classList.add('is-reveal-ready');
-        const showTargets = () => {
-            targets.forEach((element) => element.classList.add('is-visible'));
-        };
-        window.requestAnimationFrame(showTargets);
-    };
-
-    function setupCockpitPulseCollapse() {
-        const pulse = root.querySelector('[data-cockpit-pulse]');
-        const toggle = root.querySelector('[data-cockpit-pulse-toggle]');
-        const body = root.querySelector('[data-cockpit-pulse-body]');
-        if (!pulse || !toggle || !body) {
-            return;
-        }
-        const storageKey = 'lanshare:cockpit-pulse-collapsed';
-        const narrowQuery = window.matchMedia('(max-width: 720px)');
-        const applyCollapsed = (collapsed) => {
-            const effectiveCollapsed = narrowQuery.matches && collapsed;
-            pulse.classList.toggle('is-collapsed', effectiveCollapsed);
-            body.hidden = effectiveCollapsed;
-            toggle.setAttribute('aria-expanded', String(!effectiveCollapsed));
-            toggle.textContent = effectiveCollapsed
-                ? `展开 ${body.querySelectorAll('.student-cockpit-pulse').length} 门课程`
-                : '收起';
-        };
-        let collapsed = readStorageValue(storageKey);
-        let isCollapsed = collapsed === null || collapsed === '' ? true : collapsed !== 'false';
-        applyCollapsed(isCollapsed);
-        toggle.addEventListener('click', () => {
-            isCollapsed = !isCollapsed;
-            writeStorageValue(storageKey, String(isCollapsed));
-            applyCollapsed(isCollapsed);
-        });
-        if (typeof narrowQuery.addEventListener === 'function') {
-            narrowQuery.addEventListener('change', () => applyCollapsed(isCollapsed));
-        }
-    }
-
     const updateFilterUi = () => {
         filterButtons.forEach((button) => {
             const isActive = (button.dataset.filterValue || 'all') === activeFilter;
             button.classList.toggle('is-active', isActive);
-            button.setAttribute('aria-selected', String(isActive));
+            button.setAttribute('aria-current', String(isActive));
         });
     };
 
@@ -268,7 +197,7 @@ if (root) {
         if (keyword) {
             fragments.push(`关键词：${keyword}`);
         }
-        if (groupModeButtons.length) {
+        if (groupModeButtons.length && activeGroupMode !== 'flat') {
             fragments.push(`归纳：${groupModeLabels[activeGroupMode] || activeGroupMode}`);
         }
         return fragments.length ? fragments.join(' · ') : '显示全部课堂';
@@ -367,7 +296,7 @@ if (root) {
         const list = document.createElement('div');
         list.className = 'dashboard-empty-search__suggestion-list';
         suggestions.forEach(({ card, state }) => {
-            const href = card.querySelector('.dashboard-offering-card__enter')?.getAttribute('href') || '#';
+            const href = card.querySelector('[data-offering-enter]')?.getAttribute('href') || '#';
             const link = document.createElement('a');
             link.href = href;
             link.className = 'dashboard-empty-search__suggestion';
@@ -446,6 +375,12 @@ if (root) {
             resetButton.hidden = !(keyword || activeFilter !== 'all');
         }
 
+        const scope = {
+            active: Boolean(keyword || activeFilter !== 'all' || activeSemesterKey),
+            offeringIds: visibleCards.map((card) => Number(card.dataset.offeringId)).filter(Boolean),
+        };
+        root.dataset.dashboardScope = JSON.stringify(scope);
+        window.dispatchEvent(new CustomEvent('lanshare:dashboard-scope', { detail: scope }));
         updateFilterUi();
         updateGroupModeUi();
         syncSearchForm();
@@ -476,7 +411,6 @@ if (root) {
                 return;
             }
             activeGroupMode = nextMode;
-            activeTimelineKey = '';
             writeStorageValue(`${storagePrefix}:group-mode`, activeGroupMode);
             applyFilters();
         });
@@ -549,7 +483,6 @@ if (root) {
         clearSearchCriterion(button.dataset.emptySearchChip || '');
     });
 
-    setupCockpitPulseCollapse();
 
     resetButton?.addEventListener('click', () => {
         activeFilter = 'all';
@@ -581,25 +514,131 @@ if (root) {
     updateGroupModeUi();
     applyFilters({ syncUrl: false });
     formatDateNodes();
-    revealElements();
 
-    initSemesterCalendar(semesterCalendarRoot, window.DASHBOARD_SEMESTER_CALENDAR || {}, {
-        showTodos: true,
-        onMessage: (message, tone) => showMessage(message, tone || 'info'),
-    });
-
-    // 顶部「学期日历」按钮：平滑滚动到学期日历区块，而不是瞬间锚点跳转
-    document.querySelectorAll('a[href="#dashboard-semester"]').forEach((link) => {
-        link.addEventListener('click', (event) => {
-            const target = document.getElementById('dashboard-semester');
-            if (!target) return;
-            event.preventDefault();
-            const reduceMotion = window.matchMedia
-                && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
-            window.history.replaceState(null, '', '#dashboard-semester');
+    let semesterCalendarController = null;
+    let semesterCalendarLoading = null;
+    let calendarScope = null;
+    try {
+        const initialScope = JSON.parse(root.dataset.dashboardScope || '{}');
+        if (initialScope.active) calendarScope = initialScope.offeringIds || [];
+    } catch { /* Keep the authorized complete calendar when there is no stored scope. */ }
+    let appliedCalendarScope = null;
+    let baseCalendarConfig = structuredClone(window.DASHBOARD_SEMESTER_CALENDAR || {});
+    let calendarRefreshPromise = null;
+    let calendarStatus = null;
+    function setCalendarStatus(message = '') {
+        if (!semesterCalendarRoot) return;
+        if (!calendarStatus) {
+            calendarStatus = document.createElement('p');
+            calendarStatus.className = 'dw-error';
+            calendarStatus.setAttribute('role', 'status');
+            semesterCalendarRoot.prepend(calendarStatus);
+        }
+        calendarStatus.textContent = message;
+        calendarStatus.hidden = !message;
+    }
+    const belongsToScope = (todo, scope) => !scope || scope.includes(Number(todo.class_offering_id || todo.offering_id || 0));
+    const recountOverview = (overview) => {
+        const items = overview.items || [];
+        return {
+            ...overview,
+            summary: {
+                ...overview.summary,
+                total_count: items.length,
+                open_count: items.filter((item) => overview.canonical_workspace ? item.is_actionable : !item.is_completed).length,
+                manual_count: items.filter((item) => item.source_type === 'manual').length,
+                due_soon_count: items.filter((item) => String(item.relative_due_label || '').includes('后截止')).length,
+                no_deadline_count: items.filter((item) => item.no_deadline).length,
+            },
+            weeks: (overview.weeks || []).map((week) => ({ ...week, todo_count: (week.todos || []).length, open_count: (week.todos || []).filter((item) => overview.canonical_workspace ? item.is_actionable : !item.is_completed).length })),
+        };
+    };
+    function rememberCalendarChanges() {
+        if (!semesterCalendarController) return;
+        const current = semesterCalendarController.getSemesters();
+        (baseCalendarConfig.semesters || []).forEach((semester) => {
+            const view = current.find((entry) => Number(entry.id) === Number(semester.id));
+            if (!view?.todo_overview) return;
+            const overview = semester.todo_overview || { items: [], weeks: [], summary: {} };
+            if (overview.canonical_workspace) return;
+            const edited = view.todo_overview;
+            overview.items = [...(overview.items || []).filter((item) => !belongsToScope(item, appliedCalendarScope)), ...(edited.items || [])];
+            overview.weeks = (overview.weeks || []).map((week) => ({
+                ...week,
+                todos: [...(week.todos || []).filter((item) => !belongsToScope(item, appliedCalendarScope)), ...(edited.weeks?.find((entry) => entry.key === week.key)?.todos || [])],
+            }));
+            semester.todo_overview = recountOverview(overview);
         });
+    }
+    function calendarSemestersForScope() {
+        return (baseCalendarConfig.semesters || []).map((semester) => {
+            const copy = structuredClone(semester);
+            if (!calendarScope) return copy;
+            const overview = copy.todo_overview || { items: [], weeks: [], summary: {} };
+            overview.items = (overview.items || []).filter((item) => belongsToScope(item, calendarScope));
+            overview.weeks = (overview.weeks || []).map((week) => ({ ...week, todos: (week.todos || []).filter((item) => belongsToScope(item, calendarScope)) }));
+            copy.todo_overview = recountOverview(overview);
+            copy.todo_create_options = (copy.todo_create_options || []).filter((option) => belongsToScope(option, calendarScope));
+            return copy;
+        });
+    }
+    window.addEventListener('lanshare:dashboard-calendar-scope', (event) => {
+        const next = event.detail?.offeringIds ?? null;
+        if (JSON.stringify(next) === JSON.stringify(calendarScope)) return;
+        rememberCalendarChanges();
+        calendarScope = next;
+        if (semesterCalendarController) {
+            semesterCalendarController.setSemesters(calendarSemestersForScope(), { preserveSelection: true, preserveViewport: true });
+            appliedCalendarScope = calendarScope;
+        }
     });
+    async function refreshDashboardCalendar() {
+        if (calendarRefreshPromise) return calendarRefreshPromise;
+        calendarRefreshPromise = (async () => {
+            try {
+                const response = await fetch('/api/dashboard/calendar', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || payload.status !== 'success' || !payload.calendar) throw new Error(payload.detail || payload.message || '日历状态暂时无法更新，请关闭后重试。');
+                baseCalendarConfig = payload.calendar;
+                semesterCalendarController?.setSemesters(calendarSemestersForScope(), { preserveSelection: true, preserveViewport: true, calendarConfig: baseCalendarConfig });
+                appliedCalendarScope = calendarScope;
+                setCalendarStatus();
+            } catch (error) {
+                setCalendarStatus(error.message || '日历状态暂时无法更新，请关闭后重试。');
+                throw error;
+            } finally { calendarRefreshPromise = null; }
+        })();
+        return calendarRefreshPromise;
+    }
+    async function openDashboardCalendar() {
+        if (!semesterCalendarRoot) return;
+        if (!semesterCalendarLoading) semesterCalendarLoading = import('/static/js/semester_calendar.js?v=semester-band-20260825');
+        try {
+            // Keep the authorized SSR calendar usable when a refresh fails;
+            // refreshDashboardCalendar leaves a visible stale-state message.
+            const [{ initSemesterCalendar }] = await Promise.all([semesterCalendarLoading, refreshDashboardCalendar().catch(() => null)]);
+            if (!semesterCalendarController) {
+                semesterCalendarController = initSemesterCalendar(semesterCalendarRoot, { ...baseCalendarConfig, semesters: calendarSemestersForScope() }, {
+                    showTodos: true,
+                    actorRole: dashboardRole,
+                    refreshCalendar: async () => {
+                        await refreshDashboardCalendar();
+                        window.dispatchEvent(new CustomEvent('lanshare:dashboard-workspace-refresh', { detail: { calendarFresh: true } }));
+                    },
+                    onMessage: (message, tone) => showMessage(message, tone || 'info'),
+                });
+                appliedCalendarScope = calendarScope;
+            }
+        } catch (error) {
+            semesterCalendarLoading = null;
+            showMessage('学期日历暂时无法加载，请关闭后重试。', 'error');
+        }
+    }
+    window.addEventListener('lanshare:dashboard-calendar-open', openDashboardCalendar);
+    window.addEventListener('lanshare:dashboard-calendar-invalidate', () => {
+        if (semesterCalendarController && !semesterCalendarRoot.closest('[data-dw-calendar-storage]')) void refreshDashboardCalendar().catch(() => {});
+    });
+    if (semesterCalendarRoot && !semesterCalendarRoot.closest('[data-dw-calendar-storage]')) void openDashboardCalendar();
 
     function getScheduleDeckPanel() {
         if (!scheduleDeckPanel) {
@@ -675,7 +714,7 @@ if (root) {
         }
 
         offeringList.replaceChildren();
-        offeringList.className = 'dashboard-offering-grid';
+        offeringList.className = 'dw-course-list';
         offeringList.removeAttribute('aria-label');
 
         if (groupModeButtons.length && activeGroupMode === 'schedule3d') {
@@ -697,11 +736,6 @@ if (root) {
         if (activeGroupMode === 'course') {
             offeringList.classList.add('is-course-grouped');
             renderCourseGroups(visibleCards);
-            return;
-        }
-        if (activeGroupMode === 'timeline') {
-            offeringList.classList.add('is-timeline');
-            renderTimelineGroups(visibleCards);
             return;
         }
         renderDepartmentGroups(visibleCards);
@@ -779,237 +813,6 @@ if (root) {
         });
 
         offeringList.appendChild(board);
-    }
-
-    function groupTimelineDays(items) {
-        const buckets = new Map();
-        items.forEach((item) => {
-            const key = item.date_full_label || String(item.starts_at || '').slice(0, 10);
-            if (!key) {
-                return;
-            }
-            if (!buckets.has(key)) {
-                buckets.set(key, {
-                    key,
-                    dateFull: key,
-                    dateLabel: item.date_label || '',
-                    weekdayLabel: item.weekday_label || '',
-                    yearLabel: item.year_label || getYearLabel(item.starts_at),
-                    relativeLabel: item.relative_label || '',
-                    items: [],
-                });
-            }
-            buckets.get(key).items.push(item);
-        });
-        const days = Array.from(buckets.values());
-        days.forEach((day) => day.items.sort(compareTimelineSession));
-        days.sort((a, b) => compareText(a.dateFull, b.dateFull));
-        return days;
-    }
-
-    function timelineDayStatus(day) {
-        const time = new Date(`${day.dateFull}T00:00:00`).getTime();
-        if (!Number.isFinite(time)) {
-            return 'future';
-        }
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-        if (time < today) {
-            return 'past';
-        }
-        if (time === today) {
-            return 'current';
-        }
-        return 'future';
-    }
-
-    function buildTimelineSession(item) {
-        const kind = item.kind || 'class';
-        const session = document.createElement('a');
-        session.className = `dashboard-agenda-session is-${item.status || 'upcoming'}`;
-        session.dataset.kind = kind;
-        session.href = item.href || '#';
-
-        const time = document.createElement('span');
-        time.className = 'dashboard-agenda-session__time';
-        time.textContent = item.hour_label || '时间待定';
-        if (item.time_hint) {
-            time.title = item.time_hint;
-            session.classList.add('has-hint');
-        }
-
-        const body = document.createElement('span');
-        body.className = 'dashboard-agenda-session__body';
-        const titleRow = document.createElement('span');
-        titleRow.className = 'dashboard-agenda-session__titlerow';
-        const chip = document.createElement('span');
-        chip.className = `dashboard-agenda-session__kind kind-${kind}`;
-        chip.textContent = AGENDA_KIND_LABELS[kind] || '日程';
-        const title = document.createElement('strong');
-        title.textContent = item.title || item.course_name || '课堂安排';
-        titleRow.append(chip, title);
-        const meta = document.createElement('span');
-        meta.className = 'dashboard-agenda-session__meta';
-        meta.textContent = item.subtitle
-            || [item.course_name, item.class_name, item.week_label, item.section_label].filter(Boolean).join(' · ');
-        body.append(titleRow, meta);
-
-        const go = document.createElement('span');
-        go.className = 'dashboard-agenda-session__go';
-        go.setAttribute('aria-hidden', 'true');
-        go.textContent = '进入';
-        session.append(time, body, go);
-        return session;
-    }
-
-    function buildTimelineDay(day) {
-        const status = timelineDayStatus(day);
-        const section = document.createElement('section');
-        section.className = `dashboard-agenda-day is-${status}`;
-        if (status === 'current') {
-            section.dataset.timelineToday = 'true';
-        }
-
-        const marker = document.createElement('span');
-        marker.className = 'dashboard-agenda-day__marker';
-        marker.setAttribute('aria-hidden', 'true');
-
-        const header = document.createElement('div');
-        header.className = 'dashboard-agenda-day__header';
-        const heading = document.createElement('h3');
-        const dateStrong = document.createElement('strong');
-        dateStrong.textContent = `${day.dateLabel} ${day.weekdayLabel}`.trim();
-        heading.appendChild(dateStrong);
-        const rel = (day.relativeLabel || '').trim();
-        if (rel) {
-            const relSpan = document.createElement('span');
-            relSpan.className = `dashboard-agenda-day__rel is-${status}`;
-            relSpan.textContent = rel;
-            heading.appendChild(relSpan);
-        }
-        const sub = document.createElement('p');
-        sub.textContent = [day.yearLabel, `${day.items.length} 节课`].filter(Boolean).join(' · ');
-        header.append(heading, sub);
-
-        const list = document.createElement('div');
-        list.className = 'dashboard-agenda-day__sessions';
-        day.items.forEach((item) => list.appendChild(buildTimelineSession(item)));
-
-        const body = document.createElement('div');
-        body.className = 'dashboard-agenda-day__body';
-        body.append(header, list);
-
-        section.append(marker, body);
-        return section;
-    }
-
-    function renderTimelineGroups(visibleCards) {
-        const cardItems = visibleCards.flatMap((card) => {
-            const state = cardState.get(card);
-            return (state?.timelineItems || []).map((item) => ({ ...item, kind: item.kind || 'class', card }));
-        });
-        const timelineItems = [...cardItems, ...agendaEvents].sort(compareTimelineItems);
-
-        if (!timelineItems.length) {
-            const emptyShell = document.createElement('div');
-            emptyShell.className = 'dashboard-agenda dashboard-agenda--empty';
-            const empty = document.createElement('div');
-            empty.className = 'dashboard-timeline-empty';
-            const title = document.createElement('strong');
-            title.textContent = '当前筛选范围内，还没有可归纳的课次。';
-            const copy = document.createElement('p');
-            copy.textContent = '可以切换搜索或标签筛选，或在课堂管理里补齐首次上课日期、每周安排与课堂时间轴。';
-            empty.append(title, copy);
-            emptyShell.appendChild(empty);
-            offeringList.appendChild(emptyShell);
-            return;
-        }
-
-        const days = groupTimelineDays(timelineItems);
-        const pastDays = days.filter((day) => timelineDayStatus(day) === 'past');
-        const aheadDays = days.filter((day) => timelineDayStatus(day) !== 'past');
-        const pastSessionCount = pastDays.reduce((sum, day) => sum + day.items.length, 0);
-        const aheadSessionCount = aheadDays.reduce((sum, day) => sum + day.items.length, 0);
-        const hasToday = aheadDays.some((day) => timelineDayStatus(day) === 'current');
-
-        const shell = document.createElement('div');
-        shell.className = 'dashboard-agenda';
-
-        const head = document.createElement('div');
-        head.className = 'dashboard-agenda__head';
-        const summary = document.createElement('div');
-        summary.className = 'dashboard-agenda__summary';
-        const summaryTitle = document.createElement('strong');
-        summaryTitle.textContent = hasToday ? '今天有安排' : '日程已按时间排好';
-        const summaryNote = document.createElement('span');
-        summaryNote.textContent = `已结束 ${pastSessionCount} 项 · 今后 ${aheadSessionCount} 项`;
-        summary.append(summaryTitle, summaryNote);
-        head.appendChild(summary);
-        const todayBtn = document.createElement('button');
-        todayBtn.type = 'button';
-        todayBtn.className = 'dashboard-agenda__today-btn';
-        todayBtn.textContent = '回到今天';
-        head.appendChild(todayBtn);
-        shell.appendChild(head);
-
-        const track = document.createElement('div');
-        track.className = 'dashboard-agenda__track';
-
-        if (pastDays.length) {
-            const pastWrap = document.createElement('div');
-            pastWrap.className = 'dashboard-agenda__past';
-            const toggle = document.createElement('button');
-            toggle.type = 'button';
-            toggle.className = 'dashboard-agenda__past-toggle';
-            const pastBody = document.createElement('div');
-            pastBody.className = 'dashboard-agenda__past-body';
-            pastDays.forEach((day) => pastBody.appendChild(buildTimelineDay(day)));
-
-            const syncPast = () => {
-                toggle.setAttribute('aria-expanded', String(timelinePastExpanded));
-                toggle.textContent = timelinePastExpanded
-                    ? `收起已结束的 ${pastSessionCount} 项`
-                    : `查看已结束的 ${pastSessionCount} 项（${pastDays.length} 天）`;
-                pastBody.hidden = !timelinePastExpanded;
-                pastWrap.classList.toggle('is-open', timelinePastExpanded);
-            };
-            toggle.addEventListener('click', () => {
-                timelinePastExpanded = !timelinePastExpanded;
-                syncPast();
-            });
-            syncPast();
-
-            pastWrap.append(toggle, pastBody);
-            track.appendChild(pastWrap);
-        }
-
-        if (!hasToday) {
-            const divider = document.createElement('div');
-            divider.className = 'dashboard-agenda__divider';
-            divider.dataset.timelineToday = 'true';
-            const dot = document.createElement('span');
-            dot.className = 'dashboard-agenda__divider-dot';
-            dot.setAttribute('aria-hidden', 'true');
-            const label = document.createElement('span');
-            label.textContent = '今天 · 暂无课程安排';
-            divider.append(dot, label);
-            track.appendChild(divider);
-        }
-
-        aheadDays.forEach((day) => track.appendChild(buildTimelineDay(day)));
-
-        shell.appendChild(track);
-        offeringList.appendChild(shell);
-
-        const scrollToToday = () => {
-            const anchor = track.querySelector('[data-timeline-today="true"]');
-            if (anchor && typeof anchor.scrollIntoView === 'function') {
-                anchor.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                anchor.classList.add('is-pinged');
-                window.setTimeout(() => anchor.classList.remove('is-pinged'), 1200);
-            }
-        };
-        todayBtn.addEventListener('click', scrollToToday);
     }
 
     function createGroupSection({ key, title, subtitle, activityLabel, count, level, tone }) {
@@ -1294,73 +1097,8 @@ if (root) {
         return `${values.size} ${suffix}`;
     }
 
-    function groupTimelineItems(items) {
-        const buckets = new Map();
-        items.forEach((item) => {
-            const key = item.timeline_key || item.starts_at || '';
-            if (!key) {
-                return;
-            }
-            if (!buckets.has(key)) {
-                buckets.set(key, {
-                    key,
-                    startsAt: item.starts_at || '',
-                    dateLabel: item.date_label || '',
-                    dateFullLabel: item.date_full_label || '',
-                    yearLabel: item.year_label || getYearLabel(item.starts_at),
-                    hourLabel: item.hour_label || '',
-                    weekdayLabel: item.weekday_label || '',
-                    relativeLabel: item.relative_label || '',
-                    items: [],
-                });
-            }
-            buckets.get(key).items.push(item);
-        });
-        return Array.from(buckets.values()).sort((a, b) => compareText(a.startsAt, b.startsAt));
-    }
-
-    function getYearLabel(value) {
-        const dateValue = new Date(value || '');
-        if (!Number.isFinite(dateValue.getTime())) {
-            return '';
-        }
-        return `${dateValue.getFullYear()}年`;
-    }
-
-    function compareTimelineItems(a, b) {
-        return compareText(a.starts_at, b.starts_at)
-            || compareTimelineSession(a, b)
-            || compareText(a.course_name, b.course_name)
-            || compareText(a.class_name, b.class_name)
-            || compareText(a.title, b.title);
-    }
-
-    function compareTimelineSession(a, b) {
-        if (a.card && b.card) {
-            const activityCompared = compareCardsByActivity(a.card, b.card);
-            if (activityCompared !== 0) {
-                return activityCompared;
-            }
-        }
-        return compareText(a.course_name, b.course_name)
-            || compareText(a.class_name, b.class_name)
-            || compareText(a.title, b.title);
-    }
-
     function normalizeGroupLabel(value, fallback) {
         return String(value || '').replace(/\s+/g, ' ').trim() || fallback;
-    }
-
-    function parseTimelineItems(rawValue) {
-        if (!rawValue) {
-            return [];
-        }
-        try {
-            const parsed = JSON.parse(rawValue);
-            return Array.isArray(parsed) ? parsed : [];
-        } catch (error) {
-            return [];
-        }
     }
 
     function compareText(a, b) {
@@ -1404,55 +1142,6 @@ if (root) {
         }
     }
 }
-
-// ── 个性化欢迎语（AI 每日一句，就绪后滚动替换默认问候） ──────────────
-(function initPersonalGreeting() {
-    const node = document.querySelector('[data-personal-greeting]');
-    if (!node) return;
-
-    const RETRY_DELAY_MS = 25000;
-    let retried = false;
-
-    function rollReplace(text) {
-        if (!text || text === node.textContent) return;
-        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-        if (reducedMotion) {
-            node.textContent = text;
-            return;
-        }
-        node.classList.add('personal-greeting-roll-out');
-        window.setTimeout(() => {
-            node.textContent = text;
-            node.classList.remove('personal-greeting-roll-out');
-            node.classList.add('personal-greeting-roll-in');
-            window.setTimeout(() => node.classList.remove('personal-greeting-roll-in'), 700);
-        }, 380);
-    }
-
-    async function fetchGreeting() {
-        try {
-            const response = await fetch('/api/learning/personal-greeting', {
-                credentials: 'same-origin',
-                headers: { Accept: 'application/json' },
-            });
-            if (!response.ok) return;
-            const payload = await response.json();
-            const greeting = payload?.greeting;
-            if (greeting?.status === 'ready' && greeting.text) {
-                rollReplace(greeting.text);
-            } else if (greeting?.status === 'pending' && !retried) {
-                // 后台 AI 正在排队生成；稍后再看一眼，仍没好就保持默认文案。
-                retried = true;
-                window.setTimeout(fetchGreeting, RETRY_DELAY_MS);
-            }
-        } catch (error) {
-            // 欢迎语是点缀，失败静默。
-        }
-    }
-
-    const idle = window.requestIdleCallback || ((fn) => window.setTimeout(fn, 800));
-    idle(fetchGreeting);
-})();
 
 // ── 教师课堂教学评价：低频同步 + 本地详情浮窗 ─────────────────────
 (function initAcademicEvaluationExperience() {
@@ -1506,28 +1195,7 @@ if (root) {
     }
 
     function cardSummaryHtml(overview) {
-        const keywords = Array.isArray(overview?.keywords) ? overview.keywords.slice(0, 3) : [];
-        const keywordContent = keywords.length
-            ? `<div class="dashboard-evaluation-card__keywords" aria-label="学生评语高频词">${keywords.map((item) => keywordHtml(item)).join('')}</div>`
-            : `<span class="dashboard-evaluation-card__pending">${overview?.ai_keyword_status === 'running' ? '正在提炼评语高频词…' : '暂无可提炼的文字评语'}</span>`;
-        const responseRate = overview?.response_rate == null ? '' : `<span>有效率 ${escapeHtml(overview.response_rate)}%</span>`;
-        const score = Math.max(0, Math.min(100, finite(overview?.score)));
-        return `
-            <section class="dashboard-evaluation-card" data-academic-evaluation-summary>
-                <div class="dashboard-evaluation-card__score" style="--evaluation-score:${score}">
-                    <span>总体评价</span><strong>${escapeHtml(overview?.score_display || scoreText(score))}</strong><small>/ 100</small>
-                </div>
-                <div class="dashboard-evaluation-card__insight">
-                    <div class="dashboard-evaluation-card__meta">
-                        <span>${Math.max(0, finite(overview?.valid_response_count))} 份有效评价</span>${responseRate}<span>${escapeHtml(overview?.freshness_label || '刚刚更新')}</span>
-                    </div>
-                    ${keywordContent}
-                </div>
-                <button type="button" class="dashboard-evaluation-card__detail" data-academic-evaluation-open="${escapeHtml(overview?.offering_id || '')}">
-                    查看详情
-                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                </button>
-            </section>`;
+        return `<span data-academic-evaluation-summary><button type="button" class="dw-link" data-academic-evaluation-open="${escapeHtml(overview?.offering_id || '')}">教学评价 ${escapeHtml(overview?.score_display || scoreText(overview?.score))}</button></span>`;
     }
 
     function updateOfferingCards(overviews) {
@@ -1536,11 +1204,11 @@ if (root) {
             if (!card || !overview?.available) return;
             const enriched = { ...overview, offering_id: offeringId };
             const current = card.querySelector('[data-academic-evaluation-summary]');
-            const metrics = card.querySelector('.dashboard-offering-card__metrics');
+            const state = card.querySelector('.dw-course-state');
             if (current) {
                 current.outerHTML = cardSummaryHtml(enriched);
-            } else if (metrics) {
-                metrics.insertAdjacentHTML('beforebegin', cardSummaryHtml(enriched));
+            } else if (state) {
+                state.insertAdjacentHTML('beforeend', cardSummaryHtml(enriched));
             }
         });
     }
@@ -1548,6 +1216,7 @@ if (root) {
     function setSyncUi(state, message = '') {
         if (!panel) return;
         panel.classList.toggle('is-syncing', state === 'running');
+        if (state === 'failed') panel.open = true;
         if (syncButton) {
             syncButton.disabled = state === 'running';
             const label = syncButton.querySelector('span');
@@ -1819,59 +1488,3 @@ if (root) {
 })();
 
 // ===== UX overhaul 2026-08 · 阶段 9 移动端分区手风琴 =====
-// 窄屏（<640px）把辅助分区默认收起为「标题一行」，点击标题展开/收起；
-// 展开偏好记忆在 localStorage，桌面端完全不介入。
-(() => {
-    const MOBILE_QUERY = window.matchMedia('(max-width: 639px)');
-    const STORAGE_KEY = 'lanshare:dashboard-mobile-expanded';
-    const sections = Array.from(document.querySelectorAll('[data-mobile-collapse]'));
-    if (!sections.length) return;
-
-    const readExpanded = () => {
-        try {
-            return new Set(JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]'));
-        } catch {
-            return new Set();
-        }
-    };
-    const writeExpanded = (expanded) => {
-        try {
-            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(expanded)));
-        } catch {
-            /* 存储不可用时静默降级为不记忆 */
-        }
-    };
-
-    const expanded = readExpanded();
-
-    const apply = () => {
-        sections.forEach((section) => {
-            const key = section.dataset.mobileCollapse || '';
-            const shouldCollapse = MOBILE_QUERY.matches && !expanded.has(key);
-            section.classList.toggle('is-mobile-collapsed', shouldCollapse);
-        });
-    };
-
-    // 事件委托：岛屿（如快捷入口）会整体重渲染 header 节点，逐节点绑定会丢失监听
-    document.addEventListener('click', (event) => {
-        if (!MOBILE_QUERY.matches) return;
-        const header = event.target.closest('.dashboard-panel__header, .semester-calendar-panel__header');
-        if (!header) return;
-        const section = header.closest('[data-mobile-collapse]');
-        if (!section) return;
-        if (event.target.closest('button, a, select, input')) return;
-        const key = section.dataset.mobileCollapse || '';
-        if (expanded.has(key)) {
-            expanded.delete(key);
-        } else {
-            expanded.add(key);
-        }
-        writeExpanded(expanded);
-        apply();
-    });
-
-    if (typeof MOBILE_QUERY.addEventListener === 'function') {
-        MOBILE_QUERY.addEventListener('change', apply);
-    }
-    apply();
-})();

@@ -407,6 +407,12 @@ export class ClassroomChat {
             this.lastDiscussionRoomLayoutKey = '';
         };
 
+        if (document.body.classList.contains('classroom-workspace-v2')) {
+            // The room now lives below the learning workspace. Its own message
+            // area scrolls; never size it as a viewport-height sticky sidebar.
+            resetLayout();
+            return;
+        }
         if (window.innerWidth <= DISCUSSION_ROOM_DESKTOP_BREAKPOINT) {
             resetLayout();
             return;

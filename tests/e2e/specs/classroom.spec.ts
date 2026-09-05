@@ -20,8 +20,16 @@ test.describe('P03 classroom page', () => {
     await expect(page.locator('#materials-panel')).toBeVisible();
     await expect(page.locator('#discussion-room')).toBeAttached();
     await expect(page.locator('#classroom-activity-tab-discussion')).toBeVisible();
-    await expect(page.locator('[data-lanshare-island="assignment-task-board-sync"]')).toBeVisible();
-    await expect(page.locator('[data-lanshare-island="material-learning-path-sync"]')).toBeVisible();
+    await expect(page.locator('[data-lanshare-island="assignment-task-board-sync"]')).toHaveCount(0);
+    await expect(page.locator('[data-lanshare-island="material-learning-path-sync"]')).toHaveCount(0);
+    await expect(page.locator('#cw-tasks-preview')).toContainText('待处理任务');
+    await expect(page.locator('#cw-materials-preview')).toContainText('材料');
+    await expect(page.locator('[data-cw-source="tasks"]')).toBeHidden();
+    await page.locator('#cw-tasks-preview').getByRole('button', { name: /全部任务/ }).click();
+    await expect(page.getByRole('dialog', { name: /任务/ })).toBeVisible();
+    await expect(page.locator('[data-cw-source="tasks"]')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-cw-source="tasks"]')).toBeHidden();
 
     await page.locator('[data-workspace-nav][href="#materials-panel"]').first().click();
     await expect(page.locator('#materials-panel')).toBeInViewport();

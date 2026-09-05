@@ -149,13 +149,15 @@ def assignment_detail_page(request: Request, assignment_id: str, user: dict = De
                 from ...services.group_assignment_service import (
                     get_student_display_state,
                     get_student_group_context,
+                    student_visible_submission,
                 )
 
                 group_assignment_state = get_student_display_state(conn, assignment_id, int(user["id"]))
                 if group_assignment_state:
                     group_peer_context = get_student_group_context(conn, assignment_id, int(user["id"]))
             except Exception as exc:
-                print(f"[GROUP_ASSIGNMENT] student display state failed: {exc}")
+                raise HTTPException(503, "暂时无法确认小组成绩公布状态，请稍后重试") from exc
+            submission = student_visible_submission(submission, group_assignment_state)
 
     submission_returned = bool(submission and submission_is_returned(submission))
     resubmission_state = submission_resubmission_state(submission) if submission else "none"

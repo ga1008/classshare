@@ -1,8 +1,10 @@
 import { apiFetch } from '/static/js/api.js';
 import { closeModal, escapeHtml, getFileIcon, openModal, showToast } from '/static/js/ui.js';
+import { ownClassroomMaterialFocus } from '/static/js/classroom_material_focus.js';
 
 const SELECTOR_MODAL_ID = 'learningMaterialSelectorModal';
 const SEARCH_DEBOUNCE_MS = 180;
+let releaseMaterialFocus = null;
 
 const state = {
     initialized: false,
@@ -311,7 +313,13 @@ function resetState(options = {}) {
 function settle(result) {
     const resolve = state.resolve;
     state.resolve = null;
-    closeModal(SELECTOR_MODAL_ID);
+    if (releaseMaterialFocus) {
+        const modal = refs().modal;
+        modal.classList.remove('show'); modal.style.display = 'none';
+        releaseMaterialFocus(); releaseMaterialFocus = null;
+    } else {
+        closeModal(SELECTOR_MODAL_ID);
+    }
     if (typeof resolve === 'function') {
         resolve(result);
     }
@@ -355,9 +363,10 @@ function bindEvents() {
 
     dom.modal.addEventListener('click', (event) => {
         if (event.target === dom.modal) {
+            if (releaseMaterialFocus) event.stopImmediatePropagation();
             handleCancel();
         }
-    });
+    }, true);
 
     dom.backBtn?.addEventListener('click', async () => {
         const previousParentId = state.history.pop();
@@ -466,7 +475,17 @@ export function initLearningMaterialSelector() {
             }
 
             resetState(options);
-            openModal(SELECTOR_MODAL_ID);
+            const selection = new Promise((resolve) => { state.resolve = resolve; });
+            if (options.manageClassroomFocus) {
+                dom.modal.style.display = 'flex'; dom.modal.classList.add('show');
+                const dialog = dom.modal.querySelector('.modal-dialog');
+                dialog?.setAttribute('role', 'dialog');
+                dialog?.setAttribute('aria-modal', 'true');
+                dialog?.setAttribute('aria-labelledby', 'learningMaterialSelectorTitle');
+                releaseMaterialFocus = ownClassroomMaterialFocus(dom.modal, handleCancel, dom.search);
+            } else {
+                openModal(SELECTOR_MODAL_ID);
+            }
 
             try {
                 await loadLibrary(null);
@@ -474,9 +493,7 @@ export function initLearningMaterialSelector() {
                 showToast(error.message || '加载材料失败', 'error');
             }
 
-            return await new Promise((resolve) => {
-                state.resolve = resolve;
-            });
+            return await selection;
         },
         clearCache() {
             state.cache.clear();

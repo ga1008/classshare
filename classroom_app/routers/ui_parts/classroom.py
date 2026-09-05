@@ -190,8 +190,7 @@ def classroom_main(
 
                         group_state = get_student_display_state(conn, assignment['id'], int(user['id']))
                     except Exception as exc:
-                        group_state = None
-                        print(f"[GROUP_ASSIGNMENT] card gating failed: {exc}")
+                        raise HTTPException(503, "暂时无法确认小组成绩公布状态，请稍后重试") from exc
                     if group_state and group_state.get('is_group'):
                         assignment['is_group_assignment'] = True
                         if not group_state.get('revealed'):
@@ -305,6 +304,7 @@ def classroom_main(
                 except Exception:
                     pass
                 classroom_page["learning_progress"] = None
+                classroom_page["learning_progress_error"] = "修为暂时无法读取，请稍后重试"
         else:
             try:
                 classroom_page["learning_overview"] = build_class_learning_overview(

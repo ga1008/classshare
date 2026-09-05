@@ -98,6 +98,25 @@ def _fetch_rows(conn, class_offering_id: int, session_id: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def has_material_bindings_table(conn) -> bool:
+    """Old installations may still only have the legacy primary binding.
+
+    Do not migrate from a read-only page projection or suppress real DB errors.
+    """
+    if get_configured_db_engine() == "postgres":
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = current_schema() AND table_name = ?",
+            ("class_offering_learning_materials",),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+            ("class_offering_learning_materials",),
+        ).fetchone()
+    return bool(row)
+
+
 def _insert_row(conn, class_offering_id: int, session_id: int, material_id: int, teacher_id: int, sort_order: int) -> None:
     now = _now()
     if get_configured_db_engine() == "postgres":
@@ -144,14 +163,31 @@ def _material_row(conn, material_id: int):
     ).fetchone()
 
 
-def build_material_entries(conn, class_offering_id: int, session_id: int, *, teacher_id: int) -> list[dict]:
+def build_material_entries(
+    conn, class_offering_id: int, session_id: int, *, teacher_id: int, persist_legacy: bool = True,
+) -> list[dict]:
     """返回该课次/首页绑定的材料列表（含渲染入口与已存简介）。"""
-    ensure_session_learning_materials_schema(conn)
     session_id = _normalize_session_id(session_id)
-    _backfill_primary(conn, class_offering_id, session_id, teacher_id)
+    if persist_legacy:
+        ensure_session_learning_materials_schema(conn)
+        _backfill_primary(conn, class_offering_id, session_id, teacher_id)
+
+    rows = _fetch_rows(conn, class_offering_id, session_id) if (
+        persist_legacy or has_material_bindings_table(conn)
+    ) else []
+    if not persist_legacy:
+        # The workspace preview must not write or invoke AI merely by opening a
+        # lesson. Merge the legacy primary binding in memory until a management
+        # action materialises it through the existing compatibility path.
+        primary_id = _primary_material_id(conn, class_offering_id, session_id)
+        if primary_id > 0 and not any(int(row['material_id']) == primary_id for row in rows):
+            rows.insert(0, {
+                'row_id': 0, 'material_id': primary_id,
+                'ai_blurb': '', 'ai_blurb_status': 'idle', 'sort_order': -1,
+            })
 
     entries: list[dict] = []
-    for row in _fetch_rows(conn, class_offering_id, session_id):
+    for row in rows:
         material = _material_row(conn, int(row["material_id"]))
         if not material:
             continue
@@ -247,11 +283,10 @@ def set_blurb(conn, row_id: int, blurb: str, status: str = "ready") -> None:
 
 def attach_learning_material_counts(conn, class_offering_id: int, session_items: list[dict], offering_data: dict) -> None:
     """为时间轴页一次性附加每个课次/首页的材料数量（单查询，无写入）。"""
-    ensure_session_learning_materials_schema(conn)
     rows = conn.execute(
         "SELECT session_id, material_id FROM class_offering_learning_materials WHERE class_offering_id = ?",
         (class_offering_id,),
-    ).fetchall()
+    ).fetchall() if has_material_bindings_table(conn) else []
     grouped: dict[int, set[int]] = {}
     for row in rows:
         grouped.setdefault(int(row["session_id"]), set()).add(int(row["material_id"]))

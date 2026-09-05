@@ -1182,6 +1182,7 @@ def build_dashboard_context(
     *,
     initial_filter: Any = None,
     initial_search: Any = None,
+    include_workspace: bool = False,
 ) -> dict[str, Any]:
     role = str(user.get("role") or "").strip().lower()
     if role == "teacher":
@@ -1190,12 +1191,14 @@ def build_dashboard_context(
             user,
             initial_filter=initial_filter,
             initial_search=initial_search,
+            include_workspace=include_workspace,
         )
     return _build_student_dashboard_context(
         conn,
         user,
         initial_filter=initial_filter,
         initial_search=initial_search,
+        include_workspace=include_workspace,
     )
 
 
@@ -1205,6 +1208,7 @@ def _build_teacher_dashboard_context(
     *,
     initial_filter: Any = None,
     initial_search: Any = None,
+    include_workspace: bool = False,
 ) -> dict[str, Any]:
     teacher_id = int(user["id"])
     offerings = _load_teacher_offerings(conn, teacher_id)
@@ -1614,12 +1618,13 @@ def _build_teacher_dashboard_context(
         current_semester_key = ""
 
     semester_calendar = build_semester_calendar_payload(semester_rows)
-    _attach_dashboard_todos_to_semester_calendar(
-        conn,
-        semester_calendar,
-        offerings,
-        user,
-    )
+    if not include_workspace:
+        _attach_dashboard_todos_to_semester_calendar(
+            conn,
+            semester_calendar,
+            offerings,
+            user,
+        )
 
     todo_create_options = sorted(
         (_dashboard_todo_option(offering) for offering in enriched_offerings),
@@ -1675,7 +1680,13 @@ def _build_teacher_dashboard_context(
             "settings_url": "/profile?section=email",
         }
 
+    workspace = None
+    if include_workspace:
+        from .dashboard_workspace_service import load_dashboard_workspace
+        workspace = load_dashboard_workspace(conn, user=user, offerings=enriched_offerings, limit=20, calendar_target=semester_calendar)
+
     return {
+        "dashboard_workspace": workspace,
         "dashboard_theme": "teacher",
         "dashboard_hero": {
             "eyebrow": ui_copy["hero_eyebrow"],
@@ -1792,10 +1803,30 @@ def _load_student_continue_material(
     *,
     student_id: int,
     offering_ids: list[int],
+    include_multiple: bool = False,
+    require_read: bool = False,
 ) -> dict[str, Any] | None:
     if not offering_ids:
         return None
+    if include_multiple:
+        from .session_learning_materials_service import has_material_bindings_table
+        include_multiple = has_material_bindings_table(conn)
     placeholders = ",".join("?" for _ in offering_ids)
+    multiple_bindings_sql = f"""
+            UNION ALL
+            SELECT o.id AS class_offering_id, c.name AS course_name,
+                   cl.name AS class_name, m.id AS material_id, m.name AS material_name,
+                   NULLIF(lm.session_id, 0) AS session_id,
+                   COALESCE(s.order_index, 0) AS order_index, 1 AS source_rank
+            FROM class_offerings o
+            JOIN courses c ON c.id = o.course_id
+            JOIN classes cl ON cl.id = o.class_id
+            JOIN class_offering_learning_materials lm ON lm.class_offering_id = o.id
+            LEFT JOIN class_offering_sessions s ON s.id = lm.session_id AND s.class_offering_id = o.id
+            JOIN course_materials m ON m.id = lm.material_id
+            WHERE o.id IN ({placeholders}) AND m.node_type = 'file'
+              AND (lm.session_id = 0 OR s.id IS NOT NULL)
+    """ if include_multiple else ""
     rows = conn.execute(
         f"""
         WITH assigned_materials AS (
@@ -1845,6 +1876,7 @@ def _load_student_continue_material(
             JOIN course_materials m ON m.id = o.home_learning_material_id
             WHERE o.id IN ({placeholders})
               AND m.node_type = 'file'
+            {multiple_bindings_sql}
         )
         SELECT assigned_materials.*,
                lmp.completed,
@@ -1859,6 +1891,7 @@ def _load_student_continue_material(
               AND lmp.material_id = assigned_materials.material_id
               AND lmp.student_id = ?
         WHERE COALESCE(lmp.completed, 0) = 0
+          {"AND lmp.last_viewed_at IS NOT NULL AND lmp.last_viewed_at != ''" if require_read else ""}
         ORDER BY
             CASE WHEN lmp.last_viewed_at IS NOT NULL AND lmp.last_viewed_at != '' THEN 0 ELSE 1 END,
             COALESCE(lmp.last_viewed_at, lmp.updated_at, '') DESC,
@@ -1867,7 +1900,7 @@ def _load_student_continue_material(
             assigned_materials.material_name COLLATE NOCASE
         LIMIT 1
         """,
-        (*offering_ids, *offering_ids, *offering_ids, int(student_id)),
+        (*offering_ids, *offering_ids, *offering_ids, *(offering_ids if include_multiple else []), int(student_id)),
     ).fetchall()
     if not rows:
         return None
@@ -2341,8 +2374,10 @@ def _build_student_cockpit(
         longest_streak = int(streak_info.get("longest_streak") or 0)
         if longest_streak > current_streak:
             streak_hint = f"最长 {longest_streak} 天"
-        elif current_streak:
+        elif current_streak and streak_info.get("active_today"):
             streak_hint = "今天也来了，继续保持"
+        elif current_streak:
+            streak_hint = "昨天有记录，今天继续"
         else:
             streak_hint = "今天学一点就能点亮"
         stats.insert(3, {
@@ -2458,6 +2493,7 @@ def _build_student_dashboard_context(
     *,
     initial_filter: Any = None,
     initial_search: Any = None,
+    include_workspace: bool = False,
 ) -> dict[str, Any]:
     student_id = int(user["id"])
     student_security_summary = build_student_security_summary(conn, student_id)
@@ -2799,18 +2835,28 @@ def _build_student_dashboard_context(
         filter_value=selected_filter,
         search_query=search_query,
     )
-    semester_calendar = build_semester_calendar_payload(
-        load_student_semester_rows(conn, student_id),
-    )
-    _attach_dashboard_todos_to_semester_calendar(
-        conn,
-        semester_calendar,
-        offerings,
-        user,
-        preloaded_todo_overviews=todo_overviews,
-    )
+    if include_workspace:
+        from .dashboard_calendar_service import load_web_calendar_base
+        semester_calendar = load_web_calendar_base(conn, user=user, offerings=offerings, now=china_now().replace(tzinfo=None))
+    else:
+        semester_calendar = build_semester_calendar_payload(
+            load_student_semester_rows(conn, student_id),
+        )
+        _attach_dashboard_todos_to_semester_calendar(
+            conn,
+            semester_calendar,
+            offerings,
+            user,
+            preloaded_todo_overviews=todo_overviews,
+        )
+
+    workspace = None
+    if include_workspace:
+        from .dashboard_workspace_service import load_dashboard_workspace
+        workspace = load_dashboard_workspace(conn, user=user, offerings=enriched_offerings, limit=20, calendar_target=semester_calendar)
 
     return {
+        "dashboard_workspace": workspace,
         "dashboard_theme": "student",
         "dashboard_hero": {
             "eyebrow": ui_copy["hero_eyebrow"],

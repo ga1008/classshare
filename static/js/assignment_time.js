@@ -6,32 +6,33 @@ let clockStates = [];
 let tickTimer = 0;
 let syncTimer = 0;
 let stateChangeCallback = null;
+let syncInFlight = false;
 
 function parseDateMs(value) {
     if (!value) return null;
     const text = String(value).trim();
     if (!text) return null;
     const normalized = text.includes('T') ? text : text.replace(' ', 'T');
-    const parsed = Date.parse(normalized);
+    const parsed = Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized) ? normalized : `${normalized}+08:00`);
     return Number.isFinite(parsed) ? parsed : null;
 }
 
-function formatDuration(totalSeconds) {
+export function formatDuration(totalSeconds) {
     const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
     const pad = (value) => String(value).padStart(2, '0');
-    if (days > 0) {
-        return `${days}天 ${pad(hours)}:${pad(minutes)}:${pad(secs)}`;
-    }
+    if (days > 0) return `${days} 天 ${hours} 小时`;
+    if (hours > 0) return `${hours} 小时 ${minutes} 分钟`;
     return `${pad(hours)}:${pad(minutes)}:${pad(secs)}`;
 }
 
 function readClockState(el) {
     const serverNowMs = parseDateMs(el.dataset.serverNow);
     const nowMs = Date.now();
+    const startsAtMs = parseDateMs(el.dataset.startsAt);
     return {
         id: String(el.dataset.assignmentId || '').trim(),
         el,
@@ -40,6 +41,11 @@ function readClockState(el) {
         detailEl: el.querySelector('[data-assignment-clock-detail]'),
         offsetMs: serverNowMs === null ? 0 : serverNowMs - nowMs,
         countdownAtMs: parseDateMs(el.dataset.countdownAt),
+        startsAtMs,
+        startSyncRequested: startsAtMs === null || startsAtMs <= (serverNowMs ?? nowMs),
+        personalResubmission: el.dataset.personalResubmission === '1',
+        resubmissionDueAtMs: parseDateMs(el.dataset.resubmissionDueAt),
+        canResubmit: el.dataset.canResubmit === '1',
         lateUntilMs: parseDateMs(el.dataset.lateUntil),
         deadlinePhase: el.dataset.deadlinePhase || 'none',
         accepting: el.dataset.accepting === '1' || el.dataset.accepting === 'true',
@@ -64,6 +70,12 @@ function writeDatasetFromPayload(state, payload, serverNow) {
 
 function renderClock(state) {
     const serverMs = Date.now() + state.offsetMs;
+    if (!state.startSyncRequested && state.startsAtMs !== null && serverMs >= state.startsAtMs) {
+        // Scheduling is authoritative on the server. Refresh at the boundary;
+        // do not infer permission from a start timestamp alone.
+        state.startSyncRequested = true;
+        window.setTimeout(syncAssignmentTimeStates, 0);
+    }
     let phase = state.deadlinePhase;
     let accepting = state.accepting;
     let lateOpen = state.lateOpen;
@@ -80,9 +92,27 @@ function renderClock(state) {
             lateOpen = false;
         }
     }
+    if (phase === 'late' && countdownAtMs !== null && serverMs >= countdownAtMs) {
+        phase = 'closed';
+        accepting = false;
+        lateOpen = false;
+    }
     state.localAccepting = accepting;
     state.localDeadlinePhase = phase;
     state.localLateOpen = lateOpen;
+    state.localCountdownAt = countdownAtMs;
+
+    if (state.personalResubmission) {
+        const personalOpen = state.canResubmit && (state.resubmissionDueAtMs === null || serverMs < state.resubmissionDueAtMs);
+        state.el.classList.toggle('is-expired', !personalOpen);
+        state.el.classList.toggle('is-late', false);
+        state.el.classList.toggle('is-urgent', personalOpen && state.resubmissionDueAtMs !== null && state.resubmissionDueAtMs - serverMs <= 3600000);
+        if (state.labelEl) state.labelEl.textContent = personalOpen ? '重交截止' : '重交已关闭';
+        if (state.detailEl) state.detailEl.textContent = personalOpen ? '按本人的重交期限提交' : '当前个人重交窗口已关闭';
+        if (state.valueEl) state.valueEl.textContent = state.resubmissionDueAtMs === null ? (personalOpen ? '开放中' : '已截止')
+            : new Date(state.resubmissionDueAtMs).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+        return;
+    }
 
     const remainingSeconds = countdownAtMs === null
         ? null
@@ -114,7 +144,10 @@ function renderClock(state) {
         if (remainingSeconds === null) {
             state.valueEl.textContent = accepting ? (lateOpen ? '补交开放' : '长期开放') : '已截止';
         } else {
-            state.valueEl.textContent = isExpired ? '00:00:00' : formatDuration(remainingSeconds);
+            const label = isExpired ? '已截止' : remainingSeconds > 86400
+                ? `${new Date(countdownAtMs).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })} 截止`
+                : formatDuration(remainingSeconds);
+            if (state.valueEl.textContent !== label) state.valueEl.textContent = label;
         }
     }
 }
@@ -130,7 +163,7 @@ function emitStateChange() {
             deadline_phase: state.localDeadlinePhase || state.deadlinePhase,
             is_late_submission_open: state.localLateOpen ?? state.lateOpen,
             late_policy_label: state.latePolicyLabel,
-            countdown_at: state.el.dataset.countdownAt || '',
+            countdown_at: state.localCountdownAt == null ? '' : new Date(state.localCountdownAt).toISOString(),
         });
     });
     stateChangeCallback(map);
@@ -156,8 +189,10 @@ function scheduleSync() {
 }
 
 async function syncAssignmentTimeStates() {
+    if (syncInFlight) return;
     const ids = [...new Set(clockStates.map((state) => state.id).filter(Boolean))];
     if (!ids.length) return;
+    syncInFlight = true;
     try {
         const response = await fetch(`/api/assignments/time-state?ids=${encodeURIComponent(ids.join(','))}`, {
             credentials: 'same-origin',
@@ -177,6 +212,7 @@ async function syncAssignmentTimeStates() {
     } catch (error) {
         console.warn('Failed to sync assignment time state:', error);
     } finally {
+        syncInFlight = false;
         scheduleSync();
     }
 }

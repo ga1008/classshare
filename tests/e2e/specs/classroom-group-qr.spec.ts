@@ -11,7 +11,8 @@ import {
 
 // Runs against the real app, authenticated page, database and file store supplied
 // by the existing isolated P03 webServer. No production sessions are used.
-const evidenceDir = path.resolve('artifacts/classroom-group-qr');
+const evidenceDir = path.resolve(process.env.P03_QR_EVIDENCE_DIR
+  || path.join(process.env.P03_RUNTIME_ROOT || '.codex-temp/p03-runtime', 'artifacts/classroom-group-qr'));
 const introduction = '课程通知与答疑群\n入群后请将群昵称修改为「学号 + 姓名」。\n课堂资料与答疑将在群内同步。';
 const layoutReports: unknown[] = [];
 
@@ -62,12 +63,12 @@ async function expectDialogFits(page: Page) {
 
 async function inspectClassroomLayout(page: Page) {
   const layout = await page.evaluate(() => {
-    const hero = document.querySelector('#hero-info-card')!.getBoundingClientRect();
+    const identity = document.querySelector('#cw-course-identity')!.getBoundingClientRect();
     const qr = document.querySelector('[data-group-qr-open]')!.getBoundingClientRect();
     return {
       viewport: { width: innerWidth, height: innerHeight },
       documentWidth: document.documentElement.scrollWidth,
-      hero: { left: hero.left, right: hero.right },
+      identity: { left: identity.left, right: identity.right, height: identity.height },
       qr: { left: qr.left, right: qr.right },
       overflow: Array.from(document.querySelectorAll('body *')).map(element => {
         const rect = element.getBoundingClientRect();
@@ -81,15 +82,26 @@ async function inspectClassroomLayout(page: Page) {
   layoutReports.push(layout);
   fs.writeFileSync(path.join(evidenceDir, 'full-page-layout-diagnostics.json'), JSON.stringify(layoutReports, null, 2));
   expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewport.width + 1);
-  expect(layout.hero.left).toBeGreaterThanOrEqual(0);
-  expect(layout.hero.right).toBeLessThanOrEqual(layout.viewport.width + 1);
-  expect(layout.qr.left).toBeGreaterThanOrEqual(layout.hero.left);
-  expect(layout.qr.right).toBeLessThanOrEqual(layout.hero.right + 1);
+  expect(layout.identity.left).toBeGreaterThanOrEqual(0);
+  expect(layout.identity.right).toBeLessThanOrEqual(layout.viewport.width + 1);
+  expect(layout.identity.height).toBeLessThanOrEqual(100);
+  expect(layout.qr.left).toBeGreaterThanOrEqual(layout.identity.left);
+  expect(layout.qr.right).toBeLessThanOrEqual(layout.identity.right + 1);
 }
 
-async function exerciseOriginalHeroActions(page: Page) {
-  for (const selector of ['#hero-stats-btn', '#hero-course-detail-btn']) {
-    await page.locator(selector).click();
+async function openClassroomMore(page: Page) {
+  const trigger = page.locator('summary[aria-label="打开更多课堂入口"]');
+  const menu = trigger.locator('..');
+  if (await menu.getAttribute('open') === null) await trigger.click();
+  return menu;
+}
+
+async function exerciseClassroomActions(page: Page) {
+  for (const target of ['stats', 'details']) {
+    const trigger = target === 'stats'
+      ? (await openClassroomMore(page)).locator('[data-course-popover-target="stats"]')
+      : page.locator('#hero-course-detail-btn');
+    await trigger.click();
     await expect(page.locator('#course-info-popover')).toHaveClass(/popover-open/);
     await page.locator('#course-popover-close').click();
     // Existing popovers animate their card opacity while retaining a full-size
@@ -98,7 +110,7 @@ async function exerciseOriginalHeroActions(page: Page) {
     await expect(page.locator('#course-info-popover')).not.toHaveClass(/popover-open/);
     await expect(page.locator('#course-info-popover .course-popover-card')).toHaveCSS('opacity', '0');
   }
-  const members = page.locator('#hero-learning-btn');
+  const members = (await openClassroomMore(page)).locator('[data-learning-modal-open]');
   await expect(members).toBeVisible();
   await members.click();
   await expect(page.locator('#learning-progress-modal')).toBeVisible();
@@ -129,7 +141,7 @@ test.describe.serial('Classroom group QR full-page acceptance', () => {
     await expect(page.locator('#assignment-panel')).toBeVisible();
     await expect(page.locator('#materials-panel')).toBeVisible();
     await expect(page.locator('#discussion-room')).toBeAttached();
-    await exerciseOriginalHeroActions(page);
+    await exerciseClassroomActions(page);
 
     const trigger = page.locator('[data-group-qr-open]');
     const dialog = page.locator('#classroom-group-qr-dialog');
@@ -139,8 +151,11 @@ test.describe.serial('Classroom group QR full-page acceptance', () => {
     const status = page.locator('#classroom-group-qr-status');
     await expect(trigger).toContainText('点击设置');
     const cardBox = await trigger.boundingBox();
-    const actionsBox = await page.locator('.workspace-hero-actions').boundingBox();
-    expect(actionsBox!.x + actionsBox!.width).toBeLessThanOrEqual(cardBox!.x + 1);
+    const actionsBox = await page.locator('.cw-identity-actions').boundingBox();
+    expect(cardBox!.x).toBeGreaterThanOrEqual(actionsBox!.x);
+    expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(actionsBox!.x + actionsBox!.width + 1);
+    expect(cardBox!.height).toBeLessThanOrEqual(40);
+    await expect(trigger.locator('[data-group-qr-thumbnail], [data-group-qr-placeholder]')).toHaveCount(0);
     await screenshot(page, 'full-teacher-empty-desktop.png');
 
     await openTeacherQr(page);
@@ -154,7 +169,7 @@ test.describe.serial('Classroom group QR full-page acceptance', () => {
     await save.click();
     await expect(status).toContainText('已保存');
     await expect(save).toBeDisabled();
-    await decoded(page.locator('[data-group-qr-thumbnail]'));
+    await decoded(dialog.locator('[data-group-qr-preview]'));
     await screenshot(page, 'full-teacher-dialog-desktop.png');
     await expectDialogFits(page);
 
@@ -180,7 +195,7 @@ test.describe.serial('Classroom group QR full-page acceptance', () => {
     await expect(dialog).toBeHidden();
     await expect(trigger).toBeFocused();
     await screenshot(page, 'full-teacher-hero-desktop.png');
-    await exerciseOriginalHeroActions(page);
+    await exerciseClassroomActions(page);
 
     await openTeacherQr(page);
     await description.fill('暂存的修改，请勿意外丢失');
@@ -205,7 +220,7 @@ test.describe.serial('Classroom group QR full-page acceptance', () => {
     await page.keyboard.press('Escape');
 
     // Check real classroom responsive layout with normal animations, including
-    // a short landscape viewport and narrow phone. Screenshots stay in artifacts.
+    // a short landscape viewport and narrow phone. Evidence stays in the isolated task runtime.
     for (const viewport of [
       { width: 1024, height: 768 },
       { width: 390, height: 844 },
@@ -264,7 +279,7 @@ test.describe.serial('Classroom group QR full-page acceptance', () => {
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await expect(trigger).toBeFocused();
-    await exerciseOriginalHeroActions(page);
+    await exerciseClassroomActions(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await screenshot(page, 'full-student-hero-mobile.png');
     await trigger.click();

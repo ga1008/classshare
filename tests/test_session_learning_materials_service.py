@@ -1,10 +1,56 @@
 import sqlite3
 import unittest
+from contextlib import contextmanager
+from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
 from classroom_app.db import schema_session_learning_materials as _schema
 from classroom_app.services import session_learning_materials_service as svc
+
+
+class SessionMaterialPreviewRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_explicit_preview_never_generates_blurbs_or_persists_legacy(self):
+        from classroom_app.routers.materials_parts import learning as route
+        conn = _make_conn()
+        conn.execute("UPDATE class_offering_sessions SET learning_material_id=100 WHERE id=10")
+        before = conn.total_changes
+
+        @contextmanager
+        def isolated_connection():
+            yield conn
+
+        with (patch.object(route, 'get_db_connection', isolated_connection),
+              patch.object(route, 'ensure_classroom_access') as access,
+              patch.object(route, 'generate_material_blurb', new_callable=AsyncMock) as ai):
+            user = {'role': 'teacher', 'id': 1}
+            result = await route.list_classroom_learning_materials(5, 10, False, user)
+            access.assert_called_once_with(conn, 5, user)
+            ai.assert_not_awaited()
+            self.assertEqual(result['materials'][0]['material_id'], 100)
+            self.assertTrue(result['can_manage'])
+        self.assertEqual(conn.total_changes, before)
+        self.assertFalse(svc.has_material_bindings_table(conn))
+        conn.close()
+
+    async def test_denied_access_stops_before_reading_materials_or_generating(self):
+        from classroom_app.routers.materials_parts import learning as route
+        conn = _make_conn()
+
+        @contextmanager
+        def isolated_connection():
+            yield conn
+
+        with (patch.object(route, 'get_db_connection', isolated_connection),
+              patch.object(route, 'ensure_classroom_access', side_effect=HTTPException(403, 'denied')),
+              patch.object(route, 'build_material_entries') as read,
+              patch.object(route, 'generate_material_blurb', new_callable=AsyncMock) as ai):
+            with self.assertRaises(HTTPException) as caught:
+                await route.list_classroom_learning_materials(5, 10, False, {'role': 'student', 'id': 9})
+            self.assertEqual(caught.exception.status_code, 403)
+            read.assert_not_called()
+            ai.assert_not_awaited()
+        conn.close()
 
 
 def _make_conn():
@@ -56,6 +102,9 @@ class SessionLearningMaterialsServiceTests(unittest.TestCase):
             "SELECT learning_material_id FROM class_offering_sessions WHERE id=?", (session_id,)
         ).fetchone()[0]
 
+    def tearDown(self):
+        self.conn.close()
+
     def test_add_markdown_and_html_folder(self):
         svc.add_material(self.conn, 5, 10, 100, 1)
         svc.add_material(self.conn, 5, 10, 200, 1)
@@ -97,6 +146,39 @@ class SessionLearningMaterialsServiceTests(unittest.TestCase):
             self.conn.execute("SELECT home_learning_material_id FROM class_offerings WHERE id=5").fetchone()[0],
             100,
         )
+
+    def test_preview_legacy_installation_does_not_create_binding_table(self):
+        self.conn.execute("UPDATE class_offering_sessions SET learning_material_id=100 WHERE id=10")
+        before = self.conn.total_changes
+        entries = svc.build_material_entries(self.conn, 5, 10, teacher_id=1, persist_legacy=False)
+        self.assertEqual([entry['material_id'] for entry in entries], [100])
+        self.assertFalse(svc.has_material_bindings_table(self.conn))
+        self.assertEqual(self.conn.total_changes, before)
+        sessions = [{'id': 10, 'learning_material_id': 100}]
+        offering = {'home_learning_material_id': 200}
+        svc.attach_learning_material_counts(self.conn, 5, sessions, offering)
+        self.assertEqual(sessions[0]['learning_material_count'], 1)
+        self.assertEqual(offering['home_learning_material_count'], 1)
+        self.assertFalse(svc.has_material_bindings_table(self.conn))
+
+    def test_preview_merges_legacy_primary_without_writing(self):
+        svc.add_material(self.conn, 5, 10, 200, 1)
+        self.conn.execute("UPDATE class_offering_sessions SET learning_material_id=100 WHERE id=10")
+        before = self.conn.total_changes
+        entries = svc.build_material_entries(self.conn, 5, 10, teacher_id=1, persist_legacy=False)
+        self.assertEqual([entry['material_id'] for entry in entries], [100, 200])
+        self.assertEqual(entries[0]['row_id'], 0)
+        self.assertEqual(self.conn.total_changes, before)
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM class_offering_learning_materials WHERE class_offering_id=5 AND session_id=10"
+        ).fetchone()[0], 1)
+
+    def test_preview_home_primary_is_deduplicated_and_stays_read_only(self):
+        svc.add_material(self.conn, 5, 0, 100, 1)
+        before = self.conn.total_changes
+        entries = svc.build_material_entries(self.conn, 5, 0, teacher_id=1, persist_legacy=False)
+        self.assertEqual([entry['material_id'] for entry in entries], [100])
+        self.assertEqual(self.conn.total_changes, before)
 
     def test_non_bindable_material_rejected(self):
         self.conn.execute(

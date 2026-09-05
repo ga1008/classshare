@@ -1,7 +1,7 @@
 import { apiFetch } from '/static/js/api.js';
 import { initLearningMaterialSelector } from '/static/js/learning_material_selector.js';
 import { initSessionMaterialAiAssistant } from '/static/js/session_material_ai_assistant.js';
-import { initAssignmentClocks } from '/static/js/assignment_time.js';
+import { initAssignmentClocks } from '/static/js/assignment_time.js?v=classroom-workspace-20260905';
 import { showToast } from '/static/js/ui.js';
 import { openMaterialListPopup } from '/static/js/classroom_material_list.js';
 
@@ -858,1102 +858,8 @@ function initWorkspaceNav() {
     syncActiveLinkFromViewport();
 }
 
-function initAssignmentTaskBoard(clockController = null) {
-    const taskCards = Array.from(document.querySelectorAll('[data-assignment-task-card]'));
-    const mountPoint = document.querySelector('[data-lanshare-island="assignment-task-board-sync"]');
-    if (!taskCards.length && !mountPoint) return null;
-
-    const taskBoardEventName = 'lanshare:assignment-task-board-change';
-    const taskBoardCommandEventName = 'lanshare:assignment-task-board-command';
-    const focusTimers = new WeakMap();
-    let latestTimeStates = new Map();
-    let pendingFrame = 0;
-
-    const readText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim();
-    const toCount = (value) => {
-        const count = Number.parseInt(String(value || '0'), 10);
-        return Number.isFinite(count) && count > 0 ? count : 0;
-    };
-    const isTeacher = () => String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || '').trim() === 'teacher';
-
-    const readClockInfo = (card, assignmentId) => {
-        const clockEl = card.querySelector('[data-assignment-clock]');
-        const state = latestTimeStates.get(String(assignmentId || '')) || null;
-        const phase = String(state?.deadline_phase || state?.localDeadlinePhase || clockEl?.dataset?.deadlinePhase || '').trim();
-        const accepting = state?.is_accepting_submissions ?? state?.localAccepting ?? clockEl?.dataset?.accepting === '1';
-        const lateOpen = state?.is_late_submission_open ?? state?.localLateOpen ?? clockEl?.dataset?.lateOpen === '1';
-        return {
-            hasClock: Boolean(clockEl),
-            label: readText(clockEl?.querySelector('[data-assignment-clock-label]')),
-            value: readText(clockEl?.querySelector('[data-assignment-clock-value]')),
-            detail: readText(clockEl?.querySelector('[data-assignment-clock-detail]')),
-            phase,
-            accepting: Boolean(accepting),
-            lateOpen: Boolean(lateOpen),
-            isUrgent: Boolean(clockEl?.classList.contains('is-urgent')),
-            isExpired: Boolean(clockEl?.classList.contains('is-expired')),
-        };
-    };
-
-    const readTaskItem = (card) => {
-        const dataset = card.dataset || {};
-        const assignmentId = String(dataset.assignmentId || '').trim();
-        const clock = readClockInfo(card, assignmentId);
-        const title = String(dataset.assignmentTitle || readText(card.querySelector('.assignment-card-title')) || '未命名任务').trim();
-        const kind = dataset.assignmentKind === 'exam' ? 'exam' : 'assignment';
-        const pendingGradeCount = toCount(dataset.teacherPendingGradeCount);
-        const gradingCount = toCount(dataset.teacherGradingCount);
-        const returnedCount = toCount(dataset.teacherReturnedCount);
-        const unsubmittedCount = toCount(dataset.teacherUnsubmittedCount);
-        const lateCount = toCount(dataset.teacherLateCount);
-        const statusKey = String(dataset.assignmentStatusKey || '').trim();
-        return {
-            id: assignmentId,
-            title,
-            kind,
-            link: String(dataset.assignmentLink || card.getAttribute('data-assignment-link') || ''),
-            statusKey,
-            statusLabel: String(dataset.assignmentStatusLabel || readText(card.querySelector('.assignment-card-tags .badge')) || '').trim(),
-            stageLabel: String(dataset.assignmentStageLabel || '').trim(),
-            createdAt: String(dataset.assignmentCreatedAt || '').trim(),
-            submittedCount: toCount(dataset.teacherSubmittedCount),
-            totalStudents: toCount(dataset.teacherTotalStudents),
-            pendingGradeCount,
-            gradingCount,
-            returnedCount,
-            unsubmittedCount,
-            lateCount,
-            clock,
-            priority: pendingGradeCount > 0
-                ? 'review'
-                : returnedCount > 0 || statusKey === 'returned'
-                    ? 'returned'
-                    : clock.lateOpen || lateCount > 0
-                        ? 'late'
-                        : clock.isUrgent
-                            ? 'urgent'
-                            : statusKey === 'unsubmitted'
-                                ? 'todo'
-                                : 'normal',
-        };
-    };
-
-    const selectFocusItem = (items) => (
-        items.find((item) => item.priority === 'urgent')
-        || items.find((item) => item.priority === 'late')
-        || items.find((item) => item.priority === 'review')
-        || items.find((item) => item.priority === 'returned')
-        || items.find((item) => item.priority === 'todo')
-        || items[0]
-        || null
-    );
-
-    const readSnapshot = () => {
-        const items = taskCards.map(readTaskItem);
-        const teacherView = isTeacher();
-        const summary = items.reduce((acc, item) => {
-            acc.total += 1;
-            acc[item.kind === 'exam' ? 'examCount' : 'assignmentCount'] += 1;
-            if (item.stageLabel) acc.stageCount += 1;
-            if (item.clock.accepting || item.statusKey === 'published' || item.statusKey === 'unsubmitted') acc.openCount += 1;
-            if (item.clock.isUrgent) acc.urgentCount += 1;
-            if (item.clock.lateOpen || item.lateCount > 0) acc.lateOpenCount += 1;
-            acc.reviewQueue += item.pendingGradeCount;
-            acc.gradingQueue += item.gradingCount;
-            acc.returnedCount += item.returnedCount + (item.statusKey === 'returned' ? 1 : 0);
-            acc.unsubmittedCount += item.unsubmittedCount + (item.statusKey === 'unsubmitted' ? 1 : 0);
-            return acc;
-        }, {
-            total: 0,
-            assignmentCount: 0,
-            examCount: 0,
-            stageCount: 0,
-            openCount: 0,
-            urgentCount: 0,
-            lateOpenCount: 0,
-            reviewQueue: 0,
-            gradingQueue: 0,
-            returnedCount: 0,
-            unsubmittedCount: 0,
-        });
-        const focusItem = selectFocusItem(items);
-        return {
-            role: teacherView ? 'teacher' : String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || ''),
-            classOfferingId: window.APP_CONFIG?.classOfferingId || null,
-            items,
-            summary,
-            focusItemId: focusItem?.id || '',
-        };
-    };
-
-    const publishSnapshot = () => {
-        const snapshot = readSnapshot();
-        window.__LANSHARE_ASSIGNMENT_TASK_BOARD__ = snapshot;
-        window.dispatchEvent(new CustomEvent(taskBoardEventName, { detail: snapshot }));
-        return snapshot;
-    };
-
-    const schedulePublish = () => {
-        if (pendingFrame) return;
-        pendingFrame = window.requestAnimationFrame(() => {
-            pendingFrame = 0;
-            publishSnapshot();
-        });
-    };
-
-    const focusCard = (assignmentId, { open = false } = {}) => {
-        const card = taskCards.find((item) => String(item.dataset.assignmentId || '') === String(assignmentId || ''));
-        if (!card) return;
-        const existingTimer = focusTimers.get(card);
-        if (existingTimer) {
-            window.clearTimeout(existingTimer);
-        }
-        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        card.classList.add('is-task-board-focus');
-        const timer = window.setTimeout(() => {
-            card.classList.remove('is-task-board-focus');
-            focusTimers.delete(card);
-        }, 1600);
-        focusTimers.set(card, timer);
-        if (open) {
-            const link = card.dataset.assignmentLink || card.getAttribute('data-assignment-link') || '';
-            if (link) {
-                window.location.href = link;
-            }
-        }
-    };
-
-    const focusAssignmentList = () => {
-        const listRegion = document.querySelector('[data-assignment-list-region]') || document.getElementById('assignment-panel');
-        listRegion?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
-
-    const clearMetricHighlights = () => {
-        taskCards.forEach((card) => card.classList.remove('is-task-board-filtered'));
-    };
-
-    const itemMatchesMetric = (item, metricKey) => {
-        const key = String(metricKey || '').trim();
-        if (!key || key === 'total') return true;
-        if (key === 'review') return item.pendingGradeCount > 0;
-        if (key === 'returned') return item.returnedCount > 0 || item.statusKey === 'returned';
-        if (key === 'open') return item.clock.accepting || item.statusKey === 'published' || item.statusKey === 'unsubmitted';
-        if (key === 'todo') return item.statusKey === 'unsubmitted' || item.statusKey === 'returned';
-        if (key === 'urgent') return item.clock.isUrgent;
-        if (key === 'completed') return ['submitted', 'grading', 'graded'].includes(item.statusKey);
-        return false;
-    };
-
-    const focusMetric = (metricKey) => {
-        clearMetricHighlights();
-        const key = String(metricKey || '').trim();
-        if (!key || key === 'total') {
-            focusAssignmentList();
-            return;
-        }
-
-        const snapshot = readSnapshot();
-        const matchingIds = new Set(
-            snapshot.items
-                .filter((item) => itemMatchesMetric(item, key))
-                .map((item) => String(item.id || '')),
-        );
-        const matchingCards = taskCards.filter((card) => matchingIds.has(String(card.dataset.assignmentId || '')));
-        matchingCards.forEach((card) => card.classList.add('is-task-board-filtered'));
-
-        if (matchingCards.length) {
-            const firstId = matchingCards[0]?.dataset.assignmentId;
-            focusCard(firstId);
-            window.setTimeout(clearMetricHighlights, 2600);
-            return;
-        }
-
-        focusAssignmentList();
-    };
-
-    window.addEventListener(taskBoardCommandEventName, (event) => {
-        const detail = event instanceof CustomEvent ? event.detail : null;
-        const commandType = detail?.type;
-        if (commandType === 'focus-card' && detail?.assignmentId) {
-            focusCard(detail.assignmentId);
-        }
-        if (commandType === 'open-card' && detail?.assignmentId) {
-            focusCard(detail.assignmentId, { open: true });
-        }
-        if (commandType === 'focus-board') {
-            focusAssignmentList();
-        }
-        if (commandType === 'focus-metric') {
-            focusMetric(detail?.metricKey);
-        }
-        schedulePublish();
-    });
-
-    taskCards.forEach((card) => {
-        const observer = new MutationObserver(schedulePublish);
-        observer.observe(card, {
-            attributes: true,
-            childList: true,
-            subtree: true,
-            attributeFilter: ['class', 'data-accepting', 'data-late-open', 'data-deadline-phase'],
-        });
-    });
-
-    publishSnapshot();
-    return {
-        publish: publishSnapshot,
-        updateTimeStates: (timeStates) => {
-            latestTimeStates = timeStates instanceof Map ? timeStates : new Map();
-            schedulePublish();
-        },
-        getSnapshot: readSnapshot,
-        clockController,
-    };
-}
-
-function initMaterialLearningPathBridge() {
-    const mountPoint = document.querySelector('[data-lanshare-island="material-learning-path-sync"]');
-    const timelinePanel = document.getElementById('timeline-panel');
-    const materialsPanel = document.getElementById('materials-panel');
-    const materialList = document.getElementById('classroom-materials-list');
-    if (!mountPoint && !timelinePanel && !materialsPanel) return null;
-
-    const materialPathEventName = 'lanshare:material-learning-path-change';
-    const materialPathCommandEventName = 'lanshare:material-learning-path-command';
-    const teachingPlan = window.APP_CONFIG?.teachingPlan || {};
-    const sessions = Array.isArray(teachingPlan.timeline_entries)
-        ? teachingPlan.timeline_entries
-        : (Array.isArray(teachingPlan.sessions) ? teachingPlan.sessions : []);
-    const sessionByOrder = new Map(sessions.map((session) => [String(session.order_index), session]));
-    let pendingFrame = 0;
-
-    const readText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim();
-    const toCount = (value) => {
-        const count = Number.parseInt(String(value || '0'), 10);
-        return Number.isFinite(count) && count > 0 ? count : 0;
-    };
-    const isTeacher = () => String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || '').trim() === 'teacher';
-    const getSelectedOrder = () => (
-        document.querySelector('[data-session-select].is-selected')?.getAttribute('data-session-order')
-        || timelinePanel?.getAttribute('data-anchor-order')
-        || sessions.find((session) => session.is_anchor)?.order_index
-        || sessions[0]?.order_index
-        || ''
-    );
-    const isHomeEntry = (session) => Boolean(session?.is_home_entry || session?.entry_type === 'home');
-    const isAcademicExamEntry = (session) => Boolean(session?.is_academic_exam || session?.entry_type === 'academic_exam');
-    const sessionHasMaterial = (session, button = null) => {
-        if (!session) return false;
-        if (isAcademicExamEntry(session)) return false;
-        if (button?.dataset?.hasMaterial) {
-            return button.dataset.hasMaterial === 'true';
-        }
-        return isHomeEntry(session)
-            ? Boolean(session.home_learning_material_id || session.has_home_learning_material || session.learning_material_viewer_url)
-            : Boolean(session.learning_material_id || session.has_learning_material || session.learning_material_viewer_url);
-    };
-
-    const readSessions = () => Array.from(document.querySelectorAll('[data-session-select]')).map((button) => {
-        const orderIndex = String(button.getAttribute('data-session-order') || '');
-        const session = sessionByOrder.get(orderIndex) || {};
-        const title = readText(button.querySelector('.teaching-timeline-segment-title'))
-            || session.segment_title
-            || session.detail_title
-            || session.title
-            || '课次';
-        const hasMaterial = sessionHasMaterial(session, button);
-        return {
-            id: session.id || button.getAttribute('data-session-id') || null,
-            orderIndex,
-            title,
-            label: readText(button.querySelector('.teaching-timeline-segment-order')) || session.session_number_label || '',
-            statusLabel: session.session_status_label || '',
-            progressState: session.progress_state || '',
-            entryType: button.getAttribute('data-entry-type') || session.entry_type || (isHomeEntry(session) ? 'home' : 'lesson'),
-            hasMaterial,
-            isSelected: button.classList.contains('is-selected'),
-            isHomeEntry: isHomeEntry(session),
-            isAcademicExam: isAcademicExamEntry(session),
-            isAcademicSchedule: Boolean(session.is_academic_schedule),
-            isShifted: Boolean(session.is_non_periodic),
-            materialName: session.home_learning_material_name || session.learning_material_name || '',
-            materialPath: session.home_learning_material_path || session.learning_material_path || '',
-            viewerUrl: session.home_learning_material_viewer_url || session.learning_material_viewer_url || '',
-            dateLabel: readText(button.querySelector('.teaching-timeline-segment-meta')) || session.detail_meta || '',
-        };
-    });
-
-    const readMaterialRows = () => Array.from(document.querySelectorAll('#classroom-materials-list .materials-row')).map((row) => {
-        const actionText = readText(row.querySelector('[data-action]'));
-        return {
-            id: String(row.dataset.id || ''),
-            name: String(row.dataset.materialName || readText(row.querySelector('.materials-name-copy strong')) || ''),
-            path: String(row.dataset.materialPath || readText(row.querySelector('.materials-name-copy span')) || ''),
-            nodeType: String(row.dataset.materialNodeType || ''),
-            typeLabel: readText(row.children?.[2]),
-            meta: readText(row.children?.[3]),
-            previewSupported: row.dataset.materialPreviewSupported === 'true',
-            downloadAllowed: row.dataset.materialDownloadAllowed !== 'false',
-            hasDocument: row.dataset.materialHasDocument === 'true',
-            primaryAction: String(row.dataset.materialPrimaryAction || ''),
-            actionText,
-        };
-    });
-
-    const readSnapshot = () => {
-        const sessionItems = readSessions();
-        const materialItems = readMaterialRows();
-        const selectedOrder = String(getSelectedOrder());
-        const selectedSession = sessionItems.find((session) => String(session.orderIndex) === selectedOrder)
-            || sessionItems.find((session) => session.isSelected)
-            || sessionItems[0]
-            || null;
-        const materialPanel = document.getElementById('teachingTimelineMaterialPanel');
-        const breadcrumbs = readText(document.getElementById('classroom-materials-breadcrumbs'));
-        const selectionCount = toCount(readText(document.getElementById('classroom-materials-selection-count')));
-        const hasHomeMaterial = Boolean(teachingPlan.has_home_material || teachingPlan.home_material?.id);
-        const materialReadyCount = sessionItems.filter((session) => session.hasMaterial).length;
-        const documentCount = materialItems.filter((item) => item.hasDocument || item.previewSupported).length;
-        const folderCount = materialItems.filter((item) => item.nodeType === 'folder').length;
-        const blockedDownloadCount = materialItems.filter((item) => !item.downloadAllowed).length;
-
-        return {
-            role: isTeacher() ? 'teacher' : String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || ''),
-            classOfferingId: window.APP_CONFIG?.classOfferingId || null,
-            selectedOrder,
-            selectedSession,
-            sessionItems,
-            materialItems,
-            summary: {
-                sessionCount: sessionItems.length,
-                materialReadyCount,
-                missingMaterialCount: Math.max(sessionItems.filter((session) => !session.isAcademicExam).length - materialReadyCount, 0),
-                homeMaterialReady: hasHomeMaterial,
-                academicExamCount: sessionItems.filter((session) => session.isAcademicExam).length,
-                shiftedCount: sessionItems.filter((session) => session.isShifted).length,
-                materialItemCount: materialItems.length,
-                folderCount,
-                documentCount,
-                blockedDownloadCount,
-                selectionCount,
-            },
-            materialPanel: {
-                ready: materialPanel?.dataset?.materialReady === 'true',
-                entryType: materialPanel?.dataset?.entryType || '',
-                name: readText(document.getElementById('teachingTimelineMaterialName')),
-                path: readText(document.getElementById('teachingTimelineMaterialPath')),
-                hint: readText(document.getElementById('teachingTimelineOpenMaterialHint')),
-            },
-            breadcrumbs,
-            isLoadingMaterials: Boolean(materialList?.querySelector('.materials-empty') && readText(materialList).includes('正在加载')),
-        };
-    };
-
-    const publishSnapshot = () => {
-        const snapshot = readSnapshot();
-        window.__LANSHARE_MATERIAL_LEARNING_PATH__ = snapshot;
-        window.dispatchEvent(new CustomEvent(materialPathEventName, { detail: snapshot }));
-        return snapshot;
-    };
-
-    const schedulePublish = () => {
-        if (pendingFrame) return;
-        pendingFrame = window.requestAnimationFrame(() => {
-            pendingFrame = 0;
-            publishSnapshot();
-        });
-    };
-
-    const focusElement = (element, block = 'center') => {
-        element?.scrollIntoView({ behavior: 'smooth', block });
-        element?.focus?.({ preventScroll: true });
-    };
-
-    window.addEventListener(materialPathCommandEventName, (event) => {
-        const detail = event instanceof CustomEvent ? event.detail : null;
-        const commandType = detail?.type;
-        if (commandType === 'focus-timeline') {
-            focusElement(timelinePanel, 'start');
-        }
-        if (commandType === 'focus-materials') {
-            focusElement(materialsPanel, 'start');
-        }
-        if (commandType === 'refresh-materials') {
-            document.getElementById('classroom-materials-refresh-btn')?.click();
-        }
-        if (commandType === 'open-current-material') {
-            document.getElementById('teachingTimelineOpenMaterialBtn')?.click();
-        }
-        if (commandType === 'open-home-material') {
-            document.getElementById('teachingTimelineOpenHomeMaterialBtn')?.click();
-        }
-        if (commandType === 'generate-final-material') {
-            document.getElementById('classroom-final-material-generate-btn')?.click();
-        }
-        if (commandType === 'focus-session' && detail?.orderIndex) {
-            const sessionButton = document.querySelector(`[data-session-select][data-session-order="${String(detail.orderIndex)}"]`);
-            sessionButton?.click();
-            focusElement(sessionButton);
-        }
-        schedulePublish();
-    });
-
-    [
-        document.getElementById('teachingTimelineStage'),
-        document.getElementById('teachingTimelineDetail'),
-        document.getElementById('teachingTimelineMaterialPanel'),
-        document.getElementById('classroom-materials-list'),
-        document.getElementById('classroom-materials-breadcrumbs'),
-        document.getElementById('classroom-materials-selection'),
-    ].filter(Boolean).forEach((node) => {
-        const observer = new MutationObserver(schedulePublish);
-        observer.observe(node, {
-            attributes: true,
-            childList: true,
-            subtree: true,
-        });
-    });
-
-    publishSnapshot();
-    return {
-        publish: publishSnapshot,
-        getSnapshot: readSnapshot,
-    };
-}
-
-function initTeachingTimelineLegacy() {
-    const widget = document.getElementById('teaching-plan-widget');
-    const scrollEl = document.getElementById('teachingTimelineScroll');
-    const teachingPlan = window.APP_CONFIG?.teachingPlan || {};
-    const lessonSessions = Array.isArray(teachingPlan.sessions) ? teachingPlan.sessions : [];
-    const sessions = Array.isArray(teachingPlan.timeline_entries)
-        ? teachingPlan.timeline_entries
-        : lessonSessions;
-    if (!widget || !scrollEl || !sessions.length) return;
-
-    if (!Array.isArray(teachingPlan.timeline_entries)) {
-        teachingPlan.timeline_entries = sessions;
-    }
-    if (!Array.isArray(teachingPlan.sessions)) {
-        teachingPlan.sessions = sessions.filter((session) => !session?.is_home_entry);
-    }
-
-    const userInfo = window.APP_CONFIG?.userInfo || {};
-    const isTeacher = String(userInfo.role || '').trim() === 'teacher';
-    const detailKicker = document.getElementById('teachingTimelineDetailKicker');
-    const detailTitle = document.getElementById('teachingTimelineDetailTitle');
-    const detailStatus = document.getElementById('teachingTimelineDetailStatus');
-    const detailSummary = document.getElementById('teachingTimelineDetailSummary');
-    const detailMeta = document.getElementById('teachingTimelineDetailMeta');
-    const detailActions = document.getElementById('teachingTimelineDetailActions');
-    const materialPanel = document.getElementById('teachingTimelineMaterialPanel');
-    const materialName = document.getElementById('teachingTimelineMaterialName');
-    const materialPath = document.getElementById('teachingTimelineMaterialPath');
-    const openMaterialHint = document.getElementById('teachingTimelineOpenMaterialHint');
-    const openMaterialLabel = document.getElementById('teachingTimelineOpenMaterialLabel');
-    const selectHomeMaterialBtn = document.getElementById('teachingTimelineSelectHomeMaterialBtn');
-    const selectMaterialBtn = document.getElementById('teachingTimelineSelectMaterialBtn');
-    const aiMaterialBtn = document.getElementById('teachingTimelineAiMaterialBtn');
-    const clearMaterialBtn = document.getElementById('teachingTimelineClearMaterialBtn');
-    const openHomeMaterialBtn = document.getElementById('teachingTimelineOpenHomeMaterialBtn');
-    const openMaterialBtn = document.getElementById('teachingTimelineOpenMaterialBtn');
-    const sessionButtons = Array.from(scrollEl.querySelectorAll('[data-session-order]'));
-    const sessionMap = new Map(
-        sessions.map((session) => [String(session.order_index), session]),
-    );
-    const buttonMap = new Map(
-        sessionButtons.map((button) => [String(button.getAttribute('data-session-order') || ''), button]),
-    );
-    const detailSummaryCache = new Map();
-
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const resolveBehavior = (behavior) => (prefersReducedMotion ? 'auto' : behavior);
-    let selectedOrder = String(
-        sessions.find((session) => session.is_anchor)?.order_index
-        ?? sessions[0]?.order_index
-        ?? '',
-    );
-
-    let pointerId = null;
-    let startX = 0;
-    let startScrollLeft = 0;
-    let dragDistance = 0;
-    let snapTimer = 0;
-    let ignoreClickUntil = 0;
-
-    const getSessionByOrder = (sessionOrder) => sessionMap.get(String(sessionOrder || '').trim());
-    const getHomeMaterial = () => teachingPlan.home_material || null;
-    const hasHomeMaterial = () => Boolean(getHomeMaterial()?.id && getHomeMaterial()?.viewer_url);
-    const isHomeEntry = (session) => Boolean(session?.is_home_entry || session?.entry_type === 'home');
-    const isAcademicExamEntry = (session) => Boolean(session?.is_academic_exam || session?.entry_type === 'academic_exam');
-    const getRelatedInvigilations = (session) => {
-        const direct = Array.isArray(session?.related_invigilations) ? session.related_invigilations : [];
-        const nested = Array.isArray(session?.exam_item?.related_invigilations) ? session.exam_item.related_invigilations : [];
-        return direct.length ? direct : nested;
-    };
-    const formatInvigilationBrief = (item = {}) => [
-        item.invigilation_role || '监考',
-        item.exam_time_text || '',
-        item.location_full || item.location || item.location_short_name || '',
-    ].filter(Boolean).join(' · ');
-    const getSessionViewerUrl = (session) => String(
-        isHomeEntry(session)
-            ? session?.home_learning_material_viewer_url || session?.learning_material_viewer_url || ''
-            : session?.learning_material_viewer_url || '',
-    ).trim();
-    const getSessionMaterialReady = (session) => {
-        if (isAcademicExamEntry(session)) return false;
-        return isHomeEntry(session)
-            ? Boolean(session?.home_learning_material_id && session?.home_learning_material_viewer_url)
-            : Boolean(session?.learning_material_id && session?.learning_material_viewer_url);
-    };
-    const publishSelectedSessionContext = (session) => {
-        if (!session || isHomeEntry(session) || isAcademicExamEntry(session)) {
-            window.LANSHARE_SELECTED_CLASSROOM_SESSION = null;
-            return;
-        }
-        window.LANSHARE_SELECTED_CLASSROOM_SESSION = {
-            id: session.id || null,
-            orderIndex: session.order_index || null,
-            title: session.detail_title || session.title || '',
-            content: session.detail_content || session.detail_summary || session.content || '',
-            sessionDate: session.session_date || '',
-            sectionCount: session.section_count || session.slot_section_count || 1,
-            learningMaterialId: session.learning_material_id || null,
-            learningMaterialName: session.learning_material_name || '',
-            learningMaterialPath: session.learning_material_path || '',
-        };
-    };
-    const scheduleProjectionSync = () => {};
-
-    const updateSessionButtonMaterialState = (session) => {
-        if (!session) return;
-        const button = buttonMap.get(String(session.order_index));
-        if (!button) return;
-        const orderLabel = button.querySelector('.teaching-timeline-segment-order');
-        const titleLabel = button.querySelector('.teaching-timeline-segment-title');
-        const metaLabel = button.querySelector('.teaching-timeline-segment-meta');
-        const indicator = button.querySelector('[data-role="session-material-indicator"]');
-        const hasMaterial = getSessionMaterialReady(session);
-        if (orderLabel) orderLabel.textContent = session.session_number_label || '';
-        if (titleLabel) titleLabel.textContent = session.segment_title || session.detail_title || session.title || '';
-        if (metaLabel) {
-            metaLabel.dataset.weekdayLabel = session.timeline_weekday_label || '';
-            metaLabel.dataset.relativeDateLabel = session.timeline_relative_date_label || '';
-        }
-        if (indicator) {
-            indicator.textContent = isHomeEntry(session) ? '首页文档' : '学习文档';
-            indicator.hidden = !hasMaterial;
-        }
-        button.dataset.hasMaterial = hasMaterial ? 'true' : 'false';
-    };
-
-    const renderDetailMeta = (session) => {
-        if (!detailMeta) return;
-        detailMeta.textContent = '';
-
-        const metaItems = [];
-        if (session.detail_meta) {
-            metaItems.push({ text: session.detail_meta, warning: false });
-        }
-        if (session.detail_hint) {
-            metaItems.push({ text: session.detail_hint, warning: true });
-        }
-
-        metaItems.forEach((item) => {
-            const chip = document.createElement('span');
-            chip.textContent = item.text;
-            if (item.warning) {
-                chip.classList.add('is-warning');
-            }
-            detailMeta.appendChild(chip);
-        });
-    };
-
-    const renderDetailSummary = (session) => {
-        if (!detailSummary) return;
-
-        const cacheKey = String(session.order_index ?? '');
-        if (detailSummaryCache.has(cacheKey)) {
-            detailSummary.classList.add('md-content');
-            detailSummary.innerHTML = detailSummaryCache.get(cacheKey) || '';
-            return;
-        }
-
-        const markdownSource = String(
-            session.detail_content
-            || session.detail_summary
-            || session.content_preview
-            || '',
-        ).trim();
-        const emptyHtml = '<p class="text-muted">暂无课堂内容。</p>';
-        const runtime = window.MarkdownRuntime;
-
-        detailSummary.classList.add('md-content');
-        if (runtime && typeof runtime.renderIntoElement === 'function') {
-            runtime.renderIntoElement(detailSummary, markdownSource, {
-                emptyHtml,
-                fallbackMode: 'lines',
-                silent: true,
-            });
-            detailSummaryCache.set(cacheKey, detailSummary.innerHTML);
-            return;
-        }
-
-        if (!markdownSource) {
-            detailSummary.innerHTML = emptyHtml;
-            detailSummaryCache.set(cacheKey, detailSummary.innerHTML);
-            return;
-        }
-
-        detailSummary.innerHTML = String(markdownSource)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/\n/g, '<br>');
-        detailSummaryCache.set(cacheKey, detailSummary.innerHTML);
-    };
-
-    const renderMaterialPanel = (session) => {
-        if (!materialPanel || !materialName || !materialPath) return;
-        const homeEntry = isHomeEntry(session);
-        const examEntry = isAcademicExamEntry(session);
-        const hasMaterial = getSessionMaterialReady(session);
-        const homeReady = hasHomeMaterial();
-        materialPanel.classList.toggle('is-empty', !hasMaterial && !examEntry);
-        materialPanel.dataset.materialReady = hasMaterial ? 'true' : 'false';
-        materialPanel.dataset.entryType = examEntry ? 'academic_exam' : (homeEntry ? 'home' : 'lesson');
-
-        if (openMaterialLabel) {
-            openMaterialLabel.textContent = examEntry ? '教务考试' : (homeEntry ? '首页' : '学习文档');
-        }
-        if (openHomeMaterialBtn) {
-            openHomeMaterialBtn.hidden = !homeReady || homeEntry || examEntry;
-            openHomeMaterialBtn.disabled = !homeReady || homeEntry || examEntry;
-            openHomeMaterialBtn.dataset.materialReady = homeReady ? 'true' : 'false';
-        }
-
-        if (examEntry) {
-            const invigilationBriefs = getRelatedInvigilations(session).map(formatInvigilationBrief).filter(Boolean);
-            materialName.textContent = session.exam_name || session.detail_title || '教务系统考试安排';
-            materialPath.textContent = [
-                [session.exam_time_text, session.exam_location].filter(Boolean).join(' · ') || '考试时间与地点以教务系统为准',
-                invigilationBriefs.length ? `本人监考：${invigilationBriefs.slice(0, 2).join('；')}` : '',
-            ].filter(Boolean).join(' · ');
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '点击卡片可查看考试详情；重新同步会刷新时间和地点。';
-            }
-        } else if (homeEntry && hasMaterial) {
-            materialName.textContent = session.home_learning_material_name || session.learning_material_name || '课程学习首页';
-            materialPath.textContent = session.home_learning_material_path || session.learning_material_path || '';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '打开课程目录与简介';
-            }
-        } else if (homeEntry && isTeacher) {
-            materialName.textContent = '尚未配置课程首页';
-            materialPath.textContent = '可绑定课程首页 Markdown，用于目录、简介和后续文档导航。';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '先设置课程首页';
-            }
-        } else if (homeEntry) {
-            materialName.textContent = '教师尚未配置课程首页';
-            materialPath.textContent = '当前课堂还没有可打开的课程首页。';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '等待教师配置课程首页';
-            }
-        } else if (hasMaterial) {
-            materialName.textContent = session.learning_material_name || '已绑定课堂文档';
-            materialPath.textContent = session.learning_material_path || '';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '进入本次课学习入口';
-            }
-        } else if (isTeacher) {
-            materialName.textContent = '尚未绑定课堂文档';
-            materialPath.textContent = '可为本次课绑定一份 Markdown 材料，师生可从这里直接进入文档页面。';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '先为本次课绑定文档';
-            }
-        } else {
-            materialName.textContent = '教师尚未配置学习文档';
-            materialPath.textContent = '当前节点还没有可打开的课堂文档。';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '等待教师配置学习文档';
-            }
-        }
-
-        if (openMaterialBtn) {
-            openMaterialBtn.disabled = !hasMaterial;
-            openMaterialBtn.dataset.materialReady = hasMaterial ? 'true' : 'false';
-        }
-        if (clearMaterialBtn) {
-            clearMaterialBtn.hidden = !hasMaterial || homeEntry;
-        }
-    };
-
-    const syncTeacherActionState = (session) => {
-        const homeEntry = isHomeEntry(session);
-        const examEntry = isAcademicExamEntry(session);
-        if (selectMaterialBtn) {
-            selectMaterialBtn.hidden = homeEntry || examEntry;
-            selectMaterialBtn.disabled = homeEntry || examEntry;
-        }
-        if (aiMaterialBtn) {
-            aiMaterialBtn.hidden = homeEntry || examEntry;
-            aiMaterialBtn.disabled = homeEntry || examEntry || Boolean(session?.material_generation_task?.is_active);
-        }
-        if (selectHomeMaterialBtn) {
-            selectHomeMaterialBtn.textContent = hasHomeMaterial() ? '更换首页' : '设置首页';
-        }
-    };
-
-    const focusSession = (sessionOrder, behavior = 'smooth') => {
-        const sessionNode = scrollEl.querySelector(`[data-session-order="${sessionOrder}"]`);
-        if (!sessionNode) return;
-        sessionNode.scrollIntoView({
-            behavior: resolveBehavior(behavior),
-            inline: 'center',
-            block: 'nearest',
-        });
-    };
-
-    const syncSelectedState = (activeOrder) => {
-        const activeOrderText = String(activeOrder);
-        sessionButtons.forEach((button) => {
-            const isSelected = button.getAttribute('data-session-order') === activeOrderText;
-            button.classList.toggle('is-selected', isSelected);
-            button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
-        });
-    };
-
-    const setActiveSession = (sessionOrder, options = {}) => {
-        const key = String(sessionOrder || '').trim();
-        const session = getSessionByOrder(key);
-        if (!session) return;
-
-        const previousOrder = selectedOrder;
-        selectedOrder = key;
-        publishSelectedSessionContext(session);
-        syncSelectedState(key);
-        if (detailKicker) detailKicker.textContent = session.session_number_label || '';
-        if (detailTitle) detailTitle.textContent = session.detail_title || session.title || '';
-        if (detailStatus) {
-            detailStatus.textContent = session.session_status_label || '';
-            detailStatus.className = `teaching-timeline-detail-status is-${session.progress_state || 'upcoming'}`;
-        }
-        renderDetailSummary(session);
-        renderDetailMeta(session);
-        renderMaterialPanel(session);
-
-        if (options.center !== false && (options.forceCenter || previousOrder !== key)) {
-            focusSession(key, options.behavior || 'smooth');
-        }
-    };
-
-    const applySessionPatch = (patch) => {
-        if (!patch) return;
-        const session = getSessionByOrder(patch.order_index);
-        if (!session) return;
-        Object.assign(session, patch, {
-            has_learning_material: Boolean(patch.learning_material_id),
-        });
-        updateSessionButtonMaterialState(session);
-        if (String(session.order_index) === selectedOrder) {
-            renderMaterialPanel(session);
-        }
-    };
-
-    const persistSessionMaterial = async (learningMaterialId) => {
-        const session = getSessionByOrder(selectedOrder);
-        if (!session?.id) return;
-        const result = await apiFetch(
-            `/api/classrooms/${window.APP_CONFIG.classOfferingId}/sessions/${session.id}/learning-material`,
-            {
-                method: 'PUT',
-                body: { learning_material_id: learningMaterialId },
-                silent: true,
-            },
-        );
-        applySessionPatch(result.session);
-        if (window.materialsApp && typeof window.materialsApp.refresh === 'function') {
-            window.materialsApp.refresh().catch(() => {});
-        }
-        showToast(result.message || '课堂材料已更新', 'success');
-    };
-
-    const applyHomeMaterialPatch = (result = {}) => {
-        teachingPlan.home_material = result.home_material || null;
-        teachingPlan.has_home_material = Boolean(result.home_material);
-        if (result.home_entry) {
-            const homeEntry = getSessionByOrder('home');
-            if (homeEntry) {
-                Object.assign(homeEntry, result.home_entry);
-                updateSessionButtonMaterialState(homeEntry);
-                if (String(homeEntry.order_index) === selectedOrder) {
-                    if (detailKicker) detailKicker.textContent = homeEntry.session_number_label || '';
-                    if (detailTitle) detailTitle.textContent = homeEntry.detail_title || homeEntry.title || '';
-                    if (detailStatus) {
-                        detailStatus.textContent = homeEntry.session_status_label || '';
-                        detailStatus.className = `teaching-timeline-detail-status is-${homeEntry.progress_state || 'home'}`;
-                    }
-                    renderDetailSummary(homeEntry);
-                    renderDetailMeta(homeEntry);
-                    renderMaterialPanel(homeEntry);
-                }
-            }
-        }
-        const currentSession = getSessionByOrder(selectedOrder);
-        syncTeacherActionState(currentSession);
-        renderMaterialPanel(currentSession);
-        scheduleProjectionSync();
-    };
-
-    const persistHomeMaterial = async (learningMaterialId) => {
-        const result = await apiFetch(
-            `/api/classrooms/${window.APP_CONFIG.classOfferingId}/learning-home-material`,
-            {
-                method: 'PUT',
-                body: { learning_material_id: learningMaterialId },
-                silent: true,
-            },
-        );
-        applyHomeMaterialPatch(result);
-        if (window.materialsApp && typeof window.materialsApp.refresh === 'function') {
-            window.materialsApp.refresh().catch(() => {});
-        }
-        showToast(result.message || '课程首页已更新', 'success');
-    };
-
-    const getNearestSessionOrder = () => {
-        const viewportCenter = scrollEl.scrollLeft + (scrollEl.clientWidth / 2);
-        let nearestOrder = selectedOrder;
-        let nearestDistance = Number.POSITIVE_INFINITY;
-
-        sessionButtons.forEach((button) => {
-            const order = button.getAttribute('data-session-order');
-            const buttonCenter = button.offsetLeft + (button.offsetWidth / 2);
-            const distance = Math.abs(buttonCenter - viewportCenter);
-            if (distance < nearestDistance) {
-                nearestDistance = distance;
-                nearestOrder = order || nearestOrder;
-            }
-        });
-
-        return nearestOrder;
-    };
-
-    const scheduleSnapToNearest = () => {
-        window.clearTimeout(snapTimer);
-        snapTimer = window.setTimeout(() => {
-            if (!sessionButtons.length) return;
-            setActiveSession(getNearestSessionOrder(), {
-                center: true,
-                behavior: 'smooth',
-            });
-        }, 110);
-    };
-
-    scrollEl.addEventListener('pointerdown', (event) => {
-        if (!event.isPrimary || event.button !== 0) return;
-        pointerId = event.pointerId;
-        startX = event.clientX;
-        startScrollLeft = scrollEl.scrollLeft;
-        dragDistance = 0;
-        scrollEl.classList.add('is-dragging');
-        scrollEl.setPointerCapture(event.pointerId);
-    });
-
-    scrollEl.addEventListener('pointermove', (event) => {
-        if (pointerId !== event.pointerId) return;
-        event.preventDefault();
-        const deltaX = event.clientX - startX;
-        dragDistance = Math.max(dragDistance, Math.abs(deltaX));
-        scrollEl.scrollLeft = startScrollLeft - deltaX;
-    });
-
-    const releaseDrag = (event) => {
-        if (pointerId !== event.pointerId) return;
-        const didDrag = dragDistance > 6;
-        pointerId = null;
-        dragDistance = 0;
-        scrollEl.classList.remove('is-dragging');
-        if (scrollEl.hasPointerCapture(event.pointerId)) {
-            scrollEl.releasePointerCapture(event.pointerId);
-        }
-        if (didDrag) {
-            ignoreClickUntil = Date.now() + 180;
-            scheduleSnapToNearest();
-        }
-    };
-
-    scrollEl.addEventListener('pointerup', releaseDrag);
-    scrollEl.addEventListener('pointercancel', releaseDrag);
-    scrollEl.addEventListener('pointerleave', (event) => {
-        if (pointerId === event.pointerId && event.buttons === 0) {
-            releaseDrag(event);
-        }
-    });
-
-    sessionButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-            if (Date.now() < ignoreClickUntil) return;
-            setActiveSession(button.getAttribute('data-session-order'), {
-                center: true,
-                behavior: 'smooth',
-            });
-        });
-        button.addEventListener('keydown', (event) => {
-            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
-                return;
-            }
-            event.preventDefault();
-            const currentIndex = sessions.findIndex((session) => String(session.order_index) === selectedOrder);
-            if (currentIndex === -1) return;
-            const nextIndex = event.key === 'ArrowRight'
-                ? Math.min(currentIndex + 1, sessions.length - 1)
-                : Math.max(currentIndex - 1, 0);
-            const nextOrder = sessions[nextIndex]?.order_index;
-            if (nextOrder != null) {
-                setActiveSession(nextOrder, { center: true, behavior: 'smooth' });
-                sessionButtons[nextIndex]?.focus();
-            }
-        });
-    });
-
-    scrollEl.addEventListener('scroll', () => {
-        if (pointerId !== null) return;
-        scheduleSnapToNearest();
-    }, { passive: true });
-
-    sessionButtons.forEach((button) => {
-        const session = getSessionByOrder(button.getAttribute('data-session-order'));
-        updateSessionButtonMaterialState(session);
-    });
-
-    openMaterialBtn?.addEventListener('click', () => {
-        const session = getSessionByOrder(selectedOrder);
-        const viewerUrl = getSessionViewerUrl(session);
-        if (!viewerUrl) {
-            if (isHomeEntry(session)) {
-                showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
-            } else {
-                showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
-            }
-            return;
-        }
-        window.open(buildLearningViewerUrl(viewerUrl, session), '_blank', 'noopener');
-    });
-
-    openHomeMaterialBtn?.addEventListener('click', () => {
-        const homeMaterial = getHomeMaterial();
-        const viewerUrl = String(homeMaterial?.viewer_url || '').trim();
-        if (!viewerUrl) {
-            showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
-            return;
-        }
-        window.open(buildLearningViewerUrl(viewerUrl, { is_home_entry: true }), '_blank', 'noopener');
-    });
-
-    /* session modal bindings are attached in initTeachingTimeline; legacy timeline intentionally skips them.
-        const homeMaterial = getHomeMaterial();
-        const viewerUrl = String(homeMaterial?.viewer_url || '').trim();
-        if (!viewerUrl) {
-            showToast(isTeacher ? '课程首页尚未配置' : '教师尚未配置课程首页', 'warning');
-            return;
-        }
-        window.open(buildLearningViewerUrl(viewerUrl, { is_home_entry: true }), '_blank', 'noopener');
-    });
-    sessionModalOpenMaterialBtn?.addEventListener('click', () => {
-        const session = activeModalSession || getSessionByOrder(selectedOrder);
-        const viewerUrl = getSessionViewerUrl(session);
-        if (!viewerUrl) {
-            showToast(isTeacher ? '当前次课还没有绑定文档' : '教师尚未配置学习文档', 'warning');
-            return;
-        }
-        window.open(buildLearningViewerUrl(viewerUrl, session), '_blank', 'noopener');
-    });
-    sessionModalCheckinBtn?.addEventListener('click', () => {
-        if (sessionCheckinPanel) sessionCheckinPanel.hidden = false;
-        fetchSessionCheckin({ sync: false });
-    });
-    sessionSyncCheckinBtn?.addEventListener('click', () => {
-        fetchSessionCheckin({ sync: true });
-    });
-
-    */
-    selectHomeMaterialBtn?.addEventListener('click', async () => {
-        try {
-            const currentHomeMaterial = getHomeMaterial();
-            const selectedMaterial = await learningMaterialSelector.open({
-                title: '选择课程首页',
-                subtitle: '课程目录与简介，显示在时间轴第一课之前。',
-                confirmLabel: currentHomeMaterial ? '更换首页' : '设置为首页',
-                allowClear: Boolean(currentHomeMaterial),
-                clearLabel: '移除课程首页',
-                footerNote: currentHomeMaterial
-                    ? '选择新的 Markdown 文档可替换首页，也可以移除当前首页入口。'
-                    : '仅支持绑定 Markdown 文档。建议选择根目录下的 README、index 或课程目录文档。',
-                initialMaterial: currentHomeMaterial,
-            });
-            if (!selectedMaterial) {
-                return;
-            }
-            if (selectedMaterial.clear) {
-                await persistHomeMaterial(null);
-                return;
-            }
-            if (Number(selectedMaterial.id) === Number(currentHomeMaterial?.id || 0)) {
-                return;
-            }
-            await persistHomeMaterial(Number(selectedMaterial.id));
-        } catch (error) {
-            showToast(error.message || '更新课程首页失败', 'error');
-        }
-    });
-
-    selectMaterialBtn?.addEventListener('click', async () => {
-        const session = getSessionByOrder(selectedOrder);
-        if (!session || isHomeEntry(session)) return;
-        try {
-            const selectedMaterial = await learningMaterialSelector.open({
-                title: '选择课堂材料',
-                subtitle: '绑定 Markdown 文档，课堂“学习文档”按钮直达该页面。',
-                confirmLabel: '绑定到本次课',
-                initialMaterial: session.learning_material,
-            });
-            if (!selectedMaterial || Number(selectedMaterial.id) === Number(session.learning_material_id || 0)) {
-                return;
-            }
-            await persistSessionMaterial(Number(selectedMaterial.id));
-        } catch (error) {
-            showToast(error.message || '更新课堂材料失败', 'error');
-        }
-    });
-
-    clearMaterialBtn?.addEventListener('click', async () => {
-        const session = getSessionByOrder(selectedOrder);
-        if (!session?.learning_material_id) {
-            showToast('当前次课还没有绑定文档', 'warning');
-            return;
-        }
-        const confirmed = window.confirm('确定移除本次课的学习文档吗？');
-        if (!confirmed) return;
-        try {
-            await persistSessionMaterial(null);
-        } catch (error) {
-            showToast(error.message || '移除课堂材料失败', 'error');
-        }
-    });
-
-    window.requestAnimationFrame(() => {
-        setActiveSession(selectedOrder, {
-            center: true,
-            behavior: 'auto',
-            forceCenter: true,
-        });
-    });
-}
-
 function initTeachingTimeline() {
+    const compactWorkspace = document.body.classList.contains('classroom-workspace-v2');
     const widget = document.getElementById('teaching-plan-widget');
     const stageEl = document.getElementById('teachingTimelineStage');
     const scrollEl = document.getElementById('teachingTimelineScroll');
@@ -1981,18 +887,11 @@ function initTeachingTimeline() {
     const detailStatus = document.getElementById('teachingTimelineDetailStatus');
     const detailSummary = document.getElementById('teachingTimelineDetailSummary');
     const detailMeta = document.getElementById('teachingTimelineDetailMeta');
-    const materialPanel = document.getElementById('teachingTimelineMaterialPanel');
-    const materialName = document.getElementById('teachingTimelineMaterialName');
-    const materialPath = document.getElementById('teachingTimelineMaterialPath');
-    const openMaterialHint = document.getElementById('teachingTimelineOpenMaterialHint');
-    const openMaterialLabel = document.getElementById('teachingTimelineOpenMaterialLabel');
     const selectHomeMaterialBtn = document.getElementById('teachingTimelineSelectHomeMaterialBtn');
     const selectMaterialBtn = document.getElementById('teachingTimelineSelectMaterialBtn');
     const aiMaterialBtn = document.getElementById('teachingTimelineAiMaterialBtn');
     const lessonDocRewriteBtn = document.getElementById('teachingTimelineLessonDocRewriteBtn');
     const lessonDocNextBtn = document.getElementById('teachingTimelineLessonDocNextBtn');
-    const openHomeMaterialBtn = document.getElementById('teachingTimelineOpenHomeMaterialBtn');
-    const openMaterialBtn = document.getElementById('teachingTimelineOpenMaterialBtn');
     const sessionModal = document.getElementById('teachingSessionModal');
     const sessionModalCloseBtn = document.getElementById('teachingSessionModalClose');
     const sessionModalKicker = document.getElementById('teachingSessionModalKicker');
@@ -2021,7 +920,8 @@ function initTeachingTimeline() {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const resolveBehavior = (behavior) => (prefersReducedMotion ? 'auto' : behavior);
     let selectedOrder = String(
-        sessions.find((session) => session.is_anchor)?.order_index
+        (sessions.some(session => String(session.order_index) === String(window.APP_CONFIG?.workspaceSelectedOrder)) ? window.APP_CONFIG.workspaceSelectedOrder : null)
+        ?? sessions.find((session) => session.is_anchor)?.order_index
         ?? sessions[0]?.order_index
         ?? '',
     );
@@ -2073,6 +973,7 @@ function initTeachingTimeline() {
             : Boolean(session?.learning_material_id && session?.learning_material_viewer_url);
     };
     const publishSelectedSessionContext = (session) => {
+        document.dispatchEvent(new CustomEvent("classroom:session-selected", { detail: session }));
         if (!session || isHomeEntry(session) || isAcademicExamEntry(session)) {
             window.LANSHARE_SELECTED_CLASSROOM_SESSION = null;
             return;
@@ -2216,6 +1117,10 @@ function initTeachingTimeline() {
     const openSessionModal = (session) => {
         if (!sessionModal || !session) return;
         renderSessionModal(session);
+        if (compactWorkspace) {
+            document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: 'session-detail' } }));
+            return;
+        }
         sessionModal.hidden = false;
         sessionModal.classList.add('is-open');
         document.body.classList.add('has-teaching-session-modal');
@@ -2223,6 +1128,7 @@ function initTeachingTimeline() {
     };
     const closeSessionModal = () => {
         if (!sessionModal) return;
+        if (compactWorkspace) document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { back: true } }));
         sessionModal.classList.remove('is-open');
         document.body.classList.remove('has-teaching-session-modal');
         sessionModal.hidden = true;
@@ -2275,6 +1181,7 @@ function initTeachingTimeline() {
     };
 
     const syncProjection = () => {
+        if (compactWorkspace) return;
         if (!stageEl || !detailCard) return;
         const activeButton = buttonMap.get(selectedOrder);
         if (!activeButton) return;
@@ -2308,6 +1215,7 @@ function initTeachingTimeline() {
     };
 
     const syncCardMotion = () => {
+        if (compactWorkspace) return;
         if (!sessionButtons.length) return;
         const viewportCenter = scrollEl.scrollLeft + (scrollEl.clientWidth / 2);
         const baseWidth = sessionButtons[0]?.offsetWidth || 180;
@@ -2333,6 +1241,7 @@ function initTeachingTimeline() {
     };
 
     const playDetailTransition = () => {
+        if (compactWorkspace) return;
         if (!detailCard || prefersReducedMotion) return;
         window.clearTimeout(detailTransitionTimer);
         detailCard.classList.remove('is-switching');
@@ -2348,8 +1257,8 @@ function initTeachingTimeline() {
         detailMeta.textContent = '';
 
         const metaItems = [];
-        if (session.detail_meta) {
-            metaItems.push({ text: session.detail_meta, warning: false });
+        if (session.workspace_meta || session.detail_meta) {
+            metaItems.push({ text: session.workspace_meta || session.detail_meta, warning: false });
         }
         if (session.detail_hint) {
             metaItems.push({ text: session.detail_hint, warning: true });
@@ -2368,6 +1277,13 @@ function initTeachingTimeline() {
     const renderDetailSummary = (session) => {
         if (!detailSummary) return;
 
+        if (compactWorkspace) {
+            const summary = Object.prototype.hasOwnProperty.call(session, 'workspace_summary')
+                ? session.workspace_summary : (session.detail_summary || '');
+            detailSummary.textContent = String(summary).replace(/\s+/g, ' ').trim().slice(0, 140);
+            detailSummary.hidden = !detailSummary.textContent;
+            return;
+        }
         const cacheKey = String(session.order_index ?? '');
         if (detailSummaryCache.has(cacheKey)) {
             detailSummary.classList.add('md-content');
@@ -2407,89 +1323,6 @@ function initTeachingTimeline() {
             .replace(/>/g, '&gt;')
             .replace(/\n/g, '<br>');
         detailSummaryCache.set(cacheKey, detailSummary.innerHTML);
-    };
-
-    const renderMaterialPanel = (session) => {
-        if (!materialPanel || !materialName || !materialPath) return;
-        const homeEntry = isHomeEntry(session);
-        const examEntry = isAcademicExamEntry(session);
-        const hasMaterial = getSessionMaterialReady(session);
-        const homeReady = hasHomeMaterial();
-        materialPanel.classList.toggle('is-empty', !hasMaterial);
-        materialPanel.dataset.materialReady = hasMaterial ? 'true' : 'false';
-        materialPanel.dataset.entryType = examEntry ? 'academic_exam' : (homeEntry ? 'home' : 'lesson');
-
-        if (openMaterialLabel) {
-            openMaterialLabel.textContent = examEntry ? '教务考试' : (homeEntry ? '首页' : '学习文档');
-        }
-        if (openHomeMaterialBtn) {
-            openHomeMaterialBtn.hidden = !homeReady || homeEntry || examEntry;
-            openHomeMaterialBtn.disabled = !homeReady || homeEntry || examEntry;
-            openHomeMaterialBtn.dataset.materialReady = homeReady ? 'true' : 'false';
-        }
-
-        if (examEntry) {
-            materialName.textContent = session.exam_name || session.detail_title || '教务系统考试安排';
-            materialPath.textContent = [session.exam_time_text, session.exam_location].filter(Boolean).join(' · ') || '考试时间与地点以教务系统为准';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '点击卡片可查看考试详情；重新同步会刷新时间和地点。';
-            }
-        } else if (homeEntry && hasMaterial) {
-            materialName.textContent = session.home_learning_material_name || session.learning_material_name || '课程学习首页';
-            materialPath.textContent = session.home_learning_material_path || session.learning_material_path || '';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '打开课程目录与简介';
-            }
-        } else if (homeEntry && isTeacher) {
-            materialName.textContent = '尚未配置课程首页';
-            materialPath.textContent = '可绑定课程首页 Markdown，用于目录、简介和后续文档导航。';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '先设置课程首页';
-            }
-        } else if (homeEntry) {
-            materialName.textContent = '教师尚未配置课程首页';
-            materialPath.textContent = '当前课堂还没有可打开的课程首页。';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '等待教师配置课程首页';
-            }
-        } else if (hasMaterial) {
-            materialName.textContent = session.learning_material_name || '已绑定课堂文档';
-            materialPath.textContent = session.learning_material_path || '';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '进入本次课学习入口';
-            }
-        } else if (isTeacher) {
-            materialName.textContent = '尚未绑定课堂文档';
-            materialPath.textContent = '可为本次课绑定一份 Markdown 材料，师生可从这里直接进入文档页面。';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '先为本次课绑定文档';
-            }
-        } else {
-            materialName.textContent = '教师尚未配置学习文档';
-            materialPath.textContent = '当前节点还没有可打开的课堂文档。';
-            if (openMaterialHint) {
-                openMaterialHint.textContent = '等待教师配置学习文档';
-            }
-        }
-
-        const materialCount = Number(session?.learning_material_count || 0);
-        if (!examEntry && hasMaterial && materialCount > 1) {
-            const primaryName = homeEntry
-                ? (session.home_learning_material_name || session.learning_material_name || '')
-                : (session.learning_material_name || '');
-            materialName.textContent = `${materialCount} 份学习材料`;
-            materialPath.textContent = primaryName ? `含「${primaryName}」等，点击查看全部` : '点击查看全部材料';
-            if (openMaterialLabel) openMaterialLabel.textContent = '材料列表';
-            if (openMaterialHint) openMaterialHint.textContent = `共 ${materialCount} 份，点击逐项进入`;
-        } else if (!examEntry && hasMaterial && openMaterialHint) {
-            openMaterialHint.textContent = '点击查看材料列表';
-        }
-
-        if (openMaterialBtn) {
-            openMaterialBtn.hidden = examEntry;
-            openMaterialBtn.disabled = examEntry || !hasMaterial;
-            openMaterialBtn.dataset.materialReady = hasMaterial ? 'true' : 'false';
-        }
     };
 
     const syncTeacherActionState = (session) => {
@@ -2664,6 +1497,7 @@ function initTeachingTimeline() {
     };
 
     const focusSession = (sessionOrder, behavior = 'smooth') => {
+        if (compactWorkspace) return;
         animateToScrollLeft(getSessionCenterScrollLeft(sessionOrder), {
             behavior: resolveBehavior(behavior),
             stiffness: behavior === 'gear' ? 0.34 : 0.24,
@@ -2708,8 +1542,8 @@ function initTeachingTimeline() {
         }
         renderDetailSummary(session);
         renderDetailMeta(session);
-        renderMaterialPanel(session);
         syncTeacherActionState(session);
+        if (compactWorkspace && detailActions?.closest('details')) detailActions.closest('details').hidden = isAcademicExamEntry(session);
         if (isHomeEntry(session) || isAcademicExamEntry(session)) {
             sessionMaterialAssistant?.syncSelectedSession(null);
         } else {
@@ -2730,8 +1564,9 @@ function initTeachingTimeline() {
             has_learning_material: Boolean(patch.learning_material_id),
         });
         updateSessionButtonMaterialState(session);
+        document.dispatchEvent(new CustomEvent('classroom:materials-changed'));
         if (String(session.order_index) === selectedOrder) {
-            renderMaterialPanel(session);
+            publishSelectedSessionContext(session);
             sessionMaterialAssistant?.syncSelectedSession(session);
         }
         scheduleProjectionSync();
@@ -2784,13 +1619,11 @@ function initTeachingTimeline() {
                     }
                     renderDetailSummary(homeEntry);
                     renderDetailMeta(homeEntry);
-                    renderMaterialPanel(homeEntry);
                 }
             }
         }
         const currentSession = getSessionByOrder(selectedOrder);
         syncTeacherActionState(currentSession);
-        renderMaterialPanel(currentSession);
         sessionMaterialAssistant?.syncSelectedSession(
             currentSession && !isHomeEntry(currentSession) && !isAcademicExamEntry(currentSession) ? currentSession : null,
         );
@@ -2856,7 +1689,9 @@ function initTeachingTimeline() {
             behavior: options.behavior || 'gear',
             forceCenter: true,
         });
-        if (options.openModal !== false) {
+        if (compactWorkspace) {
+            document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: null } }));
+        } else if (options.openModal !== false) {
             openSessionModal(getSessionByOrder(order));
         }
     };
@@ -2926,6 +1761,7 @@ function initTeachingTimeline() {
     };
 
     scrollEl.addEventListener('pointerdown', (event) => {
+        if (compactWorkspace) return;
         if (!event.isPrimary || event.button !== 0) return;
         stopTimelineMotion();
         pointerId = event.pointerId;
@@ -2998,14 +1834,14 @@ function initTeachingTimeline() {
             activateSessionButton(button);
         });
         button.addEventListener('keydown', (event) => {
-            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+            if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
                 return;
             }
             event.preventDefault();
             const currentIndex = sessions.findIndex((session) => String(session.order_index) === selectedOrder);
             if (currentIndex === -1) return;
-            const nextIndex = event.key === 'ArrowRight'
-                ? Math.min(currentIndex + 1, sessions.length - 1)
+            const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? sessions.length - 1
+                : ['ArrowRight', 'ArrowDown'].includes(event.key) ? Math.min(currentIndex + 1, sessions.length - 1)
                 : Math.max(currentIndex - 1, 0);
             const nextOrder = sessions[nextIndex]?.order_index;
             if (nextOrder != null) {
@@ -3027,13 +1863,14 @@ function initTeachingTimeline() {
             behavior: 'gear',
             forceCenter: true,
         });
-        sessionButtons[nextIndex]?.focus({ preventScroll: true });
+        if (!compactWorkspace) sessionButtons[nextIndex]?.focus({ preventScroll: true });
     };
 
     prevTimelineBtn?.addEventListener('click', () => shiftActiveSession(-1));
     nextTimelineBtn?.addEventListener('click', () => shiftActiveSession(1));
 
     scrollEl.addEventListener('scroll', () => {
+        if (compactWorkspace) return;
         scheduleProjectionSync();
         scheduleCardMotionSync();
         if (pointerId !== null || motionMode !== 'idle' || performance.now() < suppressSnapUntil) return;
@@ -3084,13 +1921,17 @@ function initTeachingTimeline() {
         showToast(result.message || '材料已添加到首页', 'success');
     };
 
-    const openSessionMaterialList = (session) => {
+    const openSessionMaterialList = (session, returnFocus = null) => {
         const home = isHomeEntry(session);
-        openMaterialListPopup({
+        const fromDetails = Boolean(document.querySelector('.cw-dialog .teaching-session-modal-body'));
+        const restoreTarget = returnFocus || (fromDetails ? document.getElementById('cw-session-details')
+            : document.querySelector('#cw-materials-preview .cw-secondary-actions .cw-text-button'));
+        const showList = () => openMaterialListPopup({
             classOfferingId: classOfferingIdValue(),
             sessionId: home ? 0 : (session?.id || 0),
             isHome: home,
             isTeacher,
+            returnFocus: restoreTarget,
             title: home ? '课程首页材料' : (session?.detail_title || session?.title || '本次课材料'),
             subtitle: home ? '课程目录、简介与导航材料' : '点击任意卡片进入材料',
             onChanged: (result) => {
@@ -3104,33 +1945,19 @@ function initTeachingTimeline() {
                 }
             },
         }).catch((error) => showToast(error.message || '加载材料列表失败', 'error'));
+        if (compactWorkspace && document.querySelector('.cw-dialog')) {
+            document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: null } }));
+            window.setTimeout(showList, 0);
+        } else {
+            showList();
+        }
     };
-
-    openMaterialBtn?.addEventListener('click', () => {
-        const session = getSessionByOrder(selectedOrder);
-        if (!getSessionMaterialReady(session)) {
-            if (isHomeEntry(session)) {
-                showToast(isTeacher ? '课程首页尚未配置材料' : '教师尚未配置课程首页', 'warning');
-            } else {
-                showToast(isTeacher ? '当前次课还没有绑定材料' : '教师尚未配置学习材料', 'warning');
-            }
-            return;
-        }
-        openSessionMaterialList(session);
-    });
-
-    openHomeMaterialBtn?.addEventListener('click', () => {
-        if (!hasHomeMaterial()) {
-            showToast(isTeacher ? '课程首页尚未配置材料' : '教师尚未配置课程首页', 'warning');
-            return;
-        }
-        openSessionMaterialList({ is_home_entry: true });
-    });
 
     selectHomeMaterialBtn?.addEventListener('click', async () => {
         try {
             const selectedMaterial = await learningMaterialSelector.open({
                 title: '添加课程首页材料',
+                manageClassroomFocus: true,
                 subtitle: '课程目录与简介，显示在第一课之前；可添加多份材料。',
                 confirmLabel: '添加为首页材料',
                 footerNote: '可绑定 Markdown 文档或可渲染的 HTML（单体文件或前端项目目录）。单击文件选中，双击文件夹进入；可点“选择此文件夹”绑定整个网页目录。',
@@ -3151,6 +1978,7 @@ function initTeachingTimeline() {
         try {
             const selectedMaterial = await learningMaterialSelector.open({
                 title: '添加课堂材料',
+                manageClassroomFocus: true,
                 subtitle: '为本次课绑定学习材料，可同时绑定多份。',
                 confirmLabel: '添加到本次课',
                 footerNote: '可绑定 Markdown 文档或可渲染的 HTML（单体文件或前端项目目录）。单击文件选中，双击文件夹进入；可点“选择此文件夹”绑定整个网页目录。',
@@ -3217,6 +2045,8 @@ function initTeachingTimeline() {
         runLessonDocGeneration(nextLesson, 'generate');
     });
 
+    document.getElementById('cw-session-details')?.addEventListener('click', () => openSessionModal(getSessionByOrder(selectedOrder)));
+    document.addEventListener('classroom:manage-session-materials', event => openSessionMaterialList(getSessionByOrder(selectedOrder), event.detail?.returnFocus));
     if (isTeacher) loadLessonDocPack();
 
     window.requestAnimationFrame(() => {
@@ -3849,7 +2679,6 @@ function initClassroomActivitySidebar() {
     const shell = document.querySelector('[data-classroom-activity-shell]');
     if (!shell) return;
 
-    const activityWorkspaceEventName = 'lanshare:classroom-activity-workspace-change';
     const activityWorkspaceCommandEventName = 'lanshare:classroom-activity-workspace-command';
     const tabs = Array.from(shell.querySelectorAll('[data-classroom-activity-tab]'));
     const panels = new Map(
@@ -3862,7 +2691,7 @@ function initClassroomActivitySidebar() {
     const sectionToKey = new Map(
         tabs.map((tab) => [tab.dataset.classroomActivityTarget, tab.dataset.classroomActivityTab]),
     );
-    const liveCountKeys = new Set(['interaction', 'discussion', 'collaboration']);
+    const liveCountKeys = new Set(['interaction', 'discussion', 'collaboration', 'polls']);
     const counts = new Map();
     let activeActivityKey = '';
 
@@ -3872,65 +2701,12 @@ function initClassroomActivitySidebar() {
         return Math.round(numeric);
     };
 
-    const readText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim();
-
-    const getActivityNote = (key) => {
-        const notes = {
-            interaction: '课堂互动与即时反馈',
-            discussion: '研讨室与一对一消息',
-            collaboration: '小组协作空间',
-            resources: '资料上传与共享',
-        };
-        return notes[key] || '';
-    };
-
-    const getActivityLabel = (tab, key) => (
-        readText(tab.querySelector('.classroom-activity-tab__copy strong'))
-        || readText(tab.querySelector('strong'))
-        || tab.getAttribute('aria-label')
-        || key
-    );
-
-    const buildActivitySnapshot = () => {
-        const activeKey = activeActivityKey || tabs.find((tab) => tab.classList.contains('is-active'))?.dataset.classroomActivityTab || 'interaction';
-        const items = tabs.map((tab) => {
-            const key = tab.dataset.classroomActivityTab || '';
-            const targetId = tab.dataset.classroomActivityTarget || '';
-            return {
-                key,
-                label: getActivityLabel(tab, key),
-                note: getActivityNote(key),
-                targetId,
-                count: toCount(counts.get(key)),
-                isActive: key === activeKey,
-                exists: panels.has(key),
-            };
-        }).filter((item) => item.key);
-        const liveTotal = Array.from(liveCountKeys).reduce((total, key) => total + toCount(counts.get(key)), 0);
-        const resourceTotal = toCount(counts.get('resources'));
-        const role = String(window.APP_CONFIG?.userInfo?.role || window.APP_CONFIG?.userRole || '');
-
-        return {
-            role,
-            activeKey,
-            items,
-            liveTotal,
-            resourceTotal,
-            total: liveTotal + resourceTotal,
-        };
-    };
-
-    const publishActivitySnapshot = () => {
-        const snapshot = buildActivitySnapshot();
-        window.__LANSHARE_CLASSROOM_ACTIVITY_WORKSPACE__ = snapshot;
-        window.dispatchEvent(new CustomEvent(activityWorkspaceEventName, { detail: snapshot }));
-    };
-
     const countEls = Array.from(shell.querySelectorAll('[data-classroom-activity-count]'));
     countEls.forEach((element) => {
         const initialCount = toCount(element.textContent);
         counts.set(element.dataset.classroomActivityCount, initialCount);
         element.toggleAttribute('data-empty', initialCount === 0);
+        element.hidden = initialCount === 0;
     });
 
     const setTotal = () => {
@@ -3938,6 +2714,7 @@ function initClassroomActivitySidebar() {
         document.querySelectorAll('[data-classroom-activity-total]').forEach((element) => {
             element.textContent = String(liveTotal);
             element.toggleAttribute('data-empty', liveTotal === 0);
+            element.hidden = liveTotal === 0;
         });
     };
 
@@ -3948,6 +2725,7 @@ function initClassroomActivitySidebar() {
         document.querySelectorAll(`[data-classroom-activity-count="${key}"]`).forEach((element) => {
             element.textContent = String(nextCount);
             element.toggleAttribute('data-empty', nextCount === 0);
+            element.hidden = nextCount === 0;
         });
         if (note) {
             document.querySelectorAll(`[data-classroom-activity-note="${key}"]`).forEach((element) => {
@@ -3955,7 +2733,6 @@ function initClassroomActivitySidebar() {
             });
         }
         setTotal();
-        publishActivitySnapshot();
     };
 
     const resolveKeyFromHash = (hashText) => {
@@ -3972,6 +2749,7 @@ function initClassroomActivitySidebar() {
             const isActive = tab.dataset.classroomActivityTab === normalizedKey;
             tab.classList.toggle('is-active', isActive);
             tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            tab.tabIndex = isActive ? 0 : -1;
         });
         panels.forEach((panel, panelKey) => {
             const isActive = panelKey === normalizedKey;
@@ -3995,7 +2773,7 @@ function initClassroomActivitySidebar() {
         window.requestAnimationFrame(() => {
             window.dispatchEvent(new Event('resize'));
         });
-        publishActivitySnapshot();
+        document.dispatchEvent(new CustomEvent('classroom:activity-visible', { detail: { activity: normalizedKey } }));
     };
 
     const refreshActiveActivity = () => {
@@ -4010,7 +2788,6 @@ function initClassroomActivitySidebar() {
             document.getElementById('chat-input')?.focus({ preventScroll: true });
             window.dispatchEvent(new Event('resize'));
         }
-        publishActivitySnapshot();
     };
 
     const handleActivityWorkspaceCommand = (event) => {
@@ -4027,7 +2804,6 @@ function initClassroomActivitySidebar() {
                 block: 'start',
                 behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
             });
-            publishActivitySnapshot();
         }
         if (commandType === 'refresh-active') {
             refreshActiveActivity();
@@ -4040,6 +2816,15 @@ function initClassroomActivitySidebar() {
                 updateHash: true,
                 scroll: window.innerWidth <= 1180,
             });
+        });
+        tab.addEventListener('keydown', event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const index = tabs.indexOf(tab);
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+                : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            openActivity(tabs[next].dataset.classroomActivityTab, { updateHash: true, scroll: false });
+            tabs[next].focus();
         });
     });
 
@@ -4062,7 +2847,7 @@ function initClassroomActivitySidebar() {
     window.addEventListener('classroom:activity-counts', (event) => {
         const detail = event.detail || {};
         const nextCounts = detail.counts && typeof detail.counts === 'object' ? detail.counts : detail;
-        ['interaction', 'discussion', 'collaboration', 'resources'].forEach((key) => {
+        ['interaction', 'discussion', 'collaboration', 'resources', 'polls'].forEach((key) => {
             if (Object.prototype.hasOwnProperty.call(nextCounts, key)) {
                 setCount(key, nextCounts[key], detail.notes?.[key] || detail[`${key}Note`] || '');
             }
@@ -4078,7 +2863,6 @@ function initClassroomActivitySidebar() {
         openActivity(defaultKey, { updateHash: false, scroll: false });
     }
     setTotal();
-    publishActivitySnapshot();
 }
 
 function initAcademicCourseExamPanel(config = window.APP_CONFIG || {}) {
@@ -4162,13 +2946,10 @@ export function initClassroomPage() {
     initWorkspaceNav();
     initClassroomActivitySidebar();
     initTeachingTimeline();
-    initMaterialLearningPathBridge();
     initAcademicCourseExamPanel();
-    let assignmentTaskBoard = null;
-    const assignmentClocks = initAssignmentClocks({
-        onStateChange: (timeStates) => assignmentTaskBoard?.updateTimeStates(timeStates),
+    initAssignmentClocks({
+        onStateChange: timeStates => document.dispatchEvent(new CustomEvent('classroom:assignment-time-states', { detail: timeStates })),
     });
-    assignmentTaskBoard = initAssignmentTaskBoard(assignmentClocks);
     personalizeClassroomCopy();
     document.addEventListener('classroom:alias-change', (event) => {
         personalizeClassroomCopy(event.detail || {});

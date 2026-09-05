@@ -71,6 +71,7 @@ function refs() {
         generateBtn: document.getElementById('classroom-final-material-generate-btn'),
         selectionBar: document.getElementById('classroom-materials-selection'),
         selectionCount: document.getElementById('classroom-materials-selection-count'),
+        selectAll: document.getElementById('classroom-materials-select-all'),
         selectionDownloadBtn: document.getElementById('classroom-materials-download-btn'),
         detailModal: document.getElementById('classroom-material-detail-modal'),
         detailTitle: document.getElementById('classroom-material-detail-title'),
@@ -127,6 +128,10 @@ function isTeacher() {
 
 function openModal(modal) {
     if (!modal) return;
+    if (modal.id === 'classroom-material-detail-modal' && document.body.classList.contains('classroom-workspace-v2')) {
+        document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: 'material-detail' } }));
+        return;
+    }
     modal.style.display = 'flex';
     modal.setAttribute('aria-hidden', 'false');
     modal.classList.add('show');
@@ -135,6 +140,10 @@ function openModal(modal) {
 
 function closeModal(modal) {
     if (!modal) return;
+    if (modal.id === 'classroom-material-detail-modal' && document.body.classList.contains('classroom-workspace-v2')) {
+        document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { back: true } }));
+        return;
+    }
     modal.style.display = 'none';
     modal.setAttribute('aria-hidden', 'true');
     modal.classList.remove('show');
@@ -197,6 +206,12 @@ function updateSelectionBar() {
     const count = state.selectedIds.size;
     el.hidden = count === 0;
     refs().selectionCount.textContent = String(count);
+    const selectAll = refs().selectAll;
+    if (selectAll) {
+        selectAll.disabled = state.items.length === 0;
+        selectAll.checked = state.items.length > 0 && count === state.items.length;
+        selectAll.indeterminate = count > 0 && count < state.items.length;
+    }
 }
 
 function renderBreadcrumbs() {
@@ -247,7 +262,7 @@ function renderList() {
                 data-material-primary-action="${escapeHtml(primaryAction.action || '')}"
             >
                 <div>
-                    <input type="checkbox" data-role="select-item" data-id="${item.id}" ${state.selectedIds.has(item.id) ? 'checked' : ''}>
+                    <input type="checkbox" data-role="select-item" data-id="${item.id}" aria-label="${escapeHtml(`选择材料：${item.name || '未命名材料'}`)}" ${state.selectedIds.has(item.id) ? 'checked' : ''}>
                 </div>
                 <div class="materials-name-cell">
                     <div class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</div>
@@ -1732,6 +1747,15 @@ export function init(appConfig) {
         }
     });
 
+    dom.selectAll?.addEventListener('change', () => {
+        state.selectedIds.clear();
+        if (dom.selectAll.checked) state.items.forEach(item => state.selectedIds.add(Number(item.id)));
+        dom.list.querySelectorAll('[data-role="select-item"]').forEach(checkbox => {
+            checkbox.checked = state.selectedIds.has(Number(checkbox.dataset.id));
+        });
+        updateSelectionBar();
+    });
+
     dom.list.addEventListener('dblclick', (event) => {
         const row = event.target.closest('.materials-row');
         if (!row) return;
@@ -1747,14 +1771,26 @@ export function init(appConfig) {
         }
     });
 
-    loadMaterials().catch((error) => {
-        console.error(error);
-        dom.list.innerHTML = `<div class="materials-empty">加载材料失败：${escapeHtml(error.message || '未知错误')}</div>`;
-    });
+    let directoryLoaded = false;
+    const loadDirectory = () => {
+        if (directoryLoaded) return;
+        directoryLoaded = true;
+        loadMaterials().catch((error) => {
+            directoryLoaded = false;
+            dom.list.innerHTML = `<div class="materials-empty">加载材料失败：${escapeHtml(error.message || '未知错误')}。请点击刷新重试。</div>`;
+        });
+    };
+    if (document.body.classList.contains('classroom-workspace-v2')) {
+        document.addEventListener('classroom:workspace-surface-visible', event => {
+            if (event.detail?.panel === 'materials') loadDirectory();
+        });
+        if (dom.list.closest('.cw-dialog')) loadDirectory();
+    } else loadDirectory();
     openInitialFinalMaterialModalIfRequested(dom);
 }
 
 export async function refresh() {
     if (!config) return;
+    document.dispatchEvent(new CustomEvent('classroom:materials-changed'));
     await loadMaterials(state.currentParentId);
 }

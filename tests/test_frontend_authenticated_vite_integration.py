@@ -25,16 +25,12 @@ REQUIRED_AUTHENTICATED_ISLANDS = (
 REQUIRED_PAGE_ISLANDS = (
     "frontend/src/islands/assignment-authoring-sync.tsx",
     "frontend/src/islands/assignment-submit-sync.tsx",
-    "frontend/src/islands/assignment-task-board-sync.tsx",
     "frontend/src/islands/classroom-page.tsx",
-    "frontend/src/islands/classroom-activity-workspace-sync.tsx",
+    "frontend/src/islands/dashboard-quick-actions.tsx",
     "frontend/src/islands/exam-assign-sync.tsx",
-    "frontend/src/islands/learning-progress-sync.tsx",
-    "frontend/src/islands/material-learning-path-sync.tsx",
     "frontend/src/islands/materials-manage-page.tsx",
     "frontend/src/islands/message-center-page.tsx",
     "frontend/src/islands/message-center-workspace-sync.tsx",
-    "frontend/src/islands/resource-workspace-sync.tsx",
     "frontend/src/islands/submission-jump-nav.tsx",
 )
 
@@ -373,7 +369,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         self.assertIn("window.zeroUnsubmittedScores = async function()", html)
         self.assertIn("window.openWithdrawModalForSelected = function()", html)
 
-    def test_classroom_main_keeps_floating_nav_without_removing_legacy_modules(self):
+    def test_classroom_workspace_retires_duplicate_boards_and_preserves_business_modules(self):
         fixture = _load_teacher_classroom_fixture()
         if fixture is None:
             self.skipTest("No teacher-accessible classroom is available for classroom workspace nav smoke test.")
@@ -396,21 +392,19 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         html = response.text
         self.assertIn('data-lanshare-island="classroom-page"', html)
         self.assertNotIn('data-lanshare-island="classroom-workspace-nav-sync"', html)
-        self.assertIn('data-lanshare-island="assignment-task-board-sync"', html)
-        self.assertIn('data-lanshare-island="classroom-activity-workspace-sync"', html)
-        self.assertIn('data-lanshare-island="resource-workspace-sync"', html)
-        self.assertIn('data-lanshare-island="material-learning-path-sync"', html)
-        if 'id="learning-progress-modal"' in html:
-            self.assertIn('data-lanshare-island="learning-progress-sync"', html)
+        self.assertIn('id="cw-tasks-preview"', html)
+        self.assertIn('id="cw-materials-preview"', html)
+        self.assertIn('data-cw-source="tasks"', html)
+        self.assertIn('data-cw-source="materials"', html)
+        if 'id="teachingTimelineScroll"' in html:
+            self.assertIn('data-cw-source="timeline"', html)
+        for retired in ('assignment-task-board-sync', 'classroom-activity-workspace-sync',
+                        'resource-workspace-sync', 'material-learning-path-sync', 'learning-progress-sync'):
+            self.assertNotIn(retired, html)
         self.assertIn('data-lanshare-island="assignment-authoring-sync"', html)
         self.assertIn('data-lanshare-island="exam-assign-sync"', html)
         self.assertNotIn("classroom-workspace-nav-sync", html)
-        self.assertIn("assignment-task-board-sync", html)
-        self.assertIn("classroom-activity-workspace-sync", html)
-        self.assertIn("resource-workspace-sync", html)
-        self.assertIn("material-learning-path-sync", html)
         if 'id="learning-progress-modal"' in html:
-            self.assertIn("learning-progress-sync", html)
             self.assertIn("data-learning-modal-open", html)
         self.assertIn("assignment-authoring-sync", html)
         self.assertIn("exam-assign-sync", html)
@@ -485,7 +479,8 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         html = response.text
         self.assertIn('data-lanshare-island="materials-manage-page"', html)
         self.assertIn("materials-manage-page", html)
-        self.assertNotIn("/static/js/materials_manage.js", html)
+        self.assertNotRegex(html, r'<script[^>]+src="/static/js/materials_manage\.js')
+        self.assertIn("window.__LANSHARE_MATERIALS_MANAGE_PAGE_CONTROLLER__ ||= import(", html)
         self.assertIn("window.MATERIALS_MANAGE_CONFIG", html)
         self.assertIn('data-testid="p03-materials-list"', html)
         self.assertIn('data-testid="p03-materials-refresh"', html)

@@ -2549,6 +2549,47 @@ function initOpenContextHooks() {
 
 let aiWorkspaceWidgetInitialized = false;
 
+function initScopedModelessKeyboard() {
+    if (!document.body.matches('.dw-page, .classroom-workspace-v2')) return;
+    const modal = $('#ai-chat-modal');
+    const container = $('.ai-chat-container', modal || document);
+    const fab = $('#ai-chat-fab');
+    const close = $('#ai-chat-btn-close');
+    if (!modal || !container || !fab || !close) return;
+
+    // This floating workspace deliberately permits work on the page behind it.
+    container.setAttribute('aria-modal', 'false');
+    modal.style.pointerEvents = 'none';
+    modal.style.background = 'transparent';
+    // Keep the workspace below these pages' real modal overlays (5090+).
+    modal.style.zIndex = '5000';
+    container.style.pointerEvents = 'auto';
+    let returnTarget = fab;
+    window.addEventListener('ai-workspace:opened', () => {
+        const active = document.activeElement;
+        if (active instanceof HTMLElement && active !== document.body && !modal.contains(active)) {
+            returnTarget = active;
+        }
+    });
+    close.addEventListener('click', () => {
+        if (modal.getAttribute('aria-hidden') !== 'true') return;
+        const target = returnTarget.isConnected && returnTarget.getClientRects().length ? returnTarget : fab;
+        target.focus({ preventScroll: true });
+    });
+    modal.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented ||
+            event.target.closest('[role="dialog"]') !== container) return;
+        // A real modal opened above this tool owns Escape until it is dismissed.
+        const blockingDialog = [...document.querySelectorAll('[role="dialog"][aria-modal="true"], dialog[open]')]
+            .some((dialog) => dialog !== container && dialog.getClientRects().length &&
+                getComputedStyle(dialog).visibility !== 'hidden');
+        if (blockingDialog) return;
+        event.preventDefault();
+        event.stopPropagation();
+        close.click();
+    });
+}
+
 function initAIWorkspaceWidget() {
     if (aiWorkspaceWidgetInitialized) {
         return;
@@ -2561,7 +2602,14 @@ function initAIWorkspaceWidget() {
     if (!chatReady) {
         initFallbackShell();
     }
+    initScopedModelessKeyboard();
     initOpenContextHooks();
+    const deferredLauncher = $('#ai-chat-fab[data-ai-deferred]');
+    if (deferredLauncher) {
+        deferredLauncher.disabled = false;
+        deferredLauncher.removeAttribute('aria-busy');
+        deferredLauncher.removeAttribute('data-ai-deferred');
+    }
     bindTaskCenter();
     refreshContextPreview();
     handleAgentSubscriptionDeepLink().catch((error) => notify(error.message || 'Agent 定时任务链接打开失败', 'error'));

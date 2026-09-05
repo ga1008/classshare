@@ -2,7 +2,10 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Production bundles are served by FastAPI below /static/dist/. This also
+  // supplies the base for Vite's generated dynamic-import preload URLs.
+  base: command === 'build' ? '/static/dist/' : '/',
   plugins: [react()],
   publicDir: false,
   server: {
@@ -26,22 +29,17 @@ export default defineConfig({
         'app-shell': resolve(__dirname, 'frontend/src/islands/app-shell.tsx'),
         'assignment-authoring-sync': resolve(__dirname, 'frontend/src/islands/assignment-authoring-sync.tsx'),
         'assignment-submit-sync': resolve(__dirname, 'frontend/src/islands/assignment-submit-sync.tsx'),
-        'assignment-task-board-sync': resolve(__dirname, 'frontend/src/islands/assignment-task-board-sync.tsx'),
         'blog-launcher': resolve(__dirname, 'frontend/src/islands/blog-launcher.tsx'),
         'blog-topbar-sync': resolve(__dirname, 'frontend/src/islands/blog-topbar-sync.tsx'),
         'classroom-page': resolve(__dirname, 'frontend/src/islands/classroom-page.tsx'),
-        'classroom-activity-workspace-sync': resolve(__dirname, 'frontend/src/islands/classroom-activity-workspace-sync.tsx'),
         'dashboard-quick-actions': resolve(__dirname, 'frontend/src/islands/dashboard-quick-actions.tsx'),
         'exam-assign-sync': resolve(__dirname, 'frontend/src/islands/exam-assign-sync.tsx'),
         'feedback-launcher': resolve(__dirname, 'frontend/src/islands/feedback-launcher.tsx'),
-        'learning-progress-sync': resolve(__dirname, 'frontend/src/islands/learning-progress-sync.tsx'),
-        'material-learning-path-sync': resolve(__dirname, 'frontend/src/islands/material-learning-path-sync.tsx'),
         'materials-manage-page': resolve(__dirname, 'frontend/src/islands/materials-manage-page.tsx'),
         'message-center-page': resolve(__dirname, 'frontend/src/islands/message-center-page.tsx'),
         'message-center-workspace-sync': resolve(__dirname, 'frontend/src/islands/message-center-workspace-sync.tsx'),
         'message-center-sync': resolve(__dirname, 'frontend/src/islands/message-center-sync.tsx'),
         'profile-launcher': resolve(__dirname, 'frontend/src/islands/profile-launcher.tsx'),
-        'resource-workspace-sync': resolve(__dirname, 'frontend/src/islands/resource-workspace-sync.tsx'),
         'student-security-sync': resolve(__dirname, 'frontend/src/islands/student-security-sync.tsx'),
         'submission-jump-nav': resolve(__dirname, 'frontend/src/islands/submission-jump-nav.tsx'),
       },
@@ -56,4 +54,4 @@ export default defineConfig({
     include: ['frontend/src/**/*.test.ts', 'static/js/whiteboard/**/*.test.js', 'static/js/lessondoc_editor/**/*.test.js'],
     exclude: ['node_modules', 'dist', 'static/dist', '.codex-temp', 'data', 'venv'],
   },
-});
+}));

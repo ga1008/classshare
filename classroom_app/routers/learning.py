@@ -219,7 +219,11 @@ async def get_learning_progress(class_offering_id: int, user: dict = Depends(get
             overview = build_class_learning_overview(conn, class_offering_id)
             conn.commit()
             return {"status": "success", "overview": overview}
-        progress = serialize_student_learning_progress(conn, class_offering_id, int(user["id"]))
+        try:
+            progress = serialize_student_learning_progress(conn, class_offering_id, int(user["id"]))
+        except Exception as exc:
+            conn.rollback()
+            raise HTTPException(503, "修为暂时无法读取，请稍后重试") from exc
         conn.commit()
         return {"status": "success", "progress": progress}
 

@@ -71,9 +71,22 @@ test.describe('teacher dashboard todo modal', () => {
     await modal.locator('[data-todo-submit]').click();
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
-    let todoItem = page.locator(`[data-agenda-item][data-title="${todoTitle}"]`);
-    await expect(todoItem).toBeVisible();
-    await expect(todoItem).toHaveAttribute('data-class-offering-id', '0');
+    const findTodo = async (offeringId: number) => {
+      const collection = page.getByRole('dialog', { name: '日程与事项', exact: true });
+      if (!await collection.isVisible()) {
+        await page.locator('.dw-focus').getByRole('button', { name: /^全部事项/ }).click();
+      }
+      await collection.getByRole('searchbox', { name: '搜索事项' }).fill(todoTitle);
+      const row = collection.locator('.dw-agenda-row').filter({ hasText: todoTitle });
+      await expect(row).toHaveCount(1);
+      const response = await page.request.get(`/api/dashboard/workspace?q=${encodeURIComponent(todoTitle)}&kind=manual`);
+      const payload = await response.json();
+      expect(response.ok()).toBe(true);
+      expect(payload.workspace.all_items).toHaveLength(1);
+      expect(payload.workspace.all_items[0].offering_id).toBe(offeringId);
+      return row.getByRole('button', { name: '查看待办' });
+    };
+    let todoItem = await findTodo(0);
 
     // Association remains available as an organizational option while editing.
     await todoItem.click();
@@ -84,8 +97,7 @@ test.describe('teacher dashboard todo modal', () => {
     await modal.locator('[data-todo-submit]').click();
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
-    todoItem = page.locator(`[data-agenda-item][data-title="${todoTitle}"]`);
-    await expect(todoItem).toHaveAttribute('data-class-offering-id', String(fixture.classOfferingId));
+    todoItem = await findTodo(fixture.classOfferingId);
 
     // A linked todo can be detached again without recreating it.
     await todoItem.click();
@@ -96,13 +108,15 @@ test.describe('teacher dashboard todo modal', () => {
     await modal.locator('[data-todo-submit]').click();
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
-    todoItem = page.locator(`[data-agenda-item][data-title="${todoTitle}"]`);
-    await expect(todoItem).toHaveAttribute('data-class-offering-id', '0');
+    todoItem = await findTodo(0);
 
     page.once('dialog', (dialog) => dialog.accept());
     await todoItem.click();
     await page.locator('.agenda-popover [data-pop-delete]').click();
-    await expect(todoItem).toHaveCount(0, { timeout: 10_000 });
+    await expect.poll(async () => {
+      const response = await page.request.get(`/api/dashboard/workspace?q=${encodeURIComponent(todoTitle)}&kind=manual`);
+      return (await response.json()).workspace.filtered_total;
+    }).toBe(0);
 
     await expectNoBrowserErrors(errors, testInfo);
   });

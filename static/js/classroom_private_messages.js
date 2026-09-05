@@ -232,6 +232,17 @@ export class ClassroomPrivateMessages {
             }
             this.openConversationWith(detail.identity, detail.displayName || '');
         });
+        const syncVisible = () => {
+            if (document.hidden || this.root?.offsetParent === null || this.mode !== 'private') {
+                this.stopRefresh();
+                return;
+            }
+            this.refreshPrivateState();
+            this.startRefresh();
+            this.onModeChange();
+        };
+        document.addEventListener('visibilitychange', syncVisible);
+        document.addEventListener('classroom:activity-visible', syncVisible);
         this.applyModeState('broadcast');
         this.updateControls();
     }
@@ -290,8 +301,9 @@ export class ClassroomPrivateMessages {
 
     startRefresh() {
         this.stopRefresh();
+        if (document.hidden || this.root?.offsetParent === null || this.mode !== 'private') return;
         this.refreshTimer = window.setInterval(() => {
-            if (this.mode !== 'private' || this.isSending) {
+            if (document.hidden || this.root?.offsetParent === null || this.mode !== 'private' || this.isSending) {
                 return;
             }
             this.refreshPrivateState();
@@ -306,10 +318,14 @@ export class ClassroomPrivateMessages {
     }
 
     async refreshPrivateState() {
-        await this.loadContacts({ silent: true, keepConversation: true });
-        if (this.currentContact) {
-            await this.loadConversation(this.currentContact, { showLoading: false, scrollToBottom: false });
-        }
+        if (this.privateRefreshInFlight) return;
+        this.privateRefreshInFlight = true;
+        try {
+            await this.loadContacts({ silent: true, keepConversation: true });
+            if (this.currentContact && !document.hidden && this.root?.offsetParent !== null) {
+                await this.loadConversation(this.currentContact, { showLoading: false, scrollToBottom: false });
+            }
+        } finally { this.privateRefreshInFlight = false; }
     }
 
     async loadContacts({ silent = false, keepConversation = false } = {}) {

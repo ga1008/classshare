@@ -118,58 +118,11 @@
         gap: var(--spacing-md);
     }
 
-    .teaching-timeline-detail-side {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: var(--spacing-sm);
-        margin-left: auto;
-    }
-
     .teaching-timeline-detail-actions {
         display: flex;
         gap: var(--spacing-sm);
         flex-wrap: wrap;
         justify-content: flex-end;
-    }
-
-    .teaching-timeline-material-panel {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: var(--spacing-md);
-        flex-wrap: wrap;
-        padding: var(--spacing-md);
-        border-radius: var(--radius-lg);
-        background: linear-gradient(135deg, rgba(248, 250, 252, 0.96), rgba(239, 246, 255, 0.92));
-        border: 1px solid rgba(148, 163, 184, 0.18);
-    }
-
-    .teaching-timeline-material-panel.is-empty {
-        background: rgba(248, 250, 252, 0.9);
-        border-style: dashed;
-    }
-
-    .teaching-timeline-material-copy {
-        display: grid;
-        gap: 4px;
-        min-width: 0;
-    }
-
-    .teaching-timeline-material-copy strong {
-        color: var(--text-primary);
-    }
-
-    .teaching-timeline-material-copy span {
-        color: var(--text-muted);
-        font-size: 0.9rem;
-        word-break: break-all;
-    }
-
-    .teaching-timeline-material-actions {
-        display: flex;
-        gap: var(--spacing-sm);
-        flex-wrap: wrap;
     }
 
     .classroom-page .teaching-timeline-segment.is-academic-exam {
@@ -350,11 +303,12 @@
     }
 
 </style>
+<link rel="stylesheet" href="{{ asset_url('css/classroom_workspace.css') }}">
 {% endblock %}
 
 {% block head %}
-{% include "partials/markdown_assets.html" %}
-<script src="{{ asset_url('js/tools.js') }}"></script>
+{% with defer_markdown_assets=true %}{% include "partials/markdown_assets.html" %}{% endwith %}
+<script defer fetchpriority="low" src="{{ asset_url('js/tools.js') }}"></script>
 <script>
     window.APP_CONFIG = {
         userInfo: {{ user_info | tojson }},
@@ -366,12 +320,13 @@
         teachingPlan: {{ classroom_page.teaching_plan | tojson }},
         academicCourseExams: {{ classroom_page.academic_course_exams | default({}) | tojson }},
         learningProgress: {{ classroom_page.learning_progress | default(none) | tojson }},
-        learningOverview: {{ classroom_page.learning_overview | default(none) | tojson }}
+        learningOverview: {{ classroom_page.learning_overview | default(none) | tojson }},
+        assignmentWorkspaceItems: {{ classroom_page.assignment_workspace_items | tojson }}
     };
 </script>
 {% endblock %}
 
-{% block body_class %}page-wrapper classroom-page role-{{ classroom_page.theme }}{% endblock %}
+{% block body_class %}page-wrapper classroom-page classroom-workspace-v2 role-{{ classroom_page.theme }}{% endblock %}
 
 {% block body %}
 {% set has_learning_entry = (user_info.role == 'student' and classroom_page.learning_progress) or (user_info.role == 'teacher' and classroom_page.learning_overview) %}
@@ -381,62 +336,60 @@
     data-island-id="classroom-page-main"
     hidden
 ></div>
-<header class="navbar app-topbar classroom-topbar role-{{ user_info.role }}" aria-label="课堂导航">
-    <a href="/dashboard" class="navbar-brand app-topbar-brand classroom-topbar-brand" aria-label="返回教学首页">
-        <span class="app-topbar-brand__mark" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
-        <span class="app-topbar-brand__copy classroom-topbar-brand__copy">
-            <strong>{{ classroom.course_name }}</strong>
-            <small>
-                <span>{{ classroom.class_name }}</span>
-                {% if classroom.semester %}<span>{{ classroom.semester }}</span>{% endif %}
-                <span>返回教学首页</span>
-            </small>
+<header class="app-topbar cw-topbar role-{{ user_info.role }}" aria-label="课堂导航">
+    <a href="/dashboard" class="app-topbar-brand cw-topbar-brand" aria-label="返回教学首页">
+        <span class="cw-back-mark" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
+        <span class="cw-brand-copy">
+<h1 class="cw-course-title">{{ classroom.course_name }}</h1>
         </span>
     </a>
-    <nav class="navbar-user app-topbar-nav classroom-topbar-nav" aria-label="课堂快捷入口">
-        <div class="app-topbar-actions app-topbar-actions--primary classroom-topbar-sections" aria-label="课堂内入口">
-            <a href="#assignment-panel" class="app-topbar-action app-topbar-action--primary classroom-topbar-section-link" data-workspace-nav title="跳转到任务区" aria-label="跳转到任务区">
-                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('file-plus') }}</span>
-                <span class="app-topbar-action__text">
+    <nav class="cw-topbar-nav" aria-label="课堂快捷入口">
+        <div class="cw-topbar-sections" aria-label="课堂内入口">
+            <a href="#assignment-panel" class="cw-nav-link" data-workspace-nav title="跳转到任务区" aria-label="跳转到任务区">
+                <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('file-plus') }}</span>
+                <span class="cw-nav-copy">
                     <strong>任务</strong>
-                    <small>{% if user_info.role == 'teacher' %}布置与批改{% else %}提交与查看{% endif %}</small>
                 </span>
             </a>
-            <a href="#materials-panel" class="app-topbar-action app-topbar-action--tone-blue classroom-topbar-section-link" data-workspace-nav title="跳转到材料区" aria-label="跳转到材料区">
-                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('book') }}</span>
-                <span class="app-topbar-action__text">
+            <a href="#materials-panel" class="cw-nav-link" data-workspace-nav title="跳转到材料区" aria-label="跳转到材料区">
+                <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('book') }}</span>
+                <span class="cw-nav-copy">
                     <strong>材料</strong>
-                    <small>课程文档</small>
                 </span>
             </a>
-            <a href="#classroom-activity-sidebar" class="app-topbar-action app-topbar-action--tone-cyan classroom-topbar-section-link classroom-topbar-activity" data-workspace-nav title="打开课堂活动栏" aria-label="打开课堂活动栏">
-                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
-                <span class="app-topbar-action__text">
+            <a href="#classroom-activity-sidebar" class="cw-nav-link" data-workspace-nav title="打开课堂活动栏" aria-label="打开课堂活动栏">
+                <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
+                <span class="cw-nav-copy">
                     <strong>活动</strong>
-                    <small>互动讨论</small>
                 </span>
                 <span class="app-topbar-action__count classroom-topbar-activity-count" data-classroom-activity-total>0</span>
             </a>
-            {% if has_learning_entry %}
-            <button type="button" class="app-topbar-action app-topbar-action--tone-teal classroom-topbar-section-link classroom-topbar-learning" data-learning-modal-open title="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-label="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-haspopup="dialog" aria-controls="learning-progress-modal">
-                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('users' if user_info.role == 'teacher' else 'shield') }}</span>
-                <span class="app-topbar-action__text">
-                    <strong>{% if user_info.role == 'teacher' %}成员{% else %}修为{% endif %}</strong>
-                    <small>{% if user_info.role == 'teacher' %}进度与关注{% else %}进度与道印{% endif %}</small>
-                </span>
-            </button>
-            {% endif %}
-            {% if has_learning_entry %}
-            <details class="classroom-topbar-menu classroom-topbar-section-menu">
-                <summary class="app-topbar-action app-topbar-action--tone-slate classroom-topbar-section-link" title="更多课堂入口" aria-label="打开更多课堂入口">
-                    <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('plus') }}</span>
-                    <span class="app-topbar-action__text">
+
+            <details class="classroom-topbar-menu cw-topbar-menu">
+                <summary class="cw-nav-link" title="更多课堂入口" aria-label="打开更多课堂入口">
+                    <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('plus') }}</span>
+                    <span class="cw-nav-copy">
                         <strong>更多</strong>
-                        <small>资源与信息</small>
                     </span>
                 </summary>
                 <div class="classroom-topbar-menu__panel" role="menu" aria-label="更多课堂入口">
                     <div class="classroom-topbar-menu__label">课堂入口</div>
+            {% if has_learning_entry %}
+            <button type="button" class="classroom-topbar-menu__item classroom-topbar-learning" data-learning-modal-open title="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-label="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-haspopup="dialog" aria-controls="learning-progress-modal">
+                <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('users' if user_info.role == 'teacher' else 'shield') }}</span>
+                <span class="cw-nav-copy">
+                    <strong>{% if user_info.role == 'teacher' %}成员{% else %}修为{% endif %}</strong>
+                </span>
+            </button>
+            {% endif %}
+            {% if user_info.role == 'teacher' %}
+            <button type="button" class="classroom-topbar-menu__item" data-classroom-closeout-open title="结课：收尾课堂内未结束的作业、测验、投票与分组" aria-label="打开结课浮窗" aria-haspopup="dialog" aria-controls="classroom-closeout-modal">
+                <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('shield') }}</span>
+                <span class="cw-nav-copy">
+                    <strong>结课</strong>
+                </span>
+            </button>
+            {% endif %}
                     <button type="button" class="classroom-topbar-menu__item" data-classroom-activity-open="resources" role="menuitem">
                         {{ app_topbar_icon('folder-up') }}
                         <span><strong>资源区</strong><small>共享文件与附件</small></span>
@@ -455,24 +408,14 @@
                     </button>
                 </div>
             </details>
-            {% endif %}
-            {% if user_info.role == 'teacher' %}
-            <button type="button" class="app-topbar-action app-topbar-action--tone-amber classroom-topbar-section-link" data-classroom-closeout-open title="结课：收尾课堂内未结束的作业、测验、投票与分组" aria-label="打开结课浮窗" aria-haspopup="dialog" aria-controls="classroom-closeout-modal">
-                <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('shield') }}</span>
-                <span class="app-topbar-action__text">
-                    <strong>结课</strong>
-                    <small>学期收尾</small>
-                </span>
-            </button>
-            {% endif %}
+
         </div>
-        <div class="app-topbar-actions app-topbar-actions--utility classroom-topbar-tools" aria-label="课堂工具入口">
-            <details class="classroom-topbar-menu classroom-topbar-personal-menu" data-message-center-bell-shell>
-                <summary class="app-topbar-action app-topbar-action--tone-cyan" title="个人入口" aria-label="打开个人入口">
-                    <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
-                    <span class="app-topbar-action__text">
+        <div class="cw-topbar-tools" aria-label="课堂工具入口">
+            <details class="classroom-topbar-menu cw-topbar-menu" data-message-center-bell-shell>
+                <summary class="cw-nav-link" title="个人入口" aria-label="打开个人入口">
+                    <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
+                    <span class="cw-nav-copy">
                         <strong>个人</strong>
-                        <small>消息反馈</small>
                     </span>
                 </summary>
                 <div class="classroom-topbar-menu__panel" role="menu" aria-label="个人入口">
@@ -526,61 +469,114 @@
 {% set sections = classroom_page.sections %}
 {% set teaching_plan = classroom_page.teaching_plan %}
 
-<main class="classroom-workspace">
-    <section class="workspace-hero">
-        <div class="workspace-hero-main has-group-qr" id="hero-info-card">
-            <div class="workspace-hero-title-block">
-                <div class="workspace-hero-classline" aria-label="班级信息">
-                    {% for item in hero.primary_meta %}
-                    <span class="workspace-hero-classitem">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0v4a6 6 0 0 0 12 0V8Z"/><path d="M12 2v20"/><path d="M6 12h12"/></svg>
-                        <span>{{ item.label }}：{{ item.value }}</span>
-                    </span>
-                    {% endfor %}
-                </div>
-                <h1>{{ classroom.course_name }}{% if user_info.role == 'student' %}<span class="my-group-badge" data-my-group-badge hidden></span>{% endif %}</h1>
-                <p class="workspace-hero-lead">{{ hero.lead }}</p>
+<main class="classroom-workspace-v2">
+    <section class="cw-session-section">
+        <div class="cw-classroom-identity" id="cw-course-identity">
+            <div class="cw-identity-class">{{ classroom.class_name }}{% if user_info.role == 'student' %}<span class="my-group-badge" data-my-group-badge hidden></span>{% endif %}</div>
+            <div class="cw-identity-actions">
+                <button class="cw-text-button" id="hero-course-detail-btn" type="button" data-course-popover-target="details" data-popover-title="课程详情" data-popover-kicker="课程资料" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false">课程资料</button>
+                {% set classroom_workspace_compact = true %}
+                {% include "partials/classroom_group_qr.html" %}
             </div>
-
-            <div class="workspace-hero-actions" aria-label="课堂信息操作">
-                <button class="workspace-hero-action-btn is-stat" id="hero-stats-btn" type="button" data-course-popover-target="stats" data-popover-title="统计信息" data-popover-kicker="课堂概览" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5"/><path d="M12 16V8"/><path d="M17 16v-3"/></svg>
-                    <span>统计信息</span>
-                </button>
-                {% if (user_info.role == 'student' and classroom_page.learning_progress) or (user_info.role == 'teacher' and classroom_page.learning_overview) %}
-                <button class="workspace-hero-action-btn is-cultivation" id="hero-learning-btn" type="button" data-learning-modal-open aria-haspopup="dialog" aria-controls="learning-progress-modal" aria-expanded="false">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 16.3 6.4 19.2 7.5 13 3 8.6l6.2-.9z"/></svg>
-                    <span>{% if user_info.role == 'teacher' %}班级成员{% else %}修为{% endif %}</span>
-                </button>
-                {% endif %}
-                <button class="workspace-hero-action-btn" id="hero-course-detail-btn" type="button" data-course-popover-target="details" data-popover-title="课程详情" data-popover-kicker="课程资料" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                    <span>课程详情</span>
-                </button>
-            </div>
-            {% include "partials/classroom_group_qr.html" %}
         </div>
 
-        <div class="workspace-hero-bottom">
+        <div class="cw-session-body">
             {% if teaching_plan and teaching_plan.session_count %}
             {% set timeline_entries = teaching_plan.timeline_entries if teaching_plan.timeline_entries else teaching_plan.sessions %}
             {% set selected_session = teaching_plan.anchor_session if teaching_plan.anchor_session else timeline_entries[0] %}
             <section class="embedded-teaching-plan" id="timeline-panel" data-workspace-section data-anchor-order="{{ selected_session.order_index }}">
                 <div class="embedded-teaching-plan-head">
                     <div class="embedded-teaching-plan-heading">
-                        <h2>课程进度时间轴</h2>
+                        <h2>所选课次</h2>
                     </div>
+                    <div class="cw-session-nav">                            <button type="button" class="teaching-timeline-nav-btn is-prev" id="teachingTimelinePrevBtn" aria-label="切换到上一节课">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                            </button>
+                            <button type="button" class="teaching-timeline-nav-btn is-next" id="teachingTimelineNextBtn" aria-label="切换到下一节课">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                            </button>
+
+<button type="button" class="cw-text-button" data-cw-open="timeline">全部课次</button><button type="button" class="cw-text-button" id="cw-session-details">课次详情</button></div>
                 </div>
 
                 <div class="embedded-teaching-plan-shell" id="teaching-plan-widget">
                     <div class="embedded-teaching-plan-main is-full">
                         <div class="teaching-timeline-stage" id="teachingTimelineStage">
-                            <div class="teaching-timeline-projector" aria-hidden="true"></div>
 
-                            <button type="button" class="teaching-timeline-nav-btn is-prev" id="teachingTimelinePrevBtn" aria-label="切换到上一节课">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                            </button>
-                            <div class="teaching-timeline-scroll" id="teachingTimelineScroll" aria-label="课程时间轴">
+
+                            <article class="teaching-timeline-detail-card" id="teachingTimelineDetail" aria-live="polite">
+                                <div class="teaching-timeline-detail-top">
+                                    <div class="teaching-timeline-detail-copy">
+                                        <div class="teaching-timeline-detail-heading">
+                                            <span class="teaching-timeline-detail-kicker" id="teachingTimelineDetailKicker">{{ selected_session.session_number_label }}</span>
+                                            <span class="teaching-timeline-detail-status is-{{ selected_session.progress_state }}" id="teachingTimelineDetailStatus">{{ selected_session.session_status_label }}</span>
+                                        </div>
+                                        <h3 id="teachingTimelineDetailTitle">{{ selected_session.detail_title }}</h3>
+                                    </div>
+                                    {% if user_info.role == 'teacher' %}
+                                    <details class="cw-session-management"><summary>管理课次</summary><div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions" {% if selected_session.is_academic_exam %}hidden{% endif %}>
+                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectHomeMaterialBtn">
+                                            添加首页材料
+                                        </button>
+                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectMaterialBtn">添加课堂材料</button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-outline btn-sm btn-ai-assistant{% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %} is-busy{% endif %}"
+                                            id="teachingTimelineAiMaterialBtn"
+                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}disabled{% endif %}
+                                        >
+                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}
+                                            助教在思考
+                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'completed' %}
+                                            再次生成
+                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'failed' %}
+                                            重新生成
+                                            {% else %}
+                                            AI助教
+                                            {% endif %}
+                                        </button>
+                                        <button type="button" class="btn btn-outline btn-sm btn-ai-assistant" id="teachingTimelineLessonDocRewriteBtn" hidden>
+                                            AI 重写本课
+                                        </button>
+                                        <button type="button" class="btn btn-outline btn-sm btn-ai-assistant" id="teachingTimelineLessonDocNextBtn" hidden>
+                                            AI 生成下次课
+                                        </button>
+                                    </div></details>
+                                    {% endif %}
+                                </div>
+                                {% if user_info.role == 'teacher' %}
+                                <div
+                                    class="teaching-timeline-ai-task-strip{% if not selected_session.material_generation_task %} is-hidden{% endif %}"
+                                    id="teachingTimelineAiTaskStrip"
+                                    {% if not selected_session.material_generation_task %}hidden{% endif %}
+                                >
+                                    <span class="teaching-timeline-ai-task-pill" id="teachingTimelineAiTaskPill">
+                                        {% if selected_session.material_generation_task %}
+                                        {{ selected_session.material_generation_task.status_label }}
+                                        {% endif %}
+                                    </span>
+                                    <span class="teaching-timeline-ai-task-copy" id="teachingTimelineAiTaskCopy">
+                                        {% if selected_session.material_generation_task %}
+                                            {% if selected_session.material_generation_task.status == 'running' or selected_session.material_generation_task.status == 'queued' %}
+                                            AI 助教正在参考历史文档和课堂信息，完成后会自动绑定到本课。
+                                            {% elif selected_session.material_generation_task.status == 'completed' %}
+                                            最近一次 AI 生成已完成，可以直接打开文档，也可以再次发起生成。
+                                            {% elif selected_session.material_generation_task.status == 'failed' %}
+                                            上一次 AI 生成未完成，请调整要求后重新尝试。
+                                            {% endif %}
+                                        {% endif %}
+                                    </span>
+                                </div>
+                                {% endif %}
+                                <div class="teaching-timeline-detail-summary md-content" id="teachingTimelineDetailSummary">{{ selected_session.workspace_summary | default(selected_session.detail_summary) }}</div>
+                                <div class="teaching-timeline-detail-meta" id="teachingTimelineDetailMeta">
+                                    <span>{{ selected_session.workspace_meta | default(selected_session.detail_meta) }}</span>
+                                    {% if selected_session.detail_hint %}
+                                    <span class="is-warning">{{ selected_session.detail_hint }}</span>
+                                    {% endif %}
+                                </div>
+                            </article>
+                            <div class="teaching-timeline-scroll" id="teachingTimelineScroll" data-cw-source="timeline" hidden aria-label="全部课次">
                                 <div class="teaching-timeline-track">
                                     {% for session in timeline_entries %}
                                     <button
@@ -630,161 +626,6 @@
                                     {% endfor %}
                                 </div>
                             </div>
-                            <button type="button" class="teaching-timeline-nav-btn is-next" id="teachingTimelineNextBtn" aria-label="切换到下一节课">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                            </button>
-
-                            <article class="teaching-timeline-detail-card" id="teachingTimelineDetail" aria-live="polite">
-                                <div class="teaching-timeline-detail-top">
-                                    <div class="teaching-timeline-detail-copy">
-                                        <div class="teaching-timeline-detail-heading">
-                                            <span class="teaching-timeline-detail-kicker" id="teachingTimelineDetailKicker">{{ selected_session.session_number_label }}</span>
-                                            <span class="teaching-timeline-detail-status is-{{ selected_session.progress_state }}" id="teachingTimelineDetailStatus">{{ selected_session.session_status_label }}</span>
-                                        </div>
-                                        <h3 id="teachingTimelineDetailTitle">{{ selected_session.detail_title }}</h3>
-                                    </div>
-                                    {% if user_info.role == 'teacher' %}
-                                    <div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions" {% if selected_session.is_academic_exam %}hidden{% endif %}>
-                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectHomeMaterialBtn">
-                                            添加首页材料
-                                        </button>
-                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectMaterialBtn">添加课堂材料</button>
-                                        <button
-                                            type="button"
-                                            class="btn btn-outline btn-sm btn-ai-assistant{% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %} is-busy{% endif %}"
-                                            id="teachingTimelineAiMaterialBtn"
-                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}disabled{% endif %}
-                                        >
-                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}
-                                            助教在思考
-                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'completed' %}
-                                            再次生成
-                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'failed' %}
-                                            重新生成
-                                            {% else %}
-                                            AI助教
-                                            {% endif %}
-                                        </button>
-                                        <button type="button" class="btn btn-outline btn-sm btn-ai-assistant" id="teachingTimelineLessonDocRewriteBtn" hidden>
-                                            AI 重写本课
-                                        </button>
-                                        <button type="button" class="btn btn-outline btn-sm btn-ai-assistant" id="teachingTimelineLessonDocNextBtn" hidden>
-                                            AI 生成下次课
-                                        </button>
-                                    </div>
-                                    {% endif %}
-                                </div>
-                                <div class="teaching-timeline-material-panel{% if not selected_session.has_learning_material %} is-empty{% endif %}" id="teachingTimelineMaterialPanel">
-                                    <div class="teaching-timeline-material-copy">
-                                        <strong id="teachingTimelineMaterialName">
-                                            {% if selected_session.is_home_entry %}
-                                            {% if selected_session.home_learning_material_name %}
-                                            {{ selected_session.home_learning_material_name }}
-                                            {% else %}
-                                            {% if user_info.role == 'teacher' %}尚未配置课程首页{% else %}教师尚未配置课程首页{% endif %}
-                                            {% endif %}
-                                            {% else %}
-                                            {% if selected_session.learning_material_name %}
-                                            {{ selected_session.learning_material_name }}
-                                            {% else %}
-                                            {% if user_info.role == 'teacher' %}尚未绑定课堂文档{% else %}教师尚未配置学习文档{% endif %}
-                                            {% endif %}
-                                            {% endif %}
-                                        </strong>
-                                        <span id="teachingTimelineMaterialPath">
-                                            {% if selected_session.is_home_entry %}
-                                            {% if selected_session.home_learning_material_path %}
-                                            {{ selected_session.home_learning_material_path }}
-                                            {% else %}
-                                            {% if user_info.role == 'teacher' %}可绑定课程首页 Markdown，用于目录、简介和后续文档导航。{% else %}当前课堂还没有可打开的课程首页。{% endif %}
-                                            {% endif %}
-                                            {% else %}
-                                            {% if selected_session.learning_material_path %}
-                                            {{ selected_session.learning_material_path }}
-                                            {% else %}
-                                            {% if user_info.role == 'teacher' %}可为本次课绑定一份 Markdown 材料，师生可从这里直接进入文档页面。{% else %}当前节点还没有可打开的课堂文档。{% endif %}
-                                            {% endif %}
-                                            {% endif %}
-                                        </span>
-                                    </div>
-                                    <div class="teaching-timeline-material-actions">
-                                        <button
-                                            type="button"
-                                            class="teaching-timeline-open-material-btn teaching-timeline-open-home-btn"
-                                            id="teachingTimelineOpenHomeMaterialBtn"
-                                            {% if not teaching_plan.has_home_material or selected_session.is_home_entry or selected_session.is_academic_exam %}hidden{% endif %}
-                                        >
-                                            <span class="teaching-timeline-open-material-copy">
-                                                <span>首页</span>
-                                                <small>课程目录与简介</small>
-                                            </span>
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            class="teaching-timeline-open-material-btn"
-                                            id="teachingTimelineOpenMaterialBtn"
-                                            {% if selected_session.is_academic_exam %}hidden{% endif %}
-                                            {% if not selected_session.has_learning_material %}disabled{% endif %}
-                                        >
-                                            <span class="teaching-timeline-open-material-copy">
-                                                <span id="teachingTimelineOpenMaterialLabel">{% if selected_session.is_home_entry %}首页{% else %}学习文档{% endif %}</span>
-                                                <small id="teachingTimelineOpenMaterialHint">
-                                                    {% if selected_session.is_home_entry %}
-                                                    {% if selected_session.has_home_learning_material %}
-                                                    打开课程目录与简介
-                                                    {% elif user_info.role == 'teacher' %}
-                                                    先设置课程首页
-                                                    {% else %}
-                                                    等待教师配置课程首页
-                                                    {% endif %}
-                                                    {% else %}
-                                                    {% if selected_session.has_learning_material %}
-                                                    进入本次课学习入口
-                                                    {% elif user_info.role == 'teacher' %}
-                                                    先为本次课绑定文档
-                                                    {% else %}
-                                                    等待教师配置学习文档
-                                                    {% endif %}
-                                                    {% endif %}
-                                                </small>
-                                            </span>
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                                        </button>
-                                    </div>
-                                </div>
-                                {% if user_info.role == 'teacher' %}
-                                <div
-                                    class="teaching-timeline-ai-task-strip{% if not selected_session.material_generation_task %} is-hidden{% endif %}"
-                                    id="teachingTimelineAiTaskStrip"
-                                    {% if not selected_session.material_generation_task %}hidden{% endif %}
-                                >
-                                    <span class="teaching-timeline-ai-task-pill" id="teachingTimelineAiTaskPill">
-                                        {% if selected_session.material_generation_task %}
-                                        {{ selected_session.material_generation_task.status_label }}
-                                        {% endif %}
-                                    </span>
-                                    <span class="teaching-timeline-ai-task-copy" id="teachingTimelineAiTaskCopy">
-                                        {% if selected_session.material_generation_task %}
-                                            {% if selected_session.material_generation_task.status == 'running' or selected_session.material_generation_task.status == 'queued' %}
-                                            AI 助教正在参考历史文档和课堂信息，完成后会自动绑定到本课。
-                                            {% elif selected_session.material_generation_task.status == 'completed' %}
-                                            最近一次 AI 生成已完成，可以直接打开文档，也可以再次发起生成。
-                                            {% elif selected_session.material_generation_task.status == 'failed' %}
-                                            上一次 AI 生成未完成，请调整要求后重新尝试。
-                                            {% endif %}
-                                        {% endif %}
-                                    </span>
-                                </div>
-                                {% endif %}
-                                <div class="teaching-timeline-detail-summary md-content" id="teachingTimelineDetailSummary">{{ selected_session.detail_content or selected_session.detail_summary }}</div>
-                                <div class="teaching-timeline-detail-meta" id="teachingTimelineDetailMeta">
-                                    <span>{{ selected_session.detail_meta }}</span>
-                                    {% if selected_session.detail_hint %}
-                                    <span class="is-warning">{{ selected_session.detail_hint }}</span>
-                                    {% endif %}
-                                </div>
-                            </article>
                         </div>
                     </div>
                 </div>
@@ -850,46 +691,15 @@
             {% endif %}
 
             {% if has_learning_entry %}
-            <div
-                class="learning-progress-sync-island"
-                data-lanshare-island="learning-progress-sync"
-                data-island-id="learning-progress-sync-{{ classroom.id }}"
-            ></div>
             {% endif %}
 
-            <nav class="workspace-hero-nav workspace-floating-nav" aria-label="课堂快速跳转">
-                {% for item in hero.nav %}
-                {% set show_nav_item = item.target != 'timeline-panel' or (teaching_plan and teaching_plan.session_count) %}
-                {% if show_nav_item %}
-                <a href="#{{ item.target }}" class="workspace-hero-nav-link workspace-floating-nav-link" data-workspace-nav aria-label="快速跳转到{{ item.label }}" title="快速跳转到{{ item.label }}" data-tooltip="快速跳转到{{ item.label }}">
-                    <span class="workspace-floating-nav-icon" aria-hidden="true">
-                        {% if item.target == 'timeline-panel' %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/><path d="M4 20h16"/></svg>
-                        {% elif item.target == 'assignment-panel' %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2.5" width="8" height="4" rx="1.2"/><path d="M16 4.5h2a2 2 0 0 1 2 2V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2h2"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>
-                        {% elif item.target == 'interaction-panel' %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M8 17V9"/><path d="M12 19V7"/><path d="M16 15v-4"/><path d="M20 17V9"/></svg>
-                        {% elif item.target == 'collaboration-panel' %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M2 21v-2a4 4 0 0 1 3-3.87"/><path d="M8 3.13a4 4 0 0 0 0 7.75"/></svg>
-                        {% elif item.target == 'materials-panel' %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v18H6.5A2.5 2.5 0 0 1 4 18.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v18h5.5a2.5 2.5 0 0 0 2.5-2.5z"/></svg>
-                        {% elif item.target == 'resources-panel' %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5V6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v1.5"/><path d="M3.4 9.5h17.2a1 1 0 0 1 .98 1.2l-1.42 7.1A2 2 0 0 1 18.2 19.5H5.8a2 2 0 0 1-1.96-1.7l-1.42-7.1a1 1 0 0 1 .98-1.2Z"/></svg>
-                        {% else %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M21 14a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>
-                        {% endif %}
-                    </span>
-                    <span class="workspace-floating-nav-label">{{ item.label }}</span>
-                    <small>{{ item.note }}</small>
-                </a>
-                {% endif %}
-                {% endfor %}
-            </nav>
+
         </div>
     </section>
 
-    <div class="workspace-columns" id="workspace-columns">
-        <div class="workspace-content" id="workspace-content">
+    <div class="cw-live-activity" data-cw-live-polls hidden><button class="cw-text-button" type="button" data-classroom-activity-open="polls"><span data-cw-live-polls-label></span> →</button></div>
+    <div class="cw-workspace-flow" id="cw-workspace-flow">
+        <div class="cw-primary-grid" id="cw-primary-content">
 
         {% if (user_info.role == 'student' and classroom_page.learning_progress) or (user_info.role == 'teacher' and classroom_page.learning_overview) %}
         <div class="learning-modal-backdrop" id="learning-progress-modal" hidden aria-hidden="true">
@@ -1438,8 +1248,9 @@
         </div>
         {% endif %}
 
-        <div class="workspace-flow workspace-flow--priority" aria-label="课堂任务主线">
-        <section class="workspace-panel assignment-panel" id="assignment-panel" data-workspace-section>
+        <div class="cw-primary-flow" aria-label="课堂任务主线">
+        <section class="cw-primary-section" id="assignment-panel" data-workspace-section><div id="cw-tasks-preview"><div data-cw-loading><div class="cw-section-head"><h2>{{ '待处理任务' if user_info.role == 'teacher' else '课堂任务' }}</h2></div><p class="cw-empty" role="status">正在整理课堂任务…</p></div></div></section>
+        <section class="workspace-panel assignment-panel cw-collection" id="classroom-task-collection" data-cw-source="tasks" hidden>
             <div class="section-header">
                 <div class="section-heading">
                     {% if sections.assignment.eyebrow %}<span class="section-eyebrow">{{ sections.assignment.eyebrow }}</span>{% endif %}
@@ -1451,11 +1262,11 @@
                 </div>
                 {% if user_info.role == 'teacher' %}
                 <div class="header-actions">
-                    <button class="btn btn-primary btn-sm" type="button" onclick="window.examApp.newAssignment()">
+                    <button class="btn btn-primary btn-sm" type="button" data-cw-create-assignment data-cw-external-modal onclick="window.examApp.newAssignment()">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                         新建作业
                     </button>
-                    <button class="btn btn-outline btn-sm" type="button" onclick="window.UI.openModal('exam-assign-modal'); window.examApp.loadExamPapers();">
+                    <button class="btn btn-outline btn-sm" type="button" data-cw-assign-exam data-cw-external-modal onclick="window.UI.openModal('exam-assign-modal'); window.examApp.loadExamPapers();">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
                         试卷库添加
                     </button>
@@ -1463,38 +1274,14 @@
                 {% endif %}
             </div>
 
-            <div class="assignment-section-tabs" role="tablist" aria-label="作业与投票切换" data-assignment-section-tabs>
-                <button type="button" class="assignment-section-tab is-active" role="tab" aria-selected="true" data-assignment-section-tab="tasks">作业与考试</button>
-                <button type="button" class="assignment-section-tab" role="tab" aria-selected="false" data-assignment-section-tab="polls">投票<span class="assignment-section-tab__count" data-poll-tab-count hidden>0</span></button>
-            </div>
 
-            <div
-                class="assignment-task-board-island"
-                data-lanshare-island="assignment-task-board-sync"
-                data-island-id="assignment-task-board-sync-{{ classroom.id }}"
-                data-assignment-section-view="tasks"
-            ></div>
 
-            <section class="poll-panel" id="poll-panel" data-poll-root data-class-offering-id="{{ classroom.id }}" data-role="{{ user_info.role }}" data-assignment-section-view="polls" hidden aria-live="polite">
-                <div class="poll-panel__loading" data-poll-loading>正在加载投票…</div>
-                <div class="poll-panel__content" data-poll-content hidden></div>
-            </section>
+
             {% if user_info.role == 'teacher' %}
             <p class="assignment-scope-note" data-assignment-section-view="tasks">仅显示教师创建的练习与考试；个人试炼在班级成长统计。</p>
             {% endif %}
 
             <div class="assignment-board" id="assignment-list" data-assignment-list-region data-assignment-section-view="tasks">
-                <div class="assignment-board__head">
-                    <strong
-                        tabindex="0"
-                        aria-haspopup="dialog"
-                        {{ explain_attrs(
-                            '任务列表',
-                            '点击任务进入布置、批改、重交跟踪与发布信息。' if user_info.role == 'teacher' else '点击任务进入提交、补交、考试作答或查看批改结果。',
-                            placement='bottom'
-                        ) }}
-                    >任务列表</strong>
-                </div>
                 {% if assignments %}
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 assignment-grid">
                     {% for assignment in assignments %}
@@ -1541,6 +1328,8 @@
                     <article
                         class="card assignment-card assignment-card-unified hover-lift cursor-pointer"
                         data-assignment-task-card
+                        tabindex="0" role="link"
+                        onkeydown="if(event.target===this &amp;&amp; event.key==='Enter'){ this.click(); }"
                         data-assignment-id="{{ assignment.id }}"
                         data-assignment-title="{{ assignment.title }}"
                         data-assignment-kind="{{ 'exam' if assignment.exam_paper_id else 'assignment' }}"
@@ -1641,13 +1430,19 @@
                                 </small>
                             </div>
                             {% endif %}
-                            {% if assignment.countdown_at or assignment.late_submission_enabled %}
+                            {% if assignment.countdown_at or assignment.late_submission_enabled or assignment.starts_at or (user_info.role == 'student' and assignment.resubmission_due_at) %}
                             <div
                                 class="assignment-time-strip{% if assignment.is_late_submission_open %} is-late{% endif %}"
                                 data-assignment-clock
                                 data-assignment-id="{{ assignment.id }}"
                                 data-server-now="{{ assignment.server_now or '' }}"
                                 data-countdown-at="{{ assignment.countdown_at or '' }}"
+                                data-starts-at="{{ assignment.starts_at or '' }}"
+                                {% if user_info.role == 'student' and (assignment.can_resubmit_submission or assignment.submission_status == 'returned') %}
+                                data-personal-resubmission="1"
+                                data-resubmission-due-at="{{ assignment.resubmission_due_at or '' }}"
+                                data-can-resubmit="{{ '1' if assignment.can_resubmit_submission else '0' }}"
+                                {% endif %}
                                 data-late-until="{{ assignment.late_submission_until or '' }}"
                                 data-deadline-phase="{{ assignment.deadline_phase or 'none' }}"
                                 data-accepting="{{ '1' if assignment.is_accepting_submissions else '0' }}"
@@ -1719,6 +1514,7 @@
                                         type="button"
                                         class="assignment-group-config-link"
                                         data-group-config-btn
+                                        data-cw-external-modal
                                         data-assignment-id="{{ assignment.id }}"
                                         data-class-offering-id="{{ classroom.id }}"
                                         data-assignment-title="{{ assignment.title }}"
@@ -1750,8 +1546,9 @@
         </div>
 
         {% set classroom_materials_collapsed = user_info.role == 'student' and (classroom_page.assigned_material_count | default(0)) == 0 %}
-        <div class="workspace-flow workspace-flow--library" aria-label="课堂课程材料">
-        <section class="workspace-panel" id="materials-panel" data-workspace-section>
+        <div class="cw-primary-flow" aria-label="课堂课程材料">
+        <section class="cw-primary-section" id="materials-panel" data-workspace-section><div id="cw-materials-preview"><div data-cw-loading><div class="cw-section-head"><h2>课次材料</h2></div><p class="cw-empty" role="status">正在读取材料…</p></div></div></section>
+        <section class="workspace-panel cw-collection" id="classroom-material-collection" data-cw-source="materials" hidden>
             <div class="section-header">
                 <div class="section-heading">
                     {% if sections.materials.eyebrow %}<span class="section-eyebrow">{{ sections.materials.eyebrow }}</span>{% endif %}
@@ -1763,7 +1560,7 @@
                 </div>
                 <div class="header-actions materials-toolbar-group classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
                     {% if user_info.role == 'teacher' %}
-                    <button type="button" class="btn btn-primary btn-sm" id="classroom-final-material-generate-btn">AI生成期末材料</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="classroom-final-material-generate-btn" data-cw-external-modal>AI生成期末材料</button>
                     {% endif %}
                     <button type="button" class="btn btn-ghost btn-sm" id="classroom-materials-refresh-btn">刷新</button>
                 </div>
@@ -1771,24 +1568,13 @@
             {% if classroom_materials_collapsed %}
             <div class="materials-empty classroom-materials-empty-state">当前课堂还没有分配课程材料。</div>
             {% else %}
-            <div class="section-chip-row">
-                {% for tag in classroom_page.materials_tags %}
-                <span class="section-chip">{{ tag }}</span>
-                {% endfor %}
-            </div>
             {% endif %}
-
-            <div
-                class="material-learning-path-island classroom-materials-conditional"
-                data-lanshare-island="material-learning-path-sync"
-                data-island-id="material-learning-path-sync-{{ classroom.id }}"
-                {% if classroom_materials_collapsed %}hidden{% endif %}
-            ></div>
 
             <div class="materials-toolbar classroom-materials-toolbar classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
                 <div class="materials-path-actions" aria-label="材料导航">
                     <button type="button" class="btn btn-ghost btn-sm" id="classroom-materials-back-btn">返回</button>
                     <button type="button" class="btn btn-ghost btn-sm" id="classroom-materials-up-btn">上一级</button>
+                    <label class="classroom-materials-select-all"><input type="checkbox" id="classroom-materials-select-all" aria-label="选择本页全部材料" disabled>全选本页</label>
                 </div>
                 <div class="materials-breadcrumbs" id="classroom-materials-breadcrumbs">
                     <span class="text-muted">已分配材料</span>
@@ -1820,6 +1606,22 @@
 
         </div>
     </div>
+
+    {% if classroom_page.learning_progress_error | default('') %}
+    <div class="cw-learning-line" role="alert"><span>{{ classroom_page.learning_progress_error }}</span><button class="cw-text-button" type="button" onclick="window.location.reload()">刷新重试</button></div>
+    {% elif has_learning_entry %}
+    <div class="cw-learning-line">
+        {% if user_info.role == 'student' %}
+        {% set lp = classroom_page.learning_progress %}
+        <span>修为 <strong>{{ lp.score | round(1) }}</strong> · {{ lp.current_level.level_name }}</span>
+        {% if lp.eligible_stage %}<span class="cw-status">{% if lp.eligible_stage.latest_attempt and lp.eligible_stage.latest_attempt.status == 'failed' %}试炼未完成 · 可重试{% else %}可破境{% endif %}</span>{% elif lp.next_stage and lp.next_stage.status == 'generating' %}<span role="status">试炼生成中</span>{% elif lp.next_stage and lp.next_stage.status == 'in_exam' %}<span class="cw-status">试炼已就绪</span>{% endif %}
+        {% else %}
+        {% set lo = classroom_page.learning_overview %}
+        <span>班级成员 <strong>{{ lo.student_count }}</strong> 人</span><span{% if lo.need_attention_count %} class="cw-status"{% endif %}>待关注 {{ lo.need_attention_count }} 人</span>
+        {% endif %}
+        <button class="cw-text-button" type="button" data-learning-modal-open>{% if user_info.role == 'teacher' %}查看成员{% else %}查看修为{% endif %} →</button>
+    </div>
+    {% endif %}
 
     <div id="classroom-material-detail-modal" class="modal-backdrop classroom-material-modal-backdrop" style="display:none;" aria-hidden="true">
         <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
@@ -2079,20 +1881,14 @@
     </div>
 
     {% set activity_counts = classroom_page.activity_sidebar.initial_counts %}
-    <aside class="workspace-sidebar classroom-activity-sidebar" id="classroom-activity-sidebar" data-workspace-section data-classroom-activity-shell aria-label="课堂活动侧边栏">
+    <aside class="cw-activity-section" id="classroom-activity-sidebar" data-workspace-section data-classroom-activity-shell aria-label="课堂活动">
         <div class="classroom-activity-dock">
             <header class="classroom-activity-header">
                 <div class="classroom-activity-heading">
                     <h2>课堂活动</h2>
                 </div>
 
-                <div
-                    class="classroom-activity-workspace-island"
-                    data-lanshare-island="classroom-activity-workspace-sync"
-                    data-island-id="classroom-activity-workspace-sync-{{ classroom.id }}"
-                ></div>
-
-                <div class="classroom-activity-tabs classroom-activity-tabs--icon" role="tablist" aria-label="课堂活动入口">
+                <div class="classroom-activity-tabs" role="tablist" aria-label="课堂活动入口">
                 <button type="button" class="classroom-activity-tab is-active" id="classroom-activity-tab-discussion" data-classroom-activity-tab="discussion" data-classroom-activity-target="discussion-room" role="tab" aria-selected="true" aria-controls="classroom-activity-panel-discussion" aria-label="研讨室" data-tip="研讨室">
                     <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
                     <span class="classroom-activity-tab__copy">
@@ -2114,6 +1910,9 @@
                     </span>
                     <em data-classroom-activity-count="collaboration">{{ activity_counts.collaboration }}</em>
                 </button>
+                <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-polls" data-classroom-activity-tab="polls" data-classroom-activity-target="poll-panel" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-polls">
+                    <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('gauge') }}</span><span class="classroom-activity-tab__copy"><strong>投票</strong></span><em data-classroom-activity-count="polls" data-poll-tab-count hidden>0</em>
+                </button>
                 <button type="button" class="classroom-activity-tab" id="classroom-activity-tab-resources" data-classroom-activity-tab="resources" data-classroom-activity-target="resources-panel" role="tab" aria-selected="false" aria-controls="classroom-activity-panel-resources" aria-label="课堂资源" data-tip="课堂资源">
                     <span class="classroom-activity-tab__icon" aria-hidden="true">{{ app_topbar_icon('folder-up') }}</span>
                     <span class="classroom-activity-tab__copy">
@@ -2125,6 +1924,12 @@
             </header>
 
             <div class="classroom-activity-panels">
+                <div class="classroom-activity-panel" id="classroom-activity-panel-polls" data-classroom-activity-panel="polls" role="tabpanel" aria-labelledby="classroom-activity-tab-polls" hidden>
+            <section class="poll-panel" id="poll-panel" data-poll-root data-class-offering-id="{{ classroom.id }}" data-role="{{ user_info.role }}" aria-live="polite">
+                <div class="poll-panel__loading" data-poll-loading>正在加载投票…</div>
+                <div class="poll-panel__content" data-poll-content hidden></div>
+            </section>
+                </div>
                 <div class="classroom-activity-panel" id="classroom-activity-panel-interaction" data-classroom-activity-panel="interaction" role="tabpanel" aria-labelledby="classroom-activity-tab-interaction" hidden>
                     <section class="workspace-panel interaction-panel" id="interaction-panel" data-workspace-section data-interaction-root data-class-offering-id="{{ classroom.id }}" aria-live="polite">
                         <div class="section-header interaction-panel__header">
@@ -2202,7 +2007,7 @@
                         <div class="chat-quote-preview" id="chat-quote-preview" hidden></div>
                         <div class="chat-attachment-preview-row" id="chat-attachment-preview-row" hidden></div>
                         <div class="chat-emoji-preview-row" id="chat-emoji-preview-row" hidden></div>
-                        <textarea id="chat-input" class="form-control chat-composer-input" autocomplete="off" rows="3" aria-label="课堂讨论输入"></textarea>
+                        <textarea id="chat-input" class="form-control chat-composer-input" autocomplete="off" rows="3" placeholder="输入课堂问题或讨论内容…" aria-label="课堂讨论输入"></textarea>
                         <div class="chat-composer-actions" aria-label="讨论工具">
                             <button type="button" class="btn btn-ghost chat-composer-tool-btn chat-composer-expand-btn" id="chat-composer-expand-btn" title="放大输入框" aria-label="放大输入框" aria-pressed="false">
                                 <svg class="icon-expand" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="m21 3-7 7"></path><path d="M9 21H3v-6"></path><path d="m3 21 7-7"></path></svg>
@@ -2385,16 +2190,6 @@
                                     刷新
                                 </button>
                             </div>
-                        </div>
-                        <div
-                            class="resource-workspace-island"
-                            data-lanshare-island="resource-workspace-sync"
-                            data-island-id="resource-workspace-sync-{{ classroom.id }}"
-                        ></div>
-                        <div class="section-chip-row">
-                            {% for tag in classroom_page.resource_tags %}
-                            <span class="section-chip">{{ tag }}</span>
-                            {% endfor %}
                         </div>
 
                         {% if user_info.role == 'teacher' %}
@@ -2863,7 +2658,7 @@
 {% include "partials/learning_certificate_reveal.html" %}
 {% endif %}
 
-{% include "partials/ai_workspace_widget.html" %}
+{% with ai_widget_deferred=true %}{% include "partials/ai_workspace_widget.html" %}{% endwith %}
 
 {% if user_info.role == 'teacher' %}
 {% include "partials/learning_material_selector.html" %}
@@ -2903,27 +2698,22 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="{{ asset_url('js/classroom_group_qr.js') }}"></script>
+<script type="module" fetchpriority="low" src="{{ asset_url('js/classroom_group_qr.js') }}"></script>
 <script src="/static/js/behavior_tracker.js"></script>
-<script type="module" src="/static/js/feedback.js"></script>
+<script type="module" fetchpriority="low" src="/static/js/feedback.js"></script>
 {{ vite_entry_tags('frontend/src/islands/classroom-page.tsx') }}
-{{ vite_entry_tags('frontend/src/islands/assignment-task-board-sync.tsx') }}
-{{ vite_entry_tags('frontend/src/islands/classroom-activity-workspace-sync.tsx') }}
-{{ vite_entry_tags('frontend/src/islands/resource-workspace-sync.tsx') }}
-{{ vite_entry_tags('frontend/src/islands/material-learning-path-sync.tsx') }}
-{{ vite_entry_tags('frontend/src/islands/learning-progress-sync.tsx') }}
-{{ vite_entry_tags('frontend/src/islands/assignment-authoring-sync.tsx') }}
-{{ vite_entry_tags('frontend/src/islands/exam-assign-sync.tsx') }}
 
 {% if user_info.role == 'student' %}
 <script type="module" src="/static/js/student_security.js"></script>
 {% endif %}
 {% if user_info.role == 'teacher' %}
-<script type="module" src="{{ asset_url('js/group_assignment_config.js') }}"></script>
-<script type="module" src="{{ asset_url('js/ordinary_grade_kind_controls.js') }}"></script>
-<script type="module" src="{{ asset_url('js/classroom_closeout.js') }}"></script>
-<script type="module" src="{{ asset_url('js/classroom_retake.js') }}"></script>
+<script type="module" fetchpriority="low" src="{{ asset_url('js/group_assignment_config.js') }}"></script>
+<script type="module" fetchpriority="low" src="{{ asset_url('js/ordinary_grade_kind_controls.js') }}"></script>
+<script type="module" fetchpriority="low" src="{{ asset_url('js/classroom_closeout.js') }}"></script>
+<script type="module" fetchpriority="low" src="{{ asset_url('js/classroom_retake.js') }}"></script>
 {% endif %}
-<script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
-<script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
+<script type="application/json" id="cw-deferred-assets">{{ {
+    'aiComponent': asset_url('js/ai_chat_component.js'),
+    'aiWorkspace': asset_url('js/ai_workspace_widget.js')
+} | tojson }}</script>
 {% endblock %}

@@ -69,8 +69,8 @@ if (trigger && dialog) {
         } else element.removeAttribute('src');
     }
     function renderCard() {
-        showImage(thumbnail, record.image_url);
-        placeholder.hidden = Boolean(record.image_url);
+        if (thumbnail) showImage(thumbnail, record.image_url);
+        if (placeholder) placeholder.hidden = Boolean(record.image_url);
         hint.textContent = record.image_url ? '点击放大' : (form ? '点击设置' : '暂未设置');
     }
     function renderImage() {
@@ -295,8 +295,8 @@ if (trigger && dialog) {
         placeholder.hidden = false;
         hint.textContent = form ? '图片不可用 · 点击更新' : '图片暂不可用';
     }
-    thumbnail.addEventListener('error', thumbnailError);
-    if (thumbnail.getAttribute('src') && thumbnail.complete && !thumbnail.naturalWidth) thumbnailError();
+    thumbnail?.addEventListener('error', thumbnailError);
+    if (thumbnail?.getAttribute('src') && thumbnail.complete && !thumbnail.naturalWidth) thumbnailError();
     preview.addEventListener('error', () => {
         preview.hidden = true;
         empty.hidden = false;

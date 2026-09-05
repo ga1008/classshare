@@ -1258,6 +1258,33 @@ def decorate_offering_sessions(
             if part
         )
         item["detail_hint"] = " ".join(hint_parts)
+        # Keep the source description intact for details/editing. The classroom
+        # summary excludes only the exact schedule-generated placeholder.
+        generated_intro = f"第 {order_index} 次课，按教务实际排课自动生成，请补充本次课要讲的知识点、实验内容或案例任务。"
+        placeholder = bool(item.get("is_academic_schedule") and content_lines and content_lines[0] == generated_intro)
+        summary_lines = list(content_lines[1:] if placeholder else content_lines)
+        if placeholder:
+            # Only remove a leading, verifiable generated metadata block.
+            # A teacher can also write lines starting with these labels; those
+            # are content, and must not disappear through keyword filtering.
+            schedule_parts = [item["session_date"], f"第{item['week_index']}周" if item["week_index"] else "",
+                              item["weekday_label"], f"第{item['academic_section_text']}节" if item["academic_section_text"] else ""]
+            generated_lines = {"上课时间：" + " ".join(part for part in schedule_parts if part),
+                               "上课时间：" + item["session_date"]}
+            location = " ".join(part for part in (item["academic_campus"], item["academic_location"]) if part)
+            if location:
+                generated_lines.add("上课地点：" + location)
+            for class_name in (item["academic_teaching_class_name"], item["schedule_metadata"].get("class_composition")):
+                if class_name:
+                    generated_lines.add("教学班：" + str(class_name))
+            while summary_lines and summary_lines[0] in generated_lines:
+                summary_lines.pop(0)
+        item["workspace_summary"] = truncate_text(" ".join(summary_lines), 140)
+        item["workspace_meta"] = " · ".join(str(part) for part in [
+            item.get("date_label"),
+            f"第 {item['academic_section_text']} 节" if item.get("academic_section_text") else (f"{item['section_count']} 节" if item.get("section_count") else ""),
+            item.get("academic_campus"), item.get("academic_location"),
+        ] if part)
 
     home_entry = build_timeline_home_entry(
         home_material,

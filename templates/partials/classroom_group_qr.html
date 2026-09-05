@@ -1,18 +1,21 @@
 {% set group_qr = classroom_page.group_qr %}
 {% set can_edit_group_qr = user_info.role == 'teacher' %}
-<button type="button" class="classroom-group-qr" data-group-qr-open
+{% set compact_group_qr = classroom_workspace_compact | default(false) %}
+{% if not compact_group_qr or can_edit_group_qr or group_qr.image_url %}
+<button type="button" class="{{ 'cw-text-button cw-group-qr' if compact_group_qr else 'classroom-group-qr' }}" data-group-qr-open
         data-endpoint="/api/classrooms/{{ classroom.id }}/group-qr"
         aria-haspopup="dialog" aria-controls="classroom-group-qr-dialog"
         aria-label="{% if can_edit_group_qr %}查看或设置班群二维码{% else %}放大查看班群二维码{% endif %}">
-    <span class="classroom-group-qr__thumbnail">
+    {% if not compact_group_qr %}<span class="classroom-group-qr__thumbnail">
         <img data-group-qr-thumbnail {% if group_qr.image_url %}src="{{ group_qr.image_url }}"{% else %}hidden{% endif %} alt="班群二维码" width="104" height="104">
         <span data-group-qr-placeholder {% if group_qr.image_url %}hidden{% endif %}>
             <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M15 14v3h3v4m3-7v3m-7 4h1M3 12h3m6-9v3m0 4v3h3"/></svg>
         </span>
-    </span>
+    </span>{% endif %}
     <strong>班群二维码</strong>
     <small data-group-qr-hint>{% if group_qr.image_url %}点击放大{% elif can_edit_group_qr %}点击设置{% else %}暂未设置{% endif %}</small>
 </button>
+{% endif %}
 <script type="application/json" id="classroom-group-qr-data">{{ group_qr | tojson }}</script>
 <dialog id="classroom-group-qr-dialog" class="classroom-group-qr-dialog" aria-labelledby="classroom-group-qr-title" data-mode="{{ 'teacher' if can_edit_group_qr else 'student' }}">
     <div class="classroom-group-qr-dialog__header">

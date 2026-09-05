@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Any
+from ..time_utils import parse_datetime
+from .academic_service import CHINA_TZ
 
 from .discussion_mood_service import get_discussion_mood_payload
 from .materials_service import get_effective_assignment_nodes
@@ -100,6 +102,7 @@ def build_classroom_page_context(
         "hero": hero,
         "sections": sections,
         "assignment_stats": assignment_stats,
+        "assignment_workspace_items": build_assignment_workspace_items(role=role, assignments=assignments),
         "assignment_metrics": _build_assignment_metrics(role=role, assignment_stats=assignment_stats),
         "assigned_material_count": assigned_material_count,
         "materials_tags": ["目录浏览", "README 预览", "批量下载"],
@@ -125,6 +128,49 @@ def _safe_int(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def build_assignment_workspace_items(*, role: str, assignments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Small authorized classroom projection, independent of rendered cards.
+
+    The router has already applied assignment access and group-result gating.
+    Assignments have classroom scope; there is deliberately no inferred session ID.
+    """
+    items = []
+    for assignment in assignments:
+        metrics = assignment.get("teacher_submission_metrics") or {}
+        item = {
+            "id": assignment["id"],
+            "title": assignment.get("title") or "未命名任务",
+            "kind": "exam" if assignment.get("exam_paper_id") else "assignment",
+            "status": assignment.get("effective_status") or assignment.get("status") or "",
+            "submissionStatus": assignment.get("submission_status") or "unsubmitted",
+            "accepting": bool(assignment.get("is_accepting_submissions")),
+            "lateOpen": bool(assignment.get("is_late_submission_open")),
+            "latePolicyLabel": assignment.get("late_policy_label") or "",
+            "deadlinePhase": assignment.get("deadline_phase") or "none",
+            "countdownAt": _workspace_datetime(assignment.get("countdown_at")),
+            "startsAt": _workspace_datetime(assignment.get("starts_at")),
+            "serverNow": _workspace_datetime(assignment.get("server_now")),
+            "canResubmit": bool(assignment.get("can_resubmit_submission")),
+            "resubmissionDueAt": _workspace_datetime(assignment.get("resubmission_due_at")),
+            "groupPending": bool(assignment.get("group_pending")),
+        }
+        if role == "teacher":
+            item.update(pendingGrade=_safe_int(metrics.get("pending_grade_count")),
+                        grading=_safe_int(metrics.get("grading_count")),
+                        returned=_safe_int(metrics.get("returned_count")))
+        items.append(item)
+    return items
+
+
+def _workspace_datetime(value: Any) -> str:
+    parsed = parse_datetime(value)
+    if parsed is None:
+        return ""
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=CHINA_TZ)
+    return parsed.astimezone(CHINA_TZ).isoformat(timespec="seconds")
 
 
 def _build_assignment_stats(*, role: str, assignments: list[dict[str, Any]]) -> dict[str, int]:

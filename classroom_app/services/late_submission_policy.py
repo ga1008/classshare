@@ -196,10 +196,12 @@ def assignment_late_window_accepts(assignment: dict[str, Any], now_dt: datetime 
     if not _is_truthy(assignment.get("late_submission_enabled"), False):
         return False
     due_dt = parse_iso_like_datetime(assignment.get("due_at"))
-    if due_dt is None or now_dt <= due_dt:
+    # Regular submission ends at due_at; the supplement window starts at the
+    # same instant, without a one-second gap in second-precision timestamps.
+    if due_dt is None or now_dt < due_dt:
         return False
     until_dt = parse_iso_like_datetime(assignment.get("late_submission_until"))
-    if until_dt is not None and now_dt > until_dt:
+    if until_dt is not None and now_dt >= until_dt:
         return False
     return True
 
@@ -233,7 +235,7 @@ def build_late_submission_snapshot(
     due_dt = parse_iso_like_datetime(assignment.get("due_at"))
     is_late = bool(
         due_dt is not None
-        and submitted_dt > due_dt
+        and submitted_dt >= due_dt
         and _is_truthy(assignment.get("late_submission_enabled"), False)
     )
     late_by_seconds = max(0, int((submitted_dt - due_dt).total_seconds())) if due_dt and submitted_dt > due_dt else 0

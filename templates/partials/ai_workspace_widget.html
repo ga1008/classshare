@@ -27,7 +27,7 @@
     });
 </script>
 
-<button id="ai-chat-fab" type="button" title="{{ 'AI 助手与任务中心' if ai_widget_is_teacher else '课堂 AI 助手' }}" class="ai-workspace-fab shadow-lg" aria-haspopup="dialog" aria-controls="ai-chat-modal">
+<button id="ai-chat-fab" type="button" title="{{ 'AI 助手与任务中心' if ai_widget_is_teacher else '课堂 AI 助手' }}" class="ai-workspace-fab shadow-lg" aria-haspopup="dialog" aria-controls="ai-chat-modal"{% if ai_widget_deferred|default(false) %} disabled aria-busy="true" data-ai-deferred{% endif %}>
     <span class="ai-workspace-fab__halo" aria-hidden="true"></span>
     <span class="ai-workspace-fab__icon" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">

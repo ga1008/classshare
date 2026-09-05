@@ -18,6 +18,8 @@ const state = {
     previousDescribedBy: null,
     repositionFrame: 0,
     config: null,
+    returningFocus: false,
+    focusOrigin: null,
 };
 
 function asElement(target) {
@@ -128,9 +130,7 @@ function createPanel() {
     `;
     document.body.appendChild(panel);
     panel.querySelector('.ui-explain-popover__close')?.addEventListener('click', () => {
-        const trigger = state.trigger;
-        closeExplanation();
-        trigger?.focus?.({ preventScroll: true });
+        closeExplanation({ restoreFocus: true });
     });
     panel.addEventListener('pointerenter', cancelClose);
     panel.addEventListener('pointerleave', () => scheduleClose(160));
@@ -265,7 +265,12 @@ function cancelClose() {
 
 function scheduleClose(delay = 120) {
     cancelClose();
-    state.closeTimer = window.setTimeout(closeExplanation, delay);
+    state.closeTimer = window.setTimeout(() => {
+        // Moving the pointer must not dismiss content being read with the keyboard.
+        const focused = document.activeElement;
+        if (state.panel?.contains(focused) || state.trigger?.contains(focused)) return;
+        closeExplanation();
+    }, delay);
 }
 
 function scheduleOpen(trigger, delay) {
@@ -286,9 +291,15 @@ export function openExplanation(target, override = null) {
     if (state.trigger && state.trigger !== trigger) closeExplanation();
     state.trigger = trigger;
     state.config = config;
+    if (trigger.contains(document.activeElement)) state.focusOrigin = document.activeElement;
     renderPanel(config);
     const panel = createPanel();
-    state.previousDescribedBy = trigger.getAttribute('aria-describedby');
+    // Keep help inside an owning dialog's focus scope, while remaining nonmodal.
+    const panelHost = trigger.closest('[role="dialog"][aria-modal="true"]') || document.body;
+    if (panel.parentElement !== panelHost) panelHost.appendChild(panel);
+    if (trigger.getAttribute('aria-describedby') !== panel.id) {
+        state.previousDescribedBy = trigger.getAttribute('aria-describedby');
+    }
     trigger.setAttribute('aria-describedby', panel.id);
     trigger.setAttribute('aria-expanded', 'true');
     panel.hidden = false;
@@ -301,10 +312,10 @@ export function openExplanation(target, override = null) {
     return true;
 }
 
-export function closeExplanation() {
+export function closeExplanation({ restoreFocus = false } = {}) {
     cancelOpen();
     cancelClose();
-    const { trigger, panel } = state;
+    const { trigger, panel, focusOrigin } = state;
     if (trigger) {
         if (state.previousDescribedBy) trigger.setAttribute('aria-describedby', state.previousDescribedBy);
         else trigger.removeAttribute('aria-describedby');
@@ -318,6 +329,41 @@ export function closeExplanation() {
     state.trigger = null;
     state.previousDescribedBy = null;
     state.config = null;
+    state.focusOrigin = null;
+    if (restoreFocus && trigger?.isConnected) {
+        state.returningFocus = true;
+        const destination = focusOrigin?.isConnected ? focusOrigin : trigger;
+        destination.focus?.({ preventScroll: true });
+        state.returningFocus = false;
+    }
+}
+
+function focusExplanation() {
+    const panel = state.panel;
+    if (!panel || panel.hidden) return;
+    cancelClose();
+    const target = panel.querySelector('.ui-explain-popover__close');
+    target?.focus({ preventScroll: true });
+}
+
+function focusAfterExplanation() {
+    const { trigger, panel } = state;
+    if (!trigger || !panel) return;
+    const scope = trigger.closest('[role="dialog"][aria-modal="true"]') || document.body;
+    const controls = Array.from(scope.querySelectorAll(
+        'a[href], button, input, select, textarea, [tabindex]',
+    )).filter((element) => element.tabIndex >= 0 && !element.disabled
+        && !panel.contains(element) && !element.closest('[hidden], [inert]')
+        && element.getClientRects().length > 0);
+    const origin = state.focusOrigin || trigger;
+    const next = controls.find((element) => !trigger.contains(element)
+        && Boolean(origin.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING));
+    closeExplanation();
+    // No local trap: continue in document order, or leave focus on the origin
+    // at the end of the document so the next Tab can reach browser chrome.
+    state.returningFocus = true;
+    (next || origin).focus?.({ preventScroll: true });
+    state.returningFocus = false;
 }
 
 export function registerExplanations(entries = {}) {
@@ -354,6 +400,7 @@ document.addEventListener('pointerout', (event) => {
 });
 
 document.addEventListener('focusin', (event) => {
+    if (state.returningFocus) return;
     const trigger = findTrigger(event.target);
     if (trigger) scheduleOpen(trigger, 300);
 });
@@ -420,13 +467,42 @@ document.addEventListener('click', (event) => {
         : null;
     if (!toggle) return;
     event.preventDefault();
-    if (state.trigger === toggle && state.panel && !state.panel.hidden) closeExplanation();
-    else openExplanation(toggle);
+    if (state.trigger === toggle && state.panel && !state.panel.hidden) {
+        // Focus may already have opened the explanation before Enter/Space.
+        // Keyboard activation enters its links rather than closing it again.
+        if (event.detail === 0) focusExplanation();
+        else closeExplanation();
+    } else if (openExplanation(toggle) && event.detail === 0) {
+        focusExplanation();
+    }
 });
 
 document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && state.trigger) closeExplanation();
-});
+    if (!state.trigger) return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closeExplanation({ restoreFocus: state.panel?.contains(document.activeElement) });
+    } else if (event.key === 'Tab' && !event.shiftKey
+        && state.trigger.contains(document.activeElement)
+        && state.trigger.matches('[data-explain-toggle]')
+        && state.panel && !state.panel.hidden) {
+        event.preventDefault();
+        focusExplanation();
+    } else if (event.key === 'Tab' && event.shiftKey && state.panel?.contains(document.activeElement)) {
+        const firstTarget = state.panel.querySelector('.ui-explain-popover__close');
+        if (document.activeElement === firstTarget) {
+            event.preventDefault();
+            closeExplanation({ restoreFocus: true });
+        }
+    } else if (event.key === 'Tab' && !event.shiftKey && state.panel?.contains(document.activeElement)) {
+        const targets = state.panel.querySelectorAll('button, a[href]');
+        if (document.activeElement === targets[targets.length - 1]) {
+            event.preventDefault();
+            focusAfterExplanation();
+        }
+    }
+}, true);
 
 window.LanShareExplanation = Object.freeze({
     attach: attachExplanation,

@@ -21,6 +21,7 @@ function closeModal() {
     overlayEl.remove();
     overlayEl = null;
     document.removeEventListener('keydown', onKeydown);
+    document.dispatchEvent(new CustomEvent('classroom:group-config-closed'));
   }
 }
 
@@ -189,11 +190,13 @@ async function openModal(btn) {
     if (!response.ok) throw new Error(data.detail || data.message || '加载失败');
     if (data.supported === false) {
       showToast(data.message || '该作业未关联教学班，无法按小组完成', 'warning');
+      document.dispatchEvent(new CustomEvent('classroom:group-config-closed'));
       return;
     }
     render(assignmentId, title, data);
   } catch (err) {
     showToast(err.message || '加载分组配置失败', 'error');
+    document.dispatchEvent(new CustomEvent('classroom:group-config-closed'));
   }
 }
 

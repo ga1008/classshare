@@ -8,11 +8,7 @@ const state = {
     files: [],
     activeFileId: null,
 };
-const uploadStates = new Map();
-let resourceWorkspaceCommandBound = false;
 
-const resourceWorkspaceEventName = 'lanshare:resource-workspace-change';
-const resourceWorkspaceCommandEventName = 'lanshare:resource-workspace-command';
 
 function refs() {
     return {
@@ -47,55 +43,6 @@ function dispatchResourceCount() {
             notes: { resources: state.files.length ? `${state.files.length} resources` : 'No shared resources' },
         },
     }));
-}
-
-function summarizeUploads() {
-    const uploads = Array.from(uploadStates.values());
-    const activeUploads = uploads.filter((item) => item.status === 'uploading');
-    const failedUploads = uploads.filter((item) => item.status === 'error');
-    const completedUploads = uploads.filter((item) => item.status === 'complete');
-    const averagePercent = activeUploads.length
-        ? Math.round(activeUploads.reduce((total, item) => total + Number(item.percent || 0), 0) / activeUploads.length)
-        : 0;
-
-    return {
-        activeCount: activeUploads.length,
-        failedCount: failedUploads.length,
-        completedCount: completedUploads.length,
-        averagePercent,
-    };
-}
-
-function buildResourceWorkspaceSnapshot(extra = {}) {
-    const totalBytes = state.files.reduce((total, file) => total + Number(file.file_size || file.size || 0), 0);
-    const withDescription = state.files.filter((file) => String(file.description || '').trim()).length;
-    const withOriginalLink = state.files.filter((file) => String(file.original_link || '').trim()).length;
-    const blockedDownloads = state.files.filter((file) => file.download_allowed === false).length;
-    const activeFile = getFileById(state.activeFileId);
-
-    return {
-        role: String(config?.userInfo?.role || ''),
-        courseId: config?.courseId || null,
-        classOfferingId: config?.classOfferingId || null,
-        totalFiles: state.files.length,
-        totalBytes,
-        withDescription,
-        withOriginalLink,
-        blockedDownloads,
-        downloadableFiles: Math.max(state.files.length - blockedDownloads, 0),
-        canUpload: isTeacherView(),
-        upload: summarizeUploads(),
-        activeFileId: activeFile?.id || null,
-        activeFileName: activeFile?.file_name || activeFile?.filename || '',
-        isLoading: extra.isLoading === true,
-        lastError: typeof extra.lastError === 'string' ? extra.lastError : '',
-    };
-}
-
-function publishResourceWorkspaceSnapshot(extra = {}) {
-    const snapshot = buildResourceWorkspaceSnapshot(extra);
-    window.__LANSHARE_RESOURCE_WORKSPACE__ = snapshot;
-    window.dispatchEvent(new CustomEvent(resourceWorkspaceEventName, { detail: snapshot }));
 }
 
 function isTeacherView() {
@@ -264,7 +211,6 @@ function renderFiles() {
     const { list } = refs();
     if (!list) return;
     dispatchResourceCount();
-    publishResourceWorkspaceSnapshot();
 
     if (!state.files.length) {
         list.innerHTML = `
@@ -281,7 +227,6 @@ function renderFiles() {
 async function loadFiles() {
     const { list } = refs();
     if (!list) return;
-    publishResourceWorkspaceSnapshot({ isLoading: true });
 
     try {
         const data = await apiFetch(`/api/courses/${config.classOfferingId}/files`, { silent: true });
@@ -300,7 +245,6 @@ async function loadFiles() {
                 <p class="text-danger">资源加载失败，请稍后重试。</p>
             </div>
         `;
-        publishResourceWorkspaceSnapshot({ lastError: error.message || '资源加载失败' });
     }
 }
 
@@ -405,7 +349,6 @@ function openFileDetails(fileId) {
     if (!file) return;
     state.activeFileId = Number(file.id);
     renderFileModal(file);
-    publishResourceWorkspaceSnapshot();
     openModal('shared-file-modal');
 }
 
@@ -460,7 +403,6 @@ async function saveActiveFileMetadata() {
         });
         renderFiles();
         renderFileModal(getFileById(state.activeFileId));
-        publishResourceWorkspaceSnapshot();
         showToast(result?.message || '文件详情已更新', 'success');
     } catch (error) {
         console.error('Failed to update file metadata:', error);
@@ -512,13 +454,6 @@ function handleFiles(fileList) {
 function uploadFile(file) {
     const { uploadProgressArea } = refs();
     if (!uploadProgressArea) return;
-    const uploadKey = `${file.name}-${file.size}-${file.lastModified || Date.now()}`;
-    uploadStates.set(uploadKey, {
-        name: file.name,
-        percent: 0,
-        status: 'uploading',
-    });
-    publishResourceWorkspaceSnapshot();
 
     const item = document.createElement('div');
     item.className = 'card';
@@ -538,14 +473,8 @@ function uploadFile(file) {
     const barEl = item.querySelector('.upload-bar');
     const uploader = new ChunkedUploader(file, config.courseId, {
         onProgress(info) {
-            uploadStates.set(uploadKey, {
-                name: file.name,
-                percent: Number(info.percent || 0),
-                status: 'uploading',
-            });
             percentEl.textContent = `${info.percent}%`;
             barEl.style.width = `${info.percent}%`;
-            publishResourceWorkspaceSnapshot();
         },
         onComplete(result) {
             if (result.skipped) {
@@ -556,16 +485,8 @@ function uploadFile(file) {
             percentEl.textContent = '100%';
             barEl.style.width = '100%';
             barEl.style.background = 'var(--success-color)';
-            uploadStates.set(uploadKey, {
-                name: file.name,
-                percent: 100,
-                status: 'complete',
-            });
-            publishResourceWorkspaceSnapshot();
             window.setTimeout(() => {
                 item.remove();
-                uploadStates.delete(uploadKey);
-                publishResourceWorkspaceSnapshot();
             }, 1800);
             loadFiles();
         },
@@ -574,12 +495,6 @@ function uploadFile(file) {
             showToast(`${file.name} 上传失败：${error.message}`, 'error');
             percentEl.textContent = '失败';
             barEl.style.background = 'var(--danger-color)';
-            uploadStates.set(uploadKey, {
-                name: file.name,
-                percent: 0,
-                status: 'error',
-            });
-            publishResourceWorkspaceSnapshot({ lastError: error.message || '上传失败' });
         },
     });
 
@@ -644,7 +559,6 @@ function bindModalEvents() {
     modal.addEventListener('click', (event) => {
         if (event.target === modal) {
             state.activeFileId = null;
-            publishResourceWorkspaceSnapshot();
             return;
         }
         const blockedBtn = event.target.closest('[data-action="blocked"]');
@@ -657,7 +571,6 @@ function bindModalEvents() {
     modal.querySelectorAll('[data-dismiss="modal"]').forEach((button) => {
         button.addEventListener('click', () => {
             state.activeFileId = null;
-            publishResourceWorkspaceSnapshot();
         });
     });
 
@@ -696,35 +609,10 @@ function bindModalEvents() {
     });
 }
 
-function bindResourceWorkspaceCommands() {
-    if (resourceWorkspaceCommandBound) return;
-    resourceWorkspaceCommandBound = true;
-
-    window.addEventListener(resourceWorkspaceCommandEventName, (event) => {
-        const detail = event instanceof CustomEvent ? event.detail : null;
-        const commandType = detail?.type;
-        const { list, uploadZone, fileInput } = refs();
-
-        if (commandType === 'refresh') {
-            void loadFiles();
-        }
-        if (commandType === 'focus-list') {
-            list?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            publishResourceWorkspaceSnapshot();
-        }
-        if (commandType === 'open-upload' && isTeacherView()) {
-            uploadZone?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            fileInput?.click();
-            publishResourceWorkspaceSnapshot();
-        }
-    });
-}
-
 export function init(appConfig) {
     config = appConfig;
     bindListEvents();
     bindModalEvents();
-    bindResourceWorkspaceCommands();
     loadFiles();
 
     if (isTeacherView()) {
@@ -750,10 +638,8 @@ export async function deleteFile(fileId) {
             closeFileDetails();
         }
         await loadFiles();
-        publishResourceWorkspaceSnapshot();
     } catch (error) {
         console.error('Failed to delete file:', error);
         showToast(`删除失败：${error.message || '未知错误'}`, 'error');
-        publishResourceWorkspaceSnapshot({ lastError: error.message || '删除失败' });
     }
 }

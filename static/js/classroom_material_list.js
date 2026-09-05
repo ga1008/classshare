@@ -3,7 +3,7 @@
  *
  * 课堂卡片的"材料入口"按钮点开后，以宽卡片列表展示该课次（或首页）绑定的全部
  * 学习材料：大标题为材料名称，下附一行由快速版 AI 生成的一句话简介；点击卡片任
- * 意位置在新标签打开材料（Markdown 阅读器或 HTML 渲染页）。教师把鼠标移到卡片上
+ * 意位置在新标签打开材料（Markdown 阅读器或 HTML 渲染页）。列表只读，不触发简介生成。教师把鼠标移到卡片上
  * 时，右上角出现红色叉号可解绑，并有二次确认浮窗以防误点。
  *
  * 模块自包含：按需创建自己的弹窗 DOM，数据通过 REST 接口拉取，不依赖时间轴内部
@@ -11,6 +11,7 @@
  */
 import { apiFetch } from './api.js';
 import { escapeHtml, showToast } from './ui.js';
+import { ownClassroomMaterialFocus } from './classroom_material_focus.js';
 
 const state = {
     classOfferingId: 0,
@@ -26,6 +27,8 @@ const state = {
 
 let listBackdrop = null;
 let confirmBackdrop = null;
+let releaseListFocus = null;
+let releaseConfirmFocus = null;
 
 function buildOpenUrl(material) {
     const raw = String(material?.open_url || '').trim();
@@ -97,14 +100,6 @@ function ensureDom() {
         confirmRemoval().catch((error) => showToast(error.message || '解绑失败', 'error'));
     });
 
-    document.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape') return;
-        if (!confirmBackdrop.hidden) {
-            closeConfirm();
-        } else if (!listBackdrop.hidden) {
-            closeListPopup();
-        }
-    });
 }
 
 function renderList() {
@@ -117,16 +112,14 @@ function renderList() {
     }
     if (!state.materials.length) {
         listEl.innerHTML = state.isTeacher
-            ? '<div class="ls-mat-empty">这里还没有绑定材料。可在下方“添加材料”绑定 Markdown 或 HTML。</div>'
+            ? '<div class="ls-mat-empty">这里还没有绑定材料。关闭后可在“管理课次”中添加 Markdown 或 HTML。</div>'
             : '<div class="ls-mat-empty">教师还没有为这里绑定学习材料。</div>';
         return;
     }
 
     listEl.innerHTML = state.materials.map((material) => {
         const blurb = String(material.ai_blurb || '').trim()
-            || (material.ai_blurb_status === 'failed'
-                ? (material.material_path || '点击进入材料')
-                : 'AI 正在生成一句话简介…');
+            || material.material_path || '点击进入材料';
         const renderBadge = material.is_renderable
             ? '<span class="ls-mat-card__badge">可渲染</span>'
             : '';
@@ -169,7 +162,7 @@ function openMaterial(materialId) {
 async function reload() {
     state.loading = true;
     renderList();
-    const params = new URLSearchParams({ session_id: String(state.sessionId || 0) });
+    const params = new URLSearchParams({ session_id: String(state.sessionId || 0), generate_blurbs: 'false' });
     try {
         const data = await apiFetch(
             `/api/classrooms/${state.classOfferingId}/learning-materials?${params.toString()}`,
@@ -192,7 +185,7 @@ function showConfirm(material) {
     }
     confirmBackdrop.hidden = false;
     confirmBackdrop.setAttribute('aria-hidden', 'false');
-    confirmBackdrop.querySelector('[data-cancel-removal]')?.focus();
+    releaseConfirmFocus = ownClassroomMaterialFocus(confirmBackdrop, closeConfirm, confirmBackdrop.querySelector('[data-cancel-removal]'));
 }
 
 function closeConfirm() {
@@ -200,6 +193,7 @@ function closeConfirm() {
     confirmBackdrop.hidden = true;
     confirmBackdrop.setAttribute('aria-hidden', 'true');
     state.pendingRemoval = null;
+    releaseConfirmFocus?.(); releaseConfirmFocus = null;
 }
 
 async function confirmRemoval() {
@@ -219,6 +213,7 @@ async function confirmRemoval() {
         showToast(result.message || '已解绑该材料', 'success');
         closeConfirm();
         await reload();
+        listBackdrop.querySelector('[data-close-mat-popup]')?.focus({ preventScroll: true });
         if (typeof state.onChanged === 'function') {
             state.onChanged(result);
         }
@@ -229,9 +224,11 @@ async function confirmRemoval() {
 
 function closeListPopup() {
     if (!listBackdrop) return;
+    if (!confirmBackdrop.hidden) closeConfirm();
     listBackdrop.hidden = true;
     listBackdrop.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('has-ls-mat-popup');
+    releaseListFocus?.(); releaseListFocus = null;
 }
 
 export function openMaterialListPopup({
@@ -242,6 +239,7 @@ export function openMaterialListPopup({
     title = '学习材料',
     subtitle = '点击任意卡片进入材料',
     onChanged = null,
+    returnFocus = null,
 } = {}) {
     ensureDom();
     state.classOfferingId = Number(classOfferingId) || 0;
@@ -273,6 +271,7 @@ export function openMaterialListPopup({
         });
         listEl.addEventListener('keydown', (event) => {
             if (event.key !== 'Enter' && event.key !== ' ') return;
+            if (event.target.closest('[data-remove-material]')) return;
             const card = event.target.closest('[data-open-material]');
             if (card) {
                 event.preventDefault();
@@ -284,5 +283,7 @@ export function openMaterialListPopup({
     listBackdrop.hidden = false;
     listBackdrop.setAttribute('aria-hidden', 'false');
     document.body.classList.add('has-ls-mat-popup');
+    releaseListFocus?.();
+    releaseListFocus = ownClassroomMaterialFocus(listBackdrop, closeListPopup, listBackdrop.querySelector('[data-close-mat-popup]'), returnFocus);
     return reload();
 }

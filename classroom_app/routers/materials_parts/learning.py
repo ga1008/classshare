@@ -82,6 +82,7 @@ def _build_session_material_patch(conn, class_offering_id: int, session_id: int,
 async def list_classroom_learning_materials(
     class_offering_id: int,
     session_id: int = Query(default=0),
+    generate_blurbs: bool = Query(default=True),
     user: dict = Depends(get_current_user),
 ):
     with get_db_connection() as conn:
@@ -93,11 +94,15 @@ async def list_classroom_learning_materials(
         if not offering:
             raise HTTPException(404, "课堂不存在")
         teacher_id = int(offering["teacher_id"])
-        entries = build_material_entries(conn, class_offering_id, session_id, teacher_id=teacher_id)
+        entries = build_material_entries(
+            conn, class_offering_id, session_id, teacher_id=teacher_id,
+            persist_legacy=generate_blurbs,
+        )
         can_manage = user["role"] == "teacher" and (
             int(user["id"]) == teacher_id or is_super_admin_teacher(conn, int(user["id"]))
         )
-        conn.commit()
+        if generate_blurbs:
+            conn.commit()
 
     # 懒生成尚未尝试过的一句话简介（快速版 AI，best-effort）。仅处理 status=='idle'，
     # 失败标记为 'failed' 不再每次重试；前端对 failed 用材料路径降级展示。
@@ -105,7 +110,7 @@ async def list_classroom_learning_materials(
         entry for entry in entries
         if not entry.get("ai_blurb") and str(entry.get("ai_blurb_status") or "idle") == "idle"
     ][:AI_BLURB_GENERATE_LIMIT]
-    if pending:
+    if generate_blurbs and pending:
         generated: list[tuple[dict, str]] = []
         for entry in pending:
             blurb = await generate_material_blurb(

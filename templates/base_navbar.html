@@ -247,8 +247,12 @@
 <script type="module" src="/static/js/feedback.js"></script>
 <script type="module" src="/static/js/global_search.js?v=global-search-20260714"></script>
 {% if user_info.role == 'teacher' %}
+{% if dashboard_defer_ai_tools | default(false) %}
+<script type="application/json" id="dw-deferred-ai-assets">{{ {"scripts": [asset_url('es2022_polyfills'), asset_url('marked'), asset_url('markdown_runtime'), asset_url('js/ai_chat_component.js')], "module": asset_url('js/ai_workspace_widget.js'), "mermaid": asset_url('mermaid')} | tojson }}</script>
+{% else %}
 {% include "partials/markdown_assets.html" %}
 <script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
 <script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
+{% endif %}
 {% endif %}
 {% endblock %}

@@ -708,6 +708,18 @@ def _notify_group_finalized(conn, assignment_id: str, class_offering_id: int, me
 # =============================================================================
 # Student-facing display helpers
 # =============================================================================
+def student_visible_submission(submission: Optional[dict[str, Any]], display_state: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """Remove unreleased results before either HTML or JavaScript serialization.
+
+    Keep the student's own answers, attachments, status and resubmission window.
+    Callers must obtain display_state successfully; lookup failures fail closed.
+    """
+    if submission and display_state and display_state.get("is_group") and not display_state.get("revealed"):
+        return {**submission, "score": None, "feedback_md": "",
+                "score_before_late_penalty": None, "late_penalty_points": None}
+    return submission
+
+
 def get_student_display_state(conn, assignment_id: Any, student_pk_id: int) -> Optional[dict[str, Any]]:
     """Return how a group assignment's score should be presented to a student.
 

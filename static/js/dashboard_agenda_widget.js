@@ -112,6 +112,23 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
+function trapModalTab(event, card) {
+  if (event.key !== 'Tab') return;
+  // The shared date picker is portalled to body; keep its controls reachable.
+  const picker = document.querySelector('.ls-dp-pop:not(.is-closing)');
+  const boundary = picker?.getClientRects().length ? picker : card;
+  const controls = Array.from(boundary.querySelectorAll('a[href], button, input, select, textarea, summary, [tabindex="0"]'))
+    .filter((node) => !node.disabled && node.getClientRects().length);
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  if (!first) return;
+  if (event.shiftKey && (document.activeElement === first || !boundary.contains(document.activeElement))) {
+    event.preventDefault(); last.focus();
+  } else if (!event.shiftKey && (document.activeElement === last || !boundary.contains(document.activeElement))) {
+    event.preventDefault(); first.focus();
+  }
+}
+
 function positionPopover(pop, anchor) {
   const margin = 8;
   const rect = anchor.getBoundingClientRect();
@@ -139,9 +156,6 @@ function positionPopover(pop, anchor) {
 }
 
 function initAgendaWidget() {
-  const items = Array.from(document.querySelectorAll('[data-agenda-item]'));
-  if (!items.length) return;
-
   const pop = buildPopover();
   const kindEl = pop.querySelector('[data-pop-kind]');
   const titleEl = pop.querySelector('[data-pop-title]');
@@ -164,6 +178,7 @@ function initAgendaWidget() {
   const deleteBtn = pop.querySelector('[data-pop-delete]');
   const manageStatus = pop.querySelector('[data-manage-status]');
   let activeItem = null;
+  let activeData = null;
   let activeEndpoint = '';
   let activeEventId = '';
 
@@ -213,21 +228,26 @@ function initAgendaWidget() {
     remindBtn.setAttribute('aria-expanded', 'false');
   };
 
-  const close = () => {
+  const close = (restoreFocus = false) => {
     if (pop.hidden) return;
     pop.classList.remove('is-open');
     pop.hidden = true;
     collapseForm();
-    if (activeItem) activeItem.classList.remove('is-active');
+    if (activeItem) {
+      activeItem.classList.remove('is-active');
+      if (restoreFocus && activeItem.isConnected) activeItem.focus({ preventScroll: true });
+    }
     activeItem = null;
+    activeData = null;
   };
 
-  const open = (item) => {
-    if (activeItem === item) {
+  const open = (item, suppliedData = null) => {
+    if (activeItem === item && !suppliedData) {
       close();
       return;
     }
-    const data = item.dataset;
+    const data = suppliedData || item.dataset;
+    activeData = data;
     const kind = data.kind || 'todo';
     const structured = STRUCTURED_KINDS.has(kind);
     kindEl.textContent = data.kindLabel || '日程';
@@ -257,6 +277,7 @@ function initAgendaWidget() {
     if (manageEl) manageEl.hidden = !isManual;
     if (manageStatus) { manageStatus.textContent = ''; manageStatus.dataset.tone = ''; }
     if (completeBtn) completeBtn.disabled = false;
+    if (completeBtn) completeBtn.hidden = data.status === 'completed';
     if (deleteBtn) deleteBtn.disabled = false;
     const href = data.href || '#';
     goEl.hidden = canRemind || isManual;
@@ -272,8 +293,12 @@ function initAgendaWidget() {
     if (canRemind) {
       fetchReminderState();
       remindValue.focus({ preventScroll: true });
-    } else {
+    } else if (isManual) {
+      editBtn?.focus({ preventScroll: true });
+    } else if (!goEl.hidden) {
       goEl.focus({ preventScroll: true });
+    } else {
+      pop.querySelector('[data-pop-close]')?.focus({ preventScroll: true });
     }
   };
 
@@ -346,11 +371,20 @@ function initAgendaWidget() {
     }
   });
 
-  items.forEach((item) => {
-    item.addEventListener('click', () => open(item));
+  document.addEventListener('click', (event) => {
+    const item = event.target instanceof Element ? event.target.closest('[data-agenda-item]') : null;
+    if (!item || event.defaultPrevented) return;
+    event.preventDefault();
+    open(item);
+  });
+  // The full-list Dialog closes before handing off to the existing detail and
+  // editor. Its durable trigger anchors the popover, avoiding nested modals.
+  window.addEventListener('lanshare:agenda-detail', (event) => {
+    const { data, anchor } = event.detail || {};
+    if (anchor instanceof HTMLElement && data) open(anchor, data);
   });
 
-  pop.querySelector('[data-pop-close]').addEventListener('click', close);
+  pop.querySelector('[data-pop-close]').addEventListener('click', () => close(true));
 
   const setManageStatus = (message, tone) => {
     if (!manageStatus) return;
@@ -359,8 +393,8 @@ function initAgendaWidget() {
   };
 
   const activeTodoIds = () => ({
-    classOfferingId: Number(activeItem?.dataset.classOfferingId || 0),
-    todoId: Number(activeItem?.dataset.todoId || 0),
+    classOfferingId: Number(activeData?.classOfferingId || 0),
+    todoId: Number(activeData?.todoId || 0),
   });
 
   completeBtn?.addEventListener('click', async () => {
@@ -400,7 +434,7 @@ function initAgendaWidget() {
     if (!activeItem) return;
     const controller = getTodoModalController();
     if (!controller) { setManageStatus('暂时无法编辑。', 'error'); return; }
-    const data = activeItem.dataset;
+    const data = activeData || activeItem.dataset;
     const payload = {
       todoId: data.todoId,
       classOfferingId: data.classOfferingId,
@@ -424,7 +458,7 @@ function initAgendaWidget() {
     close();
   });
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') close();
+    if (event.key === 'Escape') close(true);
   });
   window.addEventListener('resize', close, { passive: true });
   document.querySelectorAll('[data-agenda-list]').forEach((list) => {
@@ -989,7 +1023,9 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   });
   form.addEventListener('submit', submit);
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !modal.hidden) close();
+    if (modal.hidden) return;
+    if (event.key === 'Escape') { event.preventDefault(); close(); }
+    else trapModalTab(event, card);
   });
   card.addEventListener('click', (event) => event.stopPropagation());
 
@@ -1077,17 +1113,28 @@ function initAgendaCalendarFeed() {
     modal.querySelector('[data-feed-open]').href = payload.webcal_url || payload.feed_url || '#';
   };
 
-  const openModal = async () => {
+  let returnFocus = null;
+  const closeModal = () => {
+    calendarFeedModal.classList.remove('is-open');
+    calendarFeedModal.hidden = true;
+    document.body.classList.remove('agenda-todo-open');
+    returnFocus?.focus({ preventScroll: true });
+  };
+  const openModal = async (event) => {
+    returnFocus = event?.currentTarget;
+    if (!returnFocus?.getClientRects().length) returnFocus = document.activeElement;
     if (!calendarFeedModal) {
       calendarFeedModal = buildCalendarFeedModal();
       const modal = calendarFeedModal;
       const statusEl = modal.querySelector('[data-feed-status]');
       const setStatus = (message) => { statusEl.textContent = message || ''; };
       modal.querySelectorAll('[data-feed-close]').forEach((el) => {
-        el.addEventListener('click', () => {
-          modal.classList.remove('is-open');
-          modal.hidden = true;
-        });
+        el.addEventListener('click', closeModal);
+      });
+      document.addEventListener('keydown', (keyEvent) => {
+        if (modal.hidden) return;
+        if (keyEvent.key === 'Escape') { keyEvent.preventDefault(); closeModal(); }
+        else trapModalTab(keyEvent, modal.querySelector('[role="dialog"]'));
       });
       modal.querySelector('[data-feed-copy]').addEventListener('click', async () => {
         const url = modal.querySelector('[data-feed-url]').value;
@@ -1111,7 +1158,11 @@ function initAgendaCalendarFeed() {
       });
     }
     calendarFeedModal.hidden = false;
-    window.requestAnimationFrame(() => calendarFeedModal.classList.add('is-open'));
+    document.body.classList.add('agenda-todo-open');
+    window.requestAnimationFrame(() => {
+      calendarFeedModal.classList.add('is-open');
+      calendarFeedModal.querySelector('[data-feed-url]').focus({ preventScroll: true });
+    });
     const statusEl = calendarFeedModal.querySelector('[data-feed-status]');
     statusEl.textContent = '';
     try {
