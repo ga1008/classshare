@@ -3327,6 +3327,8 @@ def _teacher_today_login_count_sql() -> str:
 def _normalize_dashboard_filter(role: str, value: Any) -> str:
     allowed_values = DASHBOARD_FILTER_VALUES.get(role, ("all",))
     normalized = str(value or "").strip().lower()
+    if not normalized and role == "teacher":
+        return "recent"
     return normalized if normalized in allowed_values else "all"
 
 

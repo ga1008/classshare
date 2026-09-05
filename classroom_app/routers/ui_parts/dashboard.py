@@ -28,7 +28,7 @@ def dashboard(
     for item in dashboard_context.get("dashboard_filters", []):
         params: dict[str, str] = {}
         filter_value = str(item.get("value") or "all")
-        if filter_value and filter_value != "all":
+        if filter_value:
             params["filter"] = filter_value
         if current_search:
             params["q"] = current_search
@@ -86,3 +86,21 @@ def dashboard_calendar(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         calendar = load_dashboard_calendar(conn, user=user)
     return {"status": "success", "calendar": calendar}
+
+
+@router.get("/api/dashboard/course-schedule/overview", response_class=JSONResponse)
+def dashboard_student_course_schedule(
+    year: str = Query("", max_length=32),
+    term: str = Query("", max_length=8),
+    user: dict = Depends(get_current_user),
+):
+    """Only the active student's authorized platform sessions; no academic sync."""
+    from ...services.student_course_schedule_service import build_student_course_schedule_overview
+
+    if user.get("role") != "student":
+        raise HTTPException(status_code=403, detail="当前账号不能读取学生课表")
+    with get_db_connection() as conn:
+        overview = build_student_course_schedule_overview(
+            conn, int(user["id"]), year=year.strip(), term=term.strip(),
+        )
+    return {"status": "success", "overview": overview}

@@ -63,12 +63,15 @@
 .dw-tools-menu summary::after, .dw-course-options summary::after { content: '⌄'; }
 .dw-tools-menu-body { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; display: grid; gap: 8px; width: 220px; padding: 16px; border: 1px solid hsl(var(--ls-border)); border-radius: var(--ls-radius); background: hsl(var(--ls-popover)); box-shadow: var(--shadow-sm); }
 .dw-tools-menu-body .dw-link { text-align: left; }
-.dw-course-toolbar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; }
-.dw-course-search { display: flex; gap: 8px; flex: 1 1 260px; max-width: 560px; }
+.dw-course-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.dw-course-search { display: flex; gap: 8px; width: 100%; max-width: 560px; min-width: 0; }
+.dw-course-search .dw-input { min-width: 0; }
 .dw-input, .dw-field select, .dw-item-filters input, .dw-item-filters select { min-height: 40px; width: 100%; padding: 8px 12px; border: 1px solid hsl(var(--ls-muted-foreground)); border-radius: var(--ls-radius); background: hsl(var(--ls-background)); color: hsl(var(--ls-foreground)); font: inherit; font-size: 14px; }
-.dw-course-options { flex: 1 1 160px; }
-.dw-course-options summary { justify-content: flex-end; }
-.dw-course-options-body { display: grid; gap: 12px; padding: 12px 0; }
+.dw-course-options { min-width: 0; }
+.dw-course-options summary { justify-content: flex-start; width: fit-content; }
+.dw-course-options-body { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 8px 0; }
+.dw-course-options-body > .dw-field { flex: 1 1 260px; max-width: 380px; min-width: 0; }
+.dw-course-options-body > .dw-field select { min-width: 0; }
 .dw-filter-group { display: flex; flex-wrap: wrap; gap: 8px; }
 .dw-filter { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 10px; border-radius: 6px; color: hsl(var(--ls-muted-foreground)); }
 .dw-filter.is-active, .dw-filter[aria-pressed="true"] { color: hsl(var(--ls-primary)); background: hsl(var(--ls-accent) / .6); }
@@ -104,6 +107,7 @@
 .dw-course-list .dashboard-schedule3d { padding: 16px 0; }
 .dw-course-list .dashboard-schedule3d__status { padding: 10px 0; font-size: 14px; }
 .dw-course-list .dashboard-schedule3d__retry { margin-left: 8px; color: hsl(var(--ls-primary)); }
+.dashboard-schedule3d__notice { margin: 0 0 12px; color: hsl(var(--ls-muted-foreground)); font-size: 13px; line-height: 1.6; }
 
 .dw-dialog {
     position: fixed; inset: 24px 0;

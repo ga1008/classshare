@@ -145,7 +145,7 @@ if (root) {
 
     function semesterKeyToTerm(key) {
         // 规范学期 key = identity.code，如 "2025-2026-2"（学年区间 + 学期号）。
-        const matched = /^(\d{4}-\d{4})-([12])$/.exec(String(key || ''));
+        const matched = /^(\d{4}-\d{4})-([123])$/.exec(String(key || ''));
         return matched ? { year: matched[1], term: matched[2] } : null;
     }
 
@@ -205,7 +205,7 @@ if (root) {
 
     const syncUrlState = (keyword) => {
         const url = new URL(window.location.href);
-        if (activeFilter && activeFilter !== 'all') {
+        if (activeFilter) {
             url.searchParams.set('filter', activeFilter);
         } else {
             url.searchParams.delete('filter');
@@ -424,11 +424,8 @@ if (root) {
     semesterSelect?.addEventListener('change', () => {
         activeSemesterKey = semesterSelect.value || '';
         writeStorageValue(`${storagePrefix}:semester-key`, activeSemesterKey);
+        scheduleDeckSelectedTerm = null;
         // 3D课表模式：顶部学期切换直接驱动课表数据重载。
-        if (activeGroupMode === 'schedule3d') {
-            const term = semesterKeyToTerm(activeSemesterKey);
-            loadScheduleOverview(term ? { year: term.year, term: term.term } : {});
-        }
         applyFilters();
     });
 
@@ -508,6 +505,11 @@ if (root) {
     let scheduleDeckStatus = null;
     let scheduleDeckLoaded = false;
     let scheduleDeckLoading = false;
+    let scheduleDeckOverview = null;
+    let scheduleDeckTermKey = null;
+    let scheduleDeckRequest = null;
+    let scheduleDeckSelectedTerm = null;
+    let scheduleDeckUnsupportedTerm = false;
 
     syncSearchForm();
     updateFilterUi();
@@ -650,24 +652,81 @@ if (root) {
             scheduleDeckStatus.setAttribute('aria-live', 'polite');
             scheduleDeckStatus.addEventListener('click', (event) => {
                 if (event.target.closest('[data-schedule3d-retry]')) {
-                    loadScheduleOverview();
+                    const [year = '', term = ''] = (scheduleDeckTermKey || '|').split('|');
+                    loadScheduleOverview({ year, term });
                 }
             });
             const mount = document.createElement('div');
+            if (dashboardRole === 'student') {
+                const notice = document.createElement('p');
+                notice.className = 'dashboard-schedule3d__notice';
+                notice.textContent = '仅显示本平台课程，所有课程请查看教务系统';
+                scheduleDeckPanel.append(notice);
+            }
             scheduleDeckPanel.append(scheduleDeckStatus, mount);
             scheduleDeck = createScheduleDeck(mount, {
                 title: '3D 课表',
                 description: '滚轮或方向键切换周次，点击卡片放大；点击课程进入课堂。',
                 showTermSelect: true,
-                onTermChange: (year, term) => loadScheduleOverview({ year, term }),
-                emptyHtml: () => '<strong>暂无课表数据</strong><p>请先到 <a href="/manage/teaching/course-schedule">课时统计</a> 同步智慧课堂课程表。</p>',
+                onTermChange: (year, term) => {
+                    scheduleDeckSelectedTerm = { year, term };
+                    const key = `${year}-${term}`;
+                    if (semesterOptionValues.has(key)) {
+                        activeSemesterKey = key;
+                        semesterSelect.value = key;
+                        writeStorageValue(`${storagePrefix}:semester-key`, key);
+                    } else if (semesterSelect) {
+                        // Imported/custom terms may have no platform classroom option.
+                        // Keep the deck's explicit term while releasing the old card term.
+                        activeSemesterKey = '';
+                        semesterSelect.value = '';
+                        writeStorageValue(`${storagePrefix}:semester-key`, '');
+                    }
+                    applyFilters();
+                },
+                emptyHtml: () => scheduleDeckUnsupportedTerm
+                    ? '<strong>该学期暂无可用的3D课表</strong><p>请使用列表查看课堂，或选择已配置的学年学期。</p>'
+                    : dashboardRole === 'student'
+                    ? '<strong>暂无课程安排</strong><p>已加入的课堂尚未发布课次安排，可切换学期或查看课堂列表。</p>'
+                    : '<strong>暂无课表数据</strong><p>请先到 <a href="/manage/teaching/course-schedule">课时统计</a> 同步智慧课堂课程表。</p>',
             });
         }
-        if (!scheduleDeckLoaded && !scheduleDeckLoading) {
-            const term = semesterKeyToTerm(activeSemesterKey);
-            loadScheduleOverview(term ? { year: term.year, term: term.term } : {});
+        // Free-text teacher semesters have no matching academic schedule key.
+        // Do not silently request another semester and label it as this one.
+        scheduleDeckUnsupportedTerm = Boolean(activeSemesterKey && !semesterKeyToTerm(activeSemesterKey) && !scheduleDeckSelectedTerm);
+        if (scheduleDeckUnsupportedTerm) {
+            scheduleDeckRequest?.abort();
+            scheduleDeckRequest = null;
+            scheduleDeckTermKey = null;
+            scheduleDeckOverview = null;
+            scheduleDeckLoaded = false;
+            scheduleDeckLoading = false;
+            scheduleDeck.setOverview(null);
+            setScheduleDeckStatus('');
+            return scheduleDeckPanel;
+        }
+        const term = scheduleDeckSelectedTerm || semesterKeyToTerm(activeSemesterKey) || { year: '', term: '' };
+        const termKey = `${term.year}|${term.term}`;
+        if (scheduleDeckTermKey !== termKey || (!scheduleDeckLoaded && !scheduleDeckLoading)) {
+            loadScheduleOverview(term);
         }
         return scheduleDeckPanel;
+    }
+
+    function updateScheduleDeckScope({ keepWeek = true } = {}) {
+        if (!scheduleDeck || !scheduleDeckOverview) return;
+        const keyword = normalizeText(searchInput?.value);
+        const visibleIds = new Set(cards.filter(card => cardState.get(card)?.visible).map(card => Number(card.dataset.offeringId)));
+        const weeks = (scheduleDeckOverview.weeks || []).map(week => {
+            const lessons = (week.lessons || []).filter(lesson => {
+                if (lesson.class_offering_id) return visibleIds.has(Number(lesson.class_offering_id));
+                // Teachers can still find and create classrooms for unlinked schedules under “全部”.
+                return dashboardRole === 'teacher' && activeFilter === 'all'
+                    && (!keyword || normalizeText(`${lesson.course_name} ${lesson.class_label} ${lesson.classroom}`).includes(keyword));
+            });
+            return { ...week, lessons, lesson_count: lessons.length, total_hours: lessons.reduce((sum, lesson) => sum + toNumber(lesson.hours || lesson.sections?.length), 0) };
+        });
+        scheduleDeck.setOverview({ ...scheduleDeckOverview, weeks }, { keepWeek });
     }
 
     function setScheduleDeckStatus(html) {
@@ -679,24 +738,38 @@ if (root) {
     }
 
     async function loadScheduleOverview({ year = '', term = '' } = {}) {
-        if (!scheduleDeck || scheduleDeckLoading) {
-            return;
-        }
+        if (!scheduleDeck) return;
+        scheduleDeckRequest?.abort();
+        const request = new AbortController();
+        scheduleDeckRequest = request;
+        scheduleDeckTermKey = `${year}|${term}`;
+        scheduleDeckLoaded = false;
         scheduleDeckLoading = true;
+        scheduleDeckOverview = null;
+        scheduleDeck.setOverview(null);
         setScheduleDeckStatus('正在加载课表…');
         try {
             const params = new URLSearchParams({ year, term });
-            const response = await fetch(`/api/manage/teaching/course-schedule/overview?${params.toString()}`, {
+            const endpoint = dashboardRole === 'student' ? '/api/dashboard/course-schedule/overview' : '/api/manage/teaching/course-schedule/overview';
+            const response = await fetch(`${endpoint}?${params.toString()}`, {
                 credentials: 'same-origin',
+                signal: request.signal,
             });
             if (!response.ok) {
                 throw new Error(`课表加载失败（${response.status}）`);
             }
             const data = await response.json();
+            if (request !== scheduleDeckRequest) return;
             scheduleDeckLoaded = true;
             setScheduleDeckStatus('');
-            scheduleDeck.setOverview(data.overview, { keepWeek: false });
+            scheduleDeckOverview = data.overview;
+            if (dashboardRole === 'student' && data.overview?.message) {
+                scheduleDeckStatus.hidden = false;
+                scheduleDeckStatus.textContent = data.overview.message;
+            }
+            updateScheduleDeckScope({ keepWeek: false });
         } catch (error) {
+            if (request.signal.aborted || request !== scheduleDeckRequest) return;
             const message = error instanceof Error ? error.message : '课表加载失败。';
             setScheduleDeckStatus(
                 `${normalizeText(message) ? message.replace(/[<>&"]/g, '') : '课表加载失败。'} `
@@ -704,7 +777,7 @@ if (root) {
             );
             showMessage(message, 'error');
         } finally {
-            scheduleDeckLoading = false;
+            if (request === scheduleDeckRequest) scheduleDeckLoading = false;
         }
     }
 
@@ -720,6 +793,7 @@ if (root) {
         if (groupModeButtons.length && activeGroupMode === 'schedule3d') {
             offeringList.classList.add('is-schedule3d');
             offeringList.appendChild(getScheduleDeckPanel());
+            updateScheduleDeckScope();
             return;
         }
 
