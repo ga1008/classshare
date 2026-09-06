@@ -161,6 +161,11 @@ MAIN_WS_PING_TIMEOUT = max(5.0, float(os.getenv("MAIN_WS_PING_TIMEOUT", 20.0)))
 EXAM_GENERATION_STALE_MINUTES = max(15, int(os.getenv("EXAM_GENERATION_STALE_MINUTES", 180)))
 AI_GRADING_STALE_MINUTES = max(15, int(os.getenv("AI_GRADING_STALE_MINUTES", 240)))
 AI_DURABLE_JOBS_ENABLED = _read_bool_env("AI_DURABLE_JOBS_ENABLED", False)
+CAREER_JOBS_ENABLED = _read_bool_env("CAREER_JOBS_ENABLED", True)
+# AI-only rollout; manual resume rendering keeps its existing lane behavior.
+CAREER_AI_ROLLOUT_MODE = str(os.getenv("CAREER_AI_ROLLOUT_MODE", "all"))
+CAREER_AI_ROLLOUT_STUDENT_IDS = str(os.getenv("CAREER_AI_ROLLOUT_STUDENT_IDS", ""))
+CAREER_AI_ROLLOUT_MAJORS = str(os.getenv("CAREER_AI_ROLLOUT_MAJORS", "[]"))
 AI_JOB_POLICY_VERSION = str(os.getenv("AI_JOB_POLICY_VERSION") or "durable-v1").strip()
 DEFAULT_PUBLIC_SITE_BASE_URL = "https://www.guardianangel.net.cn"
 PUBLIC_SITE_BASE_URL = _read_url_env("PUBLIC_SITE_BASE_URL") or _read_url_env("SITE_BASE_URL") or DEFAULT_PUBLIC_SITE_BASE_URL

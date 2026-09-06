@@ -298,6 +298,7 @@ def ensure_resume_schema(conn: Any) -> None:
     # Backfill columns for databases created before a column existed.
     _add_column(conn, "resume_personal_info", "seeded", "INTEGER NOT NULL DEFAULT 0", engine=engine)
     _add_column(conn, "resume_skills", "expiry_date", "TEXT NOT NULL DEFAULT ''", engine=engine)
+    _add_column(conn, "resume_educations", "degree", "TEXT NOT NULL DEFAULT ''", engine=engine)
     _add_column(conn, "resumes", "target_position", "TEXT NOT NULL DEFAULT ''", engine=engine)
     _add_column(conn, "resumes", "tech_stack_json", "TEXT NOT NULL DEFAULT '[]'", engine=engine)
     _add_column(conn, "resumes", "optimized_summary_md", "TEXT NOT NULL DEFAULT ''", engine=engine)
@@ -308,5 +309,40 @@ def ensure_resume_schema(conn: Any) -> None:
     _add_column(conn, "resumes", "source_mime_type", "TEXT NOT NULL DEFAULT ''", engine=engine)
     _add_column(conn, "resumes", "source_file_size", "INTEGER NOT NULL DEFAULT 0", engine=engine)
     _add_column(conn, "resumes", "import_summary_json", "TEXT NOT NULL DEFAULT '{}'", engine=engine)
+
+    # Revisions guard student edits and delayed background results. Published
+    # content lives in immutable versions; deleting a current document archives
+    # it, preserving the version referenced by an application.
+    for table in ("resume_personal_info", "resume_self_intros", "resume_certificates",
+                  "resume_skills", "resume_experiences", "resume_educations", "resumes",
+                  "resume_applications", "resume_job_targets"):
+        _add_column(conn, table, "revision", "INTEGER NOT NULL DEFAULT 1", engine=engine)
+    _add_column(conn, "resumes", "render_revision", "INTEGER NOT NULL DEFAULT 0", engine=engine)
+    _add_column(conn, "resumes", "archived", "INTEGER NOT NULL DEFAULT 0", engine=engine)
+    _add_column(conn, "resumes", "active_job_id", "TEXT NOT NULL DEFAULT ''", engine=engine)
+    _add_column(conn, "resumes", "client_id", "TEXT", engine=engine)
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_resumes_client_id ON resumes(student_id,client_id)")
+    _add_column(conn, "resume_self_intros", "active_job_id", "TEXT NOT NULL DEFAULT ''", engine=engine)
+    _add_column(conn, "resume_job_targets", "archived", "INTEGER NOT NULL DEFAULT 0", engine=engine)
+    _add_column(conn, "resume_job_targets", "description_hash", "TEXT", engine=engine)
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_resume_job_targets_content ON resume_job_targets(student_id,description_hash)")
+    _add_column(conn, "resume_applications", "resume_revision", "INTEGER", engine=engine)
+    _add_column(conn, "resume_applications", "resume_snapshot_json", "TEXT NOT NULL DEFAULT '{}'", engine=engine)
+    _add_column(conn, "resume_applications", "job_snapshot_json", "TEXT NOT NULL DEFAULT '{}'", engine=engine)
+    conn.execute(f"""CREATE TABLE IF NOT EXISTS resume_versions (
+        {id_column}, student_id INTEGER NOT NULL, resume_id INTEGER NOT NULL,
+        revision INTEGER NOT NULL, snapshot_json TEXT NOT NULL DEFAULT '{{}}',
+        content_hash TEXT NOT NULL DEFAULT '', render_html TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'draft', created_at TEXT NOT NULL,
+        UNIQUE(resume_id, revision))""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_resume_versions_owner ON resume_versions(student_id, resume_id, revision DESC)")
+    conn.execute(f"""CREATE TABLE IF NOT EXISTS resume_candidates (
+        {id_column}, student_id INTEGER NOT NULL, resume_id INTEGER NOT NULL,
+        base_revision INTEGER NOT NULL, kind TEXT NOT NULL,
+        payload_json TEXT NOT NULL DEFAULT '{{}}', status TEXT NOT NULL DEFAULT 'pending',
+        job_id TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(resume_id, job_id, kind))""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_resume_candidates_owner ON resume_candidates(student_id, resume_id, status, id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_resumes_active_owner ON resumes(student_id, archived, updated_at DESC, id DESC)")
 
     _SCHEMA_READY = True

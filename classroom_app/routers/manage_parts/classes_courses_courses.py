@@ -368,6 +368,8 @@ async def api_upload_course_file(
         raise HTTPException(500, "保存文件到服务器失败")
 
     with get_db_connection() as conn:
+        from ...services.file_service import bind_global_file_references
+        bind_global_file_references(conn, (file_info["hash"],))
         conn.execute(
             """
             INSERT INTO course_files

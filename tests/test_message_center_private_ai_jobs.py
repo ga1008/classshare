@@ -288,7 +288,8 @@ class PrivateMessageAIJobTests(unittest.TestCase):
             "sender_role": "student",
         }
 
-        with patch.object(service, "get_configured_db_engine", return_value="postgres"):
+        with patch.object(service, "get_configured_db_engine", return_value="postgres"), \
+             patch.object(service, "bind_global_file_references"):
             attachments = service._insert_private_message_attachments(
                 conn,
                 message_row,

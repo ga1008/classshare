@@ -63,7 +63,21 @@
   }
 
   CareerNetwork.prototype.setData = function (network, personalized) {
-    this.network = network || { cats: [], nodes: [], links: [] };
+    network = network || {};
+    var tags = Object.create(null), cats = Object.create(null);
+    this.network = {
+      cats: (Array.isArray(network.cats) ? network.cats : []).filter(function (cat) {
+        if (!cat || !cat.id || cats[cat.id]) return false; cats[cat.id] = true; return true;
+      }).slice(0, 40).map(function (cat) { return Object.assign({}, cat, {
+        c1: /^#[a-f0-9]{3,8}$/i.test(cat.c1 || '') ? cat.c1 : '#6ee7ff'
+      }); }),
+      nodes: (Array.isArray(network.nodes) ? network.nodes : []).filter(function (node) {
+        if (!node || !node.tag || !node.cat || tags[node.tag]) return false; tags[node.tag] = true; return true;
+      }).slice(0, 160).map(function (node) { return Object.assign({}, node, {
+        tag: String(node.tag), cat: String(node.cat), tl: (Array.isArray(node.tl) ? node.tl : []).filter(Array.isArray).slice(0, 4)
+      }); }),
+      links: (Array.isArray(network.links) ? network.links : []).slice(0, 640)
+    };
     this.personalized = personalized || {};
     this._index();
     this._render();
@@ -87,7 +101,7 @@
 
   CareerNetwork.prototype._index = function () {
     var self = this;
-    this.byTag = {}; this.nodeStages = {}; this.adjF = {}; this.adjB = {};
+    this.byTag = Object.create(null); this.nodeStages = Object.create(null); this.adjF = Object.create(null); this.adjB = Object.create(null);
     (this.network.nodes || []).forEach(function (n) { if (n.tag) self.byTag[n.tag] = n; });
     function link(from, to) { (self.adjF[from] = self.adjF[from] || []).push(to); (self.adjB[to] = self.adjB[to] || []).push(from); }
     (this.network.nodes || []).forEach(function (n) {
@@ -110,7 +124,7 @@
 
   CareerNetwork.prototype._catMeta = function () {
     var cats = (this.network.cats || []).slice();
-    var seen = {};
+    var seen = Object.create(null);
     cats.forEach(function (c) { seen[c.id] = true; });
     (this.network.nodes || []).forEach(function (n) {
       if (n.cat && !seen[n.cat]) { seen[n.cat] = true; cats.push({ id: n.cat, name: n.cat, c1: '#6ee7ff', icon: '✨' }); }
@@ -219,7 +233,7 @@
     rows.forEach(function (n) {
       var a = coord.origin, b = coord[n.tag + '-0'];
       if (!b) return;
-      g += '<g class="cn-edge fan" data-from="origin" data-to="' + n.tag + '-0">'
+      g += '<g class="cn-edge fan" data-from="origin" data-to="' + esc(n.tag) + '-0">'
         + '<path d="M' + a.x + ' ' + a.y + ' C ' + (a.x + 90) + ' ' + a.y + ', ' + (b.x - 90) + ' ' + b.y + ', ' + b.x + ' ' + b.y + '" '
         + 'fill="none" stroke="rgba(110,231,255,.12)" stroke-width="1.2"/></g>';
     });
@@ -232,7 +246,7 @@
       var stages = self._stagesOf(n);
       for (var i = 0; i < stages.length - 1; i++) {
         var a = coord[n.tag + '-' + i], b = coord[n.tag + '-' + (i + 1)];
-        g += '<g class="cn-edge main" data-from="' + n.tag + '-' + i + '" data-to="' + n.tag + '-' + (i + 1) + '">'
+        g += '<g class="cn-edge main" data-from="' + esc(n.tag) + '-' + i + '" data-to="' + esc(n.tag) + '-' + (i + 1) + '">'
           + '<line x1="' + a.x + '" y1="' + a.y + '" x2="' + b.x + '" y2="' + b.y + '" stroke="' + col + '" stroke-opacity="' + (op * 0.38) + '" stroke-width="2"/>'
           + '<line class="cn-flow" x1="' + a.x + '" y1="' + a.y + '" x2="' + b.x + '" y2="' + b.y + '" stroke="' + col + '" stroke-opacity="' + (op * 0.8) + '" stroke-width="2"/></g>';
       }
@@ -245,7 +259,7 @@
       if (!a || !b) return;
       var mx = (a.x + b.x) / 2;
       var d = 'M' + a.x + ' ' + a.y + ' C ' + mx + ' ' + a.y + ', ' + mx + ' ' + b.y + ', ' + b.x + ' ' + b.y;
-      g += '<g class="cn-edge cross" data-from="' + l[0] + '-' + l[1] + '" data-to="' + l[2] + '-' + l[3] + '">'
+      g += '<g class="cn-edge cross" data-from="' + esc(l[0]) + '-' + Number(l[1]) + '" data-to="' + esc(l[2]) + '-' + Number(l[3]) + '">'
         + '<path d="' + d + '" fill="none" stroke="#0a0f1d" stroke-opacity=".85" stroke-width="4.5"/>'
         + '<path class="cn-cu" d="' + d + '" fill="none" stroke="#d8b4fe" stroke-opacity=".7" stroke-width="1.8" marker-end="url(#cnArrC)"/></g>';
     });
@@ -275,7 +289,7 @@
       var rec = clamp(Number(n.rec || 3), 1, 5);
       var bright = self._brightness(n);
       var hot = !!n.highlighted;
-      g += '<text class="cn-nlabel" data-tag="' + n.tag + '" x="' + (stageX[0] - 16) + '" y="' + (n._y - 14) + '" fill="' + col + '">'
+      g += '<text class="cn-nlabel" data-tag="' + esc(n.tag) + '" x="' + (stageX[0] - 16) + '" y="' + (n._y - 14) + '" fill="' + col + '">'
         + (n.lang ? '⭐ ' : '') + esc(n.name) + (hot ? ' ✦' : '') + '</text>';
       self._stagesOf(n).forEach(function (st, i) {
         var x = stageX[i], yy = n._y;
@@ -293,11 +307,11 @@
         // core/edge 用 --chase-col 做脉冲传递的发光颜色。
         var grpStyle = '--tw-dur:' + dur + 's; --tw-delay:' + delay + 's; --tw-max:' + haloOp.toFixed(3)
           + '; --tw-min:' + twMin + '; --chase-hi:' + chaseHi + '; --chase-col:' + col;
-        g += '<g class="cn-node" style="' + grpStyle + '" data-id="' + n.tag + '-' + i + '" data-tag="' + n.tag + '">'
+        g += '<g class="cn-node" role="button" tabindex="0" aria-label="' + esc(n.name + ' · ' + (st[0] || '') + ' · ' + (st[1] || '')) + '" style="' + grpStyle + '" data-id="' + esc(n.tag) + '-' + i + '" data-tag="' + esc(n.tag) + '">'
           + '<circle class="cn-halo cn-twinkle" cx="' + x + '" cy="' + yy + '" r="' + haloR + '" fill="url(#' + glowId(col) + ')" opacity="' + haloOp + '" filter="url(#cnBlur)"/>'
           + (hot ? '<circle class="cn-ring" cx="' + x + '" cy="' + yy + '" r="' + (coreR + 5) + '" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1.1"/>' : '')
           + '<circle class="cn-core" cx="' + x + '" cy="' + yy + '" r="' + coreR + '" fill="' + col + '" fill-opacity="' + (rec >= 3 ? 1 : 0.7) + '" '
-          + 'stroke="#fff" stroke-opacity="' + (bright >= 0.8 ? 0.9 : 0.5) + '" stroke-width="1.3" data-tag="' + n.tag + '" data-i="' + i + '"/>'
+          + 'stroke="#fff" stroke-opacity="' + (bright >= 0.8 ? 0.9 : 0.5) + '" stroke-width="1.3" data-tag="' + esc(n.tag) + '" data-i="' + i + '"/>'
           + '<text class="cn-rolelab" x="' + x + '" y="' + (yy + coreR + 12) + '" text-anchor="middle">' + esc(shortRole(st[1])) + '</text>'
           + '</g>';
       });
@@ -360,7 +374,7 @@
   CareerNetwork.prototype._animateTo = function (tx, ty, s, animate) {
     var self = this;
     if (this._anim) { cancelAnimationFrame(this._anim); this._anim = null; }
-    if (animate === false) { this.tx = tx; this.ty = ty; this.scale = s; this._apply(); return; }
+    if (animate === false || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) { this.tx = tx; this.ty = ty; this.scale = s; this._apply(); return; }
     var t0 = performance.now(), d = 460;
     var fx = this.tx, fy = this.ty, fs = this.scale;
     function step(now) {
@@ -382,7 +396,10 @@
   CareerNetwork.prototype.fitAll = function (animate) {
     var box = { x: -140, y: 0, w: CONTENT_W + 170, h: this.contentH };
     var m = 18;
-    this._fitBox(box, { x: m, y: m + 44, w: this.cw - m * 2, h: this.ch - m * 2 - 44 }, animate);
+    var top = this.cw <= 720 ? 220 : 120;
+    var toolbar = document.getElementById('career-view-tools');
+    if (toolbar && !toolbar.hidden) top = Math.max(70, toolbar.getBoundingClientRect().bottom - this.container.getBoundingClientRect().top + 16);
+    this._fitBox(box, { x: m, y: top, w: this.cw - m * 2, h: Math.max(160, this.ch - top - m) }, animate);
   };
 
   CareerNetwork.prototype._safeArea = function () {
@@ -445,8 +462,8 @@
   CareerNetwork.prototype._applySelection = function (id) {
     if (!this.svg) return;
     var rel = this._related(id);
-    var tags = {};
-    Object.keys(rel).forEach(function (k) { tags[k.split('-')[0]] = true; });
+    var tags = Object.create(null), stages = this.nodeStages;
+    Object.keys(rel).forEach(function (k) { if (stages[k]) tags[stages[k].node.tag] = true; });
     this.svg.classList.add('sel');
     this.svg.querySelectorAll('.cn-node').forEach(function (e) { e.classList.toggle('hot', !!rel[e.dataset.id]); });
     this.svg.querySelectorAll('.cn-edge').forEach(function (e) { e.classList.toggle('hot', !!(rel[e.dataset.from] && rel[e.dataset.to])); });
@@ -504,8 +521,8 @@
     this.svg.querySelectorAll('.is-selected').forEach(function (e) { e.classList.remove('is-selected'); });
     var ns = this.nodeStages[id], c = this.coord[id];
     if (!ns || !c) return;
-    var g = this.svg.querySelector('.cn-node[data-id="' + id + '"]'); if (g) g.classList.add('is-selected');
-    var lab = this.svg.querySelector('.cn-nlabel[data-tag="' + ns.node.tag + '"]'); if (lab) lab.classList.add('is-selected');
+    var g = Array.from(this.svg.querySelectorAll('.cn-node')).find(function (element) { return element.dataset.id === id; }); if (g) g.classList.add('is-selected');
+    var lab = Array.from(this.svg.querySelectorAll('.cn-nlabel')).find(function (element) { return element.dataset.tag === ns.node.tag; }); if (lab) lab.classList.add('is-selected');
     var coreR = 4.2 + clamp(Number(ns.node.rec || 3), 1, 5) * 0.9;
     var r0 = (coreR + 3).toFixed(1);
     var mk = document.createElementNS(NS, 'g');
@@ -606,6 +623,16 @@
       }
     });
     sv.addEventListener('pointercancel', function () { self._drag = null; sv.classList.remove('grabbing'); });
+    sv.addEventListener('keydown', function (event) {
+      var node = event.target.closest('.cn-node');
+      if (event.key === 'Escape') { self.clear(); self.onClear(); return; }
+      if (!node || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
+      var ns = self.nodeStages[node.dataset.id]; if (!ns) return;
+      self.select(node.dataset.id);
+      var stage = self._stagesOf(ns.node)[ns.stage] || [];
+      self.onSelect(ns.node, { phase: stage[0] || '', role: stage[1] || ns.node.name, sdesc: stage[2] || '', stage: ns.stage });
+    });
     sv.addEventListener('wheel', function (e) {
       e.preventDefault();
       var r = sv.getBoundingClientRect();
@@ -693,6 +720,7 @@
   CareerNetwork.prototype.destroy = function () {
     if (this._onResize) window.removeEventListener('resize', this._onResize);
     if (this._anim) cancelAnimationFrame(this._anim);
+    if (this._resizeRAF) cancelAnimationFrame(this._resizeRAF);
     this._bound = false;
     if (this.controls && this.controls.parentNode) this.controls.parentNode.removeChild(this.controls);
     if (this.container) this.container.innerHTML = '';

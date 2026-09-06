@@ -1,0 +1,221 @@
+/* Real HTTP + complete Jinja/layout/static integration. No route interception.
+ * Start tools/career_frontend_http_probe.py in a fresh isolated output folder,
+ * then node tests/frontend/career_resume_http_probe.cjs [http://127.0.0.1:8768] [outputDir]. */
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { chromium } = require('playwright');
+const base = process.argv[2] || 'http://127.0.0.1:8768';
+if (new URL(base).hostname !== '127.0.0.1') throw new Error('This synthetic QA runner only accepts loopback.');
+const output = path.resolve(process.argv[3] || '.codex-temp/career-http-qa');
+fs.mkdirSync(output, { recursive: true });
+(async () => {
+  const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const page = await context.newPage(), errors = [], http = [], checks = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('response', response => { if (response.url().startsWith(base + '/api/')) http.push({ url: response.url().replace(base, ''), status: response.status() }); });
+  async function json(url, options = {}) { const result = await context.request.fetch(base + url, options); assert.ok(result.ok(), `${url}: ${result.status()} ${await result.text()}`); return result.json(); }
+  async function screenshot(name) { await page.screenshot({ path: path.join(output, name + '.png'), fullPage: true }); }
+  try {
+    const startup = await json('/__qa__/health');
+    assert.equal(startup.isolated, true); assert.equal(startup.fixed_code, true, 'Restart fixture after source changes');
+    await page.goto(base + '/career-path');
+    await page.getByRole('button', { name: /快速测评/ }).waitFor();
+    assert.equal(await page.locator('html').getAttribute('data-theme'), 'lanshare');
+    assert.equal(await page.locator('script[src*="ui_explanation"]').count(), 1);
+    await screenshot('http-career-cold'); checks.push('complete base template + cold major quiz immediately operable');
+    const questions = (await json('/api/career-path/questions?mode=quick')).questions;
+    await page.getByRole('button', { name: /快速测评/ }).click();
+    for (let i = 0; i < questions.length; i++) {
+      const question = questions[i];
+      await page.getByText(question.title, { exact: true }).waitFor();
+      await page.locator('#career-opts button').first().click();
+      if (question.kind === 'multi') await page.locator('#career-confirm').click();
+      if (i === 0) {
+        await page.waitForFunction(() => document.querySelector('.career-quiz__count').textContent.startsWith('2 /'));
+        await page.waitForFunction(async () => (await (await fetch('/api/career-path/state')).json()).draft.length === 1);
+        await page.reload(); await page.getByText(questions[1].title, { exact: true }).waitFor();
+        checks.push('real progress revision + questionnaire survives refresh');
+      }
+    }
+    await page.getByRole('button', { name: '提交并查看方向' }).click();
+    await page.locator('.career-direction').first().waitFor();
+    const state = await json('/api/career-path/state'); assert.equal(state.phase, 'ready'); assert.equal(state.quiz_version, 'career-quiz-v2');
+    await screenshot('http-career-ready'); checks.push('real answers API returns personal baseline and direction cards');
+    const pickedTag = await page.locator('.career-direction [data-feedback="favorite"]').first().getAttribute('data-tag');
+    await page.locator('.career-direction').first().getByRole('button', { name: '收藏', exact: true }).click();
+    await page.getByRole('button', { name: '取消收藏', exact: true }).waitFor();
+    await page.locator('#career-direction-filter').selectOption('saved');
+    assert.equal(await page.locator('.career-direction').count(), 1);
+    await page.getByRole('button', { name: '网络图', exact: true }).click();
+    assert.deepEqual(await page.locator('.cn-node[data-tag]').evaluateAll(nodes => [...new Set(nodes.map(node => node.dataset.tag))]), [pickedTag]);
+    await page.getByRole('button', { name: '方向列表', exact: true }).click();
+    await page.getByRole('button', { name: '暂不考虑', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('.career-direction'));
+    await page.getByRole('button', { name: '网络图', exact: true }).click();
+    assert.equal(await page.locator('.cn-node[data-tag]').count(), 0);
+    await page.reload(); await page.locator('.career-direction').first().waitFor();
+    assert.equal((await json('/api/career-path/state')).feedback_by_tag[pickedTag], 'dismissed');
+    await page.locator('#career-direction-filter').selectOption('dismissed');
+    await page.getByRole('button', { name: '重新考虑', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('.career-direction'));
+    await page.locator('#career-direction-filter').selectOption('all');
+    checks.push('real favorite/hide revisions survive refresh; filtered graph/list agree including an empty result; hidden direction can be restored');
+    await json('/__qa__/drain', { method: 'POST' });
+    await page.getByRole('button', { name: '真实在招职位', exact: true }).click();
+    await page.getByText('暂未接入已核验的职位来源', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+
+    await page.goto(base + '/resume/builder?auto=1&target=' + encodeURIComponent('英语教师'));
+    await page.locator('#rzZones .rz-chip').first().waitFor();
+    assert.equal(await page.locator('#rzSidebar').count(), 1);
+    assert.equal(await page.locator('script[src*="career_tools_client"]').count(), 1);
+    await page.getByRole('button', { name: '编辑本份文字' }).click();
+    await page.locator('[data-field="phone"]').fill('13900000000');
+    await page.getByRole('button', { name: '应用到当前草稿' }).click();
+    await page.getByRole('button', { name: '保存草稿', exact: true }).click();
+    await page.waitForURL(/edit=\d+/);
+    const id = Number(new URL(page.url()).searchParams.get('edit'));
+    const saved = (await json('/api/resume/resumes/' + id)).resume;
+    assert.equal(saved.content_snapshot.personal.phone, '13900000000');
+    assert.equal((await json('/api/resume/personal')).info.phone, '13800000000');
+    await screenshot('http-resume-draft'); checks.push('real resume layout + draft snapshot personal edit does not mutate profile');
+    await page.getByRole('button', { name: '生成文件', exact: true }).click();
+    await page.waitForURL(base + '/resume/list');
+    await page.getByRole('button', { name: '查看任务 / 取消' }).waitFor();
+    await page.getByRole('button', { name: '查看任务 / 取消' }).click();
+    await page.getByRole('button', { name: '取消任务', exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    const applied = await json('/__qa__/drain', { method: 'POST' }); assert.ok(applied.applied > 0);
+    await page.reload(); await page.getByRole('button', { name: '预览文件' }).waitFor();
+    const rendered = (await json('/api/resume/resumes/' + id)).resume;
+    assert.equal(rendered.render_revision, rendered.revision);
+    const preview = await context.request.get(base + '/api/resume/resumes/' + id + '/preview?revision=' + rendered.render_revision);
+    assert.equal(preview.status(), 200); assert.equal(preview.headers()['x-resume-revision'], String(rendered.render_revision));
+    assert.match(await preview.text(), /13900000000/); checks.push('real lease CAS worker publishes exact frozen HTML and preview version');
+    await Promise.all([page.waitForResponse(response => response.url().endsWith('/optimize') && response.request().method() === 'POST'), page.getByRole('button', { name: 'AI 优化', exact: true }).click()]);
+    await json('/__qa__/drain', { method: 'POST' });
+    await page.reload(); await page.getByRole('button', { name: '核对待确认内容' }).click();
+    await page.getByRole('button', { name: '核对无误，采用建议' }).waitFor();
+    await screenshot('http-resume-candidate');
+    assert.equal((await json('/api/resume/resumes/' + id)).resume.revision, rendered.revision);
+    await Promise.all([page.waitForResponse(response => response.url().endsWith('/accept') && response.request().method() === 'POST'), page.getByRole('button', { name: '核对无误，采用建议' }).click()]);
+    await page.waitForFunction(() => !document.querySelector('.rz-modal'));
+    await json('/__qa__/drain', { method: 'POST' });
+    const accepted = (await json('/api/resume/resumes/' + id)).resume;
+    assert.equal(accepted.revision, rendered.revision + 1); checks.push('real candidate accept creates immutable revision then real renderer publishes it');
+    await page.reload();
+    await page.getByRole('button', { name: '预览文件', exact: true }).click();
+    await page.locator('iframe').waitFor();
+    assert.match(await page.locator('iframe').getAttribute('src'), new RegExp('revision=' + accepted.revision));
+    await screenshot('http-resume-preview');
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('link', { name: '下载 Word', exact: true }).click();
+    const downloaded = await downloadPromise; await downloaded.saveAs(path.join(output, 'http-browser-download.docx'));
+    assert.equal(await downloaded.failure(), null); assert.equal(context.pages().length, 1);
+    await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.rz-modal'));
+    await page.getByRole('button', { name: '历史版本', exact: true }).click();
+    const oldVersion = page.locator('.rz-version-row').filter({ has: page.getByText('版本 ' + rendered.revision, { exact: true }) });
+    await Promise.all([page.waitForResponse(response => response.url().includes('/restore') && response.request().method() === 'POST'), oldVersion.getByRole('button', { name: '恢复为新版本' }).click()]);
+    await page.waitForFunction(() => !document.querySelector('.rz-modal'));
+    const restored = (await json('/api/resume/resumes/' + id)).resume;
+    assert.equal(restored.revision, accepted.revision + 1);
+    const word = await context.request.get(base + '/api/resume/resumes/' + id + '/export?fmt=docx&revision=' + rendered.revision);
+    assert.equal(word.status(), 200); assert.equal(word.headers()['x-resume-revision'], String(rendered.revision));
+    fs.writeFileSync(path.join(output, 'http-frozen-version.docx'), await word.body());
+    checks.push('real history restore creates new version; pinned historical preview and Word HTTP export preserve selected version');
+    await page.goto(base + '/resume/builder?edit=' + id);
+    await page.getByRole('button', { name: '编辑本份文字' }).click();
+    await page.locator('#rzSnapshotSummary').fill('经本人核对后的英语教学摘要');
+    await page.locator('#rzSnapshotCapabilities').fill('教学沟通：英语教学、课堂互动');
+    await page.getByRole('button', { name: '应用到当前草稿' }).click();
+    await Promise.all([page.waitForResponse(response => response.url().endsWith('/resumes/' + id) && response.request().method() === 'PUT'), page.getByRole('button', { name: '保存草稿', exact: true }).click()]);
+    let edited = (await json('/api/resume/resumes/' + id)).resume;
+    assert.equal(edited.optimized_summary_md, '经本人核对后的英语教学摘要');
+    assert.deepEqual(edited.tech_stack, [{ group: '教学沟通', items: ['英语教学', '课堂互动'] }]);
+    await page.locator('#rzResumeTitle').fill('只修改标题仍保留摘要');
+    await Promise.all([page.waitForResponse(response => response.url().endsWith('/resumes/' + id) && response.request().method() === 'PUT'), page.getByRole('button', { name: '保存草稿', exact: true }).click()]);
+    edited = (await json('/api/resume/resumes/' + id)).resume;
+    assert.equal(edited.optimized_summary_md, '经本人核对后的英语教学摘要');
+    checks.push('real revision saves retain accepted summary/capabilities and allow direct text editing without updating source materials');
+    await page.goto(base + '/resume/builder?edit=' + id);
+    await page.locator('#rzResumeTitle').fill('需要保留的当前输入');
+    await json('/__qa__/conflict/' + id, { method: 'POST' });
+    await page.getByRole('button', { name: '保存草稿', exact: true }).click();
+    await page.getByRole('dialog', { name: '这份资料有了新版本' }).waitFor();
+    assert.equal(await page.locator('#rzResumeTitle').inputValue(), '需要保留的当前输入');
+    await screenshot('http-resume-conflict'); checks.push('real 409 preserves typed input and exposes explicit reload');
+
+    await page.goto(base + '/resume/profile/personal');
+    await page.locator('[name="name"]').waitFor();
+    const beforeAvatar = (await json('/api/resume/personal')).info;
+    const avatar = { name: 'synthetic-avatar.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j4WkAAAAASUVORK5CYII=', 'base64') };
+    await page.locator('#rzAvatarInput').setInputFiles(avatar);
+    await page.getByText('头像已更新', { exact: true }).waitFor();
+    assert.equal((await json('/api/resume/personal')).info.revision, beforeAvatar.revision + 1);
+    await page.locator('[name="expected_position"]').fill('英语教学助理');
+    const [savedPersonal] = await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/resume/personal') && response.request().method() === 'POST'), page.locator('#rzPersonalForm button[type=submit]').click()]);
+    assert.equal(savedPersonal.status(), 200);
+    assert.equal((await json('/api/resume/personal')).info.revision, beforeAvatar.revision + 2);
+    checks.push('real multipart avatar upload increments revision; the next profile save uses the new revision without self-conflict');
+    await page.getByRole('button', { name: '✨ AI 优化建议', exact: true }).click();
+    await page.getByRole('button', { name: '取消建议任务', exact: true }).waitFor();
+    await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.rz-modal'));
+    await json('/__qa__/drain', { method: 'POST' });
+    await page.getByRole('button', { name: '查看上次建议', exact: true }).click();
+    await page.getByRole('button', { name: '查看并核对建议', exact: true }).click();
+    await page.getByRole('dialog', { name: '核对个人资料建议' }).waitFor();
+    assert.equal((await json('/api/resume/personal')).info.expected_industry || '', '');
+    await page.getByRole('button', { name: '采用选中的建议' }).click();
+    assert.equal(await page.locator('[name="expected_industry"]').inputValue(), '教育服务');
+    assert.equal((await json('/api/resume/personal')).info.expected_industry || '', '');
+    await page.locator('#rzPersonalForm button[type=submit]').click();
+    await page.getByText('已保存', { exact: true }).waitFor();
+    checks.push('real 202 personal suggestion uses durable worker, resume-by-job-id, selection review and explicit profile save');
+    await page.goto(base + '/resume/profile/self-intro');
+    await page.getByRole('button', { name: '+ 新建', exact: true }).click();
+    await page.locator('#rzIntroText').fill('我参与过教学实习和英语课堂活动设计。');
+    await page.getByRole('button', { name: '✨ AI 优化', exact: true }).click();
+    await page.getByRole('button', { name: '取消建议任务', exact: true }).waitFor();
+    await page.keyboard.press('Escape'); await page.waitForFunction(() => document.querySelectorAll('.rz-modal').length === 1);
+    await json('/__qa__/drain', { method: 'POST' });
+    await page.getByRole('button', { name: '查看上次建议', exact: true }).click();
+    await page.getByRole('button', { name: '查看并核对建议', exact: true }).click();
+    await page.getByRole('dialog', { name: '核对 AI 建议' }).waitFor();
+    await screenshot('http-intro-suggestion');
+    assert.match(await page.locator('#rzIntroText').inputValue(), /^我参与过/);
+    await page.getByRole('button', { name: '采用建议', exact: true }).click();
+    assert.match(await page.locator('#rzIntroText').inputValue(), /^具有教学/);
+    checks.push('real 202 self-intro suggestion preserves original until side-by-side acceptance');
+
+    const foreign = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 360, height: 800 } });
+    await foreign.addCookies([{ name: 'qa_student', value: '2', url: base }]);
+    const otherPage = await foreign.newPage();
+    const forbidden = await foreign.request.get(base + '/api/resume/resumes/' + id);
+    assert.equal(forbidden.status(), 404);
+    for (const suffix of ['/versions', '/candidates', '/job', '/preview?revision=1', '/export?fmt=docx&revision=1']) {
+      const denial = await foreign.request.get(base + '/api/resume/resumes/' + id + suffix);
+      assert.equal(denial.status(), 404, suffix + ': ' + denial.status());
+    }
+    for (const suffix of ['', '/publish', '/optimize', '/job/cancel', '/job/retry', '/versions/1/restore']) {
+      const denial = await foreign.request.fetch(base + '/api/resume/resumes/' + id + suffix, { method: suffix ? 'POST' : 'PUT', data: { revision: restored.revision, draft: true } });
+      assert.ok([400, 403, 404].includes(denial.status()), suffix + ': ' + denial.status());
+    }
+    await otherPage.goto(base + '/resume/builder?edit=' + id);
+    await otherPage.getByText(/简历不存在|未找到|无权/).first().waitFor();
+    assert.equal((await foreign.request.get(base + '/api/resume/resumes')).status(), 200);
+    await otherPage.screenshot({ path: path.join(output, 'http-foreign-resume.png'), fullPage: true });
+    await foreign.close(); checks.push('other student denied resume/version/candidate/job/preview/export and mutation endpoints; failed editor retains navigation');
+    assert.deepEqual(errors, []);
+    const ending = await json('/__qa__/health');
+    assert.equal(ending.fixed_code, true, JSON.stringify(ending.changed_files));
+    assert.equal(ending.source_fingerprint, startup.source_fingerprint);
+    const report = { ok: true, base, checks, pageErrors: errors, http, database: ending.database,
+      source_fingerprint: ending.source_fingerprint, fixed_code: ending.fixed_code, startup_manifest: ending.startup_manifest };
+    fs.writeFileSync(path.join(output, 'http-qa.json'), JSON.stringify(report, null, 2));
+    console.log(JSON.stringify(report, null, 2));
+  } catch (error) {
+    await screenshot('http-failure'); console.error(JSON.stringify({ error: error.message, pageErrors: errors, http }, null, 2)); throw error;
+  } finally { await browser.close(); }
+})().catch(() => { process.exitCode = 1; });

@@ -57,6 +57,11 @@ from .services.durable_process_job_worker import (
     start_durable_process_job_workers,
     stop_durable_process_job_workers,
 )
+from .services.student_career_job_worker import (
+    start_student_career_job_workers,
+    stop_student_career_job_workers,
+    student_career_worker_snapshot,
+)
 from .services.email_notification_service import email_worker_health_snapshot
 from .services.message_center_service import schedule_pending_private_ai_reply_jobs
 from .services.runtime_metrics_service import begin_http_request, finish_http_request, get_runtime_metrics_snapshot
@@ -183,6 +188,9 @@ async def startup_event():
     durable_process_workers = start_durable_process_job_workers()
     if durable_process_workers:
         print(f"[DURABLE PROCESS WORKER] 启动 {durable_process_workers} 个本地持久任务 worker")
+    career_workers = start_student_career_job_workers()
+    if career_workers:
+        print(f"[CAREER WORKER] 启动 {career_workers} 个职业与简历持久任务 worker")
     try:
         cleaned_ai_job_files = cleanup_terminal_ai_job_files(
             retention_days=int(os.getenv("AI_JOB_FILE_RETENTION_DAYS", "7"))
@@ -253,6 +261,7 @@ async def shutdown_event():
     await stop_discussion_mood_refresh_tasks()
     await stop_smart_attendance_advice_worker()
     await stop_durable_process_job_workers()
+    await stop_student_career_job_workers()
     await stop_behavior_profile_scheduler()
     stop_behavior_write_pipeline()
     await ai_client.__aexit__(None, None, None)  # 关闭 HTTP 客户端
@@ -317,6 +326,7 @@ async def internal_health():
         "email_worker": email_worker_health_snapshot(),
         "background_tasks": build_background_task_health_summary(),
         "document_renderer": document_render_service.cache_stats(),
+        "career_worker": student_career_worker_snapshot(),
     }
 
 

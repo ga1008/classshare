@@ -1,40 +1,45 @@
-"""Student career-development network routes.
-
-* ``GET  /career-path``                 — the immersive page (intro/test or network).
-* ``GET  /api/career-path/state``       — full lifecycle state for the page.
-* ``GET  /api/career-path/questions``   — personality-test question bank.
-* ``POST /api/career-path/answers``     — submit answers → schedule AI personalization.
-* ``POST /api/career-path/reset``       — redo the test (debug / opt-in).
-
-Students only. The deep-thinking AI runs on the unified scheduler, so the page
-polls ``/state`` and switches phases (intro → personalizing → ready).
-"""
-
+"""Student-owned career commands and read-only state endpoints."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
-from ..services.career_engagement_service import (
-    record_student_career_event,
-    record_student_career_event_safely,
-)
-from ..services.career_path_service import (
-    build_state,
-    generate_keywords_on_demand,
-    get_questions,
-    resolve_student_context,
-    reset_session,
-    save_test_and_generate,
-    save_test_progress,
-)
+from ..services import career_path_service as career
+from ..services.career_engagement_service import record_student_career_event, record_student_career_event_safely
+from ..services.student_career_job_service import CareerJobCapacityError
+from ..services.career_rollout_service import CareerRolloutLimited
+from ..services import career_job_posting_service as postings
 
 router = APIRouter()
+
+
+class QuizInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    answers: list[dict[str, Any]] = Field(max_length=12)
+    mode: Literal["quick", "full"] = "quick"
+    quiz_version: str = Field(default=career.QUIZ_VERSION, max_length=40)
+    revision: StrictInt = Field(ge=0)
+    enhance: bool = False
+
+
+class CommandInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target: Literal["network", "personalization"]
+    job_id: StrictInt | None = None
+    revision: StrictInt | None = Field(default=None, ge=0)
+
+
+class FeedbackInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    career_tag: str = Field(min_length=1,max_length=64,pattern=career.SAFE_ID_RE.pattern)
+    action: Literal["favorite","hide","restore"]
+    revision: StrictInt = Field(ge=0)
 
 
 def _require_student(user: dict) -> int:
@@ -43,135 +48,168 @@ def _require_student(user: dict) -> int:
     return int(user["id"])
 
 
+def _command(fn, student_id, **kwargs):
+    try:
+        with get_db_connection() as conn:
+            result = fn(conn, student_id, **kwargs)
+            conn.commit()
+            return result
+    except career.CareerConflict as exc:
+        raise HTTPException(409, exc.detail) from exc
+    except CareerRolloutLimited as exc:
+        raise HTTPException(403, exc.detail) from exc
+    except CareerJobCapacityError as exc:
+        raise HTTPException(429, str(exc), headers={"Retry-After": "30"}) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @router.get("/career-path")
 def career_path_page(request: Request, user: dict = Depends(get_current_user)):
     if str(user.get("role")) != "student":
         return RedirectResponse("/dashboard", status_code=302)
-    return templates.TemplateResponse(
-        request,
-        "career_path.html",
-        {"request": request, "user_info": user},
-    )
+    return templates.TemplateResponse(request, "career_path.html", {"request": request, "user_info": user})
 
 
-@router.get("/api/career-path/state", response_class=JSONResponse)
-def career_path_state(user: dict = Depends(get_current_user)):
-    student_id = _require_student(user)
+@router.get("/api/career-path/state")
+def career_path_state(response: Response, known_result_version: str = Query(default="",max_length=80), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
-        state = build_state(conn, student_id)
-        conn.commit()
+        state = career.build_state(conn, _require_student(user), known_result_version=known_result_version)
     if not state.get("ok"):
         raise HTTPException(404, "未找到你的学籍信息")
+    response.headers["Cache-Control"] = "private, no-store"
     return state
 
 
-@router.get("/api/career-path/questions", response_class=JSONResponse)
-def career_path_questions(mode: str = "quick", user: dict = Depends(get_current_user)):
-    student_id = _require_student(user)
-    selected_mode = "full" if str(mode or "").strip().lower() == "full" else "quick"
-    with get_db_connection() as conn:
-        ctx = resolve_student_context(conn, student_id) or {}
-    questions = get_questions(mode=selected_mode, major_key=str(ctx.get("major_key") or ""))
-    return {
-        "ok": True,
-        "mode": selected_mode,
-        "estimated_minutes": 3 if selected_mode == "full" else 1,
-        "questions": questions,
-    }
+@router.post("/api/career-path/initialize")
+def career_path_initialize(user: dict = Depends(get_current_user)):
+    return _command(career.initialize_career, _require_student(user))
 
 
-@router.post("/api/career-path/answers", response_class=JSONResponse)
-async def career_path_answers(request: Request, user: dict = Depends(get_current_user)):
+@router.get("/api/career-path/questions")
+def career_path_questions(mode: Literal["quick", "full"] = "quick", user: dict = Depends(get_current_user)):
     student_id = _require_student(user)
-    try:
-        payload = await request.json()
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, "请求 JSON 格式不正确") from exc
-    answers = payload.get("answers") if isinstance(payload, dict) else None
-    if not isinstance(answers, list) or not answers:
-        raise HTTPException(400, "缺少测试作答")
     with get_db_connection() as conn:
-        ctx = resolve_student_context(conn, student_id)
-        if not ctx:
-            raise HTTPException(404, "未找到你的学籍信息")
-        result = save_test_and_generate(conn, ctx, answers)
-        record_student_career_event_safely(
-            conn,
-            student_id,
-            surface="career",
-            event_name="career_quiz_completed",
-            context={"result_count": len(answers), "location_pref": result.get("test_result", {}).get("location_pref", "")},
-        )
-        conn.commit()
+        ctx = career.resolve_student_context(conn, student_id) or {}
+    return {"ok": True, "mode": mode, "quiz_version": career.QUIZ_VERSION,
+            "estimated_minutes": 3 if mode == "full" else 1,
+            "questions": career.get_questions(mode=mode, major_key=ctx.get("major_key") or "")}
+
+
+def _save_answers(conn, student_id, *, payload, complete):
+    ctx = career.resolve_student_context(conn, student_id)
+    if not ctx:
+        raise ValueError("未找到你的学籍信息")
+    args = payload.model_dump()
+    if complete:
+        result = career.save_test_and_generate(conn, ctx, **args)
+        record_student_career_event_safely(conn, student_id, surface="career", event_name="career_quiz_completed",
+                                           context={"result_count": len(payload.answers)})
+    else:
+        args.pop("enhance", None)
+        result = career.save_test_progress(conn, ctx, **args)
     return {"ok": True, **result}
 
 
-@router.post("/api/career-path/progress", response_class=JSONResponse)
-async def career_path_progress(request: Request, user: dict = Depends(get_current_user)):
-    """Persist partial answers per-question so the test can resume after exit."""
-    student_id = _require_student(user)
-    try:
-        payload = await request.json()
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, "请求 JSON 格式不正确") from exc
-    answers = payload.get("answers") if isinstance(payload, dict) else None
-    if not isinstance(answers, list):
-        raise HTTPException(400, "缺少作答")
-    with get_db_connection() as conn:
-        ctx = resolve_student_context(conn, student_id)
+@router.post("/api/career-path/answers")
+def career_path_answers(payload: QuizInput, user: dict = Depends(get_current_user)):
+    return _command(_save_answers, _require_student(user), payload=payload, complete=True)
+
+
+@router.post("/api/career-path/progress")
+def career_path_progress(payload: QuizInput, user: dict = Depends(get_current_user)):
+    return _command(_save_answers, _require_student(user), payload=payload, complete=False)
+
+
+@router.post("/api/career-path/retry")
+def career_path_retry(payload: CommandInput, user: dict = Depends(get_current_user)):
+    return _command(career.career_job_command, _require_student(user), action="retry", **payload.model_dump())
+
+
+@router.post("/api/career-path/cancel")
+def career_path_cancel(payload: CommandInput, user: dict = Depends(get_current_user)):
+    return _command(career.career_job_command, _require_student(user), action="cancel", **payload.model_dump())
+
+
+@router.post("/api/career-path/reset")
+def career_path_reset(payload: dict[str, Any] = Body(default={}), user: dict = Depends(get_current_user)):
+    def reset(conn, student_id):
+        career.reset_session(conn, student_id, revision=payload.get("revision"))
+        return career.build_state(conn, student_id)
+    return _command(reset, _require_student(user))
+
+
+@router.post("/api/career-path/preferences")
+def career_path_preferences(payload: dict[str, Any] = Body(...), user: dict = Depends(get_current_user)):
+    values = dict(payload)
+    revision = values.pop("revision", None)
+    if revision is None:
+        raise HTTPException(400, "请提供资料版本")
+    return _command(career.update_career_preferences, _require_student(user), payload=values, revision=revision)
+
+
+@router.post("/api/career-path/feedback")
+def career_path_feedback(payload: FeedbackInput, user: dict = Depends(get_current_user)):
+    def feedback(conn, student_id):
+        ctx = career.resolve_student_context(conn, student_id)
         if not ctx:
-            raise HTTPException(404, "未找到你的学籍信息")
-        result = save_test_progress(conn, ctx, answers)
-        conn.commit()
-    return {"ok": True, **result}
+            raise ValueError("未找到学籍信息")
+        graph = career.get_or_prepare_network(conn, ctx)["network"]
+        node = next((node for node in graph["nodes"] if node["tag"] == payload.career_tag), None)
+        if not node:
+            raise ValueError("未找到该职业方向")
+        return career.record_career_feedback(conn, student_id, node.get("direction_id") or node["tag"],
+            {"favorite": "saved", "hide": "dismissed", "restore": "clear"}[payload.action],
+            revision=payload.revision)
+    return _command(feedback, _require_student(user))
 
 
-@router.post("/api/career-path/keywords", response_class=JSONResponse)
-async def career_path_keywords(request: Request, user: dict = Depends(get_current_user)):
-    """On-demand search keywords for a single direction (fast AI + fallback)."""
+@router.post("/api/career-path/keywords")
+def career_path_keywords(payload: dict[str, Any] = Body(...), user: dict = Depends(get_current_user)):
     student_id = _require_student(user)
-    try:
-        payload = await request.json()
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, "请求 JSON 格式不正确") from exc
-    tag = str(payload.get("tag") or "").strip() if isinstance(payload, dict) else ""
-    if not tag:
-        raise HTTPException(400, "缺少岗位标识")
-    result = await generate_keywords_on_demand(student_id, tag)
-    if not result.get("ok"):
+    tag = str(payload.get("tag") or "")
+    if not career.SAFE_ID_RE.fullmatch(tag):
+        raise HTTPException(400, "职业方向标识不正确")
+    with get_db_connection() as conn:
+        ctx = career.resolve_student_context(conn, student_id)
+        if not ctx:
+            raise HTTPException(404, "未找到学籍信息")
+        graph = career.get_or_prepare_network(conn, ctx)["network"]
+    node = next((n for n in graph["nodes"] if n["tag"] == tag), None)
+    if not node:
         raise HTTPException(404, "未找到该职业方向")
+    return {"ok": True, "tag": tag, "keywords": career.derive_job_keywords_from_node(node), "source": "baseline"}
+
+
+@router.post("/api/career-tools/events")
+def career_tools_event(payload: dict[str, Any] = Body(...), user: dict = Depends(get_current_user)):
+    def record(conn, student_id):
+        inserted = record_student_career_event(conn, student_id, surface=str(payload.get("surface") or ""),
+            event_name=str(payload.get("event_name") or ""), context=payload.get("context"),
+            client_event_id=str(payload.get("client_event_id") or ""))
+        return {"ok": True, "inserted": inserted}
+    return _command(record, _require_student(user))
+
+
+@router.get("/api/career-path/job-postings")
+def career_job_postings(response: Response, city: str = Query(default="",max_length=80),
+                        keyword: str = Query(default="",max_length=80),
+                        page: int = Query(default=1,ge=1,le=10000),
+                        page_size: int = Query(default=20,ge=1,le=20),
+                        qualification: Literal["all","no_known_gaps","confirmed"] = "all",
+                        user: dict = Depends(get_current_user)):
+    try:
+        with get_db_connection() as conn:
+            result=postings.list_job_postings(conn,_require_student(user),city=city,keyword=keyword,page=page,
+                                             page_size=page_size,qualification=qualification)
+    except LookupError as exc:
+        raise HTTPException(404,str(exc)) from exc
+    response.headers["Cache-Control"]="private, no-store"
     return result
 
 
-@router.post("/api/career-path/reset", response_class=JSONResponse)
-def career_path_reset(user: dict = Depends(get_current_user)):
-    student_id = _require_student(user)
-    with get_db_connection() as conn:
-        reset_session(conn, student_id)
-        conn.commit()
-    return {"ok": True}
-
-
-@router.post("/api/career-tools/events", response_class=JSONResponse)
-async def career_tools_event(request: Request, user: dict = Depends(get_current_user)):
-    """Accept one privacy-minimal funnel event from career/resume pages."""
-    student_id = _require_student(user)
-    try:
-        payload = await request.json()
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, "请求 JSON 格式不正确") from exc
-    payload = payload if isinstance(payload, dict) else {}
-    try:
-        with get_db_connection() as conn:
-            inserted = record_student_career_event(
-                conn,
-                student_id,
-                surface=str(payload.get("surface") or ""),
-                event_name=str(payload.get("event_name") or ""),
-                context=payload.get("context"),
-                client_event_id=str(payload.get("client_event_id") or ""),
-            )
-            conn.commit()
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return {"ok": True, "inserted": inserted}
+@router.post("/api/career-path/job-postings/{posting_id}/target")
+def career_posting_target(posting_id: int, user: dict = Depends(get_current_user)):
+    return _command(postings.create_posting_target,_require_student(user),posting_id=posting_id)

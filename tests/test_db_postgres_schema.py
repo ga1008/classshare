@@ -39,6 +39,8 @@ class FakePostgresConnection:
     def execute(self, sql, params=()):
         self.executed_sql.append((sql, params))
         normalized = " ".join(str(sql).split())
+        if normalized in ("SET LOCAL lock_timeout = '5s'", "SET LOCAL statement_timeout = '60s'"):
+            return FakeCursor([])
         if "pg_advisory_xact_lock" in normalized:
             return FakeCursor([])
         if "SELECT is_nullable FROM information_schema.columns" in normalized:
@@ -782,7 +784,13 @@ class PostgresSchemaValidationTests(unittest.TestCase):
                 "classroom_app.db.schema.ensure_cultivation_progress_schema"
             ) as cultivation_schema, patch(
                 "classroom_app.db.schema.ensure_signature_workflow_schema"
-            ) as signature_workflow_schema:
+            ) as signature_workflow_schema, patch(
+                "classroom_app.db.schema.ensure_ai_job_schema"
+            ) as ai_jobs_schema, patch(
+                "classroom_app.db.schema.ensure_career_path_schema"
+            ) as career_schema, patch(
+                "classroom_app.db.schema.ensure_resume_schema"
+            ) as resume_schema:
                 report = database.init_database()
         finally:
             config.DB_ENGINE = original_engine
@@ -791,6 +799,9 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         self.assertTrue(conn.closed)
         cultivation_schema.assert_called_once_with(conn, engine="postgres")
         signature_workflow_schema.assert_called_once_with(conn)
+        ai_jobs_schema.assert_called_once_with(conn, engine="postgres")
+        career_schema.assert_called_once_with(conn)
+        resume_schema.assert_called_once_with(conn)
         sqlite_initializer.assert_not_called()
 
 

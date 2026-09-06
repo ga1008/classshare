@@ -87,47 +87,56 @@ def _serialize(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def check_attachment_owner(conn, student_id: int, owner_kind: str, owner_id: int) -> None:
+    from . import resume_profile_service as profile
+    kind = _normalize_owner_kind(owner_kind)
+    table = profile.LIST_SECTIONS[kind]["table"]
+    if not conn.execute(f"SELECT 1 FROM {table} WHERE id = ? AND student_id = ?", (int(owner_id), int(student_id))).fetchone():
+        raise HTTPException(404, "附件归属材料不存在或无权访问")
+    count = conn.execute("SELECT COUNT(*) AS n FROM resume_attachments WHERE student_id = ? AND owner_kind = ? AND owner_id = ?", (int(student_id), kind, int(owner_id))).fetchone()
+    if int(count["n"]) >= MAX_ATTACHMENTS_PER_OWNER:
+        raise HTTPException(400, "每项最多上传5张图片")
+
+
 async def create_attachment(conn, student_id: int, owner_kind: str, owner_id: int, file: UploadFile) -> dict[str, Any]:
-    ensure_resume_schema(conn)
-    owner_kind = _normalize_owner_kind(owner_kind)
+    """Compatibility adapter; request routes prepare the file before opening DB."""
+    check_attachment_owner(conn, student_id, owner_kind, owner_id)
+    saved = await prepare_attachment_upload(file)
+    return bind_attachment(conn, student_id, owner_kind, owner_id, saved)
 
-    existing = conn.execute(
-        "SELECT COUNT(*) AS c FROM resume_attachments WHERE student_id = ? AND owner_kind = ? AND owner_id = ?",
-        (int(student_id), owner_kind, int(owner_id)),
-    ).fetchone()
-    if int(dict(existing)["c"]) >= MAX_ATTACHMENTS_PER_OWNER:
-        raise HTTPException(status_code=400, detail=f"每项最多上传 {MAX_ATTACHMENTS_PER_OWNER} 张图片")
 
+async def prepare_attachment_upload(file: UploadFile) -> dict[str, Any]:
+    from .resume_import_service import validate_upload_stream
+    await validate_upload_stream(file, max_bytes=RESUME_ATTACHMENT_MAX_BYTES)
     content_type = str(file.content_type or "").split(";", 1)[0].lower()
+    guessed = mimetypes.guess_type(str(file.filename or ""))[0]
     if content_type not in ALLOWED_IMAGE_TYPES:
-        guessed = mimetypes.guess_type(str(file.filename or ""))[0]
-        if guessed in ALLOWED_IMAGE_TYPES:
-            content_type = guessed
+        content_type = guessed or ""
     if content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="仅支持 PNG / JPG / GIF / WebP 图片")
+        raise HTTPException(415, "仅支持有效图片附件")
+    result = await save_file_globally(file)
+    if not result:
+        raise HTTPException(500, "图片保存失败")
+    return {**result, "filename": str(file.filename or "image")[:200], "mime_type": content_type}
 
-    detected = _detect_upload_size(file)
-    if detected is not None and detected > RESUME_ATTACHMENT_MAX_BYTES:
-        raise HTTPException(status_code=413, detail="单张图片不能超过 5MB")
 
-    save_result = await save_file_globally(file)
-    if not save_result:
-        raise HTTPException(status_code=500, detail="图片保存失败")
-    saved_size = int(save_result.get("size") or 0)
-    if saved_size > RESUME_ATTACHMENT_MAX_BYTES:
-        raise HTTPException(status_code=413, detail="单张图片不能超过 5MB")
-
-    new_id = execute_insert_returning_id(
-        conn,
-        "INSERT INTO resume_attachments (student_id, owner_kind, owner_id, file_hash, "
-        "original_filename, mime_type, file_size) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (
-            int(student_id), owner_kind, int(owner_id), str(save_result["hash"]),
-            str(file.filename or "image")[:200], content_type, saved_size,
-        ),
-    )
-    row = conn.execute("SELECT * FROM resume_attachments WHERE id = ?", (int(new_id),)).fetchone()
-    return _serialize(dict(row))
+def bind_attachment(conn, student_id: int, owner_kind: str, owner_id: int, saved: dict[str, Any]) -> dict[str, Any]:
+    from . import resume_profile_service as profile
+    from ..file_service import lock_global_file_references
+    ensure_resume_schema(conn)
+    kind = _normalize_owner_kind(owner_kind)
+    table = profile.LIST_SECTIONS[kind]["table"]
+    locked = conn.execute(f"UPDATE {table} SET revision = revision WHERE id = ? AND student_id = ?", (int(owner_id), int(student_id)))
+    if locked.rowcount != 1:
+        raise HTTPException(404, "附件归属材料不存在或无权访问")
+    existing = conn.execute("SELECT COUNT(*) AS c FROM resume_attachments WHERE student_id=? AND owner_kind=? AND owner_id=?", (int(student_id), kind, int(owner_id))).fetchone()
+    if int(existing["c"]) >= MAX_ATTACHMENTS_PER_OWNER:
+        raise HTTPException(400, "每项最多上传5张图片")
+    lock_global_file_references(conn, [saved["hash"]])
+    new_id = execute_insert_returning_id(conn,
+        "INSERT INTO resume_attachments(student_id,owner_kind,owner_id,file_hash,original_filename,mime_type,file_size) VALUES(?,?,?,?,?,?,?)",
+        (int(student_id), kind, int(owner_id), saved["hash"], saved["filename"], saved["mime_type"], int(saved["size"])))
+    return _serialize(dict(conn.execute("SELECT * FROM resume_attachments WHERE id=? AND student_id=?", (new_id, int(student_id))).fetchone()))
 
 
 def delete_attachment(conn, student_id: int, attachment_id: int) -> None:

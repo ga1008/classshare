@@ -1,19 +1,10 @@
 """Schema for the student career-development network feature.
 
-Two tables:
-
-* ``career_major_networks`` — one cached career network per (school, major).
-  The software-engineering network ships as a built-in *seed*; networks for
-  any other major (网络工程、文科专业 …) are generated on demand by the
-  deep-thinking AI and cached here so every student of that major reuses them.
-* ``career_student_sessions`` — one row per student tracking the welcome /
-  personality-test / AI-personalisation lifecycle and the per-student
-  recommendation overrides + pre-graduation knowledge cards.
-
-The DDL is engine-aware and idempotent (``CREATE TABLE IF NOT EXISTS`` on both
-SQLite and PostgreSQL) so it can be ensured lazily at runtime without touching
-the central SQLite->PostgreSQL migration — mirroring ``schema_scheduler`` and
-``schema_study_group_scheme``. Timestamps are ISO-8601 TEXT.
+Current networks and private sessions retain their legacy identity. Version
+history, controlled academic aliases, source-backed public vacancies and private
+target links extend those boundaries. Schema migration runs at controlled
+application / worker startup, never from GET state. Both SQLite and PostgreSQL
+are supported; timestamps remain ISO-8601 TEXT for existing compatibility.
 """
 
 from __future__ import annotations
@@ -30,10 +21,8 @@ def _add_column(conn: Any, table: str, column: str, definition: str, *, engine: 
     if engine == "postgres":
         conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
         return
-    try:
+    if column not in {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-    except Exception:
-        pass
 
 
 def ensure_career_path_schema(conn: Any) -> None:
@@ -48,8 +37,7 @@ def ensure_career_path_schema(conn: Any) -> None:
         else "id INTEGER PRIMARY KEY AUTOINCREMENT"
     )
 
-    # Per-major cached network. major_key is a normalized slug of the major name
-    # (so "软件工程" / "软件工程技术" collapse to the same seed where intended).
+    # Scope + canonical career mapping key; education pathways remain separate.
     conn.execute(
         f"""
         CREATE TABLE IF NOT EXISTS career_major_networks (
@@ -110,5 +98,81 @@ def ensure_career_path_schema(conn: Any) -> None:
     # Backfill columns for databases created before a column existed.
     _add_column(conn, "career_student_sessions", "program_duration_years", "INTEGER", engine=engine)
     _add_column(conn, "career_major_networks", "error_message", "TEXT NOT NULL DEFAULT ''", engine=engine)
+
+    # These migrations run at application/worker startup, never from GET state.
+    for column, definition in {
+        "revision": "INTEGER NOT NULL DEFAULT 0",
+        "generation": "INTEGER NOT NULL DEFAULT 0",
+        "job_id": "BIGINT",
+        "error_code": "TEXT NOT NULL DEFAULT ''",
+        "schema_version": "TEXT NOT NULL DEFAULT 'legacy'",
+        "sources_json": "TEXT NOT NULL DEFAULT '[]'",
+    }.items():
+        _add_column(conn, "career_major_networks", column, definition, engine=engine)
+    for column, definition in {
+        "revision": "INTEGER NOT NULL DEFAULT 0",
+        "quiz_mode": "TEXT NOT NULL DEFAULT 'quick'",
+        "quiz_version": "TEXT NOT NULL DEFAULT 'career-quiz-v2'",
+        "input_hash": "TEXT NOT NULL DEFAULT ''",
+        "input_epoch": "TEXT NOT NULL DEFAULT ''",
+        "context_hash": "TEXT NOT NULL DEFAULT ''",
+        "evidence_json": "TEXT NOT NULL DEFAULT '{}'",
+        "evidence_stale": "INTEGER NOT NULL DEFAULT 0",
+        "preferences_json": "TEXT NOT NULL DEFAULT '{}'",
+        "feedback_json": "TEXT NOT NULL DEFAULT '{}'",
+        "feedback_labels_json": "TEXT NOT NULL DEFAULT '{}'",
+        "baseline_json": "TEXT NOT NULL DEFAULT '{}'",
+        "network_version": "TEXT NOT NULL DEFAULT ''",
+        "personal_job_id": "BIGINT",
+        "error_code": "TEXT NOT NULL DEFAULT ''",
+    }.items():
+        _add_column(conn, "career_student_sessions", column, definition, engine=engine)
+    conn.execute(f"""
+        CREATE TABLE IF NOT EXISTS career_network_versions (
+            {id_column}, network_id BIGINT NOT NULL, revision INTEGER NOT NULL,
+            network_json TEXT NOT NULL, sources_json TEXT NOT NULL DEFAULT '[]',
+            schema_version TEXT NOT NULL, created_at TEXT NOT NULL,
+            UNIQUE(network_id, revision)
+        )
+    """)
+    conn.execute(f"""
+        CREATE TABLE IF NOT EXISTS career_recommendation_versions (
+            {id_column}, student_id INTEGER NOT NULL, input_hash TEXT NOT NULL,
+            network_version TEXT NOT NULL, baseline_json TEXT NOT NULL,
+            personalized_json TEXT NOT NULL DEFAULT '{{}}',
+            source TEXT NOT NULL DEFAULT 'baseline', created_at TEXT NOT NULL,
+            UNIQUE(student_id, input_hash)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_career_recommendation_history "
+                 "ON career_recommendation_versions(student_id, id DESC)")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS career_major_aliases (
+        school_code TEXT NOT NULL, alias_key TEXT NOT NULL, canonical_key TEXT NOT NULL,
+        canonical_name TEXT NOT NULL, reason TEXT NOT NULL, updated_at TEXT NOT NULL,
+        PRIMARY KEY(school_code,alias_key)
+    )""")
+    conn.execute(f"""CREATE TABLE IF NOT EXISTS career_job_postings (
+        {id_column}, source TEXT NOT NULL, external_id TEXT NOT NULL,
+        school_code TEXT NOT NULL DEFAULT '', source_url TEXT NOT NULL,
+        title TEXT NOT NULL, company TEXT NOT NULL, city TEXT NOT NULL,
+        employment_type TEXT NOT NULL DEFAULT '', published_at TEXT NOT NULL DEFAULT '',
+        checked_at TEXT NOT NULL, expires_at TEXT NOT NULL, status TEXT NOT NULL,
+        job_description TEXT NOT NULL, jd_hash TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
+        content_hash TEXT NOT NULL, analysis_json TEXT NOT NULL DEFAULT '{{}}',
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(source,external_id)
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_career_postings_open "
+                 "ON career_job_postings(status,city,expires_at,id DESC)")
+    conn.execute(f"""CREATE TABLE IF NOT EXISTS career_job_posting_versions (
+        {id_column}, posting_id BIGINT NOT NULL, version INTEGER NOT NULL,
+        snapshot_json TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(posting_id,version)
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS career_posting_targets (
+        student_id INTEGER NOT NULL, posting_id BIGINT NOT NULL, posting_version INTEGER NOT NULL,
+        job_target_id BIGINT NOT NULL, source_url TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY(student_id,posting_id,posting_version)
+    )""")
 
     _SCHEMA_READY = True

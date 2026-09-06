@@ -1,0 +1,400 @@
+{
+  "research_as_of": "2026-09-06",
+  "checked_at": "2026-09-06T05:03:15+00:00",
+  "scope": "review_only_no_business_database_access",
+  "production_imported": false,
+  "pure_validator_passed": 3,
+  "import_readiness": "source_candidates_only: requirement_guard_passed; source_maintenance_review_and_preimport_refresh_still_required",
+  "source_document": {
+    "url": "https://pic.bankofchina.com/bocappd/appform/202609/P020260903517985334320.pdf",
+    "sha256": "d94e238bc826e83f7428f75cdcdc3ddc3e9bef5d5c8db4fbbc7ad3bb83cbd1bf",
+    "pages": 7
+  },
+  "postings": [
+    {
+      "external_id": "6a8fb4f83f91030978ec0ab0",
+      "job_no": "A0252",
+      "title": "信息科技岗-软件中心（北京）",
+      "company_id": "6a82a408f6bf3d0ac213d569",
+      "city": "北京",
+      "degree_field": "本科",
+      "experience_field": "应届毕业生",
+      "visible": 1,
+      "started": 1,
+      "apply_end_epoch_ms": 1791561600000,
+      "checked_at": "2026-09-06T05:03:15+00:00",
+      "expiry_utc": "2026-10-09T16:00:00+00:00",
+      "published_day_from_announcement": "2026-09-03",
+      "job_list_response_sha256": "2f99381fd72dafa5713e5a6de666e2abce42bf13e10480c3edd66a3bf06594fe",
+      "job_record_sha256": "0c1d7d75b579295ff1154814e71aefeb64d40b97b593490cddb9d11e34ba83f4",
+      "import_jd_hash": "fe132b7c77a581d0a2c0ae52effb76a18b9f9cd934b1f9a7e4cfbd01197b64a6",
+      "evidence_urls": [
+        "https://www.boc.cn/aboutboc/bi4/202609/t20260903_25689311.html",
+        "https://campus.chinahr.com/pages/2027-boc#/jobs",
+        "https://pic.bankofchina.com/bocappd/appform/202609/P020260903517985334320.pdf"
+      ],
+      "qualification_pages": [
+        3,
+        4,
+        7
+      ],
+      "source_chain": "Employer official announcement explicitly links this campus site; authenticated application endpoints were not used."
+    },
+    {
+      "external_id": "6a8ab2216e2b9009adb7e14a",
+      "job_no": "A0058",
+      "title": "单证业务岗（综合）-单证中心（北京）",
+      "company_id": "6a82a408f6bf3d0ac213d571",
+      "city": "北京",
+      "degree_field": "本科",
+      "experience_field": "应届毕业生",
+      "visible": 1,
+      "started": 1,
+      "apply_end_epoch_ms": 1791561600000,
+      "checked_at": "2026-09-06T05:03:15+00:00",
+      "expiry_utc": "2026-10-09T16:00:00+00:00",
+      "published_day_from_announcement": "2026-09-03",
+      "job_list_response_sha256": "2bc61c1ffc6f91915335976a686e581c92c86b3420106b39e3e75f13afe406f5",
+      "job_record_sha256": "d5939930ba2dc6c65953b86d445949f5264c01e2b3dd1d5be124757ff0bb9155",
+      "import_jd_hash": "a3728cce43910ad86d3b53a7eeee4c939c8edc21536748f6c5855bf295e57e68",
+      "evidence_urls": [
+        "https://www.boc.cn/aboutboc/bi4/202609/t20260903_25689311.html",
+        "https://campus.chinahr.com/pages/2027-boc#/jobs",
+        "https://pic.bankofchina.com/bocappd/appform/202609/P020260903517985334320.pdf"
+      ],
+      "qualification_pages": [
+        3,
+        4,
+        7
+      ],
+      "source_chain": "Employer official announcement explicitly links this campus site; authenticated application endpoints were not used."
+    },
+    {
+      "external_id": "6a8acfce27625b097c106b82",
+      "job_no": "A0134",
+      "title": "管理培训生-上海总部",
+      "company_id": "6a82a408f6bf3d0ac213d55b",
+      "city": "上海",
+      "degree_field": "本科",
+      "experience_field": "应届毕业生",
+      "visible": 1,
+      "started": 1,
+      "apply_end_epoch_ms": 1791561600000,
+      "checked_at": "2026-09-06T05:03:15+00:00",
+      "expiry_utc": "2026-10-09T16:00:00+00:00",
+      "published_day_from_announcement": "2026-09-03",
+      "job_list_response_sha256": "a45f2148c409fac4d4963b96925f0bed1833b56f74ec577722a1a60b094df0a3",
+      "job_record_sha256": "de3a4eacf662989c56fddae5746ad0ff7b4723b5816dfdc3de08356eeb57684f",
+      "import_jd_hash": "7b082319adee2faa33b1ca5931c264c38c5dcbccda0f529338a3f307ae612e1c",
+      "evidence_urls": [
+        "https://www.boc.cn/aboutboc/bi4/202609/t20260903_25689311.html",
+        "https://campus.chinahr.com/pages/2027-boc#/jobs",
+        "https://pic.bankofchina.com/bocappd/appform/202609/P020260903517985334320.pdf"
+      ],
+      "qualification_pages": [
+        1,
+        2,
+        7
+      ],
+      "source_chain": "Employer official announcement explicitly links this campus site; authenticated application endpoints were not used."
+    }
+  ],
+  "qualification_engine_reproduction": {
+    "synthetic_only": true,
+    "database_access": false,
+    "evaluated_on": "2026-09-06",
+    "cases": [
+      {
+        "job_no": "A0252",
+        "synthetic_profile": {
+          "education": [
+            {
+              "id": 1,
+              "degree": "本科",
+              "major": "计算机",
+              "end_date": "2020-06"
+            }
+          ],
+          "certificate": [
+            {
+              "id": 1,
+              "name": "CET-4",
+              "description": "成绩300分",
+              "acquired_date": "2020-01"
+            },
+            {
+              "id": 2,
+              "name": "CET-6",
+              "description": "成绩300分",
+              "acquired_date": "2020-01"
+            }
+          ],
+          "experience": [
+            {
+              "id": 1,
+              "kind": "work",
+              "start_date": "2020-07",
+              "end_date": "2025-12"
+            }
+          ]
+        },
+        "extracted_checks": [
+          {
+            "type": "education",
+            "state": "met",
+            "qualification": null
+          },
+          {
+            "type": "major",
+            "state": "met",
+            "qualification": null
+          },
+          {
+            "type": "qualification",
+            "state": "met",
+            "qualification": "CET-4"
+          }
+        ],
+        "current_confirmed_expression": true,
+        "expected_gate": "unknown_or_known_gap; never confirmed because graduation window, first employment and exam score are not satisfied or not represented"
+      },
+      {
+        "job_no": "A0058",
+        "synthetic_profile": {
+          "education": [
+            {
+              "id": 1,
+              "degree": "本科",
+              "major": "法学",
+              "end_date": "2020-06"
+            }
+          ],
+          "certificate": [
+            {
+              "id": 1,
+              "name": "CET-4",
+              "description": "成绩300分",
+              "acquired_date": "2020-01"
+            },
+            {
+              "id": 2,
+              "name": "CET-6",
+              "description": "成绩300分",
+              "acquired_date": "2020-01"
+            }
+          ],
+          "experience": [
+            {
+              "id": 1,
+              "kind": "work",
+              "start_date": "2020-07",
+              "end_date": "2025-12"
+            }
+          ]
+        },
+        "extracted_checks": [
+          {
+            "type": "education",
+            "state": "met",
+            "qualification": null
+          },
+          {
+            "type": "major",
+            "state": "met",
+            "qualification": null
+          },
+          {
+            "type": "qualification",
+            "state": "met",
+            "qualification": "CET-4"
+          }
+        ],
+        "current_confirmed_expression": true,
+        "expected_gate": "unknown_or_known_gap; never confirmed because graduation window, first employment and exam score are not satisfied or not represented"
+      },
+      {
+        "job_no": "A0134",
+        "synthetic_profile": {
+          "education": [
+            {
+              "id": 1,
+              "degree": "本科",
+              "major": "法学",
+              "end_date": "2020-06"
+            }
+          ],
+          "certificate": [
+            {
+              "id": 1,
+              "name": "CET-4",
+              "description": "成绩300分",
+              "acquired_date": "2020-01"
+            },
+            {
+              "id": 2,
+              "name": "CET-6",
+              "description": "成绩300分",
+              "acquired_date": "2020-01"
+            }
+          ],
+          "experience": [
+            {
+              "id": 1,
+              "kind": "work",
+              "start_date": "2020-07",
+              "end_date": "2025-12"
+            }
+          ]
+        },
+        "extracted_checks": [
+          {
+            "type": "education",
+            "state": "met",
+            "qualification": null
+          },
+          {
+            "type": "major",
+            "state": "met",
+            "qualification": null
+          },
+          {
+            "type": "qualification",
+            "state": "met",
+            "qualification": "CET-6"
+          }
+        ],
+        "current_confirmed_expression": true,
+        "expected_gate": "unknown_or_known_gap; never confirmed because graduation window, first employment and exam score are not satisfied or not represented"
+      }
+    ],
+    "code_sha256": {
+      "classroom_app\\services\\resume\\resume_requirement_service.py": "ee3e881adf0fff000c2acb69219fbbc4f77287d0cba4bc0a8169f63ffec4ee18",
+      "classroom_app\\services\\career_job_posting_service.py": "450300f36568bd1f37ca217be717da1414a83e6c43ad87dd484bdff5fb010221"
+    }
+  },
+  "not_assumed": [
+    "Province-only Guangxi jobs were not mapped to Nanning.",
+    "No missing deadline was replaced with an invented one.",
+    "No unknown job-source authorization was treated as a supported API contract.",
+    "No salary was inferred."
+  ],
+  "qualification_guard_verification": {
+    "checked_at": "2026-09-06T05:12:20+00:00",
+    "pure_function_only": true,
+    "cases": [
+      {
+        "job_no": "A0252",
+        "confirmed_after_guard": false,
+        "required_states": [
+          {
+            "type": "education",
+            "state": "met",
+            "condition_key": null
+          },
+          {
+            "type": "major",
+            "state": "met",
+            "condition_key": null
+          },
+          {
+            "type": "qualification",
+            "state": "unknown",
+            "condition_key": "certificate_alternatives"
+          },
+          {
+            "type": "eligibility",
+            "state": "unknown",
+            "condition_key": "graduation_window"
+          },
+          {
+            "type": "eligibility",
+            "state": "unknown",
+            "condition_key": "first_employment"
+          },
+          {
+            "type": "eligibility",
+            "state": "unknown",
+            "condition_key": "overseas_credential"
+          }
+        ]
+      },
+      {
+        "job_no": "A0058",
+        "confirmed_after_guard": false,
+        "required_states": [
+          {
+            "type": "education",
+            "state": "met",
+            "condition_key": null
+          },
+          {
+            "type": "major",
+            "state": "met",
+            "condition_key": null
+          },
+          {
+            "type": "qualification",
+            "state": "unknown",
+            "condition_key": "certificate_alternatives"
+          },
+          {
+            "type": "eligibility",
+            "state": "unknown",
+            "condition_key": "graduation_window"
+          },
+          {
+            "type": "eligibility",
+            "state": "unknown",
+            "condition_key": "first_employment"
+          },
+          {
+            "type": "eligibility",
+            "state": "unknown",
+            "condition_key": "overseas_credential"
+          }
+        ]
+      },
+      {
+        "job_no": "A0134",
+        "confirmed_after_guard": false,
+        "required_states": [
+          {
+            "type": "education",
+            "state": "met",
+            "condition_key": null
+          },
+          {
+            "type": "major",
+            "state": "met",
+            "condition_key": null
+          },
+          {
+            "type": "qualification",
+            "state": "unknown",
+            "condition_key": "certificate_alternatives"
+          },
+          {
+            "type": "eligibility",
+            "state": "unknown",
+            "condition_key": "graduation_window"
+          },
+          {
+            "type": "eligibility",
+            "state": "unknown",
+            "condition_key": "first_employment"
+          },
+          {
+            "type": "eligibility",
+            "state": "unknown",
+            "condition_key": "overseas_credential"
+          }
+        ]
+      }
+    ],
+    "postgres_synthetic_fixture": "passed: confirmed excludes unsupported eligibility/future certificate; no_known_gaps returns visible unknown; schema removed",
+    "code_sha256": {
+      "classroom_app\\services\\resume\\resume_requirement_service.py": "4bf95141c97b9ee268f417e54f10ed4e3b905ad9732cf3835e58acdc173c663a",
+      "classroom_app\\services\\career_job_posting_service.py": "45787db2977d50b99adf938e96e250131814c80cc5df21bbdeb2f1040b6a52f6"
+    }
+  }
+}

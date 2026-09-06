@@ -1,0 +1,896 @@
+{
+  "ok": true,
+  "synthetic_only": true,
+  "isolated_schema_removed": true,
+  "schema": "resume_probe_57d823515a824b4c84353b2fa4a1c706",
+  "configuration": {
+    "duration": 3600.0,
+    "rps": 50.0,
+    "users": 1000,
+    "writers": 100,
+    "save_interval": 10.0,
+    "baseline_duration": 10,
+    "job_rps": 1,
+    "stub_seconds": 2,
+    "conflict_rate": 0.05,
+    "max_inflight": 200,
+    "seed": 42,
+    "reminder_interval": 30,
+    "reminder_offset": 10,
+    "scheduler_poll_seconds": 20,
+    "output": ".codex-temp/career-load-1h-final-v5.json"
+  },
+  "dataset": {
+    "majors": 10,
+    "students": 1000,
+    "resumes_per_student": 1,
+    "materials_per_student": {
+      "education": 1,
+      "experience": 1,
+      "skill": 1,
+      "self_intro": 1
+    },
+    "note": "Fixture students 1/2 retain seed profile; student1 additionally retains fixture internship."
+  },
+  "machine": {
+    "logical_cpus": 20,
+    "physical_cpus": 14,
+    "ram_gb": 15.63
+  },
+  "clock": {
+    "process_TZ": "CST-8",
+    "application_timezone": "Asia/Shanghai",
+    "naive_scheduler_matches_china_clock": true
+  },
+  "measurement_scope": "Real ASGI routes/services, threadpool and PostgreSQL pool max12. No network/TLS/browser. App CPU/RSS includes the load generator and dedicated reminder thread. Pooled DB backend RSS can double-count shared pages; excludes shared PG daemon/checkpointer. Separate real profile-avatar and teaching course-schedule baselines. Read mix stays 50 RPS by replacing 10% career state with teaching (state50/compact20/readiness10/teaching10/avatar10 percent). Real assignment reminder scheduler shares this pool; SMTP enqueue/delivery disabled. Desktop differs from production 2 CPU / 3.57 GB; this is not a production SLA.",
+  "wall_seconds_with_setup": 3654.062,
+  "requests": {
+    "baseline_avatar/existing_profile_avatar": {
+      "count": 500,
+      "p50_ms": 2.643,
+      "p95_ms": 5.532,
+      "p99_ms": 6.084,
+      "max_ms": 6.518,
+      "mean_ms": 2.962,
+      "total_count": 500,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "200": 500
+      },
+      "response_bytes": 257506,
+      "database_execute_calls": 500
+    },
+    "baseline_teaching/teaching_course_schedule": {
+      "count": 500,
+      "p50_ms": 8.078,
+      "p95_ms": 11.697,
+      "p99_ms": 14.205,
+      "max_ms": 25.58,
+      "mean_ms": 8.552,
+      "total_count": 500,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "200": 500
+      },
+      "response_bytes": 29540317,
+      "database_execute_calls": 2000
+    },
+    "mixed/career_light_state": {
+      "count": 90000,
+      "p50_ms": 4.327,
+      "p95_ms": 21.839,
+      "p99_ms": 129.816,
+      "max_ms": 361.125,
+      "mean_ms": 8.33,
+      "total_count": 90000,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "200": 90000
+      },
+      "response_bytes": 268577893,
+      "database_execute_calls": 455626
+    },
+    "mixed/career_progress": {
+      "count": 17974,
+      "p50_ms": 15.432,
+      "p95_ms": 32.06,
+      "p99_ms": 148.088,
+      "max_ms": 294.789,
+      "mean_ms": 19.179,
+      "total_count": 17974,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "200": 17108,
+        "409": 866
+      },
+      "response_bytes": 2626312,
+      "database_execute_calls": 89004
+    },
+    "mixed/suggestion_enqueue": {
+      "count": 3600,
+      "p50_ms": 9.955,
+      "p95_ms": 35.287,
+      "p99_ms": 159.607,
+      "max_ms": 261.627,
+      "mean_ms": 16.136,
+      "total_count": 3600,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "202": 3600
+      },
+      "response_bytes": 1785930,
+      "database_execute_calls": 50400
+    },
+    "mixed/resume_save": {
+      "count": 17975,
+      "p50_ms": 23.586,
+      "p95_ms": 53.967,
+      "p99_ms": 173.897,
+      "max_ms": 315.186,
+      "mean_ms": 29.354,
+      "total_count": 17975,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "409": 894,
+        "200": 17081
+      },
+      "response_bytes": 1107656,
+      "database_execute_calls": 275084
+    },
+    "mixed/resume_compact": {
+      "count": 36000,
+      "p50_ms": 2.08,
+      "p95_ms": 10.706,
+      "p99_ms": 25.178,
+      "max_ms": 278.854,
+      "mean_ms": 3.825,
+      "total_count": 36000,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "200": 36000
+      },
+      "response_bytes": 6697449,
+      "database_execute_calls": 36000
+    },
+    "mixed/existing_profile_avatar": {
+      "count": 18000,
+      "p50_ms": 2.489,
+      "p95_ms": 10.52,
+      "p99_ms": 23.013,
+      "max_ms": 225.96,
+      "mean_ms": 3.978,
+      "total_count": 18000,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "200": 18000
+      },
+      "response_bytes": 9270720,
+      "database_execute_calls": 18000
+    },
+    "mixed/teaching_course_schedule": {
+      "count": 18000,
+      "p50_ms": 10.214,
+      "p95_ms": 22.056,
+      "p99_ms": 135.747,
+      "max_ms": 278.68,
+      "mean_ms": 13.568,
+      "total_count": 18000,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "200": 18000
+      },
+      "response_bytes": 1063613160,
+      "database_execute_calls": 72000
+    },
+    "mixed/resume_readiness": {
+      "count": 18000,
+      "p50_ms": 4.416,
+      "p95_ms": 20.729,
+      "p99_ms": 131.337,
+      "max_ms": 243.038,
+      "mean_ms": 8.165,
+      "total_count": 18000,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "200": 18000
+      },
+      "response_bytes": 21294000,
+      "database_execute_calls": 90000
+    },
+    "post_baseline_avatar/existing_profile_avatar": {
+      "count": 500,
+      "p50_ms": 2.563,
+      "p95_ms": 3.684,
+      "p99_ms": 4.106,
+      "max_ms": 4.289,
+      "mean_ms": 2.547,
+      "total_count": 500,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "200": 500
+      },
+      "response_bytes": 257506,
+      "database_execute_calls": 500
+    },
+    "post_baseline_teaching/teaching_course_schedule": {
+      "count": 500,
+      "p50_ms": 8.251,
+      "p95_ms": 9.678,
+      "p99_ms": 10.229,
+      "max_ms": 11.355,
+      "mean_ms": 8.421,
+      "total_count": 500,
+      "truncated_count": 0,
+      "sample_scope": "first_250000",
+      "statuses": {
+        "200": 500
+      },
+      "response_bytes": 29540317,
+      "database_execute_calls": 2000
+    }
+  },
+  "source_hashes_before": {
+    "tools\\career_mixed_load_probe.py": "d0df73464b100aa6585c080f3b3dbeaea52129ff0c30395d74cead2e84f1c6a7",
+    "classroom_app\\routers\\career_path.py": "9086cc6f8929f5438759bf229d48dd938e6c8133dac8df1acea3a252643fa69c",
+    "classroom_app\\routers\\resume_console.py": "ea790bf7173db44589cdb3c10e301c6de0337c079393e4e4207c692915102008",
+    "classroom_app\\services\\career_lifecycle_service.py": "f8d29a4431283f87c8605c9bb8d2ef207f0cdf14d1c5ef2047bfe6ae07f8c81e",
+    "classroom_app\\services\\career_path_service.py": "b6b008b0df36a9dc67e2c9c91f48ff68d94250a4d7da9ed0892f69a6fb3e735e",
+    "classroom_app\\services\\student_career_job_worker.py": "c15f9177eed9576639bb81f490d650220315ebe75f5ae8de73c99ef906ea2d16",
+    "classroom_app\\services\\student_career_job_service.py": "014d4ecd7a793fccd5293a5a11a53fe3cb620067895ed6aafc7c99a64036c0b9",
+    "classroom_app\\services\\ai_durable_job_service.py": "bae214968953294dacf9fe7314f1ea11a2dc2aa5c2bf8a87a2b733af178725dc",
+    "classroom_app\\services\\resume\\resume_ai_service.py": "19502975aa3dc5784cc7a76206c4b7614b947ab8fecdb4b4194cadb8f8293c99",
+    "classroom_app\\services\\resume\\resume_application_service.py": "9b0d0227b34238c6c722eb60ca73ac73d60d39acc2766d3c1fcf14a8443ec4e5",
+    "classroom_app\\services\\resume\\resume_attachment_service.py": "a31395fa233bc25aa4c79ee1404129ef837d0bbfc40fdbef6c5fd33c46d9a432",
+    "classroom_app\\services\\resume\\resume_document_service.py": "22dc2b6d5be163b7e5170a6ba9653d5e7dcf9565255b36f473a9f8cb6005639e",
+    "classroom_app\\services\\resume\\resume_generation_service.py": "e4e2fbe8d25ace93d282dbba7636009d4a1c888e0d315c036a6a6c448ee0f25a",
+    "classroom_app\\services\\resume\\resume_import_service.py": "d2b90d8830107c639c8610713afaa93418a8bdcbab8fef888db551258f80ceb2",
+    "classroom_app\\services\\resume\\resume_job_target_service.py": "f935f27b391af49025b278da1cfa6e79ef51df18ea15cd0d4b63f2ca87010d98",
+    "classroom_app\\services\\resume\\resume_nav_service.py": "8551ba437d8724f9d4e77227e839dd9f71982a7575c5d4235c72c1ce4776d170",
+    "classroom_app\\services\\resume\\resume_profile_service.py": "239a11d5b8b60164be31a485b1e0ce5e86d00ea18d785993ff54e32283b5f25e",
+    "classroom_app\\services\\resume\\resume_readiness_service.py": "75f6ec2579898aae892cec48c360dea0e6ffa5d2d9a8cfe4bc990efc8e0b0013",
+    "classroom_app\\services\\resume\\resume_render_service.py": "330ea9ec27f8fa3806bf9c718e2a6eff2a70aa200b6b7b114e551a3092f7e821",
+    "classroom_app\\services\\resume\\resume_requirement_service.py": "4bf95141c97b9ee268f417e54f10ed4e3b905ad9732cf3835e58acdc173c663a",
+    "classroom_app\\services\\resume\\resume_suggestion_service.py": "4489d4c3ce2c85e5927d173379b6ffccb3f402ca092c6b5893bae58180f3c97e",
+    "classroom_app\\services\\resume\\__init__.py": "086a268a53a152867fbcb1f3b4b09a4f287c28d7c67a175af27c90d565d717a5",
+    "classroom_app\\services\\career_engagement_service.py": "cb69de999eb6152c83c4150fede7156a92982aa4f14d377785efbd974202f12a",
+    "classroom_app\\services\\career_job_metrics_service.py": "187fdbe1bfda2b7d02d36c7d7681b26fc75133b7fe38874afb3b4e6a04fb3cec",
+    "classroom_app\\services\\career_job_posting_service.py": "45787db2977d50b99adf938e96e250131814c80cc5df21bbdeb2f1040b6a52f6",
+    "classroom_app\\services\\career_major_mapping_service.py": "484ea594ddff8facda5a5ddc8367c60ee40d70cf06094bdf2a429001d17f773e",
+    "classroom_app\\services\\career_payload_service.py": "d8765a5855e1421bc4893e687680c260d16fe0400a415d4a383a41039fb1fa2c",
+    "classroom_app\\services\\career_public_view_service.py": "bbbadd9688ef9a4e74cd062374604e70fd86a9ae65f77392b4c6e2301ed0b179",
+    "classroom_app\\services\\career_recommendation_service.py": "46c9914806c60671e96c67e64be01b2c4f7c3afbd45ce8479ac3b31c2385d560",
+    "classroom_app\\services\\career_seed_data.py": "71b4d16a548ede6a88f284419dbf4eb4a9ced245373780177adf5aa8277d01f0",
+    "classroom_app\\db\\connection.py": "d2f55c70f2337c10cee8d38def3b8251bcfe51801a512ac3df413372d7cdb212",
+    "classroom_app\\db\\errors.py": "27382ecdb2517823f121dfdd5d55dd8a749d5b75aec1281f89b7b34383e29062",
+    "classroom_app\\db\\migrations.py": "4fa662485cb6e143af0de6e2d22088265c4595d7cf0e56c619683ad073183aac",
+    "classroom_app\\db\\migration_registry.py": "6ed3ff2cebd2272606fb2ea69ef5dd57324927f3d93824b0f7ab7c2501ee6faf",
+    "classroom_app\\db\\postgres.py": "a0b078f00cfd7f3d2baaed684b92668b707566a40e9bf26f5df1e437ead7446e",
+    "classroom_app\\db\\postgres_indexes.py": "e86ec23572ca855ad5485fa565133b27337cac19b5a0b813214a544a543559ca",
+    "classroom_app\\db\\postgres_required_columns.py": "021c77f9ff7e50613a68863b7c24b1849d166695390d44959ad35a7c9c0611e9",
+    "classroom_app\\db\\postgres_schema.py": "5d9896ae7dc542a2141c3985ddca2974042996dddf7f958283cd4183090102e0",
+    "classroom_app\\db\\repair.py": "5b9c74e1f901b701e1362d799b756bbd223cbbc6c37736b2666770eb70fc4d6d",
+    "classroom_app\\db\\row.py": "141ee2e1352eb2ec8a376731cf2cd38210e6cb8b470823fb0404c45205b17f60",
+    "classroom_app\\db\\schema.py": "91c322e649959ac6686d9f03767c629e69e280f5dd016a8fa21f9c12e7fd3f20",
+    "classroom_app\\db\\schema_academic_evaluations.py": "bad0937e5dcafccdb2d55fb5cf1dda8ccd4c378b6ca2553434b7c8becbd260d0",
+    "classroom_app\\db\\schema_academic_final_materials.py": "e96fe90f8ca7f2b54c2c7aa25737dca7b5eca5e63dbc777e8352ee64b30a9696",
+    "classroom_app\\db\\schema_agent_ext.py": "c456892b9eeb206628ede3efb0750df5b3053421c00d18fe72f8a19ad03ea197",
+    "classroom_app\\db\\schema_ai_jobs.py": "34c0792efe9b2b5e95713073848ba621c5fcfebabb9d0980da1cfe49c9af0a28",
+    "classroom_app\\db\\schema_assessment_plans.py": "edd26dd4ccda6ff382a2f231f5b042f93d59774eca0dd710efce9de54717c1c4",
+    "classroom_app\\db\\schema_assignments.py": "43f19a237e618858f554ddf2fe3ead48c2a688e1fd91f0ce74991a0af746b560",
+    "classroom_app\\db\\schema_career_engagement.py": "56a0adf52088a20fae35121ae7ff32f0b23f8716fadd956b506039ef39a1a625",
+    "classroom_app\\db\\schema_career_path.py": "fd3b4a8b28fa7d336c49a4898847f842ccad132491e5fd1ab3f40bb77f163fac",
+    "classroom_app\\db\\schema_classroom_activity.py": "b147b26bd8da0eddb26f0096af3165b16cade65cf968e6bc0462db56c07b113c",
+    "classroom_app\\db\\schema_course_doc_packs.py": "672c541f9e33be59e20ab22045b4a49f686ae7e7504f7c884f7e7fb6d7696e81",
+    "classroom_app\\db\\schema_cultivation_progress.py": "81fde46d52f7ee8dd66a584bfe420b11cc180054ceaebd712d894f839486bcee",
+    "classroom_app\\db\\schema_foundation.py": "25ed839d06c9830aa9c199e893c0cbf6e4e82713f0d065f29d586101c521e347",
+    "classroom_app\\db\\schema_gongwen.py": "de7616b0d3847f247a7f8c46f6a554d12e1dd1a5fa0e9a0ca4eca14bcb105f81",
+    "classroom_app\\db\\schema_learning_blog.py": "8ad937859132cb567eaae4ff64ff9b772b4072be09dd3c6f65bb2e7dad2013af",
+    "classroom_app\\db\\schema_lessondoc_editor.py": "405a5eabb3032144cd56be7491d7a3e38526e66f4165acd6f4c68f51947bf93f",
+    "classroom_app\\db\\schema_lesson_plans.py": "4982277598e8a4ea8296c7aadff9a6cb0a99b4c2f860266929271588c769d556",
+    "classroom_app\\db\\schema_life_tips.py": "61fcb8ad6fe8f9dd420eeec37d1a1026dc9ec1a13452aa8904d4519fc26209aa",
+    "classroom_app\\db\\schema_materials_integrations.py": "4848694b7b135199c2547f0d28b4284a98da10d042e3c1d745d4a1175c7e445b",
+    "classroom_app\\db\\schema_material_whiteboards.py": "e3824b9d399ad132d6b44e8c84e049ac7c73cecb4a779c7fe3a54277f65b20d3",
+    "classroom_app\\db\\schema_offering_class_links.py": "57d19449d786f38deba1b4d961abef734944bf6b3affdaa262e14470545ce8fd",
+    "classroom_app\\db\\schema_offering_merge.py": "e7ce14299c15ec862b8af68f030d5b2eebcfcefe8c224ba4ea79416b26a3611e",
+    "classroom_app\\db\\schema_polls.py": "77595bdaf89b2d3b5205b38f9cdcf1861977fac347481bf909705ea4b11c4ee3",
+    "classroom_app\\db\\schema_prompt_pool.py": "4138e33abec4d4fa5bcc66a853e171c8e139931d6081ab347ed2d4ebbeeae7b1",
+    "classroom_app\\db\\schema_resume.py": "6bb204fd44a84c3424730efe889085bf603ddd43e91c1a20f5304a012d0ccaff",
+    "classroom_app\\db\\schema_retake.py": "4d74a66b17db9908aad3bdc5578def18e60081020e7c50711d42ee88b3d2655c",
+    "classroom_app\\db\\schema_scheduler.py": "37769302287ac19883182a55bd8df8d115cd8a8d18040e36dccc60f77160f84b",
+    "classroom_app\\db\\schema_session_learning_materials.py": "2660ee1016cee75db1da613dd36678cc9a5bac5cdc0b7c39b607f173c5adcf3b",
+    "classroom_app\\db\\schema_signature_workflow.py": "9692744a821c7f5aebe0d5d2f16b2e09697338aa37e57588f1c756edc2ad346c",
+    "classroom_app\\db\\schema_smart_schedule.py": "de6f77e3f5f34394253a5bc087cef3dd0bf49e71f9a085dd739046cbc4e0d7e8",
+    "classroom_app\\db\\schema_study_group_scheme.py": "948de842a0a26aed65a103afb924955d74e6a382cd3f7ed95e7dc5b198c6eae9",
+    "classroom_app\\db\\schema_teacher_evaluations.py": "e2cb062b7dd9ccb2daebb90d9072be07fa4acfd1fc613895bbb12ed56f6cbb20",
+    "classroom_app\\db\\schema_wechat_mp.py": "c56dccd456fa5ff11f2a0d5c6af7169b138df4b7e1f9536ee7d4336b6a5f43f0",
+    "classroom_app\\db\\seeds.py": "de4be583a0dfbd14d2b14d9afdea5c0a3303caefb5dece4bb752a49931e5b5f8",
+    "classroom_app\\db\\semester_unification_migration.py": "118389558789b42283b68a8ac82b699c4e2816d7fe27ba255f51cc067e4ad3de",
+    "classroom_app\\db\\sessions.py": "e1e2f61169fbd8421ce9a9db2e4e5ee87bbe826330254d4eec98b36628885e2c",
+    "classroom_app\\db\\sql.py": "8bd2d3ed0656434aa3cebc13393a7904c38a3537802a63f58da96549c7721a98",
+    "classroom_app\\db\\__init__.py": "e896edc1c4ddf07b87a4daad5a24cbe60588660a271bc7378a3e83ed8924affb",
+    "classroom_app\\services\\libreoffice_service.py": "5b57e9b75868bc3ce06484d80dec26ddc4d5f0dde0d40f6189523f6bf9cf4285",
+    "classroom_app\\services\\document_render_service.py": "5e90441b171bba08ec0d34632ba64860ee530f89d3429497772ccc751b441b07",
+    "classroom_app\\services\\file_service.py": "afe918b36e436bb5213f1e7190e203e6399bf16b5d47a7dfe6a85267e3d65d63",
+    "classroom_app\\services\\excel_upload_service.py": "9f35119d081535d70d757e87a69e0692412f023419d16672f53934944047c791",
+    "classroom_app\\services\\material_ai_import_service.py": "8b0c17516f486436a5e2a29d324d51a92f8afb5432e377a9a5ba56ff52022045",
+    "classroom_app\\routers\\files.py": "67fd0f0fc11e4f396141514c8bcaebfb704d02aa131d9f7861cbe1febd176695",
+    "classroom_app\\routers\\document_renderer.py": "91743df86d28147dbf4ea58401cdd306823f84c30edcc06b15e2fad7f6adf9ac",
+    "classroom_app\\config.py": "4c66aa948ec8d03af49f99b75d577919826887a58da69fd95055e78ea3cc7be1",
+    "classroom_app\\routers\\profile.py": "32cd5da5153e1798a06c248eabf716edc1cfa8bf17ee3a6a9ad2a94bd2bf1e6e",
+    "tools\\career_teaching_reminder_probe.py": "51ae98379fb4aef9c296fd9f9b568da7779e16eb7fbe433f1962b4096968c830",
+    "classroom_app\\routers\\ui_parts\\dashboard.py": "b06f34c458b13789761afde935c90edb08fea81352b6cc0c9892ba06889d971f",
+    "tools\\career_postgres_workflow_probe.py": "a1a111c9ac3999f10ff2fe97fa6d9f1a958bc450c3d8c9bcc12ec3ce76bb2b25",
+    "tools\\resume_postgres_workflow_probe.py": "ab56ed87c3822f99ad64d1d446e399a469a8a24a171be9f723686983e4ede79d",
+    "classroom_app\\services\\student_course_schedule_service.py": "e760d15f28ee7d705b34338d8079bbe72faf6c7d201c7b21bdf899dcd8e39b88",
+    "classroom_app\\services\\dashboard_service.py": "110ce9f1c78f6aa4e6d7f50d15b6f5a8919a1a354d871f587b74170653f5b0aa",
+    "classroom_app\\services\\dashboard_calendar_service.py": "d7165d4b5a295890c48c110145aab04a86496ff1e201e919008671e45b7861cf",
+    "classroom_app\\services\\academic_service.py": "051a6433b944592870ebd0c8106f0a34e3987d62189967e1c7e1cd1734ea3446",
+    "classroom_app\\services\\scheduled_task_service.py": "b792b18cf5e063e647877be1f05eeb379b1617b7b6976f0ed487e6812b5d4b3c",
+    "classroom_app\\services\\scheduled_task_handlers.py": "3517005b3165f7e4751dd143215fd7615e14f629e23f3ce36c6b49d9a7617fda",
+    "classroom_app\\services\\assignment_reminder_service.py": "17c52ccf84aabbd7022403b334232d5fda5c27718a44f19f40f1c409d6a0c73b",
+    "classroom_app\\services\\message_center_service.py": "2ade1e5eaa2b748fb704b4c8c884dc371b621e7a4014b41134c0d91de6eafbff",
+    "classroom_app\\services\\email_notification_service.py": "3c8fb4602fdbe9f363e9b8aa7acc228b887dbb43377d80435b006d911479082e",
+    "classroom_app\\services\\offering_membership_service.py": "7490d0b5249f11b03e6944a77d1d7e2c7cbf1039b05f76d79ef27a5bd2d952c8",
+    "classroom_app\\services\\academic_course_sync_service.py": "546f68d334e800085378f0cc4fb6ebddfd0e163c77055404fbc183700b5ec9c3",
+    "classroom_app\\services\\smart_classroom_schedule_sync_service.py": "f4855e9bf636115d8f8e30ed7a2b07c1539f8d4b26c42497cc696df721f6e839",
+    "classroom_app\\services\\semester_identity_service.py": "8f12791f95c8761336d402d06bf455823255745ccad21edf37e03824df1abdb3"
+  },
+  "sources_changed_during_run": [],
+  "fixed_code_during_run": true,
+  "mixed_requests_total": 219549,
+  "mixed_achieved_rps": 60.98,
+  "http_5xx_count": 0,
+  "expected_409_conflicts": 1760,
+  "unexpected_responses": [],
+  "arrival_skipped": 0,
+  "arrival_dispatch_lag": {
+    "count": 185600,
+    "p50_ms": 7.537,
+    "p95_ms": 76.059,
+    "p99_ms": 122.114,
+    "max_ms": 349.649,
+    "mean_ms": 14.225
+  },
+  "lightweight_responses": {
+    "unchanged": 82597,
+    "changed_full": 7403
+  },
+  "stub": {
+    "max_concurrent": 2,
+    "executions": 3522,
+    "duration_seconds": 2
+  },
+  "resource_summary": {
+    "app_rss_max_mb": 497.36,
+    "app_cpu_max_percent_one_core_100": 79.2
+  },
+  "elapsed_seconds_including_drain": 3600.329,
+  "mixed_app_and_generator_cpu_seconds": 1268.828,
+  "mixed_app_and_generator_cpu_average_percent_one_core_100": 35.24,
+  "jobs": [
+    {
+      "task_type": "career_major_network_generate",
+      "status": "succeeded",
+      "count": 9
+    },
+    {
+      "task_type": "resume_suggestion",
+      "status": "queued",
+      "count": 87
+    },
+    {
+      "task_type": "resume_suggestion",
+      "status": "running",
+      "count": 2
+    },
+    {
+      "task_type": "resume_suggestion",
+      "status": "succeeded",
+      "count": 3511
+    }
+  ],
+  "major_networks": 9,
+  "worker": {
+    "enabled": true,
+    "running": 0,
+    "ai_concurrency": 2,
+    "render_concurrency": 1,
+    "last_maintenance": "2026-09-06T15:53:20",
+    "last_error": "",
+    "queue_metrics": {
+      "available": true,
+      "last_success_at": "2026-09-06T07:53:20.259688+00:00",
+      "last_refresh_error": "",
+      "active": {
+        "scope": "registered career task types; one consistent read transaction",
+        "sample_limit": 2500,
+        "sample_count": 88,
+        "truncated": false,
+        "counts_are_lower_bounds": false,
+        "counts_by_type": {
+          "career_major_network_generate": {
+            "queued": 0,
+            "running": 0,
+            "retry_wait": 0,
+            "result_ready": 0
+          },
+          "career_personalize_generate": {
+            "queued": 0,
+            "running": 0,
+            "retry_wait": 0,
+            "result_ready": 0
+          },
+          "resume_import": {
+            "queued": 0,
+            "running": 0,
+            "retry_wait": 0,
+            "result_ready": 0
+          },
+          "resume_intro": {
+            "queued": 0,
+            "running": 0,
+            "retry_wait": 0,
+            "result_ready": 0
+          },
+          "resume_optimize": {
+            "queued": 0,
+            "running": 0,
+            "retry_wait": 0,
+            "result_ready": 0
+          },
+          "resume_render": {
+            "queued": 0,
+            "running": 0,
+            "retry_wait": 0,
+            "result_ready": 0
+          },
+          "resume_suggestion": {
+            "queued": 86,
+            "running": 2,
+            "retry_wait": 0,
+            "result_ready": 0
+          }
+        },
+        "counts_by_status": {
+          "queued": 86,
+          "running": 2,
+          "retry_wait": 0,
+          "result_ready": 0
+        },
+        "oldest_waiting_created_at_in_sample": "2026-09-06T07:51:54+00:00",
+        "oldest_waiting_age_seconds_in_sample": 86.26,
+        "waiting_scope": "queued/retry_wait; age since original admission, includes retry delays",
+        "retried_jobs_in_sample": 0
+      },
+      "recent_jobs": {
+        "ledger_sample_limit": 1000,
+        "ledger_rows_scanned": 1000,
+        "career_rows_in_sample": 1000,
+        "ledger_sample_truncated": true,
+        "sample_timestamp_field": "created_at",
+        "oldest_timestamp_in_career_sample": "2026-09-06T07:36:40+00:00",
+        "newest_timestamp_in_career_sample": "2026-09-06T07:53:19+00:00",
+        "scope": "career rows within latest all-domain job IDs; not a time window or all historical completions",
+        "counts_by_status": {
+          "queued": 86,
+          "running": 2,
+          "succeeded": 912
+        },
+        "counts_by_type": {
+          "resume_suggestion": 1000
+        },
+        "last_error_codes_in_sample": {},
+        "retried_jobs_in_sample": 0,
+        "first_start_queue_delay": {
+          "sample_count": 914,
+          "p50_ms": 76000.0,
+          "p95_ms": 85000.0,
+          "maximum_ms": 86000.0,
+          "scope": "created_at to first started_at, started jobs in recent job sample"
+        }
+      },
+      "recent_attempts": {
+        "ledger_sample_limit": 1000,
+        "ledger_rows_scanned": 1000,
+        "career_rows_in_sample": 1000,
+        "ledger_sample_truncated": true,
+        "sample_timestamp_field": "started_at",
+        "oldest_timestamp_in_career_sample": "2026-09-06T07:44:49+00:00",
+        "newest_timestamp_in_career_sample": "2026-09-06T07:53:19+00:00",
+        "scope": "career rows within latest all-domain attempt IDs; failed/retried attempts included",
+        "error_codes_in_sample": {},
+        "retry_execute_attempts_in_sample": 0,
+        "execute_duration": {
+          "sample_count": 498,
+          "p50_ms": 2000.0,
+          "p95_ms": 2000.0,
+          "maximum_ms": 3000.0,
+          "scope": "finished execute attempts only; excludes open attempts and apply stage; includes failed attempts"
+        }
+      },
+      "refresh": {
+        "sql_statements": 30,
+        "sample_rows_upper_bound": 4503,
+        "collection_ms": 21.07,
+        "target_interval_seconds": 60
+      },
+      "age_seconds": 81.72,
+      "stale": false,
+      "process_local": true
+    }
+  },
+  "pool": {
+    "connections_num": 24,
+    "connections_ms": 964,
+    "requests_num": 257975,
+    "requests_queued": 5098,
+    "requests_wait_ms": 93836,
+    "pool_min": 2,
+    "pool_max": 12,
+    "pool_size": 12,
+    "pool_available": 12,
+    "requests_waiting": 0
+  },
+  "teaching_dataset": {
+    "teachers": 10,
+    "courses": 30,
+    "offerings": 30,
+    "sessions": 1200,
+    "semesters": 1,
+    "read_endpoint": "/api/dashboard/course-schedule/overview",
+    "expected_lessons_per_student": 120
+  },
+  "warmup": {
+    "career_initialize_students": 1000,
+    "avatar_requests": 10,
+    "teaching_requests": 10,
+    "included_in_latency_samples": false
+  },
+  "original_evidence": {
+    "path": ".codex-temp\\career-load-1h-final-v5.json",
+    "sha256": "eea7b238ee79e8992e69dba33ea6682ac4c2869ce6ae48a9e7fb8849b7a7e1aa"
+  },
+  "noncareer_relative_comparison": {
+    "existing_profile_avatar": {
+      "before_p95_ms": 5.532,
+      "mixed_p95_ms": 10.52,
+      "after_p95_ms": 3.684,
+      "increase_vs_before_percent": 90.166,
+      "within_20_percent": false
+    },
+    "teaching_course_schedule": {
+      "before_p95_ms": 11.697,
+      "mixed_p95_ms": 22.056,
+      "after_p95_ms": 9.678,
+      "increase_vs_before_percent": 88.561,
+      "within_20_percent": false
+    }
+  },
+  "resource_windows": [
+    {
+      "start_seconds": 0,
+      "end_seconds": 600,
+      "sample_count": 534,
+      "median_combined_rss_mb": 237.54500000000002,
+      "max_combined_rss_mb": 268.2
+    },
+    {
+      "start_seconds": 600,
+      "end_seconds": 1200,
+      "sample_count": 527,
+      "median_combined_rss_mb": 275.38,
+      "max_combined_rss_mb": 313.16
+    },
+    {
+      "start_seconds": 1200,
+      "end_seconds": 1800,
+      "sample_count": 526,
+      "median_combined_rss_mb": 318.265,
+      "max_combined_rss_mb": 364.23
+    },
+    {
+      "start_seconds": 1800,
+      "end_seconds": 2400,
+      "sample_count": 526,
+      "median_combined_rss_mb": 364.38,
+      "max_combined_rss_mb": 405.91
+    },
+    {
+      "start_seconds": 2400,
+      "end_seconds": 3000,
+      "sample_count": 527,
+      "median_combined_rss_mb": 405.39,
+      "max_combined_rss_mb": 453.83
+    },
+    {
+      "start_seconds": 3000,
+      "end_seconds": 3601,
+      "sample_count": 525,
+      "median_combined_rss_mb": 456.0,
+      "max_combined_rss_mb": 497.36
+    }
+  ],
+  "database_checkout_wait": {
+    "warmup_avatar/existing_profile_avatar": {
+      "count": 10,
+      "p50_ms": 0.007,
+      "p95_ms": 0.009,
+      "p99_ms": 0.009,
+      "max_ms": 0.009,
+      "mean_ms": 0.007,
+      "total_count": 10,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "baseline_avatar/existing_profile_avatar": {
+      "count": 500,
+      "p50_ms": 0.02,
+      "p95_ms": 0.037,
+      "p99_ms": 0.046,
+      "max_ms": 0.087,
+      "mean_ms": 0.021,
+      "total_count": 500,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "warmup_teaching/teaching_course_schedule": {
+      "count": 10,
+      "p50_ms": 0.01,
+      "p95_ms": 0.013,
+      "p99_ms": 0.013,
+      "max_ms": 0.013,
+      "mean_ms": 0.01,
+      "total_count": 10,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "baseline_teaching/teaching_course_schedule": {
+      "count": 500,
+      "p50_ms": 0.01,
+      "p95_ms": 0.024,
+      "p99_ms": 0.029,
+      "max_ms": 0.036,
+      "mean_ms": 0.012,
+      "total_count": 500,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/setup": {
+      "count": 2,
+      "p50_ms": 0.008,
+      "p95_ms": 0.029,
+      "p99_ms": 0.029,
+      "max_ms": 0.029,
+      "mean_ms": 0.018,
+      "total_count": 2,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/background_jobs": {
+      "count": 31158,
+      "p50_ms": 0.008,
+      "p95_ms": 0.022,
+      "p99_ms": 8.682,
+      "max_ms": 84.174,
+      "mean_ms": 0.202,
+      "total_count": 31158,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/monitor": {
+      "count": 3165,
+      "p50_ms": 0.014,
+      "p95_ms": 0.031,
+      "p99_ms": 0.047,
+      "max_ms": 2.927,
+      "mean_ms": 0.017,
+      "total_count": 3165,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/assignment_reminder_scheduler": {
+      "count": 720,
+      "p50_ms": 0.008,
+      "p95_ms": 0.018,
+      "p99_ms": 0.035,
+      "max_ms": 15.286,
+      "mean_ms": 0.076,
+      "total_count": 720,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/career_progress": {
+      "count": 17974,
+      "p50_ms": 0.007,
+      "p95_ms": 0.023,
+      "p99_ms": 9.608,
+      "max_ms": 140.993,
+      "mean_ms": 0.211,
+      "total_count": 17974,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/suggestion_enqueue": {
+      "count": 3600,
+      "p50_ms": 0.015,
+      "p95_ms": 0.031,
+      "p99_ms": 0.071,
+      "max_ms": 18.542,
+      "mean_ms": 0.072,
+      "total_count": 3600,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/career_light_state": {
+      "count": 90000,
+      "p50_ms": 0.015,
+      "p95_ms": 0.033,
+      "p99_ms": 4.198,
+      "max_ms": 136.179,
+      "mean_ms": 0.144,
+      "total_count": 90000,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/resume_save": {
+      "count": 17975,
+      "p50_ms": 0.007,
+      "p95_ms": 0.024,
+      "p99_ms": 9.105,
+      "max_ms": 151.034,
+      "mean_ms": 0.204,
+      "total_count": 17975,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/teaching_course_schedule": {
+      "count": 18000,
+      "p50_ms": 0.015,
+      "p95_ms": 0.03,
+      "p99_ms": 5.336,
+      "max_ms": 103.351,
+      "mean_ms": 0.149,
+      "total_count": 18000,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/resume_compact": {
+      "count": 36000,
+      "p50_ms": 0.013,
+      "p95_ms": 0.028,
+      "p99_ms": 5.253,
+      "max_ms": 56.13,
+      "mean_ms": 0.154,
+      "total_count": 36000,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/resume_readiness": {
+      "count": 18000,
+      "p50_ms": 0.017,
+      "p95_ms": 0.033,
+      "p99_ms": 3.595,
+      "max_ms": 79.48,
+      "mean_ms": 0.138,
+      "total_count": 18000,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "mixed/existing_profile_avatar": {
+      "count": 18000,
+      "p50_ms": 0.016,
+      "p95_ms": 0.033,
+      "p99_ms": 4.125,
+      "max_ms": 148.608,
+      "mean_ms": 0.15,
+      "total_count": 18000,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "post_baseline_avatar/existing_profile_avatar": {
+      "count": 500,
+      "p50_ms": 0.019,
+      "p95_ms": 0.034,
+      "p99_ms": 0.053,
+      "max_ms": 0.104,
+      "mean_ms": 0.02,
+      "total_count": 500,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "post_baseline_teaching/teaching_course_schedule": {
+      "count": 500,
+      "p50_ms": 0.013,
+      "p95_ms": 0.02,
+      "p99_ms": 0.03,
+      "max_ms": 0.038,
+      "mean_ms": 0.014,
+      "total_count": 500,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    },
+    "verification/setup": {
+      "count": 360,
+      "p50_ms": 0.007,
+      "p95_ms": 0.01,
+      "p99_ms": 0.019,
+      "max_ms": 0.042,
+      "mean_ms": 0.007,
+      "total_count": 360,
+      "truncated_count": 0,
+      "sample_scope": "first_250000"
+    }
+  },
+  "assignment_reminders": {
+    "ok": true,
+    "exercised": true,
+    "scheduled": 120,
+    "completed": 120,
+    "incomplete": [],
+    "recipient_mismatch": [],
+    "errors": [],
+    "poll_seconds": 20,
+    "scope": "Real assignment reminder arm/claim/dispatch/recipient filtering/deduplication/in-app notification commit. Dedicated scheduler thread shares the bounded pool, unlike separate production scheduler processes. No SMTP queue/delivery. Timing due timestamps has one-second storage precision; successful notification visibility is measured on a second connection.",
+    "latency": {
+      "claim_delay_ms": {
+        "count": 120,
+        "p50_ms": 9945.521,
+        "p95_ms": 18211.39,
+        "p99_ms": 19625.505,
+        "max_ms": 19849.578,
+        "mean_ms": 9285.13
+      },
+      "handler_start_delay_ms": {
+        "count": 120,
+        "p50_ms": 9945.524,
+        "p95_ms": 18211.393,
+        "p99_ms": 19625.509,
+        "max_ms": 19849.582,
+        "mean_ms": 9285.133
+      },
+      "handler_duration_ms": {
+        "count": 120,
+        "p50_ms": 74.799,
+        "p95_ms": 216.324,
+        "p99_ms": 233.934,
+        "max_ms": 246.108,
+        "mean_ms": 87.16
+      },
+      "notification_visible_delay_ms": {
+        "count": 120,
+        "p50_ms": 10032.081,
+        "p95_ms": 18285.414,
+        "p99_ms": 19733.646,
+        "max_ms": 19920.557,
+        "mean_ms": 9374.13
+      },
+      "done_delay_ms": {
+        "count": 120,
+        "p50_ms": 10032.816,
+        "p95_ms": 18286.024,
+        "p99_ms": 19735.085,
+        "max_ms": 19925.663,
+        "mean_ms": 9375.444
+      }
+    }
+  },
+  "acceptance": {
+    "all_performance_gates_passed": false,
+    "relative_teaching_latency_passed": false,
+    "queue_drain_proven": false,
+    "pending_at_stop": 89,
+    "one_hour_actually_completed": true,
+    "scope": "Single desktop ASGI process; read 50 RPS plus 100 writers alternating questionnaire/resume every 10 seconds and one queued stub job/second. The original ok flag checks operational correctness, not the 20 percent relative-latency gate. Worker shutdown did not drain pending jobs. Combined RSS includes retained measurement samples, so this test alone cannot establish an application memory leak or leak-free operation."
+  }
+}

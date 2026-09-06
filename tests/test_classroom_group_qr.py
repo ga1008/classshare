@@ -114,7 +114,9 @@ class ClassroomGroupQRTests(unittest.TestCase):
             with connect_fixture(self.db_path) as conn:
                 conn.execute("INSERT INTO course_files VALUES (502,10,'qr.png',?)", (file_hash,))
             asyncio.run(file_routes.delete_course_file(10, 502, {'role': 'teacher', 'id': 1}))
-        self.assertIsNone(file_service.resolve_global_file_path(file_hash))
+        # Business records detach immediately; global shared bytes await an
+        # audited collector instead of risking hidden or in-flight references.
+        self.assertIsNotNone(file_service.resolve_global_file_path(file_hash))
 
     def test_material_deletion_preserves_shared_qr_image(self):
         from classroom_app.routers.materials_parts import library

@@ -8,12 +8,19 @@ centralized so document preview/export paths do not each reinvent it.
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
 import tempfile
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+
+import psutil
+
+from ..storage_paths import DATA_ROOT
 
 
 class LibreOfficeUnavailable(RuntimeError):
@@ -22,6 +29,184 @@ class LibreOfficeUnavailable(RuntimeError):
 
 class LibreOfficeConversionError(RuntimeError):
     """Raised when LibreOffice exits without producing the requested output."""
+
+
+class LibreOfficeBusy(RuntimeError):
+    """All shared conversion slots are occupied; callers should retry later."""
+
+    retry_after = 10
+
+    def __init__(self):
+        super().__init__("文档转换处理中，请稍后重试。")
+
+
+def _conversion_capacity() -> int:
+    try:
+        return max(1, min(4, int(os.getenv("LANSHARE_LIBREOFFICE_MAX_CONCURRENCY", "1"))))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _owned_processes(metadata):
+    """Find only this conversion's unique profile, detecting PID reuse safely."""
+    marker = metadata["profile_arg"]
+    recorded = {int(item["pid"]):float(item["create_time"]) for item in metadata.get("processes", [])}
+    found, uncertain = [], False
+    names = {str(metadata.get("executable_name", "")).lower(),"soffice","soffice.bin","soffice.exe","soffice.com","oosplash"}
+    # Query expensive command lines only for Office executables or recorded
+    # PIDs. Reading every system process's command line is slow on Windows.
+    for process in psutil.process_iter(["pid","name"],ad_value=None):
+        info = process.info
+        if info["pid"] not in recorded and str(info.get("name") or "").lower() not in names:
+            continue
+        try:
+            if process.status() in {psutil.STATUS_ZOMBIE,psutil.STATUS_DEAD}:
+                continue
+            created = process.create_time()
+            command = process.cmdline()
+        except (psutil.NoSuchProcess,psutil.ZombieProcess):
+            continue
+        except psutil.AccessDenied:
+            uncertain = True
+            continue
+        if marker not in command:
+            continue
+        if info["pid"] not in recorded or recorded[info["pid"]] == float(created):
+            found.append({"pid":info["pid"],"create_time":float(created)})
+        else:
+            uncertain = True
+    return found, uncertain
+
+
+def _kill_verified_processes(metadata, processes):
+    for item in processes:
+        try:
+            process = psutil.Process(item["pid"])
+            if process.create_time() == item["create_time"] and metadata["profile_arg"] in process.cmdline():
+                process.kill()
+        except (psutil.NoSuchProcess,psutil.ZombieProcess):
+            pass
+        except psutil.AccessDenied:
+            # Keep the reservation; an unverified process must never be killed.
+            pass
+
+
+class _ConversionLease:
+    def __init__(self, path):
+        self.path = path
+        self.metadata = None
+
+    def recover(self):
+        if not self.path.exists():
+            return True
+        try:
+            previous = json.loads(self.path.read_text(encoding="utf-8"))
+            if not str(previous["profile_arg"]).startswith("-env:UserInstallation=file:"):
+                return False
+            owned, uncertain = _owned_processes(previous)
+            if owned or uncertain:
+                if owned and time.monotonic()>=float(previous["deadline_monotonic"]):
+                    _kill_verified_processes(previous,owned)
+                # No waiting while holding a caller's DB connection. A retry
+                # observes termination before it may start another converter.
+                return False
+            self.path.unlink(missing_ok=True)
+            temporary_root = Path(str(previous.get("temporary_root") or ""))
+            if (temporary_root.name.startswith("lanshare-lo-") and not temporary_root.is_symlink()
+                    and temporary_root.resolve().parent == Path(tempfile.gettempdir()).resolve()):
+                shutil.rmtree(temporary_root,ignore_errors=True)
+            return True
+        except (OSError,ValueError,KeyError,TypeError):
+            return False
+
+    def _write(self):
+        temporary = self.path.with_name(self.path.name+f".{os.getpid()}.tmp")
+        temporary.write_text(json.dumps(self.metadata),encoding="utf-8")
+        os.replace(temporary,self.path)
+
+    def prepare(self, command, timeout, temporary_root):
+        self.metadata = {"profile_arg":command[1],"executable_name":Path(command[0]).name,
+                         "started_at":time.time(),"deadline_monotonic":time.monotonic()+max(0,float(timeout)),"processes":[],"temporary_root":str(temporary_root)}
+        # Commit the unique marker before Popen: even a worker killed between
+        # starting the child and recording its PID cannot free this capacity.
+        self._write()
+
+    def attach(self, pid):
+        try:
+            process = psutil.Process(pid)
+            self.metadata["processes"] = [{"pid":pid,"create_time":process.create_time()}]
+        except psutil.NoSuchProcess:
+            return
+        self._write()
+
+    def release_if_finished(self):
+        if self.metadata is None:
+            return
+        try:
+            owned, uncertain = _owned_processes(self.metadata)
+            if not owned and not uncertain:
+                self.path.unlink(missing_ok=True)
+        except (OSError,ValueError,psutil.Error):
+            # Fail closed: recovery will validate the persistent reservation.
+            pass
+
+
+def _unlock_slot(handle):
+    handle.seek(0)
+    if os.name == "nt":
+        import msvcrt
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def _conversion_slot():
+    """Nonblocking OS locks shared by all callers/processes using DATA_ROOT.
+
+    Locks are never unlinked: replacing their inode would allow two owners.
+    This budget is distinct from the document renderer's PDF/image budget, so
+    nested use of that renderer cannot attempt to acquire the same lock twice.
+    """
+    lock_root = Path(DATA_ROOT) / "tmp" / "libreoffice" / "_locks"
+    lock_root.mkdir(parents=True, exist_ok=True)
+    handle = None
+    lease = None
+    for index in range(_conversion_capacity()):
+        candidate = (lock_root / f"slot-{index}.lock").open("a+b")
+        try:
+            if candidate.seek(0, os.SEEK_END) == 0:
+                candidate.write(b"0")
+                candidate.flush()
+            candidate.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(candidate.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(candidate.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            candidate.close()
+            continue
+        current_lease = _ConversionLease(lock_root / f"slot-{index}.json")
+        if not current_lease.recover():
+            _unlock_slot(candidate)
+            candidate.close()
+            continue
+        handle = candidate
+        lease = current_lease
+        break
+    if handle is None:
+        raise LibreOfficeBusy()
+    try:
+        yield lease
+    finally:
+        try:
+            lease.release_if_finished()
+            _unlock_slot(handle)
+        finally:
+            handle.close()
 
 
 @dataclass(frozen=True)
@@ -103,6 +288,26 @@ def _short_process_error(stdout: str, stderr: str) -> str:
     return text[:300] if text else "LibreOffice did not report an error"
 
 
+def _run_conversion(command, *, timeout, cwd, env, lease):
+    lease.prepare(command,timeout,Path(cwd).parent)
+    process = subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=cwd,env=env)
+    try:
+        lease.attach(process.pid)
+        stdout, stderr = process.communicate(timeout=timeout)
+    except BaseException:
+        owned, _ = _owned_processes(lease.metadata)
+        _kill_verified_processes(lease.metadata,owned)
+        if process.poll() is None:
+            process.kill()
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.stdout.close()
+            process.stderr.close()
+        raise
+    return subprocess.CompletedProcess(command,process.returncode,stdout,stderr)
+
+
 def convert_office_file(input_path: Path, output_format: str, *, timeout: int = 90) -> LibreOfficeConversion:
     """Convert an Office file with an isolated profile and ASCII temp filename."""
 
@@ -115,7 +320,7 @@ def convert_office_file(input_path: Path, output_format: str, *, timeout: int = 
         raise LibreOfficeUnavailable("当前服务器未安装 LibreOffice，无法执行 Office 转换。")
 
     target_suffix = _target_suffix(output_format)
-    with tempfile.TemporaryDirectory(prefix="lanshare-lo-") as temp_root:
+    with _conversion_slot() as lease, tempfile.TemporaryDirectory(prefix="lanshare-lo-") as temp_root:
         root = Path(temp_root)
         work_dir = root / "work"
         out_dir = root / "out"
@@ -144,14 +349,12 @@ def convert_office_file(input_path: Path, output_format: str, *, timeout: int = 
             str(out_dir),
             str(temp_source),
         ]
-        completed = subprocess.run(
+        completed = _run_conversion(
             command,
-            check=False,
-            capture_output=True,
-            text=True,
             timeout=timeout,
             cwd=str(work_dir),
             env=_build_env(profile_dir, work_dir),
+            lease=lease,
         )
 
         candidates = sorted(path for path in out_dir.iterdir() if path.suffix.lower() == target_suffix)

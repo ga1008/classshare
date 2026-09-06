@@ -22,6 +22,7 @@ from ..services.chat_image_derivatives import (
     run_chat_image_processing,
 )
 from ..services.file_service import (
+    bind_global_file_references,
     resolve_global_file_path,
     save_file_globally,
 )
@@ -325,6 +326,8 @@ def resolve_discussion_attachment_file_payload(row, variant: str) -> dict | None
 
 def _update_derivative_columns(conn, attachment_id: int, variant: str, derivative: dict) -> None:
     columns = DISCUSSION_VARIANT_COLUMNS[variant]
+    conn.execute("UPDATE discussion_attachments SET id=id WHERE id=?", (int(attachment_id),))
+    bind_global_file_references(conn, (derivative["file_hash"],))
     conn.execute(
         f"""
         UPDATE discussion_attachments
@@ -527,6 +530,8 @@ async def create_discussion_attachment(conn, class_offering_id: int, user: dict,
     original_filename = str(file.filename or "image")
     thumbnail = derivative_payload["thumbnail"]
     preview = derivative_payload["preview"]
+
+    bind_global_file_references(conn, (save_result["hash"], thumbnail["file_hash"], preview["file_hash"]))
 
     attachment_id = execute_insert_returning_id(
         conn,

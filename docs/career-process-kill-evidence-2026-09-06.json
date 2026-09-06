@@ -1,0 +1,114 @@
+{
+  "ok": true,
+  "engine": "local PostgreSQL / real spawned worker processes",
+  "synthetic_only": true,
+  "forced_own_processes": 6,
+  "checkpoints": [
+    {
+      "checkpoint": "after_claim",
+      "forced_child_pid": 40560,
+      "checkpoint_reached": true,
+      "force_kill_called": true,
+      "child_exit_code": -15,
+      "child_joined": true,
+      "committed_writes_immediately_after_kill": 0,
+      "status": "succeeded",
+      "published_once": true,
+      "execution_attempts": 2,
+      "persisted_results": 1,
+      "result_replayed_without_reexecution": false,
+      "old_delivery_rejected": true
+    },
+    {
+      "checkpoint": "execute_wait",
+      "forced_child_pid": 9936,
+      "checkpoint_reached": true,
+      "force_kill_called": true,
+      "child_exit_code": -15,
+      "child_joined": true,
+      "committed_writes_immediately_after_kill": 0,
+      "status": "succeeded",
+      "published_once": true,
+      "execution_attempts": 2,
+      "persisted_results": 1,
+      "result_replayed_without_reexecution": false,
+      "old_delivery_rejected": true
+    },
+    {
+      "checkpoint": "result_persisted",
+      "forced_child_pid": 16136,
+      "checkpoint_reached": true,
+      "force_kill_called": true,
+      "child_exit_code": -15,
+      "child_joined": true,
+      "committed_writes_immediately_after_kill": 0,
+      "status": "succeeded",
+      "published_once": true,
+      "execution_attempts": 1,
+      "persisted_results": 1,
+      "result_replayed_without_reexecution": true,
+      "old_delivery_rejected": true
+    },
+    {
+      "checkpoint": "apply_uncommitted",
+      "forced_child_pid": 40904,
+      "checkpoint_reached": true,
+      "force_kill_called": true,
+      "child_exit_code": -15,
+      "child_joined": true,
+      "committed_writes_immediately_after_kill": 0,
+      "status": "succeeded",
+      "published_once": true,
+      "execution_attempts": 1,
+      "persisted_results": 1,
+      "result_replayed_without_reexecution": true,
+      "old_delivery_rejected": true
+    }
+  ],
+  "cancellation": {
+    "cancelled_while_executing": true,
+    "late_result_rejected": true,
+    "accepted_job_retained": true,
+    "writes": 0,
+    "force_kill_called": true,
+    "child_exit_code": -15,
+    "child_joined": true
+  },
+  "revision_fence": {
+    "crashed_transaction_rolled_back": true,
+    "missed_eager_invalidation_guarded_by_revision": true,
+    "old_result_retained_for_audit": true,
+    "old_job_status": "superseded",
+    "new_revision_published_once": true,
+    "old_revision_publications": 0,
+    "force_kill_called": true,
+    "child_exit_code": -15,
+    "child_joined": true
+  },
+  "admitted_jobs": 7,
+  "retained_jobs": 7,
+  "final_statuses": {
+    "cancelled": 1,
+    "succeeded": 5,
+    "superseded": 1
+  },
+  "duplicate_publications_per_revision": 0,
+  "schema_removed": true,
+  "owned_sessions_remaining": 0,
+  "timing_method": "After confirming the active lease prevents claim, expire only the terminated worker's isolated test-row lease; production constants unchanged.",
+  "production_lease_seconds": 120,
+  "production_heartbeat_seconds": 30,
+  "not_measured": [
+    "production 120-second wall-clock recovery",
+    "real upstream AI cancellation",
+    "host power loss or PostgreSQL server crash",
+    "production mixed workload"
+  ],
+  "elapsed_seconds": 6.129,
+  "source_sha256": {
+    "classroom_app/services/student_career_job_worker.py": "c15f9177eed9576639bb81f490d650220315ebe75f5ae8de73c99ef906ea2d16",
+    "classroom_app/services/student_career_job_service.py": "014d4ecd7a793fccd5293a5a11a53fe3cb620067895ed6aafc7c99a64036c0b9",
+    "classroom_app/services/ai_durable_job_service.py": "bae214968953294dacf9fe7314f1ea11a2dc2aa5c2bf8a87a2b733af178725dc",
+    "tools/career_postgres_process_kill_probe.py": "28ae1d499f95378da50858b7f72643777f15409bb09eeaa664beb630c69f3f08"
+  }
+}

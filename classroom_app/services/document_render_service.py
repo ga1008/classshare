@@ -27,7 +27,7 @@ from urllib.parse import quote
 
 from ..config import SECRET_KEY
 from ..storage_paths import DATA_ROOT
-from .libreoffice_service import convert_office_file
+from .libreoffice_service import LibreOfficeBusy, convert_office_file
 
 
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -1310,7 +1310,12 @@ h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.
         if source_format == "pdf":
             pdf_path.write_bytes(content)
         else:
-            conversion = convert_office_file(document_path, "pdf", timeout=120)
+            try:
+                conversion = convert_office_file(document_path, "pdf", timeout=120)
+            except LibreOfficeBusy as exc:
+                # Keep the renderer's established retryable error contract. A
+                # busy shared converter must not trigger another Office route.
+                raise DocumentRenderQueueBusy(str(exc)) from exc
             pdf_path.write_bytes(conversion.output_bytes)
 
         page_count = self._inspect_pdf_page_count(pdf_path)

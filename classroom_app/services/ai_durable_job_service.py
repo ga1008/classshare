@@ -346,8 +346,10 @@ def _claim_postgres(
     lease_expires_at: str,
     now: str,
     task_types: tuple[str, ...] = (),
+    fair_owner: bool = False,
 ) -> list[dict[str, Any]]:
     task_filter, task_params = _task_type_filter(task_types)
+    ordering, order_params = _claim_order(now, fair_owner)
     rows = conn.execute(
         f"""
         WITH candidates AS (
@@ -362,7 +364,7 @@ def _claim_postgres(
                     AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
                   ))
               {task_filter}
-            ORDER BY priority ASC, available_at ASC, id ASC
+            ORDER BY {ordering}
             LIMIT ?
             FOR UPDATE SKIP LOCKED
         )
@@ -377,7 +379,7 @@ def _claim_postgres(
         WHERE jobs.id = candidates.id
         RETURNING jobs.*
         """,
-        (now, now, *task_params, limit, now, worker_id, uuid.uuid4().hex, lease_expires_at, now, now, now),
+        (now, now, *task_params, *order_params, limit, now, worker_id, uuid.uuid4().hex, lease_expires_at, now, now, now),
     ).fetchall()
     # The SQL above intentionally uses one token for a batch. A batch is owned by
     # one worker and each completion still requires job id + token.
@@ -392,18 +394,20 @@ def _claim_sqlite(
     lease_expires_at: str,
     now: str,
     task_types: tuple[str, ...] = (),
+    fair_owner: bool = False,
 ) -> list[dict[str, Any]]:
     task_filter, task_params = _task_type_filter(task_types)
+    ordering, order_params = _claim_order(now, fair_owner)
     rows = conn.execute(
         f"""
         SELECT * FROM ai_jobs
         WHERE ((status IN ('queued', 'retry_wait') AND available_at <= ?)
            OR (status = 'running' AND (lease_expires_at IS NULL OR lease_expires_at <= ?)))
           {task_filter}
-        ORDER BY priority ASC, available_at ASC, id ASC
+        ORDER BY {ordering}
         LIMIT ?
         """,
-        (now, now, *task_params, limit),
+        (now, now, *task_params, *order_params, limit),
     ).fetchall()
     claimed: list[dict[str, Any]] = []
     for raw in rows:
@@ -432,12 +436,32 @@ def _claim_sqlite(
     return claimed
 
 
+def _claim_order(now: str, fair_owner: bool) -> tuple[str, tuple[str, ...]]:
+    if not fair_owner:
+        return "priority ASC, available_at ASC, id ASC", ()
+    # Rotate among students/shared major scopes by their last served request.
+    # After 15 minutes, oldest admitted input wins so a stream of new owners
+    # cannot indefinitely postpone an existing owner's second request.
+    cutoff = _iso(datetime.fromisoformat(now) - timedelta(minutes=15))
+    return ("CASE WHEN created_at <= ? THEN 0 ELSE 1 END, "
+            "CASE WHEN created_at <= ? THEN created_at ELSE '9999' END, priority ASC, "
+            "COALESCE(CASE WHEN owner_user_pk IS NOT NULL THEN "
+            "(SELECT MAX(served.started_at) FROM ai_jobs served WHERE served.owner_role=ai_jobs.owner_role "
+            "AND served.owner_user_pk=ai_jobs.owner_user_pk) ELSE "
+            "(SELECT MAX(served.started_at) FROM ai_jobs served WHERE served.owner_user_pk IS NULL "
+            "AND served.scope_type=ai_jobs.scope_type AND served.scope_id=ai_jobs.scope_id) END, ''), "
+            "available_at ASC, id ASC", (cutoff, cutoff))
+
+
 def claim_due_ai_jobs(
     *,
     limit: int = 1,
     worker_id: str | None = None,
     lease_seconds: int | None = None,
     task_types: tuple[str, ...] = (),
+    max_running: int | None = None,
+    concurrency_lock_key: int | None = None,
+    fair_owner: bool = False,
 ) -> list[dict[str, Any]]:
     safe_limit = max(1, min(int(limit or 1), 20))
     worker = str(worker_id or os.getenv("AI_JOB_WORKER_ID") or socket.gethostname()).strip()[:80]
@@ -446,8 +470,31 @@ def claim_due_ai_jobs(
     lease = max(60, int(lease_seconds or 900))
     lease_expires_at = _iso(now_dt + timedelta(seconds=lease))
     with get_db_connection() as conn:
-        ensure_ai_job_schema(conn)
         engine = get_configured_db_engine()
+        # Optional database-wide lane capacity. All workers sharing a lane
+        # must pass the same lock key and type set. Existing callers retain
+        # their current independent-worker semantics.
+        if max_running is not None:
+            if not task_types or concurrency_lock_key is None:
+                raise ValueError("Bounded job claiming requires task types and a lane lock key")
+            if engine == "sqlite":
+                conn.execute("BEGIN IMMEDIATE")
+        ensure_ai_job_schema(conn)
+        if max_running is not None:
+            if engine == "postgres":
+                conn.execute("SELECT pg_advisory_xact_lock(?)", (int(concurrency_lock_key),))
+            now_dt = _now()
+            now = _iso(now_dt)
+            lease_expires_at = _iso(now_dt + timedelta(seconds=lease))
+            type_filter, type_params = _task_type_filter(task_types)
+            row = conn.execute(
+                f"SELECT COUNT(*) AS n FROM ai_jobs WHERE ((status='running' "
+                f"AND lease_expires_at > ?) OR capacity_reserved_until > ?) {type_filter}", (now, now, *type_params),
+            ).fetchone()
+            safe_limit = min(safe_limit, max(0, int(max_running) - int(row["n"])))
+            if safe_limit <= 0:
+                conn.commit()
+                return []
         if engine == "postgres":
             claimed = _claim_postgres(
                 conn,
@@ -456,6 +503,7 @@ def claim_due_ai_jobs(
                 lease_expires_at=lease_expires_at,
                 now=now,
                 task_types=task_types,
+                fair_owner=fair_owner,
             )
         elif engine == "sqlite":
             claimed = _claim_sqlite(
@@ -465,6 +513,7 @@ def claim_due_ai_jobs(
                 lease_expires_at=lease_expires_at,
                 now=now,
                 task_types=task_types,
+                fair_owner=fair_owner,
             )
         else:
             raise ValueError(f"Unsupported AI job database engine: {engine!r}")
@@ -643,11 +692,26 @@ def store_ai_job_result(
     attempt_status: str = "success",
     attempt_error_code: str = "",
     attempt_error_message: str = "",
+    require_valid_lease: bool = False,
 ) -> dict[str, Any]:
     result_json = _json_dumps(result)
     result_hash = hashlib.sha256(result_json.encode("utf-8")).hexdigest()
-    now = _iso()
     with get_db_connection() as conn:
+        if require_valid_lease:
+            engine = get_configured_db_engine()
+            if engine == "sqlite":
+                conn.execute("BEGIN IMMEDIATE")
+            suffix = " FOR UPDATE" if engine == "postgres" else ""
+            # Acquire the row before reading the clock: pool/row-lock waits
+            # must never allow a result to publish using an expired lease.
+            current = conn.execute(
+                "SELECT lease_expires_at FROM ai_jobs WHERE id=? AND status='running' AND lease_token=?" + suffix,
+                (int(job["id"]), str(job.get("lease_token") or "")),
+            ).fetchone()
+            if not current or str(current["lease_expires_at"] or "") <= _iso():
+                conn.rollback()
+                raise RuntimeError("AI job lease changed before result could be stored")
+        now = _iso()
         record_ai_job_attempt_finished(
             conn,
             job,
@@ -696,16 +760,19 @@ def store_ai_job_result(
                 (int(job["id"]), result_hash),
             ).fetchone()
         result_row = _row_dict(row)
+        now = _iso()
+        lease_filter = " AND lease_expires_at > ?" if require_valid_lease else ""
         cursor = conn.execute(
             """
             UPDATE ai_jobs
             SET status = 'result_ready', result_id = ?, review_required = ?,
                 lease_expires_at = NULL, heartbeat_at = ?, updated_at = ?
             WHERE id = ? AND status = 'running' AND lease_token = ?
-            """,
+            """ + lease_filter,
             (
                 int(result_row["id"]), 1 if review_required else 0,
                 now, now, int(job["id"]), str(job.get("lease_token") or ""),
+                *((now,) if require_valid_lease else ()),
             ),
         )
         if cursor.rowcount != 1:

@@ -32,6 +32,7 @@ from .schema_material_whiteboards import ensure_material_whiteboard_schema
 from .schema_course_doc_packs import ensure_course_doc_pack_schema
 from .schema_lessondoc_editor import ensure_lessondoc_editor_schema, mark_schema_ready_after_commit
 from .schema_resume import ensure_resume_schema
+from .schema_career_path import ensure_career_path_schema
 from .schema_scheduler import ensure_scheduler_schema
 from .schema_gongwen import ensure_gongwen_schema
 from .schema_study_group_scheme import ensure_study_group_scheme_schema
@@ -239,13 +240,23 @@ def init_database():
         try:
             resume_conn = get_db_connection()
             try:
+                # Shared application containers can start concurrently. Keep
+                # career/resume migration out of GET paths and serialize DDL.
+                # Fail the new startup rather than indefinitely block existing
+                # teaching writers behind an additive migration.
+                resume_conn.execute("SET LOCAL lock_timeout = '5s'")
+                resume_conn.execute("SET LOCAL statement_timeout = '60s'")
+                resume_conn.execute("SELECT pg_advisory_xact_lock(?)", (742819036118,))
+                ensure_ai_job_schema(resume_conn, engine="postgres")
+                ensure_career_path_schema(resume_conn)
                 ensure_resume_schema(resume_conn)
                 resume_conn.commit()
             finally:
                 resume_conn.close()
             print("[DB] PostgreSQL resume console tables ensured")
         except Exception as exc:
-            print(f"[DB] PostgreSQL resume console schema step skipped: {exc}")
+            print(f"[DB] PostgreSQL career/resume schema failed: {exc}")
+            raise
         try:
             prompt_pool_conn = get_db_connection()
             try:
@@ -307,6 +318,7 @@ def init_database():
             ensure_assessment_plan_schema(conn)
             ensure_teacher_evaluation_schema(conn)
             ensure_resume_schema(conn)
+            ensure_career_path_schema(conn)
             ensure_prompt_pool_schema(conn)
             ensure_academic_final_material_schema(conn)
             ensure_academic_evaluation_schema(conn)

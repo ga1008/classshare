@@ -1,0 +1,863 @@
+{
+  "ok": true,
+  "synthetic_only": true,
+  "configuration": {
+    "duration": 24.0,
+    "rps": 2.0,
+    "users": 20,
+    "writers": 2,
+    "save_interval": 4.0,
+    "baseline_duration": 1.0,
+    "job_rps": 0.2,
+    "stub_seconds": 0.1,
+    "conflict_rate": 0.05,
+    "max_inflight": 30,
+    "seed": 42,
+    "reminder_interval": 10.0,
+    "reminder_offset": 2.0,
+    "scheduler_poll_seconds": 5.0,
+    "bucket_seconds": 5.0,
+    "fault_interval": 5.0,
+    "drain_seconds": 30.0,
+    "fast_fault_recovery": true,
+    "allow_long_run": false,
+    "output": "docs\\career-soak-smoke-evidence-2026-09-06.json"
+  },
+  "elapsed_with_setup_seconds": 27.777,
+  "same_application_process_and_schema": true,
+  "worker_generations": 5,
+  "worker_pool_max": 4,
+  "application_and_reminder_pool_max": 8,
+  "scope_connections_observed_max": 4,
+  "measurement_scope": "One persistent ASGI application/generator/reminder process. Worker RSS is per generation and resets at injected kills. Fixed-memory latency histograms; 300 latest resource samples per bucket. No TCP/TLS, external AI, SMTP, or Office export. Desktop data is not a production SLA.",
+  "timing_method": "smoke only: advance isolated terminated worker task leases; not production wall-clock recovery",
+  "buckets_jsonl": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\docs\\career-soak-smoke-evidence-2026-09-06.buckets.jsonl",
+  "metrics": {
+    "histograms": {
+      "requests": {
+        "baseline_avatar/existing_profile_avatar": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 1.826,
+          "mean_ms": 1.358,
+          "p50_upper_bound_ms": 1.28,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 2.56
+        },
+        "baseline_teaching/teaching_course_schedule": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 11.598,
+          "mean_ms": 9.684,
+          "p50_upper_bound_ms": 10.24,
+          "p95_upper_bound_ms": 20.48,
+          "p99_upper_bound_ms": 20.48
+        },
+        "mixed/career_light_state": {
+          "count": 25,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 120.995,
+          "mean_ms": 11.805,
+          "p50_upper_bound_ms": 10.24,
+          "p95_upper_bound_ms": 20.48,
+          "p99_upper_bound_ms": 163.84
+        },
+        "mixed/career_progress": {
+          "count": 6,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 121.755,
+          "mean_ms": 27.159,
+          "p50_upper_bound_ms": 10.24,
+          "p95_upper_bound_ms": 163.84,
+          "p99_upper_bound_ms": 163.84
+        },
+        "mixed/suggestion_enqueue": {
+          "count": 5,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 134.918,
+          "mean_ms": 38.579,
+          "p50_upper_bound_ms": 20.48,
+          "p95_upper_bound_ms": 163.84,
+          "p99_upper_bound_ms": 163.84
+        },
+        "mixed/resume_save": {
+          "count": 6,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 14.145,
+          "mean_ms": 8.68,
+          "p50_upper_bound_ms": 10.24,
+          "p95_upper_bound_ms": 20.48,
+          "p99_upper_bound_ms": 20.48
+        },
+        "mixed/teaching_course_schedule": {
+          "count": 5,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 18.429,
+          "mean_ms": 14.904,
+          "p50_upper_bound_ms": 20.48,
+          "p95_upper_bound_ms": 20.48,
+          "p99_upper_bound_ms": 20.48
+        },
+        "mixed/resume_compact": {
+          "count": 10,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 7.206,
+          "mean_ms": 3.847,
+          "p50_upper_bound_ms": 5.12,
+          "p95_upper_bound_ms": 10.24,
+          "p99_upper_bound_ms": 10.24
+        },
+        "mixed/resume_readiness": {
+          "count": 4,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 14.272,
+          "mean_ms": 11.735,
+          "p50_upper_bound_ms": 20.48,
+          "p95_upper_bound_ms": 20.48,
+          "p99_upper_bound_ms": 20.48
+        },
+        "mixed/existing_profile_avatar": {
+          "count": 4,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 6.289,
+          "mean_ms": 4.733,
+          "p50_upper_bound_ms": 5.12,
+          "p95_upper_bound_ms": 10.24,
+          "p99_upper_bound_ms": 10.24
+        },
+        "post_baseline_avatar/existing_profile_avatar": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 1.542,
+          "mean_ms": 1.489,
+          "p50_upper_bound_ms": 2.56,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 2.56
+        },
+        "post_baseline_teaching/teaching_course_schedule": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 14.688,
+          "mean_ms": 12.391,
+          "p50_upper_bound_ms": 10.24,
+          "p95_upper_bound_ms": 20.48,
+          "p99_upper_bound_ms": 20.48
+        }
+      },
+      "pool_wait": {
+        "setup/setup": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.02,
+          "mean_ms": 0.019,
+          "p50_upper_bound_ms": 0.02,
+          "p95_upper_bound_ms": 0.04,
+          "p99_upper_bound_ms": 0.04
+        },
+        "setup/initialize": {
+          "count": 20,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 185.445,
+          "mean_ms": 111.088,
+          "p50_upper_bound_ms": 163.84,
+          "p95_upper_bound_ms": 327.68,
+          "p99_upper_bound_ms": 327.68
+        },
+        "warmup_avatar/existing_profile_avatar": {
+          "count": 10,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.01,
+          "mean_ms": 0.006,
+          "p50_upper_bound_ms": 0.01,
+          "p95_upper_bound_ms": 0.01,
+          "p99_upper_bound_ms": 0.01
+        },
+        "baseline_avatar/existing_profile_avatar": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.012,
+          "mean_ms": 0.008,
+          "p50_upper_bound_ms": 0.01,
+          "p95_upper_bound_ms": 0.02,
+          "p99_upper_bound_ms": 0.02
+        },
+        "warmup_teaching/teaching_course_schedule": {
+          "count": 10,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.02,
+          "mean_ms": 0.013,
+          "p50_upper_bound_ms": 0.02,
+          "p95_upper_bound_ms": 0.02,
+          "p99_upper_bound_ms": 0.02
+        },
+        "baseline_teaching/teaching_course_schedule": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.025,
+          "mean_ms": 0.017,
+          "p50_upper_bound_ms": 0.01,
+          "p95_upper_bound_ms": 0.04,
+          "p99_upper_bound_ms": 0.04
+        },
+        "mixed/setup": {
+          "count": 4,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.256,
+          "mean_ms": 0.076,
+          "p50_upper_bound_ms": 0.02,
+          "p95_upper_bound_ms": 0.32,
+          "p99_upper_bound_ms": 0.32
+        },
+        "mixed/monitor": {
+          "count": 23,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.061,
+          "mean_ms": 0.025,
+          "p50_upper_bound_ms": 0.04,
+          "p95_upper_bound_ms": 0.08,
+          "p99_upper_bound_ms": 0.08
+        },
+        "mixed/career_light_state": {
+          "count": 25,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.04,
+          "mean_ms": 0.02,
+          "p50_upper_bound_ms": 0.02,
+          "p95_upper_bound_ms": 0.04,
+          "p99_upper_bound_ms": 0.04
+        },
+        "mixed/career_progress": {
+          "count": 6,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.03,
+          "mean_ms": 0.015,
+          "p50_upper_bound_ms": 0.01,
+          "p95_upper_bound_ms": 0.04,
+          "p99_upper_bound_ms": 0.04
+        },
+        "mixed/suggestion_enqueue": {
+          "count": 5,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 4.588,
+          "mean_ms": 0.938,
+          "p50_upper_bound_ms": 0.04,
+          "p95_upper_bound_ms": 5.12,
+          "p99_upper_bound_ms": 5.12
+        },
+        "mixed/assignment_reminder_scheduler": {
+          "count": 16,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 103.722,
+          "mean_ms": 6.5,
+          "p50_upper_bound_ms": 0.01,
+          "p95_upper_bound_ms": 163.84,
+          "p99_upper_bound_ms": 163.84
+        },
+        "mixed/resume_save": {
+          "count": 6,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.034,
+          "mean_ms": 0.017,
+          "p50_upper_bound_ms": 0.02,
+          "p95_upper_bound_ms": 0.04,
+          "p99_upper_bound_ms": 0.04
+        },
+        "mixed/teaching_course_schedule": {
+          "count": 5,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.035,
+          "mean_ms": 0.027,
+          "p50_upper_bound_ms": 0.04,
+          "p95_upper_bound_ms": 0.04,
+          "p99_upper_bound_ms": 0.04
+        },
+        "mixed/resume_compact": {
+          "count": 10,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.044,
+          "mean_ms": 0.022,
+          "p50_upper_bound_ms": 0.02,
+          "p95_upper_bound_ms": 0.08,
+          "p99_upper_bound_ms": 0.08
+        },
+        "mixed/resume_readiness": {
+          "count": 4,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.028,
+          "mean_ms": 0.027,
+          "p50_upper_bound_ms": 0.04,
+          "p95_upper_bound_ms": 0.04,
+          "p99_upper_bound_ms": 0.04
+        },
+        "mixed/existing_profile_avatar": {
+          "count": 4,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.053,
+          "mean_ms": 0.033,
+          "p50_upper_bound_ms": 0.04,
+          "p95_upper_bound_ms": 0.08,
+          "p99_upper_bound_ms": 0.08
+        },
+        "mixed/background_jobs": {
+          "count": 12,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.046,
+          "mean_ms": 0.019,
+          "p50_upper_bound_ms": 0.02,
+          "p95_upper_bound_ms": 0.08,
+          "p99_upper_bound_ms": 0.08
+        },
+        "post_baseline_avatar/existing_profile_avatar": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.012,
+          "mean_ms": 0.011,
+          "p50_upper_bound_ms": 0.02,
+          "p95_upper_bound_ms": 0.02,
+          "p99_upper_bound_ms": 0.02
+        },
+        "post_baseline_teaching/teaching_course_schedule": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.035,
+          "mean_ms": 0.021,
+          "p50_upper_bound_ms": 0.01,
+          "p95_upper_bound_ms": 0.04,
+          "p99_upper_bound_ms": 0.04
+        },
+        "verification/setup": {
+          "count": 12,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.007,
+          "mean_ms": 0.005,
+          "p50_upper_bound_ms": 0.01,
+          "p95_upper_bound_ms": 0.01,
+          "p99_upper_bound_ms": 0.01
+        }
+      },
+      "sql_time": {
+        "setup/setup": {
+          "count": 365,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 5.933,
+          "mean_ms": 0.317,
+          "p50_upper_bound_ms": 0.16,
+          "p95_upper_bound_ms": 1.28,
+          "p99_upper_bound_ms": 5.12
+        },
+        "setup/initialize": {
+          "count": 457,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 10.493,
+          "mean_ms": 0.557,
+          "p50_upper_bound_ms": 0.32,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 5.12
+        },
+        "warmup_avatar/existing_profile_avatar": {
+          "count": 10,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 2.027,
+          "mean_ms": 0.457,
+          "p50_upper_bound_ms": 0.32,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 2.56
+        },
+        "baseline_avatar/existing_profile_avatar": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.522,
+          "mean_ms": 0.376,
+          "p50_upper_bound_ms": 0.32,
+          "p95_upper_bound_ms": 0.64,
+          "p99_upper_bound_ms": 0.64
+        },
+        "warmup_teaching/teaching_course_schedule": {
+          "count": 40,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 4.777,
+          "mean_ms": 1.028,
+          "p50_upper_bound_ms": 1.28,
+          "p95_upper_bound_ms": 5.12,
+          "p99_upper_bound_ms": 5.12
+        },
+        "baseline_teaching/teaching_course_schedule": {
+          "count": 8,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 1.636,
+          "mean_ms": 0.735,
+          "p50_upper_bound_ms": 0.64,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 2.56
+        },
+        "mixed/setup": {
+          "count": 26,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 2.376,
+          "mean_ms": 0.62,
+          "p50_upper_bound_ms": 0.32,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 2.56
+        },
+        "mixed/career_light_state": {
+          "count": 139,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 3.716,
+          "mean_ms": 0.608,
+          "p50_upper_bound_ms": 0.64,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 5.12
+        },
+        "mixed/career_progress": {
+          "count": 30,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 70.48,
+          "mean_ms": 2.961,
+          "p50_upper_bound_ms": 0.64,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 81.92
+        },
+        "mixed/monitor": {
+          "count": 23,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 8.245,
+          "mean_ms": 2.026,
+          "p50_upper_bound_ms": 2.56,
+          "p95_upper_bound_ms": 10.24,
+          "p99_upper_bound_ms": 10.24
+        },
+        "mixed/suggestion_enqueue": {
+          "count": 70,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 113.067,
+          "mean_ms": 2.309,
+          "p50_upper_bound_ms": 0.64,
+          "p95_upper_bound_ms": 5.12,
+          "p99_upper_bound_ms": 163.84
+        },
+        "mixed/assignment_reminder_scheduler": {
+          "count": 33,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 14.003,
+          "mean_ms": 1.368,
+          "p50_upper_bound_ms": 1.28,
+          "p95_upper_bound_ms": 10.24,
+          "p99_upper_bound_ms": 20.48
+        },
+        "mixed/resume_save": {
+          "count": 68,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 4.271,
+          "mean_ms": 0.486,
+          "p50_upper_bound_ms": 0.32,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 5.12
+        },
+        "mixed/teaching_course_schedule": {
+          "count": 20,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 8.015,
+          "mean_ms": 1.681,
+          "p50_upper_bound_ms": 1.28,
+          "p95_upper_bound_ms": 5.12,
+          "p99_upper_bound_ms": 10.24
+        },
+        "mixed/resume_compact": {
+          "count": 10,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 4.86,
+          "mean_ms": 1.419,
+          "p50_upper_bound_ms": 1.28,
+          "p95_upper_bound_ms": 5.12,
+          "p99_upper_bound_ms": 5.12
+        },
+        "mixed/resume_readiness": {
+          "count": 20,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 7.64,
+          "mean_ms": 1.46,
+          "p50_upper_bound_ms": 0.64,
+          "p95_upper_bound_ms": 10.24,
+          "p99_upper_bound_ms": 10.24
+        },
+        "mixed/existing_profile_avatar": {
+          "count": 4,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 1.837,
+          "mean_ms": 1.245,
+          "p50_upper_bound_ms": 1.28,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 2.56
+        },
+        "mixed/background_jobs": {
+          "count": 40,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 2.511,
+          "mean_ms": 0.797,
+          "p50_upper_bound_ms": 1.28,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 2.56
+        },
+        "post_baseline_avatar/existing_profile_avatar": {
+          "count": 2,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 0.468,
+          "mean_ms": 0.408,
+          "p50_upper_bound_ms": 0.64,
+          "p95_upper_bound_ms": 0.64,
+          "p99_upper_bound_ms": 0.64
+        },
+        "post_baseline_teaching/teaching_course_schedule": {
+          "count": 8,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 3.085,
+          "mean_ms": 1.205,
+          "p50_upper_bound_ms": 1.28,
+          "p95_upper_bound_ms": 5.12,
+          "p99_upper_bound_ms": 5.12
+        },
+        "verification/setup": {
+          "count": 28,
+          "sample_scope": "all observations / fixed histogram",
+          "max_ms": 1.794,
+          "mean_ms": 0.49,
+          "p50_upper_bound_ms": 0.32,
+          "p95_upper_bound_ms": 2.56,
+          "p99_upper_bound_ms": 2.56
+        }
+      }
+    },
+    "statuses": {
+      "baseline_avatar/existing_profile_avatar": {
+        "200": 2
+      },
+      "baseline_teaching/teaching_course_schedule": {
+        "200": 2
+      },
+      "mixed/career_light_state": {
+        "200": 25
+      },
+      "mixed/career_progress": {
+        "200": 6
+      },
+      "mixed/suggestion_enqueue": {
+        "202": 5
+      },
+      "mixed/resume_save": {
+        "409": 2,
+        "200": 4
+      },
+      "mixed/teaching_course_schedule": {
+        "200": 5
+      },
+      "mixed/resume_compact": {
+        "200": 10
+      },
+      "mixed/resume_readiness": {
+        "200": 4
+      },
+      "mixed/existing_profile_avatar": {
+        "200": 4
+      },
+      "post_baseline_avatar/existing_profile_avatar": {
+        "200": 2
+      },
+      "post_baseline_teaching/teaching_course_schedule": {
+        "200": 2
+      }
+    },
+    "bytes": {
+      "baseline_avatar/existing_profile_avatar": 1032,
+      "baseline_teaching/teaching_course_schedule": 118745,
+      "mixed/career_light_state": 176042,
+      "mixed/career_progress": 840,
+      "mixed/suggestion_enqueue": 2450,
+      "mixed/resume_save": 440,
+      "mixed/teaching_course_schedule": 295945,
+      "mixed/resume_compact": 1846,
+      "mixed/resume_readiness": 4732,
+      "mixed/existing_profile_avatar": 2064,
+      "post_baseline_avatar/existing_profile_avatar": 1032,
+      "post_baseline_teaching/teaching_course_schedule": 118745
+    },
+    "arrival_dispatch_lag": {
+      "count": 61,
+      "sample_scope": "all observations / fixed histogram",
+      "max_ms": 45.491,
+      "mean_ms": 7.984,
+      "p50_upper_bound_ms": 10.24,
+      "p95_upper_bound_ms": 20.48,
+      "p99_upper_bound_ms": 81.92
+    }
+  },
+  "faults": [
+    {
+      "phase": "after_claim",
+      "job_id": 12,
+      "admitted_elapsed_seconds": 5.158,
+      "pid": 5840,
+      "generation": 1,
+      "exit_code": -15,
+      "joined": true,
+      "elapsed_seconds": 5.607,
+      "test_leases_advanced": 1
+    },
+    {
+      "phase": "execute_wait",
+      "job_id": 14,
+      "admitted_elapsed_seconds": 10.219,
+      "pid": 21024,
+      "generation": 2,
+      "exit_code": -15,
+      "joined": true,
+      "elapsed_seconds": 10.477,
+      "test_leases_advanced": 1
+    },
+    {
+      "phase": "result_persisted",
+      "job_id": 16,
+      "admitted_elapsed_seconds": 15.232,
+      "pid": 31424,
+      "generation": 3,
+      "exit_code": -15,
+      "joined": true,
+      "elapsed_seconds": 15.479,
+      "test_leases_advanced": 1
+    },
+    {
+      "phase": "apply_uncommitted",
+      "job_id": 18,
+      "admitted_elapsed_seconds": 20.385,
+      "pid": 7156,
+      "generation": 4,
+      "exit_code": -15,
+      "joined": true,
+      "elapsed_seconds": 21.442,
+      "test_leases_advanced": 1
+    }
+  ],
+  "admitted_jobs": 18,
+  "retained_jobs": 18,
+  "worker_errors": [],
+  "accepted_jobs_drained": true,
+  "final_jobs": [
+    {
+      "task_type": "career_major_network_generate",
+      "status": "succeeded",
+      "count": 9
+    },
+    {
+      "task_type": "resume_suggestion",
+      "status": "succeeded",
+      "count": 5
+    },
+    {
+      "task_type": "career_soak_canary",
+      "status": "succeeded",
+      "count": 4
+    }
+  ],
+  "canaries_all_published_once": true,
+  "canaries": [
+    {
+      "id": 1,
+      "writes": 1
+    },
+    {
+      "id": 2,
+      "writes": 1
+    },
+    {
+      "id": 3,
+      "writes": 1
+    },
+    {
+      "id": 4,
+      "writes": 1
+    }
+  ],
+  "max_model_stub_concurrency": 2,
+  "unexpected_first_100": [],
+  "arrival_skipped": 0,
+  "schema_removed": true,
+  "owned_connections_remaining": 0,
+  "fixed_code_during_run": true,
+  "sources_changed_during_run": [],
+  "assignment_reminders": {
+    "ok": true,
+    "exercised": true,
+    "scheduled": 2,
+    "completed": 2,
+    "incomplete": [],
+    "recipient_mismatch": [],
+    "errors": [],
+    "poll_seconds": 5.0,
+    "records": [
+      {
+        "task_id": 1,
+        "assignment_id": 900000,
+        "run_at": "2026-09-06T13:46:37",
+        "due_epoch": 1788673597.0,
+        "expected_recipients": [
+          11
+        ],
+        "submitted_control": 1,
+        "claim_epoch": 1788673600.3609998,
+        "handler_start_epoch": 1788673600.3610039,
+        "handler_return_epoch": 1788673600.3654685,
+        "notification_visible_epoch": 1788673600.3673398,
+        "actual_recipients": [
+          11
+        ],
+        "done_epoch": 1788673600.3681166,
+        "claim_delay_ms": 3361.0,
+        "handler_start_delay_ms": 3361.004,
+        "notification_visible_delay_ms": 3367.34,
+        "done_delay_ms": 3368.117,
+        "handler_duration_ms": 4.465,
+        "duplicate_replay_no_new_notifications": true
+      },
+      {
+        "task_id": 2,
+        "assignment_id": 900001,
+        "run_at": "2026-09-06T13:46:47",
+        "due_epoch": 1788673607.0,
+        "expected_recipients": [
+          12
+        ],
+        "submitted_control": 2,
+        "claim_epoch": 1788673610.3956056,
+        "handler_start_epoch": 1788673610.3956106,
+        "handler_return_epoch": 1788673610.4017558,
+        "notification_visible_epoch": 1788673610.4020865,
+        "actual_recipients": [
+          12
+        ],
+        "done_epoch": 1788673610.40458,
+        "claim_delay_ms": 3395.606,
+        "handler_start_delay_ms": 3395.611,
+        "notification_visible_delay_ms": 3402.086,
+        "done_delay_ms": 3404.58,
+        "handler_duration_ms": 6.145,
+        "duplicate_replay_no_new_notifications": true
+      }
+    ],
+    "scope": "Real assignment reminder arm/claim/dispatch/recipient filtering/deduplication/in-app notification commit. Dedicated scheduler thread shares the bounded pool, unlike separate production scheduler processes. No SMTP queue/delivery. Timing due timestamps has one-second storage precision; successful notification visibility is measured on a second connection."
+  },
+  "teaching_dataset": {
+    "teachers": 10,
+    "courses": 30,
+    "offerings": 30,
+    "sessions": 1200,
+    "semesters": 1,
+    "read_endpoint": "/api/dashboard/course-schedule/overview",
+    "expected_lessons_per_student": 120
+  },
+  "source_hashes_before": {
+    "tools\\career_mixed_load_probe.py": "d0df73464b100aa6585c080f3b3dbeaea52129ff0c30395d74cead2e84f1c6a7",
+    "classroom_app\\routers\\career_path.py": "9086cc6f8929f5438759bf229d48dd938e6c8133dac8df1acea3a252643fa69c",
+    "classroom_app\\routers\\resume_console.py": "ea790bf7173db44589cdb3c10e301c6de0337c079393e4e4207c692915102008",
+    "classroom_app\\services\\career_lifecycle_service.py": "f8d29a4431283f87c8605c9bb8d2ef207f0cdf14d1c5ef2047bfe6ae07f8c81e",
+    "classroom_app\\services\\career_path_service.py": "b6b008b0df36a9dc67e2c9c91f48ff68d94250a4d7da9ed0892f69a6fb3e735e",
+    "classroom_app\\services\\student_career_job_worker.py": "c15f9177eed9576639bb81f490d650220315ebe75f5ae8de73c99ef906ea2d16",
+    "classroom_app\\services\\student_career_job_service.py": "014d4ecd7a793fccd5293a5a11a53fe3cb620067895ed6aafc7c99a64036c0b9",
+    "classroom_app\\services\\ai_durable_job_service.py": "bae214968953294dacf9fe7314f1ea11a2dc2aa5c2bf8a87a2b733af178725dc",
+    "classroom_app\\services\\resume\\resume_ai_service.py": "19502975aa3dc5784cc7a76206c4b7614b947ab8fecdb4b4194cadb8f8293c99",
+    "classroom_app\\services\\resume\\resume_application_service.py": "9b0d0227b34238c6c722eb60ca73ac73d60d39acc2766d3c1fcf14a8443ec4e5",
+    "classroom_app\\services\\resume\\resume_attachment_service.py": "a31395fa233bc25aa4c79ee1404129ef837d0bbfc40fdbef6c5fd33c46d9a432",
+    "classroom_app\\services\\resume\\resume_document_service.py": "22dc2b6d5be163b7e5170a6ba9653d5e7dcf9565255b36f473a9f8cb6005639e",
+    "classroom_app\\services\\resume\\resume_generation_service.py": "e4e2fbe8d25ace93d282dbba7636009d4a1c888e0d315c036a6a6c448ee0f25a",
+    "classroom_app\\services\\resume\\resume_import_service.py": "d2b90d8830107c639c8610713afaa93418a8bdcbab8fef888db551258f80ceb2",
+    "classroom_app\\services\\resume\\resume_job_target_service.py": "f935f27b391af49025b278da1cfa6e79ef51df18ea15cd0d4b63f2ca87010d98",
+    "classroom_app\\services\\resume\\resume_nav_service.py": "8551ba437d8724f9d4e77227e839dd9f71982a7575c5d4235c72c1ce4776d170",
+    "classroom_app\\services\\resume\\resume_profile_service.py": "239a11d5b8b60164be31a485b1e0ce5e86d00ea18d785993ff54e32283b5f25e",
+    "classroom_app\\services\\resume\\resume_readiness_service.py": "75f6ec2579898aae892cec48c360dea0e6ffa5d2d9a8cfe4bc990efc8e0b0013",
+    "classroom_app\\services\\resume\\resume_render_service.py": "c988ebaaf48e813deaa7f9de0edaa732d0cbc352dc2d753071fc24fdbe51dd69",
+    "classroom_app\\services\\resume\\resume_requirement_service.py": "4bf95141c97b9ee268f417e54f10ed4e3b905ad9732cf3835e58acdc173c663a",
+    "classroom_app\\services\\resume\\resume_suggestion_service.py": "4489d4c3ce2c85e5927d173379b6ffccb3f402ca092c6b5893bae58180f3c97e",
+    "classroom_app\\services\\resume\\__init__.py": "086a268a53a152867fbcb1f3b4b09a4f287c28d7c67a175af27c90d565d717a5",
+    "classroom_app\\services\\career_engagement_service.py": "cb69de999eb6152c83c4150fede7156a92982aa4f14d377785efbd974202f12a",
+    "classroom_app\\services\\career_job_metrics_service.py": "187fdbe1bfda2b7d02d36c7d7681b26fc75133b7fe38874afb3b4e6a04fb3cec",
+    "classroom_app\\services\\career_job_posting_service.py": "45787db2977d50b99adf938e96e250131814c80cc5df21bbdeb2f1040b6a52f6",
+    "classroom_app\\services\\career_major_mapping_service.py": "484ea594ddff8facda5a5ddc8367c60ee40d70cf06094bdf2a429001d17f773e",
+    "classroom_app\\services\\career_payload_service.py": "d8765a5855e1421bc4893e687680c260d16fe0400a415d4a383a41039fb1fa2c",
+    "classroom_app\\services\\career_public_view_service.py": "bbbadd9688ef9a4e74cd062374604e70fd86a9ae65f77392b4c6e2301ed0b179",
+    "classroom_app\\services\\career_recommendation_service.py": "46c9914806c60671e96c67e64be01b2c4f7c3afbd45ce8479ac3b31c2385d560",
+    "classroom_app\\services\\career_seed_data.py": "71b4d16a548ede6a88f284419dbf4eb4a9ced245373780177adf5aa8277d01f0",
+    "classroom_app\\db\\connection.py": "d2f55c70f2337c10cee8d38def3b8251bcfe51801a512ac3df413372d7cdb212",
+    "classroom_app\\db\\errors.py": "27382ecdb2517823f121dfdd5d55dd8a749d5b75aec1281f89b7b34383e29062",
+    "classroom_app\\db\\migrations.py": "4fa662485cb6e143af0de6e2d22088265c4595d7cf0e56c619683ad073183aac",
+    "classroom_app\\db\\migration_registry.py": "6ed3ff2cebd2272606fb2ea69ef5dd57324927f3d93824b0f7ab7c2501ee6faf",
+    "classroom_app\\db\\postgres.py": "a0b078f00cfd7f3d2baaed684b92668b707566a40e9bf26f5df1e437ead7446e",
+    "classroom_app\\db\\postgres_indexes.py": "e86ec23572ca855ad5485fa565133b27337cac19b5a0b813214a544a543559ca",
+    "classroom_app\\db\\postgres_required_columns.py": "021c77f9ff7e50613a68863b7c24b1849d166695390d44959ad35a7c9c0611e9",
+    "classroom_app\\db\\postgres_schema.py": "5d9896ae7dc542a2141c3985ddca2974042996dddf7f958283cd4183090102e0",
+    "classroom_app\\db\\repair.py": "5b9c74e1f901b701e1362d799b756bbd223cbbc6c37736b2666770eb70fc4d6d",
+    "classroom_app\\db\\row.py": "141ee2e1352eb2ec8a376731cf2cd38210e6cb8b470823fb0404c45205b17f60",
+    "classroom_app\\db\\schema.py": "91c322e649959ac6686d9f03767c629e69e280f5dd016a8fa21f9c12e7fd3f20",
+    "classroom_app\\db\\schema_academic_evaluations.py": "bad0937e5dcafccdb2d55fb5cf1dda8ccd4c378b6ca2553434b7c8becbd260d0",
+    "classroom_app\\db\\schema_academic_final_materials.py": "e96fe90f8ca7f2b54c2c7aa25737dca7b5eca5e63dbc777e8352ee64b30a9696",
+    "classroom_app\\db\\schema_agent_ext.py": "c456892b9eeb206628ede3efb0750df5b3053421c00d18fe72f8a19ad03ea197",
+    "classroom_app\\db\\schema_ai_jobs.py": "34c0792efe9b2b5e95713073848ba621c5fcfebabb9d0980da1cfe49c9af0a28",
+    "classroom_app\\db\\schema_assessment_plans.py": "edd26dd4ccda6ff382a2f231f5b042f93d59774eca0dd710efce9de54717c1c4",
+    "classroom_app\\db\\schema_assignments.py": "43f19a237e618858f554ddf2fe3ead48c2a688e1fd91f0ce74991a0af746b560",
+    "classroom_app\\db\\schema_career_engagement.py": "56a0adf52088a20fae35121ae7ff32f0b23f8716fadd956b506039ef39a1a625",
+    "classroom_app\\db\\schema_career_path.py": "fd3b4a8b28fa7d336c49a4898847f842ccad132491e5fd1ab3f40bb77f163fac",
+    "classroom_app\\db\\schema_classroom_activity.py": "b147b26bd8da0eddb26f0096af3165b16cade65cf968e6bc0462db56c07b113c",
+    "classroom_app\\db\\schema_course_doc_packs.py": "672c541f9e33be59e20ab22045b4a49f686ae7e7504f7c884f7e7fb6d7696e81",
+    "classroom_app\\db\\schema_cultivation_progress.py": "81fde46d52f7ee8dd66a584bfe420b11cc180054ceaebd712d894f839486bcee",
+    "classroom_app\\db\\schema_foundation.py": "25ed839d06c9830aa9c199e893c0cbf6e4e82713f0d065f29d586101c521e347",
+    "classroom_app\\db\\schema_gongwen.py": "de7616b0d3847f247a7f8c46f6a554d12e1dd1a5fa0e9a0ca4eca14bcb105f81",
+    "classroom_app\\db\\schema_learning_blog.py": "8ad937859132cb567eaae4ff64ff9b772b4072be09dd3c6f65bb2e7dad2013af",
+    "classroom_app\\db\\schema_lessondoc_editor.py": "405a5eabb3032144cd56be7491d7a3e38526e66f4165acd6f4c68f51947bf93f",
+    "classroom_app\\db\\schema_lesson_plans.py": "4982277598e8a4ea8296c7aadff9a6cb0a99b4c2f860266929271588c769d556",
+    "classroom_app\\db\\schema_life_tips.py": "61fcb8ad6fe8f9dd420eeec37d1a1026dc9ec1a13452aa8904d4519fc26209aa",
+    "classroom_app\\db\\schema_materials_integrations.py": "4848694b7b135199c2547f0d28b4284a98da10d042e3c1d745d4a1175c7e445b",
+    "classroom_app\\db\\schema_material_whiteboards.py": "e3824b9d399ad132d6b44e8c84e049ac7c73cecb4a779c7fe3a54277f65b20d3",
+    "classroom_app\\db\\schema_offering_class_links.py": "57d19449d786f38deba1b4d961abef734944bf6b3affdaa262e14470545ce8fd",
+    "classroom_app\\db\\schema_offering_merge.py": "e7ce14299c15ec862b8af68f030d5b2eebcfcefe8c224ba4ea79416b26a3611e",
+    "classroom_app\\db\\schema_polls.py": "77595bdaf89b2d3b5205b38f9cdcf1861977fac347481bf909705ea4b11c4ee3",
+    "classroom_app\\db\\schema_prompt_pool.py": "4138e33abec4d4fa5bcc66a853e171c8e139931d6081ab347ed2d4ebbeeae7b1",
+    "classroom_app\\db\\schema_resume.py": "6bb204fd44a84c3424730efe889085bf603ddd43e91c1a20f5304a012d0ccaff",
+    "classroom_app\\db\\schema_retake.py": "4d74a66b17db9908aad3bdc5578def18e60081020e7c50711d42ee88b3d2655c",
+    "classroom_app\\db\\schema_scheduler.py": "37769302287ac19883182a55bd8df8d115cd8a8d18040e36dccc60f77160f84b",
+    "classroom_app\\db\\schema_session_learning_materials.py": "2660ee1016cee75db1da613dd36678cc9a5bac5cdc0b7c39b607f173c5adcf3b",
+    "classroom_app\\db\\schema_signature_workflow.py": "9692744a821c7f5aebe0d5d2f16b2e09697338aa37e57588f1c756edc2ad346c",
+    "classroom_app\\db\\schema_smart_schedule.py": "de6f77e3f5f34394253a5bc087cef3dd0bf49e71f9a085dd739046cbc4e0d7e8",
+    "classroom_app\\db\\schema_study_group_scheme.py": "948de842a0a26aed65a103afb924955d74e6a382cd3f7ed95e7dc5b198c6eae9",
+    "classroom_app\\db\\schema_teacher_evaluations.py": "e2cb062b7dd9ccb2daebb90d9072be07fa4acfd1fc613895bbb12ed56f6cbb20",
+    "classroom_app\\db\\schema_wechat_mp.py": "c56dccd456fa5ff11f2a0d5c6af7169b138df4b7e1f9536ee7d4336b6a5f43f0",
+    "classroom_app\\db\\seeds.py": "de4be583a0dfbd14d2b14d9afdea5c0a3303caefb5dece4bb752a49931e5b5f8",
+    "classroom_app\\db\\semester_unification_migration.py": "118389558789b42283b68a8ac82b699c4e2816d7fe27ba255f51cc067e4ad3de",
+    "classroom_app\\db\\sessions.py": "e1e2f61169fbd8421ce9a9db2e4e5ee87bbe826330254d4eec98b36628885e2c",
+    "classroom_app\\db\\sql.py": "8bd2d3ed0656434aa3cebc13393a7904c38a3537802a63f58da96549c7721a98",
+    "classroom_app\\db\\__init__.py": "e896edc1c4ddf07b87a4daad5a24cbe60588660a271bc7378a3e83ed8924affb",
+    "classroom_app\\services\\libreoffice_service.py": "5b57e9b75868bc3ce06484d80dec26ddc4d5f0dde0d40f6189523f6bf9cf4285",
+    "classroom_app\\services\\document_render_service.py": "5e90441b171bba08ec0d34632ba64860ee530f89d3429497772ccc751b441b07",
+    "classroom_app\\services\\file_service.py": "afe918b36e436bb5213f1e7190e203e6399bf16b5d47a7dfe6a85267e3d65d63",
+    "classroom_app\\services\\excel_upload_service.py": "9f35119d081535d70d757e87a69e0692412f023419d16672f53934944047c791",
+    "classroom_app\\services\\material_ai_import_service.py": "8b0c17516f486436a5e2a29d324d51a92f8afb5432e377a9a5ba56ff52022045",
+    "classroom_app\\routers\\files.py": "67fd0f0fc11e4f396141514c8bcaebfb704d02aa131d9f7861cbe1febd176695",
+    "classroom_app\\routers\\document_renderer.py": "91743df86d28147dbf4ea58401cdd306823f84c30edcc06b15e2fad7f6adf9ac",
+    "classroom_app\\config.py": "4c66aa948ec8d03af49f99b75d577919826887a58da69fd95055e78ea3cc7be1",
+    "classroom_app\\routers\\profile.py": "32cd5da5153e1798a06c248eabf716edc1cfa8bf17ee3a6a9ad2a94bd2bf1e6e",
+    "tools\\career_teaching_reminder_probe.py": "51ae98379fb4aef9c296fd9f9b568da7779e16eb7fbe433f1962b4096968c830",
+    "classroom_app\\routers\\ui_parts\\dashboard.py": "b06f34c458b13789761afde935c90edb08fea81352b6cc0c9892ba06889d971f",
+    "tools\\career_postgres_workflow_probe.py": "a1a111c9ac3999f10ff2fe97fa6d9f1a958bc450c3d8c9bcc12ec3ce76bb2b25",
+    "tools\\resume_postgres_workflow_probe.py": "ab56ed87c3822f99ad64d1d446e399a469a8a24a171be9f723686983e4ede79d",
+    "classroom_app\\services\\student_course_schedule_service.py": "e760d15f28ee7d705b34338d8079bbe72faf6c7d201c7b21bdf899dcd8e39b88",
+    "classroom_app\\services\\dashboard_service.py": "110ce9f1c78f6aa4e6d7f50d15b6f5a8919a1a354d871f587b74170653f5b0aa",
+    "classroom_app\\services\\dashboard_calendar_service.py": "d7165d4b5a295890c48c110145aab04a86496ff1e201e919008671e45b7861cf",
+    "classroom_app\\services\\academic_service.py": "051a6433b944592870ebd0c8106f0a34e3987d62189967e1c7e1cd1734ea3446",
+    "classroom_app\\services\\scheduled_task_service.py": "b792b18cf5e063e647877be1f05eeb379b1617b7b6976f0ed487e6812b5d4b3c",
+    "classroom_app\\services\\scheduled_task_handlers.py": "3517005b3165f7e4751dd143215fd7615e14f629e23f3ce36c6b49d9a7617fda",
+    "classroom_app\\services\\assignment_reminder_service.py": "17c52ccf84aabbd7022403b334232d5fda5c27718a44f19f40f1c409d6a0c73b",
+    "classroom_app\\services\\message_center_service.py": "2ade1e5eaa2b748fb704b4c8c884dc371b621e7a4014b41134c0d91de6eafbff",
+    "classroom_app\\services\\email_notification_service.py": "3c8fb4602fdbe9f363e9b8aa7acc228b887dbb43377d80435b006d911479082e",
+    "classroom_app\\services\\offering_membership_service.py": "7490d0b5249f11b03e6944a77d1d7e2c7cbf1039b05f76d79ef27a5bd2d952c8",
+    "classroom_app\\services\\academic_course_sync_service.py": "546f68d334e800085378f0cc4fb6ebddfd0e163c77055404fbc183700b5ec9c3",
+    "classroom_app\\services\\smart_classroom_schedule_sync_service.py": "f4855e9bf636115d8f8e30ed7a2b07c1539f8d4b26c42497cc696df721f6e839",
+    "classroom_app\\services\\semester_identity_service.py": "8f12791f95c8761336d402d06bf455823255745ccad21edf37e03824df1abdb3",
+    "tools/career_soak_probe.py": "0a005a0faa773df350f61e45006e51b2178873eaa30e52d8036f1d94b333dbc4"
+  }
+}

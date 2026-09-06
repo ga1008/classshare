@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+import json
 
 from . import resume_document_service as docs
 from . import resume_profile_service as profile
@@ -57,11 +58,19 @@ def _unresolved_conflicts(resumes: list[dict[str, Any]]) -> list[dict[str, Any]]
 def build_resume_readiness(conn, student_id: int) -> dict[str, Any]:
     """Return a compact, UI-ready picture of how resume-ready the student is."""
     personal = profile.get_personal_info(conn, student_id)
-    sections = {
-        key: profile.list_section(conn, student_id, key)
-        for key in ("self_intro", "education", "experience", "skill", "certificate")
-    }
-    resumes = docs.list_resumes(conn, student_id)
+    # Counts use owner indexes and never load unbounded experience text.
+    fragments = [f"SELECT '{key}' AS section,COUNT(*) AS n FROM {spec['table']} WHERE student_id = ?" for key, spec in profile.LIST_SECTIONS.items()]
+    section_counts = {row["section"]: int(row["n"]) for row in conn.execute(" UNION ALL ".join(fragments), [int(student_id)] * len(fragments))}
+    intro_ready = conn.execute("SELECT 1 FROM resume_self_intros WHERE student_id = ? AND status = 'ready' AND content_md <> '' LIMIT 1", (int(student_id),)).fetchone()
+    resume_counts = {row["status"]: int(row["n"]) for row in conn.execute("SELECT status,COUNT(*) AS n FROM resumes WHERE student_id = ? AND archived = 0 GROUP BY status", (int(student_id),))}
+    resumes = []
+    for row in conn.execute("SELECT id,title,import_summary_json FROM resumes WHERE student_id = ? AND archived = 0 AND import_summary_json <> '{}' ORDER BY id DESC LIMIT 50", (int(student_id),)):
+        item = dict(row)
+        try:
+            item["import_summary"] = json.loads(item.pop("import_summary_json") or "{}")
+        except (TypeError, ValueError):
+            item["import_summary"] = {}
+        resumes.append(item)
 
     has_contact = any(str(personal.get(key) or "").strip() for key in profile.PERSONAL_CONTACT_FIELDS)
     required_total = len(profile.PERSONAL_REQUIRED) + 1
@@ -77,16 +86,13 @@ def build_resume_readiness(conn, student_id: int) -> dict[str, Any]:
         required_missing.append({"key": "contact", "label": "邮箱或手机号"})
 
     has_target = bool(str(personal.get("expected_position") or "").strip())
-    has_intro = bool(sections["self_intro"])
-    has_education = bool(sections["education"])
-    has_experience = bool(sections["experience"])
-    skill_cert_count = len(sections["skill"]) + len(sections["certificate"])
+    has_intro = bool(intro_ready)
+    has_education = bool(section_counts["education"])
+    has_experience = bool(section_counts["experience"])
+    skill_cert_count = section_counts["skill"] + section_counts["certificate"]
     has_skill_cert = skill_cert_count > 0
-    ready_resumes = [r for r in resumes if r.get("status") == "ready"]
-    processing_resumes = [
-        r for r in resumes
-        if r.get("status") in {"rendering", "optimizing", "parsing"}
-    ]
+    ready_resumes = resume_counts.get("ready", 0)
+    processing_resumes = sum(resume_counts.get(status, 0) for status in ("rendering", "optimizing", "parsing"))
     conflicts = _unresolved_conflicts(resumes)
 
     score = 0
@@ -119,21 +125,21 @@ def build_resume_readiness(conn, student_id: int) -> dict[str, Any]:
             "key": "self_intro",
             "label": "自我介绍",
             "status": _status(has_intro),
-            "count": str(len(sections["self_intro"])),
+            "count": str(section_counts["self_intro"]),
             "href": "/resume/profile/self-intro",
         },
         {
             "key": "education",
             "label": "学历",
             "status": _status(has_education),
-            "count": str(len(sections["education"])),
+            "count": str(section_counts["education"]),
             "href": "/resume/profile/education",
         },
         {
             "key": "experience",
             "label": "经验",
             "status": _status(has_experience),
-            "count": str(len(sections["experience"])),
+            "count": str(section_counts["experience"]),
             "href": "/resume/profile/experience",
         },
         {
@@ -147,7 +153,7 @@ def build_resume_readiness(conn, student_id: int) -> dict[str, Any]:
             "key": "resume",
             "label": "可投递简历",
             "status": _status(bool(ready_resumes), bool(processing_resumes)),
-            "count": str(len(ready_resumes)),
+            "count": str(ready_resumes),
             "href": "/resume/builder",
         },
     ]
@@ -161,7 +167,7 @@ def build_resume_readiness(conn, student_id: int) -> dict[str, Any]:
     if not has_education:
         next_actions.append({"label": "补充学历", "href": "/resume/profile/education", "kind": "education"})
     if not has_experience:
-        next_actions.append({"label": "补充项目或比赛经验", "href": "/resume/profile/experience", "kind": "experience"})
+        next_actions.append({"label": "补充实习、课程或实践经历", "href": "/resume/profile/experience", "kind": "experience"})
     if not has_skill_cert:
         next_actions.append({"label": "补充技能或证书", "href": "/resume/profile/skill", "kind": "skill"})
     if not ready_resumes and not processing_resumes:
@@ -186,16 +192,17 @@ def build_resume_readiness(conn, student_id: int) -> dict[str, Any]:
         "checks": checks,
         "next_actions": next_actions[:4],
         "counts": {
-            "resumes": len(resumes),
-            "ready_resumes": len(ready_resumes),
-            "processing_resumes": len(processing_resumes),
+            "resumes": sum(resume_counts.values()),
+            "ready_resumes": ready_resumes,
+            "processing_resumes": processing_resumes,
             "unresolved_conflicts": len(conflicts),
-            "sections": {key: len(value) for key, value in sections.items()},
+            "conflict_history_limited": len(resumes) >= 50,
+            "sections": section_counts,
         },
     }
 
 
-def validate_resume_build(conn, student_id: int, *, target_position: str, layout: Any) -> dict[str, Any]:
+def validate_resume_build(conn, student_id: int, *, target_position: str, layout: Any, source_context: Any = None) -> dict[str, Any]:
     """Validate a resume build request before starting a render job."""
     normalized = docs.normalize_layout(layout)
     personal = profile.get_personal_info(conn, student_id)
@@ -219,7 +226,9 @@ def validate_resume_build(conn, student_id: int, *, target_position: str, layout
         })
 
     blocks = normalized.get("blocks") if isinstance(normalized.get("blocks"), list) else []
-    evidence_blocks = [block for block in blocks if block.get("type") != "tech_stack"]
+    evidence_blocks = [block for block in blocks if (
+        block.get("type") in {"self_intro", "education", "experience"} and block.get("ids")
+    ) or (block.get("type") == "skill_cert" and (block.get("skill_ids") or block.get("cert_ids")))]
     if not evidence_blocks:
         missing.append({"key": "content", "label": "至少一个可展示内容区", "href": "/resume/builder"})
 
@@ -265,8 +274,36 @@ def _missing_ids(conn, student_id: int, table: str, ids: list[Any], section: str
         return []
     placeholders = ", ".join("?" for _ in clean_ids)
     rows = conn.execute(
-        f"SELECT id FROM {table} WHERE student_id = ? AND id IN ({placeholders})",
+        f"SELECT id FROM {table} WHERE student_id = ? AND id IN ({placeholders})" + (" AND status = 'ready' AND content_md <> ''" if section == "self_intro" else ""),
         [int(student_id), *clean_ids],
     ).fetchall()
     found = {int(row["id"]) for row in rows}
     return [{"section": section, "id": item_id} for item_id in clean_ids if item_id not in found]
+
+
+def validate_frozen_resume(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Publish validation uses owned frozen facts, including deleted originals."""
+    bundle = snapshot.get("bundle") or {}
+    personal = bundle.get("personal") or {}
+    missing = []
+    for key, label, value in (("name", "姓名", personal.get("name")), ("target_position", "目标岗位", snapshot.get("target_position"))):
+        if not str(value or "").strip():
+            missing.append({"key": key, "label": label})
+    if not any(str(personal.get(key) or "").strip() for key in profile.PERSONAL_CONTACT_FIELDS):
+        missing.append({"key": "contact", "label": "邮箱或手机号"})
+    if personal.get("email") and not profile._EMAIL_RE.match(str(personal["email"])):
+        missing.append({"key": "email", "label": "有效邮箱地址"})
+    usable = False
+    for section, spec in profile.LIST_SECTIONS.items():
+        for item in bundle.get(section) or []:
+            if section == "self_intro" and item.get("status", "ready") != "ready":
+                continue
+            try:
+                profile._validate_list_payload(section, item)
+            except ValueError as exc:
+                missing.append({"key": f"{section}.{item.get('id', '')}", "label": str(exc)})
+            else:
+                usable = True
+    if not usable:
+        missing.append({"key": "content", "label": "至少一项真实的可展示材料"})
+    return {"ok": not missing, "missing": missing, "warnings": []}

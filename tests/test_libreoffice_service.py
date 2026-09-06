@@ -7,6 +7,13 @@ from classroom_app.services import libreoffice_service as lo
 
 
 class LibreOfficeServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.lock_root = tempfile.TemporaryDirectory(prefix="lo-lock-test-")
+        self.addCleanup(self.lock_root.cleanup)
+        patcher = mock.patch.object(lo, "DATA_ROOT", Path(self.lock_root.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_user_installation_arg_uses_file_uri(self):
         with tempfile.TemporaryDirectory(prefix="lo profile ") as temp_dir:
             arg = lo.user_installation_arg(Path(temp_dir))
@@ -42,7 +49,7 @@ class LibreOfficeServiceTests(unittest.TestCase):
                 return lo.subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
             with mock.patch.object(lo, "resolve_soffice_command", return_value="soffice.com"):
-                with mock.patch.object(lo.subprocess, "run", side_effect=fake_run):
+                with mock.patch.object(lo, "_run_conversion", side_effect=fake_run):
                     result = lo.convert_office_file(source, "pdf")
 
         self.assertEqual(result.output_bytes, b"%PDF-1.4\n")

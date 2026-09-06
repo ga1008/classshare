@@ -2,6 +2,7 @@
 (function () {
   'use strict';
   var RZ = window.RZ;
+  var formRevision = 0;
 
   var FIELD_DEFS = [
     { key: 'name', label: '姓名', type: 'text' },
@@ -66,6 +67,7 @@
     bindPositionCombo(fields);
     try {
       var data = await RZ.api('/api/resume/personal');
+      formRevision = Number((data.info || {}).revision || data.revision || 0);
       POSITION_OPTIONS = Array.isArray(data.position_options) ? data.position_options : [];
       fill(data.info || {});
     } catch (e) { RZ.toast(e.message, 'error'); }
@@ -207,24 +209,29 @@
 
   function init() {
     var form = document.getElementById('rzPersonalForm');
+    var personalWriting = false, avatarInput = document.getElementById('rzAvatarInput');
     form.addEventListener('submit', async function (e) {
       e.preventDefault();
+      if (personalWriting) return;
       var payload = collect();
+      payload.revision = formRevision;
       var missing = REQUIRED.filter(function (k) { return !payload[k]; });
       if (missing.length) { RZ.toast('请填写必填项', 'error'); return; }
       if (!payload.email && !payload.phone) { RZ.toast('请至少填写邮箱或手机号', 'error'); return; }
       var btn = form.querySelector('button[type="submit"]');
-      btn.disabled = true;
+      personalWriting = true; btn.disabled = true; avatarInput.disabled = true;
       try {
-        await RZ.api('/api/resume/personal', { method: 'POST', body: payload });
+        var saved = await RZ.api('/api/resume/personal', { method: 'POST', body: payload });
+        formRevision = Number(saved.revision || (saved.info || {}).revision || formRevision + 1);
         RZ.toast('已保存', 'success');
-      } catch (err) { RZ.toast(err.message, 'error'); }
-      finally { btn.disabled = false; }
+      } catch (err) { RZ.conflict(err, payload, load); }
+      finally { personalWriting = false; btn.disabled = false; avatarInput.disabled = false; }
     });
 
     document.getElementById('rzSeedBtn').addEventListener('click', async function () {
       try {
         var d = await RZ.api('/api/resume/personal');
+        formRevision = Number((d.info || {}).revision || d.revision || 0);
         POSITION_OPTIONS = Array.isArray(d.position_options) ? d.position_options : POSITION_OPTIONS;
         fill(d.info || {});
         RZ.toast('已带入平台资料', 'success');
@@ -232,33 +239,51 @@
       catch (e) { RZ.toast(e.message, 'error'); }
     });
 
-    document.getElementById('rzSuggestBtn').addEventListener('click', async function () {
-      var btn = this; btn.disabled = true; btn.textContent = '思考中…';
-      try {
-        var d = await RZ.api('/api/resume/personal/suggest', { method: 'POST' });
-        if (d.ok && d.suggestions && Object.keys(d.suggestions).length) {
-          Object.keys(d.suggestions).forEach(function (k) {
-            var el = document.querySelector('[name="' + k + '"]');
-            if (el && !el.value) el.value = d.suggestions[k];
-          });
-          renderPositionCombo();
-          RZ.toast('已填入 AI 建议，请核对后保存', 'success');
-        } else { RZ.toast(d.error || '暂无可用建议', 'info'); }
-      } catch (e) { RZ.toast(e.message, 'error'); }
-      finally { btn.disabled = false; btn.textContent = '✨ AI 优化建议'; }
-    });
+    function reviewPersonalSuggestion(data, forget, meta) {
+      var suggestions = data.suggestions || {}, baseline = collect();
+      var available = FIELD_DEFS.filter(function (field) { return suggestions[field.key] != null && String(suggestions[field.key]).trim(); });
+      if (!available.length) { RZ.toast(data.error || '暂无可用建议', 'info'); forget(); return; }
+      var review = RZ.openModal({ title: '核对个人资料建议', wide: true });
+      review.body.innerHTML = '<p>勾选需要采用的字段，确认后填入当前表单；保存后才会更新资料。</p>' +
+        (meta.profile_revision != null && Number(meta.profile_revision) !== formRevision ? '<p>生成期间资料版本已变化，请逐项重新核对。</p>' : '') +
+        available.map(function (field) { return '<section class="rz-snapshot-fields"><label><input type="checkbox" data-suggest-field="' + field.key + '"' + (!baseline[field.key] ? ' checked' : '') + '> ' + RZ.esc(field.label) + '</label><div class="rz-candidate-compare"><p>当前：' + RZ.esc(baseline[field.key] || '未填写') + '</p><p>建议：' + RZ.esc(suggestions[field.key]) + '</p></div></section>'; }).join('');
+      var apply = document.createElement('button'); apply.className = 'rz-btn rz-btn--primary'; apply.textContent = '采用选中的建议';
+      apply.onclick = function () {
+        review.body.querySelectorAll('[data-suggest-field]:checked').forEach(function (check) {
+          var input = document.querySelector('[name="' + check.dataset.suggestField + '"]');
+          if (input && input.value === (baseline[check.dataset.suggestField] || '')) input.value = String(suggestions[check.dataset.suggestField]);
+        });
+        renderPositionCombo(); forget(); review.close(); RZ.toast('已填入所选建议，请核对后保存', 'success');
+      };
+      var keep = document.createElement('button'); keep.className = 'rz-btn'; keep.textContent = '保留现有信息'; keep.onclick = function () { forget(); review.close(); };
+      review.foot.appendChild(keep); review.foot.appendChild(apply);
+    }
+    var suggestButton = document.getElementById('rzSuggestBtn');
+    var recoverSuggestion = document.createElement('button'); recoverSuggestion.type = 'button'; recoverSuggestion.className = 'rz-btn'; recoverSuggestion.textContent = '查看上次建议'; recoverSuggestion.hidden = !RZ.pendingSuggestion('personal'); suggestButton.after(recoverSuggestion);
+    async function suggest(resume) {
+      suggestButton.disabled = true;
+      try { await RZ.requestSuggestion({ kind: 'personal', url: '/api/resume/personal/suggest', resume: resume, onResult: reviewPersonalSuggestion }); recoverSuggestion.hidden = false; }
+      catch (error) { RZ.toast(error.message, 'error'); }
+      finally { suggestButton.disabled = false; }
+    }
+    suggestButton.addEventListener('click', function () { suggest(false); });
+    recoverSuggestion.onclick = function () { suggest(true); };
 
-    document.getElementById('rzAvatarInput').addEventListener('change', async function () {
-      if (!this.files || !this.files[0]) return;
+    avatarInput.addEventListener('change', async function () {
+      if (personalWriting || !this.files || !this.files[0]) return;
       var fd = new FormData(); fd.append('file', this.files[0]);
+      fd.append('revision', String(formRevision));
+      var saveButton = form.querySelector('button[type="submit"]');
+      personalWriting = true; this.disabled = true; saveButton.disabled = true;
       try {
         var d = await RZ.api('/api/resume/personal/avatar', { method: 'POST', body: fd });
+        formRevision = Number(d.revision);
         var img = document.getElementById('rzAvatarImg');
         img.style.display = ''; document.getElementById('rzAvatarPh').style.display = 'none';
-        img.src = d.avatar_url + '&t=' + Date.now();
+        img.src = d.avatar_url + (d.avatar_url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
         RZ.toast('头像已更新', 'success');
-      } catch (e) { RZ.toast(e.message, 'error'); }
-      this.value = '';
+      } catch (e) { RZ.conflict(e, collect(), load); }
+      finally { personalWriting = false; this.disabled = false; saveButton.disabled = false; this.value = ''; }
     });
 
     load();

@@ -20,7 +20,7 @@ from typing import Any, Iterator
 
 from fastapi import HTTPException
 
-from .libreoffice_service import convert_office_file
+from .libreoffice_service import LibreOfficeBusy, convert_office_file
 
 XLSX_ZIP_MAGIC = b"PK\x03\x04"
 XLS_OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -80,6 +80,8 @@ def load_upload_workbook_bytes(file_path: Path, original_name: str, *, material_
             conversion_source.write_bytes(data)
             converted = convert_office_file(conversion_source, "xlsx", timeout=120)
         output = bytes(converted.output_bytes or b"")
+    except LibreOfficeBusy as exc:
+        raise HTTPException(429,str(exc),headers={"Retry-After":str(exc.retry_after)}) from exc
     except HTTPException:
         raise
     except Exception as exc:
