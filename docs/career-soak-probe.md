@@ -31,7 +31,7 @@ venv\Scripts\python.exe tools\career_soak_probe.py --duration 24 --users 20 --wr
 拟定 24 小时命令，**本次未执行**：
 
 ```powershell
-venv\Scripts\python.exe tools\career_soak_probe.py --duration 86400 --allow-long-run --users 1000 --rps 2 --writers 20 --save-interval 60 --job-rps 0.02 --stub-seconds 0.2 --baseline-duration 10 --bucket-seconds 300 --fault-interval 3600 --reminder-interval 600 --reminder-offset 30 --scheduler-poll-seconds 20 --drain-seconds 300 --output .codex-temp\career-soak-24h-UNIQUE.json
+venv\Scripts\python.exe tools\career_soak_probe.py --duration 86400 --allow-long-run --provider-faults --users 1000 --rps 2 --writers 20 --save-interval 60 --job-rps 0.02 --stub-seconds 0.2 --baseline-duration 10 --bucket-seconds 300 --fault-interval 3600 --reminder-interval 600 --reminder-offset 30 --scheduler-poll-seconds 20 --drain-seconds 300 --output .codex-temp\career-soak-24h-UNIQUE.json
 ```
 
 工具默认只跑 60 秒。超过 10 分钟必须显式传 `--allow-long-run`，并限制：至少 5 分钟分桶、至少 1 小时一次故障、每 5 分钟最多一次提醒、最多 100 保存者且保存间隔至少 30 秒、AI 入队最多 0.1 RPS。长跑前应检查磁盘空间与机器可用性，但这不是在共享生产服务器上压测的许可。
@@ -54,3 +54,5 @@ Remove-Item Env:RUN_LOCAL_PG_CAREER_SOAK_PROBE
 短冒烟验证了启动器、四个强杀位置、分桶、课程/提醒、任务排空和资源清理的接线正确，不能替代 24 小时趋势结论。`ok` 检查请求异常、漏发、队列失败/排空、canary 重复、连接与模型槽位、提醒接收者、源码变化和清理；仍需审阅每桶 RSS、延迟及数据库等待走势。
 
 建议长跑结束后比较预热后首小时与最后一小时：请求错误或任务丢失必须为 0；应用 RSS 应进入可解释的稳定区间；教学与职业接口的延迟不能持续恶化；按 worker generation 分析其内存走势。具体 RSS/延迟上限由总体方案与机器资源预算确定，本工具不把桌面 ASGI 数据解释为生产 SLA，也不把自动化结果标成人类专家质量通过。
+
+2026-09-06停止点：后续版本增加七类供应商场景（慢成功、超时、429、断网、503、坏响应恢复和三次坏响应终止），仅纯单元通过。新的PG预检因测试账号无SHOW data_directory权限提前退出，monitor/写盘及provider实际场景未完成。长跑未启动；若今后恢复验证，唯一预期dead_letter必须按合成故障job白名单核对，其余任务仍必须正常收敛。用户已要求本次停止扩测并部署，上述工具结果不作为已通过的运行验收。
