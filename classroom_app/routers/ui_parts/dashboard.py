@@ -51,8 +51,9 @@ def dashboard_workspace(
     offering_ids: str = Query("", max_length=4000, pattern=r"^(\s*\d+\s*(,\s*\d+\s*)*)?$"),
     kind: Literal["all", "class", "exam", "invigilation", "assignment", "exam_task", "stage", "manual", "material", "review", "teacher_work", "poll"] = "all",
     date_scope: Literal["all", "today", "upcoming", "overdue", "undated", "history", "this_week", "next_seven_days"] = "all",
-    status: Literal["all", "actionable", "completed"] = "all",
+    status: Literal["all", "actionable", "attention", "completed"] = "all",
     q: str = Query("", max_length=200),
+    item_key: str = Query("", max_length=200),
     cursor: str = Query("", max_length=4096),
     offset: int = Query(0, ge=0, le=10000),
     limit: int = Query(100, ge=1, le=100),
@@ -68,7 +69,7 @@ def dashboard_workspace(
             workspace = load_dashboard_workspace(
                 conn, user=user, offering_id=offering_id, kind=kind,
                 offering_ids={int(value) for value in offering_ids.split(",") if value.strip().isdigit()} if offering_ids else None,
-                date_scope=date_scope, status=status, keyword=q, cursor=cursor,
+                date_scope=date_scope, status=status, keyword=q, item_key=item_key, cursor=cursor,
                 offset=offset, limit=limit,
             )
     except WorkspaceCursorError as exc:

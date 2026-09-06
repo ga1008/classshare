@@ -10,6 +10,25 @@ from classroom_app.services import session_learning_materials_service as svc
 
 
 class SessionMaterialPreviewRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_foreign_session_rejected_before_collecting(self):
+        from classroom_app.routers.materials_parts import learning as route
+        conn = _make_conn()
+        conn.execute("INSERT INTO class_offering_sessions (id,class_offering_id) VALUES (99,6)")
+
+        @contextmanager
+        def isolated_connection():
+            yield conn
+
+        with (patch.object(route, 'get_db_connection', isolated_connection),
+              patch.object(route, 'ensure_classroom_access'),
+              patch.object(route, 'build_material_entries') as read):
+            for session_id in (99, -1):
+                with self.assertRaises(HTTPException) as caught:
+                    await route.list_classroom_learning_materials(5, session_id, False, {'role': 'student', 'id': 9})
+                self.assertEqual(caught.exception.status_code, 404)
+            read.assert_not_called()
+        conn.close()
+
     async def test_explicit_preview_never_generates_blurbs_or_persists_legacy(self):
         from classroom_app.routers.materials_parts import learning as route
         conn = _make_conn()
@@ -64,15 +83,18 @@ def _make_conn():
             home_learning_material_id INTEGER);
         CREATE TABLE class_offering_sessions (id INTEGER PRIMARY KEY, class_offering_id INTEGER, order_index INTEGER,
             title TEXT, content TEXT, learning_material_id INTEGER, updated_at TEXT);
+        CREATE TABLE students (id INTEGER PRIMARY KEY, class_id INTEGER, enrollment_status TEXT DEFAULT 'active');
+        CREATE TABLE class_offering_class_links (offering_id INTEGER, class_id INTEGER);
         CREATE TABLE course_materials (id INTEGER PRIMARY KEY, teacher_id INTEGER, parent_id INTEGER, root_id INTEGER,
             name TEXT, material_path TEXT, node_type TEXT, preview_type TEXT DEFAULT '', file_ext TEXT DEFAULT '',
-            mime_type TEXT DEFAULT '', scope_level TEXT DEFAULT 'private', owner_role TEXT DEFAULT 'teacher',
+            mime_type TEXT DEFAULT '', file_hash TEXT DEFAULT '', scope_level TEXT DEFAULT 'private', owner_role TEXT DEFAULT 'teacher',
             owner_user_pk INTEGER, school_code TEXT, school_name TEXT, college TEXT, department TEXT);
         CREATE TABLE course_material_assignments (material_id INTEGER, class_offering_id INTEGER,
             assigned_by_teacher_id INTEGER, created_at TEXT, UNIQUE(material_id, class_offering_id));
         """
     )
     conn.execute("INSERT INTO teachers (id) VALUES (1)")
+    conn.execute("INSERT INTO students (id,class_id) VALUES (9,1)")
     conn.execute("INSERT INTO class_offerings (id,class_id,course_id,teacher_id) VALUES (5,1,1,1)")
     conn.execute("INSERT INTO class_offering_sessions (id,class_offering_id,order_index,title) VALUES (10,5,1,'L1')")
     conn.execute(
@@ -114,6 +136,58 @@ class SessionLearningMaterialsServiceTests(unittest.TestCase):
         self.assertEqual(entries[0]["open_url"], "/materials/view/100")
         self.assertEqual(entries[1]["open_url"], "/materials/render-view/200")
         self.assertTrue(entries[1]["is_renderable"])
+
+    def test_student_complete_collection_shrinks_with_reader_permissions_without_writing(self):
+        svc.add_material(self.conn, 5, 10, 100, 1)
+        svc.add_material(self.conn, 5, 10, 200, 1)
+        def read():
+            before = self.conn.total_changes
+            entries = svc.build_material_entries(self.conn, 5, 10, teacher_id=1, persist_legacy=False, user={'role': 'student', 'id': 9})
+            self.assertEqual(self.conn.total_changes, before)
+            return [entry['material_id'] for entry in entries]
+        self.assertEqual(read(), [100, 200])
+        self.conn.execute('DELETE FROM course_material_assignments WHERE material_id=200')
+        self.assertEqual(read(), [100])
+        self.conn.execute('DELETE FROM course_material_assignments WHERE material_id=100')
+        self.assertEqual(read(), [])
+        self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM class_offering_learning_materials').fetchone()[0], 2)
+
+    def test_child_html_entry_requires_reader_package_root_access(self):
+        svc.add_material(self.conn, 5, 10, 201, 1)
+        self.conn.execute('DELETE FROM course_material_assignments')
+        self.conn.execute('INSERT INTO course_material_assignments (material_id,class_offering_id) VALUES (201,5)')
+        target = {'kind': 'html', 'node_id': 200, 'source_node_id': 201, 'entry_id': 201,
+                  'render_url': '/materials/render/200/index.html', 'shell_url': '/materials/render-view/200?path=index.html'}
+        with patch.object(svc, 'resolve_render_target', return_value=target):
+            entries = svc.build_material_entries(self.conn, 5, 10, teacher_id=1, persist_legacy=False, user={'role': 'student', 'id': 9})
+            self.assertEqual(entries, [])
+            self.conn.execute('INSERT INTO course_material_assignments (material_id,class_offering_id) VALUES (200,5)')
+            entries = svc.build_material_entries(self.conn, 5, 10, teacher_id=1, persist_legacy=False, user={'role': 'student', 'id': 9})
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]['open_url'], target['shell_url'])
+
+    def test_reader_permission_unexpected_errors_are_not_reported_as_empty(self):
+        svc.add_material(self.conn, 5, 10, 100, 1)
+        with patch.object(svc, 'ensure_user_material_access', side_effect=HTTPException(503, 'unavailable')):
+            with self.assertRaises(HTTPException) as caught:
+                svc.build_material_entries(self.conn, 5, 10, teacher_id=1, persist_legacy=False, user={'role': 'student', 'id': 9})
+            self.assertEqual(caught.exception.status_code, 503)
+
+    def test_reader_access_cache_is_shared_per_collection_and_rechecks_next_request(self):
+        svc.add_material(self.conn, 5, 10, 200, 1)
+        svc.add_material(self.conn, 5, 10, 201, 1)
+        target = {'kind': 'html', 'node_id': 200, 'entry_id': 201,
+                  'render_url': '/materials/render/200/index.html', 'shell_url': '/materials/render-view/200?path=index.html'}
+        with (patch.object(svc, 'resolve_render_target', return_value=target),
+              patch.object(svc, 'ensure_user_material_access', wraps=svc.ensure_user_material_access) as access):
+            args = dict(teacher_id=1, persist_legacy=False, user={'role': 'student', 'id': 9})
+            self.assertEqual(len(svc.build_material_entries(self.conn, 5, 10, **args)), 2)
+            self.assertEqual([call.args[1] for call in access.call_args_list], [200, 201])
+            access.reset_mock()
+            self.conn.execute('DELETE FROM course_material_assignments')
+            self.conn.execute('INSERT INTO course_material_assignments (material_id,class_offering_id) VALUES (201,5)')
+            self.assertEqual(svc.build_material_entries(self.conn, 5, 10, **args), [])
+            self.assertEqual([call.args[1] for call in access.call_args_list], [200, 201])
 
     def test_first_add_mirrors_primary(self):
         svc.add_material(self.conn, 5, 10, 100, 1)

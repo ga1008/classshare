@@ -8,6 +8,10 @@
 {% endblock %}
 
 {% block head %}
+{% if reader_return %}
+<script>window.MATERIAL_READER_RETURN = {{ reader_return | tojson }};</script>
+<script type="module" src="{{ asset_url('js/material_reader_return.js') }}"></script>
+{% endif %}
 {% include "partials/markdown_assets.html" %}
 <script>
     window.MATERIAL_VIEWER = {{ material | tojson }};
@@ -144,7 +148,7 @@
     <main class="materials-viewer-main">
         <div class="materials-viewer-topbar">
             <div class="materials-toolbar-group">
-                <button type="button" class="btn btn-ghost" onclick="history.length > 1 ? history.back() : (window.location.href='/dashboard')">返回</button>
+                <button type="button" class="btn btn-ghost"{% if reader_return %} data-classroom-reader-return{% endif %} onclick="history.length > 1 ? history.back() : (window.location.href='/dashboard')">返回</button>
                 <div>
                     <div class="text-muted text-sm">课程材料预览</div>
                     <strong>{{ material.name }}</strong>

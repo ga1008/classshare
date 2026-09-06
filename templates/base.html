@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% set ui_palette = resolve_user_ui_preferences(request, user_info|default(none)) if resolve_user_ui_preferences is defined else {'enabled': false} %}
 <html lang="zh-CN" data-theme="lanshare">
 <head>
     <meta charset="UTF-8">
@@ -12,9 +13,14 @@
 
     {% block css %}{% endblock %}
 
+    {% if ui_palette.enabled %}
+    <link rel="stylesheet" href="{{ asset_url('css/user_ui_preferences.css') }}">
+    <script type="module" src="{{ asset_url('js/user_ui_preferences.js') }}"></script>
+    {% endif %}
+
     {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}"{% if user_info is defined and user_info %} data-authenticated-user="true"{% endif %}>
+<body class="{% block body_class %}{% endblock %}"{% if user_info is defined and user_info %} data-authenticated-user="true"{% endif %}{% if ui_palette.enabled %} data-ui-palette="{{ ui_palette.palette_key }}" data-ui-palette-version="{{ ui_palette.version }}" data-ui-palette-context="{{ ui_palette.context_token }}" data-ui-palette-available="{{ 'true' if ui_palette.available else 'false' }}"{% endif %}>
     {% if user_info is defined and user_info %}
     <script>
         // 人生一言场景预挂载：登录页交棒的背景图在首屏绘制前就位，避免闪白。

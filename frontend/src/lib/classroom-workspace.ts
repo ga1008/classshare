@@ -5,12 +5,14 @@ export type ClassroomTask = {
   pendingGrade?: number; grading?: number; returned?: number;
   latePolicyLabel?: string;
   startsAt?: string;
+  createdAt?: string;
 };
 
 export type ClassroomSession = {
   id?: number; order_index?: string | number; entry_type?: string; is_home_entry?: boolean;
   is_academic_exam?: boolean; is_anchor?: boolean; detail_title?: string; title?: string;
   session_number_label?: string; session_date?: string;
+  detail_meta?: string; segment_title?: string; session_status_label?: string;
 };
 
 export function parseClassroomDate(value: string): number {
@@ -80,18 +82,14 @@ export function taskPreview(tasks: ClassroomTask[], teacher: boolean, limit = 4,
 }
 
 /** Academic exams have no material relation. Home is the explicit ID 0 contract. */
-export function materialScope(session: ClassroomSession | null): number | null {
-  if (!session || session.is_academic_exam || session.entry_type === 'academic_exam') return null;
-  if (session.is_home_entry || session.entry_type === 'home') return 0;
-  return Number(session.id) > 0 ? Number(session.id) : null;
-}
-
-export function classroomMaterialUrl(raw: string, classroomId: number | string, scope: number | null): string {
-  try {
-    const url = new URL(raw, 'https://classroom.invalid');
-    if (url.origin !== 'https://classroom.invalid') return '';
-    url.searchParams.set('class_offering_id', String(classroomId));
-    if (scope !== null && scope > 0) url.searchParams.set('session_id', String(scope));
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch { return ''; }
+/** History uses creation time, never the deadline (which can change on resubmission). */
+export function taskHistory(tasks: ClassroomTask[]) {
+  const created = (task: ClassroomTask) => {
+    const value = parseClassroomDate(task.createdAt || '');
+    return Number.isFinite(value) ? value : -Infinity;
+  };
+  return [...tasks].sort((a, b) => {
+    const first = created(a), second = created(b);
+    return first === second ? b.id - a.id : first > second ? -1 : 1;
+  });
 }

@@ -993,7 +993,7 @@ def build_timeline_home_entry(
     detail_summary = (
         "从这里进入课程目录、课程简介与后续学习文档导航。"
         if has_material
-        else "教师可为本课堂绑定一份 Markdown 首页文档，用于放置课程目录、学习说明和后续文档入口。"
+        else "教师尚未配置课程首页材料，可以先查看各课次的说明与学习材料。"
     )
 
     return {
@@ -1021,7 +1021,7 @@ def build_timeline_home_entry(
         "detail_summary": detail_summary,
         "content_preview": detail_summary,
         "detail_meta": material_path or "尚未绑定首页文档",
-        "detail_hint": "" if has_material else "首页文档不存在时，学生端不会显示首页入口按钮。",
+        "detail_hint": "",
         "date_label": "",
         "week_label": "",
         "section_count": 0,

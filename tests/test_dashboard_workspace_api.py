@@ -124,6 +124,17 @@ class DashboardWorkspaceAPITests(unittest.TestCase):
         self.assertFalse(any(i["kind"] in {"manual", "stage"} for i in result["all_items"]))
         self.assertNotIn("本人受邀投票", str(result))
 
+    def test_todo_identity_lookup_never_expands_ownership_or_membership_scope(self):
+        own = self.get(item_key="manual:1:1")
+        self.assertEqual(["本人待办"], [item["title"] for item in own["all_items"]])
+        for key in ("manual:2:1", "manual:3:2", "manual:4:1"):
+            result = self.get(item_key=key)
+            self.assertEqual([], result["all_items"])
+            self.assertEqual(0, result["filtered_total"])
+        attention = self.get(status="attention")
+        self.assertTrue(all(item["kind"] not in {"class", "exam", "invigilation", "material", "review"} for item in attention["all_items"]))
+        self.assertEqual(attention["action_summary"]["total"], attention["filtered_total"])
+
     def test_inactive_student_and_teacher_are_denied_by_identity_dependency(self):
         for user_id, role in ((9, "student"), (3, "teacher")):
             self.user = {"id": user_id, "name": "已停用", "role": role}

@@ -94,9 +94,14 @@ async def list_classroom_learning_materials(
         if not offering:
             raise HTTPException(404, "课堂不存在")
         teacher_id = int(offering["teacher_id"])
+        if session_id < 0 or (session_id > 0 and not conn.execute(
+            "SELECT 1 FROM class_offering_sessions WHERE id = ? AND class_offering_id = ?",
+            (session_id, class_offering_id),
+        ).fetchone()):
+            raise HTTPException(404, "课次不存在或不属于当前课堂")
         entries = build_material_entries(
             conn, class_offering_id, session_id, teacher_id=teacher_id,
-            persist_legacy=generate_blurbs,
+            persist_legacy=generate_blurbs, user=user,
         )
         can_manage = user["role"] == "teacher" and (
             int(user["id"]) == teacher_id or is_super_admin_teacher(conn, int(user["id"]))

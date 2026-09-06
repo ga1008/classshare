@@ -22,6 +22,15 @@
 
 const STYLE_ID = 'course-schedule-deck-style';
 
+/** Normalize mouse/trackpad intent without trapping page scrolling or zoom. */
+export function scheduleWheelIntent({ deltaY = 0, deltaMode = 0, ctrlKey = false, metaKey = false, index = 0, length = 0, pending = 0 }) {
+    const direction = Math.sign(deltaY);
+    if (!direction || ctrlKey || metaKey || length < 2 || index + direction < 0 || index + direction >= length) return { consume: false, step: 0, pending: 0 };
+    const pixels = deltaY * (deltaMode === 1 ? 16 : deltaMode === 2 ? 400 : 1);
+    const total = (Math.sign(pending) === direction ? pending : 0) + pixels;
+    return Math.abs(total) >= 32 ? { consume: true, step: direction, pending: 0 } : { consume: true, step: 0, pending: total };
+}
+
 const COURSE_PALETTE = [
     '#4f46e5', '#0ea5e9', '#059669', '#d97706', '#db2777',
     '#7c3aed', '#0891b2', '#65a30d', '#ea580c', '#e11d48',
@@ -407,6 +416,11 @@ export function createScheduleDeck(container, options = {}) {
 
     const state = { overview: null, activeWeekIndex: 0, expanded: false };
     let wheelLockUntil = 0;
+    let wheelPending = 0;
+    let wheelPendingAt = 0;
+    let wheelGestureConsumed = false;
+    let expandCloseTimer = 0;
+    let expandedTrigger = null;
 
     container.classList.add('cs-deck');
     container.innerHTML = `
@@ -666,10 +680,15 @@ export function createScheduleDeck(container, options = {}) {
                     <span>${week.date_range_label ? `${escapeHtml(week.date_range_label)} · ` : ''}${week.lesson_count} 节安排 · ${week.total_hours} 课时</span>
                     <span class="cs-card__badge ${week.is_current ? 'is-current' : ''}">${week.is_current ? '本周' : escapeHtml(week.label)}</span>
                 </div>
-                <div class="cs-card__body">${renderWeekGrid(week)}${weekEmptyMarkHtml(week)}</div>`;
+                <div class="cs-card__body">${renderWeekGrid(week)}${weekEmptyMarkHtml(week)}${options.compactSummary ? renderCompactWeek(week) : ''}</div>`;
             refs.stage.appendChild(card);
         });
         layoutDeck();
+    }
+
+    function renderCompactWeek(week) {
+        const lessons = week.lessons || [];
+        return `<div class="cs-card__compact">${lessons.length ? `<ol>${lessons.slice(0, 3).map(lesson => `<li><span>${escapeHtml(lesson.weekday_label)} · ${escapeHtml(lesson.section_label)}</span><strong>${escapeHtml(lesson.course_name)}</strong></li>`).join('')}</ol><small>${lessons.length > 3 ? `还有 ${lessons.length - 3} 次安排 · ` : ''}点击放大查看整周课表</small>` : '<strong>这一周没有已排定课程</strong><small>其他课堂可从“全部课程”进入</small>'}</div>`;
     }
 
     function layoutDeck() {
@@ -727,6 +746,7 @@ export function createScheduleDeck(container, options = {}) {
         }
         if (refs.prevBtn) refs.prevBtn.disabled = state.activeWeekIndex <= 0;
         if (refs.nextBtn) refs.nextBtn.disabled = state.activeWeekIndex >= weeks.length - 1;
+        options.onWeekChange?.(active || null, state.activeWeekIndex);
     }
 
     function goToWeek(index) {
@@ -811,10 +831,12 @@ export function createScheduleDeck(container, options = {}) {
 
     function openExpanded() {
         if (!state.overview?.weeks?.length || !refs.expand) return;
+        window.clearTimeout(expandCloseTimer);
+        expandedTrigger = document.activeElement;
         state.expanded = true;
         renderExpanded();
         refs.expand.hidden = false;
-        refs.expand.classList.add('is-open');
+        requestAnimationFrame(() => { if (state.expanded) refs.expand.classList.add('is-open'); });
         refs.expandClose.focus({ preventScroll: true });
     }
 
@@ -822,8 +844,10 @@ export function createScheduleDeck(container, options = {}) {
         state.expanded = false;
         closeLessonPreview();
         refs.expand?.classList.remove('is-open');
-        refs.expand.hidden = true;
-        refs.stage?.focus({ preventScroll: true });
+        const finish = () => { if (!state.expanded) refs.expand.hidden = true; };
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) finish();
+        else expandCloseTimer = window.setTimeout(finish, 260);
+        (expandedTrigger?.isConnected ? expandedTrigger : refs.stage)?.focus({ preventScroll: true });
     }
 
     /* ---------------- 学期下拉 ---------------- */
@@ -848,12 +872,28 @@ export function createScheduleDeck(container, options = {}) {
     /* ---------------- 事件 ---------------- */
 
     function onStageWheel(event) {
-        if (!state.overview?.weeks?.length) return;
-        event.preventDefault();
+        const weeks = state.overview?.weeks || [];
+        if (state.expanded || event.defaultPrevented || event.target.closest('button, input, select, textarea')) return;
         const now = Date.now();
+        if (event.ctrlKey || event.metaKey || !event.deltaY) { wheelPending = 0; wheelGestureConsumed = false; return; }
+        const freshGesture = now - wheelPendingAt > 200;
+        if (freshGesture) { wheelPending = 0; wheelGestureConsumed = false; wheelLockUntil = 0; }
+        wheelPendingAt = now;
+        const intent = scheduleWheelIntent({ deltaY: event.deltaY, deltaMode: event.deltaMode, ctrlKey: event.ctrlKey, metaKey: event.metaKey, index: state.activeWeekIndex, length: weeks.length, pending: wheelPending });
+        if (!intent.consume) {
+            // Keep the inertia tail of an already-consumed gesture in the deck;
+            // a new gesture at the boundary scrolls the page immediately.
+            if (wheelGestureConsumed) event.preventDefault();
+            wheelPending = 0;
+            return;
+        }
+        event.preventDefault();
         if (now < wheelLockUntil) return;
-        wheelLockUntil = now + 240;
-        goToWeek(state.activeWeekIndex + (event.deltaY > 0 ? 1 : -1));
+        wheelPending = intent.pending;
+        if (!intent.step) return;
+        wheelGestureConsumed = true;
+        wheelLockUntil = now + 480;
+        goToWeek(state.activeWeekIndex + intent.step);
     }
 
     function onStageKeydown(event) {
@@ -881,13 +921,15 @@ export function createScheduleDeck(container, options = {}) {
 
     function onStagePointerDown(event) {
         if (!state.overview?.weeks?.length || event.button > 0) return;
-        dragState = { pointerId: event.pointerId, startX: event.clientX, consumedSteps: 0 };
+        dragState = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, consumedSteps: 0 };
         dragMoved = false;
     }
 
     function onStagePointerMove(event) {
         if (!dragState || event.pointerId !== dragState.pointerId) return;
         const delta = event.clientX - dragState.startX;
+        const vertical = event.clientY - dragState.startY;
+        if (!dragMoved && Math.abs(vertical) > Math.max(10, Math.abs(delta))) { dragState = null; return; }
         if (!dragMoved && Math.abs(delta) > 8) {
             dragMoved = true;
             // 拖动确立后才捕获指针：轻点仍按 click 冒泡到卡片（放大）。
@@ -911,13 +953,7 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function onExpandWheel(event) {
-        if (event.target.closest('.cs-lesson')) return;
-        event.preventDefault();
-        const now = Date.now();
-        if (now < wheelLockUntil) return;
-        wheelLockUntil = now + 260;
-        goToWeek(state.activeWeekIndex + (event.deltaY > 0 ? 1 : -1));
-        renderExpanded();
+        // Expanded content owns its vertical scroll; week buttons remain available.
     }
 
     function onExpandBackdrop(event) {
@@ -1022,6 +1058,8 @@ export function createScheduleDeck(container, options = {}) {
     /* ---------------- 公开 API ---------------- */
 
     return {
+        goToWeek,
+        openExpanded,
         setOverview(overview, { keepWeek = false } = {}) {
             const previousWeek = state.overview?.weeks?.[state.activeWeekIndex]?.week_index;
             state.overview = overview || null;
@@ -1047,6 +1085,7 @@ export function createScheduleDeck(container, options = {}) {
             return state.activeWeekIndex;
         },
         destroy() {
+            window.clearTimeout(expandCloseTimer);
             previewResizeObserver?.disconnect();
             window.removeEventListener('resize', positionLessonPreview);
             document.removeEventListener('keydown', onDocumentKeydown);

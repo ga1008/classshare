@@ -12,6 +12,7 @@
 import { apiFetch } from './api.js';
 import { escapeHtml, showToast } from './ui.js';
 import { ownClassroomMaterialFocus } from './classroom_material_focus.js';
+import { materialOpenUrl } from './classroom_workspace.js';
 
 const state = {
     classOfferingId: 0,
@@ -23,6 +24,9 @@ const state = {
     materials: [],
     loading: false,
     pendingRemoval: null,
+    error: '',
+    onClose: null,
+    requestEpoch: 0,
 };
 
 let listBackdrop = null;
@@ -31,20 +35,7 @@ let releaseListFocus = null;
 let releaseConfirmFocus = null;
 
 function buildOpenUrl(material) {
-    const raw = String(material?.open_url || '').trim();
-    if (!raw) return '';
-    try {
-        const url = new URL(raw, window.location.origin);
-        if (state.classOfferingId) {
-            url.searchParams.set('class_offering_id', String(state.classOfferingId));
-        }
-        if (!state.isHome && state.sessionId) {
-            url.searchParams.set('session_id', String(state.sessionId));
-        }
-        return url.pathname + url.search + url.hash;
-    } catch {
-        return raw;
-    }
+    return materialOpenUrl(material?.open_url, state.classOfferingId, state.isHome ? 0 : state.sessionId);
 }
 
 function ensureDom() {
@@ -110,6 +101,10 @@ function renderList() {
         listEl.innerHTML = '<div class="ls-mat-empty">正在加载材料列表…</div>';
         return;
     }
+    if (state.error) {
+        listEl.innerHTML = `<div class="ls-mat-empty" role="alert">${escapeHtml(state.error)} <button type="button" class="btn btn-outline btn-sm" data-retry-materials>重试</button></div>`;
+        return;
+    }
     if (!state.materials.length) {
         listEl.innerHTML = state.isTeacher
             ? '<div class="ls-mat-empty">这里还没有绑定材料。关闭后可在“管理课次”中添加 Markdown 或 HTML。</div>'
@@ -160,7 +155,9 @@ function openMaterial(materialId) {
 }
 
 async function reload() {
+    const epoch = ++state.requestEpoch;
     state.loading = true;
+    state.error = '';
     renderList();
     const params = new URLSearchParams({ session_id: String(state.sessionId || 0), generate_blurbs: 'false' });
     try {
@@ -168,11 +165,13 @@ async function reload() {
             `/api/classrooms/${state.classOfferingId}/learning-materials?${params.toString()}`,
             { silent: true },
         );
+        if (epoch !== state.requestEpoch) return;
         state.materials = Array.isArray(data.materials) ? data.materials : [];
         state.canManage = state.isTeacher && Boolean(data.can_manage);
+    } catch (error) {
+        if (epoch === state.requestEpoch) state.error = error.message || '材料读取失败，请重试。';
     } finally {
-        state.loading = false;
-        renderList();
+        if (epoch === state.requestEpoch) { state.loading = false; renderList(); }
     }
 }
 
@@ -229,6 +228,8 @@ function closeListPopup() {
     listBackdrop.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('has-ls-mat-popup');
     releaseListFocus?.(); releaseListFocus = null;
+    state.requestEpoch++;
+    const onClose = state.onClose; state.onClose = null; onClose?.();
 }
 
 export function openMaterialListPopup({
@@ -240,6 +241,8 @@ export function openMaterialListPopup({
     subtitle = '点击任意卡片进入材料',
     onChanged = null,
     returnFocus = null,
+    initialData = null,
+    onClose = null,
 } = {}) {
     ensureDom();
     state.classOfferingId = Number(classOfferingId) || 0;
@@ -248,6 +251,9 @@ export function openMaterialListPopup({
     state.isTeacher = Boolean(isTeacher);
     state.canManage = false;
     state.onChanged = onChanged;
+    state.onClose = onClose;
+    state.error = '';
+    state.requestEpoch++;
     state.materials = [];
 
     const titleEl = document.getElementById('lsMatPopupTitle');
@@ -259,6 +265,7 @@ export function openMaterialListPopup({
     if (listEl && !listEl.dataset.bound) {
         listEl.dataset.bound = 'true';
         listEl.addEventListener('click', (event) => {
+            if (event.target.closest('[data-retry-materials]')) { reload(); return; }
             const removeBtn = event.target.closest('[data-remove-material]');
             if (removeBtn) {
                 event.stopPropagation();
@@ -285,5 +292,11 @@ export function openMaterialListPopup({
     document.body.classList.add('has-ls-mat-popup');
     releaseListFocus?.();
     releaseListFocus = ownClassroomMaterialFocus(listBackdrop, closeListPopup, listBackdrop.querySelector('[data-close-mat-popup]'), returnFocus);
+    if (initialData) {
+        state.materials = initialData.materials || [];
+        state.canManage = state.isTeacher && Boolean(initialData.can_manage);
+        state.loading = false; renderList();
+        return Promise.resolve();
+    }
     return reload();
 }

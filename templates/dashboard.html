@@ -1,6 +1,7 @@
 {% extends "base_navbar.html" %}
 {% set dashboard_defer_ai_tools = true %}
 {% from "macros/ui_explanation.html" import explain_attrs, explain_button %}
+{% from "macros/user_ui_preferences.html" import user_palette_select %}
 {% set workspace = dashboard_workspace|default({}) %}
 
 {% block title %}首页 - 课堂平台{% endblock %}
@@ -11,21 +12,20 @@
 {% endblock %}
 
 {% block navbar_actions %}
+{{ user_palette_select(ui_palette|default({})) }}
 {% if user_info.role == 'teacher' %}
 <a href="{{ dashboard_empty_state.action_href|default('/manage/teaching/offerings') }}" class="app-topbar-action" data-teacher-onboarding-open {{ explain_attrs('开设课堂', '按现有开课流程选择课程、班级与学期。') }}><span class="app-topbar-action__text"><strong>开设课堂</strong></span></a>
 {% endif %}
 {% endblock %}
 
 {% block main_content %}
-<section class="dw-shell" data-dashboard-root data-initial-filter="{{ dashboard_initial_filter }}" data-initial-search="{{ dashboard_initial_search }}" data-initial-group-mode="{{ 'schedule3d' if user_info.role == 'teacher' else 'flat' }}" data-current-semester-key="{{ dashboard_current_semester_key|default('') }}" data-recent-activity-days="{{ dashboard_recent_activity_days|default(14) }}" data-dashboard-role="{{ user_info.role }}">
-    {% if dashboard_can_create_todo %}
+<section class="dw-shell" data-dashboard-root data-dashboard-user-id="{{ user_info.id }}" data-initial-filter="{{ dashboard_initial_filter }}" data-initial-search="{{ dashboard_initial_search }}" data-initial-group-mode="schedule3d" data-current-semester-key="{{ dashboard_current_semester_key|default('') }}" data-recent-activity-days="{{ dashboard_recent_activity_days|default(14) }}" data-dashboard-role="{{ user_info.role }}">
     <script type="application/json" data-agenda-todo-options>{{ {"options": dashboard_todo_create_options|default([]), "default_offering_id": dashboard_default_todo_offering_id|default(0), "actor_role": dashboard_todo_actor_role|default('student'), "email_reminder": dashboard_todo_email_reminder|default({"available": false, "reason": "仅教师待办支持邮件提醒。", "settings_url": "/profile?section=email"})}|tojson }}</script>
-    {% endif %}
     <header class="dw-page-head">
         <div><h1>{{ workspace.greeting|default(user_info.name ~ '，你好') }}</h1><p>{{ workspace.date_label|default('') }}{% if user_info.role == 'teacher' %}<span>教学工作</span>{% endif %}</p></div>
         <div class="dw-head-actions">
             <button type="button" class="dw-button" data-dw-open="calendar" aria-haspopup="dialog">日程</button>
-            {% if dashboard_can_create_todo %}<button type="button" class="dw-button" data-agenda-add-todo aria-haspopup="dialog">新增待办</button>{% endif %}
+            {% if user_info.role == 'teacher' and dashboard_can_create_todo %}<button type="button" class="dw-button" data-agenda-add-todo aria-haspopup="dialog">新增待办</button>{% endif %}
             <details class="dw-tools-menu"><summary>日程工具</summary><div class="dw-tools-menu-body">
                 <button type="button" class="dw-link" data-agenda-calendar-feed aria-haspopup="dialog">订阅手机日历</button>
                 {% if user_info.role == 'teacher' %}<button type="button" class="dw-link" data-agenda-sync data-sync-endpoint="/api/manage/system/academic-reminders/sync-current">同步教务提醒</button>{% endif %}
@@ -34,12 +34,14 @@
         </div>
     </header>
 
+    {% if user_info.role == 'student' %}<div class="dw-home-grid">{% include "partials/student_dashboard_schedule.html" %}{% endif %}
     <div data-lanshare-island="dashboard-workspace" data-island-id="dashboard-workspace">
         <script type="application/json" data-dashboard-workspace-payload>{{ workspace|tojson }}</script>
-        <section class="dw-focus" aria-labelledby="dw-focus-title" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">
-            <div class="dw-section-head"><h2 id="dw-focus-title">现在需要处理</h2><button type="button" class="dw-link" data-dw-open="items">全部事项{% if workspace.total|default(0) %}（{{ workspace.total }}）{% endif %}</button></div>
-            {% if workspace.focus_items|default([]) %}<ul class="dw-focus-list">
-                {% for item in workspace.focus_items %}
+        <section class="dw-focus{% if user_info.role == 'student' %} dw-focus--student{% endif %}" aria-labelledby="dw-focus-title" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">
+            <div class="dw-section-head"><h2 id="dw-focus-title">需要处理</h2><button type="button" class="dw-button" data-agenda-add-todo>＋ 新增待办</button></div>
+            {% set focus_items = workspace.attention_items|default([]) if user_info.role == 'student' else workspace.focus_items|default([]) %}
+            {% if focus_items %}<ul class="dw-focus-list">
+                {% for item in focus_items %}
                 {% set source = item.agenda_data|default({}) %}
                 <li class="dw-focus-item{% if loop.first %} is-primary{% endif %}">
                     <span class="dw-item-kind">{{ item.type_label|default('事项') }}</span><span class="dw-item-copy"><strong>{{ item.title }}</strong>{% if item.subtitle %}<small>{% if item.offering_id %}<a href="/classroom/{{ item.offering_id }}" aria-label="进入课堂：{{ item.subtitle }}">{{ item.subtitle }}</a>{% else %}{{ item.subtitle }}{% endif %}</small>{% endif %}</span><span class="dw-item-time">{% if item.status_label %}<span{% if item.date_bucket == "overdue" %} class="dw-status-warn"{% endif %}>{{ item.status_label }}</span>{% endif %}<span>{{ item.date_label }}{% if item.time_label %} · {{ item.time_label }}{% endif %}</span></span>
@@ -47,10 +49,12 @@
                 </li>
                 {% endfor %}
             </ul>{% else %}<p class="dw-empty-inline">暂无需要处理的事项。</p>{% endif %}
-            {% if workspace.pending_total|default(0) > 1 %}<button type="button" class="dw-overflow-link{% if workspace.pending_total <= workspace.focus_items|length %} dw-overflow-mobile{% endif %}" data-dw-open="items">查看待处理事项（{{ workspace.pending_total }}）</button>{% endif %}
+            <button type="button" class="dw-link" data-dw-open="items">全部事项与历史</button>
         </section>
     </div>
+    {% if user_info.role == 'student' %}</div>{% endif %}
 
+    {% if user_info.role == 'teacher' %}
     <section class="dw-courses" id="dashboard-class-list" aria-labelledby="dw-courses-title">
         <div class="dw-section-head"><h2 id="dw-courses-title">我的课堂</h2>{% if class_offerings %}<span class="dw-muted">{{ class_offerings|length }} 个课堂</span>{% endif %}</div>
         {% if class_offerings %}
@@ -85,6 +89,7 @@
         <div class="dw-empty"><h3>{{ dashboard_empty_state.title }}</h3><p>{{ dashboard_empty_state.description }}</p><a href="{{ dashboard_empty_state.action_href }}" class="dw-button dw-button-primary">{{ dashboard_empty_state.action_label }}</a>{% if dashboard_empty_state.steps %}<details class="dw-empty-help"><summary>如何开始</summary>{% for step in dashboard_empty_state.steps %}<p>{{ step.description }}{% if step.href and step.label %}<a href="{{ step.href }}">{{ step.label }}</a>{% endif %}</p>{% endfor %}</details>{% endif %}</div>
         {% endif %}
     </section>
+    {% endif %}
 
     <section class="dw-tools" aria-labelledby="dw-tools-title"><div class="dw-section-head"><h2 id="dw-tools-title">{{ '教学工具' if user_info.role == 'teacher' else '学习与成长' }}</h2></div>
         {% if user_info.role == 'teacher' and dashboard_domain_cards %}<nav class="dw-domain-nav" aria-label="管理中心">{% for domain in dashboard_domain_cards %}<a href="{{ domain.href }}" class="dw-domain-link dashboard-domain-card" data-domain="{{ domain.domain }}" {{ explain_attrs(domain.title, domain.description) }}><strong>{{ domain.label }}</strong></a>{% endfor %}</nav>{% endif %}

@@ -569,8 +569,8 @@ def _get_student_offering_ids(conn, student_id: int) -> list[int]:
     return [int(row["id"]) for row in rows]
 
 
-def ensure_user_material_access(conn, material_id: int, user: dict):
-    material = conn.execute(
+def ensure_user_material_access(conn, material_id: int, user: dict, *, material_row=None, student_offering_ids=None):
+    material = material_row if material_row is not None and int(material_row["id"]) == int(material_id) else conn.execute(
         "SELECT * FROM course_materials WHERE id = ?",
         (material_id,),
     ).fetchone()
@@ -589,7 +589,7 @@ def ensure_user_material_access(conn, material_id: int, user: dict):
             return material
         raise HTTPException(403, "Permission denied")
 
-    offering_ids = _get_student_offering_ids(conn, int(user["id"]))
+    offering_ids = student_offering_ids if student_offering_ids is not None else _get_student_offering_ids(conn, int(user["id"]))
     if not offering_ids:
         raise HTTPException(403, "当前学生没有可访问的课堂材料")
 

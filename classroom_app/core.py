@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from .config import TEMPLATES_DIR, MAX_HISTORY_IN_MEMORY, AI_ASSISTANT_URL, SITE_RECORD
 from .frontend_assets import asset_url, vite_entry_tags
 from .time_utils import format_local_datetime
+from .services.user_ui_preferences_service import resolve_user_ui_preferences
 
 # FastAPI 应用实例
 app = FastAPI()
@@ -28,6 +29,7 @@ templates.env.filters["datetime_format"] = datetime_format
 templates.env.globals["asset_url"] = asset_url
 templates.env.globals["vite_entry_tags"] = vite_entry_tags
 templates.env.globals["site_record"] = SITE_RECORD
+templates.env.globals["resolve_user_ui_preferences"] = resolve_user_ui_preferences
 
 # AI 服务的 HTTP 客户端
 ai_client = httpx.AsyncClient(base_url=AI_ASSISTANT_URL, timeout=120.0)

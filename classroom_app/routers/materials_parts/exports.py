@@ -1,4 +1,6 @@
 import mimetypes
+from functools import wraps
+from inspect import signature
 
 from urllib.parse import quote
 
@@ -20,6 +22,77 @@ _DYNAMIC_DOCUMENT_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
+
+
+def _validated_reader_return_source(conn, user: dict, class_offering_id, session_id) -> dict | None:
+    """A query parameter identifies context, never grants access to it."""
+    if user.get("role") != "student" or not class_offering_id or int(class_offering_id) <= 0:
+        return None
+    if session_id is not None and int(session_id) < 0:
+        return None
+    try:
+        offering = ensure_classroom_access(conn, int(class_offering_id), user)
+    except HTTPException as exc:
+        if exc.status_code in (403, 404):
+            return None
+        raise
+    session = None
+    if session_id:
+        session = conn.execute(
+            "SELECT id, title FROM class_offering_sessions WHERE id = ? AND class_offering_id = ?",
+            (int(session_id), int(class_offering_id)),
+        ).fetchone()
+        if not session:
+            return None
+    return {
+        "url": f"/classroom/{int(class_offering_id)}",
+        "label": "返回课次详情" if session else "返回课堂",
+        "course_name": str(offering["course_name"] or "当前课堂"),
+        "session_title": str(session["title"] or "原课次") if session else "",
+    }
+
+
+def _with_reader_return_on_unavailable(operation):
+    """Keep a verified classroom return when a direct-reading target disappears.
+
+    Normal reader responses and all authorization checks remain unchanged. The
+    existing account-scoped workspace state restores the originating detail on
+    return. No arbitrary return URL is accepted, and 401 keeps the login flow.
+    """
+    @wraps(operation)
+    async def reader(*args, **kwargs):
+        try:
+            return await operation(*args, **kwargs)
+        except HTTPException as exc:
+            if exc.status_code not in (403, 404):
+                raise
+            kwargs = signature(operation).bind(*args, **kwargs).arguments
+            user = kwargs.get("user") or {}
+            if user.get("role") != "student" or not kwargs.get("class_offering_id"):
+                raise
+            with get_db_connection() as conn:
+                source = _validated_reader_return_source(
+                    conn, user, kwargs.get("class_offering_id"), kwargs.get("session_id"),
+                )
+            if not source:
+                raise
+            source["close_tab"] = kwargs.get("classroom_reader_tab") == 1
+            unavailable = exc.status_code == 404
+            return templates.TemplateResponse(
+                kwargs["request"], "material_reader_unavailable.html",
+                {
+                    "request": kwargs["request"], "user_info": user, "source": source,
+                    "error_title": "学习材料已不可用" if unavailable else "当前无法访问这份材料",
+                    "error_message": (
+                        "材料可能已被删除或移动。可以返回原课次，重新查看可访问的材料。"
+                        if unavailable else
+                        "材料访问权限可能已变化。请返回课堂，重新查看当前可访问的材料。"
+                    ),
+                },
+                status_code=exc.status_code,
+                headers=_DYNAMIC_DOCUMENT_HEADERS,
+            )
+    return reader
 
 
 def _load_ai_import_record_preview_payload(conn, record_id: int, user: dict):
@@ -188,16 +261,23 @@ async def export_ai_import_material(
 
 
 @router.get("/materials/view/{material_id}", response_class=HTMLResponse)
+@_with_reader_return_on_unavailable
 async def material_viewer_page(
     request: Request,
     material_id: int,
     variant: str = Query(default="original"),
     class_offering_id: int | None = Query(default=None),
     session_id: int | None = Query(default=None),
+    classroom_reader_tab: int = Query(default=0, ge=0, le=1),
     user: dict = Depends(get_current_user),
 ):
+    reader_return = None
     with get_db_connection() as conn:
         material = ensure_user_material_access(conn, material_id, user)
+        if classroom_reader_tab == 1:
+            reader_return = _validated_reader_return_source(conn, user, class_offering_id, session_id)
+            if reader_return:
+                reader_return["close_tab"] = True
         allowed_rows = _resolve_allowed_scope_rows(conn, material, user)
         preview_variant = "optimized" if variant == "optimized" and material["ai_optimized_markdown"] else "original"
         can_edit_source = user["role"] == "teacher" and is_editable_material(material)
@@ -261,6 +341,7 @@ async def material_viewer_page(
             "request": request,
             "user_info": user,
             "material": preview_payload,
+            "reader_return": reader_return,
             "learning_context": {
                 "class_offering_id": class_offering_id,
                 "session_id": session_id,
@@ -306,12 +387,14 @@ async def _serve_rendered_material(material_id: int, subpath: str, user: dict) -
 
 
 @router.get("/materials/render-view/{material_id}", response_class=HTMLResponse)
+@_with_reader_return_on_unavailable
 async def material_render_shell_page(
     request: Request,
     material_id: int,
     path: str = Query(default=""),
     class_offering_id: int | None = Query(default=None),
     session_id: int | None = Query(default=None),
+    classroom_reader_tab: int = Query(default=0, ge=0, le=1),
     user: dict = Depends(get_current_user),
 ):
     """HTML 材料的全屏渲染壳页：iframe 直渲 + 浮动工具栏（返回/白板）+ AI 助手。
@@ -320,6 +403,7 @@ async def material_render_shell_page(
     路径跳转与静态资源加载全部走 ``/materials/render/{id}/...`` 通道。
     """
     subpath = str(path or "").strip().strip("/")
+    reader_return = None
     with get_db_connection() as conn:
         node = ensure_user_material_access(conn, material_id, user)
         if not resolve_render_target(conn, node):
@@ -328,6 +412,10 @@ async def material_render_shell_page(
         if not target_row:
             raise HTTPException(404, "未找到要渲染的入口文件")
         ensure_user_material_access(conn, int(target_row["id"]), user)
+        if classroom_reader_tab == 1:
+            reader_return = _validated_reader_return_source(conn, user, class_offering_id, session_id)
+            if reader_return:
+                reader_return["close_tab"] = True
 
         lesson_number = 0
         lesson_count = 0
@@ -349,6 +437,7 @@ async def material_render_shell_page(
         {
             "request": request,
             "user_info": user,
+            "reader_return": reader_return,
             "shell": {
                 "node_id": int(material_id),
                 "package_root_id": int(package["root_node_id"]) if package else int(material_id),

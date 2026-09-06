@@ -71,6 +71,9 @@ test('classroom reopens one task surface without multiplying listeners or socket
   expect(sockets).toBe(before.sockets);
   await expect(page.locator('#chat-input')).toHaveValue(draft);
   await opener.click();
+  // This fixture may already have been submitted by the real submission test.
+  // Exercise collection/filter restoration without assuming it is still pending.
+  await dialog.getByLabel('任务状态').selectOption('all');
   await dialog.getByLabel('查找任务').fill('P03');
   const target = dialog.locator(`[data-assignment-task-card][data-assignment-id="${fixture.studentSubmissionAssignmentId}"]`);
   await expect(target).toBeVisible();
@@ -78,6 +81,7 @@ test('classroom reopens one task surface without multiplying listeners or socket
   await page.waitForURL(new RegExp(`/assignment/${fixture.studentSubmissionAssignmentId}(?:\\?|$)`));
   await page.goBack();
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('任务状态')).toHaveValue('all');
   await expect(dialog.getByLabel('查找任务')).toHaveValue('P03');
   await expect(page.locator('[data-cw-source="tasks"]')).toHaveCount(1);
   expect(errors).toEqual([]);
@@ -88,39 +92,57 @@ test('selected lesson materials recover from failure and preserve viewer attribu
   const fixture = readFixture();
   await loginStudent(page, fixture);
   await page.goto(`/classroom/${fixture.classOfferingId}`);
-  const timeline = page.locator('[data-cw-source="timeline"]');
-  test.skip(await timeline.count() === 0, 'Fixture has no teaching timeline; the populated visual fixture covers this case.');
-  const initialTasks = await page.locator('#cw-tasks-preview .cw-row-copy strong').allTextContents();
+  const timeline = page.locator('#teachingTimelineScroll');
+  await expect(timeline).toBeVisible();
+  const initialTasks = await page.locator('#cw-tasks-preview .cw-task-title').allTextContents();
   const routePattern = '**/learning-materials?**';
   const materialRequests: URL[] = [];
   page.on('request', request => { if (request.url().includes('/learning-materials?')) materialRequests.push(new URL(request.url())); });
+  const actual = await page.request.get(`/api/classrooms/${fixture.classOfferingId}/learning-materials?session_id=0&generate_blurbs=false`);
+  expect(actual.status()).toBe(200);
+  const collection = (await actual.json()).materials as Array<{ open_url: string }>;
   await page.route(routePattern, route => route.fulfill({ status: 503, body: '{}' }));
-  await page.getByRole('button', { name: '全部课次', exact: true }).click();
   await timeline.locator('[data-session-select].is-home-entry').click();
-  const materials = page.locator('#cw-materials-preview');
-  await expect(materials.getByRole('alert')).toContainText('材料读取失败');
+  const entry = page.locator('#teachingSessionOpenMaterialBtn');
+  await expect(page.locator('#cw-session-material-status')).toContainText('材料读取失败');
   await page.unroute(routePattern);
-  await materials.getByRole('button', { name: '重试' }).click();
-  await expect(materials.getByRole('alert')).toHaveCount(0);
-  await expect(materials.getByRole('status')).toHaveCount(0);
+  await entry.click();
+  await expect(entry).toBeEnabled();
+  if (collection.length === 1) {
+    const popup = page.waitForEvent('popup');
+    await entry.click();
+    const reader = await popup;
+    await reader.waitForLoadState('domcontentloaded');
+    const url = new URL(reader.url());
+    expect(url.searchParams.get('class_offering_id')).toBe(String(fixture.classOfferingId));
+    expect(url.searchParams.get('session_id')).toBeNull();
+    await reader.close();
+    await expect(entry).toBeVisible();
+  } else if (collection.length > 1) {
+    await entry.click();
+    const list = page.locator('.ls-mat-popup');
+    await expect(list).toBeVisible();
+    await expect(list.locator('[data-open-material]')).toHaveCount(collection.length);
+    const popup = page.waitForEvent('popup');
+    await list.locator('[data-open-material]').first().click();
+    const reader = await popup;
+    await reader.waitForLoadState('domcontentloaded');
+    const url = new URL(reader.url());
+    expect(url.searchParams.get('class_offering_id')).toBe(String(fixture.classOfferingId));
+    expect(url.searchParams.get('session_id')).toBeNull();
+    await reader.close();
+    await list.locator('[data-close-mat-popup]').click();
+    await expect(entry).toBeVisible();
+  } else {
+    await expect(page.locator('#cw-session-material-status')).toContainText('暂无可访问');
+    await expect(page.locator('.ls-mat-popup')).toBeHidden();
+  }
   expect(materialRequests.length).toBeGreaterThanOrEqual(2);
   for (const request of materialRequests) {
     expect(request.searchParams.get('session_id')).toBe('0');
     expect(request.searchParams.get('generate_blurbs')).toBe('false');
   }
-  const link = materials.getByRole('link', { name: /^阅读/ }).first();
-  if (await link.count()) {
-    const url = new URL((await link.getAttribute('href'))!, page.url());
-    expect(url.searchParams.get('class_offering_id')).toBe(String(fixture.classOfferingId));
-    // Homepage binding uses 0, while the established reading attribution uses
-    // no lesson (null). Real lessons retain their positive session ID.
-    expect(url.searchParams.get('session_id')).toBeNull();
-    const opened = await page.context().newPage();
-    const response = await opened.goto(url.toString());
-    expect(response?.status()).toBe(200);
-    await opened.close();
-  }
-  await expect(page.locator('#cw-tasks-preview .cw-row-copy strong')).toHaveText(initialTasks);
+  await expect(page.locator('#cw-tasks-preview .cw-task-title')).toHaveText(initialTasks);
 });
 
 test.describe('touch classroom workspace', () => {

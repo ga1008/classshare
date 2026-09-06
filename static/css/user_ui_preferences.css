@@ -1,0 +1,127 @@
+/* Account palette applies only to opted-in student learning pages. body owns
+   the scope so existing body-portalled dialogs inherit it without cloning or
+   observers. Course/category/level and success/warning/danger colors stay put. */
+[data-ui-palette] {
+    --ls-primary: 243 75% 59%;
+    --ui-palette-primary-rgb: 80, 72, 229;
+    --ls-primary-foreground: 0 0% 100%;
+    --ls-accent: 247 100% 96%;
+    --ls-accent-foreground: 245 58% 40%;
+    --ls-background: 223 47% 97%;
+    --ls-border: 216 33% 86%;
+    --ls-muted-foreground: 215 18% 43%;
+    --ls-ring: var(--ls-primary);
+    --ls-input: 215 16% 53%;
+    --primary-color: hsl(var(--ls-primary));
+    --primary-hover: hsl(var(--ls-accent-foreground));
+    --primary-light: hsl(var(--ls-accent));
+    --primary-dark: hsl(var(--ls-accent-foreground));
+    --surface-color: hsl(var(--ls-card));
+    --bg-color: hsl(var(--ls-background));
+    --text-muted: hsl(var(--ls-muted-foreground));
+    --border-color: hsl(var(--ls-border));
+    --border-color-focus: hsl(var(--ls-ring));
+    --shadow-focus: 0 0 0 3px hsl(var(--ls-ring) / .24);
+    background-color: hsl(var(--ls-background));
+}
+[data-ui-palette="sky"] {
+    --ls-primary: 205 75% 36%;
+    --ui-palette-primary-rgb: 23, 103, 161;
+    --ls-accent: 207 76% 95%;
+    --ls-accent-foreground: 205 75% 30%;
+    --ls-background: 204 56% 97%;
+    --ls-border: 207 45% 85%;
+}
+[data-ui-palette="mint"] {
+    --ls-primary: 172 69% 27%;
+    --ui-palette-primary-rgb: 21, 116, 104;
+    --ls-accent: 156 43% 93%;
+    --ls-accent-foreground: 172 70% 23%;
+    --ls-background: 150 30% 97%;
+    --ls-border: 151 30% 84%;
+}
+[data-ui-palette="violet"] {
+    --ls-primary: 274 48% 47%;
+    --ui-palette-primary-rgb: 128, 62, 177;
+    --ls-accent: 274 65% 96%;
+    --ls-accent-foreground: 274 50% 38%;
+    --ls-background: 274 44% 97%;
+    --ls-border: 273 35% 86%;
+}
+[data-ui-palette="rose"] {
+    --ls-primary: 341 49% 45%;
+    --ui-palette-primary-rgb: 171, 59, 94;
+    --ls-accent: 337 73% 96%;
+    --ls-accent-foreground: 341 54% 35%;
+    --ls-background: 343 54% 98%;
+    --ls-border: 337 40% 86%;
+}
+/* Legacy aliases declared on :root otherwise retain their original computed
+   color when inherited. Rebind only the learning-page navigation/action tone. */
+[data-ui-palette] .app-topbar:not(.role-teacher),
+[data-ui-palette] .app-topbar-action--tone-blue {
+    --app-topbar-accent: hsl(var(--ls-primary));
+    --app-topbar-accent-rgb: var(--ui-palette-primary-rgb);
+    --app-topbar-accent-dark: hsl(var(--ls-accent-foreground));
+    --app-topbar-accent-soft: hsl(var(--ls-accent));
+}
+[data-ui-palette] .ui-palette-control {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+[data-ui-palette] .ui-palette-select {
+    max-width: 100%;
+    min-height: 40px;
+    padding: 8px 28px 8px 12px;
+    border: 1px solid hsl(var(--ls-input));
+    border-radius: var(--radius-md);
+    background-color: hsl(var(--ls-card));
+    color: hsl(var(--ls-foreground));
+    font: inherit;
+    font-size: var(--text-md);
+    cursor: pointer;
+}
+[data-ui-palette] .ui-palette-select:hover {
+    border-color: hsl(var(--ls-ring) / .72);
+    background-color: hsl(var(--ls-accent));
+}
+[data-ui-palette] .ui-palette-select:focus-visible {
+    outline: 2px solid hsl(var(--ls-ring));
+    outline-offset: 3px;
+}
+[data-ui-palette] .ui-palette-select[aria-invalid="true"] {
+    border-color: hsl(var(--ls-warning));
+}
+/* The same status node becomes briefly visible on save failures; no permanent
+   label, extra retry/save button or second tooltip implementation is added. */
+[data-ui-palette] .ui-palette-status.is-visible {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 6501;
+    width: min(280px, calc(100vw - 32px));
+    padding: 10px 12px;
+    border: 1px solid hsl(var(--ls-border));
+    border-radius: var(--radius-md);
+    background: hsl(var(--ls-popover));
+    color: hsl(var(--ls-popover-foreground));
+    box-shadow: 0 4px 18px hsl(var(--ls-foreground) / .14);
+    font-size: var(--text-sm);
+    white-space: normal;
+}
+[data-ui-palette].ui-palette-ready,
+[data-ui-palette].ui-palette-ready :where(.ui-palette-select, .app-topbar, .app-topbar-action) {
+    transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease;
+}
+@media (pointer: coarse) {
+    [data-ui-palette] .ui-palette-select { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    [data-ui-palette].ui-palette-ready,
+    [data-ui-palette].ui-palette-ready :where(.ui-palette-select, .app-topbar, .app-topbar-action) {
+        transition: none;
+    }
+}

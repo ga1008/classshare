@@ -87,6 +87,7 @@ from .database import get_db_connection
 
 # 导入所有 V4.0 路由
 from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center, profile, learning, review, learning_path, collaboration, classroom_interactions, agent_tasks, agent_bridge, smart_classroom, signatures
+from .routers import user_ui_preferences
 from .routers import manage_redirects
 from .routers import material_hub
 from .routers import lessondoc as lessondoc_router
@@ -611,6 +612,7 @@ app.include_router(emoji.router)
 app.include_router(behavior.router)
 app.include_router(message_center.router)
 app.include_router(profile.router)
+app.include_router(user_ui_preferences.router)
 app.include_router(learning.router)
 app.include_router(review.router)
 app.include_router(learning_path.router)

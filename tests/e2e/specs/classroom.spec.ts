@@ -17,13 +17,15 @@ test.describe('P03 classroom page', () => {
     await page.goto(`/classroom/${fixture.classOfferingId}`);
     await expect(page.locator('[data-lanshare-island="classroom-page"]')).toBeAttached();
     await expect(page.locator('#assignment-panel')).toBeVisible();
-    await expect(page.locator('#materials-panel')).toBeVisible();
+    const materialsEntry = page.locator('.cw-topbar [data-cw-open="materials"]');
+    await expect(materialsEntry).toBeVisible();
     await expect(page.locator('#discussion-room')).toBeAttached();
     await expect(page.locator('#classroom-activity-tab-discussion')).toBeVisible();
     await expect(page.locator('[data-lanshare-island="assignment-task-board-sync"]')).toHaveCount(0);
     await expect(page.locator('[data-lanshare-island="material-learning-path-sync"]')).toHaveCount(0);
     await expect(page.locator('#cw-tasks-preview')).toContainText('待处理任务');
-    await expect(page.locator('#cw-materials-preview')).toContainText('材料');
+    await expect(page.locator('#cw-materials-preview')).toHaveCount(0);
+    await expect(page.locator('.cw-primary-grid #classroom-activity-sidebar')).toBeVisible();
     await expect(page.locator('[data-cw-source="tasks"]')).toBeHidden();
     await page.locator('#cw-tasks-preview').getByRole('button', { name: /全部任务/ }).click();
     await expect(page.getByRole('dialog', { name: /任务/ })).toBeVisible();
@@ -31,8 +33,12 @@ test.describe('P03 classroom page', () => {
     await page.keyboard.press('Escape');
     await expect(page.locator('[data-cw-source="tasks"]')).toBeHidden();
 
-    await page.locator('[data-workspace-nav][href="#materials-panel"]').first().click();
-    await expect(page.locator('#materials-panel')).toBeInViewport();
+    await materialsEntry.click();
+    await expect(page.getByRole('dialog', { name: '全部课堂材料' })).toBeVisible();
+    await expect(page.locator('[data-cw-source="materials"]')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-cw-source="materials"]')).toBeHidden();
+    await expect(materialsEntry).toBeFocused();
     await page.locator('[data-workspace-nav][href="#assignment-panel"]').first().click();
     await expect(page.locator('#assignment-panel')).toBeInViewport();
     await page.locator('[data-workspace-nav][href="#classroom-activity-sidebar"]').first().click();
@@ -55,9 +61,17 @@ test.describe('P03 classroom page', () => {
     await page.goto(`/classroom/${fixture.classOfferingId}`);
     await expect(page.locator('[data-lanshare-island="classroom-page"]')).toBeAttached();
     await expect(page.locator('#assignment-panel')).toBeVisible();
-    await expect(page.locator('#materials-panel')).toBeVisible();
+    const materialsEntry = page.locator('.cw-topbar [data-cw-open="materials"]');
+    await expect(materialsEntry).toBeVisible();
     await expect(page.locator('#discussion-room')).toBeAttached();
     await expect(page.locator('#classroom-activity-tab-discussion')).toBeVisible();
+
+    await materialsEntry.click();
+    await expect(page.getByRole('dialog', { name: '全部课堂材料' })).toBeVisible();
+    await expect(page.locator('[data-cw-source="materials"]')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-cw-source="materials"]')).toBeHidden();
+    await expect(materialsEntry).toBeFocused();
 
     await page.goto(`/classroom/${fixture.otherClassOfferingId}`, { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => undefined);

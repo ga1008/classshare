@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classroomMaterialUrl, materialScope, parseClassroomDate, taskConstraintLabel, taskIsUrgent, taskMatchesFilter, taskPresentation, taskPreview, type ClassroomTask } from './classroom-workspace';
+import { parseClassroomDate, taskConstraintLabel, taskIsUrgent, taskMatchesFilter, taskPresentation, taskPreview, taskHistory, type ClassroomTask } from './classroom-workspace';
 
 const now = Date.parse('2026-09-05T12:00:00+08:00');
 const task = (patch: Partial<ClassroomTask> = {}): ClassroomTask => ({
@@ -8,6 +8,11 @@ const task = (patch: Partial<ClassroomTask> = {}): ClassroomTask => ({
   canResubmit: false, resubmissionDueAt: '', groupPending: false, ...patch,
 });
 describe('classroom workspace task semantics', () => {
+  it('orders complete history by creation time rather than deadline and keeps undated legacy entries', () => {
+    const items = [task({ id: 1, createdAt: '2026-09-01 10:00:00', countdownAt: '2026-10-01' }), task({ id: 2, createdAt: '2026-09-03 10:00:00', countdownAt: '2026-09-04' }), task({ id: 3, createdAt: '2026-09-03 10:00:00' }), task({ id: 4, createdAt: '' })];
+    expect(taskHistory(items).map(item => item.id)).toEqual([3, 2, 1, 4]);
+    expect(items.map(item => item.id)).toEqual([1, 2, 3, 4]);
+  });
   it('keeps the complete authorized collection reachable when no task is actionable', () => {
     const result = taskPreview([task({ submissionStatus: 'graded' }), task({ id: 2, accepting: false, deadlinePhase: 'closed' })], false, 4, now);
     expect(result.totalCount).toBe(2); expect(result.actionableCount).toBe(0); expect(result.rows).toEqual([]);
@@ -80,18 +85,5 @@ describe('classroom workspace task semantics', () => {
     ], false, 4, now);
     expect(result.rows.map(item => item.id)).toEqual([3, 2, 1]);
     expect(taskPresentation(result.rows[2], false, now).status).toBe('补交开放中');
-  });
-});
-describe('material relation scope', () => {
-  it('uses home 0, real session ID and no academic-exam request', () => {
-    expect(materialScope({ is_home_entry: true, id: -1 })).toBe(0);
-    expect(materialScope({ id: 42 })).toBe(42);
-    expect(materialScope({ id: 42, entry_type: 'academic_exam' })).toBeNull();
-    expect(materialScope(null)).toBeNull();
-  });
-  it('carries classroom and lesson context to existing readers', () => {
-    expect(classroomMaterialUrl('/materials/view/9', 7, 42)).toBe('/materials/view/9?class_offering_id=7&session_id=42');
-    expect(classroomMaterialUrl('/materials/view/9', 7, 0)).toBe('/materials/view/9?class_offering_id=7');
-    expect(classroomMaterialUrl('javascript:alert(1)', 7, 0)).toBe('');
   });
 });

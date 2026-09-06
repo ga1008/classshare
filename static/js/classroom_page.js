@@ -4,6 +4,7 @@ import { initSessionMaterialAiAssistant } from '/static/js/session_material_ai_a
 import { initAssignmentClocks } from '/static/js/assignment_time.js?v=classroom-workspace-20260905';
 import { showToast } from '/static/js/ui.js';
 import { openMaterialListPopup } from '/static/js/classroom_material_list.js';
+import { bindClassroomLessonRail, materialEntryDecision, sessionMaterialScope } from '/static/js/classroom_workspace.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
 
@@ -945,6 +946,11 @@ function initTeachingTimeline() {
     let detailTransitionTimer = 0;
     let sessionMaterialAssistant = null;
     let activeModalSession = null;
+    let sessionOpenOrigin = null;
+    let materialRequest = null;
+    let materialChoices = null;
+    let materialEpoch = 0;
+    let railNavigation = null;
 
     const getSessionByOrder = (sessionOrder) => sessionMap.get(String(sessionOrder || '').trim());
     const getHomeMaterial = () => teachingPlan.home_material || null;
@@ -1079,7 +1085,7 @@ function initTeachingTimeline() {
             }
         }
     };
-    const renderSessionModal = (session) => {
+    const renderSessionModal = (session, options = {}) => {
         if (!sessionModal || !session) return;
         const isHome = isHomeEntry(session);
         const isExam = isAcademicExamEntry(session);
@@ -1087,25 +1093,31 @@ function initTeachingTimeline() {
         if (sessionModalKicker) sessionModalKicker.textContent = isExam ? '教务考试' : (session.session_number_label || (isHome ? '首页' : '课次'));
         if (sessionModalTitle) sessionModalTitle.textContent = session.detail_title || session.title || '';
         if (sessionModalMeta) sessionModalMeta.textContent = session.detail_meta || session.date_label || '';
+        materialEpoch++; materialRequest?.abort(); materialRequest = null;
+        const status = document.getElementById('cw-session-material-status');
+        if (status) { status.hidden = true; status.textContent = ''; }
+        const metadata = document.getElementById('cw-session-detail-meta');
+        if (metadata) metadata.textContent = [session.detail_meta || session.date_label, session.detail_hint].filter(Boolean).join(' · ');
         if (sessionModalSummary) {
             const text = String(session.detail_content || session.detail_summary || '').trim();
-            const lineLimit = isExam ? 8 : 4;
-            sessionModalSummary.innerHTML = text
-                ? text.split(/\r?\n/).filter(Boolean).slice(0, lineLimit).map((line) => `<p>${escapeHtml(line)}</p>`).join('')
-                : `<p>${isExam ? '考试时间、地点和监考信息以教务系统同步结果为准。' : '本次课暂未填写详细说明。'}</p>`;
+            const empty = isExam ? '考试时间、地点和监考信息以教务系统同步结果为准。' : '本次课暂未填写详细说明。';
+            if (window.MarkdownRuntime?.renderIntoElement) {
+                window.MarkdownRuntime.renderIntoElement(sessionModalSummary, text, { emptyHtml: `<p>${empty}</p>`, fallbackMode: 'lines', silent: true });
+            } else {
+                sessionModalSummary.replaceChildren(...(text || empty).split(/\r?\n/).map(line => { const p = document.createElement('p'); p.textContent = line; return p; }));
+            }
         }
-        if (sessionModalActions) {
-            sessionModalActions.hidden = isExam;
-        }
+        if (sessionModalActions) sessionModalActions.hidden = false;
         if (sessionModalOpenHomeBtn) {
             sessionModalOpenHomeBtn.hidden = isExam;
             sessionModalOpenHomeBtn.disabled = !hasHomeMaterial();
         }
         if (sessionModalOpenMaterialBtn) {
             sessionModalOpenMaterialBtn.hidden = isExam;
-            sessionModalOpenMaterialBtn.disabled = isExam || !getSessionMaterialReady(session);
-            const label = sessionModalOpenMaterialBtn.querySelector('small');
-            if (label) label.textContent = isExam ? '教务考试无学习文档' : (isHome ? '打开课程首页' : '进入本次课材料');
+            sessionModalOpenMaterialBtn.disabled = isExam;
+            sessionModalOpenMaterialBtn.removeAttribute('aria-busy');
+            const label = sessionModalOpenMaterialBtn.querySelector('span');
+            if (label) label.textContent = isHome ? '进入课程首页材料' : '进入本次学习材料';
         }
         if (sessionModalCheckinBtn) {
             sessionModalCheckinBtn.hidden = isExam;
@@ -1113,12 +1125,14 @@ function initTeachingTimeline() {
         }
         renderCheckinEmpty(isExam ? '考试卡片不关联课堂点名记录。' : (isHome ? '课程首页没有点名记录。' : '点击“点名统计”读取本次课签到情况。'));
         if (sessionCheckinPanel) sessionCheckinPanel.hidden = true;
+        if (compactWorkspace && !isExam) void prepareSessionMaterials(session, Boolean(options.resume));
     };
-    const openSessionModal = (session) => {
+    const openSessionModal = (session, options = {}) => {
+        sessionOpenOrigin = options.origin || sessionOpenOrigin || buttonMap.get(String(session?.order_index));
         if (!sessionModal || !session) return;
-        renderSessionModal(session);
+        renderSessionModal(session, options);
         if (compactWorkspace) {
-            document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: 'session-detail' } }));
+            document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: 'session-detail', origin: options.origin || sessionOpenOrigin, resume: Boolean(options.resume) } }));
             return;
         }
         sessionModal.hidden = false;
@@ -1172,6 +1186,10 @@ function initTeachingTimeline() {
         if (metaLabel) {
             metaLabel.dataset.weekdayLabel = session.timeline_weekday_label || '';
             metaLabel.dataset.relativeDateLabel = session.timeline_relative_date_label || '';
+            const date = metaLabel.querySelector('[data-role="session-card-date"]');
+            const slot = metaLabel.querySelector('[data-role="session-card-slot"]');
+            if (date) date.textContent = isHomeEntry(session) ? '目录与简介' : session.month_day_label || session.date_label || '日期待定';
+            if (slot) slot.textContent = isHomeEntry(session) ? '' : session.academic_section_text ? `第 ${session.academic_section_text} 节` : session.weekday_label || '';
         }
         if (indicator) {
             indicator.textContent = isHomeEntry(session) ? '首页文档' : '学习文档';
@@ -1497,7 +1515,7 @@ function initTeachingTimeline() {
     };
 
     const focusSession = (sessionOrder, behavior = 'smooth') => {
-        if (compactWorkspace) return;
+        if (compactWorkspace) { railNavigation?.reveal(buttonMap.get(String(sessionOrder))); return; }
         animateToScrollLeft(getSessionCenterScrollLeft(sessionOrder), {
             behavior: resolveBehavior(behavior),
             stiffness: behavior === 'gear' ? 0.34 : 0.24,
@@ -1507,6 +1525,7 @@ function initTeachingTimeline() {
     };
 
     const updateTimelineControls = () => {
+        if (compactWorkspace) { railNavigation?.updateEdges(); return; }
         const currentIndex = getSelectedIndex();
         if (prevTimelineBtn) prevTimelineBtn.disabled = currentIndex <= 0;
         if (nextTimelineBtn) nextTimelineBtn.disabled = currentIndex < 0 || currentIndex >= sessions.length - 1;
@@ -1518,6 +1537,7 @@ function initTeachingTimeline() {
             const isSelected = button.getAttribute('data-session-order') === activeOrderText;
             button.classList.toggle('is-selected', isSelected);
             button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+            if (compactWorkspace) button.tabIndex = isSelected ? 0 : -1;
         });
         updateTimelineControls();
     };
@@ -1830,10 +1850,11 @@ function initTeachingTimeline() {
 
     sessionButtons.forEach((button) => {
         button.addEventListener('click', () => {
-            if (Date.now() < ignoreClickUntil) return;
+            if (compactWorkspace || Date.now() < ignoreClickUntil) return;
             activateSessionButton(button);
         });
         button.addEventListener('keydown', (event) => {
+            if (compactWorkspace) return;
             if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
                 return;
             }
@@ -1866,8 +1887,21 @@ function initTeachingTimeline() {
         if (!compactWorkspace) sessionButtons[nextIndex]?.focus({ preventScroll: true });
     };
 
-    prevTimelineBtn?.addEventListener('click', () => shiftActiveSession(-1));
-    nextTimelineBtn?.addEventListener('click', () => shiftActiveSession(1));
+    if (!compactWorkspace) {
+        prevTimelineBtn?.addEventListener('click', () => shiftActiveSession(-1));
+        nextTimelineBtn?.addEventListener('click', () => shiftActiveSession(1));
+    }
+    if (compactWorkspace) {
+        railNavigation = bindClassroomLessonRail({ rail: scrollEl, buttons: sessionButtons, previous: prevTimelineBtn, next: nextTimelineBtn, current: document.getElementById('cw-current-session'), sessions,
+            select: order => setActiveSession(order, { center: false }),
+            activate: (order, origin) => { setActiveSession(order, { center: true }); openSessionModal(getSessionByOrder(order), { origin }); },
+        });
+        document.addEventListener('classroom:select-session', event => {
+            const order = event.detail?.order;
+            setActiveSession(order, { center: true });
+            openSessionModal(getSessionByOrder(order), { resume: event.detail?.resume });
+        });
+    }
 
     scrollEl.addEventListener('scroll', () => {
         if (compactWorkspace) return;
@@ -1921,37 +1955,82 @@ function initTeachingTimeline() {
         showToast(result.message || '材料已添加到首页', 'success');
     };
 
-    const openSessionMaterialList = (session, returnFocus = null) => {
+    const openSessionMaterialList = (session, returnFocus = null, initialData = null, resumeDetail = false) => {
         const home = isHomeEntry(session);
-        const fromDetails = Boolean(document.querySelector('.cw-dialog .teaching-session-modal-body'));
-        const restoreTarget = returnFocus || (fromDetails ? document.getElementById('cw-session-details')
-            : document.querySelector('#cw-materials-preview .cw-secondary-actions .cw-text-button'));
+        const restoreTarget = returnFocus || sessionOpenOrigin || buttonMap.get(String(session?.order_index));
         const showList = () => openMaterialListPopup({
-            classOfferingId: classOfferingIdValue(),
-            sessionId: home ? 0 : (session?.id || 0),
-            isHome: home,
-            isTeacher,
-            returnFocus: restoreTarget,
+            classOfferingId: classOfferingIdValue(), sessionId: home ? 0 : (session?.id || 0), isHome: home, isTeacher,
+            returnFocus: restoreTarget, initialData,
             title: home ? '课程首页材料' : (session?.detail_title || session?.title || '本次课材料'),
-            subtitle: home ? '课程目录、简介与导航材料' : '点击任意卡片进入材料',
-            onChanged: (result) => {
-                if (home) {
-                    applyHomeMaterialPatch(result || {});
-                } else if (result?.session) {
-                    applySessionPatch(result.session);
-                }
-                if (window.materialsApp && typeof window.materialsApp.refresh === 'function') {
-                    window.materialsApp.refresh().catch(() => {});
-                }
+            subtitle: home ? '课程目录、简介与导航材料' : '点击材料在新标签阅读；关闭列表返回课次详情',
+            onClose: resumeDetail ? () => openSessionModal(session, { origin: restoreTarget, resume: true }) : null,
+            onChanged: result => {
+                materialChoices = null;
+                if (home) applyHomeMaterialPatch(result || {});
+                else if (result?.session) applySessionPatch(result.session);
+                window.materialsApp?.refresh?.().catch(() => {});
             },
-        }).catch((error) => showToast(error.message || '加载材料列表失败', 'error'));
+        }).catch(error => showToast(error.message || '加载材料列表失败', 'error'));
         if (compactWorkspace && document.querySelector('.cw-dialog')) {
-            document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: null } }));
-            window.setTimeout(showList, 0);
-        } else {
-            showList();
-        }
+            document.addEventListener('classroom:workspace-closed', () => requestAnimationFrame(showList), { once: true });
+            document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: null, handoff: true } }));
+        } else showList();
     };
+
+    function presentMaterialChoices(session, decision) {
+        const status = document.getElementById('cw-session-material-status');
+        const label = sessionModalOpenMaterialBtn?.querySelector('span');
+        if (label) label.textContent = isHomeEntry(session) ? '进入课程首页材料' : '进入本次学习材料';
+        if (!status) return;
+        status.replaceChildren(); status.hidden = decision.kind !== 'empty';
+        if (decision.kind === 'empty') {
+            status.textContent = isTeacher ? '本课次没有可访问材料，可通过管理课次添加。' : '本课次暂无可访问的学习材料。';
+            const all = document.createElement('button'); all.type = 'button'; all.className = 'cw-text-button'; all.dataset.cwOpen = 'materials'; all.textContent = '全部课堂材料'; status.appendChild(all);
+        }
+    }
+    async function prepareSessionMaterials(session, reuse = false) {
+        const scope = sessionMaterialScope(session);
+        if (scope === null || materialRequest) return;
+        if (reuse && materialChoices?.scope === scope) { presentMaterialChoices(session, materialChoices.decision); return; }
+        materialChoices = null;
+        const epoch = ++materialEpoch;
+        const controller = new AbortController(); materialRequest = controller;
+        const button = sessionModalOpenMaterialBtn;
+        const status = document.getElementById('cw-session-material-status');
+        button.disabled = true; button.setAttribute('aria-busy', 'true');
+        const label = button.querySelector('span');
+        if (label) label.textContent = '正在读取学习材料…';
+        if (status) { status.hidden = false; status.textContent = '正在读取本课可访问的学习材料…'; }
+        try {
+            const response = await fetch(`/api/classrooms/${classOfferingIdValue()}/learning-materials?session_id=${scope}&generate_blurbs=false`, { credentials: 'same-origin', signal: controller.signal });
+            if (!response.ok) throw new Error(response.status === 403 ? '当前无权读取这些材料。' : '材料读取失败，请重试。');
+            const data = await response.json();
+            if (controller.signal.aborted || epoch !== materialEpoch) return;
+            const decision = materialEntryDecision(data.materials, classOfferingIdValue(), scope, window.location.origin);
+            if (decision.kind === 'unavailable') throw new Error('该材料暂时无法打开，请稍后重试。');
+            materialChoices = { scope, decision, data };
+            presentMaterialChoices(session, decision);
+        } catch (error) {
+            if (controller.signal.aborted || epoch !== materialEpoch) return;
+            if (status) { status.hidden = false; status.textContent = error.message || '材料读取失败，请重试。'; }
+            if (label) label.textContent = '重试读取学习材料';
+        } finally {
+            if (epoch === materialEpoch) { materialRequest = null; button.disabled = false; button.removeAttribute('aria-busy'); }
+        }
+    }
+    const enterSessionMaterials = session => {
+        const scope = sessionMaterialScope(session);
+        if (scope === null || materialRequest) return;
+        if (!materialChoices || materialChoices.scope !== scope) { void prepareSessionMaterials(session); return; }
+        const { decision, data } = materialChoices;
+        if (decision.kind === 'reader') {
+            // The full collection is ready before activation, so the reader
+            // opens synchronously in this user gesture and retains live drafts.
+            window.open(decision.url, '_blank', 'noopener');
+        } else if (decision.kind === 'list') openSessionMaterialList(session, sessionOpenOrigin, data, true);
+        else presentMaterialChoices(session, decision);
+    };
+    document.addEventListener('classroom:workspace-closed', () => { materialEpoch++; materialRequest?.abort(); materialRequest = null; });
 
     selectHomeMaterialBtn?.addEventListener('click', async () => {
         try {
@@ -2011,14 +2090,8 @@ function initTeachingTimeline() {
         }
         openSessionMaterialList({ is_home_entry: true });
     });
-    sessionModalOpenMaterialBtn?.addEventListener('click', () => {
-        const session = activeModalSession || getSessionByOrder(selectedOrder);
-        if (!getSessionMaterialReady(session)) {
-            showToast(isTeacher ? '当前次课还没有绑定材料' : '教师尚未配置学习材料', 'warning');
-            return;
-        }
-        openSessionMaterialList(session);
-    });
+    sessionModalOpenMaterialBtn?.addEventListener('click', event => enterSessionMaterials(activeModalSession || getSessionByOrder(selectedOrder), event));
+    document.getElementById('cw-session-back')?.addEventListener('click', closeSessionModal);
     sessionModalCheckinBtn?.addEventListener('click', () => {
         if (sessionCheckinPanel) sessionCheckinPanel.hidden = false;
         fetchSessionCheckin({ sync: false });
@@ -2045,7 +2118,6 @@ function initTeachingTimeline() {
         runLessonDocGeneration(nextLesson, 'generate');
     });
 
-    document.getElementById('cw-session-details')?.addEventListener('click', () => openSessionModal(getSessionByOrder(selectedOrder)));
     document.addEventListener('classroom:manage-session-materials', event => openSessionMaterialList(getSessionByOrder(selectedOrder), event.detail?.returnFocus));
     if (isTeacher) loadLessonDocPack();
 

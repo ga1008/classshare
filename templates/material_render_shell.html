@@ -3,6 +3,10 @@
 {% block title %}{{ shell.entry_name or shell.material_name }} | 课程材料{% endblock %}
 
 {% block head %}
+{% if reader_return %}
+<script>window.MATERIAL_READER_RETURN = {{ reader_return | tojson }};</script>
+<script type="module" src="{{ asset_url('js/material_reader_return.js') }}"></script>
+{% endif %}
 <script>
     window.MATERIAL_VIEWER = {
         id: {{ shell.entry_material_id | tojson }},
@@ -37,7 +41,7 @@
 {% block body %}
 <div class="ls-render-shell" id="render-shell-root">
     <div class="ls-render-shell-topbar" id="render-shell-topbar">
-        <button type="button" class="btn btn-ghost btn-sm ls-render-shell-nav-btn" id="render-shell-back" title="返回上一页">
+        <button type="button" class="btn btn-ghost btn-sm ls-render-shell-nav-btn" id="render-shell-back"{% if reader_return %} data-classroom-reader-return{% endif %} title="返回上一页">
             <span class="ls-render-shell-nav-icon" aria-hidden="true">&lt;</span><span>返回</span>
         </button>
         <button type="button" class="btn btn-ghost btn-sm ls-render-shell-nav-btn" id="render-shell-home" title="回到课程首页">

@@ -1,0 +1,23 @@
+<section class="dw-schedule" data-student-schedule aria-labelledby="dw-schedule-title">
+    <header class="dw-section-head"><div><span class="dw-eyebrow">把学习安排在眼前</span><h2 id="dw-schedule-title">课程日程</h2></div><button type="button" class="dw-link" data-dw-open="calendar" aria-haspopup="dialog">学期日历 ↗</button></header>
+    <div class="dw-schedule-toolbar">
+        <div class="dw-view-switch" role="group" aria-label="课程日程视图"><button type="button" data-student-schedule-mode="3d" aria-pressed="true">3D课表</button><button type="button" data-student-schedule-mode="agenda" aria-pressed="false">日程列表</button><button type="button" data-student-schedule-mode="courses" aria-pressed="false">全部课程 <span data-student-course-count>{{ class_offerings|length }}</span></button></div>
+        <label class="dw-schedule-term"><span class="sr-only">课表学期</span><select data-student-schedule-term aria-label="课表学期" disabled><option>正在读取学期…</option></select></label>
+    </div>
+    <div class="dw-week-nav" data-student-week-nav><button type="button" class="dw-button" data-student-week-prev aria-label="上一周" disabled>‹</button><span data-student-week-label aria-live="polite">正在整理课程安排…</span><button type="button" class="dw-button" data-student-week-next aria-label="下一周" disabled>›</button><button type="button" class="dw-link" data-student-week-today disabled>回本周</button><button type="button" class="dw-link" data-student-schedule-expand disabled>放大课表</button></div>
+    <div data-student-schedule-feedback role="status" class="dw-schedule-feedback">只显示本平台课程；完整课程安排请查看教务系统。</div>
+    <button type="button" class="dw-button" data-student-schedule-retry hidden>重新加载课程日程</button>
+    <div class="dw-schedule-stage" data-student-schedule-deck aria-busy="true"></div>
+    <div class="dw-schedule-agenda" data-student-schedule-agenda hidden></div>
+    <section class="dw-schedule-collection" data-student-schedule-courses hidden aria-label="全部授权课程">
+        <div class="dw-course-collection-filters"><label><span class="sr-only">搜索全部课程</span><input type="search" class="dw-input" data-student-course-search placeholder="搜索课程、班级、教师" value="{{ dashboard_initial_search }}"></label><label><span class="sr-only">课程集合学期</span><select class="dw-input" data-student-course-term aria-label="课程集合学期"><option value="">全部学期</option></select></label><label><span class="sr-only">课程安排状态</span><select class="dw-input" data-student-course-state aria-label="课程安排状态"><option value="">全部课程</option><option value="unscheduled">未排定课程</option><option value="history">往期课程</option></select></label></div>
+        <p class="dw-muted" data-student-course-result role="status">全部学期的 {{ class_offerings|length }} 个授权课堂</p>
+        <div class="dw-course-collection-list" data-student-course-list>
+        {% for offering in class_offerings %}<article class="dw-schedule-course"><h3><a href="/classroom/{{ offering.id }}">{{ offering.course_name }}</a></h3><p>{{ offering.class_name }} · {{ offering.teacher_name|default('') }}</p><small>{{ offering.semester_label|default(offering.semester)|default('未配置学期') }}</small><div><a class="dw-button dw-button-primary" href="/classroom/{{ offering.id }}">进入课堂</a><a class="dw-link" href="/classroom/{{ offering.id }}#assignment-panel">作业与考试</a></div></article>{% endfor %}
+        </div>
+    </section>
+    <p class="dw-schedule-hint" data-student-schedule-hint>滚轮 / 方向键切周 · 点击课表放大 · 触屏左右滑动</p>
+    <noscript><p>启用 JavaScript 可查看交互课表。全部课程：{% for offering in class_offerings %}<a href="/classroom/{{ offering.id }}">{{ offering.course_name }}（{{ offering.class_name }}）</a> {% else %}暂无已加入的课堂。{% endfor %}</p></noscript>
+    {% set schedule_courses = namespace(items=[]) %}{% for offering in class_offerings %}{% set schedule_courses.items = schedule_courses.items + [{"id": offering.id, "course_name": offering.course_name, "class_name": offering.class_name, "teacher_name": offering.teacher_name|default(''), "semester": offering.semester_label|default(offering.semester)|default('未配置学期'), "classroom_url": '/classroom/' ~ offering.id}] %}{% endfor %}
+    <script type="application/json" data-student-schedule-courses-payload>{{ schedule_courses.items|tojson }}</script>
+</section>
