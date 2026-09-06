@@ -4,10 +4,11 @@
 <div class="rz-page-head">
     <div>
         <div class="rz-page-head__title">新建简历</div>
-        <div class="rz-page-head__sub">先确定目标岗位，再把已填写的内容拖入各区域。AI 会围绕岗位优化摘要、技术栈和最终呈现。</div>
+        <div class="rz-page-head__sub">选择内容后，可以直接修改本份简历的文字。随时保存草稿，确认内容后再生成文件。</div>
     </div>
-    <button type="button" class="rz-btn rz-btn--primary" id="rzBuildSubmit">确定生成</button>
+    <div class="rz-builder-actions"><button type="button" class="rz-btn" id="rzEditContent">编辑本份文字</button><button type="button" class="rz-btn" id="rzSaveDraft">保存草稿</button><button type="button" class="rz-btn rz-btn--primary" id="rzBuildSubmit">生成文件</button></div>
 </div>
+<div id="rzDraftStatus" class="rz-draft-status" role="status">尚未保存</div>
 
 <div class="rz-builder">
     <div class="rz-builder__main">
@@ -50,6 +51,6 @@
 {% endblock %}
 
 {% block page_script %}
-<script src="/static/js/resume_common.js?v=20260723a"></script>
-<script src="/static/js/resume_builder.js?v=20260723b"></script>
+<script src="/static/js/resume_common.js?v=20260906a"></script>
+<script src="/static/js/resume_builder.js?v=20260906a"></script>
 {% endblock %}

@@ -108,8 +108,38 @@ class StudentCourseScheduleTests(unittest.TestCase):
         self.assertTrue(self.get()["has_data"])
         self.conn.execute("DELETE FROM class_offering_class_links WHERE offering_id=1 AND class_id=2")
         self.assertEqual([], self.get()["terms"])
+        self.assertEqual([], self.get()["authorized_courses"])
         self.user = {"id": 7, "role": "student"}
         self.assertTrue(self.get()["has_data"])
+
+    def test_complete_collection_keeps_unscheduled_no_term_and_past_memberships(self):
+        self.conn.execute("INSERT INTO class_offerings(id,class_id,course_id,teacher_id,semester,semester_id) VALUES(10,1,1,1,'未设学期',NULL)")
+        self.conn.execute("INSERT INTO class_offerings(id,class_id,course_id,teacher_id,semester,semester_id) VALUES(11,1,1,1,'2026-2027第一学期',1)")
+        result = self.get()
+        courses = {course["id"]: course for course in result["authorized_courses"]}
+        self.assertEqual({1, 10, 11}, set(courses))
+        self.assertTrue(courses[10]["is_unscheduled"])
+        self.assertTrue(courses[11]["is_unscheduled"])
+        self.assertFalse(courses[1]["is_unscheduled"])
+        self.assertNotIn(2, courses)
+        stale_term = self.get(year="1900-1901", term="1")
+        self.assertEqual({1, 10, 11}, {course["id"] for course in stale_term["authorized_courses"]})
+        ended = build_student_course_schedule_overview(self.conn, 7, now=datetime(2027, 2, 1))
+        self.assertTrue(next(course for course in ended["authorized_courses"] if course["id"] == 1)["is_history"])
+        self.conn.execute("DELETE FROM academic_semesters")
+        empty = self.get()
+        self.assertEqual([], empty["weeks"])
+        self.assertEqual({1, 10, 11}, {course["id"] for course in empty["authorized_courses"]})
+
+    def test_past_offering_with_only_a_term_label_is_reachable_in_history(self):
+        self.conn.execute("INSERT INTO class_offerings(id,class_id,course_id,teacher_id,semester,semester_id) VALUES(12,1,1,1,'2025-2026第2学期',NULL)")
+        result = self.get()
+        course = next(course for course in result["authorized_courses"] if course["id"] == 12)
+        self.assertTrue(course["is_history"])
+        self.assertTrue(course["is_unscheduled"])
+        self.assertEqual("", course["year"])
+        self.assertEqual("/classroom/12", course["classroom_url"])
+        self.assertNotIn("2025-2026", [term["year"] for term in result["terms"]])
 
     def test_no_enrollment_foreign_semester_and_malformed_queries_do_not_leak(self):
         for params in ({"year": "2030-2031", "term": "1"}, {"year": "' OR 1=1--", "term": "1"}, {"term": "1"}):

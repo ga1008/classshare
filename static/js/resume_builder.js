@@ -8,11 +8,15 @@
   var TEMPLATES = [];
   var POSITION_OPTIONS = [];
   var EDIT_ID = null;
+  var REVISION = 0, contentOverrides = [], acceptedSummary = '', acceptedTech = [], saving = false, savedFingerprint = '', readyToEdit = false;
+  var draftClientId = window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'draft-' + Date.now() + '-' + Math.random().toString(36).slice(2);
   var lastAutoTitle = '';
   var sourceContext = {};
   var activeDrag = null;
   var lastAdded = null;
   var PERSONAL_REQUIRED = ['name', 'expected_position'];
+  var PERSONAL_LABELS = { name: '姓名', gender: '性别', birthday: '出生日期', email: '邮箱', phone: '手机', qq: 'QQ', wechat: '微信',
+    expected_position: '目标岗位', expected_industry: '意向行业', expected_salary: '期望薪资', hometown: '籍贯', address: '现居地址' };
   var PERSONAL_FIELD_ORDER = [
     'name', 'gender', 'birthday', 'email', 'phone', 'qq', 'wechat',
     'expected_position', 'expected_industry', 'expected_salary', 'hometown', 'address'
@@ -39,7 +43,7 @@
     { key: 'education', label: '学习经历' },
     { key: 'experience', label: '实习 / 项目 / 校园经历' },
     { key: 'skill_cert', label: '技能与证书' },
-    { key: 'tech_stack', label: '技术栈' }
+    { key: 'tech_stack', label: '岗位能力清单' }
   ];
 
   function labelOf(kind, item) {
@@ -50,6 +54,7 @@
     return item.name || '项';
   }
   function itemById(kind, id) {
+    if (kind === 'personal') return DATA.personal || {};
     if (kind === 'personal_field') return personalFieldItems(true).filter(function (i) { return i.id === id; })[0];
     return (DATA[kind] || []).filter(function (i) { return String(i.id) === String(id); })[0];
   }
@@ -61,8 +66,8 @@
 
   function renderTemplates() {
     document.getElementById('rzTplRow').innerHTML = TEMPLATES.map(function (t) {
-      return '<div class="rz-tpl' + (t.key === state.template ? ' active' : '') + '" data-tpl="' + t.key + '">' +
-        '<strong>' + RZ.esc(t.label) + '</strong><small>' + RZ.esc(t.description) + '</small></div>';
+      return '<button type="button" class="rz-tpl' + (t.key === state.template ? ' active' : '') + '" data-tpl="' + RZ.esc(t.key) + '" aria-pressed="' + (t.key === state.template) + '">' +
+        '<strong>' + RZ.esc(t.label) + '</strong><small>' + RZ.esc(t.description) + '</small></button>';
     }).join('');
     document.querySelectorAll('[data-tpl]').forEach(function (el) {
       el.addEventListener('click', function () { state.template = el.dataset.tpl; renderTemplates(); });
@@ -172,7 +177,7 @@
     var labels = DATA.personal_labels || {};
     var personal = DATA.personal || {};
     return PERSONAL_FIELD_ORDER.map(function (key) {
-      return { id: key, key: key, label: labels[key] || key, value: String(personal[key] || '').trim() };
+      return { id: key, key: key, label: labels[key] || PERSONAL_LABELS[key] || '个人资料', value: String(personal[key] || '').trim() };
     }).filter(function (item) { return includeBlank || item.value; });
   }
 
@@ -180,7 +185,7 @@
     var locked = kind === 'personal_field' && PERSONAL_REQUIRED.indexOf(item.id) >= 0;
     var x = inZone && !locked ? '<button type="button" class="rz-chip__x" title="移除">✕</button>' : '';
     var lock = locked && inZone ? '<span class="rz-chip__lock">必填</span>' : '';
-    return '<div class="rz-chip' + (inZone ? ' in-zone' : '') + '" draggable="true" data-kind="' + kind + '" data-id="' + item.id + '">' +
+    return '<div class="rz-chip' + (inZone ? ' in-zone' : '') + '"' + (inZone ? '' : ' role="button" tabindex="0" aria-label="添加 ' + RZ.esc(labelOf(kind, item)) + '"') + ' draggable="true" data-kind="' + kind + '" data-id="' + RZ.esc(item.id) + '">' +
       '<span class="rz-chip__label">' + RZ.esc(labelOf(kind, item)) + '</span>' + lock + x + '</div>';
   }
 
@@ -188,11 +193,11 @@
     var html = ZONES.map(function (z) {
       if (z.key === 'tech_stack') {
         var targetHint = state.target_position
-          ? '当前目标岗位：' + RZ.esc(state.target_position) + '。AI 会优先保留与该岗位相关、有材料支撑的技能。'
-          : '先填写目标岗位，AI 才能按岗位筛选技术栈。';
-        return '<div class="rz-zone" data-zone="tech_stack"><div class="rz-zone__head"><strong>技术栈</strong>' +
+          ? '当前目标岗位：' + RZ.esc(state.target_position) + '。文件使用当前已确认的能力清单；新的 AI 建议需核对后采用。'
+          : '填写目标岗位后，可在“我的简历”按需生成建议并核对采用。';
+        return '<div class="rz-zone" data-zone="tech_stack"><div class="rz-zone__head"><strong>岗位能力清单</strong>' +
           '<label style="font-size:.8rem;font-weight:600"><input type="checkbox" id="rzTechToggle" ' +
-          (state.tech_stack ? 'checked' : '') + '> 由 AI 自动生成</label></div>' +
+          (state.tech_stack ? 'checked' : '') + '> 包含已确认的能力清单</label></div>' +
           '<div class="rz-zone__hint">' + targetHint + '</div></div>';
       }
       var inner;
@@ -327,6 +332,11 @@
       });
       el.addEventListener('dragend', finishPaletteDrag);
       el.addEventListener('click', function () { addToState(el.dataset.kind, el.dataset.id); });
+      el.addEventListener('keydown', function (event) { if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault(); var kind = el.dataset.kind, id = el.dataset.id; addToState(kind, id);
+        var added = Array.from(document.querySelectorAll('.rz-zone .rz-chip')).find(function (item) { return item.dataset.kind === kind && item.dataset.id === id; });
+        if (added) { added.tabIndex = -1; added.focus(); }
+      } });
     });
   }
 
@@ -374,11 +384,13 @@
 
   function closePaletteSheet() {
     if (!mobilePalette.aside) return;
+    var wasOpen = mobilePalette.aside.classList.contains('open');
     mobilePalette.aside.classList.remove('open');
     if (mobilePalette.scrim) mobilePalette.scrim.classList.remove('show');
     if (mobilePalette.button) mobilePalette.button.setAttribute('aria-expanded', 'false');
     document.body.style.overflow = mobilePalette.bodyOverflow || '';
     document.documentElement.style.overflow = mobilePalette.htmlOverflow || '';
+    if (wasOpen && mobilePalette.button) mobilePalette.button.focus();
   }
 
   function openPaletteSheet() {
@@ -390,6 +402,7 @@
     if (mobilePalette.button) mobilePalette.button.setAttribute('aria-expanded', 'true');
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overflow = 'hidden';
+    if (mobilePalette.close) mobilePalette.close.focus();
   }
 
   function initMobilePaletteSheet() {
@@ -471,37 +484,58 @@
     m.foot.appendChild(close);
   }
 
-  async function submit() {
+  function draftBody() {
+    return { title: document.getElementById('rzResumeTitle').value.trim() || '我的简历',
+      target_position: state.target_position.trim(), template_key: state.template, layout: buildLayout(),
+      source_context: sourceContext, revision: REVISION, content_overrides: contentOverrides, optimized_summary_md: acceptedSummary, tech_stack: acceptedTech, draft: true, client_id: draftClientId };
+  }
+  function fingerprint() { var body = draftBody(); delete body.revision; return JSON.stringify(body); }
+  function draftStatus(message) { document.getElementById('rzDraftStatus').textContent = message; }
+  async function submit(event, draftOnly) {
+    if (saving || !readyToEdit) return;
     var btn = document.getElementById('rzBuildSubmit');
     var layout = buildLayout();
-    if (!state.target_position.trim()) { RZ.toast('请先填写这份简历的目标岗位', 'error'); return; }
-    if (!layout.blocks.length) { RZ.toast('请至少拖入一项内容', 'error'); return; }
-    btn.disabled = true; btn.textContent = '生成中…';
+    if (!draftOnly && !state.target_position.trim()) { RZ.toast('请先填写这份简历的目标岗位，或先保存草稿', 'error'); return; }
+    if (!draftOnly && !layout.blocks.length) { RZ.toast('请至少加入一项内容，或先保存草稿', 'error'); return; }
+    saving = true; btn.disabled = true; document.getElementById('rzSaveDraft').disabled = true; btn.textContent = '正在保存…';
+    var body = draftBody(), sentFingerprint = fingerprint(), draftSaved = false;
     try {
-      var body = {
-        title: document.getElementById('rzResumeTitle').value.trim() || '我的简历',
-        target_position: state.target_position.trim(),
-        template_key: state.template, layout: layout,
-        source_context: sourceContext
-      };
-      var validation = await RZ.api('/api/resume/builder/validate', { method: 'POST', body: body });
-      if (!validation.validation || !validation.validation.ok) {
-        openBuildIssues(validation.validation || {});
-        btn.disabled = false;
-        btn.textContent = EDIT_ID ? '保存修改' : '确定生成';
-        return;
-      }
-      if (EDIT_ID) await RZ.api('/api/resume/resumes/' + EDIT_ID, { method: 'PUT', body: body });
-      else await RZ.api('/api/resume/resumes', { method: 'POST', body: body });
-      RZ.toast('已提交，正在渲染整合…', 'success');
-      setTimeout(function () { window.location.href = '/resume/list'; }, 700);
-    } catch (e) { RZ.toast(e.message, 'error'); btn.disabled = false; btn.textContent = EDIT_ID ? '保存修改' : '确定生成'; }
+      var saved = EDIT_ID ? await RZ.api('/api/resume/resumes/' + EDIT_ID, { method: 'PUT', body: body }) :
+        await RZ.api('/api/resume/resumes', { method: 'POST', body: body });
+      draftSaved = true;
+      EDIT_ID = saved.id || EDIT_ID; REVISION = Number(saved.revision || (saved.resume || {}).revision || REVISION + 1);
+      savedFingerprint = sentFingerprint;
+      history.replaceState(null, '', '/resume/builder?edit=' + EDIT_ID);
+      draftStatus('草稿已保存 · 版本 ' + REVISION + (fingerprint() !== savedFingerprint ? ' · 还有新修改未保存' : ''));
+      if (!draftOnly) {
+        await RZ.api('/api/resume/resumes/' + EDIT_ID + '/publish', { method: 'POST', body: { revision: REVISION } });
+        RZ.toast('已开始生成文件，可在“我的简历”查看进度', 'success');
+        if (fingerprint() === savedFingerprint) window.location.href = '/resume/list';
+      } else RZ.toast('草稿已保存', 'success');
+    } catch (error) {
+      draftStatus(error.status === 409 ? '版本冲突 · 当前编辑仍保留，尚未覆盖服务器' : draftSaved ? '草稿已保存 · 文件暂未生成，请查看提示后继续编辑' : '暂未完成保存 · 当前编辑仍保留');
+      if (draftSaved && (error.status === 400 || error.status === 422)) openBuildIssues({ missing: [{ label: error.message }] });
+      else RZ.conflict(error, body, async function () { await prefillFromResume(EDIT_ID); renderTemplates(); renderZones(); renderPalette(); savedFingerprint = fingerprint(); });
+    } finally { saving = false; btn.disabled = false; btn.textContent = '生成文件'; document.getElementById('rzSaveDraft').disabled = false; }
   }
 
   async function prefillFromResume(id) {
     var d = await RZ.api('/api/resume/resumes/' + id);
     var r = d.resume || {};
     EDIT_ID = id;
+    REVISION = Number(r.revision || 0);
+    acceptedSummary = r.optimized_summary_md || '';
+    acceptedTech = Array.isArray(r.tech_stack) ? r.tech_stack : [];
+    contentOverrides = Array.isArray(r.content_overrides) ? r.content_overrides : [];
+    var bundle = r.content_snapshot || (r.snapshot || {}).bundle;
+    if (bundle) Object.keys(bundle).forEach(function (key) {
+      if (key === 'personal') DATA[key] = bundle[key];
+      else if (Array.isArray(bundle[key])) {
+        var existing = DATA[key] || [], snapshotIds = new Set(bundle[key].map(function (item) { return String(item.id); }));
+        DATA[key] = bundle[key].concat(existing.filter(function (item) { return !snapshotIds.has(String(item.id)); }));
+      }
+    });
+    contentOverrides.forEach(function (entry) { var item = itemById(entry.section, entry.id); if (item) Object.assign(item, entry.fields || {}); });
     state.target_position = r.target_position || state.target_position;
     sourceContext = r.source_context || sourceContext;
     var layout = r.layout || {};
@@ -525,11 +559,67 @@
     lastAutoTitle = titleEl.value.trim();
     var targetInput = document.getElementById('rzTargetPosition');
     if (targetInput) targetInput.value = state.target_position || '';
-    document.getElementById('rzBuildSubmit').textContent = '保存修改';
+    document.getElementById('rzBuildSubmit').textContent = '生成文件';
+    draftStatus('已载入版本 ' + REVISION + (r.render_revision ? ' · 已生成文件版本 ' + r.render_revision : ' · 尚未生成文件'));
+    if ((r.snapshot || {}).legacy_materials_reconstructed) draftStatus('已载入版本 ' + REVISION + ' · 这份历史简历的编辑材料由现有资料重建，请逐项核对；原版本文件仍可在历史中查看。');
+  }
+
+  function editContent() {
+    if (!DATA) return;
+    var fields = {
+      personal: PERSONAL_LABELS,
+      self_intro: { title: '标题', content_md: '自我介绍' }, education: { school: '学校', degree: '学历/学位层次（不确定可留空）', major: '专业', college: '学院', start_date: '开始年月', end_date: '结束年月', content: '学习内容' },
+      experience: { title: '名称', role: '角色', start_date: '开始年月', end_date: '结束年月', content: '背景与任务', contribution: '我的行动', achievement: '真实结果' },
+      skill: { name: '技能', level: '熟练程度', acquired_date: '获得年月', expiry_date: '有效期', description: '说明' }, certificate: { name: '证书', acquired_date: '获得年月', expiry_date: '有效期', description: '说明' }
+    };
+    var entries = [];
+    Object.keys(fields).forEach(function (section) {
+      var ids = section === 'personal' ? [0] : state[section === 'certificate' ? 'cert' : section];
+      ids.forEach(function (id) { var item = itemById(section, id); if (item) entries.push({ section: section, id: id, item: item }); });
+    });
+    var modal = RZ.openModal({ title: '编辑本份简历文字', wide: true });
+    modal.body.innerHTML = '<p>这里的修改只用于这份简历。请保留真实经历、技能和数字。</p>' +
+      '<fieldset class="rz-snapshot-fields"><legend>本份职业摘要与能力清单</legend><label class="rz-field">职业摘要<textarea class="rz-textarea" id="rzSnapshotSummary" maxlength="2000" rows="4">' + RZ.esc(acceptedSummary) + '</textarea></label><p>生成文件优先使用此摘要；留空时使用所选素材中的自我介绍。</p>' +
+      '<label class="rz-field">岗位能力清单<textarea class="rz-textarea" id="rzSnapshotCapabilities" maxlength="6000" rows="4" placeholder="例如：语言沟通：英语写作、课堂沟通">' + RZ.esc(acceptedTech.map(function (group) { return typeof group === 'string' ? group : (group.group || '相关技能') + '：' + (group.items || []).join('、'); }).join('\n')) + '</textarea></label><p>每行一个分组，写成“分组名称：技能一、技能二”。只填写真实掌握且有资料支持的能力。</p></fieldset>' +
+      (entries.length ? entries.map(function (entry, index) {
+        return '<fieldset class="rz-snapshot-fields"><legend>' + (entry.section === 'personal' ? '本份个人信息' : RZ.esc(labelOf(entry.section, entry.item))) + '</legend>' +
+          Object.keys(fields[entry.section]).map(function (key) {
+            var value = RZ.esc(entry.item[key] || ''), attrs = ' data-entry="' + index + '" data-field="' + key + '"';
+            var input = key === 'degree' ? '<select class="rz-select"' + attrs + '>' + ['', '高中', '中专', '大专', '本科', '硕士', '博士', '其他'].map(function (degree) { return '<option value="' + degree + '"' + (degree === entry.item[key] ? ' selected' : '') + '>' + (degree || '待确认') + '</option>'; }).join('') + '</select>' :
+              entry.section === 'personal' || /_date$/.test(key) ? '<input class="rz-input" maxlength="200" value="' + value + '"' + attrs + '>' :
+              '<textarea class="rz-textarea" rows="3" maxlength="6000"' + attrs + '>' + value + '</textarea>';
+            return '<label class="rz-field">' + RZ.esc(fields[entry.section][key]) + input + '</label>'; }).join('') + '</fieldset>';
+      }).join('') : '<p>先从素材区加入一段经历或介绍，再编辑这份简历的文字。</p>');
+    var save = document.createElement('button'); save.className = 'rz-btn rz-btn--primary'; save.textContent = '应用到当前草稿';
+    save.onclick = function () {
+      acceptedSummary = modal.body.querySelector('#rzSnapshotSummary').value;
+      acceptedTech = modal.body.querySelector('#rzSnapshotCapabilities').value.split('\n').map(function (line) {
+        var parts = line.trim().split(/[:：]/), group = parts.length > 1 ? parts.shift().trim() : '相关技能';
+        var items = parts.join('：').split(/[、,，;]/).map(function (item) { return item.trim(); }).filter(Boolean);
+        return { group: group || '相关技能', items: items };
+      }).filter(function (group) { return group.items.length; });
+      modal.body.querySelectorAll('[data-entry]').forEach(function (input) {
+        var entry = entries[Number(input.dataset.entry)], key = input.dataset.field;
+        if (String(entry.item[key] || '') === input.value) return;
+        var override = contentOverrides.find(function (item) { return item.section === entry.section && String(item.id) === String(entry.id); });
+        if (!override) { override = { section: entry.section, id: entry.id, fields: {} }; contentOverrides.push(override); }
+        override.fields[key] = input.value; entry.item[key] = input.value;
+      });
+      renderZones(); renderPalette(); draftStatus('文字已应用到当前草稿 · 记得保存'); modal.close();
+    };
+    modal.foot.appendChild(save);
   }
 
   async function init() {
+    var initialControls = ['rzResumeTitle', 'rzTargetPosition', 'rzBuildSubmit', 'rzSaveDraft', 'rzEditContent'].map(function (id) { return document.getElementById(id); }).filter(Boolean);
+    initialControls.forEach(function (control) { control.disabled = true; });
+    draftStatus('正在读取这份简历与素材…');
     document.getElementById('rzBuildSubmit').addEventListener('click', submit);
+    document.getElementById('rzSaveDraft').addEventListener('click', function () { submit(null, true); });
+    document.getElementById('rzEditContent').addEventListener('click', editContent);
+    window.addEventListener('beforeunload', function (event) {
+      if (readyToEdit && fingerprint() !== savedFingerprint) { event.preventDefault(); event.returnValue = ''; }
+    });
     var targetInput = document.getElementById('rzTargetPosition');
     if (targetInput) {
       targetInput.addEventListener('input', function () { setTargetPosition(targetInput.value, false); });
@@ -552,6 +642,8 @@
       sourceContext = {
         source: querySource || 'builder',
         career_tag: queryCareerTag,
+        direction_id: params.get('direction_id') || '',
+        recommendation_revision: params.get('recommendation_revision') || '',
         target_position: queryTarget,
         job_id: queryJobId
       };
@@ -559,7 +651,7 @@
       if (targetInput) targetInput.value = state.target_position;
       var editId = params.get('edit');
       if (editId) {
-        try { await prefillFromResume(editId); } catch (e) { RZ.toast('载入简历失败：' + e.message, 'error'); }
+        await prefillFromResume(editId);
       } else if (params.get('auto') === '1') {
         state.self_intro = (DATA.self_intro || []).map(function (item) { return Number(item.id); });
         state.education = (DATA.education || []).map(function (item) { return Number(item.id); });
@@ -580,7 +672,15 @@
       renderTargetOptions();
       if (!editId) syncTitleFromTarget(true);
       renderTemplates(); renderZones(); renderPalette();
-    } catch (e) { RZ.toast(e.message, 'error'); }
+      readyToEdit = true; savedFingerprint = fingerprint();
+      initialControls.forEach(function (control) { control.disabled = false; });
+      if (!editId) draftStatus('当前为未保存草稿');
+    } catch (e) {
+      var status = document.getElementById('rzDraftStatus'); status.textContent = '无法载入：' + e.message + '。';
+      var back = document.createElement('a'); back.href = '/resume/list'; back.textContent = ' 返回我的简历'; status.appendChild(back);
+      var retry = document.createElement('button'); retry.type = 'button'; retry.className = 'rz-btn rz-btn--sm'; retry.textContent = '重新加载'; retry.onclick = function () { window.location.reload(); }; status.appendChild(retry);
+      RZ.toast(e.message, 'error');
+    }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

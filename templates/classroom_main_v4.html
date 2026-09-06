@@ -344,19 +344,28 @@
         </span>
     </a>
     <nav class="cw-topbar-nav" aria-label="课堂快捷入口">
+        {% if user_info.role == 'student' %}
+        {% if classroom_page.learning_progress %}
+        <button type="button" class="cw-nav-link cw-cultivation-entry" data-learning-modal-open aria-controls="learning-progress-modal" aria-haspopup="dialog">本课修为 <strong>{{ classroom_page.learning_progress.score | round(1) }}</strong></button>
+        {% elif classroom_page.learning_progress_error | default('') %}
+        <span class="cw-topbar-error" role="alert">修为暂时无法读取</span>
+        {% endif %}
+        {% from 'macros/user_ui_preferences.html' import user_palette_select %}{{ user_palette_select(ui_palette | default({})) }}
+        {% endif %}
+
         <div class="cw-topbar-sections" aria-label="课堂内入口">
             <a href="#assignment-panel" class="cw-nav-link" data-workspace-nav title="跳转到任务区" aria-label="跳转到任务区">
                 <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('file-plus') }}</span>
                 <span class="cw-nav-copy">
-                    <strong>任务</strong>
+                    <strong>作业与考试</strong>
                 </span>
             </a>
-            <a href="#materials-panel" class="cw-nav-link" data-workspace-nav title="跳转到材料区" aria-label="跳转到材料区">
+            <button type="button" class="cw-nav-link" data-cw-open="materials" aria-label="全部课堂材料">
                 <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('book') }}</span>
                 <span class="cw-nav-copy">
                     <strong>材料</strong>
                 </span>
-            </a>
+            </button>
             <a href="#classroom-activity-sidebar" class="cw-nav-link" data-workspace-nav title="打开课堂活动栏" aria-label="打开课堂活动栏">
                 <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
                 <span class="cw-nav-copy">
@@ -374,7 +383,7 @@
                 </summary>
                 <div class="classroom-topbar-menu__panel" role="menu" aria-label="更多课堂入口">
                     <div class="classroom-topbar-menu__label">课堂入口</div>
-            {% if has_learning_entry %}
+            {% if has_learning_entry and user_info.role == 'teacher' %}
             <button type="button" class="classroom-topbar-menu__item classroom-topbar-learning" data-learning-modal-open title="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-label="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-haspopup="dialog" aria-controls="learning-progress-modal">
                 <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('users' if user_info.role == 'teacher' else 'shield') }}</span>
                 <span class="cw-nav-copy">
@@ -487,16 +496,16 @@
             <section class="embedded-teaching-plan" id="timeline-panel" data-workspace-section data-anchor-order="{{ selected_session.order_index }}">
                 <div class="embedded-teaching-plan-head">
                     <div class="embedded-teaching-plan-heading">
-                        <h2>所选课次</h2>
+                        <h2>课次导航</h2>
                     </div>
-                    <div class="cw-session-nav">                            <button type="button" class="teaching-timeline-nav-btn is-prev" id="teachingTimelinePrevBtn" aria-label="切换到上一节课">
+                    <div class="cw-session-nav">                            <button type="button" class="teaching-timeline-nav-btn is-prev" id="teachingTimelinePrevBtn" aria-label="向左浏览课次">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                             </button>
-                            <button type="button" class="teaching-timeline-nav-btn is-next" id="teachingTimelineNextBtn" aria-label="切换到下一节课">
+                            <button type="button" class="teaching-timeline-nav-btn is-next" id="teachingTimelineNextBtn" aria-label="向右浏览课次">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                             </button>
 
-<button type="button" class="cw-text-button" data-cw-open="timeline">全部课次</button><button type="button" class="cw-text-button" id="cw-session-details">课次详情</button></div>
+<button type="button" class="cw-text-button" data-cw-open="timeline">全部课次</button><button type="button" class="cw-text-button" id="cw-current-session">定位课次</button></div>
                 </div>
 
                 <div class="embedded-teaching-plan-shell" id="teaching-plan-widget">
@@ -504,79 +513,8 @@
                         <div class="teaching-timeline-stage" id="teachingTimelineStage">
 
 
-                            <article class="teaching-timeline-detail-card" id="teachingTimelineDetail" aria-live="polite">
-                                <div class="teaching-timeline-detail-top">
-                                    <div class="teaching-timeline-detail-copy">
-                                        <div class="teaching-timeline-detail-heading">
-                                            <span class="teaching-timeline-detail-kicker" id="teachingTimelineDetailKicker">{{ selected_session.session_number_label }}</span>
-                                            <span class="teaching-timeline-detail-status is-{{ selected_session.progress_state }}" id="teachingTimelineDetailStatus">{{ selected_session.session_status_label }}</span>
-                                        </div>
-                                        <h3 id="teachingTimelineDetailTitle">{{ selected_session.detail_title }}</h3>
-                                    </div>
-                                    {% if user_info.role == 'teacher' %}
-                                    <details class="cw-session-management"><summary>管理课次</summary><div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions" {% if selected_session.is_academic_exam %}hidden{% endif %}>
-                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectHomeMaterialBtn">
-                                            添加首页材料
-                                        </button>
-                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectMaterialBtn">添加课堂材料</button>
-                                        <button
-                                            type="button"
-                                            class="btn btn-outline btn-sm btn-ai-assistant{% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %} is-busy{% endif %}"
-                                            id="teachingTimelineAiMaterialBtn"
-                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}disabled{% endif %}
-                                        >
-                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}
-                                            助教在思考
-                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'completed' %}
-                                            再次生成
-                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'failed' %}
-                                            重新生成
-                                            {% else %}
-                                            AI助教
-                                            {% endif %}
-                                        </button>
-                                        <button type="button" class="btn btn-outline btn-sm btn-ai-assistant" id="teachingTimelineLessonDocRewriteBtn" hidden>
-                                            AI 重写本课
-                                        </button>
-                                        <button type="button" class="btn btn-outline btn-sm btn-ai-assistant" id="teachingTimelineLessonDocNextBtn" hidden>
-                                            AI 生成下次课
-                                        </button>
-                                    </div></details>
-                                    {% endif %}
-                                </div>
-                                {% if user_info.role == 'teacher' %}
-                                <div
-                                    class="teaching-timeline-ai-task-strip{% if not selected_session.material_generation_task %} is-hidden{% endif %}"
-                                    id="teachingTimelineAiTaskStrip"
-                                    {% if not selected_session.material_generation_task %}hidden{% endif %}
-                                >
-                                    <span class="teaching-timeline-ai-task-pill" id="teachingTimelineAiTaskPill">
-                                        {% if selected_session.material_generation_task %}
-                                        {{ selected_session.material_generation_task.status_label }}
-                                        {% endif %}
-                                    </span>
-                                    <span class="teaching-timeline-ai-task-copy" id="teachingTimelineAiTaskCopy">
-                                        {% if selected_session.material_generation_task %}
-                                            {% if selected_session.material_generation_task.status == 'running' or selected_session.material_generation_task.status == 'queued' %}
-                                            AI 助教正在参考历史文档和课堂信息，完成后会自动绑定到本课。
-                                            {% elif selected_session.material_generation_task.status == 'completed' %}
-                                            最近一次 AI 生成已完成，可以直接打开文档，也可以再次发起生成。
-                                            {% elif selected_session.material_generation_task.status == 'failed' %}
-                                            上一次 AI 生成未完成，请调整要求后重新尝试。
-                                            {% endif %}
-                                        {% endif %}
-                                    </span>
-                                </div>
-                                {% endif %}
-                                <div class="teaching-timeline-detail-summary md-content" id="teachingTimelineDetailSummary">{{ selected_session.workspace_summary | default(selected_session.detail_summary) }}</div>
-                                <div class="teaching-timeline-detail-meta" id="teachingTimelineDetailMeta">
-                                    <span>{{ selected_session.workspace_meta | default(selected_session.detail_meta) }}</span>
-                                    {% if selected_session.detail_hint %}
-                                    <span class="is-warning">{{ selected_session.detail_hint }}</span>
-                                    {% endif %}
-                                </div>
-                            </article>
-                            <div class="teaching-timeline-scroll" id="teachingTimelineScroll" data-cw-source="timeline" hidden aria-label="全部课次">
+
+                            <div class="teaching-timeline-scroll" id="teachingTimelineScroll" aria-label="课次导航，激活课次查看详情" role="group">
                                 <div class="teaching-timeline-track">
                                     {% for session in timeline_entries %}
                                     <button
@@ -587,14 +525,18 @@
                                         data-entry-type="{{ session.entry_type or 'lesson' }}"
                                         data-session-date="{{ session.session_date or '' }}"
                                         data-session-select
+                                        aria-haspopup="dialog"
                                         data-has-material="{{ 'true' if session.has_learning_material else 'false' }}"
-                                        aria-controls="teachingTimelineDetail"
+                                        aria-controls="teachingSessionModal"
                                         aria-pressed="{{ 'true' if session.order_index == selected_session.order_index else 'false' }}"
+                                        tabindex="{{ '0' if session.order_index == selected_session.order_index else '-1' }}"
                                         {% if session.is_anchor %}data-anchor="true"{% endif %}
                                     >
                                         <span class="teaching-timeline-segment-order">{{ session.session_number_label }}</span>
                                         <strong class="teaching-timeline-segment-title">{{ session.segment_title }}</strong>
                                         <span class="teaching-timeline-segment-tags">
+                                            <span class="cw-session-selection">已选</span>
+                                            {% if not session.is_home_entry %}<span class="cw-session-time-state">{{ '往期课次' if session.progress_state == 'completed' else session.session_status_label }}</span>{% endif %}
                                             <span
                                                 class="teaching-timeline-segment-doc"
                                                 data-role="session-material-indicator"
@@ -619,8 +561,8 @@
                                             data-weekday-label="{{ session.timeline_weekday_label }}"
                                             data-relative-date-label="{{ session.timeline_relative_date_label }}"
                                         >
-                                            <span>{{ session.relative_day_label }}</span>
-                                            <span>{{ session.week_label or '未排周次' }}</span>
+                                            <span data-role="session-card-date">{{ '目录与简介' if session.is_home_entry else (session.month_day_label or session.date_label or '日期待定') }}</span>
+                                            {% if not session.is_home_entry and (session.academic_section_text or session.weekday_label) %}<span data-role="session-card-slot">{{ ('第 ' ~ session.academic_section_text ~ ' 节') if session.academic_section_text else session.weekday_label }}</span>{% endif %}
                                         </span>
                                     </button>
                                     {% endfor %}
@@ -643,16 +585,62 @@
                         </button>
                     </div>
                     <div class="teaching-session-modal-body">
-                        <div class="teaching-session-modal-summary" id="teachingSessionModalSummary"></div>
+                        <p class="cw-session-detail-meta" id="cw-session-detail-meta"></p>
+                        <div class="teaching-session-modal-summary md-content" id="teachingSessionModalSummary"></div>
+                        {% if user_info.role == 'teacher' %}<details class="cw-session-management"><summary>管理课次</summary><div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions" {% if selected_session.is_academic_exam %}hidden{% endif %}>
+                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectHomeMaterialBtn" data-cw-external-modal>
+                                            添加首页材料
+                                        </button>
+                                        <button type="button" class="btn btn-outline btn-sm" id="teachingTimelineSelectMaterialBtn" data-cw-external-modal>添加课堂材料</button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-outline btn-sm btn-ai-assistant{% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %} is-busy{% endif %}"
+                                            id="teachingTimelineAiMaterialBtn" data-cw-external-modal
+                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}disabled{% endif %}
+                                        >
+                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}
+                                            助教在思考
+                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'completed' %}
+                                            再次生成
+                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'failed' %}
+                                            重新生成
+                                            {% else %}
+                                            AI助教
+                                            {% endif %}
+                                        </button>
+                                        <button type="button" class="btn btn-outline btn-sm btn-ai-assistant" id="teachingTimelineLessonDocRewriteBtn" data-cw-external-modal hidden>
+                                            AI 重写本课
+                                        </button>
+                                        <button type="button" class="btn btn-outline btn-sm btn-ai-assistant" id="teachingTimelineLessonDocNextBtn" data-cw-external-modal hidden>
+                                            AI 生成下次课
+                                        </button>
+                                    </div></details><div
+                                    class="teaching-timeline-ai-task-strip{% if not selected_session.material_generation_task %} is-hidden{% endif %}"
+                                    id="teachingTimelineAiTaskStrip"
+                                    {% if not selected_session.material_generation_task %}hidden{% endif %}
+                                >
+                                    <span class="teaching-timeline-ai-task-pill" id="teachingTimelineAiTaskPill">
+                                        {% if selected_session.material_generation_task %}
+                                        {{ selected_session.material_generation_task.status_label }}
+                                        {% endif %}
+                                    </span>
+                                    <span class="teaching-timeline-ai-task-copy" id="teachingTimelineAiTaskCopy">
+                                        {% if selected_session.material_generation_task %}
+                                            {% if selected_session.material_generation_task.status == 'running' or selected_session.material_generation_task.status == 'queued' %}
+                                            AI 助教正在参考历史文档和课堂信息，完成后会自动绑定到本课。
+                                            {% elif selected_session.material_generation_task.status == 'completed' %}
+                                            最近一次 AI 生成已完成，可以直接打开文档，也可以再次发起生成。
+                                            {% elif selected_session.material_generation_task.status == 'failed' %}
+                                            上一次 AI 生成未完成，请调整要求后重新尝试。
+                                            {% endif %}
+                                        {% endif %}
+                                    </span>
+                                </div>{% endif %}
                         <div class="teaching-session-modal-actions" id="teachingSessionModalActions">
-                            <button type="button" class="teaching-session-action" id="teachingSessionOpenHomeBtn">
-                                <span>文档首页</span>
-                                <small>课程目录与入口</small>
-                            </button>
                             <button type="button" class="teaching-session-action" id="teachingSessionOpenMaterialBtn">
-                                <span>学习文档</span>
-                                <small>进入本次课材料</small>
+                                <span>进入本次学习材料</span>
                             </button>
+                            <button type="button" class="teaching-session-action" id="cw-session-back">返回课次</button>
                             {% if user_info.role == 'teacher' %}
                             <button type="button" class="teaching-session-action is-accent" id="teachingSessionCheckinBtn">
                                 <span>点名统计</span>
@@ -660,6 +648,7 @@
                             </button>
                             {% endif %}
                         </div>
+                        <div id="cw-session-material-status" class="cw-session-material-status" role="status" hidden></div>
                         {% if user_info.role == 'teacher' %}
                         <section class="teaching-session-checkin-panel" id="teachingSessionCheckinPanel" hidden>
                             <div class="teaching-session-checkin-head">
@@ -1249,7 +1238,7 @@
         {% endif %}
 
         <div class="cw-primary-flow" aria-label="课堂任务主线">
-        <section class="cw-primary-section" id="assignment-panel" data-workspace-section><div id="cw-tasks-preview"><div data-cw-loading><div class="cw-section-head"><h2>{{ '待处理任务' if user_info.role == 'teacher' else '课堂任务' }}</h2></div><p class="cw-empty" role="status">正在整理课堂任务…</p></div></div></section>
+        <section class="cw-primary-section" id="assignment-panel" data-workspace-section><div id="cw-tasks-preview">{% include 'partials/classroom_task_preview.html' %}</div></section>
         <section class="workspace-panel assignment-panel cw-collection" id="classroom-task-collection" data-cw-source="tasks" hidden>
             <div class="section-header">
                 <div class="section-heading">
@@ -1546,341 +1535,8 @@
         </div>
 
         {% set classroom_materials_collapsed = user_info.role == 'student' and (classroom_page.assigned_material_count | default(0)) == 0 %}
-        <div class="cw-primary-flow" aria-label="课堂课程材料">
-        <section class="cw-primary-section" id="materials-panel" data-workspace-section><div id="cw-materials-preview"><div data-cw-loading><div class="cw-section-head"><h2>课次材料</h2></div><p class="cw-empty" role="status">正在读取材料…</p></div></div></section>
-        <section class="workspace-panel cw-collection" id="classroom-material-collection" data-cw-source="materials" hidden>
-            <div class="section-header">
-                <div class="section-heading">
-                    {% if sections.materials.eyebrow %}<span class="section-eyebrow">{{ sections.materials.eyebrow }}</span>{% endif %}
-                    <h2 class="section-title">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M9 7h6"></path><path d="M9 11h6"></path><path d="M9 15h4"></path></svg>
-                        {{ sections.materials.title }}
-                    </h2>
-                    {% if not classroom_materials_collapsed %}<p class="section-subtitle">{{ sections.materials.subtitle }}</p>{% endif %}
-                </div>
-                <div class="header-actions materials-toolbar-group classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
-                    {% if user_info.role == 'teacher' %}
-                    <button type="button" class="btn btn-primary btn-sm" id="classroom-final-material-generate-btn" data-cw-external-modal>AI生成期末材料</button>
-                    {% endif %}
-                    <button type="button" class="btn btn-ghost btn-sm" id="classroom-materials-refresh-btn">刷新</button>
-                </div>
-            </div>
-            {% if classroom_materials_collapsed %}
-            <div class="materials-empty classroom-materials-empty-state">当前课堂还没有分配课程材料。</div>
-            {% else %}
-            {% endif %}
-
-            <div class="materials-toolbar classroom-materials-toolbar classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
-                <div class="materials-path-actions" aria-label="材料导航">
-                    <button type="button" class="btn btn-ghost btn-sm" id="classroom-materials-back-btn">返回</button>
-                    <button type="button" class="btn btn-ghost btn-sm" id="classroom-materials-up-btn">上一级</button>
-                    <label class="classroom-materials-select-all"><input type="checkbox" id="classroom-materials-select-all" aria-label="选择本页全部材料" disabled>全选本页</label>
-                </div>
-                <div class="materials-breadcrumbs" id="classroom-materials-breadcrumbs">
-                    <span class="text-muted">已分配材料</span>
-                </div>
-            </div>
-
-            <div class="materials-selection-bar classroom-materials-conditional" id="classroom-materials-selection" hidden>
-                <div>
-                    已选择 <strong id="classroom-materials-selection-count">0</strong> 项
-                </div>
-                <div class="materials-toolbar-group">
-                    <button type="button" class="btn btn-outline btn-sm" id="classroom-materials-download-btn">下载选中</button>
-                </div>
-            </div>
-
-            <div class="materials-list classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
-                <div class="materials-list-header">
-                    <div></div>
-                    <div>名称</div>
-                    <div>类型</div>
-                    <div>大小 / 子项</div>
-                    <div>操作</div>
-                </div>
-                <div id="classroom-materials-list">
-                    <div class="materials-empty">正在加载课程材料...</div>
-                </div>
-            </div>
-        </section>
-
-        </div>
-    </div>
-
-    {% if classroom_page.learning_progress_error | default('') %}
-    <div class="cw-learning-line" role="alert"><span>{{ classroom_page.learning_progress_error }}</span><button class="cw-text-button" type="button" onclick="window.location.reload()">刷新重试</button></div>
-    {% elif has_learning_entry %}
-    <div class="cw-learning-line">
-        {% if user_info.role == 'student' %}
-        {% set lp = classroom_page.learning_progress %}
-        <span>修为 <strong>{{ lp.score | round(1) }}</strong> · {{ lp.current_level.level_name }}</span>
-        {% if lp.eligible_stage %}<span class="cw-status">{% if lp.eligible_stage.latest_attempt and lp.eligible_stage.latest_attempt.status == 'failed' %}试炼未完成 · 可重试{% else %}可破境{% endif %}</span>{% elif lp.next_stage and lp.next_stage.status == 'generating' %}<span role="status">试炼生成中</span>{% elif lp.next_stage and lp.next_stage.status == 'in_exam' %}<span class="cw-status">试炼已就绪</span>{% endif %}
-        {% else %}
-        {% set lo = classroom_page.learning_overview %}
-        <span>班级成员 <strong>{{ lo.student_count }}</strong> 人</span><span{% if lo.need_attention_count %} class="cw-status"{% endif %}>待关注 {{ lo.need_attention_count }} 人</span>
-        {% endif %}
-        <button class="cw-text-button" type="button" data-learning-modal-open>{% if user_info.role == 'teacher' %}查看成员{% else %}查看修为{% endif %} →</button>
-    </div>
-    {% endif %}
-
-    <div id="classroom-material-detail-modal" class="modal-backdrop classroom-material-modal-backdrop" style="display:none;" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
-            <div class="modal-content classroom-material-modal">
-                <div class="modal-header">
-                    <div>
-                        <p class="modal-subtitle" id="classroom-material-detail-kicker">课程材料</p>
-                        <h3 class="modal-title" id="classroom-material-detail-title">材料详情</h3>
-                        <p class="classroom-material-detail-path" id="classroom-material-detail-path"></p>
-                    </div>
-                    <button class="modal-close" type="button" data-classroom-material-modal-close aria-label="关闭">&times;</button>
-                </div>
-                <div class="modal-body classroom-material-detail-body">
-                    <div class="classroom-material-detail-loading" id="classroom-material-detail-loading">正在加载材料详情...</div>
-                    <div id="classroom-material-detail-content" hidden></div>
-                </div>
-                <div class="modal-footer classroom-material-detail-footer">
-                    <button type="button" class="btn btn-outline" id="classroom-material-detail-open-btn">打开</button>
-                    <button type="button" class="btn btn-outline" id="classroom-material-detail-download-btn">下载</button>
-                    {% if user_info.role == 'teacher' %}
-                    <button type="button" class="btn btn-primary" id="classroom-material-detail-export-btn">导出Word</button>
-                    <button type="button" class="btn btn-outline" id="classroom-material-detail-export-pdf-btn">导出PDF</button>
-                    {% endif %}
-                    <button type="button" class="btn btn-ghost" data-classroom-material-modal-close>关闭</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {% if user_info.role == 'teacher' %}
-    <div id="classroom-final-material-modal" class="modal-backdrop classroom-material-modal-backdrop" style="display:none;" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
-            <div class="modal-content classroom-material-modal">
-                <div class="modal-header">
-                    <div>
-                        <p class="modal-subtitle">期末材料</p>
-                        <h3 class="modal-title">AI生成教务文档</h3>
-                        <p class="classroom-material-detail-path">生成后会保存到当前材料目录，并可继续预览、优化和导出。</p>
-                    </div>
-                    <button class="modal-close" type="button" data-classroom-final-material-close aria-label="关闭">&times;</button>
-                </div>
-                <div class="modal-body classroom-final-material-form">
-                    <label class="form-group">
-                        <span>材料类型</span>
-                        <select id="classroom-final-material-type">
-                            <option value="exam_paper">课程考核试卷</option>
-                            <option value="assessment_plan">课程考核计划表</option>
-                            <option value="grading_rubric">评分细则</option>
-                            <option value="ordinary_grade_record">平时成绩记录表</option>
-                            <option value="exam_grade_record">考核登分表</option>
-                        </select>
-                    </label>
-                    <div class="classroom-final-material-template-options" id="classroom-assessment-plan-options" hidden>
-                        <label class="form-group">
-                            <span>考核形态</span>
-                            <select id="classroom-final-material-assessment-mode">
-                                <option value="non_written">非笔试考核</option>
-                                <option value="written">笔试考核</option>
-                            </select>
-                        </label>
-                        <label class="form-group">
-                            <span>考核形式</span>
-                            <input id="classroom-final-material-assessment-method" type="text" value="机试" placeholder="机试 / 闭卷笔试 / 项目实操">
-                        </label>
-                    </div>
-                    <div class="classroom-final-material-template-options classroom-final-material-template-options--notice" id="classroom-grading-rubric-options" hidden>
-                        <strong>生成评分细则前，请先在本课堂导入或生成课程考核试卷。</strong>
-                        <span>系统会读取最新试卷的题目、任务、截图要求和分值，并据此生成逐题对应的评分标准。</span>
-                    </div>
-                    <div class="classroom-final-material-template-options classroom-final-material-template-options--notice" id="classroom-exam-paper-options" hidden>
-                        <strong>生成试卷前，请先在本课堂导入或生成课程考核计划表。</strong>
-                        <span>系统会继承最新考核计划表中的考核形式、分值分布和课程字段，再结合课堂材料与提示生成题目。</span>
-                    </div>
-                    <div class="classroom-final-material-template-options ordinary-grade-wizard" id="classroom-ordinary-grade-record-options" hidden>
-                        <div class="ordinary-grade-wizard__header">
-                            <div>
-                                <span class="ordinary-grade-wizard__eyebrow">真实课堂数据 · 五步生成</span>
-                                <strong>依次确认 3 份作业、1 份测评和生成要求</strong>
-                                <p>每份来源只能使用一次；缺失成绩先按 0 分记录。出勤率达到 70% 后才可使用最低分保护，出勤始终按智慧课堂真实数据计算。</p>
-                            </div>
-                            <span class="ordinary-grade-wizard__attendance" id="classroom-ordinary-attendance-freshness">正在检查考勤缓存…</span>
-                        </div>
-                        <ol class="ordinary-grade-progress" aria-label="平时成绩记录表生成进度">
-                            <li data-ordinary-progress-step="0"><span>1</span><small>作业一</small></li>
-                            <li data-ordinary-progress-step="1"><span>2</span><small>作业二</small></li>
-                            <li data-ordinary-progress-step="2"><span>3</span><small>作业三</small></li>
-                            <li data-ordinary-progress-step="3"><span>4</span><small>测评</small></li>
-                            <li data-ordinary-progress-step="4"><span>5</span><small>要求</small></li>
-                        </ol>
-                        <div class="ordinary-grade-step-list">
-                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="0">
-                                <span class="ordinary-grade-step-card__number">1</span>
-                                <span class="ordinary-grade-step-card__copy">
-                                    <strong>选择平时作业 1</strong>
-                                    <small data-ordinary-grade-selection-detail="0">尚未选择，点击查看当前课堂作业</small>
-                                </span>
-                                <span class="ordinary-grade-step-card__action">选择</span>
-                            </button>
-                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="1">
-                                <span class="ordinary-grade-step-card__number">2</span>
-                                <span class="ordinary-grade-step-card__copy">
-                                    <strong>选择平时作业 2</strong>
-                                    <small data-ordinary-grade-selection-detail="1">尚未选择，完成上一步后继续</small>
-                                </span>
-                                <span class="ordinary-grade-step-card__action">选择</span>
-                            </button>
-                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="2">
-                                <span class="ordinary-grade-step-card__number">3</span>
-                                <span class="ordinary-grade-step-card__copy">
-                                    <strong>选择平时作业 3</strong>
-                                    <small data-ordinary-grade-selection-detail="2">尚未选择，完成上一步后继续</small>
-                                </span>
-                                <span class="ordinary-grade-step-card__action">选择</span>
-                            </button>
-                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="3">
-                                <span class="ordinary-grade-step-card__number">4</span>
-                                <span class="ordinary-grade-step-card__copy">
-                                    <strong>选择课堂测评</strong>
-                                    <small data-ordinary-grade-selection-detail="3">尚未选择，将只显示测评、测试或考试</small>
-                                </span>
-                                <span class="ordinary-grade-step-card__action">选择</span>
-                            </button>
-                        </div>
-                        <div class="ordinary-grade-picker" id="classroom-ordinary-grade-picker" hidden>
-                            <div class="ordinary-grade-picker__head">
-                                <div>
-                                    <span id="classroom-ordinary-grade-picker-kicker">第 1 步</span>
-                                    <strong id="classroom-ordinary-grade-picker-title">选择平时作业 1</strong>
-                                </div>
-                                <button type="button" class="ordinary-grade-picker__close" data-ordinary-grade-picker-close aria-label="收起来源选择">&times;</button>
-                            </div>
-                            <label class="ordinary-grade-picker__search">
-                                <span class="sr-only">搜索当前课堂的作业或测评</span>
-                                <input id="classroom-ordinary-grade-picker-search" type="search" autocomplete="off" placeholder="模糊搜索标题、状态或评分情况">
-                            </label>
-                            <div class="ordinary-grade-picker__list" id="classroom-ordinary-grade-picker-list"></div>
-                        </div>
-                        <select id="classroom-ordinary-homework-1" class="sr-only" tabindex="-1" aria-hidden="true"></select>
-                        <select id="classroom-ordinary-homework-2" class="sr-only" tabindex="-1" aria-hidden="true"></select>
-                        <select id="classroom-ordinary-homework-3" class="sr-only" tabindex="-1" aria-hidden="true"></select>
-                        <select id="classroom-ordinary-assessment" class="sr-only" tabindex="-1" aria-hidden="true"></select>
-                        <section class="ordinary-grade-score-policy" aria-labelledby="classroom-ordinary-score-floor-title">
-                            <div class="ordinary-grade-score-policy__intro">
-                                <span>第 5 步 · 成绩策略</span>
-                                <strong id="classroom-ordinary-score-floor-title">设置最低平时分保护</strong>
-                                <p>只有真实出勤率达到 70% 的学生才参与配平。系统绝不修改出勤，只以可复现的随机均衡方式上调三次作业和一次测评，并在 Excel 隐藏审计页保留原始分与调整依据。</p>
-                            </div>
-                            <div class="ordinary-grade-score-policy__controls">
-                                <label class="ordinary-grade-score-policy__switch">
-                                    <input id="classroom-ordinary-score-floor-enabled" type="checkbox" checked>
-                                    <span aria-hidden="true"></span>
-                                    <b>启用最低分保护</b>
-                                </label>
-                                <label class="ordinary-grade-score-policy__value">
-                                    <span>最低平时分</span>
-                                    <span class="ordinary-grade-score-policy__input">
-                                        <input id="classroom-ordinary-score-floor" type="number" min="0" max="100" step="1" value="60" inputmode="decimal">
-                                        <em>分</em>
-                                    </span>
-                                </label>
-                            </div>
-                            <div class="ordinary-grade-score-policy__summary" id="classroom-ordinary-score-floor-summary">
-                                出勤率达到 70% 的学生，若公式平时分低于 60 分，系统只上调所选作业和测评；出勤率保持真实。
-                            </div>
-                            <small>公式不变：出勤 × 40% + 三次作业平均分 × 30% + 测评 × 30%。若因真实出勤限制无法达到过高的最低分，系统会配平到可达到的最高值并给出警告。</small>
-                        </section>
-                        <div class="classroom-final-material-status" id="classroom-ordinary-grade-record-status" hidden></div>
-                    </div>
-                    <div class="classroom-final-material-template-options classroom-final-material-template-options--notice" id="classroom-exam-grade-record-options" hidden>
-                        <strong>考核登分表是一张连续的全班总表。</strong>
-                        <span>系统按当前课堂学生名单顺序逐行列完所有学生；未评分学生保留且成绩留空，不按人数分页拆表，不附带后台核验工作表。</span>
-                        <label class="form-group" style="grid-column:1 / -1;">
-                            <span>考试</span>
-                            <select id="classroom-exam-grade-record-assignment"></select>
-                        </label>
-                        <div class="classroom-final-material-status" id="classroom-exam-grade-record-status" style="grid-column:1 / -1;" hidden></div>
-                    </div>
-                    <label class="form-group classroom-final-material-prompt-group" id="classroom-final-material-prompt-group">
-                        <span class="classroom-final-material-prompt-heading">
-                            <small id="classroom-final-material-prompt-step" hidden>第 5 步</small>
-                            <b id="classroom-final-material-prompt-label">生成要求</b>
-                        </span>
-                        <textarea id="classroom-final-material-prompt" data-prompt-pool-key="classroom.final_material_generate" rows="6" placeholder="例如：围绕本课堂的 Linux 服务部署、数据库授权、脚本备份设计机试任务，难度适中，适合专升本班级。"></textarea>
-                    </label>
-                    <div class="classroom-final-material-status" id="classroom-final-material-status" hidden></div>
-                </div>
-                <div class="modal-footer classroom-material-detail-footer">
-                    <button type="button" class="btn btn-outline" data-classroom-final-material-close>取消</button>
-                    <button type="button" class="btn btn-primary" id="classroom-final-material-submit-btn">生成并保存</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <div id="shared-file-modal" class="modal-backdrop" style="display:none;">
-        <div class="modal-dialog modal-dialog-scrollable">
-            <div class="modal-content shared-file-modal">
-                <div class="modal-header">
-                    <div>
-                        <p class="modal-subtitle">课堂共享文件</p>
-                        <h3 class="modal-title" id="shared-file-modal-title">文件详情</h3>
-                        <p class="shared-file-modal-meta" id="shared-file-modal-meta"></p>
-                    </div>
-                    <button class="modal-close" data-dismiss="modal" aria-label="关闭">&times;</button>
-                </div>
-                <div class="modal-body shared-file-modal-body">
-                    <div class="shared-file-download-status" id="shared-file-download-status" hidden>
-                        <strong>下载已限制</strong>
-                        <p id="shared-file-download-status-text">当前文件超出下载上限。</p>
-                    </div>
-
-                    <section class="shared-file-modal-section">
-                        <div class="shared-file-section-header">
-                            <h4>文件详情</h4>
-                        </div>
-                        <div class="shared-file-description-view" id="shared-file-description-view">
-                            <p class="text-muted">教师暂未补充文件详情。</p>
-                        </div>
-                    </section>
-
-                    <section class="shared-file-modal-section">
-                        <div class="shared-file-section-header">
-                            <h4>原始链接</h4>
-                        </div>
-                        <p class="shared-file-download-hint" id="shared-file-download-hint">教师未提供原始链接。</p>
-                        <div class="shared-file-link-actions" id="shared-file-link-actions" hidden>
-                            <button type="button" class="btn btn-outline btn-sm" id="shared-file-copy-link-btn">复制原始链接</button>
-                            <button type="button" class="btn btn-outline btn-sm" id="shared-file-open-link-btn">打开原始链接</button>
-                        </div>
-                    </section>
-
-                    <section class="shared-file-modal-section" id="shared-file-teacher-form" {% if user_info.role != 'teacher' %}hidden{% endif %}>
-                        <div class="shared-file-section-header">
-                            <h4>教师设置</h4>
-                            <span class="text-muted text-sm">为学生补充辨析说明和原始来源。</span>
-                        </div>
-                        <label class="form-label" for="shared-file-description-input">详情描述</label>
-                        <textarea id="shared-file-description-input" class="form-control shared-file-textarea" rows="6" placeholder="例如：安装前注意事项、适用系统版本、课堂使用建议、常见报错说明等。"></textarea>
-                        <label class="form-label" for="shared-file-original-link-input" style="margin-top: var(--spacing-md);">原始链接</label>
-                        <input id="shared-file-original-link-input" type="url" class="form-control" placeholder="https://example.com/download">
-                    </section>
-                </div>
-                <div class="modal-footer shared-file-modal-footer">
-                    <div id="shared-file-download-slot"></div>
-                    <div class="shared-file-footer-actions">
-                        {% if user_info.role == 'teacher' %}
-                        <button type="button" class="btn btn-ghost text-danger" id="shared-file-delete-btn">删除文件</button>
-                        <button type="button" class="btn btn-outline" id="shared-file-ai-enrich-btn" title="调用AI联网搜索自动填充软件信息">更新软件信息</button>
-                        <button type="button" class="btn btn-primary" id="shared-file-save-btn">保存详情</button>
-                        {% endif %}
-                        <button type="button" class="btn btn-outline" data-dismiss="modal">关闭</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {% set activity_counts = classroom_page.activity_sidebar.initial_counts %}
+        {% set activity_counts = classroom_page.activity_sidebar.initial_counts %}
+        <div class="cw-primary-flow" aria-label="课堂活动">
     <aside class="cw-activity-section" id="classroom-activity-sidebar" data-workspace-section data-classroom-activity-shell aria-label="课堂活动">
         <div class="classroom-activity-dock">
             <header class="classroom-activity-header">
@@ -2220,6 +1876,323 @@
             </div>
         </div>
     </aside>
+        <section class="workspace-panel cw-collection" id="classroom-material-collection" data-cw-source="materials" hidden>
+            <div class="section-header">
+                <div class="section-heading">
+                    {% if sections.materials.eyebrow %}<span class="section-eyebrow">{{ sections.materials.eyebrow }}</span>{% endif %}
+                    <h2 class="section-title">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M9 7h6"></path><path d="M9 11h6"></path><path d="M9 15h4"></path></svg>
+                        {{ sections.materials.title }}
+                    </h2>
+                    {% if not classroom_materials_collapsed %}<p class="section-subtitle">{{ sections.materials.subtitle }}</p>{% endif %}
+                </div>
+                <div class="header-actions materials-toolbar-group classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
+                    {% if user_info.role == 'teacher' %}
+                    <button type="button" class="btn btn-primary btn-sm" id="classroom-final-material-generate-btn" data-cw-external-modal>AI生成期末材料</button>
+                    {% endif %}
+                    <button type="button" class="btn btn-ghost btn-sm" id="classroom-materials-refresh-btn">刷新</button>
+                </div>
+            </div>
+            {% if classroom_materials_collapsed %}
+            <div class="materials-empty classroom-materials-empty-state">当前课堂还没有分配课程材料。</div>
+            {% else %}
+            {% endif %}
+
+            <div class="materials-toolbar classroom-materials-toolbar classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
+                <div class="materials-path-actions" aria-label="材料导航">
+                    <button type="button" class="btn btn-ghost btn-sm" id="classroom-materials-back-btn">返回</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="classroom-materials-up-btn">上一级</button>
+                    <label class="classroom-materials-select-all"><input type="checkbox" id="classroom-materials-select-all" aria-label="选择本页全部材料" disabled>全选本页</label>
+                </div>
+                <div class="materials-breadcrumbs" id="classroom-materials-breadcrumbs">
+                    <span class="text-muted">已分配材料</span>
+                </div>
+            </div>
+
+            <div class="materials-selection-bar classroom-materials-conditional" id="classroom-materials-selection" hidden>
+                <div>
+                    已选择 <strong id="classroom-materials-selection-count">0</strong> 项
+                </div>
+                <div class="materials-toolbar-group">
+                    <button type="button" class="btn btn-outline btn-sm" id="classroom-materials-download-btn">下载选中</button>
+                </div>
+            </div>
+
+            <div class="materials-list classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
+                <div class="materials-list-header">
+                    <div></div>
+                    <div>名称</div>
+                    <div>类型</div>
+                    <div>大小 / 子项</div>
+                    <div>操作</div>
+                </div>
+                <div id="classroom-materials-list">
+                    <div class="materials-empty">正在加载课程材料...</div>
+                </div>
+            </div>
+        </section>
+
+        </div>
+    </div>
+
+    <div id="classroom-material-detail-modal" class="modal-backdrop classroom-material-modal-backdrop" style="display:none;" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
+            <div class="modal-content classroom-material-modal">
+                <div class="modal-header">
+                    <div>
+                        <p class="modal-subtitle" id="classroom-material-detail-kicker">课程材料</p>
+                        <h3 class="modal-title" id="classroom-material-detail-title">材料详情</h3>
+                        <p class="classroom-material-detail-path" id="classroom-material-detail-path"></p>
+                    </div>
+                    <button class="modal-close" type="button" data-classroom-material-modal-close aria-label="关闭">&times;</button>
+                </div>
+                <div class="modal-body classroom-material-detail-body">
+                    <div class="classroom-material-detail-loading" id="classroom-material-detail-loading">正在加载材料详情...</div>
+                    <div id="classroom-material-detail-content" hidden></div>
+                </div>
+                <div class="modal-footer classroom-material-detail-footer">
+                    <button type="button" class="btn btn-outline" id="classroom-material-detail-open-btn">打开</button>
+                    <button type="button" class="btn btn-outline" id="classroom-material-detail-download-btn">下载</button>
+                    {% if user_info.role == 'teacher' %}
+                    <button type="button" class="btn btn-primary" id="classroom-material-detail-export-btn">导出Word</button>
+                    <button type="button" class="btn btn-outline" id="classroom-material-detail-export-pdf-btn">导出PDF</button>
+                    {% endif %}
+                    <button type="button" class="btn btn-ghost" data-classroom-material-modal-close>关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if user_info.role == 'teacher' %}
+    <div id="classroom-final-material-modal" class="modal-backdrop classroom-material-modal-backdrop" style="display:none;" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
+            <div class="modal-content classroom-material-modal">
+                <div class="modal-header">
+                    <div>
+                        <p class="modal-subtitle">期末材料</p>
+                        <h3 class="modal-title">AI生成教务文档</h3>
+                        <p class="classroom-material-detail-path">生成后会保存到当前材料目录，并可继续预览、优化和导出。</p>
+                    </div>
+                    <button class="modal-close" type="button" data-classroom-final-material-close aria-label="关闭">&times;</button>
+                </div>
+                <div class="modal-body classroom-final-material-form">
+                    <label class="form-group">
+                        <span>材料类型</span>
+                        <select id="classroom-final-material-type">
+                            <option value="exam_paper">课程考核试卷</option>
+                            <option value="assessment_plan">课程考核计划表</option>
+                            <option value="grading_rubric">评分细则</option>
+                            <option value="ordinary_grade_record">平时成绩记录表</option>
+                            <option value="exam_grade_record">考核登分表</option>
+                        </select>
+                    </label>
+                    <div class="classroom-final-material-template-options" id="classroom-assessment-plan-options" hidden>
+                        <label class="form-group">
+                            <span>考核形态</span>
+                            <select id="classroom-final-material-assessment-mode">
+                                <option value="non_written">非笔试考核</option>
+                                <option value="written">笔试考核</option>
+                            </select>
+                        </label>
+                        <label class="form-group">
+                            <span>考核形式</span>
+                            <input id="classroom-final-material-assessment-method" type="text" value="机试" placeholder="机试 / 闭卷笔试 / 项目实操">
+                        </label>
+                    </div>
+                    <div class="classroom-final-material-template-options classroom-final-material-template-options--notice" id="classroom-grading-rubric-options" hidden>
+                        <strong>生成评分细则前，请先在本课堂导入或生成课程考核试卷。</strong>
+                        <span>系统会读取最新试卷的题目、任务、截图要求和分值，并据此生成逐题对应的评分标准。</span>
+                    </div>
+                    <div class="classroom-final-material-template-options classroom-final-material-template-options--notice" id="classroom-exam-paper-options" hidden>
+                        <strong>生成试卷前，请先在本课堂导入或生成课程考核计划表。</strong>
+                        <span>系统会继承最新考核计划表中的考核形式、分值分布和课程字段，再结合课堂材料与提示生成题目。</span>
+                    </div>
+                    <div class="classroom-final-material-template-options ordinary-grade-wizard" id="classroom-ordinary-grade-record-options" hidden>
+                        <div class="ordinary-grade-wizard__header">
+                            <div>
+                                <span class="ordinary-grade-wizard__eyebrow">真实课堂数据 · 五步生成</span>
+                                <strong>依次确认 3 份作业、1 份测评和生成要求</strong>
+                                <p>每份来源只能使用一次；缺失成绩先按 0 分记录。出勤率达到 70% 后才可使用最低分保护，出勤始终按智慧课堂真实数据计算。</p>
+                            </div>
+                            <span class="ordinary-grade-wizard__attendance" id="classroom-ordinary-attendance-freshness">正在检查考勤缓存…</span>
+                        </div>
+                        <ol class="ordinary-grade-progress" aria-label="平时成绩记录表生成进度">
+                            <li data-ordinary-progress-step="0"><span>1</span><small>作业一</small></li>
+                            <li data-ordinary-progress-step="1"><span>2</span><small>作业二</small></li>
+                            <li data-ordinary-progress-step="2"><span>3</span><small>作业三</small></li>
+                            <li data-ordinary-progress-step="3"><span>4</span><small>测评</small></li>
+                            <li data-ordinary-progress-step="4"><span>5</span><small>要求</small></li>
+                        </ol>
+                        <div class="ordinary-grade-step-list">
+                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="0">
+                                <span class="ordinary-grade-step-card__number">1</span>
+                                <span class="ordinary-grade-step-card__copy">
+                                    <strong>选择平时作业 1</strong>
+                                    <small data-ordinary-grade-selection-detail="0">尚未选择，点击查看当前课堂作业</small>
+                                </span>
+                                <span class="ordinary-grade-step-card__action">选择</span>
+                            </button>
+                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="1">
+                                <span class="ordinary-grade-step-card__number">2</span>
+                                <span class="ordinary-grade-step-card__copy">
+                                    <strong>选择平时作业 2</strong>
+                                    <small data-ordinary-grade-selection-detail="1">尚未选择，完成上一步后继续</small>
+                                </span>
+                                <span class="ordinary-grade-step-card__action">选择</span>
+                            </button>
+                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="2">
+                                <span class="ordinary-grade-step-card__number">3</span>
+                                <span class="ordinary-grade-step-card__copy">
+                                    <strong>选择平时作业 3</strong>
+                                    <small data-ordinary-grade-selection-detail="2">尚未选择，完成上一步后继续</small>
+                                </span>
+                                <span class="ordinary-grade-step-card__action">选择</span>
+                            </button>
+                            <button type="button" class="ordinary-grade-step-card" data-ordinary-grade-step-index="3">
+                                <span class="ordinary-grade-step-card__number">4</span>
+                                <span class="ordinary-grade-step-card__copy">
+                                    <strong>选择课堂测评</strong>
+                                    <small data-ordinary-grade-selection-detail="3">尚未选择，将只显示测评、测试或考试</small>
+                                </span>
+                                <span class="ordinary-grade-step-card__action">选择</span>
+                            </button>
+                        </div>
+                        <div class="ordinary-grade-picker" id="classroom-ordinary-grade-picker" hidden>
+                            <div class="ordinary-grade-picker__head">
+                                <div>
+                                    <span id="classroom-ordinary-grade-picker-kicker">第 1 步</span>
+                                    <strong id="classroom-ordinary-grade-picker-title">选择平时作业 1</strong>
+                                </div>
+                                <button type="button" class="ordinary-grade-picker__close" data-ordinary-grade-picker-close aria-label="收起来源选择">&times;</button>
+                            </div>
+                            <label class="ordinary-grade-picker__search">
+                                <span class="sr-only">搜索当前课堂的作业或测评</span>
+                                <input id="classroom-ordinary-grade-picker-search" type="search" autocomplete="off" placeholder="模糊搜索标题、状态或评分情况">
+                            </label>
+                            <div class="ordinary-grade-picker__list" id="classroom-ordinary-grade-picker-list"></div>
+                        </div>
+                        <select id="classroom-ordinary-homework-1" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+                        <select id="classroom-ordinary-homework-2" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+                        <select id="classroom-ordinary-homework-3" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+                        <select id="classroom-ordinary-assessment" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+                        <section class="ordinary-grade-score-policy" aria-labelledby="classroom-ordinary-score-floor-title">
+                            <div class="ordinary-grade-score-policy__intro">
+                                <span>第 5 步 · 成绩策略</span>
+                                <strong id="classroom-ordinary-score-floor-title">设置最低平时分保护</strong>
+                                <p>只有真实出勤率达到 70% 的学生才参与配平。系统绝不修改出勤，只以可复现的随机均衡方式上调三次作业和一次测评，并在 Excel 隐藏审计页保留原始分与调整依据。</p>
+                            </div>
+                            <div class="ordinary-grade-score-policy__controls">
+                                <label class="ordinary-grade-score-policy__switch">
+                                    <input id="classroom-ordinary-score-floor-enabled" type="checkbox" checked>
+                                    <span aria-hidden="true"></span>
+                                    <b>启用最低分保护</b>
+                                </label>
+                                <label class="ordinary-grade-score-policy__value">
+                                    <span>最低平时分</span>
+                                    <span class="ordinary-grade-score-policy__input">
+                                        <input id="classroom-ordinary-score-floor" type="number" min="0" max="100" step="1" value="60" inputmode="decimal">
+                                        <em>分</em>
+                                    </span>
+                                </label>
+                            </div>
+                            <div class="ordinary-grade-score-policy__summary" id="classroom-ordinary-score-floor-summary">
+                                出勤率达到 70% 的学生，若公式平时分低于 60 分，系统只上调所选作业和测评；出勤率保持真实。
+                            </div>
+                            <small>公式不变：出勤 × 40% + 三次作业平均分 × 30% + 测评 × 30%。若因真实出勤限制无法达到过高的最低分，系统会配平到可达到的最高值并给出警告。</small>
+                        </section>
+                        <div class="classroom-final-material-status" id="classroom-ordinary-grade-record-status" hidden></div>
+                    </div>
+                    <div class="classroom-final-material-template-options classroom-final-material-template-options--notice" id="classroom-exam-grade-record-options" hidden>
+                        <strong>考核登分表是一张连续的全班总表。</strong>
+                        <span>系统按当前课堂学生名单顺序逐行列完所有学生；未评分学生保留且成绩留空，不按人数分页拆表，不附带后台核验工作表。</span>
+                        <label class="form-group" style="grid-column:1 / -1;">
+                            <span>考试</span>
+                            <select id="classroom-exam-grade-record-assignment"></select>
+                        </label>
+                        <div class="classroom-final-material-status" id="classroom-exam-grade-record-status" style="grid-column:1 / -1;" hidden></div>
+                    </div>
+                    <label class="form-group classroom-final-material-prompt-group" id="classroom-final-material-prompt-group">
+                        <span class="classroom-final-material-prompt-heading">
+                            <small id="classroom-final-material-prompt-step" hidden>第 5 步</small>
+                            <b id="classroom-final-material-prompt-label">生成要求</b>
+                        </span>
+                        <textarea id="classroom-final-material-prompt" data-prompt-pool-key="classroom.final_material_generate" rows="6" placeholder="例如：围绕本课堂的 Linux 服务部署、数据库授权、脚本备份设计机试任务，难度适中，适合专升本班级。"></textarea>
+                    </label>
+                    <div class="classroom-final-material-status" id="classroom-final-material-status" hidden></div>
+                </div>
+                <div class="modal-footer classroom-material-detail-footer">
+                    <button type="button" class="btn btn-outline" data-classroom-final-material-close>取消</button>
+                    <button type="button" class="btn btn-primary" id="classroom-final-material-submit-btn">生成并保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div id="shared-file-modal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content shared-file-modal">
+                <div class="modal-header">
+                    <div>
+                        <p class="modal-subtitle">课堂共享文件</p>
+                        <h3 class="modal-title" id="shared-file-modal-title">文件详情</h3>
+                        <p class="shared-file-modal-meta" id="shared-file-modal-meta"></p>
+                    </div>
+                    <button class="modal-close" data-dismiss="modal" aria-label="关闭">&times;</button>
+                </div>
+                <div class="modal-body shared-file-modal-body">
+                    <div class="shared-file-download-status" id="shared-file-download-status" hidden>
+                        <strong>下载已限制</strong>
+                        <p id="shared-file-download-status-text">当前文件超出下载上限。</p>
+                    </div>
+
+                    <section class="shared-file-modal-section">
+                        <div class="shared-file-section-header">
+                            <h4>文件详情</h4>
+                        </div>
+                        <div class="shared-file-description-view" id="shared-file-description-view">
+                            <p class="text-muted">教师暂未补充文件详情。</p>
+                        </div>
+                    </section>
+
+                    <section class="shared-file-modal-section">
+                        <div class="shared-file-section-header">
+                            <h4>原始链接</h4>
+                        </div>
+                        <p class="shared-file-download-hint" id="shared-file-download-hint">教师未提供原始链接。</p>
+                        <div class="shared-file-link-actions" id="shared-file-link-actions" hidden>
+                            <button type="button" class="btn btn-outline btn-sm" id="shared-file-copy-link-btn">复制原始链接</button>
+                            <button type="button" class="btn btn-outline btn-sm" id="shared-file-open-link-btn">打开原始链接</button>
+                        </div>
+                    </section>
+
+                    <section class="shared-file-modal-section" id="shared-file-teacher-form" {% if user_info.role != 'teacher' %}hidden{% endif %}>
+                        <div class="shared-file-section-header">
+                            <h4>教师设置</h4>
+                            <span class="text-muted text-sm">为学生补充辨析说明和原始来源。</span>
+                        </div>
+                        <label class="form-label" for="shared-file-description-input">详情描述</label>
+                        <textarea id="shared-file-description-input" class="form-control shared-file-textarea" rows="6" placeholder="例如：安装前注意事项、适用系统版本、课堂使用建议、常见报错说明等。"></textarea>
+                        <label class="form-label" for="shared-file-original-link-input" style="margin-top: var(--spacing-md);">原始链接</label>
+                        <input id="shared-file-original-link-input" type="url" class="form-control" placeholder="https://example.com/download">
+                    </section>
+                </div>
+                <div class="modal-footer shared-file-modal-footer">
+                    <div id="shared-file-download-slot"></div>
+                    <div class="shared-file-footer-actions">
+                        {% if user_info.role == 'teacher' %}
+                        <button type="button" class="btn btn-ghost text-danger" id="shared-file-delete-btn">删除文件</button>
+                        <button type="button" class="btn btn-outline" id="shared-file-ai-enrich-btn" title="调用AI联网搜索自动填充软件信息">更新软件信息</button>
+                        <button type="button" class="btn btn-primary" id="shared-file-save-btn">保存详情</button>
+                        {% endif %}
+                        <button type="button" class="btn btn-outline" data-dismiss="modal">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
     </div>
 </main>
 

@@ -2316,6 +2316,7 @@ REQUIRED_POSTGRES_COLUMNS = {
         "evidence_notes",
         "updated_at",
     ),
+    "user_ui_preferences": ("user_role", "user_pk", "palette_key", "version", "updated_at"),
     "student_growth_events": (
         "id",
         "student_id",

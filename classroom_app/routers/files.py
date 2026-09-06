@@ -52,6 +52,7 @@ from ..services.discussion_attachment_service import (
 )
 from ..services.emoji_service import increment_emoji_usage, resolve_custom_emoji_payloads
 from ..services.file_service import (
+    bind_global_file_references,
     count_global_file_references,
     delete_global_file,
     global_file_write_path,
@@ -64,6 +65,7 @@ from ..services.download_policy import apply_download_policy, ensure_download_al
 from ..services.resource_access_service import (
     build_course_file_scope,
     can_manage_scoped_resource,
+    can_read_scoped_resource,
     ensure_classroom_access as ensure_scoped_classroom_access,
     ensure_scoped_resource_access,
     is_super_admin_teacher,
@@ -677,6 +679,7 @@ class FileCheckRequest(BaseModel):
     file_name: str
     file_size: int
     course_id: int
+    file_hash: Optional[str] = None
 
 class UploadInitRequest(BaseModel):
     file_name: str
@@ -745,87 +748,44 @@ async def check_file_exists(
     req: FileCheckRequest,
     user: dict = Depends(get_current_teacher)
 ):
-    with get_db_connection() as conn:
-        course_context = resolve_teacher_course_context(conn, req.course_id, user['id'])
-    req.course_id = course_context["course_id"]
+    """Check an exact, accessible file in the destination course without writes.
 
-    """预上传去重检查 — 全局统一文件库：按文件名+大小在所有课程中查找"""
-    with get_db_connection() as conn:
-        # 全局查找：不限 course_id
-        existing = conn.execute(
-            """SELECT id, file_name, file_size, file_hash, description, original_link, uploaded_at
-               FROM course_files
-               WHERE file_name = ? AND file_size = ?
-               LIMIT 1""",
-            (req.file_name, req.file_size)
-        ).fetchone()
-
-        if existing:
-            # 检查当前课程是否已有此文件
-            in_course = conn.execute(
-                "SELECT id FROM course_files WHERE course_id = ? AND file_name = ? AND file_size = ?",
-                (req.course_id, req.file_name, req.file_size)
-            ).fetchone()
-
-            if in_course:
-                # 当前课程已有此文件
-                return {
-                    "exists": True,
-                    "in_current_course": True,
-                    "file": dict(in_course) | {
-                        "file_name": existing["file_name"],
-                        "file_size": existing["file_size"],
-                        "description": existing["description"],
-                        "original_link": existing["original_link"],
-                        "uploaded_at": existing["uploaded_at"],
-                    }
-                }
-            else:
-                # 其他课程有此文件 — 自动关联到当前课程
+    Filename and size are not content identity. Legacy clients which do not
+    supply SHA-256 continue normal upload; the content-addressed store still
+    deduplicates the actual bytes after upload. Never copy another course's
+    private record, or change publication scope, during a pre-upload check.
+    """
+    def check():
+        with get_db_connection() as conn:
+            context = resolve_teacher_course_context(conn, req.course_id, user['id'])
+            digest = str(req.file_hash or "").strip().lower()
+            if not digest:
+                return {"exists": False}
+            if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+                raise HTTPException(422, "文件 SHA-256 格式无效，请重新上传。")
+            if req.file_size < 0:
+                raise HTTPException(422, "文件大小无效。")
+            candidates = conn.execute(
+                "SELECT * FROM course_files WHERE course_id=? AND file_name=? AND file_size=? AND file_hash=? "
+                "ORDER BY id DESC LIMIT 20",
+                (context["course_id"], req.file_name, req.file_size, digest),
+            ).fetchall()
+            for row in candidates:
+                if not can_read_scoped_resource(conn, row, user):
+                    continue
+                path = resolve_global_file_path(digest)
                 try:
-                    scope_payload = build_course_file_scope(
-                        conn,
-                        user=user,
-                        course_id=req.course_id,
-                        class_offering_id=course_context["class_offering_id"],
-                        is_public=True,
-                        is_teacher_resource=False,
-                    )
-                    timestamp = datetime.now().isoformat()
-                    new_id = execute_insert_returning_id(conn, """
-                                 INSERT INTO course_files
-                                 (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource,
-                                  description, original_link, uploaded_by_teacher_id,
-                                  owner_role, owner_user_pk, scope_level, class_offering_id, class_id,
-                                  school_code, school_name, college, department, published_at, updated_at)
-                                 VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                 """, (req.course_id, existing["file_name"], existing["file_hash"],
-                                       existing["file_size"], existing["description"],
-                                       existing["original_link"], user['id'],
-                                       scope_payload["owner_role"], scope_payload["owner_user_pk"],
-                                       scope_payload["scope_level"], scope_payload["class_offering_id"],
-                                       scope_payload["class_id"], scope_payload["school_code"],
-                                       scope_payload["school_name"], scope_payload["college"],
-                                       scope_payload["department"], timestamp, timestamp))
-                    conn.commit()
-                except Exception as e:
-                    raise HTTPException(500, f"关联文件失败: {e}")
-
+                    present = path is not None and path.stat().st_size == req.file_size
+                except OSError:
+                    present = False
+                if not present:
+                    continue
                 return {
-                    "exists": True,
-                    "in_current_course": False,
-                    "linked": True,
-                    "file": {
-                        "id": new_id,
-                        "file_name": existing["file_name"],
-                        "file_size": existing["file_size"],
-                        "description": existing["description"],
-                        "original_link": existing["original_link"],
-                        "uploaded_at": existing["uploaded_at"]
-                    }
+                    "exists": True, "in_current_course": True, "linked": False,
+                    "file": {key: row[key] for key in ("id", "file_name", "file_size", "description", "original_link", "uploaded_at")},
                 }
-
-        return {"exists": False}
+            return {"exists": False}
+    return await asyncio.to_thread(check)
 
 
 @router.post("/api/files/upload/init")
@@ -977,6 +937,7 @@ async def complete_chunked_upload(
                 is_teacher_resource=bool(upload['is_teacher_resource']),
             )
             timestamp = datetime.now().isoformat()
+            bind_global_file_references(conn, (file_hash,))
             file_id = execute_insert_returning_id(conn, """
                 INSERT INTO course_files
                 (course_id, file_name, file_hash, file_size,
@@ -1276,6 +1237,8 @@ async def upload_course_file(
         if not file_info:
             raise HTTPException(500, "文件保存失败")
 
+        bind_global_file_references(conn, (file_info["hash"],))
+
         try:
             scope_payload = build_course_file_scope(
                 conn,
@@ -1359,7 +1322,7 @@ async def delete_course_file(
         # 仅当没有其他引用时才删除物理文件
         save_status = True
         if count_global_file_references(conn, file_data['file_hash']) <= 0:
-            save_status = await delete_global_file(file_data['file_hash'])
+            save_status = await delete_global_file(file_data['file_hash'], conn=conn)
 
         # 广播消息
         try:
@@ -1367,8 +1330,7 @@ async def delete_course_file(
         except Exception as e:
             print(f"[ERROR] 广播删除消息失败: {e}")
 
-    return {"status": "success",
-            "message": "文件删除成功，" + ("物理文件已删除。" if save_status else "但物理文件删除失败。")}
+    return {"status": "success", "message": "文件已删除。"}
 
 
 # 修改 classroom_app/routers/files.py 中的 download_course_file 函数

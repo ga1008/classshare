@@ -173,7 +173,7 @@ class RouterPostgresWriteTests(unittest.TestCase):
 
     def test_custom_emoji_upload_uses_insert_returning_helper(self):
         conn = FakeConnection()
-        with patch.object(emoji, "get_db_connection", return_value=conn), patch.object(
+        with patch.object(emoji, "get_db_connection", return_value=conn), patch.object(emoji, "bind_global_file_references"), patch.object(
             emoji,
             "ensure_classroom_access",
             return_value=None,
@@ -215,7 +215,7 @@ class RouterPostgresWriteTests(unittest.TestCase):
         self.assertEqual(1, insert_helper.call_count)
         self.assertIn("INSERT INTO custom_emojis", insert_helper.call_args.args[1])
 
-    def test_file_check_link_uses_insert_returning_helper(self):
+    def test_filename_only_precheck_does_not_copy_a_course_file(self):
         conn = FakeConnection()
         with patch.object(files, "get_db_connection", return_value=conn), patch.object(
             files,
@@ -247,14 +247,12 @@ class RouterPostgresWriteTests(unittest.TestCase):
                 )
             )
 
-        self.assertTrue(result["linked"])
-        self.assertEqual(404, result["file"]["id"])
-        self.assertEqual(1, insert_helper.call_count)
-        self.assertIn("INSERT INTO course_files", insert_helper.call_args.args[1])
+        self.assertEqual({"exists": False}, result)
+        insert_helper.assert_not_called()
 
     def test_complete_chunked_upload_uses_insert_returning_helper(self):
         conn = FakeConnection()
-        with patch.object(files, "get_db_connection", return_value=conn), patch.object(
+        with patch.object(files, "get_db_connection", return_value=conn), patch.object(files, "bind_global_file_references"), patch.object(
             files,
             "sync_assemble_file",
             return_value=("file-hash", 123),

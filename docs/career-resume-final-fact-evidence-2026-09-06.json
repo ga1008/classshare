@@ -1,0 +1,2733 @@
+{
+  "synthetic_only": true,
+  "normalization": "Whitespace only; wording, punctuation and numbers unchanged. Full repeated experience content is checked nine times, not only one matching snippet.",
+  "visual_review": "Separate required evidence; not performed by this tool",
+  "fixture_sha256": "c95bf3eee17f6ca4f2d820c1d61ca7d3a63b5a39b23ddf70f859674edeebb9de",
+  "probe_sha256": "3d722ec3e12928a12a79d0bd473581205a59f9ba30e995e1a04e6bffb8fe4fe3",
+  "expected_facts": [
+    {
+      "id": "name",
+      "text": "渲染测试样本",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "phone",
+      "text": "13800000000",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "email",
+      "text": "sample@example.invalid",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "target",
+      "text": "跨文化项目协调助理",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "school",
+      "text": "合成测试大学",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "college",
+      "text": "人文与管理学院",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "major",
+      "text": "英语",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "degree",
+      "text": "本科",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "education_start",
+      "text": "2023-09",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "education_end",
+      "text": "2027-06",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "education_content",
+      "text": "课程成果：跨文化交流、教育实践、商务写作与资料分析。本文所有经历均为程序验收合成样本，不代表真实学生。",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "intro_one",
+      "text": "具有英语沟通、资料整理和活动协作的实践记录。能够核对信息来源、记录需求并跟进反馈。",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "intro_two",
+      "text": "本样本用于核对长中文、标点、链接与分页：测试 <script>alert(1)</script> 必须显示为普通文本。",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "skill_one",
+      "text": "英语沟通",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "skill_two",
+      "text": "资料分析与报告写作",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "certificate",
+      "text": "合成语言能力证明",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "certificate_date",
+      "text": "2025-06",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "certificate_description",
+      "text": "仅供格式测试的证明名称。核验链接：https://example.invalid/verification?sample=resume&version=2",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "experience_title_0",
+      "text": "实习长中文验收样本",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "experience_title_1",
+      "text": "项目长中文验收样本",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "experience_title_2",
+      "text": "课程成果长中文验收样本",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "experience_title_3",
+      "text": "比赛长中文验收样本",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "experience_title_4",
+      "text": "社团 / 学生工作长中文验收样本",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "experience_title_5",
+      "text": "志愿服务长中文验收样本",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "experience_title_6",
+      "text": "兼职长中文验收样本",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "experience_title_7",
+      "text": "调研 / 科研长中文验收样本",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "experience_title_8",
+      "text": "全职工作长中文验收样本",
+      "minimum_occurrences": 1
+    },
+    {
+      "id": "experience_start",
+      "text": "2025-03",
+      "minimum_occurrences": 9
+    },
+    {
+      "id": "experience_end",
+      "text": "2025-06",
+      "minimum_occurrences": 10
+    },
+    {
+      "id": "role",
+      "text": "协作成员",
+      "minimum_occurrences": 9
+    },
+    {
+      "id": "content_full",
+      "text": "围绕明确问题整理中英文资料，核对公开来源的适用范围，形成可复核的记录。围绕明确问题整理中英文资料，核对公开来源的适用范围，形成可复核的记录。围绕明确问题整理中英文资料，核对公开来源的适用范围，形成可复核的记录。围绕明确问题整理中英文资料，核对公开来源的适用范围，形成可复核的记录。围绕明确问题整理中英文资料，核对公开来源的适用范围，形成可复核的记录。围绕明确问题整理中英文资料，核对公开来源的适用范围，形成可复核的记录。围绕明确问题整理中英文资料，核对公开来源的适用范围，形成可复核的记录。围绕明确问题整理中英文资料，核对公开来源的适用范围，形成可复核的记录。",
+      "minimum_occurrences": 9
+    },
+    {
+      "id": "contribution_full",
+      "text": "将讨论结论整理为行动清单，记录负责事项与反馈，发现信息不一致时联系相关人员核对。将讨论结论整理为行动清单，记录负责事项与反馈，发现信息不一致时联系相关人员核对。将讨论结论整理为行动清单，记录负责事项与反馈，发现信息不一致时联系相关人员核对。",
+      "minimum_occurrences": 9
+    },
+    {
+      "id": "achievement_full",
+      "text": "交付整理记录与复盘文档。此处没有真实业绩数字，避免渲染测试引入虚构事实。",
+      "minimum_occurrences": 9
+    }
+  ],
+  "rows": [
+    {
+      "template": "classic",
+      "files": {
+        "html": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\resume-classic.html",
+          "sha256": "925295bc9e52bfdbd59795e699002bd45c2c35dbf45a9038b8b8b3853ccfbdb0"
+        },
+        "docx": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\resume-classic.docx",
+          "sha256": "94cae5fffa9eafdd836ddb109cb5d9264e84dd9655bb5d9b53b2e7cb0c18a547"
+        },
+        "pdf": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\resume-classic.pdf",
+          "sha256": "5e8e2de0f1b9513ef651f4545c00ddb3201ca5a2cae79278249dfc862380b154"
+        },
+        "docx_pdf": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\qa-docx-classic\\resume-classic.pdf",
+          "sha256": "16ce52ef8351b0dcb31de138be003b316ef821891dc2b3cd0413b284be154697"
+        }
+      },
+      "media": {
+        "html_avatar_count": 1,
+        "html_executable_script_count": 0,
+        "docx_images": 1,
+        "pdf": {
+          "pages": 4,
+          "unique_embedded_images": 1
+        },
+        "docx_pdf": {
+          "pages": 5,
+          "unique_embedded_images": 1
+        }
+      },
+      "surfaces": {
+        "html": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        },
+        "docx": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        },
+        "pdf": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        },
+        "docx_pdf": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "template": "modern",
+      "files": {
+        "html": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\resume-modern.html",
+          "sha256": "f85523dbb6d32260c85f4dfcf4cf3bb2da69ce185e9d512c15a5d9903ab3777a"
+        },
+        "docx": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\resume-modern.docx",
+          "sha256": "df24ee10a3bff84b5aaa7ad8a5ad1048dd9426527374bc7d57fd2f635777f9b5"
+        },
+        "pdf": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\resume-modern.pdf",
+          "sha256": "f04b6a43ec0b17aabfae395b4be5650fcba30aff081b6aea8c0aaec0ada841a7"
+        },
+        "docx_pdf": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\qa-docx-modern\\resume-modern.pdf",
+          "sha256": "0653a815d281479c3a95d8603cc113ea3b1da720750e83987aedf13290506dbe"
+        }
+      },
+      "media": {
+        "html_avatar_count": 1,
+        "html_executable_script_count": 0,
+        "docx_images": 1,
+        "pdf": {
+          "pages": 4,
+          "unique_embedded_images": 1
+        },
+        "docx_pdf": {
+          "pages": 5,
+          "unique_embedded_images": 1
+        }
+      },
+      "surfaces": {
+        "html": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        },
+        "docx": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        },
+        "pdf": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        },
+        "docx_pdf": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "template": "sidebar",
+      "files": {
+        "html": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\resume-sidebar.html",
+          "sha256": "03ca91d4a453012e2ddb3fb2e94c643e381d879db64410b3e10585131d3b879c"
+        },
+        "docx": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\resume-sidebar.docx",
+          "sha256": "cb65608a75d29ee435d324ff1da6dcba2b56d55b20c7024a9a4dd0ca7ef345bd"
+        },
+        "pdf": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\resume-sidebar.pdf",
+          "sha256": "e3d9946f0f413d7d2cd7b4671fc2d1641e716e918a7869f51210e02e06e08ad5"
+        },
+        "docx_pdf": {
+          "path": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\career-upgrade-20260906\\resume-render-v5\\qa-docx-sidebar\\resume-sidebar.pdf",
+          "sha256": "37167f0421a26f4b8240e55c1bc0f3df69dc4bbc979fec04ffc5b0d3a09f2fce"
+        }
+      },
+      "media": {
+        "html_avatar_count": 1,
+        "html_executable_script_count": 0,
+        "docx_images": 1,
+        "pdf": {
+          "pages": 5,
+          "unique_embedded_images": 1
+        },
+        "docx_pdf": {
+          "pages": 6,
+          "unique_embedded_images": 1
+        }
+      },
+      "surfaces": {
+        "html": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        },
+        "docx": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        },
+        "pdf": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        },
+        "docx_pdf": {
+          "facts_checked": 33,
+          "passed": true,
+          "facts": [
+            {
+              "id": "name",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "phone",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "email",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "target",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "school",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "college",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "major",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 3,
+              "passed": true
+            },
+            {
+              "id": "degree",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_start",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_end",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "education_content",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "intro_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "skill_one",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 2,
+              "passed": true
+            },
+            {
+              "id": "skill_two",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "certificate_date",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "certificate_description",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_0",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_1",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_2",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_3",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_4",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_5",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_6",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_7",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_title_8",
+              "expected_minimum_occurrences": 1,
+              "actual_occurrences": 1,
+              "passed": true
+            },
+            {
+              "id": "experience_start",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "experience_end",
+              "expected_minimum_occurrences": 10,
+              "actual_occurrences": 10,
+              "passed": true
+            },
+            {
+              "id": "role",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "content_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "contribution_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            },
+            {
+              "id": "achievement_full",
+              "expected_minimum_occurrences": 9,
+              "actual_occurrences": 9,
+              "passed": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "ok": true
+}

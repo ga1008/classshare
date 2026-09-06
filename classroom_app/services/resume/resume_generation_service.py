@@ -1,32 +1,23 @@
-"""Background AI jobs for the resume console (asyncio tasks).
-
-Triggered via ``asyncio.create_task`` from the router (same pattern as
-``assessment_plan_generation_service``). Each job opens its own DB connection,
-commits, and is fully graceful — on AI failure it falls back to a deterministic
-draft so the closed loop never strands the student with an empty placeholder.
-
-Jobs:
-
-* ``run_self_intro_generation_job``  — deep self-introduction from all profile data.
-* ``run_resume_render_job``          — tech-stack gen (if requested) + HTML assembly.
-* ``run_education_seed_job``         — first-visit auto education entry.
-"""
+"""Durable resume handlers: compute outside transactions, apply with revision guards."""
 
 from __future__ import annotations
 
 import json
+import asyncio
+import hashlib
 import re
-import traceback
 from typing import Any
 
-import httpx
 
 from ...database import get_db_connection
-from ..career_engagement_service import record_student_career_event_safely
 from . import resume_ai_service as ai
 from . import resume_document_service as docs
 from . import resume_profile_service as profile
 from . import resume_render_service as render
+from ..student_career_job_service import (
+    enqueue_student_career_job, register_student_career_handler, public_job_state,
+    supersede_student_career_jobs, SupersededCareerJob,
+)
 
 
 def _student_context(conn, student_id: int) -> dict[str, Any]:
@@ -38,13 +29,6 @@ def _student_context(conn, student_id: int) -> dict[str, Any]:
         return {}
 
 
-def _hidden_block(conn, student_id: int) -> str:
-    try:
-        from ..career_path_service import _build_hidden_profile_block
-
-        return _build_hidden_profile_block(conn, int(student_id))
-    except Exception:
-        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +93,7 @@ def _fallback_self_intro(bundle: dict[str, Any], ctx: dict[str, Any]) -> str:
     personal = bundle.get("personal") or {}
     position = personal.get("expected_position") or "相关岗位"
     major = _clean_intro_background_label(ctx.get("major_name")) or _first_education_major(bundle)
-    skills = [str(s.get("name") or "").strip() for s in bundle.get("skill", []) if str(s.get("name") or "").strip()]
+    skills = [name for group in ai._fallback_tech_stack(bundle) for name in group["items"]]
     experiences = [
         str(e.get("title") or "").strip()
         for e in bundle.get("experience", [])
@@ -122,163 +106,19 @@ def _fallback_self_intro(bundle: dict[str, Any], ctx: dict[str, Any]) -> str:
     opening += "。"
 
     if experiences:
-        practice = f"具备{'、'.join(experiences[:2])}等项目实践经验，能够围绕需求拆解、功能实现与问题定位推进交付。"
+        practice = f"具有{'、'.join(experiences[:2])}等实践经历。"
     else:
-        practice = "具备扎实的专业学习基础，重视需求理解、代码质量与协作交付。"
+        practice = ""
     return _compact_resume_intro(opening + practice)
 
 
-async def run_self_intro_generation_job(intro_id: int, student_id: int) -> None:
-    try:
-        with get_db_connection() as conn:
-            bundle = profile.collect_profile_bundle(conn, student_id)
-            ctx = _student_context(conn, student_id)
-            hidden = _hidden_block(conn, student_id)
-            conn.commit()
-
-        digest = {
-            "个人信息": {k: (bundle.get("personal") or {}).get(k)
-                       for k in ("name", "expected_position", "expected_industry")},
-            "专业": ctx.get("major_name"),
-            "班级": ctx.get("class_name"),
-            "学习经历": [{"学校": e.get("school"), "专业": e.get("major"), "内容": (e.get("content") or "")[:160]}
-                       for e in bundle.get("education", [])][:6],
-            "项目比赛": [{"标题": e.get("title"), "角色": e.get("role"), "内容": (e.get("content") or "")[:200],
-                       "成果": e.get("achievement")} for e in bundle.get("experience", [])][:8],
-            "技能": [s.get("name") for s in bundle.get("skill", [])][:30],
-            "证书": [c.get("name") for c in bundle.get("certificate", [])][:20],
-        }
-        system = (
-            "你是资深简历顾问。请基于学生的真实资料，写一段可直接放入简历“个人介绍/职业摘要”栏位的中文正文。"
-            "要求：80-140 个中文字符，最多 3 句；专业、严谨、简洁，突出与期望岗位匹配的技能、项目/学习成果和工作方式。"
-            "禁止聊天式自述、流水账、课堂任务过程、弱项说明、求职愿望、空泛表态；不要出现“希望”“贵单位”“未来我会”等套话。"
-            "不要虚构未提供的事实，不要 Markdown、标题、称呼或解释，只返回正文。"
-        )
-        if hidden:
-            system += "\n（以下后台学习支持参考仅用于推断能力侧重，绝不可在正文中提及课堂、班级、作业过程或其存在。）\n" + hidden
-        user = "学生资料 JSON：\n" + json.dumps(digest, ensure_ascii=False, indent=2)
-
-        content = ""
-        error_text = ""
-        try:
-            content = await ai._chat(
-                system, user, want_json=False, capability="thinking",
-                task_type="deep_text_reasoning", timeout=240.0, label="resume:self-intro",
-            )
-            content = _compact_resume_intro(content)
-            if not ai._resume_summary_is_useful(
-                content,
-                str((bundle.get("personal") or {}).get("expected_position") or ""),
-            ):
-                content = ""
-        except (httpx.HTTPError, ValueError):
-            content = ""
-        if not content:
-            content = _fallback_self_intro(bundle, ctx)
-            error_text = "AI 生成暂不可用，已根据你的资料生成基础版本，可继续编辑优化。"
-
-        with get_db_connection() as conn:
-            profile.finish_self_intro(
-                conn, intro_id, content_md=content,
-                title="AI 定制自我介绍", status="ready", error_text=error_text,
-            )
-            conn.commit()
-    except Exception as exc:  # noqa: BLE001
-        traceback.print_exc()
-        try:
-            with get_db_connection() as conn:
-                profile.finish_self_intro(
-                    conn, intro_id, content_md="", status="failed",
-                    error_text=f"生成失败：{type(exc).__name__}: {str(exc)[:200]}",
-                )
-                conn.commit()
-        except Exception:
-            pass
 
 
 # ---------------------------------------------------------------------------
 # 2) Résumé render (tech stack + HTML assembly)
 # ---------------------------------------------------------------------------
-async def run_resume_render_job(resume_id: int, student_id: int) -> None:
-    try:
-        with get_db_connection() as conn:
-            resume = docs.get_resume(conn, student_id, resume_id)
-            bundle = profile.collect_profile_bundle(conn, student_id)
-            ctx = _student_context(conn, student_id)
-            conn.commit()
-
-        wants_tech = any(b.get("type") == "tech_stack" for b in resume.get("layout", {}).get("blocks", []))
-        tech_stack = resume.get("tech_stack") or []
-        if wants_tech and not tech_stack:
-            result = await ai.generate_tech_stack(
-                bundle, ctx,
-                target_position=str(resume.get("target_position") or (bundle.get("personal") or {}).get("expected_position") or ""),
-            )
-            tech_stack = result.get("groups") or []
-        resume["tech_stack"] = tech_stack
-
-        with get_db_connection() as conn:
-            html = render.assemble_resume_html(conn, student_id, resume)
-            docs.save_render(conn, resume_id, render_html=html, tech_stack=tech_stack, status="ready")
-            conn.commit()
-    except Exception as exc:  # noqa: BLE001
-        traceback.print_exc()
-        try:
-            with get_db_connection() as conn:
-                docs.set_status(conn, resume_id, "failed",
-                                f"渲染失败：{type(exc).__name__}: {str(exc)[:200]}")
-                conn.commit()
-        except Exception:
-            pass
 
 
-async def run_resume_optimization_job(resume_id: int, student_id: int) -> None:
-    try:
-        with get_db_connection() as conn:
-            resume = docs.get_resume(conn, student_id, resume_id)
-            bundle = profile.collect_profile_bundle(conn, student_id)
-            ctx = _student_context(conn, student_id)
-            conn.commit()
-
-        result = await ai.optimize_resume_for_target(resume, bundle, ctx)
-        resume["target_position"] = result.get("target_position") or resume.get("target_position") or ""
-        resume["optimized_summary_md"] = result.get("summary_md") or ""
-        resume["tech_stack"] = result.get("tech_stack") or []
-        resume["optimization_notes"] = {"items": result.get("notes") or []}
-
-        with get_db_connection() as conn:
-            html = render.assemble_resume_html(conn, student_id, resume)
-            docs.save_optimization(
-                conn, resume_id,
-                target_position=resume["target_position"],
-                optimized_summary_md=resume["optimized_summary_md"],
-                optimization_notes=resume["optimization_notes"],
-                render_html=html,
-                tech_stack=resume["tech_stack"],
-                status="ready",
-                error_text=str(result.get("error") or ""),
-            )
-            record_student_career_event_safely(
-                conn,
-                student_id,
-                surface="resume",
-                event_name="resume_optimized",
-                context={
-                    "resume_id": resume_id,
-                    "status": "ready",
-                    "target_position": resume["target_position"],
-                },
-            )
-            conn.commit()
-    except Exception as exc:  # noqa: BLE001
-        traceback.print_exc()
-        try:
-            with get_db_connection() as conn:
-                docs.set_status(conn, resume_id, "failed",
-                                f"AI 优化失败：{type(exc).__name__}: {str(exc)[:200]}")
-                conn.commit()
-        except Exception:
-            pass
 
 
 # ---------------------------------------------------------------------------
@@ -290,12 +130,12 @@ def _fallback_education(ctx: dict[str, Any]) -> dict[str, Any]:
     end = str(timeline.get("graduation_year") or "").strip()
     return {
         "kind": "university",
-        "school": "广西外国语学院",
+        "school": ctx.get("school_name") or "",
         "college": ctx.get("college") or ctx.get("department") or "",
         "major": ctx.get("major_name") or "",
         "start_date": (start + "-09") if start else "",
         "end_date": (end + "-06") if end else "",
-        "content": f"主修{ctx.get('major_name') or '专业'}相关核心课程，系统学习专业基础知识与实践技能。",
+        "content": "",
     }
 
 
@@ -309,7 +149,7 @@ def _normalize_seed_education(
     merged = {**fallback, **{key: value for key, value in source.items() if value}}
     return {
         "kind": str(merged.get("kind") or "university")[:40],
-        "school": str(merged.get("school") or fallback.get("school") or "广西外国语学院")[:120],
+        "school": str(merged.get("school") or fallback.get("school") or ctx.get("school_name") or "")[:120],
         "college": str(merged.get("college") or fallback.get("college") or "")[:120],
         "major": str(merged.get("major") or fallback.get("major") or ctx.get("major_name") or "")[:120],
         "start_date": str(merged.get("start_date") or fallback.get("start_date") or "")[:20],
@@ -319,71 +159,227 @@ def _normalize_seed_education(
     }
 
 
-async def run_education_seed_job(student_id: int) -> None:
+def _current_resume(conn, job: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any] | None:
     try:
-        with get_db_connection() as conn:
-            if profile.has_any_education(conn, student_id):
-                return
-            ctx = _student_context(conn, student_id)
-            conn.commit()
-        if not ctx:
-            return
+        resume = docs.get_resume(conn, int(payload["student_id"]), int(payload["resume_id"]))
+    except ValueError:
+        return None
+    if int(resume.get("revision") or 1) != int(payload["revision"]) or str(resume.get("active_job_id") or "") != str(job["id"]):
+        return None
+    return resume
 
-        fallback = _fallback_education(ctx)
-        seed_payload = _normalize_seed_education(None, fallback=fallback, ctx=ctx)
-        if not seed_payload["school"] or not seed_payload["start_date"] or not seed_payload["end_date"]:
-            return
 
-        with get_db_connection() as conn:
-            if profile.has_any_education(conn, student_id):  # race guard
-                conn.commit()
-                return
-            edu_id = profile.create_education_auto(
-                conn, student_id,
-                school=seed_payload["school"],
-                college=seed_payload["college"],
-                major=seed_payload["major"],
-                start_date=seed_payload["start_date"],
-                end_date=seed_payload["end_date"],
-                content=seed_payload["content"],
-                kind=seed_payload["kind"],
-            )
-            conn.commit()
 
-        system = (
-            "你是简历填写助手。请根据学生的学校、专业、入学与毕业年份，整理一条规范的大学学习经历，"
-            "必须返回 JSON 对象，键：school、college、major、start_date(YYYY-MM)、end_date(YYYY-MM)、content。"
-            "content 用一句话概述主修方向与学习重点。只返回 JSON，不要编造不存在的信息。"
-        )
-        digest = {
-            "学校": "广西外国语学院",
-            "学院系部": ctx.get("college") or ctx.get("department"),
-            "专业": ctx.get("major_name"),
-            "班级": ctx.get("class_name"),
-            "时间线": ctx.get("timeline"),
-        }
-        user = "学生学籍信息：\n" + json.dumps(digest, ensure_ascii=False, indent=2)
-        data: Any = None
+def _lock_current_resume(conn, job, payload) -> bool:
+    # Establish the business row lock before touching candidates or versions.
+    return conn.execute("UPDATE resumes SET revision = revision WHERE id = ? AND student_id = ? AND revision = ? AND active_job_id = ? AND archived = 0",
+                        (int(payload["resume_id"]), int(payload["student_id"]), int(payload["revision"]), str(job["id"]))).rowcount == 1
+
+def queue_resume_job(conn, student_id: int, resume_id: int, kind: str, *, retry: bool = False) -> dict[str, Any]:
+    if kind not in {"render", "optimize", "import"}:
+        raise ValueError("不支持的简历任务")
+    from ..ai_durable_job_service import ensure_ai_job_schema
+    from ..career_rollout_service import require_student_ai
+    if kind != "render":
+        require_student_ai(conn, student_id)
+    ensure_ai_job_schema(conn)
+    resume = docs.get_resume(conn, student_id, resume_id)
+    revision = int(resume.get("revision") or 1)
+    locked = conn.execute("UPDATE resumes SET revision = revision WHERE id = ? AND student_id = ? AND revision = ? AND archived = 0", (int(resume_id), int(student_id), revision))
+    if locked.rowcount != 1:
+        raise docs.ResumeConflict("简历已更新，请重试当前操作。")
+    current_job = public_job_state(conn, resume.get("active_job_id"), student_id=student_id)
+    if current_job.get("cancellable") and current_job.get("task_type") == "resume_" + kind:
+        return current_job
+    supersede_student_career_jobs(conn, scope_type="resume", scope_id=str(resume_id), student_id=student_id)
+    if kind != "import":
         try:
-            data = await ai._chat(
-                system, user, want_json=True, capability="thinking",
-                task_type="deep_text_reasoning", timeout=30.0, label="resume:edu-seed",
-            )
-        except (httpx.HTTPError, ValueError):
-            data = None
-        if not isinstance(data, dict):
-            return
-        edu = _normalize_seed_education(data, fallback=fallback, ctx=ctx)
-        if not edu["school"] or not edu["start_date"] or not edu["end_date"]:
-            return
+            docs.get_version(conn, student_id, resume_id, revision)
+        except LookupError:
+            docs.capture_version(conn, student_id, resume_id)
+    # An explicit retry gets a new logical attempt id; automatic retries stay
+    # under the durable job's bounded budget and never reset on a polling GET.
+    import uuid
+    key = f"resume:{student_id}:{resume_id}:{revision}:{kind}"
+    existing = conn.execute("SELECT id,status FROM ai_jobs WHERE dedupe_key = ?", (key,)).fetchone()
+    if existing and not retry:
+        if existing["status"] == "succeeded":
+            if kind == "render" and docs.get_version(conn, student_id, resume_id, revision).get("render_html"):
+                conn.execute("UPDATE resumes SET status = 'ready' WHERE id = ? AND student_id = ? AND revision = ?", (int(resume_id), int(student_id), revision))
+                return public_job_state(conn, existing["id"], student_id=student_id)
+            pending = conn.execute("SELECT 1 FROM resume_candidates WHERE resume_id = ? AND student_id = ? AND base_revision = ? AND status = 'pending' AND kind = ?", (int(resume_id), int(student_id), revision, "import" if kind == "import" else "optimization")).fetchone()
+            if pending:
+                conn.execute("UPDATE resumes SET status = 'review_ready' WHERE id = ? AND student_id = ? AND revision = ?", (int(resume_id), int(student_id), revision))
+                return public_job_state(conn, existing["id"], student_id=student_id)
+        retry = True  # A new explicit command may replace a terminal attempt.
+    if retry:
+        key += ":retry:" + uuid.uuid4().hex
+    job = enqueue_student_career_job(
+        conn, task_type="resume_" + kind, dedupe_key=key,
+        payload={"student_id": int(student_id), "resume_id": int(resume_id), "revision": revision},
+        student_id=int(student_id), scope_type="resume", scope_id=str(resume_id), source_ref=str(resume_id))
+    status = {"render": "rendering", "optimize": "optimizing", "import": "parsing"}[kind]
+    conn.execute("UPDATE resumes SET status = ?, active_job_id = ?, error_text = '' WHERE id = ? AND student_id = ? AND revision = ? AND archived = 0",
+                 (status, str(job["id"]), int(resume_id), int(student_id), revision))
+    return public_job_state(conn, job["id"], student_id=student_id)
 
-        with get_db_connection() as conn:
-            current = profile.get_section_item(conn, student_id, "education", int(edu_id))
-            if current.get("updated_at") != current.get("created_at"):
-                # The student already edited the seed while AI was thinking.
-                conn.commit()
-                return
-            profile.update_section_item(conn, student_id, "education", int(edu_id), edu)
-            conn.commit()
-    except Exception:  # noqa: BLE001
-        traceback.print_exc()
+
+def _load_task_version(job, payload, *, context=False):
+    with get_db_connection() as conn:
+        if not _current_resume(conn, job, payload):
+            raise SupersededCareerJob()
+        version = docs.get_version(conn, int(payload["student_id"]), int(payload["resume_id"]), int(payload["revision"]))
+        return (version, _student_context(conn, int(payload["student_id"]))) if context else version
+
+
+async def execute_resume_render(job: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    version = await asyncio.to_thread(_load_task_version, job, payload)
+    # Rendering uses a frozen bundle and does not open a DB connection or call
+    # a model. AI enrichment is a separate suggestion task the student accepts.
+    html = await asyncio.to_thread(render.assemble_resume_html, None, int(payload["student_id"]), docs.snapshot_resume(version))
+    return {"render_html": html, "content_hash": version["content_hash"]}
+
+
+def apply_resume_render(conn, job, payload, result) -> bool:
+    if not _lock_current_resume(conn, job, payload):
+        return False
+    docs.save_version_render(conn, int(payload["student_id"]), int(payload["resume_id"]), int(payload["revision"]), str(result["render_html"]))
+    return True
+
+
+async def execute_resume_optimization(job, payload) -> dict[str, Any]:
+    version, ctx = await asyncio.to_thread(_load_task_version, job, payload, context=True)
+    resume = docs.snapshot_resume(version)
+    # The model receives only the selected evidence and the exact private JD.
+    return await ai.optimize_resume_for_target(resume, resume["content_snapshot"], ctx)
+
+
+def apply_resume_candidate(conn, job, payload, result) -> bool:
+    if not _lock_current_resume(conn, job, payload):
+        return False
+    kind = "import" if job["task_type"] == "resume_import" else "optimization"
+    docs.create_candidate(conn, int(payload["student_id"]), int(payload["resume_id"]), int(payload["revision"]), kind, result, job_id=str(job["id"]))
+    conn.execute("UPDATE resumes SET status = 'review_ready', error_text = '', active_job_id = '' WHERE id = ? AND student_id = ? AND revision = ?",
+                 (int(payload["resume_id"]), int(payload["student_id"]), int(payload["revision"])))
+    return True
+
+
+async def execute_resume_import(job, payload) -> dict[str, Any]:
+    from . import resume_import_service
+    return await resume_import_service.execute_import_candidate(job, payload)
+
+
+def fail_resume_job(conn, job, payload, code, message) -> None:
+    if _lock_current_resume(conn, job, payload):
+        user_message = {"ResumeImportResourceLimit": "文件页数、图片像素或解压后内容过大，请精简后重新上传。", "ResumeImportInvalidDocument": "文件无法解析或带密码，请上传可正常打开的原件。"}.get(code, "处理失败，可重试。" + str(code)[:80])
+        conn.execute("UPDATE resumes SET status = 'failed', error_text = ? WHERE id = ? AND student_id = ? AND revision = ? AND active_job_id = ?",
+                     (user_message, int(payload["resume_id"]), int(payload["student_id"]), int(payload["revision"]), str(job["id"])))
+
+
+def _intro_input(conn, student_id: int) -> dict[str, Any]:
+    data = profile.collect_profile_bundle(conn, student_id)
+    return {"personal": {"expected_position": (data.get("personal") or {}).get("expected_position", "")},
+            **{key: data.get(key) or [] for key in ("skill", "certificate", "education", "experience")}}
+
+
+def queue_intro_job(conn, student_id: int, intro_id: int) -> dict[str, Any]:
+    from ..career_rollout_service import require_student_ai
+    require_student_ai(conn, student_id)
+    intro = profile.get_section_item(conn, student_id, "self_intro", intro_id)
+    bundle = _intro_input(conn, student_id)
+    ctx = _student_context(conn, student_id)
+    job = enqueue_student_career_job(conn, task_type="resume_intro", dedupe_key=f"resume-intro:{student_id}:{intro_id}:{intro['revision']}",
+        payload={"student_id": int(student_id), "intro_id": int(intro_id), "revision": int(intro["revision"]), "bundle": bundle,
+                 "evidence_hash": hashlib.sha256(docs._json(bundle).encode()).hexdigest(),
+                 "context": {key: ctx.get(key) for key in ("major_name", "college")}},
+        student_id=int(student_id), scope_type="resume_intro", scope_id=str(intro_id))
+    conn.execute("UPDATE resume_self_intros SET active_job_id = ? WHERE id = ? AND student_id = ?", (str(job["id"]), int(intro_id), int(student_id)))
+    return public_job_state(conn, job["id"], student_id=student_id)
+
+
+def begin_intro_job(conn, student_id: int) -> tuple[int, dict[str, Any]]:
+    from ..ai_durable_job_service import ensure_ai_job_schema, load_ai_job_payload
+    ensure_ai_job_schema(conn)
+    profile._ensure_personal_row(conn, student_id)
+    conn.execute("UPDATE resume_personal_info SET student_id = student_id WHERE student_id = ?", (int(student_id),))
+    fingerprint = hashlib.sha256(docs._json(_intro_input(conn, student_id)).encode()).hexdigest()
+    pending = conn.execute("SELECT id,active_job_id FROM resume_self_intros WHERE student_id = ? AND status = 'generating' ORDER BY id LIMIT 10", (int(student_id),)).fetchall()
+    for intro in pending:
+        state = public_job_state(conn, intro["active_job_id"], student_id=student_id)
+        if state.get("cancellable"):
+            raw = conn.execute("SELECT * FROM ai_jobs WHERE id = ?", (int(intro["active_job_id"]),)).fetchone()
+            if raw and load_ai_job_payload(dict(raw)).get("evidence_hash") == fingerprint:
+                return int(intro["id"]), state
+        conn.execute("UPDATE resume_self_intros SET status = 'failed', revision = revision + 1, active_job_id = '', error_text = '资料已更新或原任务中断，请使用新的建议。' WHERE id = ? AND student_id = ?", (int(intro["id"]), int(student_id)))
+        supersede_student_career_jobs(conn, scope_type="resume_intro", scope_id=str(intro["id"]), student_id=student_id)
+    intro_id = profile.create_self_intro_placeholder(conn, student_id)
+    return intro_id, queue_intro_job(conn, student_id, intro_id)
+
+
+async def execute_intro(job, payload) -> dict[str, Any]:
+    bundle, ctx = payload["bundle"], payload["context"]
+    digest = {"professional_background": ctx, "skills": bundle.get("skill"), "experience": bundle.get("experience"), "education": bundle.get("education")}
+    text = await ai._chat("请根据真实材料写80-140字职业摘要，适用学生的专业，不编造能力、成果或工作方式，不写求职愿望。只返回正文。",
+                          json.dumps(digest, ensure_ascii=False), want_json=False, capability="thinking", timeout=180, label="resume:self-intro")
+    return {"content_md": _compact_resume_intro(text) or _fallback_self_intro(bundle, ctx)}
+
+
+def apply_intro(conn, job, payload, result) -> bool:
+    if payload.get("evidence_hash") != hashlib.sha256(docs._json(_intro_input(conn, int(payload["student_id"]))).encode()).hexdigest():
+        return False
+    cursor = conn.execute("UPDATE resume_self_intros SET content_md = ?, title = '职业摘要建议（请核实）', status = 'ready', "
+                          "active_job_id = '', updated_at = ?, revision = revision + 1 WHERE id = ? AND student_id = ? AND revision = ? AND active_job_id = ?",
+                          (str(result["content_md"]), docs._now(), int(payload["intro_id"]), int(payload["student_id"]), int(payload["revision"]), str(job["id"])))
+    return cursor.rowcount == 1
+
+
+def fail_intro(conn, job, payload, code, message) -> None:
+    conn.execute("UPDATE resume_self_intros SET status = 'failed', error_text = ? WHERE id = ? AND student_id = ? AND revision = ? AND active_job_id = ?",
+                 ("生成失败，可重试或手动编辑。" + str(code)[:80], int(payload["intro_id"]), int(payload["student_id"]), int(payload["revision"]), str(job["id"])))
+
+
+def seed_education_from_context(conn, student_id: int) -> int | None:
+    # Deterministic source facts need no AI task. A per-student row lock makes
+    # repeated first-use requests idempotent on PostgreSQL and SQLite.
+    profile._ensure_personal_row(conn, student_id)
+    conn.execute("UPDATE resume_personal_info SET student_id = student_id WHERE student_id = ?", (int(student_id),))
+    if profile.has_any_education(conn, student_id):
+        return None
+    ctx = _student_context(conn, student_id)
+    if not ctx:
+        return None
+    fields = _fallback_education(ctx)
+    if not fields["school"] or not fields["start_date"] or not fields["end_date"]:
+        return None
+    fields["content"] = ""  # Do not infer unverified coursework from a major.
+    return profile.create_section_item(conn, student_id, "education", {**fields, "source": "platform"})
+
+
+def recover_resume_jobs(conn) -> int:
+    from ...db.schema_resume import ensure_resume_schema
+    ensure_resume_schema(conn)
+    docs.backfill_resume_versions(conn, limit=100)
+    from .resume_application_service import backfill_application_snapshots
+    backfill_application_snapshots(conn, limit=100)
+    render.cleanup_export_cache()
+    count = 0
+    for table, statuses in (("resumes", "'rendering','optimizing','parsing'"), ("resume_self_intros", "'generating'")):
+        rows = conn.execute(f"SELECT id,student_id,active_job_id FROM {table} WHERE status IN ({statuses}) LIMIT 100").fetchall()
+        for row in rows:
+            state = public_job_state(conn, row["active_job_id"], student_id=int(row["student_id"]))
+            if not state or state.get("status") in {"dead_letter", "review_required", "cancelled", "superseded", "succeeded"}:
+                conn.execute(f"UPDATE {table} SET status = 'failed', error_text = '后台任务已中断，请重试；已保存资料仍保留。' WHERE id = ? AND student_id = ? AND active_job_id = ?",
+                             (int(row["id"]), int(row["student_id"]), str(row["active_job_id"] or "")))
+                count += 1
+    return count
+
+
+register_student_career_handler("resume_render", execute=execute_resume_render, apply=apply_resume_render, fail=fail_resume_job, timeout_seconds=120, lane="render")
+register_student_career_handler("resume_optimize", execute=execute_resume_optimization, apply=apply_resume_candidate, fail=fail_resume_job, timeout_seconds=300)
+register_student_career_handler("resume_import", execute=execute_resume_import, apply=apply_resume_candidate, fail=fail_resume_job, timeout_seconds=360)
+register_student_career_handler("resume_intro", execute=execute_intro, apply=apply_intro, fail=fail_intro, timeout_seconds=240)
+
+
+
+# Register short suggestions on the same shared worker and concurrency lane.
+from . import resume_suggestion_service as _suggestion_handlers  # noqa: E402,F401

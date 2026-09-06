@@ -266,7 +266,7 @@
 
 /* Modal */
 .rz-modal { position: fixed; inset: 0; background: rgba(15,23,42,.5); backdrop-filter: blur(2px);
-  display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 1000;
+  display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 1100;
   opacity: 0; transition: opacity .2s ease; }
 .rz-modal.show { opacity: 1; }
 .rz-modal[hidden] { display: none; }
@@ -618,7 +618,13 @@
   .rz-app-board { overflow-x: auto; grid-template-columns: repeat(4,minmax(260px,1fr)); padding-bottom: 8px; scroll-snap-type: x proximity; }
   .rz-app-column { scroll-snap-align: start; }
 }
+.rz-builder-actions{display:flex;gap:8px;flex-wrap:wrap}.rz-draft-status{margin:-4px 0 18px;padding:10px 14px;border-radius:10px;background:#edf5ff;color:#245383;font-size:13px}
+.rz-candidate-compare{display:grid;grid-template-columns:1fr 1fr;gap:18px}.rz-candidate-compare>section{min-width:0;border:1px solid #e1e7ef;border-radius:12px;padding:18px;background:#f8fafc}.rz-candidate-compare h4{margin:0 0 12px}.rz-candidate-compare .rz-md{overflow-wrap:anywhere}
+.rz-version-row{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid #e5eaf0}.rz-version-row small{display:block;color:#64748b;margin-top:5px}.rz-version-row>div:last-child{display:flex;gap:8px;align-items:center}.rz-version-note{color:#95611a;font-size:12px}
+.rz-snapshot-fields{border:1px solid #e1e7ef;border-radius:12px;padding:16px;margin:18px 0}.rz-snapshot-fields legend{font-weight:700;max-width:100%;overflow-wrap:anywhere}.rz-import-review-section{border:1px solid #e1e7ef;border-radius:12px;padding:14px;margin:14px 0}.rz-import-review-section dl{display:grid;grid-template-columns:80px 1fr;gap:6px 12px;border-top:1px solid #edf1f6;padding-top:12px}.rz-import-review-section dt{color:#64748b}.rz-import-review-section dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(prefers-reduced-motion:reduce){.rz-body *,.rz-body *::before,.rz-body *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media (max-width: 720px) {
+  .rz-candidate-compare{grid-template-columns:1fr}.rz-builder-actions{width:100%}.rz-builder-actions>.rz-btn{flex:1}.rz-version-row{align-items:flex-start;flex-direction:column}
   .rz-home-hero { padding: 22px 18px; }
   .rz-home-position-grid { grid-template-columns: 1fr; }
   .rz-home-status { min-height: 130px; }
@@ -630,3 +636,4 @@
   .rz-job-capabilities,.rz-job-result__cols { grid-template-columns: 1fr; }.rz-job-history__item>div:last-child { justify-content: flex-start; flex-wrap: wrap; }
   .rz-app-hero { align-items: stretch; flex-direction: column; padding: 20px; }.rz-app-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
+.rz-resume-pagination{display:flex;justify-content:center;align-items:center;gap:12px;flex-wrap:wrap;margin:24px 0;font-size:.86rem;color:#64748b}

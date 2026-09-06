@@ -17,6 +17,8 @@
         { key: 'kind', label: '类型', type: 'select', required: true,
           options: [['high_school', '高中'], ['university', '大学'], ['training', '培训']] },
         { key: 'school', label: '学校 / 机构名称', type: 'text', required: true, full: true },
+        { key: 'degree', label: '学历/学位层次（不确定可留空）', type: 'select', full: true,
+          options: [['', '待确认'], ['高中', '高中'], ['中专', '中专'], ['大专', '大专'], ['本科', '本科'], ['硕士', '硕士'], ['博士', '博士'], ['其他', '其他']] },
         { key: 'college', label: '学院（大学填写）', type: 'text' },
         { key: 'major', label: '专业（大学填写）', type: 'text' },
         { key: 'start_date', label: '开始时间', type: 'month', required: true },
@@ -80,13 +82,11 @@
   function cardMeta(item) {
     if (SECTION === 'education') {
       var kind = { high_school: '高中', university: '大学', training: '培训' }[item.kind] || '';
-      return [kind, item.major, RZ.fmtRange(item.start_date, item.end_date)].filter(Boolean).join(' · ');
+      return [item.degree || kind, item.major, RZ.fmtRange(item.start_date, item.end_date)].filter(Boolean).join(' · ');
     }
     if (SECTION === 'experience') {
-      var k = {
-        internship: '实习', project: '项目', course: '课程成果', competition: '比赛', campus: '社团 / 学生工作',
-        volunteer: '志愿服务', part_time: '兼职', research: '调研 / 科研'
-      }[item.kind] || '经历';
+      var option = SCHEMAS.experience.fields[0].options.find(function (entry) { return entry[0] === item.kind; });
+      var k = option ? option[1] : '经历';
       return [k, RZ.fmtRange(item.start_date, item.end_date)].filter(Boolean).join(' · ');
     }
     if (SECTION === 'skill') return [item.level, RZ.formatMonthLabel(item.acquired_date), item.expiry_date ? '有效期 ' + RZ.formatMonthLabel(item.expiry_date) : ''].filter(Boolean).join(' · ');
@@ -103,9 +103,9 @@
 
   function renderCard(item) {
     if (SECTION === 'self_intro' && item.status === 'generating') {
-      return '<div class="rz-card rz-card--placeholder" data-generating="1">' +
+      return '<div class="rz-card rz-card--placeholder" role="button" tabindex="0" data-id="' + Number(item.id) + '" data-generating="1">' +
         '<div class="rz-card__title"><span class="rz-spin"></span> AI 正在整理…</div>' +
-        '<div class="rz-card__meta">综合你的资料深度撰写中，请稍候</div></div>';
+        '<div class="rz-card__meta">可离开此页，点击查看进度或取消任务</div></div>';
     }
     var failed = item.status === 'failed';
     var thumbs = '';
@@ -114,16 +114,21 @@
         return '<img src="' + a.url + '" alt="">';
       }).join('') + '</div>';
     }
-    return '<div class="rz-card' + (failed ? ' rz-card--failed' : '') + '" data-id="' + item.id + '">' +
+    return '<div class="rz-card' + (failed ? ' rz-card--failed' : '') + '" role="button" tabindex="0" data-id="' + Number(item.id) + '">' +
       '<div class="rz-card__title">' + RZ.esc(cardTitle(item)) + '</div>' +
       '<div class="rz-card__meta">' + RZ.esc(cardMeta(item)) +
       (failed ? '<br><span style="color:#dc2626">生成失败，点击查看</span>' : '') + '</div>' +
       thumbs + '</div>';
   }
 
-  async function load() {
+  async function load(quiet) {
     try {
       var data = await RZ.api('/api/resume/sections/' + SECTION_API);
+      var meta = data.meta || {};
+      if (Array.isArray(meta.experience_kinds) && meta.experience_kinds.length) SCHEMAS.experience.fields[0].options =
+        meta.experience_kinds.map(function (item) { return [item.value, item.label]; });
+      if (Array.isArray(meta.education_degrees) && meta.education_degrees.length) SCHEMAS.education.fields.find(function (field) { return field.key === 'degree'; }).options =
+        [['', '待确认']].concat(meta.education_degrees.filter(Boolean).map(function (degree) { return [degree, degree]; }));
       var items = data.items || [];
       if (!items.length) {
         box.innerHTML = '<div class="rz-empty" style="grid-column:1/-1">' +
@@ -136,20 +141,27 @@
             var item = items.filter(function (i) { return String(i.id) === card.dataset.id; })[0];
             if (item) openDetail(item);
           });
+          card.addEventListener('keydown', function (event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); card.click(); } });
         });
       }
       managePolling(items);
-    } catch (e) { RZ.toast(e.message, 'error'); }
+      return items;
+    } catch (e) { if (quiet === true) throw e; RZ.toast(e.message, 'error'); }
   }
 
   function managePolling(items) {
     var anyGen = items.some(function (i) { return i.status === 'generating'; });
-    if (anyGen && !pollTimer) pollTimer = setInterval(load, 3000);
-    else if (!anyGen && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (anyGen && (!pollTimer || !pollTimer.active())) pollTimer = window.CareerTools.poll({
+      load: function () { return load(true); }, interval: 8000, immediate: false,
+      done: function (items) { return !items.some(function (item) { return item.status === 'generating'; }); },
+      onError: function (error, count) { if (count === 1) RZ.toast(error.message, 'error'); }
+    });
+    else if (!anyGen && pollTimer) { pollTimer.stop(); pollTimer = null; }
   }
 
   // ----- detail view -----
   function openDetail(item) {
+    if (SECTION === 'self_intro' && item.status === 'generating') { RZ.openJob({ title: cardTitle(item), base: '/api/resume/self-intro/' + item.id, revision: item.revision, onChange: load }); return; }
     var m = RZ.openModal({ title: cardTitle(item), wide: SECTION === 'self_intro' });
     if (SECTION === 'self_intro') {
       m.body.innerHTML = '<div class="rz-md">' + RZ.md(item.content_md) + '</div>' +
@@ -159,6 +171,11 @@
     }
     var edit = btn('编辑', 'rz-btn');
     edit.onclick = function () { m.close(); openForm(item); };
+    if (SECTION === 'self_intro' && item.active_job_id) {
+      var task = btn('查看处理状态', 'rz-btn');
+      task.onclick = function () { m.close(); RZ.openJob({ title: cardTitle(item), base: '/api/resume/self-intro/' + item.id, revision: item.revision, onChange: load }); };
+      m.foot.appendChild(task);
+    }
     var del = btn('删除', 'rz-btn rz-btn--danger');
     del.onclick = function () {
       m.close();
@@ -249,6 +266,7 @@
       try {
         var id = item.id;
         if (isEdit) {
+          payload.revision = item.revision;
           await RZ.api('/api/resume/sections/' + SECTION_API + '/' + id, { method: 'PUT', body: payload });
         } else {
           var res = await RZ.api('/api/resume/sections/' + SECTION_API, { method: 'POST', body: payload });
@@ -256,7 +274,7 @@
         }
         if (CFG.attach) await uploadStaged(id);
         RZ.toast('已保存', 'success'); m.close(); load();
-      } catch (e) { RZ.toast(e.message, 'error'); save.disabled = false; }
+      } catch (e) { RZ.conflict(e, payload, function () { m.close(); load(); }); save.disabled = false; }
     };
     m.foot.appendChild(cancel); m.foot.appendChild(save);
   }
@@ -334,14 +352,23 @@
     var ta = m.body.querySelector('#rzIntroText');
 
     var optimize = btn('✨ AI 优化', 'rz-btn');
-    optimize.onclick = async function () {
-      if (!ta.value.trim()) { RZ.toast('请先输入内容', 'error'); return; }
-      optimize.disabled = true; optimize.textContent = '优化中…';
-      try { var d = await RZ.api('/api/resume/self-intro/optimize', { method: 'POST', body: { text: ta.value } });
-        if (d.ok) { ta.value = d.content; RZ.toast('已优化', 'success'); } else RZ.toast(d.error || '优化失败', 'error');
-      } catch (e) { RZ.toast(e.message, 'error'); }
-      finally { optimize.disabled = false; optimize.textContent = '✨ AI 优化'; }
-    };
+    var recoverSuggestion = btn('查看上次建议', 'rz-btn'); recoverSuggestion.hidden = !RZ.pendingSuggestion('intro');
+    async function optimizeIntro(resume) {
+      if (!resume && !ta.value.trim()) { RZ.toast('请先输入内容', 'error'); return; }
+      optimize.disabled = true;
+      try { await RZ.requestSuggestion({ kind: 'intro', url: '/api/resume/self-intro/optimize', body: { text: ta.value }, resume: resume,
+        onResult: function (result, forget, meta) {
+          if (!result.content && !result.content_md) { RZ.toast(result.error || '暂无可用建议', 'info'); forget(); return; }
+          var current = ta.value;
+          RZ.compareSuggestion(current || meta.input_text || '', result.content || result.content_md || '', function () {
+            if (ta.value !== current) { RZ.toast('对比期间原文已有修改，请重新核对建议', 'info'); return; }
+            ta.value = result.content || result.content_md || ''; forget();
+          });
+        } }); recoverSuggestion.hidden = false;
+      } catch (error) { RZ.toast(error.message, 'error'); }
+      finally { optimize.disabled = false; }
+    }
+    optimize.onclick = function () { optimizeIntro(false); }; recoverSuggestion.onclick = function () { optimizeIntro(true); };
     var generate = btn('🤖 AI 生成', 'rz-btn');
     generate.onclick = async function () {
       generate.disabled = true;
@@ -358,7 +385,7 @@
         RZ.toast('已保存', 'success'); m.close(); load();
       } catch (e) { RZ.toast(e.message, 'error'); save.disabled = false; }
     };
-    m.foot.appendChild(optimize); m.foot.appendChild(generate);
+    m.foot.appendChild(optimize); m.foot.appendChild(recoverSuggestion); m.foot.appendChild(generate);
     m.foot.appendChild(cancel); m.foot.appendChild(save);
   }
 
@@ -371,9 +398,9 @@
     save.onclick = async function () {
       if (!ta.value.trim()) { RZ.toast('请输入内容', 'error'); return; }
       save.disabled = true;
-      try { await RZ.api('/api/resume/sections/self_intro/' + item.id, { method: 'PUT', body: { content_md: ta.value, title: item.title || '自我介绍', source: item.source || 'manual' } });
+      try { await RZ.api('/api/resume/sections/self_intro/' + item.id, { method: 'PUT', body: { revision: item.revision, content_md: ta.value, title: item.title || '自我介绍', source: item.source || 'manual' } });
         RZ.toast('已保存', 'success'); m.close(); load();
-      } catch (e) { RZ.toast(e.message, 'error'); save.disabled = false; }
+      } catch (e) { RZ.conflict(e, ta.value, function () { m.close(); load(); }); save.disabled = false; }
     };
     m.foot.appendChild(cancel); m.foot.appendChild(save);
   }

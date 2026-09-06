@@ -1,0 +1,30 @@
+{% extends "base_centered.html" %}
+
+{% block title %}{{ error_title }} | 课堂材料{% endblock %}
+
+{% block head %}
+<script>window.MATERIAL_READER_RETURN = {{ source | tojson }};</script>
+<script type="module" src="{{ asset_url('js/material_reader_return.js') }}"></script>
+{% endblock %}
+
+{% block css %}
+{{ super() }}
+<style>
+    .reader-unavailable { max-width: 34rem; padding: 2rem; border: 1px solid hsl(var(--ls-border)); border-radius: var(--radius-xl); background: hsl(var(--ls-card)); box-shadow: var(--shadow-sm); }
+    .reader-unavailable h1 { margin: 0 0 1rem; font-size: 1.4rem; line-height: 1.4; color: hsl(var(--ls-foreground)); }
+    .reader-unavailable p { margin: 0 0 1.25rem; line-height: 1.7; color: var(--text-secondary); }
+    .reader-unavailable .reader-source { font-size: var(--text-md); margin-bottom: 1.75rem; overflow-wrap: anywhere; }
+    .reader-unavailable .btn { min-height: 44px; transition: background-color 180ms ease, border-color 180ms ease; }
+    .reader-unavailable .btn:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 3px; }
+    @media (prefers-reduced-motion: reduce) { .reader-unavailable .btn { transition: none; } }
+</style>
+{% endblock %}
+
+{% block card_content %}
+<section class="reader-unavailable" aria-labelledby="reader-unavailable-title">
+    <h1 id="reader-unavailable-title">{{ error_title }}</h1>
+    <p role="status">{{ error_message }}</p>
+    <p class="reader-source">{{ source.course_name }}{% if source.session_title %} · {{ source.session_title }}{% endif %}</p>
+    <a class="btn btn-primary" data-classroom-reader-return href="{{ source.url }}">← {{ source.label }}</a>
+</section>
+{% endblock %}

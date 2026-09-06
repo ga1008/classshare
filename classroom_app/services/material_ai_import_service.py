@@ -15,6 +15,7 @@ from typing import Any, Awaitable, Callable
 from fastapi import HTTPException
 
 from .libreoffice_service import (
+    LibreOfficeBusy,
     LibreOfficeConversionError,
     LibreOfficeUnavailable,
     convert_office_file,
@@ -488,7 +489,10 @@ async def parse_material_document(
             document_type_label=type_meta["label"],
             ai_used=False,
         )
-    extraction = await asyncio.to_thread(extract_material_content, file_path, original_name)
+    try:
+        extraction = await asyncio.to_thread(extract_material_content, file_path, original_name)
+    except LibreOfficeBusy as exc:
+        raise HTTPException(429,str(exc),headers={"Retry-After":str(exc.retry_after)}) from exc
     extraction.quality = _assess_text_quality(extraction.text, method=extraction.method)
     warnings = list(extraction.warnings)
     ai_used = False
@@ -903,6 +907,8 @@ def _extract_legacy_doc_via_libreoffice(file_path: Path, warnings: list[str]) ->
             if extracted.text.strip():
                 warnings.append("已使用 LibreOffice 转换旧版 Word 后抽取正文。")
             return extracted
+    except LibreOfficeBusy:
+        raise
     except LibreOfficeUnavailable:
         warnings.append("未检测到 LibreOffice，无法将旧版 Word 转换为 docx/PDF 兜底。")
         return MaterialExtraction(method="legacy_doc_libreoffice_unavailable", source_kind="doc", warnings=warnings)
@@ -1035,6 +1041,8 @@ def _render_office_pages_to_images(file_path: Path, ext: str, warnings: list[str
             if images:
                 warnings.append("已将 Office 文档渲染为页面图片用于视觉兜底。")
             return images[:MAX_VISION_IMAGES]
+    except LibreOfficeBusy:
+        raise
     except LibreOfficeUnavailable:
         warnings.append("未检测到 LibreOffice，无法把该 Office 文档渲染为图片兜底。")
         return []

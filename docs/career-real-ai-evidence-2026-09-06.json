@@ -1,0 +1,405 @@
+{
+  "contract": "career-directions-compact-v2",
+  "synthetic_public_majors_only": true,
+  "production_business_data_written": false,
+  "measurement_scope": "Local current execute_network with SSH relay to existing production AI service; no durable enqueue, no queue wait measurement; real upstream model calls.",
+  "samples": [
+    {
+      "major": "网络工程",
+      "queue_wait_seconds": null,
+      "kind": "direct execute, no durable enqueue",
+      "raw_graph_file": "network-1.json",
+      "ok": true,
+      "nodes": 12,
+      "categories": 4,
+      "links": 8,
+      "research_query_count": 0,
+      "elapsed_seconds": 82.032
+    },
+    {
+      "major": "英语",
+      "queue_wait_seconds": null,
+      "kind": "direct execute, no durable enqueue",
+      "raw_graph_file": "network-2.json",
+      "ok": true,
+      "nodes": 10,
+      "categories": 4,
+      "links": 8,
+      "research_query_count": 0,
+      "elapsed_seconds": 87.479
+    },
+    {
+      "major": "视觉传达设计",
+      "queue_wait_seconds": null,
+      "kind": "direct execute, no durable enqueue",
+      "raw_graph_file": "network-3.json",
+      "ok": true,
+      "nodes": 12,
+      "categories": 4,
+      "links": 9,
+      "research_query_count": 0,
+      "elapsed_seconds": 89.294
+    }
+  ],
+  "http_calls": [
+    {
+      "major": "网络工程",
+      "path": "/api/ai/chat",
+      "label": "career_identity_validation_20260906_web_research_plan",
+      "timeout_seconds": 90.0,
+      "raw_response_file": "response-1.json",
+      "elapsed_seconds": 8.392,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "response_json",
+        "status"
+      ]
+    },
+    {
+      "major": "网络工程",
+      "path": "/api/ai/web-search",
+      "label": "career_identity_validation_20260906_web_research",
+      "timeout_seconds": 70.0,
+      "raw_response_file": "response-2.json",
+      "elapsed_seconds": 62.77,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "degraded",
+        "status",
+        "text"
+      ]
+    },
+    {
+      "major": "网络工程",
+      "path": "/api/ai/web-search",
+      "label": "career_identity_validation_20260906_web_research",
+      "timeout_seconds": 70.0,
+      "raw_response_file": "response-3.json",
+      "elapsed_seconds": 62.792,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "degraded",
+        "status",
+        "text"
+      ]
+    },
+    {
+      "major": "网络工程",
+      "path": "/api/ai/chat",
+      "label": "career_identity_validation_20260906_career_network:trial-1",
+      "timeout_seconds": 120,
+      "raw_response_file": "response-4.json",
+      "elapsed_seconds": 10.835,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "response_json",
+        "status"
+      ]
+    },
+    {
+      "major": "英语",
+      "path": "/api/ai/chat",
+      "label": "career_identity_validation_20260906_web_research_plan",
+      "timeout_seconds": 90.0,
+      "raw_response_file": "response-5.json",
+      "elapsed_seconds": 14.246,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "response_json",
+        "status"
+      ]
+    },
+    {
+      "major": "英语",
+      "path": "/api/ai/web-search",
+      "label": "career_identity_validation_20260906_web_research",
+      "timeout_seconds": 70.0,
+      "raw_response_file": "response-6.json",
+      "elapsed_seconds": 63.351,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "degraded",
+        "status",
+        "text"
+      ]
+    },
+    {
+      "major": "英语",
+      "path": "/api/ai/web-search",
+      "label": "career_identity_validation_20260906_web_research",
+      "timeout_seconds": 70.0,
+      "raw_response_file": "response-6.json",
+      "elapsed_seconds": 63.305,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "degraded",
+        "status",
+        "text"
+      ]
+    },
+    {
+      "major": "英语",
+      "path": "/api/ai/chat",
+      "label": "career_identity_validation_20260906_career_network:trial-2",
+      "timeout_seconds": 120,
+      "raw_response_file": "response-8.json",
+      "elapsed_seconds": 9.876,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "response_json",
+        "status"
+      ]
+    },
+    {
+      "major": "视觉传达设计",
+      "path": "/api/ai/chat",
+      "label": "career_identity_validation_20260906_web_research_plan",
+      "timeout_seconds": 90.0,
+      "raw_response_file": "response-9.json",
+      "elapsed_seconds": 13.298,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "response_json",
+        "status"
+      ]
+    },
+    {
+      "major": "视觉传达设计",
+      "path": "/api/ai/web-search",
+      "label": "career_identity_validation_20260906_web_research",
+      "timeout_seconds": 70.0,
+      "raw_response_file": "response-10.json",
+      "elapsed_seconds": 62.761,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "degraded",
+        "status",
+        "text"
+      ]
+    },
+    {
+      "major": "视觉传达设计",
+      "path": "/api/ai/web-search",
+      "label": "career_identity_validation_20260906_web_research",
+      "timeout_seconds": 70.0,
+      "raw_response_file": "response-10.json",
+      "elapsed_seconds": 62.621,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "degraded",
+        "status",
+        "text"
+      ]
+    },
+    {
+      "major": "视觉传达设计",
+      "path": "/api/ai/chat",
+      "label": "career_identity_validation_20260906_career_network:trial-3",
+      "timeout_seconds": 120,
+      "raw_response_file": "response-12.json",
+      "elapsed_seconds": 13.229,
+      "status": 200,
+      "usage": null,
+      "response_keys": [
+        "response_json",
+        "status"
+      ]
+    }
+  ],
+  "provider_logs": [
+    {
+      "call_id": "cd6a3d3007aa4134a6e76683a57d5546",
+      "started_at": "2026-09-06T05:38:50.151Z",
+      "finished_at": "2026-09-06T05:38:56.484Z",
+      "duration_ms": 6333.11,
+      "status": "success",
+      "task_label": "career_identity_validation_20260906_web_research_plan",
+      "platform": "deepseek",
+      "model": "deepseek-v4-pro",
+      "provider_usage": {
+        "completion_tokens": 409,
+        "prompt_tokens": 332,
+        "total_tokens": 741,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 251,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 256
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 76
+      },
+      "cost_estimate": null,
+      "error_category": null,
+      "queue_wait_ms": null
+    },
+    {
+      "call_id": "55f4a888f4cd46ec9a1dae62040a87e0",
+      "started_at": "2026-09-06T05:40:01.338Z",
+      "finished_at": "2026-09-06T05:40:10.063Z",
+      "duration_ms": 8725.14,
+      "status": "success",
+      "task_label": "career_identity_validation_20260906_career_network:trial-1",
+      "platform": "deepseek",
+      "model": "deepseek-v4-flash",
+      "provider_usage": {
+        "completion_tokens": 1369,
+        "prompt_tokens": 526,
+        "total_tokens": 1895,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 526
+      },
+      "cost_estimate": null,
+      "error_category": null,
+      "queue_wait_ms": null
+    },
+    {
+      "call_id": "3fde6ca21dcf4fac80a241eeffa81ae8",
+      "started_at": "2026-09-06T05:40:12.305Z",
+      "finished_at": "2026-09-06T05:40:24.289Z",
+      "duration_ms": 11984.4,
+      "status": "success",
+      "task_label": "career_identity_validation_20260906_web_research_plan",
+      "platform": "deepseek",
+      "model": "deepseek-v4-pro",
+      "provider_usage": {
+        "completion_tokens": 693,
+        "prompt_tokens": 331,
+        "total_tokens": 1024,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 546,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 256
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 75
+      },
+      "cost_estimate": null,
+      "error_category": null,
+      "queue_wait_ms": null
+    },
+    {
+      "call_id": "d45b200c68704b449c858aae85d64ba7",
+      "started_at": "2026-09-06T05:41:29.749Z",
+      "finished_at": "2026-09-06T05:41:37.457Z",
+      "duration_ms": 7709.7,
+      "status": "success",
+      "task_label": "career_identity_validation_20260906_career_network:trial-2",
+      "platform": "deepseek",
+      "model": "deepseek-v4-flash",
+      "provider_usage": {
+        "completion_tokens": 1178,
+        "prompt_tokens": 536,
+        "total_tokens": 1714,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 536
+      },
+      "cost_estimate": null,
+      "error_category": null,
+      "queue_wait_ms": null
+    },
+    {
+      "call_id": "cf8e28c074214575b3f423afee585be5",
+      "started_at": "2026-09-06T05:41:39.462Z",
+      "finished_at": "2026-09-06T05:41:50.894Z",
+      "duration_ms": 11432.48,
+      "status": "success",
+      "task_label": "career_identity_validation_20260906_web_research_plan",
+      "platform": "deepseek",
+      "model": "deepseek-v4-pro",
+      "provider_usage": {
+        "completion_tokens": 699,
+        "prompt_tokens": 333,
+        "total_tokens": 1032,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 537,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 256
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 77
+      },
+      "cost_estimate": null,
+      "error_category": null,
+      "queue_wait_ms": null
+    },
+    {
+      "call_id": "bd05f5584aa64819b2d4c97a675ddcf4",
+      "started_at": "2026-09-06T05:42:55.706Z",
+      "finished_at": "2026-09-06T05:43:06.891Z",
+      "duration_ms": 11185.07,
+      "status": "success",
+      "task_label": "career_identity_validation_20260906_career_network:trial-3",
+      "platform": "deepseek",
+      "model": "deepseek-v4-flash",
+      "provider_usage": {
+        "completion_tokens": 1515,
+        "prompt_tokens": 533,
+        "total_tokens": 2048,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 533
+      },
+      "cost_estimate": null,
+      "error_category": null,
+      "queue_wait_ms": null
+    }
+  ],
+  "checks": {
+    "all_three_structurally_valid": true,
+    "sample_count": 3,
+    "all_research_unused": true
+  },
+  "limitations": [
+    "Only three samples; no representative P95 or expert quality assessment.",
+    "All six web searches degraded to empty; output source is explicitly unverified.",
+    "Cost and queue wait absent in provider logs; null is not zero.",
+    "Prompt direction and link counts are preferences; final bounded graph validator is authoritative.",
+    "Two concurrent identical degraded search response bodies share a scratch filename; per-call timing remains distinct in report, successful generation responses have unique files."
+  ],
+  "source_sha256": {
+    "classroom_app/services/career_lifecycle_service.py": "f8d29a4431283f87c8605c9bb8d2ef207f0cdf14d1c5ef2047bfe6ae07f8c81e",
+    "classroom_app/services/career_path_service.py": "b6b008b0df36a9dc67e2c9c91f48ff68d94250a4d7da9ed0892f69a6fb3e735e",
+    "classroom_app/services/career_payload_service.py": "d8765a5855e1421bc4893e687680c260d16fe0400a415d4a383a41039fb1fa2c",
+    "classroom_app/services/career_public_view_service.py": "bbbadd9688ef9a4e74cd062374604e70fd86a9ae65f77392b4c6e2301ed0b179"
+  }
+}

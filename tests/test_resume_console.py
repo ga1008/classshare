@@ -9,6 +9,7 @@ attachment helpers, nav registry, and the deterministic AI fallbacks.
 import os
 import sqlite3
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("DB_ENGINE", "sqlite")
 
@@ -235,9 +236,12 @@ class DocumentTests(unittest.TestCase):
 
     def test_import_resume_placeholder_and_summary(self):
         c = _conn()
-        rid = D.create_import_resume(
-            c, 1, filename="resume.pdf", file_hash="abc123", mime_type="application/pdf", file_size=128,
-        )
+        # File-store binding is covered separately; this test only inspects
+        # the placeholder's persistence contract.
+        with patch("classroom_app.services.file_service.lock_global_file_references"):
+            rid = D.create_import_resume(
+                c, 1, filename="resume.pdf", file_hash="abc123", mime_type="application/pdf", file_size=128,
+            )
         row = D.get_resume(c, 1, rid)
         self.assertEqual(row["status"], "parsing")
         self.assertEqual(row["source_filename"], "resume.pdf")

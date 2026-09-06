@@ -6,7 +6,7 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 
-from .file_service import store_file_object_globally
+from .file_service import bind_global_file_references, store_file_object_globally
 from .offering_membership_service import student_offering_where_by_student_id
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -114,6 +114,13 @@ def update_group_qr(
         # pixels and quiet zone; QR codes must never be cropped or recompressed.
         file_hash = store_file_object_globally(file.file)["hash"]
     new_revision = uuid4().hex
+    locked = conn.execute(
+        "UPDATE class_offerings SET id=id WHERE id=? AND teacher_id=? AND COALESCE(group_qr_revision, '')=?",
+        (offering_id, int(user["id"]), revision),
+    )
+    if locked.rowcount != 1:
+        raise HTTPException(409, CONFLICT_MESSAGE)
+    bind_global_file_references(conn, (file_hash,))
     cursor = conn.execute(
         """UPDATE class_offerings
            SET group_qr_file_hash = ?, group_qr_mime_type = ?,

@@ -1,0 +1,14 @@
+{% from "macros/ui_explanation.html" import explain_attrs %}
+
+{% macro user_palette_select(preferences) -%}
+{% if preferences.enabled|default(false) %}
+<span class="ui-palette-control">
+    <select class="ui-palette-select" data-ui-palette-select aria-label="界面配色" {{ explain_attrs('界面配色', '应用于学习首页与课堂。选择后自动保存到当前账号；其他页面保留原有设计。') }}>
+        {% for preset in preferences.presets %}
+        <option value="{{ preset.key }}"{% if preset.key == preferences.palette_key %} selected{% endif %}>{{ preset.name }}{% if preset.key == 'indigo' %}（默认）{% endif %}</option>
+        {% endfor %}
+    </select>
+    <span class="ui-palette-status sr-only" data-ui-palette-status role="status" aria-live="polite"></span>
+</span>
+{% endif %}
+{%- endmacro %}

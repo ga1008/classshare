@@ -9,6 +9,7 @@ from .connection import get_configured_db_engine
 _SCHEMA_READY_ENGINES: set[str] = set()
 
 AI_JOB_POSTGRES_RUNTIME_COLUMNS = {
+    "ai_jobs": {"capacity_reserved_until": "TEXT"},
     "submissions": {
         "grading_revision_hash": "TEXT",
         "active_grade_revision_id": "BIGINT",
@@ -29,7 +30,7 @@ AI_JOB_POSTGRES_RUNTIME_TABLES = {
             attempt_count INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 8,
             delivery_attempt_count INTEGER NOT NULL DEFAULT 0, available_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             locked_at TEXT, locked_by TEXT NOT NULL DEFAULT '', lease_token TEXT NOT NULL DEFAULT '',
-            lease_expires_at TEXT, heartbeat_at TEXT, result_id BIGINT,
+            lease_expires_at TEXT, heartbeat_at TEXT, capacity_reserved_until TEXT, result_id BIGINT,
             review_required INTEGER NOT NULL DEFAULT 0, last_error_code TEXT NOT NULL DEFAULT '',
             last_error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, started_at TEXT, finished_at TEXT
@@ -79,7 +80,7 @@ AI_JOB_REQUIRED_POSTGRES_COLUMNS = {
     "ai_jobs": (
         "id", "task_type", "priority", "status", "dedupe_key", "payload_json", "payload_hash",
         "attempt_count", "max_attempts", "available_at", "locked_at", "locked_by", "lease_token",
-        "lease_expires_at", "result_id", "review_required", "created_at", "updated_at",
+        "lease_expires_at", "capacity_reserved_until", "result_id", "review_required", "created_at", "updated_at",
     ),
     "ai_job_attempts": (
         "id", "job_id", "attempt_no", "stage", "status", "provider", "model", "error_code",
@@ -161,6 +162,7 @@ def ensure_ai_job_schema(conn: Any, *, engine: str | None = None) -> None:
             lease_token TEXT NOT NULL DEFAULT '',
             lease_expires_at TEXT,
             heartbeat_at TEXT,
+            capacity_reserved_until TEXT,
             result_id {foreign_id},
             review_required INTEGER NOT NULL DEFAULT 0,
             last_error_code TEXT NOT NULL DEFAULT '',
@@ -243,7 +245,18 @@ def ensure_ai_job_schema(conn: Any, *, engine: str | None = None) -> None:
         """
     )
 
+    # Backwards-compatible capacity hold for cancelled/timed-out upstream work.
+    # Such a hold is independent of the job lease and may outlive a terminal job.
+    if db_engine == "postgres":
+        conn.execute("ALTER TABLE ai_jobs ADD COLUMN IF NOT EXISTS capacity_reserved_until TEXT")
+    elif "capacity_reserved_until" not in {row[1] for row in conn.execute("PRAGMA table_info(ai_jobs)")}:
+        conn.execute("ALTER TABLE ai_jobs ADD COLUMN capacity_reserved_until TEXT")
+
     statements = (
+        "CREATE INDEX IF NOT EXISTS idx_ai_jobs_owner_served ON ai_jobs (owner_role, owner_user_pk, started_at)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_jobs_type_status_created ON ai_jobs (task_type, status, created_at, id)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_jobs_scope_served ON ai_jobs (scope_type, scope_id, started_at) WHERE owner_user_pk IS NULL",
+        "CREATE INDEX IF NOT EXISTS idx_ai_jobs_capacity_hold ON ai_jobs (task_type, capacity_reserved_until) WHERE capacity_reserved_until IS NOT NULL",
         "CREATE INDEX IF NOT EXISTS idx_ai_jobs_due ON ai_jobs (status, available_at, priority, id)",
         "CREATE INDEX IF NOT EXISTS idx_ai_jobs_lease ON ai_jobs (status, lease_expires_at)",
         "CREATE INDEX IF NOT EXISTS idx_ai_jobs_scope ON ai_jobs (scope_type, scope_id, status, created_at)",

@@ -2,14 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { classroomReadiness } from '@/lib/classroom-bootstrap-ready';
-import { classroomMaterialUrl, materialScope, parseClassroomDate, taskConstraintLabel, taskDeadlineLabel, taskMatchesFilter, taskPresentation, taskPreview, type ClassroomSession, type ClassroomTask } from '@/lib/classroom-workspace';
+import { parseClassroomDate, taskConstraintLabel, taskDeadlineLabel, taskMatchesFilter, taskPresentation, taskPreview, taskHistory, type ClassroomSession, type ClassroomTask } from '@/lib/classroom-workspace';
 
-type Panel = 'tasks' | 'materials' | 'timeline' | 'session-materials' | 'session-detail' | 'material-detail';
-type Material = { material_id: number; name: string; type_label?: string; open_url?: string; ai_blurb?: string };
-type SavedState = { panel?: Panel; filter?: string; query?: string; scroll?: number; restore?: boolean; sessionOrder?: string | number };
-const labels: Record<Panel, string> = { tasks: '全部课堂任务', materials: '全部课堂材料', timeline: '全部课次', 'session-materials': '课次材料', 'session-detail': '课次详情', 'material-detail': '材料详情' };
+type Panel = 'tasks' | 'materials' | 'timeline' | 'session-detail' | 'material-detail';
+type SavedState = { panel?: Panel; filter?: string; query?: string; scroll?: number; restore?: boolean; sessionOrder?: string | number; previewFilter?: string; taskId?: string; openerKind?: 'history' | 'tasks'; returnPanel?: Panel; returnScroll?: number; timelineQuery?: string };
+const labels: Record<Panel, string> = { tasks: '全部课堂任务', materials: '全部课堂材料', timeline: '全部课次', 'session-detail': '课次详情', 'material-detail': '材料详情' };
 const sources: Partial<Record<Panel, string>> = {
-  tasks: '[data-cw-source="tasks"]', materials: '[data-cw-source="materials"]', timeline: '[data-cw-source="timeline"]',
+  tasks: '[data-cw-source="tasks"]', materials: '[data-cw-source="materials"]',
   'session-detail': '#teachingSessionModal .teaching-session-modal-body',
   'material-detail': '#classroom-material-detail-modal .modal-content',
 };
@@ -48,6 +47,10 @@ function ExistingSurface({ panel, filter, query, tasks, teacher, restoreScroll }
     // Filter while detached from layout, then reveal once in its final parent.
     // Writing scrollTop=0 here used to force layout of every business card
     // before Radix had finished applying its modal/scroll-lock styles.
+    if (panel === 'tasks') {
+      const cards = new Map([...node.querySelectorAll<HTMLElement>('[data-assignment-task-card]')].map(card => [String(card.dataset.assignmentId), card]));
+      taskHistory(tasks).forEach(task => { const card = cards.get(String(task.id)); if (card?.parentElement) card.parentElement.appendChild(card); });
+    }
     filterTasks(node);
     host.current.appendChild(node);
     node.classList.add('cw-secondary-content');
@@ -73,26 +76,28 @@ export function ClassroomWorkspace() {
   const classroomId = String(config.classOfferingId || '');
   const plan = config.teachingPlan as { timeline_entries?: ClassroomSession[]; sessions?: ClassroomSession[]; anchor_session?: ClassroomSession } | undefined;
   const sessions = plan?.timeline_entries || plan?.sessions || [];
-  const storageKey = `classroom-workspace:${classroomId}:${(config.userInfo as { id?: number })?.id || ''}`;
+  const storageKey = `classroom-workspace:${teacher ? 'teacher' : 'student'}:${classroomId}:${(config.userInfo as { id?: number })?.id || ''}`;
   const saved = useRef<SavedState>({});
   const [tasks, setTasks] = useState<ClassroomTask[]>((config.assignmentWorkspaceItems || []) as ClassroomTask[]);
   const [session, setSession] = useState<ClassroomSession | null>(plan?.anchor_session || sessions.find(item => item.is_anchor) || sessions[0] || null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [materialState, setMaterialState] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [revision, setRevision] = useState(0);
+  const [previewFilter, setPreviewFilter] = useState('actionable');
+  const [timelineQuery, setTimelineQuery] = useState('');
   const [pendingEditor, setPendingEditor] = useState<string | null>(null);
-  const materialCache = useRef(new Map<number, Material[]>());
   const opener = useRef<HTMLElement | null>(null);
   const returnPanel = useRef<Panel | null>(null);
   const scrollPositions = useRef<Partial<Record<Panel, number>>>({});
   const suppressRestoreFocus = useRef(false);
   const externalReturn = useRef<Panel | null>(null);
   const [restoreScroll, setRestoreScroll] = useState(0);
-  const scope = materialScope(session);
   const preview = taskPreview(tasks, teacher);
+  const history = taskHistory(tasks);
+  const previewTasks = previewFilter === 'actionable' ? preview.rows : history.filter(task => taskMatchesFilter(task, teacher, previewFilter, '')).slice(0, 4);
+  const previewCount = tasks.filter(task => taskMatchesFilter(task, teacher, previewFilter, '')).length;
+  const indexSessions = sessions.filter(item => [item.session_number_label, item.detail_title, item.session_date, item.detail_meta].join(' ').toLowerCase().includes(timelineQuery.trim().toLowerCase()));
+  const openHistory = () => { setFilter('all'); setQuery(''); open('tasks'); };
 
   const openEditor = async (selector: string) => {
     if (pendingEditor) return;
@@ -129,14 +134,25 @@ export function ClassroomWorkspace() {
 
   useEffect(() => {
     try { saved.current = JSON.parse(sessionStorage.getItem(storageKey) || '{}') as SavedState; } catch { /* storage is optional */ }
+    config.workspaceSelectedOrder = saved.current.sessionOrder;
     if (saved.current.restore) {
-      config.workspaceSelectedOrder = saved.current.sessionOrder;
-      setFilter(saved.current.filter || 'all'); setQuery(saved.current.query || '');
-      setRestoreScroll(saved.current.scroll || 0); setPanel(saved.current.panel || 'tasks');
+      opener.current = document.querySelector<HTMLElement>(saved.current.openerKind === 'history' ? '[data-cw-history]' : '[data-cw-task-collection]');
+      setFilter(saved.current.filter || 'all'); setQuery(saved.current.query || ''); setPreviewFilter(saved.current.previewFilter || 'actionable');
+      setRestoreScroll(saved.current.scroll || 0); returnPanel.current = saved.current.returnPanel || null;
+      setTimelineQuery(saved.current.timelineQuery || '');
+      if (saved.current.panel) scrollPositions.current[saved.current.panel] = saved.current.scroll || 0;
+      if (saved.current.returnPanel) scrollPositions.current[saved.current.returnPanel] = saved.current.returnScroll || 0;
+      if (saved.current.panel === 'session-detail') {
+        const order = saved.current.sessionOrder;
+        void classroomReadiness.wait().then(() => document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order, resume: true } }))).catch(() => window.UI?.showToast?.('课堂详情尚未就绪，请刷新重试。', 'error'));
+      } else setPanel(saved.current.panel || 'tasks');
       saved.current.restore = false;
       try { sessionStorage.setItem(storageKey, JSON.stringify(saved.current)); } catch { /* optional */ }
     }
-    const selected = (event: Event) => setSession((event as CustomEvent<ClassroomSession>).detail);
+    const selected = (event: Event) => {
+      const value = (event as CustomEvent<ClassroomSession>).detail; setSession(value);
+      try { const previous = JSON.parse(sessionStorage.getItem(storageKey) || '{}'); sessionStorage.setItem(storageKey, JSON.stringify({ ...previous, sessionOrder: value?.order_index })); } catch { /* optional */ }
+    };
     const times = (event: Event) => {
       const states = (event as CustomEvent<Map<string, Record<string, unknown>>>).detail;
       setTasks(previous => {
@@ -152,19 +168,30 @@ export function ClassroomWorkspace() {
         return changed ? next : previous;
       });
     };
-    const changed = () => { materialCache.current.clear(); setRevision(value => value + 1); };
     document.addEventListener('classroom:session-selected', selected);
     document.addEventListener('classroom:assignment-time-states', times);
-    document.addEventListener('classroom:materials-changed', changed);
-    const pageShown = (event: PageTransitionEvent) => { if (event.persisted) consumeReturnState(); };
+    const pageShown = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      try { const previous = JSON.parse(sessionStorage.getItem(storageKey) || '{}') as SavedState;
+        if (previous.restore && previous.panel === 'session-detail') document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order: previous.sessionOrder, resume: true } }));
+      } catch { /* optional */ }
+      consumeReturnState();
+    };
     window.addEventListener('pageshow', pageShown);
     return () => {
       document.removeEventListener('classroom:session-selected', selected);
       document.removeEventListener('classroom:assignment-time-states', times);
-      document.removeEventListener('classroom:materials-changed', changed);
       window.removeEventListener('pageshow', pageShown);
     };
   }, [storageKey]);
+
+  useLayoutEffect(() => {
+    if (panel === 'timeline') {
+      const scroll = document.querySelector<HTMLElement>('.cw-dialog-scroll');
+      if (scroll) scroll.scrollTop = restoreScroll;
+      document.querySelector<HTMLElement>('.cw-dialog [data-cw-session-order][aria-pressed="true"]')?.focus({ preventScroll: true });
+    }
+  }, [panel, restoreScroll]);
 
   useEffect(() => {
     // One lightweight clock for time-derived presentation, including individual
@@ -186,8 +213,8 @@ export function ClassroomWorkspace() {
       const target = event.target instanceof Element ? event.target : null;
       const trigger = target?.closest<HTMLElement>('[data-cw-open]');
       if (trigger && trigger.dataset.cwOpen && trigger.dataset.cwOpen in labels) open(trigger.dataset.cwOpen as Panel, trigger);
-      if (target?.closest('[data-assignment-link], a[href^="/assignment/"]')) {
-        const state: SavedState = { panel: 'tasks', filter, query, scroll: document.querySelector('.cw-dialog-scroll')?.scrollTop || 0, restore: true, sessionOrder: session?.order_index };
+      if (!event.ctrlKey && !event.metaKey && !event.shiftKey && target?.closest('[data-assignment-link], a[href^="/assignment/"]')) {
+        const state: SavedState = { panel: 'tasks', filter, query, scroll: document.querySelector('.cw-dialog-scroll')?.scrollTop || 0, restore: true, sessionOrder: session?.order_index, previewFilter, taskId: target?.closest<HTMLElement>('[data-assignment-id]')?.dataset.assignmentId, openerKind: opener.current?.hasAttribute('data-cw-history') ? 'history' : 'tasks' };
         try { sessionStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* optional */ }
       }
       // Existing editors are independent modals. Relinquish the Radix trap before they open.
@@ -198,11 +225,19 @@ export function ClassroomWorkspace() {
       }
     };
     const request = (event: Event) => {
-      const next = (event as CustomEvent<{ panel: Panel | null; back?: boolean }>).detail;
+      const next = (event as CustomEvent<{ panel: Panel | null; back?: boolean; origin?: HTMLElement; handoff?: boolean; resume?: boolean }>).detail;
+      if (next.handoff) { suppressRestoreFocus.current = true; setPanel(null); return; }
       if (next.back) { setRestoreScroll(returnPanel.current ? scrollPositions.current[returnPanel.current] || 0 : 0); setPanel(returnPanel.current); returnPanel.current = null; return; }
-      if (next.panel === 'material-detail' || next.panel === 'session-detail') returnPanel.current = panel;
-      open(next.panel as Panel);
+      if (!next.resume && next.panel !== panel && (next.panel === 'material-detail' || next.panel === 'session-detail')) returnPanel.current = panel;
+      if (!next.panel) { close(); return; }
+      open(next.panel, next.origin);
     };
+    const navigate = (event: Event) => {
+      const detail = (event as CustomEvent<{ panel: Panel; sessionOrder?: string | number }>).detail;
+      const state: SavedState = { panel: detail.panel, sessionOrder: detail.sessionOrder, filter, query, previewFilter, timelineQuery, scroll: document.querySelector('.cw-dialog-scroll')?.scrollTop || 0, restore: true, returnPanel: returnPanel.current || undefined, returnScroll: returnPanel.current ? scrollPositions.current[returnPanel.current] || 0 : 0 };
+      try { sessionStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* optional */ }
+    };
+    document.addEventListener('classroom:workspace-navigate', navigate);
     document.addEventListener('click', click, true);
     document.addEventListener('classroom:workspace-panel', request);
     const externalClosed = () => {
@@ -211,62 +246,43 @@ export function ClassroomWorkspace() {
       setRestoreScroll(scrollPositions.current[previous] || 0); setPanel(previous);
     };
     document.addEventListener('classroom:group-config-closed', externalClosed);
-    return () => { document.removeEventListener('click', click, true); document.removeEventListener('classroom:workspace-panel', request); document.removeEventListener('classroom:group-config-closed', externalClosed); };
-  }, [panel, filter, query, session, storageKey]);
+    return () => { document.removeEventListener('classroom:workspace-navigate', navigate); document.removeEventListener('click', click, true); document.removeEventListener('classroom:workspace-panel', request); document.removeEventListener('classroom:group-config-closed', externalClosed); };
+  }, [panel, filter, query, session, storageKey, previewFilter, timelineQuery]);
 
-  useEffect(() => {
-    if (scope === null) { setMaterials([]); setMaterialState('ready'); return; }
-    const cached = materialCache.current.get(scope);
-    if (cached) { setMaterials(cached); setMaterialState('ready'); return; }
-    const controller = new AbortController();
-    setMaterials([]); setMaterialState('loading');
-    fetch(`/api/classrooms/${classroomId}/learning-materials?session_id=${scope}&generate_blurbs=false`, { credentials: 'same-origin', signal: controller.signal })
-      .then(response => { if (!response.ok) throw new Error(String(response.status)); return response.json(); })
-      .then((data: { materials?: Material[] }) => {
-        if (controller.signal.aborted) return;
-        const entries = data.materials || [];
-        materialCache.current.set(scope, entries); setMaterials(entries); setMaterialState('ready');
-      }).catch(() => { if (!controller.signal.aborted) setMaterialState('error'); });
-    return () => controller.abort();
-  }, [classroomId, scope, revision]);
-
-  const renderMaterials = (all = false) => {
-    if (materialState === 'loading') return <p className="cw-empty" role="status">正在读取材料…</p>;
-    if (materialState === 'error') return <p className="cw-empty" role="alert">材料读取失败。<button className="cw-text-button" onClick={() => setRevision(value => value + 1)}>重试</button></p>;
-    if (!materials.length) return <p className="cw-empty">{scope === null ? session?.is_academic_exam || session?.entry_type === 'academic_exam' ? '教务考试安排不关联课次材料。' : '尚未安排课次，可浏览全部课堂材料。' : teacher ? '尚未绑定材料，可通过“管理课次”添加。' : '本课次尚未配置学习材料。'}</p>;
-    return <ul className="cw-rows">{(all ? materials : materials.slice(0, 3)).map(material => {
-      const href = classroomMaterialUrl(material.open_url || '', classroomId, scope);
-      return <li className="cw-row" key={material.material_id}><div className="cw-row-copy"><strong>{material.name}</strong>{all && material.ai_blurb && <span>{material.ai_blurb}</span>}</div><span className="cw-meta">{material.type_label || '文档'}</span>{href ? <a className="cw-text-button" href={href} target="_blank" rel="noopener">阅读<span className="cw-sr-only"> {material.name}（新窗口）</span> ↗</a> : <span className="cw-meta">暂不可打开</span>}</li>;
-    })}</ul>;
-  };
   const taskTarget = document.getElementById('cw-tasks-preview');
-  const materialTarget = document.getElementById('cw-materials-preview');
   return <>
-    {taskTarget && createPortal(<><div className="cw-section-head"><div className="cw-section-title"><h2>{teacher ? '待处理任务' : '课堂任务'}{preview.actionableCount > 0 && <span className="cw-count">{preview.actionableCount}</span>}</h2><WorkspaceExplanation title="课堂任务" text="这里汇总整个课堂的待处理任务，不随所选课次筛选。已提交、已关闭与历史记录均在全部任务中。" /></div><button className="cw-text-button" onClick={() => open('tasks')}>全部任务（{preview.totalCount}） →</button></div>
-      {!preview.actionableCount ? <p className="cw-empty">{preview.totalCount ? '当前没有待处理任务，已提交与历史任务可在全部任务中查看。' : teacher ? '尚未布置课堂任务。' : '老师尚未发布课堂任务。'}</p>
-        : <ul className="cw-rows">{preview.rows.map(task => { const state = taskPresentation(task, teacher); const deadline = taskDeadlineLabel(task); return <li className="cw-row" key={task.id}><span className={`cw-task-status${state.rank < 2 ? ' is-attention' : ''}`}>{state.status}</span><div className="cw-row-copy"><strong>{task.title}</strong><span>{task.kind === 'exam' ? '考试' : '作业'}{deadline ? ` · ${deadline} ${task.canResubmit ? '重交截止' : '截止'}` : ''}</span>{taskConstraintLabel(task) && <span className="cw-constraint">{taskConstraintLabel(task)}</span>}</div><a className="cw-text-button" data-assignment-link={`/assignment/${task.id}`} href={`/assignment/${task.id}`}>{state.action} →</a></li>; })}</ul>}
-      {preview.urgentOverflow > 0 && <button className="cw-overflow" onClick={() => { setFilter('urgent'); setQuery(''); open('tasks'); }}>还有 {preview.urgentOverflow} 项将在 24 小时内截止，查看紧急任务</button>}
-      {teacher && <div className="cw-secondary-actions"><button className="cw-text-button" disabled={pendingEditor !== null} aria-busy={pendingEditor === '[data-cw-create-assignment]'} onClick={() => void openEditor('[data-cw-create-assignment]')}>新建作业</button><button className="cw-text-button" disabled={pendingEditor !== null} aria-busy={pendingEditor === '[data-cw-assign-exam]'} onClick={() => void openEditor('[data-cw-assign-exam]')}>从试卷库添加</button>{pendingEditor && <span className="cw-meta" role="status">正在准备编辑工具…</span>}</div>}
+    {taskTarget && createPortal(<>
+      <div className="cw-section-head"><div className="cw-section-title"><h2>{teacher ? '待处理任务' : '作业与考试'}</h2><WorkspaceExplanation title="课堂任务" text="整个课堂的作业与考试，不随所选课次筛选。已提交、已关闭与历史记录均可回看。" /></div><button type="button" className="cw-button" data-cw-history="" onClick={openHistory}>历史作业与考试</button></div>
+      <p className="cw-task-scope">整个课堂 · 共 {tasks.length} 项</p>
+      <div className="cw-task-tabs" role="group" aria-label="任务筛选">{[['actionable', '待处理'], [teacher ? 'draft' : 'submitted', teacher ? '草稿' : '已提交与结果'], ['all', '全部']].map(([key, label]) => <button type="button" key={key} aria-pressed={previewFilter === key} onClick={() => setPreviewFilter(key)}>{label} <span>{tasks.filter(task => taskMatchesFilter(task, teacher, key, '')).length}</span></button>)}</div>
+      {!previewTasks.length ? <p className="cw-empty">{!tasks.length ? teacher ? '尚未布置课堂任务。' : '老师尚未发布课堂任务。' : previewFilter === 'actionable' ? '目前没有待处理任务，已提交与历史记录仍可查看。' : '当前筛选没有任务，可切换全部或查看历史。'}</p>
+        : <ul className="cw-task-cards" key={previewFilter}>{previewTasks.map(task => { const state = taskPresentation(task, teacher); const deadline = taskDeadlineLabel(task); const href = `/assignment/${task.id}`; return <li className="cw-task-card" key={task.id} data-assignment-id={task.id}><div className="cw-task-card-head"><span className="cw-task-kind">{task.kind === 'exam' ? '考试' : '作业'}</span><span className={`cw-task-status${state.actionable ? ' is-attention' : ''}`}>{state.status}</span></div><a className="cw-task-title" data-assignment-link={href} href={href}>{task.title}</a><div className="cw-task-card-foot"><div><span className="cw-meta">{deadline ? `${deadline} ${task.canResubmit ? '重交截止' : '截止'}` : '未设置截止时间'}</span>{taskConstraintLabel(task) && <p className="cw-constraint">{taskConstraintLabel(task)}</p>}</div><a className={`cw-button${state.actionable ? ' is-primary' : ''}`} data-assignment-link={href} href={href}>{state.action} →</a></div></li>; })}</ul>}
+      {previewFilter === 'actionable' && preview.urgentOverflow > 0 && <button type="button" className="cw-overflow" onClick={() => { setFilter('urgent'); setQuery(''); open('tasks'); }}>还有 {preview.urgentOverflow} 项将在 24 小时内截止，查看紧急任务</button>}
+      <div className="cw-secondary-actions"><button type="button" className="cw-button" data-cw-task-collection="" onClick={() => { setFilter(previewFilter); setQuery(''); open('tasks'); }}>全部任务（{previewCount}） →</button>
+      {teacher && <><button type="button" className="cw-button is-primary" disabled={pendingEditor !== null} aria-busy={pendingEditor === '[data-cw-create-assignment]'} onClick={() => void openEditor('[data-cw-create-assignment]')}>新建作业</button><button type="button" className="cw-button" disabled={pendingEditor !== null} aria-busy={pendingEditor === '[data-cw-assign-exam]'} onClick={() => void openEditor('[data-cw-assign-exam]')}>从试卷库添加</button>{pendingEditor && <span className="cw-meta" role="status">正在准备编辑工具…</span>}</>}
+      </div>
     </>, taskTarget)}
-    {materialTarget && createPortal(<><div className="cw-section-head"><div className="cw-section-title"><h2>{scope === 0 ? '课程首页材料' : '课次材料'}</h2><WorkspaceExplanation title="材料范围" text="当前展示所选课次绑定的材料；全部课堂材料包含教师为本课堂分配的目录与文件。" /></div><button className="cw-text-button" onClick={() => open('materials')}>全部课堂材料 →</button></div>
-      {scope !== null && <p className="cw-scope">{session?.session_number_label || session?.detail_title || session?.title}</p>}{renderMaterials()}
-      {scope !== null && <div className="cw-secondary-actions"><button className="cw-text-button" onClick={() => open('session-materials')}>本{scope === 0 ? '首页' : '课次'}全部材料（{materialState === 'ready' ? materials.length : '…'}） →</button></div>}
-    </>, materialTarget)}
     <Dialog open={panel !== null} onOpenChange={value => { if (!value) close(); }}>
       <DialogContent className="cw-dialog classroom-page classroom-workspace-v2" onOpenAutoFocus={event => {
         if (panel === 'tasks') {
+          if (saved.current.taskId) { const card = document.querySelector<HTMLElement>(`.cw-dialog [data-assignment-task-card][data-assignment-id="${saved.current.taskId}"]`); if (card && !card.hidden) { event.preventDefault(); card.focus({ preventScroll: true }); saved.current.taskId = undefined; return; } }
           const filterControl = document.querySelector<HTMLElement>('.cw-dialog .cw-filterbar select');
           if (filterControl) { event.preventDefault(); filterControl.focus({ preventScroll: true }); }
         }
         if (panel === 'timeline') {
-          const selected = document.querySelector<HTMLElement>('.cw-dialog [data-session-select][aria-pressed="true"]');
+          const selected = document.querySelector<HTMLElement>('.cw-dialog [data-cw-session-order][aria-pressed="true"]');
           if (selected) { event.preventDefault(); selected.focus({ preventScroll: true }); selected.scrollIntoView({ block: 'nearest' }); }
         }
-      }} onCloseAutoFocus={event => { event.preventDefault(); if (!suppressRestoreFocus.current) opener.current?.focus({ preventScroll: true }); suppressRestoreFocus.current = false; }}>
-        <div className="cw-dialog-heading"><DialogTitle>{panel ? labels[panel] : '课堂工作区'}</DialogTitle><DialogDescription>{panel === 'tasks' ? '本课堂全部已授权任务，包含已提交、已截止和历史记录。' : panel === 'materials' ? '课堂材料目录，保留目录导航、预览和下载权限。' : panel === 'timeline' ? '选择课次后返回课堂；课程首页与教务考试分别标识。' : session?.detail_title || session?.title || '查看详细信息'}</DialogDescription></div>
-        {(panel === 'material-detail' || panel === 'session-detail') && returnPanel.current && <button className="cw-text-button cw-back" onClick={() => { setRestoreScroll(scrollPositions.current[returnPanel.current!] || 0); setPanel(returnPanel.current); returnPanel.current = null; }}>← 返回列表</button>}
+      }} onCloseAutoFocus={event => { event.preventDefault(); if (!suppressRestoreFocus.current) opener.current?.focus({ preventScroll: true }); suppressRestoreFocus.current = false; document.dispatchEvent(new CustomEvent('classroom:workspace-closed')); }}>
+        <div className="cw-dialog-heading"><DialogTitle>{panel ? labels[panel] : '课堂工作区'}</DialogTitle><DialogDescription>{panel === 'tasks' ? '本课堂全部已授权任务，包含已提交、已截止和历史记录。' : panel === 'materials' ? '课堂材料目录，保留目录导航、预览和下载权限。' : panel === 'timeline' ? '选择课次查看完整详情与材料；横向课次导航始终保留。' : session?.detail_title || session?.title || '查看详细信息'}</DialogDescription></div>
+        {panel === 'material-detail' && returnPanel.current && <button type="button" className="cw-text-button cw-back" onClick={() => { setRestoreScroll(scrollPositions.current[returnPanel.current!] || 0); setPanel(returnPanel.current); returnPanel.current = null; }}>← 返回列表</button>}
         {panel === 'tasks' && <div className="cw-filterbar"><label>任务状态<select value={filter} onChange={event => setFilter(event.target.value)}><option value="all">全部（{tasks.length}）</option><option value="actionable">待处理（{preview.actionableCount}）</option><option value="urgent">24 小时内截止（{preview.urgentCount}）</option>{teacher ? <option value="draft">草稿</option> : <option value="submitted">已提交 / 已批改</option>}<option value="closed">已关闭</option></select></label><label className="cw-search-label">查找任务<input value={query} onChange={event => setQuery(event.target.value)} type="search" placeholder="输入任务名称" /></label></div>}
-        <div className="cw-dialog-scroll">{panel === 'tasks' && !tasks.some(task => taskMatchesFilter(task, teacher, filter, query)) && <p className="cw-empty" role="status">没有符合当前筛选条件的任务。</p>}{panel === 'session-materials' ? <>{renderMaterials(true)}{teacher && scope !== null && <button className="cw-text-button" onClick={() => { const returnFocus = opener.current; close(); window.setTimeout(() => document.dispatchEvent(new CustomEvent('classroom:manage-session-materials', { detail: { returnFocus } })), 0); }}>管理本课次材料</button>}</> : panel && <ExistingSurface panel={panel} filter={filter} query={query} tasks={tasks} teacher={teacher} restoreScroll={restoreScroll} />}</div>
+        {panel === 'timeline' && <label className="cw-filterbar">查找课次<input type="search" value={timelineQuery} onChange={event => setTimelineQuery(event.target.value)} placeholder="课次、标题或日期" /></label>}
+        <div className="cw-dialog-scroll">
+          {panel === 'tasks' && !tasks.some(task => taskMatchesFilter(task, teacher, filter, query)) && <p className="cw-empty" role="status">没有符合当前筛选条件的任务。</p>}
+          {panel === 'timeline' && !indexSessions.length && <p className="cw-empty" role="status">没有匹配的课次，请更换搜索内容。</p>}
+          {panel === 'timeline' ? <div className="cw-timeline-index">{indexSessions.map(item => <button type="button" key={String(item.order_index)} className="cw-timeline-index-item" data-cw-session-order={item.order_index} aria-pressed={String(item.order_index) === String(session?.order_index)} aria-haspopup="dialog" onClick={() => document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order: item.order_index } }))}><span>{item.session_number_label}</span><strong>{item.segment_title || item.detail_title || item.title}</strong><small>{item.session_date || item.session_status_label}</small></button>)}</div> : panel && <ExistingSurface panel={panel} filter={filter} query={query} tasks={tasks} teacher={teacher} restoreScroll={restoreScroll} />}
+        </div>
       </DialogContent>
     </Dialog>
   </>;

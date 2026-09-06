@@ -12,7 +12,7 @@ import asyncio
 import json
 import mimetypes
 import re
-import traceback
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,7 +22,6 @@ from fastapi import HTTPException
 from ...core import ai_client
 from ...database import get_db_connection
 from ...db.connection import execute_insert_returning_id
-from ..career_engagement_service import record_student_career_event_safely
 from ..file_service import resolve_global_file_path
 from ..material_ai_import_service import MAX_VISION_IMAGES, extract_material_content
 from . import resume_ai_service as ai
@@ -33,7 +32,17 @@ from . import resume_render_service as render
 ALLOWED_EXTENSIONS = {".doc", ".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 MAX_IMPORT_BYTES = 20 * 1024 * 1024
 TEXT_BUDGET = 90_000
-AI_TIMEOUT = 600.0
+AI_TIMEOUT = 240.0
+
+
+class ResumeImportResourceLimit(HTTPException):
+    def __init__(self):
+        super().__init__(413, "简历页数、图片尺寸或解压后内容过大，请精简后重新上传")
+
+
+class ResumeImportInvalidDocument(HTTPException):
+    def __init__(self):
+        super().__init__(422, "文件内容无效或受密码保护，请上传可正常打开的原件")
 
 _MONTH_RE = re.compile(r"(?P<year>19\d{2}|20\d{2})\D{0,3}(?P<month>0?[1-9]|1[0-2])?")
 _SPACE_RE = re.compile(r"\s+")
@@ -55,78 +64,108 @@ def validate_import_file(filename: str, mime_type: str = "", file_size: int = 0)
     return {"filename": safe_name, "extension": ext, "mime_type": (mime_type or guessed or "").split(";", 1)[0]}
 
 
-async def run_resume_import_parse_job(resume_id: int, student_id: int) -> None:
-    """Background coroutine: extract -> AI parse -> merge -> render -> ready/failed."""
+async def validate_upload_stream(file, *, max_bytes: int = MAX_IMPORT_BYTES) -> int:
+    """Bound reads before hashing/publishing to the shared file store."""
+    total = 0
+    signature = b""
     try:
+        while True:
+            chunk = await file.read(min(1024 * 1024, max_bytes - total + 1))
+            if not chunk:
+                break
+            if not signature:
+                signature = chunk[:16]
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(413, f"文件不能超过 {max_bytes // (1024 * 1024)}MB")
+        if not total:
+            raise HTTPException(400, "上传文件为空")
+        ext = Path(str(file.filename or "")).suffix.lower()
+        valid = {
+            ".pdf": signature.startswith(b"%PDF"),
+            ".docx": signature.startswith(b"PK"),
+            ".doc": signature.startswith(bytes.fromhex("d0cf11e0a1b11ae1")),
+            ".png": signature.startswith(b"\x89PNG\r\n\x1a\n"),
+            ".jpg": signature.startswith(b"\xff\xd8\xff"),
+            ".jpeg": signature.startswith(b"\xff\xd8\xff"),
+            ".gif": signature.startswith((b"GIF87a", b"GIF89a")),
+            ".webp": signature.startswith(b"RIFF") and signature[8:12] == b"WEBP",
+            ".bmp": signature.startswith(b"BM"),
+        }.get(ext, False)
+        if not valid:
+            raise HTTPException(415, "文件内容与扩展名不一致，请上传有效的文档或图片")
+        if ext in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}:
+            await file.seek(0)
+            await asyncio.to_thread(_check_image_input, file.file)
+        return total
+    finally:
+        await file.seek(0)
+
+
+async def execute_import_candidate(job: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Extract and parse only. Student material is untouched until acceptance."""
+    def read():
+        from .resume_generation_service import _current_resume
+        from ..student_career_job_service import SupersededCareerJob
         with get_db_connection() as conn:
-            resume = docs.get_resume(conn, student_id, resume_id)
-            conn.commit()
-        file_hash = str(resume.get("source_file_hash") or "").strip()
-        source_path = resolve_global_file_path(file_hash)
-        if not source_path:
-            raise RuntimeError("导入文件缓存已不存在，请重新上传。")
+            resume = _current_resume(conn, job, payload)
+            if not resume:
+                raise SupersededCareerJob()
+            return resume
+    resume = await asyncio.to_thread(read)
+    source_path = resolve_global_file_path(str(resume.get("source_file_hash") or ""))
+    if not source_path:
+        raise ValueError("导入原件不存在")
+    extracted = await asyncio.to_thread(_extract_resume_file, source_path, resume["source_filename"])
+    if not extracted["file_texts"] and not extracted["images"]:
+        raise ValueError("未提取到可识别内容，请上传更清晰的文件")
+    parsed = normalize_resume_import_payload(await _parse_with_ai(extracted, resume["source_filename"]))
+    if _payload_is_empty(parsed):
+        raise ValueError("未识别到可用简历内容")
+    parsed["warnings"] = _merge_text_list(parsed.get("warnings"), extracted.get("warnings"))
+    return {"parsed": parsed, "source_filename": resume["source_filename"], "message": "解析完成，请检查识别内容后导入资料库。"}
 
-        filename = str(resume.get("source_filename") or source_path.name)
-        validate_import_file(filename, str(resume.get("source_mime_type") or ""), int(resume.get("source_file_size") or 0))
 
-        extracted = await asyncio.to_thread(_extract_resume_file, source_path, filename)
-        if not extracted["file_texts"] and not extracted["images"]:
-            raise RuntimeError("未能从文件中提取到可解析的文字或页面图片，请换用更清晰的 Word/PDF/图片。")
+def accept_import_candidate(conn, student_id: int, resume_id: int, candidate_id: int, expected_revision: Any, *, selections: Any = None) -> int:
+    resume = docs.get_resume(conn, student_id, resume_id)
+    revision = docs.require_revision(resume, expected_revision)
+    candidate = docs.get_candidate(conn, student_id, resume_id, candidate_id)
+    if candidate["kind"] != "import" or candidate["status"] != "pending" or int(candidate["base_revision"]) != revision:
+        raise docs.ResumeConflict("导入候选已处理或简历已变化，请重新载入。")
+    # Lock/CAS before any profile writes, so duplicate accept requests cannot
+    # both add materials. All subsequent changes share this transaction.
+    result = conn.execute("UPDATE resumes SET status = 'import_applying' WHERE id = ? AND student_id = ? AND revision = ? AND archived = 0",
+                          (int(resume_id), int(student_id), revision))
+    if result.rowcount != 1:
+        raise docs.ResumeConflict("简历已变化，请重新载入。")
+    claimed = conn.execute("UPDATE resume_candidates SET status = 'accepting' WHERE id = ? AND student_id = ? AND status = 'pending'", (int(candidate_id), int(student_id)))
+    if claimed.rowcount != 1:
+        raise docs.ResumeConflict("该导入已处理，请刷新查看。")
+    parsed = dict(candidate["payload"]["parsed"])
+    choices = selections if isinstance(selections, dict) else {}
+    sections = choices.get("selected_sections")
+    selected_items = choices.get("selected_items") if isinstance(choices.get("selected_items"), dict) else {}
+    for section in ("personal", "self_intro", "education", "experience", "skill", "certificate"):
+        if isinstance(sections, list) and section not in sections:
+            parsed[section] = {} if section == "personal" else []
+        elif section in selected_items and isinstance(selected_items[section], list):
+            indices = {int(x) for x in selected_items[section] if str(x).isdigit()}
+            parsed[section] = [item for index, item in enumerate(parsed.get(section) or []) if index in indices]
+    if isinstance(choices.get("selected_personal_fields"), list):
+        parsed["personal"] = {key: value for key, value in (parsed.get("personal") or {}).items() if key in choices["selected_personal_fields"]}
+    if _payload_is_empty(parsed):
+        raise ValueError("请至少选择一项要导入的内容")
+    summary = merge_resume_import_payload(conn, student_id, parsed, source_filename=resume.get("source_filename", ""))
+    bundle = profile.collect_profile_bundle(conn, student_id)
+    target = _target_position(parsed, bundle)
+    document = _build_resume_doc(conn, student_id, resume, parsed, summary, target, [])
+    docs.update_resume(conn, student_id, resume_id, title=document["title"], template_key=document["template_key"],
+                       layout=document["layout"], target_position=target, expected_revision=revision, refresh_materials=True, optimized_summary_md="", tech_stack=[])
+    docs.save_import_summary(conn, resume_id, document["import_summary"])
+    conn.execute("UPDATE resume_candidates SET status = 'accepted', updated_at = ? WHERE id = ? AND student_id = ?", (_now(), int(candidate_id), int(student_id)))
+    return revision + 1
 
-        raw = await _parse_with_ai(extracted, filename)
-        parsed = normalize_resume_import_payload(raw)
-        parsed["warnings"] = _merge_text_list(extracted.get("warnings") or [], parsed.get("warnings") or [])
-        if _payload_is_empty(parsed):
-            raise RuntimeError("AI 未识别到可用的简历内容，请检查文件是否为完整简历。")
 
-        with get_db_connection() as conn:
-            merge_result = merge_resume_import_payload(conn, student_id, parsed, source_filename=filename)
-            bundle = profile.collect_profile_bundle(conn, student_id)
-            ctx = _student_context(conn, student_id)
-            target_position = _target_position(parsed, bundle)
-            tech_stack = parsed.get("tech_stack") if isinstance(parsed.get("tech_stack"), list) else []
-            conn.commit()
-
-        if not tech_stack:
-            try:
-                generated = await ai.generate_tech_stack(bundle, ctx, target_position=target_position)
-                tech_stack = generated.get("groups") or []
-            except Exception:
-                tech_stack = []
-
-        with get_db_connection() as conn:
-            resume_doc = _build_resume_doc(conn, student_id, resume, parsed, merge_result, target_position, tech_stack)
-            html = render.assemble_resume_html(conn, student_id, resume_doc)
-            docs.save_import_result(
-                conn,
-                resume_id,
-                title=resume_doc["title"],
-                target_position=target_position,
-                template_key=resume_doc["template_key"],
-                layout=resume_doc["layout"],
-                render_html=html,
-                tech_stack=tech_stack,
-                import_summary=resume_doc["import_summary"],
-                status="ready",
-                error_text="",
-            )
-            record_student_career_event_safely(
-                conn,
-                student_id,
-                surface="resume",
-                event_name="resume_import_completed",
-                context={"resume_id": resume_id, "status": "ready"},
-            )
-            conn.commit()
-    except Exception as exc:  # noqa: BLE001
-        traceback.print_exc()
-        message = f"解析失败：{str(exc)[:260]}"
-        try:
-            with get_db_connection() as conn:
-                docs.set_status(conn, resume_id, "failed", message)
-                conn.commit()
-        except Exception:
-            pass
 
 
 def _student_context(conn, student_id: int) -> dict[str, Any]:
@@ -139,6 +178,7 @@ def _student_context(conn, student_id: int) -> dict[str, Any]:
 
 
 def _extract_resume_file(file_path: Path, filename: str) -> dict[str, Any]:
+    _check_input_resource_budget(file_path, filename)
     extraction = extract_material_content(file_path, filename)
     text = str(extraction.text or "").strip()
     file_texts = [{"name": filename, "content": text[:TEXT_BUDGET]}] if text else []
@@ -160,6 +200,49 @@ def _extract_resume_file(file_path: Path, filename: str) -> dict[str, Any]:
         "method": extraction.method,
         "source_kind": extraction.source_kind,
     }
+
+
+def _check_input_resource_budget(file_path: Path, filename: str) -> None:
+    """Bound expanded input before the shared parser allocates document data."""
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".docx":
+        try:
+            with zipfile.ZipFile(file_path) as archive:
+                entries = archive.infolist()
+                if len(entries) > 2000 or sum(item.file_size for item in entries) > 80 * 1024 * 1024 or any(item.file_size > 20 * 1024 * 1024 for item in entries):
+                    raise ResumeImportResourceLimit()
+                if "word/document.xml" not in archive.namelist() or any(item.flag_bits & 1 for item in entries):
+                    raise ResumeImportInvalidDocument()
+        except zipfile.BadZipFile as exc:
+            raise ResumeImportInvalidDocument() from exc
+    elif suffix == ".pdf":
+        import fitz
+        try:
+            with fitz.open(file_path) as document:
+                if document.needs_pass or document.page_count <= 0:
+                    raise ResumeImportInvalidDocument()
+                if document.page_count > 40:
+                    raise ResumeImportResourceLimit()
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise ResumeImportInvalidDocument() from exc
+    elif suffix in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}:
+        _check_image_input(file_path)
+
+
+def _check_image_input(source: Any) -> None:
+    from PIL import Image
+    try:
+        with Image.open(source) as picture:
+            if picture.width * picture.height > 25_000_000:
+                raise ResumeImportResourceLimit()
+    except HTTPException:
+        raise
+    except Image.DecompressionBombError as exc:
+        raise ResumeImportResourceLimit() from exc
+    except Exception as exc:
+        raise ResumeImportInvalidDocument() from exc
 
 
 async def _parse_with_ai(extracted: dict[str, Any], filename: str) -> dict[str, Any] | None:
@@ -198,12 +281,13 @@ def _build_import_system_prompt() -> str:
         "必须使用这些字段："
         "personal{name,gender,birthday,phone,email,qq,wechat,address,hometown,id_card,expected_position,expected_industry,expected_salary},"
         "self_intro[{title,content_md}],"
-        "education[{kind,school,college,major,start_date,end_date,content}],"
+        "education[{kind,school,college,major,degree,start_date,end_date,content}],"
         "experience[{kind,title,start_date,end_date,role,content,contribution,achievement}],"
         "skill[{name,level,acquired_date,expiry_date,description}],"
         "certificate[{name,acquired_date,expiry_date,description}],"
         "tech_stack[{group,items}],target_position,warnings。"
-        "kind 只能用 education: high_school/university/training，experience: project/competition。"
+        f"kind 只能用 education: high_school/university/training，experience: {'/'.join(profile.EXPERIENCE_KINDS)}。"
+        "degree只记录明确写出的高中/中专/大专/本科/硕士/博士，不根据大学名称推断学历。"
         "日期尽量输出 YYYY-MM；只有年份就 YYYY；正在进行可写“至今”。"
         "个人介绍必须是简历中的职业摘要/自我评价原文或忠实压缩，不要扩写。"
         "技能和证书不要混淆：技术能力放 skill，真实证书/等级考试/资格证放 certificate。"
@@ -372,6 +456,7 @@ def _coerce_education(value: Any) -> dict[str, str]:
         "school": _pick(data, "school", "学校", "学校名称", "机构", limit=160),
         "college": _pick(data, "college", "学院", "院系", limit=160),
         "major": _pick(data, "major", "专业", limit=160),
+        "degree": _pick(data, "degree", "学历", "学位", limit=40),
         "start_date": _norm_month(data.get("start_date") or data.get("开始时间") or data.get("start")),
         "end_date": _norm_month(data.get("end_date") or data.get("结束时间") or data.get("end")),
         "content": _pick(data, "content", "description", "学习内容", "主修课程", limit=2000),
@@ -449,6 +534,13 @@ def _normalize_education_kind(value: str) -> str:
 
 def _normalize_experience_kind(value: str) -> str:
     raw = value.lower()
+    if raw in profile.EXPERIENCE_KINDS:
+        return raw
+    aliases = {"internship": ("实习",), "course": ("课程",), "campus": ("社团", "学生工作"),
+               "volunteer": ("志愿", "义工"), "part_time": ("兼职",), "research": ("调研", "科研"), "employment": ("全职", "正式工作", "employment", "full_time")}
+    for kind, labels in aliases.items():
+        if raw == kind or any(label in value for label in labels):
+            return kind
     if "比赛" in value or "竞赛" in value or "competition" in raw or "contest" in raw:
         return "competition"
     return "project"
@@ -520,12 +612,16 @@ def merge_resume_import_payload(
         if matched_ids:
             summary["matched"][section] = matched_ids
         summary["selected"][section] = added_ids + updated_ids + matched_ids
+    profile._notify_profile_change(conn, student_id)
     return summary
 
 
 def accept_import_conflict(conn, student_id: int, resume_id: int, conflict_index: int) -> dict[str, Any]:
     """Apply one import conflict's incoming value and refresh the rendered resume."""
     resume = docs.get_resume(conn, student_id, resume_id)
+    locked = conn.execute("UPDATE resumes SET revision = revision WHERE id = ? AND student_id = ? AND revision = ? AND archived = 0", (int(resume_id), int(student_id), int(resume["revision"])))
+    if locked.rowcount != 1:
+        raise docs.ResumeConflict("简历已更新，请重新核对导入冲突。")
     summary = resume.get("import_summary") if isinstance(resume.get("import_summary"), dict) else {}
     conflicts = summary.get("conflicts") if isinstance(summary.get("conflicts"), list) else []
     index = int(conflict_index)
@@ -542,10 +638,12 @@ def accept_import_conflict(conn, student_id: int, resume_id: int, conflict_index
         raise ValueError("该冲突缺少可应用的导入值")
 
     if section == "personal":
-        _apply_personal_conflict(conn, student_id, field, incoming)
+        _apply_personal_conflict(conn, student_id, field, incoming, expected=str(conflict.get("existing") or ""))
     else:
         existing_id = int(conflict.get("existing_id") or 0)
-        _apply_section_conflict(conn, student_id, section, existing_id, field, incoming)
+        _apply_section_conflict(conn, student_id, section, existing_id, field, incoming, expected=str(conflict.get("existing") or ""))
+
+    profile._notify_profile_change(conn, student_id)
 
     conflict["accepted"] = True
     conflict["resolved_at"] = _now()
@@ -554,30 +652,28 @@ def accept_import_conflict(conn, student_id: int, resume_id: int, conflict_index
     summary["message"] = _summary_message(summary)
     docs.save_import_summary(conn, resume_id, summary)
 
-    refreshed = docs.get_resume(conn, student_id, resume_id)
-    html = render.assemble_resume_html(conn, student_id, refreshed)
-    docs.save_render(
-        conn,
-        resume_id,
-        render_html=html,
-        tech_stack=refreshed.get("tech_stack") or [],
-        status="ready",
-        error_text="",
-    )
-    return {"summary": summary, "conflict": conflict, "changed": True}
+    revision = docs.update_resume(conn, student_id, resume_id, title=resume["title"], template_key=resume["template_key"],
+                                  layout=resume.get("layout"), target_position=resume["target_position"], expected_revision=resume["revision"],
+                                  content_overrides=[{"section": section, "id": conflict.get("existing_id", 0), "fields": {field: incoming}}])
+    version = docs.get_version(conn, student_id, resume_id, revision)
+    html = render.assemble_resume_html(None, student_id, docs.snapshot_resume(version))
+    docs.save_version_render(conn, student_id, resume_id, revision, html)
+    return {"summary": summary, "conflict": conflict, "changed": True, "revision": revision}
 
 
-def _apply_personal_conflict(conn, student_id: int, field: str, incoming: str) -> None:
+def _apply_personal_conflict(conn, student_id: int, field: str, incoming: str, *, expected: str = "") -> None:
     if field not in profile.PERSONAL_FIELDS:
         raise ValueError("该个人信息字段不能自动更新")
     profile.get_personal_info(conn, student_id)
-    conn.execute(
-        f"UPDATE resume_personal_info SET {field} = ?, updated_at = ? WHERE student_id = ?",
-        (incoming[:200], _now(), int(student_id)),
+    result = conn.execute(
+        f"UPDATE resume_personal_info SET {field} = ?, revision = revision + 1, updated_at = ? WHERE student_id = ? AND {field} = ?",
+        (incoming[:200], _now(), int(student_id), expected),
     )
+    if result.rowcount != 1:
+        raise docs.ResumeConflict("该字段在解析后已修改，请重新核对，系统未覆盖你的新内容。")
 
 
-def _apply_section_conflict(conn, student_id: int, section: str, item_id: int, field: str, incoming: str) -> None:
+def _apply_section_conflict(conn, student_id: int, section: str, item_id: int, field: str, incoming: str, *, expected: str = "") -> None:
     if section not in profile.LIST_SECTIONS:
         raise ValueError("该资料分区不能自动更新")
     spec = profile.LIST_SECTIONS[section]
@@ -585,10 +681,12 @@ def _apply_section_conflict(conn, student_id: int, section: str, item_id: int, f
         raise ValueError("该资料字段不能自动更新")
     profile.get_section_item(conn, student_id, section, item_id)
     limit = 8000 if field in {"content_md", "content", "contribution"} else 2000
-    conn.execute(
-        f"UPDATE {spec['table']} SET {field} = ?, updated_at = ? WHERE id = ? AND student_id = ?",
-        (incoming[:limit], _now(), int(item_id), int(student_id)),
+    result = conn.execute(
+        f"UPDATE {spec['table']} SET {field} = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND student_id = ? AND {field} = ?",
+        (incoming[:limit], _now(), int(item_id), int(student_id), expected),
     )
+    if result.rowcount != 1:
+        raise docs.ResumeConflict("该字段在解析后已修改，请重新核对，系统未覆盖你的新内容。")
 
 
 def _insert_import_section(conn, student_id: int, section: str, item: dict[str, Any]) -> int | None:
@@ -628,15 +726,17 @@ def _fill_blank_section_fields(
         if not current:
             updates[field] = value
         elif current != value and field not in _identity_fields(section) and field not in {"source"}:
-            conflicts.append({"field": field, "existing": current[:220], "incoming": value[:220]})
+            conflicts.append({"field": field, "existing": current, "incoming": value})
     if updates:
         table = spec["table"]
         assignments = ", ".join(f"{field} = ?" for field in updates)
-        params = list(updates.values()) + [_now(), int(existing["id"]), int(student_id)]
-        conn.execute(
-            f"UPDATE {table} SET {assignments}, updated_at = ? WHERE id = ? AND student_id = ?",
+        params = list(updates.values()) + [_now(), int(existing["id"]), int(student_id), int(existing.get("revision") or 1)]
+        result = conn.execute(
+            f"UPDATE {table} SET {assignments}, revision = revision + 1, updated_at = ? WHERE id = ? AND student_id = ? AND revision = ?",
             params,
         )
+        if result.rowcount != 1:
+            raise docs.ResumeConflict("素材在导入期间发生变化，请检查后重新确认。")
     return {"updated_fields": list(updates.keys()), "conflicts": conflicts}
 
 

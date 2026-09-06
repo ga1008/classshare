@@ -21,7 +21,7 @@ from .chat_image_derivatives import (
     prepare_chat_image_derivatives,
     run_chat_image_processing,
 )
-from .file_service import resolve_global_file_path, save_file_globally
+from .file_service import bind_global_file_references, resolve_global_file_path, save_file_globally
 from .offering_membership_service import offering_class_ids, student_belongs_to_offering
 from .psych_profile_service import (
     build_explicit_user_profile_prompt,
@@ -1679,6 +1679,10 @@ def _insert_private_message_attachments(
     db_engine = get_configured_db_engine()
     if db_engine not in {"sqlite", "postgres"}:
         raise ValueError(f"Unsupported private message attachment insert database engine: {db_engine!r}")
+    bind_global_file_references(conn, (
+        item.get(column) for item in prepared
+        for column in ("file_hash", "thumbnail_file_hash", "preview_file_hash")
+    ))
     inserted_ids: list[int] = []
     for item in prepared:
         insert_sql = """
@@ -2566,6 +2570,8 @@ def load_private_message_attachment_for_user(conn, user: dict, attachment_id: in
 
 def _update_private_derivative_columns(conn, attachment_id: int, variant: str, derivative: dict) -> None:
     columns = PRIVATE_MESSAGE_VARIANT_COLUMNS[variant]
+    conn.execute("UPDATE private_message_attachments SET id=id WHERE id=?", (int(attachment_id),))
+    bind_global_file_references(conn, (derivative["file_hash"],))
     conn.execute(
         f"""
         UPDATE private_message_attachments

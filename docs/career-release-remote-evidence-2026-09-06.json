@@ -1,0 +1,98 @@
+{
+  "read_only": true,
+  "checks": [],
+  "health": {
+    "status": "ok",
+    "release_id": "20260906-170537-9b2331dfa3c8",
+    "db_pool": {
+      "min": 1,
+      "max": 12,
+      "size": 4,
+      "available": 4,
+      "waiting": 0
+    },
+    "career_worker": {
+      "enabled": true,
+      "running": 3,
+      "ai_concurrency": 1,
+      "render_concurrency": 1,
+      "last_maintenance": "2026-09-06T17:14:54",
+      "last_error": ""
+    }
+  },
+  "career_students": [
+    {
+      "major": "unknown",
+      "ok": true,
+      "state_ms": 4.06,
+      "phase": "intro",
+      "node_count": 6,
+      "network_status": "ready",
+      "ai_allowed": true,
+      "has_questionnaire": true
+    },
+    {
+      "major": "软件工程",
+      "ok": true,
+      "state_ms": 26.11,
+      "phase": "intro",
+      "node_count": 24,
+      "network_status": "ready",
+      "ai_allowed": true,
+      "has_questionnaire": true
+    },
+    {
+      "major": "人工智能",
+      "ok": true,
+      "state_ms": 27.78,
+      "phase": "intro",
+      "node_count": 25,
+      "network_status": "ready",
+      "ai_allowed": true,
+      "has_questionnaire": true
+    },
+    {
+      "major": "网络工程",
+      "ok": true,
+      "state_ms": 2.5,
+      "phase": "intro",
+      "node_count": 6,
+      "network_status": "failed",
+      "ai_allowed": true,
+      "has_questionnaire": true
+    },
+    {
+      "major": "计算机科学与技术",
+      "ok": true,
+      "state_ms": 28.26,
+      "phase": "intro",
+      "node_count": 26,
+      "network_status": "ready",
+      "ai_allowed": true,
+      "has_questionnaire": true
+    }
+  ],
+  "tables": {
+    "career_network_versions": 0,
+    "career_job_postings": 0,
+    "resume_versions": 5,
+    "resume_candidates": 0
+  },
+  "preserved_resumes": 5,
+  "preserved_networks": 3,
+  "career_jobs": [],
+  "file_sha256": {
+    "static/js/career_path_app.js": "d242c03d8125fdbc1b45235d32b18df5c9bb00e19c23b8dd835bb5d4ec3b8e9d",
+    "static/css/career_path.css": "80b7ea8be8d0b9769a6df1043eaafecb47a7692bb6ad95554b3efa3cec283648",
+    "static/css/resume_console.css": "caf3d1c4448d84785401d2863add9abd95a7275ac51bba1a6de2d4a04543231d",
+    "classroom_app/services/career_lifecycle_service.py": "e4a6ddfc5ca466544e7ea136e4ef7369a3d932ca58c9111bdb28cbb27353d906",
+    "classroom_app/services/resume/resume_render_service.py": "330ea9ec27f8fa3806bf9c718e2a6eff2a70aa200b6b7b114e551a3092f7e821"
+  },
+  "local_code_sha_matches": {
+    "static/js/career_path_app.js": true,
+    "static/css/career_path.css": true,
+    "static/css/resume_console.css": true,
+    "classroom_app/services/career_lifecycle_service.py": true,
+    "classroom_app/services/resume/resume_render_service.py": true
+  }
+}

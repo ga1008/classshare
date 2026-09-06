@@ -17,6 +17,7 @@ from ..services.emoji_service import (
     validate_and_store_custom_emoji,
 )
 from ..services.materials_service import ensure_classroom_access
+from ..services.file_service import bind_global_file_references
 
 router = APIRouter()
 
@@ -54,6 +55,7 @@ async def upload_custom_emoji(
 
     with get_db_connection() as conn:
         ensure_classroom_access(conn, class_offering_id, user)
+        bind_global_file_references(conn, (stored_file["hash"],))
         existing = conn.execute(
             """
             SELECT *

@@ -27,6 +27,7 @@ KIND_LABELS = {
 }
 SCHEDULE_KINDS = {"class", "exam", "invigilation"}
 TASK_KINDS = {"assignment", "exam_task", "stage"}
+ATTENTION_KINDS = TASK_KINDS | {"manual", "poll", "teacher_work"}
 
 
 def local_datetime(value: Any) -> datetime | None:
@@ -252,11 +253,11 @@ def _decode_cursor(token: str, *, fingerprint: str, now: datetime) -> tuple[tupl
         raise WorkspaceCursorError("分页游标无效或不属于当前筛选，请从第一页重新读取") from None
 
 
-def build_dashboard_workspace(*, user: dict[str, Any], offerings: list[dict[str, Any]], sources: Iterable[dict[str, Any]], continue_material: dict[str, Any] | None = None, now: datetime | None = None, offering_id: int = 0, offering_ids: set[int] | None = None, kind: str = "all", date_scope: str = "all", status: str = "all", keyword: str = "", offset: int = 0, limit: int = 100, cursor: str = "", calendar_target: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_dashboard_workspace(*, user: dict[str, Any], offerings: list[dict[str, Any]], sources: Iterable[dict[str, Any]], continue_material: dict[str, Any] | None = None, now: datetime | None = None, offering_id: int = 0, offering_ids: set[int] | None = None, kind: str = "all", date_scope: str = "all", status: str = "all", keyword: str = "", item_key: str = "", offset: int = 0, limit: int = 100, cursor: str = "", calendar_target: dict[str, Any] | None = None) -> dict[str, Any]:
     now = local_datetime(now or china_now()) or china_now().replace(tzinfo=None)
     offset, limit = max(0, offset), max(1, min(100, limit))
     fingerprint = hashlib.sha256(json.dumps([user.get("role"), user.get("id"), offering_id, sorted(offering_ids) if offering_ids is not None else None,
-                                             kind, date_scope, status, keyword.strip().casefold()], ensure_ascii=False).encode()).hexdigest()
+                                             kind, date_scope, status, keyword.strip().casefold(), item_key], ensure_ascii=False).encode()).hexdigest()
     after = None
     if cursor:
         after, now, offset = _decode_cursor(cursor, fingerprint=fingerprint, now=now)
@@ -272,11 +273,19 @@ def build_dashboard_workspace(*, user: dict[str, Any], offerings: list[dict[str,
     seen: set[str] = set()
     counts = {"total": 0, "filtered_total": 0, "pending_total": 0, "urgent_total": 0, "today_class_count": 0, "today_due_count": 0}
     focus_pool: list[tuple[tuple, dict[str, Any]]] = []
+    attention_pool: list[tuple[tuple, dict[str, Any]]] = []
+    action_summary = {"total": 0, "today": 0, "overdue": 0, "undated": 0}
     next_transition: datetime | None = None
     offering_summaries = {str(_integer(o["id"])): {"pending_task_count": 0, "pending_review_count": 0} for o in offerings}
     calendar_items = [] if calendar_target is not None else None
 
+    def needs_attention(item):
+        # Schedule and reading facts retain their original calendar semantics.
+        return item["kind"] in ATTENTION_KINDS and item["is_actionable"] and not item["is_completed"]
+
     def matches(item):
+        if item_key and item["key"] != item_key:
+            return False
         if offering_id and item["offering_id"] != offering_id:
             return False
         if offering_ids is not None and item["offering_id"] not in offering_ids:
@@ -287,7 +296,13 @@ def build_dashboard_workspace(*, user: dict[str, Any], offerings: list[dict[str,
             return False
         if status == "completed" and not item["is_completed"]:
             return False
-        if date_scope == "this_week":
+        if status == "attention" and not needs_attention(item):
+            return False
+        if status == "attention" and date_scope == "today":
+            due = local_datetime(item["effective_due_at"])
+            if not due or due.date() != now.date():
+                return False
+        elif date_scope == "this_week":
             if not item["is_this_week"]:
                 return False
         elif date_scope == "next_seven_days":
@@ -320,6 +335,14 @@ def build_dashboard_workspace(*, user: dict[str, Any], offerings: list[dict[str,
             counts["today_class_count"] += item["kind"] == "class" and item["date_bucket"] == "today"
             due = local_datetime(item["effective_due_at"])
             counts["today_due_count"] += bool(due and item["has_hard_deadline"] and item["is_actionable"] and due.date() == now.date())
+            if needs_attention(item):
+                action_summary["total"] += 1
+                action_summary["today"] += bool(due and due.date() == now.date())
+                action_summary["overdue"] += bool(due and due < now)
+                action_summary["undated"] += not bool(due or item["starts_at"])
+                if len(attention_pool) < 3 or sort_key < attention_pool[-1][0]:
+                    insort(attention_pool, (sort_key, item))
+                    del attention_pool[3:]
             if rank <= 6:
                 # The key contains the stable source identity, so equal keys
                 # cannot reach this point after deduplication. Retain only
@@ -370,6 +393,7 @@ def build_dashboard_workspace(*, user: dict[str, Any], offerings: list[dict[str,
         "greeting": f"{name}，{greeting}" if name else greeting,
         "date_label": f"{now.month}月{now.day}日 {['周一','周二','周三','周四','周五','周六','周日'][now.weekday()]}",
         "generated_at": _iso(now), "timezone": "Asia/Shanghai", "focus_items": focus, "all_items": all_items,
+        "attention_items": [item for _, item in attention_pool], "action_summary": action_summary,
         "offering_summaries": offering_summaries,
         **counts, "actionable_total": counts["pending_total"], "offset": offset, "limit": limit,
         "has_more": has_more, "next_cursor": next_cursor,

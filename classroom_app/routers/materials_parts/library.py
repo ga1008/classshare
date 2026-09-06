@@ -1214,7 +1214,7 @@ async def delete_material(
         removed_files = 0
         for file_hash in file_hashes:
             if _count_global_file_references(conn, file_hash) <= 0:
-                if await delete_global_file(file_hash):
+                if await delete_global_file(file_hash, conn=conn):
                     removed_files += 1
 
     return {

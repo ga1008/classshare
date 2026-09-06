@@ -112,6 +112,9 @@ class FileRelatedPostgresWriteTests(unittest.TestCase):
             new=AsyncMock(return_value=derivative_payload),
         ), patch.object(
             discussion_attachment_service,
+            "bind_global_file_references",
+        ), patch.object(
+            discussion_attachment_service,
             "execute_insert_returning_id",
             return_value=606,
         ) as insert_helper, patch.object(

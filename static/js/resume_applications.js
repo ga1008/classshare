@@ -44,7 +44,7 @@
       + '<strong>' + RZ.esc(item.target_position) + '</strong><p>' + RZ.esc(item.company_name) + '</p>'
       + '<div class="rz-app-card__meta">' + (item.channel ? '<span>' + RZ.esc(item.channel) + '</span>' : '')
       + (item.applied_on ? '<span>投递 ' + RZ.esc(item.applied_on) + '</span>' : '')
-      + (item.resume_title ? '<span>简历：' + RZ.esc(item.resume_title) + '</span>' : '') + '</div>' + next
+      + (item.resume_title ? '<span>简历：' + RZ.esc(item.resume_title) + (item.resume_revision ? ' · 版本 ' + Number(item.resume_revision) : '') + '</span>' : '') + '</div>' + next
       + '<button type="button" data-application-edit="' + Number(item.id) + '">查看与更新</button></article>';
   }
   function renderBoard() {
@@ -70,9 +70,15 @@
     var targetOptions = '<option value="">不关联岗位分析</option>' + TARGETS.map(function (target) {
       return optionHtml(target.id, (target.company_name ? target.company_name + ' · ' : '') + target.target_position, item.job_target_id);
     }).join('');
+    if (item.job_target_id && !TARGETS.some(function (target) { return String(target.id) === String(item.job_target_id); })) {
+      targetOptions += optionHtml(item.job_target_id, (item.target_position || '原岗位分析') + '（已归档，保留记录）', item.job_target_id);
+    }
     var resumeOptions = '<option value="">暂不关联简历</option>' + RESUMES.map(function (resume) {
       return optionHtml(resume.id, resume.title + (resume.target_position ? ' · ' + resume.target_position : ''), item.resume_id);
     }).join('');
+    if (item.resume_id && !RESUMES.some(function (resume) { return String(resume.id) === String(item.resume_id); })) {
+      resumeOptions += optionHtml(item.resume_id, (item.resume_title || '原简历') + '（保留历史记录）', item.resume_id);
+    }
     return '<div class="rz-form-grid rz-app-form">'
       + '<div class="rz-field"><label>公司 / 组织<span class="req">*</span></label><input class="rz-input" name="company_name" aria-label="公司或组织" value="' + escAttr(item.company_name) + '"></div>'
       + '<div class="rz-field"><label>目标岗位<span class="req">*</span></label><input class="rz-input" name="target_position" aria-label="目标岗位" value="' + escAttr(item.target_position) + '"></div>'
@@ -108,6 +114,7 @@
     var save = document.createElement('button'); save.type = 'button'; save.className = 'rz-btn rz-btn--primary'; save.textContent = '保存';
     save.onclick = async function () {
       var payload = collect(modal.body);
+      if (isEdit && item.revision != null) payload.revision = item.revision;
       if (!payload.company_name || !payload.target_position) { RZ.toast('请填写公司和目标岗位', 'error'); return; }
       save.disabled = true;
       try {
@@ -115,7 +122,7 @@
           method: isEdit ? 'PUT' : 'POST', body: payload
         });
         modal.close(); await load(); RZ.toast('投递进展已保存', 'success');
-      } catch (error) { RZ.toast(error.message, 'error'); save.disabled = false; }
+      } catch (error) { RZ.conflict(error, payload, function () { modal.close(); load(); }); save.disabled = false; }
     };
     if (isEdit) modal.foot.appendChild(remove);
     modal.foot.appendChild(cancel); modal.foot.appendChild(save);

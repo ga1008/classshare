@@ -20,6 +20,8 @@ from ..db.schema_session_learning_materials import ensure_session_learning_mater
 from .material_render_service import resolve_render_target
 from .materials_service import (
     build_learning_material_brief,
+    ensure_user_material_access,
+    _get_student_offering_ids,
     ensure_teacher_learning_material_owner,
     is_git_internal_material_path,
     sync_classroom_learning_material_assignments,
@@ -164,7 +166,7 @@ def _material_row(conn, material_id: int):
 
 
 def build_material_entries(
-    conn, class_offering_id: int, session_id: int, *, teacher_id: int, persist_legacy: bool = True,
+    conn, class_offering_id: int, session_id: int, *, teacher_id: int, persist_legacy: bool = True, user: dict | None = None,
 ) -> list[dict]:
     """返回该课次/首页绑定的材料列表（含渲染入口与已存简介）。"""
     session_id = _normalize_session_id(session_id)
@@ -186,6 +188,10 @@ def build_material_entries(
                 'ai_blurb': '', 'ai_blurb_status': 'idle', 'sort_order': -1,
             })
 
+    # Use exactly the reader's authorization, with membership loaded once for
+    # this complete collection. Binding or an open_url alone grants no access.
+    offering_ids = _get_student_offering_ids(conn, int(user["id"])) if user and user.get("role") == "student" else None
+    access_cache: dict[int, bool] = {}
     entries: list[dict] = []
     for row in rows:
         material = _material_row(conn, int(row["material_id"]))
@@ -194,6 +200,34 @@ def build_material_entries(
         if is_git_internal_material_path(material["material_path"]):
             continue
         render_target = resolve_render_target(conn, material)
+        if user:
+            try:
+                source_id = int(material["id"])
+                # HTML child entries may resolve to a package-root shell plus
+                # an entry path. Both shell and entry use the reader's checks.
+                target = render_target or {}
+                required_ids = dict.fromkeys([source_id, int(target.get("node_id") or 0), int(target.get("entry_id") or 0)])
+                for required_id in required_ids:
+                    if required_id:
+                        if required_id in access_cache:
+                            if not access_cache[required_id]:
+                                raise HTTPException(403, "材料不可访问")
+                            continue
+                        try:
+                            ensure_user_material_access(
+                                conn, required_id, user,
+                                material_row=material if required_id == source_id else None,
+                                student_offering_ids=offering_ids,
+                            )
+                        except HTTPException as exc:
+                            if exc.status_code in (403, 404):
+                                access_cache[required_id] = False
+                            raise
+                        access_cache[required_id] = True
+            except HTTPException as exc:
+                if exc.status_code in (403, 404):
+                    continue
+                raise
         brief = build_learning_material_brief(material, render_target=render_target)
         entries.append(
             {

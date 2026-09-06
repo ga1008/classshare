@@ -38,12 +38,13 @@ def _term_key(semester: dict[str, Any]) -> tuple[str, str]:
     return identity.as_year_term() if identity else (f"semester-{semester['id']}", "0")
 
 
-def _empty(terms: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _empty(terms: list[dict[str, Any]] | None = None, courses: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     return {
         "status": "empty", "has_data": False, "message": "本平台暂无可显示的课程安排。",
         "terms": terms or [], "selected_term": None,
         "filters": {"course": "", "class_label": "", "course_options": [], "class_options": []},
         "summary": {}, "courses": [], "weeks": [], "section_range": {"min": 1, "max": 11},
+        "authorized_courses": courses or [],
     }
 
 
@@ -59,6 +60,29 @@ def build_student_course_schedule_overview(
         conn, user={"id": int(student_id), "role": "student"}, offerings=offerings, now=now,
     )
     semesters = calendar.get("semesters") or []
+    # Older offerings may carry only the canonical academic-term label. Classify
+    # them against a dated platform term without inventing dates or a week deck.
+    reference_identity = max((identity for semester in semesters
+        if (start := _date(semester.get("start_date"))) and start <= today
+        and (identity := parse_semester_identity(semester.get("name")))),
+        key=lambda identity: identity.sort_key, default=None)
+    # This is the complete membership projection, not a deduplication of lessons.
+    # Keep it even when no semester/date/section can be positioned in a week.
+    authorized_courses = []
+    for offering in offerings:
+        semester = _match_semester_for_offering(semesters, offering)
+        key = _term_key(semester) if semester else ("", "")
+        end = _date(semester.get("end_date")) if semester else None
+        identity = parse_semester_identity(offering.get("semester"))
+        authorized_courses.append({
+            "id": int(offering["id"]), "course_name": str(offering.get("course_name") or "课程"),
+            "class_name": str(offering.get("combined_class_names") or offering.get("class_name") or ""),
+            "teacher_name": str(offering.get("teacher_name") or ""),
+            "semester": str(offering.get("semester") or (semester or {}).get("name") or "未配置学期"),
+            "year": key[0], "term": key[1], "is_history": bool(end and today > end) or bool(
+                not semester and identity and reference_identity and identity.sort_key < reference_identity.sort_key),
+            "classroom_url": f"/classroom/{int(offering['id'])}",
+        })
     by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for semester in semesters:
         by_key.setdefault(_term_key(semester), []).append(semester)
@@ -76,12 +100,38 @@ def build_student_course_schedule_overview(
             "max_week": max((int(s.get("week_count") or 0) for s in entries), default=0),
             "anchor_source": "platform", "schedule_source": "platform_offerings",
         })
+    ids = sorted(int(offering["id"]) for offering in offerings)
+    all_rows = conn.execute(
+        f"""SELECT s.id, s.class_offering_id, s.session_date, s.order_index, s.academic_section_text,
+            s.academic_location, s.schedule_metadata_json, o.combined_class_names
+            FROM class_offering_sessions s JOIN class_offerings o ON o.id = s.class_offering_id
+            WHERE s.class_offering_id IN ({','.join('?' for _ in ids)})
+            AND COALESCE(s.schedule_status, 'scheduled') NOT IN ('cancelled', 'canceled')
+            ORDER BY s.session_date, s.order_index, s.id""", tuple(ids),
+    ).fetchall()
+    positioned_ids = set()
+    unpositioned_by_offering: dict[int, int] = {}
+    for row in all_rows:
+        try:
+            metadata = json.loads(row["schedule_metadata_json"] or "{}")
+        except (TypeError, ValueError):
+            metadata = {}
+        section = row["academic_section_text"] or (metadata.get("section_text") if isinstance(metadata, dict) else "")
+        start, end, _ = _parse_section_range(section)
+        if _date(row["session_date"]) and 1 <= start <= end <= 24:
+            positioned_ids.add(int(row["class_offering_id"]))
+        else:
+            oid = int(row["class_offering_id"])
+            unpositioned_by_offering[oid] = unpositioned_by_offering.get(oid, 0) + 1
+    for course in authorized_courses:
+        course["is_unscheduled"] = course["id"] not in positioned_ids or not course["year"]
+        course["unpositioned_session_count"] = unpositioned_by_offering.get(course["id"], 0)
     if not terms:
-        return _empty()
+        return _empty(courses=authorized_courses)
     selected = next((entry for entry in terms if (entry["year"], entry["term"]) == (year, term)), None)
     if (year or term) and selected is None:
         # An inaccessible/stale term must not silently substitute a different one.
-        return _empty(terms)
+        return _empty(terms, authorized_courses)
     selected = selected or next((entry for entry in terms if entry["status"] == "current"), None)
     if selected is None:
         ended = [entry for entry in terms if entry["status"] == "ended"]
@@ -92,15 +142,7 @@ def build_student_course_schedule_overview(
         int(offering["id"]): offering for offering in offerings
         if (semester := _match_semester_for_offering(semesters, offering)) and _term_key(semester) == selected_key
     }
-    ids = sorted(selected_offerings)
-    rows = conn.execute(
-        f"""SELECT s.id, s.class_offering_id, s.session_date, s.order_index, s.academic_section_text,
-            s.academic_location, s.schedule_metadata_json, o.combined_class_names
-            FROM class_offering_sessions s JOIN class_offerings o ON o.id = s.class_offering_id
-            WHERE s.class_offering_id IN ({','.join('?' for _ in ids)})
-            AND COALESCE(s.schedule_status, 'scheduled') NOT IN ('cancelled', 'canceled')
-            ORDER BY s.session_date, s.order_index, s.id""", tuple(ids),
-    ).fetchall() if ids else []
+    rows = [row for row in all_rows if int(row["class_offering_id"]) in selected_offerings]
     # The real date takes precedence over stale week_index/weekday after a move.
     monday = _date(selected["week1_monday"])
     if monday is None:
@@ -161,5 +203,6 @@ def build_student_course_schedule_overview(
                     "total_hours": sum(i["total_hours"] for i in items), "cur_week": live_week,
                     "max_week": max_week, "term_status": selected["status"], "unpositioned_count": unpositioned_count},
         "courses": _build_course_stats(items), "weeks": weeks,
+        "authorized_courses": authorized_courses,
         "section_range": {"min": 1, "max": max(11, max((max(i["sections"]) for i in items), default=11))},
     }

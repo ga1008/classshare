@@ -43,6 +43,27 @@ class DashboardWorkspaceSemanticsTests(unittest.TestCase):
     def workspace(self, sources, **kwargs):
         return build_dashboard_workspace(user=USER, offerings=OFFERINGS, sources=sources, now=NOW, **kwargs)
 
+    def test_attention_uses_the_full_stream_and_excludes_schedule_and_reading(self):
+        schedules = [{"source_type": "lesson", "id": index, "kind": "class", "class_offering_id": 1,
+                      "title": "正在上课", "start_at": "2026-09-05T09:00", "ends_at": "2026-09-05T11:00"} for index in range(30)]
+        sources = schedules + [todo(100, due_at="2026-09-05T08:00"), todo(101), todo(102, is_completed=True),
+            {"source_type": "material", "id": 7, "kind": "material", "title": "继续阅读", "is_actionable": True}]
+        result = self.workspace(iter(sources), limit=20)
+        self.assertEqual({"total": 2, "today": 1, "overdue": 1, "undated": 1}, result["action_summary"])
+        self.assertEqual({"manual:100:1", "manual:101:1"}, {item["key"] for item in result["attention_items"]})
+        self.assertGreater(result["pending_total"], result["action_summary"]["total"])
+        self.assertEqual(2, self.workspace(iter(sources), status="attention")["filtered_total"])
+        today = self.workspace(iter(sources), status="attention", date_scope="today")
+        self.assertEqual(["manual:100:1"], [item["key"] for item in today["all_items"]])
+
+    def test_created_todo_can_be_located_beyond_preview_and_after_completion(self):
+        sources = [todo(index, is_completed=index == 500) for index in range(501)]
+        result = self.workspace(iter(sources), item_key="manual:500:1", limit=20)
+        self.assertEqual(1, result["filtered_total"])
+        self.assertTrue(result["all_items"][0]["is_completed"])
+        self.assertEqual("manual:500:1", result["all_items"][0]["key"])
+        self.assertEqual(0, self.workspace(iter(sources), item_key="manual:500:2")["filtered_total"])
+
     def test_p02_streaming_page_reuses_each_source_order_key(self):
         from classroom_app.services import dashboard_workspace_service as service
         sources = [todo(index, due_at="2026-09-05T10:20:00") for index in range(1000)]

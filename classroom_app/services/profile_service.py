@@ -778,6 +778,9 @@ def update_profile_avatar(
     role = str(user.get("role") or "").strip().lower()
     user_id = _safe_int(user.get("id"))
     table_name = "teachers" if role == "teacher" else "students"
+    from .file_service import bind_global_file_references
+    conn.execute(f"UPDATE {table_name} SET id = id WHERE id = ?", (user_id,))
+    bind_global_file_references(conn, (file_hash,))
     conn.execute(
         f"""
         UPDATE {table_name}

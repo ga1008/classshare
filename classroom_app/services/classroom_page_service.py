@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from datetime import datetime
 from ..time_utils import parse_datetime
 from .academic_service import CHINA_TZ
 
@@ -96,13 +97,15 @@ def build_classroom_page_context(
         "mood": discussion_mood,
     }
 
+    workspace_items = build_assignment_workspace_items(role=role, assignments=assignments)
     return {
         "theme": role,
         "group_qr": serialize_group_qr(classroom),
         "hero": hero,
         "sections": sections,
         "assignment_stats": assignment_stats,
-        "assignment_workspace_items": build_assignment_workspace_items(role=role, assignments=assignments),
+        "assignment_workspace_items": workspace_items,
+        "assignment_workspace_preview": build_assignment_workspace_preview(role=role, items=workspace_items),
         "assignment_metrics": _build_assignment_metrics(role=role, assignment_stats=assignment_stats),
         "assigned_material_count": assigned_material_count,
         "materials_tags": ["目录浏览", "README 预览", "批量下载"],
@@ -143,6 +146,7 @@ def build_assignment_workspace_items(*, role: str, assignments: list[dict[str, A
             "id": assignment["id"],
             "title": assignment.get("title") or "未命名任务",
             "kind": "exam" if assignment.get("exam_paper_id") else "assignment",
+            "createdAt": _workspace_datetime(assignment.get("created_at")),
             "status": assignment.get("effective_status") or assignment.get("status") or "",
             "submissionStatus": assignment.get("submission_status") or "unsubmitted",
             "accepting": bool(assignment.get("is_accepting_submissions")),
@@ -171,6 +175,71 @@ def _workspace_datetime(value: Any) -> str:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=CHINA_TZ)
     return parsed.astimezone(CHINA_TZ).isoformat(timespec="seconds")
+
+
+def build_assignment_workspace_preview(*, role: str, items: list[dict[str, Any]], reference_time: datetime | None = None) -> dict:
+    """First-paint view of the authorized items, before the live client takes over.
+
+    This projection only reads the already-authorized payload. It must retain
+    the taskPresentation/taskPreview contract, including personal resubmission
+    expiry, so SSR never briefly offers a forbidden or outdated action.
+    """
+    now = reference_time or datetime.now(CHINA_TZ)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=CHINA_TZ)
+    teacher = role == "teacher"
+
+    def deadline(task):
+        value = (task.get("resubmissionDueAt") or task.get("countdownAt")) if task.get("canResubmit") else task.get("countdownAt")
+        parsed = parse_datetime(value)
+        return parsed.replace(tzinfo=CHINA_TZ) if parsed and parsed.tzinfo is None else parsed
+
+    def state(task):
+        if teacher:
+            if task.get("pendingGrade", 0) > 0:
+                return True, 0, f"待批改 {task['pendingGrade']}", "去批改"
+            if task.get("status") == "new":
+                return True, 3, "草稿", "继续编辑"
+            if task.get("grading", 0) > 0:
+                return False, 4, f"批改中 {task['grading']}", "查看进度"
+            return False, 5, "已截止" if task.get("status") == "closed" or task.get("deadlinePhase") == "closed" else "已发布", "查看任务"
+        resubmission = parse_datetime(task.get("resubmissionDueAt"))
+        if resubmission and resubmission.tzinfo is None:
+            resubmission = resubmission.replace(tzinfo=CHINA_TZ)
+        resubmit = task.get("canResubmit") and (not task.get("resubmissionDueAt") or bool(resubmission and resubmission > now))
+        if task.get("submissionStatus") == "returned":
+            return (True, 0, "待重交", "去重交") if resubmit else (False, 5, "重交已关闭", "查看反馈")
+        if task.get("submissionStatus") == "unsubmitted":
+            if task.get("accepting"):
+                return (True, 1, "补交开放中", "去补交") if task.get("lateOpen") else (True, 2, "未提交", "进入考试" if task.get("kind") == "exam" else "去提交")
+            return False, 5, "已截止 · 未提交" if task.get("status") == "closed" or task.get("deadlinePhase") == "closed" else "尚未开放", "查看要求"
+        if resubmit:
+            return True, 0, "可重新提交", "重新提交"
+        if task.get("groupPending"):
+            return False, 4, "小组结果待公布", "查看状态"
+        if task.get("submissionStatus") == "grading":
+            return False, 4, "批改中", "查看提交"
+        if task.get("submissionStatus") == "graded":
+            return False, 5, "已批改", "查看结果"
+        return False, 4, "已提交", "查看提交"
+
+    actionable = []
+    for task in items:
+        enabled, rank, label, action = state(task)
+        if not enabled:
+            continue
+        due = deadline(task)
+        local_due = due.astimezone(CHINA_TZ) if due else None
+        actionable.append({"task": task, "rank": rank, "status": label, "action": action,
+                           "due": due.timestamp() if due else float("inf"),
+                           "urgent": bool(due and 0 < (due - now).total_seconds() <= 86400),
+                           "deadline_label": f"{local_due.month}/{local_due.day} {local_due:%H:%M}" if local_due else "",
+                           "constraint": " · ".join(part for part in [task.get("latePolicyLabel") if task.get("lateOpen") else "", "小组结果尚未公布" if task.get("groupPending") else ""] if part)})
+    actionable.sort(key=lambda row: ((row["rank"] if teacher else 0), row["due"], row["rank"], -row["task"]["id"]))
+    return {"rows": [{key: value for key, value in row.items() if key not in ("rank", "due", "urgent")} for row in actionable[:4]], "total_count": len(items), "actionable_count": len(actionable),
+            "draft_count": sum(task.get("status") == "new" for task in items),
+            "submitted_count": sum(task.get("submissionStatus") in ("submitted", "grading", "graded") for task in items),
+            "urgent_overflow": sum(row["urgent"] for row in actionable[4:])}
 
 
 def _build_assignment_stats(*, role: str, assignments: list[dict[str, Any]]) -> dict[str, int]:

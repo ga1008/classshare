@@ -1,14 +1,9 @@
 """Career-development network service.
 
-Resolves a student's major + graduation timeline, loads (or has the
-deep-thinking AI generate) the major's career network, runs the personality
-test, and — crucially — asks the deep-thinking AI to *re-weight* recommendations
-and author pre-graduation knowledge cards for that specific student using their
-explicit profile + a HIDDEN behavioural profile that must never be surfaced.
-
-The two heavy AI steps run on the unified scheduler (handlers at the bottom):
-* ``career_major_network_generate`` — once per non-seed major, cached for all.
-* ``career_personalize_generate``   — once per student, after they finish the test.
+Resolves academic context, provides a versioned interest questionnaire and
+bounded presentation helpers. Lifecycle commands and durable AI adapters live
+in career_lifecycle_service; deterministic evidence-based recommendations live
+in career_recommendation_service. State reads never mutate business data.
 
 See [[scheduler-and-reminders]], [[agent-bridge-and-knowledge]] and the seed in
 ``career_seed_data.py``.
@@ -24,13 +19,10 @@ from typing import Any, Optional
 
 from ..core import ai_client
 from ..database import get_db_connection
-from ..db.schema_career_path import ensure_career_path_schema
 from . import ai_web_research
 from .career_seed_data import (
     CAREER_GENERAL_FOCUS_QUESTION,
     CAREER_PERSONALITY_QUESTIONS,
-    LOCATION_PREF_LABELS,
-    RIASEC_LABELS,
     SEED_MAJOR_KEYS,
     SOFTWARE_ENGINEERING_NETWORK,
     normalize_major_key,
@@ -38,17 +30,27 @@ from .career_seed_data import (
 )
 from .prompt_utils import build_time_context_text, polite_address
 from .psych_profile_service import (
-    build_explicit_user_profile_prompt,
-    load_explicit_user_profile,
     sanitize_hidden_profile_leaks,
 )
-from .scheduled_task_service import register_task_handler, schedule_task
+from .scheduled_task_service import register_task_handler
+from .career_recommendation_service import baseline_network
 
 NETWORK_GENERATE_TASK_KIND = "career_major_network_generate"
 PERSONALIZE_TASK_KIND = "career_personalize_generate"
 
-DEFAULT_PROGRAM_YEARS = 4
 PREP_LEVELS = ("非常重要", "一般重要", "需了解")
+QUIZ_VERSION = "career-quiz-v2"
+NETWORK_SCHEMA_VERSION = "career-network-v3"
+SAFE_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
+
+
+class CareerConflict(ValueError):
+    def __init__(self, row: dict[str, Any]):
+        super().__init__("资料已在另一个页面更新，请保留当前作答并刷新后重试")
+        self.detail = {"code": "revision_conflict", "message": str(self),
+                       "current_revision": int(row.get("revision") or 0),
+                       "draft": _json_loads(row.get("test_answers_json"), []),
+                       "quiz_mode": row.get("quiz_mode") or "quick", "quiz_version": QUIZ_VERSION}
 
 
 # ---------------------------------------------------------------------------
@@ -125,12 +127,15 @@ def _parse_enrollment_year(*candidates: Any) -> Optional[int]:
 def derive_timeline(class_row: dict[str, Any]) -> dict[str, Any]:
     """Compute enrollment/graduation years + time-to-graduation for a class."""
     program_years = class_row.get("program_duration_years")
+    explicit_duration = bool(program_years)
+    major_label = " ".join(str(class_row.get(key) or "") for key in ("student_major","class_major","academic_major"))
+    pathway = "top_up" if "专升本" in major_label else "unknown"
     try:
-        program_years = int(program_years) if program_years else DEFAULT_PROGRAM_YEARS
+        program_years = int(program_years) if program_years else None
     except (TypeError, ValueError):
-        program_years = DEFAULT_PROGRAM_YEARS
-    if program_years < 2 or program_years > 8:
-        program_years = DEFAULT_PROGRAM_YEARS
+        program_years = None
+    if program_years is not None and (program_years < 1 or program_years > 8):
+        program_years = None
 
     enrollment_year = None
     raw_enroll = class_row.get("enrollment_year")
@@ -140,9 +145,10 @@ def derive_timeline(class_row: dict[str, Any]) -> dict[str, Any]:
         enrollment_year = None
     if not enrollment_year:
         enrollment_year = _parse_enrollment_year(
+            class_row.get("student_grade"),
             class_row.get("academic_grade"),
             class_row.get("academic_class_code"),
-            class_row.get("name"),
+            class_row.get("class_name"),
             class_row.get("academic_class_name"),
         )
 
@@ -152,8 +158,12 @@ def derive_timeline(class_row: dict[str, Any]) -> dict[str, Any]:
         graduation_year = int(raw_grad) if raw_grad else None
     except (TypeError, ValueError):
         graduation_year = None
-    if not graduation_year and enrollment_year:
+    if not graduation_year and enrollment_year and program_years:
         graduation_year = enrollment_year + program_years
+    if enrollment_year and not 1980 <= enrollment_year <= _now().year + 2:
+        enrollment_year = None
+    if graduation_year and not 1980 <= graduation_year <= _now().year + 10:
+        graduation_year = None
 
     now = _now()
     years_to_grad: Optional[float] = None
@@ -171,6 +181,11 @@ def derive_timeline(class_row: dict[str, Any]) -> dict[str, Any]:
         "enrollment_year": enrollment_year,
         "graduation_year": graduation_year,
         "program_duration_years": program_years,
+        "program_pathway": pathway,
+        "duration_source": "academic_record" if explicit_duration and program_years else "unknown",
+        "enrollment_source": "academic_record" if raw_enroll and enrollment_year else ("academic_grade_or_class" if enrollment_year else "unknown"),
+        "graduation_source": "academic_record" if raw_grad and graduation_year else ("enrollment_and_duration" if graduation_year else "unknown"),
+        "graduation_precision": "year" if graduation_year else "unknown",
         "graduation_date_label": graduation_date_label,
         "years_to_graduation": years_to_grad,
         "months_to_graduation": months_to_grad,
@@ -179,12 +194,12 @@ def derive_timeline(class_row: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# student context (major, class, profile, hidden profile)
+# Student academic context
 # ---------------------------------------------------------------------------
 def resolve_student_context(conn, student_id: int) -> Optional[dict[str, Any]]:
     row = conn.execute(
         """
-        SELECT s.id, s.name, s.gender, s.class_id, s.school_code,
+        SELECT s.id, s.name, s.gender, s.class_id, s.school_code, s.school_name,
                s.academic_major AS student_major, s.academic_grade AS student_grade,
                s.description, s.nickname, s.today_mood,
                c.name AS class_name, c.major AS class_major, c.academic_major,
@@ -192,7 +207,7 @@ def resolve_student_context(conn, student_id: int) -> Optional[dict[str, Any]]:
                c.enrollment_year, c.expected_graduation_year, c.program_duration_years,
                c.college, c.department
         FROM students s
-        JOIN classes c ON c.id = s.class_id
+        LEFT JOIN classes c ON c.id = s.class_id
         WHERE s.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'
         LIMIT 1
@@ -203,325 +218,47 @@ def resolve_student_context(conn, student_id: int) -> Optional[dict[str, Any]]:
         return None
     item = dict(row)
     major_name = (
-        str(item.get("class_major") or "").strip()
+        str(item.get("student_major") or "").strip()
+        or str(item.get("class_major") or "").strip()
         or str(item.get("academic_major") or "").strip()
-        or str(item.get("student_major") or "").strip()
-        or "软件工程"
     )
     timeline = derive_timeline(item)
+    from .career_major_mapping_service import resolve_career_major
+    school_code = str(item.get("school_code") or "gxufl")
+    major = resolve_career_major(conn, school_code, major_name)
     return {
         "student_id": int(item["id"]),
         "name": str(item.get("name") or ""),
         "gender": str(item.get("gender") or ""),
-        "school_code": str(item.get("school_code") or "gxufl"),
+        "school_code": school_code,
+        "school_name": str(item.get("school_name") or "").strip(),
         "class_name": str(item.get("class_name") or ""),
         "college": str(item.get("college") or ""),
         "department": str(item.get("department") or ""),
-        "major_name": major_name,
-        "major_key": normalize_major_key(major_name),
+        **major,
+        "major_confirmed": bool(major_name),
         "description": str(item.get("description") or ""),
         "nickname": str(item.get("nickname") or ""),
         "timeline": timeline,
     }
 
 
-def _load_hidden_profile_for_student(conn, student_id: int) -> dict[str, Any]:
-    """Most-recent behavioural profile across all the student's offerings.
-
-    Reused only inside AI prompts; NEVER returned to the page. Mirrors
-    ``psych_profile_service.load_latest_hidden_profile`` but spans offerings.
-    """
-    try:
-        row = conn.execute(
-            """
-            SELECT profile_summary, mental_state_summary, support_strategy,
-                   personality_traits, preference_summary, language_habit_summary,
-                   preferred_ai_style, interest_hypothesis, evidence_summary, confidence
-            FROM classroom_behavior_profiles
-            WHERE user_pk = ? AND user_role = 'student'
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1
-            """,
-            (student_id,),
-        ).fetchone()
-    except Exception:
-        row = None
-    return dict(row) if row else {}
-
-
-def _build_hidden_profile_block(conn, student_id: int) -> str:
-    profile = _load_hidden_profile_for_student(conn, student_id)
-    if not profile:
-        return "（暂无后台学习支持参考，请仅依据显式资料与测试结果判断。）"
-    parts = [
-        f"长期支持摘要：{profile.get('profile_summary') or '（无）'}",
-        f"性格特征推测：{profile.get('personality_traits') or '（无稳定判断）'}",
-        f"偏好与兴趣：{profile.get('preference_summary') or profile.get('interest_hypothesis') or '（无）'}",
-        f"表达与用语习惯：{profile.get('language_habit_summary') or '（无）'}",
-        f"当前状态：{profile.get('mental_state_summary') or '（中性）'}",
-        f"建议支持策略：{profile.get('support_strategy') or '（保持耐心、鼓励）'}",
-        f"置信度：{profile.get('confidence') or 'medium'}",
-    ]
-    return "\n".join(parts)
-
-
 # ---------------------------------------------------------------------------
 # network: seed / cache / generation
 # ---------------------------------------------------------------------------
 def _is_seed_major(major_key: str) -> bool:
-    if major_key in {normalize_major_key(k) for k in SEED_MAJOR_KEYS}:
-        return True
-    return major_key in SEED_MAJOR_KEYS
+    return major_key == "软件工程"
 
 
 def _seed_network_for(major_key: str) -> Optional[dict[str, Any]]:
     if _is_seed_major(major_key):
-        return copy.deepcopy(SOFTWARE_ENGINEERING_NETWORK)
+        return _validate_network_payload(copy.deepcopy(SOFTWARE_ENGINEERING_NETWORK),"软件工程")
     return None
-
-
-def load_major_network_row(conn, school_code: str, major_key: str) -> Optional[dict[str, Any]]:
-    ensure_career_path_schema(conn)
-    row = conn.execute(
-        """
-        SELECT id, school_code, major_key, major_name, status, source,
-               network_json, knowledge_json, doc_markdown, model_label,
-               error_message, generated_at, updated_at
-        FROM career_major_networks
-        WHERE school_code = ? AND major_key = ?
-        LIMIT 1
-        """,
-        (school_code, major_key),
-    ).fetchone()
-    return dict(row) if row else None
-
-
-def _upsert_major_network(
-    conn,
-    *,
-    school_code: str,
-    major_key: str,
-    major_name: str,
-    status: str,
-    source: str,
-    network: Optional[dict[str, Any]] = None,
-    doc_markdown: str = "",
-    model_label: str = "",
-    error_message: str = "",
-) -> None:
-    ensure_career_path_schema(conn)
-    now = _now_iso()
-    existing = conn.execute(
-        "SELECT id FROM career_major_networks WHERE school_code = ? AND major_key = ? LIMIT 1",
-        (school_code, major_key),
-    ).fetchone()
-    network_json = json.dumps(network, ensure_ascii=False) if network is not None else None
-    generated_at = now if status == "ready" else None
-    if existing:
-        sets = ["status = ?", "source = ?", "major_name = ?", "updated_at = ?", "error_message = ?"]
-        params: list[Any] = [status, source, major_name, now, error_message]
-        if network_json is not None:
-            sets.append("network_json = ?")
-            params.append(network_json)
-        if doc_markdown:
-            sets.append("doc_markdown = ?")
-            params.append(doc_markdown)
-        if model_label:
-            sets.append("model_label = ?")
-            params.append(model_label)
-        if generated_at:
-            sets.append("generated_at = ?")
-            params.append(generated_at)
-        params.extend([school_code, major_key])
-        conn.execute(
-            f"UPDATE career_major_networks SET {', '.join(sets)} WHERE school_code = ? AND major_key = ?",
-            params,
-        )
-    else:
-        conn.execute(
-            """
-            INSERT INTO career_major_networks
-                (school_code, major_key, major_name, status, source, network_json,
-                 doc_markdown, model_label, error_message, generated_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                school_code, major_key, major_name, status, source,
-                network_json or "{}", doc_markdown, model_label, error_message,
-                generated_at, now, now,
-            ),
-        )
-
-
-def get_or_prepare_network(conn, ctx: dict[str, Any]) -> dict[str, Any]:
-    """Return the network + a status. Seeds SE instantly; schedules AI for others."""
-    school_code = ctx["school_code"]
-    major_key = ctx["major_key"]
-    major_name = ctx["major_name"]
-
-    seed = _seed_network_for(major_key)
-    if seed is not None:
-        return {"status": "ready", "source": "seed", "network": seed}
-
-    row = load_major_network_row(conn, school_code, major_key)
-    if row and row.get("status") == "ready":
-        network = _json_loads(row.get("network_json"), {})
-        if network.get("nodes"):
-            return {"status": "ready", "source": row.get("source") or "ai", "network": network}
-    if row and row.get("status") == "generating":
-        return {"status": "generating", "source": "ai", "network": None}
-
-    # Need to (re)generate. Mark generating + schedule the task.
-    _upsert_major_network(
-        conn, school_code=school_code, major_key=major_key, major_name=major_name,
-        status="generating", source="ai",
-    )
-    schedule_task(
-        conn,
-        task_kind=NETWORK_GENERATE_TASK_KIND,
-        run_at=_now_iso(),
-        payload={"school_code": school_code, "major_key": major_key, "major_name": major_name},
-        dedupe_key=f"career-network:{school_code}:{major_key}",
-        title=f"生成 {major_name} 职业网络",
-        max_attempts=3,
-    )
-    return {"status": "generating", "source": "ai", "network": None}
 
 
 # ---------------------------------------------------------------------------
 # per-student session
 # ---------------------------------------------------------------------------
-def _load_session_row(conn, student_id: int) -> Optional[dict[str, Any]]:
-    ensure_career_path_schema(conn)
-    row = conn.execute(
-        """
-        SELECT id, student_id, school_code, major_key, major_name, status,
-               enrollment_year, graduation_year, program_duration_years,
-               test_answers_json, test_result_json, personalized_json,
-               model_label, error_message, submitted_at, generated_at,
-               created_at, updated_at
-        FROM career_student_sessions
-        WHERE student_id = ?
-        LIMIT 1
-        """,
-        (student_id,),
-    ).fetchone()
-    return dict(row) if row else None
-
-
-def ensure_session(conn, ctx: dict[str, Any]) -> dict[str, Any]:
-    """Create the per-student session row if missing; keep major/timeline fresh."""
-    ensure_career_path_schema(conn)
-    student_id = ctx["student_id"]
-    tl = ctx["timeline"]
-    row = _load_session_row(conn, student_id)
-    now = _now_iso()
-    if row:
-        # keep major/graduation aligned if the academic data changed
-        conn.execute(
-            """
-            UPDATE career_student_sessions
-            SET major_key = ?, major_name = ?, enrollment_year = ?, graduation_year = ?,
-                program_duration_years = ?, updated_at = ?
-            WHERE student_id = ?
-            """,
-            (
-                ctx["major_key"], ctx["major_name"], tl.get("enrollment_year"),
-                tl.get("graduation_year"), tl.get("program_duration_years"), now, student_id,
-            ),
-        )
-        row.update({
-            "major_key": ctx["major_key"], "major_name": ctx["major_name"],
-            "enrollment_year": tl.get("enrollment_year"),
-            "graduation_year": tl.get("graduation_year"),
-            "program_duration_years": tl.get("program_duration_years"),
-        })
-        return row
-    conn.execute(
-        """
-        INSERT INTO career_student_sessions
-            (student_id, school_code, major_key, major_name, status,
-             enrollment_year, graduation_year, program_duration_years,
-             created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'intro', ?, ?, ?, ?, ?)
-        """,
-        (
-            student_id, ctx["school_code"], ctx["major_key"], ctx["major_name"],
-            tl.get("enrollment_year"), tl.get("graduation_year"),
-            tl.get("program_duration_years"), now, now,
-        ),
-    )
-    return _load_session_row(conn, student_id) or {}
-
-
-def save_test_progress(conn, ctx: dict[str, Any], answers: list[dict[str, Any]]) -> dict[str, Any]:
-    """Persist partial quiz answers so the student can resume after leaving.
-
-    Only writes while the test is unfinished (status intro/testing); once a
-    student has submitted/generated/ready we never clobber their result here.
-    """
-    ensure_session(conn, ctx)
-    student_id = ctx["student_id"]
-    row = _load_session_row(conn, student_id) or {}
-    status = str(row.get("status") or "intro")
-    if status not in ("intro", "testing"):
-        return {"status": status, "saved": False}
-    conn.execute(
-        """
-        UPDATE career_student_sessions
-        SET status = 'testing', test_answers_json = ?, updated_at = ?
-        WHERE student_id = ?
-        """,
-        (json.dumps(answers, ensure_ascii=False), _now_iso(), student_id),
-    )
-    return {"status": "testing", "saved": True, "answered": len(answers)}
-
-
-def save_test_and_generate(conn, ctx: dict[str, Any], answers: list[dict[str, Any]]) -> dict[str, Any]:
-    """Persist answers, score them, flip to 'generating' and schedule the AI."""
-    ensure_session(conn, ctx)
-    student_id = ctx["student_id"]
-    result = score_personality_answers(answers)
-    now = _now_iso()
-    conn.execute(
-        """
-        UPDATE career_student_sessions
-        SET status = 'generating', test_answers_json = ?, test_result_json = ?,
-            error_message = '', submitted_at = ?, updated_at = ?
-        WHERE student_id = ?
-        """,
-        (
-            json.dumps(answers, ensure_ascii=False),
-            json.dumps(result, ensure_ascii=False),
-            now, now, student_id,
-        ),
-    )
-    schedule_task(
-        conn,
-        task_kind=PERSONALIZE_TASK_KIND,
-        run_at=_now_iso(),
-        payload={"student_id": student_id},
-        dedupe_key=f"career-personalize:{student_id}",
-        title=f"为学生 {student_id} 定制职业网络",
-        owner_role="student",
-        owner_user_pk=student_id,
-        max_attempts=3,
-    )
-    return {"status": "generating", "test_result": result}
-
-
-def reset_session(conn, student_id: int) -> None:
-    ensure_career_path_schema(conn)
-    conn.execute(
-        """
-        UPDATE career_student_sessions
-        SET status = 'intro', test_answers_json = '[]', test_result_json = '{}',
-            personalized_json = '{}', error_message = '', submitted_at = NULL,
-            generated_at = NULL, updated_at = ?
-        WHERE student_id = ?
-        """,
-        (_now_iso(), student_id),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -593,8 +330,9 @@ def derive_job_keywords_from_node(node: dict[str, Any]) -> list[str]:
 
     add(name)
     if core and core != name:
-        add(core + "工程师")
-        add(core + "开发")
+        if "工程师" in name or "开发" in name:
+            add(core + "工程师")
+            add(core + "开发")
         add(core)
 
     haystack = " ".join([name] + [str(x) for x in (node.get("pre") or [])] + [str(x) for x in (node.get("know") or [])])
@@ -642,12 +380,12 @@ def apply_personalization(network: dict[str, Any], personalized: dict[str, Any])
     highlights = set(personalized.get("highlights") or [])
     for node in net.get("nodes", []):
         tag = node.get("tag")
+        node["base_rec"] = node.get("rec")
         if tag in overrides:
             try:
                 node["rec"] = max(1, min(5, int(round(float(overrides[tag])))))
             except (TypeError, ValueError):
                 pass
-        node["base_rec"] = node.get("rec")
         if tag in glow:
             try:
                 node["glow"] = max(0.0, min(1.0, float(glow[tag])))
@@ -662,76 +400,6 @@ def apply_personalization(network: dict[str, Any], personalized: dict[str, Any])
 # ---------------------------------------------------------------------------
 # state assembly for the page / API
 # ---------------------------------------------------------------------------
-def build_state(conn, student_id: int) -> dict[str, Any]:
-    ctx = resolve_student_context(conn, student_id)
-    if not ctx:
-        return {"ok": False, "error": "student_not_found"}
-    session = ensure_session(conn, ctx)
-    net_state = get_or_prepare_network(conn, ctx)
-
-    status = str(session.get("status") or "intro")
-    personalized = _json_loads(session.get("personalized_json"), {})
-    test_result = _json_loads(session.get("test_result_json"), {})
-
-    # Resolve the network to display: if personalised + ready, overlay.
-    network = net_state.get("network")
-    display_network = None
-    prep_cards: dict[str, Any] = {}
-    job_keywords: dict[str, list[str]] = {}
-    if network:
-        if status == "ready" and personalized:
-            display_network = apply_personalization(network, personalized)
-        else:
-            display_network = copy.deepcopy(network)
-        prep_cards = build_prep_cards(network, personalized if status == "ready" else {})
-        job_keywords = build_job_keywords(network, personalized if status == "ready" else {})
-
-    tl = ctx["timeline"]
-    address = polite_address(ctx["name"], "student")
-
-    # 未完成测试时回传已作答的草稿，前端据此从断点续做（而非从头开始）。
-    draft_answers = _json_loads(session.get("test_answers_json"), [])
-    draft = draft_answers if (status in ("intro", "testing") and isinstance(draft_answers, list)) else []
-
-    # Combined lifecycle status the frontend switches on.
-    if net_state.get("status") == "generating" and not network:
-        page_phase = "network_generating"
-    elif status in ("intro", "testing"):
-        page_phase = "intro"
-    elif status in ("generating", "submitted"):
-        page_phase = "personalizing"
-    elif status == "failed":
-        page_phase = "ready"  # show base network, surface a soft note
-    else:
-        page_phase = "ready"
-
-    return {
-        "ok": True,
-        "phase": page_phase,
-        "session_status": status,
-        "student": {
-            "name": ctx["name"],
-            "address": address,
-            "class_name": ctx["class_name"],
-            "college": ctx["college"],
-        },
-        "major": {"name": ctx["major_name"], "key": ctx["major_key"]},
-        "timeline": tl,
-        "network": display_network,
-        "network_status": net_state.get("status"),
-        "network_source": net_state.get("source"),
-        "prep_cards": prep_cards,
-        "job_keywords": job_keywords,
-        "personalized": _public_personalized(personalized) if status == "ready" else {},
-        "test_result": {
-            "holland_code": test_result.get("holland_code"),
-            "top_dims": test_result.get("top_dims"),
-            "location_pref": test_result.get("location_pref") or "",
-            "location_label": test_result.get("location_label") or "",
-        },
-        "draft": draft,
-        "error_message": sanitize_hidden_profile_leaks(session.get("error_message") or ""),
-    }
 
 
 def _public_personalized(personalized: dict[str, Any]) -> dict[str, Any]:
@@ -794,129 +462,53 @@ def get_questions(*, mode: str = "quick", major_key: str = "") -> list[dict[str,
         if "options" in item:
             item["options"] = [{"value": o["value"], "label": o["label"]} for o in q["options"]]
         public.append(item)
+    if not _is_technology_major(major_key):
+        replacement = {
+            ("q1", "build"): "动手把一个想法变成具体成果，并不断改进",
+            ("q2", "coder"): "承担具体专业工作，把关键任务落实完成",
+            ("q3", "solve"): "查明一个复杂问题，并提出有效解决办法",
+            ("q6", "expert"): "在某个专业领域里成为靠谱、被信任的人",
+        }
+        for item in public:
+            for option in item.get("options", []):
+                option["label"] = replacement.get((item["id"], option["value"]), option["label"])
+            if item["id"] == "q5":
+                item["title"] = "比起频繁对外沟通，我更喜欢独立研究问题、资料或作品。"
+            if item["id"] == "q10":
+                item["placeholder"] = "例如：想把语言、设计或组织能力用在真实工作中；希望找到适合的实践机会。"
     return public
 
 
 # ---------------------------------------------------------------------------
 # AI prompts
 # ---------------------------------------------------------------------------
-def _network_seed_example() -> str:
-    """A trimmed structural example handed to the AI for non-seed majors."""
-    sample = {
-        "major_name": "软件工程",
-        "cats": SOFTWARE_ENGINEERING_NETWORK["cats"][:2],
-        "nodes": [
-            {k: SOFTWARE_ENGINEERING_NETWORK["nodes"][0][k]
-             for k in ("cat", "tag", "name", "rec", "lang", "riasec", "desc", "reason", "pre", "know", "tl", "branch", "trend")}
-        ],
-        "links": SOFTWARE_ENGINEERING_NETWORK["links"][:2],
-    }
-    return json.dumps(sample, ensure_ascii=False, indent=1)
-
-
 def build_network_generation_prompt(major_name: str, research_digest: str = "") -> tuple[str, str]:
     system = (
-        "你是资深的高校生涯规划与行业研究专家。你要为某个本科专业，编制一张"
-        "结构化的『职业发展路线网络』数据，供前端渲染成可交互的职业网络图。"
-        "必须严格输出 JSON，不要任何解释文字、不要 markdown 代码块。"
+        "你是高校职业探索内容编辑。只返回严格JSON，不写薪资、市场预测、录用或晋升保证，"
+        "不替学生作个性化能力判断。平台负责统一阶段和展示文案，你只补充差异化方向与准备线索。"
         + build_time_context_text()
     )
     research_block = (
-        "【实时联网检索参考（请甄别真伪后采用，结合到就业方向、薪资与地域信号中）】\n" + research_digest + "\n"
+        "【联网检索参考：核对职业职责、学习路径与资格要求；不输出薪资、招聘数量或缺乏来源的地域市场结论】\n" + research_digest + "\n"
         if research_digest else ""
     )
     user = "\n\n".join([
-        f"目标专业：{major_name}（中国普通本科，结合 2025–2026 就业现实与 AI 对行业的冲击）。",
+        f"目标专业：{major_name}。提供适用于该专业的职业探索，培养阶段以学生真实学籍为准。",
         *( [research_block] if research_block else [] ),
-        "请产出该专业毕业生的【完整、丰富】就业去向网络，覆盖该专业绝大多数真实出路，"
-        "包含 5–6 个就业大类(cats)、每个大类下 4–6 个细分方向(nodes，总计 22–28 个，务必充实，"
-        "绝不能太少或只给热门几个)、以及 10–16 条跨方向可转岗的分叉(links)。",
-        "每个方向(node)都必须信息完整：完整的 4 个成长阶段(tl)、pre 3–5 项、know 3–6 项、"
-        "reason/branch/trend 都要具体可执行、带真实的市场/薪资/地域信号(如南宁与一线城市的差异)，"
-        "不要空泛套话、不要留空。",
-        "字段与结构必须与下方示例完全一致：",
-        "cats[].id 用大写字母 A/B/C…；cats[].icon 给一个贴切 emoji；nodes[].tag 形如 A1/A2；nodes[].cat 对应大类 id；"
-        "rec 为 1–5 的推荐度整数(要拉开档次，最推荐的给 5，鸡肋的给 2–3，不要全是 4–5)；"
-        "lang 为是否属于『外语+技术/国际化』特色方向(布尔)；"
-        "riasec 为该方向最相关的霍兰德代码数组(取 R/I/A/S/E/C 中 1–3 个)；"
-        "pre/know 为字符串数组；tl 为 4 个阶段，每个阶段是 [时间, 职位, 说明] 三元数组(0–1年→3–5年→5–10年→10年+)；"
-        "branch 为一句分叉路径文本；trend 为该方向的未来趋势。"
-        "links 为 [fromTag, fromStage, toTag, toStage] 四元数组(stage 取 0–3)。",
-        "另外加入顶层 major_name、graduate_label、intro(一句该专业差异化建议)。",
-        "请确保推荐度客观：综合市场需求×薪资上限×学历友好度×抗AI替代×普通本科适配度。"
+        "提供3至4个类别和12个不重复的职业方向。类别id、方向tag、方向名称各自全局唯一；"
+        "同一职责不要在多个类别重复。只覆盖有依据的探索方向，不声称穷尽所有就业出路。",
+        '输出结构：{"cats":[{"id":"A","name":"类别名"}],"nodes":[{"tag":"A1","cat":"A",'
+        '"name":"方向名","riasec":["S","A"],"lang":false,"pre":["准备线索"],"know":["实践任务"]}],'
+        '"links":[["A1",1,"B1",1]]}。示例只示意字段，links只能引用实际存在的方向。',
+        "每个方向pre恰好3项、know恰好3项，每项不超过25个汉字，写具体可验证的学习或实践任务。"
+        "必要职业资格只是待核对线索，不假定学生已获得。职业方向不等于正在招聘的职位。",
+        "riasec从R/I/A/S/E/C中选1至3项。lang为是否涉及外语或国际沟通。links最多8条，"
+        "只表达有依据的相邻方向探索，阶段取0至3。",
+        "不输出direction_id/desc/reason/trend/tl/branch/rec；这些字段由平台统一生成，平台 rec 固定为3，"
+        "个人排序另按学生兴趣和能力证据计算。不要生成会被平台替换的阶段说明。",
+        "尊重专业和学制差异；没有学生明确学历与资格证据时，不假定普通本科身份或满足招录条件。"
         "若该专业属于文科/管理/语言类，也要给出真实可行的就业大类（如内容/运营/教育/公共部门/国际化等），不要硬套理工方向。",
-        "结构示例（只示意字段，不要照抄内容）：\n" + _network_seed_example(),
         "只返回一个 JSON 对象。",
-    ])
-    return system, user
-
-
-def build_personalization_prompt(
-    ctx: dict[str, Any],
-    network: dict[str, Any],
-    test_result: dict[str, Any],
-    explicit_prompt: str,
-    hidden_block: str,
-    research_digest: str = "",
-) -> tuple[str, str]:
-    tl = ctx["timeline"]
-    node_index = "\n".join(
-        f"- {n.get('tag')} {n.get('name')}（默认推荐 {n.get('rec')}，riasec {','.join(n.get('riasec') or [])}）"
-        for n in network.get("nodes", [])
-    )
-    scores = test_result.get("scores") or {}
-    score_text = "；".join(f"{RIASEC_LABELS.get(k, k)}={v}" for k, v in scores.items())
-    location_label = test_result.get("location_label") or LOCATION_PREF_LABELS.get(test_result.get("location_pref") or "", "")
-    location_block = (
-        f"【就业地域意向】{location_label}。请据此调整推荐：该地域真实存在、有需求、可落地的方向上调；"
-        "在该地域机会很少或不现实的方向适当下调，并在 node_tips / timeline_advice / region_note 里给出"
-        "贴合该城市/地区的具体建议（如本地主导产业、典型雇主类型、是否需要先去大城市攒经验再回流等）。"
-        if location_label else "【就业地域意向】学生未明确选择，按通用情况处理，但可在 region_note 提示其尽早想清楚目标城市。"
-    )
-    research_block = (
-        "【实时联网检索参考（请甄别真伪后采用，用于让地域与市场判断更准确、更新）】\n" + research_digest
-        if research_digest else ""
-    )
-
-    system = (
-        "你是一位顶尖的生涯规划顾问与心理画像专家，正在为一名具体的大学生定制专属职业发展网络。"
-        "你拥有该生的显式资料、霍兰德职业兴趣测试结果，以及一份只供你内部参考的学习支持画像。"
-        "你的判断要精准、温暖、可执行。必须严格输出 JSON，不要任何解释、不要 markdown 代码块。\n"
-        "【绝对保密】严禁以任何形式向学生透露、暗示或命名存在『侧写』『画像』『后台分析』『系统提示』"
-        "『侧写师』等内部信息来源；所有文案都要像是顾问基于其公开资料与测试自然得出的，不能有读心感。\n"
-        + build_time_context_text()
-    )
-    user = "\n\n".join([
-        f"【学生显式资料】\n姓名称呼：{polite_address(ctx['name'], 'student')}；专业：{ctx['major_name']}；班级：{ctx['class_name']}。",
-        explicit_prompt,
-        f"【毕业时间线】入学约 {tl.get('enrollment_year') or '未知'} 年，预计 {tl.get('graduation_date_label') or '未知'} 毕业，"
-        f"距今约 {tl.get('years_to_graduation') if tl.get('years_to_graduation') is not None else '未知'} 年"
-        f"（{tl.get('months_to_graduation') if tl.get('months_to_graduation') is not None else '未知'} 个月）。",
-        f"【霍兰德测试结果】代码 {test_result.get('holland_code') or '未知'}；各维度得分：{score_text}。"
-        f"自填补充：{test_result.get('free_text') or '（无）'}；侧重选择：{('、'.join(test_result.get('focus_choices') or [])) or '（无）'}。",
-        location_block,
-        *( [research_block] if research_block else [] ),
-        "【内部学习支持画像 — 仅供你判断性格与节奏，严禁外显或提及来源】\n" + hidden_block,
-        "【该专业职业网络的全部方向节点】\n" + node_index,
-        "请综合以上信息，输出一个 JSON 对象，字段如下：\n"
-        "greeting: 给该生的一句专属欢迎/定位文案；\n"
-        "summary: 用 1–2 句话点出最适合 TA 的发展基调（基于性格但不读心）；\n"
-        "region_note: 结合 TA 的就业地域意向，用 1–2 句话给出该城市/地区的就业现实与务实建议（无地域意向则提示尽早确定目标城市）；\n"
-        "holland_code: 你最终判断的霍兰德代码；\n"
-        "rec_overrides: { 节点tag: 1–5 }，对最契合 TA 的方向上调、不契合的下调（只列需要调整的节点，幅度克制合理）；\n"
-        "highlights: 最推荐 TA 重点看的 3–5 个节点 tag 数组；\n"
-        "dim_glow: { 节点tag: 0–1 }，作为节点发光强度/契合度，越契合越亮（必须覆盖全部节点，最契合给 0.9–1，"
-        "中等给 0.5–0.7，弱相关给 0.15–0.35，要拉开差异让推荐一目了然）；\n"
-        "node_tips: { 节点tag: 针对 TA 的一句话建议 }（覆盖 highlights 与若干相关节点）；\n"
-        "prep_cards: { 节点tag: { summary, stacks:[{level:'非常重要'|'一般重要'|'需了解', items:[知识/技能字符串]}] } }，"
-        "为 highlights 中的节点给出『从现在到毕业要补的知识栈』，分重要程度；\n"
-        "job_keywords: { 节点tag: [3–6 条招聘平台搜索关键字] }，给出该岗位在智联/BOSS直聘等主流招聘网站上"
-        "最贴合 TA、最好搜的中文搜索词，要符合招聘市场真实岗位命名习惯（如『Java后端』『Python研发』『前端开发』"
-        "『数据分析师』『测试开发』），结合 TA 的应届/起步阶段与就业地域意向，按『最贴合 TA 且最主流好搜』在前排序，"
-        "至少覆盖 highlights 中的节点（其他重点节点也可给）；\n"
-        "timeline_advice: 结合 TA 距毕业的时间，给出『来不来得及、该怎么准备』的温馨而具体的建议；\n"
-        "top_paths: [ {tag, name, why} ]，2–4 条最推荐路径及理由。\n"
-        "只返回这个 JSON 对象。",
     ])
     return system, user
 
@@ -924,15 +516,18 @@ def build_personalization_prompt(
 # ---------------------------------------------------------------------------
 # AI call
 # ---------------------------------------------------------------------------
-async def _call_thinking_ai(system_prompt: str, user_message: str, *, label: str, timeout: float = 240.0) -> dict[str, Any]:
+async def _call_career_ai(system_prompt: str, user_message: str, *, label: str, timeout: float = 240.0,
+                          capability: str = "thinking") -> dict[str, Any]:
+    if capability not in {"standard", "thinking"}:
+        raise ValueError("Unsupported career model capability")
     response = await ai_client.post(
         "/api/ai/chat",
         json={
             "system_prompt": system_prompt,
             "messages": [],
             "new_message": user_message,
-            "model_capability": "thinking",
-            "task_type": "deep_text_reasoning",
+            "model_capability": capability,
+            "task_type": "fast_text_response" if capability == "standard" else "deep_text_reasoning",
             "response_format": "json",
             "task_priority": "background",
             "task_label": label,
@@ -941,345 +536,63 @@ async def _call_thinking_ai(system_prompt: str, user_message: str, *, label: str
         timeout=timeout,
     )
     response.raise_for_status()
-    data = response.json()
+    try:
+        data = response.json()
+    except (ValueError, TypeError):
+        raise ValueError("AI 响应不是有效 JSON") from None
+    if not isinstance(data, dict):
+        raise ValueError("AI 响应必须是 JSON 对象")
     if data.get("status") != "success":
         raise RuntimeError(f"AI 返回失败: {str(data)[:300]}")
     payload = data.get("response_json")
     if not isinstance(payload, dict):
         payload = _extract_json_object(data.get("response_text"))
     if not isinstance(payload, dict):
-        raise RuntimeError("AI 未返回 JSON 对象")
+        raise ValueError("AI 未返回 JSON 对象")
     return payload
 
 
 # ---------------------------------------------------------------------------
-# on-demand fast-AI keyword generation (when a node has no cached keywords)
+# Compatibility keyword lookup
 # ---------------------------------------------------------------------------
-async def _fast_keywords_ai(
-    node: dict[str, Any], ctx: dict[str, Any], test_result: dict[str, Any], location_label: str
-) -> list[str]:
-    """Quick model call → 3–6 market-style search keywords for one direction."""
-    system = (
-        "你是中国大学生求职助手。根据给定目标岗位与学生背景，输出该岗位在主流招聘平台（智联招聘、"
-        "BOSS直聘、前程无忧等）上最贴合、最好搜的中文搜索关键字。"
-        "只返回 JSON：{\"keywords\":[\"...\"]}，3–6 条，符合招聘市场真实岗位命名（如『Java后端』『Python研发』"
-        "『数据分析师』），按『最贴合该生且最主流好搜』在前排序，不要解释、不要 markdown。"
-    )
-    user = "\n".join([
-        f"目标岗位：{node.get('name')}（方向简介：{node.get('desc') or '（无）'}）。",
-        f"学生背景：{ctx.get('major_name') or ''} 专业、应届/起步阶段；霍兰德代码 {test_result.get('holland_code') or '未知'}。",
-        f"就业地域意向：{location_label or '未明确'}。",
-        f"该岗位常见技能/前提：{('、'.join([str(x) for x in (node.get('pre') or [])][:3])) or '（无）'}。",
-        "请只返回 JSON 对象。",
-    ])
-    response = await ai_client.post(
-        "/api/ai/chat",
-        json={
-            "system_prompt": system,
-            "messages": [],
-            "new_message": user,
-            "model_capability": "standard",
-            "task_type": "fast_text_response",
-            "response_format": "json",
-            "task_priority": "interactive",
-            "task_label": f"career_keywords:{node.get('tag')}",
-        },
-        timeout=45.0,
-    )
-    response.raise_for_status()
-    data = response.json()
-    parsed = data.get("response_json") if isinstance(data, dict) else None
-    if not isinstance(parsed, dict):
-        parsed = _extract_json_object(data.get("response_text") if isinstance(data, dict) else None)
-    return _sanitize_keyword_list((parsed or {}).get("keywords"))
 
 
 async def generate_keywords_on_demand(student_id: int, tag: str) -> dict[str, Any]:
-    """Resolve a node by tag and return tailored search keywords (AI, else derived).
-
-    Used by the page when a node has no cached keywords yet — fast model with a
-    deterministic fallback so the card always populates.
-    """
+    """Read existing safe keywords; a direction click never starts a model call."""
     with get_db_connection() as conn:
         ctx = resolve_student_context(conn, student_id)
         if not ctx:
             return {"ok": False, "error": "student_not_found"}
         net_state = get_or_prepare_network(conn, ctx)
-        session = _load_session_row(conn, student_id) or {}
-        test_result = _json_loads(session.get("test_result_json"), {})
-        conn.commit()
 
     network = net_state.get("network") or {}
     node = next((n for n in network.get("nodes", []) if n.get("tag") == tag), None)
     if not node:
         return {"ok": False, "error": "node_not_found"}
 
-    baseline = derive_job_keywords_from_node(node)
-    location_label = test_result.get("location_label") or LOCATION_PREF_LABELS.get(test_result.get("location_pref") or "", "")
-    ai_keywords: list[str] = []
-    try:
-        ai_keywords = await _fast_keywords_ai(node, ctx, test_result, location_label)
-    except Exception:  # noqa: BLE001 — never block the card on AI failure
-        ai_keywords = []
-
-    keywords = ai_keywords or baseline
-    return {"ok": True, "tag": tag, "keywords": keywords, "source": "ai" if ai_keywords else "baseline"}
+    return {"ok": True, "tag": tag, "keywords": derive_job_keywords_from_node(node), "source": "baseline"}
 
 
 # ---------------------------------------------------------------------------
-# response validation
+# Retired scheduler handlers and public facade
 # ---------------------------------------------------------------------------
-def _validate_network_payload(payload: dict[str, Any], major_name: str) -> dict[str, Any]:
-    cats = payload.get("cats") or []
-    nodes = payload.get("nodes") or []
-    links = payload.get("links") or []
-    if not isinstance(cats, list) or not isinstance(nodes, list) or len(nodes) < 12:
-        raise RuntimeError(f"AI 网络结构不够丰富（仅 {len(nodes) if isinstance(nodes, list) else 0} 个方向，需≥12）")
-
-    clean_cats = []
-    for c in cats:
-        if not isinstance(c, dict) or not c.get("id"):
-            continue
-        clean_cats.append({
-            "id": str(c.get("id")), "name": str(c.get("name") or ""),
-            "desc": str(c.get("desc") or ""), "icon": str(c.get("icon") or "✨"),
-            "c1": str(c.get("c1") or "#6ee7ff"), "c2": str(c.get("c2") or "#3b82f6"),
-        })
-    clean_nodes = []
-    valid_tags = set()
-    for n in nodes:
-        if not isinstance(n, dict) or not n.get("tag") or not n.get("cat"):
-            continue
-        tl = n.get("tl") or []
-        norm_tl = []
-        for stage in tl[:4]:
-            if isinstance(stage, (list, tuple)) and len(stage) >= 2:
-                norm_tl.append([str(stage[0]), str(stage[1]), str(stage[2]) if len(stage) > 2 else "—"])
-        try:
-            rec = max(1, min(5, int(round(float(n.get("rec", 3))))))
-        except (TypeError, ValueError):
-            rec = 3
-        riasec = [str(x).upper() for x in (n.get("riasec") or []) if str(x).upper() in RIASEC_LABELS]
-        tag = str(n.get("tag"))
-        valid_tags.add(tag)
-        clean_nodes.append({
-            "cat": str(n.get("cat")), "tag": tag, "name": str(n.get("name") or tag),
-            "rec": rec, "lang": bool(n.get("lang")), "riasec": riasec,
-            "desc": str(n.get("desc") or ""), "reason": str(n.get("reason") or ""),
-            "pre": [str(x) for x in (n.get("pre") or [])],
-            "know": [str(x) for x in (n.get("know") or [])],
-            "tl": norm_tl or [["0–1 年", str(n.get("name") or tag), "—"]],
-            "branch": str(n.get("branch") or ""), "trend": str(n.get("trend") or ""),
-        })
-    clean_links = []
-    for l in links:
-        if isinstance(l, (list, tuple)) and len(l) == 4 and str(l[0]) in valid_tags and str(l[2]) in valid_tags:
-            try:
-                clean_links.append([str(l[0]), int(l[1]), str(l[2]), int(l[3])])
-            except (TypeError, ValueError):
-                continue
-    return {
-        "major_name": str(payload.get("major_name") or major_name),
-        "graduate_label": str(payload.get("graduate_label") or f"{major_name}毕业生"),
-        "intro": str(payload.get("intro") or ""),
-        "cats": clean_cats,
-        "nodes": clean_nodes,
-        "links": clean_links,
-    }
 
 
-def _validate_personalization_payload(payload: dict[str, Any], network: dict[str, Any]) -> dict[str, Any]:
-    valid_tags = {n.get("tag") for n in network.get("nodes", [])}
+# Public compatibility facade; lifecycle mutations live beside their durable adapters.
+from .career_lifecycle_service import (
+    _load_session_row, build_state, career_job_command, ensure_session,
+    get_or_prepare_network, initialize_career, load_major_network_row,
+    record_career_feedback, recover_career_jobs, reset_session,
+    save_test_and_generate, save_test_progress, update_career_preferences,
+)
 
-    def _clean_map(raw, caster):
-        out = {}
-        if isinstance(raw, dict):
-            for k, v in raw.items():
-                if k in valid_tags:
-                    casted = caster(v)
-                    if casted is not None:
-                        out[k] = casted
-        return out
+async def handle_network_generation(task):
+    return "superseded: career work is handled by durable AI jobs"
 
-    def _as_rec(v):
-        try:
-            return max(1, min(5, int(round(float(v)))))
-        except (TypeError, ValueError):
-            return None
-
-    def _as_glow(v):
-        try:
-            return max(0.0, min(1.0, float(v)))
-        except (TypeError, ValueError):
-            return None
-
-    prep_cards = {}
-    raw_cards = payload.get("prep_cards")
-    if isinstance(raw_cards, dict):
-        for tag, card in raw_cards.items():
-            if tag not in valid_tags or not isinstance(card, dict):
-                continue
-            stacks = []
-            for s in (card.get("stacks") or []):
-                if not isinstance(s, dict):
-                    continue
-                level = str(s.get("level") or "").strip()
-                if level not in PREP_LEVELS:
-                    level = "一般重要"
-                items = [sanitize_hidden_profile_leaks(str(x)) for x in (s.get("items") or []) if str(x).strip()]
-                if items:
-                    stacks.append({"level": level, "items": items})
-            if stacks:
-                prep_cards[tag] = {"summary": sanitize_hidden_profile_leaks(card.get("summary") or ""), "stacks": stacks}
-
-    job_keywords = {}
-    raw_keywords = payload.get("job_keywords")
-    if isinstance(raw_keywords, dict):
-        for tag, arr in raw_keywords.items():
-            if tag not in valid_tags:
-                continue
-            kws = _sanitize_keyword_list(arr)
-            if kws:
-                job_keywords[tag] = kws
-
-    return {
-        "greeting": sanitize_hidden_profile_leaks(payload.get("greeting") or ""),
-        "summary": sanitize_hidden_profile_leaks(payload.get("summary") or ""),
-        "region_note": sanitize_hidden_profile_leaks(payload.get("region_note") or ""),
-        "holland_code": str(payload.get("holland_code") or ""),
-        "rec_overrides": _clean_map(payload.get("rec_overrides"), _as_rec),
-        "highlights": [t for t in (payload.get("highlights") or []) if t in valid_tags][:6],
-        "dim_glow": _clean_map(payload.get("dim_glow"), _as_glow),
-        "node_tips": {
-            k: sanitize_hidden_profile_leaks(v)
-            for k, v in (payload.get("node_tips") or {}).items()
-            if k in valid_tags and str(v or "").strip()
-        },
-        "prep_cards": prep_cards,
-        "job_keywords": job_keywords,
-        "timeline_advice": sanitize_hidden_profile_leaks(payload.get("timeline_advice") or ""),
-        "top_paths": [
-            {"tag": str(p.get("tag") or ""), "name": str(p.get("name") or ""), "why": sanitize_hidden_profile_leaks(p.get("why") or "")}
-            for p in (payload.get("top_paths") or [])
-            if isinstance(p, dict)
-        ][:4],
-    }
-
-
-# ---------------------------------------------------------------------------
-# scheduler handlers
-# ---------------------------------------------------------------------------
-async def handle_network_generation(task: dict[str, Any]) -> str:
-    payload = task.get("payload") or {}
-    school_code = str(payload.get("school_code") or "gxufl")
-    major_key = str(payload.get("major_key") or "")
-    major_name = str(payload.get("major_name") or major_key)
-    if not major_key:
-        return "skipped: missing major_key"
-    # 让 AI 自行决定是否需要联网检索该专业的最新就业市场信息（含地域差异），再据此生成网络。
-    research_digest = ""
-    try:
-        research = await ai_web_research.gather(
-            objective=f"为中国普通本科「{major_name}」专业编制 2025–2026 年的就业去向网络，需要真实的就业方向、典型岗位、薪资区间、行业趋势，以及南宁/广西本地与一线城市的地域差异。",
-            context=f"目标专业：{major_name}。用途：生成可交互的职业发展路线网络图，覆盖该专业绝大多数真实出路。",
-            search_instructions="请聚焦中国大陆就业市场的真实、最新信息（招聘需求、薪资、行业动态、地域差异），给出可核验的关键事实。",
-            max_queries=3,
-        )
-        research_digest = research.get("digest") or ""
-    except Exception:  # noqa: BLE001
-        research_digest = ""
-    try:
-        system, user = build_network_generation_prompt(major_name, research_digest)
-        raw = await _call_thinking_ai(system, user, label=f"career_network:{major_key}")
-        network = _validate_network_payload(raw, major_name)
-    except Exception as exc:  # noqa: BLE001
-        with get_db_connection() as conn:
-            _upsert_major_network(
-                conn, school_code=school_code, major_key=major_key, major_name=major_name,
-                status="failed", source="ai", error_message=str(exc)[:400],
-            )
-            conn.commit()
-        return f"failed: {str(exc)[:160]}"
-    with get_db_connection() as conn:
-        _upsert_major_network(
-            conn, school_code=school_code, major_key=major_key, major_name=major_name,
-            status="ready", source="ai", network=network,
-            doc_markdown=str(network.get("intro") or ""), model_label="thinking",
-        )
-        conn.commit()
-    return f"generated network for {major_name} ({len(network.get('nodes', []))} nodes)"
-
-
-async def handle_personalization(task: dict[str, Any]) -> str:
-    payload = task.get("payload") or {}
-    student_id = int(payload.get("student_id") or 0)
-    if not student_id:
-        return "skipped: missing student_id"
-
-    # Gather context + prompt inputs (sync DB read).
-    with get_db_connection() as conn:
-        ctx = resolve_student_context(conn, student_id)
-        if not ctx:
-            return "skipped: student not found"
-        net_state = get_or_prepare_network(conn, ctx)
-        session = _load_session_row(conn, student_id) or {}
-        test_result = _json_loads(session.get("test_result_json"), {})
-        explicit_profile = load_explicit_user_profile(conn, student_id, "student")
-        explicit_prompt = build_explicit_user_profile_prompt(explicit_profile)
-        hidden_block = _build_hidden_profile_block(conn, student_id)
-        conn.commit()
-
-    network = net_state.get("network")
-    if not network:
-        # Major network still generating — retry shortly by raising.
-        raise RuntimeError("major network not ready yet")
-
-    # 按学生的就业地域意向，让 AI 决定是否联网检索该城市/地区的真实就业行情，让推荐更精准。
-    research_digest = ""
-    location_label = test_result.get("location_label") or ""
-    if location_label:
-        try:
-            grad_label = ctx["timeline"].get("graduation_date_label") or "近一两年"
-            research = await ai_web_research.gather(
-                objective=f"为一名「{ctx['major_name']}」专业、计划在「{location_label}」就业、预计 {grad_label} 毕业的本科生，"
-                          "了解该地域当前真实的就业行情：主导产业、典型雇主、热门岗位与薪资、对该专业的需求、以及求职务实建议。",
-                context=f"学生专业：{ctx['major_name']}；地域意向：{location_label}；霍兰德代码：{test_result.get('holland_code') or '未知'}。",
-                search_instructions="请聚焦该城市/地区的真实、最新就业信息（招聘需求、薪资、主导产业、典型雇主），给出可核验的关键事实。",
-                max_queries=3,
-            )
-            research_digest = research.get("digest") or ""
-        except Exception:  # noqa: BLE001
-            research_digest = ""
-
-    try:
-        system, user = build_personalization_prompt(
-            ctx, network, test_result, explicit_prompt, hidden_block, research_digest
-        )
-        raw = await _call_thinking_ai(system, user, label=f"career_personalize:{student_id}")
-        personalized = _validate_personalization_payload(raw, network)
-        personalized["holland_code"] = personalized.get("holland_code") or test_result.get("holland_code") or ""
-    except Exception as exc:  # noqa: BLE001
-        with get_db_connection() as conn:
-            conn.execute(
-                "UPDATE career_student_sessions SET status = 'failed', error_message = ?, updated_at = ? WHERE student_id = ?",
-                (str(exc)[:400], _now_iso(), student_id),
-            )
-            conn.commit()
-        return f"failed: {str(exc)[:160]}"
-
-    with get_db_connection() as conn:
-        conn.execute(
-            """
-            UPDATE career_student_sessions
-            SET status = 'ready', personalized_json = ?, model_label = 'thinking',
-                error_message = '', generated_at = ?, updated_at = ?
-            WHERE student_id = ?
-            """,
-            (json.dumps(personalized, ensure_ascii=False), _now_iso(), _now_iso(), student_id),
-        )
-        conn.commit()
-    return f"personalized career network for student {student_id}"
-
+async def handle_personalization(task):
+    return "superseded: career work is handled by durable AI jobs"
 
 register_task_handler(NETWORK_GENERATE_TASK_KIND, handle_network_generation)
 register_task_handler(PERSONALIZE_TASK_KIND, handle_personalization)
+
+from .career_payload_service import (validate_network_payload as _validate_network_payload, validate_personalization_payload as _validate_personalization_payload)

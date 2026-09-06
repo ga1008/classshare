@@ -55,7 +55,7 @@ LIST_SECTIONS: dict[str, dict[str, Any]] = {
     },
     "education": {
         "table": "resume_educations",
-        "fields": ("kind", "school", "college", "major", "start_date", "end_date", "content", "source"),
+        "fields": ("kind", "school", "college", "major", "degree", "start_date", "end_date", "content", "source"),
         "required": ("school", "start_date", "end_date"),
         "label": "学历",
     },
@@ -67,9 +67,28 @@ PERSONAL_FIELDS = (
 )
 PERSONAL_REQUIRED = ("name", "expected_position")
 PERSONAL_CONTACT_FIELDS = ("email", "phone")
+EXPERIENCE_KINDS = {
+    "internship": "实习", "project": "项目", "course": "课程成果", "competition": "比赛",
+    "campus": "社团 / 学生工作", "volunteer": "志愿服务", "part_time": "兼职", "research": "调研 / 科研",
+    "employment": "全职工作",
+}
+EDUCATION_DEGREES = ("高中", "中专", "大专", "本科", "硕士", "博士", "其他")
 
 _FIELD_LIMIT = 2000
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _notify_profile_change(conn, student_id: int) -> None:
+    # Invalidate unfinished summaries in the same material transaction. Even
+    # a concurrent result that read the old evidence cannot remain usable.
+    pending = conn.execute("SELECT id FROM resume_self_intros WHERE student_id = ? AND status = 'generating' AND active_job_id <> ''", (int(student_id),)).fetchall()
+    if pending:
+        from ..student_career_job_service import supersede_student_career_jobs
+        for row in pending:
+            conn.execute("UPDATE resume_self_intros SET revision = revision + 1, status = 'failed', active_job_id = '', error_text = '资料已更新，请重新生成摘要。' WHERE id = ? AND student_id = ?", (int(row["id"]), int(student_id)))
+            supersede_student_career_jobs(conn, scope_type="resume_intro", scope_id=str(row["id"]), student_id=int(student_id))
+    from ..career_lifecycle_service import invalidate_career_profile
+    invalidate_career_profile(conn, int(student_id))
 
 
 def _now() -> str:
@@ -115,9 +134,8 @@ def _ensure_personal_row(conn, student_id: int) -> dict[str, Any]:
     if info:
         return info
     now = _now()
-    execute_insert_returning_id(
-        conn,
-        "INSERT INTO resume_personal_info (student_id, created_at, updated_at) VALUES (?, ?, ?)",
+    conn.execute(
+        "INSERT INTO resume_personal_info (student_id, created_at, updated_at) VALUES (?, ?, ?) ON CONFLICT(student_id) DO NOTHING",
         (int(student_id), now, now),
     )
     return get_personal_info(conn, student_id)
@@ -143,16 +161,21 @@ def validate_personal_info(payload: dict[str, Any]) -> dict[str, str]:
 def update_personal_info(conn, student_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_resume_schema(conn)
     cleaned = validate_personal_info(payload)
-    _ensure_personal_row(conn, student_id)
+    current = _ensure_personal_row(conn, student_id)
+    from .resume_document_service import require_revision, ResumeConflict
+    revision = require_revision(current, payload["revision"]) if "revision" in payload else int(current.get("revision") or 1)
     extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
     assignments = ", ".join(f"{field} = ?" for field in PERSONAL_FIELDS)
     params = [cleaned[field] for field in PERSONAL_FIELDS]
-    params.extend([json.dumps(extra, ensure_ascii=False), 1, _now(), int(student_id)])
-    conn.execute(
+    params.extend([json.dumps(extra, ensure_ascii=False), 1, _now(), int(student_id), revision])
+    result = conn.execute(
         f"UPDATE resume_personal_info SET {assignments}, extra_json = ?, seeded = ?, "
-        f"updated_at = ? WHERE student_id = ?",
+        f"revision = revision + 1, updated_at = ? WHERE student_id = ? AND revision = ?",
         params,
     )
+    if result.rowcount != 1:
+        raise ResumeConflict("个人信息已更新，请保留输入并重新载入。")
+    _notify_profile_change(conn, student_id)
     return get_personal_info(conn, student_id)
 
 
@@ -177,11 +200,15 @@ def merge_personal_info_partial(conn, student_id: int, payload: dict[str, Any]) 
             conflicts.append({"field": field, "existing": existing, "incoming": incoming})
     if updates:
         assignments = ", ".join(f"{field} = ?" for field in updates)
-        params = list(updates.values()) + [_now(), int(student_id)]
-        conn.execute(
-            f"UPDATE resume_personal_info SET {assignments}, updated_at = ? WHERE student_id = ?",
+        params = list(updates.values()) + [_now(), int(student_id), int(current.get("revision") or 1)]
+        changed = conn.execute(
+            f"UPDATE resume_personal_info SET {assignments}, revision = revision + 1, updated_at = ? WHERE student_id = ? AND revision = ?",
             params,
         )
+        if changed.rowcount != 1:
+            from .resume_document_service import ResumeConflict
+            raise ResumeConflict("个人资料在导入期间发生变化，请检查后重新确认。")
+        _notify_profile_change(conn, student_id)
     return {
         "updated_fields": list(updates.keys()),
         "conflicts": conflicts,
@@ -190,14 +217,22 @@ def merge_personal_info_partial(conn, student_id: int, payload: dict[str, Any]) 
     }
 
 
-def set_personal_avatar(conn, student_id: int, file_hash: str, mime_type: str) -> None:
+def set_personal_avatar(conn, student_id: int, file_hash: str, mime_type: str, *, expected_revision: Any = None) -> int:
     ensure_resume_schema(conn)
-    _ensure_personal_row(conn, student_id)
+    current = _ensure_personal_row(conn, student_id)
+    from .resume_document_service import require_revision, ResumeConflict
+    revision = require_revision(current, expected_revision) if expected_revision is not None else int(current["revision"])
+    locked = conn.execute("UPDATE resume_personal_info SET student_id = student_id WHERE student_id = ? AND revision = ?", (int(student_id), revision))
+    if locked.rowcount != 1:
+        raise ResumeConflict("个人资料已更新，请保留输入并重新载入。")
+    from ..file_service import lock_global_file_references
+    lock_global_file_references(conn, [file_hash])
     conn.execute(
         "UPDATE resume_personal_info SET avatar_file_hash = ?, avatar_mime_type = ?, "
-        "updated_at = ? WHERE student_id = ?",
-        (_clean(file_hash, limit=128), _clean(mime_type, limit=64), _now(), int(student_id)),
+        "revision = revision + 1, updated_at = ? WHERE student_id = ? AND revision = ?",
+        (_clean(file_hash, limit=128), _clean(mime_type, limit=64), _now(), int(student_id), revision),
     )
+    return revision + 1
 
 
 def seed_personal_info_from_platform(conn, student_id: int, user: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -221,12 +256,20 @@ def seed_personal_info_from_platform(conn, student_id: int, user: dict[str, Any]
         "qq": profile.get("qq") or "",
         "wechat": profile.get("wechat") or "",
     }
+    avatar_hash = str(profile.get("avatar_file_hash") or "")
+    from ..file_service import lock_global_file_references, resolve_global_file_path
+    # Match normal avatar changes: business row before sorted blob locks.
+    conn.execute("UPDATE resume_personal_info SET student_id = student_id WHERE student_id = ?", (int(student_id),))
+    if avatar_hash and resolve_global_file_path(avatar_hash):
+        lock_global_file_references(conn, [avatar_hash])
+    else:
+        avatar_hash = ""
     assignments = ", ".join(f"{field} = ?" for field in mapped)
     params = [_clean(value, limit=200) for value in mapped.values()]
-    params.extend([profile.get("avatar_file_hash") or "", profile.get("avatar_mime_type") or "", _now(), int(student_id)])
+    params.extend([avatar_hash, profile.get("avatar_mime_type") or "", _now(), int(student_id)])
     conn.execute(
         f"UPDATE resume_personal_info SET {assignments}, avatar_file_hash = ?, "
-        f"avatar_mime_type = ?, updated_at = ? WHERE student_id = ? AND seeded = 0",
+        f"avatar_mime_type = ?, seeded = 1, revision = revision + 1, updated_at = ? WHERE student_id = ? AND seeded = 0",
         params,
     )
     return get_personal_info(conn, student_id)
@@ -349,20 +392,36 @@ def _validate_list_payload(section: str, payload: dict[str, Any]) -> dict[str, s
             "content_md": "自我介绍内容",
         }
         raise ValueError(f"{spec['label']}缺少必填信息：{'、'.join(labels.get(field, field) for field in missing)}")
+    for field in ("start_date", "end_date", "acquired_date", "expiry_date"):
+        value = cleaned.get(field)
+        if not value or field == "end_date" and value.casefold() in {"至今", "present", "current"}:
+            continue
+        formats = {4: "%Y", 7: "%Y-%m", 10: "%Y-%m-%d"}
+        try:
+            pattern = formats[len(value)]
+            if not re.fullmatch(r"\d{4}(?:-\d{2}){0,2}", value):
+                raise ValueError("invalid date")
+            datetime.strptime(value, pattern)
+        except (ValueError, KeyError) as exc:
+            raise ValueError("日期格式无效，请填写真实的年份或年月") from exc
     if section in {"experience", "education"}:
         start, end = cleaned.get("start_date"), cleaned.get("end_date")
         if start and end and start > end:
             raise ValueError("开始时间不能晚于结束时间")
+    if section == "experience" and cleaned.get("kind") and cleaned["kind"] not in EXPERIENCE_KINDS:
+        raise ValueError("经历类型不正确，请选择已支持的类型")
+    if section == "education" and cleaned.get("degree") and cleaned["degree"] not in EDUCATION_DEGREES:
+        raise ValueError("学历层次不正确，不确定时可以留空")
     return cleaned
 
 
-def list_section(conn, student_id: int, section: str) -> list[dict[str, Any]]:
+def list_section(conn, student_id: int, section: str, *, limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
     section = _normalize_section(section)
     ensure_resume_schema(conn)
     table = LIST_SECTIONS[section]["table"]
     rows = conn.execute(
-        f"SELECT * FROM {table} WHERE student_id = ? ORDER BY created_at DESC, id DESC",
-        (int(student_id),),
+        f"SELECT * FROM {table} WHERE student_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+        (int(student_id), max(1, min(1000, int(limit))), max(0, int(offset))),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -394,31 +453,43 @@ def create_section_item(conn, student_id: int, section: str, payload: dict[str, 
         f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
         values,
     )
+    _notify_profile_change(conn, student_id)
     return int(new_id)
 
 
 def update_section_item(conn, student_id: int, section: str, item_id: int, payload: dict[str, Any]) -> None:
     section = _normalize_section(section)
     ensure_resume_schema(conn)
-    get_section_item(conn, student_id, section, item_id)  # ownership + existence
+    current = get_section_item(conn, student_id, section, item_id)  # ownership + existence
+    from .resume_document_service import require_revision, ResumeConflict
+    revision = require_revision(current, payload["revision"]) if "revision" in payload else int(current.get("revision") or 1)
     cleaned = _validate_list_payload(section, payload)
     table = LIST_SECTIONS[section]["table"]
     assignments = ", ".join(f"{field} = ?" for field in cleaned)
-    params = list(cleaned.values()) + [_now(), int(item_id), int(student_id)]
-    conn.execute(
-        f"UPDATE {table} SET {assignments}, updated_at = ? WHERE id = ? AND student_id = ?",
+    params = list(cleaned.values()) + [_now(), int(item_id), int(student_id), revision]
+    finished_intro = ", status = 'ready', active_job_id = '', error_text = ''" if section == "self_intro" else ""
+    result = conn.execute(
+        f"UPDATE {table} SET {assignments}, revision = revision + 1, updated_at = ?{finished_intro} WHERE id = ? AND student_id = ? AND revision = ?",
         params,
     )
+    if result.rowcount != 1:
+        raise ResumeConflict("素材已更新，请保留输入并重新载入。")
+    if section == "self_intro" and current.get("active_job_id"):
+        from ..student_career_job_service import supersede_student_career_jobs
+        supersede_student_career_jobs(conn, scope_type="resume_intro", scope_id=str(item_id), student_id=student_id)
+    _notify_profile_change(conn, student_id)
 
 
 def delete_section_item(conn, student_id: int, section: str, item_id: int) -> None:
     section = _normalize_section(section)
     ensure_resume_schema(conn)
     table = LIST_SECTIONS[section]["table"]
-    conn.execute(
+    result = conn.execute(
         f"DELETE FROM {table} WHERE id = ? AND student_id = ?",
         (int(item_id), int(student_id)),
     )
+    if result.rowcount:
+        _notify_profile_change(conn, student_id)
 
 
 def create_education_auto(conn, student_id: int, *, school: str, college: str = "",

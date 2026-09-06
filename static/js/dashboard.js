@@ -1,7 +1,9 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
 import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260707';
+import { initStudentDashboardSchedule } from '/static/js/student_dashboard_schedule.js';
 
 const root = document.querySelector('[data-dashboard-root]');
+initStudentDashboardSchedule(root);
 
 function normalizeText(value) {
     return String(value || '')
@@ -324,6 +326,9 @@ if (root) {
     };
 
     const applyFilters = ({ syncUrl = true } = {}) => {
+        // Student collection filtering lives inside the course schedule only.
+        // The teacher's legacy classroom filters still scope their workspace.
+        if (dashboardRole === 'student') return;
         const keyword = String(searchInput?.value || '')
             .replace(/\s+/g, ' ')
             .trim();

@@ -277,7 +277,7 @@ function initAgendaWidget() {
     if (manageEl) manageEl.hidden = !isManual;
     if (manageStatus) { manageStatus.textContent = ''; manageStatus.dataset.tone = ''; }
     if (completeBtn) completeBtn.disabled = false;
-    if (completeBtn) completeBtn.hidden = data.status === 'completed';
+    if (completeBtn) { completeBtn.hidden = false; completeBtn.textContent = data.status === 'completed' ? '恢复待办' : '标记完成'; }
     if (deleteBtn) deleteBtn.disabled = false;
     const href = data.href || '#';
     goEl.hidden = canRemind || isManual;
@@ -398,22 +398,25 @@ function initAgendaWidget() {
   });
 
   completeBtn?.addEventListener('click', async () => {
+    const operationData = activeData;
     const { classOfferingId, todoId } = activeTodoIds();
     if (!todoId || (!isTeacherTodoActor() && !classOfferingId)) return;
     completeBtn.disabled = true;
     setManageStatus('正在更新…', 'info');
-    const { ok, payload } = await todoLifecycleRequest('PATCH', classOfferingId, todoId, { completed: true });
+    const completed = activeData?.status !== 'completed';
+    const { ok, payload } = await todoLifecycleRequest('PATCH', classOfferingId, todoId, { completed });
     if (ok) {
-      setManageStatus('已完成', 'success');
-      notify(payload.message || '待办已完成。', 'success');
-      reloadSoon(500);
-    } else {
+      if (activeData === operationData) { setManageStatus(completed ? '已完成' : '已恢复', 'success'); close(true); }
+      notify(payload.message || (completed ? '待办已完成。' : '待办已恢复。'), 'success');
+      finishTodoMutation({ todoId, classOfferingId, message: completed ? '待办已完成。' : '待办已恢复。' });
+    } else if (activeData === operationData) {
       setManageStatus(payload.message || '操作失败，请稍后重试。', 'error');
       completeBtn.disabled = false;
     }
   });
 
   deleteBtn?.addEventListener('click', async () => {
+    const operationData = activeData;
     const { classOfferingId, todoId } = activeTodoIds();
     if (!todoId || (!isTeacherTodoActor() && !classOfferingId)) return;
     if (!window.confirm('确定删除这条待办吗？删除后不可恢复。')) return;
@@ -421,10 +424,10 @@ function initAgendaWidget() {
     setManageStatus('正在删除…', 'info');
     const { ok, payload } = await todoLifecycleRequest('DELETE', classOfferingId, todoId);
     if (ok) {
-      setManageStatus('已删除', 'success');
+      if (activeData === operationData) { setManageStatus('已删除', 'success'); close(true); }
       notify(payload.message || '待办已删除。', 'success');
-      reloadSoon(500);
-    } else {
+      finishTodoMutation({ todoId, classOfferingId, deleted: true, message: '待办已删除。' });
+    } else if (activeData === operationData) {
       setManageStatus(payload.message || '删除失败，请稍后重试。', 'error');
       deleteBtn.disabled = false;
     }
@@ -576,6 +579,12 @@ function reloadSoon(delay = 600) {
   window.setTimeout(() => window.location.reload(), delay);
 }
 
+function finishTodoMutation(detail) {
+  if (!document.querySelector('[data-dashboard-root]')) { reloadSoon(); return; }
+  window.dispatchEvent(new CustomEvent('lanshare:dashboard-todo-changed', { detail }));
+  window.dispatchEvent(new Event('lanshare:dashboard-workspace-refresh'));
+}
+
 // Split an ISO-ish datetime ("YYYY-MM-DDTHH:MM" / "YYYY-MM-DD HH:MM" / date)
 // into { date, time } for the native pickers.
 function splitTodoDateTime(value) {
@@ -596,9 +605,11 @@ async function todoLifecycleRequest(method, classOfferingId, todoId, body) {
   const endpoint = teacherAccountTodo
     ? `${ACCOUNT_TODO_ENDPOINT_BASE}/${todoId}`
     : `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos/${todoId}`;
-  const response = await fetch(endpoint, opts);
-  const payload = await response.json().catch(() => ({}));
-  return { ok: response.ok && payload.status === 'success', payload };
+  try {
+    const response = await fetch(endpoint, opts);
+    const payload = await response.json().catch(() => ({}));
+    return { ok: response.ok && payload.status === 'success', payload };
+  } catch { return { ok: false, payload: { message: '网络异常，请重试。' } }; }
 }
 
 function isTeacherTodoActor() {
@@ -725,7 +736,6 @@ let sharedTodoModal = null;
 function getTodoModalController() {
   if (sharedTodoModal) return sharedTodoModal;
   const { options, defaultOfferingId, actorRole, emailReminder } = readTodoOptions();
-  if (!options.length && actorRole !== 'teacher') return null;
   sharedTodoModal = createTodoModalController(options, defaultOfferingId, { actorRole, emailReminder });
   return sharedTodoModal;
 }
@@ -759,6 +769,11 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   let mode = 'create';
   let editingId = 0;
   let lastFocus = null;
+  let closeTimer = 0;
+  let afterDismiss = null;
+  let modalClosing = false;
+  let formGeneration = 0;
+  let submittingGeneration = null;
   let reminderTouched = false;
   const emailReminder = settings.emailReminder || {};
   const emailAvailable = actorRole === 'teacher' && Boolean(emailReminder.available);
@@ -818,11 +833,21 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   };
 
   const close = () => {
-    if (modal.hidden) return;
+    if (modal.hidden || modalClosing) return;
+    modalClosing = true;
+    formGeneration += 1;
     modal.classList.remove('is-open');
-    modal.hidden = true;
-    document.body.classList.remove('agenda-todo-open');
-    if (lastFocus && typeof lastFocus.focus === 'function') lastFocus.focus({ preventScroll: true });
+    const callback = afterDismiss;
+    afterDismiss = null;
+    const finish = () => {
+      modal.hidden = true;
+      document.body.classList.remove('agenda-todo-open');
+      if (callback) callback();
+      else if (lastFocus?.isConnected) lastFocus.focus({ preventScroll: true });
+    };
+    window.clearTimeout(closeTimer);
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) finish();
+    else closeTimer = window.setTimeout(finish, 220);
   };
 
   // The backdrop, header close button and footer cancel button all share the
@@ -836,6 +861,8 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   });
 
   const reveal = () => {
+    window.clearTimeout(closeTimer);
+    modalClosing = false;
     modal.hidden = false;
     document.body.classList.add('agenda-todo-open');
     window.requestAnimationFrame(() => {
@@ -878,7 +905,9 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   };
 
   const openCreate = (trigger) => {
+    formGeneration += 1;
     lastFocus = trigger || null;
+    afterDismiss = null;
     mode = 'create';
     editingId = 0;
     form.reset();
@@ -886,8 +915,10 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
     setStatus('', '');
     eyebrowEl.textContent = actorRole === 'teacher' ? '教师待办' : '我的待办';
     headingEl.textContent = isTeacher ? '记一件待办' : '新增待办';
-    if (introEl) introEl.textContent = '默认不关联课堂，只保存在你的个人待办中。';
+    if (introEl) introEl.textContent = isTeacher ? '默认不关联课堂，只保存在你的个人待办中。' : '选择已加入的课堂，添加仅你可见的个人待办；日期可以不填。';
     submitBtn.textContent = '保存待办';
+    submitBtn.disabled = !isTeacher && !options.length;
+    if (!isTeacher && !options.length) setStatus('你目前没有可用课堂。加入课堂后即可添加属于该课堂的个人待办。', 'info');
     courseSelect.disabled = false;
     if (scopeDetails) scopeDetails.open = false;
     applyDefaultCourse();
@@ -898,8 +929,10 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
     reveal();
   };
 
-  const openEdit = (data, trigger) => {
+  const openEdit = (data, trigger, afterClose) => {
+    formGeneration += 1;
     lastFocus = trigger || null;
+    afterDismiss = typeof afterClose === 'function' ? afterClose : null;
     mode = 'edit';
     editingId = Number(data.todoId || 0);
     form.reset();
@@ -908,6 +941,7 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
     headingEl.textContent = '编辑待办';
     if (introEl) introEl.textContent = '课堂归属只用于整理，这条待办仍然仅你可见。';
     submitBtn.textContent = '保存修改';
+    submitBtn.disabled = false;
     courseSelect.value = String(Number(data.classOfferingId || 0) || '');
     courseSelect.disabled = !isTeacher;
     if (scopeDetails) scopeDetails.open = false;
@@ -939,6 +973,7 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
 
   const submit = async (event) => {
     event.preventDefault();
+    if (submittingGeneration === formGeneration) return;
     const classOfferingId = Number(courseSelect.value || 0);
     const title = (titleInput.value || '').trim();
     if (!isTeacher && !classOfferingId) { setStatus('请选择所属课堂。', 'error'); return; }
@@ -960,14 +995,17 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
       return;
     }
 
+    const generation = formGeneration;
+    const submittedId = editingId;
+    const isEdit = mode === 'edit' && submittedId;
+    submittingGeneration = generation;
     submitBtn.disabled = true;
     setStatus('正在保存…', 'info');
     try {
-      const isEdit = mode === 'edit' && editingId;
       const url = isTeacher
-        ? (isEdit ? `${ACCOUNT_TODO_ENDPOINT_BASE}/${editingId}` : ACCOUNT_TODO_ENDPOINT_BASE)
+        ? (isEdit ? `${ACCOUNT_TODO_ENDPOINT_BASE}/${submittedId}` : ACCOUNT_TODO_ENDPOINT_BASE)
         : (isEdit
-          ? `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos/${editingId}`
+          ? `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos/${submittedId}`
           : `${TODO_ENDPOINT_BASE}/${classOfferingId}/todos`);
       const response = await fetch(url, {
         method: isEdit ? 'PATCH' : 'POST',
@@ -978,16 +1016,19 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
       const payload = await response.json().catch(() => ({}));
       if (response.ok && payload.status === 'success') {
         const message = payload.message || (isEdit ? '待办已更新。' : '待办已添加。');
-        setStatus(message, 'success');
+        if (generation === formGeneration) { setStatus(message, 'success'); close(); }
         notify(message, 'success');
-        reloadSoon(650);
+        finishTodoMutation({ todoId: Number(payload.id || submittedId), classOfferingId, message });
       } else {
-        setStatus(payload.message || '保存失败，请稍后重试。', 'error');
-        submitBtn.disabled = false;
+        if (generation === formGeneration) setStatus(payload.message || '保存失败，请稍后重试。', 'error');
+        else notify(`“${title}”保存失败，请重试。`, 'error');
       }
     } catch {
-      setStatus('网络异常，保存失败。', 'error');
-      submitBtn.disabled = false;
+      if (generation === formGeneration) setStatus('网络异常，保存失败。', 'error');
+      else notify(`“${title}”因网络异常未能确认保存，请查看全部事项。`, 'error');
+    } finally {
+      if (submittingGeneration === generation) submittingGeneration = null;
+      if (generation === formGeneration) submitBtn.disabled = false;
     }
   };
 
@@ -1033,14 +1074,24 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
 }
 
 function initAgendaTodoCreator() {
-  const triggers = Array.from(document.querySelectorAll('[data-agenda-add-todo]'));
-  if (!triggers.length) return;
-  const controller = getTodoModalController();
-  if (!controller) {
-    triggers.forEach((btn) => { btn.hidden = true; });
-    return;
-  }
-  triggers.forEach((trigger) => trigger.addEventListener('click', () => controller.openCreate(trigger)));
+  // React can replace SSR controls after this module starts.
+  document.addEventListener('click', (event) => {
+    const trigger = event.target.closest?.('[data-agenda-add-todo]');
+    if (trigger) { event.preventDefault(); getTodoModalController()?.openCreate(trigger); }
+  });
+  window.addEventListener('lanshare:todo-edit', (event) => {
+    getTodoModalController()?.openEdit(event.detail.data, event.detail.anchor, event.detail.afterClose);
+  });
+  window.addEventListener('lanshare:todo-toggle', async (event) => {
+    const { data, anchor } = event.detail;
+    if (anchor?.disabled) return;
+    if (anchor) anchor.disabled = true;
+    const completed = data.status !== 'completed';
+    const result = await todoLifecycleRequest('PATCH', Number(data.classOfferingId), Number(data.todoId), { completed });
+    if (anchor) anchor.disabled = false;
+    if (result.ok) finishTodoMutation({ todoId: Number(data.todoId), classOfferingId: Number(data.classOfferingId), message: completed ? '待办已完成。' : '待办已恢复。' });
+    else notify(result.payload.message || '更新失败，请重试。', 'error');
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -593,6 +593,7 @@ POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
 
 
 REQUIRED_POSTGRES_TABLES = (
+    "user_ui_preferences",
     "teachers",
     "system_settings",
     "teacher_onboarding_state",
