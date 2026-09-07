@@ -505,14 +505,17 @@ def _chart_image(distribution: list[dict[str, Any]]) -> io.BytesIO:
     image = Image.new("RGB", (width, height), "#C0C0C0")
     draw = ImageDraw.Draw(image)
     font_paths = (
+        Path("C:/Windows/Fonts/arial.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
         Path("C:/Windows/Fonts/simsun.ttc"),
         Path("C:/Windows/Fonts/simhei.ttf"),
         Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
     )
     font_path = next((path for path in font_paths if path.is_file()), None)
-    label_font = ImageFont.truetype(str(font_path), 24) if font_path else ImageFont.load_default()
-    value_font = ImageFont.truetype(str(font_path), 25) if font_path else ImageFont.load_default()
-    axis_font = ImageFont.truetype(str(font_path), 21) if font_path else ImageFont.load_default()
+    label_font = ImageFont.truetype(str(font_path), 24) if font_path else ImageFont.load_default(size=24)
+    value_font = ImageFont.truetype(str(font_path), 25) if font_path else ImageFont.load_default(size=25)
+    axis_font = ImageFont.truetype(str(font_path), 21) if font_path else ImageFont.load_default(size=21)
     left, top, right, bottom = 88, 35, width - 28, height - 58
     draw.line((left, top, left, bottom), fill="#B2B2B2", width=2)
     draw.line((left, bottom, right, bottom), fill="#B2B2B2", width=2)
