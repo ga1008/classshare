@@ -183,66 +183,104 @@ def load_student_teacher_names(conn, student_id: int) -> list[str]:
 
 def _load_student_course_signal_rows(conn, student_id: int, *, current_class_offering_id: int | None = None) -> list[dict[str, Any]]:
     personal_filter = personal_stage_assignment_filter_sql("a")
+    # Aggregate independent histories before joining them so counts and elapsed
+    # time cannot multiply across materials, tasks, certificates and events.
+    # Behavior state is one row per (class_offering_id, user_pk, user_role) PK.
     rows = conn.execute(
         f"""
-        SELECT o.id AS class_offering_id,
+        WITH enrolled_courses AS (
+            SELECT stu.id AS student_id, o.id AS class_offering_id,
+                   o.course_id, o.class_id, o.teacher_id, o.semester_id,
+                   o.semester, o.first_class_date, o.created_at
+            FROM students stu
+            JOIN class_offerings o ON (
+                stu.class_id = o.class_id OR EXISTS (
+                    SELECT 1 FROM class_offering_class_links links
+                    WHERE links.offering_id = o.id AND links.class_id = stu.class_id
+                )
+            )
+            WHERE stu.id = ?
+              AND COALESCE(stu.enrollment_status, 'active') = 'active'
+        ), stage_signals AS (
+            SELECT ec.student_id, ec.class_offering_id,
+                   MAX(lss.progress_score) AS progress_score,
+                   MAX(lss.readiness_score) AS readiness_score
+            FROM enrolled_courses ec
+            JOIN learning_stage_status lss
+              ON lss.student_id = ec.student_id AND lss.class_offering_id = ec.class_offering_id
+            GROUP BY ec.student_id, ec.class_offering_id
+        ), certificate_signals AS (
+            SELECT ec.student_id, ec.class_offering_id, COUNT(DISTINCT lc.id) AS certificate_count
+            FROM enrolled_courses ec
+            JOIN learning_certificates lc
+              ON lc.student_id = ec.student_id AND lc.class_offering_id = ec.class_offering_id
+            GROUP BY ec.student_id, ec.class_offering_id
+        ), material_signals AS (
+            SELECT ec.student_id, ec.class_offering_id,
+                   COUNT(DISTINCT CASE WHEN lmp.completed = 1 THEN lmp.material_id END) AS material_completed_count,
+                   SUM(lmp.active_seconds) AS material_active_seconds
+            FROM enrolled_courses ec
+            JOIN learning_material_progress lmp
+              ON lmp.student_id = ec.student_id AND lmp.class_offering_id = ec.class_offering_id
+            GROUP BY ec.student_id, ec.class_offering_id
+        ), eligible_tasks AS (
+            SELECT ec.student_id, ec.class_offering_id, a.id AS assignment_id
+            FROM enrolled_courses ec
+            JOIN assignments a ON a.class_offering_id = ec.class_offering_id
+                              AND a.status != 'new' AND {personal_filter}
+        ), task_signals AS (
+            SELECT tasks.student_id, tasks.class_offering_id,
+                   COUNT(DISTINCT tasks.assignment_id) AS assignment_count,
+                   COUNT(DISTINCT sub.id) AS submitted_count,
+                   AVG(sub.score) AS average_score
+            FROM eligible_tasks tasks
+            LEFT JOIN submissions sub ON sub.assignment_id = tasks.assignment_id
+                                     AND sub.student_pk_id = tasks.student_id
+                                     AND COALESCE(sub.is_absence_score, 0) = 0
+            GROUP BY tasks.student_id, tasks.class_offering_id
+        ), behavior_signals AS (
+            SELECT ec.student_id, ec.class_offering_id,
+                   MAX(be.created_at) AS last_behavior_at,
+                   SUM(CASE WHEN be.action_type = 'ai_question' THEN 1 ELSE 0 END) AS ai_question_count
+            FROM enrolled_courses ec
+            JOIN classroom_behavior_events be ON be.class_offering_id = ec.class_offering_id
+                                             AND be.user_pk = ec.student_id AND be.user_role = 'student'
+            GROUP BY ec.student_id, ec.class_offering_id
+        )
+        SELECT ec.class_offering_id,
                c.name AS course_name,
                c.sect_name AS course_sect_name,
                cl.name AS class_name,
-               COALESCE(s.name, o.semester) AS semester_name,
+               COALESCE(s.name, ec.semester) AS semester_name,
                t.name AS teacher_name,
-               COALESCE(MAX(lss.progress_score), 0) AS progress_score,
-               COALESCE(MAX(lss.readiness_score), 0) AS readiness_score,
-               COUNT(DISTINCT lc.id) AS certificate_count,
-               COUNT(DISTINCT CASE WHEN lmp.completed = 1 THEN lmp.material_id END) AS material_completed_count,
-               COALESCE(SUM(lmp.active_seconds), 0) AS material_active_seconds,
-               COUNT(DISTINCT a.id) AS assignment_count,
-               COUNT(DISTINCT sub.id) AS submitted_count,
-               AVG(CASE WHEN sub.score IS NOT NULL THEN sub.score END) AS average_score,
+               COALESCE(st.progress_score, 0) AS progress_score,
+               COALESCE(st.readiness_score, 0) AS readiness_score,
+               COALESCE(cert.certificate_count, 0) AS certificate_count,
+               COALESCE(mat.material_completed_count, 0) AS material_completed_count,
+               COALESCE(mat.material_active_seconds, 0) AS material_active_seconds,
+               COALESCE(tasks.assignment_count, 0) AS assignment_count,
+               COALESCE(tasks.submitted_count, 0) AS submitted_count,
+               tasks.average_score,
                COALESCE(bs.total_activity_count, 0) AS activity_count,
                COALESCE(bs.online_accumulated_seconds, 0) AS online_seconds,
                COALESCE(bs.focus_total_seconds, 0) AS focus_seconds,
                COALESCE(bs.last_page_key, '') AS last_page_key,
-               COALESCE(MAX(be.created_at), '') AS last_behavior_at,
-               COALESCE(SUM(CASE WHEN be.action_type = 'ai_question' THEN 1 ELSE 0 END), 0) AS ai_question_count
-        FROM students stu
-        JOIN class_offerings o ON (stu.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = stu.class_id))
-        JOIN courses c ON c.id = o.course_id
-        JOIN classes cl ON cl.id = o.class_id
-        JOIN teachers t ON t.id = o.teacher_id
-        LEFT JOIN academic_semesters s ON s.id = o.semester_id
-        LEFT JOIN learning_stage_status lss
-               ON lss.class_offering_id = o.id
-              AND lss.student_id = stu.id
-        LEFT JOIN learning_certificates lc
-               ON lc.class_offering_id = o.id
-              AND lc.student_id = stu.id
-        LEFT JOIN learning_material_progress lmp
-               ON lmp.class_offering_id = o.id
-              AND lmp.student_id = stu.id
-        LEFT JOIN assignments a
-               ON a.class_offering_id = o.id
-              AND a.status != 'new'
-              AND {personal_filter}
-        LEFT JOIN submissions sub
-               ON sub.assignment_id = a.id
-              AND sub.student_pk_id = stu.id
-              AND COALESCE(sub.is_absence_score, 0) = 0
-        LEFT JOIN classroom_behavior_states bs
-               ON bs.class_offering_id = o.id
-              AND bs.user_pk = stu.id
-              AND bs.user_role = 'student'
-        LEFT JOIN classroom_behavior_events be
-               ON be.class_offering_id = o.id
-              AND be.user_pk = stu.id
-              AND be.user_role = 'student'
-        WHERE stu.id = ?
-          AND COALESCE(stu.enrollment_status, 'active') = 'active'
-        GROUP BY o.id, c.name, c.sect_name, cl.name, s.name, s.start_date, o.semester, t.name,
-                 bs.total_activity_count, bs.online_accumulated_seconds,
-                 bs.focus_total_seconds, bs.last_page_key
-        ORDER BY CASE WHEN o.id = ? THEN 0 ELSE 1 END,
-                 COALESCE(s.start_date, o.first_class_date, o.created_at) DESC,
+               COALESCE(be.last_behavior_at, '') AS last_behavior_at,
+               COALESCE(be.ai_question_count, 0) AS ai_question_count
+        FROM enrolled_courses ec
+        JOIN courses c ON c.id = ec.course_id
+        JOIN classes cl ON cl.id = ec.class_id
+        JOIN teachers t ON t.id = ec.teacher_id
+        LEFT JOIN academic_semesters s ON s.id = ec.semester_id
+        LEFT JOIN stage_signals st ON st.student_id = ec.student_id AND st.class_offering_id = ec.class_offering_id
+        LEFT JOIN certificate_signals cert ON cert.student_id = ec.student_id AND cert.class_offering_id = ec.class_offering_id
+        LEFT JOIN material_signals mat ON mat.student_id = ec.student_id AND mat.class_offering_id = ec.class_offering_id
+        LEFT JOIN task_signals tasks ON tasks.student_id = ec.student_id AND tasks.class_offering_id = ec.class_offering_id
+        LEFT JOIN behavior_signals be ON be.student_id = ec.student_id AND be.class_offering_id = ec.class_offering_id
+        LEFT JOIN classroom_behavior_states bs ON bs.class_offering_id = ec.class_offering_id
+                                             AND bs.user_pk = ec.student_id AND bs.user_role = 'student'
+        ORDER BY CASE WHEN ec.class_offering_id = ? THEN 0 ELSE 1 END,
+                 COALESCE(s.start_date, ec.first_class_date, ec.created_at) DESC,
                  c.name
         """,
         (int(student_id), int(current_class_offering_id or 0)),

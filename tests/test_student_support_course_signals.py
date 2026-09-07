@@ -23,15 +23,15 @@ TABLES = {
     "assignments": "id INTEGER PRIMARY KEY, class_offering_id INTEGER, status TEXT",
     "learning_stage_exam_attempts": "assignment_id INTEGER",
     "submissions": "id INTEGER PRIMARY KEY, assignment_id INTEGER, student_pk_id INTEGER, is_absence_score INTEGER, score REAL",
-    "classroom_behavior_states": "class_offering_id INTEGER, user_pk INTEGER, user_role TEXT, total_activity_count INTEGER, online_accumulated_seconds INTEGER, focus_total_seconds INTEGER, last_page_key TEXT",
+    "classroom_behavior_states": "class_offering_id INTEGER, user_pk INTEGER, user_role TEXT, total_activity_count INTEGER, online_accumulated_seconds INTEGER, focus_total_seconds INTEGER, last_page_key TEXT, PRIMARY KEY (class_offering_id, user_pk, user_role)",
     "classroom_behavior_events": "class_offering_id INTEGER, user_pk INTEGER, user_role TEXT, created_at TEXT, action_type TEXT",
 }
 ROWS = {
-    "students": [(1, 1, "active"), (2, 1, "inactive")],
+    "students": [(1, 1, "active"), (2, 1, "inactive"), (3, 1, None)],
     "class_offerings": [(1, 1, 1, 1, 1, "old", None, "2026-01-01"),
                         (2, 1, 1, 1, 2, "new", None, "2026-01-01"),
                         (3, 2, 1, 1, None, "fallback", "2026-06-01", "2026-01-01")],
-    "class_offering_class_links": [(3, 1)],
+    "class_offering_class_links": [(3, 1), (1, 1)],
     "courses": [(1, "Synthetic course", "Synthetic section")],
     "classes": [(1, "Synthetic class A"), (2, "Synthetic class B")],
     "teachers": [(1, "Synthetic teacher")],
@@ -70,6 +70,45 @@ def assert_course_behavior(case, conn):
     current = _load_student_course_signal_rows(conn, 1, current_class_offering_id=1)
     case.assertEqual([1, 2, 3], [row["class_offering_id"] for row in current])
     case.assertEqual([], _load_student_course_signal_rows(conn, 2))
+    legacy_active = _load_student_course_signal_rows(conn, 3)
+    case.assertEqual([2, 3, 1], [row["class_offering_id"] for row in legacy_active])
+    case.assertTrue(all(row["average_score"] is None for row in legacy_active))
+
+
+def assert_independent_history_totals(case, conn):
+    additions = {
+        "assignments": [(5, 1, "published"), (6, 1, "published"), (7, 1, "published")],
+        "submissions": [(5, 5, 1, 0, 40), (6, 6, 1, 0, None), (7, 5, 2, 0, 100)],
+        "learning_stage_status": [(1, 1, 70, 65), (1, 1, 80, 60), (1, 2, 999, 999)],
+        "learning_certificates": [(10, 1, 1), (11, 1, 1), (12, 1, 2), (13, 2, 1)],
+        "learning_material_progress": [(1, 1, 1, 101, 120), (1, 1, 1, 102, 180),
+                                       (1, 1, 0, 103, 40), (1, 2, 1, 999, 9999), (2, 1, 1, 201, 50)],
+        "classroom_behavior_states": [(1, 1, "student", 13, 77, 33, "calendar"),
+                                      (1, 1, "teacher", 999, 999, 999, "teacher-page")],
+        "classroom_behavior_events": [(1, 1, "student", "2026-09-07T01:00:00", "ai_question"),
+                                      (1, 1, "student", "2026-09-07T01:01:00", "ai_question"),
+                                      (1, 1, "student", "2026-09-07T01:02:00", "page_view"),
+                                      (1, 1, "teacher", "2026-09-08T00:00:00", "ai_question"),
+                                      (1, 2, "student", "2026-09-09T00:00:00", "ai_question"),
+                                      (2, 1, "student", "2026-09-07T02:00:00", "ai_question")],
+    }
+    for table, rows in additions.items():
+        for row in rows:
+            conn.execute(f"INSERT INTO {table} VALUES ({','.join('?' for _ in row)})", row)
+    rows = _load_student_course_signal_rows(conn, 1)
+    case.assertEqual([2, 3, 1], [row["class_offering_id"] for row in rows])
+    by_id = {row["class_offering_id"]: row for row in rows}
+    expected = {"progress_score": 80, "readiness_score": 65, "certificate_count": 2,
+                "material_completed_count": 2, "material_active_seconds": 340,
+                "assignment_count": 4, "submitted_count": 3, "average_score": 60,
+                "activity_count": 13, "online_seconds": 77, "focus_seconds": 33,
+                "last_page_key": "calendar", "last_behavior_at": "2026-09-07T01:02:00", "ai_question_count": 2}
+    for field, value in expected.items():
+        case.assertEqual(value, by_id[1][field], field)
+    case.assertEqual((1, 50, 1, 0), (by_id[2]["certificate_count"], by_id[2]["material_active_seconds"],
+                                   by_id[2]["ai_question_count"], by_id[2]["average_score"]))
+    case.assertEqual((0, 0, 0, None), (by_id[3]["certificate_count"], by_id[3]["material_active_seconds"],
+                                      by_id[3]["ai_question_count"], by_id[3]["average_score"]))
 
 
 class StudentSupportCourseSignalsSQLiteTests(unittest.TestCase):
@@ -78,13 +117,13 @@ class StudentSupportCourseSignalsSQLiteTests(unittest.TestCase):
             conn.row_factory = sqlite3.Row
             create_fixture(conn)
             assert_course_behavior(self, conn)
+            assert_independent_history_totals(self, conn)
 
 
 @unittest.skipUnless(os.environ.get("ASSESSMENT_REHEARSAL_TEST_CLUSTER") and os.environ.get("ASSESSMENT_REHEARSAL_TEST_PORT"),
                      "Requires an explicit dedicated PostgreSQL rehearsal cluster")
 class StudentSupportCourseSignalsPostgreSQLTests(unittest.TestCase):
-    def test_native_grouping_error_reproduced_and_corrected_query_preserves_behavior(self):
-        import psycopg
+    def test_native_aggregates_preserve_order_filters_and_independent_history_totals(self):
         from psycopg.rows import dict_row
         from tools.assessment_postgres_rehearsal import connect_offline
 
@@ -95,16 +134,8 @@ class StudentSupportCourseSignalsPostgreSQLTests(unittest.TestCase):
             conn = PostgreSQLConnection(raw)
             create_fixture(conn)
 
-            class OldGroupingConnection(PostgreSQLConnection):
-                def execute(self, sql, params=()):
-                    old = sql.replace("s.name, s.start_date, o.semester", "s.name, o.semester")
-                    return super().execute(old, params)
-
-            with self.assertRaises(psycopg.errors.GroupingError) as caught:
-                with raw.transaction():
-                    _load_student_course_signal_rows(OldGroupingConnection(raw), 1)
-            self.assertEqual("42803", caught.exception.sqlstate)
             assert_course_behavior(self, conn)
+            assert_independent_history_totals(self, conn)
             raw.rollback()
 
 
