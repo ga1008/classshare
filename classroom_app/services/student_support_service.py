@@ -238,7 +238,7 @@ def _load_student_course_signal_rows(conn, student_id: int, *, current_class_off
               AND be.user_role = 'student'
         WHERE stu.id = ?
           AND COALESCE(stu.enrollment_status, 'active') = 'active'
-        GROUP BY o.id, c.name, c.sect_name, cl.name, s.name, o.semester, t.name,
+        GROUP BY o.id, c.name, c.sect_name, cl.name, s.name, s.start_date, o.semester, t.name,
                  bs.total_activity_count, bs.online_accumulated_seconds,
                  bs.focus_total_seconds, bs.last_page_key
         ORDER BY CASE WHEN o.id = ? THEN 0 ELSE 1 END,
