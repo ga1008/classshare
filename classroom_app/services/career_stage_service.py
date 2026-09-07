@@ -1,6 +1,6 @@
-"""Shared, maintained role examples for the four career graph positions.
+"""Shared role examples and planning times for the four career graph columns.
 
-Graph positions describe increasing responsibility, not promised promotion dates.
+Graduation anchors the common planning axis, not a promised promotion schedule.
 The resolver is pure and never changes direction identities or persisted graphs.
 """
 from __future__ import annotations
@@ -10,6 +10,35 @@ import unicodedata
 from typing import Any
 
 PHASES = ("探索阶段", "入门阶段", "发展阶段", "进阶阶段")
+
+# A platform-maintained planning scale shared by every direction. These bounds
+# are illustrative, not labor-market statistics or profession-specific rules.
+_TIME_RANGES = ((0, 2), (2, 5), (5, 10), (10, None))
+
+
+def build_career_time_axis() -> dict[str, Any]:
+    """Return a fresh graduation-relative time axis for all four stage columns.
+
+    Keep time separate from ``tl`` so old graphs retain their role/duty contract.
+    A graph-wide axis also keeps cross-direction links on the same time scale.
+    """
+    columns = []
+    for stage, (phase, (years_min, years_max)) in enumerate(zip(PHASES, _TIME_RANGES)):
+        span = f"{years_min} 年以上" if years_max is None else f"{years_min}–{years_max} 年"
+        columns.append({
+            "stage": stage,
+            "phase": phase,
+            "years_min": years_min,
+            "years_max": years_max,
+            "label": f"毕业后约 {span}",
+        })
+    return {
+        "basis": "graduation",
+        "label": "毕业后参考年限",
+        "note": "年限用于规划参考，不承诺按时晋升；进修、转行及执业资格路径的实际用时可能不同。",
+        "columns": columns,
+    }
+
 
 # Each row is one coherent example path. Adjacent graph links still represent
 # alternatives; a technical path does not automatically turn into management.

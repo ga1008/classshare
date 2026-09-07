@@ -11,7 +11,7 @@ from classroom_app.services import career_lifecycle_service as lifecycle
 from classroom_app.services import career_path_service as career
 from classroom_app.services import career_public_view_service as public
 from classroom_app.services.career_recommendation_service import baseline_network
-from classroom_app.services.career_stage_service import PHASES
+from classroom_app.services.career_stage_service import PHASES, build_career_time_axis
 from tests.test_career_lifecycle import fixture, answers_for
 
 LEGACY_STAGES = tuple(zip(PHASES, ("了解与观察", "实践与证据", "独立承担任务", "专长与协作"),
@@ -35,6 +35,27 @@ def legacy_graph():
 
 
 class CareerPublicProjectionTests(unittest.TestCase):
+    def test_projection_owns_shared_time_axis_and_discards_historical_ai_estimates(self):
+        expected = build_career_time_axis()
+        for historical_axis in (None, "三年晋升经理", {
+            "basis": "employment", "note": "年薪60万",
+            "columns": [{"stage": 0, "years_min": 99, "years_max": 100}],
+        }):
+            with self.subTest(historical_axis=historical_axis):
+                raw = legacy_graph()
+                raw["time_axis"] = historical_axis
+                before = copy.deepcopy(raw)
+                projected = public.project_network_for_public(raw)
+                self.assertEqual(raw, before)
+                self.assertEqual(projected["time_axis"], expected)
+                self.assertEqual(projected["public_view_version"], "career-public-view-v3")
+                self.assertEqual(public.project_network_for_public(projected), projected)
+                self.assertEqual(projected["links"], raw["links"])
+                self.assertTrue(all([row[0] for row in node["tl"]] == list(PHASES)
+                                    for node in projected["nodes"]))
+                projected["time_axis"]["columns"][0]["years_min"] = 99
+                self.assertEqual(public.project_network_for_public(raw)["time_axis"], expected)
+
     def test_saved_generic_stages_recover_positions_without_changing_graph_identity(self):
         raw = career._seed_network_for("软件工程")
         for node in raw["nodes"]:
@@ -123,6 +144,7 @@ class CareerHistoricalViewTests(unittest.TestCase):
             self.assertEqual(state["network"]["nodes"][0]["direction_id"],first["direction_id"])
             self.assertNotIn("60万",json.dumps(state,ensure_ascii=False))
             self.assertNotIn("了解与观察",json.dumps(state["network"],ensure_ascii=False))
+            self.assertEqual(state["network"]["time_axis"], build_career_time_axis())
             self.assertEqual(self.conn.total_changes, changes)
         untouched=self.conn.execute("SELECT network_json,sources_json FROM career_major_networks").fetchone()
         self.assertEqual(tuple(untouched),(stored,sources))
@@ -130,11 +152,12 @@ class CareerHistoricalViewTests(unittest.TestCase):
         restored=career.build_state(self.conn,1)
         self.assertEqual(restored["feedback_by_tag"][first["tag"]],"saved")
         self.assertEqual(restored["network"]["links"],raw["links"])
+        self.assertEqual(restored["network"]["time_axis"], build_career_time_axis())
         self.assertNotIn("60万",json.dumps(restored,ensure_ascii=False))
         self.assertEqual(self.conn.execute("SELECT network_json FROM career_network_versions WHERE revision=1").fetchone()[0],stored)
 
     def test_public_view_version_invalidates_tokens_and_old_ai_without_get_writes(self):
-        with patch.object(lifecycle,"PUBLIC_VIEW_VERSION","legacy-view"):
+        with patch.object(lifecycle,"PUBLIC_VIEW_VERSION","career-public-view-v2"):
             self.submit()
             career.career_job_command(self.conn,1,target="personalization",action="retry")
             job=dict(self.conn.execute("SELECT * FROM ai_jobs WHERE task_type=?",(career.PERSONALIZE_TASK_KIND,)).fetchone())
@@ -144,6 +167,7 @@ class CareerHistoricalViewTests(unittest.TestCase):
         state=career.build_state(self.conn,1,known_result_version=old["result_version"])
         self.assertFalse(state.get("network_unchanged",False))
         self.assertNotEqual(state["result_version"],old["result_version"])
+        self.assertEqual(state["network"]["time_axis"], build_career_time_axis())
         self.assertEqual(state["recommendation_source"],"baseline")
         self.assertTrue(state["needs_refresh"])
         self.assertNotIn("60万",json.dumps(state,ensure_ascii=False))

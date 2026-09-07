@@ -61,6 +61,177 @@ function questions(mode) {
   return { mode, quiz_version: 'career-v1', questions: [1, 2, 3].map(id => ({ id: 'q' + id, title: '问题 ' + id,
     kind: 'single', options: [{ value: 'one', label: '选项一' }, { value: 'two', label: '选项二' }] })) };
 }
+function timedCareerState(timeline = {}) {
+  const phases = ['探索阶段', '入门阶段', '发展阶段', '进阶阶段'];
+  const ranges = [[0, 2], [2, 5], [5, 10], [10, null]];
+  const timeAxis = { basis: 'graduation', label: '毕业后参考年限',
+    note: '年限用于规划参考，不承诺按时晋升；进修、转行及执业资格路径的实际用时可能不同。',
+    columns: ranges.map(([min, max], stage) => ({ stage, phase: phases[stage], years_min: min, years_max: max,
+      label: `毕业后约 ${min}${max === null ? ' 年以上' : '–' + max + ' 年'}` })) };
+  const node = (tag, name, roles) => ({ tag, cat: 'engineering', name, rec: 4,
+    tl: roles.map((role, stage) => [phases[stage], role, '积累对应岗位的实践经验。']) });
+  return careerState({ phase: 'ready', session_status: 'ready', timeline,
+    feedback_by_tag: { backend: 'saved' },
+    network: { time_axis: timeAxis, cats: [{ id: 'engineering', name: '研发与工程', c1: '#63cbff' }],
+      nodes: [node('backend', '后端开发工程师', ['初级后端开发工程师', '后端开发工程师', '高级后端开发工程师', '资深后端开发工程师']),
+        node('testing', '测试开发工程师', ['初级测试开发工程师', '测试开发工程师', '高级测试开发工程师', '资深测试开发工程师'])],
+      // A career change can point into an earlier reference window; it is not time travel.
+      links: [['backend', 2, 'testing', 1]] } });
+}
+
+test('career time axis is shared by both axes, selected details, tooltip, accessible names and filtered list paths', async () => {
+  const current = timedCareerState({ years_to_graduation: 2, months_to_graduation: 24,
+    graduation_year: 2028, graduation_date_label: '2028 年 6 月', already_graduated: false });
+  const labels = current.network.time_axis.columns.map(column => column.label);
+  const env = await open('career', async url => url.endsWith('/initialize') ? current : {}, { width: 1920, height: 1080 });
+  try {
+    await env.page.getByRole('button', { name: '网络图', exact: true }).click();
+    assert.deepEqual((await env.page.locator('.cn-axislab').allTextContents()).slice(0, 4), labels);
+    assert.deepEqual(await env.page.locator('.cn-axissub').allTextContents(), labels);
+    assert.match(await env.page.locator('#career-legend').textContent(), /转向关系，不表示时间先后/);
+    assert.match(await env.page.locator('#career-legend').textContent(), /不承诺按时晋升/);
+    assert.equal(await env.page.locator('.cn-edge.cross[data-from="backend-2"][data-to="testing-1"]').count(), 1);
+
+    await env.page.locator('.cn-node[data-id="backend-0"] .cn-core').click();
+    assert.match(await env.page.locator('.career-stage-time').textContent(), /毕业后约 0–2 年\s*距现在约 2–4 年/);
+    assert.deepEqual(await env.page.locator('.career-tl__phase').allTextContents(), labels);
+    assert.match(await env.page.locator('.career-tl__time').nth(2).textContent(), /距现在约 7–12 年/);
+
+    const senior = env.page.locator('.cn-node[data-id="backend-2"]');
+    await senior.locator('.cn-core').hover();
+    await env.page.locator('#career-tip.show').waitFor();
+    assert.match(await env.page.locator('#career-tip .cn-ttime').textContent(), /毕业后约 5–10 年\s*距现在约 7–12 年/);
+    assert.match(await senior.getAttribute('aria-label'), /高级后端开发工程师 · 毕业后约 5–10 年/);
+    await senior.focus(); await env.page.keyboard.press('Enter');
+    assert.match(await env.page.locator('.career-stage-time').textContent(), /毕业后约 5–10 年\s*距现在约 7–12 年/);
+    assert.equal(await env.page.locator('.cn-node.is-selected').getAttribute('data-id'), 'backend-2');
+    await env.page.mouse.move(20, 60);
+    await capture(env.page, 'career-time-selected-senior');
+    await env.page.keyboard.press('Escape');
+
+    // Filtering reconstructs graph data, while list details have no selected graph node.
+    await env.page.locator('#career-direction-filter').selectOption('saved');
+    assert.equal(await env.page.locator('.career-direction').count(), 1);
+    await env.page.getByRole('button', { name: '网络图', exact: true }).click();
+    assert.equal(await env.page.locator('.cn-node[data-tag]').count(), 4);
+    assert.deepEqual(await env.page.locator('.cn-axissub').allTextContents(), labels);
+    await env.page.getByRole('button', { name: '方向列表', exact: true }).click();
+    await env.page.getByRole('button', { name: '查看路径与准备清单', exact: true }).click();
+    assert.deepEqual(await env.page.locator('.career-tl__phase').allTextContents(), labels);
+    assert.match(await env.page.locator('.career-tl__time').first().textContent(), /距现在约 2–4 年/);
+    assert.match(await env.page.locator('.career-tl__time').nth(2).textContent(), /距现在约 7–12 年/);
+    assert.deepEqual(env.errors, []);
+  } finally { await env.context.close(); }
+});
+
+test('career time axis without graduation data retains reference ranges and asks for confirmation without inventing calendar years', async () => {
+  const current = timedCareerState();
+  const env = await open('career', async url => url.endsWith('/initialize') ? current : {});
+  try {
+    await env.page.getByRole('button', { name: '网络图', exact: true }).click();
+    assert.match(await env.page.locator('.cn-studylab').textContent(), /毕业时间待确认/);
+    assert.deepEqual(await env.page.locator('.cn-axissub').allTextContents(), current.network.time_axis.columns.map(column => column.label));
+    await env.page.locator('.cn-node[data-id="backend-0"] .cn-core').click();
+    assert.match(await env.page.locator('.career-stage-time').textContent(), /确认毕业年份后，可换算距现在的参考时间/);
+    assert.doesNotMatch(await env.page.locator('.career-stage-time').textContent(), /距现在约|20\d{2}/);
+    assert.equal(await env.page.locator('.career-tl__time').count(), 4);
+    for (const text of await env.page.locator('.career-tl__time').allTextContents()) {
+      assert.match(text, /确认毕业年份后/);
+      assert.doesNotMatch(text, /距现在约|20\d{2}/);
+    }
+    await env.page.mouse.move(20, 60);
+    await capture(env.page, 'career-time-graduation-unknown');
+    assert.deepEqual(env.errors, []);
+  } finally { await env.context.close(); }
+});
+
+test('career time axis keeps alumni graduation at zero and positions now within the elapsed window without awarding a job title', async () => {
+  const current = timedCareerState({ years_to_graduation: -3, months_to_graduation: -36,
+    graduation_year: 2023, graduation_date_label: '2023 年 6 月', already_graduated: true });
+  const env = await open('career', async url => url.endsWith('/initialize') ? current : {}, { width: 1920, height: 1080 });
+  try {
+    await env.page.getByRole('button', { name: '网络图', exact: true }).click();
+    assert.doesNotMatch(await env.page.locator('#career-topbar-meta').textContent(), /即将毕业/);
+    assert.match(await env.page.locator('#career-topbar-meta').textContent(), /毕业后约 3 年/);
+    assert.equal(await env.page.locator('.cn-axisgrad').textContent(), '毕业');
+    assert.match(await env.page.locator('.cn-axisnow').textContent(), /现在 · 毕业后约 3 年/);
+    assert.equal(await env.page.locator('.cn-studyline').count(), 0);
+    const coordinates = await env.page.evaluate(() => ({
+      now: +document.querySelector('.cn-time-now').getAttribute('cx'),
+      graduation: +document.querySelector('.cn-node[data-id="origin"] .cn-core').getAttribute('cx'),
+      stages: Array.from(document.querySelectorAll('.cn-node[data-tag="backend"] .cn-core')).map(node => +node.getAttribute('cx'))
+    }));
+    assert.ok(coordinates.now > coordinates.graduation, JSON.stringify(coordinates));
+    assert.ok(coordinates.now > (coordinates.stages[0] + coordinates.stages[1]) / 2 &&
+      coordinates.now < (coordinates.stages[1] + coordinates.stages[2]) / 2, JSON.stringify(coordinates));
+    assert.equal(await env.page.locator('.cn-node.is-selected').count(), 0);
+    await env.page.locator('.cn-time-now').hover();
+    await env.page.locator('#career-tip.show').waitFor();
+    assert.match(await env.page.locator('#career-tip').textContent(), /不代表你已经达到这一列的职位/);
+    await env.page.mouse.move(20, 60);
+    await capture(env.page, 'career-time-alumni-overview');
+    await env.page.locator('.cn-node[data-id="backend-1"] .cn-core').click();
+    assert.match(await env.page.locator('.career-stage-time').textContent(), /现在处于这一参考时段；不代表已达到该职位/);
+    assert.match(await env.page.locator('.career-tl__time').first().textContent(), /这一参考时段已过/);
+    assert.match(await env.page.locator('.career-tl__time').nth(2).textContent(), /距现在约 2–7 年/);
+    assert.deepEqual(env.errors, []);
+  } finally { await env.context.close(); }
+});
+
+test('career time axis keeps near-graduation now and graduation visually separate', async () => {
+  const current = timedCareerState({ years_to_graduation: 0.1, months_to_graduation: 1, already_graduated: false });
+  const env = await open('career', async url => url.endsWith('/initialize') ? current : {});
+  try {
+    await env.page.getByRole('button', { name: '网络图', exact: true }).click();
+    assert.equal(await env.page.locator('.cn-node[data-id="now"]').count(), 1);
+    assert.equal(await env.page.locator('.cn-node[data-id="origin"]').count(), 1);
+    assert.equal(await env.page.locator('.cn-time-now').count(), 0);
+    const now = await env.page.locator('.cn-axisnow').boundingBox();
+    const graduation = await env.page.locator('.cn-axisgrad').boundingBox();
+    assert.ok(now.x + now.width < graduation.x, JSON.stringify({ now, graduation }));
+    assert.equal(await env.page.locator('.cn-studylab').textContent(), '在校约 1 个月');
+    await env.page.locator('.cn-node[data-id="backend-0"] .cn-core').click();
+    assert.match(await env.page.locator('.career-stage-time').textContent(), /距现在约 0\.1–2\.1 年/);
+    current.timeline.years_to_graduation = 0;
+    current.timeline.months_to_graduation = 0;
+    await env.page.reload();
+    await env.page.getByRole('button', { name: '网络图', exact: true }).click();
+    assert.equal(await env.page.locator('.cn-studylab').textContent(), '即将毕业');
+    await env.page.locator('.cn-node[data-id="now"] .cn-core').hover();
+    assert.match(await env.page.locator('#career-tip').textContent(), /即将毕业/);
+    assert.doesNotMatch(await env.page.locator('#career-tip').textContent(), /毕业时间待确认/);
+    assert.deepEqual(env.errors, []);
+  } finally { await env.context.close(); }
+});
+
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 1280, height: 900 }]) {
+  test(`career time axis labels do not overlap adjacent columns or the future arrow at ${viewport.width}px`, async () => {
+    const current = timedCareerState({ years_to_graduation: 2, months_to_graduation: 24 });
+    const env = await open('career', async url => url.endsWith('/initialize') ? current : {}, viewport);
+    try {
+      await env.page.getByRole('button', { name: '网络图', exact: true }).click();
+      const bounds = await env.page.evaluate(() => {
+        function rect(node) { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }
+        return { top: Array.from(document.querySelectorAll('.cn-axislab')).slice(0, 4).map(rect),
+          bottom: Array.from(document.querySelectorAll('.cn-axissub')).map(rect),
+          future: rect(document.querySelectorAll('.cn-axislab')[4]) };
+      });
+      for (const row of [bounds.top, bounds.bottom]) {
+        assert.equal(row.length, 4);
+        for (let i = 0; i < row.length; i++) {
+          assert.ok(row[i].left >= 0 && row[i].right <= viewport.width, JSON.stringify({ bounds, viewport }));
+          if (i) assert.ok(row[i - 1].right < row[i].left, JSON.stringify({ bounds, viewport }));
+        }
+      }
+      const last = bounds.bottom[3], future = bounds.future;
+      assert.ok(last.right <= future.left || last.bottom <= future.top || future.bottom <= last.top,
+        JSON.stringify({ last, future, viewport }));
+      await capture(env.page, 'career-time-overview-' + viewport.width);
+      assert.deepEqual(env.errors, []);
+    } finally { await env.context.close(); }
+  });
+}
+
 test('cold major is nonblocking; double click cannot skip; quiz saves in revision order', async () => {
   let current = careerState({ tasks: { network: { id: 1, status: 'queued', phase_label: '等待处理', can_cancel: false } } });
   const writes = [];

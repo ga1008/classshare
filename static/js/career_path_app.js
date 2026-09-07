@@ -467,9 +467,11 @@
     if (s.major && s.major.name) parts.push('<span class="pill">' + esc(s.major.name) + '</span>');
     if (s.student && s.student.class_name) parts.push('<span class="pill">' + esc(s.student.class_name) + '</span>');
     if (tl.graduation_date_label) {
-      var left = (tl.years_to_graduation != null && tl.years_to_graduation > 0)
+      var graduated = tl.already_graduated || tl.years_to_graduation < 0;
+      var left = graduated ? ('毕业后约 ' + Math.abs(tl.years_to_graduation || 0) + ' 年')
+        : (tl.years_to_graduation != null && tl.years_to_graduation > 0)
         ? ('还有约 ' + tl.years_to_graduation + ' 年毕业') : '即将毕业';
-      parts.push('<span class="pill">预计 ' + esc(tl.graduation_date_label) + ' 毕业 · ' + left + '</span>');
+      parts.push('<span class="pill">' + (graduated ? '学籍预计毕业时间：' : '预计 ') + esc(tl.graduation_date_label) + (graduated ? ' · ' : ' 毕业 · ') + esc(left) + '</span>');
     }
     el.topbarMeta.innerHTML = parts.join('');
   }
@@ -537,7 +539,7 @@
     show(document.getElementById('career-scroll'), viewMode === 'network');
     show(el.legend, viewMode === 'network');
     if (viewMode === 'network' && net && STATE) {
-      net.setData({ cats: (STATE.network || {}).cats || [], nodes: visibleNodes, links: (STATE.network || {}).links || [] }, STATE.personalized || {});
+      net.setData(Object.assign({}, STATE.network || {}, { nodes: visibleNodes }), STATE.personalized || {});
       net.fitAll(false);
     }
   }
@@ -694,9 +696,11 @@
       '<span class="it"><span class="dot d5"></span>★★★★★ 最推荐（最亮·闪烁）</span>',
       '<span class="it"><span class="dot d4"></span>★★★★ 推荐</span>',
       '<span class="it"><span class="dot d3"></span>★★★ 可选（较暗）</span>',
-      '<span class="it"><span class="dx"></span>紫色虚线＝可转向的分叉路径</span>',
+      '<span class="it"><span class="dx"></span>紫色虚线＝转向关系，不表示时间先后</span>',
       '<span class="it hint">💡 点击节点：高亮成长路径并展开定制详情 · 点击空白复位</span>'
     ];
+    var axis = s.network && s.network.time_axis;
+    if (axis && axis.note) items.push('<span class="it hint career-time-note">' + esc(axis.label) + ' · ' + esc(axis.note) + '</span>');
     el.legend.innerHTML = items.join('');
   }
 
@@ -726,8 +730,10 @@
     h += '</div><div class="career-detail__body">';
 
     if (stageNode && (stageNode.phase || stageNode.role)) {
+      var selectedTime = window.CareerNetwork.timeForStage((s.network || {}).time_axis, s.timeline, stageNode.stage);
       h += sec('当前节点的职位', '<div class="career-stage-node"><b>' + esc(stageNode.phase || '成长阶段') + '</b>　'
         + esc(stageNode.role || data.name)
+        + (selectedTime.label ? '<div class="career-stage-time"><strong>' + esc(selectedTime.label) + '</strong><span>' + esc(selectedTime.from_now) + '</span></div>' : '')
         + (stageNode.sdesc && stageNode.sdesc !== '—' ? '<br>' + esc(stageNode.sdesc) : '') + '</div>');
     }
     if (data.tip) h += sec('为你定制的建议', '<div class="career-tip">' + esc(data.tip) + '</div>');
@@ -743,7 +749,10 @@
     if (data.reason) h += sec('为什么推荐 / 适合谁', '<p>' + esc(data.reason) + '</p>');
     if (data.pre && data.pre.length) h += sec('必备前提条件', pills(data.pre));
     if (data.know && data.know.length) h += sec('知识 / 经验储备', pills(data.know));
-    if (data.tl && data.tl.length) h += sec('成长阶段线　现在 → 未来', timeline(data.tl));
+    if (data.tl && data.tl.length) {
+      var axis = (s.network || {}).time_axis;
+      h += sec('职业发展时间线　毕业 → 未来', (axis && axis.note ? '<p class="career-time-note">' + esc(axis.note) + '</p>' : '') + timeline(data.tl, s));
+    }
     if (data.branch) h += sec('发展选项 / 可转向', '<div class="career-branch"><b>分叉路径</b>　' + esc(data.branch) + '</div>');
     if (data.trend) h += sec('未来趋势 · 将来会怎样', '<p>' + esc(data.trend) + '</p>');
     h += '</div>';
@@ -766,10 +775,12 @@
   function pills(arr) {
     return '<div class="career-pills">' + arr.map(function (x) { return '<span class="career-pill">' + esc(x) + '</span>'; }).join('') + '</div>';
   }
-  function timeline(tl) {
-    return '<div class="career-tl">' + tl.map(function (t) {
+  function timeline(tl, state) {
+    return '<div class="career-tl">' + tl.map(function (t, index) {
+      var time = window.CareerNetwork.timeForStage((state.network || {}).time_axis, state.timeline, index);
       var desc = (t[2] && t[2] !== '—') ? '<div class="career-tl__desc">' + esc(t[2]) + '</div>' : '';
-      return '<div class="career-tl__item"><div class="career-tl__phase">' + esc(t[0]) + '</div>'
+      return '<div class="career-tl__item"><div class="career-tl__phase">' + esc(time.label || t[0]) + '</div>'
+        + (time.label ? '<div class="career-tl__time">' + esc(t[0]) + ' · ' + esc(time.from_now) + '</div>' : '')
         + '<div class="career-tl__role">' + esc(t[1]) + '</div>' + desc + '</div>';
     }).join('') + '</div>';
   }

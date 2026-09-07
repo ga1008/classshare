@@ -2,12 +2,40 @@
 import copy
 import unittest
 
-from classroom_app.services.career_stage_service import PHASES, ROLE_PATHS, build_career_stages, is_role_title
+from classroom_app.services.career_stage_service import (
+    PHASES, ROLE_PATHS, build_career_stages, build_career_time_axis, is_role_title,
+)
 from classroom_app.services.career_seed_data import SE_NODES
 from classroom_app.services.career_recommendation_service import FAMILY_DIRECTIONS
 
 
 class CareerStageTests(unittest.TestCase):
+    def test_time_axis_has_ordered_graduation_relative_ranges_for_all_columns(self):
+        axis = build_career_time_axis()
+        self.assertEqual(axis["basis"], "graduation")
+        self.assertEqual(axis["label"], "毕业后参考年限")
+        self.assertIn("规划参考", axis["note"])
+        self.assertIn("进修、转行及执业资格", axis["note"])
+        self.assertEqual([column["stage"] for column in axis["columns"]], list(range(4)))
+        self.assertEqual([column["phase"] for column in axis["columns"]], list(PHASES))
+        self.assertEqual([(column["years_min"], column["years_max"]) for column in axis["columns"]],
+                         [(0, 2), (2, 5), (5, 10), (10, None)])
+        self.assertEqual([column["label"] for column in axis["columns"]],
+                         ["毕业后约 0–2 年", "毕业后约 2–5 年", "毕业后约 5–10 年", "毕业后约 10 年以上"])
+        for node in SE_NODES:
+            self.assertEqual([row[0] for row in build_career_stages(node)],
+                             [column["phase"] for column in axis["columns"]])
+
+    def test_time_axis_returns_independent_nested_objects(self):
+        first = build_career_time_axis()
+        expected = copy.deepcopy(first)
+        second = build_career_time_axis()
+        first["columns"][0]["years_min"] = 99
+        first["columns"][1]["label"] = "untrusted estimate"
+        first["columns"].append({"stage": 4})
+        self.assertEqual(second, expected)
+        self.assertEqual(build_career_time_axis(), expected)
+
     def test_all_maintained_directions_have_complete_occupation_paths(self):
         names = [node["name"] for node in SE_NODES]
         names += [entry[0] for family in FAMILY_DIRECTIONS.values() for entry in family]

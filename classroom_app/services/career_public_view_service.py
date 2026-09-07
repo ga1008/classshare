@@ -11,9 +11,9 @@ import re
 from functools import lru_cache
 from typing import Any
 
-from .career_stage_service import build_career_stages
+from .career_stage_service import build_career_stages, build_career_time_axis
 
-PUBLIC_VIEW_VERSION = "career-public-view-v2"
+PUBLIC_VIEW_VERSION = "career-public-view-v3"
 MARKET_NOTE = "这是职业探索方向。当前薪酬、招聘需求和录用条件须以有来源、仍有效的具体岗位公告为准。"
 EXPLORATION_REASON = "结合明确的职业兴趣与已有实践证据，选择下一项可验证的学习或体验任务。"
 # This detector is only for discrete preparation/advice entries. Public market,
@@ -46,7 +46,8 @@ def project_network_for_public(network: dict[str, Any]) -> dict[str, Any]:
     public = copy.deepcopy(network)
     public.update(public_view_version=PUBLIC_VIEW_VERSION, market_data_verified=False,
                   content_kind="career_exploration",
-                  intro="沿路径查看各阶段的参考职位与职责，了解发展方向和准备重点。职位序列不承诺晋升年限；不同单位的职级、学历、经验与执业资格要求须核对实际岗位公告。")
+                  time_axis=build_career_time_axis(),
+                  intro="横轴以毕业为起点，显示各列的参考年限；沿路径查看相应职位与职责，规划准备重点。年限为规划参考，不承诺按时晋升；进修、转行及执业资格路径用时可能不同，具体条件须核对实际岗位公告。")
     public["graduate_label"] = str(public.get("major_name") or "专业") + "职业探索"
     for category in public.get("cats", []):
         category["desc"] = "结合实际职责、准备要求和个人实践了解这一组方向。"

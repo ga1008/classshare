@@ -73,6 +73,10 @@
 .cn-axislab{font-size:12.5px; font-weight:700; fill:var(--accent)}
 .cn-axisnow{font-size:13px; font-weight:800; fill:var(--gold)}
 .cn-axissub{font-size:12px; fill:var(--dim)}
+.cn-ttime{margin:6px 0; color:#bdf0ff; line-height:1.5}
+.career-stage-time{margin-top:10px; display:grid; gap:4px; color:#bdf0ff}
+.career-stage-time span,.career-tl__time,.career-time-note{font-size:12px; line-height:1.6; color:var(--dim)}
+.career-tl__time{margin:3px 0 5px}
 .cn-origin-t{font-size:12px; font-weight:800; fill:#fde68a}
 .cn-origin-s{font-size:11px; fill:var(--dim)}
 .cn-now-t{font-size:11.5px; font-weight:800; fill:#bdf0ff}

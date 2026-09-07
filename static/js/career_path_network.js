@@ -29,6 +29,31 @@
   }
   function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
   function stars(r) { r = clamp(r | 0, 0, 5); return '★★★★★'.slice(0, r) + '☆☆☆☆☆'.slice(0, 5 - r); }
+  function timeAxisOf(axis) {
+    if (!axis || axis.basis !== 'graduation' || !Array.isArray(axis.columns) || axis.columns.length !== MAX_STAGES) return null;
+    var valid = axis.columns.every(function (col, i) {
+      return col && col.stage === i && typeof col.label === 'string' && col.label.length <= 80
+        && typeof col.years_min === 'number' && isFinite(col.years_min) && col.years_min >= 0
+        && (i === 0 ? col.years_min === 0 : col.years_min === axis.columns[i - 1].years_max)
+        && (i === MAX_STAGES - 1 ? col.years_max === null
+          : typeof col.years_max === 'number' && isFinite(col.years_max) && col.years_max > col.years_min);
+    });
+    return valid ? axis : null;
+  }
+  function yearText(years) { return String(Math.round(Math.max(0, years) * 10) / 10); }
+  function stageTime(axis, timeline, index) {
+    axis = timeAxisOf(axis);
+    var col = axis && axis.columns[index];
+    if (!col) return { label: '', from_now: '' };
+    var ytg = timeline && timeline.years_to_graduation;
+    if (typeof ytg !== 'number' || !isFinite(ytg)) return { label: col.label, from_now: '确认毕业年份后，可换算距现在的参考时间。' };
+    var low = ytg + col.years_min, high = col.years_max === null ? null : ytg + col.years_max;
+    var relative;
+    if (high !== null && high <= 0) relative = '按毕业时间，这一参考时段已过。';
+    else if (low <= 0 && (ytg < 0 || timeline.already_graduated)) relative = '按毕业时间，现在处于这一参考时段；不代表已达到该职位。';
+    else relative = '距现在约 ' + yearText(low) + (high === null ? ' 年以上' : '–' + yearText(high) + ' 年');
+    return { label: col.label, from_now: relative };
+  }
 
   function CareerNetwork(container, opts) {
     this.container = typeof container === 'string' ? document.getElementById(container) : container;
@@ -69,7 +94,8 @@
       }).slice(0, 160).map(function (node) { return Object.assign({}, node, {
         tag: String(node.tag), cat: String(node.cat), tl: (Array.isArray(node.tl) ? node.tl : []).filter(Array.isArray).slice(0, 4)
       }); }),
-      links: (Array.isArray(network.links) ? network.links : []).slice(0, 640)
+      links: (Array.isArray(network.links) ? network.links : []).slice(0, 640),
+      time_axis: timeAxisOf(network.time_axis)
     };
     this.personalized = personalized || {};
     this._index();
@@ -84,11 +110,7 @@
     this.selectedId = id;
     this._applySelection(id);
     this._fitSelection(id, animate !== false);
-    var st = this._stagesOf(ns.node)[0] || [];
-    this.onSelect(ns.node, {
-      phase: st[0] || '', role: st[1] || ns.node.name,
-      sdesc: st[2] || '', stage: 0
-    });
+    this.onSelect(ns.node, this._stageInfo(ns.node, 0));
     return true;
   };
 
@@ -115,6 +137,14 @@
     return tl.slice(0, MAX_STAGES);
   };
 
+  CareerNetwork.timeForStage = stageTime;
+  CareerNetwork.prototype._stageInfo = function (node, index) {
+    var stage = this._stagesOf(node)[index] || [];
+    var time = stageTime(this.network.time_axis, this.opts.timeline, index);
+    return { phase: stage[0] || '', role: stage[1] || node.name, sdesc: stage[2] || '',
+      stage: index, time_label: time.label, time_from_now: time.from_now };
+  };
+
   CareerNetwork.prototype._catMeta = function () {
     var cats = (this.network.cats || []).slice();
     var seen = Object.create(null);
@@ -126,6 +156,7 @@
   };
 
   CareerNetwork.prototype._columnLabels = function () {
+    if (this.network.time_axis) return this.network.time_axis.columns.map(function (col) { return col.label; });
     var counts = [{}, {}, {}, {}];
     var self = this;
     (this.network.nodes || []).forEach(function (n) {
@@ -154,13 +185,13 @@
     this.ch = rect.height || window.innerHeight;
 
     var W = CONTENT_W;
-    // 现在(在校) → 毕业 → 各成长阶段。现在在毕业之前，间距随距毕业年限变化；
-    // 临近毕业(<6个月)或已毕业则合并为「毕业·现在」单节点。
+    // Graduation is always the zero point. Alumni get a separate time cursor;
+    // elapsed time never assigns them an attained role or resets the axis.
     var tlm = this.opts.timeline || {};
-    var ytg = (typeof tlm.years_to_graduation === 'number') ? tlm.years_to_graduation : null;
-    var combined = !!tlm.already_graduated || (ytg != null && ytg < 0.5);
+    var ytg = (typeof tlm.years_to_graduation === 'number' && isFinite(tlm.years_to_graduation)) ? tlm.years_to_graduation : null;
+    var graduated = !!tlm.already_graduated || (ytg != null && ytg < 0);
     var nowX = 46;
-    var studyGap = combined ? 0 : clamp(90 + (ytg == null ? 1.4 : ytg) * 48, 100, 300);
+    var studyGap = graduated ? 0 : (ytg == null ? 150 : clamp(90 + ytg * 48, 100, 300));
     var gradX = nowX + studyGap;
     var originX = gradX;
     var firstCol = Math.max(gradX + 172, Math.round(W * 0.285));
@@ -198,7 +229,7 @@
     var axisY = H - 52;
 
     var coord = { origin: { x: originX, y: originY } };
-    if (!combined) coord.now = { x: nowX, y: originY };
+    if (!graduated) coord.now = { x: nowX, y: originY };
     rows.forEach(function (n) {
       self._stagesOf(n).forEach(function (st, i) { coord[n.tag + '-' + i] = { x: stageX[i], y: n._y }; });
     });
@@ -213,7 +244,7 @@
       g += '<text x="' + x + '" y="' + (topPad - 38) + '" text-anchor="middle" class="cn-axislab">' + esc(timeLab[i]) + '</text>';
     });
     // 毕业分界线（在校 / 职业生涯的分界）
-    if (!combined) g += '<line x1="' + gradX + '" y1="' + (topPad - 20) + '" x2="' + gradX + '" y2="' + axisY + '" stroke="rgba(251,191,36,.12)" stroke-width="1" stroke-dasharray="3 8"/>';
+    g += '<line x1="' + gradX + '" y1="' + (topPad - 20) + '" x2="' + gradX + '" y2="' + axisY + '" stroke="rgba(251,191,36,.12)" stroke-width="1" stroke-dasharray="3 8"/>';
 
     // 分类标题
     heads.forEach(function (h) {
@@ -258,12 +289,12 @@
     });
 
     // 现在(在校) → 毕业
-    var gradLabel = combined ? '🎓 毕业 · 现在' : (this.opts.originLabel || '🎓 毕业');
-    if (!combined) {
+    var gradLabel = this.opts.originLabel || '🎓 毕业';
+    if (!graduated) {
       g += '<line class="cn-studyline" x1="' + nowX + '" y1="' + originY + '" x2="' + gradX + '" y2="' + originY + '" stroke="#fbbf24" stroke-opacity=".5" stroke-width="2" stroke-dasharray="5 7"/>';
       var yLab = (ytg != null)
-        ? (ytg >= 1 ? ('在校约 ' + (Math.round(ytg * 10) / 10) + ' 年') : ('在校约 ' + Math.max(1, Math.round((tlm.months_to_graduation != null ? tlm.months_to_graduation : ytg * 12))) + ' 个月'))
-        : '在校备战';
+        ? (ytg === 0 ? '即将毕业' : ytg >= 1 ? ('在校约 ' + (Math.round(ytg * 10) / 10) + ' 年') : ('在校约 ' + Math.max(1, Math.round((tlm.months_to_graduation != null ? tlm.months_to_graduation : ytg * 12))) + ' 个月'))
+        : '毕业时间待确认';
       g += '<text x="' + ((nowX + gradX) / 2) + '" y="' + (originY - 13) + '" text-anchor="middle" class="cn-studylab">' + esc(yLab) + '</text>';
       g += '<g class="cn-node" data-id="now">'
         + '<circle class="cn-now-h" cx="' + nowX + '" cy="' + originY + '" r="20" fill="#6ee7ff" opacity=".26" filter="url(#cnBlurO)"/>'
@@ -274,7 +305,7 @@
       + '<circle class="cn-origin-h" cx="' + gradX + '" cy="' + originY + '" r="34" fill="#fbbf24" opacity=".30" filter="url(#cnBlurO)"/>'
       + '<circle class="cn-core" data-origin="1" cx="' + gradX + '" cy="' + originY + '" r="13" fill="#fde68a" stroke="#fff" stroke-width="1.5"/></g>';
     g += '<text x="' + gradX + '" y="' + (originY + 31) + '" text-anchor="middle" class="cn-origin-t">' + esc(gradLabel) + '</text>';
-    g += '<text x="' + gradX + '" y="' + (originY + 46) + '" text-anchor="middle" class="cn-origin-s">' + (combined ? '起点 · 现在' : '职业起点') + '</text>';
+    g += '<text x="' + gradX + '" y="' + (originY + 46) + '" text-anchor="middle" class="cn-origin-s">毕业后年限起点</text>';
 
     // 节点
     rows.forEach(function (n) {
@@ -300,7 +331,8 @@
         // core/edge 用 --chase-col 做脉冲传递的发光颜色。
         var grpStyle = '--tw-dur:' + dur + 's; --tw-delay:' + delay + 's; --tw-max:' + haloOp.toFixed(3)
           + '; --tw-min:' + twMin + '; --chase-hi:' + chaseHi + '; --chase-col:' + col;
-        g += '<g class="cn-node" role="button" tabindex="0" aria-label="' + esc(n.name + ' · ' + (st[0] || '') + ' · ' + (st[1] || '')) + '" style="' + grpStyle + '" data-id="' + esc(n.tag) + '-' + i + '" data-tag="' + esc(n.tag) + '">'
+        var info = self._stageInfo(n, i);
+        g += '<g class="cn-node" role="button" tabindex="0" aria-label="' + esc(n.name + ' · ' + (st[0] || '') + ' · ' + (st[1] || '') + (info.time_label ? ' · ' + info.time_label : '')) + '" style="' + grpStyle + '" data-id="' + esc(n.tag) + '-' + i + '" data-tag="' + esc(n.tag) + '">'
           + '<circle class="cn-halo cn-twinkle" cx="' + x + '" cy="' + yy + '" r="' + haloR + '" fill="url(#' + glowId(col) + ')" opacity="' + haloOp + '" filter="url(#cnBlur)"/>'
           + (hot ? '<circle class="cn-ring" cx="' + x + '" cy="' + yy + '" r="' + (coreR + 5) + '" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1.1"/>' : '')
           + '<circle class="cn-core" cx="' + x + '" cy="' + yy + '" r="' + coreR + '" fill="' + col + '" fill-opacity="' + (rec >= 3 ? 1 : 0.7) + '" '
@@ -312,17 +344,30 @@
 
     // 时间轴：现在 →（毕业）→ 各阶段 → 未来
     g += '<line x1="' + nowX + '" y1="' + axisY + '" x2="' + (W - 26) + '" y2="' + axisY + '" stroke="#6ee7ff" stroke-opacity=".5" stroke-width="2" marker-end="url(#cnArr)"/>';
-    g += '<text x="' + (W - 30) + '" y="' + (axisY + 22) + '" text-anchor="end" class="cn-axislab">未来 →</text>';
-    g += '<circle cx="' + nowX + '" cy="' + axisY + '" r="4" fill="#bdf0ff"/>';
-    g += '<text x="' + nowX + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axisnow">' + (combined ? '毕业·现在' : '现在') + '</text>';
-    if (!combined) {
-      g += '<circle cx="' + gradX + '" cy="' + axisY + '" r="4.5" fill="#fbbf24"/>';
-      g += '<text x="' + gradX + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axisgrad">毕业</text>';
+    g += '<text x="' + (W - 30) + '" y="' + (axisY + 46) + '" text-anchor="end" class="cn-axislab">未来 →</text>';
+    if (!graduated) {
+      g += '<circle cx="' + nowX + '" cy="' + axisY + '" r="4" fill="#bdf0ff"/>';
+      g += '<text x="' + nowX + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axisnow">现在</text>';
     }
+    g += '<circle cx="' + gradX + '" cy="' + axisY + '" r="4.5" fill="#fbbf24"/>';
+    g += '<text x="' + gradX + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axisgrad">毕业</text>';
     stageX.forEach(function (x, i) {
       g += '<circle cx="' + x + '" cy="' + axisY + '" r="4" fill="#6ee7ff"/>';
       g += '<text x="' + x + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axissub">' + esc(timeLab[i]) + '</text>';
     });
+    if (graduated && ytg != null && this.network.time_axis) {
+      var elapsed = Math.max(0, -ytg), columns = this.network.time_axis.columns;
+      var ci = columns.findIndex(function (col) { return col.years_max === null || elapsed < col.years_max; });
+      var column = columns[ci], cursorX = stageX[ci];
+      if (column.years_max !== null) {
+        var leftX = ci ? (stageX[ci - 1] + stageX[ci]) / 2 : gradX;
+        var rightX = (stageX[ci] + stageX[ci + 1]) / 2;
+        cursorX = leftX + (rightX - leftX) * clamp((elapsed - column.years_min) / (column.years_max - column.years_min), 0, 1);
+      }
+      g += '<line class="cn-time-cursor" x1="' + cursorX + '" x2="' + cursorX + '" y1="' + (topPad - 18) + '" y2="' + axisY + '" stroke="#fbbf24" stroke-opacity=".28" stroke-dasharray="3 7"/>';
+      g += '<circle class="cn-core cn-time-now" data-now="1" cx="' + cursorX + '" cy="' + axisY + '" r="5.5" fill="#fbbf24"/>';
+      g += '<text x="' + cursorX + '" y="' + (axisY - 12) + '" text-anchor="middle" class="cn-axisnow">现在 · 毕业后约 ' + yearText(elapsed) + ' 年</text>';
+    }
 
     var glowDefs = glowColors.map(function (col, idx) {
       return '<radialGradient id="cnGlow-' + idx + '" cx="50%" cy="50%" r="50%">'
@@ -610,8 +655,7 @@
         self._fitSelection(g.dataset.id, true);
         var ns = self.nodeStages[g.dataset.id];
         if (ns) {
-          var st = self._stagesOf(ns.node)[ns.stage] || [];
-          self.onSelect(ns.node, { phase: st[0] || '', role: st[1] || ns.node.name, sdesc: st[2] || '', stage: ns.stage });
+          self.onSelect(ns.node, self._stageInfo(ns.node, ns.stage));
         }
       } else if (!g) {
         self.clear();
@@ -626,8 +670,7 @@
       event.preventDefault();
       var ns = self.nodeStages[node.dataset.id]; if (!ns) return;
       self.select(node.dataset.id);
-      var stage = self._stagesOf(ns.node)[ns.stage] || [];
-      self.onSelect(ns.node, { phase: stage[0] || '', role: stage[1] || ns.node.name, sdesc: stage[2] || '', stage: ns.stage });
+      self.onSelect(ns.node, self._stageInfo(ns.node, ns.stage));
     });
     sv.addEventListener('wheel', function (e) {
       e.preventDefault();
@@ -651,9 +694,14 @@
     if (!t.classList || !t.classList.contains('cn-core')) return;
     if (t.dataset.now) {
       var tlm = this.opts.timeline || {};
+      if (tlm.already_graduated || tlm.years_to_graduation < 0) {
+        this.tip.innerHTML = '<div class="cn-tcat">现在 · 毕业后的时间位置</div><div class="cn-tname">毕业后约 ' + esc(yearText(-tlm.years_to_graduation)) + ' 年</div>'
+          + '<div class="cn-tdesc">标记仅按毕业时间定位，不代表你已经达到这一列的职位。沿方向查看各节点的参考年限和职责。</div>';
+        this.tip.classList.add('show'); this._posTip(e); return;
+      }
       var leftTxt = (tlm.years_to_graduation != null && tlm.years_to_graduation > 0)
         ? ('距毕业约 ' + tlm.years_to_graduation + ' 年' + (tlm.months_to_graduation != null ? '（' + tlm.months_to_graduation + ' 个月）' : ''))
-        : '在校阶段';
+        : (tlm.years_to_graduation === 0 ? '即将毕业' : '毕业时间待确认');
       this.tip.innerHTML = '<div class="cn-tcat">现在 · 在校</div><div class="cn-tname">📍 你在这里</div>'
         + '<div class="cn-tdesc">' + esc(leftTxt) + '。这段在校时间是你为毕业后职业路线做准备的窗口——点击右侧任一方向的节点，看看从现在到毕业要补什么。</div>';
       this.tip.classList.add('show'); this._posTip(e); return;
@@ -667,6 +715,7 @@
     if (!n) return;
     var i = +t.dataset.i;
     var st = this._stagesOf(n)[i] || [];
+    var time = stageTime(this.network.time_axis, this.opts.timeline, i);
     var catName = '';
     (this.network.cats || []).forEach(function (c) { if (c.id === n.cat) catName = (c.icon ? c.icon + ' ' : '') + c.name; });
     var tipExtra = n.tip ? '<div class="cn-ttip">💡 ' + esc(n.tip) + '</div>' : '';
@@ -675,6 +724,7 @@
       + '<div class="cn-tstars">' + stars(n.rec) + '　推荐度 ' + (n.rec || 0) + '/5'
       + (n.base_rec && n.base_rec !== n.rec ? '（已按你的特质调整）' : '') + '</div>'
       + '<div class="cn-trow"><span class="cn-tphase">' + esc(st[0] || '成长阶段') + '</span> <b>' + esc(st[1] || n.name) + '</b>'
+      + (time.label ? '<div class="cn-ttime">' + esc(time.label) + '<br>' + esc(time.from_now) + '</div>' : '')
       + (st[2] && st[2] !== '—' ? '<br>' + esc(st[2]) : '') + '</div>'
       + (n.desc ? '<div class="cn-tdesc">' + esc(n.desc) + '</div>' : '')
       + tipExtra;

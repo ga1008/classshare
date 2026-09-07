@@ -189,7 +189,7 @@ def derive_timeline(class_row: dict[str, Any]) -> dict[str, Any]:
         "graduation_date_label": graduation_date_label,
         "years_to_graduation": years_to_grad,
         "months_to_graduation": months_to_grad,
-        "already_graduated": bool(graduation_year and years_to_grad is not None and years_to_grad <= 0),
+        "already_graduated": bool(graduation_year and grad_date <= now),
     }
 
 

@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import unittest
+from datetime import datetime
 from contextlib import contextmanager
 from unittest.mock import patch
 
@@ -328,6 +329,19 @@ class CareerLifecycleTests(unittest.TestCase):
 
 
 class CareerPayloadAndEvidenceTests(unittest.TestCase):
+    def test_graduation_state_uses_date_boundary_not_rounded_zero_years(self):
+        for now, graduated in ((datetime(2026, 6, 30, 12), False),
+                               (datetime(2026, 7, 1), True),
+                               (datetime(2029, 7, 1), True)):
+            with self.subTest(now=now), patch.object(career, "_now", return_value=now):
+                timeline = career.derive_timeline({"expected_graduation_year": 2026})
+                self.assertEqual(timeline["already_graduated"], graduated)
+                if now.year == 2029:
+                    self.assertEqual(timeline["years_to_graduation"], -3.0)
+                else:
+                    self.assertEqual(timeline["years_to_graduation"], 0.0)
+        self.assertFalse(career.derive_timeline({})["already_graduated"])
+
     def test_software_seed_has_stable_ids_and_no_unverified_salary_promises(self):
         graph=career._seed_network_for("软件工程")
         self.assertEqual(len(graph["nodes"]),24)
