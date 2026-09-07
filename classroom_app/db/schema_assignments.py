@@ -85,6 +85,37 @@ def _ensure_optional_classroom_todo_scope(conn: sqlite3.Connection) -> None:
     )
 
 
+def ensure_assessment_classification_schema(conn: sqlite3.Connection) -> None:
+    """Add classification without inferring categories or touching grade records."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(assignments)").fetchall()}
+    columns = {
+        "assessment_kind": "TEXT CHECK (assessment_kind IS NULL OR assessment_kind IN ('homework', 'midterm', 'final'))",
+        "assessment_kind_version": "INTEGER NOT NULL DEFAULT 0 CHECK (assessment_kind_version >= 0)",
+        "assessment_kind_source": "TEXT NOT NULL DEFAULT ''",
+        "assessment_kind_updated_at": "TEXT",
+        "assessment_kind_updated_by_teacher_id": "INTEGER",
+    }
+    for name, definition in columns.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE assignments ADD COLUMN {name} {definition}")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS assignment_classification_revisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assignment_id TEXT NOT NULL,
+            class_offering_id INTEGER,
+            previous_kind TEXT CHECK (previous_kind IS NULL OR previous_kind IN ('homework', 'midterm', 'final')),
+            assessment_kind TEXT NOT NULL CHECK (assessment_kind IN ('homework', 'midterm', 'final')),
+            previous_version INTEGER NOT NULL,
+            version INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            changed_by_teacher_id INTEGER NOT NULL,
+            changed_at TEXT NOT NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            UNIQUE (assignment_id, version)
+        )
+    """)
+
+
 def ensure_assignment_schema(conn: sqlite3.Connection) -> None:
     conn.execute('''
                 CREATE TABLE IF NOT EXISTS course_files (
@@ -394,6 +425,8 @@ def ensure_assignment_schema(conn: sqlite3.Connection) -> None:
                  ) ON DELETE CASCADE
                      )
                  ''')
+
+    ensure_assessment_classification_schema(conn)
 
     # 8. 提交 (关联到作业和学生)
     conn.execute('''

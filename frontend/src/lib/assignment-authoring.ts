@@ -7,6 +7,8 @@ export type AssignmentAuthoringSnapshot = {
   requirementLength: number;
   rubricLength: number;
   gradingMode: string;
+  assessmentKind: string;
+  assessmentKindLabel: string;
   allowedFileTypes: string[];
   learningStageKey: string;
   learningStageLabel: string;
@@ -70,6 +72,8 @@ export function normalizeAssignmentAuthoringSnapshot(value: unknown): Assignment
     requirementLength: toCount(record.requirementLength),
     rubricLength: toCount(record.rubricLength),
     gradingMode: toText(record.gradingMode, 'manual'),
+    assessmentKind: toText(record.assessmentKind),
+    assessmentKindLabel: toText(record.assessmentKindLabel, '分类待确认'),
     allowedFileTypes: normalizeAllowedTypes(record.allowedFileTypes),
     learningStageKey: toText(record.learningStageKey),
     learningStageLabel: toText(record.learningStageLabel),

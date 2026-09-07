@@ -1,4 +1,6 @@
 from .common import *
+from ...services.assessment_classification_service import assessment_kind_info, enrich_assessment_classifications
+from ...services.score_projection_service import load_submission_score_facts
 from ...services.ordinary_grade_record_service import ordinary_grade_assignment_kind_info
 
 
@@ -103,6 +105,9 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
                    a.title AS assignment_title,
                    a.class_offering_id,
                    a.ordinary_grade_kind_override,
+                   a.assessment_kind,
+                   a.assessment_kind_version,
+                   a.assessment_kind_source,
                    a.ordinary_grade_kind_updated_at,
                    a.ordinary_grade_kind_updated_by_teacher_id,
                    c.name AS course_name,
@@ -127,6 +132,7 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
         for row in usage_rows:
             usage = dict(row)
             usage.update(ordinary_grade_assignment_kind_info(usage))
+            usage.update(assessment_kind_info(usage))
             usages_by_paper.setdefault(str(usage.get("exam_paper_id") or ""), []).append(usage)
         papers = []
         for row in papers_cursor:
@@ -238,6 +244,7 @@ def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(ge
             raise HTTPException(404, "作业不存在")
         assignment = refresh_assignment_runtime_status(conn, assignment)
         assignment = _enrich_assignment_upload_config(dict(assignment))
+        assignment = enrich_assessment_classifications(conn, [assignment])[0]
         assignment_back_url = _assignment_back_url(assignment)
         if user["role"] == "student" and not student_can_access_assignment(conn, assignment_id, int(user["id"])):
             raise HTTPException(403, "该破境试炼只对指定学生开放")
@@ -267,13 +274,12 @@ def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(ge
 
         # 检查学生是否已提交
         submission = None
+        absence_grade = None
         submission_files = []
         if user['role'] == 'student':
-            submission_row = conn.execute(
-                "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
-                (assignment_id, user['id'])
-            ).fetchone()
-            submission = dict(submission_row) if submission_row else None
+            score_facts = load_submission_score_facts(conn, assignment_ids=[assignment_id], student_id=int(user['id']), student_view=True)
+            submission = score_facts[0] if score_facts else None
+            absence_grade = submission if submission and submission.get("is_absence_score") else None
             if submission and int(submission.get("is_absence_score") or 0):
                 submission = None
             if submission:
@@ -342,6 +348,7 @@ def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(ge
         "assignment_back_url": assignment_back_url,
         "paper": paper_dict,
         "submission": submission,
+        "absence_grade": absence_grade,
         "submission_files": submission_files,
         "exam_ai_allowed": exam_ai_allowed,
         "exam_ai_context": exam_ai_context,

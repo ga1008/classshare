@@ -1,4 +1,5 @@
 from .common import *
+from ...services.score_projection_service import load_submission_score_facts
 from ...services.offering_membership_service import student_belongs_to_offering
 from ...services.ordinary_grade_record_service import ordinary_grade_assignment_kind_info
 from ...services.session_learning_materials_service import attach_learning_material_counts
@@ -156,22 +157,21 @@ def classroom_main(
             """,
             (course_id, class_offering_id)
         )
+        assignment_rows = list(assignments_cursor)
+        if user['role'] == 'student':
+            assignment_rows = [row for row in assignment_rows if row['status'] != 'new'
+                               and student_can_access_assignment(conn, row['id'], int(user['id']))]
+        score_facts = load_submission_score_facts(
+            conn, assignment_ids=[row['id'] for row in assignment_rows],
+            student_id=int(user['id']), student_view=True,
+        ) if user['role'] == 'student' else []
+        scores_by_assignment = {str(row['assignment_id']): row for row in score_facts}
         assignments = []
-        for row in assignments_cursor:
+        for row in assignment_rows:
             assignment = _enrich_assignment_upload_config(dict(row))
             assignment.update(ordinary_grade_assignment_kind_info(assignment))
             if user['role'] == 'student':
-                if not student_can_access_assignment(conn, assignment["id"], int(user["id"])):
-                    continue
-                if assignment['status'] == 'new': continue
-                submission = conn.execute(
-                    """
-                    SELECT id, status, score, feedback_md, resubmission_allowed, resubmission_due_at
-                    FROM submissions
-                    WHERE assignment_id = ? AND student_pk_id = ?
-                    """,
-                    (assignment['id'], user['id'])
-                ).fetchone()
+                submission = scores_by_assignment.get(str(assignment['id']))
                 if submission:
                     submission_dict = dict(submission)
                     can_resubmit = submission_resubmission_accepts(submission_dict)
@@ -179,25 +179,18 @@ def classroom_main(
                     assignment['resubmission_state'] = submission_resubmission_state(submission_dict)
                     assignment['resubmission_due_at'] = submission_dict.get('resubmission_due_at')
                     assignment['submission_status'] = submission_effective_status(submission_dict)
+                    assignment['has_effective_score'] = bool(submission.get('score_visible'))
+                    assignment['is_absence_score'] = bool(submission.get('is_absence_score'))
+                    assignment['is_regrading'] = bool(submission.get('is_regrading'))
+                    if submission.get('is_absence_score'):
+                        assignment['submission_status'] = 'unsubmitted'
                     assignment['submission_score'] = submission['score']
                     assignment['submission_id'] = submission['id']
                     assignment['submission_feedback_md'] = submission['feedback_md']
                     assignment['submission_feedback_preview'] = _plain_feedback_preview(submission['feedback_md'])
-                    # Group assignment: withhold the score (and feedback preview)
-                    # until the whole group is finalized; never leak peer detail.
-                    try:
-                        from ...services.group_assignment_service import get_student_display_state
-
-                        group_state = get_student_display_state(conn, assignment['id'], int(user['id']))
-                    except Exception as exc:
-                        raise HTTPException(503, "暂时无法确认小组成绩公布状态，请稍后重试") from exc
-                    if group_state and group_state.get('is_group'):
+                    if submission.get('group_binding_id'):
                         assignment['is_group_assignment'] = True
-                        if not group_state.get('revealed'):
-                            assignment['group_pending'] = bool(group_state.get('pending'))
-                            assignment['submission_score'] = None
-                            assignment['submission_feedback_preview'] = ""
-                            assignment['submission_feedback_md'] = None
+                        assignment['group_pending'] = submission.get('grade_display_state') == 'group_pending'
                 else:
                     assignment['submission_status'] = 'unsubmitted'
                     assignment['can_resubmit_submission'] = False

@@ -26,6 +26,8 @@ from ...services.group_assignment_service import (
     get_student_group_context,
 )
 from ...services.learning_progress_service import student_can_access_assignment
+from ...services.score_projection_service import load_submission_score_facts
+from ...services.assessment_classification_service import enrich_assessment_classifications, assessment_kind_info
 from .deps import get_current_mp_student
 
 router = APIRouter(prefix="/tasks")
@@ -45,7 +47,7 @@ def load_student_task_buckets(conn: Any, student_id: int) -> dict[str, list[dict
     close_overdue_assignments(conn)
     rows = conn.execute(
         """
-        SELECT a.*, o.id AS offering_id,
+        SELECT a.*, o.id AS offering_id, o.semester_id, sem.name AS semester_name,
                c.name AS course_name, t.name AS teacher_name,
                s.id AS sub_id, s.status AS sub_status, s.score AS sub_score,
                COALESCE(s.is_absence_score, 0) AS sub_is_absence
@@ -53,9 +55,12 @@ def load_student_task_buckets(conn: Any, student_id: int) -> dict[str, list[dict
         JOIN class_offerings o ON o.id = a.class_offering_id
         JOIN courses c ON c.id = o.course_id
         JOIN teachers t ON t.id = o.teacher_id
+        LEFT JOIN academic_semesters sem ON sem.id = o.semester_id
         LEFT JOIN submissions s
             ON s.assignment_id = a.id AND s.student_pk_id = ?
-        WHERE o.class_id = (SELECT class_id FROM students WHERE id = ?)
+        WHERE EXISTS (SELECT 1 FROM students student WHERE student.id = ? AND
+            (o.class_id = student.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links link
+                WHERE link.offering_id = o.id AND link.class_id = student.class_id)))
           AND a.status != 'new'
           AND NOT EXISTS (
               SELECT 1 FROM learning_stage_exam_attempts lsea
@@ -67,12 +72,16 @@ def load_student_task_buckets(conn: Any, student_id: int) -> dict[str, list[dict
         (int(student_id), int(student_id), TASK_LIMIT),
     ).fetchall()
 
+    rows = enrich_assessment_classifications(conn, rows)
+    facts = {row["id"]: row for row in load_submission_score_facts(conn,
+        submission_ids=[row["sub_id"] for row in rows if row.get("sub_id")], student_id=student_id, student_view=True)}
     buckets: dict[str, list[dict[str, Any]]] = {"pending": [], "completed": [], "expired": []}
     for row in rows:
         item = dict(row)
         runtime = enrich_assignment_runtime_view(item)
         submitted = bool(item.get("sub_id")) and not int(item.get("sub_is_absence") or 0)
         sub_status = str(item.get("sub_status") or "")
+        fact = facts.get(item.get("sub_id"), {})
         task = {
             "source_type": "assignment",
             "source_id": item["id"],
@@ -80,14 +89,27 @@ def load_student_task_buckets(conn: Any, student_id: int) -> dict[str, list[dict
             "title": item.get("title"),
             "course_name": item.get("course_name") or "",
             "teacher_name": item.get("teacher_name") or "",
+            "class_offering_id": item.get("offering_id"),
+            "semester_id": item.get("semester_id"),
+            "semester_name": item.get("semester_name") or "",
             "due_at": runtime.get("due_at") or "",
             "no_deadline": not runtime.get("due_at"),
             "remaining_seconds": runtime.get("remaining_seconds"),
             "is_accepting": bool(runtime.get("is_accepting_submissions")),
-            "score": item.get("sub_score"),
+            "score": fact.get("effective_score"),
+            "score_visible": bool(fact.get("score_visible")),
+            "grade_display_state": fact.get("grade_display_state") or "pending",
+            "is_absence_score": bool(item.get("sub_is_absence")),
+            "has_answer_submission": submitted,
+            "can_export_answer": bool(fact.get("can_export_answer")),
+            **assessment_kind_info(item),
         }
         if submitted:
             task["status_label"] = _SUB_STATUS_LABELS.get(sub_status, sub_status or "已提交")
+            if fact.get("grade_display_state") == "group_pending":
+                task["status_label"] = "等待小组成绩揭晓"
+            elif fact.get("is_regrading"):
+                task["status_label"] = "重批中，显示原有效成绩"
             buckets["completed"].append(task)
         elif task["is_accepting"]:
             task["status_label"] = "进行中"
@@ -95,6 +117,8 @@ def load_student_task_buckets(conn: Any, student_id: int) -> dict[str, list[dict
         else:
             task["status_label"] = "已截止未交"
             buckets["expired"].append(task)
+        if task["is_absence_score"] and task["score_visible"]:
+            task["status_label"] = "未提交，教师记 0"
 
     buckets["pending"].sort(key=lambda t: (t["no_deadline"], t["due_at"] or "9999"))
     return buckets
@@ -120,7 +144,8 @@ def _parse_submission_answers(raw: Any) -> list[dict[str, Any]]:
 def _serialize_my_submission(conn: Any, submission: Optional[dict]) -> Optional[dict[str, Any]]:
     if not submission:
         return None
-    file_rows = conn.execute(
+    is_absence = bool(submission.get("is_absence_score"))
+    file_rows = [] if is_absence else conn.execute(
         "SELECT id, original_filename, mime_type, file_size FROM submission_files "
         "WHERE submission_id = ? ORDER BY id",
         (int(submission["id"]),),
@@ -138,9 +163,14 @@ def _serialize_my_submission(conn: Any, submission: Optional[dict]) -> Optional[
     return {
         "status": submission.get("status"),
         "score": submission.get("score"),
+        "score_visible": bool(submission.get("score_visible")),
+        "grade_display_state": submission.get("grade_display_state"),
+        "is_absence_score": bool(submission.get("is_absence_score")),
+        "has_answer_submission": not is_absence,
+        "can_export_answer": bool(submission.get("can_export_answer")),
         "feedback_md": submission.get("feedback_md") or "",
         "submitted_at": submission.get("submitted_at"),
-        "answers": _parse_submission_answers(submission.get("answers_json")),
+        "answers": [] if is_absence else _parse_submission_answers(submission.get("answers_json")),
         "files": files,
         "is_returned": submission_is_returned(submission),
         "resubmission_state": submission_resubmission_state(submission),
@@ -191,8 +221,10 @@ def mp_task_detail(assignment_id: str, user: dict = Depends(get_current_mp_stude
             (assignment_id, int(user["id"])),
         ).fetchone()
         submission = dict(submission_row) if submission_row else None
-        if submission and int(submission.get("is_absence_score") or 0):
-            submission = None
+        if submission:
+            submission = load_submission_score_facts(conn, submission_ids=[submission["id"]],
+                student_id=int(user["id"]), student_view=True)[0]
+        assignment = enrich_assessment_classifications(conn, [assignment])[0]
 
         group_payload = _build_group_payload(conn, assignment_id, int(user["id"]))
         submission_payload = _serialize_my_submission(conn, submission)
@@ -212,6 +244,7 @@ def mp_task_detail(assignment_id: str, user: dict = Depends(get_current_mp_stude
         "is_accepting_submissions": bool(assignment.get("is_accepting_submissions")),
         "is_late_submission_open": bool(assignment.get("is_late_submission_open")),
         "late_policy_label": assignment.get("late_policy_label") or "",
+        **assessment_kind_info(assignment),
     }
     return {
         "success": True,

@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from .assessment_classification_service import assessment_kind_info, enrich_assessment_classifications
+from .score_projection_service import load_submission_score_facts
+from .grade_source_preflight_service import build_grade_source_preflight
 
 from fastapi import HTTPException
 
@@ -181,13 +184,15 @@ def ordinary_grade_assignment_kind_info(row: dict[str, Any]) -> dict[str, Any]:
     auto_kind = infer_ordinary_grade_assignment_kind(row)
     stored_override = str(row.get("ordinary_grade_kind_override") or "").strip().lower()
     override = stored_override if stored_override in ORDINARY_GRADE_ASSIGNMENT_KINDS else ""
-    effective_kind = override or auto_kind
+    classification = assessment_kind_info(row)
+    effective_kind = {"homework": "assignment", "midterm": "exam"}.get(classification["assessment_kind"], "unavailable")
     return {
         "kind": effective_kind,
         "ordinary_grade_kind": effective_kind,
         "ordinary_grade_auto_kind": auto_kind,
         "ordinary_grade_kind_override": override,
-        "ordinary_grade_kind_source": "manual" if override else "auto",
+        "ordinary_grade_kind_source": "assessment_classification",
+        **classification,
         "ordinary_grade_kind_updated_at": row.get("ordinary_grade_kind_updated_at") or "",
         "ordinary_grade_kind_updated_by_teacher_id": (
             _coerce_int(row.get("ordinary_grade_kind_updated_by_teacher_id")) or None
@@ -213,6 +218,7 @@ def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, t
                a.ordinary_grade_kind_updated_at,
                a.ordinary_grade_kind_updated_by_teacher_id,
                a.grading_mode,
+               a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source,
                COUNT(s.id) AS submission_count,
                SUM(CASE WHEN s.score IS NOT NULL THEN 1 ELSE 0 END) AS graded_count,
                AVG(CASE WHEN s.score IS NOT NULL THEN s.score ELSE NULL END) AS average_score
@@ -223,16 +229,28 @@ def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, t
           AND o.teacher_id = ?
         GROUP BY a.id, a.title, a.status, a.created_at, a.due_at, a.exam_paper_id,
                  a.ordinary_grade_kind_override, a.ordinary_grade_kind_updated_at,
-                 a.ordinary_grade_kind_updated_by_teacher_id, a.grading_mode
+                 a.ordinary_grade_kind_updated_by_teacher_id, a.grading_mode,
+                 a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source
         ORDER BY COALESCE(a.due_at, a.created_at, '') ASC, a.id ASC
         """,
         (int(class_offering_id), int(teacher_id)),
     ).fetchall()
     candidates = []
+    rows = enrich_assessment_classifications(conn, rows)
+    facts = load_submission_score_facts(conn, assignment_ids=[row["id"] for row in rows], student_view=True)
+    roster_ids = {row["student_id"] for row in _load_roster(conn, class_offering_id=class_offering_id, context={})} if rows else set()
+    score_sets = {}
+    for fact in facts:
+        if fact["score_visible"] and fact["student_pk_id"] in roster_ids:
+            score_sets.setdefault(int(fact["assignment_id"]), []).append(fact["effective_score"])
     for row in rows:
         item = dict(row)
-        average_score = item.get("average_score")
+        if item["source_feature"] == "personal_stage":
+            continue
+        scores = score_sets.get(int(item["id"]), [])
+        average_score = sum(scores) / len(scores) if scores else None
         kind_info = ordinary_grade_assignment_kind_info(item)
+        eligible = kind_info["kind"] in ORDINARY_GRADE_ASSIGNMENT_KINDS
         candidates.append(
             {
                 "id": int(item["id"]),
@@ -242,7 +260,9 @@ def list_ordinary_grade_assignment_candidates(conn, *, class_offering_id: int, t
                 "due_at": item.get("due_at") or "",
                 **kind_info,
                 "submission_count": _coerce_int(item.get("submission_count")),
-                "graded_count": _coerce_int(item.get("graded_count")),
+                "graded_count": len(scores),
+                "eligible": eligible,
+                "blocking_reason": "" if eligible else ("请先确认正式任务分类" if item["assessment_kind"] is None else "期末测验不计入平时成绩来源"),
                 "average_score": round(float(average_score), 2) if average_score is not None else None,
             }
         )
@@ -278,6 +298,12 @@ def build_ordinary_grade_record_payload(
     missing = [str(item) for item in [*homework_ids, assessment_id] if int(item) not in assignments]
     if missing:
         raise HTTPException(400, f"所选作业/测评不属于当前课堂或无权使用：{', '.join(missing)}")
+    for source in assignments.values():
+        info = assessment_kind_info(source)
+        if info["source_feature"] == "personal_stage":
+            raise HTTPException(400, "个人阶段试炼不能用作正式平时成绩来源。")
+        if info["classification_status"] != "confirmed":
+            raise HTTPException(400, "请先确认所选历史任务的正式分类，再生成或显式更新成绩材料。")
     mismatched_homework = [
         assignments[int(assignment_id)].get("title") or str(assignment_id)
         for assignment_id in homework_ids
@@ -286,18 +312,20 @@ def build_ordinary_grade_record_payload(
     if mismatched_homework:
         raise HTTPException(
             400,
-            f"以下来源当前被归类为测验，不能放入平时作业：{'、'.join(mismatched_homework)}。请刷新来源或先修改平时成绩用途。",
+            f"以下来源不是平时作业，不能放入平时作业：{'、'.join(mismatched_homework)}。请确认正式任务分类。",
         )
     assessment = assignments[int(assessment_id)]
     if classify_ordinary_grade_assignment(assessment) != "exam":
         raise HTTPException(
             400,
-            f"“{assessment.get('title') or assessment_id}”当前被归类为平时作业，不能作为测验。请刷新来源或先修改平时成绩用途。",
+            f"“{assessment.get('title') or assessment_id}”不是期中测验，不能作为平时成绩中的测评来源。",
         )
 
     students = _load_roster(conn, class_offering_id=int(class_offering_id), context=context)
     attendance_scores = _load_attendance_scores(conn, class_offering_id=int(class_offering_id), teacher_id=int(teacher_id))
     score_map = _load_assignment_scores(conn, assignment_ids=[*homework_ids, assessment_id])
+    preflight = build_grade_source_preflight(conn, assignment_ids=[*homework_ids, assessment_id],
+        student_ids=[int(student["student_id"]) for student in students])
 
     from .classroom_retake_service import get_confirmed_retake_students
 
@@ -330,7 +358,7 @@ def build_ordinary_grade_record_payload(
             "capped_count": 0,
         }
     )
-    warnings: list[str] = []
+    warnings: list[str] = list(preflight["warnings"])
     rows: list[dict[str, Any]] = []
     retake_rows: list[dict[str, Any]] = []
     for index, student in enumerate(students, start=1):
@@ -558,6 +586,7 @@ def build_ordinary_grade_record_payload(
             "structured": {
                 "students": rows,
                 "source_assignments": source_assignments,
+                "source_preflight": preflight,
                 "attendance_sync": dict(attendance_sync or {}),
                 "generation_requirements": str(generation_requirements or "").strip(),
                 "score_floor_policy": score_floor,
@@ -579,8 +608,9 @@ def validate_ordinary_grade_sources(
     homework_ids = []
     for value in homework_assignment_ids or []:
         item = _coerce_int(value)
-        if item > 0 and item not in homework_ids:
-            homework_ids.append(item)
+        if item <= 0 or item in homework_ids:
+            raise HTTPException(400, "三份平时作业来源必须有效且互不重复。")
+        homework_ids.append(item)
     assessment_id = _coerce_int(assessment_assignment_id)
     if len(homework_ids) != 3:
         raise HTTPException(400, "平时作业必须选择 3 份。")
@@ -1132,15 +1162,7 @@ def _load_source_assignments(conn, *, class_offering_id: int, teacher_id: int, a
     placeholders = ",".join("?" for _ in assignment_ids)
     rows = conn.execute(
         f"""
-        SELECT a.id,
-               a.title,
-               a.status,
-               a.exam_paper_id,
-               a.ordinary_grade_kind_override,
-               a.ordinary_grade_kind_updated_at,
-               a.ordinary_grade_kind_updated_by_teacher_id,
-               a.created_at,
-               a.due_at
+        SELECT a.*
         FROM assignments a
         JOIN class_offerings o ON o.id = a.class_offering_id
         WHERE a.id IN ({placeholders})
@@ -1149,7 +1171,7 @@ def _load_source_assignments(conn, *, class_offering_id: int, teacher_id: int, a
         """,
         (*[int(item) for item in assignment_ids], int(class_offering_id), int(teacher_id)),
     ).fetchall()
-    return {int(row["id"]): dict(row) for row in rows}
+    return {int(row["id"]): dict(row) for row in enrich_assessment_classifications(conn, rows)}
 
 
 def _load_roster(conn, *, class_offering_id: int, context: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1223,16 +1245,7 @@ def _load_attendance_scores(conn, *, class_offering_id: int, teacher_id: int) ->
 
 
 def _load_assignment_scores(conn, *, assignment_ids: list[int]) -> dict[tuple[int, int], float]:
-    placeholders = ",".join("?" for _ in assignment_ids)
-    rows = conn.execute(
-        f"""
-        SELECT assignment_id, student_pk_id, score
-        FROM submissions
-        WHERE assignment_id IN ({placeholders})
-          AND score IS NOT NULL
-        """,
-        [int(item) for item in assignment_ids],
-    ).fetchall()
+    rows = load_submission_score_facts(conn, assignment_ids=assignment_ids, student_view=True)
     result = {}
     for row in rows:
         assignment_id = _coerce_int(row["assignment_id"])

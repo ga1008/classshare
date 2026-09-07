@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import re
+from decimal import Decimal, ROUND_HALF_UP
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -1560,6 +1561,15 @@ def _students_by_number(record, document_type: str) -> dict[str, dict[str, Any]]
                 section_scores = student.get("section_scores") if isinstance(student.get("section_scores"), list) else []
                 if section_scores and all(value not in (None, "") for value in section_scores):
                     score = sum(_float_or_zero(value) for value in section_scores)
+            # New detailed registers explicitly carry paper points. Convert
+            # the current material value (including teacher edits), never the
+            # original task snapshot. Legacy material semantics stay unchanged.
+            policy = _as_dict(structured.get("score_adjustment_policy"))
+            if score not in (None, "") and policy.get("version") == "task-percentage-to-paper-v1":
+                full_score = _float_or_zero(policy.get("target_full_score"))
+                if full_score <= 0:
+                    raise HTTPException(422, "考核登分表缺少有效卷面满分，请先核验材料分制。")
+                score = float((Decimal(str(score)) * Decimal(100) / Decimal(str(full_score))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         normalized_score = _score_or_blank(score, row_number=0, label="成绩")
         if number in result:
             duplicates.add(number)

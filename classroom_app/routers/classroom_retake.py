@@ -93,7 +93,7 @@ async def confirm_classroom_retake_student(
             default_score=payload.default_score,
         )
 
-    # 已生成的平时成绩表/考核登分表自动更新一次；单份失败不阻塞确认。
+    # 名单确认仅列出待更新材料，不能隐式覆盖旧材料或人工改分。
     from .materials_parts.final_materials import refresh_offering_grade_record_materials
 
     material_refresh: list[dict[str, Any]] = []
@@ -103,10 +103,9 @@ async def confirm_classroom_retake_student(
             user,
         )
     except Exception:
-        material_refresh = [{"status": "failed", "message": "材料自动更新暂时失败，可稍后在材料页手动一键更新。"}]
+        material_refresh = [{"status": "failed", "message": "待更新材料清单暂时无法读取；原材料保持不变，请稍后在材料页核对。"}]
 
-    refreshed = sum(1 for item in material_refresh if item.get("status") == "success")
-    failed = sum(1 for item in material_refresh if item.get("status") == "failed")
+    pending = sum(1 for item in material_refresh if item.get("status") == "needs_confirmation")
     backfill = confirmation.get("backfill") or {}
     message_parts = [
         f"已确认 {confirmation['student_name']}（{confirmation['student_number']}）为重修/插班学生，"
@@ -117,7 +116,7 @@ async def confirm_classroom_retake_student(
     ]
     if material_refresh:
         message_parts.append(
-            f"已自动更新 {refreshed} 份成绩材料" + (f"，{failed} 份失败（可稍后手动一键更新）" if failed else "") + "。"
+            f"{pending} 份成绩材料待核对；原材料及人工改分保持不变，请在材料页预检并确认后更新。"
         )
     with get_db_connection() as conn:
         items = list_retake_students(conn, class_offering_id=int(class_offering_id))

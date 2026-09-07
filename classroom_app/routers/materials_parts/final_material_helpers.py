@@ -811,6 +811,7 @@ async def _persist_final_material_record_update(
     user: dict,
     *,
     signature_use_intents: list[dict[str, Any]] | None = None,
+    require_unchanged_record: bool = False,
 ) -> dict:
     readme_content = build_import_readme(result=parse_result, original_name=record["source_file_name"] or parse_result.document_type_label)
     readme_bytes = readme_content.encode("utf-8")
@@ -835,6 +836,14 @@ async def _persist_final_material_record_update(
     package_id = int(record["package_material_id"] or 0) or None
 
     with get_db_connection() as conn:
+        if require_unchanged_record:
+            claimed = conn.execute(
+                "UPDATE material_ai_import_records SET id = id WHERE id = ? AND teacher_id = ? "
+                "AND COALESCE(updated_at, '') = ? AND COALESCE(export_payload_json, '') = ?",
+                (int(record_id), user["id"], str(record["updated_at"] or ""), str(record["export_payload_json"] or "")),
+            )
+            if int(claimed.rowcount or 0) != 1:
+                raise HTTPException(409, "原材料已被其他操作修改，请重新预检后更新，已保存的人工改分未被覆盖。")
         current = conn.execute(
             "SELECT * FROM material_ai_import_records WHERE id = ? AND teacher_id = ?",
             (int(record_id), user["id"]),

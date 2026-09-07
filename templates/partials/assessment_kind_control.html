@@ -1,0 +1,16 @@
+{# Set assessment to an authorized assignment or usage projection. #}
+{% if assessment.source_feature != 'personal_stage' %}
+<div class="ordinary-grade-kind-control" data-assessment-kind-control onclick="event.stopPropagation();">
+    <label class="ordinary-grade-kind-control__label" for="assessment-kind-{{ assessment.assignment_id or assessment.id }}">任务分类</label>
+    <select class="ordinary-grade-kind-control__select" id="assessment-kind-{{ assessment.assignment_id or assessment.id }}"
+        data-assessment-kind-select data-assignment-id="{{ assessment.assignment_id or assessment.id }}"
+        data-version="{{ assessment.assessment_kind_version or 0 }}" aria-label="设置任务分类">
+        {% if not assessment.assessment_kind %}<option value="" selected disabled>分类待确认</option>{% endif %}
+        <option value="homework"{% if assessment.assessment_kind == 'homework' %} selected{% endif %}>平时作业</option>
+        <option value="midterm"{% if assessment.assessment_kind == 'midterm' %} selected{% endif %}>期中测验</option>
+        <option value="final"{% if assessment.assessment_kind == 'final' %} selected{% endif %}>期末测验</option>
+    </select>
+    <button type="button" class="btn btn-outline btn-sm" data-assessment-kind-save disabled>保存分类</button>
+    <small class="ordinary-grade-kind-control__note" data-assessment-kind-note role="status">分类用于后续批改和成绩归类；原成绩与历史成绩表保留。</small>
+</div>
+{% endif %}

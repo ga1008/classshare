@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseClassroomDate, taskConstraintLabel, taskIsUrgent, taskMatchesFilter, taskPresentation, taskPreview, taskHistory, type ClassroomTask } from './classroom-workspace';
+import { parseClassroomDate, taskCategoryLabel, taskConstraintLabel, taskIsUrgent, taskMatchesFilter, taskPresentation, taskPreview, taskHistory, type ClassroomTask } from './classroom-workspace';
 
 const now = Date.parse('2026-09-05T12:00:00+08:00');
 const task = (patch: Partial<ClassroomTask> = {}): ClassroomTask => ({
@@ -8,6 +8,18 @@ const task = (patch: Partial<ClassroomTask> = {}): ClassroomTask => ({
   canResubmit: false, resubmissionDueAt: '', groupPending: false, ...patch,
 });
 describe('classroom workspace task semantics', () => {
+  it('filters authoritative categories independently from answer format and state', () => {
+    const homeworkPaper = task({ kind: 'exam', has_exam_paper: true, assessment_kind: 'homework', assessment_kind_label: '平时作业' });
+    const finalUpload = task({ has_exam_paper: false, assessment_kind: 'final', assessment_kind_label: '期末测验' });
+    expect(taskCategoryLabel(homeworkPaper)).toBe('平时作业');
+    expect(taskPresentation(homeworkPaper, false, now).action).toBe('进入考试');
+    expect(taskPresentation(finalUpload, false, now).action).toBe('去提交');
+    expect(taskMatchesFilter(homeworkPaper, false, 'actionable', '', now, 'homework')).toBe(true);
+    expect(taskMatchesFilter(homeworkPaper, false, 'actionable', '', now, 'final')).toBe(false);
+    expect(taskMatchesFilter(task(), false, 'all', '', now, 'legacy_unknown')).toBe(true);
+    expect(taskMatchesFilter(task({ classification_status: 'not_applicable', source_feature: 'personal_stage' }), false, 'all', '', now, 'legacy_unknown')).toBe(false);
+    expect(taskCategoryLabel(task({ title: '期末考试', kind: 'exam' }))).toBe('历史任务');
+  });
   it('orders complete history by creation time rather than deadline and keeps undated legacy entries', () => {
     const items = [task({ id: 1, createdAt: '2026-09-01 10:00:00', countdownAt: '2026-10-01' }), task({ id: 2, createdAt: '2026-09-03 10:00:00', countdownAt: '2026-09-04' }), task({ id: 3, createdAt: '2026-09-03 10:00:00' }), task({ id: 4, createdAt: '' })];
     expect(taskHistory(items).map(item => item.id)).toEqual([3, 2, 1, 4]);

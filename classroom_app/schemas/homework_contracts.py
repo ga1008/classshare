@@ -1,10 +1,30 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .api_common import ApiFlexibleRecord, ApiSuccessResponse
+
+
+AssessmentKind = Literal["homework", "midterm", "final"]
+
+
+class AssessmentKindMutationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assessment_kind: AssessmentKind
+    expected_version: int = Field(ge=0, strict=True)
+    reason: str = Field(default="", max_length=500)
+
+
+class AssessmentKindConfirmationItem(AssessmentKindMutationRequest):
+    assignment_id: int | str
+
+
+class AssessmentKindBatchConfirmationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[AssessmentKindConfirmationItem] = Field(min_length=1, max_length=100)
+    reason: str = Field(default="", max_length=500)
 
 
 class AssignmentMutationResponse(ApiSuccessResponse):
@@ -13,6 +33,10 @@ class AssignmentMutationResponse(ApiSuccessResponse):
     deleted_assignment_id: int | str | None = None
     assignment_status: str | None = None
     due_at: str | None = None
+    assessment_kind: AssessmentKind | None = None
+    assessment_kind_label: str | None = None
+    assessment_kind_version: int | None = None
+    classification_status: str | None = None
 
 
 class AssignmentTimeStateItem(ApiFlexibleRecord):

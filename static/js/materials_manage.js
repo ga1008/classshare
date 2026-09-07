@@ -1,4 +1,6 @@
 import { apiFetch } from './api.js';
+import { submitGradeMaterialWithPreflight } from './grade_material_preflight.js';
+import { openGradePublicationModal } from './grade_publication_controls.js';
 import { closeModal, escapeHtml, formatDate, formatSize, getFileIcon, openModal, renderMarkdown, showToast } from './ui.js';
 import { enhancePromptPoolInputs, recordPromptForInput } from './prompt_pool.js';
 import { openProcessMaterialConfirm, openProcessMaterialModal } from './process_material_modal.js';
@@ -752,8 +754,8 @@ function resetFinalGradeGeneration() {
 function ordinaryGradeCandidateBuckets() {
     const candidates = state.ordinaryGradeGenerate.candidates || [];
     return {
-        homework: candidates.filter((item) => item?.kind !== 'exam'),
-        assessment: candidates.filter((item) => item?.kind === 'exam'),
+        homework: candidates.filter((item) => item?.assessment_kind === 'homework'),
+        assessment: candidates.filter((item) => item?.assessment_kind === 'midterm'),
     };
 }
 
@@ -891,14 +893,14 @@ function renderManageOrdinaryGradePicker() {
     ].filter((value) => value !== null && value !== undefined).join(' '), keyword));
     if (refs.ordinaryGradePickerKicker) refs.ordinaryGradePickerKicker.textContent = `第 ${stepIndex + 1} 步`;
     if (refs.ordinaryGradePickerTitle) {
-        refs.ordinaryGradePickerTitle.textContent = stepIndex === 3 ? '选择课堂测评' : `选择平时作业 ${stepIndex + 1}`;
+        refs.ordinaryGradePickerTitle.textContent = stepIndex === 3 ? '选择期中测验' : `选择平时作业 ${stepIndex + 1}`;
     }
     if (!refs.ordinaryGradePickerList) return;
     if (!items.length) {
         refs.ordinaryGradePickerList.innerHTML = `
             <div class="ordinary-grade-picker__empty">
-                <strong>没有匹配的${stepIndex === 3 ? '测评' : '作业'}</strong>
-                <span>清空关键词重试，或在课堂任务卡片、教师试卷管理页调整“平时成绩用途”。</span>
+                <strong>没有匹配的${stepIndex === 3 ? '期中测验' : '平时作业'}</strong>
+                <span>请在课堂任务或试卷管理页确认任务分类。历史未分类任务需先确认，期末测验不能同时计入平时成绩。</span>
             </div>
         `;
         return;
@@ -911,7 +913,7 @@ function renderManageOrdinaryGradePicker() {
         const average = item?.average_score === null || item?.average_score === undefined
             ? '暂无均分'
             : `均分 ${item.average_score}`;
-        const source = item?.ordinary_grade_kind_source === 'manual' ? '手动指定' : '自动识别';
+        const source = '已确认分类';
         return `
             <button
                 type="button"
@@ -921,7 +923,7 @@ function renderManageOrdinaryGradePicker() {
             >
                 <span class="ordinary-grade-candidate__main">
                     <strong>${escapeHtml(item?.title || `作业 ${candidateId}`)}</strong>
-                    <small>${escapeHtml(item?.kind === 'exam' ? '测评 / 考试' : '平时作业')} · ${escapeHtml(source)} · 已评分 ${escapeHtml(String(item?.graded_count || 0))}/${escapeHtml(String(item?.submission_count || 0))} · ${escapeHtml(average)}</small>
+                    <small>${escapeHtml(item?.assessment_kind_label || '历史任务')} · ${escapeHtml(source)} · 已评分 ${escapeHtml(String(item?.graded_count || 0))}/${escapeHtml(String(item?.submission_count || 0))} · ${escapeHtml(average)}</small>
                 </span>
                 <span class="ordinary-grade-candidate__usage">${escapeHtml(disabled ? `已用于第 ${usedStep + 1} 步` : (isCurrent ? '当前已选择' : '选择此来源'))}</span>
             </button>
@@ -1116,7 +1118,7 @@ async function submitManageOrdinaryGradeGeneration() {
     renderManageOrdinaryGradeWizard();
     setManageOrdinaryGradeStatus('正在核对考勤缓存、计算成绩并生成 Excel，请勿重复提交...', 'progress');
     try {
-        const data = await apiFetch(`/api/classrooms/${offeringId}/final-materials/generate`, {
+        const data = await submitGradeMaterialWithPreflight(`/api/classrooms/${offeringId}/final-materials/generate`, {
             method: 'POST',
             body: {
                 document_type: 'ordinary_grade_record',
@@ -1134,6 +1136,7 @@ async function submitManageOrdinaryGradeGeneration() {
                 })),
             },
         });
+        if (!data) { setManageOrdinaryGradeStatus('已取消生成，课堂成绩与材料保持不变。', ''); return; }
         await recordMaterialPromptBestEffort(refs.ordinaryGradePrompt, prompt);
         const materialId = Number(data?.task?.package_material_id || 0);
         closeModal('materials-classroom-generate-modal');
@@ -1216,7 +1219,7 @@ function renderManageExamGradeWizard() {
         } else if (generation.error) {
             refs.examGradeCandidateList.innerHTML = `<div class="ordinary-grade-picker__empty"><strong>读取失败</strong><span>${escapeHtml(generation.error)}</span></div>`;
         } else if (!candidates.length) {
-            refs.examGradeCandidateList.innerHTML = '<div class="ordinary-grade-picker__empty"><strong>还没有绑定试卷的考试</strong><span>请先在课堂创建考试并绑定试卷；完成评分后再生成正式登分表。</span></div>';
+            refs.examGradeCandidateList.innerHTML = '<div class="ordinary-grade-picker__empty"><strong>还没有已确认的期末测验</strong><span>先在课堂确认任务分类。按大题登记的成绩表还需要完整的试卷评分结构。</span></div>';
         } else {
             refs.examGradeCandidateList.innerHTML = candidates.map((item) => {
                 const candidateId = Number(item?.id || 0);
@@ -1230,7 +1233,7 @@ function renderManageExamGradeWizard() {
                 const coverage = rosterCount > 0
                     ? `已评分 ${gradedCount}/${rosterCount} 人`
                     : `已评分 ${gradedCount} 人`;
-                const sourceTitle = item?.exam_paper_title || '已绑定试卷';
+                const sourceTitle = item?.exam_paper_title || '未绑定结构化试卷';
                 const timing = item?.due_at ? `截止 ${formatDateLabel(item.due_at)}` : '未设置截止时间';
                 return `
                     <button
@@ -1311,7 +1314,7 @@ async function submitManageExamGradeGeneration() {
     renderManageExamGradeWizard();
     setManageExamGradeStatus('正在按名单顺序把全班学生写入同一张连续总表，并核对大题得分与总分，请勿重复提交...', 'progress');
     try {
-        const data = await apiFetch(`/api/classrooms/${offeringId}/final-materials/generate`, {
+        const data = await submitGradeMaterialWithPreflight(`/api/classrooms/${offeringId}/final-materials/generate`, {
             method: 'POST',
             body: {
                 document_type: 'exam_grade_record',
@@ -1319,6 +1322,7 @@ async function submitManageExamGradeGeneration() {
                 exam_assignment_id: Number(generation.selectedId),
             },
         });
+        if (!data) { setManageExamGradeStatus('已取消生成，课堂成绩与材料保持不变。', ''); return; }
         const materialId = Number(data?.task?.package_material_id || 0);
         closeModal('materials-classroom-generate-modal');
         resetExamGradeGeneration();
@@ -2820,6 +2824,7 @@ function renderAiImportDetailSummary(detail) {
                 ${warningsHtml}
             </details>
             <div class="materials-ai-import-summary-actions">
+                ${['final_grade_transcript', 'academic_grade_register'].includes(record.document_type) && detail.can_manage !== false ? '<button type="button" class="btn btn-primary btn-sm" data-detail-action="publish-grades">公布课程成绩</button>' : ''}
                 ${record.document_type === 'ordinary_grade_record' && detail.can_manage !== false ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="edit-grade-scores">编辑原始成绩</button>' : ''}
                 ${renderPreviewUrl ? `<a href="${escapeHtml(renderPreviewUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
                 ${exportUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
@@ -3162,14 +3167,16 @@ async function refreshGeneratedFinalMaterial(materialId, button) {
         button.textContent = '更新中…';
     }
     try {
-        const data = await apiFetch(`/api/materials/${materialId}/final-material/refresh`, {
+        const data = await submitGradeMaterialWithPreflight(`/api/materials/${materialId}/final-material/refresh`, {
             method: 'POST',
             body: {},
         });
+        if (!data) return;
         showToast(data.message || '材料已按最新成绩原地更新', 'success', 6200);
         await loadLibrary(state.currentParentId, false);
     } catch (error) {
         showToast(error.message || '一键更新失败，原材料未被修改，请稍后重试', 'error', 6200);
+    } finally {
         if (button) {
             button.disabled = false;
             button.textContent = originalText || '一键更新';
@@ -6446,6 +6453,10 @@ function bindEvents() {
             openGradeScoresModal(state.activeDetail.id).catch((error) => {
                 showToast(error.message || '加载原始成绩失败', 'error');
             });
+            return;
+        }
+        if (action === 'publish-grades') {
+            openGradePublicationModal(state.activeDetail);
             return;
         }
         if (action === 'assign') {

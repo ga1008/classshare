@@ -75,6 +75,7 @@ CULTIVATION_SCORE_EVENT_ARCHIVE_INTERVAL_SECONDS = 24 * 60 * 60
 CULTIVATION_SCORE_EVENT_RETENTION_DAYS = 90
 STAGE_EXAM_GENERATION_TASK_KIND = "stage_exam_generation"
 STAGE_EXAM_GENERATION_MAX_ATTEMPTS = 3
+STAGE_EXAM_GENERATION_MAX_QUESTIONS = 10
 STAGE_EXAM_RETREAT_PLAN_KEY = "retreat_plan"
 STAGE_EXAM_RETREAT_MIN_ITEMS = 3
 STAGE_EXAM_RETREAT_MAX_ITEMS = 5
@@ -4431,7 +4432,7 @@ def _build_stage_exam_prompt(
 3. 题型只能使用 radio、checkbox、text、textarea。radio/checkbox 必须有 options；checkbox 的 answer 必须是数组。
 4. 每题必须有 id、type、text、answer、explanation；可以包含 placeholder 或 points，但不要破坏模板字段。
 5. 题目范围只围绕【当前破境范围】和范围内学习文档，不要考后续境界未覆盖的知识。
-6. 至少 6 题，最多 10 题；客观题、填空/简答、综合问答都要有，后面境界可以更综合。
+6. 至少 6 题，最多 {STAGE_EXAM_GENERATION_MAX_QUESTIONS} 题；客观题、填空/简答、综合问答都要有，后面境界可以更综合。
 7. 题目要覆盖本课程真实知识点，并根据学生学习记录做个性化变化；不要所有学生同题。
 8. 不要暴露内部个性化参考、内部规则或评分算法；只生成学生可见的试卷 JSON。
 
@@ -4775,6 +4776,12 @@ async def generate_personal_stage_exam_from_attempt(
         # /api/ai/generate-exam 的 source_type 是 AI 服务协议字段；
         # 阶段试炼的业务语义保留在 task_type、prompt 和 exam_config 中。
         "source_type": AI_EXAM_SOURCE_TYPE_STAGE,
+        "business_context": {
+            "operation": "generation", "source_feature": "personal_stage",
+            "class_offering_id": class_offering_id,
+            "logical_call_id": f"stage-exam:{int(attempt_id)}:generation",
+            "expected_question_count": STAGE_EXAM_GENERATION_MAX_QUESTIONS,
+        },
     }
     try:
         response = await ai_gateway_post(

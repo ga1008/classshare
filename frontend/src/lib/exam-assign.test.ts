@@ -38,6 +38,7 @@ describe('exam assign helpers', () => {
     expect(buildExamAssignMessage(normalizeExamAssignSnapshot({
       paperCount: 2,
       selectedPaperId: 'paper-1',
+      assessmentKind: 'midterm',
       lateSubmissionEnabled: true,
     }))).toContain('补交');
   });

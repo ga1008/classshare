@@ -44,6 +44,7 @@ function readAssignmentAuthoringSnapshot(extra = {}) {
     const rubricLength = getTextLength('assignment-rubric');
     const checks = [
         Boolean(title),
+        Boolean(getTrimmedInputValue('assignment-assessment-kind')) || Boolean(getTrimmedInputValue('assignment-id')),
         requirementLength > 0,
         rubricLength > 0,
         Boolean(getTrimmedInputValue('assignment-grading-mode')),
@@ -56,6 +57,8 @@ function readAssignmentAuthoringSnapshot(extra = {}) {
         requirementLength,
         rubricLength,
         gradingMode: getTrimmedInputValue('assignment-grading-mode') || 'manual',
+        assessmentKind: getTrimmedInputValue('assignment-assessment-kind'),
+        assessmentKindLabel: document.getElementById('assignment-assessment-kind')?.selectedOptions?.[0]?.textContent?.trim() || '',
         allowedFileTypes: allowedTypes,
         learningStageKey: getTrimmedInputValue('assignment-learning-stage-key'),
         learningStageLabel: selectedStage && selectedStage.value ? selectedStage.textContent?.trim() || '' : '',
@@ -123,6 +126,7 @@ function readExamAssignSnapshot(extra = {}) {
     const checks = [
         !loading && paperCount > 0,
         Boolean(selectedPaper.id),
+        Boolean(getTrimmedInputValue('exam-assessment-kind')),
         scheduleReady,
         lateReady,
     ];
@@ -130,6 +134,8 @@ function readExamAssignSnapshot(extra = {}) {
     return {
         selectedPaperId: selectedPaper.id,
         selectedPaperTitle: selectedPaper.title,
+        assessmentKind: getTrimmedInputValue('exam-assessment-kind'),
+        assessmentKindLabel: document.getElementById('exam-assessment-kind')?.selectedOptions?.[0]?.textContent?.trim() || '',
         paperCount,
         allowedFileTypes: allowedTypes,
         learningStageKey: getTrimmedInputValue('exam-learning-stage-key'),
@@ -149,7 +155,7 @@ function readExamAssignSnapshot(extra = {}) {
         feedbackType,
         completedChecks: checks.filter(Boolean).length,
         totalChecks: checks.length,
-        canPublish: Boolean(selectedPaper.id) && scheduleReady && lateReady && !loading && !publishing,
+        canPublish: Boolean(selectedPaper.id) && Boolean(getTrimmedInputValue('exam-assessment-kind')) && scheduleReady && lateReady && !loading && !publishing,
         isLoading: loading,
         isPublishing: publishing,
         lastError,
@@ -465,6 +471,7 @@ function bindAssignmentAuthoringBridge() {
     const fieldIds = [
         'assignment-id',
         'assignment-title',
+        'assignment-assessment-kind',
         'assignment-requirements',
         'assignment-rubric',
         'assignment-grading-mode',
@@ -510,6 +517,7 @@ function bindExamAssignBridge() {
 
     const fieldIds = [
         'exam-send-email-notification',
+        'exam-assessment-kind',
         'exam-allowed-file-types',
         'exam-learning-stage-key',
         'exam-availability-mode',
@@ -664,6 +672,12 @@ export async function confirmExamAssign() {
     }
 
     const scheduleResult = readSchedulePayload('exam');
+    const assessmentKind = getTrimmedInputValue('exam-assessment-kind');
+    if (!['homework', 'midterm', 'final'].includes(assessmentKind)) {
+        setExamAssignFeedback('error', '请选择本次任务分类。');
+        publishExamAssignSnapshot({ lastError: '请选择本次任务分类。' });
+        return;
+    }
     if (scheduleResult.error) {
         setExamAssignFeedback('error', scheduleResult.error);
         publishExamAssignSnapshot({ lastError: scheduleResult.error });
@@ -686,6 +700,7 @@ export async function confirmExamAssign() {
             method: 'POST',
             body: {
                 paper_id: paperId,
+                assessment_kind: assessmentKind,
                 class_offering_id: config.classOfferingId,
                 allowed_file_types: getTrimmedInputValue('exam-allowed-file-types'),
                 learning_stage_key: getTrimmedInputValue('exam-learning-stage-key'),
@@ -738,6 +753,11 @@ export async function saveAssignment() {
     }
 
     const assignmentId = idEl ? idEl.value : '';
+    const assessmentKind = getTrimmedInputValue('assignment-assessment-kind');
+    if (!assignmentId && !['homework', 'midterm', 'final'].includes(assessmentKind)) {
+        showToast('请选择任务分类', 'warning');
+        return;
+    }
     const btn = document.getElementById('btn-save-assignment');
     if (btn) {
         btn.disabled = true;
@@ -756,6 +776,11 @@ export async function saveAssignment() {
         send_email_notification: isChecked('assignment-send-email-notification'),
         ...scheduleResult.payload,
     };
+    // Editing an unclassified legacy task must not silently classify it.
+    if (assessmentKind) {
+        body.assessment_kind = assessmentKind;
+        if (assignmentId) body.expected_version = Number(getTrimmedInputValue('assignment-assessment-kind-version') || 0);
+    }
 
     try {
         if (assignmentId) {
@@ -799,6 +824,7 @@ export function editAssignment(
     schedule = null,
     learningStageKey = '',
     latePolicy = null,
+    classification = null,
 ) {
     const idEl = document.getElementById('assignment-id');
     const titleEl = document.getElementById('assignment-title');
@@ -820,6 +846,10 @@ export function editAssignment(
     const lateScoreCapEl = document.getElementById('assignment-late-score-cap');
 
     if (idEl) idEl.value = assignmentId || '';
+    const classificationEl = document.getElementById('assignment-assessment-kind');
+    if (classificationEl) classificationEl.value = classification?.assessment_kind || (assignmentId ? '' : 'homework');
+    const classificationVersionEl = document.getElementById('assignment-assessment-kind-version');
+    if (classificationVersionEl) classificationVersionEl.value = String(classification?.assessment_kind_version || 0);
     if (titleEl) titleEl.value = title || '';
     if (reqEl) reqEl.value = requirements || '';
     if (rubricEl) rubricEl.value = rubric || '';

@@ -6,6 +6,19 @@ from classroom_app.services.course_planning_service import decorate_offering_ses
 
 
 class ClassroomWorkspaceProjectionTests(unittest.TestCase):
+    def test_category_does_not_infer_from_title_or_change_answer_format(self):
+        rows = [
+            {"id": 1, "title": "期末考试", "exam_paper_id": "paper", "assessment_kind": "homework"},
+            {"id": 2, "title": "作品", "assessment_kind": "final"},
+            {"id": 3, "title": "期末考试", "exam_paper_id": "paper"},
+        ]
+        student = build_assignment_workspace_items(role="student", assignments=rows)
+        teacher = build_assignment_workspace_items(role="teacher", assignments=rows)
+        self.assertEqual(["平时作业", "期末测验", "历史任务"], [row["assessment_kind_label"] for row in student])
+        self.assertEqual(["exam_paper", "submission", "exam_paper"], [row["answer_mode"] for row in student])
+        self.assertEqual("分类待确认", teacher[2]["assessment_kind_label"])
+        self.assertIsNone(student[2]["assessment_kind"])
+
     def _preview(self, assignments, role='student'):
         items = build_assignment_workspace_items(role=role, assignments=assignments)
         return build_assignment_workspace_preview(role=role, items=items, reference_time=datetime.fromisoformat('2026-09-05T12:00:00+08:00'))

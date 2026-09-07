@@ -8,8 +8,10 @@ which re-exports ``REQUIRED_POSTGRES_COLUMNS``.
 from __future__ import annotations
 
 from .schema_ai_jobs import AI_JOB_REQUIRED_POSTGRES_COLUMNS
+from .schema_grade_publications import GRADE_PUBLICATION_REQUIRED_COLUMNS
 
 REQUIRED_POSTGRES_COLUMNS = {
+    **GRADE_PUBLICATION_REQUIRED_COLUMNS,
     "teachers": ("id", "name"),
     "system_settings": ("key", "value", "updated_at"),
     "teacher_onboarding_state": (
@@ -162,6 +164,10 @@ REQUIRED_POSTGRES_COLUMNS = {
         "group_qr_description",
         "group_qr_revision",
     ),
+    "assignment_classification_revisions": (
+        "id", "assignment_id", "class_offering_id", "previous_kind", "assessment_kind",
+        "previous_version", "version", "source", "changed_by_teacher_id", "changed_at", "reason",
+    ),
     "assignments": (
         "id",
         "course_id",
@@ -174,6 +180,11 @@ REQUIRED_POSTGRES_COLUMNS = {
         "ordinary_grade_kind_override",
         "ordinary_grade_kind_updated_at",
         "ordinary_grade_kind_updated_by_teacher_id",
+        "assessment_kind",
+        "assessment_kind_version",
+        "assessment_kind_source",
+        "assessment_kind_updated_at",
+        "assessment_kind_updated_by_teacher_id",
         "allowed_file_types_json",
     ),
     "submissions": (

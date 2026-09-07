@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
+
+from classroom_app.db.connection import get_configured_db_engine, get_db_connection
+from classroom_app.time_utils import aware_local_now
 
 from .ai_provider_usage_service import build_provider_usage_snapshot
 from .message_center_service import (
@@ -15,6 +19,153 @@ from .message_center_service import (
 
 
 STAGE_EXAM_DAILY_LIMIT = 3
+AI_REVIEW_PURPOSE = "homework_visual_risk_review"
+AI_REVIEW_COUNTER_RETENTION_DAYS = 90
+
+
+def _review_now() -> datetime:
+    return aware_local_now()
+
+
+def _review_reservation_result(row, *, replay: bool, offering_id=None, policy_version=None) -> dict[str, Any]:
+    item = dict(row)
+    if replay and (item.get("class_offering_id") != offering_id or item.get("policy_version") != policy_version):
+        raise AIUsageBudgetError("A review reservation cannot change its course or policy")
+    expired = item["budget_date"] != _review_now().date().isoformat()
+    return {"allowed": item["status"] == "reserved" and not expired, "replay": replay,
+            "reason": "reservation_day_expired" if expired and item["status"] == "reserved" else
+                ("reserved" if item["status"] == "reserved" else "reservation_already_dispatched_or_closed"),
+            **item}
+
+
+def reserve_grading_review(
+    *, logical_call_id: str, class_offering_id: int | None,
+    policy_version: str, reasons: list[str], global_limit: int = 10, offering_limit: int = 3,
+) -> dict[str, Any]:
+    """Atomically reserve both daily count quotas; this is not a CNY budget.
+
+    The minimal reservation is kept for replay protection even after its daily
+    counter expires. No provider request runs inside this transaction.
+    """
+    logical_id = str(logical_call_id or "").strip()
+    if not logical_id or len(logical_id) > 200:
+        raise AIUsageBudgetError("A stable logical call id is required for automatic review")
+    offering_id = int(class_offering_id) if class_offering_id else None
+    if offering_id is not None and offering_id <= 0:
+        raise AIUsageBudgetError("Invalid review course scope")
+    now = _review_now()
+    day, stamp = now.date().isoformat(), now.isoformat(timespec="seconds")
+    scopes = [("global", "*", max(0, int(global_limit)))]
+    if offering_id:
+        scopes.append(("offering", str(offering_id), max(0, int(offering_limit))))
+    with get_db_connection() as conn:
+        engine = get_configured_db_engine()
+        if engine == "sqlite":
+            conn.execute("BEGIN IMMEDIATE")
+        suffix = " FOR UPDATE" if engine == "postgres" else ""
+        # Read without locking: every mutator locks daily scopes before the
+        # reservation, so no inverted lock order is introduced here.
+        existing = conn.execute("SELECT * FROM ai_review_reservations WHERE logical_call_id=? AND purpose=?",
+            (logical_id, AI_REVIEW_PURPOSE)).fetchone()
+        if existing:
+            conn.commit()
+            return _review_reservation_result(existing, replay=True, offering_id=offering_id, policy_version=str(policy_version))
+        counts = []
+        for scope_type, scope_id, limit in scopes:
+            conn.execute("INSERT INTO ai_review_daily_counters (budget_date,scope_type,scope_id,reserved_count,updated_at) "
+                "VALUES (?,?,?,0,?) ON CONFLICT (budget_date,scope_type,scope_id) DO NOTHING",
+                (day, scope_type, scope_id, stamp))
+            row = conn.execute("SELECT reserved_count FROM ai_review_daily_counters "
+                "WHERE budget_date=? AND scope_type=? AND scope_id=?" + suffix, (day, scope_type, scope_id)).fetchone()
+            counts.append(int(row["reserved_count"]))
+        existing = conn.execute("SELECT * FROM ai_review_reservations WHERE logical_call_id=? AND purpose=?",
+            (logical_id, AI_REVIEW_PURPOSE)).fetchone()
+        if existing:
+            conn.commit()
+            return _review_reservation_result(existing, replay=True, offering_id=offering_id, policy_version=str(policy_version))
+        for (scope_type, _, limit), count in zip(scopes, counts):
+            if count >= limit:
+                conn.commit()
+                return {"allowed": False, "replay": False, "reason": f"{scope_type}_daily_limit", "budget_date": day}
+        reservation_id = uuid.uuid4().hex
+        cursor = conn.execute("INSERT INTO ai_review_reservations "
+            "(reservation_id,logical_call_id,purpose,budget_date,class_offering_id,status,policy_version,reasons_json,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,'reserved',?,?,?,?) ON CONFLICT (logical_call_id,purpose) DO NOTHING",
+            (reservation_id, logical_id, AI_REVIEW_PURPOSE, day, offering_id, str(policy_version),
+             json.dumps(reasons, ensure_ascii=False), stamp, stamp))
+        if cursor.rowcount != 1:  # Same call crossed midnight concurrently.
+            existing = conn.execute("SELECT * FROM ai_review_reservations WHERE logical_call_id=? AND purpose=?",
+                (logical_id, AI_REVIEW_PURPOSE)).fetchone()
+            conn.commit()
+            return _review_reservation_result(existing, replay=True, offering_id=offering_id, policy_version=str(policy_version))
+        for scope_type, scope_id, limit in scopes:
+            cursor = conn.execute("UPDATE ai_review_daily_counters SET reserved_count=reserved_count+1,updated_at=? "
+                "WHERE budget_date=? AND scope_type=? AND scope_id=? AND reserved_count<?",
+                (stamp, day, scope_type, scope_id, limit))
+            if cursor.rowcount != 1:
+                conn.rollback()
+                raise AIUsageBudgetError("Review quota reservation changed concurrently")
+        # Counter rows are small, indexed by day, and have no replay identity.
+        conn.execute("DELETE FROM ai_review_daily_counters WHERE budget_date<?",
+            ((now.date() - timedelta(days=AI_REVIEW_COUNTER_RETENTION_DAYS)).isoformat(),))
+        row = conn.execute("SELECT * FROM ai_review_reservations WHERE reservation_id=?", (reservation_id,)).fetchone()
+        conn.commit()
+        return _review_reservation_result(row, replay=False)
+
+
+def mark_grading_review_sent(reservation_id: str, dispatch_token: str) -> bool:
+    """One invocation owns dispatch; its 429 retries use the same token."""
+    if not dispatch_token:
+        raise AIUsageBudgetError("Review dispatch token is required")
+    with get_db_connection() as conn:
+        cursor = conn.execute("UPDATE ai_review_reservations SET status='sent',dispatch_token=?,updated_at=? "
+            "WHERE reservation_id=? AND ((status='reserved' AND budget_date=?) OR (status='sent' AND dispatch_token=?))",
+            (dispatch_token, _review_now().isoformat(timespec="seconds"), reservation_id,
+             _review_now().date().isoformat(), dispatch_token))
+        conn.commit()
+        return cursor.rowcount == 1
+
+
+def finish_grading_review(reservation_id: str, dispatch_token: str, *, status: str) -> bool:
+    if status not in {"completed", "failed", "unknown"}:
+        raise AIUsageBudgetError("Invalid review completion status")
+    with get_db_connection() as conn:
+        cursor = conn.execute("UPDATE ai_review_reservations SET status=?,updated_at=? "
+            "WHERE reservation_id=? AND status='sent' AND dispatch_token=?",
+            (status, _review_now().isoformat(timespec="seconds"), reservation_id, dispatch_token))
+        conn.commit()
+        return cursor.rowcount == 1
+
+
+def release_unsent_grading_review(reservation_id: str) -> bool:
+    """Release only an explicit cancellation proven not to have dispatched."""
+    with get_db_connection() as conn:
+        engine = get_configured_db_engine()
+        if engine == "sqlite":
+            conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT * FROM ai_review_reservations WHERE reservation_id=?", (reservation_id,)).fetchone()
+        if not row or row["status"] != "reserved":
+            conn.commit()
+            return False
+        scopes = [("global", "*")]
+        if row["class_offering_id"]:
+            scopes.append(("offering", str(row["class_offering_id"])))
+        for scope_type, scope_id in scopes:
+            suffix = " FOR UPDATE" if engine == "postgres" else ""
+            conn.execute("SELECT reserved_count FROM ai_review_daily_counters "
+                "WHERE budget_date=? AND scope_type=? AND scope_id=?" + suffix,
+                (row["budget_date"], scope_type, scope_id)).fetchone()
+        cursor = conn.execute("UPDATE ai_review_reservations SET status='released',updated_at=? "
+            "WHERE reservation_id=? AND status='reserved'", (_review_now().isoformat(timespec="seconds"), reservation_id))
+        if cursor.rowcount != 1:
+            conn.rollback()
+            return False
+        for scope_type, scope_id in scopes:
+            conn.execute("UPDATE ai_review_daily_counters SET reserved_count=reserved_count-1,updated_at=? "
+                "WHERE budget_date=? AND scope_type=? AND scope_id=? AND reserved_count>0",
+                (_review_now().isoformat(timespec="seconds"), row["budget_date"], scope_type, scope_id))
+        conn.commit()
+        return True
 DEFAULT_AI_WEEKLY_BUDGETS: dict[str, int] = {
     "stage_exam_generation": 50,
     "ai_grading": 600,
@@ -285,6 +436,7 @@ def build_ai_usage_dashboard(conn, *, weeks: int = 8) -> dict[str, Any]:
             "summary": {},
             "model_items": [],
             "task_items": [],
+            "profile_items": [],
         }
     today = _now().date()
     current_week = _week_start(today)

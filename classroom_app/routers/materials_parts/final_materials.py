@@ -1,4 +1,12 @@
 import traceback
+from pydantic import BaseModel, Field
+from ...services.grade_publication_service import (
+    preview_grade_publication, publish_grade_snapshot, withdraw_grade_publication,
+    teacher_grade_publication_status,
+)
+from ...services.grade_material_preflight_service import (
+    build_grade_material_preflight, confirm_grade_material_preflight,
+)
 
 from .common import *
 from .generation_helpers import *
@@ -38,6 +46,50 @@ from ...services.smart_classroom_checkin_sync_service import (
 router = APIRouter()
 
 
+class GradePublicationRequest(BaseModel):
+    material_id: int = Field(gt=0)
+    expected_source_hash: str = Field(min_length=64, max_length=64)
+    expected_version: int = Field(ge=0)
+    confirmed: bool = False
+    accepted_warning_codes: list[str] = Field(default_factory=list, max_length=30)
+    confirmation_note: str = Field(default="", max_length=2000)
+
+
+class GradeWithdrawalRequest(BaseModel):
+    publication_id: int = Field(gt=0)
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+@router.get("/api/classrooms/{class_offering_id}/grade-publication", response_class=JSONResponse)
+async def get_grade_publication_status(class_offering_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        result = teacher_grade_publication_status(conn, class_offering_id=class_offering_id, teacher_id=int(user["id"]))
+    return {"status": "success", **result}
+
+
+@router.get("/api/classrooms/{class_offering_id}/grade-publication/preview", response_class=JSONResponse)
+async def get_grade_publication_preview(class_offering_id: int, material_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        preview = preview_grade_publication(conn, class_offering_id=class_offering_id, teacher_id=int(user["id"]), material_id=material_id)
+    return {"status": "success", "preview": preview}
+
+
+@router.post("/api/classrooms/{class_offering_id}/grade-publication/publish", response_class=JSONResponse)
+async def publish_classroom_grades(class_offering_id: int, body: GradePublicationRequest, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        publication = publish_grade_snapshot(conn, class_offering_id=class_offering_id, teacher_id=int(user["id"]), **body.model_dump())
+        conn.commit()
+    return {"status": "success", **publication}
+
+
+@router.post("/api/classrooms/{class_offering_id}/grade-publication/withdraw", response_class=JSONResponse)
+async def withdraw_classroom_grades(class_offering_id: int, body: GradeWithdrawalRequest, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        publication = withdraw_grade_publication(conn, class_offering_id=class_offering_id, teacher_id=int(user["id"]), **body.model_dump())
+        conn.commit()
+    return {"status": "success", **publication}
+
+
 async def _sync_fresh_attendance_for_ordinary_generation(user_id: int, class_offering_id: int) -> dict[str, Any]:
     attendance_sync = await sync_teacher_smart_classroom_checkins(
         int(user_id),
@@ -65,6 +117,48 @@ async def _sync_fresh_attendance_for_ordinary_generation(user_id: int, class_off
     return attendance_sync
 
 
+def _build_local_grade_export(conn, *, selection: dict, class_offering_id: int,
+                             teacher_id: int, classroom_context: dict, attendance_sync=None) -> dict:
+    if selection["document_type"] == ORDINARY_GRADE_RECORD_TYPE:
+        return build_ordinary_grade_record_payload(
+            conn, class_offering_id=class_offering_id, teacher_id=teacher_id,
+            homework_assignment_ids=selection.get("homework_assignment_ids") or [],
+            assessment_assignment_id=selection.get("assessment_assignment_id") or 0,
+            classroom_context=classroom_context, attendance_sync=attendance_sync,
+            generation_requirements=selection.get("prompt", selection.get("generation_requirements", "")),
+            minimum_ordinary_score_enabled=selection.get("minimum_ordinary_score_enabled", True),
+            minimum_ordinary_score=selection.get("minimum_ordinary_score", 60),
+            retake_students=selection.get("retake_students") or [],
+        )
+    if selection["document_type"] == EXAM_GRADE_RECORD_TYPE:
+        return build_exam_grade_record_payload(
+            conn, class_offering_id=class_offering_id, teacher_id=teacher_id,
+            exam_assignment_id=selection.get("exam_assignment_id") or 0, classroom_context=classroom_context,
+        )
+    raise HTTPException(400, "仅平时成绩表和考核登分表使用此成绩来源预检。")
+
+
+def _require_grade_preflight_confirmation(confirmation: dict) -> None:
+    if not confirmation.get("preflight_confirmed") or not confirmation.get("expected_preflight_hash"):
+        raise HTTPException(409, "请先预检并确认成绩来源、分数与警告，再生成或更新材料。")
+
+
+@router.post("/api/classrooms/{class_offering_id}/final-materials/preflight", response_class=JSONResponse)
+async def preflight_classroom_grade_material(class_offering_id: int, payload: ClassroomFinalMaterialGenerateRequest,
+                                             user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        ensure_classroom_access(conn, class_offering_id, user)
+    attendance_sync = None
+    if payload.document_type == ORDINARY_GRADE_RECORD_TYPE:
+        attendance_sync = await _sync_fresh_attendance_for_ordinary_generation(int(user["id"]), class_offering_id)
+    with get_db_connection() as conn:
+        context = _load_final_material_classroom_context(conn, class_offering_id, user)
+        export_payload = _build_local_grade_export(conn, selection=payload.model_dump(), class_offering_id=class_offering_id,
+            teacher_id=int(user["id"]), classroom_context=context, attendance_sync=attendance_sync)
+        preview = build_grade_material_preflight(export_payload)
+    return {"status": "success", "preflight": preview}
+
+
 def _local_grade_record_parse_result(
     *,
     document_type: str,
@@ -72,6 +166,7 @@ def _local_grade_record_parse_result(
     classroom_context: dict[str, Any],
 ):
     type_meta = resolve_material_ai_import_type("final_material", document_type)
+
     is_ordinary = document_type == ORDINARY_GRADE_RECORD_TYPE
     raw_result = {
         "metadata": export_payload.get("fields") or {},
@@ -291,6 +386,8 @@ async def generate_classroom_final_material(
     if document_type not in FINAL_MATERIAL_TYPES:
         raise HTTPException(400, "期末材料类型不受支持")
     type_meta = resolve_material_ai_import_type("final_material", document_type)
+    if document_type in {ORDINARY_GRADE_RECORD_TYPE, EXAM_GRADE_RECORD_TYPE}:
+        _require_grade_preflight_confirmation(payload.model_dump())
 
     attendance_sync: dict[str, Any] | None = None
     if document_type == ORDINARY_GRADE_RECORD_TYPE:
@@ -353,19 +450,10 @@ async def generate_classroom_final_material(
             if parent["node_type"] != "folder":
                 raise HTTPException(400, "只能生成到文件夹中")
         if document_type == ORDINARY_GRADE_RECORD_TYPE:
-            export_payload = build_ordinary_grade_record_payload(
-                conn,
-                class_offering_id=class_offering_id,
-                teacher_id=user["id"],
-                homework_assignment_ids=payload.homework_assignment_ids,
-                assessment_assignment_id=payload.assessment_assignment_id or 0,
-                classroom_context=classroom_context,
-                attendance_sync=attendance_sync,
-                generation_requirements=payload.prompt,
-                minimum_ordinary_score_enabled=payload.minimum_ordinary_score_enabled,
-                minimum_ordinary_score=payload.minimum_ordinary_score,
-                retake_students=payload.retake_students,
-            )
+            export_payload = _build_local_grade_export(conn, selection=payload.model_dump(), class_offering_id=class_offering_id,
+                teacher_id=int(user["id"]), classroom_context=classroom_context, attendance_sync=attendance_sync)
+            export_payload["structured"]["generation_confirmation"] = confirm_grade_material_preflight(
+                build_grade_material_preflight(export_payload), payload.model_dump(), teacher_id=int(user["id"]))
             parse_result = _local_grade_record_parse_result(
                 document_type=document_type,
                 export_payload=export_payload,
@@ -389,13 +477,10 @@ async def generate_classroom_final_material(
                 "attendance_sync": attendance_sync,
             }
         if document_type == EXAM_GRADE_RECORD_TYPE:
-            export_payload = build_exam_grade_record_payload(
-                conn,
-                class_offering_id=class_offering_id,
-                teacher_id=user["id"],
-                exam_assignment_id=payload.exam_assignment_id or 0,
-                classroom_context=classroom_context,
-            )
+            export_payload = _build_local_grade_export(conn, selection=payload.model_dump(), class_offering_id=class_offering_id,
+                teacher_id=int(user["id"]), classroom_context=classroom_context)
+            export_payload["structured"]["generation_confirmation"] = confirm_grade_material_preflight(
+                build_grade_material_preflight(export_payload), payload.model_dump(), teacher_id=int(user["id"]))
             parse_result = _local_grade_record_parse_result(
                 document_type=document_type,
                 export_payload=export_payload,
@@ -632,11 +717,14 @@ async def update_grade_record_students(
 @router.post("/api/materials/{material_id}/final-material/refresh", response_class=JSONResponse)
 async def refresh_generated_grade_record_material(
     material_id: int,
+    payload: GradeMaterialConfirmationRequest | None = None,
     user: dict = Depends(get_current_teacher),
 ):
     """一键更新：按材料原本记录的课堂来源（作业/考试选择、最低分策略等）
     重新读取最新成绩数据，原地更新已生成的平时成绩表/考核登分表，
     不新建材料、不改变材料位置与课堂绑定。"""
+    confirmation = payload.model_dump() if payload else {}
+    _require_grade_preflight_confirmation(confirmation)
     with get_db_connection() as conn:
         ensure_teacher_material_owner(conn, int(material_id), user["id"])
         record = _find_material_ai_import_record(
@@ -647,15 +735,34 @@ async def refresh_generated_grade_record_material(
         )
         plan = build_grade_record_refresh_plan(record)
         ensure_classroom_access(conn, int(plan["class_offering_id"]), user)
-    return await _execute_grade_record_refresh(record, plan, user)
+    return await _execute_grade_record_refresh(record, plan, user, confirmation=confirmation)
 
 
-async def _execute_grade_record_refresh(record, plan: dict[str, Any], user: dict) -> dict[str, Any]:
+@router.post("/api/materials/{material_id}/final-material/refresh/preflight", response_class=JSONResponse)
+async def preflight_grade_record_refresh(material_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        ensure_teacher_material_owner(conn, int(material_id), user["id"])
+        record = _find_material_ai_import_record(conn, int(material_id), int(user["id"]), completed_only=True)
+        plan = build_grade_record_refresh_plan(record)
+        ensure_classroom_access(conn, int(plan["class_offering_id"]), user)
+    attendance_sync = None
+    if plan["document_type"] == ORDINARY_GRADE_RECORD_TYPE:
+        attendance_sync = await _sync_fresh_attendance_for_ordinary_generation(int(user["id"]), int(plan["class_offering_id"]))
+    with get_db_connection() as conn:
+        context = _load_final_material_classroom_context(conn, int(plan["class_offering_id"]), user)
+        export_payload = _build_local_grade_export(conn, selection=plan, class_offering_id=int(plan["class_offering_id"]),
+            teacher_id=int(user["id"]), classroom_context=context, attendance_sync=attendance_sync)
+        preview = build_grade_material_preflight(export_payload, existing_record=record)
+    return {"status": "success", "preflight": preview}
+
+
+async def _execute_grade_record_refresh(record, plan: dict[str, Any], user: dict, *, confirmation: dict) -> dict[str, Any]:
     """Core of the one-click refresh: rebuild from the recorded selections and
     persist in place. Access checks are the caller's responsibility."""
     record_id = int(record["id"])
     document_type = str(plan["document_type"])
     class_offering_id = int(plan["class_offering_id"])
+    _require_grade_preflight_confirmation(confirmation)
 
     attendance_sync: dict[str, Any] | None = None
     if document_type == ORDINARY_GRADE_RECORD_TYPE:
@@ -667,28 +774,10 @@ async def _execute_grade_record_refresh(record, plan: dict[str, Any], user: dict
     with get_db_connection() as conn:
         classroom_context = _load_final_material_classroom_context(conn, class_offering_id, user)
         try:
-            if document_type == ORDINARY_GRADE_RECORD_TYPE:
-                export_payload = build_ordinary_grade_record_payload(
-                    conn,
-                    class_offering_id=class_offering_id,
-                    teacher_id=user["id"],
-                    homework_assignment_ids=plan["homework_assignment_ids"],
-                    assessment_assignment_id=plan["assessment_assignment_id"],
-                    classroom_context=classroom_context,
-                    attendance_sync=attendance_sync,
-                    generation_requirements=plan["generation_requirements"],
-                    minimum_ordinary_score_enabled=plan["minimum_ordinary_score_enabled"],
-                    minimum_ordinary_score=plan["minimum_ordinary_score"],
-                    retake_students=plan.get("retake_students") or [],
-                )
-            else:
-                export_payload = build_exam_grade_record_payload(
-                    conn,
-                    class_offering_id=class_offering_id,
-                    teacher_id=user["id"],
-                    exam_assignment_id=plan["exam_assignment_id"],
-                    classroom_context=classroom_context,
-                )
+            export_payload = _build_local_grade_export(conn, selection=plan, class_offering_id=class_offering_id,
+                teacher_id=int(user["id"]), classroom_context=classroom_context, attendance_sync=attendance_sync)
+            export_payload["structured"]["generation_confirmation"] = confirm_grade_material_preflight(
+                build_grade_material_preflight(export_payload, existing_record=record), confirmation, teacher_id=int(user["id"]))
         except HTTPException:
             raise
         except Exception:
@@ -700,7 +789,7 @@ async def _execute_grade_record_refresh(record, plan: dict[str, Any], user: dict
         export_payload=export_payload,
         classroom_context=classroom_context,
     )
-    task = await _persist_final_material_record_update(record_id, record, parse_result, user)
+    task = await _persist_final_material_record_update(record_id, record, parse_result, user, require_unchanged_record=True)
     label = "平时成绩记录表" if document_type == ORDINARY_GRADE_RECORD_TYPE else "考核登分表"
     return {
         "status": "success",
@@ -715,10 +804,11 @@ async def refresh_offering_grade_record_materials(
     class_offering_id: int,
     user: dict,
 ) -> list[dict[str, Any]]:
-    """自动刷新本课堂已生成的平时成绩表/考核登分表（如确认插班生后）。
+    """Compatibility entry: report affected saved materials without rewriting them.
 
-    逐份材料独立执行：单份失败（如考勤同步不可用）不影响其他份，
-    结果汇总返回给调用方展示。"""
+    Explicit generation/refresh preflight is the only route to replace a saved
+    grade record. Confirming roster exceptions must not overwrite manual grades.
+    """
     with get_db_connection() as conn:
         rows = conn.execute(
             """
@@ -728,9 +818,12 @@ async def refresh_offering_grade_record_materials(
               AND document_group = 'final_material'
               AND document_type IN (?, ?)
               AND parse_status = 'completed'
+              AND EXISTS (SELECT 1 FROM course_material_assignments link WHERE link.class_offering_id = ?
+                  AND (link.material_id = material_ai_import_records.package_material_id
+                       OR link.material_id = material_ai_import_records.parsed_material_id))
             ORDER BY updated_at DESC, id DESC
             """,
-            (int(user["id"]), ORDINARY_GRADE_RECORD_TYPE, EXAM_GRADE_RECORD_TYPE),
+            (int(user["id"]), ORDINARY_GRADE_RECORD_TYPE, EXAM_GRADE_RECORD_TYPE, int(class_offering_id)),
         ).fetchall()
     eligible: list[tuple[Any, dict[str, Any]]] = []
     for record in rows:
@@ -746,13 +839,7 @@ async def refresh_offering_grade_record_materials(
             "record_id": int(record["id"]),
             "document_type": str(plan["document_type"]),
         }
-        try:
-            outcome = await _execute_grade_record_refresh(record, plan, user)
-            entry.update({"status": "success", "message": outcome.get("message") or ""})
-        except HTTPException as exc:
-            entry.update({"status": "failed", "message": str(exc.detail)})
-        except Exception:
-            traceback.print_exc()
-            entry.update({"status": "failed", "message": "自动更新暂时失败，材料未被修改。"})
+        entry.update({"status": "needs_confirmation", "material_id": record["package_material_id"] or record["parsed_material_id"],
+                      "message": "课堂名单规则已变化；原材料与人工改分已保留，请在材料页预检并确认后更新。"})
         results.append(entry)
     return results

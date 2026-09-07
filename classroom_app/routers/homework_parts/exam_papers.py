@@ -1,4 +1,5 @@
 from .common import *
+from ...services.assessment_classification_service import initialize_assignment_assessment_kind, normalize_assessment_kind
 from ...services.base_resource_modes_service import (
     build_exam_delete_blockers,
     ensure_teacher_can_manage_exam_attributes,
@@ -53,7 +54,7 @@ def _count_exam_drafts(conn, paper_id: str) -> int:
     return int(row[0] or 0) if row else 0
 
 
-def _sync_exam_assignment_content(conn, *, paper_id: str, title: str, description: str, exam_data: dict[str, Any]) -> int:
+def _sync_exam_assignment_content(conn, *, paper_id: str, title: str, description: str, exam_data: dict[str, Any], grading_inputs_changed: bool = True) -> int:
     rubric_md = build_exam_rubric_md(
         title=title,
         description=description,
@@ -71,6 +72,10 @@ def _sync_exam_assignment_content(conn, *, paper_id: str, title: str, descriptio
         """,
         (title, requirements_md, rubric_md, str(paper_id)),
     )
+    if grading_inputs_changed:
+        from ...services.ai_grading_service import invalidate_assignment_grading_inputs
+        assignment_ids = [row["id"] for row in conn.execute("SELECT id FROM assignments WHERE exam_paper_id = ?", (str(paper_id),)).fetchall()]
+        invalidate_assignment_grading_inputs(conn, assignment_ids)
     return int(cursor.rowcount or 0)
 
 
@@ -222,6 +227,8 @@ async def put_exam_paper_content(
                     title=title,
                     description=description,
                     exam_data=complete_questions,
+                    grading_inputs_changed=(complete_questions != normalize_exam_scoring_payload(json.loads(paper["questions_json"] or "{}"))
+                                            or description != str(paper["description"] or "")),
                 )
                 questions_payload = complete_questions
             except ValueError as exc:
@@ -458,13 +465,25 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
     data = await request.json()
     now = datetime.now().isoformat()
     requested_scope = _normalize_exam_open_scope(data.get("scope_level"), default=SCOPE_DEPARTMENT)
-    try:
-        questions_payload = normalize_exam_scoring_payload(data.get('questions', {"pages": []}))
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
     with get_db_connection() as conn:
         paper = _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]), manage=True)
+        try:
+            previous_questions = normalize_exam_scoring_payload(json.loads(paper.get("questions_json") or "{}"))
+            questions_payload = normalize_exam_scoring_payload(data.get('questions', previous_questions))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        description = str(data.get('description', paper.get('description')) or '')
+        grading_inputs_changed = questions_payload != previous_questions or description != str(paper.get('description') or '')
+        if grading_inputs_changed:
+            if _count_exam_submissions(conn, paper_id) > 0 or _count_exam_drafts(conn, paper_id) > 0:
+                raise HTTPException(409, "试卷已有学生提交或草稿，不能原地修改题目、分值和评分标准；请创建新版本后再编辑。")
+            if _count_exam_assignments(conn, paper_id) > 0:
+                try:
+                    questions_payload = normalize_exam_scoring_payload(questions_payload, require_complete=True)
+                    _sync_exam_assignment_content(conn, paper_id=paper_id, title=str(data.get('title') or paper['title']),
+                                                  description=description, exam_data=questions_payload)
+                except ValueError as exc:
+                    raise HTTPException(400, f"试卷已分配到课堂，修改内容前必须补齐评分标准：{exc}") from exc
         owner_scope = load_teacher_org_scope(conn, int(paper.get("teacher_id") or user["id"]))
 
         conn.execute(
@@ -479,7 +498,7 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
                    department = ?,
                    updated_at = ?
                WHERE id = ?""",
-            (data['title'], data.get('description', ''),
+             (data['title'], description,
              json.dumps(questions_payload, ensure_ascii=False),
              json.dumps(data.get('config', {}), ensure_ascii=False),
              data.get('status', 'draft'),
@@ -513,6 +532,10 @@ async def delete_exam_paper(paper_id: str, user: dict = Depends(get_current_teac
 async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depends(get_current_teacher)):
     """将试卷分配给指定课堂（创建 assignment）"""
     data = await request.json()
+    try:
+        assessment_kind = normalize_assessment_kind(data.get("assessment_kind"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     class_offering_id = data.get('class_offering_id')
     if not class_offering_id:
         raise HTTPException(400, "请指定课堂")
@@ -610,6 +633,9 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
                 learning_stage_key,
             )
         )
+        classification = initialize_assignment_assessment_kind(
+            conn, new_assignment_id, assessment_kind=assessment_kind, teacher_id=int(user["id"]), source="teacher_assign",
+        )
         if schedule_fields["status"] == "published":
             try:
                 create_assignment_published_notifications(
@@ -637,6 +663,7 @@ async def assign_exam_paper(paper_id: str, request: Request, user: dict = Depend
     return {
         "status": "success",
         "assignment_id": new_assignment_id,
+        **{key: value for key, value in classification.items() if key not in {"assignment_id", "changed"}},
         "assignment_status": schedule_fields["status"],
         "due_at": schedule_fields["due_at"],
         "message": "试卷已成功发布到当前课堂"

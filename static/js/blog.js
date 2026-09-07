@@ -3026,7 +3026,7 @@ class BlogCenter {
                     <img class="blog-comment-composer__avatar" src="${escapeHtml(this.currentAvatarUrl)}" alt="${escapeHtml(this.userName)}">
                     <div class="blog-comment-composer__panel">
                         <div class="blog-comment-replying" data-blog-replying hidden></div>
-                        <textarea class="blog-comment-composer__input" data-blog-comment-input rows="3" placeholder="写下你的观点、代码片段或补充说明。输入 @管家 可以邀请 AI 管家参与讨论..."></textarea>
+                        <textarea class="blog-comment-composer__input" data-blog-comment-input rows="3" placeholder="写下你的观点或补充说明。输入 @管家 可邀请 AI 回复并查看本条评论的图片（最多 4 张）。"></textarea>
                         <div class="blog-comment-media-strip" data-blog-comment-custom-emoji-preview hidden></div>
                         <div class="blog-comment-media-strip" data-blog-comment-attachment-preview hidden></div>
                         <div class="blog-comment-toolbar" data-blog-comment-toolbar>

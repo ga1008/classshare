@@ -82,7 +82,7 @@ class FakePostgresConnection:
             if match:
                 self.missing_tables.discard(match.group(1))
             return FakeCursor([])
-        if normalized.startswith("CREATE UNIQUE INDEX IF NOT EXISTS"):
+        if normalized.startswith(("CREATE UNIQUE INDEX IF NOT EXISTS", "CREATE INDEX IF NOT EXISTS")):
             return FakeCursor([])
         if normalized.startswith("ALTER TABLE"):
             match = re.search(r'ALTER TABLE "([^"]+)" ADD COLUMN IF NOT EXISTS "([^"]+)"', normalized)

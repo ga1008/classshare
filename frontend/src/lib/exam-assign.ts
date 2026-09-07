@@ -4,6 +4,8 @@ export const EXAM_ASSIGN_COMMAND_EVENT = 'lanshare:exam-assign-command';
 export type ExamAssignSnapshot = {
   selectedPaperId: string;
   selectedPaperTitle: string;
+  assessmentKind: string;
+  assessmentKindLabel: string;
   paperCount: number;
   allowedFileTypes: string[];
   learningStageKey: string;
@@ -69,6 +71,8 @@ export function normalizeExamAssignSnapshot(value: unknown): ExamAssignSnapshot 
   return {
     selectedPaperId: toText(record.selectedPaperId),
     selectedPaperTitle: toText(record.selectedPaperTitle),
+    assessmentKind: toText(record.assessmentKind),
+    assessmentKindLabel: toText(record.assessmentKindLabel, '待选分类'),
     paperCount: toCount(record.paperCount),
     allowedFileTypes: normalizeAllowedTypes(record.allowedFileTypes),
     learningStageKey: toText(record.learningStageKey),
@@ -135,6 +139,7 @@ export function buildExamAssignMessage(snapshot: ExamAssignSnapshot): string {
   if (!snapshot.selectedPaperId) {
     return '先选择一份试卷，后端仍会校验评分标准完整性。';
   }
+  if (!snapshot.assessmentKind) return '请选择本次课堂任务的分类。';
   if (snapshot.lateSubmissionEnabled && snapshot.scheduleMode === 'permanent') {
     return '补交扣分需要先设置首次截止或倒计时。';
   }

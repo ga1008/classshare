@@ -1253,6 +1253,16 @@
                 </div>
 
                 <form id="ai-exam-form">
+                    <div class="form-group">
+                        <label class="form-label" for="ai-exam-assessment-kind">本次出题用途</label>
+                        <select id="ai-exam-assessment-kind" class="form-control">
+                            <option value="">尚未确定</option>
+                            <option value="homework">平时作业</option>
+                            <option value="midterm">期中测验</option>
+                            <option value="final">期末测验</option>
+                        </select>
+                        <p class="form-hint">用于选择本次看图出题的质量要求；发布到课堂时再确认任务分类。</p>
+                    </div>
                     <div class="assist-section">
                         <div class="assist-section-head">
                             <strong>试卷基础信息</strong>
@@ -2982,6 +2992,8 @@
                     payload.append('class_offering_id', String(classOfferingId));
                 }
                 payload.append('question_types', JSON.stringify(questionTypes));
+                const intendedKind = document.getElementById('ai-exam-assessment-kind').value;
+                if (intendedKind) payload.append('intended_assessment_kind', intendedKind);
                 payload.append('source_material_ids', JSON.stringify(selectedMaterialIds));
                 sourceFiles.forEach(file => payload.append('source_files', file));
 

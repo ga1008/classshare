@@ -6,6 +6,13 @@ export type ClassroomTask = {
   latePolicyLabel?: string;
   startsAt?: string;
   createdAt?: string;
+  assessment_kind?: 'homework' | 'midterm' | 'final' | null;
+  assessment_kind_label?: string;
+  classification_status?: 'confirmed' | 'legacy_unknown' | 'not_applicable';
+  assessment_kind_version?: number;
+  source_feature?: string;
+  has_exam_paper?: boolean;
+  answer_mode?: 'exam_paper' | 'submission';
 };
 
 export type ClassroomSession = {
@@ -33,7 +40,7 @@ export function taskPresentation(task: ClassroomTask, teacher: boolean, now = Da
     ? { actionable: true, rank: 0, status: '待重交', action: '去重交' }
     : { actionable: false, rank: 5, status: '重交已关闭', action: '查看反馈' };
   if (task.submissionStatus === 'unsubmitted') {
-    if (task.accepting) return { actionable: true, rank: task.lateOpen ? 1 : 2, status: task.lateOpen ? '补交开放中' : '未提交', action: task.lateOpen ? '去补交' : task.kind === 'exam' ? '进入考试' : '去提交' };
+    if (task.accepting) return { actionable: true, rank: task.lateOpen ? 1 : 2, status: task.lateOpen ? '补交开放中' : '未提交', action: task.lateOpen ? '去补交' : (task.has_exam_paper ?? task.kind === 'exam') ? '进入考试' : '去提交' };
     return { actionable: false, rank: 5, status: task.status === 'closed' || task.deadlinePhase === 'closed' ? '已截止 · 未提交' : '尚未开放', action: '查看要求' };
   }
   if (resubmit) return { actionable: true, rank: 0, status: '可重新提交', action: '重新提交' };
@@ -48,14 +55,21 @@ export function taskIsUrgent(task: ClassroomTask, teacher: boolean, now = Date.n
   return taskPresentation(task, teacher, now).actionable && Number.isFinite(due) && due > now && due - now <= 86400000;
 }
 
-export function taskMatchesFilter(task: ClassroomTask, teacher: boolean, filter: string, query: string, now = Date.now()) {
+export function taskMatchesFilter(task: ClassroomTask, teacher: boolean, filter: string, query: string, now = Date.now(), category = 'all') {
   const presentation = taskPresentation(task, teacher, now);
   const matches = filter === 'all' || (filter === 'actionable' && presentation.actionable)
     || (filter === 'urgent' && taskIsUrgent(task, teacher, now))
     || (filter === 'submitted' && ['submitted', 'grading', 'graded'].includes(task.submissionStatus))
     || (filter === 'closed' && (task.status === 'closed' || task.deadlinePhase === 'closed'))
     || (filter === 'draft' && task.status === 'new');
-  return matches && task.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
+  const categoryMatches = category === 'all' || (category === 'legacy_unknown'
+    ? !task.assessment_kind && task.classification_status !== 'not_applicable'
+    : category === 'personal_stage' ? task.source_feature === 'personal_stage' : task.assessment_kind === category);
+  return matches && categoryMatches && task.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
+}
+
+export function taskCategoryLabel(task: ClassroomTask) {
+  return task.assessment_kind_label || '历史任务';
 }
 
 export function taskDeadlineLabel(task: ClassroomTask) {

@@ -30,10 +30,13 @@ re-grading / re-finalization never double-blends an already-blended score.
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
+import json
 from typing import Any, Optional
 
 from ..db.connection import execute_insert_returning_id
 from ..db.schema_study_group_scheme import ensure_study_group_scheme_schema
+from .grading_revision_service import activate_submission_grade_revision
 
 # --- Scoring constants -------------------------------------------------------
 DEFAULT_PEER_POINTS = 16          # fair default when a rater never rates a teammate
@@ -491,7 +494,9 @@ def record_member_work_score(conn, submission_id: int) -> dict[str, Any]:
     group assignment, persist its *raw* work score into the member-result
     ledger and attempt to finalize the group. Safe no-op for non-group work."""
     submission = conn.execute(
-        "SELECT id, assignment_id, student_pk_id, status, score, is_absence_score FROM submissions WHERE id = ? LIMIT 1",
+        "SELECT s.id, s.assignment_id, s.student_pk_id, s.status, s.score, s.is_absence_score, "
+        "r.provenance_json FROM submissions s LEFT JOIN submission_grade_revisions r "
+        "ON r.id = s.active_grade_revision_id AND r.status = 'active' WHERE s.id = ? LIMIT 1",
         (int(submission_id),),
     ).fetchone()
     if not submission:
@@ -509,6 +514,18 @@ def record_member_work_score(conn, submission_id: int) -> dict[str, Any]:
         return {"handled": True, "in_group": False}
     if submission.get("score") is None:
         return {"handled": True, "in_group": True, "recorded": False}
+    try:
+        provenance = json.loads(submission.get("provenance_json") or "{}")
+    except (TypeError, ValueError):
+        provenance = {}
+    previous = _load_member_result(conn, assignment_id, student_pk_id)
+    # A repeated callback must never blend an already settled score again.
+    already_settled = provenance.get("source") == "group_final" or (
+        not provenance and previous and previous.get("revealed")
+        and previous.get("final_score") == submission.get("score")
+    )
+    if already_settled:
+        return try_finalize_group(conn, assignment_id=assignment_id, group_id=int(group["id"]))
     _upsert_member_result(
         conn,
         assignment_id=assignment_id,
@@ -517,7 +534,7 @@ def record_member_work_score(conn, submission_id: int) -> dict[str, Any]:
         student_pk_id=student_pk_id,
         submission_id=int(submission["id"]),
         work_score=float(submission["score"]),
-        revealed=0,
+        revealed=1 if previous and previous.get("revealed") else 0,
     )
     return try_finalize_group(conn, assignment_id=assignment_id, group_id=int(group["id"]))
 
@@ -627,6 +644,9 @@ def try_finalize_group(conn, *, assignment_id: Any, group_id: int) -> dict[str, 
         final_score = compute_final_score(work_score, peer_avg)
         submission = _load_submission_for_member(conn, assignment_id, student_pk_id)
         submission_id = _safe_int(submission.get("id")) if submission else None
+        if submission and submission.get("is_absence_score"):
+            # A teacher's explicit absence zero is not a submitted group work.
+            peer_avg, peer_count, final_score = 0.0, 0, 0.0
         _upsert_member_result(
             conn,
             assignment_id=assignment_id,
@@ -662,7 +682,7 @@ _FINAL_FEEDBACK_MARKER = "<!-- group-final -->"
 
 def _apply_final_to_submission(conn, submission_id: int, final_score: float, work_score: float, peer_avg: float) -> None:
     row = conn.execute(
-        "SELECT feedback_md FROM submissions WHERE id = ? LIMIT 1",
+        "SELECT * FROM submissions WHERE id = ? LIMIT 1",
         (int(submission_id),),
     ).fetchone()
     feedback = str(row["feedback_md"] or "") if row else ""
@@ -674,9 +694,28 @@ def _apply_final_to_submission(conn, submission_id: int, final_score: float, wor
         f"**综合表现分：{final_score}**\n\n"
         f"（综合表现分 = 作业得分 × {WORK_WEIGHT:g} + 组员评分均分，已结合小组协作表现。）"
     )
+    final_feedback = (feedback + summary).strip()
+    revision_hash = "group-final:" + hashlib.sha256(json.dumps(
+        [int(submission_id), work_score, peer_avg, final_score, final_feedback],
+        ensure_ascii=False, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+    if row:
+        source_audit = {}
+        source_revision = conn.execute("SELECT quality_audit_json, provenance_json FROM submission_grade_revisions WHERE id = ?", (row["active_grade_revision_id"],)).fetchone() if row["active_grade_revision_id"] else None
+        if source_revision:
+            source_audit = json.loads(source_revision["quality_audit_json"] or "{}")
+            origin = json.loads(source_revision["provenance_json"] or "{}")
+            source_audit.setdefault("group_work_source", origin.get("source"))
+        activate_submission_grade_revision(
+            conn, submission=dict(row), score=final_score, feedback_md=final_feedback,
+            data={"source": "group_final", "grading_revision_hash": revision_hash,
+                  "quality_audit": source_audit,
+                  "group_work_score": work_score, "group_peer_average": round(peer_avg, 2)},
+        )
     conn.execute(
-        "UPDATE submissions SET score = ?, status = 'graded', feedback_md = ? WHERE id = ?",
-        (final_score, (feedback + summary).strip(), int(submission_id)),
+        "UPDATE submissions SET score = ?, status = CASE WHEN status IN ('grading', 'grading_review') "
+        "THEN status ELSE 'graded' END, feedback_md = ? WHERE id = ?",
+        (final_score, final_feedback, int(submission_id)),
     )
 
 
@@ -716,7 +755,9 @@ def student_visible_submission(submission: Optional[dict[str, Any]], display_sta
     """
     if submission and display_state and display_state.get("is_group") and not display_state.get("revealed"):
         return {**submission, "score": None, "feedback_md": "",
-                "score_before_late_penalty": None, "late_penalty_points": None}
+                "score_before_late_penalty": None, "late_penalty_points": None,
+                "effective_score": None, "score_visible": False, "has_effective_score": False,
+                "can_export_answer": False, "active_grade_revision_id": None}
     return submission
 
 
@@ -738,7 +779,8 @@ def get_student_display_state(conn, assignment_id: Any, student_pk_id: int) -> O
     result = _load_member_result(conn, assignment_id, int(student_pk_id))
     submission = _load_submission_for_member(conn, assignment_id, int(student_pk_id))
     group = _scheme_group_for_student(conn, int(binding["scheme_id"]), int(student_pk_id))
-    revealed = bool(result and int(result.get("revealed") or 0))
+    revealed = bool(result and group and int(result.get("revealed") or 0)
+                    and int(result.get("group_id") or 0) == int(group["id"]))
     work_graded = bool(result and result.get("work_score") is not None) or (
         submission is not None
         and submission.get("score") is not None

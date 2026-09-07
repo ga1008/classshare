@@ -1,0 +1,147 @@
+"""Native tests are opt-in and restricted to the explicitly isolated cluster."""
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+from tools.assessment_postgres_rehearsal import (
+    apply_assessment_migrations, connect_offline, differences, rehearse, snapshot, validate_target,
+)
+
+
+class TargetGuardTests(unittest.TestCase):
+    def test_explicit_cluster_nondefault_port_and_database_prefix_are_required(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with self.assertRaises(ValueError):
+                validate_target(cluster_dir=root, port=55437, database="lanshare_assessment_rehearsal")
+            (root / "PG_VERSION").write_text("16", encoding="ascii")
+            for port, database in ((5432, "lanshare_assessment_rehearsal"), (55437, "lanshare"), (55437, "postgres")):
+                with self.assertRaises(ValueError):
+                    validate_target(cluster_dir=root, port=port, database=database)
+            self.assertEqual(root.resolve(), validate_target(cluster_dir=root, port=55437,
+                                                            database="lanshare_assessment_rehearsal_tests"))
+
+
+@unittest.skipUnless(os.environ.get("ASSESSMENT_REHEARSAL_TEST_CLUSTER"), "Requires an explicitly created offline PostgreSQL cluster")
+class NativePostgresRehearsalTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.cluster = Path(os.environ["ASSESSMENT_REHEARSAL_TEST_CLUSTER"])
+        cls.port = int(os.environ["ASSESSMENT_REHEARSAL_TEST_PORT"])
+        cls.database = f"lanshare_assessment_rehearsal_tests_{os.getpid()}"
+        cls.admin = connect_offline(cluster_dir=cls.cluster, port=cls.port, database="lanshare_assessment_rehearsal")
+        cls.admin.autocommit = True
+        # Exclusive creation: never replace an existing database. Only this
+        # process-created synthetic database is dropped in tearDownClass.
+        cls.admin.execute(f'CREATE DATABASE "{cls.database}" TEMPLATE template0')
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls.admin.execute(f'DROP DATABASE "{cls.database}"')
+        finally:
+            cls.admin.close()
+
+    def setUp(self):
+        self.conn = connect_offline(cluster_dir=self.cluster, port=self.port, database=self.database)
+        with self.conn.transaction():
+            self.conn.execute("DROP SCHEMA public CASCADE")
+            self.conn.execute("CREATE SCHEMA public")
+            self.conn.execute("""CREATE TABLE assignments(id TEXT PRIMARY KEY, title TEXT, ordinary_grade_kind_override TEXT);
+                CREATE TABLE submissions(id BIGINT PRIMARY KEY, assignment_id TEXT REFERENCES assignments(id),
+                    score DOUBLE PRECISION, feedback_md TEXT, answers_json TEXT);
+                CREATE TABLE submission_files(id BIGINT PRIMARY KEY, submission_id BIGINT REFERENCES submissions(id), relative_path TEXT);
+                CREATE TABLE original_types(id SERIAL PRIMARY KEY, raw_json JSON, normalized_json JSONB, exact_decimal NUMERIC,
+                    happened_at TIMESTAMPTZ, content BYTEA, value DOUBLE PRECISION, nullable_value TEXT);
+                INSERT INTO assignments VALUES ('legacy','历史期末测验','assignment'), ('plain','普通作业',NULL);
+                INSERT INTO submissions VALUES (1,'legacy',82.5,'DO_NOT_REPORT_FEEDBACK','{"q":"DO_NOT_REPORT_ANSWER"}'),
+                    (2,'legacy',0,'缺交0',''), (3,'plain',NULL,'未评分',NULL);
+                INSERT INTO submission_files VALUES(1,1,'DO_NOT_REPORT_FILENAME.png');
+                INSERT INTO original_types(raw_json,normalized_json,exact_decimal,happened_at,content,value,nullable_value)
+                VALUES ('{ "b":2, "a":1 }','{"b":2,"a":1}',123456789.123456789,'2026-01-01 00:00:00+08',decode('00ff0a','hex'),'-0',NULL);""")
+        self.temp = tempfile.TemporaryDirectory()
+        self.backup = Path(self.temp.name) / "synthetic-input.dump"
+        self.backup.write_bytes(b"Synthetic read-only source sentinel; not a production restore claim")
+
+    def tearDown(self):
+        self.conn.close()
+        self.temp.cleanup()
+
+    def test_actual_release_ddl_twice_preserves_all_old_fields_and_sequence_state(self):
+        result = rehearse(self.conn, backup=self.backup, progress=lambda _: None)
+        self.assertEqual("ok", result["status"])
+        self.assertEqual([], result["idempotency_differences"])
+        self.assertEqual([], result["stages"][0]["old_field_differences"])
+        self.assertFalse(result["deployment_gate_complete"])
+        rendered = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("DO_NOT_REPORT_", rendered)
+        self.assertEqual([(None, "assignment"), (None, None)], self.conn.execute(
+            "SELECT assessment_kind,ordinary_grade_kind_override FROM assignments ORDER BY id").fetchall())
+        self.assertEqual(0, self.conn.execute("SELECT COUNT(*) FROM assignment_classification_revisions").fetchone()[0])
+
+    def test_grade_changes_and_non_idempotent_new_rows_are_failed_gates(self):
+        def destructive(conn):
+            apply_assessment_migrations(conn)
+            conn.execute("UPDATE submissions SET score=99 WHERE id=1")
+            conn.execute("CREATE TABLE IF NOT EXISTS accidental_extra_rows(value INTEGER)")
+            conn.execute("INSERT INTO accidental_extra_rows VALUES (1)")
+        result = rehearse(self.conn, backup=self.backup, migrate=destructive, progress=lambda _: None)
+        self.assertEqual("failed", result["status"])
+        self.assertIn("table:submissions", result["stages"][0]["old_field_differences"])
+        self.assertIn("table:accidental_extra_rows", result["idempotency_differences"])
+
+    def test_raw_json_schema_sequence_and_relationship_changes_are_detected(self):
+        with self.conn.transaction():
+            before = snapshot(self.conn)
+        with self.conn.transaction():
+            self.conn.execute("UPDATE original_types SET raw_json = '{\"b\":2,\"a\":1}'")
+            self.conn.execute("UPDATE submission_files SET submission_id=2")
+            self.conn.execute("ALTER TABLE submissions ALTER COLUMN feedback_md SET DEFAULT 'unexpected'")
+            self.conn.execute("SELECT nextval('original_types_id_seq')")
+        with self.conn.transaction():
+            changes = differences(before, snapshot(self.conn, baseline=before))
+        self.assertIn("table:original_types", changes)
+        self.assertIn("table:submission_files", changes)
+        self.assertIn("schema:column:submissions.feedback_md", changes)
+        self.assertIn("sequence:original_types_id_seq", changes)
+
+    def test_signature_seed_preserves_pg_serial_and_updates_only_changed_metadata(self):
+        from classroom_app.db.postgres import LanSharePostgresConnection
+        from classroom_app.db.schema_signature_workflow import SIGNATURE_FUNCTION_POINTS, _seed_function_points
+        adapter = LanSharePostgresConnection(self.conn)
+        with self.conn.transaction():
+            self.conn.execute("""CREATE TABLE signature_function_points (
+                id SERIAL PRIMARY KEY, point_key TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
+                module_key TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
+                required_identities TEXT NOT NULL DEFAULT '', is_enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+            _seed_function_points(adapter, engine="postgres")
+            self.conn.execute("UPDATE signature_function_points SET updated_at='2001-01-01',created_at='2000-01-01',is_enabled=0")
+        with self.conn.transaction():
+            before = snapshot(self.conn)
+        for _ in range(2):
+            with self.conn.transaction():
+                _seed_function_points(adapter, engine="postgres")
+            with self.conn.transaction():
+                self.assertEqual([], differences(before, snapshot(self.conn)))
+        with self.conn.transaction():
+            self.conn.execute("UPDATE signature_function_points SET label='old' WHERE point_key=%s", (SIGNATURE_FUNCTION_POINTS[0][0],))
+            _seed_function_points(adapter, engine="postgres")
+            row = self.conn.execute("SELECT label,is_enabled,created_at::text,updated_at::text FROM signature_function_points WHERE point_key=%s", (SIGNATURE_FUNCTION_POINTS[0][0],)).fetchone()
+            self.assertEqual(SIGNATURE_FUNCTION_POINTS[0][1], row[0])
+            self.assertEqual(0, row[1])
+            self.assertTrue(row[2].startswith("2000-01-01"))
+            self.assertFalse(row[3].startswith("2001-01-01"))
+            self.assertEqual(len(SIGNATURE_FUNCTION_POINTS), self.conn.execute("SELECT last_value FROM signature_function_points_id_seq").fetchone()[0])
+            self.conn.execute("DELETE FROM signature_function_points WHERE point_key=%s", (SIGNATURE_FUNCTION_POINTS[0][0],))
+            _seed_function_points(adapter, engine="postgres")
+            _seed_function_points(adapter, engine="postgres")
+            self.assertEqual(len(SIGNATURE_FUNCTION_POINTS)+1, self.conn.execute("SELECT last_value FROM signature_function_points_id_seq").fetchone()[0])
+            self.assertEqual(len(SIGNATURE_FUNCTION_POINTS), self.conn.execute("SELECT count(*) FROM signature_function_points").fetchone()[0])
+
+
+if __name__ == "__main__":
+    unittest.main()

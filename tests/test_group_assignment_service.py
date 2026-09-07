@@ -9,6 +9,7 @@ import unittest
 os.environ.setdefault("DB_ENGINE", "sqlite")
 
 from classroom_app.db import schema_study_group_scheme as scheme_schema
+from classroom_app.db import schema_ai_jobs
 from classroom_app.db.schema_assignments import ensure_assignment_schema
 from classroom_app.db.schema_classroom_activity import ensure_classroom_activity_schema
 from classroom_app.services import group_assignment_service as ga
@@ -21,12 +22,16 @@ SCHEME_ID = 500
 
 class GroupAssignmentLifecycleTests(unittest.TestCase):
     def setUp(self):
+        self._previous_ai_ready = set(schema_ai_jobs._SCHEMA_READY_ENGINES)
+        self._previous_group_ready = scheme_schema._SCHEMA_READY
         # Reset the module-level schema-ready guard so the engine-aware DDL runs
         # against this fresh in-memory connection.
         scheme_schema._SCHEMA_READY = False
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         ensure_assignment_schema(self.conn)
+        schema_ai_jobs._SCHEMA_READY_ENGINES.clear()
+        schema_ai_jobs.ensure_ai_job_schema(self.conn)
         ensure_classroom_activity_schema(self.conn)
         scheme_schema.ensure_study_group_scheme_schema(self.conn)
         self.conn.execute(
@@ -54,6 +59,8 @@ class GroupAssignmentLifecycleTests(unittest.TestCase):
 
     def tearDown(self):
         self.conn.close()
+        schema_ai_jobs._SCHEMA_READY_ENGINES = self._previous_ai_ready
+        scheme_schema._SCHEMA_READY = self._previous_group_ready
 
     # -- helpers -----------------------------------------------------------
     def _add_student(self, sid, name):
@@ -214,6 +221,54 @@ class GroupAssignmentLifecycleTests(unittest.TestCase):
         self.assertEqual(ga.compute_final_score(100, 20), 100.0)
         self.assertEqual(ga.compute_final_score(100, 25), 100.0)  # clamp
         self.assertEqual(ga.compute_final_score(50, 16), 56.0)
+
+    def test_group_revision_matches_settlement_and_repeated_callback_is_idempotent(self):
+        self._add_student(1, "独行")
+        self._make_group(901, 1, [1])
+        self._bind()
+        sub_id = self._submit_and_grade(1, 90)
+        ga.record_member_work_score(self.conn, sub_id)
+        ga.record_member_work_score(self.conn, sub_id)
+        row = self.conn.execute("SELECT s.score, r.score AS revision_score, r.provenance_json FROM submissions s JOIN submission_grade_revisions r ON r.id = s.active_grade_revision_id WHERE s.id = ?", (sub_id,)).fetchone()
+        self.assertEqual(row["score"], 88)
+        self.assertEqual(row["revision_score"], 88)
+        self.assertIn('"source": "group_final"', row["provenance_json"])
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM submission_grade_revisions").fetchone()[0], 1)
+        self.assertEqual(self._member_result(1)["work_score"], 90)
+
+    def test_manual_regrade_creates_new_consistent_group_revision(self):
+        self._add_student(1, "独行")
+        self._make_group(901, 1, [1])
+        self._bind()
+        sub_id = self._submit_and_grade(1, 90)
+        ga.record_member_work_score(self.conn, sub_id)
+        self.conn.execute("UPDATE submissions SET score = 80, feedback_md = '教师调整' WHERE id = ?", (sub_id,))
+        ga.activate_submission_grade_revision(self.conn, submission={"id": sub_id},
+            data={"source": "manual"}, score=80, feedback_md="教师调整")
+        ga.record_member_work_score(self.conn, sub_id)
+        self.assertEqual(self._member_result(1)["work_score"], 80)
+        self.assertEqual(self._member_result(1)["final_score"], 80)
+        row = self.conn.execute("SELECT s.score, r.score FROM submissions s JOIN submission_grade_revisions r ON r.id = s.active_grade_revision_id WHERE s.id = ?", (sub_id,)).fetchone()
+        self.assertEqual(tuple(row), (80, 80))
+
+    def test_absence_zero_does_not_receive_default_peer_points(self):
+        self._add_student(1, "缺交")
+        self._make_group(901, 1, [1])
+        self._bind()
+        sub_id = self._submit_and_grade(1, 0)
+        self.conn.execute("UPDATE submissions SET is_absence_score = 1 WHERE id = ?", (sub_id,))
+        ga.record_member_work_score(self.conn, sub_id)
+        self.assertEqual(self._member_result(1)["final_score"], 0)
+
+    def test_refinalization_preserves_in_progress_regrading_status(self):
+        self._add_student(1, "独行")
+        self._make_group(901, 1, [1])
+        self._bind()
+        sub_id = self._submit_and_grade(1, 90)
+        ga.record_member_work_score(self.conn, sub_id)
+        self.conn.execute("UPDATE submissions SET status = 'grading' WHERE id = ?", (sub_id,))
+        ga.try_finalize_group(self.conn, assignment_id=ASSIGNMENT_ID, group_id=901)
+        self.assertEqual(self.conn.execute("SELECT status FROM submissions WHERE id = ?", (sub_id,)).fetchone()[0], "grading")
 
     def test_explicit_rating_not_overwritten_by_default(self):
         for sid, name in [(1, "甲"), (2, "乙")]:

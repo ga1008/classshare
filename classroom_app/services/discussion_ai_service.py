@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, AsyncIterator, Optional
 
 import httpx
+from fastapi import HTTPException
 
 from ..core import ai_client
 from ..database import get_db_connection
@@ -146,11 +147,13 @@ def _build_discussion_request_context(
         conn,
         class_offering_id,
         current_message_attachments or [],
+        strict=True,
     )
     quote_images = build_attachment_image_inputs_from_payloads(
         conn,
         class_offering_id,
         quote_payload.get("attachments") or [],
+        strict=True,
     )
 
     image_inputs: list[dict[str, str]] = []
@@ -432,6 +435,7 @@ async def _build_discussion_ai_chat_payload(
         "task_type": "vision_interactive" if image_inputs else "fast_text_response",
         "task_priority": "interactive",
         "task_label": "discussion_reply",
+        "business_context": {"operation": "chat", "source_feature": "discussion", "class_offering_id": class_offering_id, "logical_call_id": f"discussion:{current_message_id}"},
         "web_search_enabled": False,
     }
 
@@ -546,6 +550,10 @@ async def stream_discussion_ai_reply(
             "raw_chars": len(raw_answer),
             "replaced": final_answer != raw_answer,
         }
+    except HTTPException as exc:
+        message = str(exc.detail) if exc.status_code in {400, 413} else DISCUSSION_REPLY_FALLBACK
+        yield {"event": "error", "message": message}
+        yield {"event": "done", "message": message, "raw_chars": 0, "replaced": True}
     except httpx.HTTPError as exc:
         print(f"[DISCUSSION_AI] 课堂助教流式回复失败: {exc}")
         yield {"event": "error", "message": str(exc)}
@@ -650,6 +658,7 @@ async def generate_discussion_ai_reply(
                 "task_type": "vision_interactive" if request_context["image_inputs"] else "fast_text_response",
                 "task_priority": "interactive",
                 "task_label": "discussion_reply",
+                "business_context": {"operation": "chat", "source_feature": "discussion", "class_offering_id": class_offering_id, "logical_call_id": f"discussion:{current_message_id}"},
                 "web_search_enabled": False,
             },
             timeout=90.0,
@@ -659,6 +668,8 @@ async def generate_discussion_ai_reply(
         if data.get("status") != "success":
             return DISCUSSION_REPLY_FALLBACK
         return _sanitize_assistant_reply(data.get("response_text") or "")
+    except HTTPException as exc:
+        return str(exc.detail) if exc.status_code in {400, 413} else DISCUSSION_REPLY_FALLBACK
     except httpx.HTTPError as exc:
         print(f"[DISCUSSION_AI] 课堂助教回复失败: {exc}")
         return DISCUSSION_REPLY_FALLBACK

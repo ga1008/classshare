@@ -21,6 +21,7 @@ from ...services.deterministic_exam_grading import (
     build_deterministic_grading_evidence,
 )
 from ...services.submission_preview_service import ensure_submission_file_access
+from ...services.assessment_classification_service import assessment_kind_info
 from .deps import get_current_mp_teacher
 
 router = APIRouter(prefix="/teacher")
@@ -435,6 +436,7 @@ def _get_teacher_assignment(conn, assignment_id: int, teacher_id: int) -> dict:
     row = conn.execute(
         """
         SELECT a.id, a.title, a.status, a.due_at, a.exam_paper_id,
+               a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source,
                o.id AS offering_id, o.class_id,
                c.name AS course_name, cl.name AS class_name
         FROM assignments a
@@ -442,6 +444,7 @@ def _get_teacher_assignment(conn, assignment_id: int, teacher_id: int) -> dict:
         JOIN courses c ON c.id = o.course_id
         JOIN classes cl ON cl.id = o.class_id
         WHERE a.id = ? AND o.teacher_id = ?
+          AND NOT EXISTS (SELECT 1 FROM learning_stage_exam_attempts lsea WHERE lsea.assignment_id = a.id)
         """,
         (assignment_id, teacher_id),
     ).fetchone()
@@ -462,6 +465,7 @@ def mp_teacher_tasks(user: dict = Depends(get_current_mp_teacher)):
         rows = conn.execute(
             """
             SELECT a.id, a.title, a.status, a.due_at, a.exam_paper_id, a.created_at,
+                   a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source,
                    o.id AS offering_id,
                    c.name AS course_name,
                    cl.name AS class_name,
@@ -506,6 +510,7 @@ def mp_teacher_tasks(user: dict = Depends(get_current_mp_teacher)):
                 "status": status,
                 "status_label": _STATUS_LABELS.get(status, status),
                 "is_exam": bool(item.get("exam_paper_id")),
+                **assessment_kind_info(item),
                 "due_at": item.get("due_at") or "",
                 "course_name": item.get("course_name") or "",
                 "class_name": item.get("class_name") or "",
@@ -635,6 +640,7 @@ def mp_teacher_grading(assignment_id: int, user: dict = Depends(get_current_mp_t
                 "id": assignment["id"],
                 "title": assignment["title"],
                 "is_exam": bool(assignment.get("exam_paper_id")),
+                **assessment_kind_info(assignment),
                 "course_name": assignment.get("course_name") or "",
                 "class_name": assignment.get("class_name") or "",
             },
@@ -737,6 +743,7 @@ def mp_teacher_submission_review(
                    s.score_before_late_penalty,
                    COALESCE(s.late_penalty_points, 0) AS late_penalty_points,
                    a.id AS assignment_id, a.title AS assignment_title, a.exam_paper_id,
+                   a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source,
                    c.name AS course_name, cl.name AS class_name,
                    st.name AS student_name, st.student_id_number
             FROM submissions s
@@ -746,6 +753,7 @@ def mp_teacher_submission_review(
             JOIN classes cl ON cl.id = o.class_id
             JOIN students st ON st.id = s.student_pk_id
             WHERE s.id = ? AND o.teacher_id = ?
+              AND NOT EXISTS (SELECT 1 FROM learning_stage_exam_attempts lsea WHERE lsea.assignment_id = a.id)
             """,
             (int(submission_id), teacher_id),
         ).fetchone()
@@ -790,6 +798,7 @@ def mp_teacher_submission_review(
                 "id": submission["assignment_id"],
                 "title": submission.get("assignment_title") or "",
                 "is_exam": bool(submission.get("exam_paper_id")),
+                **assessment_kind_info(submission),
                 "course_name": submission.get("course_name") or "",
                 "class_name": submission.get("class_name") or "",
             },

@@ -15,6 +15,7 @@ import json
 from collections.abc import Iterable
 from datetime import date, datetime, time, timedelta
 from typing import Any
+from .assessment_classification_service import assessment_kind_info
 
 from .academic_service import CHINA_TZ, china_now
 from .assignment_lifecycle_service import enrich_assignment_runtime_view, submission_resubmission_state
@@ -161,12 +162,19 @@ def normalize_workspace_item(source: dict[str, Any], *, now: datetime) -> dict[s
         "is_manual": kind == "manual" and bool(source.get("is_manual")),
         "is_in_progress": status == "in_progress" or bool(source.get("is_in_progress")),
     }
+    if kind in {"assignment", "exam_task", "stage"}:
+        classification = assessment_kind_info(source, source_feature="personal_stage" if kind == "stage" else None)
+        item.update(classification)
+        item["type_label"] = classification["assessment_kind_label"]
+    item["semester_id"] = source.get("semester_id")
+    item["semester_name"] = source.get("semester_name") or ""
     # Preserve the established lifecycle controller contract, without copying
     # assignment SQL rows, grades or teacher-only metadata into browser JSON.
     agenda_data = {name: source.get(name) for name in (
         "todo_id", "notes", "reminder_enabled", "email_reminder_enabled", "reminder_lead_minutes", "event_id", "can_email_reminder", "detail",
     ) if name in source}
     agenda_data.update({
+        **{key: item[key] for key in ("assessment_kind", "assessment_kind_label", "classification_status", "source_feature", "has_exam_paper", "answer_mode", "semester_id", "semester_name") if key in item},
         "kind": "todo" if kind == "manual" else kind, "title": item["title"], "subtitle": item["subtitle"], "href": href,
         "status": status, "date_label": date_label, "hour_label": time_label, "relative_label": status_label,
         "is_manual": item["is_manual"], "todo_id": source.get("todo_id") or (source_id if item["is_manual"] else None),
@@ -434,6 +442,8 @@ def assignment_workspace_source(row: dict[str, Any], *, now: datetime, role: str
         if clean.get("starts_at") and local_datetime(clean["starts_at"]) > now and runtime.get("effective_status") == "published":
             status, label = "not_started", "未开始"
     source = {
+        **assessment_kind_info(clean),
+        "semester_id": clean.get("semester_id"), "semester_name": clean.get("semester_name") or "",
         "source_type": "assignment", "source_id": clean["id"], "kind": "exam_task" if clean.get("exam_paper_id") else "assignment",
         "class_offering_id": clean["offering_id"], "title": clean.get("title") or "课堂任务", "subtitle": clean.get("offering_label") or "",
         "href": f"/assignment/{clean['id']}", "starts_at": clean.get("starts_at"), "due_at": clean.get("due_at"),
@@ -472,9 +482,12 @@ def load_assignment_workspace_sources(conn, *, offerings: list[dict[str, Any]], 
         ORDER BY o.id, a.id
     """, tuple(([int(user["id"])] if student else []) + ids))
     labels = {_integer(o["id"]): " · ".join(str(o.get(k) or "") for k in ("course_name", "class_name") if o.get(k)) for o in offerings}
+    offering_map = {_integer(o["id"]): o for o in offerings}
     for row in rows:
         item = dict(row)
         item["offering_label"] = labels.get(_integer(item["offering_id"]), "")
+        offering = offering_map.get(_integer(item["offering_id"]), {})
+        item.update(semester_id=offering.get("semester_id"), semester_name=offering.get("semester") or "")
         yield assignment_workspace_source(item, now=now, role=str(user.get("role")))
 
 
@@ -571,6 +584,7 @@ def iter_workspace_sources(conn, *, offerings: list[dict[str, Any]], user: dict[
                 actionable = attempt_status == "generated" and bool(task.get("is_actionable"))
                 yield {
                     **task, "source_type": "stage_exam", "source_id": row["attempt_id"], "kind": "stage", "class_offering_id": row["offering_id"],
+                    **assessment_kind_info(row, source_feature="personal_stage"),
                     "title": f"{level['name']}破境试炼", "subtitle": labels.get(_integer(row["offering_id"]), ""),
                     "status": task.get("status", "closed") if attempt_status == "generated" else attempt_status,
                     "is_completed": attempt_status in {"submitted", "grading", "graded", "passed"}, "is_actionable": actionable,
@@ -624,7 +638,7 @@ def iter_workspace_sources(conn, *, offerings: list[dict[str, Any]], user: dict[
                 if row["pending_count"]:
                     yield {"source_type": "grading", "source_id": row["offering_id"], "kind": "teacher_work", "class_offering_id": row["offering_id"],
                            "work_count": _integer(row["pending_count"]),
-                           "title": f"{row['pending_count']} 份作业待批改", "subtitle": labels.get(_integer(row["offering_id"]), ""),
+                           "title": f"{row['pending_count']} 份答卷待批改", "subtitle": labels.get(_integer(row["offering_id"]), ""),
                            "is_actionable": True, "href": f"/classroom/{row['offering_id']}#assignment-panel", "action_label": "查看待批改"}
         for row in _iter_rows(conn, """SELECT COUNT(*) AS pending_count FROM student_password_reset_requests r JOIN classes c ON c.id = r.class_id
             WHERE r.teacher_id = ? AND c.created_by_teacher_id = ? AND r.status = 'pending'""", (int(user["id"]), int(user["id"]))):

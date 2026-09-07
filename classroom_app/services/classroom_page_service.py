@@ -10,6 +10,7 @@ from .materials_service import get_effective_assignment_nodes
 from .ui_copy_service import get_ui_copy_block, render_ui_copy_block
 from .prompt_utils import polite_address
 from .classroom_group_qr_service import serialize_group_qr
+from .assessment_classification_service import assessment_kind_info, enrich_assessment_classifications
 
 
 def build_classroom_page_context(
@@ -21,6 +22,8 @@ def build_classroom_page_context(
     shared_files: list[dict[str, Any]],
 ) -> dict[str, Any]:
     role = str(user.get("role") or "student").strip().lower()
+    # The same authorized rows feed SSR cards and the React bootstrap contract.
+    assignments[:] = enrich_assessment_classifications(conn, assignments)
     assignment_stats = _build_assignment_stats(role=role, assignments=assignments)
     resource_count = len(shared_files)
     assigned_material_count = (
@@ -142,10 +145,16 @@ def build_assignment_workspace_items(*, role: str, assignments: list[dict[str, A
     items = []
     for assignment in assignments:
         metrics = assignment.get("teacher_submission_metrics") or {}
+        classification = assessment_kind_info(assignment)
         item = {
             "id": assignment["id"],
             "title": assignment.get("title") or "未命名任务",
             "kind": "exam" if assignment.get("exam_paper_id") else "assignment",
+            **classification,
+            "assessment_kind_label": (
+                "分类待确认" if role == "teacher" and classification["classification_status"] == "legacy_unknown"
+                else classification["assessment_kind_label"]
+            ),
             "createdAt": _workspace_datetime(assignment.get("created_at")),
             "status": assignment.get("effective_status") or assignment.get("status") or "",
             "submissionStatus": assignment.get("submission_status") or "unsubmitted",

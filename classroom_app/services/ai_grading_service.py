@@ -15,11 +15,13 @@ from ..core import ai_client
 from ..database import get_db_connection
 from ..db.connection import get_configured_db_engine
 from .ai_gateway_service import ai_gateway_post
-from .ai_durable_job_service import create_ai_job
+from .ai_durable_job_service import cancel_ai_jobs_for_source, create_ai_job
 from .ai_grading_attachments import ensure_ai_grading_attachments_supported
 from .exam_json_service import build_exam_rubric_md
 from .psych_profile_service import load_latest_hidden_profile
 from .submission_file_alignment import resolve_submission_file_path
+from .assessment_classification_service import enrich_assessment_classifications
+from .ai_model_policy import AI_EXECUTION_POLICY_VERSION
 
 
 class AIGradingQueueError(Exception):
@@ -106,8 +108,8 @@ def expire_stale_ai_grading_submissions(
     cursor = conn.execute(
         f"""
         UPDATE submissions
-        SET status = 'grading_failed',
-            feedback_md = ?,
+        SET status = CASE WHEN score IS NOT NULL THEN 'graded' ELSE 'grading_failed' END,
+            feedback_md = CASE WHEN score IS NOT NULL THEN feedback_md ELSE ? END,
             grading_started_at = NULL,
             grading_attempt_fingerprint = NULL
         WHERE status = 'grading'
@@ -284,6 +286,9 @@ def _load_submission_for_grading(
                a.exam_paper_id,
                a.allowed_file_types_json,
                a.class_offering_id,
+               a.assessment_kind,
+               a.assessment_kind_version,
+               a.assessment_kind_source,
                ep.title AS exam_title,
                ep.description AS exam_description,
                ep.questions_json AS exam_questions_json,
@@ -307,7 +312,7 @@ def _load_submission_for_grading(
         offering_teacher_id = int(submission_dict.get("offering_teacher_id") or 0)
         if int(teacher_id) not in {owner_id, offering_teacher_id}:
             raise AIGradingQueueError(403, "Permission denied")
-    return submission_dict
+    return enrich_assessment_classifications(conn, [submission_dict])[0]
 
 
 def _load_submission_files_for_grading(conn, submission_id: int) -> list[dict[str, Any]]:
@@ -391,6 +396,43 @@ def build_submission_grading_fingerprint(
 def _build_grading_attempt_token(content_fingerprint: str) -> str:
     normalized = str(content_fingerprint or "").strip()
     return f"{normalized}:{uuid.uuid4().hex}" if normalized else uuid.uuid4().hex
+
+
+def current_submission_grading_fingerprint(conn, submission_id: int) -> str:
+    submission = _load_submission_for_grading(conn, submission_id)
+    return build_submission_grading_fingerprint(
+        submission, _load_submission_files_for_grading(conn, submission_id),
+        rubric_md=_resolve_grading_rubric(submission),
+    )
+
+
+def invalidate_assignment_grading_inputs(conn, assignment_ids) -> int:
+    """Invalidate in-flight old content in the editor's existing transaction.
+
+    Stored answers, scores, feedback, active revisions and late deductions are
+    untouched. Reclassification alone must never call this function.
+    """
+    ids = list(dict.fromkeys(str(value) for value in assignment_ids if value is not None))
+    changed = 0
+    for offset in range(0, len(ids), 400):
+        chunk = ids[offset:offset + 400]
+        placeholders = ','.join('?' for _ in chunk)
+        rows = conn.execute(
+            f"SELECT id, grading_job_id FROM submissions WHERE assignment_id IN ({placeholders}) AND status = 'grading'",
+            tuple(chunk),
+        ).fetchall()
+        updated = conn.execute(
+            f"""UPDATE submissions SET status = CASE WHEN score IS NOT NULL THEN 'graded' ELSE 'grading_review' END,
+                       grading_started_at = NULL, grading_attempt_fingerprint = NULL,
+                       grading_revision_hash = NULL, grading_job_id = NULL
+                WHERE assignment_id IN ({placeholders}) AND status = 'grading'""",
+            tuple(chunk),
+        )
+        changed += int(updated.rowcount or 0)
+        for row in rows:
+            if row['grading_job_id']:
+                cancel_ai_jobs_for_source(conn, task_type="ai_grading", source_ref=f"submission:{row['id']}", reason="grading_inputs_changed")
+    return changed
 
 
 def _prepare_grading_inputs(
@@ -729,6 +771,18 @@ async def submit_submission_for_ai_grading(
         student_profile_context = _build_hidden_student_profile_context(conn, current)
         job_data = {
             "submission_id": submission_id,
+            "business_context": {
+                "operation": "grading",
+                "source_feature": current.get("source_feature") or "classroom_assignment",
+                "assessment_kind": current.get("assessment_kind"),
+                "classification_source": current.get("classification_source") or "legacy_unknown",
+                "assessment_kind_version": current.get("assessment_kind_version") or 0,
+                "classification_status": current.get("classification_status") or "legacy_unknown",
+                "assignment_id": str(current["assignment_id"]),
+                "class_offering_id": current.get("class_offering_id"),
+                "logical_call_id": attempt_token,
+                "policy_version": AI_EXECUTION_POLICY_VERSION,
+            },
             "rubric_md": rubric_md,
             "requirements_md": submission["requirements_md"] or "",
             "allowed_file_types_json": submission["allowed_file_types_json"],
@@ -794,6 +848,12 @@ async def submit_submission_for_ai_grading(
                 "job_id": int(job_row["id"]),
                 "durable": True,
             }
+        else:
+            conn.execute(
+                """UPDATE submissions SET grading_revision_hash = ?, grading_job_id = NULL
+                   WHERE id = ? AND status = 'grading' AND grading_attempt_fingerprint = ?""",
+                (content_fingerprint, submission_id, attempt_token),
+            )
         conn.commit()
     if durable_job_response is not None:
         return durable_job_response

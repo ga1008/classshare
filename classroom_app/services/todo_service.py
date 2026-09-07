@@ -10,6 +10,7 @@ from .academic_service import china_now, parse_date_input
 from .academic_class_mapping_service import resolve_teaching_class_display_name
 from .academic_course_exam_sync_service import ensure_course_exam_schema
 from .assignment_lifecycle_service import submission_effective_status, submission_resubmission_accepts
+from .assessment_classification_service import assessment_kind_info
 from .course_planning_service import weekday_label
 from .learning_progress_service import get_learning_level, personal_stage_assignment_filter_sql, public_level_payload
 from .message_center_service import create_todo_notification
@@ -344,7 +345,10 @@ def _normalize_item(
     end_date = effective_end.date()
     todo_id = f"{source_type}:{source_id}"
     no_deadline = due_at is None
+    classification = assessment_kind_info(metadata or {}, source_feature="personal_stage" if source_type == TODO_SOURCE_STAGE else None) if source_type in {TODO_SOURCE_ASSIGNMENT, TODO_SOURCE_STAGE} else {}
     return {
+        **classification,
+        **{key: (metadata or {})[key] for key in ("class_offering_id", "semester_id", "semester_name") if key in (metadata or {})},
         "id": todo_id,
         "source_type": source_type,
         "source_id": source_id,
@@ -499,8 +503,10 @@ def _load_assignment_rows(conn: sqlite3.Connection, *, class_offering_id: int, u
         rows = conn.execute(
             f"""
             SELECT a.*,
+                   o.semester_id, o.semester AS semester_name,
                    ep.title AS exam_paper_title
             FROM assignments a
+            LEFT JOIN class_offerings o ON o.id = a.class_offering_id
             LEFT JOIN exam_papers ep ON ep.id = a.exam_paper_id
             WHERE a.class_offering_id = ?
               AND {personal_stage_assignment_filter_sql('a')}
@@ -513,6 +519,7 @@ def _load_assignment_rows(conn: sqlite3.Connection, *, class_offering_id: int, u
     rows = conn.execute(
         """
         SELECT a.*,
+               o.semester_id, o.semester AS semester_name,
                ep.title AS exam_paper_title,
                s.id AS submission_id,
                s.status AS submission_status,
@@ -520,10 +527,12 @@ def _load_assignment_rows(conn: sqlite3.Connection, *, class_offering_id: int, u
                s.resubmission_allowed,
                s.resubmission_due_at
         FROM assignments a
+        LEFT JOIN class_offerings o ON o.id = a.class_offering_id
         LEFT JOIN exam_papers ep ON ep.id = a.exam_paper_id
         LEFT JOIN submissions s
                ON s.assignment_id = a.id
               AND s.student_pk_id = ?
+              AND COALESCE(s.is_absence_score, 0) = 0
         WHERE a.class_offering_id = ?
           AND a.status != 'new'
           AND NOT EXISTS (
@@ -605,7 +614,8 @@ def _assignment_items(conn: sqlite3.Connection, *, class_offering_id: int, user:
     for row in rows:
         assignment_id = row["id"]
         is_exam = bool(row.get("exam_paper_id"))
-        title = str(row.get("title") or row.get("exam_paper_title") or ("考试" if is_exam else "作业")).strip()
+        classification = assessment_kind_info(row)
+        title = str(row.get("title") or row.get("exam_paper_title") or classification["assessment_kind_label"]).strip()
         start_at = parse_datetime_input(row.get("starts_at") or row.get("created_at"), "开始时间")
         assignment_due_at = parse_datetime_input(row.get("due_at"), "截止时间")
         created_at = parse_datetime_input(row.get("created_at"), "创建时间")
@@ -639,7 +649,7 @@ def _assignment_items(conn: sqlite3.Connection, *, class_offering_id: int, user:
                 source_type=TODO_SOURCE_ASSIGNMENT,
                 source_id=assignment_id,
                 title=title,
-                subtitle="考试截止" if is_exam else "作业截止",
+                subtitle=f"{classification['assessment_kind_label']}截止",
                 start_at=start_at,
                 due_at=due_at,
                 created_at=created_at,
@@ -649,6 +659,8 @@ def _assignment_items(conn: sqlite3.Connection, *, class_offering_id: int, user:
                 tone="exam" if is_exam else "assignment",
                 is_completed=is_completed,
                 metadata={
+                    **classification,
+                    "class_offering_id": class_offering_id, "semester_id": row.get("semester_id"), "semester_name": row.get("semester_name") or "",
                     "assignment_id": assignment_id,
                     "is_exam": is_exam,
                     "availability_mode": row.get("availability_mode") or "",
@@ -690,6 +702,8 @@ def _stage_items(conn: sqlite3.Connection, *, class_offering_id: int, student_id
                 tone="stage",
                 is_completed=status in {"submitted", "grading"},
                 metadata={
+                    **assessment_kind_info(attempt, source_feature="personal_stage"),
+                    "class_offering_id": class_offering_id,
                     "attempt_id": attempt["id"],
                     "assignment_id": assignment_id,
                     "stage_key": level["key"],

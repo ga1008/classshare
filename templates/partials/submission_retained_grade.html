@@ -1,0 +1,12 @@
+{% if absence_grade and absence_grade.score_visible %}
+<div class="alert alert-info" role="status">
+    <strong>教师已登记缺交成绩：{{ absence_grade.score }} 分</strong>
+    <p>目前没有已提交的答卷。是否还能补交，以当前任务的开放时间为准。</p>
+</div>
+{% elif submission and submission.score_visible and submission.is_regrading %}
+<div class="alert alert-info" role="status">
+    <strong>重新批改中 · 当前有效成绩 {{ submission.score }} 分</strong>
+    <p>新结果尚未生效，原成绩继续保留。</p>
+    {% if submission.feedback_md %}<details><summary>查看原评语</summary><p style="white-space:pre-wrap">{{ submission.feedback_md }}</p></details>{% endif %}
+</div>
+{% endif %}

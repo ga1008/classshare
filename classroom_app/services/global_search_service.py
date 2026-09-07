@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from typing import Any
+from .assessment_classification_service import assessment_kind_info
 
 MAX_PER_KIND = 6
 MIN_QUERY_LENGTH = 2
@@ -125,11 +126,15 @@ def _search_assignments(conn: Any, offering_ids: list[int], pattern: str, *, rol
     status_clause = "" if role == "teacher" else "AND a.status != 'new'"
     rows = conn.execute(
         f"""
-        SELECT a.id, a.title, a.exam_paper_id, a.status, c.name AS course_name
+        SELECT a.id, a.title, a.exam_paper_id, a.status, a.assessment_kind,
+               a.assessment_kind_version, a.assessment_kind_source, a.class_offering_id,
+               o.semester_id, o.semester AS semester_name, c.name AS course_name
         FROM assignments a
         JOIN courses c ON c.id = a.course_id
+        JOIN class_offerings o ON o.id = a.class_offering_id
         WHERE a.class_offering_id IN ({placeholders})
           {status_clause}
+          AND NOT EXISTS (SELECT 1 FROM learning_stage_exam_attempts lsea WHERE lsea.assignment_id = a.id)
           AND LOWER(a.title) LIKE ? ESCAPE '\\'
         ORDER BY a.created_at DESC
         LIMIT ?
@@ -139,8 +144,11 @@ def _search_assignments(conn: Any, offering_ids: list[int], pattern: str, *, rol
     return [
         {
             "kind": "assignment",
+            **assessment_kind_info(row),
+            "class_offering_id": row["class_offering_id"],
+            "semester_id": row["semester_id"],
             "title": str(row["title"] or "任务"),
-            "subtitle": f"{row['course_name'] or '课程'} · {'考试' if row['exam_paper_id'] else '作业'}",
+            "subtitle": " · ".join(filter(None, (row["course_name"] or "课程", row["semester_name"], assessment_kind_info(row)["assessment_kind_label"]))),
             "link_url": f"/assignment/{row['id']}",
         }
         for row in rows

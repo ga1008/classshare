@@ -343,7 +343,8 @@ def _render_manage_materials_page(
         ).fetchall()
         ordinary_source_rows = conn.execute(
             """
-            SELECT a.class_offering_id,
+            SELECT a.id, a.class_offering_id,
+                   a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source,
                    a.title,
                    a.exam_paper_id,
                    a.ordinary_grade_kind_override,
@@ -352,6 +353,7 @@ def _render_manage_materials_page(
             FROM assignments a
             JOIN class_offerings o ON o.id = a.class_offering_id
             WHERE o.teacher_id = ?
+              AND NOT EXISTS (SELECT 1 FROM learning_stage_exam_attempts p WHERE p.assignment_id = a.id)
             """,
             (user["id"],),
         ).fetchall()

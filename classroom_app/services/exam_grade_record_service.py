@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
+from .assessment_classification_service import assessment_kind_info, enrich_assessment_classifications
+from .score_projection_service import load_submission_score_facts
+from .grade_source_preflight_service import build_grade_source_preflight
 
 from fastapi import HTTPException
 
@@ -158,6 +161,7 @@ def normalize_exam_grade_record_payload(
             "integer_scores": True,
             "target_total_source": "submissions.score",
             "deduction_distribution": "even_by_big_question_with_remainder_on_higher_score",
+            **_as_dict(structured.get("score_adjustment_policy")),
         },
     }
     base.update(
@@ -201,6 +205,7 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
                a.created_at,
                a.due_at,
                a.exam_paper_id,
+               a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source,
                ep.title AS exam_paper_title,
                ep.questions_json,
                (
@@ -214,7 +219,7 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
                AVG(CASE WHEN scored_student.id IS NOT NULL AND s.score IS NOT NULL THEN s.score ELSE NULL END) AS average_score
         FROM assignments a
         JOIN class_offerings o ON o.id = a.class_offering_id
-        JOIN exam_papers ep ON ep.id = a.exam_paper_id
+        LEFT JOIN exam_papers ep ON ep.id = a.exam_paper_id
         LEFT JOIN submissions s ON s.assignment_id = a.id
         LEFT JOIN students scored_student
                ON scored_student.id = s.student_pk_id
@@ -222,23 +227,35 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
               AND COALESCE(scored_student.enrollment_status, 'active') = 'active'
         WHERE a.class_offering_id = ?
           AND o.teacher_id = ?
-          AND COALESCE(a.exam_paper_id, '') != ''
-        GROUP BY a.id, a.title, a.status, a.created_at, a.due_at, a.exam_paper_id, ep.title, ep.questions_json, o.class_id
+        GROUP BY a.id, a.title, a.status, a.created_at, a.due_at, a.exam_paper_id, ep.title, ep.questions_json, o.class_id,
+                 a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source
         ORDER BY COALESCE(a.due_at, a.created_at, '') DESC, a.id DESC
         """,
         (int(class_offering_id), int(teacher_id)),
     ).fetchall()
     items = []
+    rows = enrich_assessment_classifications(conn, rows)
+    facts = load_submission_score_facts(conn, assignment_ids=[row["id"] for row in rows], student_view=True)
+    roster_ids = {row["student_id"] for row in _load_roster(conn, class_offering_id=class_offering_id)} if rows else set()
+    score_sets = {}
+    for fact in facts:
+        if fact["score_visible"] and fact["student_pk_id"] in roster_ids:
+            score_sets.setdefault(int(fact["assignment_id"]), []).append(fact["effective_score"])
     for row in rows:
         item = dict(row)
-        sections = _sections_from_exam_data(item.get("questions_json"))
+        if item["source_feature"] == "personal_stage":
+            continue
+        sections = _sections_for_assignment(item)
         total_score = sum(_score_to_int(section.get("full_score")) for section in sections)
-        average_score = item.get("average_score")
+        scores = score_sets.get(int(item["id"]), [])
+        average_score = sum(scores) / len(scores) if scores else None
         roster_count = _coerce_int(item.get("roster_count"))
         submission_count = _coerce_int(item.get("submission_count"))
-        graded_count = _coerce_int(item.get("graded_count"))
+        graded_count = len(scores)
         blocking_reason = ""
-        if not sections or total_score <= 0:
+        if item["assessment_kind"] != "final":
+            blocking_reason = "请先确认为期末测验" if item["assessment_kind"] is None else "只有期末测验可作为期末登分来源"
+        elif not sections or total_score <= 0:
             blocking_reason = "试卷未配置可识别的大题和分值"
         elif roster_count <= 0:
             blocking_reason = "课堂暂无在读学生"
@@ -253,6 +270,7 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
                 "created_at": item.get("created_at") or "",
                 "due_at": item.get("due_at") or "",
                 "kind": "exam",
+                **assessment_kind_info(item),
                 "exam_paper_id": item.get("exam_paper_id") or "",
                 "exam_paper_title": item.get("exam_paper_title") or "",
                 "section_count": len(sections),
@@ -264,6 +282,7 @@ def list_exam_grade_record_candidates(conn, *, class_offering_id: int, teacher_i
                 "coverage_percent": round(graded_count * 100 / roster_count, 1) if roster_count else 0,
                 "average_score": round(float(average_score), 2) if average_score is not None else None,
                 "eligible": eligible,
+                "can_generate_detailed_record": bool(sections and total_score > 0),
                 "blocking_reason": blocking_reason,
             }
         )
@@ -288,7 +307,10 @@ def build_exam_grade_record_payload(
         teacher_id=int(teacher_id),
         assignment_id=assignment_id,
     )
-    sections = _sections_from_exam_data(assignment.get("questions_json"))
+    classification = assessment_kind_info(assignment)
+    if classification["source_feature"] == "personal_stage" or classification["assessment_kind"] != "final":
+        raise HTTPException(400, "请先确认来源属于本课堂的期末测验；个人试炼、期中测验和未分类历史任务不能作为期末来源。")
+    sections = _sections_for_assignment(assignment)
     if not sections:
         raise HTTPException(422, "所选考试没有可识别的大题分值，无法生成考核登分表。")
     total_score = sum(_score_to_int(section.get("full_score")) for section in sections)
@@ -296,6 +318,8 @@ def build_exam_grade_record_payload(
     if not students:
         raise HTTPException(422, "当前课堂没有在读学生，无法生成考核登分表。")
     submissions = _load_exam_submissions(conn, assignment_id=assignment_id)
+    preflight = build_grade_source_preflight(conn, assignment_ids=[assignment_id],
+        student_ids=[int(student["student_id"]) for student in students])
 
     from .classroom_retake_service import get_confirmed_retake_students
 
@@ -304,7 +328,7 @@ def build_exam_grade_record_payload(
         for item in get_confirmed_retake_students(conn, class_offering_id=int(class_offering_id))
     }
 
-    warnings: list[str] = []
+    warnings: list[str] = list(preflight["warnings"])
     rows: list[dict[str, Any]] = []
     missing_grade_students: list[str] = []
     graded_student_count = 0
@@ -330,10 +354,7 @@ def build_exam_grade_record_payload(
             if roster_retake is not None:
                 # 已确认的重修/插班学生未参加考试：按教师确认的默认分入库，
                 # 大题按满分比例拆分并校验总分一致。
-                default_total = min(
-                    _round_int_score(roster_retake["default_ordinary_score"]),
-                    total_score,
-                )
+                default_total = _percent_to_paper_score(roster_retake["default_ordinary_score"], total_score)
                 max_scores = [_score_to_int(section.get("full_score")) for section in sections]
                 raw_section_scores = _clamp_section_scores(
                     _distribute_total_by_weights(default_total, max_scores),
@@ -375,18 +396,11 @@ def build_exam_grade_record_payload(
             rows.append(row)
             continue
 
-        target_total = _round_int_score(submission.get("score"))
-        if target_total < 0:
-            warnings.append(
-                f"{row['student_name'] or row['student_number']} 的最终分 {target_total} 小于 0，已按 0 分生成。"
-            )
-            target_total = 0
-        if target_total > total_score:
-            warnings.append(
-                f"{row['student_name'] or row['student_number']} 的最终分 {target_total} 超过试卷满分 {total_score}，已按满分生成。"
-            )
-            target_total = total_score
-        raw_total = _resolve_raw_total(submission, target_total=target_total)
+        task_score_percent = float(submission["score"])
+        if not 0 <= task_score_percent <= 100:
+            warnings.append(f"{row['student_name'] or row['student_number']} 的百分制来源分超出0–100，本材料按边界生成，请核验源成绩。")
+        target_total = _percent_to_paper_score(task_score_percent, total_score)
+        raw_total = _resolve_raw_total(submission, target_total=target_total, full_score=total_score)
         parsed_scores, source_question_scores = _section_scores_from_feedback(
             submission.get("feedback_md"),
             sections=sections,
@@ -411,6 +425,8 @@ def build_exam_grade_record_payload(
                 "section_scores": section_scores,
                 "raw_section_scores": raw_section_scores,
                 "total_score": target_total,
+                "task_score_percent": task_score_percent,
+                "paper_full_score": total_score,
                 "raw_total_score": sum(raw_section_scores),
                 "adjustment_points": adjustment,
                 "score_adjustment_reason": _score_adjustment_reason(submission, adjustment),
@@ -434,6 +450,7 @@ def build_exam_grade_record_payload(
         "exam_paper_title": assignment.get("exam_paper_title") or "",
         "section_count": len(sections),
         "total_score": total_score,
+        **classification,
     }
     fields = {
         **context,
@@ -453,6 +470,11 @@ def build_exam_grade_record_payload(
                 "sections": sections,
                 "students": rows,
                 "source_exam": source_exam,
+                "source_preflight": preflight,
+                "score_adjustment_policy": {"target_total_source": "effective_task_percentage",
+                    "source_full_score": 100, "target_full_score": total_score,
+                    "conversion": "round_half_up(task_score_percent * paper_full_score / 100)",
+                    "version": "task-percentage-to-paper-v1"},
                 "ordering_source": "active_class_roster.student_number_then_id",
                 "warnings": _dedupe(warnings),
             },
@@ -777,28 +799,22 @@ def _load_context(conn, *, class_offering_id: int, teacher_id: int, classroom_co
 def _load_exam_assignment(conn, *, class_offering_id: int, teacher_id: int, assignment_id: int) -> dict[str, Any]:
     row = conn.execute(
         """
-        SELECT a.id,
-               a.title,
-               a.status,
-               a.exam_paper_id,
-               a.created_at,
-               a.due_at,
+        SELECT a.*,
                ep.title AS exam_paper_title,
                ep.questions_json
         FROM assignments a
         JOIN class_offerings o ON o.id = a.class_offering_id
-        JOIN exam_papers ep ON ep.id = a.exam_paper_id
+        LEFT JOIN exam_papers ep ON ep.id = a.exam_paper_id
         WHERE a.id = ?
           AND a.class_offering_id = ?
           AND o.teacher_id = ?
-          AND COALESCE(a.exam_paper_id, '') != ''
         LIMIT 1
         """,
         (int(assignment_id), int(class_offering_id), int(teacher_id)),
     ).fetchone()
     if not row:
         raise HTTPException(404, "所选考试不存在、未绑定试卷或您无权使用。")
-    return dict(row)
+    return enrich_assessment_classifications(conn, [row])[0]
 
 
 def _load_roster(conn, *, class_offering_id: int) -> list[dict[str, Any]]:
@@ -854,12 +870,20 @@ def _load_exam_submissions(conn, *, assignment_id: int) -> dict[int, dict[str, A
         (int(assignment_id),),
     ).fetchall()
     result: dict[int, dict[str, Any]] = {}
+    facts = {fact["id"]: fact for fact in load_submission_score_facts(conn,
+        submission_ids=[row["id"] for row in rows], student_view=True)}
     for row in rows:
-        item = dict(row)
+        item = {**dict(row), **facts[row["id"]]}
         student_id = _coerce_int(item.get("student_pk_id"))
         if student_id > 0:
             result[student_id] = item
     return result
+
+
+def _sections_for_assignment(assignment: dict[str, Any]) -> list[dict[str, Any]]:
+    if not assignment.get("exam_paper_id"):
+        return []
+    return _sections_from_exam_data(assignment.get("questions_json"))
 
 
 def _sections_from_exam_data(raw_value: Any) -> list[dict[str, Any]]:
@@ -1051,11 +1075,16 @@ def _question_aliases(value: Any) -> set[str]:
     return aliases
 
 
-def _resolve_raw_total(submission: dict[str, Any], *, target_total: int) -> int:
+def _percent_to_paper_score(value: Any, full_score: int) -> int:
+    percent = min(Decimal("100"), max(Decimal("0"), Decimal(str(value))))
+    return int((percent * Decimal(full_score) / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _resolve_raw_total(submission: dict[str, Any], *, target_total: int, full_score: int = 100) -> int:
     for key in ("score_before_late_penalty", "work_score"):
         value = submission.get(key)
         if value not in (None, ""):
-            return _round_int_score(value)
+            return _percent_to_paper_score(value, full_score)
     return _round_int_score(target_total)
 
 

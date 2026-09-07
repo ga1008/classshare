@@ -88,6 +88,10 @@ class StudentReportCardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         init_database()
+        from classroom_app.db.schema_grade_publications import ensure_grade_publication_schema
+        with get_db_connection() as conn:
+            ensure_grade_publication_schema(conn, engine="sqlite")
+            conn.commit()
 
     def setUp(self):
         with get_db_connection() as conn:

@@ -9,8 +9,9 @@ import { computed, ref } from "vue";
 import { request } from "../../utils/api";
 import { formatDueLabel, relativeDueLabel } from "../../utils/format";
 import { useAuthStore } from "../../stores/auth";
+import { ASSESSMENT_FILTER_OPTIONS, assessmentLabel, isFormalAssessment, matchesAssessmentKind, visibleTaskScore, type AssessmentClassification, type SubmissionPresence } from "../../utils/assessment";
 
-interface TaskItem {
+interface TaskItem extends AssessmentClassification, SubmissionPresence {
   source_type: string;
   source_id: number;
   is_exam: boolean;
@@ -24,7 +25,7 @@ interface TaskItem {
   score: number | null;
 }
 
-interface TeacherTask {
+interface TeacherTask extends AssessmentClassification {
   id: number;
   title: string;
   status: string;
@@ -59,27 +60,35 @@ const buckets = ref<Record<Segment, TaskItem[]>>({ pending: [], completed: [], e
 const teacherTasks = ref<TeacherTask[]>([]);
 const loading = ref(false);
 const failed = ref(false);
+const categoryIndex = ref(0);
+const category = computed(() => ASSESSMENT_FILTER_OPTIONS[categoryIndex.value]?.value || "");
+let loadSequence = 0;
 
-const visibleTasks = computed(() => buckets.value[segment.value] ?? []);
+const visibleTasks = computed(() => (buckets.value[segment.value] ?? []).filter(item => matchesAssessmentKind(item, category.value)));
+const visibleTeacherTasks = computed(() => teacherTasks.value.filter(item => matchesAssessmentKind(item, category.value)));
+const segmentCount = (key: Segment) => (buckets.value[key] ?? []).filter(item => matchesAssessmentKind(item, category.value)).length;
+function changeCategory(event: { detail: { value: string | number } }): void { categoryIndex.value = Number(event.detail.value); }
 
 async function loadTasks(): Promise<void> {
+  const sequence = ++loadSequence;
   loading.value = true;
   failed.value = false;
   try {
     if (auth.isTeacher) {
       const data = await request<{ tasks: TeacherTask[] }>({ path: "/api/mp/teacher/tasks" });
-      teacherTasks.value = data.tasks;
+      if (sequence === loadSequence) teacherTasks.value = data.tasks;
       return;
     }
-    buckets.value = await request<Record<Segment, TaskItem[]>>({ path: "/api/mp/tasks" });
+    const data = await request<Record<Segment, TaskItem[]>>({ path: "/api/mp/tasks" });
+    if (sequence === loadSequence) buckets.value = data;
   } catch (error: unknown) {
+    if (sequence !== loadSequence) return;
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
       uni.reLaunch({ url: "/pages/welcome/index" });
     }
   } finally {
-    loading.value = false;
-    uni.stopPullDownRefresh();
+    if (sequence === loadSequence) { loading.value = false; uni.stopPullDownRefresh(); }
   }
 }
 
@@ -102,21 +111,24 @@ onPullDownRefresh(() => {
 
 <template>
   <view class="tasks">
+    <picker :range="ASSESSMENT_FILTER_OPTIONS" range-key="label" :value="categoryIndex" @change="changeCategory">
+      <view class="glass-chip category-filter"><text>任务分类 · {{ ASSESSMENT_FILTER_OPTIONS[categoryIndex].label }} ▾</text></view>
+    </picker>
     <!-- 教师视图 -->
     <template v-if="auth.isTeacher">
       <view v-if="loading && !teacherTasks.length" class="empty"><text>加载中…</text></view>
       <view v-else-if="failed" class="empty" @tap="loadTasks"><text>加载失败，点击重试</text></view>
-      <view v-else-if="!teacherTasks.length" class="empty"><text>暂无绑定课堂的作业/考试</text></view>
+      <view v-else-if="!visibleTeacherTasks.length" class="empty"><text>当前分类暂无课堂任务</text></view>
 
       <view
-        v-for="task in teacherTasks"
+        v-for="task in visibleTeacherTasks"
         :key="task.id"
         class="glass-card press task-card"
         @tap="openTeacherTask(task)"
       >
         <view class="task-card__top">
-          <text class="badge" :class="task.is_exam ? 'badge--exam' : 'badge--hw'">
-            {{ task.is_exam ? "考试" : "作业" }}
+          <text class="badge" :class="isFormalAssessment(task) ? 'badge--exam' : 'badge--hw'">
+            {{ assessmentLabel(task) }}
           </text>
           <text class="task-card__status">{{ task.status_label }}</text>
         </view>
@@ -147,7 +159,7 @@ onPullDownRefresh(() => {
           :class="{ 'segment__item--active': segment === item.key }"
           @tap="segment = item.key"
         >
-          <text>{{ item.label }} {{ buckets[item.key]?.length ?? 0 }}</text>
+          <text>{{ item.label }} {{ segmentCount(item.key) }}</text>
         </view>
       </view>
 
@@ -164,17 +176,18 @@ onPullDownRefresh(() => {
         @tap="openTask(task)"
       >
         <view class="task-card__top">
-          <text class="badge" :class="task.is_exam ? 'badge--exam' : 'badge--hw'">
-            {{ task.is_exam ? "考试" : "作业" }}
+          <text class="badge" :class="isFormalAssessment(task) ? 'badge--exam' : 'badge--hw'">
+            {{ assessmentLabel(task) }}
           </text>
           <text
-            v-if="segment === 'completed' && task.score !== null && task.score !== undefined"
+            v-if="visibleTaskScore(task) !== null"
             class="task-card__score"
-          >{{ task.score }} 分</text>
+          >{{ visibleTaskScore(task) }} 分<template v-if="task.is_absence_score"> · 缺交记分</template></text>
           <text v-else class="task-card__status">{{ task.status_label }}</text>
         </view>
         <text class="task-card__title">{{ task.title }}</text>
         <text class="task-card__meta">{{ task.course_name }} · {{ task.teacher_name }}</text>
+        <text v-if="visibleTaskScore(task) !== null" class="task-card__meta">{{ task.status_label }}</text>
         <view class="task-card__bottom">
           <text class="task-card__due">{{ formatDueLabel(task.due_at) }}</text>
           <text
@@ -188,6 +201,7 @@ onPullDownRefresh(() => {
 </template>
 
 <style scoped>
+.category-filter { padding: 22rpx 26rpx; font-size: 26rpx; color: #475569; }
 .tasks {
   min-height: 100vh;
   padding: 28rpx 30rpx calc(env(safe-area-inset-bottom) + 32rpx);

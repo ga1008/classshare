@@ -1591,10 +1591,12 @@
     <!-- Main Content Area -->
     <main class="exam-main">
         <div class="exam-paper-container" id="app">
+            {% include "partials/submission_retained_grade.html" %}
 
             <div class="paper-header">
                 <h1>{{ paper.title }}</h1>
                 <div class="paper-sub-title">{{ assignment.title }}</div>
+                <div class="paper-sub-title">{{ assignment.assessment_kind_label or '历史任务' }} · 在线试卷</div>
             </div>
 
             <!-- Dynamic content area -->

@@ -1,0 +1,165 @@
+{
+  "verified_at_utc": "2026-09-07T05:16:23.896495+00:00",
+  "engine": "PostgreSQL 16.14 (source and isolated restore)",
+  "source_export": {
+    "method": "consistent pg_dump custom; lock-wait-timeout=5s; no-owner/no-acl",
+    "bytes": 32120139,
+    "sha256": "cc48110a53b63cecf998530c5131ba256f8db9216af3767b2fb40ba3b4d29e36",
+    "remote_local_hash_equal": true,
+    "unchanged_after_rehearsal": true
+  },
+  "isolation": {
+    "listener": "127.0.0.1",
+    "port": 55437,
+    "dedicated_new_cluster": true,
+    "dedicated_new_database": true,
+    "raw_data_outside_sync_workspace": true,
+    "production_tables_modified": false,
+    "app_or_workers_started": false,
+    "cluster_stopped": false
+  },
+  "restored_baseline": {
+    "old_table_count": 220,
+    "old_total_rows": 469672,
+    "counts": {
+      "assignments": 98,
+      "submissions": 4294,
+      "submission_files": 13342,
+      "submission_grade_revisions": 86,
+      "material_ai_import_records": 36
+    },
+    "schema_sha256": "db129df56612aaeb1cce802b9672bdcab58e2abd6ed84dd41d2a521d57aa86d2"
+  },
+  "incremental": {
+    "status": "ok",
+    "database_preservation_passed": true,
+    "old_differences_per_pass": [
+      [],
+      []
+    ],
+    "idempotency_differences": [],
+    "added_tables": [
+      "ai_review_daily_counters",
+      "ai_review_reservations",
+      "assignment_classification_revisions",
+      "grade_publication_students",
+      "grade_publications"
+    ],
+    "added_columns": {
+      "assignments": [
+        "assessment_kind",
+        "assessment_kind_version",
+        "assessment_kind_source",
+        "assessment_kind_updated_at",
+        "assessment_kind_updated_by_teacher_id"
+      ]
+    },
+    "legacy_assignments_unclassified": 98,
+    "legacy_metadata_unchanged": true,
+    "classification_audit_rows": 0
+  },
+  "full_startup": {
+    "strict_status": "failed",
+    "fresh_process_per_pass": true,
+    "old_differences_per_pass": [
+      [
+        "table:signature_function_points",
+        "sequence:signature_function_points_id_seq"
+      ],
+      [
+        "table:signature_function_points",
+        "sequence:signature_function_points_id_seq"
+      ]
+    ],
+    "idempotency_differences": [
+      "table:signature_function_points",
+      "sequence:signature_function_points_id_seq"
+    ],
+    "runs": [
+      {
+        "status": "ok",
+        "required_table_count": 158,
+        "present_required_table_count": 158,
+        "runtime_tables": {
+          "created_tables": [],
+          "schema_writes_executed": false
+        },
+        "runtime_columns": {
+          "added_columns": {},
+          "skipped_tables": [],
+          "legacy_material_mastery_repaired": true,
+          "schema_writes_executed": false
+        },
+        "runtime_constraints": {
+          "created_indexes": [],
+          "skipped_indexes": [],
+          "classroom_todo_scope_repaired": false,
+          "signature_requester_repaired": false,
+          "schema_writes_executed": false
+        },
+        "index_created": 279,
+        "index_failed": 0,
+        "skipped_step_count": 0,
+        "captured_log_sha256": "f359a15650a854186a2a0cf294a5cb313e409378d1b9b30b41650350f0024f94"
+      },
+      {
+        "status": "ok",
+        "required_table_count": 158,
+        "present_required_table_count": 158,
+        "runtime_tables": {
+          "created_tables": [],
+          "schema_writes_executed": false
+        },
+        "runtime_columns": {
+          "added_columns": {},
+          "skipped_tables": [],
+          "legacy_material_mastery_repaired": true,
+          "schema_writes_executed": false
+        },
+        "runtime_constraints": {
+          "created_indexes": [],
+          "skipped_indexes": [],
+          "classroom_todo_scope_repaired": false,
+          "signature_requester_repaired": false,
+          "schema_writes_executed": false
+        },
+        "index_created": 279,
+        "index_failed": 0,
+        "skipped_step_count": 0,
+        "captured_log_sha256": "f359a15650a854186a2a0cf294a5cb313e409378d1b9b30b41650350f0024f94"
+      }
+    ],
+    "diagnosis": {
+      "table": "signature_function_points",
+      "row_count": 5,
+      "changed_columns_row_counts": {
+        "updated_at": 5
+      },
+      "sequence_advance_across_two_startups": 10,
+      "sequence_called_flag_preserved": true,
+      "all_other_old_tables_unchanged": true,
+      "cause": "Existing seed UPSERT unconditionally sets updated_at and consumes SERIAL sequence values.",
+      "strict_gate_passed": false
+    },
+    "score_answer_feedback_material_rows_unchanged": true
+  },
+  "native_synthetic_tests": {
+    "passed": 4,
+    "covers": [
+      "explicit isolated target guard",
+      "actual incremental PG DDL twice",
+      "old score mutation detected",
+      "non-idempotent new row detected",
+      "JSON raw text change detected",
+      "relationship mutation detected",
+      "column default mutation detected",
+      "sequence mutation detected"
+    ]
+  },
+  "deployment_gate_complete": false,
+  "remaining_gates": [
+    "Resolve or explicitly accept the explained existing signature seed timestamp/sequence churn; strict full-startup report remains failed.",
+    "Back up and open actual historical attachment/material files; dump verifies only database mappings.",
+    "Protect production writes since snapshot before deployment."
+  ]
+}

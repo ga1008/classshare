@@ -10,6 +10,8 @@ import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
 import { relativeTimeLabel } from "../../utils/format";
+import { useAuthStore } from "../../stores/auth";
+import { assessmentNotificationTarget } from "../../utils/assessment";
 
 interface MessageItem {
   id: number;
@@ -22,6 +24,7 @@ interface MessageItem {
   created_at: string;
   is_unread: boolean;
   link_url?: string;
+  metadata?: Record<string, unknown>;
 }
 
 const items = ref<MessageItem[]>([]);
@@ -29,6 +32,7 @@ const loading = ref(true);
 const failed = ref(false);
 const tab = ref<"all" | "unread">("all");
 const marking = ref(false);
+const auth = useAuthStore();
 
 const unreadCount = computed(() => items.value.filter((item) => item.is_unread).length);
 const visibleItems = computed(() =>
@@ -68,10 +72,8 @@ async function openItem(item: MessageItem): Promise<void> {
     }
   }
   // 作业/考试相关通知深链到作答页；其余仅展开阅读（正文即预览）
-  const match = /\/(?:assignment|exam\/take)\/(\d+)/.exec(item.link_url || "");
-  if (match) {
-    uni.navigateTo({ url: `/pages/task-detail/index?id=${match[1]}` });
-  }
+  const target = assessmentNotificationTarget(item.link_url || "", item.metadata, auth.isTeacher);
+  if (target) uni.navigateTo({ url: target });
 }
 
 async function markAllRead(): Promise<void> {

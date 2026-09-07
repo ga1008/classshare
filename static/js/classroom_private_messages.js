@@ -654,6 +654,7 @@ export class ClassroomPrivateMessages {
     }
 
     queueAttachments(files, { imagesOnly = false } = {}) {
+        imagesOnly = imagesOnly || this.currentContact?.role === 'assistant';
         const selectedFiles = Array.from(files || []);
         if (!selectedFiles.length) {
             return;
@@ -817,9 +818,13 @@ export class ClassroomPrivateMessages {
             this.sendButton.classList.toggle('is-uploading', this.isSending);
             this.sendButton.title = this.isSending ? '正在发送一对一消息' : '发送一对一消息';
         }
+        if (this.fileButton && this.currentContact?.role === 'assistant') {
+            this.fileButton.disabled = true;
+            this.fileButton.title = 'AI 助教私信支持文字和图片，其他文件请使用课堂即时对话';
+        }
         if (this.input) {
             this.input.placeholder = this.currentContact?.display_name
-                ? `发送给 ${this.currentContact.display_name}，可粘贴或拖入图片/文件`
+                ? `发送给 ${this.currentContact.display_name}，可粘贴或拖入${this.currentContact?.role === 'assistant' ? '图片，也可仅发图片' : '图片/文件'}`
                 : '选择同学或老师后发送一对一消息，可粘贴或拖入图片/文件';
         }
     }

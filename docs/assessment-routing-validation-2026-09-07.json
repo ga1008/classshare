@@ -1,0 +1,90 @@
+{
+  "date": "2026-09-07",
+  "scope": "Local implementation and isolated validation; no production deployment or paid model calls",
+  "python": {
+    "tests": 469,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "success": true
+  },
+  "frontend": {
+    "typecheck": "passed",
+    "production_build": "passed",
+    "vitest_tests": 16,
+    "vitest_status": "passed",
+    "component_tests": 7,
+    "component_status": "passed"
+  },
+  "miniapp": {
+    "contract_tests": 6,
+    "typecheck": "passed",
+    "wechat_build": "passed",
+    "uploaded": false
+  },
+  "browser": {
+    "classification": {
+      "synthetic": true,
+      "checks": [
+        "teacher: category save/read/filter and responsive history",
+        "teacher: create defaults homework",
+        "student: category save/read/filter and responsive history",
+        "student: absence zero without answer export; previous valid grade during retry; report card"
+      ],
+      "errors": []
+    },
+    "publication": {
+      "synthetic": true,
+      "checks": [
+        "teacher: real material button, required warnings and explicit publish confirmation, desktop/mobile preview",
+        "student: sees own immutable 81.6 score, cannot read teacher preview",
+        "teacher: independent classroom management shows published version without source preview",
+        "withdrawal: explicit reason required, student visibility removed, history retained"
+      ],
+      "errors": []
+    },
+    "usage": {
+      "synthetic": true,
+      "checks": [
+        "super-admin real rendered page: physical attempts dedupe, low/high review distinction, known cost and unknown cost, responsive"
+      ],
+      "errors": []
+    },
+    "material_preflight": {
+      "synthetic": true,
+      "checks": [
+        "取消预检不提交生成请求",
+        "刷新原分/新分对照、逐项警告确认及390px无横向溢出",
+        "确认后仅一次刷新，提交原预检hash与全部警告确认"
+      ],
+      "errors": []
+    }
+  },
+  "native_pg": {
+    "report": "assessment-postgres-rehearsal-fixed-2026-09-07.json",
+    "old_tables": 220,
+    "old_rows": 469672,
+    "incremental_passes": 2,
+    "fresh_database_initialization_passes": 2,
+    "old_differences": 0,
+    "native_test_count": 5,
+    "cluster_stopped": true
+  },
+  "no_external_billing": true,
+  "production_modified": false,
+  "limitations": [
+    "Source data file mappings checked; attachment and material file bytes still require backup and open verification before rollout",
+    "Material preflight browser checks mock the preflight/write APIs; publication/classification/browser routes used actual synthetic local DB",
+    "No production service or miniapp release performed"
+  ],
+  "deployment_gate_tests": {
+    "count": 5,
+    "status": "passed"
+  },
+  "runtime_cleanup": {
+    "synthetic_app_stopped": true,
+    "isolated_pg_stopped": true,
+    "temporary_directory_deletion": "automatic approval rejected: blocked by policy",
+    "artifacts_retained": true
+  }
+}

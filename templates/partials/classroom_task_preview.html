@@ -6,7 +6,7 @@
 <div data-cw-loading>
     <div class="cw-section-head">
         <div class="cw-section-title"><h2>{{ '待处理任务' if teacher else '作业与考试' }}</h2>{{ explain_button('课堂任务', '整个课堂的作业与考试，不随所选课次筛选。已提交、已关闭与历史记录均可回看。', label='课堂任务说明', class_name='cw-explain-button') }}</div>
-        <button type="button" class="cw-button" data-cw-history data-cw-open="tasks">历史作业与考试</button>
+        <div class="cw-secondary-actions">{% if teacher %}<button type="button" class="cw-button" data-classroom-grade-publication data-offering-id="{{ classroom.id }}">成绩公布</button>{% endif %}<button type="button" class="cw-button" data-cw-history data-cw-open="tasks">历史作业与考试</button></div>
     </div>
     <p class="cw-task-scope">整个课堂 · 共 {{ preview.total_count }} 项</p>
     <div class="cw-task-tabs" role="group" aria-label="任务筛选">
@@ -18,7 +18,7 @@
     <ul class="cw-task-cards">
         {% for row in preview.rows %}{% set task = row.task %}
         <li class="cw-task-card" data-assignment-id="{{ task.id }}">
-            <div class="cw-task-card-head"><span class="cw-task-kind">{{ '考试' if task.kind == 'exam' else '作业' }}</span><span class="cw-task-status is-attention">{{ row.status }}</span></div>
+            <div class="cw-task-card-head"><span class="cw-task-kind">{{ task.assessment_kind_label or '历史任务' }}</span><span class="cw-task-status is-attention">{{ row.status }}</span></div>
             <a class="cw-task-title" data-assignment-link="/assignment/{{ task.id }}" href="/assignment/{{ task.id }}">{{ task.title }}</a>
             <div class="cw-task-card-foot">
                 <div><span class="cw-meta">{% if row.deadline_label %}{{ row.deadline_label }} {{ '重交截止' if task.canResubmit else '截止' }}{% else %}未设置截止时间{% endif %}</span>{% if row.constraint %}<p class="cw-constraint">{{ row.constraint }}</p>{% endif %}</div>

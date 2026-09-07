@@ -50,6 +50,9 @@ function AssignmentAuthoringIslandView({ snapshot }: { snapshot: AssignmentAutho
       </div>
 
       <div className="assignment-authoring-sync__chips" aria-label="作业发布配置">
+        <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-assessment-kind' })}>
+          <ClipboardList size={14} aria-hidden="true" />{snapshot.assessmentKindLabel}
+        </button>
         <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-grading-mode' })}>
           {snapshot.gradingMode === 'ai' ? <Bot size={14} aria-hidden="true" /> : <CheckCircle2 size={14} aria-hidden="true" />}
           {modeLabel}

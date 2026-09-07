@@ -1268,6 +1268,7 @@
 
             {% if user_info.role == 'teacher' %}
             <p class="assignment-scope-note" data-assignment-section-view="tasks">仅显示教师创建的练习与考试；个人试炼在班级成长统计。</p>
+            {% include 'partials/assessment_classification_batch.html' %}
             {% endif %}
 
             <div class="assignment-board" id="assignment-list" data-assignment-list-region data-assignment-section-view="tasks">
@@ -1322,6 +1323,7 @@
                         data-assignment-id="{{ assignment.id }}"
                         data-assignment-title="{{ assignment.title }}"
                         data-assignment-kind="{{ 'exam' if assignment.exam_paper_id else 'assignment' }}"
+                        data-assessment-kind="{{ assignment.assessment_kind or '' }}"
                         data-assignment-link="/assignment/{{ assignment.id }}"
                         data-assignment-status-key="{{ assignment.effective_status if user_info.role == 'teacher' else assignment.submission_status }}"
                         data-assignment-status-label="{{ status_label }}"
@@ -1339,12 +1341,9 @@
                         <div class="card-body">
                             <div class="assignment-card-top">
                                 <div class="assignment-card-tags">
-                                    <span class="badge {{ status_class }}">{{ status_label }}{% if assignment.submission_status == 'graded' and assignment.submission_score is not none %} · {{ assignment.submission_score }} 分{% endif %}</span>
-                                    {% if assignment.exam_paper_id %}
-                                    <span class="badge badge-outline">试卷</span>
-                                    {% else %}
-                                    <span class="badge badge-outline">作业</span>
-                                    {% endif %}
+                                    <span class="badge {{ status_class }}" data-grade-visible="{{ '1' if assignment.has_effective_score else '0' }}">{{ status_label }}{% if assignment.has_effective_score and assignment.submission_score is not none %} · {{ '缺交登记 ' if assignment.is_absence_score else '当前有效 ' if assignment.is_regrading else '' }}{{ assignment.submission_score }} 分{% endif %}</span>
+                                    <span class="badge badge-outline" data-assessment-kind-label>{{ '分类待确认' if user_info.role == 'teacher' and assignment.classification_status == 'legacy_unknown' else assignment.assessment_kind_label }}</span>
+                                    {% if assignment.exam_paper_id %}<span class="badge badge-outline">在线试卷</span>{% endif %}
                                     {% if assignment.learning_stage %}
                                     <span class="badge badge-primary">试炼 · {{ assignment.learning_stage.short_name }}</span>
                                     {% endif %}
@@ -1382,42 +1381,7 @@
                                 {% endif %}
                             </p>
                             {% if user_info.role == 'teacher' %}
-                            <div
-                                class="ordinary-grade-kind-control{% if assignment.ordinary_grade_kind_source == 'manual' %} is-manual{% endif %}"
-                                data-ordinary-grade-kind-control
-                                data-ordinary-grade-kind="{{ assignment.ordinary_grade_kind }}"
-                                data-ordinary-grade-kind-source="{{ assignment.ordinary_grade_kind_source }}"
-                                onclick="event.stopPropagation();"
-                            >
-                                <span class="ordinary-grade-kind-control__label">
-                                    平时成绩用途
-                                    <em
-                                        class="ordinary-grade-kind-control__badge"
-                                        data-ordinary-grade-kind-badge
-                                        data-kind="{{ assignment.ordinary_grade_kind }}"
-                                    >{{ '测验' if assignment.ordinary_grade_kind == 'exam' else '平时作业' }}</em>
-                                </span>
-                                <select
-                                    class="ordinary-grade-kind-control__select"
-                                    data-ordinary-grade-kind-select
-                                    data-assignment-id="{{ assignment.id }}"
-                                    aria-label="设置 {{ assignment.title }} 的平时成绩用途"
-                                    onclick="event.stopPropagation();"
-                                >
-                                    <option value="auto"{% if not assignment.ordinary_grade_kind_override %} selected{% endif %}>
-                                        自动 · {{ '测验' if assignment.ordinary_grade_auto_kind == 'exam' else '平时作业' }}
-                                    </option>
-                                    <option value="assignment"{% if assignment.ordinary_grade_kind_override == 'assignment' %} selected{% endif %}>平时作业</option>
-                                    <option value="exam"{% if assignment.ordinary_grade_kind_override == 'exam' %} selected{% endif %}>测验</option>
-                                </select>
-                                <small class="ordinary-grade-kind-control__note" data-ordinary-grade-kind-note>
-                                    {% if assignment.ordinary_grade_kind_source == 'manual' %}
-                                    已手动指定；只影响平时成绩表，学生答题与批改方式不变。
-                                    {% else %}
-                                    自动识别；依据任务名称与试卷来源。
-                                    {% endif %}
-                                </small>
-                            </div>
+                            {% with assessment=assignment %}{% include 'partials/assessment_kind_control.html' %}{% endwith %}
                             {% endif %}
                             {% if assignment.countdown_at or assignment.late_submission_enabled or assignment.starts_at or (user_info.role == 'student' and assignment.resubmission_due_at) %}
                             <div
@@ -2209,12 +2173,23 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="assignment-id">
+                <input type="hidden" id="assignment-assessment-kind-version" value="0">
                 <div
                     class="assignment-authoring-island"
                     data-lanshare-island="assignment-authoring-sync"
                     data-island-id="assignment-authoring-sync-{{ classroom.id }}"
                 ></div>
 
+                <div class="form-group">
+                    <label class="form-label required" for="assignment-assessment-kind">任务分类</label>
+                    <select id="assignment-assessment-kind" class="form-select">
+                        <option value="" disabled>分类待确认</option>
+                        <option value="homework" selected>平时作业</option>
+                        <option value="midterm">期中测验</option>
+                        <option value="final">期末测验</option>
+                    </select>
+                    <p class="form-hint">期中和期末测验采用更严格的图片批改；分类不会改变答题形式或自动重批原成绩。</p>
+                </div>
                 <div class="form-group">
                     <label class="form-label required" for="assignment-title">作业标题</label>
                     <input type="text" id="assignment-title" class="form-control" placeholder="例如：第一周课后作业">
@@ -2366,6 +2341,16 @@
                             <span class="block text-xs text-muted mt-1">默认只创建站内通知；勾选后才进入邮件队列，并按账号限速分批发送。</span>
                         </span>
                     </label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label required" for="exam-assessment-kind">任务分类</label>
+                    <select id="exam-assessment-kind" class="form-select">
+                        <option value="" selected disabled>请选择本次使用试卷的类别</option>
+                        <option value="homework">平时作业</option>
+                        <option value="midterm">期中测验</option>
+                        <option value="final">期末测验</option>
+                    </select>
+                    <p class="form-hint">同一份试卷可以在不同课堂承担不同用途；本次选择只属于当前课堂任务。</p>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="exam-allowed-file-types">接收附件类型</label>
@@ -2681,7 +2666,7 @@
 {% endif %}
 {% if user_info.role == 'teacher' %}
 <script type="module" fetchpriority="low" src="{{ asset_url('js/group_assignment_config.js') }}"></script>
-<script type="module" fetchpriority="low" src="{{ asset_url('js/ordinary_grade_kind_controls.js') }}"></script>
+<script type="module" fetchpriority="low" src="{{ asset_url('js/assessment_kind_controls.js') }}"></script>
 <script type="module" fetchpriority="low" src="{{ asset_url('js/classroom_closeout.js') }}"></script>
 <script type="module" fetchpriority="low" src="{{ asset_url('js/classroom_retake.js') }}"></script>
 {% endif %}

@@ -1,0 +1,38 @@
+{
+  "created_at_utc": "2026-09-07T05:54:57.340248+00:00",
+  "status": "ok",
+  "preliminary_snapshot_requires_final_sync": false,
+  "deploy_file_count": 1944,
+  "task_new_files": 48,
+  "vite_build_file_count": 30,
+  "protected_path_violations": [],
+  "private_key_block_files": [],
+  "missing_files": [],
+  "missing_task_new_files": [],
+  "missing_vite_dependencies": [],
+  "archive_manifest_equal": true,
+  "archive_bytes": 32059285,
+  "archive_sha256": "3b5ec998d66bc3434a054a2fca580233938d2e6f7284bd4dd8212909d78970ad",
+  "manifest_sha256": "98f54ad09382da9f82640fc7eb01e1aaa6aeed871476da89de0d69c721516df0",
+  "frozen_source_drift": [],
+  "archive_path": "C:\\Users\\AngelWei\\AppData\\Local\\Temp\\lanshare-deploy-20260907-135418\\lanshare-code-20260907-135418.tgz",
+  "manifest_path": "C:\\Users\\AngelWei\\AppData\\Local\\Temp\\lanshare-deploy-20260907-135418\\deploy-files.txt",
+  "review_json_path": "C:\\Users\\AngelWei\\AppData\\Local\\Temp\\lanshare-assessment-release-20260907\\final-delivery-audit.json",
+  "personal_deploy_script_in_archive": false,
+  "native_migration_gate": {
+    "status": "ok",
+    "database_engine": "postgres",
+    "backup_sha256": "cc48110a53b63cecf998530c5131ba256f8db9216af3767b2fb40ba3b4d29e36",
+    "migration_source_file_count": 53,
+    "blockers": [],
+    "production_data_modified": false,
+    "scope": "Native database migration gate only; attachment backup and live deployment checks remain separate."
+  },
+  "remote_upload_or_deploy_performed": false,
+  "artifact_paths": {
+    "archive": "C:\\Users\\AngelWei\\AppData\\Local\\Temp\\lanshare-deploy-20260907-135418\\lanshare-code-20260907-135418.tgz",
+    "manifest": "C:\\Users\\AngelWei\\AppData\\Local\\Temp\\lanshare-deploy-20260907-135418\\deploy-files.txt"
+  },
+  "audit_sha256": "dd5c487c9ae3f6178911bb43a9de7e353d23448b737cdf9f6ba47c8f86762135",
+  "note": "Evidence generated after candidate freeze; intentionally outside its archive to avoid self-referential digest."
+}

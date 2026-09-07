@@ -17,6 +17,7 @@ import { computed, reactive, ref } from "vue";
 import { request, uploadFile } from "../../utils/api";
 import { previewProtectedFile } from "../../utils/preview";
 import { requestSubscribe } from "../../utils/subscribe";
+import { assessmentLabel, isFormalAssessment, hasAnswerSubmission, canEnterAnswerMode, visibleTaskScore, type AssessmentClassification, type SubmissionPresence } from "../../utils/assessment";
 
 interface Question {
   id: string;
@@ -45,7 +46,7 @@ interface DraftResponse {
 }
 
 interface DetailData {
-  assignment: {
+  assignment: AssessmentClassification & {
     id: number | string;
     title: string;
     requirements_md: string;
@@ -57,7 +58,7 @@ interface DetailData {
     late_policy_label: string;
   };
   paper: { title: string; description: string; pages?: Array<{ name?: string; questions?: Question[] }> } | null;
-  submission: {
+  submission: (SubmissionPresence & {
     status: string;
     score: number | null;
     feedback_md: string;
@@ -69,7 +70,7 @@ interface DetailData {
       mime_type: string;
       is_image: boolean;
     }>;
-  } | null;
+  }) | null;
   group: {
     is_group: boolean;
     in_group: boolean;
@@ -117,7 +118,7 @@ const allQuestions = computed<Question[]>(() => {
 });
 
 const isAnswerMode = computed(
-  () => Boolean(detail.value && !detail.value.submission && detail.value.assignment.is_accepting_submissions),
+  () => Boolean(detail.value && canEnterAnswerMode(detail.value.submission, detail.value.assignment.is_accepting_submissions)),
 );
 
 const answeredCount = computed(
@@ -131,9 +132,9 @@ const peerSaving = ref(false);
 const showPeerEval = computed(
   () =>
     Boolean(
-      detail.value?.submission &&
-        detail.value.group?.in_group &&
-        (detail.value.group?.peers?.length ?? 0) > 0,
+      hasAnswerSubmission(detail.value?.submission) &&
+        detail.value?.group?.in_group &&
+        (detail.value?.group?.peers?.length ?? 0) > 0,
     ),
 );
 
@@ -142,6 +143,10 @@ const scoreDisplay = computed(() => {
   const group = detail.value?.group;
   const submission = detail.value?.submission;
   if (!submission) return { value: "—", label: "待批改", note: "" };
+  if (submission.score_visible === false) return { value: "—", label: group?.pending ? "待揭晓" : "暂无可见成绩", note: "" };
+  if (submission.is_absence_score && visibleTaskScore(submission) !== null) {
+    return { value: String(visibleTaskScore(submission)), label: "缺交记分", note: "尚未提交答卷，能否补交以当前开放状态为准" };
+  }
   if (group?.is_group) {
     if (group.revealed && group.final_score !== null && group.final_score !== undefined) {
       return { value: String(group.final_score), label: "综合表现分", note: "作业分×0.8 + 组员互评均分" };
@@ -152,7 +157,7 @@ const scoreDisplay = computed(() => {
     return { value: "—", label: "待批改", note: `小组：${group.group_name || "未分组"}` };
   }
   if (submission.score !== null && submission.score !== undefined) {
-    return { value: String(submission.score), label: "得分", note: "" };
+    return { value: String(submission.score), label: "得分", note: submission.grade_display_state === "regrading" ? "重批中，保留原有效成绩" : "" };
   }
   return { value: "—", label: "待批改", note: "" };
 });
@@ -537,7 +542,7 @@ async function loadDetail(): Promise<void> {
       path: `/api/mp/tasks/assignment/${assignmentId.value}`,
     });
     remainingSeconds.value = detail.value.assignment.remaining_seconds;
-    if (detail.value.submission) {
+    if (hasAnswerSubmission(detail.value.submission) && detail.value.submission) {
       restoreFromAnswersList(detail.value.submission.answers || []);
       initPeerRatings();
     } else if (detail.value.assignment.is_accepting_submissions) {
@@ -674,8 +679,8 @@ onUnload(() => {
       <!-- 头部信息 -->
       <view class="head-card glass-card">
         <view class="head-card__top">
-          <text class="head-card__badge" :class="{ 'head-card__badge--exam': detail.assignment.is_exam }">
-            {{ detail.assignment.is_exam ? "考试" : "作业" }}
+          <text class="head-card__badge" :class="{ 'head-card__badge--exam': isFormalAssessment(detail.assignment) }">
+            {{ assessmentLabel(detail.assignment) }}
           </text>
           <text v-if="countdownLabel && isAnswerMode" class="head-card__countdown">
             ⏱ {{ countdownLabel }}
@@ -695,7 +700,7 @@ onUnload(() => {
             <text class="result-card__score-label">{{ scoreDisplay.label }}</text>
           </view>
           <text v-if="scoreDisplay.note" class="result-card__meta">{{ scoreDisplay.note }}</text>
-          <text class="result-card__meta">提交于 {{ detail.submission.submitted_at }}</text>
+          <text v-if="hasAnswerSubmission(detail.submission) && detail.submission.submitted_at" class="result-card__meta">提交于 {{ detail.submission.submitted_at }}</text>
           <view v-if="detail.submission.feedback_md" class="result-card__feedback">
             <text class="result-card__feedback-title">教师批语</text>
             <text class="result-card__feedback-text">{{ detail.submission.feedback_md }}</text>
@@ -749,7 +754,7 @@ onUnload(() => {
       </template>
 
       <!-- 作答模式：试卷 -->
-      <template v-else-if="isAnswerMode && detail.paper">
+      <template v-if="isAnswerMode && detail.paper">
         <view v-for="(page, pageIndex) in detail.paper.pages" :key="pageIndex" class="page-block">
           <text v-if="page.name" class="section-title">{{ page.name }}</text>
           <view v-for="(q, qIndex) in page.questions" :key="q.id" class="question-card glass-card">
@@ -893,7 +898,7 @@ onUnload(() => {
       </template>
 
       <!-- 已截止且无提交 -->
-      <view v-else class="empty">
+      <view v-else-if="!hasAnswerSubmission(detail.submission)" class="empty">
         <text>已超过提交时间{{ detail.assignment.late_policy_label ? `（${detail.assignment.late_policy_label}）` : "" }}</text>
       </view>
 

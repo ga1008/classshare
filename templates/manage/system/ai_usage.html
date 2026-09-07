@@ -18,6 +18,8 @@
 {% set provider_usage = dashboard.provider_usage or {} %}
 {% set provider_summary = provider_usage.summary or {} %}
 {% set provider_model_items = provider_usage.model_items or [] %}
+{% set provider_profile_items = provider_usage.profile_items or [] %}
+{% set profile_labels = {'text_fast': 'DS · 轻量文字', 'text_deep': 'DS · 深度文字', 'vision_edge_low': 'Lite · 日常识图', 'vision_pro_low': 'Pro · 低思考', 'vision_assessment_high': 'Pro · 测验高思考', 'legacy_unknown': '历史调用 · 档位未知'} %}
 
 {% block extra_head %}
 <style>
@@ -330,9 +332,10 @@
             <strong>{{ summary.avg_duration_ms or 0 }} ms</strong>
         </div>
         <div class="ai-usage-metric">
-            <span>供应商估算费用</span>
-            <strong>¥{{ (provider_summary.estimated_cost_cny or 0) | round(4) }}</strong>
+            <span>{{ '已知费用小计' if provider_summary.estimated_cost_is_partial else '供应商估算费用' }}</span>
+            <strong>{% if provider_summary.cost_known_calls %}¥{{ (provider_summary.estimated_cost_cny or 0) | round(4) }}{% else %}待核对{% endif %}</strong>
             <small>{{ provider_summary.cost_known_calls or 0 }}/{{ provider_summary.calls or 0 }} 次有实际 Token 计价</small>
+            {% if provider_summary.cost_unknown_calls %}<small>{{ provider_summary.cost_unknown_calls }} 次费用未知，未按免费计入</small>{% endif %}
         </div>
     </section>
 
@@ -424,7 +427,7 @@
                 <h2>供应商与模型实际用量</h2>
                 <p class="ai-usage-note">聚合最近 {{ provider_usage.window_days or 56 }} 天共享调用日志；Token 来自供应商响应，费用按当前配置单价估算。日志采用有界尾读，页面访问不会扫描整份历史文件。</p>
             </div>
-            <span class="ai-usage-badge">{{ provider_usage.events_read or 0 }} 条调用</span>
+            <span class="ai-usage-badge">{{ provider_usage.physical_attempts_read or 0 }} 次实际尝试</span>
         </div>
         {% if provider_model_items %}
         <div class="ai-usage-table-wrap">
@@ -454,8 +457,9 @@
                         </td>
                         <td>{{ item.avg_duration_ms }} ms</td>
                         <td>
-                            <span class="ai-usage-primary">¥{{ (item.estimated_cost_cny or 0) | round(4) }}</span>
+                            <span class="ai-usage-primary">{% if item.cost_known_calls %}¥{{ (item.estimated_cost_cny or 0) | round(4) }}{{ '（小计）' if item.estimated_cost_is_partial else '' }}{% else %}费用未知{% endif %}</span>
                             <span class="ai-usage-subtle">{{ item.cost_known_calls }}/{{ item.calls }} 次可计价</span>
+                            {% if item.cost_unknown_calls %}<span class="ai-usage-subtle">{{ item.cost_unknown_calls }} 次待核对</span>{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -466,6 +470,21 @@
         <div class="ai-usage-empty">尚无供应商 Token 日志。新调用完成后会自动汇总到这里。</div>
         {% endif %}
     </article>
+
+    {% if provider_profile_items %}
+    <article class="ai-usage-panel">
+        <div class="ai-usage-panel-head"><div><h2>模型档位与复核费用</h2><p class="ai-usage-note">每次实际请求只计一次；主调用与风险复核分别统计。失败、截断或断流也可能产生费用，未知用量不按零元处理。</p></div></div>
+        <div class="ai-usage-table-wrap"><table class="ai-usage-table">
+            <thead><tr><th>档位</th><th>用途</th><th>实际尝试</th><th>成功率</th><th>未完整返回</th><th>估算费用</th></tr></thead>
+            <tbody>{% for item in provider_profile_items %}<tr>
+                <td><span class="ai-usage-primary">{{ profile_labels.get(item.profile_id, item.profile_id) }}</span></td>
+                <td>{{ '风险复核' if item.stage == 'review' else '主调用' }}</td>
+                <td>{{ item.calls }}</td><td>{{ item.success_rate }}%</td><td>{{ item.incomplete_calls }}</td>
+                <td><span class="ai-usage-primary">{% if item.cost_known_calls %}¥{{ item.estimated_cost_cny | round(4) }}{{ '（已知小计）' if item.estimated_cost_is_partial else '' }}{% else %}费用未知{% endif %}</span><span class="ai-usage-subtle">{{ item.cost_unknown_calls }} 次费用待核对</span></td>
+            </tr>{% endfor %}</tbody>
+        </table></div>
+    </article>
+    {% endif %}
 
     <article class="ai-usage-panel">
         <div class="ai-usage-panel-head">

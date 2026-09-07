@@ -51,6 +51,9 @@ function ExamAssignIslandView({ snapshot }: { snapshot: ExamAssignSnapshot }) {
       </div>
 
       <div className="exam-assign-sync__chips" aria-label="考试发布配置">
+        <button type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-assessment-kind' })}>
+          <BookOpenCheck size={14} aria-hidden="true" />{snapshot.assessmentKindLabel}
+        </button>
         <button type="button" onClick={() => sendExamAssignCommand('focus-list')}>
           <BookOpenCheck size={14} aria-hidden="true" />
           {snapshot.paperCount} 份试卷

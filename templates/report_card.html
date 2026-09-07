@@ -63,35 +63,58 @@
 {% block main_content %}
 {% set summary = report_card.summary %}
 <section class="report-shell">
+    {% if report_card.published_grades %}
+    <section class="report-course" aria-label="已公布课程成绩">
+        <h2>已公布课程成绩</h2>
+        <p class="report-course__meta">以下是教师确认公布的课程成绩；任务批改或材料更新不会自动改动已公布版本。</p>
+        {% for grade in report_card.published_grades %}
+        <div class="report-record">
+            <div class="report-record__title">{{ grade.course_name }}<small>{{ grade.semester_name }} · 第 {{ grade.version }} 版 · {{ grade.published_at[:10] }}</small></div>
+            <span>平时 {{ grade.ordinary_score }} 分</span>
+            <span>期末 {{ grade.final_exam_score }} 分</span>
+            <strong class="report-record__score">总评 {{ grade.overall_score }} 分</strong>
+            <small>{{ grade.formula.text or '按教务成绩登记表确认' }}</small>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
     <header class="report-hero">
         <div>
             <span class="report-hero__eyebrow">Report Card · 成绩单</span>
             <h1>我的成绩，一目了然</h1>
-            <p>每一次作业与考试的得分、班级平均和你的相对位置，全部汇总在这里。</p>
+            <p>按开课学期与任务类型查看已公布成绩、班级平均和学习变化。</p>
         </div>
         <div class="report-stats">
-            <div class="report-stat"><span>已批改记录</span><strong>{{ summary.record_total }}</strong></div>
-            <div class="report-stat"><span>综合均分</span><strong>{{ summary.overall_avg if summary.overall_avg is not none else '—' }}</strong></div>
+            <div class="report-stat"><span>可查成绩</span><strong>{{ summary.record_total }}</strong></div>
+            <div class="report-stat"><span>任务均分 · 百分制</span><strong>{{ summary.overall_avg if summary.overall_avg is not none else '—' }}</strong></div>
             <div class="report-stat"><span>位居前列次数</span><strong>{{ summary.top_band_count }}</strong></div>
         </div>
     </header>
+    <nav class="report-course__meta" aria-label="成绩类型筛选">
+        {% for value, label in [('', '全部'), ('homework', '平时作业'), ('midterm', '期中测验'), ('final', '期末测验')] %}
+        <a class="btn {{ 'btn-primary' if report_card.selected_assessment_kind == value else 'btn-outline-secondary' }}" href="/report-card?{{ ('assessment_kind=' ~ value ~ '&') if value else '' }}{{ ('class_offering_id=' ~ report_card.selected_class_offering_id) if report_card.selected_class_offering_id else '' }}" {% if report_card.selected_assessment_kind == value %}aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+        {% if summary.pending_total %}<span>{{ summary.pending_total }} 条成绩待批改或待揭晓</span>{% endif %}
+    </nav>
 
     {% if report_card.courses %}
     {% for course in report_card.courses %}
     <section class="report-course">
         <div class="report-course__head">
-            <h2>{{ course.course_name }}</h2>
+            <h2>{{ course.course_name }} <small>{{ course.semester_name }}</small></h2>
             <div class="report-course__meta">
                 <span>共 <strong>{{ course.record_count }}</strong> 次记录</span>
-                <span>课程均分 <strong>{{ course.avg_score if course.avg_score is not none else '—' }}</strong></span>
+                <span>任务均分 <strong>{{ course.avg_score if course.avg_score is not none else '—' }}</strong></span>
                 <span>{{ course.trend_label }}</span>
             </div>
         </div>
-        {% if course.record_count >= 2 %}
-        <div class="report-chart" data-report-chart="{{ loop.index0 }}" aria-hidden="true"></div>
+        {% for category in course.categories %}
+        <h3 class="report-course__meta">{{ category.label }} · {{ category.graded_count }} 次有效成绩 · 均分 {{ category.avg_score if category.avg_score is not none else '—' }} · {{ category.trend_label }}</h3>
+        {% if category.graded_count >= 2 %}
+        <div class="report-chart" data-report-chart="{{ category.chart_index }}" aria-hidden="true"></div>
         {% endif %}
         <div class="report-records">
-            {% for record in course.records | reverse %}
+            {% for record in category.records | reverse %}
             <div class="report-record">
                 <a class="report-record__title" href="{{ record.link_url }}">
                     {{ record.title }}
@@ -99,7 +122,9 @@
                 </a>
                 <span class="report-badge report-badge--kind">{{ record.kind_label }}</span>
                 {% if record.is_late %}<span class="report-badge report-badge--late">迟交</span>{% endif %}
-                <span class="report-record__score">{{ record.my_score }} 分</span>
+                {% if record.is_absence_score %}<span class="report-badge report-badge--late">未提交，教师记 0</span>{% endif %}
+                {% if record.is_regrading %}<span class="report-badge report-badge--kind">重批中 · 原有效分</span>{% endif %}
+                <span class="report-record__score">{% if record.my_score is not none %}{{ record.my_score }} 分{% elif record.grade_display_state == 'group_pending' %}等待小组揭晓{% elif record.grade_display_state == 'returned' %}已退回待重交{% else %}待批改{% endif %}</span>
                 <span class="report-record__avg">
                     {% if record.class_avg is not none %}班均 {{ record.class_avg }}{% else %}班均 —{% endif %}
                 </span>
@@ -109,22 +134,36 @@
             </div>
             {% endfor %}
         </div>
+        {% endfor %}
     </section>
     {% endfor %}
 
     <aside class="report-explain">
         <strong>这些数字怎么来的？</strong><br>
-        · 只统计已批改且非缺考计分的记录；班级平均为同一任务全班已批改分数的均值。<br>
+        · 任务均分按已公布有效成绩计算（百分制），不等同于课程总评；教师明确记录的缺交 0 分计入，未评分不当作 0 分。<br>
+        · 班级平均与分位只使用同一任务已揭晓成绩；小组待揭晓分数不参与任何学生端汇总。重批期间保留原有效分。<br>
         · “前 10% / 前 25%…” 是你在这次任务里的匿名相对位置，批改人数不足 5 人时不显示，任何人都看不到他人的具体分数。<br>
         · 小组作业的综合表现分 = 作业得分 × 0.8 + 组内互评均分（互评在全组完成后才计入）。
     </aside>
     {% else %}
     <section class="report-course">
         <div class="report-empty">
-            <strong>还没有已批改的成绩</strong>
-            <p>作业或考试批改后自动汇总到这里。</p>
+            <strong>当前范围还没有成绩记录</strong>
+            <p>提交后的平时作业、期中测验和期末测验会按学期汇总到这里。</p>
             <a class="btn btn-primary" href="/dashboard">回到首页</a>
         </div>
+    </section>
+    {% endif %}
+    {% if report_card.personal_records %}
+    <section class="report-course">
+        <h2>个人阶段试炼</h2>
+        <p class="report-course__meta">自主练习单独记录，不计入上方任务均分或课程正式成绩。</p>
+        {% for record in report_card.personal_records | reverse %}
+        <div class="report-record">
+            <a class="report-record__title" href="{{ record.link_url }}">{{ record.title }}<small>{{ record.course_name }} · {{ record.date_label }}</small></a>
+            <span class="report-record__score">{% if record.my_score is not none %}{{ record.my_score }} 分{% else %}待批改{% endif %}</span>
+        </div>
+        {% endfor %}
     </section>
     {% endif %}
 </section>
@@ -132,7 +171,7 @@
 
 {% block scripts %}
 {{ super() }}
-<script type="application/json" data-report-chart-data>{{ report_card.courses | map(attribute='chart') | list | tojson }}</script>
+<script type="application/json" data-report-chart-data>{{ report_card.charts | tojson }}</script>
 <script src="/static/js/echarts.min.js"></script>
 <script>
     (() => {

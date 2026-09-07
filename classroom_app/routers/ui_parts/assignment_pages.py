@@ -2,6 +2,8 @@ import re
 from urllib.parse import urlsplit
 
 from .common import *
+from ...services.assessment_classification_service import enrich_assessment_classifications
+from ...services.score_projection_service import load_submission_score_facts
 
 
 router = APIRouter()
@@ -31,6 +33,7 @@ def assignment_detail_page(request: Request, assignment_id: str, user: dict = De
             raise HTTPException(404, "Assignment not found")
         assignment_row = refresh_assignment_runtime_status(conn, assignment_row)
         assignment = _enrich_assignment_upload_config(dict(assignment_row))
+        assignment = enrich_assessment_classifications(conn, [assignment])[0]
         assignment_back_url = _assignment_back_url(assignment)
         if user["role"] == "student" and not student_can_access_assignment(conn, assignment_id, int(user["id"])):
             raise HTTPException(403, "该破境试炼只对指定学生开放")
@@ -125,11 +128,9 @@ def assignment_detail_page(request: Request, assignment_id: str, user: dict = De
                 },
             )
 
-        submission_row = conn.execute(
-            "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
-            (assignment_id, user['id'])
-        ).fetchone()
-        submission = dict(submission_row) if submission_row else None
+        score_facts = load_submission_score_facts(conn, assignment_ids=[assignment_id], student_id=int(user['id']), student_view=True)
+        submission = score_facts[0] if score_facts else None
+        absence_grade = submission if submission and submission.get("is_absence_score") else None
         if submission and int(submission.get("is_absence_score") or 0):
             submission = None
         submission_files = []
@@ -197,6 +198,7 @@ def assignment_detail_page(request: Request, assignment_id: str, user: dict = De
         "request": request, "user_info": user, "assignment": assignment,
         "assignment_back_url": assignment_back_url,
         "submission": submission, "submission_files": submission_files,
+        "absence_grade": absence_grade,
         "can_withdraw_submission": can_withdraw_submission,
         "can_resubmit_submission": can_resubmit_submission,
         "submission_returned": submission_returned,

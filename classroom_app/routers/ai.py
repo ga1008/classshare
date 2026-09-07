@@ -52,6 +52,7 @@ from ..services.submission_file_alignment import resolve_submission_file_path
 from ..services.ai_grading_service import (
     AIGradingQueueError,
     build_submission_grading_fingerprint,
+    current_submission_grading_fingerprint,
     force_submit_submission_for_ai_grading,
     submit_submission_for_ai_grading,
     stop_submission_ai_grading,
@@ -380,7 +381,7 @@ def _activate_submission_grade_revision(
     return activate_submission_grade_revision(
         conn,
         submission=submission,
-        data=data,
+        data={**data, "source": "ai"},
         score=score,
         feedback_md=feedback_md,
     )
@@ -434,6 +435,13 @@ async def handle_ai_grading_callback(request: Request):
                 if current_fingerprint != expected_fingerprint:
                     conn.commit()
                     return {"status": "ignored_stale_grading_result"}
+            source_revision = str(submission_dict.get("grading_revision_hash") or "").strip()
+            if source_revision and current_submission_grading_fingerprint(conn, int(submission_id)) != source_revision:
+                data = {
+                    **data, "status": "grading_review_required", "score": None,
+                    "feedback_md": "答题内容或评分标准已变更，旧批改结果未生效，请核对后重新批改。",
+                    "review_required": True, "review_reason_codes": ["grading_inputs_changed"],
+                }
             status = str(data.get("status") or "").strip().lower()
             score = data.get("score")
             feedback_md = data.get("feedback_md")
@@ -465,7 +473,7 @@ async def handle_ai_grading_callback(request: Request):
                 "penalty_points": 0,
                 "score_cap_applied": False,
             }
-            if status == "graded":
+            if status == "graded" and not preserved_previous_grade:
                 normalized = normalize_grading_result(
                     data,
                     answers_json=submission["answers_json"] if submission else None,
@@ -489,8 +497,23 @@ async def handle_ai_grading_callback(request: Request):
                     )
                     score = late_adjustment.get("final_score")
                     feedback_md = append_late_policy_feedback(feedback_md, late_adjustment)
-            elif feedback_md:
+            elif feedback_md and not preserved_previous_grade:
                 feedback_md = sanitize_student_feedback_text(feedback_md)
+            if not preserved_previous_grade and status == "grading_failed":
+                incoming_failure_detail = feedback_md
+                status, score, feedback_md, preserved_previous_grade = _preserve_previous_grade_on_failed_regrade(
+                    submission_dict, incoming_status=status, incoming_score=score, incoming_feedback=feedback_md,
+                )
+            # A failed retry must preserve the whole effective grade, including
+            # already applied lateness adjustments. Do not normalize a failed
+            # provider payload as though it were a new successful grade.
+            if preserved_previous_grade:
+                late_adjustment = {
+                    "applied": submission_dict.get("score_before_late_penalty") is not None,
+                    "original_score": submission_dict.get("score_before_late_penalty"),
+                    "penalty_points": submission_dict.get("late_penalty_points") or 0,
+                    "score_cap_applied": bool(submission_dict.get("late_score_cap_applied")),
+                }
             update_sql = """
                 UPDATE submissions
                 SET status = ?,
@@ -667,6 +690,87 @@ _EXAM_SOURCE_MAX_TOTAL_CHARS = 80000
 _EXAM_SOURCE_MAX_IMAGES = 10
 
 
+_CHAT_FILE_PROCESSING_SLOTS = asyncio.Semaphore(2)
+_CHAT_MAX_IMAGES = 8
+_CHAT_MAX_PIXELS = 36_000_000
+_CHAT_MAX_TEXT_CHARS = 120_000
+
+
+def _validated_chat_image(contents: bytes, name: str) -> str:
+    """Validate headers before decoding; never send an unreadable image as text."""
+    import io
+    from PIL import Image, ImageOps
+    try:
+        with Image.open(io.BytesIO(contents)) as source:
+            if source.width * source.height > _CHAT_MAX_PIXELS:
+                raise HTTPException(413, f"图片 {name} 超过 3600 万像素，请缩小后上传")
+            if getattr(source, "n_frames", 1) > 1:
+                raise HTTPException(400, f"图片 {name} 包含多帧，请选择需要识别的一帧后上传")
+            source.load()
+            picture = ImageOps.exif_transpose(source).convert("RGB")
+            picture.thumbnail((2048, 2048))
+            buffer = io.BytesIO()
+            picture.save(buffer, format="JPEG", quality=90)
+            return "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, f"图片 {name} 无法完整读取，请重新上传") from exc
+
+
+def _extract_chat_document(contents: bytes, filename: str, ext: str, *, max_images: int = _CHAT_MAX_IMAGES) -> dict:
+    from ai_assistant_doc_extract import extract_document_text
+    import zipfile
+    import io
+    if zipfile.is_zipfile(io.BytesIO(contents)):
+        with zipfile.ZipFile(io.BytesIO(contents)) as archive:
+            entries = archive.infolist()
+            if len(entries) > 2048 or sum(item.file_size for item in entries) > 64 * 1024 * 1024:
+                raise HTTPException(413, f"文档 {filename} 解压内容过大，请拆分后上传")
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        tmp.write(contents)
+        tmp_path = Path(tmp.name)
+    try:
+        result = extract_document_text(tmp_path, ext, max_bytes=_CHAT_MAX_TEXT_CHARS * 4)
+        images = list(result.images or [])
+        if ext == ".pdf":
+            # Use complete visual pages for scans/diagrams; embedded fragments
+            # alone lose their positions, captions and vector content.
+            import fitz
+            with fitz.open(tmp_path) as document:
+                if document.is_encrypted:
+                    raise HTTPException(400, f"PDF {filename} 已加密，请上传可读取版本")
+                if len(document) > 50:
+                    raise HTTPException(413, f"PDF {filename} 超过 50 页，请拆分后上传")
+                visual_pages = [page.number for page in document if not page.get_text().strip() or page.get_images() or page.get_drawings()]
+                if len(visual_pages) > max_images:
+                    raise HTTPException(413, f"PDF {filename} 需要识别的图像页超过 {max_images} 页，请拆分后上传")
+                images = []
+                for number in visual_pages:
+                    page = document[number]
+                    zoom = min(120 / 72, 2048 / max(page.rect.width, page.rect.height))
+                    pixmap = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+                    images.append({"filename": f"第{number + 1}页", "data_url": _validated_chat_image(pixmap.tobytes("png"), filename)})
+        elif result.issues:
+            raise HTTPException(400, f"文档 {filename} 图片不完整：{'；'.join(dict.fromkeys(result.issues))}，请拆分或重新上传")
+        if result.truncated or len(result.text or "") > _CHAT_MAX_TEXT_CHARS:
+            raise HTTPException(413, f"文档 {filename} 内容过长，请拆分后上传")
+        if len(images) > max_images:
+            raise HTTPException(413, f"文档 {filename} 图片超过 {max_images} 张，请拆分后上传")
+        if ext != ".pdf":
+            for item in images:
+                try:
+                    raw = base64.b64decode(item["data_url"].split(",", 1)[1], validate=True)
+                except (ValueError, KeyError) as exc:
+                    raise HTTPException(400, f"文档 {filename} 中的图片无法读取") from exc
+                item["data_url"] = _validated_chat_image(raw, f"{filename}/{item.get('filename') or '图片'}")
+        if not (result.text or "").strip() and not images:
+            raise HTTPException(400, f"无法从 {filename} 提取可读内容，请转换为 PDF 或图片后上传")
+        return {"type": "text", "name": filename, "content": result.text or "", "images": images}
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 async def _process_chat_file(file: UploadFile) -> dict:
     """处理上传文件用于 AI 聊天。
 
@@ -674,8 +778,8 @@ async def _process_chat_file(file: UploadFile) -> dict:
         图片文件: {"type": "image", "data_url": "...", "name": "..."}
         文本文件: {"type": "text", "name": "...", "content": "..."}
     """
-    contents = await file.read()
     chat_max_bytes = 10 * 1024 * 1024  # 10MB 限制
+    contents = await file.read(chat_max_bytes + 1)
     if len(contents) > chat_max_bytes:
         raise HTTPException(status_code=413, detail=f"文件 {file.filename} 大小超过 10MB 限制")
 
@@ -685,16 +789,10 @@ async def _process_chat_file(file: UploadFile) -> dict:
 
     # 图片文件: 转为 base64 data URL
     image_types = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/tiff"}
-    if content_type in image_types or (ext in _IMAGE_EXTENSIONS and content_type.startswith("image/")):
-        try:
-            from PIL import Image
-            import io
-            Image.open(io.BytesIO(contents)).verify()
-            mime = content_type or "image/png"
-            b64 = base64.b64encode(contents).decode("utf-8")
-            return {"type": "image", "data_url": f"data:{mime};base64,{b64}", "name": filename}
-        except Exception:
-            pass
+    if content_type in image_types or ext in (_IMAGE_EXTENSIONS - {".svg"}):
+        async with _CHAT_FILE_PROCESSING_SLOTS:
+            data_url = await asyncio.to_thread(_validated_chat_image, contents, filename)
+        return {"type": "image", "data_url": data_url, "name": filename}
 
     # 文本/代码文件: 直接读取文本内容
     text_mime_types = {
@@ -703,22 +801,19 @@ async def _process_chat_file(file: UploadFile) -> dict:
     }
     if ext in _TEXT_EXTENSIONS or any(content_type.startswith(t) for t in text_mime_types):
         text = _decode_bytes_with_detection(contents)
+        if len(text) > _CHAT_MAX_TEXT_CHARS:
+            raise HTTPException(413, f"文件 {filename} 内容过长，请拆分后上传")
         return {"type": "text", "name": filename, "content": text}
 
     # 文档文件: 提取文本
     if ext in _DOCUMENT_EXTENSIONS:
-        from ai_assistant_doc_extract import extract_document_text
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-            tmp.write(contents)
-            tmp_path = tmp.name
-        try:
-            result = extract_document_text(Path(tmp_path), ext)
-            return {"type": "text", "name": filename, "content": result.text or f"[无法从 {filename} 提取文本]"}
-        finally:
+        async with _CHAT_FILE_PROCESSING_SLOTS:
             try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+                return await asyncio.to_thread(_extract_chat_document, contents, filename, ext)
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(400, f"文档 {filename} 无法完整读取，请转换或重新上传") from exc
 
     # 未知类型: 尝试作为文本读取
     try:
@@ -726,11 +821,41 @@ async def _process_chat_file(file: UploadFile) -> dict:
         sample = text[:2000]
         printable_count = sum(1 for ch in sample if ch.isprintable() or ch in {"\n", "\r", "\t"})
         if len(sample) > 0 and printable_count / len(sample) > 0.3:
+            if len(text) > _CHAT_MAX_TEXT_CHARS:
+                raise HTTPException(413, f"文件 {filename} 内容过长，请拆分后上传")
             return {"type": "text", "name": filename, "content": text}
+    except HTTPException:
+        raise
     except Exception:
         pass
 
     raise HTTPException(status_code=400, detail=f"不支持的文件类型: {filename}")
+
+
+async def _prepare_chat_uploads(files: List[UploadFile]) -> dict:
+    """One ordered manifest for text, direct images and document visuals."""
+    if len(files) > 8:
+        raise HTTPException(413, "每条消息最多上传 8 个文件，请分批发送")
+    image_inputs, file_texts, attachments = [], [], []
+    total_text = 0
+    for file in files:
+        result = await _process_chat_file(file)
+        images = [{"filename": result["name"], "data_url": result["data_url"]}] if result["type"] == "image" else result.get("images") or []
+        content = str(result.get("content") or "")
+        if not content.strip() and not images:
+            raise HTTPException(400, f"文件 {result['name']} 没有可读取的内容")
+        if content:
+            total_text += len(content)
+            if total_text > _CHAT_MAX_TEXT_CHARS:
+                raise HTTPException(413, "本条消息的附件文字过长，请拆分后发送")
+            file_texts.append({"name": result["name"], "content": content})
+        for item in images:
+            name = result["name"] if result["type"] == "image" else f"{result['name']} / {item.get('filename') or '图片'}"
+            image_inputs.append({"url": item["data_url"], "name": name, "source": "current_upload", "source_kind": "current_message_attachment"})
+        if len(image_inputs) > _CHAT_MAX_IMAGES:
+            raise HTTPException(413, "本条消息需要识别的图片超过 8 张，请拆分后发送")
+        attachments.append({"type": result["type"], "name": result["name"], "image_count": len(images)})
+    return {"image_inputs": image_inputs, "base64_urls": [item["url"] for item in image_inputs], "file_texts": file_texts, "attachments": attachments}
 
 
 def _exam_source_mime(filename: str, fallback: str = "") -> str:
@@ -825,16 +950,15 @@ def _extract_exam_source_blob(
         "source_id": source_id,
         "images": [],
     }
-    if ext in _IMAGE_EXTENSIONS:
-        mime = _exam_source_mime(name, content_type)
+    if ext in (_IMAGE_EXTENSIONS - {".svg"}):
         return {
             **base_item,
             "type": "image",
             "content": "",
-            "data_url": f"data:{mime};base64,{base64.b64encode(contents).decode('utf-8')}",
+            "data_url": _validated_chat_image(contents, name),
         }
 
-    if ext in _TEXT_EXTENSIONS:
+    if ext in _TEXT_EXTENSIONS or ext == ".svg":
         raw = contents[:_EXAM_SOURCE_MAX_EXTRACT_BYTES + 1]
         truncated = len(raw) > _EXAM_SOURCE_MAX_EXTRACT_BYTES
         text = _decode_bytes_with_detection(raw[:_EXAM_SOURCE_MAX_EXTRACT_BYTES])
@@ -846,30 +970,8 @@ def _extract_exam_source_blob(
             "empty": not bool(str(text or "").strip()),
         }
 
-    from ai_assistant_doc_extract import extract_document_text
-
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        tmp.write(contents)
-        tmp_path = tmp.name
-    try:
-        result = extract_document_text(
-            Path(tmp_path),
-            ext,
-            max_bytes=_EXAM_SOURCE_MAX_EXTRACT_BYTES,
-        )
-        return {
-            **base_item,
-            "type": "document",
-            "content": result.text or "",
-            "truncated": bool(result.truncated),
-            "empty": not bool(str(result.text or "").strip()) and not bool(result.images),
-            "images": list(result.images or []),
-        }
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+    result = _extract_chat_document(contents, name, ext, max_images=_EXAM_SOURCE_MAX_IMAGES)
+    return {**base_item, "type": "document", "content": result["content"], "images": result["images"]}
 
 
 async def _extract_exam_source_items(
@@ -891,19 +993,15 @@ async def _extract_exam_source_items(
     for file in source_files:
         filename = Path(str(file.filename or "source")).name
         ext = Path(filename).suffix.lower()
-        contents = await file.read()
+        contents = await file.read(_EXAM_SOURCE_MAX_FILE_BYTES + 1)
         if not contents:
-            continue
+            raise HTTPException(400, f"出题参考文件 {filename} 为空，请重新上传")
         total_bytes += len(contents)
         if total_bytes > _EXAM_SOURCE_MAX_TOTAL_BYTES:
             raise HTTPException(status_code=413, detail="出题参考文件总大小不能超过 32MB")
-        item = _extract_exam_source_blob(
-            name=filename,
-            ext=ext,
-            contents=contents,
-            content_type=str(file.content_type or ""),
-            source_kind="upload",
-        )
+        async with _CHAT_FILE_PROCESSING_SLOTS:
+            item = await asyncio.to_thread(_extract_exam_source_blob, name=filename, ext=ext,
+                contents=contents, content_type=str(file.content_type or ""), source_kind="upload")
         total_chars = _append_exam_source_item(extracted_items, item, total_chars)
 
     if material_ids:
@@ -944,21 +1042,15 @@ async def _extract_exam_source_items(
             filename = Path(str(row["name"] or f"material-{material_id}")).name
             raw_ext = str(row["file_ext"] or Path(filename).suffix or "").strip().lower()
             ext = raw_ext if raw_ext.startswith(".") else (f".{raw_ext}" if raw_ext else Path(filename).suffix.lower())
-            item = _extract_exam_source_blob(
-                name=filename,
-                ext=ext,
-                contents=contents,
-                content_type=str(row["mime_type"] or ""),
-                source_kind="material",
-                source_id=material_id,
-            )
+            async with _CHAT_FILE_PROCESSING_SLOTS:
+                item = await asyncio.to_thread(_extract_exam_source_blob, name=filename, ext=ext,
+                    contents=contents, content_type=str(row["mime_type"] or ""), source_kind="material", source_id=material_id)
             total_chars = _append_exam_source_item(extracted_items, item, total_chars)
 
-    if extracted_items and not any(
-        item.get("content") or item.get("data_url") or item.get("images")
-        for item in extracted_items
-    ):
-        raise HTTPException(status_code=400, detail="未能从参考文件中提取可用于出题的文本或图像内容")
+    incomplete = [str(item.get("name") or "参考资料") for item in extracted_items if item.get("empty") or item.get("truncated")]
+    if incomplete:
+        raise HTTPException(400, f"以下参考资料为空或内容超限，无法完整用于出题，请拆分或重新上传：{'、'.join(incomplete)}")
+    _build_exam_image_inputs(extracted_items)
 
     return extracted_items
 
@@ -990,14 +1082,14 @@ def _build_exam_image_inputs(source_files: list[dict[str, Any]]) -> list[dict[st
         for image in item.get("images") or []:
             data_url = str(image.get("data_url") or "")
             if not data_url:
-                continue
+                raise HTTPException(400, "参考资料含无法读取的图片，请重新上传")
             image_inputs.append({
                 "name": f"{item.get('name') or 'reference'} / {image.get('filename') or 'image'}",
                 "url": data_url,
             })
-        if len(image_inputs) >= _EXAM_SOURCE_MAX_IMAGES:
-            break
-    return image_inputs[:_EXAM_SOURCE_MAX_IMAGES]
+    if len(image_inputs) > _EXAM_SOURCE_MAX_IMAGES:
+        raise HTTPException(413, f"出题参考图片超过 {_EXAM_SOURCE_MAX_IMAGES} 张，请拆分后重试")
+    return image_inputs
 
 
 async def _parse_exam_generation_request(request: Request) -> tuple[dict[str, Any], list[UploadFile]]:
@@ -1018,6 +1110,7 @@ async def _parse_exam_generation_request(request: Request) -> tuple[dict[str, An
         "class_offering_id",
         "question_types",
         "source_material_ids",
+        "intended_assessment_kind",
     ):
         value = form.get(key)
         if value is not None:
@@ -2188,7 +2281,7 @@ def _build_material_knowledge_block(user: dict, extra_context: str) -> str:
 async def handle_ai_workspace_chat(
         request: Request,
         files: List[UploadFile] = File([]),
-        message: str = Form(...),
+        message: str = Form(""),
         user: dict = Depends(get_current_user),
         deep_thinking: bool = Form(False),
         context_prompt_extra: str = Form(""),
@@ -2200,35 +2293,17 @@ async def handle_ai_workspace_chat(
     """
     user_pk, user_role = _get_user_pk_role(user)
     cleaned_message = str(message or "").strip()
-    if not cleaned_message:
+    if not cleaned_message and not files:
         raise HTTPException(status_code=400, detail="请输入要发送给 AI 助手的内容。")
+    cleaned_message = cleaned_message or "请根据当前附件回答，并说明图片中的关键内容。"
 
-    base64_urls = []
-    user_attachments = []
-    file_texts = []
+    uploads = await _prepare_chat_uploads(files or [])
+    base64_urls = uploads["base64_urls"]
+    file_texts = uploads["file_texts"]
     model_capability: Literal["standard", "thinking", "vision"] = "thinking" if deep_thinking else "standard"
-
-    if files:
-        for file in files:
-            try:
-                result = await _process_chat_file(file)
-                if result["type"] == "image":
-                    base64_urls.append(result["data_url"])
-                    user_attachments.append({"type": "image", "name": result["name"]})
-                elif result["type"] == "text":
-                    file_texts.append({"name": result["name"], "content": result["content"]})
-                    user_attachments.append({"type": "text", "name": result["name"]})
-            except HTTPException as exc:
-                print(f"[AI_WORKSPACE_CHAT] 文件处理失败: {getattr(file, 'filename', '')}: {exc.detail}")
-            except Exception as exc:
-                print(f"[AI_WORKSPACE_CHAT] 文件处理失败: {getattr(file, 'filename', '')}: {exc}")
-        if base64_urls:
-            model_capability = "vision"
-        elif file_texts and deep_thinking:
-            model_capability = "thinking"
-
     if base64_urls:
-        ai_task_type = "deep_multimodal_reasoning" if deep_thinking else "vision_interactive"
+        model_capability = "vision"
+        ai_task_type = "vision_interactive"
     elif model_capability == "thinking":
         ai_task_type = "deep_text_reasoning"
     else:
@@ -2278,15 +2353,8 @@ async def handle_ai_workspace_chat(
         "messages": [],
         "new_message": cleaned_message,
         "base64_urls": base64_urls,
-        "image_inputs": [
-            {
-                "url": b64_url,
-                "name": str(attachment.get("name") or ""),
-                "source": "current_upload",
-            }
-            for b64_url, attachment in zip(base64_urls, user_attachments)
-            if str(b64_url or "").strip() and attachment.get("type") == "image"
-        ],
+        "image_inputs": uploads["image_inputs"],
+        "business_context": {"operation": "chat", "source_feature": "chat", "logical_call_id": str(uuid.uuid4())},
         "file_texts": file_texts,
         "model_capability": model_capability,
         "task_type": ai_task_type,
@@ -2405,7 +2473,7 @@ async def handle_ai_workspace_chat(
 async def handle_ai_chat(
         request: Request,
         files: List[UploadFile] = File([]),  # 接收文件
-        message: str = Form(...),
+        message: str = Form(""),
         session_uuid: str = Form(...),
         class_offering_id: int = Form(...),  # (从 classroom 变量中获取)
         user: dict = Depends(get_current_user),
@@ -2449,38 +2517,19 @@ async def handle_ai_chat(
             print(f"[ERROR] 现场生成 context_prompt 失败: {e}")
             user_context_prompt = f"无法加载用户 {user_pk} 的背景信息。"
 
-    # 3. 处理上传的文件 -> 图片转 Base64，文本文件提取内容
-    base64_urls = []
-    user_attachments = []
-    file_texts = []
-    model_capability: Literal["standard", "thinking", "vision"] = "standard"
-
-    if files:
-        for file in files:
-            try:
-                result = await _process_chat_file(file)
-                if result["type"] == "image":
-                    base64_urls.append(result["data_url"])
-                    user_attachments.append({"type": "image", "name": result["name"]})
-                elif result["type"] == "text":
-                    file_texts.append({"name": result["name"], "content": result["content"]})
-                    user_attachments.append({"type": "text", "name": result["name"]})
-            except HTTPException as e:
-                print(f"文件 {file.filename} 处理失败: {e.detail}")
-            except Exception as e:
-                print(f"文件 {file.filename} 处理失败: {e}")
-
-        # 根据上传内容选择模型能力
-        if base64_urls:
-            model_capability = "vision"
-        elif file_texts:
-            model_capability = "thinking" if deep_thinking else "standard"
-        elif deep_thinking:
-            model_capability = "thinking"
-    elif deep_thinking:
-        model_capability = "thinking"
+    message = str(message or "").strip()
+    if not message and not files:
+        raise HTTPException(400, "请输入消息或上传附件")
+    message = message or "请根据当前附件回答，并说明图片中的关键内容。"
+    # A missing/unreadable attachment aborts before persisting or calling AI.
+    uploads = await _prepare_chat_uploads(files or [])
+    base64_urls = uploads["base64_urls"]
+    user_attachments = uploads["attachments"]
+    file_texts = uploads["file_texts"]
+    model_capability: Literal["standard", "thinking", "vision"] = "thinking" if deep_thinking else "standard"
     if base64_urls:
-        ai_task_type = "deep_multimodal_reasoning" if deep_thinking else "vision_interactive"
+        model_capability = "vision"
+        ai_task_type = "vision_interactive"
     elif model_capability == "thinking":
         ai_task_type = "deep_text_reasoning"
     else:
@@ -2574,15 +2623,8 @@ async def handle_ai_chat(
         "messages": ai_history_for_call,
         "new_message": message,
         "base64_urls": base64_urls,
-        "image_inputs": [
-            {
-                "url": b64_url,
-                "name": str(attachment.get("name") or ""),
-                "source": "current_upload",
-            }
-            for b64_url, attachment in zip(base64_urls, user_attachments)
-            if str(b64_url or "").strip() and attachment.get("type") == "image"
-        ],
+        "image_inputs": uploads["image_inputs"],
+        "business_context": {"operation": "chat", "source_feature": "classroom_chat", "class_offering_id": class_offering_id, "logical_call_id": str(uuid.uuid4())},
         "file_texts": file_texts,
         "model_capability": model_capability,
         "task_type": ai_task_type,
@@ -2949,6 +2991,7 @@ async def generate_exam_questions_async(
     force_platform: Optional[str] = None,
     source_type: str = "manual",
     source_files: Optional[list[dict[str, Any]]] = None,
+    business_context: Optional[dict[str, Any]] = None,
 ):
     """异步生成试卷题目（调用高级模型）"""
     paper_id = None
@@ -2986,6 +3029,7 @@ async def generate_exam_questions_async(
             "teacher_id": teacher_id,
             "class_offering_id": class_offering_id,
             "source_type": source_type,
+            "business_context": business_context or {"operation": "generation", "source_feature": "exam_generation"},
         }
         if source_image_inputs:
             payload["image_inputs"] = source_image_inputs
@@ -3319,6 +3363,12 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
     """启动AI生成试卷任务（调用高级模型，异步）"""
     try:
         data, uploaded_source_files = await _parse_exam_generation_request(request)
+        from ..services.assessment_classification_service import normalize_assessment_kind
+        from ..services.ai_model_policy import AI_EXECUTION_POLICY_VERSION, AIOutputSizeError, structured_output_size_tier
+        try:
+            intended_assessment_kind = normalize_assessment_kind(data.get("intended_assessment_kind"), allow_none=True)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
         # 验证必填字段
         required_fields = ['title']
@@ -3384,6 +3434,11 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
             if count > 0:
                 normalized_question_types[qtype] = count
         question_types = normalized_question_types
+        expected_question_count = max(total_questions or 0, sum(question_types.values())) or None
+        try:
+            structured_output_size_tier('exam_generation_v1', expected_question_count)
+        except AIOutputSizeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         # 验证并处理课堂ID
         class_offering_id = data.get('class_offering_id')
@@ -3477,6 +3532,14 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
                         "teacher_id": int(user["id"]),
                         "class_offering_id": class_offering_id,
                         "source_type": "document" if has_source_files else "manual",
+                        "business_context": {
+                            "operation": "generation", "source_feature": "exam_generation",
+                            "intended_assessment_kind": intended_assessment_kind,
+                            "expected_question_count": expected_question_count,
+                            "classification_source": "teacher_intent" if intended_assessment_kind else "legacy_unknown",
+                            "class_offering_id": class_offering_id, "logical_call_id": task_id,
+                            "policy_version": AI_EXECUTION_POLICY_VERSION,
+                        },
                         "force_platform": "volcengine" if has_source_images else None,
                         "artifact_ref": artifact_ref,
                     },
@@ -3534,6 +3597,14 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
             "volcengine" if has_source_images else None,
             "document" if has_source_files else "manual",
             source_files,
+            {
+                "operation": "generation", "source_feature": "exam_generation",
+                "intended_assessment_kind": intended_assessment_kind,
+                "expected_question_count": expected_question_count,
+                "classification_source": "teacher_intent" if intended_assessment_kind else "legacy_unknown",
+                "class_offering_id": class_offering_id, "logical_call_id": task_id,
+                "policy_version": AI_EXECUTION_POLICY_VERSION,
+            },
         )
 
         return {

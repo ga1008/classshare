@@ -278,7 +278,11 @@ if (app) {
     function setAttachmentButtonsDisabled(disabled) {
         [imageTriggerEl, fileTriggerEl].forEach((button) => {
             if (button) {
-                button.disabled = Boolean(disabled);
+                button.disabled = Boolean(disabled) || (button === fileTriggerEl && state.conversation?.contact?.role === 'assistant');
+                if (button === fileTriggerEl) {
+                    button.title = state.conversation?.contact?.role === 'assistant'
+                        ? 'AI 助教私信支持文字和图片，其他文件请使用课堂即时对话' : '添加文件';
+                }
             }
         });
     }
@@ -434,6 +438,7 @@ if (app) {
     }
 
     function queuePrivateAttachments(files, { imagesOnly = false } = {}) {
+        imagesOnly = imagesOnly || state.conversation?.contact?.role === 'assistant';
         const selectedFiles = Array.from(files || []);
         if (!selectedFiles.length) {
             return;
@@ -1139,7 +1144,7 @@ if (app) {
         }
         setAttachmentButtonsDisabled(!canSend);
         composeInputEl.placeholder = canSend
-            ? (isCurrentConversationAiPending() ? 'AI 助教正在回复上一条消息，你可以先整理下一条内容' : `发送给 ${contact.display_name || '联系人'}`)
+            ? (isCurrentConversationAiPending() ? 'AI 助教正在回复上一条消息，你可以先整理下一条内容' : `发送给 ${contact.display_name || '联系人'}${contact.role === 'assistant' ? '，可仅发送图片（最多 8 张）' : ''}`)
             : (contact.is_blocked ? '对方已在黑名单中，解除后才能发送' : '当前无法向该联系人发送消息');
 
         updateSendButtonState();

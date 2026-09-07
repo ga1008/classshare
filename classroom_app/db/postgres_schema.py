@@ -11,6 +11,7 @@ from .schema_ai_jobs import (
     AI_JOB_POSTGRES_RUNTIME_TABLES,
     AI_JOB_REQUIRED_POSTGRES_COLUMNS,
 )
+from .schema_grade_publications import GRADE_PUBLICATION_POSTGRES_TABLES, GRADE_PUBLICATION_REQUIRED_COLUMNS
 
 
 POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
@@ -342,6 +343,11 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
         "ordinary_grade_kind_override": "TEXT",
         "ordinary_grade_kind_updated_at": "TEXT",
         "ordinary_grade_kind_updated_by_teacher_id": "INTEGER",
+        "assessment_kind": "TEXT CHECK (assessment_kind IS NULL OR assessment_kind IN ('homework', 'midterm', 'final'))",
+        "assessment_kind_version": "INTEGER NOT NULL DEFAULT 0 CHECK (assessment_kind_version >= 0)",
+        "assessment_kind_source": "TEXT NOT NULL DEFAULT ''",
+        "assessment_kind_updated_at": "TEXT",
+        "assessment_kind_updated_by_teacher_id": "INTEGER",
     },
     "course_materials": {
         "check_questions_json": "TEXT DEFAULT ''",
@@ -395,6 +401,23 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
 
 POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
     **AI_JOB_POSTGRES_RUNTIME_TABLES,
+    **GRADE_PUBLICATION_POSTGRES_TABLES,
+    "assignment_classification_revisions": """
+        CREATE TABLE IF NOT EXISTS assignment_classification_revisions (
+            id SERIAL PRIMARY KEY,
+            assignment_id TEXT NOT NULL,
+            class_offering_id INTEGER,
+            previous_kind TEXT CHECK (previous_kind IS NULL OR previous_kind IN ('homework', 'midterm', 'final')),
+            assessment_kind TEXT NOT NULL CHECK (assessment_kind IN ('homework', 'midterm', 'final')),
+            previous_version INTEGER NOT NULL,
+            version INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            changed_by_teacher_id INTEGER NOT NULL,
+            changed_at TEXT NOT NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            UNIQUE (assignment_id, version)
+        )
+    """,
     "blog_sections": """
         CREATE TABLE IF NOT EXISTS blog_sections (
             section_key TEXT PRIMARY KEY,
@@ -608,6 +631,7 @@ REQUIRED_POSTGRES_TABLES = (
     "courses",
     "class_offerings",
     "assignments",
+    "assignment_classification_revisions",
     "submissions",
     "submission_files",
     "submission_drafts",
@@ -736,6 +760,7 @@ REQUIRED_POSTGRES_TABLES = (
     "cultivation_alerts",
     "ai_usage_log",
     *AI_JOB_REQUIRED_POSTGRES_COLUMNS,
+    *GRADE_PUBLICATION_REQUIRED_COLUMNS,
     "learning_stage_status",
     "learning_stage_exam_attempts",
     "learning_certificates",

@@ -1,0 +1,218 @@
+{
+  "verified_at_utc": "2026-09-07T05:24:04.367921+00:00",
+  "engine": "PostgreSQL 16.14 (source and isolated restore)",
+  "source_export": {
+    "method": "consistent pg_dump custom; lock-wait-timeout=5s; no-owner/no-acl",
+    "bytes": 32120139,
+    "sha256": "cc48110a53b63cecf998530c5131ba256f8db9216af3767b2fb40ba3b4d29e36",
+    "remote_local_hash_equal": true,
+    "unchanged_after_rehearsal": true
+  },
+  "isolation": {
+    "listener": "127.0.0.1",
+    "port": 55437,
+    "dedicated_new_cluster": true,
+    "dedicated_new_database": true,
+    "raw_data_outside_sync_workspace": true,
+    "production_tables_modified": false,
+    "app_or_workers_started": false,
+    "cluster_stopped": true
+  },
+  "clean_restore": {
+    "restored_again_from_original_dump": true,
+    "baseline_equals_initial_unmigrated_restore": true,
+    "no_timestamp_or_sequence_whitelist": true
+  },
+  "restored_baseline": {
+    "old_table_count": 220,
+    "old_total_rows": 469672,
+    "counts": {
+      "assignments": 98,
+      "submissions": 4294,
+      "submission_files": 13342,
+      "submission_grade_revisions": 86,
+      "material_ai_import_records": 36
+    },
+    "schema_sha256": "db129df56612aaeb1cce802b9672bdcab58e2abd6ed84dd41d2a521d57aa86d2"
+  },
+  "incremental": {
+    "status": "ok",
+    "database_preservation_passed": true,
+    "old_differences_per_pass": [
+      [],
+      []
+    ],
+    "idempotency_differences": [],
+    "added_tables": [
+      "ai_review_daily_counters",
+      "ai_review_reservations",
+      "assignment_classification_revisions",
+      "grade_publication_students",
+      "grade_publications"
+    ],
+    "added_columns": {
+      "assignments": [
+        "assessment_kind",
+        "assessment_kind_version",
+        "assessment_kind_source",
+        "assessment_kind_updated_at",
+        "assessment_kind_updated_by_teacher_id"
+      ]
+    }
+  },
+  "full_startup": {
+    "strict_status": "ok",
+    "fresh_process_per_pass": true,
+    "old_differences_per_pass": [
+      [],
+      []
+    ],
+    "idempotency_differences": [],
+    "runs": [
+      {
+        "status": "ok",
+        "required_table_count": 158,
+        "present_required_table_count": 158,
+        "runtime_tables": {
+          "created_tables": [],
+          "schema_writes_executed": false
+        },
+        "runtime_columns": {
+          "added_columns": {},
+          "skipped_tables": [],
+          "legacy_material_mastery_repaired": true,
+          "schema_writes_executed": false
+        },
+        "runtime_constraints": {
+          "created_indexes": [],
+          "skipped_indexes": [],
+          "classroom_todo_scope_repaired": false,
+          "signature_requester_repaired": false,
+          "schema_writes_executed": false
+        },
+        "index_created_or_already_present": 279,
+        "index_failed": 0,
+        "skipped_step_count": 0,
+        "captured_log_sha256": "f359a15650a854186a2a0cf294a5cb313e409378d1b9b30b41650350f0024f94"
+      },
+      {
+        "status": "ok",
+        "required_table_count": 158,
+        "present_required_table_count": 158,
+        "runtime_tables": {
+          "created_tables": [],
+          "schema_writes_executed": false
+        },
+        "runtime_columns": {
+          "added_columns": {},
+          "skipped_tables": [],
+          "legacy_material_mastery_repaired": true,
+          "schema_writes_executed": false
+        },
+        "runtime_constraints": {
+          "created_indexes": [],
+          "skipped_indexes": [],
+          "classroom_todo_scope_repaired": false,
+          "signature_requester_repaired": false,
+          "schema_writes_executed": false
+        },
+        "index_created_or_already_present": 279,
+        "index_failed": 0,
+        "skipped_step_count": 0,
+        "captured_log_sha256": "f359a15650a854186a2a0cf294a5cb313e409378d1b9b30b41650350f0024f94"
+      }
+    ],
+    "all_old_fields_and_sequences_unchanged": true
+  },
+  "resolved_finding": {
+    "original_report": "docs/assessment-postgres-rehearsal-2026-09-07.json",
+    "source": "classroom_app/db/schema_signature_workflow.py::_seed_function_points",
+    "fix": "UPDATE only changed metadata; INSERT only missing keys, preserving timestamps and sequence for unchanged rows; retain enabled and creation settings."
+  },
+  "tests": {
+    "native_postgresql_passed": 4,
+    "sqlite_migration_and_signature_regressions_passed": 52,
+    "covers": [
+      "explicit isolated target guard",
+      "actual incremental PG DDL twice",
+      "old score mutation detected",
+      "non-idempotent new row detected",
+      "JSON raw text change detected",
+      "relationship mutation detected",
+      "column default mutation detected",
+      "sequence mutation detected",
+      "unchanged seeds preserve all fields and sequence",
+      "changed labels and missing seeds still work without re-enabling existing points"
+    ],
+    "isolated_target_guard_passed": 1,
+    "native_suite_total_passed": 5
+  },
+  "deployment_gate_complete": false,
+  "remaining_gates": [
+    "Back up and open actual historical attachment/material files; dump verifies only database mappings.",
+    "Protect production writes since snapshot before deployment."
+  ],
+  "report_contract": "native-pg-rehearsal-v1",
+  "database_engine": "postgres",
+  "migration_source_sha256": {
+    "classroom_app/config.py": "5548e6e17b6619cebd8dd9f9d3cd400b5050e0a45512f9a27bb5ddadf9b13ee7",
+    "classroom_app/database.py": "cc0862448fd67f7673840727e733b0f3e2d585adb6b358cd2d14eb05e12d6b1a",
+    "classroom_app/db/__init__.py": "e896edc1c4ddf07b87a4daad5a24cbe60588660a271bc7378a3e83ed8924affb",
+    "classroom_app/db/connection.py": "d2f55c70f2337c10cee8d38def3b8251bcfe51801a512ac3df413372d7cdb212",
+    "classroom_app/db/errors.py": "27382ecdb2517823f121dfdd5d55dd8a749d5b75aec1281f89b7b34383e29062",
+    "classroom_app/db/migration_registry.py": "6ed3ff2cebd2272606fb2ea69ef5dd57324927f3d93824b0f7ab7c2501ee6faf",
+    "classroom_app/db/migrations.py": "4fa662485cb6e143af0de6e2d22088265c4595d7cf0e56c619683ad073183aac",
+    "classroom_app/db/postgres.py": "a0b078f00cfd7f3d2baaed684b92668b707566a40e9bf26f5df1e437ead7446e",
+    "classroom_app/db/postgres_indexes.py": "e86ec23572ca855ad5485fa565133b27337cac19b5a0b813214a544a543559ca",
+    "classroom_app/db/postgres_required_columns.py": "d4b6096b7f0568e6c8f1fd61424fb5ea11f5656f0ce5a80cb39a790099f483ab",
+    "classroom_app/db/postgres_schema.py": "f84f3b2fd127fc9d7c6dff65803953342cbbf045523fc324a42653ced12039dc",
+    "classroom_app/db/repair.py": "5b9c74e1f901b701e1362d799b756bbd223cbbc6c37736b2666770eb70fc4d6d",
+    "classroom_app/db/row.py": "141ee2e1352eb2ec8a376731cf2cd38210e6cb8b470823fb0404c45205b17f60",
+    "classroom_app/db/schema.py": "486e76e1e7bcfd9852f49945cf8e214f68cebe594d08db24297f4b5d719c051b",
+    "classroom_app/db/schema_academic_evaluations.py": "bad0937e5dcafccdb2d55fb5cf1dda8ccd4c378b6ca2553434b7c8becbd260d0",
+    "classroom_app/db/schema_academic_final_materials.py": "e96fe90f8ca7f2b54c2c7aa25737dca7b5eca5e63dbc777e8352ee64b30a9696",
+    "classroom_app/db/schema_agent_ext.py": "c456892b9eeb206628ede3efb0750df5b3053421c00d18fe72f8a19ad03ea197",
+    "classroom_app/db/schema_ai_jobs.py": "651f71b7e15556c45ce87e162e50491854811794879375245c67f30867b748f0",
+    "classroom_app/db/schema_assessment_plans.py": "edd26dd4ccda6ff382a2f231f5b042f93d59774eca0dd710efce9de54717c1c4",
+    "classroom_app/db/schema_assignments.py": "541c96d2a179f5934d87bbac8acd757a3252aee785af179357a1dcc6459e1c6b",
+    "classroom_app/db/schema_career_engagement.py": "56a0adf52088a20fae35121ae7ff32f0b23f8716fadd956b506039ef39a1a625",
+    "classroom_app/db/schema_career_path.py": "3d0f43720e18163a65c86db96decb252ca2a07e9de64548ca26e85e80ba93e6a",
+    "classroom_app/db/schema_classroom_activity.py": "b147b26bd8da0eddb26f0096af3165b16cade65cf968e6bc0462db56c07b113c",
+    "classroom_app/db/schema_course_doc_packs.py": "672c541f9e33be59e20ab22045b4a49f686ae7e7504f7c884f7e7fb6d7696e81",
+    "classroom_app/db/schema_cultivation_progress.py": "81fde46d52f7ee8dd66a584bfe420b11cc180054ceaebd712d894f839486bcee",
+    "classroom_app/db/schema_foundation.py": "25ed839d06c9830aa9c199e893c0cbf6e4e82713f0d065f29d586101c521e347",
+    "classroom_app/db/schema_gongwen.py": "de7616b0d3847f247a7f8c46f6a554d12e1dd1a5fa0e9a0ca4eca14bcb105f81",
+    "classroom_app/db/schema_grade_publications.py": "a1928332bf0d7a85aa5469913c692572e6edcf14f0a81553eac8b38fd651d3ea",
+    "classroom_app/db/schema_learning_blog.py": "8ad937859132cb567eaae4ff64ff9b772b4072be09dd3c6f65bb2e7dad2013af",
+    "classroom_app/db/schema_lesson_plans.py": "4982277598e8a4ea8296c7aadff9a6cb0a99b4c2f860266929271588c769d556",
+    "classroom_app/db/schema_lessondoc_editor.py": "405a5eabb3032144cd56be7491d7a3e38526e66f4165acd6f4c68f51947bf93f",
+    "classroom_app/db/schema_life_tips.py": "61fcb8ad6fe8f9dd420eeec37d1a1026dc9ec1a13452aa8904d4519fc26209aa",
+    "classroom_app/db/schema_material_whiteboards.py": "e3824b9d399ad132d6b44e8c84e049ac7c73cecb4a779c7fe3a54277f65b20d3",
+    "classroom_app/db/schema_materials_integrations.py": "4848694b7b135199c2547f0d28b4284a98da10d042e3c1d745d4a1175c7e445b",
+    "classroom_app/db/schema_offering_class_links.py": "57d19449d786f38deba1b4d961abef734944bf6b3affdaa262e14470545ce8fd",
+    "classroom_app/db/schema_offering_merge.py": "e7ce14299c15ec862b8af68f030d5b2eebcfcefe8c224ba4ea79416b26a3611e",
+    "classroom_app/db/schema_polls.py": "77595bdaf89b2d3b5205b38f9cdcf1861977fac347481bf909705ea4b11c4ee3",
+    "classroom_app/db/schema_prompt_pool.py": "4138e33abec4d4fa5bcc66a853e171c8e139931d6081ab347ed2d4ebbeeae7b1",
+    "classroom_app/db/schema_resume.py": "fd3b09d7f4b2c57ebf8a57d6cb8f87cd8b0745e880e59e799e522b4b47dd3e20",
+    "classroom_app/db/schema_retake.py": "4d74a66b17db9908aad3bdc5578def18e60081020e7c50711d42ee88b3d2655c",
+    "classroom_app/db/schema_scheduler.py": "37769302287ac19883182a55bd8df8d115cd8a8d18040e36dccc60f77160f84b",
+    "classroom_app/db/schema_session_learning_materials.py": "2660ee1016cee75db1da613dd36678cc9a5bac5cdc0b7c39b607f173c5adcf3b",
+    "classroom_app/db/schema_signature_workflow.py": "9bbb4b37ea5cd51a4f1b449c8212cdd49d47528f796f131daba67d2722298218",
+    "classroom_app/db/schema_smart_schedule.py": "de6f77e3f5f34394253a5bc087cef3dd0bf49e71f9a085dd739046cbc4e0d7e8",
+    "classroom_app/db/schema_study_group_scheme.py": "948de842a0a26aed65a103afb924955d74e6a382cd3f7ed95e7dc5b198c6eae9",
+    "classroom_app/db/schema_teacher_evaluations.py": "e2cb062b7dd9ccb2daebb90d9072be07fa4acfd1fc613895bbb12ed56f6cbb20",
+    "classroom_app/db/schema_user_ui_preferences.py": "d47501add6c9e2c0d0871c8b2c38b4508bd7cb37adb28a7ecd0cc19cc9f5dad9",
+    "classroom_app/db/schema_wechat_mp.py": "c56dccd456fa5ff11f2a0d5c6af7169b138df4b7e1f9536ee7d4336b6a5f43f0",
+    "classroom_app/db/seeds.py": "de4be583a0dfbd14d2b14d9afdea5c0a3303caefb5dece4bb752a49931e5b5f8",
+    "classroom_app/db/semester_unification_migration.py": "118389558789b42283b68a8ac82b699c4e2816d7fe27ba255f51cc067e4ad3de",
+    "classroom_app/db/sessions.py": "e1e2f61169fbd8421ce9a9db2e4e5ee87bbe826330254d4eec98b36628885e2c",
+    "classroom_app/db/sql.py": "8bd2d3ed0656434aa3cebc13393a7904c38a3537802a63f58da96549c7721a98",
+    "classroom_app/storage_paths.py": "ddd6f7f85b15e5dcc1d009f5fc8ab705fe9da9d1a93f81d0ef82d040fec3bef3"
+  },
+  "migration_source_binding": {
+    "method": "Explicit source-file digest binding after verifying all source mtimes precede the native-run completion timestamp.",
+    "file_count": 53,
+    "source_modified_after_verified_run": false
+  },
+  "status": "ok"
+}

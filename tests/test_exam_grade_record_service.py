@@ -27,6 +27,43 @@ from classroom_app.services.material_export_template_service import (
 
 
 class ExamGradeRecordServiceTests(unittest.TestCase):
+    def test_percent_80_on_a_50_point_paper_exports_40_without_rescaling_source(self):
+        paper = {"grading": {"total_score": 50}, "pages": [{"name": "综合题", "questions": [
+            {"id": "p1_q1", "type": "textarea", "text": "题目", "answer": "答案", "points": 50,
+             "grading_guidance": "按步骤", "deduction_points": "缺步骤扣分"}]}]}
+        self.conn.execute("UPDATE exam_papers SET questions_json = ?", (json.dumps(paper),))
+        self.conn.execute("UPDATE submissions SET score = 80, score_before_late_penalty = NULL, late_penalty_points = 0, is_late_submission = 0, feedback_md = '### 第 p1_q1 题\n- 本题得分：40/50' WHERE id = 1")
+        payload = build_exam_grade_record_payload(self.conn, class_offering_id=30, teacher_id=1, exam_assignment_id=301)
+        student = payload["structured"]["students"][0]
+        self.assertEqual(student["total_score"], 40)
+        self.assertEqual(student["section_scores"], [40])
+        self.assertEqual(student["task_score_percent"], 80)
+        self.assertEqual(student["paper_full_score"], 50)
+        self.assertEqual(self.conn.execute("SELECT score FROM submissions WHERE id = 1").fetchone()[0], 80)
+        self.assertEqual(payload["structured"]["score_adjustment_policy"]["target_full_score"], 50)
+
+    def test_final_source_rejects_midterm_unknown_personal_and_missing_structure(self):
+        from fastapi import HTTPException
+        for kind in ("midterm", None):
+            self.conn.execute("UPDATE assignments SET assessment_kind = ?", (kind,))
+            candidate = list_exam_grade_record_candidates(self.conn, class_offering_id=30, teacher_id=1)[0]
+            self.assertFalse(candidate["eligible"])
+            with self.assertRaises(HTTPException):
+                build_exam_grade_record_payload(self.conn, class_offering_id=30, teacher_id=1, exam_assignment_id=301)
+        self.conn.execute("UPDATE assignments SET assessment_kind = 'final'")
+        self.conn.execute("INSERT INTO learning_stage_exam_attempts VALUES (1, 301)")
+        self.assertEqual(list_exam_grade_record_candidates(self.conn, class_offering_id=30, teacher_id=1), [])
+        with self.assertRaises(HTTPException):
+            build_exam_grade_record_payload(self.conn, class_offering_id=30, teacher_id=1, exam_assignment_id=301)
+        self.conn.execute("DELETE FROM learning_stage_exam_attempts")
+        self.conn.execute("UPDATE assignments SET exam_paper_id = NULL")
+        candidate = list_exam_grade_record_candidates(self.conn, class_offering_id=30, teacher_id=1)[0]
+        self.assertFalse(candidate["can_generate_detailed_record"])
+        self.assertFalse(candidate["eligible"])
+        with self.assertRaises(HTTPException) as error:
+            build_exam_grade_record_payload(self.conn, class_offering_id=30, teacher_id=1, exam_assignment_id=301)
+        self.assertEqual(error.exception.status_code, 422)
+
     def setUp(self) -> None:
         # 每个用例都是全新内存库：重置模块级 _SCHEMA_READY，确保重修表按需重建。
         import classroom_app.db.schema_retake as schema_retake
@@ -36,6 +73,9 @@ class ExamGradeRecordServiceTests(unittest.TestCase):
         self.conn.row_factory = sqlite3.Row
         self._create_schema()
         self._seed_data()
+        from tests.grade_projection_fixtures import add_grade_projection_schema
+        add_grade_projection_schema(self.conn)
+        self.conn.execute("UPDATE assignments SET assessment_kind = 'final'")
         ensure_offering_class_links_schema(self.conn, force=True, engine="sqlite")
 
     def tearDown(self) -> None:

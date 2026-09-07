@@ -1770,45 +1770,17 @@
             {% if paper.ordinary_grade_usages %}
             <details class="ordinary-grade-usage-panel">
                 <summary>
-                    <span>平时成绩用途</span>
+                    <span>课堂任务分类</span>
                     <small class="ordinary-grade-usage-panel__count">{{ paper.ordinary_grade_usages|length }} 个课堂任务</small>
                 </summary>
                 <div class="ordinary-grade-usage-panel__body">
                     {% for usage in paper.ordinary_grade_usages %}
-                    <div
-                        class="ordinary-grade-kind-control ordinary-grade-kind-control--compact{% if usage.ordinary_grade_kind_source == 'manual' %} is-manual{% endif %}"
-                        data-ordinary-grade-kind-control
-                        data-ordinary-grade-kind="{{ usage.ordinary_grade_kind }}"
-                        data-ordinary-grade-kind-source="{{ usage.ordinary_grade_kind_source }}"
-                    >
+                    <div>
                         <span class="ordinary-grade-usage-panel__context" title="{{ usage.course_name }} · {{ usage.class_name }} · {{ usage.assignment_title }}">
                             <strong>{{ usage.course_name }} · {{ usage.class_name }}</strong>
                             <span>{{ usage.assignment_title }}{% if usage.semester_display %} · {{ usage.semester_display }}{% endif %}</span>
                         </span>
-                        <select
-                            class="ordinary-grade-kind-control__select"
-                            data-ordinary-grade-kind-select
-                            data-assignment-id="{{ usage.assignment_id }}"
-                            aria-label="设置 {{ usage.assignment_title }} 的平时成绩用途"
-                        >
-                            <option value="auto"{% if not usage.ordinary_grade_kind_override %} selected{% endif %}>
-                                自动 · {{ '测验' if usage.ordinary_grade_auto_kind == 'exam' else '平时作业' }}
-                            </option>
-                            <option value="assignment"{% if usage.ordinary_grade_kind_override == 'assignment' %} selected{% endif %}>平时作业</option>
-                            <option value="exam"{% if usage.ordinary_grade_kind_override == 'exam' %} selected{% endif %}>测验</option>
-                        </select>
-                        <span
-                            class="ordinary-grade-kind-control__badge"
-                            data-ordinary-grade-kind-badge
-                            data-kind="{{ usage.ordinary_grade_kind }}"
-                        >{{ '测验' if usage.ordinary_grade_kind == 'exam' else '平时作业' }}</span>
-                        <small class="ordinary-grade-kind-control__note" data-ordinary-grade-kind-note>
-                            {% if usage.ordinary_grade_kind_source == 'manual' %}
-                            已手动指定；试卷答题与批改方式不变。
-                            {% else %}
-                            自动识别；可按本课堂统计口径覆盖。
-                            {% endif %}
-                        </small>
+                        {% with assessment=usage %}{% include 'partials/assessment_kind_control.html' %}{% endwith %}
                     </div>
                     {% endfor %}
                 </div>
@@ -1956,6 +1928,16 @@
             </div>
 
             <div class="form-group">
+                <label class="form-label required" for="assign-assessment-kind">本次任务分类</label>
+                <select id="assign-assessment-kind" class="form-select">
+                    <option value="" selected disabled>请选择分类</option>
+                    <option value="homework">平时作业</option>
+                    <option value="midterm">期中测验</option>
+                    <option value="final">期末测验</option>
+                </select>
+                <p class="text-xs text-muted mt-1">所选课堂使用同一分类。不同用途请分别分配；不会修改共享试卷。</p>
+            </div>
+            <div class="form-group">
                 <label class="form-label" for="assign-learning-stage-key">试炼阶段</label>
                 <select id="assign-learning-stage-key" class="form-select">
                     <option value="">普通考试，不绑定境界试炼</option>
@@ -2038,7 +2020,7 @@
 
 {% block scripts %}
 <script type="module" src="{{ asset_url('js/base_resource_modes.js') }}"></script>
-<script type="module" src="{{ asset_url('js/ordinary_grade_kind_controls.js') }}"></script>
+<script type="module" src="{{ asset_url('js/assessment_kind_controls.js') }}"></script>
 <script>
     // ===== Paper data for client-side filtering =====
     const papersData = [
@@ -3290,6 +3272,7 @@
     async function openAssignModal(examId, examTitle) {
         currentExamId = examId;
         document.getElementById('assign-exam-name').textContent = examTitle;
+        document.getElementById('assign-assessment-kind').value = '';
         const listDiv = document.getElementById('offering-list');
         resetAssignScheduleFields();
 
@@ -3337,6 +3320,11 @@
         }
 
         let schedulePayload;
+        const assessmentKind = document.getElementById('assign-assessment-kind').value;
+        if (!['homework', 'midterm', 'final'].includes(assessmentKind)) {
+            window.showMessage('请选择本次任务分类', 'warning');
+            return;
+        }
         try {
             schedulePayload = buildAssignSchedulePayload();
         } catch (e) {
@@ -3357,6 +3345,7 @@
                     method: 'POST',
                     body: JSON.stringify({
                         class_offering_id: parseInt(cb.value),
+                        assessment_kind: assessmentKind,
                         learning_stage_key: (document.getElementById('assign-learning-stage-key')?.value || '').trim(),
                         ...schedulePayload
                     }),

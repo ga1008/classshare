@@ -123,6 +123,7 @@ class AIGradingServiceTests(unittest.TestCase):
                         grading_started_at TEXT,
                         submitted_at TEXT,
                         feedback_md TEXT,
+                        score REAL,
                         grading_attempt_fingerprint TEXT
                     )
                     """
@@ -175,6 +176,8 @@ class AIGradingServiceTests(unittest.TestCase):
                         stale_minutes=240,
                         assignment_ids=["assignment-1"],
                     )
+                    conn.execute("UPDATE submissions SET score=81,feedback_md='original feedback' WHERE assignment_id='assignment-2'")
+                    preserved_count = expire_stale_ai_grading_submissions(conn, stale_minutes=240, assignment_ids=["assignment-2"])
                 conn.commit()
 
                 rows = {
@@ -183,12 +186,15 @@ class AIGradingServiceTests(unittest.TestCase):
                         "SELECT assignment_id, status FROM submissions ORDER BY assignment_id"
                     ).fetchall()
                 }
+                preserved = conn.execute("SELECT score,feedback_md FROM submissions WHERE assignment_id='assignment-2'").fetchone()
             finally:
                 conn.close()
 
             self.assertEqual(expired_count, 1)
             self.assertEqual(rows["assignment-1"], "grading_failed")
-            self.assertEqual(rows["assignment-2"], "grading")
+            self.assertEqual(preserved_count, 1)
+            self.assertEqual(rows["assignment-2"], "graded")
+            self.assertEqual(tuple(preserved), (81, 'original feedback'))
         finally:
             try:
                 os.remove(db_path)
@@ -328,9 +334,11 @@ class _FakeRequest:
 
 
 class _FakeCallbackConnection:
-    def __init__(self):
+    def __init__(self, *, previous=None, update_count=0):
         self.calls = []
         self.commits = 0
+        self.previous = previous or {}
+        self.update_count = update_count
 
     def execute(self, sql, params=()):
         normalized = " ".join(str(sql).split())
@@ -345,10 +353,11 @@ class _FakeCallbackConnection:
                     "answers_json": "{}",
                     "resubmission_allowed": 0,
                     "grading_attempt_fingerprint": "token-current",
+                    **self.previous,
                 }
             )
         if normalized.startswith("UPDATE submissions"):
-            return _FakeCursor(rowcount=0)
+            return _FakeCursor(rowcount=self.update_count)
         raise AssertionError(f"Unexpected SQL: {normalized}")
 
     def commit(self):
@@ -362,6 +371,33 @@ class _FakeCallbackConnection:
 
 
 class AIGradingCallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_retry_keeps_full_grade_through_callback(self):
+        for result_status in ("grading_failed", "grading_review_required", "graded"):
+            with self.subTest(result_status=result_status):
+                conn = _FakeCallbackConnection(previous={
+                    "score": 81, "feedback_md": "原评语\n已扣迟交分", "score_before_late_penalty": 86,
+                    "late_penalty_points": 5, "late_score_cap_applied": 1,
+                }, update_count=1)
+                request = _FakeRequest({
+                    "submission_id": 7, "submission_fingerprint": "token-current", "status": result_status,
+                    "score": None, "feedback_md": "provider failed or malformed",
+                })
+                with patch.object(ai_router, "get_db_connection", return_value=conn), \
+                     patch.object(ai_router, "normalize_grading_result", return_value={"score": None, "feedback_md": "invalid"}) as normalize, \
+                     patch.object(ai_router, "apply_late_policy_to_score") as late, \
+                     patch.object(ai_router, "_activate_submission_grade_revision") as activate, \
+                     patch.object(ai_router, "create_teacher_grading_issue_notification") as notify, \
+                     patch.object(ai_router, "create_student_grading_notification") as student_notice:
+                    result = await ai_router.handle_ai_grading_callback(request)
+                self.assertEqual({"status": "received"}, result)
+                params = next(params for sql, params in conn.calls if sql.startswith("UPDATE submissions"))
+                self.assertEqual(("graded", 81, "原评语\n已扣迟交分", 86, 5, 1), params[:6])
+                self.assertEqual(1 if result_status == "graded" else 0, normalize.call_count)
+                late.assert_not_called()
+                activate.assert_not_called()
+                student_notice.assert_not_called()
+                notify.assert_called_once()
+
     def test_grade_revision_activation_is_append_only_and_switches_active_pointer(self):
         reset_ai_job_schema_guard_for_tests()
         conn = sqlite3.connect(":memory:")

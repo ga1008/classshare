@@ -14,7 +14,8 @@ import time
 import traceback
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from contextvars import ContextVar
+from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import AsyncGenerator
@@ -26,7 +27,7 @@ from PIL import Image
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from contextlib import asynccontextmanager, suppress # 1. 新增导入
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 # --- 加载 .env 配置 ---
@@ -59,6 +60,15 @@ from classroom_app.services.ai_model_policy import (
     normalize_ai_task_type as _policy_normalize_ai_task_type,
     provider_order_for_task,
     public_policy_snapshot,
+    AIBusinessContext,
+    AIExecutionPlan,
+    AIExecutionBudget,
+    AIExecutionBudgetExceeded,
+    AIExecutionStateError,
+    AIOutputSizeError,
+    AI_EXECUTION_POLICY_VERSION,
+    resolve_execution_plan,
+    size_structured_execution_plan,
 )
 from classroom_app.services.deterministic_exam_grading import (
     apply_deterministic_grading_result,
@@ -79,16 +89,21 @@ from classroom_app.services.ai_durable_job_service import (
     reschedule_ai_job,
     reschedule_ai_job_delivery,
     store_ai_job_result,
+    persist_ai_job_execution_state,
 )
 from classroom_app.database import get_db_connection
 from classroom_app.services.exam_json_service import normalize_exam_scoring_payload
+from classroom_app.services.ai_usage_budget_service import (
+    reserve_grading_review, mark_grading_review_sent, finish_grading_review, release_unsent_grading_review,
+)
 from classroom_app.services.grading_feedback_service import normalize_grading_result, validate_ai_grading_result
 
 # --- AI 平台 SDK ---
 try:
-    from openai import OpenAI, AsyncOpenAI
+    from openai import OpenAI, AsyncOpenAI, APIConnectionError, APITimeoutError
 except ImportError:
     OpenAI, AsyncOpenAI = None, None
+    APIConnectionError = APITimeoutError = None
 try:
     from volcenginesdkarkruntime import Ark, AsyncArk
 except ImportError:
@@ -141,7 +156,7 @@ AI_HOST = os.getenv("AI_HOST", "127.0.0.1")
 AI_PORT = int(os.getenv("AI_PORT", 8001))
 GLOBAL_AI_CONCURRENCY = max(
     1,
-    _read_int_env("GLOBAL_AI_CONCURRENCY", "AI_WORKER_CONCURRENCY", default=8),
+    _read_int_env("GLOBAL_AI_CONCURRENCY", "AI_WORKER_CONCURRENCY", default=6),
 )
 AI_QUEUE_MAX_PENDING = max(0, _read_int_env("AI_QUEUE_MAX_PENDING", default=200))
 AI_PROVIDER_QUEUE_MAX_PENDING = max(
@@ -150,7 +165,7 @@ AI_PROVIDER_QUEUE_MAX_PENDING = max(
 )
 MAIN_APP_CALLBACK_URL = os.getenv("MAIN_APP_CALLBACK_URL")
 VOLCENGINE_OPENAI_BASE_URL = os.getenv("VOLCENGINE_OPENAI_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
-AI_TEXT_SPILLOVER_ENABLED = _read_bool_env("AI_TEXT_SPILLOVER_ENABLED", True)
+AI_TEXT_SPILLOVER_ENABLED = False  # Business policy keeps ordinary text on DeepSeek.
 AI_NONSTREAM_USE_PROVIDER_STREAM = _read_bool_env("AI_NONSTREAM_USE_PROVIDER_STREAM", True)
 DEEPSEEK_TEXT_SPILLOVER_THRESHOLD = max(
     1,
@@ -160,11 +175,13 @@ DEEPSEEK_TEXT_SPILLOVER_THRESHOLD = max(
         default=8,
     ),
 )
-DEEPSEEK_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("DEEPSEEK_MAX_CONCURRENT_REQUESTS", default=8))
+DEEPSEEK_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("DEEPSEEK_MAX_CONCURRENT_REQUESTS", default=4))
 SILICONFLOW_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("SILICONFLOW_MAX_CONCURRENT_REQUESTS", default=0))
-VOLCENGINE_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("VOLCENGINE_MAX_CONCURRENT_REQUESTS", default=4))
+VOLCENGINE_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("VOLCENGINE_MAX_CONCURRENT_REQUESTS", default=2))
 QIANWEN_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("QIANWEN_MAX_CONCURRENT_REQUESTS", default=8))
 ZHIPU_MAX_CONCURRENT_REQUESTS = max(0, _read_int_env("ZHIPU_MAX_CONCURRENT_REQUESTS", default=2))
+AI_VOLCENGINE_HIGH_MAX_CONCURRENT_REQUESTS = max(1, _read_int_env("AI_VOLCENGINE_HIGH_MAX_CONCURRENT_REQUESTS", default=1))
+AI_PROVIDER_BACKGROUND_AGING_SECONDS = max(1.0, _read_float_env("AI_PROVIDER_BACKGROUND_AGING_SECONDS", 300.0))
 AI_GRADING_MAX_FILE_COUNT = int(os.getenv("AI_GRADING_MAX_FILE_COUNT", 50))
 AI_GRADING_MAX_TOTAL_FILE_MB = float(os.getenv("AI_GRADING_MAX_TOTAL_FILE_MB", 20))
 AI_GRADING_MAX_TOTAL_FILE_BYTES = int(AI_GRADING_MAX_TOTAL_FILE_MB * 1024 * 1024)
@@ -193,7 +210,7 @@ AI_GRADING_CALLBACK_RETRY_BASE_SECONDS = max(
 )
 AI_PROVIDER_HTTP_MAX_ATTEMPTS = max(
     1,
-    min(_read_int_env("AI_PROVIDER_HTTP_MAX_ATTEMPTS", default=4), 10),
+    min(_read_int_env("AI_PROVIDER_HTTP_MAX_ATTEMPTS", default=3), 3),
 )
 AI_PROVIDER_HTTP_RETRY_BASE_SECONDS = max(
     0.5,
@@ -205,6 +222,8 @@ AI_PROVIDER_HTTP_RETRY_MAX_SECONDS = max(
 )
 AI_PROVIDER_HTTP_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 AI_GRADING_ADJUDICATION_ENABLED = _read_bool_env("AI_GRADING_ADJUDICATION_ENABLED", True)
+AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT = max(0, _read_int_env("AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT", default=10))
+AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT = max(0, _read_int_env("AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT", default=3))
 AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD = min(
     1.0,
     max(0.0, _read_float_env("AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD", 0.65)),
@@ -426,6 +445,11 @@ class AIModelRoute:
     model_name: str
     spillover: bool = False
     reason: str = ""
+    execution_plan: AIExecutionPlan | None = None
+
+    @property
+    def route_id(self) -> str:
+        return self.execution_plan.route_id if self.execution_plan else f"{self.platform_name}:{self.model_name}:{self.task_type}"
 
 
 def _sanitize_task_priority(value: Optional[str]) -> str:
@@ -467,26 +491,31 @@ def _build_model_routes(
     *,
     task_type: Optional[str] = None,
     preferred_platform: Optional[str] = None,
+    business_context: AIBusinessContext | dict[str, Any] | None = None,
+    execution_snapshot: dict[str, Any] | None = None,
 ) -> list[AIModelRoute]:
     normalized_task_type = _normalize_ai_task_type(task_type, capability)
     effective_capability = _capability_for_task_type(normalized_task_type, capability)
-    platform_order = (
-        [preferred_platform]
-        if preferred_platform
-        else provider_order_for_task(normalized_task_type, effective_capability)
-    )
+    plan = resolve_execution_plan(normalized_task_type, effective_capability, business_context, execution_snapshot=execution_snapshot)
+    platform_order = provider_order_for_task(normalized_task_type, effective_capability)
+    if preferred_platform and preferred_platform != plan.provider:
+        raise ValueError("Preferred provider is outside the business execution plan")
     routes: list[AIModelRoute] = []
 
     for platform_name in platform_order:
+        if platform_name != plan.provider:
+            continue
         if not platform_name or platform_name not in PLATFORMS_CONFIG:
             continue
         config = PLATFORMS_CONFIG[platform_name]
         if not config.get("enabled") or platform_name not in ENABLED_PLATFORMS:
             continue
-        model_name = _get_platform_task_model(config, normalized_task_type, effective_capability)
+        model_name = plan.model
         if not model_name:
             continue
         if normalized_task_type in MULTIMODAL_TASK_TYPES and not (config.get("supports") or {}).get("images"):
+            continue
+        if plan.operation in {"grading", "adjudication"} and plan.provider != "deepseek" and not (config.get("supports") or {}).get("authoritative_grading"):
             continue
         routes.append(
             AIModelRoute(
@@ -495,6 +524,7 @@ def _build_model_routes(
                 task_type=normalized_task_type,
                 capability=effective_capability,
                 model_name=model_name,
+                execution_plan=plan,
             )
         )
     return routes
@@ -542,11 +572,21 @@ def _messages_contain_visual(messages: Optional[List[Dict[str, Any]]]) -> bool:
             if not isinstance(item, dict):
                 continue
             item_type = str(item.get("type") or "").strip().lower()
-            if item_type in {"image_url", "input_image", "video_url", "input_video"}:
+            if item_type in {"image_url", "input_image", "video_url", "input_video", "input_file"}:
                 return True
             if "image_url" in item or "video_url" in item or "file_data" in item:
                 return True
     return False
+
+
+def _request_task_for_messages(messages: List[Dict], task_type: str | None, capability: str) -> tuple[str, str]:
+    task = _normalize_ai_task_type(task_type, capability)
+    visual = _messages_contain_visual(messages)
+    if visual and task in TEXT_TASK_TYPES:
+        task = AI_TASK_DEEP_MULTIMODAL if task == AI_TASK_DEEP_TEXT else AI_TASK_VISION_INTERACTIVE
+    elif not visual and task in MULTIMODAL_TASK_TYPES:
+        task = AI_TASK_DEEP_TEXT if task in DEEP_REASONING_TASK_TYPES else AI_TASK_FAST_TEXT
+    return task, _capability_for_task_type(task)
 
 
 def _should_fallback_to_next_platform(exc: BaseException) -> bool:
@@ -565,6 +605,9 @@ def _apply_openai_provider_options(
     effort: str = "high",
 ) -> None:
     if route.platform_name == "deepseek":
+        if route.execution_plan:
+            effort = route.execution_plan.reasoning_effort or effort
+            kwargs["max_tokens"] = route.execution_plan.max_output_tokens_total
         extra_body = dict(kwargs.get("extra_body") or {})
         if route.task_type == AI_TASK_FAST_TEXT:
             extra_body["thinking"] = {"type": "disabled"}
@@ -589,14 +632,25 @@ def _apply_openai_provider_options(
 
 
 def _apply_volcengine_thinking(kwargs: dict[str, Any], route: AIModelRoute) -> None:
-    """火山方舟 doubao 深度思考开关（OpenAI 兼容 extra_body）。
+    """Apply the same verified Doubao profile to both streaming and normal Chat."""
+    plan = route.execution_plan or resolve_execution_plan(route.task_type, route.capability)
+    if plan.provider != "volcengine" or plan.model != route.model_name:
+        raise ValueError("Doubao request does not match its execution plan")
+    if "max_tokens" in kwargs:
+        raise ValueError("max_tokens cannot coexist with a total output limit")
+    extra_body = dict(kwargs.get("extra_body") or {})
+    extra_body["thinking"] = {"type": plan.thinking_type}
+    kwargs["extra_body"] = extra_body
+    kwargs["reasoning_effort"] = plan.reasoning_effort
+    kwargs["max_completion_tokens"] = plan.max_output_tokens_total
 
-    仅对深度任务显式开启思考；快速/轻量任务保留模型默认值，避免在 lite 模型上触发参数报错。
-    """
-    if route.task_type in DEEP_REASONING_TASK_TYPES:
-        extra_body = dict(kwargs.get("extra_body") or {})
-        extra_body.setdefault("thinking", {"type": "enabled"})
-        kwargs["extra_body"] = extra_body
+
+def _execution_metadata(route: AIModelRoute, *, usage: dict[str, Any] | None = None, finish_reason: str | None = None) -> dict[str, Any]:
+    metadata = route.execution_plan.to_dict() if route.execution_plan else {
+        "provider": route.platform_name, "model": route.model_name, "route_id": route.route_id,
+    }
+    metadata.update({"usage": usage, "usage_known": bool(usage), "finish_reason": finish_reason})
+    return metadata
 
 
 def _provider_timeout_for_task(
@@ -613,27 +667,39 @@ def _provider_timeout_for_task(
 
 def _max_attempts_for_error(exc: BaseException) -> int:
     """超时类错误用较小的重试上限，避免“慢请求 × 多次重试”挂死并发槽位。"""
-    if isinstance(exc, httpx.TimeoutException):
+    if isinstance(exc, httpx.TimeoutException) or (APITimeoutError and isinstance(exc, APITimeoutError)):
         return AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS
     return AI_PROVIDER_HTTP_MAX_ATTEMPTS
+
+
+_active_execution_budget: ContextVar[AIExecutionBudget | None] = ContextVar("ai_execution_budget", default=None)
 
 
 async def _provider_call_with_retry(
     do_attempt,
     *,
     platform_name: str,
+    execution_budget: AIExecutionBudget | None = None,
+    execution_plan: dict[str, Any] | None = None,
+    attempt_metadata=None,
 ) -> Any:
     """对单次厂商网络调用做 429/5xx/网络抖动重试（指数退避，遵守 Retry-After）。
 
     超时类错误的重试上限单独收紧（AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS），避免一个很慢的
     请求被反复用同样的超时重试，长时间占住批改/生成的并发槽。
     """
-    for attempt in range(1, AI_PROVIDER_HTTP_MAX_ATTEMPTS + 1):
+    budget = execution_budget or _active_execution_budget.get() or AIExecutionBudget()
+    for attempt in range(1, min(3, AI_PROVIDER_HTTP_MAX_ATTEMPTS) + 1):
+        attempt_id = await budget.begin(execution_plan or {"provider": platform_name})
         try:
-            return await do_attempt()
+            result = await do_attempt()
+        except (asyncio.CancelledError, GeneratorExit) as exc:
+            await budget.finish(attempt_id, error=exc)
+            raise
         except Exception as exc:  # noqa: BLE001 - 由下方判定是否可重试
+            await budget.finish(attempt_id, error=exc)
             max_attempts = _max_attempts_for_error(exc)
-            if not _is_retryable_provider_error(exc) or attempt >= max_attempts:
+            if budget.exhausted or not _is_retryable_provider_error(exc) or attempt >= max_attempts:
                 raise
             delay_seconds = _provider_retry_delay_seconds(exc, attempt)
             print(
@@ -642,6 +708,9 @@ async def _provider_call_with_retry(
                 f"{_provider_error_summary(exc)}"
             )
             await asyncio.sleep(delay_seconds)
+        else:
+            await budget.finish(attempt_id, **(attempt_metadata() if attempt_metadata else {}))
+            return result
 
 
 class AIModelLoadRouter:
@@ -650,6 +719,10 @@ class AIModelLoadRouter:
         self._reserved_by_platform: dict[str, int] = {}
         self._condition = asyncio.Condition()
         self._waiting = 0
+        self._reservations: set[str] = set()
+        self._reservation_high: dict[str, bool] = {}
+        self._high_reserved = 0
+        self._interactive_waiters = 0
 
     async def choose_and_reserve(
         self,
@@ -659,12 +732,17 @@ class AIModelLoadRouter:
     ) -> tuple[AIModelRoute, str]:
         if not routes:
             raise ValueError("no_ai_model_route")
+        wait_started = time.monotonic()
 
         async with self._condition:
             while True:
-                selected = self._choose_route_locked(routes, task_priority=task_priority)
+                selected = self._choose_route_locked(routes, task_priority=task_priority, waited_seconds=time.monotonic() - wait_started)
                 if selected:
                     reservation_id = uuid.uuid4().hex
+                    self._reservations.add(reservation_id)
+                    high = self._is_high_route(selected)
+                    self._reservation_high[reservation_id] = high
+                    self._high_reserved += int(high)
                     self._reserved_by_platform[selected.platform_name] = (
                         self._reserved_by_platform.get(selected.platform_name, 0) + 1
                     )
@@ -682,15 +760,28 @@ class AIModelLoadRouter:
                     )
 
                 self._waiting += 1
+                interactive = task_priority == "interactive" and any(route.platform_name == "volcengine" for route in routes)
+                self._interactive_waiters += int(interactive)
                 print(
                     "[AI ROUTER] wait provider capacity "
                     f"task={routes[0].task_type}, priority={task_priority}, "
                     f"pending={self._waiting}, candidates={','.join(route.platform_name for route in routes)}"
                 )
                 try:
-                    await self._condition.wait()
+                    age_remaining = AI_PROVIDER_BACKGROUND_AGING_SECONDS - (time.monotonic() - wait_started)
+                    if task_priority != "interactive" and age_remaining > 0:
+                        try:
+                            await asyncio.wait_for(self._condition.wait(), timeout=age_remaining)
+                        except asyncio.TimeoutError:
+                            pass
+                    else:
+                        await self._condition.wait()
+                except asyncio.CancelledError:
+                    self._condition.notify_all()
+                    raise
                 finally:
                     self._waiting = max(0, self._waiting - 1)
+                    self._interactive_waiters = max(0, self._interactive_waiters - int(interactive))
 
         print(
             "[AI ROUTER] route "
@@ -707,7 +798,13 @@ class AIModelLoadRouter:
         except (TypeError, ValueError):
             return 0
 
+    @staticmethod
+    def _is_high_route(route: AIModelRoute) -> bool:
+        return bool(route.platform_name == "volcengine" and route.execution_plan and route.execution_plan.reasoning_effort == "high")
+
     def _has_provider_capacity_locked(self, route: AIModelRoute) -> bool:
+        if self._is_high_route(route) and self._high_reserved >= AI_VOLCENGINE_HIGH_MAX_CONCURRENT_REQUESTS:
+            return False
         limit = self._provider_limit(route)
         if limit <= 0:
             return True
@@ -718,11 +815,19 @@ class AIModelLoadRouter:
         routes: list[AIModelRoute],
         *,
         task_priority: str,
+        waited_seconds: float = 0.0,
     ) -> Optional[AIModelRoute]:
         available_routes = [
             route for route in routes
             if self._has_provider_capacity_locked(route)
         ]
+        if task_priority != "interactive" and self._interactive_waiters and waited_seconds < AI_PROVIDER_BACKGROUND_AGING_SECONDS:
+            available_routes = [route for route in available_routes if not (
+                route.platform_name == "volcengine" and route.execution_plan
+                and route.execution_plan.profile_id != "vision_edge_low"
+                and self._provider_limit(route) > 0
+                and self._reserved_by_platform.get("volcengine", 0) >= self._provider_limit(route) - 1
+            )]
         if not available_routes:
             return None
 
@@ -767,6 +872,10 @@ class AIModelLoadRouter:
         if not route or not reservation_id:
             return
         async with self._condition:
+            if reservation_id not in self._reservations:
+                return
+            self._reservations.remove(reservation_id)
+            self._high_reserved = max(0, self._high_reserved - int(self._reservation_high.pop(reservation_id, False)))
             current = self._reserved_by_platform.get(route.platform_name, 0)
             if current <= 1:
                 self._reserved_by_platform.pop(route.platform_name, None)
@@ -873,6 +982,17 @@ class AIPriorityLimiter:
 
 ai_limiter = AIPriorityLimiter(GLOBAL_AI_CONCURRENCY, max_pending=AI_QUEUE_MAX_PENDING)
 ai_model_router = AIModelLoadRouter(max_pending=AI_PROVIDER_QUEUE_MAX_PENDING)
+
+
+@asynccontextmanager
+async def _stream_capacity_slot(route: AIModelRoute, reservation: str, *, priority: str, label: str):
+    try:
+        async with ai_limiter.slot(priority=priority, label=label):
+            yield
+    finally:
+        await ai_model_router.release(route, reservation)
+
+
 callback_client = httpx.AsyncClient()
 grading_job_semaphore = asyncio.Semaphore(AI_GRADING_MAX_CONCURRENT_JOBS)
 grading_job_lock = asyncio.Lock()
@@ -1003,10 +1123,11 @@ def _provider_http_status(exc: BaseException) -> int | None:
 
 
 def _is_retryable_provider_error(exc: BaseException) -> bool:
-    if isinstance(exc, httpx.HTTPStatusError):
-        status_code = _provider_http_status(exc)
+    status_code = _provider_http_status(exc)
+    if status_code is not None:
         return status_code in AI_PROVIDER_HTTP_RETRY_STATUS_CODES
-    return isinstance(exc, (httpx.TimeoutException, httpx.NetworkError))
+    return (isinstance(exc, (httpx.TimeoutException, httpx.NetworkError))
+            or bool(APIConnectionError and isinstance(exc, APIConnectionError)))
 
 
 def _provider_retry_delay_seconds(exc: BaseException, attempt: int) -> float:
@@ -1064,9 +1185,81 @@ def _estimate_provider_cost_cny(
     provider_usage: dict[str, Any] | None,
     *,
     task_type: str | None = None,
+    model_name: str | None = None,
+    request_started_at: str | None = None,
 ) -> dict[str, Any] | None:
     if not provider_usage:
         return None
+    if platform_name == "deepseek" and model_name in {"deepseek-v4-flash", "deepseek-v4-pro"}:
+        if not all(key in provider_usage for key in ("prompt_tokens", "completion_tokens")):
+            return None
+        try:
+            prompt = int(provider_usage["prompt_tokens"])
+            completion = int(provider_usage["completion_tokens"])
+            details = provider_usage.get("prompt_tokens_details") or {}
+            cache_known = "prompt_cache_hit_tokens" in provider_usage or "cached_tokens" in details
+            cached = int(provider_usage.get("prompt_cache_hit_tokens", details.get("cached_tokens", 0)) or 0)
+            if prompt < 0 or completion < 0 or not 0 <= cached <= prompt:
+                return None
+        except (TypeError, ValueError):
+            return None
+        peak = True
+        price_basis = "peak_conservative_unknown_time"
+        if request_started_at:
+            try:
+                local_tz = timezone(timedelta(hours=8))
+                start = datetime.fromisoformat(request_started_at.replace("Z", "+00:00")).astimezone(local_tz)
+                end = datetime.now(timezone.utc).astimezone(local_tz)
+                if start <= end and (end - start).days < 7:
+                    peak = False
+                    day = start.replace(hour=0, minute=0, second=0, microsecond=0)
+                    while day <= end:
+                        if day.weekday() < 5 and any(start < day.replace(hour=b) and end >= day.replace(hour=a) for a, b in ((9, 12), (14, 18))):
+                            peak = True
+                            break
+                        day += timedelta(days=1)
+                    price_basis = "peak_conservative_request_window" if peak else "off_peak_request_window"
+            except (TypeError, ValueError, OverflowError):
+                pass
+        scale = (3.0 if model_name == "deepseek-v4-pro" else 1.0) * (1.0 if peak else 0.5)
+        input_price, cached_price, output_price = 3.0 * scale, 0.1 * scale, 9.0 * scale
+        return {"currency": "CNY", "estimated_cost": round(((prompt - cached) * input_price + cached * cached_price + completion * output_price) / 1_000_000, 8), "prompt_tokens": prompt, "completion_tokens": completion, "cached_input_tokens": cached if cache_known else None, "cache_usage_reported": cache_known, "assumed_cached_input_tokens": cached, "input_price_per_million": input_price, "cached_price_per_million": cached_price, "output_price_per_million": output_price, "price_tier": price_basis, "model": model_name, "price_version": "deepseek-2026-09-07"}
+    if model_name and platform_name == "volcengine":
+        from classroom_app.services.ai_model_policy import DOUBAO_PRO_MODEL, DOUBAO_LITE_MODEL
+        input_key = "prompt_tokens" if "prompt_tokens" in provider_usage else "input_tokens"
+        output_key = "completion_tokens" if "completion_tokens" in provider_usage else "output_tokens"
+        if input_key not in provider_usage or output_key not in provider_usage:
+            return None
+        try:
+            prompt = int(provider_usage[input_key])
+            completion = int(provider_usage[output_key])
+            details = provider_usage.get("prompt_tokens_details") or provider_usage.get("input_tokens_details") or {}
+            cache_known = "cached_tokens" in details or "cached_tokens" in provider_usage
+            cached = int(details.get("cached_tokens", provider_usage.get("cached_tokens", 0)) or 0)
+            if prompt < 0 or completion < 0 or not 0 <= cached <= prompt:
+                return None
+        except (TypeError, ValueError):
+            return None
+        if model_name == DOUBAO_PRO_MODEL and prompt <= 256000:
+            input_price, cached_price, output_price, price_tier = 6.0, 1.2, 30.0, "0-256k"
+        elif model_name == DOUBAO_LITE_MODEL and prompt <= 256000:
+            if prompt <= 32000:
+                input_price, cached_price, output_price, price_tier = 0.6, 0.12, 3.6, "0-32k"
+            elif prompt <= 128000:
+                input_price, cached_price, output_price, price_tier = 0.9, 0.18, 5.4, "32-128k"
+            else:
+                input_price, cached_price, output_price, price_tier = 1.8, 0.36, 10.8, "128-256k"
+        else:
+            return None
+        return {
+            "currency": "CNY", "estimated_cost": round(((prompt - cached) * input_price + cached * cached_price + completion * output_price) / 1_000_000, 8),
+            "prompt_tokens": prompt, "completion_tokens": completion,
+            "cached_input_tokens": cached if cache_known else None,
+            "cache_usage_reported": cache_known, "assumed_cached_input_tokens": cached,
+            "input_price_per_million": input_price, "cached_price_per_million": cached_price,
+            "output_price_per_million": output_price, "price_tier": price_tier,
+            "model": model_name, "price_version": "volcengine-2026-09-07",
+        }
     config = PLATFORMS_CONFIG.get(platform_name) or {}
     pricing = config.get("pricing_cny_per_million") or {}
     tier = "deep" if task_type in DEEP_REASONING_TASK_TYPES else "light"
@@ -1204,14 +1397,18 @@ def _log_ai_usage(
             response_payload=response_payload,
         ),
         "provider_usage": provider_usage,
+        "usage_known": bool(provider_usage),
     }
     cost_estimate = _estimate_provider_cost_cny(
         platform_name,
         provider_usage,
         task_type=task_type,
+        model_name=model_name,
+        request_started_at=started_at,
     )
     if cost_estimate:
         event["cost_estimate"] = cost_estimate
+    event["cost_known"] = cost_estimate is not None
     if error:
         event["error"] = _truncate_for_log(error)
     if extra:
@@ -1227,12 +1424,16 @@ def _new_ai_usage_context() -> tuple[str, str, float]:
 class GenerationRequest(BaseModel):
     prompt: str
     model_type: Literal["standard", "thinking"] = "standard"
+    business_context: dict[str, Any] = Field(default_factory=dict)
+    execution_plan: dict[str, Any] | None = None
 
 
 class ExamGenerationRequest(BaseModel):
     prompt: str
     model_type: Literal["standard", "thinking", "vision"] = "thinking"
     task_type: str = "exam_generation"
+    business_context: dict[str, Any] = Field(default_factory=dict)
+    execution_plan: dict[str, Any] | None = None
     teacher_id: Optional[int] = None
     class_offering_id: Optional[int] = None
     source_type: Literal["manual", "document", "learning_stage"] = "manual"
@@ -1266,6 +1467,8 @@ class GradingJob(BaseModel):
     submission_fingerprint: Optional[str] = None
     grading_revision_hash: Optional[str] = None
     grading_contract_version: str = "2026-07-durable-v1"
+    business_context: dict[str, Any] = Field(default_factory=dict)
+    execution_plan: dict[str, Any] | None = None
     # model_type 将在 run_grading_job 中动态决定，这里不再需要
 
 
@@ -1549,10 +1752,34 @@ async def _execute_durable_ai_job(job: dict[str, Any]) -> None:
         )
         return
     await asyncio.to_thread(_record_durable_attempt_start, job)
+    payload = load_ai_job_payload(job)
+    async def persist_execution(state, revision):
+        await asyncio.to_thread(
+            persist_ai_job_execution_state, int(job["id"]), str(job.get("lease_token") or ""),
+            state, expected_revision=revision,
+        )
+    try:
+        budget = AIExecutionBudget(payload.get("execution_state"),
+            logical_call_id=str((payload.get("business_context") or {}).get("logical_call_id") or job["id"]),
+            persist=persist_execution)
+    except AIExecutionStateError:
+        await asyncio.to_thread(reschedule_ai_job, job, error_code="unsupported_execution_state",
+            error_message="Execution state requires a compatible worker or manual review", terminal=True)
+        return
+    if budget.state.get("primary_plan"):
+        payload["execution_plan"] = budget.state["primary_plan"]
+    # Claims increment attempt_count. An old job claimed a second time may
+    # already have incurred provider charges, even when its old worker left no
+    # ledger. Never grant it a fresh automatic inference allowance.
+    if not payload.get("execution_state") and int(job.get("attempt_count") or 1) > 1:
+        budget.state["legacy_history_unknown"] = True
+    budget_token = _active_execution_budget.set(budget)
     heartbeat_stop = asyncio.Event()
     heartbeat_task = asyncio.create_task(_durable_lease_heartbeat(job, heartbeat_stop))
-    payload = load_ai_job_payload(job)
     try:
+        if budget.state.get("legacy_history_unknown"):
+            await budget._save()
+            raise AIExecutionBudgetExceeded("旧任务已有执行记录但缺少模型调用账本，需人工确认后显式重试")
         if task_type == "exam_generation":
             with get_db_connection() as conn:
                 conn.execute(
@@ -1578,12 +1805,16 @@ async def _execute_durable_ai_job(job: dict[str, Any]) -> None:
                 source_type=payload.get("source_type") or "manual",
                 force_platform=payload.get("force_platform"),
                 image_inputs=artifact.get("image_inputs") or [],
+                business_context=payload.get("business_context") or {},
+                execution_plan=payload.get("execution_plan"),
             )
             generated = await generate_exam_task(request)
             durable_result = {
                 "paper_id": str(payload.get("paper_id") or ""),
                 "task_id": str(payload.get("task_id") or ""),
                 "exam_data": generated.get("exam_data") or {},
+                "execution_metadata": generated.get("execution_metadata") or {},
+                "execution_state": budget.audit_snapshot(),
             }
             result_row = await asyncio.to_thread(
                 store_ai_job_result,
@@ -1591,6 +1822,7 @@ async def _execute_durable_ai_job(job: dict[str, Any]) -> None:
                 durable_result,
                 prompt_version="exam-generation-2026-07-v1",
                 policy_version=str(job.get("policy_version") or ""),
+                require_valid_lease=True,
             )
             delivery_job = {**job, "result_id": int(result_row["id"])}
             if await asyncio.to_thread(_apply_durable_exam_result, delivery_job, {**result_row, "result": durable_result}):
@@ -1624,6 +1856,7 @@ async def _execute_durable_ai_job(job: dict[str, Any]) -> None:
             confidence=callback_data.get("ai_confidence"),
             review_required=bool(callback_data.get("review_required")),
             quality_audit=callback_data.get("quality_audit") or {},
+            require_valid_lease=True,
         )
         delivery_job = {**job, "result_id": int(result_row["id"])}
         try:
@@ -1645,6 +1878,7 @@ async def _execute_durable_ai_job(job: dict[str, Any]) -> None:
                 job,
                 error_code=exc.__class__.__name__,
                 error_message=str(exc),
+                terminal=budget.exhausted or isinstance(exc, AIOutputSizeError),
             )
             if terminal_status == "review_required":
                 with get_db_connection() as conn:
@@ -1656,7 +1890,10 @@ async def _execute_durable_ai_job(job: dict[str, Any]) -> None:
                           AND ai_gen_status IN ('pending', 'running')
                         """,
                         (
-                            "AI 多次自动重试后仍未能可靠生成试卷，请教师检查材料后重新生成。",
+                            (str(exc) if isinstance(exc, AIOutputSizeError) else
+                             "旧任务的历史模型调用量无法确认，已停止自动生成，请教师检查后重新生成。"
+                             if budget.state.get("legacy_history_unknown") else
+                             "AI 多次自动重试后仍未能可靠生成试卷，请教师检查材料后重新生成。"),
                             datetime.now().isoformat(timespec="seconds"),
                             str(payload.get("paper_id") or ""),
                             str(payload.get("task_id") or ""),
@@ -1665,18 +1902,24 @@ async def _execute_durable_ai_job(job: dict[str, Any]) -> None:
                     conn.commit()
                 await asyncio.to_thread(cleanup_ai_job_artifact, payload.get("artifact_ref") or {})
             return
-        if int(job.get("attempt_count") or 1) >= int(job.get("max_attempts") or 8):
+        if _grading_manual_reason(exc) or budget.exhausted or int(job.get("attempt_count") or 1) >= int(job.get("max_attempts") or 8):
             terminal_callback = {
                 "submission_id": int(payload.get("submission_id") or 0),
                 "status": "grading_review_required",
                 "score": None,
-                "feedback_md": "AI 批改在多次自动重试后仍未能可靠完成，提交内容和原成绩均已保留，请教师人工复核。",
+                "feedback_md": ((str(exc) + "。原成绩已保留，请教师检查后重新处理。") if _grading_manual_reason(exc) else
+                    ("旧任务的历史模型调用量无法确认，已停止自动批改；提交内容和原成绩均已保留，请教师检查后显式重批。"
+                     if budget.state.get("legacy_history_unknown") else
+                     "AI 批改在多次自动重试后仍未能可靠完成，提交内容和原成绩均已保留，请教师人工复核。")),
                 "review_required": True,
-                "review_reason_codes": ["durable_attempts_exhausted"],
+                "review_reason_codes": [_grading_manual_reason(exc) if _grading_manual_reason(exc) else
+                    ("legacy_execution_history_unknown" if budget.state.get("legacy_history_unknown") else
+                     ("execution_budget_exhausted" if budget.exhausted else "durable_attempts_exhausted"))],
                 "submission_fingerprint": payload.get("submission_fingerprint") or "",
                 "grading_revision_hash": payload.get("grading_revision_hash") or "",
                 "grading_contract_version": payload.get("grading_contract_version") or "",
                 "ai_job_id": int(job["id"]),
+                "execution_state": budget.audit_snapshot(),
             }
             result_row = await asyncio.to_thread(
                 store_ai_job_result,
@@ -1690,6 +1933,7 @@ async def _execute_durable_ai_job(job: dict[str, Any]) -> None:
                 attempt_status="error",
                 attempt_error_code=exc.__class__.__name__,
                 attempt_error_message=str(exc),
+                require_valid_lease=True,
             )
             delivery_job = {**job, "result_id": int(result_row["id"])}
             try:
@@ -1719,6 +1963,7 @@ async def _execute_durable_ai_job(job: dict[str, Any]) -> None:
                 error_message=str(exc),
             )
     finally:
+        _active_execution_budget.reset(budget_token)
         heartbeat_stop.set()
         with suppress(asyncio.CancelledError):
             await heartbeat_task
@@ -1875,6 +2120,8 @@ class AIChatRequest(BaseModel):
     task_label: Optional[str] = None
     tools: List[Dict[str, Any]] = Field(default_factory=list)
     tool_choice: Any = None
+    business_context: dict[str, Any] = Field(default_factory=dict)
+    execution_plan: dict[str, Any] | None = None
 
 
 # --- 辅助函数 (保持不变) ---
@@ -2370,16 +2617,95 @@ def _is_text_like_grading_file(file_path: Path, mime_type: str | None = None) ->
     )
 
 
+class AIGradingEvidenceError(ValueError):
+    """Required grading evidence is missing, partial, or unreadable."""
+
+
+class AIGradingCoverageError(ValueError):
+    """A grading response does not cover the teacher's complete question set."""
+
+
+class AIGradingReviewRequired(RuntimeError):
+    def __init__(self, message: str, reason_code: str):
+        super().__init__(message)
+        self.reason_code = reason_code
+
+
+def _grading_manual_reason(exc: BaseException) -> str:
+    if isinstance(exc, AIGradingEvidenceError):
+        return "incomplete_grading_evidence"
+    if isinstance(exc, AIGradingCoverageError):
+        return "incomplete_question_coverage"
+    if isinstance(exc, AIOutputSizeError):
+        return "structured_output_too_large"
+    if isinstance(exc, AIGradingReviewRequired):
+        return exc.reason_code
+    return ""
+
+
+def _grading_teacher_question_targets(job: GradingJob) -> list[dict[str, Any]]:
+    """Canonical question identities from the teacher-authored scoring snapshot."""
+    if job.exam_scoring_json:
+        try:
+            paper = json.loads(job.exam_scoring_json)
+            pages = paper["pages"]
+            if not isinstance(pages, list) or any(not isinstance(page, dict) or not isinstance(page.get("questions"), list) for page in pages):
+                raise ValueError("invalid pages")
+            questions = [question for page in pages for question in page["questions"]]
+            if not questions or any(not isinstance(question, dict) for question in questions):
+                raise ValueError("invalid questions")
+            targets = []
+            seen = set()
+            for page_index, page in enumerate(pages, 1):
+                for question_index, question in enumerate(page["questions"], 1):
+                    question_id = str(question.get("id") or question.get("question_id") or f"p{page_index}_q{question_index}").strip()
+                    if not question_id or question_id.casefold() in seen:
+                        raise ValueError("duplicate or empty teacher question id")
+                    seen.add(question_id.casefold())
+                    targets.append({"question_id": question_id, "question_no": len(targets) + 1})
+            return targets
+        except (ValueError, TypeError, KeyError) as exc:
+            raise AIGradingEvidenceError("无法从服务端试卷评分快照确认完整题量") from exc
+    return []
+
+
+def _grading_expected_question_count(job: GradingJob) -> int | None:
+    """The teacher-authored scoring snapshot outranks any caller count hint."""
+    targets = _grading_teacher_question_targets(job)
+    if targets:
+        return len(targets)
+    return AIBusinessContext.from_mapping(job.business_context).expected_question_count
+
+
+def _validate_grading_result_for_job(raw_result: dict[str, Any], job: GradingJob) -> dict[str, Any]:
+    """One result contract for main calls, repairs, high review and recovery."""
+    result = validate_ai_grading_result(raw_result, answers_json=job.answers_json)
+    targets = _grading_teacher_question_targets(job)
+    expected_count = len(targets) if targets else AIBusinessContext.from_mapping(job.business_context).expected_question_count
+    questions = result["questions"]
+    if expected_count is not None and len(questions) != expected_count:
+        raise AIGradingCoverageError(f"逐题评分覆盖不完整：教师试卷要求{expected_count}题，实际返回{len(questions)}题；必须逐题完整返回")
+    if targets:
+        expected = {item["question_id"].casefold(): item for item in targets}
+        returned = [str(item.get("question_id") or "").casefold() for item in questions]
+        if len(set(returned)) != len(returned) or set(returned) != set(expected):
+            missing = [item["question_id"] for key, item in expected.items() if key not in returned]
+            raise AIGradingCoverageError("逐题评分的 question_id 必须与教师试卷逐一对应，不得重复或用其他题号替代；缺少：" + "、".join(missing[:10]))
+        if any(question["question_no"] != expected[key]["question_no"] for question, key in zip(questions, returned)):
+            raise AIGradingCoverageError("逐题评分的 question_no 与教师试卷 question_id 对应关系不一致，请按教师题目清单返回")
+    return result
+
+
 def _normalize_grading_files(job: GradingJob) -> list[dict[str, Any]]:
     normalized_files: list[dict[str, Any]] = []
     if job.files:
         for file in job.files:
             file_path = Path(file.stored_path)
-            if not file_path.exists():
-                continue
+            if not file_path.is_file():
+                raise AIGradingEvidenceError(f"批改附件不存在：{file.original_filename or file_path.name}")
             stat = file_path.stat()
             try:
-                file_size = int(file.file_size or stat.st_size)
+                file_size = int(stat.st_size)
             except OSError:
                 file_size = int(file.file_size or 0)
             display_name = file.relative_path or file.original_filename or file_path.name
@@ -2401,8 +2727,8 @@ def _normalize_grading_files(job: GradingJob) -> list[dict[str, Any]]:
 
     for raw_path in job.file_paths:
         file_path = Path(raw_path)
-        if not file_path.exists():
-            continue
+        if not file_path.is_file():
+            raise AIGradingEvidenceError(f"批改附件不存在：{file_path.name}")
         stat = file_path.stat()
         normalized_files.append(
             {
@@ -2438,7 +2764,7 @@ def _categorize_grading_file(file_info: dict[str, Any]) -> str:
 
 def _validate_grading_file_limits(grading_files: list[dict[str, Any]]) -> None:
     if len(grading_files) > AI_GRADING_MAX_FILE_COUNT:
-        raise ValueError(f"附件数量超过 AI 批改上限 {AI_GRADING_MAX_FILE_COUNT} 个")
+        raise AIGradingEvidenceError(f"附件数量超过 AI 批改上限 {AI_GRADING_MAX_FILE_COUNT} 个")
 
     total_bytes = sum(
         int(file_info.get("size") or 0)
@@ -2447,7 +2773,7 @@ def _validate_grading_file_limits(grading_files: list[dict[str, Any]]) -> None:
         and not file_info.get("_embedded_data_url")
     )
     if total_bytes > AI_GRADING_MAX_TOTAL_FILE_BYTES:
-        raise ValueError(f"附件总大小超过 AI 批改上限 {_human_size(AI_GRADING_MAX_TOTAL_FILE_BYTES)}")
+        raise AIGradingEvidenceError(f"附件总大小超过 AI 批改上限 {_human_size(AI_GRADING_MAX_TOTAL_FILE_BYTES)}")
 
     for file_info in grading_files:
         category = file_info.get("category")
@@ -2456,30 +2782,34 @@ def _validate_grading_file_limits(grading_files: list[dict[str, Any]]) -> None:
         if category == "metadata_only":
             continue
         if category == "document_native" and file_size > AI_GRADING_PDF_MAX_BYTES:
-            raise ValueError(f"PDF文档 '{display_name}' 超过 AI 批改上限 {_human_size(AI_GRADING_PDF_MAX_BYTES)}")
+            raise AIGradingEvidenceError(f"PDF文档 '{display_name}' 超过 AI 批改上限 {_human_size(AI_GRADING_PDF_MAX_BYTES)}")
         if category == "image" and file_size > AI_GRADING_IMAGE_MAX_BYTES:
-            raise ValueError(f"图片 '{display_name}' 超过 AI 批改上限 {_human_size(AI_GRADING_IMAGE_MAX_BYTES)}")
+            raise AIGradingEvidenceError(f"图片 '{display_name}' 超过 AI 批改上限 {_human_size(AI_GRADING_IMAGE_MAX_BYTES)}")
 
 
-def _select_grading_execution(grading_files: list[dict[str, Any]]) -> dict[str, Any]:
+def _select_grading_execution(grading_files: list[dict[str, Any]], *, business_context: dict[str, Any] | None = None, execution_snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
     has_native_documents = any(file_info["category"] == "document_native" for file_info in grading_files)
     has_images = any(file_info["category"] == "image" for file_info in grading_files)
     task_type = AI_TASK_MULTIMODAL_GRADING if (has_native_documents or has_images) else AI_TASK_DEEP_TEXT
     capability: Literal["standard", "thinking", "vision"] = (
         "vision" if task_type == AI_TASK_MULTIMODAL_GRADING else "thinking"
     )
-    routes = _build_model_routes(capability, task_type=task_type)
+    routes = _build_model_routes(capability, task_type=task_type, business_context={**(business_context or {}), "operation": "grading"}, execution_snapshot=execution_snapshot)
     if not routes:
         if capability == "vision":
             raise ValueError("当前没有已启用且支持图片批改的 AI 模型。")
         raise ValueError("没有可用于文本批改的 AI 模型配置。")
     selected = routes[0]
+    plan = size_structured_execution_plan(selected.execution_plan, schema="grading_v1",
+        question_count=AIBusinessContext.from_mapping(business_context).expected_question_count,
+        execution_snapshot=execution_snapshot)
     return {
         "platform_name": selected.platform_name,
         "platform_config": selected.platform_config,
         "capability": capability,
         "task_type": task_type,
         "mode": "vision_messages" if capability == "vision" else "text_messages",
+        "execution_plan": plan.to_dict(),
     }
 
 
@@ -3192,29 +3522,38 @@ async def _call_volcengine_responses_api(
     task_type: Optional[str] = None,
     task_priority: str = "default",
     task_label: Optional[str] = None,
+    business_context: dict[str, Any] | None = None,
+    execution_snapshot: dict[str, Any] | None = None,
+    metadata_out: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    normalized_task_type, effective_capability = _request_task_for_messages(input_payload, task_type, "vision" if capability == "vision" else "thinking")
+    plan = resolve_execution_plan(normalized_task_type, effective_capability, business_context, execution_snapshot=execution_snapshot).for_api("responses")
+    if plan.provider != "volcengine" or model_name != plan.model:
+        raise ValueError("Responses request is outside the business execution plan")
     request_payload = {
         "model": model_name,
         "instructions": GRADING_SYSTEM_PROMPT,
         "input": input_payload,
         "text": {"format": {"type": "json_object"}},
+        "thinking": {"type": plan.thinking_type},
+        "reasoning": {"effort": plan.reasoning_effort},
+        "max_output_tokens": plan.max_output_tokens_total,
     }
     call_id, started_at, start_perf = _new_ai_usage_context()
-    normalized_task_type = _normalize_ai_task_type(
-        task_type,
-        "vision" if capability == "vision" else "thinking",
-    )
     volcengine_route = AIModelRoute(
         platform_name="volcengine",
         platform_config={"name": "volcengine", **(PLATFORMS_CONFIG.get("volcengine") or {})},
         task_type=normalized_task_type,
         capability="vision" if capability == "vision" else "thinking",
         model_name=model_name,
+        execution_plan=plan,
     )
 
     data: dict[str, Any] | None = None
-    for provider_attempt in range(1, AI_PROVIDER_HTTP_MAX_ATTEMPTS + 1):
+    budget = _active_execution_budget.get() or AIExecutionBudget()
+    for provider_attempt in range(1, min(3, AI_PROVIDER_HTTP_MAX_ATTEMPTS) + 1):
         attempt_call_id, attempt_started_at, attempt_start_perf = _new_ai_usage_context()
+        attempt_id = None
         try:
             async with ai_model_router.route([volcengine_route], task_priority=task_priority):
                 async with ai_limiter.slot(
@@ -3222,6 +3561,7 @@ async def _call_volcengine_responses_api(
                     label=task_label or f"responses_api:{normalized_task_type}",
                 ):
                     async with httpx.AsyncClient(timeout=AI_RESPONSES_HTTP_TIMEOUT_SECONDS) as client:
+                        attempt_id = await budget.begin(plan.to_dict())
                         response = await client.post(
                             f"{VOLCENGINE_OPENAI_BASE_URL}/responses",
                             headers={
@@ -3232,12 +3572,17 @@ async def _call_volcengine_responses_api(
                         )
                         response.raise_for_status()
                         data = response.json()
+                        usage = _extract_provider_usage(data)
+                        await budget.finish(attempt_id, usage=usage, finish_reason=data.get("status"),
+                            cost=_estimate_provider_cost_cny("volcengine", usage, model_name=model_name, request_started_at=attempt_started_at))
             break
         except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+            if attempt_id:
+                await budget.finish(attempt_id, error=exc)
             retryable = _is_retryable_provider_error(exc)
             # 超时类错误收紧重试上限，避免大图批改一遍遍超时把并发槽挂死几十分钟。
             attempt_cap = _max_attempts_for_error(exc)
-            should_retry = retryable and provider_attempt < attempt_cap
+            should_retry = not budget.exhausted and retryable and provider_attempt < attempt_cap
             delay_seconds = _provider_retry_delay_seconds(exc, provider_attempt) if should_retry else 0.0
             error_summary = _provider_error_summary(exc)
             _log_ai_usage(
@@ -3292,9 +3637,11 @@ async def _call_volcengine_responses_api(
             if output_text:
                 break
 
-    if not output_text:
-        raise ValueError("火山方舟 Responses API 未返回可解析的文本结果")
-
+    finish_reason = str(data.get("status") or "completed")
+    incomplete = finish_reason != "completed" or not output_text
+    if metadata_out is not None:
+        metadata_out.update(_execution_metadata(volcengine_route, usage=_extract_provider_usage(data), finish_reason=finish_reason))
+        metadata_out["execution_state"] = budget.audit_snapshot()
     _log_ai_usage(
         call_id=call_id,
         started_at=started_at,
@@ -3306,13 +3653,15 @@ async def _call_volcengine_responses_api(
         capability=capability,
         api_style="responses",
         request_payload=request_payload,
-        response_text=output_text,
+        response_text=output_text or "",
         response_payload=data,
         provider_usage=_extract_provider_usage(data),
-        status="success",
+        status="error" if incomplete else "success",
         stream=False,
-        extra={"base_url": VOLCENGINE_OPENAI_BASE_URL, "task_type": normalized_task_type},
+        extra={"base_url": VOLCENGINE_OPENAI_BASE_URL, "task_type": normalized_task_type, "execution_plan": plan.to_dict(), "finish_reason": finish_reason},
     )
+    if incomplete:
+        raise ValueError("火山方舟 Responses API 未返回完整可解析的文本结果")
     return _robust_parse_grading_json(output_text)
 
 
@@ -3440,6 +3789,7 @@ async def _do_provider_call(
         tool_choice: Any = None,
         return_tool_calls: bool = False,
         effort: str = "high",
+        metadata_out: dict[str, Any] | None = None,
 ) -> Any:
     """对单个已选定平台执行一次非流式调用（含厂商级 429/5xx 重试），解析并记账。
 
@@ -3457,11 +3807,20 @@ async def _do_provider_call(
     safe_tools = [tool for tool in (tools or []) if isinstance(tool, dict)]
     call_id, started_at, start_perf = _new_ai_usage_context()
     provider_usage: dict[str, Any] | None = None
+    finish_reason: str | None = None
+    if selected_route.execution_plan:
+        effort = selected_route.execution_plan.reasoning_effort or "none"
     response_thinking = ""
     response_content: Optional[str] = None
     tool_calls: list[dict[str, Any]] = []
     provider_stream_used = False
     api_style = "chat_completions"
+    budget = _active_execution_budget.get() or AIExecutionBudget()
+
+    def attempt_metadata():
+        return {"usage": provider_usage, "finish_reason": finish_reason,
+                "cost": _estimate_provider_cost_cny(platform_name, provider_usage,
+                    model_name=model_name, request_started_at=started_at)}
     logged_usage = False
 
     async with ai_limiter.slot(priority=task_priority, label=task_label or f"call:{selected_route.task_type}"):
@@ -3476,61 +3835,72 @@ async def _do_provider_call(
 
         try:
             if platform_type == "volcengine":
-                if not AsyncArk:
-                    raise ImportError("volcenginesdkarkruntime 未安装")
+                if not AsyncOpenAI:
+                    raise ImportError("openai 未安装")
                 volc_kwargs: dict[str, Any] = {"model": model_name, "messages": prepared_messages}
                 if safe_tools:
                     volc_kwargs["tools"] = safe_tools
                     if tool_choice is not None:
                         volc_kwargs["tool_choice"] = tool_choice
                 _apply_volcengine_thinking(volc_kwargs, selected_route)
-                # Ark streaming chunks do not reliably expose usage. Non-streaming
-                # background/API calls already have a task-tier timeout and return
-                # authoritative token accounting, so reserve streaming for the
-                # actual user-facing stream endpoint.
+                # Background/API calls collect completion and usage together.
+                # Interactive streaming endpoints request include_usage explicitly.
                 use_stream = False
 
                 async def _volc_attempt() -> None:
-                    nonlocal response_content, response_thinking, provider_usage
+                    nonlocal response_content, response_thinking, provider_usage, finish_reason
                     nonlocal tool_calls, request_payload, api_style, provider_stream_used
-                    client = AsyncArk(
+                    # The compatibility client omits unset fields. Older Ark
+                    # clients serialize max_tokens=null beside the total cap.
+                    client = AsyncOpenAI(
                         api_key=api_key,
                         base_url=selected_platform_config.get("base_url") or VOLCENGINE_OPENAI_BASE_URL,
                         timeout=_provider_timeout_for_task(selected_route.task_type, task_priority),
+                        max_retries=0,
                     )
-                    if use_stream:
-                        provider_stream_used = True
-                        api_style = "chat_completions_stream_collect"
-                        stream_kwargs = dict(volc_kwargs)
-                        stream_kwargs["stream"] = True
-                        request_payload = dict(stream_kwargs)
-                        stream = await client.chat.completions.create(**stream_kwargs)
-                        answer_parts: list[str] = []
-                        thinking_parts: list[str] = []
-                        usage_local: dict[str, Any] | None = None
-                        async for chunk in stream:
-                            usage_local = _extract_provider_usage(chunk) or usage_local
-                            if not getattr(chunk, "choices", None) or not chunk.choices[0].delta:
-                                continue
-                            reasoning_text, content_text = _extract_delta_parts(chunk.choices[0].delta)
-                            if reasoning_text:
-                                thinking_parts.append(reasoning_text)
-                            if content_text:
-                                answer_parts.append(content_text)
-                        response_content = "".join(answer_parts)
-                        response_thinking = "".join(thinking_parts)
-                        provider_usage = usage_local
-                    else:
-                        api_style = "chat_completions_tools" if safe_tools else "chat_completions"
-                        request_payload = dict(volc_kwargs)
-                        completion = await client.chat.completions.create(**volc_kwargs)
-                        message = completion.choices[0].message
-                        response_content = _coerce_stream_text(getattr(message, "content", None))
-                        response_thinking = _extract_reasoning_text(message)
-                        tool_calls = _extract_message_tool_calls(message)
-                        provider_usage = _extract_provider_usage(completion)
+                    try:
+                        if use_stream:
+                            provider_stream_used = True
+                            api_style = "chat_completions_stream_collect"
+                            stream_kwargs = dict(volc_kwargs)
+                            stream_kwargs["stream"] = True
+                            stream_kwargs["stream_options"] = {"include_usage": True}
+                            request_payload = dict(stream_kwargs)
+                            stream = await client.chat.completions.create(**stream_kwargs)
+                            answer_parts: list[str] = []
+                            thinking_parts: list[str] = []
+                            usage_local: dict[str, Any] | None = None
+                            async for chunk in stream:
+                                usage_local = _extract_provider_usage(chunk) or usage_local
+                                if getattr(chunk, "choices", None):
+                                    finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
+                                if not getattr(chunk, "choices", None) or not chunk.choices[0].delta:
+                                    continue
+                                reasoning_text, content_text = _extract_delta_parts(chunk.choices[0].delta)
+                                if reasoning_text:
+                                    thinking_parts.append(reasoning_text)
+                                if content_text:
+                                    answer_parts.append(content_text)
+                            response_content = "".join(answer_parts)
+                            response_thinking = "".join(thinking_parts)
+                            provider_usage = usage_local
+                        else:
+                            api_style = "chat_completions_tools" if safe_tools else "chat_completions"
+                            request_payload = dict(volc_kwargs)
+                            completion = await client.chat.completions.create(**volc_kwargs)
+                            finish_reason = getattr(completion.choices[0], "finish_reason", None)
+                            message = completion.choices[0].message
+                            response_content = _coerce_stream_text(getattr(message, "content", None))
+                            response_thinking = _extract_reasoning_text(message)
+                            tool_calls = _extract_message_tool_calls(message)
+                            provider_usage = _extract_provider_usage(completion)
 
-                await _provider_call_with_retry(_volc_attempt, platform_name=platform_name)
+                    finally:
+                        await client.close()
+
+                await _provider_call_with_retry(_volc_attempt, platform_name=platform_name,
+                    execution_budget=budget, execution_plan=selected_route.execution_plan.to_dict(),
+                    attempt_metadata=attempt_metadata)
 
             elif platform_type == "openai":
                 if not AsyncOpenAI:
@@ -3552,48 +3922,57 @@ async def _do_provider_call(
                 use_stream = AI_NONSTREAM_USE_PROVIDER_STREAM and not safe_tools
 
                 async def _openai_attempt() -> None:
-                    nonlocal response_content, response_thinking, provider_usage
+                    nonlocal response_content, response_thinking, provider_usage, finish_reason
                     nonlocal tool_calls, request_payload, api_style, provider_stream_used
                     client = AsyncOpenAI(
                         api_key=api_key,
                         base_url=base_url,
                         timeout=_provider_timeout_for_task(selected_route.task_type, task_priority),
+                        max_retries=0,
                     )
-                    if use_stream:
-                        provider_stream_used = True
-                        api_style = "chat_completions_stream_collect"
-                        stream_kwargs = dict(kwargs)
-                        stream_kwargs["stream"] = True
-                        if platform_name in {"qwen", "zhipu"}:
+                    try:
+                        if use_stream:
+                            provider_stream_used = True
+                            api_style = "chat_completions_stream_collect"
+                            stream_kwargs = dict(kwargs)
+                            stream_kwargs["stream"] = True
                             stream_kwargs["stream_options"] = {"include_usage": True}
-                        request_payload = dict(stream_kwargs)
-                        stream = await client.chat.completions.create(**stream_kwargs)
-                        answer_parts: list[str] = []
-                        thinking_parts: list[str] = []
-                        usage_local: dict[str, Any] | None = None
-                        async for chunk in stream:
-                            usage_local = _extract_provider_usage(chunk) or usage_local
-                            if not getattr(chunk, "choices", None) or not chunk.choices[0].delta:
-                                continue
-                            reasoning_text, content_text = _extract_delta_parts(chunk.choices[0].delta)
-                            if reasoning_text:
-                                thinking_parts.append(reasoning_text)
-                            if content_text:
-                                answer_parts.append(content_text)
-                        response_content = "".join(answer_parts)
-                        response_thinking = "".join(thinking_parts)
-                        provider_usage = usage_local
-                    else:
-                        api_style = "chat_completions_tools" if safe_tools else "chat_completions"
-                        request_payload = dict(kwargs)
-                        completion = await client.chat.completions.create(**kwargs)
-                        message = completion.choices[0].message
-                        response_content = _coerce_stream_text(getattr(message, "content", None))
-                        response_thinking = _extract_reasoning_text(message)
-                        tool_calls = _extract_message_tool_calls(message)
-                        provider_usage = _extract_provider_usage(completion)
+                            request_payload = dict(stream_kwargs)
+                            stream = await client.chat.completions.create(**stream_kwargs)
+                            answer_parts: list[str] = []
+                            thinking_parts: list[str] = []
+                            usage_local: dict[str, Any] | None = None
+                            async for chunk in stream:
+                                usage_local = _extract_provider_usage(chunk) or usage_local
+                                if getattr(chunk, "choices", None):
+                                    finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
+                                if not getattr(chunk, "choices", None) or not chunk.choices[0].delta:
+                                    continue
+                                reasoning_text, content_text = _extract_delta_parts(chunk.choices[0].delta)
+                                if reasoning_text:
+                                    thinking_parts.append(reasoning_text)
+                                if content_text:
+                                    answer_parts.append(content_text)
+                            response_content = "".join(answer_parts)
+                            response_thinking = "".join(thinking_parts)
+                            provider_usage = usage_local
+                        else:
+                            api_style = "chat_completions_tools" if safe_tools else "chat_completions"
+                            request_payload = dict(kwargs)
+                            completion = await client.chat.completions.create(**kwargs)
+                            finish_reason = getattr(completion.choices[0], "finish_reason", None)
+                            message = completion.choices[0].message
+                            response_content = _coerce_stream_text(getattr(message, "content", None))
+                            response_thinking = _extract_reasoning_text(message)
+                            tool_calls = _extract_message_tool_calls(message)
+                            provider_usage = _extract_provider_usage(completion)
 
-                await _provider_call_with_retry(_openai_attempt, platform_name=platform_name)
+                    finally:
+                        await client.close()
+
+                await _provider_call_with_retry(_openai_attempt, platform_name=platform_name,
+                    execution_budget=budget, execution_plan=selected_route.execution_plan.to_dict(),
+                    attempt_metadata=attempt_metadata)
 
             else:
                 raise HTTPException(500, f"不支持的平台类型: {platform_type}")
@@ -3609,7 +3988,13 @@ async def _do_provider_call(
                 "spillover": selected_route.spillover,
                 "route_reason": selected_route.reason,
                 "effort": effort,
+                "execution_plan": selected_route.execution_plan.to_dict() if selected_route.execution_plan else None,
+                "finish_reason": finish_reason,
+                "execution_state": budget.audit_snapshot(),
             }
+            if metadata_out is not None:
+                metadata_out.update(_execution_metadata(selected_route, usage=provider_usage, finish_reason=finish_reason))
+                metadata_out["execution_state"] = budget.audit_snapshot()
             _log_ai_usage(
                 call_id=call_id,
                 started_at=started_at,
@@ -3624,11 +4009,13 @@ async def _do_provider_call(
                 response_text=response_content or "",
                 thinking_text=response_thinking,
                 provider_usage=provider_usage,
-                status="success",
+                status="error" if finish_reason in {"length", "incomplete", "content_filter"} else "success",
                 stream=provider_stream_used,
                 extra=usage_extra,
             )
             logged_usage = True
+            if finish_reason in {"length", "incomplete", "content_filter"}:
+                raise HTTPException(502, f"AI response is incomplete ({finish_reason}); no complete result was produced")
 
             if return_tool_calls and safe_tools:
                 return {
@@ -3687,6 +4074,7 @@ async def _do_provider_call(
                         "spillover": selected_route.spillover,
                         "route_reason": selected_route.reason,
                         "effort": effort,
+                        "execution_state": budget.audit_snapshot(),
                     },
                 )
             raise he
@@ -3717,6 +4105,7 @@ async def _do_provider_call(
                         "spillover": selected_route.spillover,
                         "route_reason": selected_route.reason,
                         "effort": effort,
+                        "execution_state": budget.audit_snapshot(),
                     },
                 )
             raise HTTPException(500, f"{platform_name} 调用失败: {e}")
@@ -3735,36 +4124,24 @@ async def _call_ai_platform(
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Any = None,
         return_tool_calls: bool = False,
+        business_context: dict[str, Any] | AIBusinessContext | None = None,
+        execution_snapshot: dict[str, Any] | None = None,
+        metadata_out: dict[str, Any] | None = None,
 ) -> Any:
-    normalized_task_type = _normalize_ai_task_type(task_type, capability)
+    task_type, capability = _request_task_for_messages(messages, task_type, capability)
+    normalized_task_type = task_type
 
-    # 安全网：纯文本任务里检测到图片/视频内容时升级为相应多模态任务。
-    # 路由策略会把它送往支持视觉的千问主模型，并保留豆包跨厂商回退。
-    if normalized_task_type in TEXT_TASK_TYPES and _messages_contain_visual(messages):
-        upgraded_task_type = (
-            AI_TASK_DEEP_MULTIMODAL
-            if normalized_task_type == AI_TASK_DEEP_TEXT
-            else AI_TASK_VISION_INTERACTIVE
-        )
-        print(
-            f"[AI ROUTER] detected visual content on text task '{normalized_task_type}'; "
-            f"upgrading to '{upgraded_task_type}'."
-        )
-        task_type = upgraded_task_type
-        capability = "vision"
-        normalized_task_type = upgraded_task_type
-
-    # 候选路由：preferred 平台优先，其后补齐其余启用平台用于跨平台降级。
+    # Only the business profile's allowlisted routes can be considered.
     primary_routes = _build_model_routes(
-        capability, task_type=task_type, preferred_platform=preferred_platform
+        capability, task_type=task_type, preferred_platform=preferred_platform,
+        business_context=business_context, execution_snapshot=execution_snapshot,
     )
-    fallback_routes = _build_model_routes(capability, task_type=task_type)
-    seen_platforms: set[str] = set()
+    seen_routes: set[str] = set()
     candidate_routes: list[AIModelRoute] = []
-    for route in [*primary_routes, *fallback_routes]:
-        if route.platform_name in seen_platforms:
+    for route in primary_routes:
+        if route.route_id in seen_routes:
             continue
-        seen_platforms.add(route.platform_name)
+        seen_routes.add(route.route_id)
         candidate_routes.append(route)
 
     if not candidate_routes:
@@ -3773,19 +4150,19 @@ async def _call_ai_platform(
         raise HTTPException(500, f"没有找到支持 '{normalized_task_type}' 任务的已启用AI平台。")
 
     effort = _effort_for_task(task_type, task_label)
-    distinct_platform_count = len({route.platform_name for route in candidate_routes})
+    distinct_platform_count = len({route.route_id for route in candidate_routes})
     attempted_platforms: set[str] = set()
     last_exc: Optional[BaseException] = None
 
     while True:
         remaining = [
             route for route in candidate_routes
-            if route.platform_name not in attempted_platforms
+            if route.route_id not in attempted_platforms
         ]
         if not remaining:
             break
         async with ai_model_router.route(remaining, task_priority=task_priority) as selected_route:
-            attempted_platforms.add(selected_route.platform_name)
+            attempted_platforms.add(selected_route.route_id)
             try:
                 return await _do_provider_call(
                     selected_route,
@@ -3799,6 +4176,7 @@ async def _call_ai_platform(
                     tool_choice=tool_choice,
                     return_tool_calls=return_tool_calls,
                     effort=effort,
+                    metadata_out=metadata_out,
                 )
             except Exception as exc:
                 last_exc = exc
@@ -3825,167 +4203,20 @@ async def _call_ai_platform_chat_stream_generator(
         task_priority: str = "interactive",
         task_label: Optional[str] = None,
         task_type: Optional[str] = None,
+        business_context: dict[str, Any] | None = None,
+        execution_snapshot: dict[str, Any] | None = None,
 ) -> AsyncGenerator[str, None]:
-    """
-    (新) 专用于聊天流式输出的 AI 调用函数。
-    它是一个异步生成器，逐块 yield 文本。
-    它会处理 system_prompt 注入。
-    """
-    thinking_content = ""
-    final_answer = ""
-    thinking_start_sent = False
-    thinking_end_sent = False
-
-    # 构建最终发送给 AI 的消息列表
-    final_messages = [
-        {"role": "system", "content": system_prompt},
-        *messages  # 添加所有历史消息
-    ]
-
-    selected_platform_config = _get_selected_platform_config(capability)
-    if not selected_platform_config:
-        error_msg = f"没有找到支持 '{capability}' 能力的已启用AI平台。"
-        print(f"[ERROR] {error_msg}")
-        yield error_msg
-        return
-
-    platform_name = selected_platform_config["name"]
-    model_name = selected_platform_config["models"][capability]
-    api_key = selected_platform_config["api_key"]
-    platform_type = selected_platform_config["type"]
-    prepared_messages = _prepare_chat_messages_for_platform(final_messages, capability=capability)
-    request_payload: dict[str, Any] = {"model": model_name, "messages": prepared_messages, "stream": True}
-    call_id, started_at, start_perf = _new_ai_usage_context()
-    stream_error: Any = None
-    provider_usage: dict[str, Any] | None = None
-
-    async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream:{capability}"):
-        print(
-            f"[AI WORKER] 开始处理流式聊天 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
-        if not api_key:
-            error_msg = f"未配置 {platform_name} 的 API_KEY"
-            print(f"[ERROR] {error_msg}")
-            _log_ai_usage(
-                call_id=call_id,
-                started_at=started_at,
-                start_perf=start_perf,
-                task_label=task_label,
-                platform_name=platform_name,
-                platform_type=platform_type,
-                model_name=model_name,
-                capability=capability,
-                api_style="chat_completions_stream_legacy",
-                request_payload=request_payload,
-                response_text="",
-                thinking_text="",
-                status="error",
-                stream=True,
-                error=error_msg,
-            )
-            yield error_msg
-            return
-
-        stream = None
-        try:
-            if platform_type == "volcengine":
-                if not AsyncArk: raise ImportError("volcenginesdkarkruntime 未安装")
-                # (注意: 火山/豆包的超时设置在客户端初始化时)
-                client = AsyncArk(api_key=api_key, timeout=180.0)
-
-                stream = await client.chat.completions.create(
-                    model=model_name,
-                    messages=prepared_messages,
-                    stream=True
-                )
-                async for chunk in stream:
-                    # 检查火山引擎的流式响应结构
-                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content is not None:
-                        final_answer += chunk.choices[0].delta.content
-                        # 如果思考过程结束，发送结束标记
-                        if thinking_content and not thinking_end_sent:
-                            yield "【思考过程结束】"
-                            thinking_end_sent = True
-                        yield chunk.choices[0].delta.content
-                    # (根据您的文档，火山推理模型可能有 reasoning_content)
-                    if hasattr(chunk.choices[0].delta, 'reasoning_content') and chunk.choices[
-                        0].delta.reasoning_content:
-                        # 我们可以选择是否将思考过程也流式传输，这里暂时只打印
-                        # print(f"[{platform_name} Reasoning]: {chunk.choices[0].delta.reasoning_content}")
-                        # 发送思考过程开始标记（如果还没发送过）
-                        thinking_content += chunk.choices[0].delta.reasoning_content
-                        if thinking_content and not thinking_start_sent:
-                            yield "【思考过程开始】"
-                            thinking_start_sent = True
-                        yield chunk.choices[0].delta.reasoning_content  # 如果需要显示思考过程，取消此行注释
-
-            elif platform_type == "openai":  # (DeepSeek 和 SiliconFlow 都使用此类型)
-                if not AsyncOpenAI: raise ImportError("openai 库未安装")
-                base_url = selected_platform_config["base_url"]
-                client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
-
-                kwargs = {
-                    "model": model_name,
-                    "messages": prepared_messages,
-                    "stream": True
-                }
-
-                # (处理 SiliconFlow 的 DeepSeek-R1 推理模型)
-                if "DeepSeek-R1" in model_name:
-                    kwargs["extra_body"] = {"thinking_budget": 1024}
-
-                request_payload = dict(kwargs)
-                stream = await client.chat.completions.create(**kwargs)
-
-                async for chunk in stream:
-                    # 检查 OpenAI 兼容的流式响应结构
-                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content is not None:
-                        final_answer += chunk.choices[0].delta.content
-                        # 如果思考过程结束，发送结束标记
-                        if thinking_content and not thinking_end_sent:
-                            yield "【思考过程结束】"
-                            thinking_end_sent = True
-                        yield chunk.choices[0].delta.content
-                    # (根据您的文档，DeepSeek 推理模型有 reasoning_content)
-                    if hasattr(chunk.choices[0].delta, 'reasoning_content') and chunk.choices[
-                        0].delta.reasoning_content:
-                        # print(f"[{platform_name} Reasoning]: {chunk.choices[0].delta.reasoning_content}")
-                        # 发送思考过程开始标记（如果还没发送过）
-                        thinking_content += chunk.choices[0].delta.reasoning_content
-                        if thinking_content and not thinking_start_sent:
-                            yield "【思考过程开始】"
-                            thinking_start_sent = True
-                        yield chunk.choices[0].delta.reasoning_content  # 如果需要显示思考过程，取消此行注释
-
-            else:
-                error_msg = f"不支持的平台类型: {platform_type}"
-                print(f"[ERROR] {error_msg}")
-                yield error_msg
-
-        except Exception as e:
-            stream_error = e
-            print(f"[ERROR] {platform_name} 流式聊天调用失败: {e}")
-            print(traceback.format_exc())
-            yield f"\n[AI助手内部错误: {platform_name} 调用失败: {e}]"
-        finally:
-            _log_ai_usage(
-                call_id=call_id,
-                started_at=started_at,
-                start_perf=start_perf,
-                task_label=task_label,
-                platform_name=platform_name,
-                platform_type=platform_type,
-                model_name=model_name,
-                capability=capability,
-                api_style="chat_completions_stream_legacy",
-                request_payload=request_payload,
-                response_text=final_answer,
-                thinking_text=thinking_content,
-                provider_usage=None,
-                status="error" if stream_error else "success",
-                stream=True,
-                error=stream_error,
-            )
-            print(f"[AI WORKER] {platform_name} 流式聊天结束。")
+    """Legacy text transport delegates to the same routed event stream."""
+    async for encoded in _call_ai_platform_chat_stream_events(
+        system_prompt, messages, capability=capability, task_priority=task_priority,
+        task_label=task_label, task_type=task_type, business_context=business_context,
+        execution_snapshot=execution_snapshot,
+    ):
+        event = json.loads(encoded)
+        if event.get("event") == "answer_delta":
+            yield str(event.get("delta") or "")
+        elif event.get("event") == "error":
+            yield str(event.get("message") or "AI request failed")
 
 
 async def _call_ai_platform_chat_stream_events(
@@ -3996,6 +4227,8 @@ async def _call_ai_platform_chat_stream_events(
         task_label: Optional[str] = None,
         task_type: Optional[str] = None,
         _excluded_platforms: frozenset[str] = frozenset(),
+        business_context: dict[str, Any] | AIBusinessContext | None = None,
+        execution_snapshot: dict[str, Any] | None = None,
 ) -> AsyncGenerator[str, None]:
     thinking_content = ""
     final_answer = ""
@@ -4004,11 +4237,12 @@ async def _call_ai_platform_chat_stream_events(
         {"role": "system", "content": system_prompt},
         *messages
     ]
+    task_type, capability = _request_task_for_messages(final_messages, task_type, capability)
 
     routes = [
         route
-        for route in _build_model_routes(capability, task_type=task_type)
-        if route.platform_name not in _excluded_platforms
+        for route in _build_model_routes(capability, task_type=task_type, business_context=business_context, execution_snapshot=execution_snapshot)
+        if route.route_id not in _excluded_platforms
     ]
     if not routes:
         normalized_task_type = _normalize_ai_task_type(task_type, capability)
@@ -4045,10 +4279,11 @@ async def _call_ai_platform_chat_stream_events(
                 yield _encode_stream_event("error", message=f"AI route selection failed: {e}")
                 yield _encode_stream_event("done", has_thinking=False)
                 return
-    except asyncio.CancelledError:
+    except (asyncio.CancelledError, GeneratorExit):
         route_task.cancel()
         with suppress(asyncio.CancelledError):
-            await route_task
+            reserved_route, reservation_id = await route_task
+            await ai_model_router.release(reserved_route, reservation_id)
         raise
     selected_platform_config = selected_route.platform_config
     capability = selected_route.capability
@@ -4063,9 +4298,12 @@ async def _call_ai_platform_chat_stream_events(
     call_id, started_at, start_perf = _new_ai_usage_context()
     stream_error: Any = None
     provider_usage: dict[str, Any] | None = None
+    finish_reason: str | None = None
     fallback_requested = False
+    budget = _active_execution_budget.get() or AIExecutionBudget()
+    attempt_id = None
 
-    async with ai_limiter.slot(priority=task_priority, label=task_label or f"stream_events:{selected_route.task_type}"):
+    async with _stream_capacity_slot(selected_route, route_reservation, priority=task_priority, label=task_label or f"stream_events:{selected_route.task_type}"):
         print(
             f"[AI WORKER] 开始处理结构化流式聊天 (Platform: {platform_name}, Model: {model_name}, Capability: {capability})")
 
@@ -4123,49 +4361,58 @@ async def _call_ai_platform_chat_stream_events(
             task_type=selected_route.task_type,
             spillover=selected_route.spillover,
             thinking_supported=thinking_supported,
+            execution_metadata=_execution_metadata(selected_route),
         )
 
+        client = None
+        stream = None
+        closing = False
         try:
             if platform_type == "volcengine":
-                if not AsyncArk:
-                    raise ImportError("volcenginesdkarkruntime 未安装")
-                client = AsyncArk(
+                if not AsyncOpenAI:
+                    raise ImportError("openai 未安装")
+                client = AsyncOpenAI(
                     api_key=api_key,
                     base_url=selected_platform_config.get("base_url") or VOLCENGINE_OPENAI_BASE_URL,
                     timeout=180.0,
+                    max_retries=0,
                 )
                 volc_kwargs: dict[str, Any] = {
                     "model": model_name,
                     "messages": prepared_messages,
                     "stream": True,
+                    "stream_options": {"include_usage": True},
                 }
                 _apply_volcengine_thinking(volc_kwargs, selected_route)
                 request_payload = dict(volc_kwargs)
+                attempt_id = await budget.begin(selected_route.execution_plan.to_dict())
                 stream = await client.chat.completions.create(**volc_kwargs)
             elif platform_type == "openai":
                 if not AsyncOpenAI:
                     raise ImportError("openai 库未安装")
                 base_url = selected_platform_config["base_url"]
-                client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0)
+                client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=180.0, max_retries=0)
                 kwargs = {
                     "model": model_name,
                     "messages": prepared_messages,
                     "stream": True,
                 }
-                if platform_name in {"qwen", "zhipu"}:
-                    kwargs["stream_options"] = {"include_usage": True}
+                kwargs["stream_options"] = {"include_usage": True}
                 if "DeepSeek-R1" in model_name:
                     kwargs["extra_body"] = {"thinking_budget": 1024}
                 _apply_openai_provider_options(
                     kwargs, selected_route, effort=_effort_for_task(task_type, task_label)
                 )
                 request_payload = dict(kwargs)
+                attempt_id = await budget.begin(selected_route.execution_plan.to_dict())
                 stream = await client.chat.completions.create(**kwargs)
             else:
                 raise HTTPException(500, f"不支持的平台类型: {platform_type}")
 
             async for chunk in stream:
                 provider_usage = _extract_provider_usage(chunk) or provider_usage
+                if getattr(chunk, "choices", None):
+                    finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
                 if not chunk.choices or not chunk.choices[0].delta:
                     continue
 
@@ -4187,15 +4434,21 @@ async def _call_ai_platform_chat_stream_events(
 
             if not final_answer and not thinking_content:
                 raise RuntimeError("AI 流式响应为空")
+            if finish_reason in {"length", "incomplete", "content_filter"}:
+                raise RuntimeError(f"AI response is incomplete ({finish_reason})")
 
+        except (asyncio.CancelledError, GeneratorExit):
+            closing = True
+            stream_error = "stream_disconnected"
+            raise
         except Exception as e:
             print(f"[ERROR] {platform_name} 结构化流式聊天调用失败: {e}")
             print(traceback.format_exc())
             stream_error = e
             remaining_routes = [
                 route
-                for route in _build_model_routes(capability, task_type=task_type)
-                if route.platform_name not in {*_excluded_platforms, platform_name}
+                for route in _build_model_routes(capability, task_type=task_type, business_context=business_context, execution_snapshot=execution_snapshot)
+                if route.route_id not in {*_excluded_platforms, selected_route.route_id}
             ]
             if not final_answer and not thinking_content and remaining_routes and _should_fallback_to_next_platform(e):
                 fallback_requested = True
@@ -4209,21 +4462,13 @@ async def _call_ai_platform_chat_stream_events(
                     message=f"AI助手内部错误: {platform_name} 调用失败: {e}",
                 )
         finally:
-            if think_tag_parser and not fallback_requested:
-                for segment_type, segment_text in think_tag_parser.flush():
-                    for event in forward_segment(segment_type, segment_text):
-                        yield event
-
-            if thinking_content and not thinking_end_sent and not fallback_requested:
-                yield _encode_stream_event("thinking_end")
-
-            if not fallback_requested:
-                yield _encode_stream_event(
-                    "done",
-                    has_thinking=bool(thinking_content.strip()),
-                    answer_chars=len(final_answer),
-                    thinking_chars=len(thinking_content),
-                )
+            if attempt_id:
+                try:
+                    await budget.finish(attempt_id, usage=provider_usage, finish_reason=finish_reason,
+                        error=stream_error, cost=_estimate_provider_cost_cny(platform_name, provider_usage,
+                            model_name=model_name, request_started_at=started_at))
+                except AIExecutionStateError as exc:
+                    stream_error = exc
             _log_ai_usage(
                 call_id=call_id,
                 started_at=started_at,
@@ -4245,9 +4490,37 @@ async def _call_ai_platform_chat_stream_events(
                     "task_type": selected_route.task_type,
                     "spillover": selected_route.spillover,
                     "route_reason": selected_route.reason,
+                    "execution_plan": selected_route.execution_plan.to_dict() if selected_route.execution_plan else None,
+                    "finish_reason": finish_reason,
+                    "execution_state": budget.audit_snapshot(),
                 },
             )
+            if stream is not None:
+                with suppress(Exception):
+                    await stream.close()
+            if client is not None:
+                with suppress(Exception):
+                    await client.close()
             await ai_model_router.release(selected_route, route_reservation)
+            if not closing:
+                if think_tag_parser and not fallback_requested:
+                    for segment_type, segment_text in think_tag_parser.flush():
+                        for event in forward_segment(segment_type, segment_text):
+                            yield event
+
+                if thinking_content and not thinking_end_sent and not fallback_requested:
+                    yield _encode_stream_event("thinking_end")
+
+                if not fallback_requested:
+                    yield _encode_stream_event(
+                        "done",
+                        has_thinking=bool(thinking_content.strip()),
+                        answer_chars=len(final_answer),
+                        thinking_chars=len(thinking_content),
+                        complete=not bool(stream_error),
+                        execution_metadata=_execution_metadata(selected_route, usage=provider_usage, finish_reason=finish_reason),
+                        execution_state=budget.audit_snapshot(),
+                    )
 
     if fallback_requested:
         async for event in _call_ai_platform_chat_stream_events(
@@ -4257,7 +4530,9 @@ async def _call_ai_platform_chat_stream_events(
             task_priority=task_priority,
             task_label=task_label,
             task_type=task_type,
-            _excluded_platforms=frozenset({*_excluded_platforms, platform_name}),
+            _excluded_platforms=frozenset({*_excluded_platforms, selected_route.route_id}),
+            business_context=business_context,
+            execution_snapshot=execution_snapshot,
         ):
             yield event
 
@@ -4269,6 +4544,9 @@ async def _call_ai_platform_chat(
         task_priority: str = "interactive",
         task_label: Optional[str] = None,
         task_type: Optional[str] = None,
+        business_context: dict[str, Any] | AIBusinessContext | None = None,
+        execution_snapshot: dict[str, Any] | None = None,
+        metadata_out: dict[str, Any] | None = None,
 ) -> str:
     final_messages = [
         {"role": "system", "content": system_prompt},
@@ -4282,6 +4560,9 @@ async def _call_ai_platform_chat(
         task_priority=task_priority,
         task_label=task_label,
         task_type=task_type,
+        business_context=business_context,
+        execution_snapshot=execution_snapshot,
+        metadata_out=metadata_out,
     )
     if isinstance(result, dict):
         return str(result.get("text") or "")
@@ -4392,6 +4673,11 @@ async def _call_volcengine_with_web_search(
 
 
 # --- API Endpoints (保持不变) ---
+@app.exception_handler(AIOutputSizeError)
+async def structured_output_size_error_handler(request: Request, exc: AIOutputSizeError):
+    return JSONResponse(status_code=422, content={"detail": str(exc), "code": "structured_output_too_large"})
+
+
 @app.post("/api/ai/generate-assignment")
 async def generate_assignment_task(req: GenerationRequest):
     messages = [{"role": "system", "content": GENERATION_SYSTEM_PROMPT}, {"role": "user", "content": req.prompt}]
@@ -4402,6 +4688,8 @@ async def generate_assignment_task(req: GenerationRequest):
         task_priority="default",
         task_label="generate_assignment",
         task_type=AI_TASK_DEEP_TEXT if req.model_type == "thinking" else AI_TASK_FAST_TEXT,
+        business_context={**req.business_context, "operation": "generation"},
+        execution_snapshot=req.execution_plan,
     )
 
 
@@ -4418,7 +4706,7 @@ async def generate_exam_task(req: ExamGenerationRequest):
 
     image_inputs = _normalize_request_image_inputs(req)
     user_message_content = _build_user_message_content(user_prompt, image_inputs, req.file_texts)
-    capability: Literal["standard", "thinking", "vision"] = "vision" if image_inputs else req.model_type
+    capability: Literal["standard", "thinking", "vision"] = "vision" if image_inputs else "thinking"
     task_type = AI_TASK_DEEP_MULTIMODAL if capability == "vision" else AI_TASK_DEEP_TEXT
 
     messages = [
@@ -4426,7 +4714,15 @@ async def generate_exam_task(req: ExamGenerationRequest):
         {"role": "user", "content": user_message_content}
     ]
 
-    # 使用thinking模型（高级模型）生成试卷
+    execution_metadata: dict[str, Any] = {}
+    business_context = {**req.business_context, "operation": "generation"}
+    context = AIBusinessContext.from_mapping(business_context)
+    plan = size_structured_execution_plan(
+        resolve_execution_plan(task_type, capability, context, execution_snapshot=req.execution_plan),
+        schema="exam_generation_v1", question_count=context.expected_question_count,
+        execution_snapshot=req.execution_plan)
+    req.execution_plan = plan.to_dict()
+    # Resolve intended business use independently of the generated paper format.
     result = await _call_ai_platform(
         messages,
         capability=capability,
@@ -4436,13 +4732,17 @@ async def generate_exam_task(req: ExamGenerationRequest):
         task_label="generate_exam",
         preferred_platform=req.force_platform,
         task_type=task_type,
+        business_context=business_context,
+        execution_snapshot=req.execution_plan,
+        metadata_out=execution_metadata,
     )
 
     result = _normalize_exam_generation_result(result)
 
     return {
         "status": "success",
-        "exam_data": result
+        "exam_data": result,
+        "execution_metadata": execution_metadata,
     }
 
 
@@ -4470,6 +4770,8 @@ async def ai_chat_task_stream(req: AIChatRequest):
         task_priority=req.task_priority,
         task_label=req.task_label or "chat_stream",
         task_type=req.task_type,
+        business_context=req.business_context,
+        execution_snapshot=req.execution_plan,
     )
 
     # 4. 返回 StreamingResponse
@@ -4499,6 +4801,7 @@ async def ai_chat_task(req: AIChatRequest):
         "content": new_user_message_content
     })
 
+    execution_metadata: dict[str, Any] = {}
     try:
         if req.tools:
             tool_messages = [
@@ -4512,12 +4815,15 @@ async def ai_chat_task(req: AIChatRequest):
                 task_priority=req.task_priority,
                 task_label=req.task_label or "chat_tool_call",
                 task_type=req.task_type,
+                business_context=req.business_context,
+                execution_snapshot=req.execution_plan,
+                metadata_out=execution_metadata,
                 tools=req.tools,
                 tool_choice=req.tool_choice,
                 return_tool_calls=True,
             )
             return {
-                "status": "success",
+                "status": "success", "execution_metadata": execution_metadata,
                 "response_text": str((ai_tool_result or {}).get("text") or ""),
                 "tool_calls": (ai_tool_result or {}).get("tool_calls") or [],
             }
@@ -4534,8 +4840,11 @@ async def ai_chat_task(req: AIChatRequest):
                 task_priority=req.task_priority,
                 task_label=req.task_label or "chat_json",
                 task_type=req.task_type,
+                business_context=req.business_context,
+                execution_snapshot=req.execution_plan,
+                metadata_out=execution_metadata,
             )
-            return {"status": "success", "response_json": ai_response_json}
+            return {"status": "success", "execution_metadata": execution_metadata, "response_json": ai_response_json}
 
         # 5. 调用 AI
         # (注意：_call_ai_platform_chat 会处理 system_prompt)
@@ -4546,10 +4855,13 @@ async def ai_chat_task(req: AIChatRequest):
             task_priority=req.task_priority,
             task_label=req.task_label or "chat_text",
             task_type=req.task_type,
+            business_context=req.business_context,
+            execution_snapshot=req.execution_plan,
+            metadata_out=execution_metadata,
         )
 
         # 6. 返回纯文本响应
-        return {"status": "success", "response_text": ai_response_text}
+        return {"status": "success", "execution_metadata": execution_metadata, "response_text": ai_response_text}
 
     except Exception as e:
         # 捕获 _call_ai_platform_chat 中可能抛出的 HTTPException
@@ -4665,13 +4977,16 @@ async def _post_grading_callback_with_retry(callback_data: dict[str, Any], submi
 
 
 def _pre_extract_documents(grading_files: list[dict[str, Any]]) -> None:
-    """Build a provider-neutral text/image evidence bundle for documents.
+    """Build complete original evidence before choosing a grading profile."""
 
-    Native PDF upload used to lock grading to Volcengine Responses. The new
-    route extracts text and bounded page images once, so Qwen, Doubao and other
-    OpenAI-compatible vision providers see the same evidence and can safely
-    cross-provider fallback without rebuilding the submission.
-    """
+    def validate_extraction(source, result):
+        issues = list(getattr(result, "issues", None) or [])
+        if result.truncated:
+            issues.append("文档正文超过提取上限")
+        if not result.text.strip() and not result.has_images:
+            issues.append("未能读取文档内容")
+        if issues:
+            raise AIGradingEvidenceError(f"附件 {source['display_name']} 无法完整用于批改：" + "；".join(dict.fromkeys(issues)))
 
     def append_virtual_image(
         source: dict[str, Any],
@@ -4698,10 +5013,14 @@ def _pre_extract_documents(grading_files: list[dict[str, Any]]) -> None:
     for file_info in list(grading_files):  # list() 以允许迭代中追加
         category = file_info.get("category")
 
-        if category == "document_extractable":
+        if category == "text":
+            if file_info["path"].stat().st_size > AI_GRADING_MAX_RAW_TEXT_FILE_BYTES:
+                raise AIGradingEvidenceError(f"附件 {file_info['display_name']} 正文超过批改提取上限，不能仅按截取内容给分")
+        elif category == "document_extractable":
             file_path = file_info["path"]
             ext = file_info["ext"]
             result = _extract_doc_text(file_path, ext, AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)
+            validate_extraction(file_info, result)
             file_info["_extract_result"] = result
 
             if result.has_images:
@@ -4721,16 +5040,23 @@ def _pre_extract_documents(grading_files: list[dict[str, Any]]) -> None:
 
         elif category == "document_native":
             file_path = file_info["path"]
+            from ai_assistant_doc_extract import fitz
+            if fitz is None:
+                raise AIGradingEvidenceError("PDF批改所需的页面渲染组件不可用")
+            try:
+                with fitz.open(str(file_path)) as doc:
+                    page_count = len(doc)
+            except Exception as exc:
+                raise AIGradingEvidenceError(f"PDF附件无法读取：{file_info['display_name']}") from exc
+            if not 1 <= page_count <= AI_GRADING_MAX_RENDERED_PDF_PAGES:
+                raise AIGradingEvidenceError(f"PDF附件 {file_info['display_name']} 共{page_count}页，批改上限为{AI_GRADING_MAX_RENDERED_PDF_PAGES}页")
             result = _extract_doc_text(file_path, ".pdf", AI_GRADING_MAX_RAW_TEXT_FILE_BYTES)
             file_info["_extract_result"] = result
-            print(f"[AI WORKER] 将 PDF 渲染为跨厂商页面证据: {file_info['display_name']}")
-            rendered_pages = _render_pdf_pages(file_path)
-            if len(rendered_pages) > AI_GRADING_MAX_RENDERED_PDF_PAGES:
-                print(
-                    f"[AI WORKER] PDF 页面证据按上限截断: total={len(rendered_pages)}, "
-                    f"limit={AI_GRADING_MAX_RENDERED_PDF_PAGES}"
-                )
-            for page_img in rendered_pages[:AI_GRADING_MAX_RENDERED_PDF_PAGES]:
+            rendered_pages = _render_pdf_pages(file_path, max_pages=page_count)
+            expected_pages = {f"page_{index + 1}.png" for index in range(page_count)}
+            if len(rendered_pages) != page_count or {page.get("filename") for page in rendered_pages} != expected_pages:
+                raise AIGradingEvidenceError(f"PDF附件 {file_info['display_name']} 有页面未能完整渲染，停止自动批改")
+            for page_img in rendered_pages:
                 append_virtual_image(
                     file_info,
                     filename=page_img["filename"],
@@ -4800,6 +5126,11 @@ def _build_grading_chat_messages(
                 ),
             }
         )
+    teacher_targets = _grading_teacher_question_targets(job)
+    if teacher_targets:
+        messages.append({"role": "user", "content": "【教师试卷完整题目清单】\n"
+            + json.dumps(teacher_targets, ensure_ascii=False)
+            + "\nquestions 必须逐一覆盖以上全部题目，每个 question_id 恰好一次并保留对应题号。只提交附件或部分文字答案也不能漏题。"})
     if validation_error:
         messages.append({"role": "user", "content": _build_grading_repair_instruction(validation_error)})
     return messages
@@ -4810,6 +5141,7 @@ def _grading_adjudication_reasons(
     *,
     image_count: int,
     format_repair_required: bool,
+    answers_empty: bool = False,
 ) -> list[str]:
     reasons: list[str] = []
     confidence = result.get("confidence")
@@ -4825,13 +5157,23 @@ def _grading_adjudication_reasons(
     if isinstance(conflicts, list) and any(str(item or "").strip() for item in conflicts):
         reasons.append("evidence_conflict")
     audit = result.get("_quality_audit") if isinstance(result.get("_quality_audit"), dict) else {}
-    score_delta = float(audit.get("score_sum_delta") or 0)
+    if audit.get("teacher_question_coverage_incomplete"):
+        reasons.append("teacher_question_coverage_incomplete")
+    try:
+        score_delta = abs(float(audit.get("score_sum_delta") or 0))
+    except (ValueError, TypeError):
+        score_delta = 0
     if score_delta > AI_GRADING_ADJUDICATION_SCORE_DELTA:
         reasons.append(f"score_consistency_delta={score_delta:g}")
     if image_count >= 8 and confidence_value is None:
         reasons.append("many_images_without_confidence")
     if format_repair_required:
         reasons.append("format_repair_required")
+    if answers_empty and image_count and _re.search(
+        r"(?:未提交|没有提交|无作答|未作答|没有答案|未提供答案|答案为空|未上传|没有附件)",
+        str(result.get("summary") or "") + " " + str(result.get("feedback_md") or ""),
+    ):
+        reasons.append("blank_answer_claim_with_valid_attachment")
     return reasons
 
 
@@ -4845,11 +5187,169 @@ def _grading_review_metadata(result: dict[str, Any]) -> tuple[bool, list[str], f
         reason_codes.append("model_requested_review")
     if confidence is not None and confidence < AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD:
         reason_codes.append("low_confidence")
+    if result.get("evidence_conflicts"):
+        reason_codes.append("evidence_conflict")
+    audit = result.get("_quality_audit") or {}
+    if audit.get("review_deferred"):
+        reason_codes.append(str(audit["review_deferred"]))
+    if (audit.get("adjudication") or {}).get("succeeded") is False:
+        reason_codes.append("adjudication_failed")
     return bool(reason_codes), reason_codes, confidence
 
 
 # --- 后台任务 (更新: 支持文件 + JSON 答案 + 文档内嵌图片) ---
+async def _review_grading_result_if_needed(
+    result, *, job, grading_files, execution, execution_metadata, business_context,
+    deterministic_evidence, deterministic_evidence_prompt, format_repair_required,
+    validation_error: str = "", candidate_valid: bool = True,
+):
+    budget = _active_execution_budget.get()
+    saved_review = (budget.state.get("review_result") or {}) if budget else {}
+    reasons = _grading_adjudication_reasons(result,
+        image_count=sum(item.get("category") == "image" for item in grading_files),
+        format_repair_required=format_repair_required,
+        answers_empty=not bool(_extract_answers_text(job.answers_json).strip()))
+    profile = execution_metadata.get("profile_id") or (execution.get("execution_plan") or {}).get("profile_id")
+
+    def defer(reason):
+        if not candidate_valid:
+            raise AIGradingReviewRequired("评分格式与证据风险未能完成合并复核，请教师人工处理或显式重批", "combined_repair_" + reason)
+        result["needs_review"] = True
+        audit = dict(result.get("_quality_audit") or {})
+        audit["review_deferred"] = reason
+        audit["risk_reasons"] = reasons
+        result["_quality_audit"] = audit
+        return result, {}
+
+    if saved_review:
+        try:
+            restored = apply_deterministic_grading_result(
+                _validate_grading_result_for_job(copy.deepcopy(saved_review["result"]), job), deterministic_evidence)
+        except ValueError:
+            return defer("saved_review_invalid")
+        return restored, dict(saved_review.get("execution_metadata") or {})
+    if not reasons:
+        return result, {}
+    if profile != "vision_pro_low":
+        return defer("manual_review_required")
+    if not AI_GRADING_ADJUDICATION_ENABLED:
+        return defer("automatic_review_disabled")
+    if budget is None or budget.exhausted:
+        return defer("generation_budget_exhausted")
+    adjudication_context = {**business_context, "operation": "adjudication"}
+    review_snapshot = budget.state.get("review_plan")
+    review_plan = size_structured_execution_plan(
+        resolve_execution_plan(AI_TASK_MULTIMODAL_ADJUDICATION, "vision", adjudication_context, execution_snapshot=review_snapshot),
+        schema="grading_v1", question_count=business_context.get("expected_question_count"), execution_snapshot=review_snapshot)
+    if not _build_model_routes("vision", task_type=AI_TASK_MULTIMODAL_ADJUDICATION, business_context=adjudication_context, execution_snapshot=review_plan.to_dict()):
+        return defer("review_model_unavailable")
+    try:
+        reservation = await asyncio.to_thread(reserve_grading_review,
+            logical_call_id=budget.state["logical_call_id"],
+            class_offering_id=business_context.get("class_offering_id"),
+            policy_version=AI_EXECUTION_POLICY_VERSION, reasons=reasons,
+            global_limit=AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT,
+            offering_limit=AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT)
+    except Exception:
+        return defer("review_quota_unavailable")
+    if not reservation["allowed"]:
+        return defer(reservation["reason"])
+
+    reservation_id = reservation["reservation_id"]
+    dispatch_token = uuid.uuid4().hex
+    previous_dispatch = budget.before_dispatch
+    metadata = {}
+    review_status = "unknown"
+
+    async def before_dispatch(plan, attempt_id):
+        if previous_dispatch:
+            await previous_dispatch(plan, attempt_id)
+        if plan.get("operation") != "adjudication":
+            raise AIExecutionStateError("Review reservation cannot dispatch another operation")
+        if not await asyncio.to_thread(mark_grading_review_sent, reservation_id, dispatch_token):
+            raise AIExecutionBudgetExceeded("This review was already dispatched or cancelled")
+
+    try:
+        budget.state["review_reservation"] = {"reservation_id": reservation_id,
+            "budget_date": reservation["budget_date"], "class_offering_id": reservation.get("class_offering_id")}
+        budget.state["review_plan"] = review_plan.to_dict()
+        await budget._save()
+        budget.before_dispatch = before_dispatch
+        messages = _build_grading_chat_messages(job=job, grading_files=grading_files,
+            execution_mode="vision_messages", platform_type="volcengine",
+            deterministic_evidence_prompt=deterministic_evidence_prompt,
+            system_prompt=GRADING_SYSTEM_PROMPT + "\n" + GRADING_ADJUDICATION_PROMPT,
+            candidate_result=result, validation_error=validation_error)
+        # Include the locally derived dispute, plus exactly the original evidence.
+        messages.append({"role": "user", "content": "【需核对的风险信号】\n" + "\n".join(reasons)})
+        raw = await _call_ai_platform(messages, capability="vision", require_json_output=True,
+            task_priority="background", task_label=f"grading:{job.submission_id}:adjudication",
+            preferred_platform="volcengine", task_type=AI_TASK_MULTIMODAL_ADJUDICATION,
+            business_context=adjudication_context, execution_snapshot=review_plan.to_dict(), metadata_out=metadata)
+        if not isinstance(raw, dict):
+            raise ValueError("仲裁模型返回的结果不是 JSON 对象")
+        adjudicated = apply_deterministic_grading_result(
+            _validate_grading_result_for_job(raw, job), deterministic_evidence)
+        # Remaining high-tier evidence risks become manual review, never another call.
+        remaining = _grading_adjudication_reasons(adjudicated,
+            image_count=sum(item.get("category") == "image" for item in grading_files),
+            format_repair_required=False, answers_empty=not bool(_extract_answers_text(job.answers_json).strip()))
+        if remaining:
+            adjudicated["needs_review"] = True
+        audit = dict(adjudicated.get("_quality_audit") or {})
+        audit["adjudication"] = {"triggered": True, "succeeded": True, "reasons": reasons,
+            "reservation_id": reservation_id, "primary_score": result.get("score") if candidate_valid else None,
+            "combined_format_repair": not candidate_valid,
+            "adjudicated_score": adjudicated.get("score"), "remaining_risks": remaining}
+        adjudicated["_quality_audit"] = audit
+        budget.state["review_result"] = {"result": copy.deepcopy(adjudicated),
+            "execution_metadata": {k: v for k, v in metadata.items() if k != "execution_state"}}
+        await budget._save()
+        result = adjudicated
+        review_status = "completed"
+    except (asyncio.CancelledError, GeneratorExit):
+        raise
+    except Exception as exc:
+        if not candidate_valid:
+            review_status = "failed"
+            raise AIGradingReviewRequired("合并格式修复与证据复核未返回可靠成绩，请教师检查后重批", "combined_repair_failed") from exc
+        result["needs_review"] = True
+        audit = dict(result.get("_quality_audit") or {})
+        audit["adjudication"] = {"triggered": True, "succeeded": False, "reasons": reasons,
+            "reservation_id": reservation_id, "error_code": exc.__class__.__name__}
+        result["_quality_audit"] = audit
+        review_status = "failed"
+    finally:
+        budget.before_dispatch = previous_dispatch
+        # Only a reservation still proven unsent can return its daily slots.
+        # Failure to settle is conservative: 'sent' continues to consume quota.
+        with suppress(Exception):
+            await asyncio.to_thread(finish_grading_review, reservation_id, dispatch_token, status=review_status)
+        with suppress(Exception):
+            await asyncio.to_thread(release_unsent_grading_review, reservation_id)
+    return result, metadata
+
+
 async def _build_grading_callback_data(
+    job: GradingJob,
+    *,
+    raise_on_failure: bool = False,
+) -> dict[str, Any]:
+    stable_revision = job.grading_revision_hash or job.submission_fingerprint or hashlib.sha256(
+        json.dumps(job.model_dump(exclude={"execution_plan", "business_context"}), sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    budget = _active_execution_budget.get() or AIExecutionBudget(
+        logical_call_id=str(job.business_context.get("logical_call_id") or f"grading:{job.submission_id}:{stable_revision}"))
+    token = _active_execution_budget.set(budget)
+    try:
+        result = await _build_grading_callback_data_impl(job, raise_on_failure=raise_on_failure)
+        result["execution_state"] = budget.audit_snapshot()
+        return result
+    finally:
+        _active_execution_budget.reset(token)
+
+
+async def _build_grading_callback_data_impl(
     job: GradingJob,
     *,
     raise_on_failure: bool = False,
@@ -4891,10 +5391,16 @@ async def _build_grading_callback_data(
                 print(f"[AI WORKER] 无法直接识别的附件改为仅属性输入: {file_info['display_name']}")
 
         # 预提取文档内容，发现嵌入图片后作为独立图片条目加入评分文件
+        _validate_grading_file_limits(grading_files)
         _pre_extract_documents(grading_files)
 
         _validate_grading_file_limits(grading_files)
-        execution = _select_grading_execution(grading_files)
+        business_context = {**job.business_context, "operation": "grading",
+            "expected_question_count": _grading_expected_question_count(job)}
+        execution = _select_grading_execution(grading_files, business_context=business_context, execution_snapshot=job.execution_plan)
+        job.execution_plan = execution["execution_plan"]
+        execution_metadata: dict[str, Any] = {}
+        adjudication_metadata: dict[str, Any] = {}
         selected_capability: Literal["standard", "thinking", "vision"] = execution["capability"]
         selected_platform = execution["platform_config"]
         selected_task_type = execution.get("task_type") or (
@@ -4918,98 +5424,108 @@ async def _build_grading_callback_data(
         result: dict[str, Any] | None = None
         validation_error = ""
         format_repair_required = False
-        for attempt in range(1, GRADING_RESULT_MAX_ATTEMPTS + 1):
+        budget = _active_execution_budget.get()
+        saved_primary = (budget.state.get("primary_result") or {}) if budget else {}
+        saved_repair = (budget.state.get("repair_candidate") or {}) if budget else {}
+        if saved_primary:
             try:
-                messages = _build_grading_chat_messages(
-                    job=job,
-                    grading_files=grading_files,
-                    execution_mode=execution["mode"],
-                    platform_type=selected_platform["type"],
-                    deterministic_evidence_prompt=deterministic_evidence_prompt,
-                    validation_error=validation_error,
-                )
-                raw_result = await _call_ai_platform(
-                    messages,
-                    capability=selected_capability,
-                    require_json_output=True,
-                    task_priority="default",
-                    task_label=f"grading:{job.submission_id}:attempt:{attempt}",
-                    preferred_platform=execution["platform_name"],
-                    task_type=selected_task_type,
-                )
-
-                if not isinstance(raw_result, dict):
-                    raise ValueError(f"AI 返回的批改结果不是 JSON 对象：{str(raw_result)[:200]}")
-                result = validate_ai_grading_result(raw_result, answers_json=job.answers_json)
-                result = apply_deterministic_grading_result(result, deterministic_evidence)
-                break
-            except Exception as exc:
-                if not _is_grading_result_format_error(exc) or attempt >= GRADING_RESULT_MAX_ATTEMPTS:
+                restored_result = _validate_grading_result_for_job(copy.deepcopy(saved_primary["result"]), job)
+            except ValueError:
+                saved_final = (budget.state.get("review_result") or {}) if budget else {}
+                if not saved_final:
                     raise
-                validation_error = str(getattr(exc, "detail", None) or exc)
-                format_repair_required = True
-                print(
-                    f"[AI WORKER] 批改结果结构校验失败，将重试 {attempt + 1}/{GRADING_RESULT_MAX_ATTEMPTS}: "
-                    f"{validation_error}"
-                )
+                # Old workers may have accepted a partial primary. A saved high
+                # result is usable only if it passes the new complete contract.
+                restored_result = _validate_grading_result_for_job(copy.deepcopy(saved_final["result"]), job)
+            result = apply_deterministic_grading_result(restored_result, deterministic_evidence)
+            execution_metadata.update(saved_primary.get("execution_metadata") or {})
+            format_repair_required = bool(saved_primary.get("format_repair_required"))
+        elif saved_repair:
+            execution_metadata.update(saved_repair.get("execution_metadata") or {})
+            format_repair_required = True
+            result, adjudication_metadata = await _review_grading_result_if_needed(
+                copy.deepcopy(saved_repair["result"]), job=job, grading_files=grading_files,
+                execution=execution, execution_metadata=execution_metadata, business_context=business_context,
+                deterministic_evidence=deterministic_evidence, deterministic_evidence_prompt=deterministic_evidence_prompt,
+                format_repair_required=True, validation_error=saved_repair["validation_error"], candidate_valid=False)
+        else:
+            for attempt in range(1, GRADING_RESULT_MAX_ATTEMPTS + 1):
+                raw_result = None
+                try:
+                    messages = _build_grading_chat_messages(
+                        job=job,
+                        grading_files=grading_files,
+                        execution_mode=execution["mode"],
+                        platform_type=selected_platform["type"],
+                        deterministic_evidence_prompt=deterministic_evidence_prompt,
+                        validation_error=validation_error,
+                    )
+                    raw_result = await _call_ai_platform(
+                        messages,
+                        capability=selected_capability,
+                        require_json_output=True,
+                        task_priority="default",
+                        task_label=f"grading:{job.submission_id}:attempt:{attempt}",
+                        preferred_platform=execution["platform_name"],
+                        task_type=selected_task_type,
+                        business_context=business_context,
+                        execution_snapshot=job.execution_plan,
+                        metadata_out=execution_metadata,
+                    )
 
-        if result is None:
-            raise ValueError("AI 批改未返回可用结果")
+                    if not isinstance(raw_result, dict):
+                        raise ValueError(f"AI 返回的批改结果不是 JSON 对象：{str(raw_result)[:200]}")
+                    result = _validate_grading_result_for_job(raw_result, job)
+                    result = apply_deterministic_grading_result(result, deterministic_evidence)
+                    break
+                except Exception as exc:
+                    if not _is_grading_result_format_error(exc) or attempt >= GRADING_RESULT_MAX_ATTEMPTS:
+                        raise
+                    validation_error = str(getattr(exc, "detail", None) or exc)
+                    format_repair_required = True
+                    if isinstance(exc, AIGradingCoverageError) and isinstance(raw_result, dict):
+                        local_audit = dict(raw_result.get("_quality_audit")) if isinstance(raw_result.get("_quality_audit"), dict) else {}
+                        local_audit["teacher_question_coverage_incomplete"] = True
+                        raw_result["_quality_audit"] = local_audit
+                    # Only structured risk fields that we can inspect justify a
+                    # combined high-tier repair. Unparseable text alone does not.
+                    known_risks = _grading_adjudication_reasons(raw_result,
+                        image_count=sum(item.get("category") == "image" for item in grading_files),
+                        format_repair_required=False,
+                        answers_empty=not bool(_extract_answers_text(job.answers_json).strip())) if isinstance(raw_result, dict) else []
+                    if known_risks and (execution.get("execution_plan") or {}).get("profile_id") == "vision_pro_low":
+                        if budget:
+                            budget.state["repair_candidate"] = {"result": copy.deepcopy(raw_result),
+                                "validation_error": validation_error,
+                                "execution_metadata": {k: v for k, v in execution_metadata.items() if k != "execution_state"}}
+                            await budget._save()
+                        result, adjudication_metadata = await _review_grading_result_if_needed(
+                            raw_result, job=job, grading_files=grading_files, execution=execution,
+                            execution_metadata=execution_metadata, business_context=business_context,
+                            deterministic_evidence=deterministic_evidence, deterministic_evidence_prompt=deterministic_evidence_prompt,
+                            format_repair_required=True, validation_error=validation_error, candidate_valid=False)
+                        break
+                    print(
+                        f"[AI WORKER] 批改结果结构校验失败，将重试 {attempt + 1}/{GRADING_RESULT_MAX_ATTEMPTS}: "
+                        f"{validation_error}"
+                    )
 
-        image_count = sum(1 for item in grading_files if item.get("category") == "image")
-        adjudication_reasons = _grading_adjudication_reasons(
-            result,
-            image_count=image_count,
+            if result is None:
+                raise ValueError("AI 批改未返回可用结果")
+
+            if budget and not budget.state.get("review_result"):
+                budget.state["primary_result"] = {"result": copy.deepcopy(result),
+                    "execution_metadata": {k: v for k, v in execution_metadata.items() if k != "execution_state"},
+                    "format_repair_required": format_repair_required}
+                await budget._save()
+
+        result, adjudication_metadata = await _review_grading_result_if_needed(
+            result, job=job, grading_files=grading_files, execution=execution,
+            execution_metadata=execution_metadata, business_context=business_context,
+            deterministic_evidence=deterministic_evidence,
+            deterministic_evidence_prompt=deterministic_evidence_prompt,
             format_repair_required=format_repair_required,
         )
-        if (
-            AI_GRADING_ADJUDICATION_ENABLED
-            and selected_task_type == AI_TASK_MULTIMODAL_GRADING
-            and execution["platform_name"] != "volcengine"
-            and adjudication_reasons
-            and _build_model_routes("vision", task_type=AI_TASK_MULTIMODAL_ADJUDICATION)
-        ):
-            print(
-                "[AI WORKER] 评分触发高质量仲裁 "
-                f"submission={job.submission_id}, reasons={adjudication_reasons}"
-            )
-            try:
-                adjudication_messages = _build_grading_chat_messages(
-                    job=job,
-                    grading_files=grading_files,
-                    execution_mode="vision_messages",
-                    platform_type="volcengine",
-                    deterministic_evidence_prompt=deterministic_evidence_prompt,
-                    system_prompt=GRADING_SYSTEM_PROMPT + "\n" + GRADING_ADJUDICATION_PROMPT,
-                    candidate_result=result,
-                )
-                adjudicated_raw = await _call_ai_platform(
-                    adjudication_messages,
-                    capability="vision",
-                    require_json_output=True,
-                    task_priority="background",
-                    task_label=f"grading:{job.submission_id}:adjudication",
-                    preferred_platform="volcengine",
-                    task_type=AI_TASK_MULTIMODAL_ADJUDICATION,
-                )
-                if not isinstance(adjudicated_raw, dict):
-                    raise ValueError("仲裁模型返回的结果不是 JSON 对象")
-                adjudicated = validate_ai_grading_result(adjudicated_raw, answers_json=job.answers_json)
-                adjudicated = apply_deterministic_grading_result(adjudicated, deterministic_evidence)
-                audit = dict(adjudicated.get("_quality_audit") or {})
-                audit["adjudication"] = {
-                    "triggered": True,
-                    "reasons": adjudication_reasons,
-                    "primary_score": result.get("score"),
-                    "adjudicated_score": adjudicated.get("score"),
-                }
-                adjudicated["_quality_audit"] = audit
-                result = adjudicated
-            except Exception as adjudication_exc:
-                print(
-                    "[AI WORKER] 仲裁失败，保留已通过确定性校验的主评分: "
-                    f"{_provider_error_summary(adjudication_exc)}"
-                )
         result = normalize_grading_result(result, answers_json=job.answers_json)
         if result.get("score") is None:
             raise ValueError(f"AI 返回的批改分数无效：{str(result)[:200]}")
@@ -5024,19 +5540,26 @@ async def _build_grading_callback_data(
             "ai_confidence": ai_confidence,
             "quality_audit": result.get("_quality_audit") or {},
             "requested_provider": execution.get("platform_name") or "",
-            "requested_model": selected_platform.get("task_models", {}).get(selected_task_type)
+            "requested_model": (execution.get("execution_plan") or {}).get("model") or selected_platform.get("task_models", {}).get(selected_task_type)
             or selected_platform.get("models", {}).get(selected_capability)
             or "",
             "grading_revision_hash": job.grading_revision_hash or "",
             "grading_contract_version": job.grading_contract_version,
+            "execution_metadata": execution_metadata,
+            "adjudication_execution_metadata": adjudication_metadata or None,
+            "execution_plan": job.execution_plan,
+            "ai_policy_version": AI_EXECUTION_POLICY_VERSION,
+            "business_context": business_context,
         }
     except Exception as e:
         print(f"[ERROR] 批改任务 {job.submission_id} 失败: {e}")
         if raise_on_failure:
             raise
         callback_data = {
-            "submission_id": job.submission_id, "status": "grading_failed",
-            "score": None, "feedback_md": f"AI 批改失败: {e}"
+            "submission_id": job.submission_id, "status": "grading_review_required" if _grading_manual_reason(e) else "grading_failed",
+            "score": None, "feedback_md": f"AI 批改失败: {e}",
+            "review_required": bool(_grading_manual_reason(e)),
+            "review_reason_codes": [_grading_manual_reason(e)] if _grading_manual_reason(e) else [],
         }
 
     if callback_data:

@@ -12,6 +12,7 @@ from .postgres_schema import (
 )
 from .schema_agent_ext import ensure_agent_task_extension_schema
 from .schema_ai_jobs import ensure_ai_job_schema
+from .schema_grade_publications import ensure_grade_publication_schema
 from .schema_assignments import ensure_assignment_schema
 from .schema_classroom_activity import ensure_classroom_activity_schema
 from .schema_cultivation_progress import ensure_cultivation_progress_schema
@@ -50,6 +51,7 @@ def init_database():
         try:
             ensure_cultivation_progress_schema(conn, engine="postgres")
             runtime_table_report = ensure_postgres_runtime_tables(conn)
+            ensure_grade_publication_schema(conn, engine="postgres")
             runtime_column_report = ensure_postgres_runtime_columns(conn)
             runtime_constraint_report = ensure_postgres_runtime_constraints(conn)
             ensure_signature_workflow_schema(conn)
@@ -302,6 +304,7 @@ def init_database():
             ensure_foundation_schema(conn)
             ensure_assignment_schema(conn)
             ensure_ai_job_schema(conn, engine="sqlite")
+            ensure_grade_publication_schema(conn, engine="sqlite")
             ensure_classroom_activity_schema(conn)
             ensure_study_group_scheme_schema(conn)
             ensure_poll_schema(conn)

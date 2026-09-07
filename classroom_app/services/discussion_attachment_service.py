@@ -157,15 +157,25 @@ def ensure_discussion_attachment_schema(conn) -> None:
     )
 
 
-def _coerce_attachment_ids(attachment_ids: Iterable[object] | None) -> list[int]:
+def _coerce_attachment_ids(attachment_ids: Iterable[object] | None, *, strict: bool = False) -> list[int]:
     normalized: list[int] = []
     seen: set[int] = set()
     for raw_value in attachment_ids or []:
+        if strict and (isinstance(raw_value, bool) or not isinstance(raw_value, (int, str))):
+            raise HTTPException(400, "图片附件标识无效，请重新上传后发送。")
+        if strict and isinstance(raw_value, str) and not raw_value.strip().isdecimal():
+            raise HTTPException(400, "图片附件标识无效，请重新上传后发送。")
         try:
             attachment_id = int(raw_value)
         except (TypeError, ValueError):
+            if strict:
+                raise HTTPException(400, "图片附件标识无效，请重新上传后发送。")
             continue
-        if attachment_id <= 0 or attachment_id in seen:
+        if attachment_id <= 0 or (strict and attachment_id > 2**63 - 1):
+            if strict:
+                raise HTTPException(400, "图片附件标识无效，请重新上传后发送。")
+            continue
+        if attachment_id in seen:
             continue
         normalized.append(attachment_id)
         seen.add(attachment_id)
@@ -426,16 +436,29 @@ async def ensure_discussion_attachment_file_payload(
         )
 
 
+def _validate_discussion_image_file_size(file_path: Path) -> None:
+    try:
+        size = file_path.stat().st_size
+    except OSError as exc:
+        raise HTTPException(400, "当前请求的图片无法读取，请重新上传。") from exc
+    if not 0 < size <= DISCUSSION_ATTACHMENT_MAX_BYTES:
+        raise HTTPException(400, "当前请求的图片损坏或超限，请重新上传。")
+
+
 def build_attachment_image_inputs_from_payloads(
     conn,
     class_offering_id: int,
     attachments: Iterable[dict] | None,
+    *, strict: bool = False,
 ) -> list[dict]:
     ensure_discussion_attachment_schema(conn)
+    attachment_payloads = list(attachments or [])
+    if strict and any(not isinstance(item, dict) for item in attachment_payloads):
+        raise HTTPException(400, "当前请求的图片附件无效，请重新附图后召唤助教。")
     attachment_ids = _coerce_attachment_ids(
-        item.get("attachment_id")
-        for item in (attachments or [])
-        if isinstance(item, dict)
+        (item.get("attachment_id", item.get("id"))
+         for item in attachment_payloads if isinstance(item, dict)),
+        strict=strict,
     )
     if not attachment_ids:
         return []
@@ -456,10 +479,17 @@ def build_attachment_image_inputs_from_payloads(
     for attachment_id in attachment_ids:
         row = row_map.get(attachment_id)
         if row is None:
+            if strict:
+                raise HTTPException(400, "当前请求的图片已失效，请重新附图后召唤助教。")
             continue
 
         preview_payload = resolve_discussion_attachment_file_payload(row, "preview")
         if not preview_payload:
+            if strict:
+                original_payload = _resolve_original_file_payload(row)
+                if not original_payload:
+                    raise HTTPException(400, "当前请求的图片文件缺失，请重新附图后召唤助教。")
+                _validate_discussion_image_file_size(original_payload["path"])
             try:
                 preview_payload = _ensure_discussion_attachment_derivative_sync(
                     class_offering_id,
@@ -469,6 +499,8 @@ def build_attachment_image_inputs_from_payloads(
             except HTTPException:
                 preview_payload = _resolve_original_file_payload(row)
         if not preview_payload:
+            if strict:
+                raise HTTPException(400, "当前请求的图片文件缺失，请重新附图后召唤助教。")
             continue
 
         file_path = preview_payload["path"]
@@ -478,9 +510,28 @@ def build_attachment_image_inputs_from_payloads(
             mime_type = guessed_type or "application/octet-stream"
 
         try:
-            binary = file_path.read_bytes()
+            if strict:
+                _validate_discussion_image_file_size(file_path)
+                with file_path.open("rb") as source:
+                    binary = source.read(DISCUSSION_ATTACHMENT_MAX_BYTES + 1)
+            else:
+                binary = file_path.read_bytes()
         except OSError:
+            if strict:
+                raise HTTPException(400, "当前请求的图片无法读取，请重新上传。")
             continue
+        if strict:
+            import io
+            from PIL import Image
+            try:
+                if not binary or len(binary) > DISCUSSION_ATTACHMENT_MAX_BYTES:
+                    raise ValueError("invalid image size")
+                with Image.open(io.BytesIO(binary)) as picture:
+                    if picture.width * picture.height > 36_000_000:
+                        raise ValueError("invalid image dimensions")
+                    picture.verify()
+            except Exception as exc:
+                raise HTTPException(400, "当前请求的图片损坏或超限，请重新上传。") from exc
 
         encoded = base64.b64encode(binary).decode("utf-8")
         image_inputs.append({
@@ -609,7 +660,7 @@ def resolve_discussion_attachment_payloads(
     user: dict,
 ) -> list[dict]:
     ensure_discussion_attachment_schema(conn)
-    normalized_ids = _coerce_attachment_ids(attachment_ids)
+    normalized_ids = _coerce_attachment_ids(attachment_ids, strict=True)
     if not normalized_ids:
         return []
 
@@ -638,10 +689,11 @@ def resolve_discussion_attachment_payloads(
         ),
     ).fetchall()
     row_map = {int(row["id"]): row for row in rows}
+    if any(attachment_id not in row_map for attachment_id in normalized_ids):
+        raise HTTPException(400, "部分图片附件已失效或不可使用，请重新上传后发送。")
     return [
         build_discussion_attachment_payload(row_map[attachment_id], class_offering_id)
         for attachment_id in normalized_ids
-        if attachment_id in row_map
     ]
 
 

@@ -5,6 +5,7 @@
 
 {% block css %}
 <link rel="stylesheet" href="{{ asset_url('css/exam_paper_preview.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/ordinary_grade_kind_controls.css') }}">
 <style>
     /* Header */
     .assignment-header {
@@ -1216,6 +1217,7 @@
             <small>
                 <span>返回课堂</span>
                 <span>{{ assignment_status_label|trim }}</span>
+                <span data-assessment-detail-label>{{ '分类待确认' if assignment.classification_status == 'legacy_unknown' else assignment.assessment_kind_label }}</span>
                 <span>提交管理</span>
             </small>
         </span>
@@ -1711,6 +1713,7 @@
             </div>
             <div class="modal-body">
                 <form id="edit-assignment-form">
+                    {% with assessment=assignment %}{% include 'partials/assessment_kind_control.html' %}{% endwith %}
                     <div class="form-group">
                         <label class="form-label required">作业标题</label>
                         <input type="text" id="edit-title" class="form-control" value="{{ assignment.title }}" required>
@@ -2001,6 +2004,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script type="module" src="{{ asset_url('js/assessment_kind_controls.js') }}"></script>
 <script type="module" src="/static/js/feedback.js"></script>
 <script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
 <script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>

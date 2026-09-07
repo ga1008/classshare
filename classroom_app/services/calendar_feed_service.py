@@ -131,7 +131,7 @@ def _load_user_offerings(conn: Any, *, role: str, user_pk: int) -> list[dict[str
     if role == "student":
         rows = conn.execute(
             """
-            SELECT o.id, c.name AS course_name
+            SELECT o.id, o.semester, c.name AS course_name
             FROM class_offerings o
             JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
             JOIN courses c ON c.id = o.course_id
@@ -144,7 +144,7 @@ def _load_user_offerings(conn: Any, *, role: str, user_pk: int) -> list[dict[str
     else:
         rows = conn.execute(
             """
-            SELECT o.id, c.name AS course_name
+            SELECT o.id, o.semester, c.name AS course_name
             FROM class_offerings o
             JOIN courses c ON c.id = o.course_id
             WHERE o.teacher_id = ?
@@ -252,7 +252,7 @@ def build_ics_for_user(conn: Any, *, role: str, user_pk: int) -> str:
             else:
                 lines.append(f"DTSTART:{_format_local_dt(due)}")
                 lines.append(f"SUMMARY:{_ics_escape(f'【{course_name}】{title}（{subtitle}）')}")
-            description_parts = [part for part in (status_label, url) if part]
+            description_parts = [part for part in (str(offering.get("semester") or ""), status_label, url) if part]
             if description_parts:
                 lines.append(f"DESCRIPTION:{_ics_escape('；'.join(description_parts))}")
             if url:

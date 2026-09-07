@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -105,7 +106,62 @@ def _bucket() -> dict[str, Any]:
         "duration_ms": 0.0,
         "estimated_cost_cny": 0.0,
         "cost_known_calls": 0,
+        "cost_unknown_calls": 0,
+        "usage_unknown_calls": 0,
+        "unknown_outcome_calls": 0,
+        "incomplete_calls": 0,
+        "review_calls": 0,
+        "review_cost_cny": 0.0,
+        "primary_cost_cny": 0.0,
+        "duration_known_calls": 0,
     }
+
+
+def _physical_usage_events(events: list[dict[str, Any]], cutoff: datetime) -> list[dict[str, Any]]:
+    """Expand cumulative ledgers, then dedupe physical attempts (not logical jobs)."""
+    records: dict[str, dict[str, Any]] = {}
+    for index, event in enumerate(events):
+        extra = event.get("extra") if isinstance(event.get("extra"), dict) else {}
+        state = extra.get("execution_state") if isinstance(extra.get("execution_state"), dict) else {}
+        attempts = state.get("attempts")
+        if isinstance(attempts, list):
+            # Empty ledger means validation failed before a provider send.
+            for attempt in attempts:
+                if not isinstance(attempt, dict) or not attempt.get("attempt_id"):
+                    continue
+                timestamp = _parse_datetime(attempt.get("finished_at") or attempt.get("started_at"))
+                if timestamp is None or timestamp < cutoff:
+                    continue
+                status = str(attempt.get("status") or "unknown")
+                incomplete = attempt.get("finish_reason") in {"length", "incomplete", "content_filter"}
+                start, finish = _parse_datetime(attempt.get("started_at")), _parse_datetime(attempt.get("finished_at"))
+                plan = state.get("primary_plan") or {}
+                operation = attempt.get("operation") or (
+                    "adjudication" if attempt.get("profile_id") == "vision_assessment_high" and plan.get("profile_id") == "vision_pro_low"
+                    else plan.get("operation") or "unknown")
+                cost = attempt.get("cost_basis") if isinstance(attempt.get("cost_basis"), dict) else {}
+                if attempt.get("cost_known") and attempt.get("cost_estimate_cny") is not None:
+                    cost = {**cost, "currency": "CNY", "estimated_cost": attempt["cost_estimate_cny"]}
+                record = {"platform": attempt.get("provider"), "model": attempt.get("model"),
+                    "status": "success" if status == "completed" and not incomplete and not attempt.get("error_code") else "error",
+                    "outcome_status": status, "finish_reason": attempt.get("finish_reason"),
+                    "duration_ms": max(0, (finish - start).total_seconds() * 1000) if start and finish else None,
+                    "provider_usage": attempt.get("usage"), "cost_estimate": cost,
+                    "logical_call_id": state.get("logical_call_id"),
+                    "extra": {"profile_id": attempt.get("profile_id") or "legacy_unknown",
+                        "operation": operation, "task_type": attempt.get("task_type") or plan.get("task_type") or extra.get("task_type")}}
+                key = "attempt:" + str(attempt["attempt_id"])
+                old = records.get(key)
+                # A stale replay must not replace a known completed usage with pending.
+                if old and old.get("provider_usage") and not record.get("provider_usage"):
+                    continue
+                if old and old.get("outcome_status") not in {"pending", "unknown"} and status in {"pending", "unknown"}:
+                    continue
+                records[key] = record
+        else:
+            key = "legacy:" + str(event.get("call_id") or f"line-{index}")
+            records[key] = event
+    return list(records.values())
 
 
 def build_provider_usage_snapshot(
@@ -141,27 +197,45 @@ def build_provider_usage_snapshot(
     total = _bucket()
     by_model: dict[tuple[str, str], dict[str, Any]] = defaultdict(_bucket)
     by_task: dict[str, dict[str, Any]] = defaultdict(_bucket)
+    by_profile: dict[tuple[str, str], dict[str, Any]] = defaultdict(_bucket)
+    physical_events = _physical_usage_events(events, cutoff)
 
     def add(bucket: dict[str, Any], event: dict[str, Any]) -> None:
         status = str(event.get("status") or "unknown").strip().lower()
         prompt_tokens, completion_tokens = _usage_tokens(event)
         cost = event.get("cost_estimate") if isinstance(event.get("cost_estimate"), dict) else {}
+        extra = event.get("extra") or {}
+        review = extra.get("operation") == "adjudication"
         bucket["calls"] += 1
         bucket["successful_calls"] += 1 if status == "success" else 0
         bucket["failed_calls"] += 0 if status == "success" else 1
         bucket["prompt_tokens"] += prompt_tokens
         bucket["completion_tokens"] += completion_tokens
         bucket["duration_ms"] += _safe_float(event.get("duration_ms"))
-        if "estimated_cost" in cost:
-            bucket["estimated_cost_cny"] += _safe_float(cost.get("estimated_cost"))
+        bucket["duration_known_calls"] += int(event.get("duration_ms") is not None)
+        bucket["usage_unknown_calls"] += int(not bool(event.get("provider_usage")))
+        bucket["unknown_outcome_calls"] += int(event.get("outcome_status") in {"pending", "unknown"})
+        bucket["incomplete_calls"] += int(event.get("finish_reason") in {"length", "incomplete", "content_filter"})
+        bucket["review_calls"] += int(review)
+        amount = cost.get("estimated_cost")
+        known = (cost.get("currency", "CNY") == "CNY" and isinstance(amount, (int, float))
+                 and not isinstance(amount, bool) and math.isfinite(amount) and amount >= 0)
+        if known:
+            bucket["estimated_cost_cny"] += amount
+            bucket["review_cost_cny" if review else "primary_cost_cny"] += amount
             bucket["cost_known_calls"] += 1
+        else:
+            bucket["cost_unknown_calls"] += 1
 
-    for event in events:
+    for event in physical_events:
         provider = str(event.get("platform") or "unknown").strip() or "unknown"
         model = str(event.get("model") or "unknown").strip() or "unknown"
         extra = event.get("extra") if isinstance(event.get("extra"), dict) else {}
         task_type = str(extra.get("task_type") or event.get("task_label") or "unknown").strip() or "unknown"
-        for bucket in (total, by_model[(provider, model)], by_task[task_type]):
+        plan = extra.get("execution_plan") or {}
+        profile = str(extra.get("profile_id") or plan.get("profile_id") or "legacy_unknown")
+        stage = "review" if extra.get("operation", plan.get("operation")) == "adjudication" else "primary"
+        for bucket in (total, by_model[(provider, model)], by_task[task_type], by_profile[(profile, stage)]):
             add(bucket, event)
 
     def finalize(bucket: dict[str, Any]) -> dict[str, Any]:
@@ -170,8 +244,11 @@ def build_provider_usage_snapshot(
             **bucket,
             "total_tokens": _safe_int(bucket.get("prompt_tokens")) + _safe_int(bucket.get("completion_tokens")),
             "success_rate": round(_safe_int(bucket.get("successful_calls")) / calls * 100, 1) if calls else 0.0,
-            "avg_duration_ms": round(_safe_float(bucket.get("duration_ms")) / calls) if calls else 0,
+            "avg_duration_ms": round(_safe_float(bucket.get("duration_ms")) / bucket["duration_known_calls"]) if bucket["duration_known_calls"] else 0,
             "estimated_cost_cny": round(_safe_float(bucket.get("estimated_cost_cny")), 6),
+            "primary_cost_cny": round(_safe_float(bucket.get("primary_cost_cny")), 6),
+            "review_cost_cny": round(_safe_float(bucket.get("review_cost_cny")), 6),
+            "estimated_cost_is_partial": bool(bucket["cost_unknown_calls"]),
         }
 
     model_items = []
@@ -197,9 +274,12 @@ def build_provider_usage_snapshot(
         "path_exists": log_path.exists(),
         "window_days": max(1, int(days or 56)),
         "events_read": len(events),
+        "physical_attempts_read": len(physical_events),
         "malformed_lines_skipped": malformed_lines,
         "tail_bytes_limit": AI_PROVIDER_USAGE_TAIL_BYTES,
         "summary": finalize(total),
         "model_items": model_items,
         "task_items": task_items,
+        "profile_items": [{"profile_id": profile, "stage": stage, **finalize(bucket)}
+            for (profile, stage), bucket in sorted(by_profile.items())],
     }

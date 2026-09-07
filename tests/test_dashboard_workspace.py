@@ -346,7 +346,7 @@ class DashboardWorkspaceReadTests(unittest.TestCase):
         self.assertNotIn("他人监考", items)
         self.assertEqual(0, items["我的独立待办"]["offering_id"])
         self.assertEqual("teacher_work", items["教研会议"]["kind"])
-        self.assertIn("2 份作业待批改", items)
+        self.assertIn("2 份答卷待批改", items)
         self.assertEqual(2, result["offering_summaries"]["1"]["pending_review_count"])
         self.assertIn("1 项密码申请待审核", items)
 

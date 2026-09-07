@@ -5,6 +5,7 @@
 """
 
 from __future__ import annotations
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -23,11 +24,13 @@ def _ensure_student(user: dict) -> None:
 
 
 @router.get("/report-card", response_class=HTMLResponse)
-async def report_card_page(request: Request, user: dict = Depends(get_current_user)):
+async def report_card_page(request: Request, user: dict = Depends(get_current_user),
+                           assessment_kind: Literal["homework", "midterm", "final"] | None = None,
+                           class_offering_id: int | None = None):
     _ensure_student(user)
     with get_db_connection() as conn:
-        report_card = build_student_report_card(conn, student_id=int(user["id"]))
-        conn.commit()
+        report_card = build_student_report_card(conn, student_id=int(user["id"]),
+            assessment_kind=assessment_kind, class_offering_id=class_offering_id)
     return templates.TemplateResponse(
         request,
         "report_card.html",
@@ -40,9 +43,11 @@ async def report_card_page(request: Request, user: dict = Depends(get_current_us
 
 
 @router.get("/api/report-card", response_class=JSONResponse)
-async def api_report_card(user: dict = Depends(get_current_user)):
+async def api_report_card(user: dict = Depends(get_current_user),
+                          assessment_kind: Literal["homework", "midterm", "final"] | None = None,
+                          class_offering_id: int | None = None):
     _ensure_student(user)
     with get_db_connection() as conn:
-        report_card = build_student_report_card(conn, student_id=int(user["id"]))
-        conn.commit()
+        report_card = build_student_report_card(conn, student_id=int(user["id"]),
+            assessment_kind=assessment_kind, class_offering_id=class_offering_id)
     return {"status": "success", "report_card": report_card}

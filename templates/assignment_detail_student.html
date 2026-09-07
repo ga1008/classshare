@@ -11,6 +11,8 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: var(--spacing-md);
+        flex-wrap: wrap;
         position: sticky;
         top: 0;
         z-index: 40;
@@ -20,7 +22,14 @@
         display: flex;
         align-items: center;
         gap: var(--spacing-md);
+        flex: 1 1 20rem;
+        min-width: 0;
     }
+    .header-assignment-copy { min-width: 0; }
+    .header-assignment-copy h1 { overflow-wrap: anywhere; }
+    .header-assignment-copy small { display: block; color: var(--text-muted); margin-top: 0.2rem; }
+    .assignment-header > .flex { flex-shrink: 0; margin-left: auto; }
+    .assignment-header .badge, .back-link { white-space: nowrap; flex-shrink: 0; }
     .back-link {
         display: inline-flex;
         align-items: center;
@@ -475,7 +484,10 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
             返回
         </a>
-        <h1 class="text-lg font-bold m-0">{{ assignment.title }}</h1>
+        <div class="header-assignment-copy">
+            <h1 class="text-lg font-bold m-0">{{ assignment.title }}</h1>
+            <small>{{ assignment.assessment_kind_label or '历史任务' }}</small>
+        </div>
     </div>
     <div class="flex items-center gap-2">
         {% include "partials/message_center_bell.html" %}
@@ -556,6 +568,7 @@
 {% endmacro %}
 
 <main class="workspace-container">
+    {% include "partials/submission_retained_grade.html" %}
     <!-- Requirements Card -->
     <div class="card">
         <div class="card-header">

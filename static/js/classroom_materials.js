@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { submitGradeMaterialWithPreflight } from './grade_material_preflight.js';
 import { escapeHtml, formatSize, getFileIcon, showToast } from './ui.js';
 import { enhancePromptPoolInput, enhancePromptPoolInputs, recordPromptForInput } from './prompt_pool.js';
 import {
@@ -1420,7 +1421,7 @@ async function submitFinalMaterialGeneration() {
         'progress',
     );
     try {
-        const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/final-materials/generate`, {
+        const data = await submitGradeMaterialWithPreflight(`/api/classrooms/${config.classOfferingId}/final-materials/generate`, {
             method: 'POST',
             body: {
                 document_type: documentType,
@@ -1435,6 +1436,7 @@ async function submitFinalMaterialGeneration() {
                 exam_assignment_id: examGradeSelection?.examAssignmentId || null,
             },
         });
+        if (!data) { setFinalMaterialStatus('已取消生成，课堂成绩与材料保持不变。', ''); return; }
         showToast(data.message || '期末材料已生成', 'success');
         await recordPromptForInput(dom.finalMaterialPrompt, prompt);
         closeModal(dom.finalMaterialModal);

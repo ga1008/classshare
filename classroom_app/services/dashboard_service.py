@@ -8,6 +8,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from ..db.connection import get_configured_db_engine
+from .assessment_classification_service import ASSESSMENT_KIND_LABELS, assessment_kind_info
 from .academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 from .message_center_service import CATEGORY_LABELS, get_message_center_summary
 from .offering_membership_service import (
@@ -1327,8 +1328,7 @@ def _build_teacher_dashboard_context(
             badges.append({"label": f"草稿 {draft_count}", "tone": "warning"})
         if published_count > 0:
             badges.append({"label": f"已发布 {published_count}", "tone": "success"})
-        if exam_count > 0:
-            badges.append({"label": f"考试 {exam_count}", "tone": "neutral"})
+        badges.extend({"label": label, "tone": "neutral"} for label in _assessment_count_labels(assignment_item))
 
         meta = [
             item
@@ -1381,6 +1381,7 @@ def _build_teacher_dashboard_context(
         offering["assignment_count"] = assignment_count
         offering["draft_count"] = draft_count
         offering["exam_count"] = exam_count
+        offering["assessment_counts"] = {key: int(assignment_item.get(f"{key}_count") or 0) for key in (*ASSESSMENT_KIND_LABELS, "legacy_unknown")}
         offering["pending_review_count"] = pending_review_count
         offering["grading_count"] = grading_count
         offering["recent_active_student_count"] = recent_active_student_count
@@ -1393,7 +1394,7 @@ def _build_teacher_dashboard_context(
         offering["has_progress"] = assignment_count > 0 or resource_total > 0
         offering["metrics"] = [
             {"label": "学生", "value": student_count, "note": "班级规模"},
-            {"label": "任务", "value": assignment_count, "note": f"考试 {exam_count}"},
+            {"label": "任务", "value": assignment_count, "note": " · ".join(_assessment_count_labels(assignment_item)) or "暂无任务"},
             {"label": "待批改", "value": pending_review_count, "note": f"批改中 {grading_count}"},
             {"label": "资料", "value": resource_total, "note": f"文件 {resource_count} · 材料 {material_count}"},
         ]
@@ -2050,9 +2051,10 @@ def _student_cockpit_todo_plan_item(item: dict[str, Any], *, now: datetime) -> d
     context = " · ".join(part for part in [course_name, class_name] if part)
     return {
         "kind": kind,
+        **{key: item[key] for key in ("assessment_kind", "assessment_kind_label", "classification_status", "source_feature", "has_exam_paper", "answer_mode", "semester_id", "semester_name") if key in item},
         "label": label,
         "title": str(item.get("title") or "待处理事项"),
-        "description": context or str(item.get("subtitle") or "进入后查看完整内容。"),
+        "description": " · ".join(part for part in (context, item.get("assessment_kind_label")) if part) or str(item.get("subtitle") or "进入后查看完整内容。"),
         "href": href or "/dashboard#dashboard-semester",
         "tone": tone,
         "due_label": due_label,
@@ -2580,8 +2582,7 @@ def _build_student_dashboard_context(
             badges.append({"label": f"批改中 {grading_count}", "tone": "warning"})
         if graded_count > 0:
             badges.append({"label": f"已批改 {graded_count}", "tone": "success"})
-        if exam_count > 0:
-            badges.append({"label": f"考试 {exam_count}", "tone": "primary"})
+        badges.extend({"label": label, "tone": "primary"} for label in _assessment_count_labels(assignment_item))
         if cultivation_level.get("tier"):
             badges.append({"label": str(cultivation_level.get("short_name") or cultivation_level.get("level_name")), "tone": "success"})
 
@@ -2620,6 +2621,7 @@ def _build_student_dashboard_context(
         offering["graded_count"] = graded_count
         offering["grading_count"] = grading_count
         offering["exam_count"] = exam_count
+        offering["assessment_counts"] = {key: int(assignment_item.get(f"{key}_count") or 0) for key in (*ASSESSMENT_KIND_LABELS, "legacy_unknown")}
         offering["resource_total"] = resource_total
         offering["resource_count"] = resource_count
         offering["material_count"] = material_count
@@ -3018,6 +3020,11 @@ def _load_student_offerings(conn, student_id: int) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def _assessment_count_labels(stats: dict[str, Any]) -> list[str]:
+    return [f"{label} {int(stats.get(f'{kind}_count') or 0)}" for kind, label in
+            {**ASSESSMENT_KIND_LABELS, "legacy_unknown": "历史任务"}.items() if int(stats.get(f"{kind}_count") or 0)]
+
+
 def _load_teacher_assignment_stats(conn, offering_ids: list[int]) -> dict[int, dict[str, Any]]:
     if not offering_ids:
         return {}
@@ -3029,6 +3036,10 @@ def _load_teacher_assignment_stats(conn, offering_ids: list[int]) -> dict[int, d
                COUNT(DISTINCT CASE WHEN a.status = 'new' THEN a.id END) AS draft_count,
                COUNT(DISTINCT CASE WHEN a.status = 'published' THEN a.id END) AS published_count,
                COUNT(DISTINCT CASE WHEN a.exam_paper_id IS NOT NULL THEN a.id END) AS exam_count,
+               COUNT(DISTINCT CASE WHEN a.assessment_kind = 'homework' THEN a.id END) AS homework_count,
+               COUNT(DISTINCT CASE WHEN a.assessment_kind = 'midterm' THEN a.id END) AS midterm_count,
+               COUNT(DISTINCT CASE WHEN a.assessment_kind = 'final' THEN a.id END) AS final_count,
+               COUNT(DISTINCT CASE WHEN a.assessment_kind IS NULL THEN a.id END) AS legacy_unknown_count,
                MAX(a.created_at) AS latest_assignment_at
         FROM class_offerings o
         LEFT JOIN assignments a
@@ -3050,18 +3061,23 @@ def _load_student_assignment_stats(conn, offering_ids: list[int], student_id: in
     if not offering_ids:
         return {}
     placeholders = ",".join("?" for _ in offering_ids)
-    params = [student_id, student_id, *offering_ids]
+    params = [student_id, *offering_ids]
     rows = conn.execute(
         f"""
         SELECT o.id AS offering_id,
                COUNT(DISTINCT CASE WHEN a.status != 'new' THEN a.id END) AS assignment_count,
                COUNT(DISTINCT CASE WHEN a.status != 'new' AND a.exam_paper_id IS NOT NULL THEN a.id END) AS exam_count,
+               COUNT(DISTINCT CASE WHEN a.status != 'new' AND a.assessment_kind = 'homework' THEN a.id END) AS homework_count,
+               COUNT(DISTINCT CASE WHEN a.status != 'new' AND a.assessment_kind = 'midterm' THEN a.id END) AS midterm_count,
+               COUNT(DISTINCT CASE WHEN a.status != 'new' AND a.assessment_kind = 'final' THEN a.id END) AS final_count,
+               COUNT(DISTINCT CASE WHEN a.status != 'new' AND a.assessment_kind IS NULL THEN a.id END) AS legacy_unknown_count,
                COUNT(DISTINCT CASE
                    WHEN a.status = 'published'
-                    AND (s.id IS NULL OR COALESCE(s.resubmission_allowed, 0) = 1)
+                    AND (s.id IS NULL OR COALESCE(s.is_absence_score, 0) = 1 OR COALESCE(s.resubmission_allowed, 0) = 1)
                    THEN a.id END) AS pending_count,
                COUNT(DISTINCT CASE
                    WHEN s.id IS NOT NULL
+                    AND COALESCE(s.is_absence_score, 0) = 0
                     AND COALESCE(s.resubmission_allowed, 0) = 0
                    THEN a.id END) AS submitted_count,
                COUNT(DISTINCT CASE WHEN s.status = 'graded' THEN a.id END) AS graded_count,
@@ -3074,7 +3090,6 @@ def _load_student_assignment_stats(conn, offering_ids: list[int], student_id: in
            AND NOT EXISTS (
                SELECT 1 FROM learning_stage_exam_attempts lsea
                WHERE lsea.assignment_id = a.id
-                 AND lsea.student_id != ?
            )
         LEFT JOIN submissions s
             ON s.assignment_id = a.id
@@ -3098,12 +3113,12 @@ def _load_teacher_pending_submission_stats(conn, offering_ids: list[int]) -> dic
                    WHEN COALESCE(s.is_absence_score, 0) = 0
                     AND COALESCE(s.resubmission_allowed, 0) = 0
                     AND s.status = 'submitted'
-                   THEN s.student_pk_id END) AS pending_review_count,
+                   THEN s.id END) AS pending_review_count,
                COUNT(DISTINCT CASE
                    WHEN COALESCE(s.is_absence_score, 0) = 0
                     AND COALESCE(s.resubmission_allowed, 0) = 0
                     AND s.status = 'grading'
-                   THEN s.student_pk_id END) AS grading_count,
+                   THEN s.id END) AS grading_count,
                MAX(CASE
                    WHEN COALESCE(s.is_absence_score, 0) = 0
                     AND COALESCE(s.resubmission_allowed, 0) = 0
@@ -3249,8 +3264,10 @@ def _load_student_priority_items(conn, student_id: int, limit: int = 4) -> list[
         SELECT a.id AS assignment_id,
                a.title,
                a.exam_paper_id,
+               a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source,
                a.created_at,
                o.id AS offering_id,
+               o.semester_id, o.semester AS semester_name,
                c.name AS course_name,
                cl.name AS class_name
         FROM class_offerings o
@@ -3262,28 +3279,28 @@ def _load_student_priority_items(conn, student_id: int, limit: int = 4) -> list[
            AND NOT EXISTS (
                SELECT 1 FROM learning_stage_exam_attempts lsea
                WHERE lsea.assignment_id = a.id
-                 AND lsea.student_id != ?
            )
         LEFT JOIN submissions s
             ON s.assignment_id = a.id
-           AND s.student_pk_id = ?
+          AND s.student_pk_id = ?
         WHERE {student_offering_where_by_student_id(offering_alias="o", require_active=True)}
           AND a.status = 'published'
-          AND s.id IS NULL
+          AND (s.id IS NULL OR COALESCE(s.is_absence_score, 0) = 1)
         ORDER BY a.created_at DESC, a.id DESC
         LIMIT ?
         """,
-        (student_id, student_id, student_id, limit),
+        (student_id, student_id, limit),
     ).fetchall()
 
     items = []
     for row in rows:
         items.append({
+            **assessment_kind_info(row), "class_offering_id": row["offering_id"], "semester_id": row["semester_id"],
             "title": str(row["title"] or "待完成任务"),
             "description": f"{row['course_name']} · {row['class_name']}"
-            + (" · 考试" if row["exam_paper_id"] else " · 作业"),
+            + f" · {assessment_kind_info(row)['assessment_kind_label']}" + (f" · {row['semester_name']}" if row["semester_name"] else ""),
             "href": f"/assignment/{row['assignment_id']}",
-            "tone": "danger" if not row["exam_paper_id"] else "warning",
+            "tone": "warning" if row["assessment_kind"] in {"midterm", "final"} else "danger",
         })
     return items
 

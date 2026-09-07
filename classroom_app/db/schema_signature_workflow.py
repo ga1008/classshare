@@ -88,37 +88,37 @@ def _add_columns(conn: Any, table: str, definitions: dict[str, str], *, engine: 
 
 
 def _seed_function_points(conn: Any, *, engine: str) -> None:
+    comparison = "IS DISTINCT FROM" if engine == "postgres" else "IS NOT"
+    fields = ("label", "module_key", "description", "required_identities")
+    changed_parameters = " OR ".join(f"{field} {comparison} ?" for field in fields)
+    changed_excluded = " OR ".join(
+        f"signature_function_points.{field} {comparison} excluded.{field}" for field in fields
+    )
     for key, label, module_key, description, required_identities in SIGNATURE_FUNCTION_POINTS:
-        if engine == "postgres":
-            conn.execute(
-                """
-                INSERT INTO signature_function_points (
+        values = (label, module_key, description, required_identities)
+        # An unconditional UPSERT consumes SERIAL/AUTOINCREMENT values even
+        # when its conflict branch leaves the row unchanged. Update changed
+        # metadata first, then attempt inserts only for absent point keys.
+        # Administrative is_enabled and the original created_at are retained.
+        conn.execute(
+            f"""UPDATE signature_function_points
+                SET label = ?, module_key = ?, description = ?, required_identities = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE point_key = ? AND ({changed_parameters})""",
+            (*values, key, *values),
+        )
+        conn.execute(
+            f"""INSERT INTO signature_function_points (
                     point_key, label, module_key, description, required_identities, is_enabled, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+                ) SELECT ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP
+                  WHERE NOT EXISTS (SELECT 1 FROM signature_function_points WHERE point_key = ?)
                 ON CONFLICT (point_key) DO UPDATE SET
-                    label = EXCLUDED.label,
-                    module_key = EXCLUDED.module_key,
-                    description = EXCLUDED.description,
-                    required_identities = EXCLUDED.required_identities,
+                    label = excluded.label, module_key = excluded.module_key,
+                    description = excluded.description, required_identities = excluded.required_identities,
                     updated_at = CURRENT_TIMESTAMP
-                """,
-                (key, label, module_key, description, required_identities),
-            )
-        else:
-            conn.execute(
-                """
-                INSERT INTO signature_function_points (
-                    point_key, label, module_key, description, required_identities, is_enabled, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-                ON CONFLICT(point_key) DO UPDATE SET
-                    label = excluded.label,
-                    module_key = excluded.module_key,
-                    description = excluded.description,
-                    required_identities = excluded.required_identities,
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (key, label, module_key, description, required_identities),
-            )
+                WHERE {changed_excluded}""",
+            (key, *values, key),
+        )
 
 
 def ensure_signature_workflow_schema(conn: Any) -> None:

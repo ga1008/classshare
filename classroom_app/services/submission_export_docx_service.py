@@ -18,6 +18,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Inches, Pt, RGBColor
 
 from .submission_file_alignment import resolve_submission_file_path
+from .score_projection_service import load_submission_score_facts
 
 
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -69,10 +70,14 @@ def build_student_submission_export_docx(
 ) -> StudentSubmissionExport:
     context = _load_export_context(conn, assignment_id=assignment_id, student_pk_id=student_pk_id)
     submission = context["submission"]
-    if str(submission.get("submission_status") or "").strip().lower() != "graded":
-        raise HTTPException(400, "批改完成后才能导出复习 Word")
     if int(submission.get("is_absence_score") or 0):
         raise HTTPException(400, "缺交记 0 的记录没有可导出的学生答卷")
+    facts = load_submission_score_facts(conn, submission_ids=[submission["submission_id"]],
+                                      student_id=student_pk_id, student_view=True)
+    if not facts or not facts[0]["score_visible"]:
+        raise HTTPException(400, "成绩尚未公布，暂不能导出复习 Word")
+    submission = {**submission, "score": facts[0]["effective_score"], "feedback_md": facts[0]["feedback_md"]}
+    context = {**context, "submission": submission}
 
     submission_files = _load_submission_files(conn, int(submission["submission_id"]))
     answer_items = _normalize_answer_items(submission.get("answers_json"))

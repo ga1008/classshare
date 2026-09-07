@@ -46,6 +46,9 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
         self.conn.row_factory = sqlite3.Row
         self._create_schema()
         self._seed_data()
+        from tests.grade_projection_fixtures import add_grade_projection_schema
+        add_grade_projection_schema(self.conn)
+        self.conn.execute("UPDATE assignments SET assessment_kind = CASE WHEN id = 204 THEN 'midterm' ELSE 'homework' END")
         ensure_offering_class_links_schema(self.conn, force=True, engine="sqlite")
 
     def tearDown(self) -> None:
@@ -351,19 +354,19 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
     def test_linked_exam_paper_can_still_be_a_homework_by_classroom_purpose(self):
         self.assertEqual(
             classify_ordinary_grade_assignment(
-                {"title": "动态 Web 作业 2 - 第十讲实战", "exam_paper_id": "paper-2"}
+                {"title": "动态 Web 作业 2 - 第十讲实战", "exam_paper_id": "paper-2", "assessment_kind": "homework"}
             ),
             "assignment",
         )
         self.assertEqual(
             classify_ordinary_grade_assignment(
-                {"title": "期末综合实验验收", "exam_paper_id": "paper-final"}
+                {"title": "期末综合实验验收", "exam_paper_id": "paper-final", "assessment_kind": "final"}
             ),
-            "exam",
+            "unavailable",
         )
         self.assertEqual(
             classify_ordinary_grade_assignment(
-                {"title": "阶段测评", "exam_paper_id": None}
+                {"title": "阶段测评", "exam_paper_id": None, "assessment_kind": "midterm"}
             ),
             "exam",
         )
@@ -373,12 +376,13 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
                     "title": "阶段测评",
                     "exam_paper_id": "paper-stage",
                     "ordinary_grade_kind_override": "assignment",
+                    "assessment_kind": "midterm",
                 }
             ),
-            "assignment",
+            "exam",
         )
 
-    def test_manual_kind_override_is_visible_and_can_satisfy_three_homework_sources(self):
+    def test_legacy_kind_override_cannot_override_formal_classification(self):
         self.conn.execute(
             """
             UPDATE assignments
@@ -401,27 +405,16 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
             teacher_id=1,
         )
         changed = next(item for item in candidates if item["id"] == 204)
-        self.assertEqual("assignment", changed["kind"])
+        self.assertEqual("exam", changed["kind"])
         self.assertEqual("exam", changed["ordinary_grade_auto_kind"])
-        self.assertEqual("manual", changed["ordinary_grade_kind_source"])
+        self.assertEqual("assessment_classification", changed["ordinary_grade_kind_source"])
         self.assertEqual(1, changed["ordinary_grade_kind_updated_by_teacher_id"])
         self.assertEqual(3, sum(item["kind"] == "assignment" for item in candidates))
         self.assertEqual(1, sum(item["kind"] == "exam" for item in candidates))
 
-        payload = build_ordinary_grade_record_payload(
-            self.conn,
-            class_offering_id=30,
-            teacher_id=1,
-            homework_assignment_ids=[201, 202, 204],
-            assessment_assignment_id=203,
-        )
-        self.assertEqual([201, 202, 204], [
-            item["id"] for item in payload["structured"]["source_assignments"]["homework_assignments"]
-        ])
-        self.assertEqual(
-            203,
-            payload["structured"]["source_assignments"]["assessment_assignment"]["id"],
-        )
+        with self.assertRaises(HTTPException):
+            build_ordinary_grade_record_payload(self.conn, class_offering_id=30, teacher_id=1,
+                homework_assignment_ids=[201, 202, 204], assessment_assignment_id=203)
 
         self.assertEqual("", normalize_ordinary_grade_kind_override("auto"))
         self.assertEqual("assignment", normalize_ordinary_grade_kind_override("assignment"))
@@ -430,7 +423,7 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
 
     def test_generation_revalidates_effective_kind_after_selection(self):
         self.conn.execute(
-            "UPDATE assignments SET ordinary_grade_kind_override = 'exam' WHERE id = 203"
+            "UPDATE assignments SET assessment_kind = 'midterm' WHERE id = 203"
         )
         with self.assertRaises(HTTPException) as ctx:
             build_ordinary_grade_record_payload(
@@ -442,6 +435,41 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
             )
         self.assertEqual(400, ctx.exception.status_code)
         self.assertIn("不能放入平时作业", str(ctx.exception.detail))
+
+    def test_formal_three_plus_one_excludes_final_unknown_personal_and_foreign_sources(self):
+        for change in ("assessment_kind = 'final'", "assessment_kind = NULL", "class_offering_id = 99"):
+            with self.subTest(change=change):
+                self.conn.execute(f"UPDATE assignments SET {change} WHERE id = 204")
+                with self.assertRaises(HTTPException):
+                    build_ordinary_grade_record_payload(self.conn, class_offering_id=30, teacher_id=1,
+                        homework_assignment_ids=[201, 202, 203], assessment_assignment_id=204)
+                self.conn.execute("UPDATE assignments SET assessment_kind = 'midterm', class_offering_id = 30 WHERE id = 204")
+        self.conn.execute("INSERT INTO learning_stage_exam_attempts VALUES (1, 204)")
+        self.assertNotIn(204, [item["id"] for item in list_ordinary_grade_assignment_candidates(self.conn, class_offering_id=30, teacher_id=1)])
+        with self.assertRaises(HTTPException):
+            build_ordinary_grade_record_payload(self.conn, class_offering_id=30, teacher_id=1,
+                homework_assignment_ids=[201, 202, 203], assessment_assignment_id=204)
+        with self.assertRaises(HTTPException):
+            validate_ordinary_grade_sources(homework_assignment_ids=[201, 201, 202, 203], assessment_assignment_id=204)
+
+    def test_v2_formula_84_and_old_material_remains_unchanged_after_classification_edit(self):
+        from unittest.mock import patch
+        from copy import deepcopy
+        for aid, score in ((201, 80), (202, 90), (203, 100), (204, 70)):
+            self.conn.execute("UPDATE submissions SET score = ? WHERE assignment_id = ? AND student_pk_id = 101", (score, aid))
+        with patch("classroom_app.services.ordinary_grade_record_service._load_attendance_scores", return_value={101: 90}):
+            payload = build_ordinary_grade_record_payload(self.conn, class_offering_id=30, teacher_id=1,
+                homework_assignment_ids=[201, 202, 203], assessment_assignment_id=204,
+                minimum_ordinary_score_enabled=False)
+        student = payload["structured"]["students"][0]
+        self.assertEqual(calculate_ordinary_grade_score(student["attendance_raw_score"], student["homework_scores"], student["assessment_score"]), 84)
+        self.assertEqual(payload["structured"]["score_weights"], {"attendance": 0.4, "homework": 0.3, "assessment": 0.3})
+        frozen = deepcopy(payload["structured"])
+        self.conn.execute("UPDATE assignments SET assessment_kind = 'final' WHERE id = 204")
+        normalized = normalize_ordinary_grade_record_payload(metadata={}, export_payload=payload)
+        self.assertEqual(normalized["structured"]["source_assignments"], frozen["source_assignments"])
+        self.assertEqual(normalized["structured"]["students"], frozen["students"])
+        self.assertFalse(normalized["structured"]["source_preflight"]["ready_for_publication"])
 
     def test_score_floor_is_deterministic_balanced_and_requires_seventy_percent_attendance(self):
         seed_parts = (30, 103, 201, 202, 203, 204)

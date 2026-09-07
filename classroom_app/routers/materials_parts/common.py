@@ -175,7 +175,14 @@ class MaterialAiImportOptimizeRequest(BaseModel):
     class_offering_id: int | None = None
 
 
-class ClassroomFinalMaterialGenerateRequest(BaseModel):
+class GradeMaterialConfirmationRequest(BaseModel):
+    expected_preflight_hash: str = Field(default="", max_length=64)
+    preflight_confirmed: bool = False
+    accepted_preflight_warning_codes: list[str] = Field(default_factory=list, max_length=30)
+    preflight_confirmation_note: str = Field(default="", max_length=2000)
+
+
+class ClassroomFinalMaterialGenerateRequest(GradeMaterialConfirmationRequest):
     document_type: str = "exam_paper"
     prompt: str = ""
     parent_id: int | None = None

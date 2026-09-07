@@ -5,7 +5,7 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from classroom_app.db.connection import LanShareSQLiteConnection
 from classroom_app.db.schema_ai_jobs import ensure_ai_job_schema, reset_ai_job_schema_guard_for_tests
@@ -40,6 +40,7 @@ class AIDurableJobServiceTests(unittest.TestCase):
         self.patches = [
             patch.object(jobs, "get_db_connection", side_effect=self._connect),
             patch.object(jobs, "get_configured_db_engine", return_value="sqlite"),
+            patch("classroom_app.db.schema_ai_jobs.get_configured_db_engine", return_value="sqlite"),
         ]
         for item in self.patches:
             item.start()
@@ -69,6 +70,52 @@ class AIDurableJobServiceTests(unittest.TestCase):
             )
             conn.commit()
             return row, created
+
+    def test_execution_ledger_cas_and_resume_preserve_original_payload_hash(self):
+        created, _ = self._create()
+        job = jobs.claim_due_ai_jobs(limit=1, worker_id="first", lease_seconds=120)[0]
+        state = {"version": 1, "revision": 1, "logical_call_id": "test",
+                 "attempts": [{"attempt_id": "sent", "status": "pending"}]}
+        jobs.persist_ai_job_execution_state(job["id"], job["lease_token"], state, expected_revision=0)
+        with self.assertRaisesRegex(RuntimeError, "revision"):
+            jobs.persist_ai_job_execution_state(job["id"], job["lease_token"], state, expected_revision=0)
+        jobs.reschedule_ai_job(job, error_code="timeout", error_message="unknown delivery")
+        with self._connect() as conn:
+            conn.execute("UPDATE ai_jobs SET available_at='2000-01-01T00:00:00' WHERE id=?", (job["id"],))
+            conn.commit()
+        resumed = jobs.claim_due_ai_jobs(limit=1, worker_id="second", lease_seconds=120)[0]
+        self.assertEqual(created["payload_hash"], resumed["payload_hash"])
+        self.assertEqual(state, jobs.load_ai_job_payload(resumed)["execution_state"])
+        with self.assertRaisesRegex(RuntimeError, "lease"):
+            jobs.persist_ai_job_execution_state(job["id"], job["lease_token"], {**state, "revision": 2}, expected_revision=1)
+        with self.assertRaisesRegex(ValueError, "reset"):
+            jobs.persist_ai_job_execution_state(job["id"], resumed["lease_token"], {**state, "revision": 2, "attempts": []}, expected_revision=1)
+        jobs.reschedule_ai_job(resumed, error_code="budget", error_message="exhausted", terminal=True)
+        with self._connect() as conn:
+            requeued = jobs.requeue_ai_job(conn, job["id"])
+            conn.commit()
+        self.assertEqual(state, jobs.load_ai_job_payload(requeued)["execution_state"])
+
+    def test_execution_ledger_rejects_expired_lease_before_send(self):
+        self._create()
+        job = jobs.claim_due_ai_jobs(limit=1, worker_id="worker", lease_seconds=120)[0]
+        with self._connect() as conn:
+            conn.execute("UPDATE ai_jobs SET lease_expires_at='2000-01-01T00:00:00' WHERE id=?", (job["id"],))
+            conn.commit()
+        with self.assertRaisesRegex(RuntimeError, "lease"):
+            jobs.persist_ai_job_execution_state(job["id"], job["lease_token"], {"version": 1, "revision": 1, "attempts": []}, expected_revision=0)
+
+    def test_repair_candidate_and_review_plan_are_immutable_on_resume(self):
+        self._create("grading:combined-repair-state")
+        job = jobs.claim_due_ai_jobs(limit=1, worker_id="worker", lease_seconds=120)[0]
+        state = {"version": 1, "revision": 1, "logical_call_id": "combined", "attempts": [],
+            "repair_candidate": {"result": {"score": 80}, "validation_error": "missing evaluation"},
+            "review_plan": {"profile_id": "vision_assessment_high", "max_output_tokens_total": 32768}}
+        jobs.persist_ai_job_execution_state(job["id"], job["lease_token"], state, expected_revision=0)
+        for key in ("repair_candidate", "review_plan"):
+            with self.assertRaisesRegex(ValueError, "cannot be rewritten"):
+                jobs.persist_ai_job_execution_state(job["id"], job["lease_token"],
+                    {**state, "revision": 2, key: {}}, expected_revision=1)
 
     def test_create_is_idempotent_and_schema_adds_submission_revision_columns(self):
         first, first_created = self._create()
@@ -340,6 +387,43 @@ class AIDurableJobServiceTests(unittest.TestCase):
         self.assertEqual("error", attempt["status"])
         self.assertEqual("grading_review_required", delivered[0][0]["status"])
         self.assertEqual(8, delivered[0][1])
+
+    def test_legacy_retry_without_ledger_requires_review_before_inference(self):
+        import ai_assistant
+        from classroom_app.services.ai_model_policy import AIExecutionBudget, AIExecutionBudgetExceeded
+
+        created, _ = self._create("grading:legacy-unknown")
+        first = jobs.claim_due_ai_jobs(limit=1, worker_id="old-worker", lease_seconds=120)[0]
+        jobs.reschedule_ai_job(first, error_code="timeout", error_message="old worker recorded no usage")
+        with self._connect() as conn:
+            conn.execute("UPDATE ai_jobs SET available_at='2000-01-01T00:00:00' WHERE id=?", (created["id"],))
+            conn.commit()
+        resumed = jobs.claim_due_ai_jobs(limit=1, worker_id="new-worker", lease_seconds=120)[0]
+        self.assertEqual(2, resumed["attempt_count"])
+        inference = AsyncMock()
+        callback = AsyncMock()
+        async def execute_without_network():
+            with patch("socket.socket.connect", side_effect=AssertionError("network disabled")):
+                await ai_assistant._execute_durable_ai_job(resumed)
+        with (
+            patch.object(ai_assistant, "get_db_connection", side_effect=self._connect),
+            patch.object(ai_assistant, "_build_grading_callback_data", inference),
+            patch.object(ai_assistant, "_post_grading_callback_with_retry", callback),
+        ):
+            asyncio.run(execute_without_network())
+        inference.assert_not_awaited()
+        delivered = callback.await_args.args[0]
+        self.assertEqual(["legacy_execution_history_unknown"], delivered["review_reason_codes"])
+        self.assertIsNone(delivered["score"])
+        with self._connect() as conn:
+            final = dict(conn.execute("SELECT * FROM ai_jobs WHERE id=?", (created["id"],)).fetchone())
+        self.assertEqual("review_required", final["status"])
+        state = jobs.load_ai_job_payload(final)["execution_state"]
+        self.assertTrue(state["legacy_history_unknown"])
+        self.assertEqual([], state["attempts"])
+        budget = AIExecutionBudget(state)
+        with self.assertRaises(AIExecutionBudgetExceeded):
+            asyncio.run(budget.begin({"profile_id": "vision_pro_high"}))
 
     def test_exam_worker_persists_and_applies_result_before_completion(self):
         import ai_assistant

@@ -1,7 +1,8 @@
 import json
 import sqlite3
 import unittest
-from unittest.mock import patch
+from contextlib import ExitStack
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from classroom_app.services import learning_progress_service as service
 from classroom_app.services.personalized_learning_path_service import _load_stage_retreat_path_steps
@@ -13,6 +14,48 @@ from classroom_app.services.learning_progress_service import (
     build_stage_exam_retreat_plan,
     handle_stage_exam_grading_complete,
 )
+
+
+class StageExamGenerationContextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_gateway_preserves_trusted_personal_stage_context(self):
+        from classroom_app.services.ai_model_policy import resolve_execution_plan
+
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        connection.execute.return_value.fetchone.return_value = {
+            "id": 91, "status": "generating", "class_offering_id": 7,
+            "student_id": 12, "stage_key": "stage-a",
+        }
+        response = MagicMock()
+        response.json.return_value = {"exam_data": {}}
+        gateway = AsyncMock(return_value=response)
+        with ExitStack() as stack:
+            stack.enter_context(patch("socket.socket.connect", side_effect=AssertionError("network disabled")))
+            replacements = {
+                "get_db_connection": MagicMock(return_value=connection),
+                "normalize_level_key": MagicMock(return_value="stage-a"),
+                "get_learning_level": MagicMock(return_value={"key": "stage-a"}),
+                "_load_offering": MagicMock(return_value={"teacher_id": 3}),
+                "refresh_student_learning_state": MagicMock(return_value={}),
+                "_build_stage_exam_prompt": MagicMock(return_value="Synthetic exam task"),
+                "ai_gateway_post": gateway,
+                "_normalize_exam_payload": MagicMock(return_value={"pages": []}),
+                "_load_historical_stage_exam_question_texts": MagicMock(return_value=[]),
+                "_validate_stage_exam_quality": MagicMock(return_value={"ok": True}),
+                "_publish_generated_stage_exam": MagicMock(return_value={"status": "generated"}),
+            }
+            for name, replacement in replacements.items():
+                stack.enter_context(patch.object(service, name, replacement))
+            result = await service.generate_personal_stage_exam_from_attempt(91)
+        self.assertEqual("generated", result["status"])
+        payload = gateway.await_args.kwargs["json_payload"]
+        context = payload["business_context"]
+        self.assertEqual("personal_stage", context["source_feature"])
+        self.assertEqual(7, context["class_offering_id"])
+        self.assertEqual("stage-exam:91:generation", context["logical_call_id"])
+        self.assertEqual(10, context["expected_question_count"])
+        self.assertEqual("deepseek", resolve_execution_plan(payload["task_type"], "thinking", context).provider)
+        self.assertEqual("vision_assessment_high", resolve_execution_plan(payload["task_type"], "vision", context).profile_id)
 
 
 class LearningProgressStageExamTests(unittest.TestCase):

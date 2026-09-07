@@ -17,6 +17,7 @@ from classroom_app.services.ai_model_policy import (
     AI_TASK_VISION_OCR,
     normalize_ai_task_type,
     provider_order_for_task,
+    resolve_execution_plan,
 )
 from classroom_app.services.deterministic_exam_grading import (
     apply_deterministic_grading_result,
@@ -28,19 +29,19 @@ from classroom_app.services.deterministic_exam_grading import (
 class AIMultimodalPolicyTests(unittest.TestCase):
     def test_text_and_multimodal_provider_orders_are_isolated(self):
         env = {"AI_PLATFORM_PRIORITY": "deepseek,volcengine"}
-        self.assertEqual(provider_order_for_task(AI_TASK_FAST_TEXT, environ=env), ["deepseek", "volcengine"])
-        self.assertEqual(provider_order_for_task(AI_TASK_DEEP_TEXT, environ=env), ["deepseek", "volcengine"])
+        self.assertEqual(provider_order_for_task(AI_TASK_FAST_TEXT, environ=env), ["deepseek"])
+        self.assertEqual(provider_order_for_task(AI_TASK_DEEP_TEXT, environ=env), ["deepseek"])
         self.assertEqual(
             provider_order_for_task(AI_TASK_VISION_OCR, "vision", environ=env),
-            ["qwen", "volcengine", "zhipu"],
+            ["volcengine"],
         )
         self.assertEqual(
             provider_order_for_task(AI_TASK_MULTIMODAL_GRADING, "vision", environ=env),
-            ["qwen", "volcengine"],
+            ["volcengine"],
         )
         self.assertEqual(
             provider_order_for_task(AI_TASK_MULTIMODAL_ADJUDICATION, "vision", environ=env),
-            ["volcengine", "qwen"],
+            ["volcengine"],
         )
 
     def test_legacy_aliases_converge_on_specific_tasks(self):
@@ -182,72 +183,39 @@ class DeterministicExamGradingTests(unittest.TestCase):
 
 
 class StreamingFallbackTests(unittest.IsolatedAsyncioTestCase):
-    async def test_stream_falls_back_only_before_first_content_token(self):
+    async def test_stream_does_not_bypass_provider_allowlist_before_first_token(self):
         class FailingCompletions:
             async def create(self, **kwargs):
-                raise RuntimeError("qwen unavailable")
+                raise RuntimeError("provider unavailable")
 
         class FailingOpenAI:
             def __init__(self, **kwargs):
                 self.chat = SimpleNamespace(completions=FailingCompletions())
 
-        class SuccessfulStream:
-            def __aiter__(self):
-                self._sent = False
-                return self
+            async def close(self):
+                pass
 
-            async def __anext__(self):
-                if self._sent:
-                    raise StopAsyncIteration
-                self._sent = True
-                delta = SimpleNamespace(content="豆包回退成功", reasoning_content=None)
-                return SimpleNamespace(choices=[SimpleNamespace(delta=delta)], usage=None)
-
-        class SuccessfulCompletions:
-            async def create(self, **kwargs):
-                return SuccessfulStream()
-
-        class SuccessfulArk:
-            def __init__(self, **kwargs):
-                self.chat = SimpleNamespace(completions=SuccessfulCompletions())
-
-        qwen = {**ai_assistant.PLATFORMS_CONFIG["qwen"], "enabled": True, "api_key": "test-qwen"}
-        volcengine = {
-            **ai_assistant.PLATFORMS_CONFIG["volcengine"],
-            "enabled": True,
-            "api_key": "test-volcengine",
-        }
+        volcengine = {**ai_assistant.PLATFORMS_CONFIG["volcengine"], "enabled": True, "api_key": "test-only"}
         with (
             mock.patch.object(ai_assistant, "AsyncOpenAI", FailingOpenAI),
-            mock.patch.object(ai_assistant, "AsyncArk", SuccessfulArk),
             mock.patch.object(ai_assistant, "_write_ai_usage_log", lambda event: None),
-            mock.patch.object(ai_assistant, "ENABLED_PLATFORMS", ["qwen", "volcengine"]),
-            mock.patch.dict(
-                ai_assistant.PLATFORMS_CONFIG,
-                {"qwen": qwen, "volcengine": volcengine},
-                clear=False,
-            ),
+            mock.patch.object(ai_assistant, "ENABLED_PLATFORMS", ["volcengine"]),
+            mock.patch.dict(ai_assistant.PLATFORMS_CONFIG, {"volcengine": volcengine}),
+            mock.patch.object(ai_assistant, "ai_model_router", ai_assistant.AIModelLoadRouter()),
+            mock.patch.object(ai_assistant, "ai_limiter", ai_assistant.AIPriorityLimiter(2)),
         ):
-            events = []
-            async for raw_event in ai_assistant._call_ai_platform_chat_stream_events(
-                "system",
-                [{"role": "user", "content": [{"type": "text", "text": "看图"}]}],
-                capability="vision",
-                task_type=AI_TASK_VISION_INTERACTIVE,
-            ):
-                events.append(json.loads(raw_event))
-
-        self.assertEqual([item["platform"] for item in events if item["event"] == "meta"], ["qwen", "volcengine"])
-        self.assertEqual(
-            "".join(item.get("delta", "") for item in events if item["event"] == "answer_delta"),
-            "豆包回退成功",
-        )
-        self.assertFalse(any(item["event"] == "error" for item in events))
-        self.assertEqual(sum(item["event"] == "done" for item in events), 1)
+            events = [json.loads(event) async for event in ai_assistant._call_ai_platform_chat_stream_events(
+                "system", [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}}]}],
+                capability="vision", task_type=AI_TASK_VISION_INTERACTIVE,
+            )]
+        self.assertEqual([event["platform"] for event in events if event["event"] == "meta"], ["volcengine"])
+        self.assertFalse(any(event["event"] == "answer_delta" for event in events))
+        self.assertTrue(any(event["event"] == "error" for event in events))
+        self.assertEqual(sum(event["event"] == "done" for event in events), 1)
 
 
 class GradingPipelineIntegrationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_multimodal_grading_uses_qwen_route_and_fixed_exam_score(self):
+    async def test_multimodal_grading_uses_business_profile_and_fixed_exam_score(self):
         calls = []
         callback_payloads = []
 
@@ -282,6 +250,7 @@ class GradingPipelineIntegrationTests(unittest.IsolatedAsyncioTestCase):
             image_path.write_bytes(tiny_png)
             job = ai_assistant.GradingJob(
                 submission_id=42,
+                business_context={"operation": "grading", "assessment_kind": "homework"},
                 rubric_md="第1题 100分，选 A 得满分。",
                 requirements_md="完成单选题并提交截图。",
                 files=[
@@ -318,8 +287,9 @@ class GradingPipelineIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 submission_fingerprint="fingerprint",
             )
             execution = {
-                "platform_name": "qwen",
-                "platform_config": {"name": "qwen", "type": "openai"},
+                "platform_name": "volcengine",
+                "platform_config": {"name": "volcengine", "type": "volcengine"},
+                "execution_plan": resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", job.business_context, environ={}).to_dict(),
                 "capability": "vision",
                 "task_type": AI_TASK_MULTIMODAL_GRADING,
                 "mode": "vision_messages",
@@ -335,10 +305,12 @@ class GradingPipelineIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["task_type"], AI_TASK_MULTIMODAL_GRADING)
-        self.assertEqual(calls[0]["preferred_platform"], "qwen")
+        self.assertEqual(calls[0]["preferred_platform"], "volcengine")
+        self.assertEqual(calls[0]["business_context"]["assessment_kind"], "homework")
         self.assertEqual(callback_payloads[0]["status"], "graded")
         self.assertEqual(callback_payloads[0]["score"], 0)
-        self.assertFalse(callback_payloads[0]["review_required"])
+        self.assertTrue(callback_payloads[0]["review_required"])
+        self.assertIn("automatic_review_disabled", callback_payloads[0]["review_reason_codes"])
         self.assertIn("客观题答案不正确", callback_payloads[0]["feedback_md"])
 
 

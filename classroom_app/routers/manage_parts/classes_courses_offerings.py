@@ -509,6 +509,12 @@ async def api_delete_class_offering(offering_id: int, user: dict = Depends(get_c
             if not cursor.fetchone():
                 raise HTTPException(403, "无权删除该课堂或课堂不存在")
 
+            # Serialize with publication, which locks the same classroom row.
+            conn.execute("UPDATE class_offerings SET id = id WHERE id = ? AND teacher_id = ?", (offering_id, user["id"]))
+            if conn.execute("SELECT 1 FROM grade_publications WHERE class_offering_id = ? AND status = 'active' LIMIT 1",
+                            (offering_id,)).fetchone():
+                raise HTTPException(409, "本课堂仍有正在公布的课程成绩。请先在成绩材料中撤回公布，再删除课堂；历史公布快照会保留。")
+
             # 删除 (依赖于 ON DELETE CASCADE)
             # 1. 删除 chat_logs (通过外键)
             # 2. 删除 ai_class_configs (通过外键)
@@ -520,6 +526,8 @@ async def api_delete_class_offering(offering_id: int, user: dict = Depends(get_c
             conn.execute("DELETE FROM class_offerings WHERE id = ?", (offering_id,))
             conn.commit()
 
+    except HTTPException:
+        raise
     except sqlite3.IntegrityError as e:
         raise HTTPException(400, f"删除失败: {e}")
     except Exception as e:

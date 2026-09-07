@@ -16,6 +16,7 @@ import { onLoad } from "@dcloudio/uni-app";
 import { computed, reactive, ref, watch } from "vue";
 
 import { request } from "../../utils/api";
+import { assessmentLabel, type AssessmentClassification } from "../../utils/assessment";
 import { downloadProtectedTempFile, previewProtectedFile } from "../../utils/preview";
 
 interface FeedbackBlock {
@@ -62,7 +63,7 @@ interface ReviewQuestion {
 }
 
 interface ReviewData {
-  assignment: { id: number; title: string; is_exam: boolean; course_name: string; class_name: string };
+  assignment: AssessmentClassification & { id: number; title: string; is_exam: boolean; course_name: string; class_name: string };
   student: { name: string; student_id_number: string };
   submission: {
     id: number;
@@ -371,7 +372,7 @@ onLoad((query) => {
         <view class="header__paper">
           <text class="header__title">{{ review?.assignment.title || "" }}</text>
           <text class="header__meta">
-            {{ review?.assignment.course_name }} · {{ review?.assignment.class_name }}
+            {{ assessmentLabel(review?.assignment) }} · {{ review?.assignment.course_name }} · {{ review?.assignment.class_name }}
             <template v-if="review?.total_points"> · 卷面 {{ review.total_points }} 分</template>
           </text>
         </view>

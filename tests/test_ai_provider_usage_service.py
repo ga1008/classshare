@@ -125,6 +125,64 @@ class AIProviderUsageServiceTests(unittest.TestCase):
         self.assertEqual(0, snapshot["summary"]["calls"])
         self.assertEqual([], snapshot["model_items"])
 
+    def test_physical_ledgers_dedupe_cumulative_replay_and_expose_unknown_cost(self):
+        def attempt(key, profile, operation, *, status="completed", cost=0.2, finish="stop"):
+            return {"attempt_id": key, "profile_id": profile, "operation": operation,
+                "provider": "volcengine", "model": "doubao-seed-2-1-pro-260628",
+                "task_type": "multimodal_grading" if operation == "grading" else "multimodal_adjudication",
+                "status": status, "finish_reason": finish, "started_at": (self.now-timedelta(seconds=2)).isoformat(),
+                "finished_at": self.now.isoformat(), "usage": {"prompt_tokens": 100, "completion_tokens": 20,
+                    "completion_tokens_details": {"reasoning_tokens": 15}} if cost is not None else None,
+                "cost_known": cost is not None, "cost_estimate_cny": cost}
+        low = attempt("low-1", "vision_pro_low", "grading")
+        unknown = attempt("high-unknown", "vision_assessment_high", "adjudication", status="unknown", cost=None)
+        high = attempt("another-high", "vision_assessment_high", "grading", cost=0.3, finish="length")
+        def event(attempts):
+            return {"event": "ai_usage", "finished_at": self.now.isoformat(), "call_id": "logical-event",
+                "status": "success", "cost_estimate": {"estimated_cost": 99},
+                "extra": {"execution_state": {"logical_call_id": "job-1", "attempts": attempts}}}
+        rows = [event([low]), event([low, unknown]), event([low, unknown]), event([high]),
+            {**self._event(provider="deepseek", model="legacy", cost=0.1), "call_id": "legacy-1"},
+            {**self._event(provider="deepseek", model="legacy", cost=0.1), "call_id": "legacy-1"}]
+        self.log_path.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+        snapshot = build_provider_usage_snapshot(path=self.log_path, now=self.now)
+        self.assertEqual(4, snapshot["summary"]["calls"])
+        self.assertEqual(6, snapshot["events_read"])
+        self.assertEqual(0.6, snapshot["summary"]["estimated_cost_cny"])
+        self.assertEqual(1, snapshot["summary"]["cost_unknown_calls"])
+        self.assertTrue(snapshot["summary"]["estimated_cost_is_partial"])
+        self.assertEqual(1, snapshot["summary"]["incomplete_calls"])
+        self.assertEqual(1, snapshot["summary"]["review_calls"])
+        self.assertEqual(240, snapshot["summary"]["total_tokens"])  # Reasoning is already part of completion.
+        self.assertEqual({("vision_pro_low", "primary"), ("vision_assessment_high", "primary"),
+            ("vision_assessment_high", "review"), ("legacy_unknown", "primary")},
+            {(row["profile_id"], row["stage"]) for row in snapshot["profile_items"]})
+
+    def test_empty_ledger_is_not_a_billable_call_and_null_or_foreign_cost_is_unknown(self):
+        rows = [{"event": "ai_usage", "finished_at": self.now.isoformat(), "extra": {"execution_state": {"attempts": []}}},
+            {**self._event(provider="volcengine", model="a"), "cost_estimate": {"estimated_cost": None}},
+            {**self._event(provider="volcengine", model="b"), "cost_estimate": {"currency": "USD", "estimated_cost": 1}}]
+        self.log_path.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+        summary = build_provider_usage_snapshot(path=self.log_path, now=self.now)["summary"]
+        self.assertEqual(2, summary["calls"])
+        self.assertEqual(2, summary["cost_unknown_calls"])
+        self.assertEqual(0, summary["cost_known_calls"])
+
+    def test_disconnected_attempt_with_known_usage_is_billed_but_not_successful(self):
+        attempt = {"attempt_id": "disconnected", "status": "completed", "error_code": "stream_disconnected",
+            "started_at": self.now.isoformat(), "finished_at": self.now.isoformat(),
+            "provider": "volcengine", "model": "doubao-seed-2-0-lite-260428",
+            "profile_id": "vision_edge_low", "usage": {"prompt_tokens": 100, "completion_tokens": 30},
+            "cost_known": True, "cost_estimate_cny": 0.000168}
+        event = {"event": "ai_usage", "finished_at": self.now.isoformat(),
+            "extra": {"execution_state": {"attempts": [attempt]}}}
+        self.log_path.write_text(json.dumps(event), encoding="utf-8")
+        summary = build_provider_usage_snapshot(path=self.log_path, now=self.now)["summary"]
+        self.assertEqual(0, summary["successful_calls"])
+        self.assertEqual(1, summary["failed_calls"])
+        self.assertEqual(1, summary["cost_known_calls"])
+        self.assertEqual(0.000168, summary["estimated_cost_cny"])
+
     def test_tail_reader_discards_a_partial_first_line(self):
         complete_event = json.dumps(
             self._event(provider="qwen", model="qwen3.6-flash"),

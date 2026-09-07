@@ -12,6 +12,7 @@ import { onLoad, onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { assessmentLabel, type AssessmentClassification } from "../../utils/assessment";
 
 interface GradeEntry {
   submission_id: number | null;
@@ -27,13 +28,13 @@ interface GradeEntry {
 }
 
 interface GradingResponse {
-  assignment: { id: number; title: string; is_exam: boolean; course_name: string; class_name: string };
+  assignment: AssessmentClassification & { id: number; title: string; is_exam: boolean; course_name: string; class_name: string };
   stats: {
     total_students: number;
     submitted_count: number;
     graded_count: number;
     pending_grade_count: number;
-    average_score: number;
+    average_score: number | null;
   };
   entries: GradeEntry[];
 }
@@ -222,7 +223,7 @@ onPullDownRefresh(() => {
       <view class="title-block">
         <text class="title-block__title">{{ data.assignment.title }}</text>
         <text class="title-block__meta">
-          {{ data.assignment.course_name }} · {{ data.assignment.class_name }}
+          {{ assessmentLabel(data.assignment) }} · {{ data.assignment.course_name }} · {{ data.assignment.class_name }}
         </text>
       </view>
 
@@ -246,7 +247,7 @@ onPullDownRefresh(() => {
         </view>
         <view class="stat__divider" />
         <view class="stat">
-          <text class="stat__value">{{ data.stats.average_score }}</text>
+          <text class="stat__value">{{ data.stats.average_score ?? "—" }}</text>
           <text class="stat__label">平均分</text>
         </view>
       </view>

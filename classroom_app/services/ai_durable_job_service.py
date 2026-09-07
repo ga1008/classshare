@@ -619,6 +619,68 @@ def renew_ai_job_lease(job_id: int, lease_token: str, *, lease_seconds: int = 90
         return cursor.rowcount == 1
 
 
+def persist_ai_job_execution_state(
+    job_id: int, lease_token: str, execution_state: dict[str, Any], *, expected_revision: int,
+) -> None:
+    """CAS mutable inference ledger without changing the enqueue/dedupe hash.
+
+    Row locking serializes a heartbeat/reclaim with a send reservation. Old
+    workers and stale in-process updates cannot overwrite a newer ledger.
+    """
+    if execution_state.get("version") != 1 or int(execution_state.get("revision") or 0) != expected_revision + 1:
+        raise ValueError("Invalid AI execution ledger revision")
+    with get_db_connection() as conn:
+        engine = get_configured_db_engine()
+        if engine == "sqlite":
+            conn.execute("BEGIN IMMEDIATE")
+        suffix = " FOR UPDATE" if engine == "postgres" else ""
+        row = conn.execute(
+            "SELECT payload_json, lease_expires_at FROM ai_jobs WHERE id=? AND status='running' AND lease_token=?" + suffix,
+            (int(job_id), str(lease_token)),
+        ).fetchone()
+        if not row or str(row["lease_expires_at"] or "") <= _iso():
+            conn.rollback()
+            raise RuntimeError("AI job lease changed before execution reservation")
+        payload = _json_loads(row["payload_json"])
+        previous = payload.get("execution_state") or {}
+        if int(previous.get("revision") or 0) != expected_revision:
+            conn.rollback()
+            raise RuntimeError("AI execution ledger revision conflict")
+        old_attempts = previous.get("attempts") or []
+        new_attempts = execution_state.get("attempts") or []
+        if (len(new_attempts) < len(old_attempts) or len(new_attempts) > 3
+                or [a.get("attempt_id") for a in new_attempts[:len(old_attempts)]]
+                != [a.get("attempt_id") for a in old_attempts]):
+            conn.rollback()
+            raise ValueError("AI execution attempts cannot be reset")
+        if previous and any(previous.get(key) != execution_state.get(key)
+                            for key in ("version", "logical_call_id", "primary_plan", "legacy_history_unknown")):
+            conn.rollback()
+            raise ValueError("AI execution identity and primary plan are immutable")
+        for key in ("primary_result", "review_result", "repair_candidate", "review_plan"):
+            if previous.get(key) is not None and previous.get(key) != execution_state.get(key):
+                conn.rollback()
+                raise ValueError("A validated AI result snapshot cannot be rewritten")
+        immutable_attempt_fields = ("attempt_id", "started_at", "route_id", "profile_id", "provider",
+                                    "model", "reasoning_effort", "max_output_tokens_total", "operation", "task_type", "api_style")
+        for old, new in zip(old_attempts, new_attempts):
+            if any(old.get(key) != new.get(key) for key in immutable_attempt_fields):
+                conn.rollback()
+                raise ValueError("AI physical attempt identity is immutable")
+            if old.get("status") != "pending" and old != new:
+                conn.rollback()
+                raise ValueError("A settled AI attempt cannot be rewritten")
+        payload["execution_state"] = execution_state
+        cursor = conn.execute(
+            "UPDATE ai_jobs SET payload_json=?, updated_at=? WHERE id=? AND status='running' AND lease_token=? AND lease_expires_at>?",
+            (_json_dumps(payload), _iso(), int(job_id), str(lease_token), _iso()),
+        )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            raise RuntimeError("AI job lease expired before execution reservation")
+        conn.commit()
+
+
 def record_ai_job_attempt_started(conn, job: dict[str, Any], *, stage: str = "execute") -> None:
     attempt_no = int(job.get("attempt_count") or 1)
     engine = get_configured_db_engine()
@@ -782,11 +844,11 @@ def store_ai_job_result(
         return result_row
 
 
-def reschedule_ai_job(job: dict[str, Any], *, error_code: str, error_message: str) -> str:
+def reschedule_ai_job(job: dict[str, Any], *, error_code: str, error_message: str, terminal: bool = False) -> str:
     attempt_count = int(job.get("attempt_count") or 1)
     max_attempts = int(job.get("max_attempts") or durable_task_policy(str(job.get("task_type"))).max_attempts)
     policy = durable_task_policy(str(job.get("task_type") or ""))
-    terminal = attempt_count >= max_attempts
+    terminal = terminal or attempt_count >= max_attempts
     status = policy.failure_terminal if terminal else JOB_RETRY_WAIT
     backoff = BACKOFF_SECONDS[min(max(attempt_count - 1, 0), len(BACKOFF_SECONDS) - 1)]
     jitter = int(job.get("id") or 0) % 7

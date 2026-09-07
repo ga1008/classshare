@@ -35,6 +35,7 @@ def calendar_item(item: dict[str, Any], *, source: dict[str, Any]) -> dict[str, 
         prefix = "原截止" if historical_due else ("重交截止" if item["status"] == "returned" else ("补交截止" if item["status"] == "late" else "截止"))
         deadline = f"{prefix} {end.month}月{end.day}日 {end:%H:%M}"
     return {
+        **{key: item[key] for key in ("assessment_kind", "assessment_kind_label", "classification_status", "source_feature", "has_exam_paper", "answer_mode", "semester_name") if key in item},
         "canonical_workspace": True, "workspace_key": item["key"],
         "id": f"manual:{item['source_id']}" if item["is_manual"] else item["key"],
         "source_id": item["source_id"], "source_type": source_type, "type_label": item["type_label"],

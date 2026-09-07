@@ -1,0 +1,14 @@
+.grade-material-preflight { display: grid; gap: 1rem; color: var(--text-primary, #1e293b); }
+.grade-material-preflight p { margin: 0; line-height: 1.65; }
+.grade-material-preflight__intro { font-weight: 650; }
+.grade-material-preflight__notice { padding: .85rem 1rem; border-radius: .8rem; background: var(--bg-secondary, #f1f5f9); }
+.grade-material-preflight__table { max-height: 22rem; overflow: auto; border: 1px solid var(--border-color, #e2e8f0); border-radius: .75rem; }
+.grade-material-preflight table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .9rem; }
+.grade-material-preflight th, .grade-material-preflight td { padding: .65rem .8rem; border-bottom: 1px solid var(--border-color, #e2e8f0); text-align: left; white-space: nowrap; }
+.grade-material-preflight th { position: sticky; top: 0; background: var(--bg-secondary, #f1f5f9); }
+.grade-material-preflight__checks { display: grid; gap: .8rem; border: 1px solid var(--border-color, #e2e8f0); border-radius: .8rem; padding: 1rem; }
+.grade-material-preflight__checks label, .grade-material-preflight__confirm { display: flex; align-items: flex-start; gap: .65rem; line-height: 1.6; }
+.grade-material-preflight input[type=checkbox] { margin-top: .3rem; flex-shrink: 0; }
+.grade-material-preflight__note { display: grid; gap: .4rem; }
+.grade-material-preflight details summary { cursor: pointer; padding: .5rem 0; }
+.grade-material-preflight__checks details { font-size: .9rem; }
