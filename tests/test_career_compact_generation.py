@@ -13,7 +13,7 @@ from classroom_app.services import ai_durable_job_service as durable
 from classroom_app.services import career_lifecycle_service as lifecycle
 from classroom_app.services import career_path_service as career
 from classroom_app.services import career_payload_service as payloads
-from classroom_app.services.career_public_view_service import STAGES
+from classroom_app.services.career_stage_service import PHASES, build_career_stages
 from classroom_app.services.career_recommendation_service import baseline_network
 from tests.test_career_lifecycle import fixture
 
@@ -40,12 +40,37 @@ class CompactPayloadTests(unittest.TestCase):
         self.assertEqual(graph["nodes"][0]["direction_id"], "direction-reviewed")
         self.assertEqual(graph["links"], raw["links"])
         for node in graph["nodes"]:
-            self.assertEqual(node["tl"], [list(stage) for stage in STAGES])
+            self.assertEqual(node["tl"], build_career_stages(node, major_name="英语"))
+            self.assertNotIn("了解与观察", [stage[1] for stage in node["tl"]])
             self.assertEqual(node["rec"], 3)
             self.assertNotIn("salary", node)
         graph["nodes"][0]["tl"][0][0] = "changed locally"
         self.assertNotEqual(graph["nodes"][1]["tl"][0][0], "changed locally")
-        self.assertNotEqual(STAGES[0][0], "changed locally")
+        self.assertNotEqual(PHASES[0], "changed locally")
+
+    def test_new_role_titles_survive_expansion_validation_and_public_projection(self):
+        from classroom_app.services.career_public_view_service import project_network_for_public
+        raw = compact_candidate()
+        roles = ["助理声学工程师", "声学工程师", "高级声学工程师", "资深声学工程师"]
+        raw["nodes"][0].update(name="声学研发", role_titles=roles)
+        before = copy.deepcopy(raw)
+        graph = payloads.expand_network_candidate(raw, "声学")
+        self.assertEqual([stage[1] for stage in graph["nodes"][0]["tl"]], roles)
+        projected = project_network_for_public(graph)
+        self.assertEqual([stage[1] for stage in projected["nodes"][0]["tl"]], roles)
+        self.assertEqual(project_network_for_public(projected), projected)
+        self.assertEqual(raw, before)
+
+    def test_invalid_role_titles_fail_publication(self):
+        for roles in (None, "高级工程师", [], ["工程师"] * 3, ["工程师"] * 5,
+                      ["工程师", "工程师", "", "工程师"], [None] * 4,
+                      ["a" * 81] * 4, ["工程师\x00"] * 4,
+                      ["3年成为经理"] * 4, ["年薪60万元工程师"] * 4,
+                      ["了解与观察", "实践与证据", "独立承担任务", "专长与协作"]):
+            raw = compact_candidate()
+            raw["nodes"][0]["role_titles"] = roles
+            with self.subTest(roles=roles), self.assertRaises(ValueError):
+                payloads.expand_network_candidate(raw, "英语")
 
     def test_oversized_collections_fail_before_traversal_or_expansion(self):
         class UntraversableList(list):

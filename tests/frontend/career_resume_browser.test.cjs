@@ -129,6 +129,127 @@ test('graph escapes AI attributes, supports hyphen tags and keyboard; mobile lis
     assert.deepEqual(env.errors, []);
   } finally { await env.context.close(); }
 });
+test('career graph shows full position titles throughout highlighted routes, tooltip and keyboard-selected details', async () => {
+  const phases = ['入门阶段', '成长阶段', '成熟阶段', '进阶阶段'];
+  const backendRoles = ['初级后端开发工程师', '后端开发工程师', '高级后端开发工程师', '资深后端开发工程师'];
+  const testingRoles = ['初级测试开发工程师', '测试开发工程师', '高级测试开发工程师', '资深测试开发工程师'];
+  const analysisRoles = ['助理数据分析师', '数据分析师', '数据分析师/业务分析师', '资深数据分析师（产品）'];
+  const makeNode = (tag, name, roles) => ({ tag, cat: 'engineering', name, rec: 4,
+    tl: roles.map((role, i) => [phases[i], role, '此岗位需要积累相应的实践经验。']) });
+  const current = careerState({ phase: 'ready', session_status: 'ready',
+    network: { cats: [{ id: 'engineering', name: '研发与工程', c1: '#63cbff' }], nodes: [
+      makeNode('backend', '后端开发工程师', backendRoles),
+      makeNode('testing', '测试开发工程师', testingRoles),
+      makeNode('analysis', '数据分析师', analysisRoles)
+    ], links: [['testing', 0, 'backend', 1], ['backend', 1, 'analysis', 2]] } });
+  const env = await open('career', async url => url.endsWith('/initialize') ? current : {}, { width: 2048, height: 1187 });
+  const node = id => env.page.locator(`.cn-node[data-id="${id}"]`);
+  try {
+    await env.page.getByRole('button', { name: '网络图', exact: true }).click();
+    await node('backend-1').locator('.cn-core').click();
+    await env.page.locator('.cn-node.is-selected[data-id="backend-1"]').waitFor();
+    await env.page.waitForFunction(() => {
+      const labels = Array.from(document.querySelectorAll('.cn-node.hot .cn-rolelab'));
+      return labels.length > 0 && labels.every(label => Number(getComputedStyle(label).opacity) > 0.5);
+    });
+
+    // Each highlighted stage keeps its own complete job title, including cross-direction branches.
+    const highlightedRoles = await env.page.locator('.cn-node.hot[data-tag]').evaluateAll(nodes =>
+      Object.fromEntries(nodes.map(node => [node.dataset.id, node.querySelector('.cn-rolelab').textContent])));
+    assert.deepEqual(highlightedRoles, {
+      'backend-0': backendRoles[0], 'backend-1': backendRoles[1],
+      'backend-2': backendRoles[2], 'backend-3': backendRoles[3],
+      'testing-0': testingRoles[0], 'analysis-2': analysisRoles[2], 'analysis-3': analysisRoles[3]
+    });
+    assert.deepEqual((await env.page.locator('.cn-axislab').allTextContents()).slice(0, 4), phases);
+    assert.deepEqual(await env.page.locator('.cn-axissub').allTextContents(), phases);
+    assert.equal(await env.page.locator('#career-detail .career-sec__t').first().textContent(), '当前节点的职位');
+    assert.match(await env.page.locator('.career-stage-node').textContent(), /成长阶段\s+后端开发工程师/);
+    assert.deepEqual(await env.page.locator('.career-tl__role').allTextContents(), backendRoles);
+    const layout = await env.page.evaluate(() => ({
+      detailLeft: document.querySelector('#career-detail').getBoundingClientRect().left,
+      prepTop: document.querySelector('#career-prep').getBoundingClientRect().top,
+      labels: Array.from(document.querySelectorAll('.cn-node.hot .cn-rolelab')).map(label => {
+        const bounds = label.getBoundingClientRect();
+        return { title: label.textContent, left: bounds.left, right: bounds.right, bottom: bounds.bottom };
+      })
+    }));
+    for (const label of layout.labels) {
+      assert.ok(label.left >= 0 && label.right < layout.detailLeft && label.bottom < layout.prepTop,
+        JSON.stringify({ label, detailLeft: layout.detailLeft, prepTop: layout.prepTop }));
+    }
+    await env.page.mouse.move(20, 60);
+    await capture(env.page, 'career-network-position-branches');
+
+    await node('backend-3').locator('.cn-core').hover();
+    await env.page.locator('#career-tip.show').waitFor();
+    assert.equal(await env.page.locator('#career-tip .cn-trow b').textContent(), backendRoles[3]);
+    assert.equal(await node('backend-3').getAttribute('aria-label'), `后端开发工程师 · ${phases[3]} · ${backendRoles[3]}`);
+    await node('backend-3').focus(); await env.page.keyboard.press('Enter');
+    assert.equal(await env.page.locator('.cn-node.is-selected').getAttribute('data-id'), 'backend-3');
+    assert.match(await env.page.locator('.career-stage-node').textContent(), /进阶阶段\s+资深后端开发工程师/);
+    await env.page.mouse.move(20, 60);
+    await capture(env.page, 'career-network-position-titles');
+
+    // Space selection uses the same role contract; punctuation is part of the title, not a truncation marker.
+    await node('analysis-3').focus(); await env.page.keyboard.press('Space');
+    assert.equal(await env.page.locator('.cn-node.is-selected').getAttribute('data-id'), 'analysis-3');
+    assert.equal(await node('analysis-3').locator('.cn-rolelab').textContent(), analysisRoles[3]);
+    assert.match(await env.page.locator('.career-stage-node').textContent(), /进阶阶段\s+资深数据分析师（产品）/);
+    assert.equal(await env.page.locator('.career-detail__title').textContent(), '数据分析师');
+    assert.deepEqual(await env.page.locator('.career-tl__role').allTextContents(), analysisRoles);
+    await env.page.keyboard.press('Escape');
+    assert.equal(await env.page.locator('.cn-node.is-selected').count(), 0);
+    await env.page.locator('#career-detail').waitFor({ state: 'hidden' });
+    assert.equal(await env.page.locator('#career-detail').isVisible(), false);
+    assert.deepEqual(env.errors, []);
+  } finally { await env.context.close(); }
+});
+
+test('tall career catalogue keeps selected position titles readable below the overview zoom threshold', async () => {
+  const phases = ['入门阶段', '成长阶段', '成熟阶段', '进阶阶段'];
+  const roles = ['初级后端开发工程师', '后端开发工程师', '高级后端开发工程师', '资深后端开发工程师'];
+  const nodes = Array.from({ length: 24 }, (_, i) => ({
+    tag: 'direction-' + i, cat: 'engineering', name: i === 0 ? '后端开发工程师' : '工程方向 ' + i, rec: 4,
+    tl: phases.map((phase, stage) => [phase, roles[stage], '积累对应岗位的实践经验。'])
+  }));
+  const current = careerState({ phase: 'ready', session_status: 'ready',
+    network: { cats: [{ id: 'engineering', name: '研发与工程', c1: '#63cbff' }], nodes, links: [] } });
+  const env = await open('career', async url => url.endsWith('/initialize') ? current : {});
+  try {
+    await env.page.getByRole('button', { name: '网络图', exact: true }).click();
+    assert.equal(await env.page.locator('.cn-node[data-tag]').count(), 96);
+    await env.page.locator('.cn-node[data-id="direction-0-3"] .cn-core').click();
+    await env.page.locator('.cn-node.is-selected[data-id="direction-0-3"]').waitFor();
+    await env.page.waitForFunction(() => Array.from(document.querySelectorAll('.cn-node.hot .cn-rolelab'))
+      .every(label => Number(getComputedStyle(label).opacity) > 0.5));
+    const layout = await env.page.evaluate(() => ({
+      zoomNear: document.querySelector('.cn-vp').classList.contains('zoom-near'),
+      detailLeft: document.querySelector('#career-detail').getBoundingClientRect().left,
+      prepTop: document.querySelector('#career-prep').getBoundingClientRect().top,
+      labels: Array.from(document.querySelectorAll('.cn-node.hot .cn-rolelab')).map(label => {
+        const bounds = label.getBoundingClientRect();
+        const core = label.parentElement.querySelector('.cn-core').getBoundingClientRect();
+        return { title: label.textContent, left: bounds.left, right: bounds.right, top: bounds.top,
+          bottom: bounds.bottom, height: bounds.height, coreBottom: core.bottom,
+          opacity: Number(getComputedStyle(label).opacity) };
+      })
+    }));
+    assert.equal(layout.zoomNear, false, 'the tall catalogue must exercise automatic fitting below the zoom threshold');
+    assert.deepEqual(layout.labels.map(label => label.title), roles);
+    for (const [i, label] of layout.labels.entries()) {
+      assert.ok(label.opacity > 0.5 && label.height >= 10, JSON.stringify(label));
+      assert.ok(label.left >= 0 && label.right < layout.detailLeft && label.bottom < layout.prepTop,
+        JSON.stringify({ label, detailLeft: layout.detailLeft, prepTop: layout.prepTop }));
+      assert.ok(label.top > label.coreBottom, 'the position title must sit below its node: ' + JSON.stringify(label));
+      if (i) assert.ok(layout.labels[i - 1].right < label.left, 'adjacent position titles must not overlap: ' + JSON.stringify(layout.labels));
+    }
+    await env.page.mouse.move(20, 60);
+    await capture(env.page, 'career-network-position-titles-tall-catalogue');
+    assert.deepEqual(env.errors, []);
+  } finally { await env.context.close(); }
+});
+
 test('shared poller never overlaps a pending read and stops at a terminal result', async () => {
   const context = await browser.newContext(), page = await context.newPage();
   try {

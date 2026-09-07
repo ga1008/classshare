@@ -11,7 +11,11 @@ from classroom_app.services import career_lifecycle_service as lifecycle
 from classroom_app.services import career_path_service as career
 from classroom_app.services import career_public_view_service as public
 from classroom_app.services.career_recommendation_service import baseline_network
+from classroom_app.services.career_stage_service import PHASES
 from tests.test_career_lifecycle import fixture, answers_for
+
+LEGACY_STAGES = tuple(zip(PHASES, ("了解与观察", "实践与证据", "独立承担任务", "专长与协作"),
+                          ("了解工作", "记录成果", "补足能力", "深化专业")))
 
 
 def legacy_graph():
@@ -31,6 +35,21 @@ def legacy_graph():
 
 
 class CareerPublicProjectionTests(unittest.TestCase):
+    def test_saved_generic_stages_recover_positions_without_changing_graph_identity(self):
+        raw = career._seed_network_for("软件工程")
+        for node in raw["nodes"]:
+            node["tl"] = [list(stage) for stage in LEGACY_STAGES]
+        before = copy.deepcopy(raw)
+        projected = public.project_network_for_public(raw)
+        backend = next(node for node in projected["nodes"] if node["tag"] == "A1")
+        self.assertEqual([stage[1] for stage in backend["tl"]],
+                         ["初级后端开发工程师", "后端开发工程师", "高级后端开发工程师", "资深后端开发工程师"])
+        self.assertEqual(projected["links"], raw["links"])
+        self.assertEqual(raw, before)
+        self.assertEqual(public.project_network_for_public(projected), projected)
+        for node in projected["nodes"]:
+            self.assertNotEqual([stage[1] for stage in node["tl"]], [stage[1] for stage in LEGACY_STAGES])
+
     def test_projection_preserves_ids_links_and_qualification_digits_without_mutating_raw(self):
         raw = legacy_graph(); before = copy.deepcopy(raw)
         projected = public.project_network_for_public(raw)
@@ -42,7 +61,7 @@ class CareerPublicProjectionTests(unittest.TestCase):
         self.assertEqual(first["pre"], ["CET4", "Java17", "3年相关工作经验", "资格证有效期3年"])
         self.assertEqual(first["know"], ["核验资格证有效期3年"])
         self.assertEqual(first["rec"], 3)
-        self.assertEqual([item[0] for item in first["tl"]], [item[0] for item in public.STAGES])
+        self.assertEqual([item[0] for item in first["tl"]], list(PHASES))
         self.assertNotRegex(json.dumps(projected,ensure_ascii=False), r"60万|招聘需求翻倍|0-1年|3-5年|保证录用|三年晋升经理")
         self.assertFalse(projected["market_data_verified"])
 
@@ -67,6 +86,8 @@ class CareerPublicProjectionTests(unittest.TestCase):
         self.assertIn("不承诺", public.project_network_for_public(legacy_graph())["intro"])
         self.assertNotRegex(prompt,r"市场需求×|薪资上限×|普通本科适配|0-1年|3-5年")
         self.assertIn("不假定普通本科身份",prompt)
+        self.assertIn("role_titles", prompt)
+        self.assertIn("完整职位名称", prompt)
 
 
 class CareerHistoricalViewTests(unittest.TestCase):
@@ -96,10 +117,13 @@ class CareerHistoricalViewTests(unittest.TestCase):
                           (row["id"],stored,sources,"career-network-v2","2026-01-01T00:00:00"))
         self.conn.commit()
         for _ in range(2):
+            changes = self.conn.total_changes
             state=career.build_state(self.conn,1)
             self.assertEqual(state["feedback_by_tag"][first["tag"]],"saved")
             self.assertEqual(state["network"]["nodes"][0]["direction_id"],first["direction_id"])
             self.assertNotIn("60万",json.dumps(state,ensure_ascii=False))
+            self.assertNotIn("了解与观察",json.dumps(state["network"],ensure_ascii=False))
+            self.assertEqual(self.conn.total_changes, changes)
         untouched=self.conn.execute("SELECT network_json,sources_json FROM career_major_networks").fetchone()
         self.assertEqual(tuple(untouched),(stored,sources))
         lifecycle.restore_network_version(self.conn,school_code="audit",major_key="英语",revision=1,reason="历史投影回归")

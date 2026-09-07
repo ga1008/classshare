@@ -8,11 +8,12 @@ from typing import Any
 
 from .career_recommendation_service import payload_hash
 from .psych_profile_service import sanitize_hidden_profile_leaks
+from .career_stage_service import build_career_stages, is_role_title
 
 SCHEMA_VERSION = "career-network-v3"
 ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
-GENERATION_CONTRACT = "career-directions-compact-v2"
+GENERATION_CONTRACT = "career-directions-compact-v3"
 
 
 def _network_parts(payload: Any):
@@ -68,12 +69,12 @@ def assign_network_direction_ids(payload: Any, major_name: str, previous_directi
 def expand_network_candidate(payload: Any, major_name: str, *, previous_directions=None) -> dict[str, Any]:
     """Add server-owned presentation fields before strict graph validation.
 
-    Models only propose topology, interests and preparation items. Repeating
+    Models propose topology, role titles, interests and preparation items. Repeating
     shared stage/market paragraphs per node wastes generation and is not an
     independent source of evidence. Model-local tags and links are validated;
     persistent IDs are server-owned and excluded from the generation contract.
     """
-    from .career_public_view_service import STAGES, EXPLORATION_REASON, MARKET_NOTE
+    from .career_public_view_service import EXPLORATION_REASON, MARKET_NOTE, contains_market_claim
     raw_cats, raw_nodes, links = _network_parts(payload)
     palette = (("#6ee7ff", "#3b82f6"), ("#a78bfa", "#7c3aed"),
                ("#6ee7b7", "#059669"), ("#fda4af", "#e11d48"))
@@ -88,7 +89,17 @@ def expand_network_candidate(payload: Any, major_name: str, *, previous_directio
         if not isinstance(item, dict):
             raise ValueError("职业方向必须是对象")
         node = {key: item[key] for key in ("tag", "cat", "name", "riasec", "lang", "pre", "know") if key in item}
-        node.update(rec=3, tl=[list(stage) for stage in STAGES], reason=EXPLORATION_REASON, trend=MARKET_NOTE)
+        # Optional for legacy compact candidates; new generations supply four
+        # actual positions. Descriptions and phase labels remain server-owned.
+        if "role_titles" in item:
+            roles = item["role_titles"]
+            if not isinstance(roles, list) or len(roles) != 4:
+                raise ValueError("职业方向需要4个阶段职位名称")
+            roles = [text(role, 80) for role in roles]
+            if any(not is_role_title(role) or contains_market_claim(role) for role in roles):
+                raise ValueError("阶段职位必须为完整职位名称，不可包含薪酬及晋升承诺")
+            node["role_titles"] = roles
+        node.update(rec=3, tl=build_career_stages(node, major_name=major_name), reason=EXPLORATION_REASON, trend=MARKET_NOTE)
         nodes.append(node)
     assigned = assign_network_direction_ids({"cats": cats, "nodes": nodes, "links": links}, major_name, previous_directions)
     return validate_network_payload(assigned, major_name)

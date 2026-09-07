@@ -485,7 +485,7 @@ def get_questions(*, mode: str = "quick", major_key: str = "") -> list[dict[str,
 def build_network_generation_prompt(major_name: str, research_digest: str = "") -> tuple[str, str]:
     system = (
         "你是高校职业探索内容编辑。只返回严格JSON，不写薪资、市场预测、录用或晋升保证，"
-        "不替学生作个性化能力判断。平台负责统一阶段和展示文案，你只补充差异化方向与准备线索。"
+        "不替学生作个性化能力判断。平台负责阶段说明，你补充职业方向、各阶段职位名称与准备线索。"
         + build_time_context_text()
     )
     research_block = (
@@ -498,10 +498,16 @@ def build_network_generation_prompt(major_name: str, research_digest: str = "") 
         "提供3至4个类别和12个不重复的职业方向。类别id、方向tag、方向名称各自全局唯一；"
         "同一职责不要在多个类别重复。只覆盖有依据的探索方向，不声称穷尽所有就业出路。",
         '输出结构：{"cats":[{"id":"A","name":"类别名"}],"nodes":[{"tag":"A1","cat":"A",'
-        '"name":"方向名","riasec":["S","A"],"lang":false,"pre":["准备线索"],"know":["实践任务"]}],'
+        '"name":"方向名","role_titles":["初级软件工程师","软件工程师","高级软件工程师","资深软件工程师"],'
+        '"riasec":["S","A"],"lang":false,"pre":["准备线索"],"know":["实践任务"]}],'
         '"links":[["A1",1,"B1",1]]}。示例只示意字段，links只能引用实际存在的方向。',
         "每个方向pre恰好3项、know恰好3项，每项不超过25个汉字，写具体可验证的学习或实践任务。"
         "必要职业资格只是待核对线索，不假定学生已获得。职业方向不等于正在招聘的职位。",
+        "role_titles恰好4项，按职责从起步到进阶列出该方向实际使用的完整职位名称，每项不超过30个汉字。"
+        "例如后端开发可写初级后端开发工程师、后端开发工程师、高级后端开发工程师、资深后端开发工程师。"
+        "按专业选用教师、译员、设计师、专员等真实称谓；研究与创业用实际角色。"
+        "不要填了解与观察、实践与证据等行动口号，不要只写初级/高级/资深，不要在一项堆砌多个职位。"
+        "职位是可能的发展角色，不绑定固定年限，不预设每个人必然走向管理层。",
         "riasec从R/I/A/S/E/C中选1至3项。lang为是否涉及外语或国际沟通。links最多8条，"
         "只表达有依据的相邻方向探索，阶段取0至3。",
         "不输出direction_id/desc/reason/trend/tl/branch/rec；这些字段由平台统一生成，平台 rec 固定为3，"

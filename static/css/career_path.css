@@ -57,10 +57,10 @@
 .cn-vp{transform-origin:0 0}
 .cn-catlabel{font-size:14px; font-weight:800; letter-spacing:.5px}
 .cn-nlabel{font-size:11.5px; font-weight:600; pointer-events:none}
-.cn-rolelab{font-size:9px; font-weight:600; fill:#bcc8e0; opacity:0; transition:opacity .3s; pointer-events:none}
+.cn-rolelab{font-size:var(--cn-role-size,9px); font-weight:600; fill:#bcc8e0; opacity:0; transition:opacity .3s; pointer-events:none}
 .cn-vp.zoom-near .cn-rolelab{opacity:.72}
 .career-svg.sel .cn-vp .cn-rolelab{opacity:0}
-.career-svg.sel .cn-vp.zoom-near .cn-node.hot .cn-rolelab{opacity:.85}
+.career-svg.sel .cn-vp .cn-node.hot .cn-rolelab{opacity:.95}
 
 /* 缩放控件 */
 .career-zoom{position:absolute; right:18px; bottom:64px; z-index:26; display:flex; flex-direction:column; gap:8px}

@@ -726,7 +726,7 @@
     h += '</div><div class="career-detail__body">';
 
     if (stageNode && (stageNode.phase || stageNode.role)) {
-      h += sec('当前点亮的时间节点', '<div class="career-stage-node"><b>' + esc(stageNode.phase || '成长阶段') + '</b>　'
+      h += sec('当前节点的职位', '<div class="career-stage-node"><b>' + esc(stageNode.phase || '成长阶段') + '</b>　'
         + esc(stageNode.role || data.name)
         + (stageNode.sdesc && stageNode.sdesc !== '—' ? '<br>' + esc(stageNode.sdesc) : '') + '</div>');
     }

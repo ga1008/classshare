@@ -11,6 +11,8 @@ import re
 from datetime import datetime
 from typing import Any
 
+from .career_stage_service import build_career_stages
+
 SCORER_VERSION = "career-evidence-v3"
 CATALOG_VERSION = "career-catalog-v3"
 
@@ -105,10 +107,7 @@ def baseline_network(major_name: str) -> dict[str, Any]:
             "desc": f"可结合{major_name or '所学专业'}和个人实践进一步了解的职业方向。",
             "reason": "先了解实际工作内容，再用项目、实习或作品验证兴趣与能力。",
             "pre": skills, "know": ["了解目标岗位的真实职责", "准备可展示的实践证据", "核对招聘条件与专业资格"],
-            "tl": [["准备阶段", "了解与体验", "访谈、课程和小实践"],
-                   ["入门阶段", "实习与初级工作", "根据真实岗位条件补足证据"],
-                   ["发展阶段", "独立承担职责", "通过持续实践提升专业能力"],
-                   ["进阶阶段", "专长与协作", "结合个人选择探索专业深度或团队协作"]],
+            "tl": build_career_stages({"name": name}, major_name=major_name),
             "branch": "根据已积累的能力探索相邻方向，核对转向要求。",
             "trend": "此为通用探索框架，具体招聘需求和资格请核对当前真实岗位。",
         })

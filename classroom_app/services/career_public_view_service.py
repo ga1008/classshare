@@ -11,16 +11,11 @@ import re
 from functools import lru_cache
 from typing import Any
 
-PUBLIC_VIEW_VERSION = "career-public-view-v1"
+from .career_stage_service import build_career_stages
+
+PUBLIC_VIEW_VERSION = "career-public-view-v2"
 MARKET_NOTE = "这是职业探索方向。当前薪酬、招聘需求和录用条件须以有来源、仍有效的具体岗位公告为准。"
 EXPLORATION_REASON = "结合明确的职业兴趣与已有实践证据，选择下一项可验证的学习或体验任务。"
-STAGES = (
-    ("探索阶段", "了解与观察", "阅读实际岗位说明，通过访谈、课程或体验任务了解工作内容。"),
-    ("入门阶段", "实践与证据", "选择与自身条件相符的小项目或实习，记录成果并核对资格要求。"),
-    ("发展阶段", "独立承担任务", "根据实际反馈补足能力证据，尝试职责更完整的任务。"),
-    ("进阶阶段", "专长与协作", "结合个人选择深化专业能力或团队协作，不预设职位或晋升期限。"),
-)
-
 # This detector is only for discrete preparation/advice entries. Public market,
 # description and timeline fields use controlled text regardless of detection.
 # Never remove digits generally: CET4/Java17, experience and certificate validity
@@ -51,7 +46,7 @@ def project_network_for_public(network: dict[str, Any]) -> dict[str, Any]:
     public = copy.deepcopy(network)
     public.update(public_view_version=PUBLIC_VIEW_VERSION, market_data_verified=False,
                   content_kind="career_exploration",
-                  intro="通过职业方向了解准备重点和可尝试的实践。阶段表示探索顺序，不承诺晋升年限；学历、经验与执业资格须核对实际岗位公告。")
+                  intro="沿路径查看各阶段的参考职位与职责，了解发展方向和准备重点。职位序列不承诺晋升年限；不同单位的职级、学历、经验与执业资格要求须核对实际岗位公告。")
     public["graduate_label"] = str(public.get("major_name") or "专业") + "职业探索"
     for category in public.get("cats", []):
         category["desc"] = "结合实际职责、准备要求和个人实践了解这一组方向。"
@@ -67,7 +62,11 @@ def project_network_for_public(network: dict[str, Any]) -> dict[str, Any]:
         node["desc"] = _maintained_descriptions().get(name) or f"可通过岗位说明、课程实践或从业者访谈，了解“{name}”的具体职责和工作环境。"
         node["reason"] = EXPLORATION_REASON
         node["trend"] = MARKET_NOTE
-        node["tl"] = [list(stage) for stage in STAGES]
+        node["tl"] = [[stage[0], "" if contains_market_claim(stage[1]) else stage[1], stage[2]]
+                      for stage in node.get("tl", [])]
+        node["tl"] = build_career_stages(node, major_name=str(public.get("major_name") or ""))
+        for stage in node["tl"]:
+            stage[2] = project_advice(stage[2])
         node["branch"] = "结合已有能力和个人选择，了解相邻方向的职责差异与转向要求。"
         for field in ("pre", "know"):
             node[field] = [item for item in node.get(field, []) if not contains_market_claim(item)]

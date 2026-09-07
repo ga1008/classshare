@@ -1,13 +1,13 @@
 /* 职业发展网络 · 时间轴 SVG 网络图（无依赖，模板化 + 可平移缩放）
  *
  * 还原参考版「职业发展网络图」的横向时间轴样式，并以专业数据为模板套用到任意专业：
- *   - 左侧 = 现在（毕业起点），向右沿时间轴展开到 10 年以后。
+ *   - 左侧 = 现在与毕业起点，向右按服务端提供的成长阶段展开。
  *   - 每个就业大类(cat)一组，纵向堆叠；该类下所有方向(node)各占一行，4 个成长阶段(tl)沿时间轴排开。
  *   - 节点越亮＝越推荐 / 越契合（rec 与个性化 dim_glow 决定亮度与闪烁）。
  *   - 点击节点：高亮其来路 + 全部下游分支 + 可转向(links)，并自动把这条路线缩放进「安全可视区」
  *     （详情面板左侧 / 必备知识面板上方），避免被弹层遮挡；点击空白复位为全景。
  *   - 交互：滚轮（或 Ctrl+滚轮）以光标为中心缩放、按住拖动平移、右下角缩放按钮、双击复位全景。
- *   - 缩放分级：放大显示各阶段职位简称，缩小只保留方向名，减少拥挤遮挡。
+ *   - 缩放分级：放大显示各阶段完整职位名称，缩小只保留方向名，减少拥挤遮挡。
  *
  * 暴露 window.CareerNetwork。
  *   new CareerNetwork(container, { onSelect(node,stage), onClear(), tipEl, originLabel })
@@ -18,8 +18,7 @@
 
   var NS = 'http://www.w3.org/2000/svg';
   var MAX_STAGES = 4;
-  var DEFAULT_TIME_LABELS = ['毕业后 0–1 年', '3–5 年', '5–10 年', '10 年以后'];
-  var AXIS_LABELS = ['0–1 年', '3–5 年', '5–10 年', '10 年 +'];
+  var DEFAULT_TIME_LABELS = ['探索阶段', '入门阶段', '发展阶段', '进阶阶段'];
   var CONTENT_W = 1240;
   var MIN_SCALE = 0.18, MAX_SCALE = 2.8, ZOOM_NEAR = 1.12;
 
@@ -30,12 +29,6 @@
   }
   function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
   function stars(r) { r = clamp(r | 0, 0, 5); return '★★★★★'.slice(0, r) + '☆☆☆☆☆'.slice(0, 5 - r); }
-  function shortRole(s) {
-    s = String(s || '').trim();
-    // 取第一个分隔符前的主体，再限长，作为"职位简称"
-    s = s.split(/[\/·(（]/)[0].trim() || s;
-    return s.length > 7 ? s.slice(0, 7) + '…' : s;
-  }
 
   function CareerNetwork(container, opts) {
     this.container = typeof container === 'string' ? document.getElementById(container) : container;
@@ -118,7 +111,7 @@
   };
 
   CareerNetwork.prototype._stagesOf = function (node) {
-    var tl = (node.tl && node.tl.length) ? node.tl : [['0–1 年', node.name || '入门', node.desc || '']];
+    var tl = (node.tl && node.tl.length) ? node.tl : [[DEFAULT_TIME_LABELS[0], node.name || '入门', node.desc || '']];
     return tl.slice(0, MAX_STAGES);
   };
 
@@ -312,7 +305,7 @@
           + (hot ? '<circle class="cn-ring" cx="' + x + '" cy="' + yy + '" r="' + (coreR + 5) + '" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1.1"/>' : '')
           + '<circle class="cn-core" cx="' + x + '" cy="' + yy + '" r="' + coreR + '" fill="' + col + '" fill-opacity="' + (rec >= 3 ? 1 : 0.7) + '" '
           + 'stroke="#fff" stroke-opacity="' + (bright >= 0.8 ? 0.9 : 0.5) + '" stroke-width="1.3" data-tag="' + esc(n.tag) + '" data-i="' + i + '"/>'
-          + '<text class="cn-rolelab" x="' + x + '" y="' + (yy + coreR + 12) + '" text-anchor="middle">' + esc(shortRole(st[1])) + '</text>'
+          + '<text class="cn-rolelab" x="' + x + '" y="' + (yy + coreR + 4) + '" text-anchor="middle" dominant-baseline="hanging">' + esc(st[1] || n.name) + '</text>'
           + '</g>';
       });
     });
@@ -328,7 +321,7 @@
     }
     stageX.forEach(function (x, i) {
       g += '<circle cx="' + x + '" cy="' + axisY + '" r="4" fill="#6ee7ff"/>';
-      g += '<text x="' + x + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axissub">' + esc(AXIS_LABELS[i]) + '</text>';
+      g += '<text x="' + x + '" y="' + (axisY + 22) + '" text-anchor="middle" class="cn-axissub">' + esc(timeLab[i]) + '</text>';
     });
 
     var glowDefs = glowColors.map(function (col, idx) {
@@ -369,6 +362,9 @@
     this.vp.setAttribute('transform', 'translate(' + this.tx.toFixed(2) + ',' + this.ty.toFixed(2) + ') scale(' + this.scale.toFixed(4) + ')');
     this.vp.classList.toggle('zoom-near', this.scale >= ZOOM_NEAR);
     this.vp.classList.toggle('zoom-far', this.scale < 0.5);
+    // A tall catalogue may fit the selected path below the overview label
+    // threshold. Keep highlighted positions readable without widening columns.
+    this.vp.style.setProperty('--cn-role-size', clamp(11 / this.scale, 9, 16).toFixed(2) + 'px');
   };
 
   CareerNetwork.prototype._animateTo = function (tx, ty, s, animate) {
