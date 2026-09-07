@@ -5,7 +5,9 @@ import os
 import sqlite3
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from classroom_app.services import student_support_service as support
 from classroom_app.services.student_support_service import _load_student_course_signal_rows
 
 
@@ -22,7 +24,12 @@ TABLES = {
     "learning_material_progress": "class_offering_id INTEGER, student_id INTEGER, completed INTEGER, material_id INTEGER, active_seconds INTEGER",
     "assignments": "id INTEGER PRIMARY KEY, class_offering_id INTEGER, status TEXT",
     "learning_stage_exam_attempts": "assignment_id INTEGER",
-    "submissions": "id INTEGER PRIMARY KEY, assignment_id INTEGER, student_pk_id INTEGER, is_absence_score INTEGER, score REAL",
+    "submissions": "id INTEGER PRIMARY KEY, assignment_id INTEGER, student_pk_id INTEGER, is_absence_score INTEGER, score REAL, status TEXT DEFAULT 'graded', submitted_at TEXT DEFAULT '2026-09-07', resubmission_allowed INTEGER DEFAULT 0, is_late_submission INTEGER DEFAULT 0, active_grade_revision_id INTEGER",
+    "submission_grade_revisions": "id INTEGER PRIMARY KEY, submission_id INTEGER, score REAL, status TEXT",
+    "assignment_group_bindings": "id INTEGER PRIMARY KEY, assignment_id TEXT, scheme_id INTEGER, status TEXT",
+    "group_assignment_member_results": "id INTEGER PRIMARY KEY, assignment_id TEXT, student_pk_id INTEGER, group_id INTEGER, final_score REAL, revealed INTEGER",
+    "study_groups": "id INTEGER PRIMARY KEY, scheme_id INTEGER",
+    "study_group_members": "id INTEGER PRIMARY KEY, group_id INTEGER, student_id INTEGER, status TEXT",
     "classroom_behavior_states": "class_offering_id INTEGER, user_pk INTEGER, user_role TEXT, total_activity_count INTEGER, online_accumulated_seconds INTEGER, focus_total_seconds INTEGER, last_page_key TEXT, PRIMARY KEY (class_offering_id, user_pk, user_role)",
     "classroom_behavior_events": "class_offering_id INTEGER, user_pk INTEGER, user_role TEXT, created_at TEXT, action_type TEXT",
 }
@@ -50,14 +57,19 @@ class PostgreSQLConnection:
         return self.connection.execute(sql.replace("?", "%s"), params)
 
 
+def insert_rows(conn, table, rows):
+    columns = " (id,assignment_id,student_pk_id,is_absence_score,score)" if table == "submissions" else ""
+    for row in rows:
+        conn.execute(f"INSERT INTO {table}{columns} VALUES ({','.join('?' for _ in row)})", row)
+
+
 def create_fixture(conn):
     # PostgreSQL temporary tables shadow the clone's public tables; no copied
     # production row is inserted, updated or deleted by this regression suite.
     for name, columns in TABLES.items():
         conn.execute(f"CREATE TEMP TABLE {name} ({columns})")
     for table, rows in ROWS.items():
-        for row in rows:
-            conn.execute(f"INSERT INTO {table} VALUES ({','.join('?' for _ in row)})", row)
+        insert_rows(conn, table, rows)
 
 
 def assert_course_behavior(case, conn):
@@ -93,8 +105,7 @@ def assert_independent_history_totals(case, conn):
                                       (2, 1, "student", "2026-09-07T02:00:00", "ai_question")],
     }
     for table, rows in additions.items():
-        for row in rows:
-            conn.execute(f"INSERT INTO {table} VALUES ({','.join('?' for _ in row)})", row)
+        insert_rows(conn, table, rows)
     rows = _load_student_course_signal_rows(conn, 1)
     case.assertEqual([2, 3, 1], [row["class_offering_id"] for row in rows])
     by_id = {row["class_offering_id"]: row for row in rows}
@@ -111,6 +122,83 @@ def assert_independent_history_totals(case, conn):
                                       by_id[3]["ai_question_count"], by_id[3]["average_score"]))
 
 
+def assert_student_visible_effective_scores(case, conn):
+    insert_rows(conn, "classes", [(4, "Visibility fixture")])
+    insert_rows(conn, "students", [(4, 4, "active"), (5, 4, "active")])
+    insert_rows(conn, "class_offerings", [(4, 4, 1, 1, 1, "old", None, "2026-01-01")])
+    insert_rows(conn, "assignments", [(101, 4, "published")])
+    insert_rows(conn, "submissions", [(101, 101, 4, 0, 90), (102, 101, 5, 0, 20)])
+    insert_rows(conn, "submission_grade_revisions", [(101, 101, 90, "active")])
+    conn.execute("UPDATE submissions SET active_grade_revision_id=101 WHERE id=101")
+    insert_rows(conn, "assignment_group_bindings", [(1, "101", 1, "active")])
+    insert_rows(conn, "study_groups", [(1, 1), (2, 2)])
+    insert_rows(conn, "study_group_members", [(1, 1, 4, "active"), (2, 1, 5, "active")])
+    insert_rows(conn, "group_assignment_member_results", [(1, "101", 4, 1, 88, 0), (2, "101", 5, 1, 25, 1)])
+
+    def own():
+        with patch.object(support, "load_submission_score_facts", wraps=support.load_submission_score_facts) as loader:
+            rows = _load_student_course_signal_rows(conn, 4)
+        case.assertEqual(1, len(rows))
+        loader.assert_called_once()
+        case.assertTrue(loader.call_args.kwargs["student_view"])
+        case.assertFalse(loader.call_args.kwargs["include_content"])
+        case.assertEqual(4, loader.call_args.kwargs["student_id"])
+        case.assertEqual({"101"} if len(rows) and rows[0]["assignment_count"] == 1 else {"101", "103", "104", "105", "106"},
+                         set(loader.call_args.kwargs["assignment_ids"]))
+        return rows[0]
+
+    row = own()
+    case.assertEqual((1, 1, None), (row["assignment_count"], row["submitted_count"], row["average_score"]))
+    case.assertEqual(25, _load_student_course_signal_rows(conn, 5)[0]["average_score"])
+    conn.execute("UPDATE group_assignment_member_results SET revealed=1 WHERE id=1")
+    case.assertEqual(88, own()["average_score"])
+    conn.execute("UPDATE group_assignment_member_results SET final_score=0 WHERE id=1")
+    case.assertEqual(0, own()["average_score"])
+    conn.execute("UPDATE group_assignment_member_results SET final_score=NULL WHERE id=1")
+    case.assertIsNone(own()["average_score"])
+    conn.execute("UPDATE group_assignment_member_results SET final_score=88 WHERE id=1")
+    conn.execute("UPDATE study_group_members SET status='removed' WHERE id=1")
+    case.assertIsNone(own()["average_score"])
+    conn.execute("UPDATE study_group_members SET status='active', group_id=2 WHERE id=1")
+    case.assertIsNone(own()["average_score"])
+    conn.execute("UPDATE study_group_members SET group_id=1 WHERE id=1")
+    conn.execute("UPDATE assignment_group_bindings SET scheme_id=2 WHERE id=1")
+    case.assertIsNone(own()["average_score"])
+    conn.execute("UPDATE assignment_group_bindings SET status='inactive' WHERE id=1")
+    case.assertEqual(90, own()["average_score"])
+    conn.execute("UPDATE assignment_group_bindings SET status='active', scheme_id=1 WHERE id=1")
+    conn.execute("UPDATE group_assignment_member_results SET revealed=0 WHERE id=1")
+
+    # Retained active revision survives regrading; true zero counts, absence and
+    # returned grades do not. Other students' visible scores stay out of AVG.
+    insert_rows(conn, "assignments", [(103, 4, "published"), (104, 4, "published"),
+                                      (105, 4, "published"), (106, 4, "published"), (107, 4, "new"), (108, 4, "published")])
+    insert_rows(conn, "submissions", [(103, 103, 4, 0, None), (104, 104, 4, 0, 0),
+                                      (105, 105, 4, 1, 0), (106, 106, 4, 0, 99),
+                                      (107, 107, 4, 0, 100), (108, 108, 4, 0, 100)])
+    insert_rows(conn, "learning_stage_exam_attempts", [(108,)])
+    insert_rows(conn, "submission_grade_revisions", [(103, 103, 82, "active")])
+    conn.execute("UPDATE submissions SET active_grade_revision_id=103, status='grading' WHERE id=103")
+    conn.execute("UPDATE submissions SET resubmission_allowed=1 WHERE id=106")
+    row = own()
+    case.assertEqual((5, 4, 41), (row["assignment_count"], row["submitted_count"], row["average_score"]))
+    conn.execute("UPDATE submission_grade_revisions SET status='superseded' WHERE id=103")
+    case.assertEqual(0, own()["average_score"])
+    conn.execute("UPDATE submissions SET score=70, status='submitted' WHERE id=103")
+    case.assertEqual(0, own()["average_score"])
+    conn.execute("UPDATE submissions SET score=70, status='grading_review' WHERE id=103")
+    case.assertEqual(35, own()["average_score"])
+    with patch.object(support, "load_submission_score_facts") as loader:
+        case.assertEqual([], _load_student_course_signal_rows(conn, 999))
+        loader.assert_not_called()
+    insert_rows(conn, "classes", [(6, "Empty-course fixture")])
+    insert_rows(conn, "students", [(6, 6, "active")])
+    insert_rows(conn, "class_offerings", [(6, 6, 1, 1, 1, "old", None, "2026-01-01")])
+    with patch.object(support, "load_submission_score_facts") as loader:
+        case.assertIsNone(_load_student_course_signal_rows(conn, 6)[0]["average_score"])
+        loader.assert_not_called()
+
+
 class StudentSupportCourseSignalsSQLiteTests(unittest.TestCase):
     def test_ordering_combined_class_and_existing_submission_filters(self):
         with sqlite3.connect(":memory:") as conn:
@@ -118,6 +206,7 @@ class StudentSupportCourseSignalsSQLiteTests(unittest.TestCase):
             create_fixture(conn)
             assert_course_behavior(self, conn)
             assert_independent_history_totals(self, conn)
+            assert_student_visible_effective_scores(self, conn)
 
 
 @unittest.skipUnless(os.environ.get("ASSESSMENT_REHEARSAL_TEST_CLUSTER") and os.environ.get("ASSESSMENT_REHEARSAL_TEST_PORT"),
@@ -136,6 +225,7 @@ class StudentSupportCourseSignalsPostgreSQLTests(unittest.TestCase):
 
             assert_course_behavior(self, conn)
             assert_independent_history_totals(self, conn)
+            assert_student_visible_effective_scores(self, conn)
             raw.rollback()
 
 

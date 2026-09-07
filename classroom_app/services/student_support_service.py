@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from .psych_profile_service import sanitize_hidden_profile_leaks
+from .score_projection_service import load_submission_score_facts
 from .smart_classroom_checkin_sync_service import build_student_attendance_support_prompt
 
 
@@ -231,8 +232,7 @@ def _load_student_course_signal_rows(conn, student_id: int, *, current_class_off
         ), task_signals AS (
             SELECT tasks.student_id, tasks.class_offering_id,
                    COUNT(DISTINCT tasks.assignment_id) AS assignment_count,
-                   COUNT(DISTINCT sub.id) AS submitted_count,
-                   AVG(sub.score) AS average_score
+                   COUNT(DISTINCT sub.id) AS submitted_count
             FROM eligible_tasks tasks
             LEFT JOIN submissions sub ON sub.assignment_id = tasks.assignment_id
                                      AND sub.student_pk_id = tasks.student_id
@@ -260,7 +260,7 @@ def _load_student_course_signal_rows(conn, student_id: int, *, current_class_off
                COALESCE(mat.material_active_seconds, 0) AS material_active_seconds,
                COALESCE(tasks.assignment_count, 0) AS assignment_count,
                COALESCE(tasks.submitted_count, 0) AS submitted_count,
-               tasks.average_score,
+               NULL AS average_score,
                COALESCE(bs.total_activity_count, 0) AS activity_count,
                COALESCE(bs.online_accumulated_seconds, 0) AS online_seconds,
                COALESCE(bs.focus_total_seconds, 0) AS focus_seconds,
@@ -285,7 +285,35 @@ def _load_student_course_signal_rows(conn, student_id: int, *, current_class_off
         """,
         (int(student_id), int(current_class_offering_id or 0)),
     ).fetchall()
-    return [dict(row) for row in rows]
+    courses = [dict(row) for row in rows]
+    if not courses:
+        return courses
+    # Student AI contexts must use the same visible, effective grades as the
+    # report card, including pending group results and retained grading revisions.
+    offering_ids = [row["class_offering_id"] for row in courses]
+    eligible = conn.execute(
+        f"""SELECT a.id, a.class_offering_id FROM assignments a
+            WHERE a.class_offering_id IN ({','.join('?' for _ in offering_ids)})
+              AND a.status != 'new' AND {personal_filter}""",
+        tuple(offering_ids),
+    ).fetchall()
+    assignment_offerings = {str(row["id"]): row["class_offering_id"] for row in eligible}
+    totals: dict[Any, tuple[float, int]] = {}
+    if assignment_offerings:
+        facts = load_submission_score_facts(
+            conn, assignment_ids=assignment_offerings, student_id=int(student_id),
+            student_view=True, include_content=False,
+        )
+        for fact in facts:
+            if not fact["score_visible"] or fact.get("is_absence_score") or fact.get("is_personal_stage"):
+                continue
+            offering_id = assignment_offerings[str(fact["assignment_id"])]
+            total, count = totals.get(offering_id, (0.0, 0))
+            totals[offering_id] = (total + fact["effective_score"], count + 1)
+    for course in courses:
+        total, count = totals.get(course["class_offering_id"], (0.0, 0))
+        course["average_score"] = total / count if count else None
+    return courses
 
 
 def _format_course_signal(item: dict[str, Any], *, is_current: bool) -> str:
