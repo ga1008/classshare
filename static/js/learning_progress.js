@@ -1,8 +1,9 @@
 import { apiFetch } from '/static/js/api.js';
 import { initLearningCertificateReveal } from '/static/js/learning_certificate_reveal.js?v=cultivation-certificate-20260612';
 import { showToast } from '/static/js/ui.js';
+import { setOverlayOpen } from '/static/js/ui_overlay_motion.js';
 
-function initLearningProgressModal() {
+export function initLearningProgressModal() {
     const modal = document.getElementById('learning-progress-modal');
     const panel = document.querySelector('[data-learning-panel]');
     const triggers = Array.from(document.querySelectorAll('[data-learning-modal-open], [data-learning-scroll]'));
@@ -10,8 +11,10 @@ function initLearningProgressModal() {
 
     const shell = modal.querySelector('.learning-modal-shell');
     const closeBtn = document.getElementById('learning-modal-close');
-    const transitionMs = 260;
-    let closeTimer = 0;
+    shell?.setAttribute('data-ui-overlay-surface', '');
+    let generation = 0;
+    let closeOperation = null;
+    let focusTimer = 0;
     let activeTrigger = null;
 
     const getFocusableElements = () => Array.from(
@@ -25,34 +28,40 @@ function initLearningProgressModal() {
     };
 
     const openModal = (trigger = null) => {
-        window.clearTimeout(closeTimer);
+        generation++;
+        closeOperation = null;
+        window.clearTimeout(focusTimer);
         activeTrigger = trigger || document.activeElement;
-        modal.hidden = false;
         modal.setAttribute('aria-hidden', 'false');
         document.body.classList.add('has-learning-modal');
         setTriggerState(true);
-        window.requestAnimationFrame(() => {
-            modal.classList.add('is-open');
-            panel.classList.remove('is-learning-focus');
-            void panel.offsetWidth;
-            panel.classList.add('is-learning-focus');
-            (closeBtn || shell)?.focus({ preventScroll: true });
-            window.setTimeout(() => panel.classList.remove('is-learning-focus'), 1600);
-        });
+        modal.classList.add('is-open');
+        setOverlayOpen(modal, true);
+        panel.classList.remove('is-learning-focus');
+        void panel.offsetWidth;
+        panel.classList.add('is-learning-focus');
+        (closeBtn || shell)?.focus({ preventScroll: true });
+        focusTimer = window.setTimeout(() => panel.classList.remove('is-learning-focus'), 1600);
     };
 
     const closeModal = () => {
+        if (modal.hidden) return Promise.resolve(true);
+        if (closeOperation) return closeOperation;
+        const epoch = ++generation;
+        window.clearTimeout(focusTimer);
+        panel.classList.remove('is-learning-focus');
         modal.classList.remove('is-open');
-        modal.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('has-learning-modal');
         setTriggerState(false);
-        closeTimer = window.setTimeout(() => {
-            if (!modal.classList.contains('is-open')) {
-                modal.hidden = true;
-                activeTrigger?.focus?.({ preventScroll: true });
-                activeTrigger = null;
-            }
-        }, transitionMs);
+        const closing = setOverlayOpen(modal, false).then(completed => {
+            if (!completed || epoch !== generation) return false;
+            modal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('has-learning-modal');
+            activeTrigger?.focus?.({ preventScroll: true });
+            activeTrigger = null;
+            return true;
+        }).finally(() => { if (closeOperation === closing) closeOperation = null; });
+        closeOperation = closing;
+        return closing;
     };
 
     triggers.forEach((trigger) => {
@@ -76,6 +85,7 @@ function initLearningProgressModal() {
         }
 
         if (event.key !== 'Tab') return;
+        if (closeOperation) { event.preventDefault(); return; }
 
         const focusableElements = getFocusableElements();
         if (!focusableElements.length) {
@@ -630,7 +640,7 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
     loadStatus();
 }
 
-function initStudentInsightModal() {
+export function initStudentInsightModal() {
     const modal = document.getElementById('student-insight-modal');
     const frame = modal?.querySelector('[data-student-insight-frame]');
     const loading = modal?.querySelector('[data-student-insight-loading]');
@@ -640,9 +650,10 @@ function initStudentInsightModal() {
     if (!modal || !frame || !triggers.length) return;
 
     const shell = modal.querySelector('.student-insight-modal-shell');
-    const transitionMs = 240;
+    shell?.setAttribute('data-ui-overlay-surface', '');
     let activeTrigger = null;
-    let closeTimer = 0;
+    let generation = 0;
+    let closeOperation = null;
     let loadGuardTimer = 0;
 
     const getFocusableElements = () => Array.from(
@@ -652,7 +663,8 @@ function initStudentInsightModal() {
     const openModal = (trigger) => {
         const url = trigger.dataset.studentInsightUrl || `${trigger.getAttribute('href') || ''}?embed=1`;
         if (!url) return;
-        window.clearTimeout(closeTimer);
+        generation++;
+        closeOperation = null;
         window.clearTimeout(loadGuardTimer);
         activeTrigger = trigger;
         if (titleEl) {
@@ -661,32 +673,34 @@ function initStudentInsightModal() {
         }
         if (loading) loading.hidden = false;
         frame.classList.add('is-loading');
-        modal.hidden = false;
         modal.setAttribute('aria-hidden', 'false');
         document.body.classList.add('has-student-insight-modal');
-        window.requestAnimationFrame(() => {
-            modal.classList.add('is-open');
-            (closeBtn || shell)?.focus({ preventScroll: true });
-            frame.src = url;
-            loadGuardTimer = window.setTimeout(() => {
-                if (loading) loading.hidden = true;
-                frame.classList.remove('is-loading');
-            }, 5000);
-        });
+        modal.classList.add('is-open');
+        setOverlayOpen(modal, true);
+        (closeBtn || shell)?.focus({ preventScroll: true });
+        frame.src = url;
+        loadGuardTimer = window.setTimeout(() => {
+            if (loading) loading.hidden = true;
+            frame.classList.remove('is-loading');
+        }, 5000);
     };
 
     const closeModal = () => {
+        if (modal.hidden) return Promise.resolve(true);
+        if (closeOperation) return closeOperation;
+        const epoch = ++generation;
         window.clearTimeout(loadGuardTimer);
         modal.classList.remove('is-open');
-        modal.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('has-student-insight-modal');
-        closeTimer = window.setTimeout(() => {
-            if (!modal.classList.contains('is-open')) {
-                modal.hidden = true;
-                activeTrigger?.focus?.({ preventScroll: true });
-                activeTrigger = null;
-            }
-        }, transitionMs);
+        const closing = setOverlayOpen(modal, false).then(completed => {
+            if (!completed || epoch !== generation) return false;
+            modal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('has-student-insight-modal');
+            activeTrigger?.focus?.({ preventScroll: true });
+            activeTrigger = null;
+            return true;
+        }).finally(() => { if (closeOperation === closing) closeOperation = null; });
+        closeOperation = closing;
+        return closing;
     };
 
     triggers.forEach((trigger) => {
@@ -712,6 +726,7 @@ function initStudentInsightModal() {
             return;
         }
         if (event.key !== 'Tab') return;
+        if (closeOperation) { event.preventDefault(); return; }
 
         const focusableElements = getFocusableElements();
         if (!focusableElements.length) {

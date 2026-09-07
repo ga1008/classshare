@@ -112,7 +112,7 @@ test('selected lesson materials recover from failure and preserve viewer attribu
     const popup = page.waitForEvent('popup');
     await entry.click();
     const reader = await popup;
-    await reader.waitForLoadState('domcontentloaded');
+    await reader.waitForURL(/\/materials\/(?:view|render-view)\//);
     const url = new URL(reader.url());
     expect(url.searchParams.get('class_offering_id')).toBe(String(fixture.classOfferingId));
     expect(url.searchParams.get('session_id')).toBeNull();
@@ -126,7 +126,7 @@ test('selected lesson materials recover from failure and preserve viewer attribu
     const popup = page.waitForEvent('popup');
     await list.locator('[data-open-material]').first().click();
     const reader = await popup;
-    await reader.waitForLoadState('domcontentloaded');
+    await reader.waitForURL(/\/materials\/(?:view|render-view)\//);
     const url = new URL(reader.url());
     expect(url.searchParams.get('class_offering_id')).toBe(String(fixture.classOfferingId));
     expect(url.searchParams.get('session_id')).toBeNull();

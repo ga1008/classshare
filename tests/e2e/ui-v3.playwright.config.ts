@@ -6,6 +6,7 @@ import path from 'node:path';
 const output = path.resolve(process.env.UI_V3_OUTPUT || 'artifacts/home-classroom-ui-v3-2026-09-07/e2e');
 export default defineConfig({
   testDir: './specs', testMatch: [
+    'ui-motion.spec.ts',
     'home-classroom-ui-v3.spec.ts', 'home-classroom-workspace.spec.ts',
     'dashboard-schedule.spec.ts', 'classroom.spec.ts', 'assignment-submission.spec.ts',
   ],

@@ -329,6 +329,7 @@
         flex-wrap: nowrap;
         gap: 1rem;
         padding: 0.82rem clamp(1rem, 2.4vw, 1.8rem);
+        transition: background-color var(--transition-normal), border-color var(--transition-fast), box-shadow var(--transition-fast), color var(--transition-fast);
     }
 
     .app-topbar.role-teacher {
@@ -559,6 +560,7 @@
         font: inherit;
         text-align: left;
         text-decoration: none;
+        transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
     }
 
     .app-topbar-menu__item:hover,
@@ -581,6 +583,7 @@
         border-radius: var(--radius-sm);
         background: var(--app-topbar-accent-soft);
         color: var(--app-topbar-accent);
+        transition: background-color var(--transition-fast), color var(--transition-fast);
     }
 
     .app-topbar-menu__item span:not(.app-topbar-action__count):not(.message-center-bell__count) {
@@ -674,6 +677,7 @@
         border-radius: var(--radius-sm);
         background: var(--app-topbar-accent-soft);
         color: var(--app-topbar-accent);
+        transition: background-color var(--transition-fast), color var(--transition-fast);
     }
 
     .app-topbar-action__text {
@@ -1241,7 +1245,7 @@
         flex-direction: column;
         border-radius: var(--radius-lg);
         color: inherit;
-        transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal);
+        transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal), background-color var(--transition-normal), color var(--transition-fast);
         word-wrap: break-word;
     }
 
@@ -23911,8 +23915,8 @@ body.has-chat-image-preview-open {
     padding: clamp(14px, 2.6vw, 32px);
     background: rgba(15, 23, 42, 0.34);
     opacity: 0;
-    pointer-events: none;
-    transition: opacity 220ms ease;
+    pointer-events: auto;
+    transition: opacity var(--transition-normal);
 }
 
 .classroom-page .learning-modal-backdrop[hidden] {
@@ -23927,7 +23931,7 @@ body.has-chat-image-preview-open {
     }
 }
 
-.classroom-page .learning-modal-backdrop.is-open {
+.classroom-page .learning-modal-backdrop[data-ui-overlay-state="open"] {
     opacity: 1;
     pointer-events: auto;
 }
@@ -23944,10 +23948,10 @@ body.has-chat-image-preview-open {
     box-shadow: 0 28px 76px -42px rgba(15, 23, 42, 0.72);
     transform: translateY(16px) scale(0.98);
     opacity: 0;
-    transition: opacity 220ms ease, transform 220ms ease;
+    transition: opacity var(--transition-normal), transform var(--transition-normal);
 }
 
-.classroom-page .learning-modal-backdrop.is-open .learning-modal-shell {
+.classroom-page .learning-modal-backdrop[data-ui-overlay-state="open"] .learning-modal-shell {
     opacity: 1;
     transform: translateY(0) scale(1);
 }
@@ -23983,6 +23987,7 @@ body.has-chat-image-preview-open {
     cursor: pointer;
     font-size: 1.3rem;
     line-height: 1;
+    transition: color var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
 .classroom-page .learning-modal-close:hover,
@@ -24032,8 +24037,8 @@ body.has-chat-image-preview-open {
     padding: clamp(12px, 2.4vw, 28px);
     background: rgba(15, 23, 42, 0.38);
     opacity: 0;
-    pointer-events: none;
-    transition: opacity 220ms ease;
+    pointer-events: auto;
+    transition: opacity var(--transition-normal);
 }
 
 .classroom-page .student-insight-modal-backdrop[hidden] {
@@ -24048,7 +24053,7 @@ body.has-chat-image-preview-open {
     }
 }
 
-.classroom-page .student-insight-modal-backdrop.is-open {
+.classroom-page .student-insight-modal-backdrop[data-ui-overlay-state="open"] {
     opacity: 1;
     pointer-events: auto;
 }
@@ -24065,10 +24070,10 @@ body.has-chat-image-preview-open {
     box-shadow: 0 30px 80px -42px rgba(15, 23, 42, 0.76);
     opacity: 0;
     transform: translateY(14px) scale(0.985);
-    transition: opacity 220ms ease, transform 220ms ease;
+    transition: opacity var(--transition-normal), transform var(--transition-normal);
 }
 
-.classroom-page .student-insight-modal-backdrop.is-open .student-insight-modal-shell {
+.classroom-page .student-insight-modal-backdrop[data-ui-overlay-state="open"] .student-insight-modal-shell {
     opacity: 1;
     transform: translateY(0) scale(1);
 }
@@ -24104,6 +24109,7 @@ body.has-chat-image-preview-open {
     cursor: pointer;
     font-size: 1.3rem;
     line-height: 1;
+    transition: color var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
 .classroom-page .student-insight-modal-close:hover,
@@ -24141,7 +24147,16 @@ body.has-chat-image-preview-open {
     border: 0;
     background: transparent;
     opacity: 1;
-    transition: opacity 160ms ease;
+    transition: opacity var(--transition-fast);
+}
+
+.classroom-page :is(.learning-modal-backdrop, .student-insight-modal-backdrop)[data-ui-overlay-state="closed"] > [data-ui-overlay-surface] {
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .classroom-page :is(.learning-modal-backdrop, .student-insight-modal-backdrop),
+    .classroom-page :is(.learning-modal-backdrop, .student-insight-modal-backdrop) > [data-ui-overlay-surface] { transition: none !important; }
 }
 
 .classroom-page .student-insight-modal-frame.is-loading {
@@ -40687,6 +40702,7 @@ body.has-academic-sync-dialog {
     font: inherit;
     text-align: left;
     text-decoration: none;
+    transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .classroom-page .classroom-topbar-menu__item:hover,
@@ -40709,6 +40725,7 @@ body.has-academic-sync-dialog {
     border-radius: var(--radius-sm);
     background: var(--app-topbar-accent-soft);
     color: var(--app-topbar-accent);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
 .classroom-page .classroom-topbar-menu__item span:not(.app-topbar-action__count):not(.message-center-bell__count) {
@@ -46045,10 +46062,12 @@ body.has-teaching-session-modal {
     transition: opacity 0.16s ease, transform 0.16s ease;
 }
 
-.agenda-popover.is-open {
+.agenda-popover[data-ui-overlay-state="open"] {
     opacity: 1;
     transform: translateY(0) scale(1);
 }
+
+.agenda-popover[data-ui-overlay-state="closed"] { pointer-events: none; }
 
 .agenda-popover__close {
     position: absolute;
@@ -48452,6 +48471,7 @@ body.has-teaching-session-modal {
 }
 
 .agenda-todo-modal[hidden] { display: none; }
+.agenda-todo-modal[data-ui-overlay-state="closed"] { pointer-events: none; }
 
 .agenda-todo-modal__backdrop {
     position: absolute;
@@ -48464,7 +48484,7 @@ body.has-teaching-session-modal {
     transition: opacity var(--transition-normal);
 }
 
-.agenda-todo-modal.is-open .agenda-todo-modal__backdrop { opacity: 1; }
+.agenda-todo-modal[data-ui-overlay-state="open"] .agenda-todo-modal__backdrop { opacity: 1; }
 
 .agenda-todo-modal__card {
     position: relative;
@@ -48483,7 +48503,7 @@ body.has-teaching-session-modal {
     transition: transform var(--transition-normal), opacity var(--transition-normal);
 }
 
-.agenda-todo-modal.is-open .agenda-todo-modal__card {
+.agenda-todo-modal[data-ui-overlay-state="open"] .agenda-todo-modal__card {
     transform: translateY(0) scale(1);
     opacity: 1;
 }
@@ -51623,7 +51643,7 @@ body.academic-evaluation-modal-open { overflow: hidden; }
     color: var(--gray-500);
     background: rgba(255, 255, 255, 0.58);
     cursor: help;
-    transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+    transition: color var(--transition-fast), border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .ui-explain-trigger:hover,
@@ -51671,7 +51691,7 @@ body.academic-evaluation-modal-open { overflow: hidden; }
     pointer-events: none;
     transform: translateY(4px) scale(0.985);
     transform-origin: top center;
-    transition: opacity 140ms ease, transform 140ms ease, visibility 140ms ease;
+    transition: opacity var(--transition-fast), transform var(--transition-fast), visibility var(--transition-fast);
     overscroll-behavior: contain;
 }
 
@@ -51679,7 +51699,8 @@ body.academic-evaluation-modal-open { overflow: hidden; }
     display: none !important;
 }
 
-.ui-explain-popover.is-visible {
+.ui-explain-popover.is-visible:not([data-ui-overlay-state="closed"]),
+.ui-explain-popover[data-ui-overlay-state="open"] {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
@@ -51721,6 +51742,7 @@ body.academic-evaluation-modal-open { overflow: hidden; }
     font-size: 1.15rem;
     line-height: 1;
     cursor: pointer;
+    transition: color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .ui-explain-popover__close:hover,
@@ -51768,6 +51790,7 @@ body.academic-evaluation-modal-open { overflow: hidden; }
     font-weight: 650;
     line-height: 1.25;
     text-decoration: none;
+    transition: color var(--transition-fast), border-color var(--transition-fast), background-color var(--transition-fast);
 }
 
 .ui-explain-popover__links a:hover,
@@ -51829,6 +51852,57 @@ body.academic-evaluation-modal-open { overflow: hidden; }
     }
 }
 
+/* Native menu details retain their summary, toggle and focus behavior. The
+   details-content gate keeps a closing panel painted until its exit completes;
+   older engines still get a short entrance without JavaScript interception. */
+@keyframes ui-menu-enter {
+    from { opacity: 0; translate: 0 -4px; }
+    to { opacity: 1; translate: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+    :is(.dw-page, .classroom-workspace-v2)
+    details:is(.app-topbar-menu, .classroom-topbar-menu, .dw-tools-menu, .cw-session-management)[open] > :not(summary) {
+        animation: ui-menu-enter var(--transition-fast);
+    }
+    @supports (transition-behavior: allow-discrete) and selector(details::details-content) {
+        :is(.dw-page, .classroom-workspace-v2)
+        details:is(.app-topbar-menu, .classroom-topbar-menu, .dw-tools-menu, .cw-session-management)::details-content {
+            transition: content-visibility var(--transition-fast) allow-discrete;
+        }
+        :is(.dw-page, .classroom-workspace-v2)
+        details:is(.app-topbar-menu, .classroom-topbar-menu, .dw-tools-menu, .cw-session-management) > :not(summary) {
+            opacity: 0;
+            translate: 0 -4px;
+            pointer-events: none;
+            transition: opacity var(--transition-fast), translate var(--transition-fast);
+        }
+        :is(.dw-page, .classroom-workspace-v2)
+        details:is(.app-topbar-menu, .classroom-topbar-menu, .dw-tools-menu, .cw-session-management)[open] > :not(summary) {
+            animation: none;
+            opacity: 1;
+            translate: none;
+            pointer-events: auto;
+        }
+        @starting-style {
+            :is(.dw-page, .classroom-workspace-v2)
+            details:is(.app-topbar-menu, .classroom-topbar-menu, .dw-tools-menu, .cw-session-management)[open] > :not(summary) {
+                opacity: 0;
+                translate: 0 -4px;
+            }
+        }
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :is(.dw-page, .classroom-workspace-v2)
+    details:is(.app-topbar-menu, .classroom-topbar-menu, .dw-tools-menu, .cw-session-management) > :not(summary),
+    :is(.dw-page, .classroom-workspace-v2)
+    details:is(.app-topbar-menu, .classroom-topbar-menu, .dw-tools-menu, .cw-session-management)::details-content {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
 /* Workspace text and small counts need text contrast, independently of the
    lighter decorative status tokens retained by other existing pages. */
 :is(.dw-page, .classroom-workspace-v2) .message-center-bell.app-topbar-action {
@@ -51864,7 +51938,9 @@ body.academic-evaluation-modal-open { overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
     .ui-explain-popover,
-    .ui-explain-trigger {
+    .ui-explain-trigger,
+    .ui-explain-popover__close,
+    .ui-explain-popover__links a {
         transition: none !important;
     }
 }
@@ -52440,7 +52516,7 @@ html.scene-cover-collapsing .main-content {
     .ls-anim-stagger > *:nth-child(10) { animation-delay: 0.49s; }
 
     .ls-anim-hover-lift {
-        transition: transform 0.18s ease, box-shadow 0.18s ease;
+        transition: transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
     }
 
     .ls-anim-hover-lift:hover {
@@ -53707,4 +53783,32 @@ html.scene-cover-collapsing .main-content {
 
 body.offering-hub-drawer-open {
     overflow: hidden;
+}
+
+/* Transitions reverse from the currently painted frame. The nonvisual exit
+   animation keeps Radix presence mounted for the same duration. At rest scale
+   is none, preserving viewport positioning of fixed help inside the dialog. */
+[data-ui-dialog-overlay][data-state], [data-ui-dialog-content][data-state] {
+    opacity: 0;
+    transition: opacity var(--transition-normal), scale var(--transition-normal);
+}
+[data-ui-dialog-content][data-state] { scale: .97; }
+[data-ui-dialog-overlay][data-state="open"], [data-ui-dialog-content][data-state="open"] {
+    opacity: 1;
+    scale: none;
+}
+@starting-style {
+    [data-ui-dialog-overlay][data-state="open"] { opacity: 0; }
+    [data-ui-dialog-content][data-state="open"] { opacity: 0; scale: .97; }
+}
+[data-ui-dialog-overlay][data-state="closed"], [data-ui-dialog-content][data-state="closed"] {
+    animation: ui-dialog-presence-out var(--transition-normal);
+    pointer-events: none;
+}
+@keyframes ui-dialog-presence-out { from { --ui-dialog-presence: 1; } to { --ui-dialog-presence: 0; } }
+@media (prefers-reduced-motion: reduce) {
+    [data-ui-dialog-overlay][data-state], [data-ui-dialog-content][data-state] {
+        animation: none;
+        transition: none;
+    }
 }

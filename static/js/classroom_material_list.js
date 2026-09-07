@@ -13,6 +13,7 @@ import { apiFetch } from './api.js';
 import { escapeHtml, showToast } from './ui.js';
 import { ownClassroomMaterialFocus } from './classroom_material_focus.js';
 import { materialOpenUrl } from './classroom_workspace.js';
+import { setOverlayOpen } from './ui_overlay_motion.js';
 
 const state = {
     classOfferingId: 0,
@@ -33,6 +34,11 @@ let listBackdrop = null;
 let confirmBackdrop = null;
 let releaseListFocus = null;
 let releaseConfirmFocus = null;
+let popupEpoch = 0;
+let confirmEpoch = 0;
+let listClosePromise = null;
+let confirmClosePromise = null;
+let removalInFlight = false;
 
 function buildOpenUrl(material) {
     return materialOpenUrl(material?.open_url, state.classOfferingId, state.isHome ? 0 : state.sessionId);
@@ -46,7 +52,7 @@ function ensureDom() {
     listBackdrop.hidden = true;
     listBackdrop.setAttribute('aria-hidden', 'true');
     listBackdrop.innerHTML = `
-        <div class="ls-mat-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="lsMatPopupTitle">
+        <div class="ls-mat-popup__dialog" data-ui-overlay-surface role="dialog" aria-modal="true" aria-labelledby="lsMatPopupTitle">
             <div class="ls-mat-popup__header">
                 <div>
                     <span class="ls-mat-popup__kicker">学习材料</span>
@@ -71,7 +77,7 @@ function ensureDom() {
     confirmBackdrop.hidden = true;
     confirmBackdrop.setAttribute('aria-hidden', 'true');
     confirmBackdrop.innerHTML = `
-        <div class="ls-mat-confirm__dialog" role="alertdialog" aria-modal="true" aria-labelledby="lsMatConfirmTitle">
+        <div class="ls-mat-confirm__dialog" data-ui-overlay-surface role="alertdialog" aria-modal="true" aria-labelledby="lsMatConfirmTitle">
             <h4 class="ls-mat-confirm__title" id="lsMatConfirmTitle">确认解绑材料？</h4>
             <p class="ls-mat-confirm__body" id="lsMatConfirmBody"></p>
             <div class="ls-mat-confirm__actions">
@@ -177,27 +183,40 @@ async function reload() {
 
 function showConfirm(material) {
     ensureDom();
+    if (listClosePromise || removalInFlight) return;
+    confirmEpoch++;
+    confirmClosePromise = null;
     state.pendingRemoval = material;
     const body = document.getElementById('lsMatConfirmBody');
     if (body) {
         body.innerHTML = `确定要从这里解绑 <strong>${escapeHtml(material.name || '该材料')}</strong> 吗？解绑后学生将不再从此入口看到它，材料本身不会被删除。`;
     }
-    confirmBackdrop.hidden = false;
     confirmBackdrop.setAttribute('aria-hidden', 'false');
-    releaseConfirmFocus = ownClassroomMaterialFocus(confirmBackdrop, closeConfirm, confirmBackdrop.querySelector('[data-cancel-removal]'));
+    setOverlayOpen(confirmBackdrop, true);
+    releaseConfirmFocus ||= ownClassroomMaterialFocus(confirmBackdrop, closeConfirm, confirmBackdrop.querySelector('[data-cancel-removal]'));
 }
 
 function closeConfirm() {
-    if (!confirmBackdrop) return;
-    confirmBackdrop.hidden = true;
-    confirmBackdrop.setAttribute('aria-hidden', 'true');
+    if (!confirmBackdrop || confirmBackdrop.hidden) return Promise.resolve(true);
+    if (confirmClosePromise) return confirmClosePromise;
+    const epoch = confirmEpoch;
     state.pendingRemoval = null;
-    releaseConfirmFocus?.(); releaseConfirmFocus = null;
+    const closing = setOverlayOpen(confirmBackdrop, false).then((completed) => {
+        if (!completed || epoch !== confirmEpoch) return false;
+        confirmBackdrop.setAttribute('aria-hidden', 'true');
+        releaseConfirmFocus?.(); releaseConfirmFocus = null;
+        return true;
+    }).finally(() => { if (confirmClosePromise === closing) confirmClosePromise = null; });
+    confirmClosePromise = closing;
+    return closing;
 }
 
 async function confirmRemoval() {
     const material = state.pendingRemoval;
-    if (!material) return;
+    if (!material || removalInFlight || confirmClosePromise || listClosePromise) return;
+    removalInFlight = true;
+    const epoch = popupEpoch;
+    const onChanged = state.onChanged;
     const confirmBtn = confirmBackdrop.querySelector('[data-confirm-removal]');
     if (confirmBtn) confirmBtn.disabled = true;
     try {
@@ -210,29 +229,38 @@ async function confirmRemoval() {
             },
         );
         showToast(result.message || '已解绑该材料', 'success');
-        closeConfirm();
-        await reload();
-        listBackdrop.querySelector('[data-close-mat-popup]')?.focus({ preventScroll: true });
-        if (typeof state.onChanged === 'function') {
-            state.onChanged(result);
+        if (epoch === popupEpoch && !listClosePromise) {
+            await closeConfirm();
+            if (epoch === popupEpoch && !listClosePromise) {
+                await reload();
+                if (epoch === popupEpoch && !listClosePromise) listBackdrop.querySelector('[data-close-mat-popup]')?.focus({ preventScroll: true });
+            }
         }
+        if (typeof onChanged === 'function') onChanged(result);
     } finally {
+        removalInFlight = false;
         if (confirmBtn) confirmBtn.disabled = false;
     }
 }
 
 function closeListPopup() {
-    if (!listBackdrop) return;
-    if (!confirmBackdrop.hidden) closeConfirm();
-    listBackdrop.hidden = true;
-    listBackdrop.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('has-ls-mat-popup');
-    releaseListFocus?.(); releaseListFocus = null;
+    if (!listBackdrop || listBackdrop.hidden) return Promise.resolve(true);
+    if (listClosePromise) return listClosePromise;
+    const epoch = popupEpoch;
     state.requestEpoch++;
-    const onClose = state.onClose; state.onClose = null; onClose?.();
+    const closing = Promise.all([closeConfirm(), setOverlayOpen(listBackdrop, false)]).then(([confirmClosed, completed]) => {
+        if (!confirmClosed || !completed || epoch !== popupEpoch) return false;
+        listBackdrop.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('has-ls-mat-popup');
+        releaseListFocus?.(); releaseListFocus = null;
+        const onClose = state.onClose; state.onClose = null; onClose?.();
+        return true;
+    }).finally(() => { if (listClosePromise === closing) listClosePromise = null; });
+    listClosePromise = closing;
+    return closing;
 }
 
-export function openMaterialListPopup({
+export async function openMaterialListPopup({
     classOfferingId,
     sessionId = 0,
     isHome = false,
@@ -245,6 +273,14 @@ export function openMaterialListPopup({
     onClose = null,
 } = {}) {
     ensureDom();
+    const epoch = ++popupEpoch;
+    listClosePromise = null;
+    listBackdrop.setAttribute('aria-hidden', 'false');
+    setOverlayOpen(listBackdrop, true);
+    document.body.classList.add('has-ls-mat-popup');
+    // Nested focus owners must unwind before the list is re-used for another scope.
+    await closeConfirm();
+    if (epoch !== popupEpoch || listClosePromise) return;
     state.classOfferingId = Number(classOfferingId) || 0;
     state.sessionId = isHome ? 0 : (Number(sessionId) || 0);
     state.isHome = Boolean(isHome);
@@ -265,6 +301,7 @@ export function openMaterialListPopup({
     if (listEl && !listEl.dataset.bound) {
         listEl.dataset.bound = 'true';
         listEl.addEventListener('click', (event) => {
+            if (listClosePromise) return;
             if (event.target.closest('[data-retry-materials]')) { reload(); return; }
             const removeBtn = event.target.closest('[data-remove-material]');
             if (removeBtn) {
@@ -277,6 +314,7 @@ export function openMaterialListPopup({
             if (card) openMaterial(card.dataset.openMaterial);
         });
         listEl.addEventListener('keydown', (event) => {
+            if (listClosePromise) return;
             if (event.key !== 'Enter' && event.key !== ' ') return;
             if (event.target.closest('[data-remove-material]')) return;
             const card = event.target.closest('[data-open-material]');
@@ -287,11 +325,7 @@ export function openMaterialListPopup({
         });
     }
 
-    listBackdrop.hidden = false;
-    listBackdrop.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('has-ls-mat-popup');
-    releaseListFocus?.();
-    releaseListFocus = ownClassroomMaterialFocus(listBackdrop, closeListPopup, listBackdrop.querySelector('[data-close-mat-popup]'), returnFocus);
+    releaseListFocus ||= ownClassroomMaterialFocus(listBackdrop, closeListPopup, listBackdrop.querySelector('[data-close-mat-popup]'), returnFocus);
     if (initialData) {
         state.materials = initialData.materials || [];
         state.canManage = state.isTeacher && Boolean(initialData.can_manage);
