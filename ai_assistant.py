@@ -2071,6 +2071,71 @@ THINK_TAG_OPEN = "<think>"
 THINK_TAG_CLOSE = "</think>"
 
 
+def _public_execution_policy_health() -> dict[str, Any]:
+    """Resolve synthetic trusted cases; never inspect a job, prompt, or credential."""
+    cases = (
+        ("text_fast", AI_TASK_FAST_TEXT, {"operation": "chat"}),
+        ("text_deep", AI_TASK_DEEP_TEXT, {"operation": "document"}),
+        ("text_assessment", AI_TASK_DEEP_TEXT, {"operation": "grading", "assessment_kind": "final"}),
+        ("vision_edge", AI_TASK_VISION_INTERACTIVE, {"operation": "chat", "source_feature": "chat"}),
+        ("vision_document", AI_TASK_DOCUMENT_MULTIMODAL, {"operation": "document"}),
+        ("vision_homework", AI_TASK_MULTIMODAL_GRADING, {"operation": "grading", "assessment_kind": "homework"}),
+        ("vision_midterm", AI_TASK_MULTIMODAL_GRADING, {"operation": "grading", "assessment_kind": "midterm"}),
+        ("vision_final", AI_TASK_MULTIMODAL_GRADING, {"operation": "grading", "assessment_kind": "final"}),
+        ("vision_legacy_unknown", AI_TASK_MULTIMODAL_GRADING, {"operation": "grading"}),
+        ("vision_personal_stage", AI_TASK_MULTIMODAL_GRADING, {"operation": "grading", "source_feature": "personal_stage"}),
+        ("vision_exam_generation", AI_TASK_DEEP_MULTIMODAL, {"operation": "generation", "intended_assessment_kind": "final"}),
+        ("vision_adjudication", AI_TASK_MULTIMODAL_ADJUDICATION, {"operation": "adjudication", "assessment_kind": "homework"}),
+    )
+    profiles: list[dict[str, Any]] = []
+    for name, task_type, context in cases:
+        try:
+            capability = _capability_for_task_type(task_type)
+            plan = resolve_execution_plan(task_type, capability, context)
+            routes = _build_model_routes(capability, task_type=task_type, business_context=context)
+            profiles.append({"case": name, **plan.to_dict(), "available": bool(routes)})
+        except (TypeError, ValueError):
+            # Environment mistakes must not turn health into a raw-value/secret echo.
+            profiles.append({"case": name, "available": False, "error": "invalid_execution_configuration"})
+    sizing: dict[str, Any] = {}
+    for schema, operation, counts in (("grading_v1", "grading", (20, 40, 80)),
+            ("exam_generation_v1", "generation", (10, 20, 40))):
+        try:
+            base = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision",
+                {"operation": operation, "assessment_kind": "homework"})
+            sizing[schema] = [{"up_to_questions": count,
+                "max_output_tokens_total": size_structured_execution_plan(base, schema=schema,
+                    question_count=count).max_output_tokens_total} for count in counts]
+        except (TypeError, ValueError):
+            sizing[schema] = {"error": "invalid_execution_configuration"}
+    return {
+        "policy_version": AI_EXECUTION_POLICY_VERSION,
+        "ok": all(item.get("available") for item in profiles) and all(isinstance(value, list) for value in sizing.values()),
+        "profiles": profiles,
+        "structured_output_tiers": sizing,
+        "text_spillover_enabled": AI_TEXT_SPILLOVER_ENABLED,
+        "capacity": {
+            "scope": "process",
+            "global_max_concurrent": ai_limiter.concurrency,
+            "global_active": ai_limiter._running,
+            "global_waiting": len(ai_limiter._waiters),
+            "provider_max_concurrent": {name: PLATFORMS_CONFIG[name].get("max_concurrency") or 0 for name in ENABLED_PLATFORMS},
+            "provider_reserved": ai_model_router.snapshot(),
+            "provider_waiting": ai_model_router._waiting,
+            "volcengine_high_max_concurrent": AI_VOLCENGINE_HIGH_MAX_CONCURRENT_REQUESTS,
+            "volcengine_high_reserved": ai_model_router._high_reserved,
+            "durable_worker_concurrency": AI_JOB_WORKER_CONCURRENCY,
+            "legacy_grading_max_concurrent": AI_GRADING_MAX_CONCURRENT_JOBS,
+        },
+        "attempt_budget": {"scope": "logical_operation", "max_possibly_billed_generations": 2,
+            "max_http_attempts": min(3, AI_PROVIDER_HTTP_MAX_ATTEMPTS),
+            "max_timeout_attempts": min(3, AI_PROVIDER_HTTP_MAX_ATTEMPTS, AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS)},
+        "review_quota": {"scope": "database_local_day", "enabled": AI_GRADING_ADJUDICATION_ENABLED,
+            "global_daily_limit": AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT,
+            "offering_daily_limit": AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT},
+    }
+
+
 @app.get("/api/internal/health")
 async def internal_health():
     durable_snapshot: dict[str, Any] = {"enabled": AI_DURABLE_JOBS_ENABLED}
@@ -2078,7 +2143,7 @@ async def internal_health():
         try:
             durable_snapshot.update(await asyncio.to_thread(ai_durable_job_health_snapshot))
         except Exception as exc:
-            durable_snapshot.update({"ok": False, "error": _provider_error_summary(exc, limit=240)})
+            durable_snapshot.update({"ok": False, "error": "database_health_unavailable", "error_type": type(exc).__name__})
     return {
         "status": "ok",
         "service": "ai",
@@ -2094,6 +2159,7 @@ async def internal_health():
         "durable_jobs": durable_snapshot,
         "model_routing": {
             "policies": public_policy_snapshot(),
+            "execution_policy": _public_execution_policy_health(),
             "providers": {
                 provider: {
                     "max_concurrency": PLATFORMS_CONFIG[provider].get("max_concurrency") or 0,

@@ -305,6 +305,7 @@ class MaterialExtraction:
     images: list[dict[str, str]] = field(default_factory=list)
     truncated: bool = False
     quality: dict[str, Any] = field(default_factory=dict)
+    visual_issues: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -527,7 +528,12 @@ async def parse_material_document(
             warnings.append(f"文本 AI 解析失败，已尝试兼容兜底: {_format_exception(exc)}")
 
     if not raw_ai_result and _needs_vision_fallback(extraction):
-        image_inputs = extraction.images[:MAX_VISION_IMAGES]
+        # This gate belongs after the existing text-first path. Never send a
+        # partial visual fallback, and never reject a successful text parse for
+        # unrelated layout elements that did not need to be read.
+        image_inputs = await asyncio.to_thread(
+            _prepare_complete_material_vision_inputs, file_path, extraction,
+        )
         if image_inputs:
             try:
                 raw_ai_result = await ai_chat(
@@ -540,7 +546,7 @@ async def parse_material_document(
                     ),
                     capability="vision",
                     response_format="json",
-                    base64_urls=[item["data_url"] for item in image_inputs if item.get("data_url")],
+                    base64_urls=[item["data_url"] for item in image_inputs],
                     task_type="document_multimodal_understanding",
                     task_priority="background",
                     task_label="material_ai_import:vision",
@@ -601,8 +607,9 @@ def extract_material_content(file_path: Path, original_name: str) -> MaterialExt
             method=f"{ext.lstrip('.')}_document_extract",
             source_kind=ext.lstrip("."),
             warnings=["该格式按通用文档抽取处理，复杂版式可能需要人工复核。"],
-            images=list(extracted.images or [])[:MAX_VISION_IMAGES],
+            images=list(extracted.images or []),
             truncated=bool(extracted.truncated),
+            visual_issues=list(getattr(extracted, "issues", None) or []),
         )
 
     return MaterialExtraction(
@@ -686,6 +693,7 @@ def normalize_ai_parse_result(
             "source_kind": extraction.source_kind,
             "truncated": extraction.truncated,
             "quality": extraction.quality,
+            "visual_issues": list(extraction.visual_issues),
         },
         "content_quality": content_quality,
         "ai_used": ai_used,
@@ -778,6 +786,7 @@ def _extract_text_like(file_path: Path, ext: str) -> MaterialExtraction:
 
 def _extract_docx(file_path: Path) -> MaterialExtraction:
     warnings: list[str] = []
+    visual_issues: list[str] = []
     parts: list[str] = []
     table_index = 0
     try:
@@ -809,14 +818,17 @@ def _extract_docx(file_path: Path) -> MaterialExtraction:
     truncated = False
     if extract_document_text:
         extracted = extract_document_text(file_path, ".docx", max_bytes=MAX_EXTRACT_TEXT_BYTES)
-        images = list(extracted.images or [])[:MAX_VISION_IMAGES]
+        images = list(extracted.images or [])
+        visual_issues.extend(getattr(extracted, "issues", None) or [])
         if not parts and extracted.text:
             parts.append(extracted.text)
         truncated = bool(extracted.truncated)
 
     text, local_truncated = _truncate_by_bytes("\n\n".join(parts), MAX_EXTRACT_TEXT_BYTES)
     if len(text.strip()) < 800 and not images:
-        images.extend(_render_office_pages_to_images(file_path, ".docx", warnings))
+        render_issues: list[str] = []
+        images.extend(_render_office_pages_to_images(file_path, ".docx", warnings, render_issues))
+        visual_issues = render_issues if images else [*visual_issues, *render_issues]
     return MaterialExtraction(
         text=text,
         method="python_docx_tables",
@@ -824,6 +836,7 @@ def _extract_docx(file_path: Path) -> MaterialExtraction:
         warnings=warnings,
         images=images,
         truncated=truncated or local_truncated,
+        visual_issues=visual_issues,
     )
 
 
@@ -848,9 +861,12 @@ def _extract_legacy_document(file_path: Path, ext: str) -> MaterialExtraction:
 
     if extract_document_text:
         extracted = extract_document_text(file_path, ext, max_bytes=MAX_EXTRACT_TEXT_BYTES)
-        images = list(extracted.images or [])[:MAX_VISION_IMAGES]
+        images = list(extracted.images or [])
+        visual_issues = list(getattr(extracted, "issues", None) or [])
         if len(str(extracted.text or "").strip()) < 800 and not images:
-            images.extend(_render_office_pages_to_images(file_path, ext, warnings))
+            render_issues: list[str] = []
+            images.extend(_render_office_pages_to_images(file_path, ext, warnings, render_issues))
+            visual_issues = render_issues if images else [*visual_issues, *render_issues]
         binary_quality = _assess_text_quality(extracted.text, method="legacy_doc_binary_extract")
         text = extracted.text if binary_quality.get("usable", False) else ""
         if extracted.text and not text:
@@ -861,8 +877,9 @@ def _extract_legacy_document(file_path: Path, ext: str) -> MaterialExtraction:
             method="legacy_doc_binary_extract" if text else "legacy_doc_unreadable",
             source_kind=ext.lstrip("."),
             warnings=warnings,
-            images=images[:MAX_VISION_IMAGES],
+            images=images,
             truncated=bool(extracted.truncated),
+            visual_issues=visual_issues,
         )
     return MaterialExtraction(method="legacy_doc_unavailable", source_kind=ext.lstrip("."), warnings=warnings)
 
@@ -945,7 +962,8 @@ def _extract_xlsx(file_path: Path) -> MaterialExtraction:
 
     text, truncated = _truncate_by_bytes("\n\n".join(parts), MAX_EXTRACT_TEXT_BYTES)
     warnings: list[str] = []
-    images = _render_office_pages_to_images(file_path, ".xlsx", warnings) if len(text.strip()) < 800 else []
+    visual_issues: list[str] = []
+    images = _render_office_pages_to_images(file_path, ".xlsx", warnings, visual_issues) if len(text.strip()) < 800 else []
     return MaterialExtraction(
         text=text,
         method="openpyxl_tables",
@@ -953,6 +971,7 @@ def _extract_xlsx(file_path: Path) -> MaterialExtraction:
         warnings=warnings,
         images=images,
         truncated=truncated,
+        visual_issues=visual_issues,
     )
 
 
@@ -975,7 +994,8 @@ def _extract_xls(file_path: Path) -> MaterialExtraction:
 
     text, truncated = _truncate_by_bytes("\n\n".join(parts), MAX_EXTRACT_TEXT_BYTES)
     warnings = ["旧版 Excel 已按单元格值抽取，合并单元格和图片需人工复核。"]
-    images = _render_office_pages_to_images(file_path, ".xls", warnings) if len(text.strip()) < 800 else []
+    visual_issues: list[str] = []
+    images = _render_office_pages_to_images(file_path, ".xls", warnings, visual_issues) if len(text.strip()) < 800 else []
     return MaterialExtraction(
         text=text,
         method="xlrd_tables",
@@ -983,6 +1003,7 @@ def _extract_xls(file_path: Path) -> MaterialExtraction:
         warnings=warnings,
         images=images,
         truncated=truncated,
+        visual_issues=visual_issues,
     )
 
 
@@ -991,16 +1012,15 @@ def _extract_pdf(file_path: Path) -> MaterialExtraction:
     text = ""
     images: list[dict[str, str]] = []
     truncated = False
+    visual_issues: list[str] = []
     if extract_document_text:
         extracted = extract_document_text(file_path, ".pdf", max_bytes=MAX_EXTRACT_TEXT_BYTES)
         text = extracted.text
-        images = list(extracted.images or [])[:MAX_VISION_IMAGES]
+        images = list(extracted.images or [])
         truncated = bool(extracted.truncated)
-    if (not text.strip() or len(images) < 2) and render_pdf_pages_to_data_urls:
-        rendered = render_pdf_pages_to_data_urls(file_path, dpi=144, max_pages=MAX_VISION_IMAGES)
-        if rendered:
-            images = rendered[:MAX_VISION_IMAGES]
-            warnings.append("PDF 已渲染页面图像用于版式兜底。")
+        visual_issues.extend(getattr(extracted, "issues", None) or [])
+    # Full-page rendering is deferred until vision is actually needed, after
+    # text-first parsing. Embedded fragments cannot prove full PDF coverage.
     return MaterialExtraction(
         text=text,
         method="pdf_text_and_render",
@@ -1008,6 +1028,7 @@ def _extract_pdf(file_path: Path) -> MaterialExtraction:
         warnings=warnings,
         images=images,
         truncated=truncated,
+        visual_issues=visual_issues,
     )
 
 
@@ -1025,7 +1046,57 @@ def _extract_image_file(file_path: Path, ext: str) -> MaterialExtraction:
     )
 
 
-def _render_office_pages_to_images(file_path: Path, ext: str, warnings: list[str]) -> list[dict[str, str]]:
+def _render_complete_pdf_pages(file_path: Path) -> list[dict[str, str]]:
+    if not render_pdf_pages_to_data_urls:
+        raise HTTPException(422, "视觉兜底页面渲染不可用，请转换文件后重试。")
+    try:
+        import fitz
+        with fitz.open(str(file_path)) as document:
+            if document.is_encrypted:
+                raise HTTPException(422, "视觉兜底不能读取加密 PDF，请解密后重试。")
+            count = len(document)
+        if not 1 <= count <= MAX_VISION_IMAGES:
+            raise HTTPException(422, f"视觉兜底需要完整读取 {count} 页，最多支持 {MAX_VISION_IMAGES} 页，请拆分文件后重试。")
+        images = render_pdf_pages_to_data_urls(file_path, dpi=144, max_pages=count)
+        if len(images) != count or any(not image.get("data_url") for image in images):
+            raise HTTPException(422, "视觉兜底有页面未能完整渲染，请修复或转换文件后重试。")
+        return images
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(422, "视觉兜底无法完整读取 PDF，请修复或转换文件后重试。") from exc
+
+
+def _prepare_complete_material_vision_inputs(file_path: Path, extraction: MaterialExtraction) -> list[dict[str, str]]:
+    issues = list(extraction.visual_issues)
+    if extraction.truncated:
+        issues.append("材料正文提取被截断")
+    if issues:
+        raise HTTPException(422, "视觉兜底内容不完整：" + "；".join(dict.fromkeys(issues)))
+    images = (_render_complete_pdf_pages(file_path) if extraction.source_kind == "pdf" else list(extraction.images))
+    if not 1 <= len(images) <= MAX_VISION_IMAGES:
+        raise HTTPException(422, f"视觉兜底需要完整图片，最多支持 {MAX_VISION_IMAGES} 张，请拆分或转换文件后重试。")
+    import io
+    from PIL import Image
+    for item in images:
+        try:
+            data_url = item.get("data_url") or ""
+            header, encoded = data_url.split(",", 1)
+            if not header.startswith("data:image/") or not header.endswith(";base64") or len(encoded) > ((MAX_IMAGE_BYTES + 2) // 3) * 4:
+                raise ValueError("invalid image input")
+            binary = base64.b64decode(encoded, validate=True)
+            if not 0 < len(binary) <= MAX_IMAGE_BYTES:
+                raise ValueError("invalid image size")
+            with Image.open(io.BytesIO(binary)) as image:
+                if image.width * image.height > 36_000_000 or getattr(image, "n_frames", 1) != 1:
+                    raise ValueError("unsupported image dimensions or frame count")
+                image.verify()
+        except Exception as exc:
+            raise HTTPException(422, "视觉兜底图片缺失、损坏或超限，请重新上传或转换为 PDF。") from exc
+    return images
+
+
+def _render_office_pages_to_images(file_path: Path, ext: str, warnings: list[str], visual_issues: list[str] | None = None) -> list[dict[str, str]]:
     if not render_pdf_pages_to_data_urls:
         return []
 
@@ -1037,12 +1108,17 @@ def _render_office_pages_to_images(file_path: Path, ext: str, warnings: list[str
         with tempfile.TemporaryDirectory(prefix="material-ai-render-") as temp_dir:
             pdf_path = Path(temp_dir) / "render.pdf"
             pdf_path.write_bytes(converted.output_bytes)
-            images = render_pdf_pages_to_data_urls(pdf_path, dpi=144, max_pages=MAX_VISION_IMAGES)
+            images = _render_complete_pdf_pages(pdf_path)
             if images:
                 warnings.append("已将 Office 文档渲染为页面图片用于视觉兜底。")
-            return images[:MAX_VISION_IMAGES]
+            return images
     except LibreOfficeBusy:
         raise
+    except HTTPException as exc:
+        if visual_issues is not None:
+            visual_issues.append(str(exc.detail))
+        warnings.append(str(exc.detail))
+        return []
     except LibreOfficeUnavailable:
         warnings.append("未检测到 LibreOffice，无法把该 Office 文档渲染为图片兜底。")
         return []
@@ -1375,11 +1451,12 @@ def _infer_export_sections(document_type: str, content_markdown: str) -> list[di
 
 
 def _needs_vision_fallback(extraction: MaterialExtraction) -> bool:
-    if extraction.images and not extraction.quality.get("usable", False):
+    has_visual_source = bool(extraction.images or extraction.visual_issues or extraction.source_kind == "pdf")
+    if has_visual_source and not extraction.quality.get("usable", False):
         return True
-    if extraction.images and not extraction.text.strip():
+    if has_visual_source and not extraction.text.strip():
         return True
-    if extraction.images and len(extraction.text.strip()) < 1200:
+    if has_visual_source and len(extraction.text.strip()) < 1200:
         return True
     return False
 
