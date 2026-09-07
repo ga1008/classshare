@@ -242,7 +242,7 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
 
         document = Document(BytesIO(content))
         self.assertEqual(1, len(document.tables))
-        self.assertEqual(22, len(document.tables[0].rows))
+        self.assertEqual(19, len(document.tables[0].rows))
         section = document.sections[0]
         self.assertEqual(11905, section.page_width.twips)
         self.assertEqual(16837, section.page_height.twips)
@@ -262,14 +262,14 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
         self.assertEqual([720, 340, 220], row_heights[:3])
         self.assertEqual(3000, row_heights[15])
         self.assertEqual(4960, row_heights[17])
-        self.assertEqual(1542, row_heights[20])
+        self.assertEqual(2240, row_heights[18])
         self.assertEqual("广西外国语学院课程试卷分析表", table.rows[0].cells[0].text)
         self.assertIn("教师组题", table.rows[5].cells[7].text)
         self.assertEqual("√", table.rows[5].cells[9].text)
         self.assertIn("本人阅卷 √", table.rows[13].cells[2].text)
         self.assertIn("简要分析试题结构", table.rows[16].cells[1].text)
         self.assertIn("成绩分布与试卷分析", table.rows[17].cells[1].text)
-        self.assertIn("本表一式两份", table.rows[21].cells[0].text)
+        self.assertIn("本表一式两份", document.paragraphs[-1].text)
         self.assertIn('w:textDirection w:val="tbRl"', document._element.xml)
 
         with ZipFile(BytesIO(content)) as archive:

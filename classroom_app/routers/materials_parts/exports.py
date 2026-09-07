@@ -220,6 +220,7 @@ async def preview_ai_import_record_export(
         return HTMLResponse(
             document_render_service.render_error_html(title=title, message=str(exc)),
             status_code=503,
+            headers=_DYNAMIC_DOCUMENT_HEADERS,
         )
     return HTMLResponse(
         document_render_service.render_preview_html(
@@ -228,7 +229,8 @@ async def preview_ai_import_record_export(
             user=user,
             eyebrow="期末材料 · 导出一致预览",
             download_label="下载文件",
-        )
+        ),
+        headers=_DYNAMIC_DOCUMENT_HEADERS,
     )
 
 

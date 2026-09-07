@@ -22,6 +22,12 @@ const state = {
     currentBatchId: '',
     currentRecord: null,
     currentPreviewUrl: '',
+    savedReviewOpinions: {},
+    savedExplicitReviewOpinions: new Set(),
+    explicitReviewOpinions: new Set(),
+    editorLoading: false,
+    editorSaving: false,
+    editorRegenerating: false,
     pendingClassOfferingId: 0,
     pendingExamCandidates: [],
     defaultSemester: null,
@@ -482,21 +488,86 @@ function signatureIds(fields, pluralKey, legacyKey) {
         : (fields[legacyKey] ? [fields[legacyKey]] : []);
 }
 
-// 签名确认即提交：只 PATCH 当前签名点的 ids，后台同步重建文档，
-// 返回即代表预览/下载已是最新内容。
+function reviewOpinionInput(key) {
+    return $(`[data-afm-review-opinion="${key}"]`, els.analysisFields);
+}
+
+function reviewOpinionKey(idsKey) {
+    return { department_signature_ids: 'department_review_opinion', dean_signature_ids: 'dean_review_opinion' }[idsKey];
+}
+
+function reviewPointControl(key) {
+    const slot = key.replace('_review_opinion', '');
+    return state.signaturePoints[`academic_final_material.exam_analysis.${slot}_review_signature`];
+}
+
+function hasReviewStamp(key) {
+    const control = reviewPointControl(key);
+    if (control?.state) {
+        return control.getSelectedIds().some((id) => control.signatureById(id)?.signature_kind === 'stamp');
+    }
+    const ids = state.currentRecord?.fields?.[key.replace('_opinion', '_stamp_ids')];
+    return Array.isArray(ids) && ids.length > 0;
+}
+
+function syncSuggestedReviewOpinion(key) {
+    if (!key || state.explicitReviewOpinions.has(key)) return;
+    const input = reviewOpinionInput(key);
+    input.value = hasReviewStamp(key) ? '' : input.dataset.afmOpinionDefault;
+    state.savedReviewOpinions[key] = input.value.trim();
+}
+
+function reviewOpinionsDirty() {
+    return !isGrade && $$('[data-afm-review-opinion]', els.analysisFields).some(reviewOpinionChanged);
+}
+
+function reviewOpinionChanged(input) {
+    const key = input.dataset.afmReviewOpinion;
+    return input.value.trim() !== state.savedReviewOpinions[key]
+        || (state.explicitReviewOpinions.has(key) && !state.savedExplicitReviewOpinions.has(key));
+}
+
+function acceptEditorUpdate(data, payload) {
+    const record = data.record;
+    if (record?.id) {
+        state.currentRecord = record;
+        state.currentPreviewUrl = record.preview_url || state.currentPreviewUrl;
+    } else if (state.currentRecord) {
+        state.currentRecord.fields = { ...state.currentRecord.fields, ...payload };
+    }
+    $$('[data-afm-review-opinion]', els.analysisFields).forEach((input) => {
+        const key = input.dataset.afmReviewOpinion;
+        if (!Object.hasOwn(payload, key)) return;
+        const saved = String(record?.fields?.[key] ?? payload[key]).trim();
+        input.value = saved;
+        state.savedReviewOpinions[key] = saved;
+        state.savedExplicitReviewOpinions.add(key);
+        state.explicitReviewOpinions.add(key);
+    });
+}
+
+// 审核意见与本签名点一并确认，使用后台返回的新版本预览地址。
 async function commitPointSignatures(idsKey, ids) {
-    await request(`/api/academic-final-materials/${encodeURIComponent(state.currentBatchId)}`, {
+    const opinionKey = reviewOpinionKey(idsKey);
+    const payload = { document_type: type, expected_updated_at: state.currentRecord?.updated_at, [idsKey]: ids };
+    if (opinionKey && (state.explicitReviewOpinions.has(opinionKey) || !hasReviewStamp(opinionKey))) {
+        payload[opinionKey] = reviewOpinionInput(opinionKey).value.trim();
+    }
+    const data = await request(`/api/academic-final-materials/${encodeURIComponent(state.currentBatchId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ document_type: type, [idsKey]: ids }),
+        body: JSON.stringify(payload),
     }, 30000);
+    acceptEditorUpdate(data, payload);
     loadItems({ notify: false });
 }
 
 function updateEditorGate() {
     const controls = Object.values(state.signaturePoints);
     const dirty = controls.some((control) => control.isDirty?.());
-    const updating = controls.some((control) => control.isUpdating?.());
+    const updating = state.editorLoading || state.editorSaving || state.editorRegenerating || controls.some((control) => control.isUpdating?.());
+    const opinionDirty = reviewOpinionsDirty();
+    controls.forEach((control) => { control.root.inert = updating; });
     const save = $('[data-afm-save]');
     if (save) {
         save.disabled = dirty || updating;
@@ -505,16 +576,34 @@ function updateEditorGate() {
             : (dirty ? '有签名修改未确认，请先在签名区点击“确认并更新文档”。' : '');
     }
     if (els.previewCurrent) {
-        els.previewCurrent.disabled = updating;
-        els.previewCurrent.title = updating ? '后台正在更新文档，完成后即可预览。' : '';
+        els.previewCurrent.disabled = updating || opinionDirty;
+        els.previewCurrent.title = updating ? '后台正在更新文档，完成后即可预览。'
+            : (opinionDirty ? '审核意见尚未保存，请先保存并更新文档。' : '');
     }
+    $$('[data-afm-review-opinion]', els.analysisFields).forEach((input) => {
+        const key = input.dataset.afmReviewOpinion;
+        const changed = reviewOpinionChanged(input);
+        input.disabled = updating;
+        const label = $(`[data-afm-opinion-status="${key}"]`, els.analysisFields);
+        if (label) {
+            label.textContent = changed ? '修改待保存'
+                : (state.explicitReviewOpinions.has(key) ? '已保存' : (hasReviewStamp(key) ? '沿用批语章' : '默认批语'));
+            label.classList.toggle('is-dirty', changed);
+        }
+        input.placeholder = !state.explicitReviewOpinions.has(key) && hasReviewStamp(key)
+            ? '沿用下方已选批语章；输入文字可替换'
+            : '填写审核意见，留空不显示';
+    });
+    $$('[data-afm-use-opinion], [data-afm-clear-opinion]', els.analysisFields).forEach((button) => { button.disabled = updating; });
+    if (els.regenerate) els.regenerate.disabled = dirty || updating;
+    if (els.analysisText) els.analysisText.disabled = state.editorRegenerating;
     const status = $('[data-afm-editor-status]');
     if (status) {
         status.classList.toggle('is-updating', updating);
-        status.classList.toggle('is-dirty', !updating && dirty);
+        status.classList.toggle('is-dirty', !updating && (dirty || opinionDirty));
         status.innerHTML = updating
             ? '<span class="afm-spinner" style="width:14px;height:14px;border-width:2px"></span>后台正在更新文档…'
-            : (dirty ? '签名修改待确认' : '');
+            : (dirty ? '签名修改待确认' : (opinionDirty ? '审核意见待保存' : ''));
     }
 }
 
@@ -529,6 +618,7 @@ async function ensureSignaturePoint({ key, label, root, selectedIds, materialId,
             materialId,
             initialSelectedIds: selectedIds,
             onConfirm: (ids) => commitPointSignatures(idsKey, ids),
+            onChange: () => syncSuggestedReviewOpinion(reviewOpinionKey(idsKey)),
             onStateChange: updateEditorGate,
             notify: message,
         });
@@ -551,11 +641,17 @@ function identityHtml(fields) {
 }
 
 async function openEditor(batchId) {
+    if (state.editorLoading || state.editorSaving || state.editorRegenerating || Object.values(state.signaturePoints).some((control) => control.isUpdating?.())) return;
     state.currentBatchId = batchId;
+    state.editorLoading = true;
+    state.savedReviewOpinions = {};
+    state.savedExplicitReviewOpinions.clear();
+    state.explicitReviewOpinions.clear();
     els.editorDialog.showModal();
     els.editorTitle.textContent = `编辑${typeLabel}`;
     els.editorSubtitle.textContent = '正在读取结构化内容与签名库…';
     els.identity.innerHTML = '<div style="grid-column:1/-1">正在加载…</div>';
+    updateEditorGate();
     try {
         const detail = await apiFetch(`/api/academic-final-materials/${encodeURIComponent(batchId)}`);
         const record = isGrade ? detail.grade : detail.analysis;
@@ -582,6 +678,17 @@ async function openEditor(batchId) {
                 input.value = fields[input.dataset.afmField] || '';
             });
             els.analysisText.value = structured.analysis_text || fields.analysis_text || '';
+            $$('[data-afm-review-opinion]', els.analysisFields).forEach((input) => {
+                const key = input.dataset.afmReviewOpinion;
+                const stampIds = fields[key.replace('_opinion', '_stamp_ids')];
+                input.value = fields[key] ?? (stampIds?.length ? '' : input.dataset.afmOpinionDefault);
+                state.savedReviewOpinions[key] = input.value.trim();
+                const source = fields[`${key}_source`];
+                if (source === 'explicit' || (source == null && fields[key] != null)) {
+                    state.explicitReviewOpinions.add(key);
+                    state.savedExplicitReviewOpinions.add(key);
+                }
+            });
             await Promise.all([
                 ensureSignaturePoint({
                     key: 'academic_final_material.exam_analysis.department_review_signature',
@@ -600,17 +707,20 @@ async function openEditor(batchId) {
                     idsKey: 'dean_signature_ids',
                 }),
             ]);
+            $$('[data-afm-review-opinion]', els.analysisFields).forEach((input) => syncSuggestedReviewOpinion(input.dataset.afmReviewOpinion));
             enhancePromptPoolInput(els.regeneratePrompt);
         }
-        updateEditorGate();
     } catch (error) {
         els.editorDialog.close();
         message(error.message || '读取材料失败。', 'error');
+    } finally {
+        state.editorLoading = false;
+        updateEditorGate();
     }
 }
 
 function editorPayload() {
-    const payload = { document_type: type };
+    const payload = { document_type: type, expected_updated_at: state.currentRecord?.updated_at };
     if (isGrade) {
         payload.teacher_signature_ids = state.signaturePoints['academic_final_material.grade_register.teacher_signature']?.getSelectedIds() || [];
     } else {
@@ -620,46 +730,67 @@ function editorPayload() {
         payload.analysis_text = els.analysisText.value.trim();
         payload.department_signature_ids = state.signaturePoints['academic_final_material.exam_analysis.department_review_signature']?.getSelectedIds() || [];
         payload.dean_signature_ids = state.signaturePoints['academic_final_material.exam_analysis.dean_review_signature']?.getSelectedIds() || [];
+        $$('[data-afm-review-opinion]', els.analysisFields).forEach((input) => {
+            const key = input.dataset.afmReviewOpinion;
+            const idsKey = key.replace('_review_opinion', '_signature_ids');
+            // 未签名、未触碰的建议批语仅在界面展示，不产生审核结果。
+            if (state.explicitReviewOpinions.has(key) || (payload[idsKey]?.length && !hasReviewStamp(key))) {
+                payload[key] = input.value.trim();
+            }
+        });
     }
     return payload;
 }
 
 async function saveEditor(event) {
     event.preventDefault();
+    if (state.editorLoading || state.editorSaving || state.editorRegenerating || Object.values(state.signaturePoints).some((control) => control.isDirty?.() || control.isUpdating?.())) return;
     const button = $('[data-afm-save]');
+    const payload = editorPayload();
+    state.editorSaving = true;
     setBusy(button, true, '保存中…');
+    updateEditorGate();
     try {
         const data = await apiFetch(`/api/academic-final-materials/${encodeURIComponent(state.currentBatchId)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(editorPayload()),
+            body: JSON.stringify(payload),
         });
+        acceptEditorUpdate(data, payload);
         els.editorDialog.close();
         message(data.message || '已保存。');
         await loadItems();
     } catch (error) {
         message(error.message || '保存失败。', 'error');
     } finally {
+        state.editorSaving = false;
         setBusy(button, false);
+        updateEditorGate();
     }
 }
 
 async function regenerateAnalysis() {
+    if (state.editorLoading || state.editorSaving || state.editorRegenerating || Object.values(state.signaturePoints).some((control) => control.isDirty?.() || control.isUpdating?.())) return;
+    state.editorRegenerating = true;
     setBusy(els.regenerate, true, '深度思考中…');
+    updateEditorGate();
     try {
         const prompt = els.regeneratePrompt.value.trim();
         const data = await apiFetch(`/api/academic-final-materials/${encodeURIComponent(state.currentBatchId)}/regenerate-analysis`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt }),
+            body: JSON.stringify({ prompt, expected_updated_at: state.currentRecord?.updated_at }),
         });
         els.analysisText.value = data.analysis_text || '';
+        acceptEditorUpdate(data, { analysis_text: data.analysis_text || '' });
         await recordPromptForInput(els.regeneratePrompt);
         message(data.message || '已重新生成。');
     } catch (error) {
         message(error.message || '重新生成失败。', 'error');
     } finally {
+        state.editorRegenerating = false;
         setBusy(els.regenerate, false);
+        updateEditorGate();
     }
 }
 
@@ -686,6 +817,28 @@ $('[data-afm-close-preview]')?.addEventListener('click', () => {
 });
 els.syncForm.addEventListener('submit', submitSync);
 els.editorForm.addEventListener('submit', saveEditor);
+$$('[data-afm-review-opinion]', els.analysisFields).forEach((input) => {
+    input.addEventListener('input', () => {
+        state.explicitReviewOpinions.add(input.dataset.afmReviewOpinion);
+        updateEditorGate();
+    });
+});
+$$('[data-afm-use-opinion]', els.analysisFields).forEach((button) => {
+    button.addEventListener('click', () => {
+        const input = reviewOpinionInput(button.dataset.afmUseOpinion);
+        input.value = input.dataset.afmOpinionDefault;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+    });
+});
+$$('[data-afm-clear-opinion]', els.analysisFields).forEach((button) => {
+    button.addEventListener('click', () => {
+        const input = reviewOpinionInput(button.dataset.afmClearOpinion);
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+    });
+});
 els.search.addEventListener('input', renderCards);
 els.semesterFilter?.addEventListener('change', () => {
     state.semesterValue = els.semesterFilter.value;

@@ -843,7 +843,7 @@ async def _persist_final_material_record_update(
                 (int(record_id), user["id"], str(record["updated_at"] or ""), str(record["export_payload_json"] or "")),
             )
             if int(claimed.rowcount or 0) != 1:
-                raise HTTPException(409, "原材料已被其他操作修改，请重新预检后更新，已保存的人工改分未被覆盖。")
+                raise HTTPException(409, "材料已被其他操作更新，请重新读取后再保存，已保存的内容未被覆盖。")
         current = conn.execute(
             "SELECT * FROM material_ai_import_records WHERE id = ? AND teacher_id = ?",
             (int(record_id), user["id"]),

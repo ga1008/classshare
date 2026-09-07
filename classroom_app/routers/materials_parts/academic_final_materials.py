@@ -23,10 +23,13 @@ from ...services import signature_service
 from ...services.academic_final_material_service import (
     ACADEMIC_EXAM_ANALYSIS_LABEL,
     ACADEMIC_EXAM_ANALYSIS_TYPE,
+    ACADEMIC_EXAM_ANALYSIS_EDIT_FIELDS,
+    ACADEMIC_EXAM_REVIEW_DEFAULTS,
     ACADEMIC_FINAL_MATERIAL_TYPES,
     ACADEMIC_GRADE_REGISTER_LABEL,
     ACADEMIC_GRADE_REGISTER_TYPE,
     academic_final_material_record_urls,
+    academic_exam_analysis_is_complete,
     batch_semester_parts,
     build_content_markdown,
     build_exam_analysis_export_payload,
@@ -35,6 +38,8 @@ from ...services.academic_final_material_service import (
     load_fresh_cached_batch,
     list_teacher_final_material_batches,
     list_teacher_final_material_candidates,
+    hydrate_academic_final_material_signature_paths,
+    normalize_academic_review_opinion,
     reclaim_stale_academic_final_material_batches,
     resolve_default_semester_selection,
     serialize_batch,
@@ -56,12 +61,15 @@ class AcademicFinalMaterialSyncRequest(BaseModel):
 
 class AcademicFinalMaterialUpdateRequest(BaseModel):
     document_type: str
+    expected_updated_at: str | None = Field(default=None, max_length=80)
     proposition_form: str | None = None
     exam_form: str | None = None
     separate_teaching_exam: str | None = None
     course_nature: str | None = None
     marking_form: str | None = None
     analysis_text: str | None = None
+    department_review_opinion: str | None = Field(default=None, max_length=80)
+    dean_review_opinion: str | None = Field(default=None, max_length=80)
     teacher_signature_id: int | None = None
     department_signature_id: int | None = None
     dean_signature_id: int | None = None
@@ -72,15 +80,10 @@ class AcademicFinalMaterialUpdateRequest(BaseModel):
 
 class AcademicFinalMaterialRegenerateRequest(BaseModel):
     prompt: str = Field(default="", max_length=2000)
+    expected_updated_at: str | None = Field(default=None, max_length=80)
 
 
-ANALYSIS_EDIT_FIELDS = {
-    "proposition_form",
-    "exam_form",
-    "separate_teaching_exam",
-    "course_nature",
-    "marking_form",
-}
+ANALYSIS_EDIT_FIELDS = ACADEMIC_EXAM_ANALYSIS_EDIT_FIELDS
 ANALYSIS_CHOICE_SETS = {
     "proposition_form": {"", "试题库", "试卷库", "教师组题"},
     "exam_form": {"", "开卷", "闭卷"},
@@ -118,6 +121,11 @@ def _record_export_payload(record: Any) -> dict[str, Any]:
     return _json_object(record["export_payload_json"]) if record else {}
 
 
+def _require_expected_record_version(record: Any, expected_updated_at: str | None) -> None:
+    if expected_updated_at is not None and str(record["updated_at"] or "") != expected_updated_at:
+        raise HTTPException(409, "材料已被其他操作更新，请重新打开编辑窗口后再保存，已保存的内容未被覆盖。")
+
+
 def _record_for_teacher(conn: Any, record_id: int | None, teacher_id: int):
     if not record_id:
         return None
@@ -147,15 +155,17 @@ def _batch_for_teacher(conn: Any, batch_id: str, teacher_id: int):
     return row
 
 
-def _serialize_record_payload(record: Any) -> dict[str, Any]:
+def _serialize_record_payload(record: Any, *, conn: Any | None = None) -> dict[str, Any]:
     if not record:
         return {}
     payload = _record_export_payload(record)
+    if conn is not None:
+        payload = hydrate_academic_final_material_signature_paths(conn, payload, record=record, include_images=False)
     return {
         "id": int(record["id"]),
         "document_type": record["document_type"] or "",
         "document_type_label": record["document_type_label"] or "",
-        "updated_at": record["updated_at"] or "",
+        "updated_at": str(record["updated_at"] or ""),
         "fields": payload.get("fields") if isinstance(payload.get("fields"), dict) else {},
         "structured": payload.get("structured") if isinstance(payload.get("structured"), dict) else {},
         **academic_final_material_record_urls(int(record["id"]), record["updated_at"]),
@@ -620,11 +630,18 @@ async def api_academic_final_material_detail(batch_id: str, user: dict = Depends
         batch = _batch_for_teacher(conn, batch_id, int(user["id"]))
         grade = _record_for_teacher(conn, batch["grade_record_id"], int(user["id"]))
         analysis = _record_for_teacher(conn, batch["analysis_record_id"], int(user["id"]))
+        grade_payload = _serialize_record_payload(grade, conn=conn)
+        analysis_payload = _serialize_record_payload(analysis, conn=conn)
+        batch_payload = serialize_batch(batch)
+        if analysis_payload:
+            batch_payload["edit_state"]["analysis_complete"] = academic_exam_analysis_is_complete(
+                analysis_payload.get("fields") or {}, analysis_payload.get("structured") or {},
+            )
     return {
         "status": "success",
-        "batch": serialize_batch(batch),
-        "grade": _serialize_record_payload(grade),
-        "analysis": _serialize_record_payload(analysis),
+        "batch": batch_payload,
+        "grade": grade_payload,
+        "analysis": analysis_payload,
     }
 
 
@@ -997,6 +1014,8 @@ def _apply_signatures(
     fields[ids_key] = normalized_ids
     fields[id_key] = normalized_ids[0] if normalized_ids else None
     fields[path_key] = ""
+    has_personal_signature = False
+    has_opinion_stamp = False
     for signature_id in normalized_ids:
         try:
             row, _actor = signature_service.get_signature_row_for_actor(
@@ -1009,6 +1028,14 @@ def _apply_signatures(
             raise HTTPException(exc.status_code, exc.message) from exc
         if not signature_service.resolve_signature_file_path(row):
             raise HTTPException(422, "所选签名图片文件不存在。")
+        if signature_service.is_stamp_signature(row):
+            has_opinion_stamp = True
+        else:
+            has_personal_signature = True
+    role = ids_key.removesuffix("_signature_ids")
+    opinion_key = f"{role}_review_opinion"
+    if role in ACADEMIC_EXAM_REVIEW_DEFAULTS and opinion_key not in fields and has_personal_signature and not has_opinion_stamp:
+        fields[opinion_key] = ACADEMIC_EXAM_REVIEW_DEFAULTS[role]
     return {
         "signature_ids": normalized_ids,
         "function_point_key": function_point_key,
@@ -1042,6 +1069,7 @@ async def api_update_academic_final_material(
         record = _record_for_teacher(conn, record_id, int(user["id"]))
         if not record:
             raise HTTPException(409, "请先同步该课堂的两份期末材料。")
+        _require_expected_record_version(record, body.expected_updated_at)
         export_payload = _record_export_payload(record)
         fields = dict(export_payload.get("fields") or {})
         structured = dict(export_payload.get("structured") or {})
@@ -1049,6 +1077,14 @@ async def api_update_academic_final_material(
             "teacher_signature_image_path",
             "department_signature_image_path",
             "dean_signature_image_path",
+            "department_review_opinion_image_path",
+            "dean_review_opinion_image_path",
+            "department_review_opinion_source",
+            "dean_review_opinion_source",
+            "department_personal_signature_ids",
+            "dean_personal_signature_ids",
+            "department_review_stamp_ids",
+            "dean_review_stamp_ids",
         ):
             fields.pop(stale_path_key, None)
         signature_use_intents: list[dict[str, Any]] = []
@@ -1073,6 +1109,10 @@ async def api_update_academic_final_material(
                 )
                 signature_use_intents.append(intent)
         else:
+            for role in ACADEMIC_EXAM_REVIEW_DEFAULTS:
+                opinion_key = f"{role}_review_opinion"
+                if opinion_key in body_payload:
+                    fields[opinion_key] = normalize_academic_review_opinion(body_payload[opinion_key])
             for key in ANALYSIS_EDIT_FIELDS:
                 if key in body_payload:
                     fields[key] = str(body_payload.get(key) or "").strip()
@@ -1128,9 +1168,12 @@ async def api_update_academic_final_material(
         parse_result,
         user,
         signature_use_intents=signature_use_intents,
+        require_unchanged_record=True,
     )
     with get_db_connection() as conn:
         batch_row = _batch_for_teacher(conn, batch_id, int(user["id"]))
+        refreshed_record = _record_for_teacher(conn, int(record["id"]), int(user["id"]))
+        refreshed_payload = _serialize_record_payload(refreshed_record, conn=conn)
         edit_state = _json_object(batch_row["edit_state_json"])
         edit_state.update(
             {
@@ -1139,17 +1182,8 @@ async def api_update_academic_final_material(
             }
         )
         if body.document_type == ACADEMIC_EXAM_ANALYSIS_TYPE:
-            has_department_signature = bool(
-                fields.get("department_signature_ids") or fields.get("department_signature_id")
-            )
-            has_dean_signature = bool(
-                fields.get("dean_signature_ids") or fields.get("dean_signature_id")
-            )
-            edit_state["analysis_complete"] = bool(
-                all(str(fields.get(key) or "").strip() for key in ANALYSIS_EDIT_FIELDS)
-                and str(structured.get("analysis_text") or "").strip()
-                and has_department_signature
-                and has_dean_signature
+            edit_state["analysis_complete"] = academic_exam_analysis_is_complete(
+                refreshed_payload.get("fields") or {}, refreshed_payload.get("structured") or {},
             )
         else:
             has_teacher_signature = bool(
@@ -1164,7 +1198,10 @@ async def api_update_academic_final_material(
             values={"edit_state_json": json.dumps(edit_state, ensure_ascii=False)},
         )
         conn.commit()
-    return {"status": "success", "message": "期末材料信息已保存，预览与下载将使用最新内容。", "batch": updated, "task": task}
+    return {
+        "status": "success", "message": "期末材料信息已保存，预览与下载将使用最新内容。",
+        "batch": updated, "task": task, "record": refreshed_payload,
+    }
 
 
 @router.post("/api/academic-final-materials/{batch_id}/regenerate-analysis", response_class=JSONResponse)
@@ -1179,6 +1216,7 @@ async def api_regenerate_academic_final_analysis(
         analysis_record = _record_for_teacher(conn, batch["analysis_record_id"], int(user["id"]))
         if not grade_record or not analysis_record:
             raise HTTPException(409, "请先同步该课堂的两份期末材料。")
+        _require_expected_record_version(analysis_record, body.expected_updated_at)
         grade_payload = _record_export_payload(grade_record)
         analysis_payload = _record_export_payload(analysis_record)
         course_context = _load_course_analysis_context(
@@ -1202,10 +1240,15 @@ async def api_regenerate_academic_final_analysis(
         analysis_record,
         parse_result,
         user,
+        require_unchanged_record=True,
     )
+    with get_db_connection() as conn:
+        refreshed = _record_for_teacher(conn, int(analysis_record["id"]), int(user["id"]))
+        refreshed_payload = _serialize_record_payload(refreshed, conn=conn)
     return {
         "status": "success",
         "message": "已按强化要求重新生成教学分析，并同步更新预览与下载文档。",
         "analysis_text": text,
         "task": task,
+        "record": refreshed_payload,
     }

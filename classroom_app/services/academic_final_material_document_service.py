@@ -6,6 +6,7 @@ import hashlib
 import io
 import math
 import re
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -501,7 +502,7 @@ def _chart_image(distribution: list[dict[str, Any]]) -> io.BytesIO:
     from PIL import Image, ImageDraw, ImageFont
 
     width, height = 1250, 390
-    image = Image.new("RGB", (width, height), "#D0D0D0")
+    image = Image.new("RGB", (width, height), "#C0C0C0")
     draw = ImageDraw.Draw(image)
     font_paths = (
         Path("C:/Windows/Fonts/simsun.ttc"),
@@ -519,7 +520,7 @@ def _chart_image(distribution: list[dict[str, Any]]) -> io.BytesIO:
     maximum = max(counts or [1]) or 1
     axis_max = max(5, ((maximum + 4) // 5) * 5)
     labels = ["<60", "60-69", "70-79", "80-89", "90-100"]
-    colors = ["#A7A7A7", "#70AD47", "#ED7D31", "#FF3B3B", "#20A9C2"]
+    colors = ["#0E72CC", "#6CA30F", "#F59311", "#FA4343", "#16AFCC"]
     for tick in range(0, axis_max + 1, 5):
         y = bottom - (bottom - top) * tick / axis_max
         if tick:
@@ -553,6 +554,10 @@ def _merge_row(table: Any, row_index: int, start: int, end: int) -> Any:
 
 
 _ANALYSIS_GRID_POINTS = (21.7, 46.5, 31.5, 54.0, 28.5, 43.5, 71.25, 45.75, 54.0, 42.0, 43.5)
+_ANALYSIS_REVIEW_REMARK_ASSETS = {
+    "已核": Path(__file__).with_name("assets") / "gxufl_exam_review_checked.png",
+    "同意": Path(__file__).with_name("assets") / "gxufl_exam_review_agreed.png",
+}
 
 
 def _set_cell_width_points(cell: Any, width_points: float) -> None:
@@ -619,7 +624,7 @@ def _configure_analysis_table(table: Any) -> None:
 
     table.autofit = False
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _set_table_borders(table, size=4)
+    _set_table_borders(table, size=8)
     tbl_pr = table._tbl.tblPr
     layout = tbl_pr.find(qn("w:tblLayout"))
     if layout is None:
@@ -671,38 +676,102 @@ def _set_analysis_body(cell: Any, value: Any) -> None:
         paragraph.paragraph_format.space_before = 0
         paragraph.paragraph_format.space_after = 0
         paragraph.paragraph_format.line_spacing = 1
-        paragraph.paragraph_format.first_line_indent = Pt(24) if not re.match(r"^[一二三四五六七八九十]+[、.]|^\d+[.、]", line) else Pt(0)
+        is_heading = bool(re.match(r"^[一二三四五六七八九十]+[、.]|^\d+[.、]", line))
+        paragraph.paragraph_format.first_line_indent = Pt(0) if is_heading else Pt(24)
+        paragraph.paragraph_format.keep_with_next = is_heading and len(line) <= 40 and index + 1 < len(lines)
         _set_run_font(paragraph.add_run(line), 12)
 
 
-def _set_review_signature(cell: Any, path_value: Any, signature_count: int = 1) -> None:
+def _add_fitted_review_image(paragraph: Any, path_value: Any, *, width: float, height: float, description: str = "") -> bool:
+    """Fit both single and composed signatures without stretching or overflow."""
+    from docx.shared import Pt
+    from PIL import Image
+
+    path = Path(str(path_value or ""))
+    if not path.is_file():
+        return False
+    with Image.open(path) as source:
+        image_width, image_height = source.size
+    scale = min(width / image_width, height / image_height)
+    picture = paragraph.add_run().add_picture(str(path), width=Pt(image_width * scale), height=Pt(image_height * scale))
+    if description:
+        picture._inline.docPr.set("descr", description)
+    return True
+
+
+def _review_opinion_lines(fields: dict[str, Any], role: str, width: float) -> list[str]:
+    value = str(fields.get(f"{role}_review_opinion") or "").strip()
+    if len(value) <= 6:
+        return [value]
+    # A conservative full-width character budget also fits mixed Latin text.
+    return textwrap.wrap(value, width=max(1, int((width - 16) / 12))) or [""]
+
+
+def _set_review_cell(cell: Any, fields: dict[str, Any], role: str, title: str, *, opinion_height: float) -> None:
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.shared import Cm
+    from docx.shared import Pt
 
     cell.text = ""
-    paragraph = cell.paragraphs[0]
-    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    paragraph.paragraph_format.space_before = 0
-    paragraph.paragraph_format.space_after = 0
-    _set_run_font(paragraph.add_run("签字："), 9)
-    path = Path(str(path_value or ""))
-    if path.is_file():
-        if int(signature_count or 1) <= 1:
-            paragraph.add_run().add_picture(str(path), width=Cm(3.1), height=Cm(1.1))
-        else:
-            paragraph.add_run().add_picture(str(path), width=Cm(4.35))
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+    heading = cell.paragraphs[0]
+    heading.paragraph_format.space_after = Pt(8)
+    heading.paragraph_format.line_spacing = Pt(14)
+    _set_run_font(heading.add_run(title), 11)
+
+    opinion = cell.add_paragraph()
+    opinion.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    opinion.paragraph_format.line_spacing = 1
+    opinion.paragraph_format.left_indent = Pt(8)
+    opinion.paragraph_format.right_indent = Pt(8)
+    value = str(fields.get(f"{role}_review_opinion") or "").strip()
+    lines = _review_opinion_lines(fields, role, cell.width.pt)
+    content_height = 32 if len(value) <= 6 else 14 * len(lines)
+    opinion.paragraph_format.space_after = Pt(14 + opinion_height - content_height)
+    if value:
+        # These two typeset remark assets are form vocabulary, not personal
+        # signatures. They keep the calligraphic style identical on Word and
+        # Linux without depending on installed Chinese handwriting fonts.
+        if value not in _ANALYSIS_REVIEW_REMARK_ASSETS or not _add_fitted_review_image(
+            opinion, _ANALYSIS_REVIEW_REMARK_ASSETS[value], width=54, height=30, description=value,
+        ):
+            _set_run_font(opinion.add_run("\n".join(lines)), 22 if len(value) <= 6 else 12, name="楷体")
+    elif f"{role}_review_opinion" in fields or not _add_fitted_review_image(
+        opinion, fields.get(f"{role}_review_opinion_image_path"), width=62, height=32,
+    ):
+        _set_run_font(opinion.add_run(""), 22)
+    opinion.paragraph_format.line_spacing = Pt(32 if len(value) <= 6 else 14)
+
+    signature = cell.add_paragraph()
+    signature.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    signature.paragraph_format.right_indent = Pt(6)
+    signature.paragraph_format.space_after = Pt(5)
+    signature.paragraph_format.line_spacing = Pt(38)
+    ids = fields.get(f"{role}_personal_signature_ids", fields.get(f"{role}_signature_ids"))
+    count = len(ids) if isinstance(ids, list) else 1
+    _add_fitted_review_image(
+        signature, fields.get(f"{role}_signature_image_path"),
+        width=88 if count <= 1 else 138, height=32,
+    )
+    _set_run_font(signature.add_run(" 签字："), 11)
 
 
 def _build_analysis_table(document: Any, fields: dict[str, Any], structured: dict[str, Any]) -> Any:
     from docx.shared import Cm
 
-    table = document.add_table(rows=22, cols=11)
+    table = document.add_table(rows=19, cols=11)
     _configure_analysis_table(table)
-    heights = (36, 17, 11, 14, 14, 14, 15, 14, 14, 15, 15, 15, 15, 14, 14, 150, 14, 248, 14, None, 77.1, 14)
-    for row, height in zip(table.rows, heights):
-        _set_row_height(row, height, exact=height is not None)
+    heights = (36, 17, 11, 14, 14, 14, 15, 14, 14, 15, 15, 15, 15, 14, 14, 150, 14, 248, 112)
+    for index, (row, height) in enumerate(zip(table.rows, heights)):
+        _set_row_height(row, height, exact=index < 17)
+    # Long analysis must continue onto the next page rather than disappear
+    # inside an EXACTLY-height row. The review area remains indivisible.
+    from docx.oxml.ns import qn
+    body_properties = table.rows[17]._tr.get_or_add_trPr()
+    for node in list(body_properties.findall(qn("w:cantSplit"))):
+        body_properties.remove(node)
 
-    title = _analysis_cell(table, 0, 0, 10, "广西外国语学院课程试卷分析表", size=16)
+    title = _analysis_cell(table, 0, 0, 10, "广西外国语学院课程试卷分析表", size=16, bold=True)
     period = _analysis_cell(table, 1, 0, 10, _academic_period_text(fields), size=12)
     spacer = _analysis_cell(table, 2, 0, 10, "", size=9)
     for cell in (title, period, spacer):
@@ -795,30 +864,19 @@ def _build_analysis_table(document: Any, fields: dict[str, Any], structured: dic
         size=9,
         align=0,
     )
-    analysis_label = _analysis_cell(table, 17, 0, 0, "试卷分析", size=9, bold=True)
-    _set_cell_direction_vertical(analysis_label)
+    # True vertical text prevents LibreOffice from splitting a long adjacent
+    # cell across pages. Stacked upright glyphs preserve the form's appearance.
+    _analysis_cell(table, 17, 0, 0, "试\n卷\n分\n析", size=9, bold=True)
     analysis_cell = _analysis_cell(table, 17, 1, 10, "", align=0)
     _set_analysis_body(analysis_cell, structured.get("analysis_text") or fields.get("analysis_text") or "")
 
-    _analysis_cell(table, 18, 0, 5, "系（教研室）审核意见：", size=9, align=0)
-    _analysis_cell(table, 18, 6, 10, "教学院长审核意见：", size=9, align=0)
-    _analysis_cell(table, 19, 0, 5, fields.get("department_review_opinion") or "", size=9, align=0)
-    _analysis_cell(table, 19, 6, 10, fields.get("dean_review_opinion") or "", size=9, align=0)
-    department_signature_cell = _analysis_cell(table, 20, 0, 5, "")
-    dean_signature_cell = _analysis_cell(table, 20, 6, 10, "")
-    department_ids = fields.get("department_signature_ids") if isinstance(fields.get("department_signature_ids"), list) else []
-    dean_ids = fields.get("dean_signature_ids") if isinstance(fields.get("dean_signature_ids"), list) else []
-    _set_review_signature(
-        department_signature_cell,
-        fields.get("department_signature_image_path"),
-        len(department_ids) or (1 if fields.get("department_signature_image_path") else 0),
+    reviews = (
+        (_merge_row(table, 18, 0, 5), "department", "系（教研室）审核意见："),
+        (_merge_row(table, 18, 6, 10), "dean", "教学院长审核意见："),
     )
-    _set_review_signature(
-        dean_signature_cell,
-        fields.get("dean_signature_image_path"),
-        len(dean_ids) or (1 if fields.get("dean_signature_image_path") else 0),
-    )
-    _analysis_cell(table, 21, 0, 10, "注：1、本表一式两份，一份交学生所在学院，一份交开课学院存档。", size=9, bold=True, align=0)
+    opinion_height = max(32, *(14 * len(_review_opinion_lines(fields, role, cell.width.pt)) for cell, role, _ in reviews))
+    for cell, role, heading in reviews:
+        _set_review_cell(cell, fields, role, heading, opinion_height=opinion_height)
     return table
 
 
@@ -841,6 +899,12 @@ def build_exam_analysis_docx(parse_payload: dict[str, Any]) -> bytes:
     section.footer_distance = Pt(36)
     document.styles["Normal"].paragraph_format.space_after = Pt(0)
     _build_analysis_table(document, fields, structured)
+    note = document.add_paragraph()
+    note.paragraph_format.left_indent = Pt((487.25 - sum(_ANALYSIS_GRID_POINTS)) / 2)
+    note.paragraph_format.space_before = 0
+    note.paragraph_format.space_after = 0
+    note.paragraph_format.line_spacing = Pt(14)
+    _set_run_font(note.add_run("注：1、本表一式两份，一份交学生所在学院，一份交开课学院存档。"), 10, bold=True)
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()

@@ -202,12 +202,42 @@ data-afm-open-sync {{ explain_attrs(
                 </label>
 
                 <div class="afm-section-heading afm-section-heading--signature">
-                    <div><span>审核区</span><h4>签名库</h4></div>
-                    <p>两处审核签名分别申请、分别授权；获批签名仅在当前材料版本中可选。</p>
+                    <div><span>审核区</span><h4>审核意见与签名</h4></div>
+                    <p>两处签名分别申请、分别授权。意见位于签名上方，确认签名时同步保存本栏意见。</p>
                 </div>
-                <div class="afm-fields-grid">
-                    <div data-afm-department-signature-point></div>
-                    <div data-afm-dean-signature-point></div>
+                <div class="afm-review-grid">
+                    <article class="afm-review-card">
+                        <div class="afm-review-opinion">
+                            <label class="afm-field" for="afm-department-opinion">
+                                <span class="afm-review-opinion__heading">系（教研室）审核意见 <small data-afm-opinion-status="department_review_opinion" aria-live="polite"></small></span>
+                                <input id="afm-department-opinion" type="text" maxlength="80" data-afm-review-opinion="department_review_opinion" data-afm-opinion-default="已核" aria-describedby="afm-department-opinion-help" placeholder="填写审核意见，留空不显示">
+                            </label>
+                            <div class="afm-review-opinion__help">
+                                <small id="afm-department-opinion-help">“已核”沿用原表批语样式；可改写或留空。</small>
+                                <div class="afm-review-opinion__actions">
+                                    <button type="button" data-afm-use-opinion="department_review_opinion">填入“已核”</button>
+                                    <button type="button" data-afm-clear-opinion="department_review_opinion" aria-label="清空系（教研室）审核意见">清空</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div data-afm-department-signature-point></div>
+                    </article>
+                    <article class="afm-review-card">
+                        <div class="afm-review-opinion">
+                            <label class="afm-field" for="afm-dean-opinion">
+                                <span class="afm-review-opinion__heading">教学院长审核意见 <small data-afm-opinion-status="dean_review_opinion" aria-live="polite"></small></span>
+                                <input id="afm-dean-opinion" type="text" maxlength="80" data-afm-review-opinion="dean_review_opinion" data-afm-opinion-default="同意" aria-describedby="afm-dean-opinion-help" placeholder="填写审核意见，留空不显示">
+                            </label>
+                            <div class="afm-review-opinion__help">
+                                <small id="afm-dean-opinion-help">“同意”沿用原表批语样式；可改写或留空。</small>
+                                <div class="afm-review-opinion__actions">
+                                    <button type="button" data-afm-use-opinion="dean_review_opinion">填入“同意”</button>
+                                    <button type="button" data-afm-clear-opinion="dean_review_opinion" aria-label="清空教学院长审核意见">清空</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div data-afm-dean-signature-point></div>
+                    </article>
                 </div>
             </section>
         </div>

@@ -62,7 +62,7 @@ from .semester_identity_service import (
 )
 from .deployment_cache_service import get_deployment_release_id
 from .file_service import resolve_global_file_path
-from .signature_service import resolve_signature_file_path
+from .signature_service import is_stamp_signature, resolve_signature_file_path
 from .signature_composition_service import compose_signature_strip, resolve_signature_paths
 
 
@@ -694,6 +694,24 @@ def build_grade_register_export_payload(
     }
 
 
+def _exam_analysis_layout_profile() -> dict[str, Any]:
+    return {
+        "page": "A4 portrait",
+        "page_points": {"width": 595.25, "height": 841.85},
+        "margins_points": {"top": 19.4, "bottom": 19.4, "left": 54.0, "right": 54.0},
+        "table_width_points": 482.2,
+        "table_rows": 19,
+        "note_placement": "paragraph_after_table",
+        "signature_mode": "feature_bound_runtime_resolution",
+        "review_layout": {
+            "columns": 2,
+            "content_order": ["heading", "opinion", "personal_signature_and_label"],
+            "internal_horizontal_borders": False,
+            "opinion_mode": "explicit_text_or_bound_stamp_with_legacy_defaults",
+        },
+    }
+
+
 def build_exam_analysis_export_payload(
     parsed: dict[str, Any],
     validation: dict[str, Any],
@@ -714,7 +732,7 @@ def build_exam_analysis_export_payload(
         for index, segment in enumerate(["<60", "60-69", "70-79", "80-89", "90-100"])
     ]
     return {
-        "schema_version": "gxufl-academic-exam-analysis-v2",
+        "schema_version": "gxufl-academic-exam-analysis-v3",
         "template_key": ACADEMIC_EXAM_ANALYSIS_TYPE,
         "document_group": "final_material",
         "document_type": ACADEMIC_EXAM_ANALYSIS_TYPE,
@@ -726,14 +744,7 @@ def build_exam_analysis_export_payload(
             "analysis_text": str((defaults or {}).get("analysis_text") or parsed.get("analysis_text") or ""),
             "validation": validation,
         },
-        "layout_profile": {
-            "page": "A4 portrait",
-            "page_points": {"width": 595.25, "height": 841.85},
-            "margins_points": {"top": 19.4, "bottom": 19.4, "left": 54.0, "right": 54.0},
-            "table_width_points": 482.2,
-            "table_rows": 22,
-            "signature_mode": "feature_bound_runtime_resolution",
-        },
+        "layout_profile": _exam_analysis_layout_profile(),
     }
 
 
@@ -746,6 +757,8 @@ def normalize_academic_final_material_payload(
     payload = dict(export_payload or {})
     fields = dict(payload.get("fields") or {})
     for key, value in (metadata or {}).items():
+        if key in {"department_review_opinion", "dean_review_opinion"} and key in fields:
+            continue  # Clearing an opinion must survive stale imported metadata.
         if value not in (None, "") and fields.get(key) in (None, ""):
             fields[key] = value
     payload.update(
@@ -762,6 +775,11 @@ def normalize_academic_final_material_payload(
             "structured": dict(payload.get("structured") or {}),
         }
     )
+    if document_type == ACADEMIC_EXAM_ANALYSIS_TYPE:
+        payload["schema_version"] = "gxufl-academic-exam-analysis-v3"
+        payload["layout_profile"] = {
+            **dict(payload.get("layout_profile") or {}), **_exam_analysis_layout_profile(),
+        }
     return payload
 
 
@@ -1304,6 +1322,7 @@ def list_teacher_final_material_batches(
         SELECT b.*,
                r.document_type_label,
                r.updated_at AS record_updated_at,
+               r.signature_revision AS record_signature_revision,
                r.content_quality_status,
                r.export_payload_json AS record_export_payload_json
         FROM academic_final_material_batches b
@@ -1313,6 +1332,48 @@ def list_teacher_final_material_batches(
         """,
         (int(teacher_id),),
     ).fetchall()
+    binding_cache: dict[tuple[str, str, str], list[int]] | None = None
+    signature_cache: dict[int, Any] | None = None
+    if document_type == ACADEMIC_EXAM_ANALYSIS_TYPE and rows:
+        # The card status must reflect current bindings and remarks, including
+        # old records whose stored edit_state predates review opinions. Fetch
+        # both collections in bulk instead of issuing queries for each card.
+        record_ids = [str(row["analysis_record_id"]) for row in rows if row["analysis_record_id"]]
+        binding_cache = {}
+        signature_ids: set[int] = set()
+        if record_ids:
+            bindings = conn.execute(
+                "SELECT function_point_key, material_id, material_revision, signature_id "
+                "FROM signature_point_bindings WHERE material_type = 'academic_final_material' "
+                f"AND material_id IN ({','.join('?' for _ in record_ids)}) ORDER BY display_order, id",
+                tuple(record_ids),
+            ).fetchall()
+            for binding in bindings:
+                key = (str(binding["function_point_key"]), str(binding["material_id"]), str(binding["material_revision"]))
+                signature_id = int(binding["signature_id"])
+                binding_cache.setdefault(key, []).append(signature_id)
+                signature_ids.add(signature_id)
+        for row in rows:
+            payload = _json_loads(row["record_export_payload_json"], {})
+            if isinstance(payload.get("export_payload"), dict):
+                payload = payload["export_payload"]
+            record_fields = payload.get("fields") or {}
+            for role in ("department", "dean"):
+                raw_ids = record_fields.get(f"{role}_signature_ids")
+                raw_ids = raw_ids if isinstance(raw_ids, list) else [record_fields.get(f"{role}_signature_id")]
+                for value in raw_ids:
+                    try:
+                        signature_id = int(value)
+                    except (TypeError, ValueError):
+                        continue
+                    if signature_id > 0:
+                        signature_ids.add(signature_id)
+        signatures = conn.execute(
+            f"SELECT * FROM electronic_signatures WHERE id IN ({','.join('?' for _ in signature_ids)}) "
+            "AND status = 'active' AND deleted_at IS NULL",
+            tuple(signature_ids),
+        ).fetchall() if signature_ids else []
+        signature_cache = {int(signature["id"]): signature for signature in signatures}
     items = []
     for row in rows:
         item = serialize_batch(row)
@@ -1330,6 +1391,17 @@ def list_teacher_final_material_batches(
             }
         )
         record_id = item.get("grade_record_id") if document_type == ACADEMIC_GRADE_REGISTER_TYPE else item.get("analysis_record_id")
+        if document_type == ACADEMIC_EXAM_ANALYSIS_TYPE and record_id:
+            resolved = hydrate_academic_final_material_signature_paths(
+                conn, record_payload,
+                record={"id": record_id, "document_type": document_type, "signature_revision": row["record_signature_revision"]},
+                include_images=False, _binding_cache=binding_cache, _signature_cache=signature_cache,
+            )
+            if isinstance(resolved.get("export_payload"), dict):
+                resolved = resolved["export_payload"]
+            item["edit_state"]["analysis_complete"] = academic_exam_analysis_is_complete(
+                resolved.get("fields") or {}, resolved.get("structured") or {},
+            )
         item.update(
             {
                 "record_id": record_id,
@@ -1594,11 +1666,42 @@ def repair_legacy_grade_register_roster_order(conn: Any, row: Any, payload: dict
     return export_payload
 
 
+ACADEMIC_EXAM_ANALYSIS_EDIT_FIELDS = frozenset({
+    "proposition_form", "exam_form", "separate_teaching_exam", "course_nature", "marking_form",
+})
+ACADEMIC_EXAM_REVIEW_DEFAULTS = {"department": "已核", "dean": "同意"}
+
+
+def normalize_academic_review_opinion(value: Any) -> str:
+    """Keep review remarks on one logical line without changing their meaning."""
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def academic_exam_analysis_is_complete(fields: dict[str, Any], structured: dict[str, Any]) -> bool:
+    """Use resolved personal signatures; a shared opinion stamp is not a signer."""
+    for role in ACADEMIC_EXAM_REVIEW_DEFAULTS:
+        if not fields.get(f"{role}_personal_signature_ids"):
+            return False
+        opinion_key = f"{role}_review_opinion"
+        if opinion_key in fields:
+            if not normalize_academic_review_opinion(fields[opinion_key]):
+                return False
+        elif not fields.get(f"{role}_review_stamp_ids"):
+            return False
+    return bool(
+        all(str(fields.get(key) or "").strip() for key in ACADEMIC_EXAM_ANALYSIS_EDIT_FIELDS)
+        and str(structured.get("analysis_text") or "").strip()
+    )
+
+
 def hydrate_academic_final_material_signature_paths(
     conn: Any,
     payload: dict[str, Any],
     *,
     record: Any | None = None,
+    include_images: bool = True,
+    _binding_cache: dict[tuple[str, str, str], list[int]] | None = None,
+    _signature_cache: dict[int, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve signature images only at the trusted render boundary.
 
@@ -1641,7 +1744,10 @@ def hydrate_academic_final_material_signature_paths(
     record_keys = set(record.keys()) if record is not None and hasattr(record, "keys") else set()
     revision = str(record["signature_revision"] or "").strip() if "signature_revision" in record_keys else ""
     record_id = str(record["id"] or "").strip() if "id" in record_keys else ""
-    document_type = str(record["document_type"] or "").strip() if "document_type" in record_keys else ""
+    document_type = (
+        str(record["document_type"] or "").strip()
+        if "document_type" in record_keys else str(target.get("document_type") or "")
+    )
     relevant_points = {
         "academic_grade_register": {"academic_final_material.grade_register.teacher_signature"},
         "academic_exam_analysis": {
@@ -1649,24 +1755,34 @@ def hydrate_academic_final_material_signature_paths(
             "academic_final_material.exam_analysis.dean_review_signature",
         },
     }.get(document_type, set())
+    # These paths and classifications are always derived from trusted database
+    # rows, never from serialized client fields or an old exported payload.
+    for role in ACADEMIC_EXAM_REVIEW_DEFAULTS:
+        fields.pop(f"{role}_review_opinion_image_path", None)
+        fields.pop(f"{role}_review_opinion_source", None)
+        fields.pop(f"{role}_personal_signature_ids", None)
+        fields.pop(f"{role}_review_stamp_ids", None)
     for id_key, ids_key, path_key, point_key in mappings:
         fields.pop(path_key, None)
         if relevant_points and point_key not in relevant_points:
             continue
         if revision and record_id:
-            try:
-                rows = conn.execute(
-                    """
-                    SELECT signature_id FROM signature_point_bindings
-                    WHERE function_point_key = ? AND material_type = 'academic_final_material'
-                      AND material_id = ? AND material_revision = ?
-                    ORDER BY display_order, id
-                    """,
-                    (point_key, record_id, revision),
-                ).fetchall()
-                signature_ids = [int(row["signature_id"]) for row in rows]
-            except (sqlite3.OperationalError, KeyError, TypeError, ValueError):
-                signature_ids = []
+            if _binding_cache is not None:
+                signature_ids = list(_binding_cache.get((point_key, record_id, revision), []))
+            else:
+                try:
+                    rows = conn.execute(
+                        """
+                        SELECT signature_id FROM signature_point_bindings
+                        WHERE function_point_key = ? AND material_type = 'academic_final_material'
+                          AND material_id = ? AND material_revision = ?
+                        ORDER BY display_order, id
+                        """,
+                        (point_key, record_id, revision),
+                    ).fetchall()
+                    signature_ids = [int(row["signature_id"]) for row in rows]
+                except (sqlite3.OperationalError, KeyError, TypeError, ValueError):
+                    signature_ids = []
             fields[ids_key] = signature_ids
             fields[id_key] = signature_ids[0] if signature_ids else None
         else:
@@ -1674,8 +1790,63 @@ def hydrate_academic_final_material_signature_paths(
             signature_ids = list(raw_ids) if isinstance(raw_ids, list) else []
             if not signature_ids and fields.get(id_key):
                 signature_ids = [fields[id_key]]
-        paths = resolve_signature_paths(conn, signature_ids)
-        if paths:
+        if ids_key in {"department_signature_ids", "dean_signature_ids"}:
+            role = ids_key.removesuffix("_signature_ids")
+            opinion_key = f"{role}_review_opinion"
+            personal_ids: list[int] = []
+            stamp_ids: list[int] = []
+            paths: list[str] = []
+            stamp_paths: list[str] = []
+            normalized_ids: list[int] = []
+            for value in signature_ids:
+                try:
+                    signature_id = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if signature_id > 0 and signature_id not in normalized_ids:
+                    normalized_ids.append(signature_id)
+            if _signature_cache is not None:
+                signatures_by_id = _signature_cache
+            else:
+                signature_rows = conn.execute(
+                    f"SELECT * FROM electronic_signatures WHERE id IN ({','.join('?' for _ in normalized_ids)}) "
+                    "AND status = 'active' AND deleted_at IS NULL",
+                    tuple(normalized_ids),
+                ).fetchall() if normalized_ids else []
+                signatures_by_id = {int(row["id"]): row for row in signature_rows}
+            for signature_id in normalized_ids:
+                signature = signatures_by_id.get(signature_id)
+                if signature is None:
+                    continue
+                path = resolve_signature_file_path(signature)
+                if not path:
+                    continue
+                if is_stamp_signature(signature):
+                    stamp_ids.append(signature_id)
+                    stamp_paths.append(str(path))
+                else:
+                    personal_ids.append(signature_id)
+                    paths.append(str(path))
+            fields[f"{role}_personal_signature_ids"] = personal_ids
+            fields[f"{role}_review_stamp_ids"] = stamp_ids
+            fields[f"{role}_review_opinion_source"] = "absent"
+            if opinion_key in fields:
+                # An explicit empty remark is intentional, including for old
+                # documents that also carry a selected opinion stamp.
+                fields[opinion_key] = normalize_academic_review_opinion(fields[opinion_key])
+                fields[f"{role}_review_opinion_source"] = "explicit"
+            elif stamp_paths:
+                fields[f"{role}_review_opinion_source"] = "bound_stamp"
+                if include_images:
+                    fields[f"{role}_review_opinion_image_path"] = compose_signature_strip(
+                        stamp_paths, slot_width=250, height=145,
+                    )
+            elif personal_ids:
+                fields[opinion_key] = ACADEMIC_EXAM_REVIEW_DEFAULTS[role]
+                fields[f"{role}_review_opinion_source"] = "legacy_default"
+        else:
+            paths = resolve_signature_paths(conn, signature_ids) if include_images else []
+        if paths and include_images:
             fields[path_key] = compose_signature_strip(
                 paths,
                 slot_width=320 if ids_key == "teacher_signature_ids" else 250,
