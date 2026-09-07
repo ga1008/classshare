@@ -5,6 +5,7 @@ import { initAssignmentClocks } from '/static/js/assignment_time.js?v=classroom-
 import { showToast } from '/static/js/ui.js';
 import { openMaterialListPopup } from '/static/js/classroom_material_list.js';
 import { bindClassroomLessonRail, materialEntryDecision, sessionMaterialScope } from '/static/js/classroom_workspace.js';
+import { setOverlayOpen } from '/static/js/ui_overlay_motion.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
 
@@ -859,6 +860,57 @@ function initWorkspaceNav() {
     syncActiveLinkFromViewport();
 }
 
+/** A material list may take focus only after its own workspace exit completes. */
+export function createClassroomMaterialHandoff(eventTarget, view) {
+    const supersedingEvents = ['classroom:workspace-panel', 'classroom:select-session', 'classroom:session-selected', 'classroom:workspace-surface-visible'];
+    let generation = 0;
+    let frame = 0;
+    let closedListener = null;
+    let ownCloseRequest = null;
+    let listening = false;
+    const cancel = () => {
+        generation += 1;
+        if (closedListener) eventTarget.removeEventListener('classroom:workspace-closed', closedListener);
+        closedListener = null;
+        if (frame) view.cancelAnimationFrame(frame);
+        frame = 0;
+        if (listening) {
+            supersedingEvents.forEach(name => eventTarget.removeEventListener(name, supersede));
+            eventTarget.removeEventListener('click', onClick, true);
+            view.removeEventListener('pagehide', cancel);
+            listening = false;
+        }
+    };
+    const supersede = event => { if (event !== ownCloseRequest) cancel(); };
+    const onClick = event => {
+        if (event.target?.closest?.('[data-cw-open], [data-cw-history], [data-cw-task-collection], [data-cw-session-order], [data-session-order], [data-cw-external-modal]')) cancel();
+    };
+    const open = (showList, waitForWorkspace = true) => {
+        cancel();
+        if (!waitForWorkspace) { showList(); return; }
+        const epoch = generation;
+        listening = true;
+        supersedingEvents.forEach(name => eventTarget.addEventListener(name, supersede));
+        eventTarget.addEventListener('click', onClick, true);
+        view.addEventListener('pagehide', cancel);
+        closedListener = () => {
+            eventTarget.removeEventListener('classroom:workspace-closed', closedListener);
+            closedListener = null;
+            frame = view.requestAnimationFrame(() => {
+                frame = 0;
+                if (epoch !== generation) return;
+                cancel();
+                showList();
+            });
+        };
+        eventTarget.addEventListener('classroom:workspace-closed', closedListener);
+        ownCloseRequest = new CustomEvent('classroom:workspace-panel', { detail: { panel: null, handoff: true } });
+        eventTarget.dispatchEvent(ownCloseRequest);
+        ownCloseRequest = null;
+    };
+    return { open, cancel };
+}
+
 function initTeachingTimeline() {
     const compactWorkspace = document.body.classList.contains('classroom-workspace-v2');
     const widget = document.getElementById('teaching-plan-widget');
@@ -872,6 +924,7 @@ function initTeachingTimeline() {
         ? teachingPlan.timeline_entries
         : lessonSessions;
     if (!widget || !scrollEl || !sessions.length) return;
+    const materialHandoff = createClassroomMaterialHandoff(document, window);
 
     if (!Array.isArray(teachingPlan.timeline_entries)) {
         teachingPlan.timeline_entries = sessions;
@@ -1971,10 +2024,7 @@ function initTeachingTimeline() {
                 window.materialsApp?.refresh?.().catch(() => {});
             },
         }).catch(error => showToast(error.message || '加载材料列表失败', 'error'));
-        if (compactWorkspace && document.querySelector('.cw-dialog')) {
-            document.addEventListener('classroom:workspace-closed', () => requestAnimationFrame(showList), { once: true });
-            document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: null, handoff: true } }));
-        } else showList();
+        materialHandoff.open(showList, Boolean(compactWorkspace && document.querySelector('.cw-dialog')));
     };
 
     function presentMaterialChoices(session, decision) {
@@ -2030,7 +2080,10 @@ function initTeachingTimeline() {
         } else if (decision.kind === 'list') openSessionMaterialList(session, sessionOpenOrigin, data, true);
         else presentMaterialChoices(session, decision);
     };
-    document.addEventListener('classroom:workspace-closed', () => { materialEpoch++; materialRequest?.abort(); materialRequest = null; });
+    // A FocusScope exit can finish after another session detail has opened.
+    // Material reads belong to the selected session, so only its replacement
+    // in renderSessionModal cancels them. A closing overlay may finish its
+    // current read; its delayed exit must never abort the new session's read.
 
     selectHomeMaterialBtn?.addEventListener('click', async () => {
         try {
@@ -2747,6 +2800,57 @@ function initActivityScrollIsolation(shell) {
     }, { passive: false });
 }
 
+/** Preserve live activity DOM while changing visual presence and keyboard ownership. */
+export function createClassroomActivityPresence(panels, container) {
+    let activeKey = '';
+    let generation = 0;
+    container?.classList.add('cw-activity-presence');
+    return (key, focusTarget) => {
+        const epoch = ++generation;
+        const initial = !activeKey;
+        const changed = activeKey !== key;
+        activeKey = key;
+        const view = container?.ownerDocument.defaultView || window;
+        const reduced = view.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const moving = !initial && changed && !reduced && container;
+        if (moving) {
+            // Begin a reversal from the currently painted height, not the old target.
+            container.style.height = `${container.getBoundingClientRect().height}px`;
+            container.classList.add('is-switching');
+            view.getComputedStyle(container).height;
+        }
+        const transitions = [];
+        panels.forEach((panel, panelKey) => {
+            const selected = panelKey === key;
+            if (!selected && panel.contains(panel.ownerDocument.activeElement)) focusTarget?.focus({ preventScroll: true });
+            panel.inert = !selected;
+            panel.setAttribute('aria-hidden', selected ? 'false' : 'true');
+            panel.classList.toggle('is-active', selected);
+            if (initial) {
+                panel.hidden = !selected;
+                panel.dataset.uiOverlayState = selected ? 'open' : 'closed';
+            } else transitions.push(setOverlayOpen(panel, selected));
+        });
+        if (moving) {
+            container.style.height = `${panels.get(key).getBoundingClientRect().height}px`;
+            view.getComputedStyle(container).height;
+        }
+        if (container?.classList.contains('is-switching')) {
+            const heightAnimations = (container.getAnimations?.() || []).filter(animation =>
+                Number.isFinite(animation.effect?.getComputedTiming().endTime));
+            transitions.push(Promise.allSettled(heightAnimations.map(animation => animation.finished)).then(() => true));
+        }
+        return Promise.all(transitions).then(results => {
+            if (epoch !== generation || results.some(completed => !completed)) return false;
+            if (container) {
+                container.classList.remove('is-switching');
+                container.style.removeProperty('height');
+            }
+            return true;
+        });
+    };
+}
+
 function initClassroomActivitySidebar() {
     const shell = document.querySelector('[data-classroom-activity-shell]');
     if (!shell) return;
@@ -2757,6 +2861,7 @@ function initClassroomActivitySidebar() {
         Array.from(shell.querySelectorAll('[data-classroom-activity-panel]'))
             .map((panel) => [panel.dataset.classroomActivityPanel, panel]),
     );
+    const showActivity = createClassroomActivityPresence(panels, shell.querySelector('.classroom-activity-panels'));
     initActivityScrollIsolation(shell);
 
     const tabByKey = new Map(tabs.map((tab) => [tab.dataset.classroomActivityTab, tab]));
@@ -2823,13 +2928,8 @@ function initClassroomActivitySidebar() {
             tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
             tab.tabIndex = isActive ? 0 : -1;
         });
-        panels.forEach((panel, panelKey) => {
-            const isActive = panelKey === normalizedKey;
-            panel.hidden = !isActive;
-            panel.classList.toggle('is-active', isActive);
-        });
-
         const activeTab = tabByKey.get(normalizedKey);
+        const presence = showActivity(normalizedKey, activeTab);
         const targetId = activeTab?.dataset.classroomActivityTarget || '';
         if (options.updateHash !== false && targetId && window.history?.replaceState) {
             window.history.replaceState(null, '', `#${targetId}`);
@@ -2842,10 +2942,14 @@ function initClassroomActivitySidebar() {
             });
         }
 
-        window.requestAnimationFrame(() => {
-            window.dispatchEvent(new Event('resize'));
+        presence.then(completed => {
+            if (!completed) return;
+            window.requestAnimationFrame(() => {
+                if (activeActivityKey === normalizedKey) window.dispatchEvent(new Event('resize'));
+            });
+            // PM visibility uses offsetParent: announce only after outgoing DOM is hidden.
+            document.dispatchEvent(new CustomEvent('classroom:activity-visible', { detail: { activity: normalizedKey } }));
         });
-        document.dispatchEvent(new CustomEvent('classroom:activity-visible', { detail: { activity: normalizedKey } }));
     };
 
     const refreshActiveActivity = () => {

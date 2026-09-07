@@ -91,7 +91,7 @@ main.classroom-workspace-v2 { container: classroom-main / inline-size; width: 10
 .cw-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 /* The Radix shell owns the only overlay and focus trap. */
 .cw-dialog { width: min(1100px, calc(100vw - 48px)); max-width: 1100px; max-height: min(88dvh, 1000px); padding: 24px; display: flex; flex-direction: column; gap: 16px; color: var(--cw-ink); background: var(--cw-paper); border: 1px solid var(--cw-line); border-radius: 16px; z-index: 10050; }
-body.classroom-workspace-v2 > [data-state="open"][class~="tw-inset-0"] { z-index: 10040; background: #172e3466; }
+body.classroom-workspace-v2 > [data-ui-dialog-overlay][data-state] { z-index: 10040; background: #172e3466; }
 .cw-dialog-heading { flex: 0 0 auto; padding-right: 32px; }
 .cw-dialog-heading h2 { font-size: 20px; font-weight: 600; line-height: 1.5; }
 .cw-dialog-heading p { margin-top: 4px; color: var(--cw-muted); line-height: 1.65; font-size: 13px; }
@@ -278,8 +278,8 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
 .cw-button:hover, .classroom-workspace-v2 .cw-session-nav .cw-text-button:hover { border-color: var(--cw-accent); background: var(--cw-tint); color: var(--cw-accent); }
 .cw-button.is-primary, .classroom-workspace-v2 #teachingSessionOpenMaterialBtn { color: hsl(var(--ls-primary-foreground)); background: var(--cw-accent); border-color: var(--cw-accent); }
 .cw-button.is-primary:hover, .classroom-workspace-v2 #teachingSessionOpenMaterialBtn:hover { background: hsl(var(--ls-primary) / .9); }
-.classroom-workspace-v2 :where(.cw-button, .cw-text-button, .cw-nav-link, .teaching-session-action, .classroom-activity-tab, .cw-task-title, .cw-task-card, .cw-task-tabs button, .cw-timeline-index-item) {
-    transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 120ms ease;
+.classroom-workspace-v2 :is(.cw-button, .cw-text-button, .cw-nav-link, .teaching-session-action, .teaching-timeline-nav-btn, .classroom-activity-tab, .cw-task-title, .cw-task-card, .cw-task-tabs button, .cw-timeline-index-item, .cw-explain-button, .cw-overflow) {
+    transition: color var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
 }
 .classroom-workspace-v2 :where(.cw-button, .cw-text-button, .cw-nav-link, .teaching-session-action):active { transform: translateY(1px); }
 .classroom-workspace-v2 :where(button, a, summary, select, input, textarea):focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 3px; }
@@ -296,7 +296,7 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
     flex: 0 0 166px; width: 166px; min-width: 166px; height: auto; min-height: 130px; padding: 13px 14px; gap: 7px;
     border: 1px solid var(--cw-line); border-radius: var(--radius-lg, 12px); background: var(--cw-paper); color: var(--cw-ink);
     box-shadow: none; transform: none; text-align: left;
-    transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    transition: color var(--transition-fast), border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
 }
 .classroom-workspace-v2 #teachingTimelineScroll .teaching-timeline-segment:hover { border-color: var(--cw-accent); transform: translateY(-1px); }
 .classroom-workspace-v2 #teachingTimelineScroll .teaching-timeline-segment.is-selected { background: var(--cw-tint); border-color: var(--cw-accent); box-shadow: inset 0 0 0 1px var(--cw-accent); }
@@ -318,7 +318,7 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
 .cw-task-tabs button { min-height: 36px; padding: 7px 11px; border: 0; border-radius: 7px; background: transparent; color: var(--cw-muted); cursor: pointer; font-size: 13px; }
 .cw-task-tabs button[aria-pressed=true] { background: var(--cw-paper); color: var(--cw-accent); box-shadow: 0 1px 5px hsl(var(--ls-foreground) / .09); }
 .cw-task-tabs button span { font-size: 12px; margin-left: 3px; }
-.cw-task-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; animation: cw-content-in 200ms ease-out; }
+.cw-task-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; animation: cw-content-in var(--transition-normal); }
 .cw-task-card { padding: 15px; border: 1px solid var(--cw-line); border-radius: var(--radius-lg, 12px); background: var(--cw-paper); }
 .cw-task-card:focus-within, .cw-task-card:hover { border-color: hsl(var(--ls-primary) / .5); box-shadow: 0 3px 10px hsl(var(--ls-primary) / .05); }
 .cw-task-card-head, .cw-task-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
@@ -355,7 +355,15 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
 .classroom-workspace-v2 .classroom-private-shell { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .classroom-workspace-v2 .classroom-private-contact-bar { flex: 0 0 auto; flex-wrap: wrap; }
 .classroom-workspace-v2 .classroom-private-contact-picker { flex: 1 1 150px; min-width: 0; }
-.classroom-workspace-v2 .classroom-activity-panel.is-active { animation: cw-content-in 200ms ease-out; }
+.classroom-workspace-v2 .cw-activity-presence { position: relative; transition: height var(--transition-normal); }
+.classroom-workspace-v2 .cw-activity-presence.is-switching { overflow: clip; }
+.classroom-workspace-v2 .cw-activity-presence.is-switching > .classroom-activity-panel { position: absolute; inset: 0 0 auto; width: 100%; }
+.classroom-workspace-v2 .cw-activity-presence > .classroom-activity-panel {
+    animation: none;
+    opacity: 1;
+    transition: opacity var(--transition-normal);
+}
+.classroom-workspace-v2 .cw-activity-presence > .classroom-activity-panel[data-ui-overlay-state="closed"] { opacity: 0; pointer-events: none; }
 @keyframes cw-content-in { from { opacity: .6; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @container classroom-main (max-width: 1050px) { .classroom-workspace-v2 .cw-primary-grid { grid-template-columns: minmax(0, 1fr); } }
 @container classroom-activity (max-width: 420px) {
@@ -410,4 +418,38 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
 }
 @media (prefers-reduced-motion: reduce) {
     .classroom-workspace-v2 *, .classroom-workspace-v2 *::before, .classroom-workspace-v2 *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Native material overlays keep their focus owners until this exit is complete. */
+.classroom-workspace-v2 :is(.ls-mat-popup, .ls-mat-confirm) {
+    opacity: 0;
+    transition: opacity var(--transition-normal);
+}
+.classroom-workspace-v2 :is(.ls-mat-popup, .ls-mat-confirm)[data-ui-overlay-state="open"] { opacity: 1; }
+.classroom-workspace-v2 :is(.ls-mat-popup, .ls-mat-confirm) > [data-ui-overlay-surface] {
+    opacity: 0;
+    scale: .975;
+    translate: 0 8px;
+    transition: opacity var(--transition-normal), scale var(--transition-normal), translate var(--transition-normal);
+}
+.classroom-workspace-v2 :is(.ls-mat-popup, .ls-mat-confirm)[data-ui-overlay-state="open"] > [data-ui-overlay-surface] {
+    opacity: 1;
+    scale: 1;
+    translate: 0 0;
+}
+.classroom-workspace-v2 :is(.ls-mat-card, .ls-mat-card__del, .ls-mat-popup__close) {
+    transition: color var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
+}
+.classroom-workspace-v2 .ls-mat-card__go { transition: color var(--transition-fast), translate var(--transition-fast); }
+.classroom-workspace-v2 .ls-mat-card:is(:hover, :focus-within) .ls-mat-card__go { color: var(--cw-accent); translate: 3px 0; }
+.classroom-workspace-v2 .ls-mat-card:focus-within { border-color: var(--cw-accent); box-shadow: 0 4px 16px hsl(var(--ls-primary) / .08); }
+.classroom-workspace-v2 .ls-mat-card:focus-within .ls-mat-card__del { opacity: 1; transform: scale(1); }
+.classroom-workspace-v2 .ls-mat-popup__close:active { transform: scale(.94); }
+@media (hover: none), (pointer: coarse) {
+    .classroom-workspace-v2 .ls-mat-card { padding-right: 44px; }
+    .classroom-workspace-v2 .ls-mat-card__del { top: 0; right: 0; width: 44px; height: 44px; opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .classroom-workspace-v2 :is(.ls-mat-popup, .ls-mat-confirm),
+    .classroom-workspace-v2 :is(.ls-mat-popup, .ls-mat-confirm) > [data-ui-overlay-surface] { transition: none !important; }
 }

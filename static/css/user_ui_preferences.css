@@ -112,16 +112,20 @@
     font-size: var(--text-sm);
     white-space: normal;
 }
-[data-ui-palette].ui-palette-ready,
-[data-ui-palette].ui-palette-ready :where(.ui-palette-select, .app-topbar, .app-topbar-action) {
-    transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease;
+[data-ui-palette].ui-palette-ready {
+    transition: background-color var(--transition-normal), color var(--transition-fast);
+}
+/* Page controls keep their own complete transitions, including hover/press
+   transforms. A palette-ready shorthand must not erase those properties. */
+[data-ui-palette].ui-palette-ready .ui-palette-select {
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 @media (pointer: coarse) {
     [data-ui-palette] .ui-palette-select { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
     [data-ui-palette].ui-palette-ready,
-    [data-ui-palette].ui-palette-ready :where(.ui-palette-select, .app-topbar, .app-topbar-action) {
+    [data-ui-palette].ui-palette-ready .ui-palette-select {
         transition: none;
     }
 }

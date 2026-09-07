@@ -81,6 +81,12 @@ export function ClassroomWorkspace() {
   const [tasks, setTasks] = useState<ClassroomTask[]>((config.assignmentWorkspaceItems || []) as ClassroomTask[]);
   const [session, setSession] = useState<ClassroomSession | null>(plan?.anchor_session || sessions.find(item => item.is_anchor) || sessions[0] || null);
   const [panel, setPanel] = useState<Panel | null>(null);
+  const activePanel = useRef(panel);
+  useLayoutEffect(() => { activePanel.current = panel; }, [panel]);
+  // Radix retains the closing content until its exit animation ends. Keep the
+  // original surface mounted too, including its draft and scroll position.
+  const [displayPanel, setDisplayPanel] = useState<Panel | null>(null);
+  if (panel !== null && panel !== displayPanel) setDisplayPanel(panel);
   const [filter, setFilter] = useState('all');
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
@@ -89,6 +95,8 @@ export function ClassroomWorkspace() {
   const [pendingEditor, setPendingEditor] = useState<string | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   const returnPanel = useRef<Panel | null>(null);
+  const [displayReturnPanel, setDisplayReturnPanel] = useState<Panel | null>(null);
+  if (panel !== null && displayReturnPanel !== returnPanel.current) setDisplayReturnPanel(returnPanel.current);
   const scrollPositions = useRef<Partial<Record<Panel, number>>>({});
   const suppressRestoreFocus = useRef(false);
   const externalReturn = useRef<Panel | null>(null);
@@ -284,15 +292,15 @@ export function ClassroomWorkspace() {
           const selected = document.querySelector<HTMLElement>('.cw-dialog [data-cw-session-order][aria-pressed="true"]');
           if (selected) { event.preventDefault(); selected.focus({ preventScroll: true }); selected.scrollIntoView({ block: 'nearest' }); }
         }
-      }} onCloseAutoFocus={event => { event.preventDefault(); if (!suppressRestoreFocus.current) opener.current?.focus({ preventScroll: true }); suppressRestoreFocus.current = false; document.dispatchEvent(new CustomEvent('classroom:workspace-closed')); }}>
-        <div className="cw-dialog-heading"><DialogTitle>{panel ? labels[panel] : '课堂工作区'}</DialogTitle><DialogDescription>{panel === 'tasks' ? '本课堂全部已授权任务，包含已提交、已截止和历史记录。' : panel === 'materials' ? '课堂材料目录，保留目录导航、预览和下载权限。' : panel === 'timeline' ? '选择课次查看完整详情与材料；横向课次导航始终保留。' : session?.detail_title || session?.title || '查看详细信息'}</DialogDescription></div>
-        {panel === 'material-detail' && returnPanel.current && <button type="button" className="cw-text-button cw-back" onClick={() => { setRestoreScroll(scrollPositions.current[returnPanel.current!] || 0); setPanel(returnPanel.current); returnPanel.current = null; }}>← 返回列表</button>}
-        {panel === 'tasks' && <div className="cw-filterbar"><label>任务状态<select value={filter} onChange={event => setFilter(event.target.value)}><option value="all">全部（{tasks.length}）</option><option value="actionable">待处理（{preview.actionableCount}）</option><option value="urgent">24 小时内截止（{preview.urgentCount}）</option>{teacher ? <option value="draft">草稿</option> : <option value="submitted">已提交 / 已批改</option>}<option value="closed">已关闭</option></select></label><label>任务分类<select value={category} onChange={event => setCategory(event.target.value)}><option value="all">全部分类</option><option value="homework">平时作业</option><option value="midterm">期中测验</option><option value="final">期末测验</option><option value="legacy_unknown">{teacher ? '分类待确认' : '历史任务'}</option>{tasks.some(task => task.source_feature === 'personal_stage') && <option value="personal_stage">个人阶段试炼</option>}</select></label><label className="cw-search-label">查找任务<input value={query} onChange={event => setQuery(event.target.value)} type="search" placeholder="输入任务名称" /></label></div>}
-        {panel === 'timeline' && <label className="cw-filterbar">查找课次<input type="search" value={timelineQuery} onChange={event => setTimelineQuery(event.target.value)} placeholder="课次、标题或日期" /></label>}
+      }} onCloseAutoFocus={event => { event.preventDefault(); if (activePanel.current !== null) return; if (!suppressRestoreFocus.current) opener.current?.focus({ preventScroll: true }); suppressRestoreFocus.current = false; document.dispatchEvent(new CustomEvent('classroom:workspace-closed')); }}>
+        <div className="cw-dialog-heading"><DialogTitle>{displayPanel ? labels[displayPanel] : '课堂工作区'}</DialogTitle><DialogDescription>{displayPanel === 'tasks' ? '本课堂全部已授权任务，包含已提交、已截止和历史记录。' : displayPanel === 'materials' ? '课堂材料目录，保留目录导航、预览和下载权限。' : displayPanel === 'timeline' ? '选择课次查看完整详情与材料；横向课次导航始终保留。' : session?.detail_title || session?.title || '查看详细信息'}</DialogDescription></div>
+        {displayPanel === 'material-detail' && displayReturnPanel && <button type="button" className="cw-text-button cw-back" onClick={() => { setRestoreScroll(scrollPositions.current[displayReturnPanel] || 0); setPanel(displayReturnPanel); returnPanel.current = null; }}>← 返回列表</button>}
+        {displayPanel === 'tasks' && <div className="cw-filterbar"><label>任务状态<select value={filter} onChange={event => setFilter(event.target.value)}><option value="all">全部（{tasks.length}）</option><option value="actionable">待处理（{preview.actionableCount}）</option><option value="urgent">24 小时内截止（{preview.urgentCount}）</option>{teacher ? <option value="draft">草稿</option> : <option value="submitted">已提交 / 已批改</option>}<option value="closed">已关闭</option></select></label><label>任务分类<select value={category} onChange={event => setCategory(event.target.value)}><option value="all">全部分类</option><option value="homework">平时作业</option><option value="midterm">期中测验</option><option value="final">期末测验</option><option value="legacy_unknown">{teacher ? '分类待确认' : '历史任务'}</option>{tasks.some(task => task.source_feature === 'personal_stage') && <option value="personal_stage">个人阶段试炼</option>}</select></label><label className="cw-search-label">查找任务<input value={query} onChange={event => setQuery(event.target.value)} type="search" placeholder="输入任务名称" /></label></div>}
+        {displayPanel === 'timeline' && <label className="cw-filterbar">查找课次<input type="search" value={timelineQuery} onChange={event => setTimelineQuery(event.target.value)} placeholder="课次、标题或日期" /></label>}
         <div className="cw-dialog-scroll">
-          {panel === 'tasks' && !tasks.some(task => taskMatchesFilter(task, teacher, filter, query, Date.now(), category)) && <p className="cw-empty" role="status">没有符合当前筛选条件的任务。</p>}
-          {panel === 'timeline' && !indexSessions.length && <p className="cw-empty" role="status">没有匹配的课次，请更换搜索内容。</p>}
-          {panel === 'timeline' ? <div className="cw-timeline-index">{indexSessions.map(item => <button type="button" key={String(item.order_index)} className="cw-timeline-index-item" data-cw-session-order={item.order_index} aria-pressed={String(item.order_index) === String(session?.order_index)} aria-haspopup="dialog" onClick={() => document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order: item.order_index } }))}><span>{item.session_number_label}</span><strong>{item.segment_title || item.detail_title || item.title}</strong><small>{item.session_date || item.session_status_label}</small></button>)}</div> : panel && <ExistingSurface panel={panel} filter={filter} category={category} query={query} tasks={tasks} teacher={teacher} restoreScroll={restoreScroll} />}
+          {displayPanel === 'tasks' && !tasks.some(task => taskMatchesFilter(task, teacher, filter, query, Date.now(), category)) && <p className="cw-empty" role="status">没有符合当前筛选条件的任务。</p>}
+          {displayPanel === 'timeline' && !indexSessions.length && <p className="cw-empty" role="status">没有匹配的课次，请更换搜索内容。</p>}
+          {displayPanel === 'timeline' ? <div className="cw-timeline-index">{indexSessions.map(item => <button type="button" key={String(item.order_index)} className="cw-timeline-index-item" data-cw-session-order={item.order_index} aria-pressed={String(item.order_index) === String(session?.order_index)} aria-haspopup="dialog" onClick={() => document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order: item.order_index } }))}><span>{item.session_number_label}</span><strong>{item.segment_title || item.detail_title || item.title}</strong><small>{item.session_date || item.session_status_label}</small></button>)}</div> : displayPanel && <ExistingSurface panel={displayPanel} filter={filter} category={category} query={query} tasks={tasks} teacher={teacher} restoreScroll={restoreScroll} />}
         </div>
       </DialogContent>
     </Dialog>

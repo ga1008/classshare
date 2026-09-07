@@ -242,9 +242,9 @@ a.cs-lesson strong, a.cs-lesson span { color: #fff; }
 .cs-lesson-slot { position: relative; min-width: 0; min-height: 0; }
 .cs-lesson--cell {
     position: absolute;
-    top: 50%; left: 50%;
+    top: 0; left: 0;
     width: 100%; height: 100%;
-    transform: translate(-50%, -50%);
+    transform: none;
     justify-content: flex-start;
     padding: 6px 9px;
     box-sizing: border-box;
@@ -260,10 +260,10 @@ a.cs-lesson--create {
 }
 a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; text-underline-offset: 3px; }
 
-/* 形式三：保持同一个课程链接，按内容自然展开。JS 只测量并约束位置；
-   不固定高度、不缩放文字。超长内容超过课表可用高度时才出现内部滚动。 */
+/* 形式三：保持同一个链接，测量自然尺寸后动画到该尺寸，不缩放文字。
+   缩回期间保留换行排版，结束后恢复省略；槽位始终不参与尺寸动画。 */
 .cs-lesson-slot.is-preview { z-index: 60; }
-.cs-lesson--cell.is-preview {
+.cs-lesson--cell:is(.is-preview, .is-preview-closing) {
     top: var(--cs-preview-top, 0px); left: var(--cs-preview-left, 0px);
     transform: none;
     width: max-content; height: auto;
@@ -279,9 +279,10 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
     touch-action: pan-y;
     box-shadow: 0 22px 46px rgba(15, 23, 42, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.32);
 }
-.cs-lesson--cell.is-preview > * { flex: 0 0 auto; overflow: visible; overflow-wrap: anywhere; white-space: normal; }
-.cs-lesson--cell.is-preview strong { font-size: 1.02rem; line-height: 1.3; margin-bottom: 3px; }
-.cs-lesson--cell.is-preview span { font-size: 0.86rem; line-height: 1.55; }
+.cs-lesson--cell:is(.is-preview, .is-preview-closing) > * { flex: 0 0 auto; overflow: visible; overflow-wrap: anywhere; white-space: normal; }
+.cs-lesson--cell:is(.is-preview, .is-preview-closing) strong { font-size: 1.02rem; line-height: 1.3; margin-bottom: 3px; }
+.cs-lesson--cell:is(.is-preview, .is-preview-closing) span { font-size: 0.86rem; line-height: 1.55; }
+.cs-lesson--cell.is-preview-closing { pointer-events: none; }
 .cs-lesson--cell:focus-visible { outline: 3px solid #312e81; outline-offset: 3px; }
 
 /* ---- 放大视图 ---- */
@@ -419,8 +420,9 @@ export function createScheduleDeck(container, options = {}) {
     let wheelPending = 0;
     let wheelPendingAt = 0;
     let wheelGestureConsumed = false;
-    let expandCloseTimer = 0;
+    let expandMotionGeneration = 0;
     let expandedTrigger = null;
+    let renderedExpandedWeek = null;
 
     container.classList.add('cs-deck');
     container.innerHTML = `
@@ -762,18 +764,46 @@ export function createScheduleDeck(container, options = {}) {
 
     let previewCell = null;
     let pendingTouchPreview = null;
+    const previewMotions = new Map();
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    function lessonFrame(cell) {
+        const style = getComputedStyle(cell);
+        const properties = ['width', 'height', 'left', 'top', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'gap', 'boxShadow'];
+        return {
+            card: Object.fromEntries(properties.map((key) => [key, style[key]])),
+            text: [...cell.children].map((node) => {
+                const textStyle = getComputedStyle(node);
+                return { fontSize: textStyle.fontSize, lineHeight: textStyle.lineHeight, marginBottom: textStyle.marginBottom };
+            }),
+        };
+    }
+
+    function cancelLessonMotion(cell) {
+        const motion = previewMotions.get(cell);
+        previewMotions.delete(cell);
+        motion?.animations.forEach((animation) => animation.cancel());
+    }
+
+    function clearLessonPreviews() {
+        previewCell = null;
+        for (const cell of [...previewMotions.keys()]) cancelLessonMotion(cell);
+        refs.expandBody.querySelectorAll('.is-preview, .is-preview-closing').forEach((node) => {
+            node.classList.remove('is-preview', 'is-preview-closing');
+            delete node.dataset.previewState;
+        });
+    }
 
     function closeLessonPreview() {
         if (!previewCell) return;
-        previewCell.classList.remove('is-preview');
-        previewCell.parentElement?.classList.remove('is-preview');
+        const cell = previewCell;
         previewCell = null;
+        animateLessonPreview(cell, false);
     }
 
-    function positionLessonPreview() {
-        if (!previewCell?.isConnected || !state.expanded) return;
+    function measureLessonPreview(cell) {
         const body = refs.expandBody;
-        const slot = previewCell.parentElement;
+        const slot = cell.parentElement;
         const bodyRect = body.getBoundingClientRect();
         const slotRect = slot.getBoundingClientRect();
         // offset 尺寸处于 CSS 坐标系，避免打开动画中的 scale 影响边界计算。
@@ -783,18 +813,64 @@ export function createScheduleDeck(container, options = {}) {
         const availableHeight = Math.max(1, body.clientHeight - 24);
         const maxWidth = Math.min(420, availableWidth);
         const minWidth = Math.min(maxWidth, Math.max(240, slot.offsetWidth));
-        previewCell.style.setProperty('--cs-preview-min-width', `${minWidth}px`);
-        previewCell.style.setProperty('--cs-preview-max-width', `${maxWidth}px`);
-        previewCell.style.setProperty('--cs-preview-max-height', `${availableHeight}px`);
-        const width = previewCell.offsetWidth;
-        const height = previewCell.offsetHeight;
+        cell.style.setProperty('--cs-preview-min-width', `${minWidth}px`);
+        cell.style.setProperty('--cs-preview-max-width', `${maxWidth}px`);
+        cell.style.setProperty('--cs-preview-max-height', `${availableHeight}px`);
+        const width = cell.offsetWidth;
+        const height = cell.offsetHeight;
         const slotLeft = (slotRect.left - bodyRect.left) / scaleX;
         const slotTop = (slotRect.top - bodyRect.top) / scaleY;
         const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
         const left = clamp(slotLeft + (slot.offsetWidth - width) / 2, 12, body.clientWidth - width - 12);
         const top = clamp(slotTop + (slot.offsetHeight - height) / 2, 12, body.clientHeight - height - 12);
-        previewCell.style.setProperty('--cs-preview-left', `${left - slotLeft}px`);
-        previewCell.style.setProperty('--cs-preview-top', `${top - slotTop}px`);
+        cell.style.setProperty('--cs-preview-left', `${left - slotLeft}px`);
+        cell.style.setProperty('--cs-preview-top', `${top - slotTop}px`);
+    }
+
+    function animateLessonPreview(cell, opening) {
+        if (!cell.isConnected) return;
+        // Read the currently displayed frame before cancelling: reversing or
+        // switching courses starts here, never at a stale endpoint.
+        const from = lessonFrame(cell);
+        cancelLessonMotion(cell);
+        cell.classList.remove('is-preview-closing');
+        cell.classList.toggle('is-preview', opening);
+        if (opening) measureLessonPreview(cell);
+        const to = lessonFrame(cell);
+        const finish = () => {
+            cell.classList.remove('is-preview-closing');
+            cell.parentElement?.classList.toggle('is-preview', previewCell === cell);
+            if (previewCell === cell) cell.dataset.previewState = 'open';
+            else delete cell.dataset.previewState;
+        };
+        if (reducedMotion.matches || typeof cell.animate !== 'function') {
+            finish();
+            return;
+        }
+        if (!opening) cell.classList.add('is-preview-closing');
+        cell.dataset.previewState = opening ? 'opening' : 'closing';
+        const timing = { duration: 240, easing: 'cubic-bezier(.2,.75,.25,1)', fill: 'both' };
+        // Natural min/max sizes must not clamp intermediate animation frames.
+        // Only the moving card clips its text; the stable grid slot is untouched.
+        const moving = { minWidth: '0px', maxWidth: 'none', minHeight: '0px', maxHeight: 'none', overflow: 'hidden' };
+        const animations = [cell.animate([{ ...from.card, ...moving }, { ...to.card, ...moving }], timing)];
+        [...cell.children].forEach((node, index) => animations.push(node.animate([from.text[index], to.text[index]], timing)));
+        const motion = { animations };
+        previewMotions.set(cell, motion);
+        Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+            if (previewMotions.get(cell) !== motion) return;
+            finish();
+            cancelLessonMotion(cell);
+        });
+    }
+
+    function positionLessonPreview() {
+        if (previewCell?.isConnected && state.expanded) animateLessonPreview(previewCell, true);
+    }
+
+    function onReducedMotionChange() {
+        if (!reducedMotion.matches) return;
+        for (const cell of [...previewMotions.keys()]) animateLessonPreview(cell, cell === previewCell);
     }
 
     function openLessonPreview(cell) {
@@ -803,10 +879,9 @@ export function createScheduleDeck(container, options = {}) {
             closeLessonPreview();
             previewCell = cell;
             cell.parentElement.classList.add('is-preview');
-            cell.classList.add('is-preview');
             cell.scrollTop = 0;
+            animateLessonPreview(cell, true);
         }
-        positionLessonPreview();
     }
 
     // 页面缩放、旋转屏幕、对话框标题换行都会改变可用空间。
@@ -818,8 +893,9 @@ export function createScheduleDeck(container, options = {}) {
         const weeks = state.overview?.weeks || [];
         const week = weeks[state.activeWeekIndex];
         if (!week || !refs.expandBody) return;
-        closeLessonPreview();
+        clearLessonPreviews();
         pendingTouchPreview = null;
+        renderedExpandedWeek = week;
         if (refs.expandTitle) refs.expandTitle.textContent = week.label + (week.is_current ? '（本周）' : '');
         if (refs.expandSub) {
             const termLabel = state.overview?.selected_term?.label || '';
@@ -831,22 +907,35 @@ export function createScheduleDeck(container, options = {}) {
 
     function openExpanded() {
         if (!state.overview?.weeks?.length || !refs.expand) return;
-        window.clearTimeout(expandCloseTimer);
-        expandedTrigger = document.activeElement;
+        if (state.expanded) return;
+        expandMotionGeneration += 1;
+        if (refs.expand.hidden) expandedTrigger = document.activeElement;
         state.expanded = true;
-        renderExpanded();
+        if (refs.expand.hidden || renderedExpandedWeek !== state.overview.weeks[state.activeWeekIndex]) renderExpanded();
         refs.expand.hidden = false;
-        requestAnimationFrame(() => { if (state.expanded) refs.expand.classList.add('is-open'); });
+        refs.expand.inert = false;
+        // Resolve the closed frame before opening; a reopening transition keeps
+        // its current transform instead of reconstructing the course links.
+        refs.expand.getBoundingClientRect();
+        refs.expand.classList.add('is-open');
         refs.expandClose.focus({ preventScroll: true });
     }
 
     function closeExpanded() {
+        if (!state.expanded) return;
         state.expanded = false;
+        const generation = ++expandMotionGeneration;
         closeLessonPreview();
-        refs.expand?.classList.remove('is-open');
-        const finish = () => { if (!state.expanded) refs.expand.hidden = true; };
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) finish();
-        else expandCloseTimer = window.setTimeout(finish, 260);
+        refs.expand.classList.remove('is-open');
+        refs.expand.inert = true;
+        const finish = () => {
+            if (state.expanded || generation !== expandMotionGeneration) return;
+            clearLessonPreviews();
+            refs.expand.hidden = true;
+        };
+        const animations = reducedMotion.matches ? [] : refs.expand.getAnimations({ subtree: true });
+        if (!animations.length) finish();
+        else Promise.allSettled(animations.map((animation) => animation.finished)).then(finish);
         (expandedTrigger?.isConnected ? expandedTrigger : refs.stage)?.focus({ preventScroll: true });
     }
 
@@ -978,12 +1067,14 @@ export function createScheduleDeck(container, options = {}) {
 
     function onLessonPointerOver(event) {
         if (event.pointerType === 'touch') return;
-        const cell = event.target.closest('.cs-lesson--cell');
+        const cell = event.target.closest('.cs-lesson--cell')
+            || event.target.closest('.cs-lesson-slot')?.querySelector('.cs-lesson--cell');
         if (cell && !cell.contains(event.relatedTarget)) openLessonPreview(cell);
     }
 
     function onLessonPointerOut(event) {
         if (event.pointerType === 'touch' || !previewCell) return;
+        if (event.target.closest('.cs-lesson-slot') !== previewCell.parentElement) return;
         if (previewCell.parentElement.contains(event.relatedTarget)) return;
         if (previewCell.contains(document.activeElement)) return;
         closeLessonPreview();
@@ -1052,6 +1143,7 @@ export function createScheduleDeck(container, options = {}) {
     refs.expandBody.addEventListener('focusout', onLessonFocusOut);
     refs.expand.addEventListener('transitionend', positionLessonPreview);
     window.addEventListener('resize', positionLessonPreview);
+    reducedMotion.addEventListener('change', onReducedMotionChange);
     refs.termSelect?.addEventListener('change', onTermSelectChange);
     document.addEventListener('keydown', onDocumentKeydown);
 
@@ -1085,9 +1177,11 @@ export function createScheduleDeck(container, options = {}) {
             return state.activeWeekIndex;
         },
         destroy() {
-            window.clearTimeout(expandCloseTimer);
+            expandMotionGeneration += 1;
+            clearLessonPreviews();
             previewResizeObserver?.disconnect();
             window.removeEventListener('resize', positionLessonPreview);
+            reducedMotion.removeEventListener('change', onReducedMotionChange);
             document.removeEventListener('keydown', onDocumentKeydown);
             expand.remove();
             container.classList.remove('cs-deck');

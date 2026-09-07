@@ -1,5 +1,6 @@
 // Agenda reminder widget: clicking an item opens a detail popover anchored to
 // it, with a button to jump to the related page. Keyboard + outside-click close.
+import { setOverlayOpen } from './ui_overlay_motion.js';
 
 const GO_LABELS = {
   invigilation: '前往监考安排',
@@ -133,7 +134,6 @@ function positionPopover(pop, anchor) {
   const margin = 8;
   const rect = anchor.getBoundingClientRect();
   pop.style.visibility = 'hidden';
-  pop.hidden = false;
   const pw = pop.offsetWidth;
   const ph = pop.offsetHeight;
   const vw = window.innerWidth;
@@ -157,6 +157,9 @@ function positionPopover(pop, anchor) {
 
 function initAgendaWidget() {
   const pop = buildPopover();
+  let popoverGeneration = 0;
+  let popoverClosing = false;
+  let popoverCloseOperation = Promise.resolve(false);
   const kindEl = pop.querySelector('[data-pop-kind]');
   const titleEl = pop.querySelector('[data-pop-title]');
   const factsEl = pop.querySelector('[data-pop-facts]');
@@ -229,16 +232,23 @@ function initAgendaWidget() {
   };
 
   const close = (restoreFocus = false) => {
-    if (pop.hidden) return;
-    pop.classList.remove('is-open');
-    pop.hidden = true;
-    collapseForm();
-    if (activeItem) {
-      activeItem.classList.remove('is-active');
-      if (restoreFocus && activeItem.isConnected) activeItem.focus({ preventScroll: true });
-    }
+    if (pop.hidden) return Promise.resolve(false);
+    if (popoverClosing) return popoverCloseOperation;
+    popoverClosing = true;
+    const generation = ++popoverGeneration;
+    const trigger = activeItem;
+    trigger?.classList.remove('is-active');
     activeItem = null;
     activeData = null;
+    pop.inert = true;
+    popoverCloseOperation = setOverlayOpen(pop, false).then((completed) => {
+      if (!completed || generation !== popoverGeneration) return false;
+      popoverClosing = false;
+      collapseForm();
+      if (restoreFocus && trigger?.isConnected) trigger.focus({ preventScroll: true });
+      return true;
+    });
+    return popoverCloseOperation;
   };
 
   const open = (item, suppliedData = null) => {
@@ -246,6 +256,9 @@ function initAgendaWidget() {
       close();
       return;
     }
+    popoverGeneration += 1;
+    popoverClosing = false;
+    pop.inert = false;
     const data = suppliedData || item.dataset;
     activeData = data;
     const kind = data.kind || 'todo';
@@ -273,6 +286,7 @@ function initAgendaWidget() {
     // their jump link.
     remindBtn.hidden = true;
     remindForm.hidden = !canRemind;
+    remindForm.classList.remove('is-busy');
     const isManual = data.manual === '1';
     if (manageEl) manageEl.hidden = !isManual;
     if (manageStatus) { manageStatus.textContent = ''; manageStatus.dataset.tone = ''; }
@@ -288,8 +302,8 @@ function initAgendaWidget() {
     if (activeItem) activeItem.classList.remove('is-active');
     activeItem = item;
     item.classList.add('is-active');
+    void setOverlayOpen(pop, true);
     positionPopover(pop, item);
-    pop.classList.add('is-open');
     if (canRemind) {
       fetchReminderState();
       remindValue.focus({ preventScroll: true });
@@ -304,12 +318,14 @@ function initAgendaWidget() {
 
   const fetchReminderState = async () => {
     if (!activeEndpoint || !activeEventId) return;
+    const generation = popoverGeneration;
     try {
       const response = await fetch(`${activeEndpoint}?event_id=${encodeURIComponent(activeEventId)}`, {
         headers: { Accept: 'application/json' },
         credentials: 'same-origin',
       });
       const payload = await response.json().catch(() => ({}));
+      if (generation !== popoverGeneration) return;
       if (payload.has_reminder) {
         showReminderSummary(payload);
         return;
@@ -329,6 +345,7 @@ function initAgendaWidget() {
       return;
     }
     setStatus('正在设置…', 'info');
+    const generation = popoverGeneration;
     remindForm.classList.add('is-busy');
     try {
       const response = await fetch(activeEndpoint, {
@@ -338,6 +355,7 @@ function initAgendaWidget() {
         body: JSON.stringify({ event_id: Number(activeEventId), lead_value: value, lead_unit: remindUnit.value }),
       });
       const payload = await response.json().catch(() => ({}));
+      if (generation !== popoverGeneration) return;
       if (response.ok && payload.status === 'success') {
         setStatus(payload.message || '邮件提醒已设置。', 'success');
         remindCancel.hidden = false;
@@ -347,15 +365,16 @@ function initAgendaWidget() {
         setStatus(payload.message || '设置失败，请稍后重试。', 'error');
       }
     } catch {
-      setStatus('网络异常，设置失败。', 'error');
+      if (generation === popoverGeneration) setStatus('网络异常，设置失败。', 'error');
     } finally {
-      remindForm.classList.remove('is-busy');
+      if (generation === popoverGeneration) remindForm.classList.remove('is-busy');
     }
   });
 
   remindCancel.addEventListener('click', async () => {
     if (!activeEndpoint || !activeEventId) return;
     setStatus('正在取消…', 'info');
+    const generation = popoverGeneration;
     try {
       const response = await fetch(`${activeEndpoint}?event_id=${encodeURIComponent(activeEventId)}`, {
         method: 'DELETE',
@@ -363,11 +382,12 @@ function initAgendaWidget() {
         credentials: 'same-origin',
       });
       const payload = await response.json().catch(() => ({}));
+      if (generation !== popoverGeneration) return;
       setStatus(payload.message || '已取消提醒。', payload.cancelled_count ? 'success' : 'info');
       if (payload.cancelled_count) remindCancel.hidden = true;
       if (payload.cancelled_count) showReminderEditor(payload.message || '已取消提醒，可以重新设置。', 'success');
     } catch {
-      setStatus('网络异常，取消失败。', 'error');
+      if (generation === popoverGeneration) setStatus('网络异常，取消失败。', 'error');
     }
   });
 
@@ -433,7 +453,7 @@ function initAgendaWidget() {
     }
   });
 
-  editBtn?.addEventListener('click', () => {
+  editBtn?.addEventListener('click', async () => {
     if (!activeItem) return;
     const controller = getTodoModalController();
     if (!controller) { setManageStatus('暂时无法编辑。', 'error'); return; }
@@ -451,8 +471,8 @@ function initAgendaWidget() {
       reminderLead: data.reminderLead || '1440',
     };
     const triggerEl = activeItem;
-    close();
-    controller.openEdit(payload, triggerEl);
+    const generation = controller.getGeneration();
+    if (await close() && generation === controller.getGeneration()) controller.openEdit(payload, triggerEl);
   });
 
   document.addEventListener('click', (event) => {
@@ -648,8 +668,8 @@ function buildTodoModalDom({ actorRole = 'student' } = {}) {
   modal.className = 'agenda-todo-modal';
   modal.hidden = true;
   modal.innerHTML = `
-    <div class="agenda-todo-modal__backdrop" data-todo-close></div>
-    <div class="agenda-todo-modal__card" role="dialog" aria-modal="true" aria-labelledby="agendaTodoTitle">
+    <div class="agenda-todo-modal__backdrop" data-ui-overlay-surface data-todo-close></div>
+    <div class="agenda-todo-modal__card" data-ui-overlay-surface role="dialog" aria-modal="true" aria-labelledby="agendaTodoTitle">
       <div class="agenda-todo-modal__head">
         <div>
           <span class="agenda-todo-modal__eyebrow" data-todo-eyebrow>我的待办</span>
@@ -769,7 +789,7 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   let mode = 'create';
   let editingId = 0;
   let lastFocus = null;
-  let closeTimer = 0;
+  let scopeScrollFrame = 0;
   let afterDismiss = null;
   let modalClosing = false;
   let formGeneration = 0;
@@ -836,18 +856,19 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
     if (modal.hidden || modalClosing) return;
     modalClosing = true;
     formGeneration += 1;
-    modal.classList.remove('is-open');
+    const generation = formGeneration;
+    window.cancelAnimationFrame(scopeScrollFrame);
+    modal.inert = true;
     const callback = afterDismiss;
+    const focusTarget = lastFocus;
     afterDismiss = null;
-    const finish = () => {
-      modal.hidden = true;
-      document.body.classList.remove('agenda-todo-open');
+    void setOverlayOpen(modal, false).then((completed) => {
+      if (!completed || generation !== formGeneration) return;
+      modalClosing = false;
+      syncAgendaModalScroll();
       if (callback) callback();
-      else if (lastFocus?.isConnected) lastFocus.focus({ preventScroll: true });
-    };
-    window.clearTimeout(closeTimer);
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) finish();
-    else closeTimer = window.setTimeout(finish, 220);
+      else if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    });
   };
 
   // The backdrop, header close button and footer cancel button all share the
@@ -861,14 +882,12 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   });
 
   const reveal = () => {
-    window.clearTimeout(closeTimer);
+    window.cancelAnimationFrame(scopeScrollFrame);
     modalClosing = false;
-    modal.hidden = false;
+    modal.inert = false;
+    void setOverlayOpen(modal, true);
     document.body.classList.add('agenda-todo-open');
-    window.requestAnimationFrame(() => {
-      modal.classList.add('is-open');
-      titleInput?.focus({ preventScroll: true });
-    });
+    titleInput?.focus({ preventScroll: true });
   };
 
   const hasDeadline = () => Boolean(form.elements.due_date?.value);
@@ -1038,8 +1057,11 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   });
   courseSelect.addEventListener('change', syncScopeSummary);
   scopeDetails?.addEventListener('toggle', () => {
+    window.cancelAnimationFrame(scopeScrollFrame);
     if (!scopeDetails.open) return;
-    window.requestAnimationFrame(() => {
+    const generation = formGeneration;
+    scopeScrollFrame = window.requestAnimationFrame(() => {
+      if (generation !== formGeneration || modal.hidden || modalClosing || !scopeDetails.open) return;
       form.scrollTo({
         top: form.scrollHeight,
         behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
@@ -1064,13 +1086,13 @@ function createTodoModalController(options, defaultOfferingId, settings = {}) {
   });
   form.addEventListener('submit', submit);
   document.addEventListener('keydown', (event) => {
-    if (modal.hidden) return;
+    if (modal.hidden || modalClosing) return;
     if (event.key === 'Escape') { event.preventDefault(); close(); }
     else trapModalTab(event, card);
   });
   card.addEventListener('click', (event) => event.stopPropagation());
 
-  return { openCreate, openEdit };
+  return { openCreate, openEdit, getGeneration: () => formGeneration };
 }
 
 function initAgendaTodoCreator() {
@@ -1100,13 +1122,17 @@ function initAgendaTodoCreator() {
 // ---------------------------------------------------------------------------
 let calendarFeedModal = null;
 
+function syncAgendaModalScroll() {
+  document.body.classList.toggle('agenda-todo-open', Boolean(document.querySelector('.agenda-todo-modal:not([hidden])')));
+}
+
 function buildCalendarFeedModal() {
   const modal = document.createElement('div');
   modal.className = 'agenda-todo-modal';
   modal.hidden = true;
   modal.innerHTML = `
-    <div class="agenda-todo-modal__backdrop" data-feed-close></div>
-    <div class="agenda-todo-modal__card" role="dialog" aria-modal="true" aria-labelledby="agendaCalendarFeedTitle">
+    <div class="agenda-todo-modal__backdrop" data-ui-overlay-surface data-feed-close></div>
+    <div class="agenda-todo-modal__card" data-ui-overlay-surface role="dialog" aria-modal="true" aria-labelledby="agendaCalendarFeedTitle">
       <div class="agenda-todo-modal__head">
         <div>
           <span class="agenda-todo-modal__eyebrow">日历订阅</span>
@@ -1165,13 +1191,24 @@ function initAgendaCalendarFeed() {
   };
 
   let returnFocus = null;
+  let feedGeneration = 0;
+  let feedClosing = false;
   const closeModal = () => {
-    calendarFeedModal.classList.remove('is-open');
-    calendarFeedModal.hidden = true;
-    document.body.classList.remove('agenda-todo-open');
-    returnFocus?.focus({ preventScroll: true });
+    if (!calendarFeedModal || calendarFeedModal.hidden || feedClosing) return;
+    const generation = ++feedGeneration;
+    const focusTarget = returnFocus;
+    feedClosing = true;
+    calendarFeedModal.inert = true;
+    void setOverlayOpen(calendarFeedModal, false).then((completed) => {
+      if (!completed || generation !== feedGeneration) return;
+      feedClosing = false;
+      syncAgendaModalScroll();
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    });
   };
   const openModal = async (event) => {
+    const generation = ++feedGeneration;
+    feedClosing = false;
     returnFocus = event?.currentTarget;
     if (!returnFocus?.getClientRects().length) returnFocus = document.activeElement;
     if (!calendarFeedModal) {
@@ -1183,44 +1220,47 @@ function initAgendaCalendarFeed() {
         el.addEventListener('click', closeModal);
       });
       document.addEventListener('keydown', (keyEvent) => {
-        if (modal.hidden) return;
+        if (modal.hidden || feedClosing) return;
         if (keyEvent.key === 'Escape') { keyEvent.preventDefault(); closeModal(); }
         else trapModalTab(keyEvent, modal.querySelector('[role="dialog"]'));
       });
       modal.querySelector('[data-feed-copy]').addEventListener('click', async () => {
+        const generation = feedGeneration;
         const url = modal.querySelector('[data-feed-url]').value;
         try {
           await navigator.clipboard.writeText(url);
+          if (generation !== feedGeneration) return;
           setStatus('链接已复制，去日历 App 里“订阅日历 / 从 URL 添加”即可。');
         } catch {
+          if (generation !== feedGeneration) return;
           modal.querySelector('[data-feed-url]').select();
           setStatus('自动复制失败，链接已选中，请手动复制（Ctrl/Cmd+C）。');
         }
       });
       modal.querySelector('[data-feed-reset]').addEventListener('click', async () => {
         if (!window.confirm('重置后旧链接立即失效，所有已订阅的日历需要用新链接重新订阅。确定重置吗？')) return;
+        const generation = feedGeneration;
         try {
           const payload = await fetchCalendarFeed('/api/calendar-feed/reset', 'POST');
+          if (generation !== feedGeneration) return;
           applyPayload(calendarFeedModal, payload);
           setStatus('已生成新链接，旧链接已失效。');
         } catch (error) {
-          setStatus(error instanceof Error ? error.message : '重置失败，请稍后重试。');
+          if (generation === feedGeneration) setStatus(error instanceof Error ? error.message : '重置失败，请稍后重试。');
         }
       });
     }
-    calendarFeedModal.hidden = false;
+    calendarFeedModal.inert = false;
+    void setOverlayOpen(calendarFeedModal, true);
     document.body.classList.add('agenda-todo-open');
-    window.requestAnimationFrame(() => {
-      calendarFeedModal.classList.add('is-open');
-      calendarFeedModal.querySelector('[data-feed-url]').focus({ preventScroll: true });
-    });
+    calendarFeedModal.querySelector('[data-feed-url]').focus({ preventScroll: true });
     const statusEl = calendarFeedModal.querySelector('[data-feed-status]');
     statusEl.textContent = '';
     try {
       const payload = await fetchCalendarFeed('/api/calendar-feed');
-      applyPayload(calendarFeedModal, payload);
+      if (generation === feedGeneration) applyPayload(calendarFeedModal, payload);
     } catch (error) {
-      statusEl.textContent = error instanceof Error ? error.message : '获取订阅链接失败。';
+      if (generation === feedGeneration) statusEl.textContent = error instanceof Error ? error.message : '获取订阅链接失败。';
     }
   };
 
