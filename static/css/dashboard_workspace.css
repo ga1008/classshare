@@ -190,7 +190,6 @@
     border: 1px solid hsl(var(--ls-border)); border-radius: var(--ls-radius); box-shadow: var(--shadow-lg);
     z-index: 5100; overflow: hidden;
 }
-.dw-dialog[data-state] { animation: none; }
 .dw-dialog--calendar {
     inset: 16px 0; width: min(1800px, calc(100vw - 32px));
     max-height: calc(100dvh - 32px); padding: 20px; gap: 12px;

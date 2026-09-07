@@ -35,9 +35,13 @@ async function mountDeck(page: Page) {
   await page.goto('http://schedule.test/');
   await page.locator('.cs-card.is-active').click();
   await expect(page.getByRole('dialog')).toBeVisible();
+  await page.locator('.cs-expand__card').evaluate(async card => {
+    await Promise.allSettled(card.getAnimations().map(animation => animation.finished));
+  });
 }
 
 async function previewMetrics(page: Page) {
+  await expect(page.locator('.cs-lesson--cell.is-preview')).toHaveAttribute('data-preview-state', 'open');
   return page.locator('.cs-lesson--cell.is-preview').evaluate(cell => {
     const rect = cell.getBoundingClientRect();
     const body = cell.closest('.cs-expand__body')!.getBoundingClientRect();
@@ -151,6 +155,152 @@ test('unmatched courses support focus preview and scrolling without switching we
   await card.hover();
   await page.mouse.wheel(0, 150);
   await expect(page.locator('[data-csd-expand-title]')).toHaveText('第1周（本周）');
+});
+
+test('preview dimensions animate both ways without moving the slot or replacing the course link', async ({ page }) => {
+  await mountDeck(page);
+  await page.mouse.move(2, 2);
+  const metrics = await page.getByRole('link', { name: /^长课程/ }).evaluate(async cell => {
+    const slot = cell.parentElement!;
+    const body = cell.closest('.cs-expand__body')!;
+    const initialSlot = slot.getBoundingClientRect().toJSON();
+    const box = () => {
+      const rect = cell.getBoundingClientRect();
+      const bounds = body.getBoundingClientRect();
+      return { width: rect.width, height: rect.height, x: rect.x, y: rect.y,
+        contained: rect.left >= bounds.left + 10 && rect.right <= bounds.right - 10
+          && rect.top >= bounds.top + 10 && rect.bottom <= bounds.bottom - 10 };
+    };
+    const sample = async () => {
+      const frames = [box()];
+      while (cell.getAnimations().some(animation => animation.playState === 'running')) {
+        await new Promise(requestAnimationFrame);
+        frames.push(box());
+      }
+      return frames;
+    };
+    const before = box();
+    (cell as HTMLElement).focus();
+    const opening = await sample();
+    const expanded = box();
+    (document.querySelector('[data-csd-expand-close]') as HTMLElement).focus();
+    const closing = await sample();
+    return { before, expanded, opening, closing, initialSlot,
+      finalSlot: slot.getBoundingClientRect().toJSON(), sameLink: cell.isConnected && slot.firstElementChild === cell };
+  });
+  expect(metrics.sameLink).toBe(true);
+  expect(metrics.finalSlot).toEqual(metrics.initialSlot);
+  expect(metrics.opening.length).toBeGreaterThan(3);
+  expect(metrics.closing.length).toBeGreaterThan(3);
+  expect(Math.abs(metrics.opening[0].width - metrics.before.width)).toBeLessThan(1);
+  expect(Math.abs(metrics.closing[0].width - metrics.expanded.width)).toBeLessThan(1);
+  expect(metrics.opening.some(frame => frame.width > metrics.before.width + 5 && frame.width < metrics.expanded.width - 5)).toBe(true);
+  expect(metrics.closing.some(frame => frame.width > metrics.before.width + 5 && frame.width < metrics.expanded.width - 5)).toBe(true);
+  expect(metrics.opening.every(frame => frame.contained)).toBe(true);
+  expect(metrics.closing.every(frame => frame.contained)).toBe(true);
+  expect(metrics.closing.at(-1)!.width).toBeCloseTo(metrics.before.width, 0);
+  expect(metrics.closing.at(-1)!.height).toBeCloseTo(metrics.before.height, 0);
+});
+
+test('interrupting a preview reverses from its current frame and switching courses leaves no stale motion', async ({ page }) => {
+  await mountDeck(page);
+  await page.mouse.move(2, 2);
+  const result = await page.evaluate(async () => {
+    const cells = [...document.querySelectorAll<HTMLElement>('.cs-lesson--cell')];
+    const first = cells.find(cell => cell.querySelector('strong')?.textContent === '长课程')!;
+    const second = cells.find(cell => cell.querySelector('strong')?.textContent === '短课程')!;
+    const close = document.querySelector<HTMLElement>('[data-csd-expand-close]')!;
+    const width = () => first.getBoundingClientRect().width;
+    const frames = async (count: number) => { for (let i = 0; i < count; i += 1) await new Promise(requestAnimationFrame); };
+    first.focus();
+    await frames(4);
+    const beforeReverse = width();
+    close.focus();
+    const afterReverse = width();
+    await frames(2);
+    const beforeReopen = width();
+    first.focus();
+    const afterReopen = width();
+    await frames(2);
+    second.focus();
+    await Promise.allSettled(document.getAnimations().map(animation => animation.finished));
+    return { beforeReverse, afterReverse, beforeReopen, afterReopen,
+      firstWidth: width(), slotWidth: first.parentElement!.getBoundingClientRect().width,
+      states: cells.map(cell => cell.dataset.previewState || ''),
+      sameLinks: cells.every(cell => cell.isConnected && cell.parentElement!.firstElementChild === cell),
+      staleAnimations: cells.flatMap(cell => cell.getAnimations()).length,
+      closingCount: document.querySelectorAll('.is-preview-closing').length };
+  });
+  expect(Math.abs(result.afterReverse - result.beforeReverse)).toBeLessThan(1);
+  expect(Math.abs(result.afterReopen - result.beforeReopen)).toBeLessThan(1);
+  expect(result.beforeReopen).toBeLessThan(result.beforeReverse);
+  expect(result.firstWidth).toBeCloseTo(result.slotWidth, 0);
+  expect(result.states.filter(state => state === 'open')).toHaveLength(1);
+  expect(result.sameLinks).toBe(true);
+  expect(result.staleAnimations).toBe(0);
+  expect(result.closingCount).toBe(0);
+  await page.getByRole('link', { name: /^短课程/ }).press('Enter');
+  await expect.poll(() => page.evaluate(() => (window as any).navigations)).toEqual(['/classroom/1']);
+});
+
+test('expanded view finishes its full exit and reopening during exit preserves the current transform and links', async ({ page }) => {
+  await mountDeck(page);
+  const reopening = await page.evaluate(async () => {
+    const overlay = document.querySelector<HTMLElement>('.cs-expand')!;
+    const panel = document.querySelector<HTMLElement>('.cs-expand__card')!;
+    const link = panel.querySelector('.cs-lesson--cell');
+    (document.querySelector('[data-csd-expand-close]') as HTMLButtonElement).click();
+    for (let i = 0; i < 4; i += 1) await new Promise(requestAnimationFrame);
+    const before = panel.getBoundingClientRect().width;
+    (window as any).deck.openExpanded();
+    const after = panel.getBoundingClientRect().width;
+    await Promise.allSettled(overlay.getAnimations({ subtree: true }).map(animation => animation.finished));
+    return { before, after, hidden: overlay.hidden, inert: overlay.inert,
+      sameLink: link === panel.querySelector('.cs-lesson--cell'), focused: document.activeElement?.hasAttribute('data-csd-expand-close') };
+  });
+  expect(Math.abs(reopening.after - reopening.before)).toBeLessThan(1);
+  expect(reopening.hidden).toBe(false);
+  expect(reopening.inert).toBe(false);
+  expect(reopening.sameLink).toBe(true);
+  expect(reopening.focused).toBe(true);
+  const exit = await page.evaluate(async () => {
+    const overlay = document.querySelector<HTMLElement>('.cs-expand')!;
+    const panel = document.querySelector<HTMLElement>('.cs-expand__card')!;
+    (document.querySelector('[data-csd-expand-close]') as HTMLButtonElement).click();
+    const transform = panel.getAnimations().find(animation => (animation as CSSTransition).transitionProperty === 'transform')!;
+    const duration = Number(transform.effect!.getComputedTiming().duration);
+    // Hold a real CSS transition after the historical 260ms cutoff.
+    transform.pause();
+    transform.currentTime = duration - 20;
+    await new Promise(resolve => setTimeout(resolve, 285));
+    const stillVisible = !overlay.hidden;
+    transform.finish();
+    await Promise.allSettled(overlay.getAnimations({ subtree: true }).map(animation => animation.finished));
+    await new Promise(requestAnimationFrame);
+    return { duration, stillVisible, hidden: overlay.hidden, inert: overlay.inert,
+      focused: document.activeElement?.hasAttribute('data-csd-stage') };
+  });
+  expect(exit.duration).toBeGreaterThan(260);
+  expect(exit.stillVisible).toBe(true);
+  expect(exit.hidden).toBe(true);
+  expect(exit.inert).toBe(true);
+  expect(exit.focused).toBe(true);
+});
+
+test('reduced motion keeps preview, navigation and focus restoration without pending animations', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mountDeck(page);
+  const card = page.getByRole('link', { name: /^长课程/ });
+  await card.focus();
+  expectContained(await previewMetrics(page));
+  expect(await card.evaluate(cell => cell.getAnimations({ subtree: true }).length)).toBe(0);
+  await card.press('Enter');
+  await expect.poll(() => page.evaluate(() => (window as any).navigations)).toEqual(['/classroom/2']);
+  await page.keyboard.press('Escape');
+  await expect(card).not.toHaveClass(/is-preview/);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.cs-expand')).toHaveAttribute('hidden', '');
+  await expect(page.locator('[data-csd-stage]')).toBeFocused();
 });
 
 test.describe('touch', () => {

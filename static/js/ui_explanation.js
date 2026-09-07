@@ -1,3 +1,5 @@
+import { setOverlayOpen } from './ui_overlay_motion.js';
+
 const TRIGGER_SELECTOR = '[data-explain], [data-lp-tip]';
 const DEFAULT_DELAY_MS = 2000;
 const DEFAULT_LONG_PRESS_MS = 650;
@@ -302,13 +304,10 @@ export function openExplanation(target, override = null) {
     }
     trigger.setAttribute('aria-describedby', panel.id);
     trigger.setAttribute('aria-expanded', 'true');
-    panel.hidden = false;
-    panel.classList.remove('is-visible');
+    panel.inert = false;
+    setOverlayOpen(panel, true);
+    positionPanel();
     bindOpenViewportListeners();
-    window.requestAnimationFrame(() => {
-        positionPanel();
-        panel.classList.add('is-visible');
-    });
     return true;
 }
 
@@ -322,8 +321,8 @@ export function closeExplanation({ restoreFocus = false } = {}) {
         trigger.removeAttribute('aria-expanded');
     }
     if (panel) {
-        panel.classList.remove('is-visible');
-        panel.hidden = true;
+        panel.inert = true;
+        setOverlayOpen(panel, false);
     }
     unbindOpenViewportListeners();
     state.trigger = null;
@@ -340,7 +339,7 @@ export function closeExplanation({ restoreFocus = false } = {}) {
 
 function focusExplanation() {
     const panel = state.panel;
-    if (!panel || panel.hidden) return;
+    if (!panel || panel.hidden || panel.inert) return;
     cancelClose();
     const target = panel.querySelector('.ui-explain-popover__close');
     target?.focus({ preventScroll: true });
