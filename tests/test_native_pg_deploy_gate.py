@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -124,6 +125,64 @@ $ast.FindAll({{param($n) $n -is [System.Management.Automation.Language.FunctionD
         self.assertNotIn('$migrationReport = Join-Path', script)
         self.assertIn('elseif ($configuredPostgres)', script)
         self.assertLess(script.index('if ($DryRun) {'), script.index('& scp @sshBaseArgs'))
+
+    def test_quiesced_cutover_requires_report_and_runs_after_build_before_up(self):
+        script = (REPO / "deployment/deploy_remote.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn('[switch]$QuiesceForMigration', script)
+        self.assertIn('$QuiesceForMigration -and ($SkipDatabaseBackup -or', script)
+        self.assertIn('Unexpected source mount', script)
+        self.assertLess(script.index('bash deployment/docker/build_app.sh'), script.index('  run_quiesced_migration\n'))
+        self.assertLess(script.index('  run_quiesced_migration\n'), script.index('"${compose_cmd[@]}" up -d'))
+        self.assertIn('--lock-wait-timeout=5s', script)
+        self.assertIn('docker image tag "$old_image" "$rollback_tag"', script)
+
+    def test_quiesced_cutover_failure_does_not_continue_to_migration_or_service_start(self):
+        bash = shutil.which("bash")
+        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+        if git_bash.is_file():
+            bash = str(git_bash)
+        if not bash:
+            self.skipTest("Local Bash is required to exercise the remote-script contract")
+        script = (REPO / "deployment/deploy_remote.ps1").read_text(encoding="utf-8-sig")
+        remote = script.split("    $remoteScript = @'\n", 1)[1].split("\n'@", 1)[0]
+        parsed = subprocess.run([bash, "-n"], input=remote, text=True, capture_output=True)
+        self.assertEqual(0, parsed.returncode, parsed.stderr)
+        cutover = remote.split('run_quiesced_migration() {\n', 1)[1].split('\nif [ "$quiesce_for_migration"', 1)[0]
+        # Execute only the isolated cutover function with a fake Compose command.
+        # No Docker, database, network or real deployment directories are used.
+        harness = r'''
+set -euo pipefail
+remote_path="$PWD"
+backup_dir="$PWD"
+ts=synthetic
+writer_services=(app ai mailer blog-crawler scheduler agent-worker)
+compose_cmd=(fake_compose)
+fake_compose() {
+  echo "$1" >> events
+  if [ "$1" = stop ] && [ "$FAIL_AT" = stop ]; then return 31; fi
+  if [ "$1" = ps ]; then return 0; fi
+  if [ "$1" = exec ]; then
+    if [ "$FAIL_AT" = backup ]; then return 32; fi
+    printf 'synthetic PostgreSQL dump\n'
+  fi
+  if [ "$1" = run ]; then
+    cat >/dev/null
+    if [ "$FAIL_AT" = migration ]; then return 33; fi
+  fi
+}
+'''
+        harness += 'run_quiesced_migration() {\n' + cutover
+        harness += '\nrun_quiesced_migration\necho started >> events\n'
+        for failure, code in (("stop", 31), ("backup", 32), ("migration", 33), ("none", 0)):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                (root / "docker.env").write_text("POSTGRES_USER=synthetic\nPOSTGRES_DB=synthetic\n", encoding="utf-8")
+                result = subprocess.run([bash], input=harness, cwd=temp, text=True,
+                                        capture_output=True, env={**os.environ, "FAIL_AT": failure})
+                self.assertEqual(code, result.returncode, result.stderr)
+                events = (root / "events").read_text().splitlines()
+                self.assertEqual(failure == "none", "started" in events)
+                self.assertEqual(failure in ("migration", "none"), "run" in events)
 
 
 if __name__ == "__main__":
