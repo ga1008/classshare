@@ -184,6 +184,33 @@ fake_compose() {
                 self.assertEqual(failure == "none", "started" in events)
                 self.assertEqual(failure in ("migration", "none"), "run" in events)
 
+    def test_empty_backup_pruning_succeeds_without_hiding_deletion_failure(self):
+        bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+        if not bash.is_file():
+            self.skipTest("Local Git Bash is required for the backup retention contract")
+        script = (REPO / "deployment/deploy_remote.ps1").read_text(encoding="utf-8-sig")
+        body = script.split('prune_backup_files() {\n', 1)[1].split('\necho "Pruning old backups;', 1)[0]
+        harness = 'set -euo pipefail\nkeep_backups=2\nprune_backup_files() {\n' + body
+        harness += '\nshopt -s nullglob\n'
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            empty = subprocess.run([str(bash)], cwd=temp, input=harness + 'prune_backup_files "$PWD"/db-*.sql.gz\necho done\n',
+                                   capture_output=True, text=True)
+            self.assertEqual((0, "done"), (empty.returncode, empty.stdout.strip()), empty.stderr)
+            for index in range(3):
+                file = root / f"db-{index}.sql.gz"
+                file.write_text("synthetic backup", encoding="utf-8")
+                os.utime(file, (100 + index, 100 + index))
+            blocked = subprocess.run([str(bash)], cwd=temp, input=harness + 'rm() { return 43; }\nprune_backup_files "$PWD"/db-*.sql.gz\necho unexpected\n',
+                                     capture_output=True, text=True)
+            self.assertEqual(43, blocked.returncode)
+            self.assertNotIn("unexpected", blocked.stdout)
+            self.assertEqual(3, len(list(root.glob("db-*"))))
+            retained = subprocess.run([str(bash)], cwd=temp, input=harness + 'prune_backup_files "$PWD"/db-*.sql.gz\n',
+                                      capture_output=True, text=True)
+            self.assertEqual(0, retained.returncode, retained.stderr)
+            self.assertEqual({"db-1.sql.gz", "db-2.sql.gz"}, {file.name for file in root.glob("db-*")})
+
 
 if __name__ == "__main__":
     unittest.main()
