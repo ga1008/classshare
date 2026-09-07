@@ -13,6 +13,14 @@ class AcademicSignatureScopeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
+        self.conn.execute("CREATE TABLE electronic_signatures (id INTEGER PRIMARY KEY, status TEXT, deleted_at TEXT)")
+        self.conn.execute("INSERT INTO electronic_signatures VALUES (7, 'active', NULL)")
+        actor = patch("classroom_app.services.academic_final_material_service.signature_service.build_signature_actor", return_value={"id": 1, "role": "teacher"})
+        access = patch("classroom_app.services.academic_final_material_service.signature_workflow_service.signature_use_access_state", return_value={"can_use": True})
+        actor.start()
+        access.start()
+        self.addCleanup(actor.stop)
+        self.addCleanup(access.stop)
         self.conn.execute(
             """
             CREATE TABLE signature_point_bindings (
@@ -40,6 +48,7 @@ class AcademicSignatureScopeTests(unittest.TestCase):
         }
         record = {
             "id": 88,
+            "teacher_id": 1,
             "document_type": "academic_grade_register",
             "signature_revision": "revision-new",
         }

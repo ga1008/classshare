@@ -64,6 +64,7 @@ from .deployment_cache_service import get_deployment_release_id
 from .file_service import resolve_global_file_path
 from .signature_service import is_stamp_signature, resolve_signature_file_path
 from .signature_composition_service import compose_signature_strip, resolve_signature_paths
+from . import signature_service, signature_workflow_service
 
 
 ACADEMIC_GRADE_REGISTER_TYPE = "academic_grade_register"
@@ -1334,7 +1335,9 @@ def list_teacher_final_material_batches(
     ).fetchall()
     binding_cache: dict[tuple[str, str, str], list[int]] | None = None
     signature_cache: dict[int, Any] | None = None
+    signature_actor: dict[str, Any] | None = None
     if document_type == ACADEMIC_EXAM_ANALYSIS_TYPE and rows:
+        signature_actor = signature_service.build_signature_actor(conn, {"role": "teacher", "id": teacher_id})
         # The card status must reflect current bindings and remarks, including
         # old records whose stored edit_state predates review opinions. Fetch
         # both collections in bulk instead of issuing queries for each card.
@@ -1394,8 +1397,9 @@ def list_teacher_final_material_batches(
         if document_type == ACADEMIC_EXAM_ANALYSIS_TYPE and record_id:
             resolved = hydrate_academic_final_material_signature_paths(
                 conn, record_payload,
-                record={"id": record_id, "document_type": document_type, "signature_revision": row["record_signature_revision"]},
+                record={"id": record_id, "teacher_id": teacher_id, "document_type": document_type, "signature_revision": row["record_signature_revision"]},
                 include_images=False, _binding_cache=binding_cache, _signature_cache=signature_cache,
+                _signature_actor=signature_actor,
             )
             if isinstance(resolved.get("export_payload"), dict):
                 resolved = resolved["export_payload"]
@@ -1702,6 +1706,7 @@ def hydrate_academic_final_material_signature_paths(
     include_images: bool = True,
     _binding_cache: dict[tuple[str, str, str], list[int]] | None = None,
     _signature_cache: dict[int, Any] | None = None,
+    _signature_actor: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve signature images only at the trusted render boundary.
 
@@ -1748,6 +1753,19 @@ def hydrate_academic_final_material_signature_paths(
         str(record["document_type"] or "").strip()
         if "document_type" in record_keys else str(target.get("document_type") or "")
     )
+    actor = _signature_actor
+    if actor is None:
+        owner_id = record["teacher_id"] if "teacher_id" in record_keys else None
+        if not owner_id and record_id:
+            owner = conn.execute(
+                "SELECT teacher_id FROM material_ai_import_records WHERE id = ?", (int(record_id),),
+            ).fetchone()
+            owner_id = owner["teacher_id"] if owner else None
+        if owner_id:
+            try:
+                actor = signature_service.build_signature_actor(conn, {"role": "teacher", "id": int(owner_id)})
+            except signature_service.SignatureServiceError:
+                actor = None
     relevant_points = {
         "academic_grade_register": {"academic_final_material.grade_register.teacher_signature"},
         "academic_exam_analysis": {
@@ -1790,6 +1808,36 @@ def hydrate_academic_final_material_signature_paths(
             signature_ids = list(raw_ids) if isinstance(raw_ids, list) else []
             if not signature_ids and fields.get(id_key):
                 signature_ids = [fields[id_key]]
+        normalized_ids: list[int] = []
+        for value in signature_ids:
+            try:
+                signature_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if signature_id > 0 and signature_id not in normalized_ids:
+                normalized_ids.append(signature_id)
+        if _signature_cache is not None:
+            signatures_by_id = _signature_cache
+        else:
+            signature_rows = conn.execute(
+                f"SELECT * FROM electronic_signatures WHERE id IN ({','.join('?' for _ in normalized_ids)}) "
+                "AND status = 'active' AND deleted_at IS NULL",
+                tuple(normalized_ids),
+            ).fetchall() if normalized_ids else []
+            signatures_by_id = {int(row["id"]): row for row in signature_rows}
+        # Rendering never consumes or creates authorization. Revalidate the
+        # material owner's current visibility and this exact point/revision,
+        # even when a stale JSON payload or historical binding names the image.
+        signature_ids = [
+            signature_id for signature_id in normalized_ids
+            if actor and signature_id in signatures_by_id
+            and signature_workflow_service.signature_use_access_state(
+                conn, actor, signatures_by_id[signature_id], point_key,
+                material_type="academic_final_material", material_id=record_id, material_revision=revision,
+            ).get("can_use")
+        ]
+        fields[ids_key] = signature_ids
+        fields[id_key] = signature_ids[0] if signature_ids else None
         if ids_key in {"department_signature_ids", "dean_signature_ids"}:
             role = ids_key.removesuffix("_signature_ids")
             opinion_key = f"{role}_review_opinion"
@@ -1797,24 +1845,7 @@ def hydrate_academic_final_material_signature_paths(
             stamp_ids: list[int] = []
             paths: list[str] = []
             stamp_paths: list[str] = []
-            normalized_ids: list[int] = []
-            for value in signature_ids:
-                try:
-                    signature_id = int(value)
-                except (TypeError, ValueError):
-                    continue
-                if signature_id > 0 and signature_id not in normalized_ids:
-                    normalized_ids.append(signature_id)
-            if _signature_cache is not None:
-                signatures_by_id = _signature_cache
-            else:
-                signature_rows = conn.execute(
-                    f"SELECT * FROM electronic_signatures WHERE id IN ({','.join('?' for _ in normalized_ids)}) "
-                    "AND status = 'active' AND deleted_at IS NULL",
-                    tuple(normalized_ids),
-                ).fetchall() if normalized_ids else []
-                signatures_by_id = {int(row["id"]): row for row in signature_rows}
-            for signature_id in normalized_ids:
+            for signature_id in signature_ids:
                 signature = signatures_by_id.get(signature_id)
                 if signature is None:
                     continue

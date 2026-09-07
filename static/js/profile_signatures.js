@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { openSignaturePad } from './signature_pad.js?v=1';
+import { SignatureScopeFields, signatureScopeOptions } from './signature_scope_fields.js';
 import { escapeHtml, showToast } from './ui.js';
 
 const root = document.querySelector('[data-signature-app]');
@@ -13,6 +14,12 @@ const state = {
     claimPanelOpen: false,
     claimSearch: '',
     busy: false,
+    actor: {},
+    scopeOptions: signatureScopeOptions,
+    schools: [],
+    uploadScope: null,
+    editingScopeId: null,
+    editScope: null,
 };
 
 const requestStatusText = {
@@ -34,12 +41,15 @@ const reviewerStatusText = {
 
 async function loadAll() {
     const [mine, incoming, outgoing, usage] = await Promise.all([
-        apiFetch('/api/signatures?limit=200', { silent: true }),
+        apiFetch('/api/signatures?scope=mine&limit=200', { silent: true }),
         apiFetch('/api/signatures/requests?direction=incoming', { silent: true }),
         apiFetch('/api/signatures/requests?direction=outgoing', { silent: true }),
         apiFetch('/api/signatures/usage-logs?limit=50', { silent: true }),
     ]);
     state.signatures = mine.items || [];
+    state.actor = mine.actor || {};
+    state.scopeOptions = mine.scope_options || mine.actor?.scope_options || signatureScopeOptions;
+    state.schools = mine.school_options || [];
     state.incoming = incoming.items || [];
     state.outgoing = outgoing.items || [];
     state.usage = usage.items || [];
@@ -82,6 +92,7 @@ function renderClaimPanel() {
 
 function renderSignatureCard(item) {
     const badges = [];
+    if (item.scope_label) badges.push(`<span class="psig-badge">${escapeHtml(item.scope_label)}</span>`);
     if (item.subject_role === 'student' && item.subject_id) badges.push('<span class="psig-badge is-self">本人签名</span>');
     if (item.is_owner) badges.push('<span class="psig-badge">归属于我</span>');
     if (item.can_claim) badges.push('<span class="psig-badge is-claim">待认领</span>');
@@ -97,7 +108,8 @@ function renderSignatureCard(item) {
             <span>${badges.join('')}</span>
             <small>${item.can_claim ? '识别为你的签名，认领后与账号绑定' : (item.usage_count ? `已被使用 ${item.usage_count} 次` : '尚未被使用')}</small>
         </div>
-        ${action}
+        <div class="psig-item__actions">${item.can_edit ? `<button type="button" class="psig-link" data-psig-scope="${item.id}">可见范围</button>` : ''}${action}</div>
+        ${state.editingScopeId === item.id ? `<form class="psig-scope-editor" data-psig-scope-form><div data-psig-edit-scope></div><div class="psig-actions"><button type="submit" class="btn btn-primary btn-sm">保存范围</button><button type="button" class="psig-link" data-psig-scope-cancel>取消</button></div><p class="psig-hint" data-psig-scope-status aria-live="polite"></p></form>` : ''}
     </article>`;
 }
 
@@ -147,6 +159,8 @@ function renderUsage(item) {
 }
 
 function render() {
+    let uploadScopeValue = {};
+    try { uploadScopeValue = state.uploadScope?.getValue() || {}; } catch { /* leave incomplete fields for validation on the next upload */ }
     const pendingIncoming = state.incoming.filter((item) => item.status === 'pending');
     const settledIncoming = state.incoming.filter((item) => item.status !== 'pending').slice(0, 5);
     root.innerHTML = `
@@ -161,6 +175,7 @@ function render() {
                 </div>
             </div>
             <p class="psig-hint">上传白底或透明底的手写签名图片（PNG/JPG）。签名者固定为你本人，归属权在你手上；他人使用前必须经过你的批准。若系统里已有你名字的签名，请使用“认领签名”而不是重复上传。</p>
+            <details class="psig-upload-scope" open><summary>新签名的可见范围</summary><div data-psig-upload-scope></div></details>
             <div class="psig-grid">
                 ${state.signatures.map(renderSignatureCard).join('') || '<div class="psig-empty">还没有签名，点击右上角上传或认领。</div>'}
             </div>
@@ -192,6 +207,9 @@ function render() {
                 ${state.usage.map(renderUsage).join('') || '<li class="psig-empty">你的签名还没有被使用过。</li>'}
             </ul>
         </section>`;
+    state.uploadScope = new SignatureScopeFields({ root: root.querySelector('[data-psig-upload-scope]'), actor: state.actor, options: state.scopeOptions, schools: state.schools, value: uploadScopeValue });
+    const editing = state.signatures.find(item => item.id === state.editingScopeId);
+    if (editing) state.editScope = new SignatureScopeFields({ root: root.querySelector('[data-psig-edit-scope]'), actor: state.actor, options: state.scopeOptions, schools: state.schools, value: editing });
     bindEvents();
 }
 
@@ -211,6 +229,7 @@ async function uploadSignature(file) {
     try {
         const formData = new FormData();
         formData.append('file', file);
+        Object.entries(state.uploadScope.getValue()).forEach(([key, value]) => formData.append(key, value));
         await apiFetch('/api/signatures/upload', { method: 'POST', body: formData });
         showToast('签名已上传。', 'success');
         await refresh();
@@ -340,6 +359,28 @@ async function applyClaim(signatureId) {
 }
 
 function bindEvents() {
+    root.querySelectorAll('[data-psig-scope]').forEach(button => button.addEventListener('click', () => {
+        state.editingScopeId = Number(button.dataset.psigScope);
+        render();
+    }));
+    root.querySelector('[data-psig-scope-cancel]')?.addEventListener('click', () => {
+        state.editingScopeId = null;
+        render();
+    });
+    root.querySelector('[data-psig-scope-form]')?.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (state.busy) return;
+        setBusy(true);
+        try {
+            await apiFetch(`/api/signatures/${state.editingScopeId}`, { method: 'PATCH', body: state.editScope.getValue() });
+            state.editingScopeId = null;
+            await refresh();
+            showToast('签名可见范围已更新；使用授权规则保持不变。', 'success');
+        } catch (error) {
+            const status = root.querySelector('[data-psig-scope-status]');
+            if (status) status.textContent = error.message || '可见范围保存失败。';
+        } finally { setBusy(false); }
+    });
     const fileInput = root.querySelector('[data-psig-file]');
     root.querySelector('[data-psig-upload]')?.addEventListener('click', () => fileInput?.click());
     fileInput?.addEventListener('change', () => {

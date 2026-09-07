@@ -61,6 +61,8 @@ def _same_identity(role: Any, user_id: Any, actor: dict[str, Any]) -> bool:
 
 def direct_authorization_mode(actor: dict[str, Any], signature: Any) -> str:
     """Return the direct-use mode dictated by signer identity or ownership."""
+    if not signature_service.can_view_signature(actor, signature):
+        return ""
     if _same_identity(signature["subject_role"], signature["subject_id"], actor):
         return "self"
     if _same_identity(signature["owner_role"], signature["owner_id"], actor):
@@ -168,21 +170,50 @@ def access_state(
     material_id: str = "",
     material_revision: str = "",
 ) -> dict[str, Any]:
+    return signature_use_access_state(
+        conn, actor, signature, function_point_key,
+        material_type=material_type, material_id=material_id,
+        material_revision=material_revision,
+    )
+
+
+def signature_use_access_state(
+    conn: Any,
+    actor: dict[str, Any],
+    signature: Any,
+    function_point_key: str,
+    *,
+    material_type: str = "",
+    material_id: str = "",
+    material_revision: str = "",
+) -> dict[str, Any]:
+    """Read current authority without consuming grants or recording a use.
+
+    Document exporters must pass the material owner's actor and exact revision.
+    Historical usage alone never grants access: only a still-valid one-time
+    approval may be replayed by its original actor on its original object.
+    """
     point = _function_points(conn, [function_point_key])[0]
-    mode = direct_authorization_mode(actor, signature)
-    if mode:
-        return {
-            "can_use": True,
-            "authorization_mode": mode,
-            "function_point_key": point["point_key"],
-            "function_point_label": point["label"],
-            "grant_item_id": None,
-        }
-    if not signature_service.can_view_signature(actor, signature):
+    keys = signature.keys() if hasattr(signature, "keys") else ()
+    active = (
+        ("status" not in keys or signature["status"] == "active")
+        and ("deleted_at" not in keys or not signature["deleted_at"])
+    )
+    if not active or not signature_service.can_view_signature(actor, signature):
         return {
             "can_use": False,
             "can_request": False,
             "authorization_mode": "",
+            "function_point_key": point["point_key"],
+            "function_point_label": point["label"],
+            "grant_item_id": None,
+        }
+    mode = direct_authorization_mode(actor, signature)
+    if mode:
+        return {
+            "can_use": True,
+            "can_request": False,
+            "authorization_mode": mode,
             "function_point_key": point["point_key"],
             "function_point_label": point["label"],
             "grant_item_id": None,
@@ -196,6 +227,30 @@ def access_state(
         material_id=material_id,
         material_revision=material_revision,
     )
+    previous_usage = None
+    if not item and material_type and material_id and not material_revision:
+        previous_usage = conn.execute(
+            """
+            SELECT item.id, item.request_id, usage.id AS usage_log_id
+            FROM signature_usage_logs usage
+            JOIN signature_access_request_items item ON item.id = usage.request_item_id
+            JOIN signature_access_requests request ON request.id = item.request_id
+            WHERE usage.signature_id = ? AND usage.actor_role = ? AND usage.actor_id = ?
+              AND usage.function_point_key = ? AND usage.context_type = ? AND usage.context_id = ?
+              AND usage.material_revision = '' AND usage.authorization_mode = 'approval'
+              AND usage.request_id = request.id AND request.signature_id = usage.signature_id
+              AND request.requester_role = usage.actor_role AND request.requester_id = usage.actor_id
+              AND request.status IN ('partially_used', 'consumed')
+              AND item.function_point_key = usage.function_point_key AND item.status = 'consumed'
+              AND item.material_type = '' AND item.material_id = '' AND item.material_revision = ''
+              AND item.consumed_context_type = usage.context_type
+              AND item.consumed_context_id = usage.context_id
+            ORDER BY usage.id DESC LIMIT 1
+            """,
+            (int(signature["id"]), actor["role"], int(actor["id"]),
+             str(point["point_key"]), material_type, material_id),
+        ).fetchone()
+        item = previous_usage
     return {
         "can_use": bool(item),
         "can_request": not bool(item),
@@ -203,6 +258,8 @@ def access_state(
         "function_point_key": point["point_key"],
         "function_point_label": point["label"],
         "grant_item_id": int(item["id"]) if item else None,
+        "request_id": int(item["request_id"]) if item else None,
+        "previous_usage_log_id": int(previous_usage["usage_log_id"]) if previous_usage else None,
     }
 
 
@@ -740,6 +797,15 @@ def review_access_request(
     normalized_action = str(action or "").strip().lower()
     if normalized_action not in {"approve", "reject"}:
         raise signature_service.SignatureServiceError(400, "审批动作必须为 approve 或 reject。")
+    if normalized_action == "approve":
+        signature = _signature_row(conn, int(request["signature_id"]))
+        requester = signature_service.build_signature_actor(
+            conn, {"role": request["requester_role"], "id": request["requester_id"]},
+        )
+        if not signature_service.can_view_signature(requester, signature):
+            raise signature_service.SignatureServiceError(
+                403, "申请人已不在该签名的可见范围内，不能批准；可拒绝或由申请人取消本次申请。"
+            )
     reviewer_status = "approved" if normalized_action == "approve" else "rejected"
     reviewer_update = conn.execute(
         """
@@ -908,11 +974,10 @@ def create_claim_request(
     if actor.get("role") not in REQUESTER_ROLES:
         raise signature_service.SignatureServiceError(403, "仅教师或学生账号可以申请认领签名。")
     signature = _signature_row(conn, signature_id)
+    if not signature_service.can_view_signature(actor, signature):
+        raise signature_service.SignatureServiceError(403, "当前账号无权查看此签名。")
     # system-owned 个人签名（autoCorrecting 迁入）可以认领；批语章不可以。
-    if (
-        str(signature["scope_level"] or "") == "platform"
-        or signature_service.is_stamp_signature(signature)
-    ):
+    if signature_service.is_stamp_signature(signature):
         raise signature_service.SignatureServiceError(400, "平台公共签章/批语章不可认领。")
     if _same_identity(signature["subject_role"], signature["subject_id"], actor):
         raise signature_service.SignatureServiceError(400, "该签名已绑定你的账号，无需认领。")
@@ -1096,6 +1161,8 @@ def claim_signature(conn: Any, user: dict[str, Any], signature_id: int) -> dict[
     """Bind an unbound signature bearing the actor's own name to their account."""
     actor = signature_service.build_signature_actor(conn, user)
     signature = _signature_row(conn, signature_id)
+    if not signature_service.can_view_signature(actor, signature):
+        raise signature_service.SignatureServiceError(403, "当前账号无权查看此签名。")
     if not signature_service.can_claim_signature(actor, signature):
         raise signature_service.SignatureServiceError(
             403, "只能认领与本人姓名一致、且尚未绑定账号的签名。"
@@ -1383,13 +1450,14 @@ def resolve_material_scope(
     }
 
 
-def _existing_usage(conn: Any, key: str) -> Any:
+def _existing_usage(conn: Any, key: str, actor: dict[str, Any]) -> Any:
     return conn.execute(
         """
         SELECT id, signature_id, authorization_mode, request_id, request_item_id
-        FROM signature_usage_logs WHERE idempotency_key = ? LIMIT 1
+        FROM signature_usage_logs
+        WHERE idempotency_key = ? AND actor_role = ? AND actor_id = ? LIMIT 1
         """,
-        (key,),
+        (key, actor["role"], int(actor["id"])),
     ).fetchone()
 
 
@@ -1495,39 +1563,46 @@ def authorize_and_consume_signature_use(
         )
         material_revision = scope["material_revision"]
     raw_key_context = f"{normalized_context_id}|{material_revision}" if material_revision else normalized_context_id
-    key = _idempotency_key(int(signature_id), point["point_key"], normalized_context_type, raw_key_context)
+    legacy_key = _idempotency_key(int(signature_id), point["point_key"], normalized_context_type, raw_key_context)
     engine = get_configured_db_engine()
     if engine == "postgres":
-        conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (f"signature-use:{key}",))
-    existing = _existing_usage(conn, key)
-    if existing:
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtext(?))",
+            (f"signature-use:{legacy_key}:{actor['role']}:{actor['id']}",),
+        )
+    access = signature_use_access_state(
+        conn, actor, signature, str(point["point_key"]),
+        material_type=normalized_context_type, material_id=normalized_context_id,
+        material_revision=material_revision,
+    )
+    if not access.get("can_use"):
+        raise signature_service.SignatureServiceError(403, "当前材料版本的该签名点没有可用授权，请先申请并获批。")
+    mode = str(access["authorization_mode"])
+    request_id = access.get("request_id")
+    request_item_id = access.get("grant_item_id")
+    key = _idempotency_key(
+        int(signature_id), point["point_key"], normalized_context_type,
+        f"{raw_key_context}|actor:{actor['role']}:{actor['id']}|authorization:{mode}:{request_item_id or ''}",
+    )
+    existing = _existing_usage(conn, key, actor) or _existing_usage(conn, legacy_key, actor)
+    if existing and (
+        str(existing["authorization_mode"] or "") != mode
+        or existing["request_item_id"] != request_item_id
+    ):
+        existing = None
+    previous_usage_log_id = access.get("previous_usage_log_id")
+    if existing or previous_usage_log_id:
         return {
             "status": "success",
             "signature_id": int(signature_id),
-            "usage_log_id": int(existing["id"]),
-            "authorization_mode": existing["authorization_mode"],
-            "request_id": existing["request_id"],
-            "request_item_id": existing["request_item_id"],
+            "usage_log_id": int(existing["id"] if existing else previous_usage_log_id),
+            "authorization_mode": mode,
+            "request_id": request_id,
+            "request_item_id": request_item_id,
             "already_consumed": True,
         }
 
-    mode = direct_authorization_mode(actor, signature)
-    request_id: int | None = None
-    request_item_id: int | None = None
-    if not mode:
-        item = _available_item(
-            conn,
-            actor,
-            int(signature_id),
-            str(point["point_key"]),
-            material_type=normalized_context_type if material_revision else "",
-            material_id=normalized_context_id if material_revision else "",
-            material_revision=material_revision,
-        )
-        if not item:
-            raise signature_service.SignatureServiceError(403, "当前材料版本的该签名点没有可用授权，请先申请并获批。")
-        request_id = int(item["request_id"])
-        request_item_id = int(item["id"])
+    if mode == "approval":
         if not material_revision:
             cursor = conn.execute(
                 """
@@ -1540,7 +1615,6 @@ def authorize_and_consume_signature_use(
             )
             if int(cursor.rowcount or 0) != 1:
                 raise signature_service.SignatureServiceError(409, "该旧版一次性授权已被其他操作使用。")
-        mode = "approval"
 
     usage_log_id = _insert_usage(
         conn,

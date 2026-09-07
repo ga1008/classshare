@@ -60,10 +60,10 @@ class SignatureIdentityClaimTests(unittest.TestCase):
                 uploaded_by_id INTEGER,
                 uploaded_by_name_snapshot TEXT NOT NULL DEFAULT '',
                 scope_level TEXT NOT NULL DEFAULT 'department',
-                school_code TEXT NOT NULL DEFAULT '',
+                school_code TEXT NOT NULL DEFAULT 'gxufl',
                 school_name TEXT NOT NULL DEFAULT '',
-                college TEXT NOT NULL DEFAULT '',
-                department TEXT NOT NULL DEFAULT '',
+                college TEXT NOT NULL DEFAULT '数字科技学院',
+                department TEXT NOT NULL DEFAULT '软件工程系',
                 file_hash TEXT NOT NULL DEFAULT '',
                 file_ext TEXT NOT NULL DEFAULT '.png',
                 mime_type TEXT NOT NULL DEFAULT 'image/png',
@@ -155,6 +155,7 @@ class SignatureIdentityClaimTests(unittest.TestCase):
             """
         )
         self.conn.commit()
+        self.conn.execute("UPDATE electronic_signatures SET school_code='gxufl', college='数字科技学院', department='软件工程系'")
         self.actor_patch = patch.object(
             signature_service,
             "build_signature_actor",
@@ -163,8 +164,8 @@ class SignatureIdentityClaimTests(unittest.TestCase):
                 "id": int(user["id"]),
                 "name": ACTORS[(str(user["role"]), int(user["id"]))],
                 "is_super_admin": (str(user["role"]), int(user["id"])) in ADMIN_IDENTITIES,
-                "scope": {},
-                "memberships": [],
+                "scope": {"school_code": "gxufl", "college": "数字科技学院", "department": "软件工程系"},
+                "memberships": [{"school_code": "gxufl", "college": "数字科技学院", "department": "软件工程系"}],
             },
         )
         self.engine_patches = [
@@ -414,8 +415,8 @@ class SignatureIdentityClaimTests(unittest.TestCase):
             """
             INSERT INTO electronic_signatures (
                 name, subject_name, subject_role, subject_id,
-                owner_role, owner_id, owner_name_snapshot, signature_kind
-            ) VALUES ('同意', '同意', 'other', NULL, 'teacher', 9, '平台管理员', 'stamp')
+                owner_role, owner_id, owner_name_snapshot, signature_kind, scope_level
+            ) VALUES ('同意', '同意', 'other', NULL, 'teacher', 9, '平台管理员', 'stamp', 'platform')
             """
         )
         stamp_id = int(cursor.lastrowid)
@@ -471,16 +472,16 @@ class SignatureIdentityClaimTests(unittest.TestCase):
         for above in ("dean", "vice_dean", "principal", "academic_affairs", "counselor", "other"):
             self.assertFalse(signature_identity_service.identity_requires_department(above))
 
-    def test_propagate_above_department_identity_clears_department(self) -> None:
+    def test_propagate_identity_preserves_selected_visibility_department(self) -> None:
         self.conn.execute("UPDATE electronic_signatures SET department = '软件工程系' WHERE id = 2")
         signature_identity_service.propagate_account_identity(self.conn, "teacher", 2, "dean")
-        self.assertEqual("", self._signature(2)["department"])
+        self.assertEqual("软件工程系", self._signature(2)["department"])
         # Department-scoped identity keeps the department untouched.
         self.conn.execute("UPDATE electronic_signatures SET department = '软件工程系' WHERE id = 2")
         signature_identity_service.propagate_account_identity(self.conn, "teacher", 2, "department_head")
         self.assertEqual("软件工程系", self._signature(2)["department"])
 
-    def test_view_scope_widens_as_org_fields_empty(self) -> None:
+    def test_view_scope_requires_explicit_level_instead_of_missing_org_fields(self) -> None:
         actor = {
             "role": "teacher",
             "id": 42,
@@ -491,18 +492,20 @@ class SignatureIdentityClaimTests(unittest.TestCase):
                 "college": "数字科技学院",
                 "department": "软件工程系",
             },
-            "memberships": [],
+            "memberships": [{"school_code": "gxufl", "college": "数字科技学院", "department": "软件工程系"}],
         }
         base = {
             "id": 500, "owner_role": "teacher", "owner_id": 7, "subject_role": "teacher",
             "subject_id": None, "scope_level": "department", "school_code": "gxufl",
         }
         dean_row = {**base, "college": "数字科技学院", "department": ""}
-        self.assertTrue(signature_service.can_view_signature(actor, dean_row))
+        self.assertFalse(signature_service.can_view_signature(actor, dean_row))
+        self.assertTrue(signature_service.can_view_signature(actor, {**dean_row, "scope_level": "college"}))
         other_college_dean = {**base, "college": "外国语学院", "department": ""}
         self.assertFalse(signature_service.can_view_signature(actor, other_college_dean))
         school_level = {**base, "college": "", "department": ""}
-        self.assertTrue(signature_service.can_view_signature(actor, school_level))
+        self.assertFalse(signature_service.can_view_signature(actor, school_level))
+        self.assertTrue(signature_service.can_view_signature(actor, {**school_level, "scope_level": "school"}))
         other_department = {**base, "college": "数字科技学院", "department": "网络工程系"}
         self.assertFalse(signature_service.can_view_signature(actor, other_department))
 

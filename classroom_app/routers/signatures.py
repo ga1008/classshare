@@ -102,6 +102,9 @@ async def api_upload_signature(
     subject_name: str = Form(""),
     subject_id: int | None = Form(None),
     scope_level: str = Form(""),
+    school_code: str = Form(""),
+    college: str = Form(""),
+    department: str = Form(""),
     identity_category: str = Form(""),
     signature_kind: str = Form(""),
     description: str = Form(""),
@@ -118,6 +121,9 @@ async def api_upload_signature(
                 subject_name=subject_name,
                 subject_id=subject_id,
                 scope_level=scope_level,
+                school_code=school_code,
+                college=college,
+                department=department,
                 identity_category=identity_category,
                 signature_kind=signature_kind,
                 description=description,
@@ -158,7 +164,7 @@ async def api_signature_image(
                 require_use=False,
             )
             is_admin_viewer = bool(actor.get("is_super_admin"))
-            if int(download or 0) == 1 and not is_admin_viewer and not signature_service.can_use_signature(actor, row, conn):
+            if int(download or 0) == 1 and not signature_service.can_use_signature(actor, row, conn):
                 raise HTTPException(status_code=403, detail="当前账号无权下载此签名。")
             file_path = signature_service.resolve_signature_file_path(row)
             if not file_path:
@@ -180,7 +186,7 @@ async def api_signature_image(
                     media_type="image/png",
                     content_disposition_type="inline",
                 )
-                response.headers["Cache-Control"] = "private, max-age=300"
+                response.headers["Cache-Control"] = "private, no-store"
                 return response
             if int(download or 0) == 1:
                 signature_service.record_signature_usage(
@@ -200,7 +206,7 @@ async def api_signature_image(
                 filename=filename,
                 content_disposition_type="attachment" if int(download or 0) == 1 else "inline",
             )
-            response.headers["Cache-Control"] = "private, max-age=300"
+            response.headers["Cache-Control"] = "private, no-store"
             return response
     except signature_service.SignatureServiceError as exc:
         _raise_signature_error(exc)

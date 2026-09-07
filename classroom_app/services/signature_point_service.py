@@ -187,6 +187,22 @@ def get_point_state(
         signature_identity_service.expand_required_identities(point_row["required_identities"])
     )
     listed = signature_service.list_signatures(conn, user, limit=500)
+    bound_ids = _binding_ids(conn, scope)
+    listed_ids = {int(item["id"]) for item in listed.get("items") or []}
+    # A broad platform library can exceed the picker limit. Always include
+    # visible current bindings, while still checking their present scope.
+    missing_ids = [signature_id for signature_id in bound_ids if signature_id not in listed_ids]
+    if missing_ids:
+        rows = conn.execute(
+            signature_service._base_signature_select()
+            + f" WHERE s.id IN ({','.join('?' for _ in missing_ids)})"
+            " AND s.status = 'active' AND s.deleted_at IS NULL",
+            tuple(missing_ids),
+        ).fetchall()
+        listed["items"].extend(
+            signature_service.serialize_signature(row, actor, conn)
+            for row in rows if signature_service.can_view_signature(actor, row)
+        )
     bound_holders = [
         (str(item.get("subject_role") or ""), int(item.get("subject_id") or 0))
         for item in (listed.get("items") or [])
@@ -264,7 +280,10 @@ def get_point_state(
                 "grant_item_id": grant_item_id,
             }
         )
-    selected_ids = _binding_ids(conn, scope)
+    # Stored bindings are historical selections, not a visibility grant.
+    # Scope changes must remove inaccessible entries from the live picker.
+    visible_ids = {int(item["id"]) for item in signatures}
+    selected_ids = [signature_id for signature_id in bound_ids if signature_id in visible_ids]
     active_flow = _serialize_flow(conn, _active_flow_row(conn, actor, scope))
     return {
         "status": "success",

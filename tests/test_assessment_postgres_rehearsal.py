@@ -107,6 +107,31 @@ class NativePostgresRehearsalTests(unittest.TestCase):
         self.assertIn("schema:column:submissions.feedback_md", changes)
         self.assertIn("sequence:original_types_id_seq", changes)
 
+    def test_signature_scope_repair_allows_only_exact_scope_values_and_new_marker(self):
+        with self.conn.transaction():
+            self.conn.execute("""CREATE TABLE electronic_signatures(
+                id SERIAL PRIMARY KEY, scope_level TEXT, school_code TEXT, college TEXT, department TEXT,
+                name TEXT, updated_at TIMESTAMPTZ DEFAULT '2001-01-01', metadata_json TEXT);
+                INSERT INTO electronic_signatures(scope_level,school_code,college,department,name,metadata_json)
+                VALUES ('college','school','college','department','DO_NOT_REPORT_SIGNATURE','{ "a": 1 }'),
+                       ('department','school','college','','DO_NOT_REPORT_SIGNATURE','{}'),
+                       ('department','school','','','DO_NOT_REPORT_SIGNATURE','{}'),
+                       ('department','','','','DO_NOT_REPORT_SIGNATURE','{}');""")
+        result = rehearse(self.conn, backup=self.backup, progress=lambda _: None)
+        self.assertEqual("ok", result["status"])
+        self.assertEqual([], result["idempotency_differences"])
+        proof = result["stages"][0]["signature_visibility_migration"]
+        self.assertEqual([1, 2, 3], [row["id"] for row in proof["actual_changes"]])
+        self.assertEqual(["department", "college", "school"], [row["after"] for row in proof["actual_changes"]])
+        self.assertEqual(["table:electronic_signatures"], result["stages"][0]["old_field_differences"])
+        self.assertNotIn("DO_NOT_REPORT_SIGNATURE", json.dumps(result))
+        def corrupt(conn):
+            apply_assessment_migrations(conn)
+            conn.execute("UPDATE electronic_signatures SET name='wrong' WHERE id=1")
+        failed = rehearse(self.conn, backup=self.backup, migrate=corrupt, progress=lambda _: None)
+        self.assertEqual("failed", failed["status"])
+        self.assertIn("signature_other_columns_changed:1", failed["stages"][0]["signature_visibility_migration"]["blockers"])
+
     def test_signature_seed_preserves_pg_serial_and_updates_only_changed_metadata(self):
         from classroom_app.db.postgres import LanSharePostgresConnection
         from classroom_app.db.schema_signature_workflow import SIGNATURE_FUNCTION_POINTS, _seed_function_points

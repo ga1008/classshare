@@ -21,7 +21,6 @@ def _actor(department: str = "网络工程系", college: str = "数字科技学�
             "college": college,
             "department": department,
         },
-        "memberships": [],
     }
 
 
@@ -49,6 +48,9 @@ class SignaturePointOrgFilterTests(unittest.TestCase):
         self.assertTrue(identity_org_match(_actor(), _item("vice_department_head"), accepted))
         self.assertFalse(
             identity_org_match(_actor(), _item("department_head", department="软件工程系"), accepted)
+        )
+        self.assertFalse(
+            identity_org_match(_actor(), _item("department_head", college="另一学院"), accepted)
         )
 
     def test_dean_requires_same_college(self) -> None:

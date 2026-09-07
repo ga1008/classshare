@@ -4,6 +4,7 @@
 {% block title %}电子签名{% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/signature_scope_fields.css') }}">
 <style>
     .signature-page {
         display: grid;
@@ -533,26 +534,7 @@
                             <option value="other">其他</option>
                         </select>
                     </label>
-                    <label class="signature-field">
-                        <span>可用层级</span>
-                        <select class="form-control" id="signature-edit-scope-level-input" name="scope_level">
-                            <option value="personal">个人</option>
-                            <option value="department">系部可见</option>
-                            <option value="platform">平台可用</option>
-                        </select>
-                    </label>
-                    <label class="signature-field" id="signature-edit-school-field">
-                        <span>所属学校</span>
-                        <input type="search" class="form-control" id="signature-edit-school-input" list="signature-school-options" autocomplete="off">
-                    </label>
-                    <label class="signature-field">
-                        <span>学院</span>
-                        <input type="text" class="form-control" id="signature-edit-college-input" name="college" maxlength="120">
-                    </label>
-                    <label class="signature-field">
-                        <span>系部</span>
-                        <input type="text" class="form-control" id="signature-edit-department-input" name="department" maxlength="120">
-                    </label>
+                    <div class="signature-field--full" id="signature-edit-scope-fields"></div>
                     <label class="signature-field">
                         <span>归属教师</span>
                         <input type="search" class="form-control" id="signature-edit-owner-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="输入姓名、邮箱、学院筛选">
@@ -609,13 +591,13 @@
             <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
                 {{ insight_meter('可见签名', signature_stats.visible_total, 100,
-                    '我的归属 ' ~ signature_stats.mine ~ ' 个 · 系部可见 ' ~ signature_stats.college ~ ' 个', 'indigo', '个') }}
-                {{ insight_ring('我的归属占比', signature_stats.mine, signature_stats.visible_total,
-                    '由我归属、可自行维护与授权的签名占比。', 'teal',
+                    '我的签名 ' ~ signature_stats.mine ~ ' 个 · 按可见范围共享', 'indigo', '个') }}
+                {{ insight_ring('我的签名占比', signature_stats.mine, signature_stats.visible_total,
+                    '归属于我或签名者是本人的签名占比；按具体权限维护和授权。', 'teal',
                     signature_stats.mine ~ ' / ' ~ signature_stats.visible_total ~ ' 个') }}
-                {{ insight_ring('系部共享占比', signature_stats.college, signature_stats.visible_total,
-                    '同系部可见、可在审批后引用的签名占比。', 'violet',
-                    signature_stats.college ~ ' / ' ~ signature_stats.visible_total ~ ' 个') }}
+                {{ insight_ring('组织共享占比', signature_stats.get('school', 0) + signature_stats.get('college', 0) + signature_stats.get('department', 0), signature_stats.visible_total,
+                    '学校、学院或系部范围可见的签名；个人签名使用仍需授权。', 'violet',
+                    (signature_stats.get('school', 0) + signature_stats.get('college', 0) + signature_stats.get('department', 0)) ~ ' / ' ~ signature_stats.visible_total ~ ' 个') }}
                 {{ insight_meter('调用记录', signature_stats.usage_total, 100,
                     '签名被课堂材料引用的累计次数。', 'amber', '次') }}
             </div>
@@ -627,7 +609,7 @@
             <div class="signature-school-switcher" id="signature-school-switcher">
                 <label class="signature-field" id="signature-school-field">
                     <span>学校</span>
-                    <input type="search" class="form-control" id="signature-school-search-input" list="signature-school-options" placeholder="输入学校名称或代码筛选" autocomplete="off">
+                    <input type="search" class="form-control" id="signature-school-search-input" list="signature-school-options" placeholder="全部学校；输入学校名称或代码筛选" autocomplete="off">
                     <datalist id="signature-school-options"></datalist>
                 </label>
                 <div class="signature-school-note" id="signature-school-note">
@@ -643,8 +625,12 @@
                     <span>范围</span>
                     <select class="form-control" id="signature-scope-filter">
                         <option value="">全部可见</option>
-                        <option value="mine">我的归属签名</option>
-                        <option value="department">同系部</option>
+                        <option value="mine">我的签名（归属或本人）</option>
+                        <option value="platform">平台可见</option>
+                        <option value="school">学校可见</option>
+                        <option value="college">学院可见</option>
+                        <option value="department">系部可见</option>
+                        <option value="personal">个人可见</option>
                         <option value="system">平台导入</option>
                     </select>
                 </label>
@@ -771,7 +757,7 @@
                         <span>签名类型</span>
                         <select class="form-control" id="signature-kind-input" name="signature_kind">
                             <option value="">个人签名</option>
-                            <option value="stamp">批语章（同意/已阅等，全员免申请）</option>
+                            <option value="stamp">批语章（可见范围内免申请）</option>
                         </select>
                     </label>
                     <label class="signature-field" id="signature-subject-role-field">
@@ -791,14 +777,7 @@
                         <span>签名者教师账号</span>
                         <input type="search" class="form-control" id="signature-subject-account-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="用于本人审批与使用权识别">
                     </label>
-                    <label class="signature-field" id="signature-scope-level-field">
-                        <span>可用层级</span>
-                        <select class="form-control" id="signature-scope-level-input" name="scope_level">
-                            <option value="department">系部可见</option>
-                            <option value="platform">平台可用</option>
-                            <option value="personal">个人</option>
-                        </select>
-                    </label>
+                    <div class="signature-field--full" id="signature-upload-scope-fields"></div>
                     <label class="signature-field signature-field--full">
                         <span>备注</span>
                         <textarea class="form-control" id="signature-description-input" name="description" rows="3" maxlength="300" placeholder="可填写来源或用途"></textarea>

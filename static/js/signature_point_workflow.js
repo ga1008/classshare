@@ -443,12 +443,12 @@ export class SignaturePointControl {
             if (!Array.isArray(this.dialogRequestOrder)) this.dialogRequestOrder = [];
             const options = visibleCandidates.map((item) => {
                 const order = this.dialogRequestOrder.indexOf(Number(item.id));
-                return `<label><input type="checkbox" value="${item.id}" ${order >= 0 ? 'checked' : ''}><span class="spw-candidate-order">${order >= 0 ? order + 1 : '—'}</span><span><strong>${esc(item.subject_name || item.name)}</strong><small>${item.identity_label ? `${esc(item.identity_label)}${item.identity_verified ? '✓' : ''} · ` : ''}${esc(item.owner_name || item.scope_label || '')}${item.needs_admin_review ? ' · <em class="spw-admin-review">未绑定账号，由管理员审批</em>' : ''}</small></span></label>`;
+                return `<label><input type="checkbox" value="${item.id}" ${order >= 0 ? 'checked' : ''}><span class="spw-candidate-order">${order >= 0 ? order + 1 : '—'}</span><span><strong>${esc(item.subject_name || item.name)}</strong><small>${item.identity_label ? `${esc(item.identity_label)}${item.identity_verified ? '✓' : ''} · ` : ''}${esc([item.scope_label, item.owner_name ? `归属：${item.owner_name}` : ''].filter(Boolean).join(' · '))}${item.needs_admin_review ? ' · <em class="spw-admin-review">未绑定账号，由管理员审批</em>' : ''}</small></span></label>`;
             }).join('');
             panel.innerHTML = `
                 <header><div><span>新建签名申请</span><h3>${esc(this.pointLabel)}</h3></div><button type="button" data-spw-close aria-label="关闭">×</button></header>
                 <div class="spw-dialog-body">
-                    <p class="spw-flow-note">按需要嵌入的先后顺序勾选签名。申请获批后，它只会出现在当前材料、当前签名点的可用列表中。</p>
+                    <p class="spw-flow-note">这里展示你可见范围内、需要申请授权的签名。按嵌入顺序勾选，获批后仅在当前材料、当前签名点可用。</p>
                     <div class="spw-picker-tools">
                         <input type="search" data-spw-dialog-search placeholder="模糊搜索签名姓名…" value="${esc(this.dialogSearchTerm)}">
                         ${this.identityToggleHtml('data-spw-dialog-identity-toggle', this.dialogIdentityFilterOn, hiddenCount)}

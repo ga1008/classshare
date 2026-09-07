@@ -149,7 +149,7 @@ def _owner_for_signature(
             "owner_name_snapshot": name,
             "subject_role": "teacher",
             "subject_name": name,
-            "scope_level": "college",
+            "scope_level": "department",
             "scope": scope,
             "matched": "teacher",
         }
@@ -177,7 +177,7 @@ def _owner_for_signature(
         "owner_name_snapshot": "autoCorrecting 导入",
         "subject_role": "teacher",
         "subject_name": name,
-        "scope_level": "college",
+        "scope_level": "department",
         "scope": super_scope,
         "matched": "system",
     }

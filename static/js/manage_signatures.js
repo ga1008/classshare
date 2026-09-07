@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { openSignaturePad } from './signature_pad.js?v=1';
+import { SignatureScopeFields, signatureScopeOptions } from './signature_scope_fields.js';
 import { closeModal, escapeHtml, formatDate, formatSize, openModal, showMessage } from './ui.js';
 
 const state = {
@@ -12,6 +13,9 @@ const state = {
     functionPoints: [],
     pendingRequests: [],
     outgoingRequests: [],
+    scopeOptions: signatureScopeOptions,
+    uploadScope: null,
+    editScope: null,
 };
 
 const els = {};
@@ -114,11 +118,9 @@ function cacheElements() {
         'signature-subject-role-field',
         'signature-subject-name-field',
         'signature-subject-account-field',
-        'signature-scope-level-field',
         'signature-subject-role-input',
         'signature-subject-name-input',
         'signature-subject-account-input',
-        'signature-scope-level-input',
         'signature-identity-input',
         'signature-kind-field',
         'signature-kind-input',
@@ -130,11 +132,6 @@ function cacheElements() {
         'signature-edit-subject-input',
         'signature-edit-subject-role-input',
         'signature-edit-identity-input',
-        'signature-edit-scope-level-input',
-        'signature-edit-school-field',
-        'signature-edit-school-input',
-        'signature-edit-college-input',
-        'signature-edit-department-input',
         'signature-edit-owner-input',
         'signature-owner-teacher-options',
         'signature-edit-description-input',
@@ -181,9 +178,7 @@ function signatureQuery() {
     const scope = els['signature-scope-filter']?.value;
     const identityCategory = els['signature-identity-filter']?.value;
     const ownerRole = els['signature-owner-filter']?.value;
-    const schoolCode = state.selectedSchoolCode
-        || schoolCodeFromInput(els['signature-school-search-input']?.value)
-        || (isSuperAdmin() ? actorSchoolCode() : '');
+    const schoolCode = state.selectedSchoolCode || schoolCodeFromInput(els['signature-school-search-input']?.value);
     if (search) params.set('q', search);
     if (schoolCode) params.set('school_code', schoolCode);
     if (scope) params.set('scope', scope);
@@ -202,6 +197,7 @@ async function loadSignatures({ keepSelection = true } = {}) {
         const payload = await apiFetch(`/api/signatures?${signatureQuery()}`, { method: 'GET' });
         state.items = Array.isArray(payload.items) ? payload.items : [];
         state.actor = payload.actor || null;
+        state.scopeOptions = payload.scope_options || payload.actor?.scope_options || signatureScopeOptions;
         state.schoolOptions = Array.isArray(payload.school_options) ? payload.school_options : [];
         if (payload.selected_school?.school_code) {
             state.selectedSchoolCode = payload.selected_school.school_code;
@@ -256,8 +252,8 @@ function renderSchoolControls(selectedSchool = null) {
     if (els['signature-school-note']) {
         const display = school?.school_name || actorSchoolName() || '未记录';
         els['signature-school-note'].textContent = isSuperAdmin()
-            ? `当前学校：${display}。切换学校后仅显示该校签名。`
-            : `当前学校：${display}。普通账号只能使用本校签名。`;
+            ? (state.selectedSchoolCode ? `正在筛选：${display}。清空学校可查看全平台签名。` : '正在查看全平台签名，可按学校筛选。')
+            : '展示你所在组织可见的签名及平台共享签名；个人签名使用仍需本人或归属人授权。';
     }
 }
 
@@ -272,7 +268,9 @@ async function fetchSchoolOptions(query = '') {
 
 async function fetchOwnerTeachers(query = '') {
     const params = new URLSearchParams();
-    const schoolCode = state.selectedSchoolCode || schoolCodeFromInput(els['signature-edit-school-input']?.value) || actorSchoolCode();
+    let editingSchool = '';
+    try { editingSchool = state.editScope?.getValue().school_code || state.uploadScope?.getValue().school_code || ''; } catch { /* wait for a complete organization */ }
+    const schoolCode = editingSchool || state.selectedSchoolCode || actorSchoolCode();
     if (query) params.set('q', query);
     if (schoolCode) params.set('school_code', schoolCode);
     const payload = await apiFetch(`/api/signatures/teachers?${params.toString()}`, { method: 'GET', silent: true });
@@ -351,7 +349,7 @@ function renderDetail(item) {
         els['signature-detail-chips'].innerHTML = `
             <span class="signature-chip${item.is_owner ? ' is-owner' : ''}">${escapeHtml(item.scope_label)}</span>
             <span class="signature-chip">${escapeHtml(item.subject_role_label)}</span>
-            ${item.kind_label ? `<span class="signature-chip is-system">${escapeHtml(item.kind_label)} · 全员免申请</span>` : ''}
+            ${item.kind_label ? `<span class="signature-chip is-system">${escapeHtml(item.kind_label)} · 可见范围内免申请</span>` : ''}
             ${!item.kind_label && item.identity_label ? `<span class="signature-chip">${escapeHtml(item.identity_label)}${item.identity_verified ? '（已核验）' : '（未核验）'}</span>` : ''}
             ${item.is_owner ? '<span class="signature-chip is-owner">归属我</span>' : ''}
             ${item.owner_role === 'system' ? '<span class="signature-chip is-system">平台导入</span>' : ''}
@@ -387,22 +385,6 @@ function renderDetail(item) {
     );
     if (els['signature-download-link']) {
         els['signature-download-link'].href = item.download_url || '#';
-    }
-}
-
-const DEPARTMENT_SCOPED_IDENTITIES = new Set(['', 'teacher', 'department_head', 'vice_department_head']);
-
-function syncEditDepartmentWithIdentity() {
-    const identity = els['signature-edit-identity-input']?.value || '';
-    const departmentInput = els['signature-edit-department-input'];
-    if (!departmentInput) return;
-    const keepsDepartment = DEPARTMENT_SCOPED_IDENTITIES.has(identity);
-    departmentInput.disabled = !keepsDepartment;
-    if (!keepsDepartment) {
-        departmentInput.value = '';
-        departmentInput.placeholder = '该身份超越系部，不归属系部';
-    } else {
-        departmentInput.placeholder = '';
     }
 }
 
@@ -584,15 +566,14 @@ async function uploadHandwrittenSignature(blob) {
     formData.append('file', new File([blob], 'handwritten.png', { type: 'image/png' }));
     const typedName = els['signature-name-input']?.value?.trim() || '';
     formData.append('name', typedName || '手写签名');
-    formData.append('identity_category', els['signature-identity-input']?.value || '');
-    formData.append('description', els['signature-description-input']?.value?.trim() || '手写板录入');
     try {
+        appendUploadAttributes(formData);
         await apiFetch('/api/signatures/upload', { method: 'POST', body: formData });
-        showMessage('手写签名已保存并绑定到你的账号。', 'success');
+        showMessage('手写签名已保存。', 'success');
         closeModal('signature-upload-modal');
         await loadSignatures({ keepSelection: false });
-    } catch {
-        // apiFetch already surfaces the error (e.g. duplicate-name claim hint).
+    } catch (error) {
+        showMessage(error.message || '手写签名保存失败。', 'error');
     }
 }
 
@@ -867,20 +848,8 @@ async function openEditModal() {
     }
     if (els['signature-edit-subject-role-input']) els['signature-edit-subject-role-input'].value = item.subject_role || 'teacher';
     if (els['signature-edit-identity-input']) els['signature-edit-identity-input'].value = item.identity_category || '';
-    syncEditDepartmentWithIdentity();
-    const scopeLevel = item.scope_level === 'college' ? 'department' : (item.scope_level || 'department');
-    if (els['signature-edit-scope-level-input']) els['signature-edit-scope-level-input'].value = scopeLevel;
-    if (els['signature-edit-college-input']) els['signature-edit-college-input'].value = item.college || '';
-    if (els['signature-edit-department-input']) els['signature-edit-department-input'].value = item.department || '';
+    state.editScope = new SignatureScopeFields({ root: byId('signature-edit-scope-fields'), actor: state.actor || {}, options: state.scopeOptions, schools: state.schoolOptions, value: item });
     if (els['signature-edit-description-input']) els['signature-edit-description-input'].value = item.description || '';
-    if (els['signature-edit-school-field']) els['signature-edit-school-field'].hidden = !isSuperAdmin();
-    if (els['signature-edit-school-input']) {
-        const school = state.schoolOptions.find((entry) => entry.school_code === item.school_code) || {
-            school_code: item.school_code,
-            school_name: item.school_name,
-        };
-        els['signature-edit-school-input'].value = optionLabel(school);
-    }
     if (els['signature-edit-owner-input']) {
         els['signature-edit-owner-input'].value = item.owner_role === 'teacher'
             ? `${item.owner_name || '教师'}（${item.owner_id}）`
@@ -908,19 +877,13 @@ async function submitEdit(event) {
             subject_name: els['signature-edit-subject-name-input']?.value?.trim() || '',
             subject_role: els['signature-edit-subject-role-input']?.value || '',
             identity_category: els['signature-edit-identity-input']?.value || '',
-            scope_level: els['signature-edit-scope-level-input']?.value || '',
-            college: els['signature-edit-college-input']?.value?.trim() || '',
-            department: els['signature-edit-department-input']?.value?.trim() || '',
+            ...state.editScope.getValue(),
             description: els['signature-edit-description-input']?.value?.trim() || '',
         };
         const ownerTeacherId = ownerTeacherIdFromInput(els['signature-edit-owner-input']?.value);
         if (ownerTeacherId) payload.owner_teacher_id = ownerTeacherId;
         const subjectTeacherId = ownerTeacherIdFromInput(els['signature-edit-subject-input']?.value);
         if (subjectTeacherId && payload.subject_role === 'teacher') payload.subject_teacher_id = subjectTeacherId;
-        if (isSuperAdmin()) {
-            const schoolCode = schoolCodeFromInput(els['signature-edit-school-input']?.value);
-            if (schoolCode) payload.school_code = schoolCode;
-        }
         await apiFetch(`/api/signatures/${state.selectedId}`, {
             method: 'PATCH',
             body: payload,
@@ -928,12 +891,17 @@ async function submitEdit(event) {
         showMessage('签名属性已更新', 'success');
         closeModal('signature-edit-modal');
         await loadSignatures({ keepSelection: true });
+    } catch (error) {
+        if (els['signature-edit-status']) els['signature-edit-status'].textContent = error.message || '保存失败。';
+        showMessage(error.message || '签名属性保存失败。', 'error');
     } finally {
         if (submitBtn) submitBtn.disabled = false;
     }
 }
 
 function resetFilters() {
+    state.selectedSchoolCode = '';
+    if (els['signature-school-search-input']) els['signature-school-search-input'].value = '';
     [
         'signature-search-input',
         'signature-scope-filter',
@@ -975,15 +943,8 @@ async function submitUpload(event) {
             formData.append('file', file);
             const typedName = els['signature-name-input']?.value?.trim() || '';
             formData.append('name', files.length === 1 && typedName ? typedName : file.name.replace(/\.[^.]+$/, ''));
-            formData.append('subject_role', els['signature-subject-role-input']?.value || '');
-            formData.append('subject_name', els['signature-subject-name-input']?.value?.trim() || '');
-            const subjectTeacherId = ownerTeacherIdFromInput(els['signature-subject-account-input']?.value);
-            if (subjectTeacherId) formData.append('subject_id', String(subjectTeacherId));
-            formData.append('scope_level', els['signature-scope-level-input']?.value || '');
-            formData.append('identity_category', els['signature-identity-input']?.value || '');
-            formData.append('signature_kind', els['signature-kind-input']?.value || '');
-            formData.append('description', els['signature-description-input']?.value?.trim() || '');
             try {
+                appendUploadAttributes(formData);
                 await apiFetch('/api/signatures/upload', {
                     method: 'POST',
                     body: formData,
@@ -1014,16 +975,30 @@ async function submitUpload(event) {
 }
 
 function configureUploadFormForActor() {
-    ['signature-subject-role-field', 'signature-subject-name-field', 'signature-subject-account-field', 'signature-scope-level-field', 'signature-kind-field'].forEach((id) => {
+    ['signature-subject-role-field', 'signature-subject-name-field', 'signature-subject-account-field', 'signature-kind-field'].forEach((id) => {
         if (els[id]) els[id].hidden = !isSuperAdmin();
     });
     if (!isSuperAdmin() && els['signature-school-field']) {
         els['signature-school-field'].hidden = true;
     }
-    if (!isSuperAdmin() && els['signature-edit-scope-level-input']) {
-        Array.from(els['signature-edit-scope-level-input'].options).forEach((option) => {
-            if (option.value === 'platform') option.hidden = true;
-        });
+}
+
+function openUploadModal() {
+    state.uploadScope = new SignatureScopeFields({ root: byId('signature-upload-scope-fields'), actor: state.actor || {}, options: state.scopeOptions, schools: state.schoolOptions });
+    openModal('signature-upload-modal');
+}
+
+function appendUploadAttributes(formData) {
+    const scope = state.uploadScope.getValue();
+    Object.entries(scope).forEach(([key, value]) => formData.append(key, value));
+    formData.append('identity_category', els['signature-identity-input']?.value || '');
+    formData.append('description', els['signature-description-input']?.value?.trim() || '');
+    if (isSuperAdmin()) {
+        formData.append('subject_role', els['signature-subject-role-input']?.value || '');
+        formData.append('subject_name', els['signature-subject-name-input']?.value?.trim() || '');
+        const subjectTeacherId = ownerTeacherIdFromInput(els['signature-subject-account-input']?.value);
+        if (subjectTeacherId) formData.append('subject_id', String(subjectTeacherId));
+        formData.append('signature_kind', els['signature-kind-input']?.value || '');
     }
 }
 
@@ -1056,7 +1031,6 @@ function bindEvents() {
 
     els['signature-clear-filter-btn']?.addEventListener('click', resetFilters);
     els['signature-refresh-btn']?.addEventListener('click', () => loadSignatures({ keepSelection: true }));
-    els['signature-open-upload-btn']?.addEventListener('click', () => openModal('signature-upload-modal'));
     els['signature-file-input']?.addEventListener('change', updateFileLabel);
     els['signature-upload-form']?.addEventListener('submit', submitUpload);
     els['signature-edit-form']?.addEventListener('submit', submitEdit);
@@ -1113,24 +1087,20 @@ function bindEvents() {
     els['signature-edit-owner-input']?.addEventListener('input', ownerDebounced);
     els['signature-edit-subject-input']?.addEventListener('input', debounce(() => fetchOwnerTeachers(els['signature-edit-subject-input']?.value?.trim() || ''), 220));
     els['signature-subject-account-input']?.addEventListener('input', debounce(() => fetchOwnerTeachers(els['signature-subject-account-input']?.value?.trim() || ''), 220));
-    els['signature-edit-school-input']?.addEventListener('change', () => fetchOwnerTeachers(''));
-    els['signature-edit-identity-input']?.addEventListener('change', syncEditDepartmentWithIdentity);
+    byId('signature-edit-scope-fields')?.addEventListener('change', () => fetchOwnerTeachers(''));
 }
 
 document.addEventListener('click', (event) => {
     const trigger = event.target.closest?.('#signature-open-upload-btn');
     if (!trigger) return;
     event.preventDefault();
-    openModal('signature-upload-modal');
+    openUploadModal();
 });
 
 document.addEventListener('DOMContentLoaded', () => {
     cacheElements();
-    state.selectedSchoolCode = actorSchoolCode();
-    renderSchoolControls({
-        school_code: actorSchoolCode(),
-        school_name: actorSchoolName(),
-    });
+    state.selectedSchoolCode = '';
+    renderSchoolControls();
     configureUploadFormForActor();
     bindEvents();
     loadSignatures({ keepSelection: false });

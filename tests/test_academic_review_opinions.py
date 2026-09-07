@@ -44,7 +44,13 @@ class AcademicReviewOpinionTests(unittest.TestCase):
                 (4, 'personal', 'teacher', 'teacher', 'active', NULL),
                 (5, 'personal', 'teacher', 'teacher', 'inactive', NULL);
         """)
-        self.record = {"id": 88, "document_type": service.ACADEMIC_EXAM_ANALYSIS_TYPE, "signature_revision": "current"}
+        self.record = {"id": 88, "teacher_id": 1, "document_type": service.ACADEMIC_EXAM_ANALYSIS_TYPE, "signature_revision": "current"}
+        self.actor = patch.object(service.signature_service, "build_signature_actor", return_value={"id": 1, "role": "teacher"})
+        self.actor_mock = self.actor.start()
+        self.access = patch.object(service.signature_workflow_service, "signature_use_access_state", return_value={"can_use": True})
+        self.access_mock = self.access.start()
+        self.addCleanup(self.actor.stop)
+        self.addCleanup(self.access.stop)
         self.payload = {
             "document_type": service.ACADEMIC_EXAM_ANALYSIS_TYPE,
             "fields": {key: "selected" for key in service.ACADEMIC_EXAM_ANALYSIS_EDIT_FIELDS},
@@ -132,6 +138,18 @@ class AcademicReviewOpinionTests(unittest.TestCase):
         fields = self.hydrate()
         self.assertNotIn("department_signature_image_path", fields)
         self.assertFalse(service.academic_exam_analysis_is_complete(fields, self.payload["structured"]))
+
+    def test_visibility_or_authorization_revoked_after_binding_removes_rendered_signature(self) -> None:
+        self.bind("department", [1])
+        self.payload["fields"]["department_signature_image_path"] = "/old-authorized.png"
+        self.access_mock.return_value = {"can_use": False}
+        fields = self.hydrate()
+        self.assertEqual([], fields["department_signature_ids"])
+        self.assertNotIn("department_signature_image_path", fields)
+        self.assertNotIn("department_review_opinion", fields)
+        self.actor_mock.assert_called_with(self.conn, {"role": "teacher", "id": 1})
+        self.assertEqual("current", self.access_mock.call_args.kwargs["material_revision"])
+        self.assertEqual("88", self.access_mock.call_args.kwargs["material_id"])
 
     def test_legacy_scalar_ids_and_image_free_editor_match_rendered_opinions(self) -> None:
         self.record["signature_revision"] = ""

@@ -815,7 +815,7 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
             name TEXT NOT NULL,
             subject_name TEXT NOT NULL DEFAULT '',
             subject_role TEXT NOT NULL DEFAULT 'teacher',
-            scope_level TEXT NOT NULL DEFAULT 'college',
+            scope_level TEXT NOT NULL DEFAULT 'department',
             owner_role TEXT NOT NULL,
             owner_id INTEGER,
             owner_name_snapshot TEXT NOT NULL DEFAULT '',
@@ -846,7 +846,7 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
     for column_name, column_def in {
         "subject_name": "TEXT NOT NULL DEFAULT ''",
         "subject_role": "TEXT NOT NULL DEFAULT 'teacher'",
-        "scope_level": "TEXT NOT NULL DEFAULT 'college'",
+        "scope_level": "TEXT NOT NULL DEFAULT 'department'",
         "owner_name_snapshot": "TEXT NOT NULL DEFAULT ''",
         "uploaded_by_role": "TEXT NOT NULL DEFAULT ''",
         "uploaded_by_id": "INTEGER",
@@ -937,13 +937,9 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
             ), '')
         """
     )
-    conn.execute(
-        """
-        UPDATE electronic_signatures
-        SET scope_level = 'department'
-        WHERE scope_level = 'college'
-        """
-    )
+    # Historical college-as-department values are migrated once by the
+    # signature workflow schema. Rewriting them on every startup would destroy
+    # newly selected, genuine college visibility.
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS signature_usage_logs (

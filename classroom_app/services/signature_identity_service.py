@@ -159,13 +159,11 @@ def sync_identity_for_signature(conn: Any, signature_id: int) -> dict[str, str]:
             """
             UPDATE electronic_signatures
             SET identity_category = ?, identity_verified = 0,
-                department = CASE WHEN ? = 1 THEN department ELSE '' END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
             (
                 account_identity,
-                1 if identity_requires_department(account_identity) else 0,
                 int(signature_id),
             ),
         )
@@ -440,7 +438,6 @@ def propagate_account_identity(conn: Any, role: str, user_id: Any, identity: str
         """
         UPDATE electronic_signatures
         SET identity_category = ?, identity_verified = 0,
-            department = CASE WHEN ? = 1 THEN department ELSE '' END,
             updated_at = CURRENT_TIMESTAMP
         WHERE subject_role = ? AND subject_id = ?
           AND status = 'active' AND deleted_at IS NULL
@@ -448,7 +445,6 @@ def propagate_account_identity(conn: Any, role: str, user_id: Any, identity: str
         """,
         (
             normalized_identity,
-            1 if identity_requires_department(normalized_identity) else 0,
             table_role,
             normalized_id,
             normalized_identity,

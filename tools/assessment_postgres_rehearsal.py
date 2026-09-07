@@ -23,6 +23,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from tools.assessment_migration_rehearsal import file_digest, quote_identifier, row_bytes, update_digest
+from tools.signature_visibility_rehearsal import capture as capture_signature_visibility, prove as prove_signature_visibility
 
 
 def digest(value: Any) -> str:
@@ -196,6 +197,10 @@ def apply_assessment_migrations(conn) -> None:
     finally:
         schema_ai_jobs._SCHEMA_READY_ENGINES = previous_ready
     ensure_grade_publication_schema(conn, engine="postgres")
+    if conn.execute("SELECT to_regclass('public.electronic_signatures')").fetchone()[0]:
+        from classroom_app.db.postgres import LanSharePostgresConnection
+        from classroom_app.db.schema_signature_workflow import migrate_signature_visibility_levels
+        migrate_signature_visibility_levels(LanSharePostgresConnection(conn), engine="postgres")
 
 
 def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrations, progress: Callable = print):
@@ -203,6 +208,7 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
     with conn.transaction():
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         before = snapshot(conn)
+        signature_before = capture_signature_visibility(conn, before["tables"])
     if not {"assignments", "submissions"}.issubset(before["tables"]):
         raise ValueError("Required restored application tables are missing")
     progress(f"Baseline: {len(before['tables'])} tables, {sum(t['row_count'] for t in before['tables'].values())} rows")
@@ -215,8 +221,13 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
                 conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                 preserved = snapshot(conn, baseline=before)
                 full = snapshot(conn)
+                signature_after = capture_signature_visibility(conn, full["tables"])
             changes = differences(before, preserved)
+            signature_proof = prove_signature_visibility(signature_before, signature_after)
+            unexpected = [change for change in changes if change not in signature_proof["allowed_differences"]]
             stages.append({"migration": number, "old_field_differences": changes,
+                           "unexpected_old_field_differences": unexpected,
+                           "signature_visibility_migration": signature_proof,
                            "old_projection": preserved, "full_schema_sha256": full["schema_sha256"]})
             progress(f"Migration {number}: old-data/schema differences={len(changes)}")
             if number == 1:
@@ -228,11 +239,13 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
                     "error_type": type(exc).__name__, "stages": stages, "before": before,
                     "source_unchanged": file_digest(backup) == source_hash, "deployment_gate_complete": False}
     source_unchanged = file_digest(backup) == source_hash
-    passed = source_unchanged and not idempotency and all(not item["old_field_differences"] for item in stages)
+    passed = source_unchanged and not idempotency and all(
+        not item["unexpected_old_field_differences"] and item["signature_visibility_migration"]["status"] == "ok"
+        for item in stages)
     return {
         "status": "ok" if passed else "failed", "engine": "postgres", "source_dump_sha256": source_hash,
         "source_unchanged": source_unchanged, "database_preservation_passed": passed,
-        "migration_scope": "assessment classification, durable AI/review ledger, grade publication runtime schema",
+        "migration_scope": "assessment classification, durable AI/review ledger, grade publication runtime schema, one-time explicit signature visibility migration",
         "before": before, "stages": stages, "idempotency_differences": idempotency,
         "added_tables": sorted(set(first_full["tables"]) - set(before["tables"])),
         "added_columns": {table: added for table, meta in before["tables"].items()

@@ -5,8 +5,12 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
+import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from tools.signature_visibility_rehearsal import valid_report_proof
 REPORT_CONTRACT = "native-pg-rehearsal-v1"
 REQUIRED_MIGRATION_FILES = (
     "classroom_app/config.py", "classroom_app/database.py", "classroom_app/storage_paths.py",
@@ -39,6 +43,21 @@ def validate_report(report: dict[str, Any], *, repo_root: Path, backup_file: Pat
         if not condition:
             blockers.append(code)
 
+    def preserved_phase(phase):
+        raw = phase.get("old_differences_per_pass")
+        if raw == [[], []] and not phase.get("signature_visibility_migration_per_pass"):
+            return True
+        proofs = phase.get("signature_visibility_migration_per_pass")
+        # A registry created by this migration has no old rows to compare;
+        # its sole new marker is still verified in each proof and on restart.
+        registry_added = "schema_migrations" in (phase.get("added_tables") or [])
+        return (isinstance(proofs, list) and len(proofs) == 2
+                and all(valid_report_proof(proof) for proof in proofs)
+                and proofs[0] == proofs[1]
+                and raw == [[item for item in proof["allowed_differences"]
+                             if item != "table:schema_migrations" or not registry_added] for proof in proofs]
+                and phase.get("unexpected_old_differences_per_pass") == [[], []])
+
     require(report.get("report_contract") == REPORT_CONTRACT, "native_report_contract_missing")
     require(report.get("status") == "ok", "native_report_not_passed")
     require(report.get("database_engine") == "postgres", "native_postgres_engine_required")
@@ -61,12 +80,13 @@ def validate_report(report: dict[str, Any], *, repo_root: Path, backup_file: Pat
     incremental = report.get("incremental") or {}
     require(incremental.get("status") == "ok" and incremental.get("database_preservation_passed") is True,
             "incremental_migration_not_passed")
-    require(incremental.get("old_differences_per_pass") == [[], []]
+    require(preserved_phase(incremental)
             and incremental.get("idempotency_differences") == [], "incremental_differences_or_missing_checks")
     startup = report.get("full_startup") or {}
     require(startup.get("strict_status") == "ok" and startup.get("fresh_process_per_pass") is True
-            and startup.get("all_old_fields_and_sequences_unchanged") is True, "full_startup_not_passed")
-    require(startup.get("old_differences_per_pass") == [[], []]
+            and (startup.get("all_old_fields_and_sequences_unchanged") is True
+                 or startup.get("all_old_fields_except_verified_signature_scope_and_sequences_unchanged") is True), "full_startup_not_passed")
+    require(preserved_phase(startup)
             and startup.get("idempotency_differences") == [], "full_startup_differences_or_missing_checks")
     runs = startup.get("runs")
     require(isinstance(runs, list) and len(runs) == 2, "two_fresh_startup_runs_required")

@@ -7,10 +7,13 @@
 {% block css %}
 {{ super() }}
 {% if active_section == 'signatures' %}
+<link rel="stylesheet" href="{{ asset_url('css/signature_scope_fields.css') }}">
 <style>
 .psig-shell{display:grid;gap:16px}
+.psig-shell [hidden]{display:none!important}
 .psig-shell.is-busy{opacity:.6;pointer-events:none}
 .psig-card{display:grid;gap:12px}
+.psig-scope-editor{grid-column:1/-1;display:grid;gap:10px;min-width:0}.psig-item__actions{display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end}.psig-upload-scope{margin:0}.psig-upload-scope>summary{cursor:pointer;color:#0f766e;font-size:12px;font-weight:700;padding:5px 0}.psig-upload-scope>.signature-scope-control{margin-top:8px}
 .psig-hint{margin:0;color:#64748b;font-size:12px;line-height:1.6}
 .psig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
 .psig-item{display:grid;grid-template-columns:88px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px;border:1px solid #e6eaf2;border-radius:12px;background:#fff}

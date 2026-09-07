@@ -26,8 +26,8 @@ from typing import Any
 from ..db.connection import get_configured_db_engine
 from ..db.schema_assessment_plans import ensure_assessment_plan_schema
 from . import material_scope_service as scope_core
-from . import signature_service
-from .signature_composition_service import compose_signature_strip, resolve_signature_paths
+from . import signature_service, signature_workflow_service
+from .signature_composition_service import compose_signature_strip
 from .academic_class_mapping_service import resolve_offering_display_class_name
 from .class_label_service import build_academic_class_label
 from .material_export_template_service import build_material_export_artifact
@@ -925,24 +925,61 @@ def _signature_image_for_subject(conn: sqlite3.Connection, plan: dict[str, Any],
 def build_export_fields(conn: sqlite3.Connection, plan: dict[str, Any]) -> dict[str, Any]:
     """Build the export fields, injecting bound signature image paths + names."""
     fields = dict(plan.get("fields") or {})
-    examiner_ids = plan.get("examiner_signature_ids") or ([plan.get("examiner_signature_id")] if plan.get("examiner_signature_id") else [])
-    reviewer_ids = plan.get("reviewer_signature_ids") or ([plan.get("reviewer_signature_id")] if plan.get("reviewer_signature_id") else [])
-    examiner_subjects = [_signature_image_path(conn, item)[0] for item in examiner_ids]
-    reviewer_subjects = [_signature_image_path(conn, item)[0] for item in reviewer_ids]
-    examiner_subject = "、".join(item for item in examiner_subjects if item)
-    reviewer_subject = "、".join(item for item in reviewer_subjects if item)
-    examiner_path = compose_signature_strip(resolve_signature_paths(conn, examiner_ids), slot_width=260, height=130)
-    reviewer_path = compose_signature_strip(resolve_signature_paths(conn, reviewer_ids), slot_width=260, height=130)
-    fields["examiner_signature_count"] = len(examiner_ids)
-    fields["reviewer_signature_count"] = len(reviewer_ids)
-    if examiner_path:
-        fields["examiner_signature_image_path"] = examiner_path
-    if examiner_subject and not fields.get("examiner_name"):
-        fields["examiner_name"] = examiner_subject
-    if reviewer_path:
-        fields["reviewer_signature_image_path"] = reviewer_path
-    if reviewer_subject and not fields.get("reviewer_name"):
-        fields["reviewer_name"] = reviewer_subject
+    for role in ("examiner", "reviewer"):
+        fields.pop(f"{role}_signature_image_path", None)
+        fields[f"{role}_signature_count"] = 0
+    # The persisted plan arrays are also used by import/generation, which do
+    # not create point-binding rows. Re-read those trusted selections and the
+    # current revision; never infer export authority from caller-supplied IDs.
+    plan_id = _text(plan.get("id"))
+    stored = conn.execute(
+        "SELECT teacher_id, signature_revision, examiner_signature_id, reviewer_signature_id, "
+        "examiner_signature_ids_json, reviewer_signature_ids_json FROM assessment_plans WHERE id = ? LIMIT 1",
+        (plan_id,),
+    ).fetchone() if plan_id else None
+    if stored:
+        selections = {
+            role: _signature_ids(stored[f"{role}_signature_ids_json"], stored[f"{role}_signature_id"])
+            for role in ("examiner", "reviewer")
+        }
+        actor = None
+        if any(selections.values()):
+            try:
+                actor = signature_service.build_signature_actor(
+                    conn, {"role": "teacher", "id": int(stored["teacher_id"])},
+                )
+            except signature_service.SignatureServiceError:
+                pass
+        revision = _text(stored["signature_revision"]) or f"plan:{plan_id}"
+        selected_ids = list(dict.fromkeys(selections["examiner"] + selections["reviewer"]))
+        signature_rows = conn.execute(
+            f"SELECT * FROM electronic_signatures WHERE id IN ({','.join('?' for _ in selected_ids)}) "
+            "AND status = 'active' AND deleted_at IS NULL",
+            tuple(selected_ids),
+        ).fetchall() if actor and selected_ids else []
+        by_id = {int(row["id"]): row for row in signature_rows}
+        for role, signature_ids in selections.items():
+            paths: list[str] = []
+            subjects: list[str] = []
+            for signature_id in signature_ids:
+                signature = by_id.get(signature_id)
+                if signature is None:
+                    continue
+                access = signature_workflow_service.signature_use_access_state(
+                    conn, actor, signature, f"assessment_plan.{role}_signature",
+                    material_type="assessment_plan", material_id=plan_id, material_revision=revision,
+                )
+                if not access["can_use"]:
+                    continue
+                path = signature_service.resolve_signature_file_path(signature)
+                if path:
+                    paths.append(str(path))
+                    subjects.append(str(signature["subject_name"] or signature["name"] or ""))
+            fields[f"{role}_signature_count"] = len(paths)
+            if paths:
+                fields[f"{role}_signature_image_path"] = compose_signature_strip(paths, slot_width=260, height=130)
+            if subjects and not fields.get(f"{role}_name"):
+                fields[f"{role}_name"] = "、".join(subjects)
     if not _text(fields.get("reviewer_name")):
         fields["reviewer_name"] = "【系主任未填写】"
         fields["reviewer_missing_notice"] = "请填写系主任姓名，并从签名库绑定或上传签名。"

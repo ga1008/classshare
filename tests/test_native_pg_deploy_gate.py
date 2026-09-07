@@ -85,6 +85,29 @@ class NativePostgresDeployGateTests(unittest.TestCase):
         report.pop("migration_source_sha256")
         self.assertEqual("failed", self.validate(report)["status"])
 
+    def test_only_proven_signature_scope_migration_is_allowed(self):
+        from tests.test_signature_visibility_rehearsal import SignatureVisibilityRehearsalTests
+        from tools.signature_visibility_rehearsal import prove
+        fixture = SignatureVisibilityRehearsalTests()
+        fixture.setUp()
+        proof = prove(fixture.before, fixture.after)
+        for phase in ("incremental", "full_startup"):
+            self.report[phase]["old_differences_per_pass"] = [proof["allowed_differences"]] * 2
+            self.report[phase]["unexpected_old_differences_per_pass"] = [[], []]
+            self.report[phase]["signature_visibility_migration_per_pass"] = [proof, copy.deepcopy(proof)]
+        self.report["full_startup"]["all_old_fields_and_sequences_unchanged"] = False
+        self.report["full_startup"]["all_old_fields_except_verified_signature_scope_and_sequences_unchanged"] = True
+        self.assertEqual("ok", self.validate()["status"])
+        for field, value in (("field", "updated_at"), ("after", "platform")):
+            changed = copy.deepcopy(self.report)
+            for item in changed["incremental"]["signature_visibility_migration_per_pass"]:
+                item["expected_changes"][0][field] = value
+                item["actual_changes"][0][field] = value
+            self.assertEqual("failed", self.validate(changed)["status"])
+        changed = copy.deepcopy(self.report)
+        changed["incremental"]["old_differences_per_pass"][0].append("sequence:old_seq")
+        self.assertEqual("failed", self.validate(changed)["status"])
+
 
 @unittest.skipUnless(os.name == "nt" and (REPO / "deployment/deploy_remote.ps1").is_file(),
                      "Requires Windows and the intentionally local, gitignored deployment script")

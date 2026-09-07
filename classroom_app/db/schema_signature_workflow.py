@@ -11,9 +11,47 @@ from __future__ import annotations
 from typing import Any
 
 from .connection import get_configured_db_engine
+from .migration_registry import migration_checksum, schema_migrations_table_sql
 
 
 _SCHEMA_READY = False
+SIGNATURE_VISIBILITY_MIGRATION_VERSION = "20260908_signature_visibility_levels_v1"
+
+
+def migrate_signature_visibility_levels(conn: Any, *, engine: str) -> None:
+    """Interpret old scopes exactly once; missing scope data never broadens later."""
+    if engine == "postgres":
+        conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (SIGNATURE_VISIBILITY_MIGRATION_VERSION,))
+    conn.execute(schema_migrations_table_sql(engine))
+    applied = conn.execute(
+        "SELECT success FROM schema_migrations WHERE version = ? AND db_engine = ?",
+        (SIGNATURE_VISIBILITY_MIGRATION_VERSION, engine),
+    ).fetchone()
+    if applied and bool(applied["success"] if hasattr(applied, "keys") else applied[0]):
+        return
+    migration_sql = """
+        UPDATE electronic_signatures
+        SET scope_level = CASE
+            WHEN TRIM(COALESCE(department, '')) = ''
+                 AND TRIM(COALESCE(school_code, '')) <> ''
+                 AND TRIM(COALESCE(college, '')) <> '' THEN 'college'
+            WHEN TRIM(COALESCE(department, '')) = ''
+                 AND TRIM(COALESCE(school_code, '')) <> '' THEN 'school'
+            ELSE 'department'
+        END
+        WHERE scope_level IN ('college', 'department')
+    """
+    conn.execute(migration_sql)
+    conn.execute(
+        """INSERT INTO schema_migrations
+            (version, name, checksum, applied_at, duration_ms, db_engine, success, error)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, 0, ?, ?, NULL)
+            ON CONFLICT (version, db_engine) DO UPDATE SET
+                checksum = excluded.checksum, applied_at = excluded.applied_at,
+                success = excluded.success, error = NULL""",
+        (SIGNATURE_VISIBILITY_MIGRATION_VERSION, "Explicit signature visibility levels",
+         migration_checksum(migration_sql), engine, True),
+    )
 
 
 # (point_key, label, module_key, description, required_identities)
@@ -146,11 +184,13 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
             # Org columns exist in the real DDL; adding them here keeps narrow
             # test fixtures compatible with the migrations below.
             "school_code": "TEXT NOT NULL DEFAULT ''",
+            "scope_level": "TEXT NOT NULL DEFAULT 'department'",
             "college": "TEXT NOT NULL DEFAULT ''",
             "department": "TEXT NOT NULL DEFAULT ''",
         },
         engine=engine,
     )
+    migrate_signature_visibility_levels(conn, engine=engine)
     # Platform-owned remark stamps (审核意见“同意” etc.) migrate to 'stamp'.
     # CAUTION: autoCorrecting-imported PERSONAL autographs are also
     # system-owned — only rows whose subject is not a real person qualify.
@@ -163,18 +203,8 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
           AND COALESCE(signature_kind, 'personal') <> 'stamp'
         """
     )
-    # Above-department identities carry no department affiliation (mirror of
-    # signature_identity_service.DEPARTMENT_SCOPED_IDENTITIES — only
-    # teacher/department_head/vice_department_head keep a department).
-    conn.execute(
-        """
-        UPDATE electronic_signatures
-        SET department = ''
-        WHERE COALESCE(identity_category, '') NOT IN
-              ('', 'teacher', 'department_head', 'vice_department_head')
-          AND COALESCE(department, '') <> ''
-        """
-    )
+    # Organizational visibility is selected independently of a signer's job
+    # identity. A dean may deliberately restrict one signature to a department.
     # Repair guard: a stamp must never point at a person's account/name-role.
     # (Also fixes rows mislabelled by the earlier, broader migration.)
     conn.execute(
