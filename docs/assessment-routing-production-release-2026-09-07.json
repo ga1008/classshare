@@ -1,0 +1,1692 @@
+{
+  "recorded_at_utc": "2026-09-07T10:19:11.803139+00:00",
+  "status": "deployed_and_verified",
+  "release_id": "20260907-181359-4545404e64e6",
+  "deployed_source_commit": "a55ce2e14e50b40a81907ebc5b1fecac09598180",
+  "deployment_exit_code": 0,
+  "database_engine": "postgres",
+  "migration": {
+    "required_tables": 158,
+    "present_required_tables": 158,
+    "index_failed": 0,
+    "skipped_steps": 0
+  },
+  "cutover": {
+    "writers_stopped": [
+      "app",
+      "ai",
+      "mailer",
+      "blog-crawler",
+      "scheduler",
+      "agent-worker"
+    ],
+    "final_database_backup_after_writers_stopped": true,
+    "legacy_grading_pending_before_cutover": 0,
+    "durable_active_before_cutover": 0,
+    "agent_active_before_cutover": 0,
+    "legacy_review_required_preserved": 26
+  },
+  "backups": {
+    "protected_root": "/var/backups/lanshare/assessment-20260907-084343",
+    "preflight_database": {
+      "bytes": 32126732,
+      "sha256": "81947e0f9c04303c688069b2285149c20177623b64cf0cbe6f6d8e8317751088"
+    },
+    "runtime_files": {
+      "bytes": 2768803773,
+      "regular_files": 18949,
+      "sha256": "21940ee048373325bdb3df0aab25ce35b440171cdcd11a6c50a2797133532d94",
+      "excludes_live_pg_data": true
+    },
+    "code_archive": "cutover/code-20260907-181407.tgz",
+    "final_database_archive": "cutover/db-cutover-20260907-181407.sql.gz",
+    "private_env_before_and_after_saved": true,
+    "old_container_images_tagged_for_rollback": true,
+    "pre_feature_code": {
+      "file": "pre-feature-code-20260907-172632.tgz",
+      "bytes": 33497109,
+      "sha256": "c4e7e196c15a1c968263b17ff662cf23aa8a12eb50b669de989a27280b5d18d2",
+      "retained_outside_rotating_cutover_backups": true
+    }
+  },
+  "native_postgresql_rehearsal": {
+    "report_contract": "native-pg-rehearsal-v1",
+    "status": "ok",
+    "database_engine": "postgres",
+    "verified_at_utc": "2026-09-07T09:17:46.590766+00:00",
+    "git_head": "7bbb751cd47d7768390373554fb025451eadda4c",
+    "source_export": {
+      "method": "consistent pg_dump custom; lock-wait-timeout=5s; no-owner/no-acl",
+      "bytes": 32126732,
+      "sha256": "81947e0f9c04303c688069b2285149c20177623b64cf0cbe6f6d8e8317751088",
+      "remote_local_hash_equal": true,
+      "unchanged_after_rehearsal": true
+    },
+    "isolation": {
+      "listener": "127.0.0.1",
+      "port": 55437,
+      "dedicated_new_cluster": true,
+      "dedicated_new_database": true,
+      "raw_data_outside_sync_workspace": true,
+      "production_tables_modified": false,
+      "app_or_workers_started": false,
+      "cluster_stopped": true
+    },
+    "clean_restore": {
+      "restored_again_from_original_dump": true,
+      "baseline_equals_initial_unmigrated_restore": true,
+      "no_timestamp_or_sequence_whitelist": true
+    },
+    "restored_baseline": {
+      "old_table_count": 220,
+      "old_total_rows": 469779,
+      "counts": {
+        "assignments": 98,
+        "submissions": 4294,
+        "submission_files": 13342,
+        "submission_grade_revisions": 86,
+        "material_ai_import_records": 36
+      },
+      "schema_sha256": "db129df56612aaeb1cce802b9672bdcab58e2abd6ed84dd41d2a521d57aa86d2"
+    },
+    "incremental": {
+      "status": "ok",
+      "database_preservation_passed": true,
+      "old_differences_per_pass": [
+        [],
+        []
+      ],
+      "idempotency_differences": [],
+      "added_tables": [
+        "ai_review_daily_counters",
+        "ai_review_reservations",
+        "assignment_classification_revisions",
+        "grade_publication_students",
+        "grade_publications"
+      ],
+      "added_columns": {
+        "assignments": [
+          "assessment_kind",
+          "assessment_kind_version",
+          "assessment_kind_source",
+          "assessment_kind_updated_at",
+          "assessment_kind_updated_by_teacher_id"
+        ]
+      }
+    },
+    "full_startup": {
+      "strict_status": "ok",
+      "fresh_process_per_pass": true,
+      "all_old_fields_and_sequences_unchanged": true,
+      "old_differences_per_pass": [
+        [],
+        []
+      ],
+      "idempotency_differences": [],
+      "runs": [
+        {
+          "status": "ok",
+          "required_table_count": 158,
+          "present_required_table_count": 158,
+          "runtime_tables": {
+            "created_tables": [],
+            "schema_writes_executed": false
+          },
+          "runtime_columns": {
+            "added_columns": {},
+            "skipped_tables": [],
+            "legacy_material_mastery_repaired": true,
+            "schema_writes_executed": false
+          },
+          "runtime_constraints": {
+            "created_indexes": [],
+            "skipped_indexes": [],
+            "classroom_todo_scope_repaired": false,
+            "signature_requester_repaired": false,
+            "schema_writes_executed": false
+          },
+          "index_created_or_already_present": 279,
+          "index_failed": 0,
+          "skipped_step_count": 0,
+          "captured_log_sha256": "f359a15650a854186a2a0cf294a5cb313e409378d1b9b30b41650350f0024f94"
+        },
+        {
+          "status": "ok",
+          "required_table_count": 158,
+          "present_required_table_count": 158,
+          "runtime_tables": {
+            "created_tables": [],
+            "schema_writes_executed": false
+          },
+          "runtime_columns": {
+            "added_columns": {},
+            "skipped_tables": [],
+            "legacy_material_mastery_repaired": true,
+            "schema_writes_executed": false
+          },
+          "runtime_constraints": {
+            "created_indexes": [],
+            "skipped_indexes": [],
+            "classroom_todo_scope_repaired": false,
+            "signature_requester_repaired": false,
+            "schema_writes_executed": false
+          },
+          "index_created_or_already_present": 279,
+          "index_failed": 0,
+          "skipped_step_count": 0,
+          "captured_log_sha256": "f359a15650a854186a2a0cf294a5cb313e409378d1b9b30b41650350f0024f94"
+        }
+      ]
+    },
+    "migration_source_sha256": {
+      "classroom_app/config.py": "5548e6e17b6619cebd8dd9f9d3cd400b5050e0a45512f9a27bb5ddadf9b13ee7",
+      "classroom_app/database.py": "cc0862448fd67f7673840727e733b0f3e2d585adb6b358cd2d14eb05e12d6b1a",
+      "classroom_app/db/__init__.py": "e896edc1c4ddf07b87a4daad5a24cbe60588660a271bc7378a3e83ed8924affb",
+      "classroom_app/db/connection.py": "d2f55c70f2337c10cee8d38def3b8251bcfe51801a512ac3df413372d7cdb212",
+      "classroom_app/db/errors.py": "27382ecdb2517823f121dfdd5d55dd8a749d5b75aec1281f89b7b34383e29062",
+      "classroom_app/db/migration_registry.py": "6ed3ff2cebd2272606fb2ea69ef5dd57324927f3d93824b0f7ab7c2501ee6faf",
+      "classroom_app/db/migrations.py": "4fa662485cb6e143af0de6e2d22088265c4595d7cf0e56c619683ad073183aac",
+      "classroom_app/db/postgres.py": "a0b078f00cfd7f3d2baaed684b92668b707566a40e9bf26f5df1e437ead7446e",
+      "classroom_app/db/postgres_indexes.py": "e86ec23572ca855ad5485fa565133b27337cac19b5a0b813214a544a543559ca",
+      "classroom_app/db/postgres_required_columns.py": "d4b6096b7f0568e6c8f1fd61424fb5ea11f5656f0ce5a80cb39a790099f483ab",
+      "classroom_app/db/postgres_schema.py": "f84f3b2fd127fc9d7c6dff65803953342cbbf045523fc324a42653ced12039dc",
+      "classroom_app/db/repair.py": "5b9c74e1f901b701e1362d799b756bbd223cbbc6c37736b2666770eb70fc4d6d",
+      "classroom_app/db/row.py": "141ee2e1352eb2ec8a376731cf2cd38210e6cb8b470823fb0404c45205b17f60",
+      "classroom_app/db/schema.py": "486e76e1e7bcfd9852f49945cf8e214f68cebe594d08db24297f4b5d719c051b",
+      "classroom_app/db/schema_academic_evaluations.py": "bad0937e5dcafccdb2d55fb5cf1dda8ccd4c378b6ca2553434b7c8becbd260d0",
+      "classroom_app/db/schema_academic_final_materials.py": "e96fe90f8ca7f2b54c2c7aa25737dca7b5eca5e63dbc777e8352ee64b30a9696",
+      "classroom_app/db/schema_agent_ext.py": "c456892b9eeb206628ede3efb0750df5b3053421c00d18fe72f8a19ad03ea197",
+      "classroom_app/db/schema_ai_jobs.py": "651f71b7e15556c45ce87e162e50491854811794879375245c67f30867b748f0",
+      "classroom_app/db/schema_assessment_plans.py": "edd26dd4ccda6ff382a2f231f5b042f93d59774eca0dd710efce9de54717c1c4",
+      "classroom_app/db/schema_assignments.py": "541c96d2a179f5934d87bbac8acd757a3252aee785af179357a1dcc6459e1c6b",
+      "classroom_app/db/schema_career_engagement.py": "56a0adf52088a20fae35121ae7ff32f0b23f8716fadd956b506039ef39a1a625",
+      "classroom_app/db/schema_career_path.py": "3d0f43720e18163a65c86db96decb252ca2a07e9de64548ca26e85e80ba93e6a",
+      "classroom_app/db/schema_classroom_activity.py": "b147b26bd8da0eddb26f0096af3165b16cade65cf968e6bc0462db56c07b113c",
+      "classroom_app/db/schema_course_doc_packs.py": "672c541f9e33be59e20ab22045b4a49f686ae7e7504f7c884f7e7fb6d7696e81",
+      "classroom_app/db/schema_cultivation_progress.py": "81fde46d52f7ee8dd66a584bfe420b11cc180054ceaebd712d894f839486bcee",
+      "classroom_app/db/schema_foundation.py": "25ed839d06c9830aa9c199e893c0cbf6e4e82713f0d065f29d586101c521e347",
+      "classroom_app/db/schema_gongwen.py": "de7616b0d3847f247a7f8c46f6a554d12e1dd1a5fa0e9a0ca4eca14bcb105f81",
+      "classroom_app/db/schema_grade_publications.py": "a1928332bf0d7a85aa5469913c692572e6edcf14f0a81553eac8b38fd651d3ea",
+      "classroom_app/db/schema_learning_blog.py": "8ad937859132cb567eaae4ff64ff9b772b4072be09dd3c6f65bb2e7dad2013af",
+      "classroom_app/db/schema_lesson_plans.py": "4982277598e8a4ea8296c7aadff9a6cb0a99b4c2f860266929271588c769d556",
+      "classroom_app/db/schema_lessondoc_editor.py": "405a5eabb3032144cd56be7491d7a3e38526e66f4165acd6f4c68f51947bf93f",
+      "classroom_app/db/schema_life_tips.py": "61fcb8ad6fe8f9dd420eeec37d1a1026dc9ec1a13452aa8904d4519fc26209aa",
+      "classroom_app/db/schema_material_whiteboards.py": "e3824b9d399ad132d6b44e8c84e049ac7c73cecb4a779c7fe3a54277f65b20d3",
+      "classroom_app/db/schema_materials_integrations.py": "4848694b7b135199c2547f0d28b4284a98da10d042e3c1d745d4a1175c7e445b",
+      "classroom_app/db/schema_offering_class_links.py": "57d19449d786f38deba1b4d961abef734944bf6b3affdaa262e14470545ce8fd",
+      "classroom_app/db/schema_offering_merge.py": "e7ce14299c15ec862b8af68f030d5b2eebcfcefe8c224ba4ea79416b26a3611e",
+      "classroom_app/db/schema_polls.py": "77595bdaf89b2d3b5205b38f9cdcf1861977fac347481bf909705ea4b11c4ee3",
+      "classroom_app/db/schema_prompt_pool.py": "4138e33abec4d4fa5bcc66a853e171c8e139931d6081ab347ed2d4ebbeeae7b1",
+      "classroom_app/db/schema_resume.py": "fd3b09d7f4b2c57ebf8a57d6cb8f87cd8b0745e880e59e799e522b4b47dd3e20",
+      "classroom_app/db/schema_retake.py": "4d74a66b17db9908aad3bdc5578def18e60081020e7c50711d42ee88b3d2655c",
+      "classroom_app/db/schema_scheduler.py": "37769302287ac19883182a55bd8df8d115cd8a8d18040e36dccc60f77160f84b",
+      "classroom_app/db/schema_session_learning_materials.py": "2660ee1016cee75db1da613dd36678cc9a5bac5cdc0b7c39b607f173c5adcf3b",
+      "classroom_app/db/schema_signature_workflow.py": "9bbb4b37ea5cd51a4f1b449c8212cdd49d47528f796f131daba67d2722298218",
+      "classroom_app/db/schema_smart_schedule.py": "de6f77e3f5f34394253a5bc087cef3dd0bf49e71f9a085dd739046cbc4e0d7e8",
+      "classroom_app/db/schema_study_group_scheme.py": "948de842a0a26aed65a103afb924955d74e6a382cd3f7ed95e7dc5b198c6eae9",
+      "classroom_app/db/schema_teacher_evaluations.py": "e2cb062b7dd9ccb2daebb90d9072be07fa4acfd1fc613895bbb12ed56f6cbb20",
+      "classroom_app/db/schema_user_ui_preferences.py": "d47501add6c9e2c0d0871c8b2c38b4508bd7cb37adb28a7ecd0cc19cc9f5dad9",
+      "classroom_app/db/schema_wechat_mp.py": "c56dccd456fa5ff11f2a0d5c6af7169b138df4b7e1f9536ee7d4336b6a5f43f0",
+      "classroom_app/db/seeds.py": "de4be583a0dfbd14d2b14d9afdea5c0a3303caefb5dece4bb752a49931e5b5f8",
+      "classroom_app/db/semester_unification_migration.py": "118389558789b42283b68a8ac82b699c4e2816d7fe27ba255f51cc067e4ad3de",
+      "classroom_app/db/sessions.py": "e1e2f61169fbd8421ce9a9db2e4e5ee87bbe826330254d4eec98b36628885e2c",
+      "classroom_app/db/sql.py": "8bd2d3ed0656434aa3cebc13393a7904c38a3537802a63f58da96549c7721a98",
+      "classroom_app/storage_paths.py": "ddd6f7f85b15e5dcc1d009f5fc8ab705fe9da9d1a93f81d0ef82d040fec3bef3"
+    },
+    "raw_evidence_sha256": {
+      "incremental-report.json": "7acf7d387c252598fff1570a92aee50c800a57c7fe7c60c0eee48814d27e4dca",
+      "full-startup-report.json": "345060d628eb6332cf17aef07b17240bb7c208a58892c81364562eed8f9d639d",
+      "restore-verification.json": "07ab82bdb8f7e821a5c0661f03746f21f329de7ebd125c5531208deade173f2a"
+    },
+    "migration_source_binding": "Current HEAD sources match the completed rehearsal and the previously verified 53-file source set; no migration source changed in the frontend merge or final fixes.",
+    "deployment_gate_complete": false,
+    "remaining_gates": [
+      "Protect writes after snapshot with the mandatory quiesced cutover backup.",
+      "Confirm historical attachments and runtime configuration backups independently.",
+      "Verify container health and business flows after actual deployment."
+    ]
+  },
+  "actual_package_audit": {
+    "created_at_utc": "2026-09-07T10:14:47.777218+00:00",
+    "status": "ok",
+    "preliminary_snapshot_requires_final_sync": false,
+    "deploy_file_count": 1956,
+    "task_new_files": 52,
+    "vite_build_file_count": 30,
+    "protected_path_violations": [],
+    "private_key_block_files": [],
+    "missing_files": [],
+    "missing_task_new_files": [],
+    "missing_vite_dependencies": [],
+    "archive_source_digest_mismatches": [],
+    "archive_manifest_equal": true,
+    "archive_bytes": 32092807,
+    "archive_sha256": "4545404e64e65c79c723cf492c1e6d7ad1ae57f91bac6055db696b308affcf55",
+    "manifest_sha256": "12967de7434c4a6c1f758142009017d69721a100e7b8a3c684e22d6e5d3af61e",
+    "frozen_source_drift": [],
+    "archive_path": "C:\\Users\\AngelWei\\AppData\\Local\\Temp\\lanshare-deploy-20260907-181359\\lanshare-code-20260907-181359.tgz",
+    "manifest_path": "C:\\Users\\AngelWei\\AppData\\Local\\Temp\\lanshare-deploy-20260907-181359\\deploy-files.txt",
+    "review_json_path": "C:\\Users\\AngelWei\\AppData\\Local\\Temp\\lanshare-assessment-release-20260907\\complete-actual-package-audit.json",
+    "personal_deploy_script_in_archive": false,
+    "native_migration_gate": {
+      "status": "ok",
+      "database_engine": "postgres",
+      "backup_sha256": "81947e0f9c04303c688069b2285149c20177623b64cf0cbe6f6d8e8317751088",
+      "migration_source_file_count": 53,
+      "blockers": [],
+      "production_data_modified": false,
+      "scope": "Native database migration gate only; attachment backup and live deployment checks remain separate."
+    },
+    "git_head": "a55ce2e14e50b40a81907ebc5b1fecac09598180",
+    "pending_final_document_changes_not_deployed": [
+      "docs/assessment-routing-implementation-2026-09-07.md"
+    ],
+    "local_auditor_remote_operations": false,
+    "deployment_status": "completed_by_root"
+  },
+  "public_verification": {
+    "origin": "https://www.guardianangel.net.cn",
+    "expected_release": "20260907-181359-4545404e64e6",
+    "checks": [
+      {
+        "name": "public_login",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "public_release",
+        "ok": true,
+        "actual": "20260907-181359-4545404e64e6"
+      },
+      {
+        "name": "first_response_cache_only",
+        "ok": true,
+        "actual": "\"cache\""
+      },
+      {
+        "name": "second_response_no_repeated_cache_clear",
+        "ok": true
+      },
+      {
+        "name": "static:static/js/grade_publication_controls.js",
+        "ok": true,
+        "status": 200,
+        "sha256": "fc58c7f466c6fcece57f3ce5f05507317ce51429d401ac0af13f3dddbb9da0d7"
+      },
+      {
+        "name": "static:static/js/assessment_kind_controls.js",
+        "ok": true,
+        "status": 200,
+        "sha256": "2e139e9fc69e871dd25b7d8b35129e441019c89b937dca98d7dae5de9f563b72"
+      },
+      {
+        "name": "static:static/js/assessment_classification_batch.js",
+        "ok": true,
+        "status": 200,
+        "sha256": "0a9302d557197554256a7610e5877a5dd5a59830071cfc78d3c405b928f75c83"
+      },
+      {
+        "name": "static:static/js/assignment_time.js",
+        "ok": true,
+        "status": 200,
+        "sha256": "51e6adb436a51e5495ed38bb1ade37197d5433848df12dcff35ac99d0fe64d57"
+      }
+    ],
+    "authenticated_browser_verified": false,
+    "ok": true
+  },
+  "production_read_only": {
+    "kind": "production_database_and_service_read_only",
+    "authenticated_browser": false,
+    "checks": [
+      {
+        "name": "database_enforced_read_only",
+        "passed": true
+      },
+      {
+        "name": "real_classification_status",
+        "passed": true
+      },
+      {
+        "name": "unknown_not_guessed_from_paper",
+        "passed": true
+      },
+      {
+        "name": "installed_helper_unknown_default_in_memory",
+        "passed": true
+      },
+      {
+        "name": "installed_helper_personal_scope_in_memory",
+        "passed": true
+      },
+      {
+        "name": "legacy_visibility_projection",
+        "passed": true
+      },
+      {
+        "name": "legacy_private_audit_removed",
+        "passed": true
+      },
+      {
+        "name": "legacy_absence_zero_export_separate",
+        "passed": true
+      },
+      {
+        "name": "absence_visibility_projection",
+        "passed": true
+      },
+      {
+        "name": "absence_private_audit_removed",
+        "passed": true
+      },
+      {
+        "name": "absence_absence_zero_export_separate",
+        "passed": true
+      },
+      {
+        "name": "ungraded_visibility_projection",
+        "passed": true
+      },
+      {
+        "name": "ungraded_private_audit_removed",
+        "passed": true
+      },
+      {
+        "name": "ungraded_absence_zero_export_separate",
+        "passed": true
+      },
+      {
+        "name": "regrading_visibility_projection",
+        "passed": true
+      },
+      {
+        "name": "regrading_private_audit_removed",
+        "passed": true
+      },
+      {
+        "name": "regrading_absence_zero_export_separate",
+        "passed": true
+      },
+      {
+        "name": "group_visibility_projection",
+        "passed": true
+      },
+      {
+        "name": "group_private_audit_removed",
+        "passed": true
+      },
+      {
+        "name": "group_absence_zero_export_separate",
+        "passed": true
+      },
+      {
+        "name": "report_grouping",
+        "passed": true
+      },
+      {
+        "name": "report_personal_stage_separate",
+        "passed": true
+      },
+      {
+        "name": "report_unrevealed_group_no_aggregate",
+        "passed": true
+      },
+      {
+        "name": "report_no_whole_class_material",
+        "passed": true
+      },
+      {
+        "name": "published_view_only_active_self_rows",
+        "passed": true
+      },
+      {
+        "name": "report_grouping",
+        "passed": true
+      },
+      {
+        "name": "report_personal_stage_separate",
+        "passed": true
+      },
+      {
+        "name": "report_unrevealed_group_no_aggregate",
+        "passed": true
+      },
+      {
+        "name": "report_no_whole_class_material",
+        "passed": true
+      },
+      {
+        "name": "published_view_only_active_self_rows",
+        "passed": true
+      },
+      {
+        "name": "teacher_publication_contract",
+        "passed": true
+      },
+      {
+        "name": "other_real_teacher_rejected_by_service",
+        "passed": true
+      }
+    ],
+    "old_data": {
+      "academic_final_material_batches": {
+        "before_count": 2,
+        "current_count": 2,
+        "old_column_count": 29,
+        "comparisons": {
+          "row_count": true,
+          "data_sha256": true,
+          "primary_key_columns": true,
+          "primary_key_sha256": true,
+          "association_columns": true,
+          "association_sha256": true
+        },
+        "current_data_sha256": "b94b05a3b2f0449f150b239922fbe997d9527e885c307bc0cdd86f6cad358eac",
+        "current_primary_key_sha256": "59a8dc420af0d56f71572e730ae0844c4a344a1f356d6447425695624ad39e3c",
+        "current_association_sha256": "cecdfd1afec23054a24021ec3f12daa5a2e75d1d28af8b0c3a5dcc280059b282",
+        "missing_columns": [],
+        "missing_table": false
+      },
+      "assignment_group_bindings": {
+        "before_count": 2,
+        "current_count": 2,
+        "old_column_count": 9,
+        "comparisons": {
+          "row_count": true,
+          "data_sha256": true,
+          "primary_key_columns": true,
+          "primary_key_sha256": true,
+          "association_columns": true,
+          "association_sha256": true
+        },
+        "current_data_sha256": "5cd5c65eacb500d3c37601b2403b7d0b5c973565e3356664c9c64f2565ceb3ce",
+        "current_primary_key_sha256": "82c1c863c48e813e246134c913c48407af99c283af1f90015f4f26c629b0ea84",
+        "current_association_sha256": "416636fdfaf9a9cb4d2f359bb6c65261c52015e5f6ec8dd0621212e57f0754e8",
+        "missing_columns": [],
+        "missing_table": false
+      },
+      "assignments": {
+        "before_count": 98,
+        "current_count": 98,
+        "old_column_count": 28,
+        "comparisons": {
+          "row_count": true,
+          "data_sha256": true,
+          "primary_key_columns": true,
+          "primary_key_sha256": true,
+          "association_columns": true,
+          "association_sha256": true
+        },
+        "current_data_sha256": "fbb15d9033a2a87befa0f0adee2c0b917f74cf6e7851409883dcb94258d3c736",
+        "current_primary_key_sha256": "fc0078abbeaafaa15927c9f0f8721ebcf7e45143bbdbd5bf0361e598c14fc6cd",
+        "current_association_sha256": "81aff1de3d6ef9f6b9c4175d82fbcf5c8b8463cf3ce7bee4996c2dc7ea88b79c",
+        "missing_columns": [],
+        "missing_table": false
+      },
+      "course_material_assignments": {
+        "before_count": 40,
+        "current_count": 40,
+        "old_column_count": 5,
+        "comparisons": {
+          "row_count": true,
+          "data_sha256": true,
+          "primary_key_columns": true,
+          "primary_key_sha256": true,
+          "association_columns": true,
+          "association_sha256": true
+        },
+        "current_data_sha256": "92f7212cb6da20863ac58d9b3517d772c51c4112161a4f9a9e3573b893b43823",
+        "current_primary_key_sha256": "cc3db4aad6586e1493350ccdf21a7352f0176b7f18827e0b6593a48c22570f2c",
+        "current_association_sha256": "0b75c75388b4db4d989334040669cf12b1e57fa0269a1e6ea5c5d2c055339dee",
+        "missing_columns": [],
+        "missing_table": false
+      },
+      "course_materials": {
+        "before_count": 2784,
+        "current_count": 2784,
+        "old_column_count": 43,
+        "comparisons": {
+          "row_count": true,
+          "data_sha256": true,
+          "primary_key_columns": true,
+          "primary_key_sha256": true,
+          "association_columns": true,
+          "association_sha256": true
+        },
+        "current_data_sha256": "f072c5916eae09fde407a7827b29ff921eba4e645ac5c157fc3c6f73bee0d26f",
+        "current_primary_key_sha256": "5ee8e8ddc76ee56900309692e19bdaa4bb589bd9560331618ed3165e8642d40d",
+        "current_association_sha256": "0071f2d517bf6e08ff204e33d71b9afc6620218818eb862ce3dddd28dde73108",
+        "missing_columns": [],
+        "missing_table": false
+      },
+      "group_assignment_member_results": {
+        "before_count": 96,
+        "current_count": 96,
+        "old_column_count": 14,
+        "comparisons": {
+          "row_count": true,
+          "data_sha256": true,
+          "primary_key_columns": true,
+          "primary_key_sha256": true,
+          "association_columns": true,
+          "association_sha256": true
+        },
+        "current_data_sha256": "605ee6eea0565731c3b31f5055824a4134832b3b76fc0cfb7b984e68ec6aea62",
+        "current_primary_key_sha256": "7a9d156cb94194354ce8a33581bd95fb4cb139f2d9f926ee9f28864d12e63d3b",
+        "current_association_sha256": "2c5164abf439456339259bb3e85487b039c23c88b73fef8620374b45bdd628b7",
+        "missing_columns": [],
+        "missing_table": false
+      },
+      "material_ai_import_records": {
+        "before_count": 36,
+        "current_count": 36,
+        "old_column_count": 30,
+        "comparisons": {
+          "row_count": true,
+          "data_sha256": true,
+          "primary_key_columns": true,
+          "primary_key_sha256": true,
+          "association_columns": true,
+          "association_sha256": true
+        },
+        "current_data_sha256": "b346c7b9ba55ab5bc98e49b681493890f7858ea834cd6ebd333d5440225e3b27",
+        "current_primary_key_sha256": "3921965dc0785dd1aa3c936bb0122ba2e901b41bc8f36707c5ab4c96a46a2bf1",
+        "current_association_sha256": "a0c3882a1ebe2559ac21ebaeeea3af5cae8a26612c6df3879d4f535b9283b307",
+        "missing_columns": [],
+        "missing_table": false
+      },
+      "submission_files": {
+        "before_count": 13342,
+        "current_count": 13342,
+        "old_column_count": 9,
+        "comparisons": {
+          "row_count": true,
+          "data_sha256": true,
+          "primary_key_columns": true,
+          "primary_key_sha256": true,
+          "association_columns": true,
+          "association_sha256": true
+        },
+        "current_data_sha256": "3fa63837dba0f4ecd596e2f2f5c110a86179b97b8144ca32d06f1f40f0beb05b",
+        "current_primary_key_sha256": "3e71860c05d89226cfbc9b2465c68feeda9aa9e16a2d4142c591214d8ed7898f",
+        "current_association_sha256": "4f715da2e7a38bc55a6244e108116e33d4b05e0ffa6d3d23eee3464ef7218262",
+        "missing_columns": [],
+        "missing_table": false
+      },
+      "submission_grade_revisions": {
+        "before_count": 86,
+        "current_count": 86,
+        "old_column_count": 14,
+        "comparisons": {
+          "row_count": true,
+          "data_sha256": true,
+          "primary_key_columns": true,
+          "primary_key_sha256": true,
+          "association_columns": true,
+          "association_sha256": true
+        },
+        "current_data_sha256": "abd408c58a77eebcc9aa78fea42b33a3a27951b2ab0e31d0b5af524e4ab18cbe",
+        "current_primary_key_sha256": "3e1b302f6a679a436a339faac91f4aa6590c1ab0c8a2623dcc26d12a22d3cb77",
+        "current_association_sha256": "bc0bf560870ed1bbc8369a0c2a14d6b68c1cc0ed87135cc7fea5dfa496ddfaec",
+        "missing_columns": [],
+        "missing_table": false
+      },
+      "submissions": {
+        "before_count": 4294,
+        "current_count": 4294,
+        "old_column_count": 32,
+        "comparisons": {
+          "row_count": true,
+          "data_sha256": true,
+          "primary_key_columns": true,
+          "primary_key_sha256": true,
+          "association_columns": true,
+          "association_sha256": true
+        },
+        "current_data_sha256": "1662e7876c82bc40da5b2fc41380e853715dfa7484b16d4245bf52230635177f",
+        "current_primary_key_sha256": "f0a9aa6ba1bffff1a27e43a93e5a2f24955fe33681ae3db97a0478dac2e83005",
+        "current_association_sha256": "8ad8c9cb7765c26c57f57bab1e30ec8078f33e2d4c078c03db3cff9cd794ce56",
+        "missing_columns": [],
+        "missing_table": false
+      }
+    },
+    "samples": {
+      "classifications": {
+        "sampled": 98,
+        "confirmed": 0,
+        "legacy_unknown": 46,
+        "not_applicable": 52
+      },
+      "legacy": {
+        "sampled": 20,
+        "visible": 20,
+        "group_pending": 0,
+        "regrading": 0
+      },
+      "absence": {
+        "sampled": 20,
+        "visible": 20,
+        "group_pending": 0,
+        "regrading": 0
+      },
+      "ungraded": {
+        "sampled": 4,
+        "visible": 0,
+        "group_pending": 0,
+        "regrading": 0
+      },
+      "regrading": {
+        "sampled": 0,
+        "visible": 0,
+        "group_pending": 0,
+        "regrading": 0
+      },
+      "group": {
+        "sampled": 20,
+        "visible": 20,
+        "group_pending": 0,
+        "regrading": 0
+      },
+      "student_reports": [
+        {
+          "task_records": 16,
+          "personal_records": 27,
+          "published_records": 0
+        },
+        {
+          "task_records": 16,
+          "personal_records": 27,
+          "published_records": 0
+        }
+      ],
+      "publication_counts": {},
+      "teacher_status": {
+        "history_count": 0,
+        "has_active": false
+      }
+    },
+    "errors": [],
+    "completed": true,
+    "snapshot_helper_sha256": "4e00ef11b6f9311808cd7c118d4326ebf55ea004fe118dc87f562b3c51236efb",
+    "all_ten_old_projections_identical": true,
+    "service_checks_passed": true,
+    "commits": 0,
+    "paid_model_calls": 0,
+    "limitations": [
+      "No authenticated production browser session was available.",
+      "No publication or mutation was performed. Empty live states are not evidence for publish/withdraw behavior.",
+      "In-memory helper cases are distinguished from real-row observations; local E2E remains necessary."
+    ]
+  },
+  "post_file_verification": {
+    "groups": {
+      "submissions": {
+        "records": 13342,
+        "existing": 13342,
+        "size_mismatch": 3
+      },
+      "materials": {
+        "records": 1815,
+        "existing": 1815
+      }
+    },
+    "groups_unchanged": true,
+    "sample_count": 14,
+    "sample_changes": 0,
+    "sample_open_failures": 0,
+    "missing_file_count": 0,
+    "cutover_backup": {
+      "bytes": 31407168,
+      "sha256": "628471df2623e234ec85f1343601fc84c29adf5c5d977944c6fe0f8180b864b1",
+      "gzip_verified": true,
+      "uncompressed_bytes": 215871509
+    },
+    "preexisting_size_mismatches_preserved": true,
+    "ok": true
+  },
+  "deployed_ai_probe": {
+    "observed_at_utc": "2026-09-07T10:17:14.238448+00:00",
+    "expected_release": "20260907-181359-4545404e64e6",
+    "services": {
+      "app": {
+        "container_id": "994c436762a99e076b5a3dafaa3dd10630470fae888846c931254b1cd9ae0645",
+        "image": "sha256:25d08ddf74a2ed3f22ecc395e84892f6c8b63c2cb66a55e4835731190adb57d3",
+        "release": "20260907-181359-4545404e64e6",
+        "public_parameters_match": true,
+        "mismatched_public_keys": []
+      },
+      "ai": {
+        "container_id": "810b6d3d84fe61284f0633ef566a77c6f8cd03d13154b507245b7bac743c5a6f",
+        "image": "sha256:25d08ddf74a2ed3f22ecc395e84892f6c8b63c2cb66a55e4835731190adb57d3",
+        "release": "20260907-181359-4545404e64e6",
+        "public_parameters_match": true,
+        "mismatched_public_keys": []
+      },
+      "agent-worker": {
+        "container_id": "0be8c9aba6f8fde7abc07745fd3913ad3bb21f00fd751d043faa085afe073ad7",
+        "image": "sha256:25d08ddf74a2ed3f22ecc395e84892f6c8b63c2cb66a55e4835731190adb57d3",
+        "release": "20260907-181359-4545404e64e6",
+        "public_parameters_match": true,
+        "mismatched_public_keys": []
+      }
+    },
+    "reviewed_probe_sha256": "cae3a3a674e0e0bc6d763c84bcce466ea38ebcf7fa69f67b4617253de9978ace",
+    "public_overrides_sha256": "c42aa48be9d4675b5f2ded8159bf9c749dac13f70ddf4a8f0036a12503a0b773",
+    "probe_exit_code": 0,
+    "probe": {
+      "mode": "container_environment",
+      "checks": {
+        "policy_version": true,
+        "enabled_provider_catalog_with_dummy_credentials": true,
+        "ordinary_text_spillover_disabled": true,
+        "health_resolves_execution_profiles": true,
+        "homework_one_route": true,
+        "homework_profile": true,
+        "midterm_one_route": true,
+        "midterm_profile": true,
+        "final_one_route": true,
+        "final_profile": true,
+        "legacy_unknown_one_route": true,
+        "legacy_unknown_profile": true,
+        "personal_stage_one_route": true,
+        "personal_stage_profile": true,
+        "exam_generation_one_route": true,
+        "exam_generation_profile": true,
+        "document_one_route": true,
+        "document_profile": true,
+        "text_exam_one_route": true,
+        "text_exam_profile": true,
+        "text_chat_one_route": true,
+        "text_chat_profile": true,
+        "chat_one_route": true,
+        "chat_profile": true,
+        "discussion_one_route": true,
+        "discussion_profile": true,
+        "private_message_one_route": true,
+        "private_message_profile": true,
+        "blog_one_route": true,
+        "blog_profile": true,
+        "ocr_one_route": true,
+        "ocr_profile": true,
+        "grading_v1_21": true,
+        "grading_v1_41": true,
+        "exam_generation_v1_11": true,
+        "exam_generation_v1_21": true,
+        "grading_v1_too_large_rejected": true,
+        "exam_generation_v1_too_large_rejected": true,
+        "qwen_cannot_override_business_profile": true,
+        "required_sdks_imported": true,
+        "homework_actual_sdk_model": true,
+        "homework_actual_sdk_total_cap": true,
+        "homework_actual_sdk_effort": true,
+        "homework_actual_sdk_thinking": true,
+        "homework_metadata": true,
+        "homework_no_max_tokens_conflict": true,
+        "final_actual_sdk_model": true,
+        "final_actual_sdk_total_cap": true,
+        "final_actual_sdk_effort": true,
+        "final_actual_sdk_thinking": true,
+        "final_metadata": true,
+        "final_no_max_tokens_conflict": true,
+        "chat_actual_sdk_model": true,
+        "chat_actual_sdk_total_cap": true,
+        "chat_actual_sdk_effort": true,
+        "chat_actual_sdk_thinking": true,
+        "chat_metadata": true,
+        "chat_no_max_tokens_conflict": true,
+        "text_exam_actual_sdk_model": true,
+        "text_exam_actual_sdk_total_cap": true,
+        "text_exam_actual_sdk_effort": true,
+        "text_exam_actual_sdk_thinking": true,
+        "text_exam_metadata": true,
+        "text_chat_actual_sdk_model": true,
+        "text_chat_actual_sdk_total_cap": true,
+        "text_chat_actual_sdk_effort": true,
+        "text_chat_actual_sdk_thinking": true,
+        "text_chat_metadata": true,
+        "stream_includes_usage": true,
+        "stream_lite_low_cap": true,
+        "stream_complete": true,
+        "responses_high_total_cap": true,
+        "responses_no_chat_cap_fields": true,
+        "all_capacity_released": true,
+        "no_network_attempts": true,
+        "no_database_attempts": true,
+        "seven_synthetic_requests": true
+      },
+      "profiles": [
+        {
+          "case": "homework",
+          "profile_id": "vision_pro_low",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-1-pro-260628",
+          "capability": "vision",
+          "task_type": "multimodal_grading",
+          "operation": "grading",
+          "thinking_type": "enabled",
+          "reasoning_effort": "low",
+          "max_output_tokens_total": 8192,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "grading",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_pro_low:volcengine:doubao-seed-2-1-pro-260628:low:8192:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "midterm",
+          "profile_id": "vision_assessment_high",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-1-pro-260628",
+          "capability": "vision",
+          "task_type": "multimodal_grading",
+          "operation": "grading",
+          "thinking_type": "enabled",
+          "reasoning_effort": "high",
+          "max_output_tokens_total": 16384,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "assessment",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_assessment_high:volcengine:doubao-seed-2-1-pro-260628:high:16384:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "final",
+          "profile_id": "vision_assessment_high",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-1-pro-260628",
+          "capability": "vision",
+          "task_type": "multimodal_grading",
+          "operation": "grading",
+          "thinking_type": "enabled",
+          "reasoning_effort": "high",
+          "max_output_tokens_total": 16384,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "assessment",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_assessment_high:volcengine:doubao-seed-2-1-pro-260628:high:16384:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "legacy_unknown",
+          "profile_id": "vision_assessment_high",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-1-pro-260628",
+          "capability": "vision",
+          "task_type": "multimodal_grading",
+          "operation": "grading",
+          "thinking_type": "enabled",
+          "reasoning_effort": "high",
+          "max_output_tokens_total": 16384,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "assessment",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_assessment_high:volcengine:doubao-seed-2-1-pro-260628:high:16384:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "personal_stage",
+          "profile_id": "vision_assessment_high",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-1-pro-260628",
+          "capability": "vision",
+          "task_type": "multimodal_grading",
+          "operation": "grading",
+          "thinking_type": "enabled",
+          "reasoning_effort": "high",
+          "max_output_tokens_total": 16384,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "assessment",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_assessment_high:volcengine:doubao-seed-2-1-pro-260628:high:16384:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "exam_generation",
+          "profile_id": "vision_assessment_high",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-1-pro-260628",
+          "capability": "vision",
+          "task_type": "deep_multimodal_reasoning",
+          "operation": "generation",
+          "thinking_type": "enabled",
+          "reasoning_effort": "high",
+          "max_output_tokens_total": 16384,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "assessment",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_assessment_high:volcengine:doubao-seed-2-1-pro-260628:high:16384:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "document",
+          "profile_id": "vision_pro_low",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-1-pro-260628",
+          "capability": "vision",
+          "task_type": "deep_multimodal_reasoning",
+          "operation": "document",
+          "thinking_type": "enabled",
+          "reasoning_effort": "low",
+          "max_output_tokens_total": 8192,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "standard",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_pro_low:volcengine:doubao-seed-2-1-pro-260628:low:8192:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "text_exam",
+          "profile_id": "text_deep",
+          "provider": "deepseek",
+          "model": "deepseek-v4-pro",
+          "capability": "thinking",
+          "task_type": "deep_text_reasoning",
+          "operation": "grading",
+          "thinking_type": "enabled",
+          "reasoning_effort": "max",
+          "max_output_tokens_total": 16384,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "standard",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "text_deep:deepseek:deepseek-v4-pro:max:16384:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "text_chat",
+          "profile_id": "text_fast",
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "capability": "standard",
+          "task_type": "fast_text_response",
+          "operation": "chat",
+          "thinking_type": "disabled",
+          "reasoning_effort": null,
+          "max_output_tokens_total": 4096,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "standard",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "text_fast:deepseek:deepseek-v4-flash:none:4096:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "chat",
+          "profile_id": "vision_edge_low",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-0-lite-260428",
+          "capability": "vision",
+          "task_type": "deep_multimodal_reasoning",
+          "operation": "chat",
+          "thinking_type": "enabled",
+          "reasoning_effort": "low",
+          "max_output_tokens_total": 4096,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "standard",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_edge_low:volcengine:doubao-seed-2-0-lite-260428:low:4096:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "discussion",
+          "profile_id": "vision_edge_low",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-0-lite-260428",
+          "capability": "vision",
+          "task_type": "deep_multimodal_reasoning",
+          "operation": "chat",
+          "thinking_type": "enabled",
+          "reasoning_effort": "low",
+          "max_output_tokens_total": 4096,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "standard",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_edge_low:volcengine:doubao-seed-2-0-lite-260428:low:4096:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "private_message",
+          "profile_id": "vision_edge_low",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-0-lite-260428",
+          "capability": "vision",
+          "task_type": "deep_multimodal_reasoning",
+          "operation": "chat",
+          "thinking_type": "enabled",
+          "reasoning_effort": "low",
+          "max_output_tokens_total": 4096,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "standard",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_edge_low:volcengine:doubao-seed-2-0-lite-260428:low:4096:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "blog",
+          "profile_id": "vision_edge_low",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-0-lite-260428",
+          "capability": "vision",
+          "task_type": "deep_multimodal_reasoning",
+          "operation": "chat",
+          "thinking_type": "enabled",
+          "reasoning_effort": "low",
+          "max_output_tokens_total": 4096,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "standard",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_edge_low:volcengine:doubao-seed-2-0-lite-260428:low:4096:chat_completions:business-routing-2026-09-v2"
+        },
+        {
+          "case": "ocr",
+          "profile_id": "vision_edge_low",
+          "provider": "volcengine",
+          "model": "doubao-seed-2-0-lite-260428",
+          "capability": "vision",
+          "task_type": "deep_multimodal_reasoning",
+          "operation": "chat",
+          "thinking_type": "enabled",
+          "reasoning_effort": "low",
+          "max_output_tokens_total": 4096,
+          "api_style": "chat_completions",
+          "policy_version": "business-routing-2026-09-v2",
+          "quality_floor": "standard",
+          "allowed_fallbacks": [],
+          "output_schema": "",
+          "expected_question_count": null,
+          "output_size_tier": "",
+          "route_id": "vision_edge_low:volcengine:doubao-seed-2-0-lite-260428:low:4096:chat_completions:business-routing-2026-09-v2"
+        }
+      ],
+      "transports": [
+        {
+          "case": "homework",
+          "model": "doubao-seed-2-1-pro-260628",
+          "cap_field": "max_completion_tokens",
+          "total_output_cap": 8192,
+          "effort": "low",
+          "stream": false
+        },
+        {
+          "case": "final",
+          "model": "doubao-seed-2-1-pro-260628",
+          "cap_field": "max_completion_tokens",
+          "total_output_cap": 16384,
+          "effort": "high",
+          "stream": false
+        },
+        {
+          "case": "chat",
+          "model": "doubao-seed-2-0-lite-260428",
+          "cap_field": "max_completion_tokens",
+          "total_output_cap": 4096,
+          "effort": "low",
+          "stream": false
+        },
+        {
+          "case": "text_exam",
+          "model": "deepseek-v4-pro",
+          "cap_field": "max_tokens",
+          "total_output_cap": 16384,
+          "effort": "max",
+          "stream": true
+        },
+        {
+          "case": "text_chat",
+          "model": "deepseek-v4-flash",
+          "cap_field": "max_tokens",
+          "total_output_cap": 4096,
+          "effort": null,
+          "stream": true
+        },
+        {
+          "case": "stream_lite",
+          "model": "doubao-seed-2-0-lite-260428",
+          "effort": "low",
+          "total_output_cap": 4096,
+          "stream": true
+        },
+        {
+          "case": "responses_high",
+          "model": "doubao-seed-2-1-pro-260628",
+          "effort": "high",
+          "total_output_cap": 16384
+        }
+      ],
+      "blocked_network_attempts": 0,
+      "blocked_database_attempts": 0,
+      "synthetic_http_requests": 7,
+      "configuration_matches": {
+        "DEEPSEEK_ENABLED": true,
+        "VOLCENGINE_ENABLED": true,
+        "QIANWEN_ENABLED": true,
+        "ZHIPU_ENABLED": true,
+        "SILICONFLOW_ENABLED": true,
+        "AI_PLATFORM_PRIORITY": true,
+        "AI_TEXT_FAST_PRIORITY": true,
+        "AI_TEXT_DEEP_PRIORITY": true,
+        "AI_MULTIMODAL_LIGHT_PRIORITY": true,
+        "AI_MULTIMODAL_DEEP_PRIORITY": true,
+        "AI_MULTIMODAL_GRADING_PRIORITY": true,
+        "AI_MULTIMODAL_ADJUDICATION_PRIORITY": true,
+        "AI_TEXT_SPILLOVER_ENABLED": true,
+        "DEEPSEEK_MODEL_STANDARD": true,
+        "DEEPSEEK_MODEL_THINKING": true,
+        "DEEPSEEK_MODEL_FAST_TEXT": true,
+        "DEEPSEEK_MODEL_DEEP_TEXT": true,
+        "AI_VISION_PRO_MODEL": true,
+        "AI_VISION_LITE_MODEL": true,
+        "VOLCENGINE_MODEL_STANDARD": true,
+        "VOLCENGINE_MODEL_THINKING": true,
+        "VOLCENGINE_MODEL_VISION": true,
+        "VOLCENGINE_MODEL_TEXT_FAST": true,
+        "VOLCENGINE_MODEL_TEXT_DEEP": true,
+        "VOLCENGINE_MODEL_MULTIMODAL_LIGHT": true,
+        "VOLCENGINE_MODEL_MULTIMODAL_DEEP": true,
+        "VOLCENGINE_OPENAI_BASE_URL": true,
+        "AI_PROFILE_VISION_EDGE_LOW_MAX_OUTPUT_TOKENS": true,
+        "AI_PROFILE_VISION_PRO_LOW_MAX_OUTPUT_TOKENS": true,
+        "AI_PROFILE_VISION_ASSESSMENT_HIGH_MAX_OUTPUT_TOKENS": true,
+        "AI_PROFILE_TEXT_FAST_MAX_OUTPUT_TOKENS": true,
+        "AI_PROFILE_TEXT_DEEP_MAX_OUTPUT_TOKENS": true,
+        "AI_STRUCTURED_OUTPUT_MEDIUM_MAX_TOKENS": true,
+        "AI_STRUCTURED_OUTPUT_LARGE_MAX_TOKENS": true,
+        "GLOBAL_AI_CONCURRENCY": true,
+        "DEEPSEEK_MAX_CONCURRENT_REQUESTS": true,
+        "VOLCENGINE_MAX_CONCURRENT_REQUESTS": true,
+        "AI_VOLCENGINE_HIGH_MAX_CONCURRENT_REQUESTS": true,
+        "AI_GRADING_MAX_CONCURRENT_JOBS": true,
+        "AI_QUEUE_MAX_PENDING": true,
+        "AI_PROVIDER_QUEUE_MAX_PENDING": true,
+        "AI_GRADING_MAX_PENDING_JOBS": true,
+        "AI_PROVIDER_BACKGROUND_AGING_SECONDS": true,
+        "AI_DURABLE_JOBS_ENABLED": true,
+        "AI_JOB_POLICY_VERSION": true,
+        "AI_JOB_WORKER_CONCURRENCY": true,
+        "AI_JOB_WORKER_POLL_SECONDS": true,
+        "AI_JOB_WORKER_LEASE_SECONDS": true,
+        "AI_PROVIDER_HTTP_MAX_ATTEMPTS": true,
+        "AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS": true,
+        "AI_PROVIDER_HTTP_RETRY_BASE_SECONDS": true,
+        "AI_PROVIDER_HTTP_RETRY_MAX_SECONDS": true,
+        "AI_HTTP_TIMEOUT_INTERACTIVE": true,
+        "AI_HTTP_TIMEOUT_DEEP": true,
+        "AI_RESPONSES_HTTP_TIMEOUT_SECONDS": true,
+        "AI_GRADING_CALLBACK_MAX_ATTEMPTS": true,
+        "AI_GRADING_CALLBACK_RETRY_BASE_SECONDS": true,
+        "AI_GRADING_ADJUDICATION_ENABLED": true,
+        "AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT": true,
+        "AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT": true,
+        "AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD": true,
+        "AI_GRADING_ADJUDICATION_SCORE_DELTA": true,
+        "AI_NONSTREAM_USE_PROVIDER_STREAM": true,
+        "AI_USAGE_LOG_ENABLED": true,
+        "AI_USAGE_LOG_TO_STDOUT": true,
+        "AI_USAGE_LOG_PATH": true,
+        "AI_PROVIDER_USAGE_TAIL_BYTES": true,
+        "AI_PROVIDER_USAGE_MAX_EVENTS": true,
+        "AI_GRADING_MAX_RENDERED_PDF_PAGES": true,
+        "AI_GRADING_PDF_MAX_MB": true,
+        "AI_GRADING_IMAGE_MAX_MB": true
+      },
+      "effective_limits": {
+        "GLOBAL_AI_CONCURRENCY": 6,
+        "AI_VOLCENGINE_HIGH_MAX_CONCURRENT_REQUESTS": 1,
+        "AI_GRADING_MAX_CONCURRENT_JOBS": 4,
+        "AI_JOB_WORKER_CONCURRENCY": 2,
+        "AI_PROVIDER_HTTP_MAX_ATTEMPTS": 3,
+        "AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS": 2,
+        "AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT": 10,
+        "AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT": 3,
+        "provider_concurrency": {
+          "deepseek": 4,
+          "volcengine": 2
+        }
+      },
+      "all_explicit_overrides_match": true,
+      "ok": true
+    },
+    "ok": true,
+    "stderr_empty": true
+  },
+  "validation_paid_calls": 0,
+  "validation_online_test_records_created": 0,
+  "known_preexisting_issue": {
+    "submission_file_records_with_size_and_hash_mismatch": 3,
+    "format": "RTF content with .doc extension",
+    "present_before_deployment": true,
+    "database_rows_and_file_bytes_preserved": true,
+    "original_content_recovered": false
+  },
+  "limits": [
+    "No authenticated production teacher/student browser session was available.",
+    "Live publish/withdraw, regrading and unrevealed group states had no production samples; verified locally with synthetic E2E data.",
+    "Provider balance, actual billing and fresh model quality were not probed in this deployment.",
+    "Mini-program source, type checks and build completed earlier; no formal mini-program upload in this release.",
+    "Some local test artifacts remain because automatic approval rejected their cleanup; no bypass was attempted."
+  ],
+  "remote_integrity_and_health": {
+    "verified_at_utc": "2026-09-07T10:17:01.899479+00:00",
+    "release": "20260907-181359-4545404e64e6",
+    "read_only": true,
+    "server_files": {
+      "checked": 1956,
+      "missing": [],
+      "different": []
+    },
+    "image_files": {
+      "checked": 1924,
+      "missing": [],
+      "different": [],
+      "tailwind_sha256": "d88361572f51f527abc1616179a8e29c58d7a0365a244ab1e26a7c6a3e874bc3",
+      "build_assets": {
+        "count": 30,
+        "missing": [],
+        "extra": [],
+        "different": []
+      },
+      "tailwind_matches_local": true
+    },
+    "containers": [
+      {
+        "name": "lanshare-agent-worker-1",
+        "state": "running",
+        "health": "not_configured",
+        "image_id": "sha256:25d08ddf74a2ed3f22ecc395e84892f6c8b63c2cb66a55e4835731190adb57d3"
+      },
+      {
+        "name": "lanshare-ai-1",
+        "state": "running",
+        "health": "healthy",
+        "image_id": "sha256:25d08ddf74a2ed3f22ecc395e84892f6c8b63c2cb66a55e4835731190adb57d3"
+      },
+      {
+        "name": "lanshare-app-1",
+        "state": "running",
+        "health": "healthy",
+        "image_id": "sha256:25d08ddf74a2ed3f22ecc395e84892f6c8b63c2cb66a55e4835731190adb57d3"
+      },
+      {
+        "name": "lanshare-blog-crawler-1",
+        "state": "running",
+        "health": "not_configured",
+        "image_id": "sha256:25d08ddf74a2ed3f22ecc395e84892f6c8b63c2cb66a55e4835731190adb57d3"
+      },
+      {
+        "name": "lanshare-deepseek-runtime-1",
+        "state": "running",
+        "health": "not_configured",
+        "image_id": "sha256:f70c436f72c84dfd1e8fde779a3433b2ad6bbf06d6752a06dbef180e837c7a98"
+      },
+      {
+        "name": "lanshare-mailer-1",
+        "state": "running",
+        "health": "healthy",
+        "image_id": "sha256:25d08ddf74a2ed3f22ecc395e84892f6c8b63c2cb66a55e4835731190adb57d3"
+      },
+      {
+        "name": "lanshare-nginx-1",
+        "state": "running",
+        "health": "healthy",
+        "image_id": "sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"
+      },
+      {
+        "name": "lanshare-postgres-1",
+        "state": "running",
+        "health": "healthy",
+        "image_id": "sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229"
+      },
+      {
+        "name": "lanshare-scheduler-1",
+        "state": "running",
+        "health": "healthy",
+        "image_id": "sha256:25d08ddf74a2ed3f22ecc395e84892f6c8b63c2cb66a55e4835731190adb57d3"
+      }
+    ],
+    "observation_since_utc": "2026-09-07T10:14:59.222964471Z",
+    "seconds_since_app_started": 123.98,
+    "recent_log_summary": [
+      {
+        "name": "lanshare-agent-worker-1",
+        "line_count": 23,
+        "exit_code": 0,
+        "counts": {
+          "tracebacks": 0,
+          "error_lines": 0,
+          "unhandled": 0,
+          "warning_lines": 0
+        },
+        "exception_classes": []
+      },
+      {
+        "name": "lanshare-ai-1",
+        "line_count": 6,
+        "exit_code": 0,
+        "counts": {
+          "tracebacks": 0,
+          "error_lines": 0,
+          "unhandled": 0,
+          "warning_lines": 0
+        },
+        "exception_classes": []
+      },
+      {
+        "name": "lanshare-app-1",
+        "line_count": 100,
+        "exit_code": 0,
+        "counts": {
+          "tracebacks": 0,
+          "error_lines": 0,
+          "unhandled": 0,
+          "warning_lines": 0
+        },
+        "exception_classes": []
+      },
+      {
+        "name": "lanshare-blog-crawler-1",
+        "line_count": 23,
+        "exit_code": 0,
+        "counts": {
+          "tracebacks": 0,
+          "error_lines": 0,
+          "unhandled": 0,
+          "warning_lines": 0
+        },
+        "exception_classes": []
+      },
+      {
+        "name": "lanshare-deepseek-runtime-1",
+        "line_count": 1,
+        "exit_code": 0,
+        "counts": {
+          "tracebacks": 0,
+          "error_lines": 0,
+          "unhandled": 0,
+          "warning_lines": 0
+        },
+        "exception_classes": []
+      },
+      {
+        "name": "lanshare-mailer-1",
+        "line_count": 1,
+        "exit_code": 0,
+        "counts": {
+          "tracebacks": 0,
+          "error_lines": 0,
+          "unhandled": 0,
+          "warning_lines": 0
+        },
+        "exception_classes": []
+      },
+      {
+        "name": "lanshare-nginx-1",
+        "line_count": 58,
+        "exit_code": 0,
+        "counts": {
+          "tracebacks": 0,
+          "error_lines": 8,
+          "unhandled": 0,
+          "warning_lines": 0
+        },
+        "exception_classes": []
+      },
+      {
+        "name": "lanshare-postgres-1",
+        "line_count": 8,
+        "exit_code": 0,
+        "counts": {
+          "tracebacks": 0,
+          "error_lines": 0,
+          "unhandled": 0,
+          "warning_lines": 0
+        },
+        "exception_classes": []
+      },
+      {
+        "name": "lanshare-scheduler-1",
+        "line_count": 25,
+        "exit_code": 0,
+        "counts": {
+          "tracebacks": 0,
+          "error_lines": 0,
+          "unhandled": 0,
+          "warning_lines": 0
+        },
+        "exception_classes": []
+      }
+    ],
+    "error_classification": [
+      {
+        "container": "lanshare-nginx-1",
+        "timestamp": "2026-09-07T10:14:59.396591923Z",
+        "categories": [
+          "connection_refused"
+        ],
+        "line_sha256": "4a2fe28340226379e222ca3d4c3c6f85fa54584db9eda84f0ffaae121c772fa0"
+      },
+      {
+        "container": "lanshare-nginx-1",
+        "timestamp": "2026-09-07T10:15:00.567307652Z",
+        "categories": [
+          "connection_refused"
+        ],
+        "line_sha256": "9e1feeacea3edfa4ac2063e6b422ec763ad0af0be1d3133806d0895b300489a1"
+      },
+      {
+        "container": "lanshare-nginx-1",
+        "timestamp": "2026-09-07T10:15:01.576653410Z",
+        "categories": [
+          "connection_refused"
+        ],
+        "line_sha256": "e704a44b2871adf40f9abf2a5700bfd46bb1cfcf00081cc7bcb5924b3d5fcdf1"
+      },
+      {
+        "container": "lanshare-nginx-1",
+        "timestamp": "2026-09-07T10:15:02.571639524Z",
+        "categories": [
+          "connection_refused"
+        ],
+        "line_sha256": "b38007ead08f1c8872adcb0df7d5a26949a2e1479f21dc2324910ac89f554221"
+      },
+      {
+        "container": "lanshare-nginx-1",
+        "timestamp": "2026-09-07T10:15:03.569258952Z",
+        "categories": [
+          "connection_refused"
+        ],
+        "line_sha256": "3bfda1504c643df1025069e345328ee16a667d2c9a7bf9c3be6185b280657b51"
+      },
+      {
+        "container": "lanshare-nginx-1",
+        "timestamp": "2026-09-07T10:15:04.566424537Z",
+        "categories": [
+          "connection_refused"
+        ],
+        "line_sha256": "b6739a0ad379f23ad6968de4a8db59908b676da1a6440d398b8fa15dd598ad0b"
+      },
+      {
+        "container": "lanshare-nginx-1",
+        "timestamp": "2026-09-07T10:15:05.567222935Z",
+        "categories": [
+          "connection_refused"
+        ],
+        "line_sha256": "5573ec221508f0f546d8bb94d70963ee7aca40eeeacbfe4e44ee5daeba9fc2b1"
+      },
+      {
+        "container": "lanshare-nginx-1",
+        "timestamp": "2026-09-07T10:15:06.564327265Z",
+        "categories": [
+          "connection_refused"
+        ],
+        "line_sha256": "bb8d1ab50b38c5890764182f1d00cc704f3c2f2ddaa18ed9a8a02ca69c71c4bf"
+      }
+    ],
+    "service_restored_at_utc": "2026-09-07T10:15:12+00:00",
+    "post_restoration_observation_seconds": 109.9,
+    "at_least_two_45s_periods_observed": true,
+    "post_restoration_classified_errors": [],
+    "transient_startup_connection_refused_count": 8,
+    "status": "ok",
+    "interpretation": "All server/image source and Linux-built static files match the frozen candidate. Eight nginx connection refusals occurred only during startup before restoration; no new PostgreSQL grouping/cancellation errors or application exceptions in the observed recovery window."
+  },
+  "resolved_production_followups": {
+    "problem": "The legacy student-support aggregate had a PostgreSQL GROUP BY error; adding the missing column exposed history join multiplication. Student AI context also averaged raw unrevealed group scores.",
+    "change": "Aggregate independent histories before joining. Batch load visible effective grades through the shared score projection for the authorized student and eligible assignments. No schema or model configuration change.",
+    "regression_tests_passed": 14,
+    "offline_performance": {
+      "engine": "postgres",
+      "offline_clone": true,
+      "read_only_transaction": true,
+      "statement_timeout_ms": 10000,
+      "student_identifiers_omitted": true,
+      "score_projection": "shared student_view=True include_content=False",
+      "sample_source_counts": {
+        "submissions": 14,
+        "material_progress": 10,
+        "behavior_events": 5199
+      },
+      "fixed_query": {
+        "elapsed_ms": 46.77,
+        "query_count": 3,
+        "course_row_count": 2,
+        "courses_with_visible_average": 2
+      },
+      "plan_summaries": [
+        {
+          "planning_ms": 2.877,
+          "execution_ms": 3.089,
+          "max_node_rows": 5199,
+          "node_types": {
+            "Sort": 7,
+            "Nested Loop": 7,
+            "Index Scan": 4,
+            "Seq Scan": 10,
+            "Hash Join": 10,
+            "Hash": 10,
+            "Merge Join": 1,
+            "CTE Scan": 6,
+            "Subquery Scan": 5,
+            "Aggregate": 5,
+            "Materialize": 2,
+            "Bitmap Heap Scan": 1,
+            "Bitmap Index Scan": 1
+          }
+        },
+        {
+          "planning_ms": 0.118,
+          "execution_ms": 0.045,
+          "max_node_rows": 61,
+          "node_types": {
+            "Hash Join": 1,
+            "Seq Scan": 2,
+            "Hash": 1
+          }
+        },
+        {
+          "planning_ms": 0.452,
+          "execution_ms": 0.344,
+          "max_node_rows": 783,
+          "node_types": {
+            "Sort": 1,
+            "Nested Loop": 3,
+            "Bitmap Heap Scan": 1,
+            "Bitmap Index Scan": 1,
+            "Index Scan": 1,
+            "Materialize": 2,
+            "Seq Scan": 5,
+            "Hash Join": 1,
+            "Hash": 1
+          }
+        }
+      ],
+      "read_only_confirmed": true,
+      "target_under_500ms_passed": true,
+      "status": "ok",
+      "cluster_stopped": true,
+      "source_git_head": "a55ce2e14e50b40a81907ebc5b1fecac09598180"
+    },
+    "production_read_only_performance": {
+      "status": "ok",
+      "read_only": true,
+      "statement_timeout_ms": 10000,
+      "student_identifiers_omitted": true,
+      "retried": false,
+      "release": "20260907-181359-4545404e64e6",
+      "verified_at_utc": "2026-09-07T10:16:17.292325+00:00",
+      "read_only_confirmed": true,
+      "sample_source_counts": {
+        "submissions": 43,
+        "material_progress": 10,
+        "behavior_events": 5199
+      },
+      "fixed_query": {
+        "elapsed_ms": 72.55,
+        "query_count": 3,
+        "course_row_count": 2,
+        "courses_with_visible_average": 2
+      },
+      "source_sha256": "f25a3eedcfe20f6d44da2e2b3216e8faf807953e236852410810378bcfb2dd63",
+      "target_under_500ms_passed": true,
+      "transaction_rolled_back_and_closed": true,
+      "sample_comparability": "Anonymous representative sample with at least 5000 behavior events; identity and exact data equivalence across runs are not asserted. Counts do not establish production data changes."
+    },
+    "sample_comparison_limit": "Offline and online evidence use selected large samples; differing submission counts do not imply new production submissions or matched student identities.",
+    "stored_scores_or_profiles_rewritten": false,
+    "group_visibility_cases": [
+      "unrevealed",
+      "revealed settled grade",
+      "settled zero",
+      "missing final",
+      "inactive member",
+      "wrong group",
+      "wrong scheme",
+      "other student",
+      "retained active revision",
+      "returned submission",
+      "absence",
+      "personal stage"
+    ]
+  },
+  "prior_release_ids": [
+    "20260907-172624-c8201fba4d60",
+    "20260907-174507-e0c2ae6506c5"
+  ]
+}
