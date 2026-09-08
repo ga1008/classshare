@@ -1,0 +1,294 @@
+{
+  "report_contract": "native-pg-rehearsal-v1",
+  "status": "ok",
+  "database_engine": "postgres",
+  "verified_at_utc": "2026-09-08T04:14:57.169640+00:00",
+  "source_export": {
+    "method": "consistent pg_dump custom; no-owner/no-acl; lock-wait-timeout=5s",
+    "sha256": "256d63ceb5b408e7c590d60e4db5435b781f82910a4020a8a5c454bc6c25589b",
+    "bytes": 32321589,
+    "remote_local_hash_equal": true,
+    "unchanged_after_rehearsal": true
+  },
+  "clean_restore": {
+    "restored_again_from_original_dump": true,
+    "baseline_equals_initial_unmigrated_restore": true,
+    "no_timestamp_or_sequence_whitelist": true
+  },
+  "isolation": {
+    "dedicated_new_cluster": true,
+    "dedicated_new_database": true,
+    "production_tables_modified": false,
+    "app_or_workers_started": false,
+    "listener": "127.0.0.1",
+    "port": 55439,
+    "cluster_stopped": true
+  },
+  "incremental": {
+    "status": "ok",
+    "database_preservation_passed": true,
+    "old_differences_per_pass": [
+      [],
+      []
+    ],
+    "unexpected_old_differences_per_pass": [
+      [],
+      []
+    ],
+    "signature_visibility_migration_per_pass": [
+      {
+        "contract": "signature-visibility-migration-v1",
+        "status": "ok",
+        "expected_changes": [],
+        "actual_changes": [],
+        "changed_fields": [],
+        "all_other_signature_columns_unchanged": true,
+        "old_migration_records_unchanged": true,
+        "added_migration_marker": null,
+        "allowed_differences": [],
+        "signature_row_count": 41,
+        "blockers": []
+      },
+      {
+        "contract": "signature-visibility-migration-v1",
+        "status": "ok",
+        "expected_changes": [],
+        "actual_changes": [],
+        "changed_fields": [],
+        "all_other_signature_columns_unchanged": true,
+        "old_migration_records_unchanged": true,
+        "added_migration_marker": null,
+        "allowed_differences": [],
+        "signature_row_count": 41,
+        "blockers": []
+      }
+    ],
+    "idempotency_differences": [],
+    "added_tables": [
+      "material_export_bundles",
+      "signature_application_batches",
+      "signature_material_snapshots"
+    ],
+    "added_columns": {
+      "signature_access_requests": [
+        "snapshot_id",
+        "signature_hash",
+        "document_type",
+        "requester_school",
+        "requester_college",
+        "requester_department",
+        "requester_identities_json",
+        "invalidation_reason"
+      ],
+      "signature_point_flow_items": [
+        "signature_kind",
+        "signature_hash",
+        "authorization_mode"
+      ],
+      "signature_point_flows": [
+        "application_batch_id",
+        "snapshot_id",
+        "plan_revision",
+        "base_binding_hash",
+        "auto_apply",
+        "apply_status",
+        "apply_error",
+        "applied_at",
+        "opinion_mode",
+        "opinion_text"
+      ]
+    }
+  },
+  "full_startup": {
+    "status": "ok",
+    "database_preservation_passed": true,
+    "old_differences_per_pass": [
+      [],
+      []
+    ],
+    "unexpected_old_differences_per_pass": [
+      [],
+      []
+    ],
+    "signature_visibility_migration_per_pass": [
+      {
+        "contract": "signature-visibility-migration-v1",
+        "status": "ok",
+        "expected_changes": [],
+        "actual_changes": [],
+        "changed_fields": [],
+        "all_other_signature_columns_unchanged": true,
+        "old_migration_records_unchanged": true,
+        "added_migration_marker": null,
+        "allowed_differences": [],
+        "signature_row_count": 41,
+        "blockers": []
+      },
+      {
+        "contract": "signature-visibility-migration-v1",
+        "status": "ok",
+        "expected_changes": [],
+        "actual_changes": [],
+        "changed_fields": [],
+        "all_other_signature_columns_unchanged": true,
+        "old_migration_records_unchanged": true,
+        "added_migration_marker": null,
+        "allowed_differences": [],
+        "signature_row_count": 41,
+        "blockers": []
+      }
+    ],
+    "idempotency_differences": [],
+    "added_tables": [
+      "material_export_bundles",
+      "signature_application_batches",
+      "signature_material_snapshots"
+    ],
+    "added_columns": {
+      "signature_access_requests": [
+        "snapshot_id",
+        "signature_hash",
+        "document_type",
+        "requester_school",
+        "requester_college",
+        "requester_department",
+        "requester_identities_json",
+        "invalidation_reason"
+      ],
+      "signature_point_flow_items": [
+        "signature_kind",
+        "signature_hash",
+        "authorization_mode"
+      ],
+      "signature_point_flows": [
+        "application_batch_id",
+        "snapshot_id",
+        "plan_revision",
+        "base_binding_hash",
+        "auto_apply",
+        "apply_status",
+        "apply_error",
+        "applied_at",
+        "opinion_mode",
+        "opinion_text"
+      ]
+    },
+    "strict_status": "ok",
+    "fresh_process_per_pass": true,
+    "all_old_fields_and_sequences_unchanged": true,
+    "runs": [
+      {
+        "status": "ok",
+        "required_table_count": 158,
+        "present_required_table_count": 158,
+        "runtime_tables": {
+          "created_tables": [],
+          "schema_writes_executed": false
+        },
+        "runtime_columns": {
+          "added_columns": {},
+          "skipped_tables": [],
+          "legacy_material_mastery_repaired": true,
+          "schema_writes_executed": false
+        },
+        "runtime_constraints": {
+          "created_indexes": [],
+          "skipped_indexes": [],
+          "classroom_todo_scope_repaired": false,
+          "signature_requester_repaired": false,
+          "schema_writes_executed": false
+        },
+        "index_created_or_already_present": 279,
+        "index_failed": 0,
+        "skipped_step_count": 0,
+        "captured_log_sha256": "14037822c9f6608c91bcc7c94c446885b75ec01b4901a0c7eebc37b57ed21890"
+      },
+      {
+        "status": "ok",
+        "required_table_count": 158,
+        "present_required_table_count": 158,
+        "runtime_tables": {
+          "created_tables": [],
+          "schema_writes_executed": false
+        },
+        "runtime_columns": {
+          "added_columns": {},
+          "skipped_tables": [],
+          "legacy_material_mastery_repaired": true,
+          "schema_writes_executed": false
+        },
+        "runtime_constraints": {
+          "created_indexes": [],
+          "skipped_indexes": [],
+          "classroom_todo_scope_repaired": false,
+          "signature_requester_repaired": false,
+          "schema_writes_executed": false
+        },
+        "index_created_or_already_present": 279,
+        "index_failed": 0,
+        "skipped_step_count": 0,
+        "captured_log_sha256": "14037822c9f6608c91bcc7c94c446885b75ec01b4901a0c7eebc37b57ed21890"
+      }
+    ]
+  },
+  "restored_baseline": {
+    "old_table_count": 227,
+    "old_total_rows": 470764
+  },
+  "migration_source_sha256": {
+    "classroom_app/config.py": "5548e6e17b6619cebd8dd9f9d3cd400b5050e0a45512f9a27bb5ddadf9b13ee7",
+    "classroom_app/database.py": "cc0862448fd67f7673840727e733b0f3e2d585adb6b358cd2d14eb05e12d6b1a",
+    "classroom_app/db/__init__.py": "e896edc1c4ddf07b87a4daad5a24cbe60588660a271bc7378a3e83ed8924affb",
+    "classroom_app/db/connection.py": "d2f55c70f2337c10cee8d38def3b8251bcfe51801a512ac3df413372d7cdb212",
+    "classroom_app/db/errors.py": "27382ecdb2517823f121dfdd5d55dd8a749d5b75aec1281f89b7b34383e29062",
+    "classroom_app/db/migration_registry.py": "6ed3ff2cebd2272606fb2ea69ef5dd57324927f3d93824b0f7ab7c2501ee6faf",
+    "classroom_app/db/migrations.py": "4fa662485cb6e143af0de6e2d22088265c4595d7cf0e56c619683ad073183aac",
+    "classroom_app/db/postgres.py": "a0b078f00cfd7f3d2baaed684b92668b707566a40e9bf26f5df1e437ead7446e",
+    "classroom_app/db/postgres_indexes.py": "e86ec23572ca855ad5485fa565133b27337cac19b5a0b813214a544a543559ca",
+    "classroom_app/db/postgres_required_columns.py": "d09bde1ed7cd0a7bc65f6f8d9a7248b9faba6fa13fd2cf3dcd3a2a1f7293f106",
+    "classroom_app/db/postgres_schema.py": "85db84a47f6fbb652385c7de89fc7efac9b61af168db5037bfad2f479ae9f865",
+    "classroom_app/db/repair.py": "5b9c74e1f901b701e1362d799b756bbd223cbbc6c37736b2666770eb70fc4d6d",
+    "classroom_app/db/row.py": "141ee2e1352eb2ec8a376731cf2cd38210e6cb8b470823fb0404c45205b17f60",
+    "classroom_app/db/schema.py": "ab066cd671214de82484bf966d94a9b2a20dd1b196f96cef278889e0d2531808",
+    "classroom_app/db/schema_academic_evaluations.py": "bad0937e5dcafccdb2d55fb5cf1dda8ccd4c378b6ca2553434b7c8becbd260d0",
+    "classroom_app/db/schema_academic_final_materials.py": "e96fe90f8ca7f2b54c2c7aa25737dca7b5eca5e63dbc777e8352ee64b30a9696",
+    "classroom_app/db/schema_agent_ext.py": "c8983cd542f984610173498c6600d340d68ff972c82c3eb54e31d4d870bc2954",
+    "classroom_app/db/schema_ai_jobs.py": "348306626ee96be71ae0fd1fce7e0a0b6f780c3353e63114325c1749449ea542",
+    "classroom_app/db/schema_assessment_plans.py": "edd26dd4ccda6ff382a2f231f5b042f93d59774eca0dd710efce9de54717c1c4",
+    "classroom_app/db/schema_assignments.py": "3e4d779868bc8b10379a2c0a2c99c3d0290ae434571c4df555dc6383b7adcef8",
+    "classroom_app/db/schema_career_engagement.py": "56a0adf52088a20fae35121ae7ff32f0b23f8716fadd956b506039ef39a1a625",
+    "classroom_app/db/schema_career_path.py": "3d0f43720e18163a65c86db96decb252ca2a07e9de64548ca26e85e80ba93e6a",
+    "classroom_app/db/schema_classroom_activity.py": "3c49f1d7771bd01464039c5d581676bc6277c8144c978e3b1e804db79ec71a20",
+    "classroom_app/db/schema_course_doc_packs.py": "672c541f9e33be59e20ab22045b4a49f686ae7e7504f7c884f7e7fb6d7696e81",
+    "classroom_app/db/schema_cultivation_progress.py": "13a5d80027b2ae545dd49767e0ee37f32ecd09136db5bda378a7767c7200005b",
+    "classroom_app/db/schema_foundation.py": "25ed839d06c9830aa9c199e893c0cbf6e4e82713f0d065f29d586101c521e347",
+    "classroom_app/db/schema_gongwen.py": "de7616b0d3847f247a7f8c46f6a554d12e1dd1a5fa0e9a0ca4eca14bcb105f81",
+    "classroom_app/db/schema_grade_publications.py": "38669d43644e97367c1a4ad2319ff4fb9a75ace25284457bbaacb33da64f55cb",
+    "classroom_app/db/schema_learning_blog.py": "fde0302d831b78649002c8efc726faaf2d9364d08c69440a0a8ea0d532a985b3",
+    "classroom_app/db/schema_lesson_plans.py": "4982277598e8a4ea8296c7aadff9a6cb0a99b4c2f860266929271588c769d556",
+    "classroom_app/db/schema_lessondoc_editor.py": "405a5eabb3032144cd56be7491d7a3e38526e66f4165acd6f4c68f51947bf93f",
+    "classroom_app/db/schema_life_tips.py": "61fcb8ad6fe8f9dd420eeec37d1a1026dc9ec1a13452aa8904d4519fc26209aa",
+    "classroom_app/db/schema_material_signatures.py": "5c36c2a8d8b96fcae2f5b8856d432064393b5b9a2b87a05cf32f5a8247aea61f",
+    "classroom_app/db/schema_material_whiteboards.py": "e3824b9d399ad132d6b44e8c84e049ac7c73cecb4a779c7fe3a54277f65b20d3",
+    "classroom_app/db/schema_materials_integrations.py": "4848694b7b135199c2547f0d28b4284a98da10d042e3c1d745d4a1175c7e445b",
+    "classroom_app/db/schema_offering_class_links.py": "57d19449d786f38deba1b4d961abef734944bf6b3affdaa262e14470545ce8fd",
+    "classroom_app/db/schema_offering_merge.py": "e7ce14299c15ec862b8af68f030d5b2eebcfcefe8c224ba4ea79416b26a3611e",
+    "classroom_app/db/schema_polls.py": "77595bdaf89b2d3b5205b38f9cdcf1861977fac347481bf909705ea4b11c4ee3",
+    "classroom_app/db/schema_prompt_pool.py": "4138e33abec4d4fa5bcc66a853e171c8e139931d6081ab347ed2d4ebbeeae7b1",
+    "classroom_app/db/schema_resume.py": "fd3b09d7f4b2c57ebf8a57d6cb8f87cd8b0745e880e59e799e522b4b47dd3e20",
+    "classroom_app/db/schema_retake.py": "4d74a66b17db9908aad3bdc5578def18e60081020e7c50711d42ee88b3d2655c",
+    "classroom_app/db/schema_scheduler.py": "0fe12ef40b30dc2f8e0c56d3b7b98a6ac6f69349b8a8ebd488e27be0b15a0595",
+    "classroom_app/db/schema_session_learning_materials.py": "2660ee1016cee75db1da613dd36678cc9a5bac5cdc0b7c39b607f173c5adcf3b",
+    "classroom_app/db/schema_signature_workflow.py": "c24ac2d464a0ab8116735a8cf2963c3f72ebd5c5e61d39ae2bd2ecf3cd25ce07",
+    "classroom_app/db/schema_smart_schedule.py": "de6f77e3f5f34394253a5bc087cef3dd0bf49e71f9a085dd739046cbc4e0d7e8",
+    "classroom_app/db/schema_study_group_scheme.py": "948de842a0a26aed65a103afb924955d74e6a382cd3f7ed95e7dc5b198c6eae9",
+    "classroom_app/db/schema_teacher_evaluations.py": "e2cb062b7dd9ccb2daebb90d9072be07fa4acfd1fc613895bbb12ed56f6cbb20",
+    "classroom_app/db/schema_user_ui_preferences.py": "d47501add6c9e2c0d0871c8b2c38b4508bd7cb37adb28a7ecd0cc19cc9f5dad9",
+    "classroom_app/db/schema_wechat_mp.py": "c56dccd456fa5ff11f2a0d5c6af7169b138df4b7e1f9536ee7d4336b6a5f43f0",
+    "classroom_app/db/seeds.py": "de4be583a0dfbd14d2b14d9afdea5c0a3303caefb5dece4bb752a49931e5b5f8",
+    "classroom_app/db/semester_unification_migration.py": "118389558789b42283b68a8ac82b699c4e2816d7fe27ba255f51cc067e4ad3de",
+    "classroom_app/db/sessions.py": "e1e2f61169fbd8421ce9a9db2e4e5ee87bbe826330254d4eec98b36628885e2c",
+    "classroom_app/db/sql.py": "8bd2d3ed0656434aa3cebc13393a7904c38a3537802a63f58da96549c7721a98",
+    "classroom_app/storage_paths.py": "ddd6f7f85b15e5dcc1d009f5fc8ab705fe9da9d1a93f81d0ef82d040fec3bef3"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "verified_at_utc": "2026-09-08T04:22:37.053181+00:00",
+  "release_id": "20260908-121747-1d539b5fd064",
+  "deployed_code_commit": "3299942ae9e884ecdb26d6efd918b8760eee8b2e",
+  "feature_commit": "1b81e905929ee8b7f946441bfb6a782324398653",
+  "code_backup": "/tmp/lanshare-deploy-backups/code-20260908-121757.tgz",
+  "database_backup": "/tmp/lanshare-deploy-backups/db-20260908-121757.sql.gz",
+  "tests": {
+    "material_and_signature_regressions": 192,
+    "deployed_git_update_regressions": 8
+  },
+  "main_status": "ok",
+  "database_engine": "postgres",
+  "email_worker": {
+    "ok": true,
+    "queue_depth": 0,
+    "status": "running",
+    "updated_at": "2026-09-08T12:22:36",
+    "last_error": ""
+  },
+  "ai_health": "ok",
+  "matched_deployed_source_files": 61,
+  "matched_public_assets": 10,
+  "real_material_checks": [
+    {
+      "type": "academic_grade_register",
+      "selection_readable": true,
+      "docx_bytes": 41935,
+      "shared_renderer_pdf_ready": true
+    },
+    {
+      "type": "academic_exam_analysis",
+      "selection_readable": true,
+      "docx_bytes": 104949,
+      "shared_renderer_pdf_ready": true
+    },
+    {
+      "type": "assessment_plan",
+      "selection_readable": true,
+      "docx_bytes": 53914,
+      "shared_renderer_pdf_ready": true
+    }
+  ],
+  "standard_review_marks": 2,
+  "cleanup_task_scheduled": true,
+  "material_durable_worker_started": true,
+  "approval_page_server_rendered": true,
+  "request_filters_postgres_readable": true,
+  "browser_check": "Anonymous production page correctly redirects to teacher login; no authenticated production UI session or approval action was used.",
+  "representative_email_ready": true,
+  "test_notifications_or_approvals_sent": false,
+  "historical_background_health": {
+    "overall_ok": false,
+    "historical_failed_count": 506,
+    "stale_count": 0,
+    "all_current_items_ok": true
+  }
+}
