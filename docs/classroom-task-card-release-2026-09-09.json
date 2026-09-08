@@ -1,0 +1,298 @@
+{
+  "release_id": "20260909-042442-1c90cddbd9a5",
+  "deployed_code_commit": "ff114e634ab5e3a7bfeeb1cac99c453ba3cf7bce",
+  "verified_at_utc": "2026-09-09T04:26:53.005368+08:00",
+  "status": "ok",
+  "source_files": {
+    "static/css/classroom_workspace.css": {
+      "sha256": "db064237099cf4580f0fcbb85902c43c2e73418646ad5f7b655112944199225b",
+      "bytes": 54079
+    },
+    "static/js/assignment_time.js": {
+      "sha256": "331e564f18f9db279f3b62457b045023923407ba11866dab34cc25f3dc9db6e9",
+      "bytes": 10636
+    },
+    "static/js/classroom_page.js": {
+      "sha256": "30f3fee0dc8b9cb2dff498b773703c9f963f58fcd687bb9c6cc56acad7c14d7d",
+      "bytes": 152707
+    },
+    "templates/classroom_main_v4.html": {
+      "sha256": "4a1434c4860c0a56186a97c4123589caaaec2c4ce1202df5a4c6ea87d77f904a",
+      "bytes": 189737
+    }
+  },
+  "checks": [
+    {
+      "check": "domain_is_configured_in_production_nginx",
+      "passed": true
+    },
+    {
+      "check": "container_source_matches:static/css/classroom_workspace.css",
+      "passed": true
+    },
+    {
+      "check": "container_source_matches:static/js/assignment_time.js",
+      "passed": true
+    },
+    {
+      "check": "container_source_matches:static/js/classroom_page.js",
+      "passed": true
+    },
+    {
+      "check": "container_source_matches:templates/classroom_main_v4.html",
+      "passed": true
+    },
+    {
+      "check": "all_9_expected_services_present",
+      "passed": true
+    },
+    {
+      "check": "all_services_running",
+      "passed": true
+    },
+    {
+      "check": "configured_healthchecks_healthy",
+      "passed": true
+    },
+    {
+      "check": "app_health_ok",
+      "passed": true
+    },
+    {
+      "check": "ai_health_ok",
+      "passed": true
+    },
+    {
+      "check": "production_database_is_postgres",
+      "passed": true
+    },
+    {
+      "check": "email_worker_ok",
+      "passed": true
+    },
+    {
+      "check": "current_background_items_ok",
+      "passed": true
+    },
+    {
+      "check": "background_stale_count_zero",
+      "passed": true
+    },
+    {
+      "check": "public_https_health_ok",
+      "passed": true
+    },
+    {
+      "check": "public_health_keeps_verified_https_domain",
+      "passed": true
+    },
+    {
+      "check": "container_host_and_public_release_match",
+      "passed": true
+    },
+    {
+      "check": "release_is_expected_new_release",
+      "passed": true
+    },
+    {
+      "check": "public_asset_matches:static/css/classroom_workspace.css",
+      "passed": true
+    },
+    {
+      "check": "public_asset_keeps_verified_https_domain:static/css/classroom_workspace.css",
+      "passed": true
+    },
+    {
+      "check": "public_asset_matches:static/js/assignment_time.js",
+      "passed": true
+    },
+    {
+      "check": "public_asset_keeps_verified_https_domain:static/js/assignment_time.js",
+      "passed": true
+    },
+    {
+      "check": "public_asset_matches:static/js/classroom_page.js",
+      "passed": true
+    },
+    {
+      "check": "public_asset_keeps_verified_https_domain:static/js/classroom_page.js",
+      "passed": true
+    }
+  ],
+  "services": [
+    {
+      "Service": "agent-worker",
+      "Name": "lanshare-agent-worker-1",
+      "State": "running",
+      "Health": "",
+      "ExitCode": 0
+    },
+    {
+      "Service": "ai",
+      "Name": "lanshare-ai-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    },
+    {
+      "Service": "app",
+      "Name": "lanshare-app-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    },
+    {
+      "Service": "blog-crawler",
+      "Name": "lanshare-blog-crawler-1",
+      "State": "running",
+      "Health": "",
+      "ExitCode": 0
+    },
+    {
+      "Service": "deepseek-runtime",
+      "Name": "lanshare-deepseek-runtime-1",
+      "State": "running",
+      "Health": "",
+      "ExitCode": 0
+    },
+    {
+      "Service": "mailer",
+      "Name": "lanshare-mailer-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    },
+    {
+      "Service": "nginx",
+      "Name": "lanshare-nginx-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    },
+    {
+      "Service": "postgres",
+      "Name": "lanshare-postgres-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    },
+    {
+      "Service": "scheduler",
+      "Name": "lanshare-scheduler-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    }
+  ],
+  "historical_background_health": {
+    "overall_ok": false,
+    "historical_failed_count": 506,
+    "stale_count": 0,
+    "queue_depth": 17,
+    "current_items": [
+      {
+        "task_type": "ai_grading",
+        "status": "ok",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 27,
+        "stale_count": 0
+      },
+      {
+        "task_type": "material_ai_import",
+        "status": "ok",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 1,
+        "stale_count": 0
+      },
+      {
+        "task_type": "session_material_generation",
+        "status": "ok",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 0,
+        "stale_count": 0
+      },
+      {
+        "task_type": "private_message_ai_reply",
+        "status": "ok",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 0,
+        "stale_count": 0
+      },
+      {
+        "task_type": "email_outbox",
+        "status": "ok",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 456,
+        "stale_count": 0
+      },
+      {
+        "task_type": "blog_news_crawler",
+        "status": "ok",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 8,
+        "stale_count": 0
+      },
+      {
+        "task_type": "agent_task",
+        "status": "ok",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 1,
+        "stale_count": 0
+      },
+      {
+        "task_type": "scheduled_task",
+        "status": "ok",
+        "queue_depth": 17,
+        "running_count": 0,
+        "failed_count": 13,
+        "stale_count": 0
+      },
+      {
+        "task_type": "behavior_write_pipeline",
+        "status": "ok",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 0,
+        "stale_count": 0
+      }
+    ]
+  },
+  "code_backup": "/tmp/lanshare-deploy-backups/code-20260909-042450.tgz",
+  "database_backup": "/tmp/lanshare-deploy-backups/db-20260909-042450.sql.gz",
+  "database_schema_changed": false,
+  "production_test_data_modified": false,
+  "deployment_source": "Clean isolated checkout of the code commit; unrelated working-tree changes excluded.",
+  "validation": {
+    "classroom_projection_unit_tests_passed": 11,
+    "frontend_clock_motion_handoff_tests_passed": 19,
+    "task_card_browser_tests_passed": 4,
+    "browser_viewports": [
+      "1440x980",
+      "390x844"
+    ],
+    "desktop_long_title_card_height_px": 322,
+    "mobile_long_title_card_height_px": 500,
+    "workflows": [
+      "Classification expand/save with persisted version and category filter sync",
+      "Group configuration modal and return to the same filter",
+      "Teacher primary task/review link",
+      "Student keyboard navigation",
+      "Online paper draft/edit, published card, and wrong-answer summary navigation",
+      "No horizontal overflow in collapsed and expanded cards"
+    ],
+    "additional_workspace_checks_passed": [
+      "Homepage item pagination",
+      "Repeated task modal opening and navigation-state restoration"
+    ],
+    "broader_workspace_fixture_limit": "Two lesson-rail checks could not run because the disposable P03 fixture has no teaching sessions; no lesson-rail code changed.",
+    "rendered_screenshots": ".codex-temp/p03-artifacts/task-card-{teacher|classification|exam}-{1440|390}.png",
+    "production_browser_session_used": false
+  }
+}
