@@ -487,7 +487,7 @@ def attach_git_repository_metadata(conn, items: list[dict]) -> list[dict]:
 def _repository_command_strings(root_item: dict) -> dict:
     remote_name = str(root_item.get("git_remote_name") or DEFAULT_REMOTE_NAME)
     branch_name = str(root_item.get("git_default_branch") or root_item.get("git_head_branch") or "")
-    update_command = f"git pull {remote_name} {branch_name}".strip()
+    update_command = f"git pull --no-rebase --no-edit --ff {remote_name} {branch_name}".strip()
     commit_command = f'git add -A && git commit -m "{DEFAULT_COMMIT_MESSAGE}" && git push {remote_name} {branch_name}'.strip()
     return {
         "update": update_command,
@@ -1189,6 +1189,28 @@ def _parse_custom_command(command: str) -> list[str]:
     return tokens
 
 
+def _failed_repository_update(repo_detail: dict, remote_info: dict, execution_log: list[dict], credential: dict | None) -> dict:
+    combined_output = _build_combined_output(execution_log)
+    auth_state = _classify_auth_failure(remote_info, combined_output)
+    lowered = combined_output.lower()
+    message = "仓库更新失败，服务器材料保持不变。"
+    if "conflict (" in lowered or "automatic merge failed" in lowered or "unmerged files" in lowered:
+        message = "远程内容与服务器修改存在合并冲突，本次更新已取消，服务器材料保持不变；请先处理冲突后重试。"
+    elif "would be overwritten by merge" in lowered or "would be overwritten by checkout" in lowered:
+        message = "服务器存在会被覆盖的未提交修改，本次更新已取消，服务器材料保持不变；请先保存并处理这些修改后重试。"
+    return {
+        "status": "auth_required" if auth_state["auth_required"] else "failed",
+        "message": auth_state["message"] or message,
+        "execution_log": execution_log,
+        "combined_output": combined_output,
+        "repository": repo_detail,
+        "sync_summary": {"inserted": 0, "updated": 0, "deleted": 0, "unchanged": 0},
+        "readme_candidates": [],
+        "credential_saved": bool(credential),
+        "credential_supported": auth_state["credential_supported"],
+    }
+
+
 async def execute_material_repository_action(
     conn_factory,
     material_id: int,
@@ -1233,14 +1255,21 @@ async def execute_material_repository_action(
                         "repository": repo_detail,
                         "sync_summary": {"inserted": 0, "updated": 0, "deleted": 0, "unchanged": 0},
                     }
+                execution_log.extend(await _ensure_repository_identity(workspace_dir, teacher_user))
+                if any(entry["returncode"] != 0 and not entry.get("allow_failure") for entry in execution_log):
+                    return _failed_repository_update(repo_detail, remote_info, execution_log, credential)
                 execution_log.append(
                     await _run_git_command(
-                        ["git", "pull", repo_detail["remote_name"], repo_detail["default_branch"]],
+                        ["git", "pull", "--no-rebase", "--no-edit", "--ff", repo_detail["remote_name"], repo_detail["default_branch"]],
                         workspace_dir,
                         credential,
                     )
                 )
-                message = "仓库更新完成" if execution_log[-1]["returncode"] == 0 else "仓库更新失败"
+                if execution_log[-1]["returncode"] != 0:
+                    # A failed pull can leave fetched refs, merge state and conflict
+                    # markers in this temporary workspace. Never publish them.
+                    return _failed_repository_update(repo_detail, remote_info, execution_log, credential)
+                message = "仓库更新完成"
             elif normalized_action == "commit_push":
                 if not repo_detail["can_commit_push"]:
                     return {
