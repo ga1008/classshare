@@ -434,6 +434,12 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/signatures",),
     ),
     ManageNavItem(
+        key="signature_workflows", domain=MANAGE_ADMIN_DOMAIN, group="我的资料",
+        label="签名审批与使用", icon="check", href="/manage/me/signature-workflows",
+        search_text="材料 签名 审批 申请 批准 使用",
+        ai_hint="查看申请材料原样预览，批准或拒绝签名，跟踪申请和实际应用状态。",
+    ),
+    ManageNavItem(
         key="teacher_credentials",
         domain=MANAGE_ADMIN_DOMAIN,
         group="账号与安全",

@@ -25,7 +25,8 @@ from .ai_durable_job_service import (
 )
 
 
-LOCAL_TASK_TYPES = ("document_import", "document_generation")
+MATERIAL_TASK_TYPES = ("material_signature_apply", "material_signature_batch", "material_export_bundle")
+LOCAL_TASK_TYPES = (("document_import", "document_generation") if AI_DURABLE_JOBS_ENABLED else ()) + MATERIAL_TASK_TYPES
 WORKER_CONCURRENCY = max(1, min(int(os.getenv("AI_LOCAL_JOB_WORKER_CONCURRENCY", "1")), 2))
 POLL_SECONDS = max(0.5, float(os.getenv("AI_LOCAL_JOB_WORKER_POLL_SECONDS", "2")))
 LEASE_SECONDS = max(120, int(os.getenv("AI_LOCAL_JOB_WORKER_LEASE_SECONDS", "900")))
@@ -151,13 +152,18 @@ async def _execute(job: dict[str, Any]) -> None:
     heartbeat_stop = asyncio.Event()
     heartbeat = asyncio.create_task(_lease_heartbeat(job, heartbeat_stop))
     try:
-        if str(job.get("task_type") or "") == "document_import":
+        task_type = str(job.get("task_type") or "")
+        if task_type in MATERIAL_TASK_TYPES:
+            from .material_workflow_jobs import dispatch_material_job
+
+            await dispatch_material_job(task_type, payload)
+        elif task_type == "document_import":
             await _dispatch_import(payload)
         elif str(job.get("task_type") or "") == "document_generation":
             await _dispatch_generation(payload)
         else:
             raise ValueError("unsupported local durable job type")
-        result_payload = _ensure_target_completed(payload)
+        result_payload = {"completed": True} if task_type in MATERIAL_TASK_TYPES else _ensure_target_completed(payload)
         result = await asyncio.to_thread(
             store_ai_job_result,
             job,
@@ -179,6 +185,10 @@ async def _execute(job: dict[str, Any]) -> None:
             error_code=exc.__class__.__name__,
             error_message=str(exc),
         )
+        if terminal in {JOB_DEAD_LETTER, JOB_REVIEW_REQUIRED} and str(job.get("task_type") or "") in MATERIAL_TASK_TYPES:
+            from .material_workflow_jobs import mark_material_job_failed
+
+            await asyncio.to_thread(mark_material_job_failed, str(job["task_type"]), payload, str(exc))
         if terminal in {JOB_DEAD_LETTER, JOB_REVIEW_REQUIRED} and str(job.get("task_type") or "") == "document_import":
             await asyncio.to_thread(cleanup_ai_job_input_files, payload.get("input_files") or [])
     finally:
@@ -190,7 +200,8 @@ async def _execute(job: dict[str, Any]) -> None:
 async def _finish_result_ready(job: dict[str, Any]) -> None:
     payload = load_ai_job_payload(job)
     result = await asyncio.to_thread(load_ai_job_result, job)
-    _ensure_target_completed(payload)
+    if str(job.get("task_type") or "") not in MATERIAL_TASK_TYPES:
+        _ensure_target_completed(payload)
     await asyncio.to_thread(
         mark_ai_job_succeeded,
         int(job["id"]),
@@ -237,7 +248,7 @@ async def _worker_loop(index: int, stop: asyncio.Event) -> None:
 
 def start_durable_process_job_workers() -> int:
     global _stop_event, _worker_tasks
-    if not AI_DURABLE_JOBS_ENABLED or _worker_tasks:
+    if _worker_tasks:
         return 0
     _stop_event = asyncio.Event()
     _worker_tasks = [asyncio.create_task(_worker_loop(index + 1, _stop_event)) for index in range(WORKER_CONCURRENCY)]

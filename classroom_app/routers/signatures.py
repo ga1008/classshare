@@ -5,6 +5,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse
+from starlette.concurrency import run_in_threadpool
 
 from ..database import get_db_connection
 from ..dependencies import get_client_ip, get_current_user
@@ -17,6 +19,18 @@ from ..services import (
 
 
 router = APIRouter(prefix="/api/signatures")
+
+
+@router.get("/notification-readiness")
+async def api_signature_notification_readiness(user: dict = Depends(get_current_user)):
+    from ..services import email_notification_service as email
+
+    with get_db_connection() as conn:
+        recipient = email._load_recipient_email(conn, role=user["role"], user_pk=user["id"])
+        sender = email._resolve_sender_teacher_id(conn, {"category": "signature_workflow", "recipient_role": user["role"], "recipient_user_pk": user["id"]})
+        configured = bool(sender and email._load_default_email_config(conn, sender))
+    reason = "邮件提醒已就绪，发送仍遵循账号的通知偏好。" if recipient and configured else "请在个人资料填写收件邮箱后接收邮件提醒。" if not recipient else "邮件通道尚未配置；可配置默认发信邮箱，或由平台设置统一发信账号。"
+    return {"email_available": bool(recipient and configured), "email_reason": reason}
 
 
 def _raise_signature_error(exc: signature_service.SignatureServiceError) -> None:
@@ -266,6 +280,9 @@ async def api_create_signature_access_request(
 async def api_list_signature_access_requests(
     direction: str = "incoming",
     status: str = "",
+    q: str = "", document_type: str = "", requester_role: str = "",
+    identity: str = "", organization: str = "", request_kind: str = "", batch_id: str = "",
+    offset: int = 0, limit: int = 50,
     user: dict = Depends(get_current_user),
 ):
     try:
@@ -274,7 +291,9 @@ async def api_list_signature_access_requests(
                 conn,
                 user,
                 direction=direction,
-                status=status,
+                status=status, search=q, document_type=document_type, requester_role=requester_role,
+                identity=identity, organization=organization, request_kind=request_kind, batch_id=batch_id,
+                offset=offset, limit=limit,
             )
     except signature_service.SignatureServiceError as exc:
         _raise_signature_error(exc)
@@ -373,16 +392,15 @@ async def api_batch_review_signature_requests(
     raw_ids = payload.get("request_ids")
     action = str(payload.get("action") or "")
     try:
-        with get_db_connection() as conn:
-            result = signature_workflow_service.batch_review_access_requests(
-                conn,
-                user,
-                [item for item in raw_ids] if isinstance(raw_ids, list) else [],
-                action=action,
-                note=str(payload.get("note") or ""),
-            )
-            conn.commit()
-        return result
+        def review_batch():
+            with get_db_connection() as conn:
+                result = signature_workflow_service.batch_review_access_requests(
+                    conn, user, list(raw_ids) if isinstance(raw_ids, list) else [],
+                    action=action, note=str(payload.get("note") or ""),
+                )
+                conn.commit()
+                return result
+        return await run_in_threadpool(review_batch)
     except signature_service.SignatureServiceError as exc:
         _raise_signature_error(exc)
 
@@ -445,6 +463,7 @@ async def api_approve_signature_access_request(
                 request_id,
                 action="approve",
                 note=str(payload.get("note") or ""),
+                expected_snapshot_id=payload.get("expected_snapshot_id"),
             )
             conn.commit()
         return result
@@ -479,6 +498,7 @@ async def api_signature_point_state(
     function_point_key: str,
     material_type: str,
     material_id: str,
+    q: str = "",
     user: dict = Depends(get_current_user),
 ):
     try:
@@ -489,6 +509,7 @@ async def api_signature_point_state(
                 function_point_key=function_point_key,
                 material_type=material_type,
                 material_id=material_id,
+                search=q[:80],
             )
     except signature_service.SignatureServiceError as exc:
         _raise_signature_error(exc)
@@ -503,6 +524,14 @@ async def api_create_signature_point_flow(
     payload = await _json_body(request)
     raw_ids = payload.get("signature_ids")
     try:
+        from ..services.material_signature_service import prepare_snapshot
+
+        snapshot = await run_in_threadpool(prepare_snapshot, user, {
+            "material_type": str(payload.get("material_type") or ""),
+            "material_id": str(payload.get("material_id") or ""),
+        })
+        if payload.get("expected_revision") and str(payload["expected_revision"]) != snapshot["material_revision"]:
+            raise signature_service.SignatureServiceError(409, "材料内容已更新，请重新打开材料后申请。")
         with get_db_connection() as conn:
             result = signature_point_service.create_point_flow(
                 conn,
@@ -512,11 +541,88 @@ async def api_create_signature_point_flow(
                 material_id=str(payload.get("material_id") or ""),
                 signature_ids=list(raw_ids) if isinstance(raw_ids, list) else [],
                 note=str(payload.get("note") or ""),
+                snapshot=snapshot,
+                auto_apply=payload.get("auto_apply") is True,
+                opinion_mode="stamp" if payload.get("opinion_mode") == "stamp" else "keep",
             )
             conn.commit()
         return result
     except signature_service.SignatureServiceError as exc:
         _raise_signature_error(exc)
+
+
+@router.get("/requests/{request_id:int}", response_class=JSONResponse)
+async def api_signature_request_detail(request_id: int, user: dict = Depends(get_current_user)):
+    from ..services.material_signature_service import authorized_request
+
+    try:
+        with get_db_connection() as conn:
+            item = authorized_request(conn, user, request_id)
+        return {"status": "success", "request": item,
+                "preview_url": f"/api/signatures/requests/{request_id}/preview" if item.get("snapshot_id") else "",
+                "preview_notice": "" if item.get("snapshot_id") else "历史申请未保存申请时文档，请申请人选择材料重新提交。"}
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/requests/{request_id:int}/document-review")
+async def api_signature_document_review(request_id: int, request: Request, user: dict = Depends(get_current_user)):
+    from ..services.material_signature_service import review_document_requests
+
+    payload = await _json_body(request)
+    def review():
+        with get_db_connection() as conn:
+            result = review_document_requests(conn, user, request_id, action=str(payload.get("action") or ""),
+                note=str(payload.get("note") or ""), expected_snapshot_id=payload.get("expected_snapshot_id"))
+            conn.commit()
+            return result
+    try:
+        return await run_in_threadpool(review)
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+def _render_signature_request_preview(request_id: int, user: dict) -> str:
+    from ..services.material_signature_service import authorized_request, artifact_path, json_object
+    from ..services.document_render_service import document_render_service
+
+    with get_db_connection() as conn:
+        item = authorized_request(conn, user, request_id)
+        snapshot = conn.execute("SELECT * FROM signature_material_snapshots WHERE id = ?", (item.get("snapshot_id", ""),)).fetchone()
+        if not snapshot:
+            raise signature_service.SignatureServiceError(409, "历史申请没有冻结文档，请申请人基于当前材料重新申请。")
+        artifact = json_object(snapshot["artifact_json"])
+    original = artifact
+    artifact = artifact.get("pdf_artifact") or artifact
+    job = document_render_service.render_artifact(
+        artifact_path(artifact).read_bytes(), filename=artifact["filename"], media_type=artifact["media_type"],
+        source_format=artifact["suffix"].lstrip("."),
+    )
+    if not original.get("pdf_artifact"):
+        from ..services.material_signature_service import store_artifact, dumps
+
+        pdf_path = job.root / (job.manifest.get("pdf_file") or "document.pdf")
+        if pdf_path.is_file():
+            original["pdf_artifact"] = store_artifact(pdf_path.read_bytes(), filename="申请时材料.pdf", media_type="application/pdf")
+            with get_db_connection() as conn:
+                conn.execute("UPDATE signature_material_snapshots SET artifact_json = ? WHERE id = ?", (dumps(original), snapshot["id"]))
+                conn.commit()
+    return document_render_service.render_preview_html(job, title=snapshot["title"], user=user,
+        eyebrow="签名审批 · 申请时文档", download_label="下载申请时文档", signature_request_id=request_id)
+
+
+@router.get("/requests/{request_id:int}/preview", response_class=HTMLResponse)
+async def api_signature_request_preview(request_id: int, user: dict = Depends(get_current_user)):
+    from ..services.document_render_service import document_render_service, DocumentRenderError
+
+    try:
+        content = await run_in_threadpool(_render_signature_request_preview, request_id, user)
+        return HTMLResponse(content, headers={"Cache-Control": "private, no-store"})
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+    except (DocumentRenderError, RuntimeError) as exc:
+        return HTMLResponse(document_render_service.render_error_html(title="申请文档预览", message=str(exc)), status_code=503,
+                            headers={"Cache-Control": "private, no-store"})
 
 
 @router.post("/point-flows/{flow_id:int}/end", response_class=JSONResponse)
@@ -586,3 +692,93 @@ def _safe_download_name(name: Any, ext: Any) -> str:
     if safe_ext and not safe_ext.startswith("."):
         safe_ext = f".{safe_ext}"
     return f"{safe_name or 'signature'}{safe_ext or '.png'}"
+
+
+def _material_call(user, operation, *args):
+    from ..services import material_batch_service
+
+    try:
+        with get_db_connection() as conn:
+            result = getattr(material_batch_service, operation)(conn, user, *args)
+            conn.commit()
+            return result
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/materials/selection")
+async def api_material_selection(request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_body(request)
+    return await run_in_threadpool(_material_call, user, "selection_context", payload.get("documents"))
+
+
+@router.post("/materials/applications")
+async def api_material_application(request: Request, user: dict = Depends(get_current_user)):
+    return await run_in_threadpool(_material_call, user, "create_application", await _json_body(request))
+
+
+@router.get("/materials/applications")
+async def api_material_application_history(user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        batches = conn.execute("SELECT id, status, results_json, error_message, created_at FROM signature_application_batches WHERE requester_role = ? AND requester_id = ? ORDER BY created_at DESC, id DESC LIMIT 50", (user["role"], user["id"])).fetchall()
+        flows = conn.execute("SELECT id, application_batch_id, material_label, function_point_key, status, apply_status, apply_error FROM signature_point_flows WHERE requester_role = ? AND requester_id = ? ORDER BY created_at DESC, id DESC LIMIT 100", (user["role"], user["id"])).fetchall()
+    import json
+
+    return {"batches": [{**dict(batch), "results": json.loads(batch["results_json"] or "[]")} for batch in batches], "flows": [dict(flow) for flow in flows]}
+
+
+@router.get("/materials/applications/{batch_id}")
+async def api_material_application_status(batch_id: str, user: dict = Depends(get_current_user)):
+    return await run_in_threadpool(_material_call, user, "job_status", batch_id, "application")
+
+
+@router.post("/materials/bundles/preflight")
+async def api_material_bundle_preflight(request: Request, user: dict = Depends(get_current_user)):
+    return await run_in_threadpool(_material_call, user, "bundle_preflight", await _json_body(request))
+
+
+@router.post("/materials/bundles/{bundle_id}/submit")
+async def api_material_bundle_submit(bundle_id: str, request: Request, user: dict = Depends(get_current_user)):
+    payload = await _json_body(request)
+    return await run_in_threadpool(_material_call, user, "submit_bundle", bundle_id, payload.get("allow_incomplete") is True)
+
+
+@router.get("/materials/bundles/{bundle_id}")
+async def api_material_bundle_status(bundle_id: str, user: dict = Depends(get_current_user)):
+    return await run_in_threadpool(_material_call, user, "job_status", bundle_id, "bundle")
+
+
+@router.get("/materials/bundles/{bundle_id}/download")
+async def api_material_bundle_download(bundle_id: str, user: dict = Depends(get_current_user)):
+    from datetime import datetime
+    from ..services.material_batch_service import job_status
+    from ..services.material_signature_service import artifact_path, json_object, load_material
+
+    try:
+        with get_db_connection() as conn:
+            job_status(conn, user, bundle_id, "bundle")
+            row = conn.execute("SELECT * FROM material_export_bundles WHERE id = ?", (bundle_id,)).fetchone()
+            if datetime.fromisoformat(str(row["expires_at"])) < datetime.now():
+                raise signature_service.SignatureServiceError(410, "下载已过期，请重新打包。")
+            if row["status"] != "ready":
+                raise signature_service.SignatureServiceError(409, "压缩包尚未准备完成。")
+            for doc in json_object(row["plan_json"])["documents"]:
+                load_material(conn, user, doc, write=False)
+            artifact = json_object(row["artifact_json"])
+        return FileResponse(artifact_path(artifact), filename=artifact["filename"], media_type="application/zip", headers={"Cache-Control": "private, no-store"})
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)
+
+
+@router.post("/flows/{flow_id:int}/apply")
+async def api_material_apply_flow(flow_id: int, user: dict = Depends(get_current_user)):
+    from ..services.material_signature_apply_service import apply_flow
+
+    try:
+        with get_db_connection() as conn:
+            row = conn.execute("SELECT requester_role, requester_id FROM signature_point_flows WHERE id = ?", (flow_id,)).fetchone()
+            if not row or (row["requester_role"], row["requester_id"]) != (user["role"], user["id"]):
+                raise signature_service.SignatureServiceError(404, "申请流程不存在或无权操作。")
+        return await apply_flow(flow_id)
+    except signature_service.SignatureServiceError as exc:
+        _raise_signature_error(exc)

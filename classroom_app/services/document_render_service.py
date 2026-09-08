@@ -157,7 +157,7 @@ def is_valid_render_key(key: str) -> bool:
     return len(text) == 64 and all(ch in "0123456789abcdef" for ch in text.lower())
 
 
-def issue_render_token(key: str, *, user: dict[str, Any], ttl_seconds: int | None = None) -> str:
+def issue_render_token(key: str, *, user: dict[str, Any], ttl_seconds: int | None = None, signature_request_id: int | None = None) -> str:
     if not is_valid_render_key(key):
         raise DocumentRenderError("预览缓存标识无效，请重新生成预览。")
     scope = _render_user_scope(user)
@@ -170,9 +170,21 @@ def issue_render_token(key: str, *, user: dict[str, Any], ttl_seconds: int | Non
         "scope": scope,
         "exp": int(time.time()) + ttl,
     }
+    if signature_request_id is not None:
+        payload["signature_request_id"] = int(signature_request_id)
     payload_b64 = _b64encode(_canonical_json(payload).encode("utf-8"))
     signature = hmac.new(_secret_key_bytes(), payload_b64.encode("ascii"), hashlib.sha256).digest()
     return RENDER_TOKEN_PREFIX + payload_b64 + "." + _b64encode(signature)
+
+
+def render_token_signature_request(token: str) -> int | None:
+    """Read the purpose only AFTER the caller verifies the token signature."""
+    try:
+        payload = json.loads(_b64decode(token[len(RENDER_TOKEN_PREFIX):].split(".", 1)[0]))
+        value = payload.get("signature_request_id")
+        return int(value) if value is not None else None
+    except (ValueError, TypeError, KeyError):
+        return None
 
 
 def sign_render_key(key: str) -> str:
@@ -323,8 +335,9 @@ class DocumentRenderService:
         eyebrow: str = "文档真实预览",
         download_label: str = "下载文件",
         download_disabled_reason: str = "",
+        signature_request_id: int | None = None,
     ) -> str:
-        token = issue_render_token(job.key, user=user, ttl_seconds=self.token_ttl_seconds)
+        token = issue_render_token(job.key, user=user, ttl_seconds=self.token_ttl_seconds, signature_request_id=signature_request_id)
         page_payload = []
         for page_number in range(1, job.page_count + 1):
             base = f"/api/document-renderer/jobs/{quote(job.key)}/pages/{page_number}?token={quote(token)}"

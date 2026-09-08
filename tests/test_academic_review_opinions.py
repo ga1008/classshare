@@ -130,7 +130,7 @@ class AcademicReviewOpinionTests(unittest.TestCase):
         self.assertEqual("", fields["department_review_opinion"])
         self.assertEqual("explicit", fields["department_review_opinion_source"])
         self.assertNotIn("department_review_opinion_image_path", fields)
-        self.assertFalse(service.academic_exam_analysis_is_complete(fields, self.payload["structured"]))
+        self.assertTrue(service.academic_exam_analysis_is_complete(fields, self.payload["structured"]))
 
     def test_stamp_alone_never_completes_review(self) -> None:
         self.bind("department", [3])
@@ -185,20 +185,21 @@ class AcademicReviewOpinionTests(unittest.TestCase):
             items = service.list_teacher_final_material_batches(self.conn, 1, document_type=service.ACADEMIC_EXAM_ANALYSIS_TYPE)
         self.assertEqual(12, len(items))
         for item in items:
-            self.assertEqual(int(item["id"]) % 2 == 0, item["edit_state"]["analysis_complete"])
+            self.assertTrue(item["edit_state"]["analysis_complete"])
         self.assertEqual(3, sum(sql.lstrip().upper().startswith("SELECT") for sql in statements))
         self.compose_mock.assert_not_called()
 
-    def test_layout_metadata_matches_rendered_table_and_external_note(self) -> None:
+    def test_layout_metadata_matches_native_table_and_original_last_row_note(self) -> None:
         from classroom_app.services.academic_final_material_document_service import build_exam_analysis_docx
 
         payload = service.build_exam_analysis_export_payload({}, {})
         document = Document(BytesIO(build_exam_analysis_docx(payload)))
-        self.assertEqual("gxufl-academic-exam-analysis-v3", payload["schema_version"])
-        self.assertEqual(19, payload["layout_profile"]["table_rows"])
+        self.assertEqual("gxufl-academic-exam-analysis-v4", payload["schema_version"])
+        self.assertEqual(23, payload["layout_profile"]["table_rows"])
         self.assertEqual(len(document.tables[0].rows), payload["layout_profile"]["table_rows"])
-        self.assertEqual("paragraph_after_table", payload["layout_profile"]["note_placement"])
-        self.assertTrue(any(paragraph.text.startswith("注：1、") for paragraph in document.paragraphs))
+        self.assertEqual("note_in_original_last_row", payload["layout_profile"]["note_placement"])
+        self.assertTrue(document.tables[0].rows[-1].cells[0].text.startswith("注：1、"))
+        self.assertFalse(any(paragraph.text.startswith("注：1、") for paragraph in document.paragraphs))
         self.assertEqual(["heading", "opinion", "personal_signature_and_label"], payload["layout_profile"]["review_layout"]["content_order"])
         legacy = {"schema_version": "gxufl-academic-exam-analysis-v2", "fields": {"department_review_opinion": ""}, "layout_profile": {"table_rows": 22}}
         normalized = service.normalize_academic_final_material_payload(
@@ -219,10 +220,10 @@ class AcademicReviewOpinionApiTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             router.AcademicFinalMaterialUpdateRequest(document_type=service.ACADEMIC_EXAM_ANALYSIS_TYPE, department_review_opinion="核" * 81)
 
-    def test_first_personal_signature_defaults_but_explicit_clear_and_stamp_are_preserved(self) -> None:
+    def test_first_personal_signature_does_not_add_optional_remark(self) -> None:
         from classroom_app.routers.materials_parts import academic_final_materials as router
 
-        for explicit, stamp, expected in ((False, False, "已核"), (True, False, ""), (False, True, None)):
+        for explicit, stamp, expected in ((False, False, None), (True, False, ""), (False, True, None)):
             with self.subTest(explicit=explicit, stamp=stamp):
                 fields = {"department_review_opinion": ""} if explicit else {}
                 with (

@@ -10,6 +10,7 @@ automatically when the material is rebuilt into a different revision.
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from typing import Any
 
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
@@ -76,7 +77,7 @@ def _active_flow_row(conn: Any, actor: dict[str, Any], scope: dict[str, str]) ->
         SELECT * FROM signature_point_flows
         WHERE function_point_key = ? AND material_type = ? AND material_id = ?
           AND material_revision = ? AND requester_role = ? AND requester_id = ?
-          AND status IN ('pending', 'partially_approved')
+          AND (status IN ('pending', 'partially_approved') OR (status = 'approved' AND apply_status IN ('waiting', 'queued')))
         ORDER BY created_at DESC, id DESC LIMIT 1
         """,
         (
@@ -130,6 +131,12 @@ def _serialize_flow(conn: Any, flow_row: Any | None) -> dict[str, Any] | None:
         "created_at": flow["created_at"] or "",
         "updated_at": flow["updated_at"] or "",
         "ended_at": flow["ended_at"] or "",
+        "snapshot_id": flow.get("snapshot_id") or "",
+        "application_batch_id": flow.get("application_batch_id") or "",
+        "auto_apply": bool(flow.get("auto_apply")),
+        "apply_status": flow.get("apply_status") or "manual",
+        "apply_error": flow.get("apply_error") or "",
+        "plan_revision": flow.get("plan_revision") or "",
         "items": items,
     }
 
@@ -173,6 +180,7 @@ def get_point_state(
     function_point_key: str,
     material_type: str,
     material_id: str,
+    search: str = "",
 ) -> dict[str, Any]:
     actor, scope = _scope(
         conn,
@@ -186,7 +194,7 @@ def get_point_state(
     accepted_identities = set(
         signature_identity_service.expand_required_identities(point_row["required_identities"])
     )
-    listed = signature_service.list_signatures(conn, user, limit=500)
+    listed = signature_service.list_signatures(conn, user, search=search, limit=500)
     bound_ids = _binding_ids(conn, scope)
     listed_ids = {int(item["id"]) for item in listed.get("items") or []}
     # A broad platform library can exceed the picker limit. Always include
@@ -215,7 +223,7 @@ def get_point_state(
     )
     grant_rows = conn.execute(
         """
-        SELECT request.signature_id, item.id AS grant_item_id
+        SELECT request.signature_id, item.id AS grant_item_id, request.signature_hash
         FROM signature_access_request_items item
         JOIN signature_access_requests request ON request.id = item.request_id
         WHERE request.requester_role = ? AND request.requester_id = ?
@@ -229,11 +237,13 @@ def get_point_state(
             scope["material_type"], scope["material_id"], scope["material_revision"],
         ),
     ).fetchall()
-    grants = {int(row["signature_id"]): int(row["grant_item_id"]) for row in grant_rows}
+    current_hashes = {int(item["id"]): item.get("file_hash", "") for item in listed.get("items") or []}
+    grants = {int(row["signature_id"]): (int(row["grant_item_id"]), row["signature_hash"]) for row in grant_rows if not row["signature_hash"] or row["signature_hash"] == current_hashes.get(int(row["signature_id"]))}
     signatures: list[dict[str, Any]] = []
     for item in listed.get("items") or []:
         direct_mode = signature_workflow_service.direct_authorization_mode(actor, item)
-        grant_item_id = grants.get(int(item["id"]))
+        grant = grants.get(int(item["id"]))
+        grant_item_id = grant[0] if grant and (not grant[1] or grant[1] == item.get("file_hash")) else None
         can_use = bool(direct_mode or grant_item_id)
         try:
             owner_id = int(item.get("owner_id") or 0)
@@ -318,7 +328,21 @@ def create_point_flow(
     material_id: str,
     signature_ids: list[int],
     note: str = "",
+    snapshot: dict[str, Any] | None = None,
+    auto_apply: bool = False,
+    application_batch_id: str = "",
+    notify_reviewers: bool = True,
+    opinion_mode: str = "keep",
+    opinion_text: str = "",
 ) -> dict[str, Any]:
+    from .material_signature_revision_service import ordered_binding_hash
+
+    if snapshot:
+        from .material_signature_service import pin_snapshot
+
+        if (snapshot["material_type"], snapshot["material_id"]) != (material_type, str(material_id)):
+            raise signature_service.SignatureServiceError(400, "申请快照与材料不一致。")
+        pin_snapshot(conn, user, snapshot)
     actor, scope = _scope(
         conn,
         user,
@@ -346,10 +370,13 @@ def create_point_flow(
         conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (lock_key,))
     if _active_flow_row(conn, actor, scope):
         raise signature_service.SignatureServiceError(409, "该签名点已有未结束的申请流程。")
+    candidates = {}
     for signature_id in ordered:
         signature = signature_workflow_service._signature_row(conn, signature_id)
         if not signature_service.can_view_signature(actor, signature):
             raise signature_service.SignatureServiceError(403, "申请中包含当前账号不可查看的签名。")
+        if snapshot and not signature_service.resolve_signature_file_path(signature):
+            raise signature_service.SignatureServiceError(422, "所选签名图片文件不存在。")
         access = signature_workflow_service.access_state(
             conn,
             actor,
@@ -359,12 +386,13 @@ def create_point_flow(
             material_id=scope["material_id"],
             material_revision=scope["material_revision"],
         )
-        if access.get("can_use"):
+        if access.get("can_use") and not snapshot:
             raise signature_service.SignatureServiceError(400, "申请中包含已可直接使用或已获授权的签名。")
-        if not signature_workflow_service._reviewer_identities(conn, signature) and not signature_workflow_service._admin_identities(conn):
+        if not access.get("can_use") and not signature_workflow_service._reviewer_identities(conn, signature) and not signature_workflow_service._admin_identities(conn):
             raise signature_service.SignatureServiceError(
                 422, "申请中有签名未绑定任何账号，且平台暂无管理员可代为审批。"
             )
+        candidates[signature_id] = (dict(signature), access)
     try:
         flow_id = execute_insert_returning_id(
             conn,
@@ -386,29 +414,42 @@ def create_point_flow(
         if isinstance(exc, sqlite3.IntegrityError) or (engine == "postgres" and ("unique" in detail or "duplicate" in detail)):
             raise signature_service.SignatureServiceError(409, "该签名点已有未结束的申请流程。") from exc
         raise
-    for order, signature_id in enumerate(ordered):
-        result = signature_workflow_service.create_access_request(
-            conn,
-            user,
-            signature_id,
-            function_point_keys=[scope["function_point_key"]],
-            note=note,
-            flow_id=flow_id,
-            material_type=scope["material_type"],
-            material_id=scope["material_id"],
-            material_revision=scope["material_revision"],
-            material_label=scope["material_label"],
-            display_order=order,
+    if snapshot:
+        conn.execute(
+            "UPDATE signature_point_flows SET snapshot_id = ?, application_batch_id = ?, auto_apply = ?, "
+            "apply_status = ?, plan_revision = ?, base_binding_hash = ?, opinion_mode = ?, opinion_text = ? WHERE id = ?",
+            (snapshot["id"], application_batch_id, int(auto_apply), "waiting" if auto_apply else "manual",
+             uuid.uuid4().hex, ordered_binding_hash(_binding_ids(conn, scope)), opinion_mode, opinion_text, flow_id),
         )
-        request_id = int(result["request"]["id"])
+    pending = 0
+    for order, signature_id in enumerate(ordered):
+        signature, access = candidates[signature_id]
+        request_id = None
+        if not access.get("can_use"):
+            result = signature_workflow_service.create_access_request(
+                conn, user, signature_id, function_point_keys=[scope["function_point_key"]],
+                note=note, flow_id=flow_id, material_type=scope["material_type"],
+                material_id=scope["material_id"], material_revision=scope["material_revision"],
+                material_label=scope["material_label"], display_order=order,
+                snapshot=snapshot, notify_reviewers=notify_reviewers,
+            )
+            request_id = int(result["request"]["id"])
+            pending += 1
         conn.execute(
             """
             INSERT INTO signature_point_flow_items (
-                flow_id, signature_id, display_order, request_id
-            ) VALUES (?, ?, ?, ?)
+                flow_id, signature_id, display_order, request_id, status,
+                signature_kind, signature_hash, authorization_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (flow_id, signature_id, order, request_id),
+            (flow_id, signature_id, order, request_id, "pending" if request_id else "approved",
+             signature.get("signature_kind", "personal"), signature.get("file_hash", ""), access.get("authorization_mode", "")),
         )
+    if not pending:
+        conn.execute("UPDATE signature_point_flows SET status = 'approved', ended_at = CURRENT_TIMESTAMP WHERE id = ?", (flow_id,))
+        from .material_signature_apply_service import enqueue_application
+
+        enqueue_application(conn, flow_id)
     flow_row = conn.execute("SELECT * FROM signature_point_flows WHERE id = ?", (flow_id,)).fetchone()
     return {"status": "success", "flow": _serialize_flow(conn, flow_row)}
 
@@ -420,7 +461,7 @@ def end_point_flow(conn: Any, user: dict[str, Any], flow_id: int) -> dict[str, A
         raise signature_service.SignatureServiceError(404, "签名申请流程不存在。")
     if str(flow["requester_role"] or "") != actor["role"] or int(flow["requester_id"] or 0) != int(actor["id"]):
         raise signature_service.SignatureServiceError(403, "只有申请人可以结束该流程。")
-    if str(flow["status"] or "") not in ACTIVE_FLOW_STATUSES:
+    if str(flow["status"] or "") not in ACTIVE_FLOW_STATUSES and not (flow["status"] == "approved" and flow["apply_status"] in {"waiting", "queued"}):
         raise signature_service.SignatureServiceError(409, "该申请流程已经结束。")
     conn.execute(
         "UPDATE signature_point_flows SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP, ended_at = CURRENT_TIMESTAMP WHERE id = ?",

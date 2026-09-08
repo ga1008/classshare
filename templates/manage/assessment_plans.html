@@ -10,6 +10,10 @@
 {{ topbar_action('导入解析', '过程材料', 'upload', variant='soft', tone='slate', attrs='data-ap-import-open') }}
 {% endblock %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/material_workflows.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/signature_point_workflow.css') }}">
+{% endblock %}
 {% block content %}
 <section class="manage-lp" data-ap-root>
     <div class="manage-lp__intro">

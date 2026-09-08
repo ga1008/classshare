@@ -10,7 +10,6 @@ const state = {
     selectedSchoolCode: '',
     schoolOptions: [],
     ownerTeacherOptions: [],
-    functionPoints: [],
     pendingRequests: [],
     outgoingRequests: [],
     scopeOptions: signatureScopeOptions,
@@ -103,13 +102,6 @@ function cacheElements() {
         'signature-requests-refresh-btn',
         'signature-request-list',
         'signature-outgoing-request-list',
-        'signature-request-modal',
-        'signature-request-form',
-        'signature-request-subtitle',
-        'signature-function-point-list',
-        'signature-request-note',
-        'signature-request-status',
-        'signature-request-submit-btn',
         'signature-upload-form',
         'signature-file-input',
         'signature-file-label',
@@ -647,54 +639,7 @@ async function claimCurrentSignature() {
 }
 
 async function requestCurrentSignatureUse() {
-    if (!state.selectedId) return;
-    const item = state.items.find((entry) => entry.id === state.selectedId);
-    if (!item || !item.can_request_use) return;
-    if (!state.functionPoints.length) {
-        const payload = await apiFetch('/api/signatures/function-points', { method: 'GET' });
-        state.functionPoints = Array.isArray(payload.items) ? payload.items : [];
-    }
-    if (els['signature-request-subtitle']) {
-        els['signature-request-subtitle'].textContent = `为“${item.subject_name || item.name}”选择一个或多个一次性使用功能点。`;
-    }
-    if (els['signature-function-point-list']) {
-        els['signature-function-point-list'].innerHTML = state.functionPoints.map((point) => `
-            <label class="signature-function-point-option">
-                <input type="checkbox" name="signature_function_point" value="${escapeHtml(point.key)}">
-                <span><strong>${escapeHtml(point.label)}</strong><small>${escapeHtml(point.description || point.key)}</small></span>
-            </label>
-        `).join('') || '<div class="signature-empty">后台尚未登记可申请的签名功能点。</div>';
-    }
-    if (els['signature-request-note']) els['signature-request-note'].value = '';
-    if (els['signature-request-status']) els['signature-request-status'].textContent = '';
-    openModal('signature-request-modal');
-}
-
-async function submitSignatureRequest(event) {
-    event.preventDefault();
-    if (!state.selectedId) return;
-    const keys = Array.from(document.querySelectorAll('input[name="signature_function_point"]:checked'))
-        .map((input) => input.value);
-    if (!keys.length) {
-        showMessage('请至少选择一个签名功能点。', 'warning');
-        return;
-    }
-    const button = els['signature-request-submit-btn'];
-    if (button) button.disabled = true;
-    try {
-        await apiFetch(`/api/signatures/${state.selectedId}/requests`, {
-            method: 'POST',
-            body: {
-                function_point_keys: keys,
-                note: els['signature-request-note']?.value?.trim() || '',
-            },
-        });
-        closeModal('signature-request-modal');
-        showMessage('申请已提交；归属人和签名者均会收到通知，任一人批准即可。', 'success');
-        await loadSignatures({ keepSelection: true });
-    } finally {
-        if (button) button.disabled = false;
-    }
+    window.location.assign('/manage/me/signature-workflows?start=1');
 }
 
 async function loadSignatureRequests() {
@@ -1036,7 +981,6 @@ function bindEvents() {
     els['signature-edit-form']?.addEventListener('submit', submitEdit);
     els['signature-request-btn']?.addEventListener('click', requestCurrentSignatureUse);
     els['signature-claim-btn']?.addEventListener('click', claimCurrentSignature);
-    els['signature-request-form']?.addEventListener('submit', submitSignatureRequest);
     els['signature-requests-refresh-btn']?.addEventListener('click', loadSignatureRequests);
     els['signature-request-list']?.addEventListener('click', (event) => {
         const button = event.target.closest?.('[data-signature-request-action]');
@@ -1105,3 +1049,5 @@ document.addEventListener('DOMContentLoaded', () => {
     bindEvents();
     loadSignatures({ keepSelection: false });
 });
+
+if (location.hash === '#signature-requests') location.replace('/manage/me/signature-workflows');

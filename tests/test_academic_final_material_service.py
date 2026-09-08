@@ -218,7 +218,7 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
             self.assertIn(title, all_text)
             self.assertIn("计算机网络实验", all_text)
 
-    def test_exam_analysis_rebuilds_official_single_table_geometry(self) -> None:
+    def test_exam_analysis_fills_the_official_native_table_geometry(self) -> None:
         payload = build_exam_analysis_export_payload(
             self.analysis,
             self.validation,
@@ -242,7 +242,7 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
 
         document = Document(BytesIO(content))
         self.assertEqual(1, len(document.tables))
-        self.assertEqual(19, len(document.tables[0].rows))
+        self.assertEqual(23, len(document.tables[0].rows))
         section = document.sections[0]
         self.assertEqual(11905, section.page_width.twips)
         self.assertEqual(16837, section.page_height.twips)
@@ -260,23 +260,24 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
             for row in table.rows
         ]
         self.assertEqual([720, 340, 220], row_heights[:3])
-        self.assertEqual(3000, row_heights[15])
-        self.assertEqual(4960, row_heights[17])
-        self.assertEqual(2240, row_heights[18])
+        self.assertEqual(3000, row_heights[16])
+        self.assertEqual(2840, row_heights[18])
+        self.assertEqual([280, 1860, 320], row_heights[19:22])
         self.assertEqual("广西外国语学院课程试卷分析表", table.rows[0].cells[0].text)
         self.assertIn("教师组题", table.rows[5].cells[7].text)
         self.assertEqual("√", table.rows[5].cells[9].text)
-        self.assertIn("本人阅卷 √", table.rows[13].cells[2].text)
-        self.assertIn("简要分析试题结构", table.rows[16].cells[1].text)
-        self.assertIn("成绩分布与试卷分析", table.rows[17].cells[1].text)
-        self.assertIn("本表一式两份", document.paragraphs[-1].text)
-        self.assertIn('w:textDirection w:val="tbRl"', document._element.xml)
+        self.assertIn("本人阅卷 √", table.rows[14].cells[2].text)
+        self.assertIn("简要分析试题结构", table.rows[17].cells[1].text)
+        self.assertIn("成绩分布与试卷分析", table.rows[18].cells[1].text)
+        self.assertIn("本表一式两份", table.rows[-1].cells[0].text)
+        self.assertNotIn("w:textDirection", document._element.xml)
 
         with ZipFile(BytesIO(content)) as archive:
             media = [name for name in archive.namelist() if name.startswith("word/media/")]
             document_xml = archive.read("word/document.xml").decode("utf-8")
         self.assertGreaterEqual(len(media), 2)  # Word may deduplicate identical signature images.
-        self.assertEqual(3, document_xml.count("<a:blip "))
+        self.assertEqual(2, document_xml.count("<a:blip "))
+        self.assertEqual(3, len(document._element.xpath(".//w:pict")))
         self.assertNotIn(str(department_signature), document_xml)
         self.assertNotIn(str(dean_signature), document_xml)
         self.assertNotIn("已阅", document_xml)

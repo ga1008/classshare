@@ -109,6 +109,9 @@ def build_material_export_artifact(
 ) -> MaterialExportArtifact:
     payload = _coerce_payload(parse_payload)
     if "export_payload" not in payload and str(payload.get("template_key") or "").strip():
+        from .academic_final_material_source_service import ACADEMIC_NATIVE_SOURCE_KEY
+
+        native_source = payload.get(ACADEMIC_NATIVE_SOURCE_KEY)
         template_key = str(payload.get("template_key") or "").strip()
         payload = {
             "document_group": payload.get("document_group") or ("final_material" if template_key in FINAL_MATERIAL_TYPES else ""),
@@ -119,6 +122,8 @@ def build_material_export_artifact(
             "tables": payload.get("tables") if isinstance(payload.get("tables"), list) else [],
             "export_payload": payload,
         }
+        if native_source is not None:
+            payload[ACADEMIC_NATIVE_SOURCE_KEY] = native_source
     export_payload = _as_dict(payload.get("export_payload"))
     template_key = str(export_payload.get("template_key") or payload.get("document_type") or "teaching_document")
     config = TEMPLATE_CONFIGS.get(template_key, TEMPLATE_CONFIGS.get(str(payload.get("document_type")), {}))

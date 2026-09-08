@@ -812,6 +812,7 @@ async def _persist_final_material_record_update(
     *,
     signature_use_intents: list[dict[str, Any]] | None = None,
     require_unchanged_record: bool = False,
+    expected_signature_flow_id: int | None = None,
 ) -> dict:
     readme_content = build_import_readme(result=parse_result, original_name=record["source_file_name"] or parse_result.document_type_label)
     readme_bytes = readme_content.encode("utf-8")
@@ -836,6 +837,10 @@ async def _persist_final_material_record_update(
     package_id = int(record["package_material_id"] or 0) or None
 
     with get_db_connection() as conn:
+        if expected_signature_flow_id:
+            from ...services.material_signature_apply_service import validate_application
+
+            validate_application(conn, expected_signature_flow_id)
         if require_unchanged_record:
             claimed = conn.execute(
                 "UPDATE material_ai_import_records SET id = id WHERE id = ? AND teacher_id = ? "
@@ -850,6 +855,9 @@ async def _persist_final_material_record_update(
         ).fetchone()
         if not current:
             raise HTTPException(404, "未找到可更新的解析记录")
+        from ...services.material_signature_revision_service import update_record_revision
+
+        update_record_revision(conn, current, parse_result.export_payload)
         for intent in signature_use_intents or []:
             try:
                 raw_ids = intent.get("signature_ids")
@@ -948,6 +956,10 @@ async def _persist_final_material_record_update(
                 int(record_id),
             ),
         )
+        if expected_signature_flow_id:
+            from ...services.material_signature_apply_service import mark_applied
+
+            mark_applied(conn, expected_signature_flow_id)
         conn.commit()
         refreshed = conn.execute(
             "SELECT * FROM material_ai_import_records WHERE id = ?",

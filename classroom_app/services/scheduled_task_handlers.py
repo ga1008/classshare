@@ -588,6 +588,10 @@ def handle_signature_request_reminder(task: dict[str, Any]) -> str:
 
 register_task_handler(TASK_KIND_SIGNATURE_REQUEST_REMINDER, handle_signature_request_reminder)
 
+from .material_workflow_storage_service import cleanup_expired_bundles  # noqa: E402
+
+register_task_handler("material_workflow_cleanup", cleanup_expired_bundles)
+
 
 from .wechat_mp_subscribe_service import (  # noqa: E402
     DEADLINE_SCAN_TASK_KIND,

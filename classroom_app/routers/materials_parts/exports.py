@@ -13,6 +13,7 @@ from ...services.learning_progress_service import get_material_mastery_check_con
 from ...services.html_package_service import find_html_package_root, lesson_number_from_entry_name
 from ...services.material_render_service import attach_render_metadata, resolve_render_file, resolve_render_target
 from ...services.document_render_service import DocumentRenderError, document_render_service
+from ...services.academic_final_material_source_service import NativeAcademicSourceError
 
 
 router = APIRouter()
@@ -22,6 +23,25 @@ _DYNAMIC_DOCUMENT_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
+
+
+def _build_material_export_for_response(payload: dict, *, fallback_filename: str, requested_format: str):
+    """Expose unsupported native layouts as actionable export conflicts."""
+    try:
+        return build_material_export_artifact(
+            payload,
+            fallback_filename=fallback_filename,
+            requested_format=requested_format,
+        )
+    except NativeAcademicSourceError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        # The native form filler can reject content that would overflow its
+        # original cells.  Preserve other document types' existing behavior.
+        export_payload = payload.get("export_payload") or {}
+        if str(payload.get("document_type") or export_payload.get("template_key") or "") == "academic_exam_analysis":
+            raise HTTPException(400, str(exc)) from exc
+        raise
 
 
 def _validated_reader_return_source(conn, user: dict, class_offering_id, session_id) -> dict | None:
@@ -124,7 +144,7 @@ def _load_ai_import_record_preview_payload(conn, record_id: int, user: dict):
             continue
     if not has_access:
         raise HTTPException(404, "未找到可预览的解析记录")
-    payload = _build_ai_import_payload_from_record(row, conn)
+    payload = _build_ai_import_payload_from_record(row, conn, for_export=True)
     fallback_filename = row["source_file_name"] or f"材料解析-{record_id}"
     return row, payload, fallback_filename
 
@@ -164,10 +184,10 @@ async def export_ai_import_record(
                 continue
         if not has_access:
             raise HTTPException(404, "未找到可导出的解析记录")
-        payload = _build_ai_import_payload_from_record(row, conn)
+        payload = _build_ai_import_payload_from_record(row, conn, for_export=True)
         fallback_filename = row["source_file_name"] or f"材料解析-{record_id}"
 
-    artifact = build_material_export_artifact(
+    artifact = _build_material_export_for_response(
         payload,
         fallback_filename=fallback_filename,
         requested_format=format,
@@ -202,7 +222,7 @@ async def preview_ai_import_record_export(
     requested_format = (format or preferred_format).strip().lower()
     if requested_format == "pdf":
         requested_format = preferred_format
-    artifact = build_material_export_artifact(
+    artifact = _build_material_export_for_response(
         payload,
         fallback_filename=fallback_filename,
         requested_format=requested_format,

@@ -505,5 +505,8 @@ def ensure_signature_workflow_schema(conn: Any) -> None:
     ):
         conn.execute(statement)
 
+    from .schema_material_signatures import ensure_material_signature_schema
+
+    ensure_material_signature_schema(conn, engine=engine)
     _seed_function_points(conn, engine=engine)
     _SCHEMA_READY = True

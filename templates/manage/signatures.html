@@ -686,31 +686,12 @@
         </aside>
     </div>
 
-    <section class="signature-panel signature-requests-panel" id="signature-requests" aria-label="签名申请审批">
-        <div class="signature-requests-head">
-            <h3>待审批申请</h3>
-            <div class="signature-request-actions">
-                <label class="signature-chip" id="signature-batch-select-all-label" hidden style="cursor:pointer;gap:5px;">
-                    <input type="checkbox" id="signature-batch-select-all" style="accent-color:#0f766e;">全选
-                </label>
-                <button type="button" class="btn btn-primary btn-sm" id="signature-batch-approve-btn" hidden>批量批准</button>
-                <button type="button" class="btn btn-outline btn-sm" id="signature-batch-reject-btn" hidden>批量拒绝</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="signature-requests-refresh-btn">刷新</button>
-            </div>
-        </div>
-        <div class="signature-request-list" id="signature-request-list">
-            <div class="signature-empty">暂无待审批申请。</div>
-        </div>
+    <section class="signature-panel" id="signature-requests">
+        <h3>签名审批与使用</h3>
+        <p>申请材料预览、批准、我的申请和使用记录已集中到独立工作区。</p>
+        <a class="btn btn-primary" href="/manage/me/signature-workflows">进入签名审批与使用</a>
     </section>
 
-    <section class="signature-panel signature-requests-panel" aria-label="我的签名申请">
-        <div class="signature-requests-head">
-            <h3>我的申请</h3>
-        </div>
-        <div class="signature-request-list" id="signature-outgoing-request-list">
-            <div class="signature-empty">暂无签名使用申请。</div>
-        </div>
-    </section>
 </section>
 
 <div id="signature-upload-modal" class="modal-backdrop signature-upload-modal" style="display:none;">
@@ -788,32 +769,6 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
                 <button type="submit" class="btn btn-primary" id="signature-upload-submit-btn">上传</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<div id="signature-request-modal" class="modal-backdrop signature-upload-modal" style="display:none;">
-    <div class="modal-dialog modal-dialog-scrollable">
-        <form class="modal-content" id="signature-request-form">
-            <div class="modal-header">
-                <div>
-                    <h3 class="modal-title">申请一次性使用签名</h3>
-                    <p class="modal-subtitle" id="signature-request-subtitle">选择本次需要的一个或多个已登记功能点。</p>
-                </div>
-                <button type="button" class="modal-close" data-dismiss="modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="signature-function-point-list" id="signature-function-point-list"></div>
-                <label class="signature-field" style="margin-top:14px;">
-                    <span>申请说明（选填）</span>
-                    <textarea class="form-control" id="signature-request-note" rows="3" maxlength="300" placeholder="说明对应材料或使用原因"></textarea>
-                </label>
-                <div class="signature-upload-status" id="signature-request-status"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
-                <button type="submit" class="btn btn-primary" id="signature-request-submit-btn">提交申请</button>
             </div>
         </form>
     </div>

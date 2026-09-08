@@ -8,6 +8,7 @@
 {% block title %}{{ document_type_label }}{% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/material_workflows.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/academic_final_materials.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/signature_point_workflow.css') }}">
 {% endblock %}
@@ -213,7 +214,7 @@ data-afm-open-sync {{ explain_attrs(
                                 <input id="afm-department-opinion" type="text" maxlength="80" data-afm-review-opinion="department_review_opinion" data-afm-opinion-default="已核" aria-describedby="afm-department-opinion-help" placeholder="填写审核意见，留空不显示">
                             </label>
                             <div class="afm-review-opinion__help">
-                                <small id="afm-department-opinion-help">“已核”沿用原表批语样式；可改写或留空。</small>
+                                <small id="afm-department-opinion-help">批语可选；“已核”可从下方签名框选取。</small>
                                 <div class="afm-review-opinion__actions">
                                     <button type="button" data-afm-use-opinion="department_review_opinion">填入“已核”</button>
                                     <button type="button" data-afm-clear-opinion="department_review_opinion" aria-label="清空系（教研室）审核意见">清空</button>
@@ -229,7 +230,7 @@ data-afm-open-sync {{ explain_attrs(
                                 <input id="afm-dean-opinion" type="text" maxlength="80" data-afm-review-opinion="dean_review_opinion" data-afm-opinion-default="同意" aria-describedby="afm-dean-opinion-help" placeholder="填写审核意见，留空不显示">
                             </label>
                             <div class="afm-review-opinion__help">
-                                <small id="afm-dean-opinion-help">“同意”沿用原表批语样式；可改写或留空。</small>
+                                <small id="afm-dean-opinion-help">批语可选；“同意”可从下方签名框选取。</small>
                                 <div class="afm-review-opinion__actions">
                                     <button type="button" data-afm-use-opinion="dean_review_opinion">填入“同意”</button>
                                     <button type="button" data-afm-clear-opinion="dean_review_opinion" aria-label="清空教学院长审核意见">清空</button>

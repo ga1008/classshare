@@ -1,5 +1,10 @@
 from .common import *
 from ...db.connection import get_configured_db_engine
+from ...services.academic_final_material_source_service import (
+    NativeAcademicSourceError,
+    hydrate_academic_final_material_source,
+    strip_academic_native_source,
+)
 from .generation_helpers import *
 
 
@@ -861,32 +866,13 @@ async def _persist_final_grade_transcript_import_success(
         conn.commit()
 
 
-def _build_ai_import_payload_from_record(row, conn=None) -> dict:
-    payload = _parse_json_object(row["parsed_payload_json"])
-    if not payload:
-        payload = {
-            "metadata": _parse_json_object(row["metadata_json"]),
-            "content_markdown": row["content_markdown"] or "",
-            "tables": [],
-            "warnings": _parse_json_array(row["warnings_json"]),
-            "export_payload": _parse_json_object(row["export_payload_json"]),
-            "document_group": row["document_group"],
-            "document_type": row["document_type"],
-            "document_type_label": row["document_type_label"],
-            "extraction_method": row["extraction_method"],
-        }
-    if conn is not None and str(row["document_type"] or "") in {
-        "academic_grade_register",
-        "academic_exam_analysis",
-    }:
-        from ...services.academic_final_material_service import (
-            hydrate_academic_final_material_signature_paths,
-            repair_legacy_grade_register_roster_order,
-        )
+def _build_ai_import_payload_from_record(row, conn=None, *, for_export: bool = False) -> dict:
+    from ...services.material_record_export_service import build_record_export_payload
 
-        payload = repair_legacy_grade_register_roster_order(conn, row, payload)
-        payload = hydrate_academic_final_material_signature_paths(conn, payload, record=row)
-    return payload
+    try:
+        return build_record_export_payload(row, conn, for_export=for_export)
+    except NativeAcademicSourceError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 def _find_material_ai_import_record(conn, material_id: int, teacher_id: int, *, completed_only: bool = False):

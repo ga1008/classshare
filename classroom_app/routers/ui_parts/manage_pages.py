@@ -655,6 +655,12 @@ async def get_manage_textbooks_page(request: Request, user: dict = Depends(get_c
     )
 
 
+@router.get("/manage/me/signature-workflows", response_class=HTMLResponse)
+async def get_manage_signature_workflows_page(request: Request, user: dict = Depends(get_current_teacher)):
+    return templates.TemplateResponse(request, "manage/signature_workflows.html",
+        _build_manage_template_context(request, user, page_title="签名审批与使用", active_page="signature_workflows"))
+
+
 @router.get("/manage/me/signatures", response_class=HTMLResponse)
 @router.get("/manage/signatures", response_class=HTMLResponse)
 async def get_manage_signatures_page(request: Request, user: dict = Depends(get_current_teacher)):

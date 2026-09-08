@@ -697,17 +697,20 @@ def build_grade_register_export_payload(
 
 def _exam_analysis_layout_profile() -> dict[str, Any]:
     return {
+        "render_mode": "native_template_in_place",
+        "source_validation": "native_layout_fingerprint",
+        "chart_mode": "native_source_chart",
         "page": "A4 portrait",
         "page_points": {"width": 595.25, "height": 841.85},
         "margins_points": {"top": 19.4, "bottom": 19.4, "left": 54.0, "right": 54.0},
         "table_width_points": 482.2,
-        "table_rows": 19,
-        "note_placement": "paragraph_after_table",
+        "table_rows": 23,
+        "note_placement": "note_in_original_last_row",
         "signature_mode": "feature_bound_runtime_resolution",
         "review_layout": {
             "columns": 2,
             "content_order": ["heading", "opinion", "personal_signature_and_label"],
-            "internal_horizontal_borders": False,
+            "internal_horizontal_borders": "original_white_borders",
             "opinion_mode": "explicit_text_or_bound_stamp_with_legacy_defaults",
         },
     }
@@ -733,7 +736,7 @@ def build_exam_analysis_export_payload(
         for index, segment in enumerate(["<60", "60-69", "70-79", "80-89", "90-100"])
     ]
     return {
-        "schema_version": "gxufl-academic-exam-analysis-v3",
+        "schema_version": "gxufl-academic-exam-analysis-v4",
         "template_key": ACADEMIC_EXAM_ANALYSIS_TYPE,
         "document_group": "final_material",
         "document_type": ACADEMIC_EXAM_ANALYSIS_TYPE,
@@ -746,6 +749,7 @@ def build_exam_analysis_export_payload(
             "validation": validation,
         },
         "layout_profile": _exam_analysis_layout_profile(),
+        "review_opinion_policy": "optional",
     }
 
 
@@ -777,10 +781,10 @@ def normalize_academic_final_material_payload(
         }
     )
     if document_type == ACADEMIC_EXAM_ANALYSIS_TYPE:
-        payload["schema_version"] = "gxufl-academic-exam-analysis-v3"
-        payload["layout_profile"] = {
-            **dict(payload.get("layout_profile") or {}), **_exam_analysis_layout_profile(),
-        }
+        payload["schema_version"] = "gxufl-academic-exam-analysis-v4"
+        # Layout is an audited source contract, not a user-configurable style.
+        # Drop obsolete reconstruction settings when reading older records.
+        payload["layout_profile"] = _exam_analysis_layout_profile()
     return payload
 
 
@@ -1336,12 +1340,12 @@ def list_teacher_final_material_batches(
     binding_cache: dict[tuple[str, str, str], list[int]] | None = None
     signature_cache: dict[int, Any] | None = None
     signature_actor: dict[str, Any] | None = None
-    if document_type == ACADEMIC_EXAM_ANALYSIS_TYPE and rows:
+    if document_type in ACADEMIC_FINAL_MATERIAL_TYPES and rows:
         signature_actor = signature_service.build_signature_actor(conn, {"role": "teacher", "id": teacher_id})
         # The card status must reflect current bindings and remarks, including
         # old records whose stored edit_state predates review opinions. Fetch
         # both collections in bulk instead of issuing queries for each card.
-        record_ids = [str(row["analysis_record_id"]) for row in rows if row["analysis_record_id"]]
+        record_ids = [str(row[record_column]) for row in rows if row[record_column]]
         binding_cache = {}
         signature_ids: set[int] = set()
         if record_ids:
@@ -1394,7 +1398,7 @@ def list_teacher_final_material_batches(
             }
         )
         record_id = item.get("grade_record_id") if document_type == ACADEMIC_GRADE_REGISTER_TYPE else item.get("analysis_record_id")
-        if document_type == ACADEMIC_EXAM_ANALYSIS_TYPE and record_id:
+        if document_type in ACADEMIC_FINAL_MATERIAL_TYPES and record_id:
             resolved = hydrate_academic_final_material_signature_paths(
                 conn, record_payload,
                 record={"id": record_id, "teacher_id": teacher_id, "document_type": document_type, "signature_revision": row["record_signature_revision"]},
@@ -1403,9 +1407,10 @@ def list_teacher_final_material_batches(
             )
             if isinstance(resolved.get("export_payload"), dict):
                 resolved = resolved["export_payload"]
-            item["edit_state"]["analysis_complete"] = academic_exam_analysis_is_complete(
-                resolved.get("fields") or {}, resolved.get("structured") or {},
-            )
+            if document_type == ACADEMIC_EXAM_ANALYSIS_TYPE:
+                item["edit_state"]["analysis_complete"] = academic_exam_analysis_is_complete(resolved.get("fields") or {}, resolved.get("structured") or {})
+            else:
+                item["edit_state"]["grade_complete"] = bool((resolved.get("fields") or {}).get("teacher_personal_signature_ids"))
         item.update(
             {
                 "record_id": record_id,
@@ -1686,12 +1691,6 @@ def academic_exam_analysis_is_complete(fields: dict[str, Any], structured: dict[
     for role in ACADEMIC_EXAM_REVIEW_DEFAULTS:
         if not fields.get(f"{role}_personal_signature_ids"):
             return False
-        opinion_key = f"{role}_review_opinion"
-        if opinion_key in fields:
-            if not normalize_academic_review_opinion(fields[opinion_key]):
-                return False
-        elif not fields.get(f"{role}_review_stamp_ids"):
-            return False
     return bool(
         all(str(fields.get(key) or "").strip() for key in ACADEMIC_EXAM_ANALYSIS_EDIT_FIELDS)
         and str(structured.get("analysis_text") or "").strip()
@@ -1872,10 +1871,13 @@ def hydrate_academic_final_material_signature_paths(
                     fields[f"{role}_review_opinion_image_path"] = compose_signature_strip(
                         stamp_paths, slot_width=250, height=145,
                     )
-            elif personal_ids:
+            elif personal_ids and target.get("review_opinion_policy") != "optional":
                 fields[opinion_key] = ACADEMIC_EXAM_REVIEW_DEFAULTS[role]
                 fields[f"{role}_review_opinion_source"] = "legacy_default"
         else:
+            fields["teacher_personal_signature_ids"] = [signature_id for signature_id in signature_ids
+                if signature_id in signatures_by_id and not is_stamp_signature(signatures_by_id[signature_id])
+                and resolve_signature_file_path(signatures_by_id[signature_id])]
             paths = resolve_signature_paths(conn, signature_ids) if include_images else []
         if paths and include_images:
             fields[path_key] = compose_signature_strip(

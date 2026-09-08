@@ -451,6 +451,12 @@ def create_assessment_plan(
     org = teacher_scope(conn, int(teacher["id"]))
     normalized = normalize_plan_payload(fields or {}, items or [])
     resolved_notes = notes if isinstance(notes, list) and notes else normalized["notes"]
+    from .material_signature_revision_service import content_fingerprint, plan_content
+
+    previous = conn.execute("SELECT * FROM assessment_plans WHERE id = ?", (str(plan_id),)).fetchone()
+    incoming = {"fields": normalized["fields"], "items": normalized["items"], "notes": resolved_notes}
+    if previous and content_fingerprint(plan_content(dict(previous))) != content_fingerprint(plan_content(incoming)):
+        rotate_signature_revision(conn, plan_id)
     now = _now()
     conn.execute(
         """
@@ -742,6 +748,9 @@ def rotate_signature_revision(conn: sqlite3.Connection, plan_id: str) -> str:
     """Invalidate all point grants/bindings when a material is rebuilt."""
     ensure_assessment_plan_schema(conn)
     revision = uuid.uuid4().hex
+    from .material_signature_revision_service import invalidate_pending_material_plans
+
+    invalidate_pending_material_plans(conn, "assessment_plan", str(plan_id), revision)
     conn.execute(
         """
         UPDATE assessment_plans
@@ -928,6 +937,7 @@ def build_export_fields(conn: sqlite3.Connection, plan: dict[str, Any]) -> dict[
     for role in ("examiner", "reviewer"):
         fields.pop(f"{role}_signature_image_path", None)
         fields[f"{role}_signature_count"] = 0
+        fields[f"{role}_personal_signature_count"] = 0
     # The persisted plan arrays are also used by import/generation, which do
     # not create point-binding rows. Re-read those trusted selections and the
     # current revision; never infer export authority from caller-supplied IDs.
@@ -961,6 +971,7 @@ def build_export_fields(conn: sqlite3.Connection, plan: dict[str, Any]) -> dict[
         for role, signature_ids in selections.items():
             paths: list[str] = []
             subjects: list[str] = []
+            personal_count = 0
             for signature_id in signature_ids:
                 signature = by_id.get(signature_id)
                 if signature is None:
@@ -974,8 +985,10 @@ def build_export_fields(conn: sqlite3.Connection, plan: dict[str, Any]) -> dict[
                 path = signature_service.resolve_signature_file_path(signature)
                 if path:
                     paths.append(str(path))
+                    personal_count += int(not signature_service.is_stamp_signature(signature))
                     subjects.append(str(signature["subject_name"] or signature["name"] or ""))
             fields[f"{role}_signature_count"] = len(paths)
+            fields[f"{role}_personal_signature_count"] = personal_count
             if paths:
                 fields[f"{role}_signature_image_path"] = compose_signature_strip(paths, slot_width=260, height=130)
             if subjects and not fields.get(f"{role}_name"):

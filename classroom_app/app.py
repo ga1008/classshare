@@ -173,6 +173,11 @@ async def startup_event():
     # （尽管 uvicorn reload 模式下可能不需要，但这是个好习惯）
     ensure_runtime_directories()
     init_database()
+    from .services.system_review_signature_service import ensure_standard_review_signatures
+
+    with get_db_connection() as signature_conn:
+        ensure_standard_review_signatures(signature_conn)
+        signature_conn.commit()
 
     # 确保静态目录存在
     STATIC_DIR.mkdir(exist_ok=True)
@@ -222,6 +227,9 @@ async def startup_event():
             cultivation_archive_task_id = ensure_cultivation_score_event_archive_task(align_conn)
             cultivation_alert_task_id = ensure_cultivation_alert_task(align_conn)
             signature_reminder_task_id = ensure_signature_reminder_task(align_conn)
+            from .services.material_workflow_storage_service import ensure_material_workflow_cleanup_task
+
+            ensure_material_workflow_cleanup_task(align_conn)
             from .services.wechat_mp_subscribe_service import ensure_deadline_scan_task
 
             mp_deadline_scan_task_id = ensure_deadline_scan_task(align_conn)

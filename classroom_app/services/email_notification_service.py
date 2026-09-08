@@ -45,6 +45,7 @@ SEVERITY_LABELS = {
 }
 
 IMPORTANT_NOTIFICATION_CATEGORIES = {
+    "signature_workflow",
     "assignment",
     "discussion_mention",
     "submission",
@@ -64,6 +65,7 @@ SYSTEM_NOTIFICATION_CATEGORIES = {
 }
 
 EMAIL_ELIGIBLE_CATEGORIES = {
+    "signature_workflow",
     "assignment",
     "discussion_mention",
     "submission",
@@ -829,6 +831,13 @@ def _load_recipient_email(conn, *, role: str, user_pk: int) -> Optional[dict[str
 
 
 def _resolve_sender_teacher_id(conn, payload: dict[str, Any]) -> Optional[int]:
+    if payload.get("category") == "signature_workflow":
+        configured_sender = _safe_int(os.getenv("SIGNATURE_NOTIFICATION_SENDER_TEACHER_ID", "0"))
+        if configured_sender:
+            # Deployment explicitly nominates the platform's configured sender.
+            # Never borrow an arbitrary teacher's mailbox to reach reviewers.
+            return configured_sender
+
     recipient_role = str(payload.get("recipient_role") or "").strip().lower()
     if recipient_role == "teacher":
         return _safe_int(payload.get("recipient_user_pk")) or None

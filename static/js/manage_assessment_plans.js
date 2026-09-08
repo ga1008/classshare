@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { MaterialSelectionPanel } from './material_selection_panel.js?v=material-workflows-1';
 import { showToast, escapeHtml, formatDate } from './ui.js';
 import { openTreeSelectFormModal } from './tree_select_form_modal.js';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
@@ -61,6 +62,8 @@ const STATUS_META = {
 const SOURCE_LABEL = { blank: '表单新建', classroom: '按课堂生成', import: '导入解析', exam_reverse: '试卷反推' };
 
 const root = document.querySelector('[data-ap-root]');
+const materialPanel = new MaterialSelectionPanel({grid:root.querySelector('[data-ap-grid]'),onChanged:()=>loadPlans()});
+const selectablePlans = plans => plans.filter(plan=>!isBusy(plan)&&plan.status!=='failed').map(plan=>({material_type:'assessment_plan',material_id:String(plan.id),title:plan.title,updated_at:plan.updated_at}));
 
 function statusMeta(status) {
     return STATUS_META[status] || STATUS_META.draft;
@@ -283,7 +286,7 @@ function renderCard(plan) {
     `;
 
     return `
-        <article class="lp-card" data-ap-card="${plan.id}">
+        <article class="lp-card" data-ap-card="${plan.id}" data-material-key="assessment_plan:${escapeHtml(plan.id)}">
             <div class="lp-card__top"><span class="lp-status ${meta.tone}">${meta.label}</span>${sourceBadge}${scopeBadge}${scoreBadge(plan)}</div>
             <strong class="lp-card__title">${escapeHtml(plan.title)}</strong>
             <div class="lp-card__meta">
@@ -320,6 +323,7 @@ function render() {
     grid.innerHTML = visible.length
         ? visible.map(renderCard).join('')
         : `<div class="manage-lp__empty" style="grid-column:1/-1">没有符合筛选条件的考核计划表。</div>`;
+    materialPanel.update(selectablePlans(state.plans), selectablePlans(visible));
 }
 
 function clearFilters() {
@@ -834,3 +838,5 @@ function boot() {
 }
 
 boot();
+
+window.addEventListener('focus', () => loadPlans());

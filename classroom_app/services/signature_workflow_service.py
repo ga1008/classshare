@@ -24,7 +24,7 @@ REQUESTER_ROLES = {"teacher", "student"}
 
 # Reviewers and requesters land on different surfaces per role.
 SIGNATURE_INBOX_LINKS = {
-    "teacher": "/manage/me/signatures#signature-requests",
+    "teacher": "/manage/me/signature-workflows",
     "student": "/profile?section=signatures",
 }
 
@@ -131,6 +131,7 @@ def _available_item(
     material_type: str = "",
     material_id: str = "",
     material_revision: str = "",
+    signature_hash: str = "",
 ) -> Any:
     scoped = bool(material_type and material_id and material_revision)
     scope_sql = (
@@ -141,9 +142,10 @@ def _available_item(
     params: list[Any] = [int(signature_id), actor["role"], int(actor["id"]), function_point_key]
     if scoped:
         params.extend([material_type, material_id, material_revision])
+    params.append(signature_hash)
     return conn.execute(
         """
-        SELECT item.*, request.status AS request_status
+        SELECT item.*, request.status AS request_status, request.signature_hash AS approved_signature_hash
         FROM signature_access_request_items item
         JOIN signature_access_requests request ON request.id = item.request_id
         WHERE request.signature_id = ?
@@ -153,6 +155,7 @@ def _available_item(
           AND item.function_point_key = ?
           AND item.status = 'available'
           {scope_sql}
+          AND (request.signature_hash = '' OR request.signature_hash = ?)
         ORDER BY request.requested_at, request.id, item.id
         LIMIT 1
         """.format(scope_sql=scope_sql),
@@ -226,6 +229,7 @@ def signature_use_access_state(
         material_type=material_type,
         material_id=material_id,
         material_revision=material_revision,
+        signature_hash=str(signature["file_hash"] or "") if "file_hash" in keys else "",
     )
     previous_usage = None
     if not item and material_type and material_id and not material_revision:
@@ -335,6 +339,12 @@ def _notify(
         if role not in {"teacher", "student"} or user_id <= 0 or identity in seen or identity == actor_identity:
             continue
         seen.add(identity)
+        link = SIGNATURE_INBOX_LINKS.get(role, SIGNATURE_INBOX_LINKS["teacher"])
+        if role == "teacher" and metadata.get("request_id"):
+            link += f"?request_id={int(metadata['request_id'])}"
+        elif role == "teacher" and metadata.get("application_batch_id"):
+            from urllib.parse import urlencode
+            link += "?" + urlencode({"batch_id": metadata["application_batch_id"]})
         payload = message_center_service._build_notification_payload(
             recipient_role=role,
             recipient_user_pk=user_id,
@@ -345,7 +355,7 @@ def _notify(
             actor_role=actor.get("role") or "",
             actor_user_pk=int(actor.get("id") or 0),
             actor_display_name=actor.get("name") or "",
-            link_url=SIGNATURE_INBOX_LINKS.get(role, SIGNATURE_INBOX_LINKS["teacher"]),
+            link_url=link,
             ref_type=ref_type,
             ref_id=ref_id,
             metadata=metadata,
@@ -368,6 +378,8 @@ def create_access_request(
     material_revision: str = "",
     material_label: str = "",
     display_order: int = 0,
+    snapshot: dict[str, Any] | None = None,
+    notify_reviewers: bool = True,
 ) -> dict[str, Any]:
     actor = signature_service.build_signature_actor(conn, user)
     if actor.get("role") not in REQUESTER_ROLES:
@@ -456,6 +468,16 @@ def create_access_request(
         ):
             raise signature_service.SignatureServiceError(409, "该签名已有待审批申请，请先等待审批或撤销。") from exc
         raise
+    if snapshot:
+        identities = signature_identity_service.effective_identities_bulk(conn, [(actor["role"], int(actor["id"]))])
+        scope = actor.get("scope") or {}
+        conn.execute(
+            "UPDATE signature_access_requests SET snapshot_id = ?, signature_hash = ?, document_type = ?, "
+            "requester_school = ?, requester_college = ?, requester_department = ?, requester_identities_json = ? WHERE id = ?",
+            (snapshot["id"], dict(signature).get("file_hash", ""), snapshot["document_type"],
+             scope.get("school_code", ""), scope.get("college", ""), scope.get("department", ""),
+             json.dumps(identities.get((actor["role"], int(actor["id"])), []), ensure_ascii=False), request_id),
+        )
     for point in points:
         conn.execute(
             """
@@ -481,7 +503,7 @@ def create_access_request(
     labels = "、".join(str(point["label"]) for point in points)
     _notify(
         conn,
-        recipients=reviewers,
+        recipients=reviewers if notify_reviewers else [],
         actor=actor,
         title="收到签名使用申请",
         body=f"{actor['name']} 申请在“{labels}”使用“{signature['subject_name'] or signature['name']}”签名，材料：{_clean(material_label, 120) or '当前材料'}。任一审批人同意后，仅可在当前材料版本不限次数使用。",
@@ -544,10 +566,20 @@ def _serialize_request_row(
         "decided_at": row["decided_at"] or row["reviewed_at"] or "",
         "cancelled_at": row["cancelled_at"] or "",
         "flow_id": int(row["flow_id"] or 0),
+        "apply_status": row["flow_apply_status"] or "",
+        "apply_error": row["flow_apply_error"] or "",
+        "application_batch_id": row["application_batch_id"] or "",
         "function_point_key": row["function_point_key"] or "",
         "material_type": row["material_type"] or "",
         "material_id": row["material_id"] or "",
         "material_revision": row["material_revision"] or "",
+        "snapshot_id": (row["snapshot_id"] if "snapshot_id" in keys else "") or "",
+        "signature_hash": (row["signature_hash"] if "signature_hash" in keys else "") or "",
+        "document_type": (row["document_type"] if "document_type" in keys else "") or "",
+        "requester_school": (row["requester_school"] if "requester_school" in keys else "") or "",
+        "requester_college": (row["requester_college"] if "requester_college" in keys else "") or "",
+        "requester_department": (row["requester_department"] if "requester_department" in keys else "") or "",
+        "invalidation_reason": (row["invalidation_reason"] if "invalidation_reason" in keys else "") or "",
         "display_order": int(row["display_order"] or 0),
         "items": items,
         "reviewers": reviewers,
@@ -579,9 +611,11 @@ def get_requests(conn: Any, request_ids: list[int]) -> dict[int, dict[str, Any]]
         f"""
         SELECT request.*, signature.name AS signature_name,
                signature.subject_name AS signature_subject_name,
-               COALESCE(teacher.name, student.name) AS requester_name
+               COALESCE(teacher.name, student.name) AS requester_name,
+               flow.apply_status AS flow_apply_status, flow.apply_error AS flow_apply_error, flow.application_batch_id
         FROM signature_access_requests request
         JOIN electronic_signatures signature ON signature.id = request.signature_id
+        LEFT JOIN signature_point_flows flow ON flow.id = request.flow_id
         LEFT JOIN teachers teacher
           ON request.requester_role = 'teacher' AND teacher.id = request.requester_id
         LEFT JOIN students student
@@ -641,6 +675,14 @@ def list_access_requests(
     direction: str = "incoming",
     status: str = "",
     limit: int = 100,
+    offset: int = 0,
+    search: str = "",
+    document_type: str = "",
+    requester_role: str = "",
+    identity: str = "",
+    organization: str = "",
+    request_kind: str = "",
+    batch_id: str = "",
 ) -> dict[str, Any]:
     actor = signature_service.build_signature_actor(conn, user)
     normalized_direction = "outgoing" if str(direction).lower() == "outgoing" else "incoming"
@@ -666,6 +708,24 @@ def list_access_requests(
     if normalized_status:
         where.append("request.status = ?")
         params.append(normalized_status)
+    for column, value in (("document_type", document_type), ("requester_role", requester_role), ("request_kind", request_kind)):
+        if value:
+            where.append(f"request.{column} = ?")
+            params.append(str(value)[:80])
+    if identity:
+        where.append("request.requester_identities_json LIKE ?")
+        params.append('%"' + str(identity).replace('%', '').replace('_', r'\_')[:60] + '"%')
+        where[-1] += " ESCAPE '\\'"
+    if organization:
+        where.append("(request.requester_college LIKE ? OR request.requester_department LIKE ? OR request.requester_school LIKE ?)")
+        params.extend(['%' + str(organization)[:80] + '%'] * 3)
+    if batch_id:
+        where.append("EXISTS (SELECT 1 FROM signature_point_flows flow WHERE flow.id = request.flow_id AND flow.application_batch_id = ?)")
+        params.append(str(batch_id)[:120])
+    if search:
+        where.append("(request.context_label LIKE ? OR request.request_note LIKE ? OR EXISTS (SELECT 1 FROM teachers teacher WHERE request.requester_role = 'teacher' AND teacher.id = request.requester_id AND teacher.name LIKE ?) OR EXISTS (SELECT 1 FROM students student WHERE request.requester_role = 'student' AND student.id = request.requester_id AND student.name LIKE ?))")
+        params.extend(['%' + str(search)[:80] + '%'] * 4)
+    total = conn.execute(f"SELECT COUNT(*) AS total FROM signature_access_requests request WHERE {' AND '.join(where)}", tuple(params)).fetchone()["total"]
     rows = conn.execute(
         f"""
         SELECT request.id
@@ -674,13 +734,18 @@ def list_access_requests(
         ORDER BY CASE request.status
             WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 WHEN 'partially_used' THEN 2 ELSE 3 END,
             request.requested_at DESC, request.id DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
-        (*params, max(1, min(int(limit or 100), 500))),
+        (*params, max(1, min(int(limit or 100), 500)), max(0, min(int(offset), 100000))),
     ).fetchall()
     request_ids = [int(row["id"]) for row in rows]
     requests_by_id = get_requests(conn, request_ids)
+    for item in requests_by_id.values():
+        item["can_review"] = item["status"] == "pending" and (actor["is_super_admin"] or any(
+            reviewer["role"] == actor["role"] and reviewer["id"] == actor["id"] and reviewer["status"] == "pending" for reviewer in item["reviewers"]))
     return {
+        "total": total,
+        "offset": max(0, int(offset)),
         "items": [requests_by_id[request_id] for request_id in request_ids if request_id in requests_by_id],
         "direction": normalized_direction,
         "status": normalized_status,
@@ -747,6 +812,7 @@ def review_access_request(
     *,
     action: str,
     note: str = "",
+    expected_snapshot_id: str | None = None,
 ) -> dict[str, Any]:
     actor = signature_service.build_signature_actor(conn, user)
     # A no-op conditional update takes the request row lock on both supported
@@ -798,7 +864,14 @@ def review_access_request(
     if normalized_action not in {"approve", "reject"}:
         raise signature_service.SignatureServiceError(400, "审批动作必须为 approve 或 reject。")
     if normalized_action == "approve":
+        from .material_signature_service import check_request_snapshot
+
+        if expected_snapshot_id is not None and expected_snapshot_id != request.get("snapshot_id", ""):
+            raise signature_service.SignatureServiceError(409, "审批材料已更新，请重新打开申请。")
+        check_request_snapshot(conn, request)
         signature = _signature_row(conn, int(request["signature_id"]))
+        if request.get("signature_hash") and dict(signature).get("file_hash") != request["signature_hash"]:
+            raise signature_service.SignatureServiceError(409, "签名图片已更换，请申请人重新确认签名后申请。")
         requester = signature_service.build_signature_actor(
             conn, {"role": request["requester_role"], "id": request["requester_id"]},
         )
@@ -925,13 +998,22 @@ def batch_review_access_requests(
         raise signature_service.SignatureServiceError(400, "一次最多批量处理 50 条申请。")
     results = {"processed": 0, "failed": 0, "items": []}
     for request_id in normalized_ids:
+        savepoint = f"signature_review_{request_id}"
+        conn.execute(f"SAVEPOINT {savepoint}")
         try:
             outcome = review_access_request(conn, user, request_id, action=action, note=note)
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
             results["processed"] += 1
             results["items"].append({"id": request_id, "status": outcome["request"]["status"]})
         except signature_service.SignatureServiceError as exc:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
             results["failed"] += 1
             results["items"].append({"id": request_id, "error": exc.message})
+        except Exception:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+            raise
     return {"status": "success", **results}
 
 
@@ -1344,7 +1426,7 @@ def _sync_point_flow_for_request(conn: Any, request_id: int) -> None:
         SELECT
             SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
             SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
-            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+            SUM(CASE WHEN status IN ('rejected', 'cancelled') THEN 1 ELSE 0 END) AS rejected_count
         FROM signature_point_flow_items WHERE flow_id = ?
         """,
         (flow_id,),
@@ -1356,12 +1438,16 @@ def _sync_point_flow_for_request(conn: Any, request_id: int) -> None:
         flow_status = "partially_approved" if approved_count or rejected_count else "pending"
         ended_at_sql = "ended_at"
     else:
-        flow_status = "approved" if approved_count else "rejected"
+        flow_status = "approved" if approved_count and not rejected_count else "rejected"
         ended_at_sql = "CURRENT_TIMESTAMP"
     conn.execute(
         f"UPDATE signature_point_flows SET status = ?, updated_at = CURRENT_TIMESTAMP, ended_at = {ended_at_sql} WHERE id = ? AND status <> 'cancelled'",
         (flow_status, flow_id),
     )
+    if flow_status == 'approved':
+        from .material_signature_apply_service import enqueue_application
+
+        enqueue_application(conn, flow_id)
 
 
 def _idempotency_key(signature_id: int, function_point_key: str, context_type: str, context_id: str) -> str:
@@ -1390,7 +1476,7 @@ def resolve_material_scope(
         try:
             row = conn.execute(
                 """
-                SELECT id, teacher_id, source_file_hash, signature_revision, document_type_label, export_payload_json
+                SELECT *
                 FROM material_ai_import_records WHERE id = ? AND parse_status = 'completed' LIMIT 1
                 """,
                 (int(normalized_id),),
@@ -1417,6 +1503,12 @@ def resolve_material_scope(
         except (TypeError, ValueError):
             pass
         owner_id = int(row["teacher_id"] or 0)
+        document_type = dict(row).get("document_type")
+        if document_type:
+            from .material_signature_service import DOCUMENT_POINTS
+
+            if function_point_key not in {entry[0] for entry in DOCUMENT_POINTS.get(document_type, [])}:
+                raise signature_service.SignatureServiceError(400, "该签名位置不属于所选文档类型。")
     elif normalized_type == "assessment_plan":
         try:
             row = conn.execute(

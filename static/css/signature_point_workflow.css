@@ -35,3 +35,43 @@ li[draggable=true]{cursor:grab}li[draggable=true]:active .spw-drag{cursor:grabbi
 .spw-selected-list li.is-dragging{opacity:.45;border-style:dashed;border-color:#818cf8;background:#eef2ff}
 .spw-selected-list .spw-selected-empty{animation:none}
 @media(max-width:640px){.spw-selected-list li{grid-template-columns:auto 25px minmax(0,1fr)}.spw-selected-actions{flex-wrap:wrap}.spw-selected-actions .spw-confirm{flex:1}}
+.spm { min-width: 0; }
+.spm-trigger { width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #26324a; text-align: left; cursor: pointer; font: inherit; }
+.spm-trigger:hover, .spm-trigger[aria-expanded="true"] { border-color: #6366f1; box-shadow: 0 0 0 3px #6366f114; }
+.spm-values { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; }
+.spm-tag { display: inline-flex; align-items: center; gap: 5px; max-width: 180px; padding: 3px 7px; border-radius: 7px; background: #eef2ff; color: #3730a3; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.spm-tag b { font-size: 11px; opacity: .7; }
+.spm-placeholder { color: #64748b; }
+.spm-popover { position: fixed; inset: auto; margin: 0; box-sizing: border-box; padding: 0; border: 1px solid #dbe2ee; border-radius: 16px; background: #fff; color: #1e293b; box-shadow: 0 18px 64px #1e293b30; font: 14px/1.5 system-ui, sans-serif; overflow: hidden; }
+.spm-popover:popover-open { display: flex; flex-direction: column; }
+.spm-popover button { font: inherit; cursor: pointer; }
+.spm-popover button:disabled { opacity: .4; cursor: default; }
+.spm-popover button:focus-visible, .spm-trigger:focus-visible { outline: 2px solid #6366f1; outline-offset: -2px; }
+.spm-search { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #edf0f5; }
+.spm-search input { width: 0; flex: 1; padding: 4px 0; outline: none; border: 0; box-shadow: none; font: inherit; background: transparent; }
+.spm-search button { border: 0; background: transparent; font-size: 23px; color: #64748b; }
+.spm-tools { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 8px 10px; background: #f8fafc; flex-wrap: wrap; }
+.spm-tools button { border: 0; border-radius: 7px; padding: 5px 8px; background: transparent; font-size: 12px; color: #64748b; }
+.spm-tools button[aria-pressed="true"] { background: #e9edff; color: #4338ca; }
+.spm-tabs { display: inline-flex; gap: 2px; }
+.spm-scroll { overflow: auto; overscroll-behavior: contain; max-height: 300px; min-height: 72px; padding: 5px 7px; }
+.spm-group { padding: 8px 9px 4px; font-size: 11px; font-weight: 700; color: #64748b; }
+[data-spm-options] > button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px; border: 0; background: transparent; border-radius: 8px; text-align: left; color: inherit; }
+[data-spm-options] > button:hover, [data-spm-options] > button[aria-selected="true"] { background: #f0f3ff; }
+.spm-check { flex: 0 0 19px; width: 19px; height: 19px; line-height: 19px; border: 1px solid #cbd5e1; border-radius: 5px; text-align: center; color: #4338ca; font-size: 12px; }
+.spm-candidate { min-width: 0; flex: 1; }
+.spm-candidate strong, .spm-candidate small { display: block; overflow: hidden; text-overflow: ellipsis; }
+.spm-candidate small { font-size: 11px; color: #64748b; }
+.spm-access { font-size: 10px; color: #9a6700; white-space: nowrap; }
+.spm-access.is-ready { color: #047857; }
+[data-spm-selected] { padding: 0; margin: 0; list-style: none; }
+[data-spm-selected] li { display: flex; align-items: center; gap: 5px; padding: 9px 5px; border-bottom: 1px solid #eef2f6; }
+[data-spm-selected] li.is-dragging { opacity: .35; }
+.spm-order { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 6px; background: #eef2ff; font-size: 12px; color: #4338ca; }
+.spm-selected-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+[data-spm-selected] button { width: 29px; height: 30px; padding: 0; border: 1px solid #e2e8f0; background: #fff; border-radius: 6px; color: #475569; }
+.spm-popover footer { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid #e8edf4; font-size: 12px; }
+.spm-popover footer span { flex: 1; color: #64748b; }
+.spm-popover footer button { padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: #475569; }
+.spm-popover footer [data-spm-done] { color: #fff; background: #4f46e5; }
+[data-spm-empty] { padding: 20px 10px; color: #64748b; font-size: 13px; }

@@ -1,6 +1,7 @@
 import { apiFetch } from './api.js';
+import { MaterialSelectionPanel } from './material_selection_panel.js?v=material-workflows-1';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
-import { SignaturePointControl } from './signature_point_workflow.js?v=confirm-flow-1';
+import { SignaturePointControl } from './signature_point_workflow.js?v=material-workflows-20260908';
 
 const root = document.querySelector('[data-afm-root]');
 if (!root) throw new Error('Academic final-material root not found.');
@@ -71,6 +72,12 @@ const els = {
     previewFrame: $('[data-afm-preview-frame]'),
     previewTitle: $('[data-afm-preview-title]'),
 };
+
+const materialPanel = new MaterialSelectionPanel({grid:els.grid,onChanged:()=>loadItems({notify:false})});
+const selectableDocuments = items => items.filter(item=>item.record_id&&item.sync_status==='completed').map(item=>({
+    material_type:'academic_final_material',material_id:String(item.record_id),
+    title:[typeLabel,item.course_name,itemClassLabel(item)].filter(Boolean).join(' · '),updated_at:item.record_updated_at||item.updated_at,
+}));
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -225,6 +232,7 @@ function renderCards() {
     renderOptionSelect(els.courseFilter, state.items.map((item) => item.course_name || ''), state.courseValue, '全部课程');
     renderOptionSelect(els.classFilter, state.items.map(itemClassLabel), state.classValue, '全部班级');
     const items = filteredItems();
+    materialPanel.update(selectableDocuments(state.items), selectableDocuments(items));
     els.grid.hidden = !items.length && !state.items.length;
     els.empty.hidden = Boolean(state.items.length);
     const isDocumentComplete = (item) => Boolean(
@@ -265,7 +273,7 @@ function renderCards() {
             action = `<button type="button" class="afm-btn afm-btn--primary" data-afm-confirm-course="${escapeHtml(item.id)}">确认教务课程</button>`;
         }
         return `
-            <article class="afm-card">
+            <article class="afm-card" ${readyItem ? `data-material-key="academic_final_material:${Number(item.record_id)}"` : ''}>
                 <div class="afm-card__top">
                     <div class="afm-card__doc">
                         <div class="afm-card__icon">${isGrade ? '绩' : '析'}</div>
@@ -274,8 +282,8 @@ function renderCards() {
                             <p class="afm-card__class">${escapeHtml(item.teaching_class_name || '待确认教学班')}</p>
                         </div>
                     </div>
-                    <span class="afm-status afm-status--${escapeHtml(item.sync_status)}">${escapeHtml(
-                        readyItem ? (documentComplete ? '可提交' : '待补全') : statusLabel(item.sync_status)
+                    <span class="afm-status afm-status--${readyItem ? (documentComplete ? 'ready' : 'incomplete') : escapeHtml(item.sync_status)}">${escapeHtml(
+                        readyItem ? (documentComplete ? '可提交' : '待补充') : statusLabel(item.sync_status)
                     )}</span>
                 </div>
                 <div class="afm-card__meta">
@@ -290,6 +298,7 @@ function renderCards() {
                 <div class="afm-card__actions">${action}</div>
             </article>`;
     }).join('');
+    materialPanel.update(selectableDocuments(state.items), selectableDocuments(items));
 }
 
 function stopPolling() {
@@ -513,7 +522,7 @@ function hasReviewStamp(key) {
 function syncSuggestedReviewOpinion(key) {
     if (!key || state.explicitReviewOpinions.has(key)) return;
     const input = reviewOpinionInput(key);
-    input.value = hasReviewStamp(key) ? '' : input.dataset.afmOpinionDefault;
+    input.value = hasReviewStamp(key) ? '' : (state.savedReviewOpinions[key] || '');
     state.savedReviewOpinions[key] = input.value.trim();
 }
 
@@ -550,7 +559,9 @@ function acceptEditorUpdate(data, payload) {
 async function commitPointSignatures(idsKey, ids) {
     const opinionKey = reviewOpinionKey(idsKey);
     const payload = { document_type: type, expected_updated_at: state.currentRecord?.updated_at, [idsKey]: ids };
-    if (opinionKey && (state.explicitReviewOpinions.has(opinionKey) || !hasReviewStamp(opinionKey))) {
+    if (opinionKey && hasReviewStamp(opinionKey)) {
+        payload[opinionKey] = null;
+    } else if (opinionKey && state.explicitReviewOpinions.has(opinionKey)) {
         payload[opinionKey] = reviewOpinionInput(opinionKey).value.trim();
     }
     const data = await request(`/api/academic-final-materials/${encodeURIComponent(state.currentBatchId)}`, {
@@ -587,7 +598,7 @@ function updateEditorGate() {
         const label = $(`[data-afm-opinion-status="${key}"]`, els.analysisFields);
         if (label) {
             label.textContent = changed ? '修改待保存'
-                : (state.explicitReviewOpinions.has(key) ? '已保存' : (hasReviewStamp(key) ? '沿用批语章' : '默认批语'));
+                : (state.explicitReviewOpinions.has(key) ? '已保存' : (hasReviewStamp(key) ? '使用特殊签名' : '可选批语'));
             label.classList.toggle('is-dirty', changed);
         }
         input.placeholder = !state.explicitReviewOpinions.has(key) && hasReviewStamp(key)
@@ -681,7 +692,7 @@ async function openEditor(batchId) {
             $$('[data-afm-review-opinion]', els.analysisFields).forEach((input) => {
                 const key = input.dataset.afmReviewOpinion;
                 const stampIds = fields[key.replace('_opinion', '_stamp_ids')];
-                input.value = fields[key] ?? (stampIds?.length ? '' : input.dataset.afmOpinionDefault);
+                input.value = fields[key] ?? '';
                 state.savedReviewOpinions[key] = input.value.trim();
                 const source = fields[`${key}_source`];
                 if (source === 'explicit' || (source == null && fields[key] != null)) {
@@ -897,3 +908,5 @@ els.previewCurrent?.addEventListener('click', () => openPreview(state.currentPre
 window.addEventListener('pagehide', stopPolling);
 
 loadItems();
+
+window.addEventListener('focus', () => loadItems({notify:false}));

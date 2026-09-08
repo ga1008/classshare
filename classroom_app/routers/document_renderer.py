@@ -12,6 +12,7 @@ from ..services.document_render_service import (
     DocumentRenderNotFound,
     document_render_service,
     verify_render_token,
+    render_token_signature_request,
 )
 
 
@@ -21,6 +22,17 @@ router = APIRouter(prefix="/api/document-renderer")
 def _require_token(key: str, token: str | None, user: dict) -> None:
     if not verify_render_token(key, token, user=user):
         raise HTTPException(status_code=403, detail="预览凭证无效，请刷新预览页面。")
+    request_id = render_token_signature_request(token or "")
+    if request_id is not None:
+        from ..database import get_db_connection
+        from ..services.material_signature_service import authorized_request
+        from ..services.signature_service import SignatureServiceError
+
+        try:
+            with get_db_connection() as conn:
+                authorized_request(conn, user, request_id)
+        except SignatureServiceError as exc:
+            raise HTTPException(exc.status_code, exc.message) from exc
 
 
 def _map_render_error(exc: DocumentRenderError) -> HTTPException:

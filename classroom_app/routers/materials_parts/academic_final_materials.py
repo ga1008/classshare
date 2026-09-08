@@ -498,6 +498,7 @@ async def _attach_source_document(
                 owner_scope=owner_scope,
                 now=now,
             )
+        new_signature_revision = uuid.uuid4().hex
         conn.execute(
             """
             UPDATE material_ai_import_records
@@ -511,11 +512,14 @@ async def _attach_source_document(
                 file_hash,
                 len(source_bytes),
                 profile["mime_type"],
-                uuid.uuid4().hex,
+                new_signature_revision,
                 now,
                 int(record_id),
             ),
         )
+        from ...services.material_signature_revision_service import invalidate_pending_material_plans
+
+        invalidate_pending_material_plans(conn, "academic_final_material", str(record_id), new_signature_revision)
         refresh_root_git_metadata(conn, int(package["root_id"]))
         conn.commit()
     return {"source_material_id": source_id, "file_hash": file_hash, "file_size": len(source_bytes)}
@@ -1014,8 +1018,6 @@ def _apply_signatures(
     fields[ids_key] = normalized_ids
     fields[id_key] = normalized_ids[0] if normalized_ids else None
     fields[path_key] = ""
-    has_personal_signature = False
-    has_opinion_stamp = False
     for signature_id in normalized_ids:
         try:
             row, _actor = signature_service.get_signature_row_for_actor(
@@ -1028,14 +1030,6 @@ def _apply_signatures(
             raise HTTPException(exc.status_code, exc.message) from exc
         if not signature_service.resolve_signature_file_path(row):
             raise HTTPException(422, "所选签名图片文件不存在。")
-        if signature_service.is_stamp_signature(row):
-            has_opinion_stamp = True
-        else:
-            has_personal_signature = True
-    role = ids_key.removesuffix("_signature_ids")
-    opinion_key = f"{role}_review_opinion"
-    if role in ACADEMIC_EXAM_REVIEW_DEFAULTS and opinion_key not in fields and has_personal_signature and not has_opinion_stamp:
-        fields[opinion_key] = ACADEMIC_EXAM_REVIEW_DEFAULTS[role]
     return {
         "signature_ids": normalized_ids,
         "function_point_key": function_point_key,
@@ -1112,7 +1106,10 @@ async def api_update_academic_final_material(
             for role in ACADEMIC_EXAM_REVIEW_DEFAULTS:
                 opinion_key = f"{role}_review_opinion"
                 if opinion_key in body_payload:
-                    fields[opinion_key] = normalize_academic_review_opinion(body_payload[opinion_key])
+                    if body_payload[opinion_key] is None:
+                        fields.pop(opinion_key, None)
+                    else:
+                        fields[opinion_key] = normalize_academic_review_opinion(body_payload[opinion_key])
             for key in ANALYSIS_EDIT_FIELDS:
                 if key in body_payload:
                     fields[key] = str(body_payload.get(key) or "").strip()
@@ -1160,6 +1157,7 @@ async def api_update_academic_final_material(
                 signature_use_intents.append(intent)
         export_payload["fields"] = fields
         export_payload["structured"] = structured
+        export_payload["review_opinion_policy"] = "optional"
         conn.commit()
     parse_result = _make_parse_result(export_payload, ai_used=bool(record["parse_mode"] in {"ai", "ai_generated"}))
     task = await _persist_final_material_record_update(
@@ -1187,7 +1185,7 @@ async def api_update_academic_final_material(
             )
         else:
             has_teacher_signature = bool(
-                fields.get("teacher_signature_ids") or fields.get("teacher_signature_id")
+                (refreshed_payload.get("fields") or {}).get("teacher_personal_signature_ids")
             )
             edit_state["teacher_signature_ready"] = has_teacher_signature
             edit_state["grade_complete"] = has_teacher_signature
