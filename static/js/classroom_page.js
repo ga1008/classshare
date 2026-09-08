@@ -1,7 +1,7 @@
 import { apiFetch } from '/static/js/api.js';
 import { initLearningMaterialSelector } from '/static/js/learning_material_selector.js';
 import { initSessionMaterialAiAssistant } from '/static/js/session_material_ai_assistant.js';
-import { initAssignmentClocks } from '/static/js/assignment_time.js?v=classroom-workspace-20260905';
+import { initAssignmentClocks } from '/static/js/assignment_time.js?v=task-cards-20260909';
 import { showToast } from '/static/js/ui.js';
 import { openMaterialListPopup } from '/static/js/classroom_material_list.js';
 import { bindClassroomLessonRail, materialEntryDecision, sessionMaterialScope } from '/static/js/classroom_workspace.js';

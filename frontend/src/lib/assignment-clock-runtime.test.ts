@@ -7,6 +7,33 @@ type TimeState = { is_accepting_submissions: boolean; deadline_phase: string; co
 
 describe('legacy assignment clock boundary contract', () => {
   afterEach(() => vi.useRealTimers());
+  it.each([
+    { phase: 'regular', dateLabel: '截止时间', durationLabel: '剩余时间', initialDetail: '截止时间', dateDetail: '', durationDetail: '请在首次截止前提交' },
+    { phase: 'late', dateLabel: '补交截止', durationLabel: '补交剩余', initialDetail: '补交封顶 80 分', dateDetail: '补交封顶 80 分', durationDetail: '补交封顶 80 分' },
+  ])('keeps the $phase label and detail consistent when a date becomes a countdown', ({ phase, dateLabel, durationLabel, initialDetail, dateDetail, durationDetail }) => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-05T04:00:00Z'));
+    const labels = new Map<string, { textContent: string }>();
+    const clock = {
+      dataset: { assignmentId: '10', serverNow: '2026-09-05 12:00:00', countdownAt: '2026-09-06 12:00:01',
+        deadlinePhase: phase, accepting: '1', lateOpen: phase === 'late' ? '1' : '0', latePolicyLabel: '补交封顶 80 分' },
+      classList: { toggle: () => undefined },
+      querySelector: (selector: string) => {
+        const node = { textContent: selector === '[data-assignment-clock-detail]' ? initialDetail : '' };
+        labels.set(selector, node); return node;
+      },
+    };
+    const context = vm.createContext({ Date, Map, console, window: { setInterval, clearInterval, setTimeout, clearTimeout }, document: { querySelectorAll: () => [clock] } });
+    vm.runInContext(readFileSync(resolve('static/js/assignment_time.js'), 'utf8').replaceAll('export function ', 'function '), context);
+    context.initAssignmentClocks();
+    expect(labels.get('[data-assignment-clock-label]')?.textContent).toBe(dateLabel);
+    expect(labels.get('[data-assignment-clock-value]')?.textContent).toContain('12:00');
+    expect(labels.get('[data-assignment-clock-value]')?.textContent).not.toContain('截止');
+    expect(labels.get('[data-assignment-clock-detail]')?.textContent).toBe(dateDetail);
+    vi.advanceTimersByTime(2000);
+    expect(labels.get('[data-assignment-clock-label]')?.textContent).toBe(durationLabel);
+    expect(labels.get('[data-assignment-clock-value]')?.textContent).toBe('23 小时 59 分钟');
+    expect(labels.get('[data-assignment-clock-detail]')?.textContent).toBe(durationDetail);
+  });
   it('transitions regular to supplement to closed without waiting for the network poll', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-05T04:00:00Z'));

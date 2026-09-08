@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('/static/js/api.js', () => ({ apiFetch: vi.fn() }));
 vi.mock('/static/js/learning_material_selector.js', () => ({ initLearningMaterialSelector: vi.fn() }));
 vi.mock('/static/js/session_material_ai_assistant.js', () => ({ initSessionMaterialAiAssistant: vi.fn() }));
-vi.mock('/static/js/assignment_time.js?v=classroom-workspace-20260905', () => ({ initAssignmentClocks: vi.fn() }));
+vi.mock('/static/js/assignment_time.js?v=task-cards-20260909', () => ({ initAssignmentClocks: vi.fn() }));
 vi.mock('/static/js/ui.js', () => ({ showToast: vi.fn() }));
 vi.mock('/static/js/classroom_material_list.js', () => ({ openMaterialListPopup: vi.fn() }));
 // @ts-expect-error Native classroom controller outside the frontend tree.

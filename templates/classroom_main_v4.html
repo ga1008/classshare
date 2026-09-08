@@ -1268,7 +1268,6 @@
 
             {% if user_info.role == 'teacher' %}
             <p class="assignment-scope-note" data-assignment-section-view="tasks">仅显示教师创建的练习与考试；个人试炼在班级成长统计。</p>
-            {% include 'partials/assessment_classification_batch.html' %}
             {% endif %}
 
             <div class="assignment-board" id="assignment-list" data-assignment-list-region data-assignment-section-view="tasks">
@@ -1309,14 +1308,13 @@
                     {% endif %}
                     {% set teacher_metrics = assignment.teacher_submission_metrics | default({}, true) %}
                     {% set teacher_pending_grade_count = teacher_metrics.pending_grade_count | default(0, true) %}
-                    {% set teacher_review_queue = teacher_pending_grade_count %}
                     {% set teacher_grading_count = teacher_metrics.grading_count | default(0, true) %}
                     {% set teacher_returned_count = teacher_metrics.returned_count | default(0, true) %}
                     {% set teacher_unsubmitted_count = teacher_metrics.unsubmitted_count | default(0, true) %}
                     {% set teacher_late_count = teacher_metrics.late_submission_count | default(0, true) %}
                     {% set teacher_total_students = teacher_metrics.total_students | default(0, true) %}
                     <article
-                        class="card assignment-card assignment-card-unified hover-lift cursor-pointer"
+                        class="card assignment-card assignment-card-unified{% if user_info.role == 'teacher' %} assignment-card--teacher{% endif %} hover-lift cursor-pointer"
                         data-assignment-task-card
                         tabindex="0" role="link"
                         onkeydown="if(event.target===this &amp;&amp; event.key==='Enter'){ this.click(); }"
@@ -1339,6 +1337,11 @@
                         onclick="location.href='/assignment/{{ assignment.id }}'"
                     >
                         <div class="card-body">
+                            {% if user_info.role == 'teacher' %}
+                            <div class="assignment-card-heading">
+                            <div class="assignment-card-overview">
+                            <h3 class="card-title assignment-card-title">{{ assignment.title }}</h3>
+                            {% endif %}
                             <div class="assignment-card-top">
                                 <div class="assignment-card-tags">
                                     <span class="badge {{ status_class }}" data-grade-visible="{{ '1' if assignment.has_effective_score else '0' }}">{{ status_label }}{% if assignment.has_effective_score and assignment.submission_score is not none %} · {{ '缺交登记 ' if assignment.is_absence_score else '当前有效 ' if assignment.is_regrading else '' }}{{ assignment.submission_score }} 分{% endif %}</span>
@@ -1353,24 +1356,17 @@
                                     {% if user_info.role == 'student' and assignment.group_pending %}
                                     <span class="badge badge-warning">待组内揭晓</span>
                                     {% endif %}
-                                    {% if user_info.role == 'teacher' and teacher_review_queue %}
-                                    <span class="badge badge-danger">待批改 {{ teacher_review_queue }}</span>
-                                    {% endif %}
-                                    {% if user_info.role == 'teacher' and teacher_grading_count %}
-                                    <span class="badge badge-warning">批改中 {{ teacher_grading_count }}</span>
-                                    {% endif %}
-                                    {% if user_info.role == 'teacher' and teacher_returned_count %}
-                                    <span class="badge badge-warning">待重交 {{ teacher_returned_count }}</span>
-                                    {% endif %}
-                                    {% if user_info.role == 'teacher' and teacher_late_count %}
-                                    <span class="badge badge-warning">补交 {{ teacher_late_count }}</span>
-                                    {% endif %}
                                 </div>
+                                {% if user_info.role != 'teacher' %}
                                 <span class="assignment-arrow" aria-hidden="true">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                                 </span>
+                                {% endif %}
                             </div>
+                            {% if user_info.role != 'teacher' %}
                             <h3 class="card-title assignment-card-title">{{ assignment.title }}</h3>
+                            {% endif %}
+                            {% if user_info.role != 'teacher' or (not assignment.exam_paper_id and assignment.requirements_md) %}
                             <p class="assignment-card-desc">
                                 {% if assignment.exam_paper_id %}
                                 该任务来自试卷库，进入后可查看试卷详情、答题状态与发布信息。
@@ -1380,8 +1376,6 @@
                                 暂未填写详细说明，点击进入查看完整作业内容与提交要求。
                                 {% endif %}
                             </p>
-                            {% if user_info.role == 'teacher' %}
-                            {% with assessment=assignment %}{% include 'partials/assessment_kind_control.html' %}{% endwith %}
                             {% endif %}
                             {% if assignment.countdown_at or assignment.late_submission_enabled or assignment.starts_at or (user_info.role == 'student' and assignment.resubmission_due_at) %}
                             <div
@@ -1411,6 +1405,14 @@
                                 </small>
                             </div>
                             {% endif %}
+                            {% if user_info.role == 'teacher' %}
+                            </div>
+                            <a class="btn btn-primary assignment-card-primary-link" href="/assignment/{{ assignment.id }}" onclick="event.stopPropagation();">
+                                {% if assignment.effective_status == 'new' %}继续编辑{% elif teacher_pending_grade_count %}去批改{% else %}查看任务{% endif %}
+                                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+                            </a>
+                            </div>
+                            {% endif %}
                             {% if user_info.role == 'student' and assignment.submission_status == 'graded' and assignment.submission_feedback_preview %}
                             <div class="assignment-card-feedback-preview" aria-label="批改总览评语">
                                 <span class="assignment-card-feedback-preview__label">总览评语</span>
@@ -1419,10 +1421,13 @@
                             {% endif %}
                             {% if user_info.role == 'teacher' %}
                             <div class="assignment-card-insights" aria-label="提交与批改概览">
-                                <span class="assignment-card-insight" data-tone="primary">
-                                    <strong>{{ teacher_metrics.submitted_count | default(0, true) }}{% if teacher_total_students %}/{{ teacher_total_students }}{% endif %}</strong>
-                                    <small>已交</small>
-                                </span>
+                                <div class="assignment-card-insight assignment-card-submission-progress" data-tone="primary">
+                                    <span class="assignment-card-submission-count"><strong>{{ teacher_metrics.submitted_count | default(0, true) }}{% if teacher_total_students %}<span class="assignment-card-total"> / {{ teacher_total_students }}</span>{% endif %}</strong><small>已提交</small></span>
+                                    {% if teacher_total_students %}
+                                    <progress max="{{ teacher_total_students }}" value="{{ teacher_metrics.submitted_count | default(0, true) }}" aria-label="提交进度"></progress>
+                                    {% endif %}
+                                    <small class="assignment-card-unsubmitted">{{ teacher_unsubmitted_count }} 人未交{% if teacher_returned_count %} · {{ teacher_returned_count }} 人待重交{% endif %}{% if teacher_late_count %} · {{ teacher_late_count }} 人补交{% endif %}</small>
+                                </div>
                                 <span class="assignment-card-insight" data-tone="{{ 'danger' if teacher_pending_grade_count else 'neutral' }}">
                                     <strong>{{ teacher_pending_grade_count }}</strong>
                                     <small>待批改</small>
@@ -1433,22 +1438,16 @@
                                 </span>
                                 <span class="assignment-card-insight" data-tone="success">
                                     <strong>{{ teacher_metrics.graded_count | default(0, true) }}</strong>
-                                    <small>已批</small>
+                                    <small>已批改</small>
                                 </span>
                             </div>
                             {% endif %}
                             <div class="assignment-card-footer">
+                                {% if user_info.role != 'teacher' %}
                                 <span class="assignment-meta-text">
-                                    {% if user_info.role == 'teacher' and teacher_pending_grade_count %}
-                                    {{ teacher_pending_grade_count }} 份待开始批改
-                                    {% elif user_info.role == 'teacher' and teacher_grading_count %}
-                                    {{ teacher_grading_count }} 份正在批改
-                                    {% elif user_info.role == 'teacher' and teacher_returned_count %}
-                                    {{ teacher_returned_count }} 人待重交
-                                    {% elif user_info.role == 'teacher' and teacher_unsubmitted_count %}
-                                    {{ teacher_unsubmitted_count }} 人未交
-                                    {% elif assignment.created_at %}创建于 {{ assignment.created_at[:10] }}{% else %}随时可进入查看{% endif %}
+                                    {% if assignment.created_at %}创建于 {{ assignment.created_at[:10] }}{% else %}随时可进入查看{% endif %}
                                 </span>
+                                {% endif %}
                                 {% if user_info.role == 'teacher' %}
                                 <span class="assignment-card-action-row">
                                     {% if assignment.exam_paper_id %}
@@ -1479,6 +1478,12 @@
                                         <span>分组配置</span>
                                     </button>
                                 </span>
+                                {% if assignment.source_feature != 'personal_stage' %}
+                                <details class="assignment-card-classification" onclick="event.stopPropagation();">
+                                    <summary>调整分类</summary>
+                                    {% with assessment=assignment %}{% include 'partials/assessment_kind_control.html' %}{% endwith %}
+                                </details>
+                                {% endif %}
                                 {% endif %}
                             </div>
                         </div>
@@ -1495,6 +1500,9 @@
                 </div>
                 {% endif %}
             </div>
+            {% if user_info.role == 'teacher' %}
+            {% include 'partials/assessment_classification_batch.html' %}
+            {% endif %}
         </section>
         </div>
 

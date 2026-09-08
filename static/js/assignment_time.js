@@ -119,18 +119,19 @@ function renderClock(state) {
         : Math.floor((countdownAtMs - serverMs) / SECOND_MS);
     const isExpired = remainingSeconds !== null && remainingSeconds <= 0;
     const isUrgent = remainingSeconds !== null && remainingSeconds > 0 && remainingSeconds <= 3600;
+    const showDeadline = remainingSeconds !== null && remainingSeconds > 86400;
 
     state.el.classList.toggle('is-late', lateOpen || phase === 'late');
     state.el.classList.toggle('is-urgent', isUrgent);
     state.el.classList.toggle('is-expired', isExpired && !accepting);
 
     if (phase === 'late') {
-        if (state.labelEl) state.labelEl.textContent = '补交剩余';
+        if (state.labelEl) state.labelEl.textContent = showDeadline ? '补交截止' : '补交剩余';
         if (state.detailEl) state.detailEl.textContent = state.latePolicyLabel || '补交扣分已生效';
     } else if (phase === 'regular') {
-        if (state.labelEl) state.labelEl.textContent = '剩余时间';
-        if (state.detailEl && !state.detailEl.textContent.trim()) {
-            state.detailEl.textContent = '请在首次截止前提交';
+        if (state.labelEl) state.labelEl.textContent = showDeadline ? '截止时间' : '剩余时间';
+        if (state.detailEl && ['', '截止时间', '倒计时', '长期有效', '请在首次截止前提交'].includes(state.detailEl.textContent.trim())) {
+            state.detailEl.textContent = showDeadline ? '' : '请在首次截止前提交';
         }
     } else if (accepting) {
         if (state.labelEl) state.labelEl.textContent = lateOpen ? '补交开放中' : '开放中';
@@ -144,8 +145,8 @@ function renderClock(state) {
         if (remainingSeconds === null) {
             state.valueEl.textContent = accepting ? (lateOpen ? '补交开放' : '长期开放') : '已截止';
         } else {
-            const label = isExpired ? '已截止' : remainingSeconds > 86400
-                ? `${new Date(countdownAtMs).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })} 截止`
+            const label = isExpired ? '已截止' : showDeadline
+                ? new Date(countdownAtMs).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
                 : formatDuration(remainingSeconds);
             if (state.valueEl.textContent !== label) state.valueEl.textContent = label;
         }

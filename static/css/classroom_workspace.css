@@ -124,7 +124,7 @@ body.classroom-workspace-v2 > [data-ui-dialog-overlay][data-state] { z-index: 10
 .cw-dialog .assignment-card { height: auto; min-height: 0; margin: 0; border-radius: 10px; box-shadow: none; transform: none; }
 /* The old equal-height dashboard tiles and teacher row-spanning grid create
    cyclic intrinsic sizing when placed in a scrolling full-width collection. */
-.cw-dialog.classroom-workspace-v2 .assignment-card .card-body { display: flex; flex-direction: column; height: auto; min-height: 0; padding: 16px; gap: 10px; }
+.cw-dialog.classroom-workspace-v2 .assignment-card .card-body { display: flex; flex-direction: column; align-items: stretch; height: auto; min-height: 0; padding: 16px; gap: 10px; }
 .cw-dialog .assignment-card h3 { margin: 8px 0; font-size: 16px; line-height: 1.55; }
 .cw-dialog .assignment-card-tags { flex-wrap: wrap; gap: 6px; }
 .cw-dialog .assignment-card-tags .badge { padding: 3px 8px; font-size: 12px; line-height: 1.5; }
@@ -136,6 +136,71 @@ body.classroom-workspace-v2 > [data-ui-dialog-overlay][data-state] { z-index: 10
 .cw-dialog .assignment-card-insight strong { font-size: 15px; }
 .cw-dialog .assignment-card-insight small { font-size: 12px; }
 .cw-dialog .assignment-card .card-footer { padding: 8px 16px; font-size: 12px; }
+/* Teacher task cards: identity, progress, then optional management controls.
+   Reset inherited dashboard sizing at this collection boundary. */
+.cw-dialog #classroom-task-collection > .section-header .section-heading,
+.cw-dialog #classroom-task-collection > .assignment-scope-note { display: none; }
+.cw-dialog #classroom-task-collection > .section-header { margin-bottom: 14px; }
+.cw-dialog #classroom-task-collection > .section-header:empty { display: none; }
+.cw-dialog #classroom-task-collection > .section-header .header-actions { flex-wrap: wrap; gap: 8px; }
+.cw-dialog #classroom-task-collection .assignment-board { display: block; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.cw-dialog #classroom-task-collection > .assessment-classification-batch { margin: 12px 0 0; border: 0; border-radius: 0; }
+.cw-dialog #classroom-task-collection > .assessment-classification-batch > summary { padding: 8px 0; color: var(--cw-muted); font-size: 13px; font-weight: 500; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher { border: 1px solid var(--cw-line); border-radius: 12px; background: var(--cw-paper); }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher::before { content: none; }
+.cw-dialog .assignment-card--teacher:focus-visible { outline: 2px solid var(--cw-accent); outline-offset: 2px; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .card-body { padding: 20px; gap: 16px; }
+.cw-dialog .assignment-card-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 16px 24px; }
+.cw-dialog .assignment-card-overview { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-title { margin: 0; font-size: 17px; font-weight: 650; line-height: 1.55; overflow-wrap: anywhere; }
+.cw-dialog .assignment-card--teacher .assignment-card-top { margin: 0; }
+.cw-dialog .assignment-card--teacher .assignment-card-tags { display: flex; align-items: center; gap: 6px; }
+.cw-dialog .assignment-card--teacher .assignment-card-tags .badge { box-shadow: none; font-weight: 500; }
+.cw-dialog .assignment-card--teacher .assignment-card-tags .badge-outline { border-color: transparent; background: #f1f5f7; color: var(--cw-muted); }
+.cw-dialog .assignment-card-primary-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 8px 14px; border-radius: 8px; white-space: nowrap; font-size: 13px; font-weight: 600; box-shadow: none; }
+.cw-dialog .assignment-card--teacher .assignment-card-desc { margin: 0; min-height: 0; color: var(--cw-muted); }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-time-strip { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.cw-dialog .assignment-card--teacher .assignment-time-strip__value { font-size: 13px; line-height: 1.5; white-space: normal; }
+.cw-dialog .assignment-card--teacher .assignment-time-strip__label,
+.cw-dialog .assignment-card--teacher .assignment-time-strip__detail { font-size: 12px; font-weight: 400; }
+.cw-dialog .assignment-card--teacher .assignment-time-strip__detail:empty { display: none; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insights { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 0; margin: 0; padding: 14px 0; border: 1px solid var(--cw-line); border-radius: 9px; background: #f8fafb; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insight { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 4px; min-width: 0; min-height: 0; padding: 0 18px; border: 0; border-left: 1px solid var(--cw-line); border-radius: 0; background: transparent; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insight:first-child { border-left: 0; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insight strong { font-size: 23px; line-height: 1.25; font-weight: 650; font-variant-numeric: tabular-nums; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insight[data-tone="danger"] strong { color: #a42626; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insight[data-tone="warning"] strong { color: #975b16; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insight[data-tone="success"] strong { color: #16715e; }
+.cw-dialog .assignment-card-submission-count { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.cw-dialog .assignment-card-total { font-size: 14px; font-weight: 400; color: var(--cw-muted); }
+.cw-dialog .assignment-card-submission-progress progress { display: block; appearance: none; width: 100%; height: 5px; margin: 3px 0; overflow: hidden; border: 0; border-radius: 99px; background: #e3eae8; color: var(--cw-accent); }
+.cw-dialog .assignment-card-submission-progress progress::-webkit-progress-bar { background: #e3eae8; border-radius: 99px; }
+.cw-dialog .assignment-card-submission-progress progress::-webkit-progress-value { background: var(--cw-accent); border-radius: 99px; }
+.cw-dialog .assignment-card-submission-progress progress::-moz-progress-bar { background: var(--cw-accent); border-radius: 99px; }
+.cw-dialog .assignment-card--teacher .assignment-card-unsubmitted { line-height: 1.5; overflow-wrap: anywhere; }
+.cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.cw-dialog .assignment-card--teacher .assignment-card-action-row { flex: 1 1 auto; width: auto; justify-content: flex-start; flex-wrap: wrap; gap: 8px 16px; }
+.cw-dialog .assignment-card--teacher :is(.assignment-wrong-summary-link, .assignment-group-config-link) { min-height: 36px; padding: 6px 0; border: 0; border-radius: 4px; background: transparent; color: var(--cw-muted); font-size: 13px; font-weight: 500; }
+.cw-dialog .assignment-card--teacher :is(.assignment-wrong-summary-link, .assignment-group-config-link):hover { color: var(--cw-accent); transform: none; }
+.cw-dialog .assignment-card-classification { min-width: 0; cursor: default; }
+.cw-dialog .assignment-card-classification > summary { width: fit-content; min-height: 36px; margin-left: auto; padding: 6px 0; color: var(--cw-muted); font-size: 13px; line-height: 24px; cursor: pointer; }
+.cw-dialog .assignment-card-classification > summary:hover { color: var(--cw-accent); }
+.cw-dialog .assignment-card-classification[open] { grid-column: 1 / -1; width: 100%; }
+.cw-dialog .assignment-card-classification[open] > summary { color: var(--cw-accent); }
+.cw-dialog .assignment-card-classification .ordinary-grade-kind-control { grid-template-columns: auto minmax(140px, 220px) auto; justify-content: start; gap: 10px; width: 100%; margin: 8px 0 0; padding: 14px; border: 1px solid var(--cw-line); border-radius: 8px; background: #f8fafb; }
+.cw-dialog .assignment-card-classification .ordinary-grade-kind-control__select { width: 100%; min-width: 0; min-height: 36px; font-size: 13px; font-weight: 500; }
+.cw-dialog .assignment-card-classification .ordinary-grade-kind-control__note { font-size: 12px; font-weight: 400; line-height: 1.6; }
+@media (max-width: 600px) {
+    .cw-dialog.classroom-workspace-v2 .assignment-card--teacher .card-body { padding: 14px; gap: 14px; }
+    .cw-dialog .assignment-card-heading { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .cw-dialog .assignment-card-primary-link { justify-self: start; }
+    .cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insights { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0; }
+    .cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insight { padding: 12px; }
+    .cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insight:nth-child(3) { border-left: 0; }
+    .cw-dialog.classroom-workspace-v2 .assignment-card--teacher .assignment-card-insight:nth-child(n+3) { border-top: 1px solid var(--cw-line); }
+    .cw-dialog .assignment-card-classification .ordinary-grade-kind-control { grid-template-columns: minmax(0, 1fr) auto; padding: 12px; }
+    .cw-dialog .assignment-card-classification .ordinary-grade-kind-control__label { grid-column: 1 / -1; }
+}
 .cw-dialog .materials-list { border: 0; background: transparent; }
 .cw-dialog .materials-list-header,
 .cw-dialog .materials-row { display: grid; grid-template-columns: 28px minmax(160px, 1fr) 90px 100px minmax(150px, auto); align-items: center; gap: 12px; padding: 12px 0; min-width: 0; min-height: 0; margin: 0; border: 0; border-bottom: 1px solid var(--cw-line); border-radius: 0; background: transparent; box-shadow: none; }
