@@ -1,0 +1,31 @@
+{
+  "release_id": "20260908-125255-0f3b882d860a",
+  "main_status": "ok",
+  "source_files_matched": 7,
+  "full_templates_rendered": 2,
+  "navigation_icons_resolved": true,
+  "email_worker": {
+    "ok": true,
+    "queue_depth": 0,
+    "status": "running",
+    "updated_at": "2026-09-08T12:54:49",
+    "last_error": ""
+  },
+  "verified_at_utc": "2026-09-08T04:55:24.547497+00:00",
+  "deployed_code_commit": "0afcd0b5c090821cfebb0854b02ab6b3c5ff8dc4",
+  "public_assets_matched": 4,
+  "unit_tests_passed": 61,
+  "browser_validation": "Complete production Jinja layouts with isolated APIs; desktop/mobile selection, conditional controls, sorting, preview/approval, incomplete download, editing overlay, and card/filter bounds passed.",
+  "production_browser_session_used": false,
+  "production_test_notifications_or_approvals_sent": false,
+  "code_backup": "/tmp/lanshare-deploy-backups/code-20260908-125304.tgz",
+  "database_backup": "/tmp/lanshare-deploy-backups/db-20260908-125304.sql.gz",
+  "database_schema_changed": false,
+  "native_postgres_deployment_gate": "passed against matching migration sources and original rehearsal backup",
+  "historical_background_health": {
+    "overall_ok": false,
+    "historical_failed_count": 506,
+    "stale_count": 0,
+    "all_current_items_ok": true
+  }
+}
