@@ -3,9 +3,8 @@
 {% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/material_workflows.css') }}">{% endblock %}
 {% block content %}
 <section class="msw-page" data-signature-workflows>
-  <header class="msw-hero"><div><span class="msw-eyebrow">材料 · 签名</span><h2>签名审批与使用</h2><p>先查看申请时的材料，再决定签名授权。每份文档、每个位置独立审批。</p></div><a class="msw-button" href="/manage/me/signatures">管理我的签名</a></header>
   <details class="msw-point" data-start-application><summary>从材料发起签名申请</summary><p class="msw-note">进入材料列表，选择一份或多份同类文档，然后点击右侧“申请签名”。审批人会收到申请时的实际文档。</p><div class="msw-toolbar"><a class="msw-button" href="/manage/teaching/academic-grade-registers">成绩登记表</a><a class="msw-button" href="/manage/teaching/academic-exam-analyses">试卷分析表</a><a class="msw-button" href="/manage/teaching/assessment-plans">考核计划表</a></div></details>
-  <p class="msw-note" data-notification-readiness></p>
+  <p class="msw-note" data-notification-readiness hidden role="status"></p>
   <nav class="msw-tabs" aria-label="签名工作区"><button type="button" data-view="incoming" aria-pressed="true">待我审批</button><button type="button" data-view="outgoing" aria-pressed="false">我的申请</button><button type="button" data-view="usage" aria-pressed="false">使用记录</button></nav>
   <form class="msw-filters" data-filters>
     <label class="msw-search">搜索<input type="search" name="q" placeholder="申请人、课程或材料名称"></label>
@@ -22,7 +21,7 @@
   <details class="msw-point" data-history hidden><summary>最近提交与文档应用结果</summary><div data-history-list></div></details>
   <div class="msw-workspace">
     <div class="msw-request-list" data-list aria-label="签名申请列表"></div>
-    <aside class="msw-preview" data-preview><div class="msw-placeholder"><strong>选择一份申请材料</strong><p>这里将展示申请时保存的真实文档，以及各个签名位置的审批操作。</p></div></aside>
+    <aside class="msw-preview" data-preview><div class="msw-placeholder"><strong>选择一份申请材料</strong><p>选择申请后，可预览材料并处理签名。</p></div></aside>
   </div>
   <footer class="msw-pagination"><button class="msw-button" data-prev>上一页</button><span data-page></span><button class="msw-button" data-next>下一页</button></footer>
 </section>

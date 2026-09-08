@@ -42,7 +42,7 @@ export class MaterialSelectionPanel{
         const $=selector=>this.sidebar.querySelector(selector);
         $('[data-selection-title]').textContent=selected.length?`已选 ${selected.length} 份文档`:'选择文档';
         const hidden=selected.filter(doc=>!this.visible.some(item=>refKey(item)===refKey(doc))).length;
-        $('[data-selection-help]').textContent=hidden?`其中 ${hidden} 份位于其他筛选结果中。`:'点击卡片空白处选择或取消；原有操作按钮可直接使用。';
+        $('[data-selection-help]').textContent=hidden?`其中 ${hidden} 份位于其他筛选结果中。`:'点击卡片空白处选择或取消。';
         $('[data-clear-selection]').hidden=!selected.length;$('[data-download-selected]').disabled=!selected.length;
         $('[data-download-all]').disabled=!this.visible.length;$('[data-download-all]').textContent=`全部打包下载（当前筛选 ${this.visible.length} 份）`;
         $('[data-select-visible]').disabled=!this.visible.length;
@@ -64,7 +64,7 @@ export class MaterialSelectionPanel{
         const dialogSequence=this.dialogSequence=(this.dialogSequence||0)+1;
         this.pickers.forEach(picker=>picker.destroy());this.pickers=[];
         const context=this.context;const docs=context.documents.map(ref);const first=docs[0];const config=[];const key=crypto.randomUUID();
-        this.dialog.innerHTML=`<header class="msw-dialog__head"><div><span class="msw-eyebrow">${docs.length} 份同类文档</span><h3>申请并配置签名</h3></div><button class="msw-button" data-close aria-label="关闭">×</button></header><div class="msw-dialog__body"><p class="msw-note">每个位置分别选择签名，在下拉框的“已选”中调整顺序。“已核”“同意”属于特殊签名，可直接使用。</p><div data-points></div><label class="msw-field">申请附言<textarea data-note rows="2" maxlength="300" placeholder="说明材料用途，帮助审批人了解背景"></textarea></label><label class="msw-inline"><input type="checkbox" data-auto checked>每个位置全部获批后，自动按选定顺序更新文档</label></div><footer class="msw-dialog__foot"><span class="msw-status" data-result role="status">正在读取签名位置…</span><button class="msw-button msw-primary" data-submit disabled>提交 ${docs.length} 份申请</button></footer>`;
+        this.dialog.innerHTML=`<header class="msw-dialog__head"><div><span class="msw-eyebrow">${docs.length} 份同类文档</span><h3>申请并配置签名</h3></div><button class="msw-button" data-close aria-label="关闭">×</button></header><div class="msw-dialog__body"><p class="msw-note">选择签名后，可在下拉框的“已选”中调整顺序。</p><div data-points></div><label class="msw-field">申请附言<textarea data-note rows="2" maxlength="300" placeholder="说明材料用途，帮助审批人了解背景"></textarea></label><label class="msw-inline"><input type="checkbox" data-auto checked>每个位置全部获批后，自动按选定顺序更新文档</label></div><footer class="msw-dialog__foot"><span class="msw-status" data-result role="status">正在读取签名位置…</span><button class="msw-button msw-primary" data-submit disabled>提交 ${docs.length} 份申请</button></footer>`;
         this.dialog.querySelector('[data-close]').onclick=()=>this.dialog.close();this.dialog.showModal();
         try{
             const states=await Promise.all(context.points.map(point=>call(`/points/${encodeURIComponent(point.key)}/state?${new URLSearchParams(first)}`)));
@@ -73,7 +73,7 @@ export class MaterialSelectionPanel{
             context.points.forEach((point,index)=>{
                 const current={key:point.key,signature_ids:[],mode:'append',opinion_mode:'keep'};config.push(current);
                 const card=document.createElement('section');card.className='msw-point';
-                card.innerHTML=`<header><strong>${esc(point.label)}</strong><span class="msw-badge">独立位置</span></header><div data-picker></div><div class="msw-inline"><label>已有签名 <select data-mode><option value="append">保留并追加</option><option value="replace">替换为本次选择</option></select></label>${point.opinion_key?'<label>批语 <select data-opinion><option value="keep">保留当前批语</option><option value="stamp">使用所选特殊签名</option><option value="clear">留空</option></select></label>':''}</div>`;
+                card.innerHTML=`<header><strong>${esc(point.label)}</strong></header><div data-picker></div><div class="msw-inline"><label>已有签名 <select data-mode><option value="append">保留并追加</option><option value="replace">替换为本次选择</option></select></label>${point.opinion_key?'<label>批语 <select data-opinion><option value="keep">保留当前批语</option><option value="stamp">使用所选特殊签名</option><option value="clear">留空</option></select></label>':''}</div>`;
                 container.append(card);card.querySelector('[data-mode]').onchange=event=>current.mode=event.target.value;
                 if(point.opinion_key)card.querySelector('[data-opinion]').onchange=event=>current.opinion_mode=event.target.value;
                 const picker=new SignatureMultiSelect({root:card.querySelector('[data-picker]'),items:states[index].signatures,identityLabels:states[index].point.required_identity_labels,

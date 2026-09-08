@@ -110,4 +110,4 @@ await load();
 if(initial.get('request_id'))await openRequest(Number(initial.get('request_id')));
 
 if(initial.has('start'))$('[data-start-application]').open=true;
-try{const readiness=await call('/notification-readiness');if(readiness.email_reason)$('[data-notification-readiness]').textContent='系统消息已接入签名流程。'+readiness.email_reason;}catch{/* Inbox remains usable when email status cannot be read. */}
+try{const readiness=await call('/notification-readiness');const notice=$('[data-notification-readiness]');notice.hidden=readiness.email_available!==false||!readiness.email_reason;if(!notice.hidden)notice.textContent=readiness.email_reason;}catch{/* Inbox remains usable when email status cannot be read. */}

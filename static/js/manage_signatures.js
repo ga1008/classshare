@@ -10,8 +10,6 @@ const state = {
     selectedSchoolCode: '',
     schoolOptions: [],
     ownerTeacherOptions: [],
-    pendingRequests: [],
-    outgoingRequests: [],
     scopeOptions: signatureScopeOptions,
     uploadScope: null,
     editScope: null,
@@ -61,6 +59,10 @@ function teacherOptionLabel(item) {
 }
 
 function cacheElements() {
+    // Fixed overlays must not inherit the topbar's backdrop/transform bounds.
+    document.querySelectorAll('.signature-edit-modal, .signature-upload-modal').forEach(modal => {
+        document.body.append(modal);
+    });
     [
         'signature-search-input',
         'signature-school-switcher',
@@ -91,17 +93,10 @@ function cacheElements() {
         'signature-merge-subtitle',
         'signature-merge-submit-btn',
         'signature-open-pad-btn',
-        'signature-batch-select-all-label',
-        'signature-batch-select-all',
-        'signature-batch-approve-btn',
-        'signature-batch-reject-btn',
         'signature-delete-btn',
         'signature-open-claim-btn',
         'signature-claim-search-input',
         'signature-claim-list',
-        'signature-requests-refresh-btn',
-        'signature-request-list',
-        'signature-outgoing-request-list',
         'signature-upload-form',
         'signature-file-input',
         'signature-file-label',
@@ -205,7 +200,6 @@ async function loadSignatures({ keepSelection = true } = {}) {
             state.selectedId = null;
             renderDetail(null);
         }
-        await loadSignatureRequests();
     } catch (error) {
         if (grid) {
             grid.innerHTML = '<div class="signature-empty">签名加载失败，请稍后重试。</div>';
@@ -585,44 +579,6 @@ async function unbindCurrentSignature() {
     }
 }
 
-function selectedBatchRequestIds() {
-    return Array.from(document.querySelectorAll('input[data-signature-batch-check]:checked'))
-        .map((input) => Number(input.dataset.signatureBatchCheck || 0))
-        .filter(Boolean);
-}
-
-function updateBatchToolbar() {
-    const isAdmin = Boolean(state.adminRequestView);
-    const hasPending = state.pendingRequests.length > 0;
-    ['signature-batch-select-all-label', 'signature-batch-approve-btn', 'signature-batch-reject-btn'].forEach((id) => {
-        if (els[id]) els[id].hidden = !(isAdmin && hasPending);
-    });
-}
-
-async function batchReviewRequests(action) {
-    const ids = selectedBatchRequestIds();
-    if (!ids.length) {
-        showMessage('请先勾选要处理的申请。', 'warning');
-        return;
-    }
-    const verb = action === 'approve' ? '批准' : '拒绝';
-    if (!window.confirm(`确定批量${verb}选中的 ${ids.length} 条申请？`)) return;
-    const buttons = [els['signature-batch-approve-btn'], els['signature-batch-reject-btn']];
-    buttons.forEach((button) => { if (button) button.disabled = true; });
-    try {
-        const result = await apiFetch('/api/signatures/requests/batch-review', {
-            method: 'POST',
-            body: { request_ids: ids, action },
-        });
-        const failNote = result.failed ? `，${result.failed} 条失败（如认领须签名者本人审批）` : '';
-        showMessage(`已${verb} ${result.processed} 条申请${failNote}。`, result.failed ? 'warning' : 'success');
-        await loadSignatureRequests();
-        await loadSignatures({ keepSelection: true });
-    } finally {
-        buttons.forEach((button) => { if (button) button.disabled = false; });
-    }
-}
-
 async function claimCurrentSignature() {
     if (!state.selectedId) return;
     const item = state.items.find((entry) => entry.id === state.selectedId);
@@ -640,122 +596,6 @@ async function claimCurrentSignature() {
 
 async function requestCurrentSignatureUse() {
     window.location.assign('/manage/me/signature-workflows?start=1');
-}
-
-async function loadSignatureRequests() {
-    const list = els['signature-request-list'];
-    if (!list) return;
-    try {
-        const [incoming, outgoing] = await Promise.all([
-            apiFetch('/api/signatures/requests?direction=incoming&status=pending', { method: 'GET', silent: true }),
-            apiFetch('/api/signatures/requests?direction=outgoing', { method: 'GET', silent: true }),
-        ]);
-        state.pendingRequests = Array.isArray(incoming.items) ? incoming.items : [];
-        state.adminRequestView = Boolean(incoming.admin_view);
-        state.outgoingRequests = Array.isArray(outgoing.items) ? outgoing.items : [];
-        renderSignatureRequests();
-    } catch (error) {
-        list.innerHTML = '<div class="signature-empty">申请加载失败，请稍后重试。</div>';
-    }
-}
-
-function renderSignatureRequests() {
-    const list = els['signature-request-list'];
-    if (!list) return;
-    if (!state.pendingRequests.length) {
-        list.innerHTML = '<div class="signature-empty">暂无待审批申请。</div>';
-        updateBatchToolbar();
-        renderOutgoingRequests();
-        return;
-    }
-    list.innerHTML = state.pendingRequests.map((item) => {
-        const isClaim = item.request_kind === 'claim';
-        const signatureName = escapeHtml((item.signature_name || '未命名签名') + (isClaim ? ' · 认领申请' : ''));
-        const requester = escapeHtml(item.requester_name || `教师 ${item.requester_teacher_id}`);
-        const pointLabels = (item.items || []).map((entry) => entry.function_point_label).filter(Boolean).join('、');
-        const purpose = isClaim ? '申请认领签名（批准后归属权转移并绑定其账号）' : (pointLabels || '未登记功能点');
-        const material = !isClaim && item.context_label ? ` · ${item.context_label}` : '';
-        const meta = escapeHtml(`${requester} · ${purpose}${material} · ${item.requested_at ? formatDate(item.requested_at) : ''}`);
-        const mine = (item.reviewers || []).find((reviewer) => (
-            reviewer.role === state.actor?.role && Number(reviewer.id) === Number(state.actor?.id)
-        ));
-        const canAct = mine?.status === 'pending'
-            || (state.adminRequestView && !mine && item.status === 'pending');
-        const adminBadge = state.adminRequestView && !mine
-            ? '<span class="signature-chip is-system">管理员代批</span>'
-            : '';
-        const batchCheck = state.adminRequestView
-            ? `<input type="checkbox" data-signature-batch-check="${item.id}" style="width:16px;height:16px;accent-color:#0f766e;" aria-label="选择此申请">`
-            : '';
-        const actions = canAct ? `
-            ${batchCheck}
-            ${adminBadge}
-            <button type="button" class="btn btn-primary btn-sm" data-signature-request-action="approve">批准</button>
-            <button type="button" class="btn btn-outline btn-sm" data-signature-request-action="reject">拒绝</button>
-        ` : `${batchCheck}<span class="signature-chip">${escapeHtml(mine?.status || item.status)}</span>`;
-        const claimPreview = isClaim
-            ? `<img class="signature-request-preview" src="/api/signatures/${item.signature_id}/image" alt="签名图" loading="lazy" style="max-height:44px;max-width:120px;object-fit:contain;background:#fff;border:1px solid rgba(148,163,184,.3);border-radius:6px;padding:2px;margin-top:6px;">`
-            : '';
-        return `
-            <article class="signature-request-item" data-signature-request-id="${item.id}">
-                <div class="signature-request-main">
-                    <p class="signature-request-title">${signatureName}</p>
-                    <div class="signature-request-meta">${meta}</div>
-                    ${claimPreview}
-                </div>
-                <div class="signature-request-actions">
-                    ${actions}
-                </div>
-            </article>
-        `;
-    }).join('');
-    updateBatchToolbar();
-    renderOutgoingRequests();
-}
-
-function renderOutgoingRequests() {
-    const list = els['signature-outgoing-request-list'];
-    if (!list) return;
-    if (!state.outgoingRequests.length) {
-        list.innerHTML = '<div class="signature-empty">暂无签名使用申请。</div>';
-        return;
-    }
-    const statusLabels = {
-        pending: '待审批', approved: '已批准·当前材料可用', partially_used: '旧版授权部分已使用',
-        consumed: '旧版授权已使用', rejected: '已拒绝', cancelled: '已结束',
-    };
-    list.innerHTML = state.outgoingRequests.map((item) => {
-        const isClaim = item.request_kind === 'claim';
-        const points = isClaim
-            ? '认领申请（批准后归属权转移并绑定我的账号）'
-            : (item.items || []).map((entry) => `${entry.function_point_label}（${entry.status}）`).join('、');
-        return `
-            <article class="signature-request-item" data-signature-request-id="${item.id}">
-                <div class="signature-request-main">
-                    <p class="signature-request-title">${escapeHtml(item.signature_name || '未命名签名')} · ${escapeHtml(statusLabels[item.status] || item.status)}</p>
-                <div class="signature-request-meta">${escapeHtml(points || '未登记功能点')}${!isClaim && item.context_label ? ` · ${escapeHtml(item.context_label)}` : ''} · ${escapeHtml(item.requested_at ? formatDate(item.requested_at) : '')}</div>
-                </div>
-                <div class="signature-request-actions">
-                    ${item.status === 'pending' ? '<button type="button" class="btn btn-outline btn-sm" data-signature-request-action="cancel">撤销</button>' : ''}
-                </div>
-            </article>
-        `;
-    }).join('');
-}
-
-async function reviewSignatureRequest(requestId, action) {
-    if (!requestId || !['approve', 'reject', 'cancel'].includes(action)) return;
-    try {
-        await apiFetch(`/api/signatures/requests/${requestId}/${action}`, {
-            method: 'POST',
-            body: {},
-        });
-        showMessage(action === 'approve' ? '已批准签名使用申请。' : action === 'reject' ? '已记录拒绝意见。' : '申请已撤销。', 'success');
-        await loadSignatureRequests();
-        await loadSignatures({ keepSelection: true });
-    } catch {
-        // apiFetch already surfaces the error.
-    }
 }
 
 async function deleteCurrentSignature() {
@@ -981,20 +821,6 @@ function bindEvents() {
     els['signature-edit-form']?.addEventListener('submit', submitEdit);
     els['signature-request-btn']?.addEventListener('click', requestCurrentSignatureUse);
     els['signature-claim-btn']?.addEventListener('click', claimCurrentSignature);
-    els['signature-requests-refresh-btn']?.addEventListener('click', loadSignatureRequests);
-    els['signature-request-list']?.addEventListener('click', (event) => {
-        const button = event.target.closest?.('[data-signature-request-action]');
-        if (!button) return;
-        const item = button.closest('[data-signature-request-id]');
-        const requestId = Number(item?.dataset.signatureRequestId || 0);
-        reviewSignatureRequest(requestId, button.dataset.signatureRequestAction);
-    });
-    els['signature-outgoing-request-list']?.addEventListener('click', (event) => {
-        const button = event.target.closest?.('[data-signature-request-action]');
-        if (!button) return;
-        const item = button.closest('[data-signature-request-id]');
-        reviewSignatureRequest(Number(item?.dataset.signatureRequestId || 0), button.dataset.signatureRequestAction);
-    });
     els['signature-edit-btn']?.addEventListener('click', openEditModal);
     els['signature-delete-btn']?.addEventListener('click', deleteCurrentSignature);
     els['signature-open-claim-btn']?.addEventListener('click', () => {
@@ -1013,14 +839,6 @@ function bindEvents() {
     els['signature-open-pad-btn']?.addEventListener('click', () => {
         openSignaturePad({ onConfirm: (blob) => uploadHandwrittenSignature(blob) });
     });
-    els['signature-batch-select-all']?.addEventListener('change', () => {
-        const checked = Boolean(els['signature-batch-select-all']?.checked);
-        document.querySelectorAll('input[data-signature-batch-check]').forEach((input) => {
-            input.checked = checked;
-        });
-    });
-    els['signature-batch-approve-btn']?.addEventListener('click', () => batchReviewRequests('approve'));
-    els['signature-batch-reject-btn']?.addEventListener('click', () => batchReviewRequests('reject'));
     els['signature-replace-image-btn']?.addEventListener('click', () => els['signature-replace-image-input']?.click());
     els['signature-replace-image-input']?.addEventListener('change', () => {
         const file = els['signature-replace-image-input']?.files?.[0];

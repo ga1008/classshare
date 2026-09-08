@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi.routing import APIRoute
 
 from classroom_app.app import app
+from classroom_app.core import templates
 from classroom_app.services.manage_nav_service import (
     MANAGE_DOMAIN_ORDER,
     MANAGE_NAV_ITEMS,
@@ -16,6 +17,13 @@ from classroom_app.dependencies import require_teacher_domain
 
 
 class ManageNavServiceTests(unittest.TestCase):
+    def test_registered_navigation_icons_render_without_fallback(self):
+        render_icon = templates.get_template("macros/manage_icons.html").module.manage_icon
+        fallback = str(render_icon("unknown")).strip()
+        for item in MANAGE_NAV_ITEMS:
+            with self.subTest(key=item.key, icon=item.icon):
+                self.assertNotEqual(fallback, str(render_icon(item.icon)).strip())
+
     def test_manage_nav_registry_is_complete_and_unique(self):
         keys = [item.key for item in MANAGE_NAV_ITEMS]
         self.assertEqual(len(keys), len(set(keys)))
