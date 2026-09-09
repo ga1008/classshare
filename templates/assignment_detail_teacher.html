@@ -869,6 +869,74 @@
         gap: 6px;
         white-space: nowrap;
     }
+    .assignment-kind-dialog {
+        width: min(32rem, calc(100vw - 2rem));
+        max-width: none;
+        max-height: calc(100dvh - 2rem);
+        margin: auto;
+        padding: 0;
+        overflow-y: auto;
+        color: var(--text-primary);
+        background: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-xl);
+    }
+    .assignment-kind-dialog::backdrop {
+        background: rgba(15, 23, 42, .42);
+        backdrop-filter: blur(4px);
+    }
+    .assignment-kind-dialog__context {
+        margin: 0;
+        padding: 1.25rem 1.5rem 0;
+        overflow-wrap: anywhere;
+    }
+    .assignment-kind-dialog__context small {
+        display: block;
+        margin-bottom: .4rem;
+        color: var(--text-muted);
+    }
+    .assignment-kind-dialog .ordinary-grade-kind-control {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: .75rem;
+        margin: 0;
+        padding: 1.5rem;
+        border: 0;
+        background: transparent;
+    }
+    .assignment-kind-dialog .ordinary-grade-kind-control__label { font-weight: 650; }
+    .assignment-kind-dialog .ordinary-grade-kind-control__select {
+        width: 100%;
+        min-width: 0;
+        min-height: 3rem;
+        padding: .65rem .85rem;
+        color: var(--text-primary);
+        background: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        font: inherit;
+    }
+    .assignment-kind-dialog .ordinary-grade-kind-control__note {
+        margin: .25rem 0 0;
+        padding: .85rem 1rem;
+        color: var(--text-muted);
+        background: var(--bg-secondary, rgba(99, 102, 241, .05));
+        border-radius: var(--radius-md);
+        font-size: .875rem;
+        line-height: 1.65;
+        overflow-wrap: anywhere;
+    }
+    .assignment-kind-dialog__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: .75rem;
+        padding-top: .75rem;
+    }
+    .assignment-kind-dialog__actions .btn { min-height: 2.75rem; }
+    @media (max-width: 480px) {
+        .assignment-kind-dialog__actions .btn { flex: 1; }
+    }
     .rubric-modal-dialog {
         width: min(92vw, 760px);
     }
@@ -1217,7 +1285,7 @@
             <small>
                 <span>返回课堂</span>
                 <span>{{ assignment_status_label|trim }}</span>
-                <span data-assessment-detail-label>{{ '分类待确认' if assignment.classification_status == 'legacy_unknown' else assignment.assessment_kind_label }}</span>
+                <span data-assessment-detail-label data-assignment-id="{{ assignment.id }}">{{ '分类待确认' if assignment.classification_status == 'legacy_unknown' else assignment.assessment_kind_label }}</span>
                 <span>提交管理</span>
             </small>
         </span>
@@ -1346,6 +1414,9 @@
                 <div class="assignment-more-menu" role="menu" aria-label="管理作业">
                     <div class="assignment-more-menu__label">作业管理</div>
                     <button type="button" class="dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); openEditModal()" role="menuitem">{{ app_topbar_icon('blog') }} 编辑作业</button>
+                    {% if assignment.source_feature != 'personal_stage' %}
+                    <button type="button" class="dropdown-item" data-assessment-kind-open="assignment-kind-modal" role="menuitem" aria-haspopup="dialog" aria-controls="assignment-kind-modal">{{ app_topbar_icon('list') }} 作业分类</button>
+                    {% endif %}
                     <button type="button" class="dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); exportGrades()" role="menuitem">{{ app_topbar_icon('download') }} 导出成绩</button>
                     <button type="button" class="dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); exportAttachments()" id="export-attachments-btn" role="menuitem">{{ app_topbar_icon('folder-up') }} 导出附件</button>
                     <button type="button" class="dropdown-item text-danger" onclick="this.closest('details')?.removeAttribute('open'); openDeleteModal()" role="menuitem">
@@ -1701,6 +1772,17 @@
         </div>
     </div>
 </div>
+{% endif %}
+
+{% if assignment.source_feature != 'personal_stage' %}
+<dialog id="assignment-kind-modal" class="assignment-kind-dialog" data-assessment-kind-dialog aria-labelledby="assignment-kind-modal-title">
+    <div class="modal-header">
+        <h3 class="modal-title" id="assignment-kind-modal-title">作业分类</h3>
+        <button type="button" class="modal-close" data-assessment-kind-close aria-label="关闭作业分类">&times;</button>
+    </div>
+    <p class="assignment-kind-dialog__context"><small>当前作业</small><strong>{{ assignment.title }}</strong></p>
+    {% with assessment=assignment, assessment_control_suffix='-modal', assessment_control_modal=true %}{% include 'partials/assessment_kind_control.html' %}{% endwith %}
+</dialog>
 {% endif %}
 
 <!-- 编辑作业模态框 -->

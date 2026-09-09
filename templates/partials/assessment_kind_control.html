@@ -1,16 +1,23 @@
 {# Set assessment to an authorized assignment or usage projection. #}
 {% if assessment.source_feature != 'personal_stage' %}
+{% set control_id = 'assessment-kind-' ~ (assessment.assignment_id or assessment.id) ~ (assessment_control_suffix | default('')) %}
 <div class="ordinary-grade-kind-control" data-assessment-kind-control onclick="event.stopPropagation();">
-    <label class="ordinary-grade-kind-control__label" for="assessment-kind-{{ assessment.assignment_id or assessment.id }}">任务分类</label>
-    <select class="ordinary-grade-kind-control__select" id="assessment-kind-{{ assessment.assignment_id or assessment.id }}"
+    <label class="ordinary-grade-kind-control__label" for="{{ control_id }}">{{ '作业分类' if assessment_control_modal else '任务分类' }}</label>
+    <select class="ordinary-grade-kind-control__select" id="{{ control_id }}"
         data-assessment-kind-select data-assignment-id="{{ assessment.assignment_id or assessment.id }}"
-        data-version="{{ assessment.assessment_kind_version or 0 }}" aria-label="设置任务分类">
+        data-version="{{ assessment.assessment_kind_version or 0 }}" aria-label="设置任务分类" aria-describedby="{{ control_id }}-note">
         {% if not assessment.assessment_kind %}<option value="" selected disabled>分类待确认</option>{% endif %}
         <option value="homework"{% if assessment.assessment_kind == 'homework' %} selected{% endif %}>平时作业</option>
         <option value="midterm"{% if assessment.assessment_kind == 'midterm' %} selected{% endif %}>期中测验</option>
         <option value="final"{% if assessment.assessment_kind == 'final' %} selected{% endif %}>期末测验</option>
     </select>
-    <button type="button" class="btn btn-outline btn-sm" data-assessment-kind-save disabled>保存分类</button>
-    <small class="ordinary-grade-kind-control__note" data-assessment-kind-note role="status">分类用于后续批改和成绩归类；原成绩与历史成绩表保留。</small>
+    {% if not assessment_control_modal %}<button type="button" class="btn btn-outline btn-sm" data-assessment-kind-save disabled>保存分类</button>{% endif %}
+    <small class="ordinary-grade-kind-control__note" id="{{ control_id }}-note" data-assessment-kind-note role="status">分类用于后续批改和成绩归类；原成绩与历史成绩表保留。</small>
+    {% if assessment_control_modal %}
+    <div class="assignment-kind-dialog__actions">
+        <button type="button" class="btn btn-outline" data-assessment-kind-close>取消</button>
+        <button type="button" class="btn btn-primary" data-assessment-kind-save disabled>保存分类</button>
+    </div>
+    {% endif %}
 </div>
 {% endif %}
