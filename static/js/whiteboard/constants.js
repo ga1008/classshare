@@ -5,12 +5,59 @@
 
 export const STORAGE_NAMESPACE_LEGACY = 'teacher-whiteboard:v1';
 export const STORAGE_NAMESPACE = 'teacher-whiteboard:v2';
+/** v3 分键存储：索引（板元信息 + settings）与板体（elements）分开，保存时只写改动的板。 */
+export const STORAGE_INDEX_NAMESPACE = 'teacher-whiteboard:v3';
+export const STORAGE_BOARD_NAMESPACE = 'teacher-whiteboard:v3b';
 export const FAB_STORAGE_NAMESPACE = 'teacher-whiteboard-fab:v1';
+export const PERF_STORAGE_NAMESPACE = 'teacher-whiteboard-perf:v1';
+/** 板结构的 schema 版本（同时作为 schema_version 上报服务端），与上面的存储布局版本无关。 */
 export const STATE_VERSION = 2;
 export const MAX_BOARDS = 24;
-export const UNDO_LIMIT = 36;
+/**
+ * 单板笔迹的软上限（提示，不阻断）。后端硬闸是 20000 个元素，但那个量级早就不流畅了，
+ * 这里在体感开始下滑之前就给出「新建一块」的出口。
+ */
+export const CAPACITY = Object.freeze({ HINT: 1500, WARN: 3000 });
+/** 快照现在是引用数组的浅拷贝（见 state.cloneElements），内存不再是瓶颈，层数可以给足。 */
+export const UNDO_LIMIT = 80;
 export const MIN_ZOOM = 0.35;
 export const MAX_ZOOM = 2.6;
+
+/**
+ * 画布后备存储上限。4K 投影 + dpr 2.5 会开出 8300 万像素（约 133MB 显存），
+ * 集显机上光是分配和清屏就吃掉整帧预算，这里按「单边倍率 + 总像素」双重设限。
+ */
+export const MAX_DPR = 1.75;
+export const MAX_CANVAS_PIXELS = 8_000_000;
+
+/** 主线程调度节流参数（毫秒）。 */
+export const TIMING = Object.freeze({
+    SAVE_DEBOUNCE_MS: 1500,
+    SAVE_IDLE_TIMEOUT_MS: 1200,
+    RESIZE_DEBOUNCE_MS: 180,
+    BOOTSTRAP_IDLE_TIMEOUT_MS: 2500,
+    DRAWING_CLASS_RELEASE_MS: 260,
+});
+
+/**
+ * 提交层位图缓存策略。
+ * MIN_COVERAGE：缓存盖住屏幕的比例低于此值就别 blit 了，直接重建。
+ * MAX_BLIT_SCALE：缩放差量超过这个倍数时位图会明显糊，改为重建。
+ * SETTLE_MS：手势停下多久之后回正重建一张清晰缓存。
+ */
+export const CACHE = Object.freeze({
+    MIN_COVERAGE: 0.72,
+    MAX_BLIT_SCALE: 1.6,
+    SETTLE_MS: 140,
+});
+
+/** 采点与入库抽稀。屏幕阈值随笔宽自适应：粗笔不需要细笔那么密的点。 */
+export const INPUT = Object.freeze({
+    MIN_POINT_DISTANCE: 1.2,
+    POINT_DISTANCE_BRUSH_RATIO: 0.25,
+    MAX_POINT_DISTANCE: 4,
+    COMMIT_SIMPLIFY_TOLERANCE: 0.5,
+});
 export const CANVAS_FONT_STACK = '"Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif';
 
 export const LEGACY_DEFAULT_COLOR = '#0f172a';
@@ -18,7 +65,19 @@ export const DEFAULT_COLOR = '#ff0000';
 
 export const TOOLS = ['hand', 'brush', 'eraser', 'text', 'shape'];
 export const SHAPES = ['circle', 'square', 'rectangle', 'rounded', 'diamond'];
-export const ELEMENT_TYPES = ['stroke', 'shape', 'text', 'eraser'];
+/**
+ * 每类元素允许持久化的字段（既是类型白名单，也是字段白名单）。
+ * 运行时算出来的东西（包围盒、抽稀结果等）一律放 WeakMap，不许挂到元素上 ——
+ * `sanitizeElement` 以此为准剥离未知字段，避免它们被写进 localStorage 或上传到服务端。
+ */
+export const ELEMENT_FIELDS = Object.freeze({
+    stroke: Object.freeze(['id', 'type', 'color', 'size', 'points', 'createdAt']),
+    eraser: Object.freeze(['id', 'type', 'size', 'hardness', 'points', 'createdAt']),
+    shape: Object.freeze(['id', 'type', 'shape', 'color', 'size', 'x1', 'y1', 'x2', 'y2', 'createdAt']),
+    text: Object.freeze(['id', 'type', 'text', 'x', 'y', 'color', 'fontSize', 'createdAt']),
+});
+
+export const ELEMENT_TYPES = Object.keys(ELEMENT_FIELDS);
 export const ERASER_MODES = ['pixel', 'stroke'];
 
 export const LIMITS = {
@@ -72,6 +131,7 @@ export const EXPORT = Object.freeze({
 export const REMOTE = Object.freeze({
     MAX_JSON_BYTES: 2 * 1024 * 1024,
     AUTO_SYNC_INTERVAL_MS: 30_000,
+    IDLE_FLUSH_TIMEOUT_MS: 4_000,
     SIMPLIFY_TOLERANCE: 0.35,
 });
 

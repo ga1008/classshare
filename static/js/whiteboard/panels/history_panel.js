@@ -2,7 +2,7 @@
  * 历史白板浮窗：列表（倒序）、内联重命名、删除（内联确认）、当前高亮、同步状态。
  */
 import { escapeHtml } from '../../ui.js';
-import { ICONS, LIMITS, SYNC_STATUS } from '../constants.js';
+import { CAPACITY, ICONS, LIMITS, SYNC_STATUS } from '../constants.js';
 import { createPopover } from '../popover.js';
 import { formatRelativeTime, isBoardEmpty } from '../state.js';
 import { openConfirm } from './confirm_popover.js';
@@ -50,11 +50,23 @@ export function createHistoryPanel(board, anchor) {
             dataset: { id: item.id },
         });
         const nameEl = h('div', { className: 'twb-history-name', text: item.name || '未命名白板' });
-        const meta = h('div', {
-            className: 'twb-history-meta',
-            html: `${escapeHtml(formatRelativeTime(item.updatedAt || item.createdAt))} · ${strokeCount(item)} 笔 · `
-                + `<span class="twb-history-status" data-status="${status}"><i class="twb-status-dot"></i>${escapeHtml(STATUS_LABEL[status] || '')}</span>`,
-        });
+        const count = strokeCount(item);
+        // 笔迹超过软上限的板标出来：这类板是卡顿的主要来源，顺手提示用户拆分。
+        const heavy = count >= CAPACITY.HINT;
+        const meta = h('div', { className: 'twb-history-meta' }, [
+            h('span', { text: `${formatRelativeTime(item.updatedAt || item.createdAt)} · ` }),
+            h('span', {
+                className: heavy ? 'twb-history-strokes is-heavy' : 'twb-history-strokes',
+                text: `${count} 笔`,
+                title: heavy ? '笔迹较多，建议新建一块白板' : null,
+            }),
+            h('span', { text: ' · ' }),
+            h('span', {
+                className: 'twb-history-status',
+                dataset: { status },
+                html: `<i class="twb-status-dot"></i>${escapeHtml(STATUS_LABEL[status] || '')}`,
+            }),
+        ]);
         const actions = h('div', { className: 'twb-history-actions' }, [
             h('button', {
                 type: 'button', className: 'twb-icon-btn', title: '重命名', 'aria-label': '重命名', html: ICONS.edit,

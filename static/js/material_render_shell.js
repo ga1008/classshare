@@ -116,6 +116,63 @@ async function initSlideRewriteEntry() {
     frame.addEventListener('load',refresh);await refresh();
 }
 
+/**
+ * 白板打开时让文档侧降级。
+ *
+ * 白板是覆盖在这张 iframe 之上的半透明层：白板每重绘一帧，浏览器都要把 iframe 里
+ * 整棵文档树重新合成一次。iframe 与壳页同源，所以可以直接往里注入一小段样式，
+ * 白板打开期间暂停文档的动效与毛玻璃；背景调到完全不透明时（文档已经看不见了）
+ * 干脆把 iframe 从合成里摘掉。
+ */
+const DOC_QUIET_STYLE_ID = 'render-shell-quiet-style';
+const DOC_QUIET_CSS = `
+.ld-quiet *, .ld-quiet *::before, .ld-quiet *::after {
+    animation-play-state: paused !important;
+    transition-duration: 0s !important;
+}
+.ld-quiet .stat { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+`;
+
+function initWhiteboardDocQuiet() {
+    if (viewerContext.userRole !== 'teacher') return;
+    const frameEl = document.getElementById('render-shell-frame');
+    if (!frameEl) return;
+    let state = { open: false, backgroundOpacity: 1 };
+
+    const frameDocument = () => {
+        try {
+            return frameEl.contentDocument;
+        } catch {
+            return null; // 跨源（理论上不会发生）时安静放弃
+        }
+    };
+
+    const ensureStyle = (doc) => {
+        if (!doc?.head || doc.getElementById(DOC_QUIET_STYLE_ID)) return;
+        const style = doc.createElement('style');
+        style.id = DOC_QUIET_STYLE_ID;
+        style.textContent = DOC_QUIET_CSS;
+        doc.head.appendChild(style);
+    };
+
+    const apply = () => {
+        const doc = frameDocument();
+        if (doc) {
+            ensureStyle(doc);
+            doc.documentElement?.classList.toggle('ld-quiet', state.open);
+        }
+        // 背景不透明时文档完全被盖住，隐藏 iframe 可以整棵树退出合成。
+        frameEl.style.visibility = state.open && state.backgroundOpacity >= 0.98 ? 'hidden' : '';
+    };
+
+    window.addEventListener('teacher-whiteboard:state', (event) => {
+        state = { ...state, ...(event.detail || {}) };
+        apply();
+    });
+    frameEl.addEventListener('load', apply);
+    apply();
+}
+
 function loadTeacherWhiteboardWhenIdle() {
     if (viewerContext.userRole !== 'teacher') return;
     const loadWhiteboard = () => {
@@ -200,5 +257,6 @@ function initLearningProgressHeartbeat() {
 initTopbar();
 initPackageBadgeSync();
 initSlideRewriteEntry();
+initWhiteboardDocQuiet();
 loadTeacherWhiteboardWhenIdle();
 initLearningProgressHeartbeat();

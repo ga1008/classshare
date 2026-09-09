@@ -37204,6 +37204,8 @@ body.has-academic-sync-dialog {
     overflow: hidden;
     cursor: crosshair;
     touch-action: none;
+    /* 网格与画布的重绘不必外溢到工具栏/浮窗所在的子树。 */
+    contain: layout paint;
 }
 
 .teacher-whiteboard-stage::before {
@@ -37231,6 +37233,63 @@ body.has-academic-sync-dialog {
     pointer-events: none;
 }
 
+/* 讲课白板的网格改用独立元素 + transform 驱动（考试画板仍沿用上面的 ::before）。
+   元素向四周多出一个主网格周期，平移时只改 transform —— 纯合成，不重新栅格化渐变；
+   只有缩放才需要改 background-size。 */
+.twb-root .teacher-whiteboard-stage::before {
+    display: none;
+}
+
+.twb-grid {
+    --teacher-whiteboard-grid-size: 40px;
+    --teacher-whiteboard-major-grid-size: 200px;
+    position: absolute;
+    inset: calc(-1 * var(--teacher-whiteboard-major-grid-size));
+    z-index: 0;
+    opacity: var(--teacher-whiteboard-bg-alpha);
+    background-color: var(--gray-50);
+    background-image:
+        linear-gradient(rgba(71, 85, 105, 0.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(71, 85, 105, 0.12) 1px, transparent 1px),
+        linear-gradient(rgba(14, 116, 144, 0.16) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(14, 116, 144, 0.16) 1px, transparent 1px);
+    background-size:
+        var(--teacher-whiteboard-grid-size) var(--teacher-whiteboard-grid-size),
+        var(--teacher-whiteboard-grid-size) var(--teacher-whiteboard-grid-size),
+        var(--teacher-whiteboard-major-grid-size) var(--teacher-whiteboard-major-grid-size),
+        var(--teacher-whiteboard-major-grid-size) var(--teacher-whiteboard-major-grid-size);
+    background-position: 0 0;
+    pointer-events: none;
+    will-change: transform;
+}
+/* 流畅档只画主网格：细网格是 2 层全屏渐变，缩小时几乎看不清，却要一直参与栅格化。 */
+.teacher-whiteboard-root[data-perf="lite"] .twb-grid {
+    background-image:
+        linear-gradient(rgba(14, 116, 144, 0.16) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(14, 116, 144, 0.16) 1px, transparent 1px);
+    background-size:
+        var(--teacher-whiteboard-major-grid-size) var(--teacher-whiteboard-major-grid-size),
+        var(--teacher-whiteboard-major-grid-size) var(--teacher-whiteboard-major-grid-size);
+}
+
+/* 流畅档同时收掉浮窗的动效开销（背后可能压着正在重绘的画布）。 */
+.teacher-whiteboard-root[data-perf="lite"] .twb-status-dot {
+    animation: none;
+}
+
+.twb-history-strokes.is-heavy {
+    color: hsl(var(--ls-warning));
+    font-weight: 700;
+}
+
+.twb-section-hint {
+    display: block;
+    margin-top: 6px;
+    color: var(--gray-500);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+}
+
 .teacher-whiteboard-root[data-tool="hand"] .teacher-whiteboard-stage {
     cursor: grab;
 }
@@ -37251,6 +37310,12 @@ body.has-academic-sync-dialog {
     position: absolute;
     inset: 0;
     z-index: 1;
+    contain: layout paint;
+}
+
+/* 墨迹不透明（默认值）时不加 opacity：否则两张 canvas 会被强制拉进一个合成组，
+   每帧多一次全屏 blit。只有真正调低墨迹透明度时才付这个代价。 */
+.teacher-whiteboard-root.has-ink-alpha .teacher-whiteboard-canvas-layer {
     opacity: var(--teacher-whiteboard-ink-alpha);
 }
 
@@ -37280,6 +37345,8 @@ body.has-academic-sync-dialog {
         radial-gradient(circle at top left, hsl(var(--ls-teal-bright) / 0.12), transparent 34%);
     box-shadow: 0 22px 42px -28px rgba(15, 23, 42, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.78);
     backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    contain: layout paint;
     transform: translateY(-10px);
     opacity: 0;
     pointer-events: none;
@@ -37290,6 +37357,18 @@ body.has-academic-sync-dialog {
     transform: translateY(0);
     opacity: 1;
     pointer-events: auto;
+}
+
+/* 落笔期间关掉毛玻璃。backdrop-filter 要把「元素背后的全部内容」重新合成再做 18px 高斯模糊，
+   而工具栏背后正是每帧都在变的画布 —— 无独显 / 软件合成（投影、远程桌面）的机器上这一项
+   就能吃掉整帧预算。抬笔 260ms 后自动恢复，静态观感不变。 */
+.teacher-whiteboard-root.is-drawing .teacher-whiteboard-toolbar,
+.teacher-whiteboard-root[data-perf="lite"] .teacher-whiteboard-toolbar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 250, 252, 0.98)),
+        radial-gradient(circle at top left, hsl(var(--ls-teal-bright) / 0.12), transparent 34%);
 }
 
 .teacher-whiteboard-group {

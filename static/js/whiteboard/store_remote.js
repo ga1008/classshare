@@ -29,7 +29,8 @@ async function request(url, { method = 'GET', body, keepalive = false } = {}) {
             credentials: 'same-origin',
             keepalive,
             headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-            body: body !== undefined ? JSON.stringify(body) : undefined,
+            // 已经序列化好的直接用，避免大 payload 被 stringify 两遍。
+            body: body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
         });
     } catch (error) {
         throw new RemoteError('网络不可用', { status: 0, cause: error });
@@ -80,11 +81,15 @@ export class RemoteStore {
         return data.board || null;
     }
 
-    async upsert(boardKey, { name, viewport, elements, baseVersion, keepalive = false }) {
+    /**
+     * 保存整块板。`serialized` 是调用方已经序列化好的请求体（sync 那边量体积时就做过一次），
+     * 传它可以省掉一次大字符串的重复构造；否则按字段现拼。
+     */
+    async upsert(boardKey, { serialized, name, viewport, elements, baseVersion, keepalive = false }) {
         const data = await request(`${this.base}/${encodeURIComponent(boardKey)}`, {
             method: 'PUT',
             keepalive,
-            body: { name, viewport, elements, schema_version: 2, base_version: baseVersion },
+            body: serialized ?? { name, viewport, elements, schema_version: 2, base_version: baseVersion },
         });
         return data.board || null;
     }

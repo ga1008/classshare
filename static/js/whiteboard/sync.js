@@ -7,13 +7,37 @@ import { simplifyStroke } from './geometry.js';
 import { isBoardEmpty, makeId, nowIso } from './state.js';
 import { RemoteError, remoteToBoard } from './store_remote.js';
 
-function prepareElements(elements) {
-    return (elements || []).map((element) => {
-        if ((element.type === 'stroke' || element.type === 'eraser') && Array.isArray(element.points) && element.points.length > 2) {
-            return { ...element, points: simplifyStroke(element.points, REMOTE.SIMPLIFY_TOLERANCE) };
-        }
-        return element;
-    });
+/**
+ * 上传前抽稀的结果按元素缓存。
+ *
+ * 元素提交后不可变（见 `state.cloneElements` 的契约），所以抽稀结果是稳定的。
+ * 原来每次同步都要把整块板重算一遍 RDP —— 30 秒一次的周期性长任务，板越大越明显。
+ * 用 WeakMap 而不是挂在元素上，避免运行时字段被写进 localStorage 或上传。
+ */
+const PREPARED_CACHE = new WeakMap();
+
+function prepareElement(element) {
+    if (!element || typeof element !== 'object') return element;
+    const cached = PREPARED_CACHE.get(element);
+    if (cached !== undefined) return cached;
+    let prepared = element;
+    if ((element.type === 'stroke' || element.type === 'eraser') && Array.isArray(element.points) && element.points.length > 2) {
+        const points = simplifyStroke(element.points, REMOTE.SIMPLIFY_TOLERANCE);
+        // 点数没减少就别造新对象，省一次分配也省一份内存。
+        if (points.length !== element.points.length) prepared = { ...element, points };
+    }
+    PREPARED_CACHE.set(element, prepared);
+    return prepared;
+}
+
+export function prepareElements(elements) {
+    return (elements || []).map(prepareElement);
+}
+
+/** UTF-8 字节数（服务端也是按字节卡 2MB；`String.length` 对中文会低估一半以上）。 */
+export function byteLength(text) {
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(text).length;
+    return unescape(encodeURIComponent(text)).length;
 }
 
 export class SyncController {
@@ -30,20 +54,40 @@ export class SyncController {
     constructor(host) {
         this.host = host;
         this.timer = null;
+        this.intervalMs = REMOTE.AUTO_SYNC_INTERVAL_MS;
         this.inFlight = new Map();
         this.lastError = null;
         this.bootstrapped = false;
         this.enabled = true;
     }
 
-    start() {
+    start(intervalMs = REMOTE.AUTO_SYNC_INTERVAL_MS) {
         if (this.timer) return;
-        this.timer = window.setInterval(() => this.flushDirty({ silent: true }), REMOTE.AUTO_SYNC_INTERVAL_MS);
+        this.intervalMs = Math.max(5_000, Number(intervalMs) || REMOTE.AUTO_SYNC_INTERVAL_MS);
+        // 定时同步改到空闲帧里做，并且落笔期间一律让路 —— 否则每 30 秒会在某一帧里
+        // 插进「遍历 + 序列化 + 发请求」，正好压在正在写的那一笔上。
+        this.timer = window.setInterval(() => this.requestIdleFlush(), this.intervalMs);
+    }
+
+    requestIdleFlush() {
+        const run = () => this.flushDirty({ silent: true, respectBusy: true });
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(run, { timeout: REMOTE.IDLE_FLUSH_TIMEOUT_MS });
+        } else {
+            run();
+        }
     }
 
     stop() {
         window.clearInterval(this.timer);
         this.timer = null;
+    }
+
+    /** 换周期（性能档位切换时用）。定时器没跑就什么也不做，`start` 时自然会用新值。 */
+    restart(intervalMs) {
+        if (!this.timer) return;
+        this.stop();
+        this.start(intervalMs);
     }
 
     statusOf(board) {
@@ -125,9 +169,15 @@ export class SyncController {
         const flightKey = board.id;
         if (this.inFlight.has(flightKey)) return this.inFlight.get(flightKey);
 
-        const elements = prepareElements(board.elements);
-        const payloadSize = JSON.stringify(elements).length;
-        if (payloadSize > REMOTE.MAX_JSON_BYTES) {
+        // 只序列化一次：量体积和实际发送共用同一份字符串（原来是各 stringify 一遍）。
+        const serialized = JSON.stringify({
+            name: board.name,
+            viewport: board.viewport,
+            elements: prepareElements(board.elements),
+            schema_version: 2,
+            base_version: board.remoteVersion,
+        });
+        if (byteLength(serialized) > REMOTE.MAX_JSON_BYTES) {
             this.noteError(board.id, new RemoteError('白板内容过大（超过 2MB），已保留在本机，请拆分到新白板', { status: 413 }), { silent: !explicit });
             return false;
         }
@@ -135,13 +185,7 @@ export class SyncController {
         const task = (async () => {
             this.host.onStatus(SYNC_STATUS.SAVING, { boardId: board.id });
             try {
-                const row = await this.host.store.upsert(board.id, {
-                    name: board.name,
-                    viewport: board.viewport,
-                    elements,
-                    baseVersion: board.remoteVersion,
-                    keepalive,
-                });
+                const row = await this.host.store.upsert(board.id, { serialized, keepalive });
                 this.lastError = null;
                 this.host.patchBoard(board.id, {
                     remoteVersion: Number(row?.version || board.remoteVersion + 1),
@@ -168,8 +212,9 @@ export class SyncController {
         return task;
     }
 
-    async flushDirty({ silent = true, keepalive = false } = {}) {
+    async flushDirty({ silent = true, keepalive = false, respectBusy = false } = {}) {
         if (!this.enabled) return;
+        if (respectBusy && this.host.isBusy?.()) return;
         const dirtyBoards = this.host.getBoards().filter((board) => board.dirty && board.elementsLoaded !== false && !isBoardEmpty(board));
         for (const board of dirtyBoards) {
             // 顺序上传，避免并发写库

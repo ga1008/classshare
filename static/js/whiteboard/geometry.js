@@ -83,6 +83,72 @@ export function elementBounds(element, measureWidth = fallbackMeasure) {
     return null;
 }
 
+/**
+ * 元素包围盒缓存。已提交的元素不再修改，包围盒只需算一次。
+ * 故意用 WeakMap 而不是把 bbox 挂在元素对象上：`state.sanitizeElement` 原样透传元素，
+ * 挂上去的运行时字段会被一起写进 localStorage 并上传到服务端。
+ */
+const BOUNDS_CACHE = new WeakMap();
+
+export function cachedElementBounds(element, measureWidth = fallbackMeasure) {
+    if (!element || typeof element !== 'object') return null;
+    const hit = BOUNDS_CACHE.get(element);
+    if (hit !== undefined) return hit;
+    const bounds = elementBounds(element, measureWidth);
+    BOUNDS_CACHE.set(element, bounds);
+    return bounds;
+}
+
+export function invalidateElementBounds(element) {
+    if (element && typeof element === 'object') BOUNDS_CACHE.delete(element);
+}
+
+const PAINT_BOUNDS_CACHE = new WeakMap();
+
+/**
+ * 绘制包围盒（视口裁剪用），与命中测试用的包围盒是两回事：
+ * 橡皮不参与命中测试（`elementBounds` 对它返回 null），但绘制时必须参与，
+ * 所以这里按笔画算它的范围，并为软边模糊留出余量。
+ */
+export function paintBounds(element, measureWidth = fallbackMeasure) {
+    if (!element || typeof element !== 'object') return null;
+    if (element.type !== 'eraser') return elementBounds(element, measureWidth);
+    const bounds = elementBounds({ ...element, type: 'stroke' }, measureWidth);
+    if (!bounds) return null;
+    const margin = Math.max(toFiniteNumber(element.size, 8), 1) * 0.5;
+    return {
+        x: bounds.x - margin,
+        y: bounds.y - margin,
+        width: bounds.width + margin * 2,
+        height: bounds.height + margin * 2,
+    };
+}
+
+export function cachedPaintBounds(element, measureWidth = fallbackMeasure) {
+    if (!element || typeof element !== 'object') return null;
+    const hit = PAINT_BOUNDS_CACHE.get(element);
+    if (hit !== undefined) return hit;
+    const bounds = paintBounds(element, measureWidth);
+    PAINT_BOUNDS_CACHE.set(element, bounds);
+    return bounds;
+}
+
+/** AABB 快速排除：点落在包围盒外（含容差）时必然不命中，可跳过逐段精确测距。 */
+export function pointOutsideBounds(bounds, point, tolerance) {
+    if (!bounds) return false;
+    return point.x < bounds.x - tolerance
+        || point.x > bounds.x + bounds.width + tolerance
+        || point.y < bounds.y - tolerance
+        || point.y > bounds.y + bounds.height + tolerance;
+}
+
+/** 元素包围盒是否与世界矩形相交（视口裁剪用）。无包围盒的元素（橡皮）一律视为相交。 */
+export function boundsIntersectRect(bounds, rect) {
+    if (!bounds) return true;
+    return bounds.x <= rect.x + rect.width && bounds.x + bounds.width >= rect.x
+        && bounds.y <= rect.y + rect.height && bounds.y + bounds.height >= rect.y;
+}
+
 export function unionBounds(a, b) {
     if (!a) return b;
     if (!b) return a;
@@ -99,7 +165,7 @@ export function unionBounds(a, b) {
 export function boardBounds(elements, measureWidth = fallbackMeasure) {
     let bounds = null;
     for (const element of Array.isArray(elements) ? elements : []) {
-        bounds = unionBounds(bounds, elementBounds(element, measureWidth));
+        bounds = unionBounds(bounds, cachedElementBounds(element, measureWidth));
     }
     return bounds;
 }

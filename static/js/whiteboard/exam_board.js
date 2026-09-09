@@ -3,7 +3,7 @@
  * 复用 teacher-whiteboard-* 类名；exam_take.html 有覆盖样式，勿改类名。
  */
 import { showToast } from '../ui.js';
-import { ICONS, LEGACY_DEFAULT_COLOR } from './constants.js';
+import { ICONS, LEGACY_DEFAULT_COLOR, MAX_DPR } from './constants.js';
 import { clamp } from './state.js';
 
 const DEFAULT_SETTINGS = { brushColor: LEGACY_DEFAULT_COLOR, brushSize: 5 };
@@ -21,10 +21,18 @@ class ExamDrawingWhiteboard {
         this.canvasHeight = 0;
         this.isOpen = false;
         this.isDrawing = false;
-        this.hasContent = false;
+        /** 底图（载入的附图 / 清空后的空白），只在 clear / loadImage 时变化。 */
+        this.baseline = null;
+        /** 已完成的笔画（矢量，CSS 像素）。撤销栈存的是「底图引用 + 笔画引用数组」。 */
+        this.strokes = [];
+        this.activeStroke = null;
+        /** 设计空间：打开时的画布尺寸。窗口尺寸变化时整体等比居中缩放，内容不会被裁掉也不会拉伸。 */
+        this.designWidth = 0;
+        this.designHeight = 0;
+        this.canvasRect = null;
         this.history = [];
         this.redoStack = [];
-        this.maxHistory = 24;
+        this.maxHistory = 50;
         this.resolveOpen = null;
         this.context = {};
         this.settings = {
@@ -133,6 +141,8 @@ class ExamDrawingWhiteboard {
         document.addEventListener('keydown', this.boundKeydown);
         window.requestAnimationFrame(async () => {
             this.resizeCanvas({ preserve: false });
+            this.designWidth = this.canvasWidth;
+            this.designHeight = this.canvasHeight;
             this.clearCanvas({ silent: true });
             if (context.dataUrl || context.imageUrl) {
                 await this.loadImage(context.dataUrl || context.imageUrl);
@@ -173,13 +183,17 @@ class ExamDrawingWhiteboard {
         }
     }
 
+    get hasContent() {
+        return Boolean(this.baseline) || this.strokes.length > 0 || Boolean(this.activeStroke);
+    }
+
     resizeCanvas({ preserve = true } = {}) {
         if (!this.canvasEl || !this.stageEl || !this.ctx) return;
-        const snapshot = preserve && this.hasContent ? this.canvasEl.toDataURL('image/png') : '';
+        this.canvasRect = null;
         const rect = this.stageEl.getBoundingClientRect();
         const width = Math.max(320, Math.round(rect.width || window.innerWidth));
         const height = Math.max(240, Math.round(rect.height || window.innerHeight));
-        const dpr = clamp(window.devicePixelRatio || 1, 1, 2.5);
+        const dpr = clamp(window.devicePixelRatio || 1, 1, MAX_DPR);
         this.canvasWidth = width;
         this.canvasHeight = height;
         this.dpr = dpr;
@@ -190,61 +204,141 @@ class ExamDrawingWhiteboard {
         this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
-        if (snapshot) this.restoreSnapshot(snapshot);
+        // 内容是矢量的，尺寸变化直接重放即可，既不用编码 PNG 也不会因位图缩放而糊掉。
+        if (preserve) this.repaint();
+    }
+
+    /** 设计空间 → 当前画布的等比居中变换。 */
+    viewTransform() {
+        const designWidth = this.designWidth || this.canvasWidth || 1;
+        const designHeight = this.designHeight || this.canvasHeight || 1;
+        const scale = Math.min(this.canvasWidth / designWidth, this.canvasHeight / designHeight) || 1;
+        return {
+            scale,
+            dx: (this.canvasWidth - designWidth * scale) / 2,
+            dy: (this.canvasHeight - designHeight * scale) / 2,
+        };
+    }
+
+    withView(draw) {
+        const view = this.viewTransform();
+        this.ctx.save();
+        this.ctx.translate(view.dx, view.dy);
+        this.ctx.scale(view.scale, view.scale);
+        draw();
+        this.ctx.restore();
     }
 
     getPoint(event) {
-        const rect = this.canvasEl.getBoundingClientRect();
+        if (!this.canvasRect) this.canvasRect = this.canvasEl.getBoundingClientRect();
+        const view = this.viewTransform();
         return {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
+            x: (event.clientX - this.canvasRect.left - view.dx) / view.scale,
+            y: (event.clientY - this.canvasRect.top - view.dy) / view.scale,
         };
     }
 
     handlePointerDown(event) {
         if (!this.isOpen || event.button !== 0) return;
         event.preventDefault();
+        this.canvasRect = null;
         this.canvasEl.setPointerCapture?.(event.pointerId);
         this.pushHistory();
         this.isDrawing = true;
         const point = this.getPoint(event);
-        this.ctx.beginPath();
-        this.ctx.moveTo(point.x, point.y);
-        this.ctx.lineTo(point.x, point.y);
-        this.applyStrokeStyle();
-        this.ctx.stroke();
-        this.hasContent = true;
+        this.activeStroke = {
+            tool: this.settings.tool,
+            color: this.settings.brushColor,
+            size: this.settings.brushSize,
+            points: [point],
+        };
+        this.strokeSegment(this.activeStroke, point, point);
     }
 
     handlePointerMove(event) {
-        if (!this.isDrawing) return;
+        if (!this.isDrawing || !this.activeStroke) return;
         event.preventDefault();
+        const points = this.activeStroke.points;
+        const previous = points[points.length - 1];
         const point = this.getPoint(event);
-        this.applyStrokeStyle();
-        this.ctx.lineTo(point.x, point.y);
-        this.ctx.stroke();
-        this.hasContent = true;
+        points.push(point);
+        this.strokeSegment(this.activeStroke, previous, point);
+    }
+
+    /**
+     * 只画新增的这一段。
+     * 原实现是「累积路径 + 每次 stroke 全部重描」，一笔 N 个点就是 O(N^2) 的描边量。
+     */
+    strokeSegment(stroke, from, to) {
+        this.withView(() => {
+            this.applyStrokeStyle(stroke);
+            this.ctx.beginPath();
+            this.ctx.moveTo(from.x, from.y);
+            this.ctx.lineTo(to.x, to.y);
+            this.ctx.stroke();
+        });
     }
 
     handlePointerUp(event) {
         if (!this.isDrawing) return;
         event.preventDefault();
         this.isDrawing = false;
-        this.ctx.closePath();
+        if (this.activeStroke) {
+            this.strokes.push(this.activeStroke);
+            this.activeStroke = null;
+        }
         this.canvasEl.releasePointerCapture?.(event.pointerId);
         this.updateHistoryButtons();
     }
 
-    applyStrokeStyle() {
-        if (this.settings.tool === 'eraser') {
+    /** 把底图与全部笔画重放一遍。只在撤销/重做/清空/载图/改尺寸时调用，不在绘制热路径上。 */
+    repaint() {
+        if (!this.ctx) return;
+        this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+        this.withView(() => {
+            this.drawBaseline();
+            for (const stroke of this.strokes) this.drawStrokePath(stroke);
+        });
+        this.ctx.globalCompositeOperation = 'source-over';
+    }
+
+    drawBaseline() {
+        const image = this.baseline?.canvas;
+        if (!image) return;
+        const boxWidth = this.designWidth || this.canvasWidth;
+        const boxHeight = this.designHeight || this.canvasHeight;
+        const scale = Math.min(boxWidth / image.width, boxHeight / image.height, 1);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.drawImage(image, (boxWidth - width) / 2, (boxHeight - height) / 2, width, height);
+    }
+
+    drawStrokePath(stroke) {
+        const points = stroke?.points || [];
+        if (!points.length) return;
+        this.applyStrokeStyle(stroke);
+        this.ctx.beginPath();
+        this.ctx.moveTo(points[0].x, points[0].y);
+        if (points.length === 1) this.ctx.lineTo(points[0].x, points[0].y);
+        else for (let index = 1; index < points.length; index += 1) this.ctx.lineTo(points[index].x, points[index].y);
+        this.ctx.stroke();
+        this.ctx.closePath();
+    }
+
+    applyStrokeStyle(stroke = null) {
+        const tool = stroke ? stroke.tool : this.settings.tool;
+        const color = stroke ? stroke.color : this.settings.brushColor;
+        const size = stroke ? stroke.size : this.settings.brushSize;
+        if (tool === 'eraser') {
             this.ctx.globalCompositeOperation = 'destination-out';
             this.ctx.strokeStyle = 'rgba(0,0,0,1)';
-            this.ctx.lineWidth = Math.max(this.settings.brushSize * 2.2, 8);
-        } else {
-            this.ctx.globalCompositeOperation = 'source-over';
-            this.ctx.strokeStyle = this.settings.brushColor;
-            this.ctx.lineWidth = this.settings.brushSize;
+            this.ctx.lineWidth = Math.max(size * 2.2, 8);
+            return;
         }
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = size;
     }
 
     handleToolbarClick(event) {
@@ -297,64 +391,72 @@ class ExamDrawingWhiteboard {
         if (this.controls.redo) this.controls.redo.disabled = !this.redoStack.length;
     }
 
+    /**
+     * 撤销不再存位图快照。
+     *
+     * 原实现每落一笔就 `toDataURL('image/png')`：PNG 编码是同步的，1920×1080@2dpr 在集显机上
+     * 单次 80~400ms，24 层历史还会以 base64 字符串常驻内存 —— 这就是考试页「点一下笔就卡住」。
+     * 换成位图拷贝虽然去掉了编码，但未压缩快照按整屏算每张 20MB 以上，同样不可接受。
+     * 这里改成「底图引用 + 笔画引用数组」的文档快照：底图只在清空/载图时才产生（很少），
+     * 笔画是矢量，撤销栈里存的全是引用，一层快照只有几十字节。
+     */
+    currentDocument() {
+        return { baseline: this.baseline, strokes: this.strokes.slice() };
+    }
+
+    restoreDocument(snapshot) {
+        if (!snapshot) return;
+        this.baseline = snapshot.baseline;
+        this.strokes = snapshot.strokes.slice();
+        this.activeStroke = null;
+        this.isDrawing = false;
+        this.repaint();
+    }
+
     pushHistory() {
-        if (!this.canvasEl) return;
-        this.history.push(this.canvasEl.toDataURL('image/png'));
+        this.history.push(this.currentDocument());
         if (this.history.length > this.maxHistory) this.history.shift();
         this.redoStack = [];
         this.updateHistoryButtons();
     }
 
-    restoreSnapshot(dataUrl) {
-        if (!dataUrl || !this.ctx) return;
-        const image = new Image();
-        image.onload = () => {
-            this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
-            this.ctx.globalCompositeOperation = 'source-over';
-            this.ctx.drawImage(image, 0, 0, this.canvasWidth, this.canvasHeight);
-            this.hasContent = true;
-        };
-        image.src = dataUrl;
-    }
-
     undo() {
         if (!this.history.length) return;
-        this.redoStack.push(this.canvasEl.toDataURL('image/png'));
-        const snapshot = this.history.pop();
-        this.restoreSnapshot(snapshot);
+        this.redoStack.push(this.currentDocument());
+        this.restoreDocument(this.history.pop());
         this.updateHistoryButtons();
     }
 
     redo() {
         if (!this.redoStack.length) return;
-        this.history.push(this.canvasEl.toDataURL('image/png'));
-        const snapshot = this.redoStack.pop();
-        this.restoreSnapshot(snapshot);
+        this.history.push(this.currentDocument());
+        this.restoreDocument(this.redoStack.pop());
         this.updateHistoryButtons();
     }
 
     clearCanvas({ silent = false } = {}) {
         if (!this.ctx) return;
         if (!silent) this.pushHistory();
-        this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
-        this.hasContent = false;
+        this.baseline = null;
+        this.strokes = [];
+        this.activeStroke = null;
+        this.repaint();
         this.updateHistoryButtons();
     }
 
+    /** 载入题目附图作为底图（不进笔画栈，撤销时整体保留）。 */
     async loadImage(source) {
         if (!source || !this.ctx) return;
         await new Promise((resolve) => {
             const image = new Image();
             image.onload = () => {
-                this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
-                this.ctx.globalCompositeOperation = 'source-over';
-                const scale = Math.min(this.canvasWidth / image.width, this.canvasHeight / image.height, 1);
-                const width = image.width * scale;
-                const height = image.height * scale;
-                const x = (this.canvasWidth - width) / 2;
-                const y = (this.canvasHeight - height) / 2;
-                this.ctx.drawImage(image, x, y, width, height);
-                this.hasContent = true;
+                const canvas = document.createElement('canvas');
+                canvas.width = image.width;
+                canvas.height = image.height;
+                canvas.getContext('2d')?.drawImage(image, 0, 0);
+                this.baseline = { canvas };
+                this.strokes = [];
+                this.repaint();
                 resolve();
             };
             image.onerror = () => resolve();

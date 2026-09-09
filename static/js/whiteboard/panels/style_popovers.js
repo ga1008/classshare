@@ -4,7 +4,8 @@
  */
 import { LIMITS } from '../constants.js';
 import { createPopover } from '../popover.js';
-import { h, rangeRow, sectionTitle, swatchRow } from './controls.js';
+import { h, rangeRow, sectionTitle, segmented, swatchRow } from './controls.js';
+import { PERF_MODE_LABELS, PERF_MODES } from '../perf_profile.js';
 
 export function createBrushPopover(board, anchor) {
     const dot = h('span', { className: 'twb-preview-dot' });
@@ -86,8 +87,28 @@ export function createBackgroundPopover(board, anchor) {
         format: (v) => `${Math.round(v)}%`,
         onInput: (v) => board.updateSettings({ backgroundOpacity: v / 100 }),
     });
-    const panel = h('div', { className: 'twb-panel-body' }, [sectionTitle('背景', '0% 完全透视文档'), opacity.el]);
-    const popover = createPopover({ anchor, panel, kind: 'popover', label: '背景透明度' });
-    const refresh = () => opacity.set(Math.round(board.settings.backgroundOpacity * 100));
+    const perfHintText = () => (board.profile.tier === 'lite'
+        ? '当前：流畅 —— 降低清晰度与特效，换更稳的帧率'
+        : '当前：高画质');
+    const perfHint = h('small', { className: 'twb-section-hint', text: perfHintText() });
+    const perf = segmented({
+        label: '性能档位',
+        value: board.profile.mode,
+        options: PERF_MODES.map((mode) => ({ value: mode, label: PERF_MODE_LABELS[mode] })),
+        onChange: (mode) => { board.setPerfMode(mode); perfHint.textContent = perfHintText(); },
+    });
+    const panel = h('div', { className: 'twb-panel-body' }, [
+        sectionTitle('背景', '0% 完全透视文档'),
+        opacity.el,
+        sectionTitle('性能', '只记在这台设备'),
+        perf.el,
+        perfHint,
+    ]);
+    const popover = createPopover({ anchor, panel, kind: 'popover', label: '背景与性能' });
+    const refresh = () => {
+        opacity.set(Math.round(board.settings.backgroundOpacity * 100));
+        perf.set(board.profile.mode);
+        perfHint.textContent = perfHintText();
+    };
     return { popover, refresh };
 }

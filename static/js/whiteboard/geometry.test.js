@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
-    boardBounds, elementBounds, getShapeBox, hitTestElement, pointToSegmentDistance, simplifyStroke,
+    boardBounds, cachedElementBounds, elementBounds, getShapeBox, hitTestElement,
+    pointOutsideBounds, pointToSegmentDistance, simplifyStroke,
 } from './geometry.js';
 
 const measure = (text, size) => text.length * size;
@@ -67,5 +68,60 @@ describe('geometry: simplify', () => {
     test('keeps a real corner', () => {
         const points = [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 5 }, { x: 10, y: 10 }];
         expect(simplifyStroke(points, 0.5)).toEqual([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }]);
+    });
+});
+
+describe('geometry: 包围盒缓存与 AABB 预筛', () => {
+    test('cachedElementBounds 与 elementBounds 结果一致且复用同一对象', () => {
+        const element = { type: 'stroke', size: 4, points: [{ x: 0, y: 0 }, { x: 30, y: 12 }] };
+        const direct = elementBounds(element);
+        const cached = cachedElementBounds(element);
+        expect(cached).toEqual(direct);
+        expect(cachedElementBounds(element)).toBe(cached);
+    });
+
+    test('AABB 预筛永远不会误杀真实命中（随机用例）', () => {
+        let seed = 20260909;
+        const random = () => {
+            seed = (seed * 1103515245 + 12345) % 2147483648;
+            return seed / 2147483648;
+        };
+        const elements = Array.from({ length: 60 }, () => {
+            const x = random() * 400 - 200;
+            const y = random() * 400 - 200;
+            const kind = random();
+            if (kind < 0.5) {
+                return {
+                    type: 'stroke',
+                    size: 1 + random() * 8,
+                    points: Array.from({ length: 5 }, (_, i) => ({ x: x + i * 12 * random(), y: y + i * 9 * random() })),
+                };
+            }
+            if (kind < 0.8) {
+                return { type: 'shape', shape: 'rectangle', size: 2, x1: x, y1: y, x2: x + 40, y2: y + 25 };
+            }
+            return { type: 'text', text: '命中测试', fontSize: 20, x, y };
+        });
+
+        for (let round = 0; round < 400; round += 1) {
+            const point = { x: random() * 500 - 250, y: random() * 500 - 250 };
+            const radius = 2 + random() * 20;
+            for (const element of elements) {
+                const truth = hitTestElement(element, point, radius);
+                if (!truth) continue;
+                // 预筛只允许排除「必然不命中」的元素。
+                expect(pointOutsideBounds(cachedElementBounds(element), point, radius)).toBe(false);
+            }
+        }
+    });
+
+    test('明显在包围盒外的点会被预筛掉', () => {
+        const element = { type: 'stroke', size: 2, points: [{ x: 0, y: 0 }, { x: 10, y: 0 }] };
+        expect(pointOutsideBounds(cachedElementBounds(element), { x: 500, y: 500 }, 5)).toBe(true);
+        expect(pointOutsideBounds(cachedElementBounds(element), { x: 5, y: 0 }, 5)).toBe(false);
+    });
+
+    test('没有包围盒的元素（橡皮）不参与预筛', () => {
+        expect(pointOutsideBounds(null, { x: 0, y: 0 }, 1)).toBe(false);
     });
 });

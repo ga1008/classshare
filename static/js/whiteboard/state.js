@@ -2,7 +2,7 @@
  * 白板状态：纯函数（创建、规范化、v1→v2 迁移、判空）。
  */
 import {
-    DEFAULT_SETTINGS, DEFAULT_COLOR, LEGACY_DEFAULT_COLOR, ELEMENT_TYPES, ERASER_MODES,
+    DEFAULT_SETTINGS, DEFAULT_COLOR, LEGACY_DEFAULT_COLOR, ELEMENT_FIELDS, ERASER_MODES,
     LIMITS, MIN_ZOOM, MAX_ZOOM, SHAPES, STATE_VERSION, TOOLS,
 } from './constants.js';
 
@@ -82,19 +82,48 @@ export function createBoard(name = '') {
     };
 }
 
+/**
+ * 撤销/重做快照。
+ *
+ * **契约：元素一旦被推进 `board.elements` 就不再被修改**（绘制中的元素是独立对象，
+ * 提交前才入列；`patchBoard` 换的是整个数组；从存储读回的是全新对象）。
+ * 有了这个前提，快照只需要复制「引用数组」，不需要复制元素内容。
+ *
+ * 原来这里是 `JSON.parse(JSON.stringify(...))`：500 笔的板每笔要来回 3~5MB 文本、
+ * 单次 30~150ms，36 层快照常驻内存是板体积的 37 倍（约 150MB），在 8GB 机器上直接
+ * 引发周期性 GC 卡顿。改成浅拷贝后，一次快照是 n 个指针的 memcpy，几十微秒、几十 KB。
+ *
+ * 将来如果要支持「选中并编辑已有元素」，必须改成写时复制（替换元素而不是就地改），
+ * 否则撤销会看到被改后的内容。
+ */
 export function cloneElements(elements) {
-    return JSON.parse(JSON.stringify(Array.isArray(elements) ? elements : []));
+    return Array.isArray(elements) ? elements.slice() : [];
 }
 
+/** 非橡皮元素计数。热路径（每笔一次），用裸循环避免 filter 的中间数组分配。 */
 export function countInkElements(elements) {
-    return (Array.isArray(elements) ? elements : []).filter((el) => el && el.type !== 'eraser').length;
+    const list = Array.isArray(elements) ? elements : [];
+    let count = 0;
+    for (let index = 0; index < list.length; index += 1) {
+        if (list[index] && list[index].type !== 'eraser') count += 1;
+    }
+    return count;
+}
+
+/** 是否存在非橡皮元素。判空只需要「有没有」，提前返回避免遍历整块板。 */
+export function hasInkElements(elements) {
+    const list = Array.isArray(elements) ? elements : [];
+    for (let index = 0; index < list.length; index += 1) {
+        if (list[index] && list[index].type !== 'eraser') return true;
+    }
+    return false;
 }
 
 /** 空板 = 没有任何非橡皮元素；远端未加载的板按服务端计数判断。 */
 export function isBoardEmpty(board) {
     if (!board) return true;
     if (board.elementsLoaded === false) return !(toFiniteNumber(board.elementCount, 0) > 0);
-    return countInkElements(board.elements) === 0;
+    return !hasInkElements(board.elements);
 }
 
 export function nextBoardName(materialName, boards) {
@@ -109,9 +138,29 @@ export function nextBoardName(materialName, boards) {
     return candidate.slice(0, LIMITS.boardNameLength);
 }
 
+const ELEMENT_FIELD_SETS = new Map(
+    Object.entries(ELEMENT_FIELDS).map(([type, fields]) => [type, new Set(fields)]),
+);
+
+/**
+ * 类型 + 字段双重白名单。未知类型丢弃；已知类型剥掉未知字段。
+ * 没有多余字段时原样返回，避免在载入路径上给每个元素都造一次新对象。
+ */
 export function sanitizeElement(raw) {
-    if (!raw || typeof raw !== 'object' || !ELEMENT_TYPES.includes(raw.type)) return null;
-    return raw;
+    if (!raw || typeof raw !== 'object') return null;
+    const allowed = ELEMENT_FIELD_SETS.get(raw.type);
+    if (!allowed) return null;
+    const keys = Object.keys(raw);
+    let hasExtra = false;
+    for (let index = 0; index < keys.length; index += 1) {
+        if (!allowed.has(keys[index])) { hasExtra = true; break; }
+    }
+    if (!hasExtra) return raw;
+    const cleaned = {};
+    for (const field of ELEMENT_FIELDS[raw.type]) {
+        if (field in raw) cleaned[field] = raw[field];
+    }
+    return cleaned;
 }
 
 export function sanitizeBoard(rawBoard, fallbackIndex = 1) {

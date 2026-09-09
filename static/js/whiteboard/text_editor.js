@@ -33,9 +33,11 @@ export const textEditorMixin = {
         this.closeTextEditor();
         if (!text) return;
         this.pushUndoSnapshot();
-        this.activeBoard.elements.push({
+        const element = {
             id: makeId('text'), type: 'text', text, x: data.worldPoint.x, y: data.worldPoint.y, color: data.color, fontSize: data.fontSize, createdAt: nowIso(),
-        });
+        };
+        this.activeBoard.elements.push(element);
+        this.commitToCache(element);
         this.scheduleRender(true);
         this.markDirty();
     },

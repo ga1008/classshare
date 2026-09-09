@@ -3,13 +3,18 @@
  * 设计真源：docs/whiteboard-upgrade-2026-09.md
  */
 import { showToast } from '../ui.js';
-import { ICONS, LIMITS, MAX_ZOOM, MIN_ZOOM, TOOLS, UNDO_LIMIT } from './constants.js';
-import { createMeasureWidth, renderElements } from './renderer.js';
 import {
-    clamp, cloneElements, createBoard, createViewport, isBoardEmpty, nextBoardName,
+    CACHE, CAPACITY, ICONS, LIMITS, MAX_CANVAS_PIXELS, MAX_DPR, MAX_ZOOM, MIN_ZOOM, TIMING, TOOLS, UNDO_LIMIT,
+} from './constants.js';
+import { createMeasureWidth, renderElements } from './renderer.js';
+import { RenderCache, screenRectToWorld, shouldRebuild } from './render_cache.js';
+import {
+    clamp, cloneElements, countInkElements, createBoard, createViewport, isBoardEmpty, nextBoardName,
     normalizeSettings, normalizeViewport, nowIso, sanitizeBoard,
 } from './state.js';
-import { loadLocalState, pruneBoards, saveLocalState } from './store_local.js';
+import { dropLocalBoard, loadLocalState, loadPerfMode, pruneBoards, savePerfMode, saveLocalState } from './store_local.js';
+import { resolveProfile } from './perf_profile.js';
+import { createPerfProbe } from './perf_probe.js';
 import { RemoteStore } from './store_remote.js';
 import { SyncController } from './sync.js';
 import { popoverManager } from './popover.js';
@@ -67,9 +72,26 @@ export class TeacherWhiteboard {
         this.canvasWidth = 0;
         this.canvasHeight = 0;
         this.renderFrame = null;
-        this.draftFrame = null;
+        this.inputFrame = null;
+        this.inputQueue = [];
         this.saveTimer = null;
+        this.saveIdleHandle = null;
+        this.resizeTimer = null;
+        this.bootstrapHandle = null;
+        this.drawingReleaseTimer = null;
         this.closeTimer = null;
+        this.stageRect = null;
+        this.stageObserver = null;
+        this.gridEl = null;
+        this.gridScale = null;
+        this.renderCache = new RenderCache();
+        this.cacheSettleTimer = null;
+        this.profile = resolveProfile('auto');
+        this.probe = createPerfProbe();
+        /** 每块板每场只提示一次容量，且只升不降。 */
+        this.capacityNotices = new Map();
+        /** 本地待落盘的板 id（活动板之外，被同步流程改过的板）。 */
+        this.localDirtyBoardIds = new Set();
         this.saveErrorShown = false;
         this.activePointer = null;
         this.activeStroke = null;
@@ -96,6 +118,7 @@ export class TeacherWhiteboard {
     init() {
         if (!isAllowedContext(this.context) || document.getElementById('teacher-whiteboard-root')) return;
         this.state = loadLocalState(this.context);
+        this.profile = resolveProfile(loadPerfMode(this.context));
         this.settings = normalizeSettings(this.state.settings);
         this.activeBoard = this.state.boards.find((board) => board.id === this.state.activeBoardId) || this.state.boards[0];
         this.viewport = normalizeViewport(this.activeBoard.viewport);
@@ -114,11 +137,59 @@ export class TeacherWhiteboard {
         this.updateSyncStatus();
         this.applyFabPosition();
         this.setFabOpenState(false);
+        this.observeStage();
         window.addEventListener('resize', this.boundResize);
         document.addEventListener('keydown', this.boundKeydown);
         document.addEventListener('keyup', this.boundKeyup);
         document.addEventListener('visibilitychange', this.boundVisibility);
         window.addEventListener('pagehide', this.boundPageHide);
+    }
+
+    // ------------------------------------------------------------ 舞台矩形
+    /**
+     * 舞台是 `position:fixed; inset:0`，矩形只在窗口尺寸变化时才会变。
+     * 缓存它，指针回调里就不再需要 getBoundingClientRect（原来每个 coalesced 点一次，
+     * 与网格层的自定义属性写入叠加成典型的 layout thrashing）。
+     */
+    getStageRect() {
+        if (!this.stageRect) this.stageRect = this.stageEl.getBoundingClientRect();
+        return this.stageRect;
+    }
+
+    invalidateStageRect() {
+        this.stageRect = null;
+    }
+
+    observeStage() {
+        if (typeof ResizeObserver !== 'function' || !this.stageEl) return;
+        this.stageObserver = new ResizeObserver(() => this.invalidateStageRect());
+        this.stageObserver.observe(this.stageEl);
+    }
+
+    /**
+     * 把开关状态与背景透明度广播出去。宿主壳页（material_render_shell.js）据此让
+     * 下方的学习文档 iframe 降级：暂停动效；背景完全不透明时干脆把 iframe 藏起来，
+     * 整棵文档树退出合成。
+     */
+    notifyHostState() {
+        try {
+            window.dispatchEvent(new CustomEvent('teacher-whiteboard:state', {
+                detail: { open: this.isOpen, backgroundOpacity: this.settings.backgroundOpacity },
+            }));
+        } catch { /* CustomEvent 不可用时忽略，纯属锦上添花 */ }
+    }
+
+    /** 落笔期间给根元素挂 `is-drawing`，CSS 借此临时关掉工具栏的 backdrop-filter。 */
+    setDrawingState(active) {
+        if (!this.rootEl) return;
+        window.clearTimeout(this.drawingReleaseTimer);
+        if (active) {
+            this.rootEl.classList.add('is-drawing');
+            return;
+        }
+        this.drawingReleaseTimer = window.setTimeout(() => {
+            if (!this.activePointer) this.rootEl?.classList.remove('is-drawing');
+        }, TIMING.DRAWING_CLASS_RELEASE_MS);
     }
 
     buildDom() {
@@ -128,8 +199,10 @@ export class TeacherWhiteboard {
         root.hidden = true;
         root.setAttribute('aria-hidden', 'true');
         root.dataset.tool = this.settings.tool;
+        root.dataset.perf = this.profile.tier;
         root.innerHTML = `
             <div class="teacher-whiteboard-stage" id="teacher-whiteboard-stage">
+                <div class="twb-grid" id="teacher-whiteboard-grid" aria-hidden="true"></div>
                 <div class="teacher-whiteboard-canvas-layer" id="teacher-whiteboard-canvas-layer">
                     <canvas id="teacher-whiteboard-canvas"></canvas>
                     <canvas id="teacher-whiteboard-draft-canvas"></canvas>
@@ -151,6 +224,7 @@ export class TeacherWhiteboard {
     cacheDom() {
         this.rootEl = document.getElementById('teacher-whiteboard-root');
         this.stageEl = document.getElementById('teacher-whiteboard-stage');
+        this.gridEl = document.getElementById('teacher-whiteboard-grid');
         this.canvasEl = document.getElementById('teacher-whiteboard-canvas');
         this.draftCanvasEl = document.getElementById('teacher-whiteboard-draft-canvas');
         this.toolbarEl = document.getElementById('teacher-whiteboard-toolbar');
@@ -205,6 +279,8 @@ export class TeacherWhiteboard {
             onStatus: () => this.updateSyncStatus(),
             notify: (message, type = 'info') => showToast(message, type, 3200),
             persistLocal: () => this.persistLocal(),
+            // 落笔期间不要发起后台同步，把这一帧完整让给绘制。
+            isBusy: () => Boolean(this.activePointer),
         });
     }
 
@@ -237,6 +313,7 @@ export class TeacherWhiteboard {
         }
         this.updateOpacityVariables();
         this.syncChips();
+        if (patch.backgroundOpacity !== undefined) this.notifyHostState();
         this.scheduleSave();
     }
 
@@ -255,25 +332,56 @@ export class TeacherWhiteboard {
     updateOpacityVariables() {
         this.rootEl?.style.setProperty('--teacher-whiteboard-bg-alpha', String(this.settings.backgroundOpacity));
         this.rootEl?.style.setProperty('--teacher-whiteboard-ink-alpha', String(this.settings.boardOpacity));
+        // 墨迹不透明时不要给画布层加 opacity：那会把两张 canvas 强制拉进一个合成组，
+        // 每帧多一次全屏 blit。默认值就是 1，所以这条覆盖的是绝大多数使用场景。
+        this.rootEl?.classList.toggle('has-ink-alpha', this.settings.boardOpacity < 0.99);
     }
 
+    /**
+     * 网格改成「独立元素 + transform 驱动」。
+     *
+     * 原来是给根元素写 4 个自定义属性去推 `background-position`：自定义属性变更会让整棵
+     * 子树样式失效（工具栏几十个按钮跟着重算），而 `background-position` 变化又要把全屏
+     * 4 层渐变重新栅格化 —— 每一帧平移都付这两笔。
+     * 现在网格元素比视口大出一个主网格周期，平移只改 `transform`，是纯合成操作；
+     * 只有缩放才需要改网格尺寸（低频）。
+     */
     updateGridPosition() {
-        if (!this.rootEl) return;
-        const gridSize = 40 * this.viewport.scale;
-        this.rootEl.style.setProperty('--teacher-whiteboard-pan-x', `${this.viewport.x % gridSize}px`);
-        this.rootEl.style.setProperty('--teacher-whiteboard-pan-y', `${this.viewport.y % gridSize}px`);
-        this.rootEl.style.setProperty('--teacher-whiteboard-grid-size', `${gridSize}px`);
-        this.rootEl.style.setProperty('--teacher-whiteboard-major-grid-size', `${200 * this.viewport.scale}px`);
+        if (!this.gridEl) return;
+        const scale = this.viewport.scale;
+        const major = 200 * scale;
+        if (this.gridScale !== scale) {
+            this.gridScale = scale;
+            const style = this.gridEl.style;
+            style.setProperty('--teacher-whiteboard-grid-size', `${40 * scale}px`);
+            style.setProperty('--teacher-whiteboard-major-grid-size', `${major}px`);
+        }
+        // 归一化到 [0, major)：网格元素向外多出一个周期，这个范围内平移永远有内容可露。
+        const wrap = (value) => ((value % major) + major) % major;
+        this.gridEl.style.transform = `translate3d(${wrap(this.viewport.x)}px, ${wrap(this.viewport.y)}px, 0)`;
     }
 
     // ----------------------------------------------------------- persistence
+    cancelPendingSave() {
+        window.clearTimeout(this.saveTimer);
+        this.saveTimer = null;
+        if (this.saveIdleHandle !== null && typeof window.cancelIdleCallback === 'function') {
+            window.cancelIdleCallback(this.saveIdleHandle);
+        }
+        this.saveIdleHandle = null;
+    }
+
     persistLocal() {
         if (!this.activeBoard) return;
+        this.cancelPendingSave();
         this.activeBoard.viewport = { ...this.viewport };
         this.state.settings = { ...this.settings };
         this.state.activeBoardId = this.activeBoard.id;
         this.state.boards = pruneBoards(this.state.boards, this.activeBoard.id);
-        const result = saveLocalState(this.context, this.state);
+        // 只写活动板 + 同步流程刚改过的板，其余板体保持原样（v3 分键存储）。
+        const boardIds = [this.activeBoard.id, ...this.localDirtyBoardIds];
+        this.localDirtyBoardIds.clear();
+        const result = saveLocalState(this.context, this.state, { boardIds });
         if (result.pruned) this.state = result.state;
         if (result.ok) {
             this.saveErrorShown = false;
@@ -283,11 +391,26 @@ export class TeacherWhiteboard {
         }
     }
 
-    scheduleSave(delay = 450) {
-        window.clearTimeout(this.saveTimer);
+    /**
+     * 防抖 + 空闲落盘。序列化与 localStorage 写入都是同步阻塞主线程的，
+     * 放到空闲帧里做，避免和下一笔的绘制抢同一帧。
+     */
+    scheduleSave(delay = TIMING.SAVE_DEBOUNCE_MS) {
+        this.cancelPendingSave();
+        if (delay <= 0) {
+            this.persistLocal();
+            return;
+        }
         this.saveTimer = window.setTimeout(() => {
             this.saveTimer = null;
-            this.persistLocal();
+            if (typeof window.requestIdleCallback === 'function') {
+                this.saveIdleHandle = window.requestIdleCallback(
+                    () => { this.saveIdleHandle = null; this.persistLocal(); },
+                    { timeout: TIMING.SAVE_IDLE_TIMEOUT_MS },
+                );
+            } else {
+                this.persistLocal();
+            }
         }, delay);
     }
 
@@ -295,10 +418,29 @@ export class TeacherWhiteboard {
         if (!this.activeBoard) return;
         this.activeBoard.updatedAt = nowIso();
         this.activeBoard.dirty = true;
-        this.activeBoard.elementCount = this.activeBoard.elements.filter((el) => el.type !== 'eraser').length;
+        this.activeBoard.elementCount = countInkElements(this.activeBoard.elements);
+        this.maybeNoticeCapacity();
         this.updateSyncStatus();
         this.updateClearButton();
         this.scheduleSave();
+    }
+
+    /**
+     * 笔迹太多时提醒新建一块。后端硬闸是 20000 个元素，但那个量级早就没法流畅了；
+     * 这里在体感开始下滑之前先给出口，每块板每场最多提示两次（且只升不降）。
+     */
+    maybeNoticeCapacity() {
+        const count = this.activeBoard.elementCount;
+        const level = count >= CAPACITY.WARN ? 'warn' : (count >= CAPACITY.HINT ? 'hint' : '');
+        if (!level) return;
+        const seen = this.capacityNotices.get(this.activeBoard.id);
+        if (seen === level || seen === 'warn') return;
+        this.capacityNotices.set(this.activeBoard.id, level);
+        if (level === 'warn') {
+            showToast('这块白板笔迹很多了，新建一块会更流畅；旧的随时能在历史白板里翻回来', 'warning', 4200);
+        } else {
+            showToast('这块白板笔迹渐多，必要时可以新建一块', 'info', 3000);
+        }
     }
 
     persistAndFlush({ keepalive = false } = {}) {
@@ -317,19 +459,25 @@ export class TeacherWhiteboard {
         const index = this.state.boards.findIndex((item) => item.id === normalized.id);
         if (index === -1) this.state.boards.push(normalized);
         else this.state.boards.splice(index, 1, normalized);
+        this.localDirtyBoardIds.add(normalized.id);
         if (this.panels.history?.popover?.isOpen) this.panels.history.refresh();
     }
 
     patchBoard(id, patch) {
         const board = this.state.boards.find((item) => item.id === id);
         if (!board) return;
+        const previousId = board.id;
         Object.assign(board, patch);
+        // 板体键跟着 id 走：冲突处理会给本机副本换一个新 key。
+        if (patch.id && patch.id !== previousId) dropLocalBoard(this.context, previousId);
+        if (patch.elements || patch.id) this.localDirtyBoardIds.add(board.id);
         if (board === this.activeBoard) {
             if (patch.viewport) {
                 this.viewport = normalizeViewport(patch.viewport);
                 this.updateGridPosition();
             }
             if (patch.elements) {
+                this.invalidateRenderCache();
                 this.updateClearButton();
                 this.scheduleRender(true);
             }
@@ -368,6 +516,7 @@ export class TeacherWhiteboard {
         this.updateClearButton();
         this.updateGridPosition();
         this.updateSyncStatus();
+        this.invalidateRenderCache();
         this.clearDraftCanvas();
         this.scheduleRender(true);
         this.scheduleSave(0);
@@ -420,6 +569,7 @@ export class TeacherWhiteboard {
         const removed = await this.sync.remove(board);
         if (!removed) return;
         this.state.boards = this.state.boards.filter((item) => item.id !== boardId);
+        dropLocalBoard(this.context, boardId);
         if (board === this.activeBoard) {
             const next = [...this.state.boards].sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0];
             if (next) {
@@ -440,7 +590,8 @@ export class TeacherWhiteboard {
     // ------------------------------------------------------------------ undo
     pushUndoSnapshot() {
         this.undoStack.push(cloneElements(this.activeBoard.elements));
-        if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
+        const limit = Math.min(UNDO_LIMIT, this.profile.undoLimit);
+        while (this.undoStack.length > limit) this.undoStack.shift();
         this.redoStack = [];
         this.updateUndoRedoButtons();
     }
@@ -450,6 +601,7 @@ export class TeacherWhiteboard {
         this.commitTextEditor();
         this.redoStack.push(cloneElements(this.activeBoard.elements));
         this.activeBoard.elements = this.undoStack.pop();
+        this.invalidateRenderCache();
         this.updateUndoRedoButtons();
         this.scheduleRender(true);
         this.markDirty();
@@ -460,6 +612,7 @@ export class TeacherWhiteboard {
         this.commitTextEditor();
         this.undoStack.push(cloneElements(this.activeBoard.elements));
         this.activeBoard.elements = this.redoStack.pop();
+        this.invalidateRenderCache();
         this.updateUndoRedoButtons();
         this.scheduleRender(true);
         this.markDirty();
@@ -488,6 +641,7 @@ export class TeacherWhiteboard {
                 this.commitTextEditor();
                 this.pushUndoSnapshot();
                 this.activeBoard.elements = [];
+                this.invalidateRenderCache();
                 this.clearDraftCanvas();
                 this.scheduleRender(true);
                 this.markDirty();
@@ -567,13 +721,38 @@ export class TeacherWhiteboard {
         this.previousBodyOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
         this.setFabOpenState(true);
+        this.invalidateStageRect();
         window.requestAnimationFrame(() => {
             this.rootEl?.classList.add('is-open');
+            this.invalidateStageRect();
             this.resizeCanvases();
             this.scheduleRender(true);
         });
-        this.sync.start();
-        this.sync.bootstrap().then(() => this.adoptRemoteBoardIfFresh());
+        this.notifyHostState();
+        this.probe?.start();
+        this.sync.start(this.profile.syncIntervalMs);
+        // 拉列表 → 合并 → 落盘 → 上传是一串同步+网络开销，正好会挤在老师落下的第一笔上。
+        // 推到空闲帧再做，最迟 2.5s 兜底。
+        this.scheduleBootstrap();
+    }
+
+    scheduleBootstrap() {
+        const run = () => {
+            this.bootstrapHandle = null;
+            if (!this.isOpen) return;
+            this.sync.bootstrap().then(() => this.adoptRemoteBoardIfFresh());
+        };
+        // idle 与 timeout 的句柄是两个独立的 id 空间，混着取消会误伤别人的定时器。
+        this.bootstrapHandle = typeof window.requestIdleCallback === 'function'
+            ? { type: 'idle', id: window.requestIdleCallback(run, { timeout: TIMING.BOOTSTRAP_IDLE_TIMEOUT_MS }) }
+            : { type: 'timeout', id: window.setTimeout(run, 600) };
+    }
+
+    cancelBootstrap() {
+        if (!this.bootstrapHandle) return;
+        if (this.bootstrapHandle.type === 'idle') window.cancelIdleCallback(this.bootstrapHandle.id);
+        else window.clearTimeout(this.bootstrapHandle.id);
+        this.bootstrapHandle = null;
     }
 
     /** 新电脑首次打开：本地只有一块空板而云端有内容时，直接切到最近的云端白板。 */
@@ -604,10 +783,18 @@ export class TeacherWhiteboard {
         this.commitTextEditor();
         this.finishPointerState();
         this.isOpen = false;
-        this.rootEl.classList.remove('is-open', 'is-panning');
+        this.rootEl.classList.remove('is-open', 'is-panning', 'is-drawing');
         this.rootEl.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = this.previousBodyOverflow || '';
         this.setFabOpenState(false);
+        this.notifyHostState();
+        this.probe?.stop();
+        this.probe?.report('讲课白板本次会话');
+        this.cancelBootstrap();
+        this.cancelInputFlush();
+        this.cancelCacheSettle();
+        window.clearTimeout(this.resizeTimer);
+        window.clearTimeout(this.drawingReleaseTimer);
         this.persistAndFlush();
         this.sync.stop();
         window.clearTimeout(this.closeTimer);
@@ -621,17 +808,27 @@ export class TeacherWhiteboard {
         else this.open();
     }
 
+    /**
+     * 窗口尺寸变化会重新分配画布后备存储并清空内容，拖窗口/切投影分辨率时会连续触发
+     * 几十次「重分配 + 全量重绘」。悬浮球位置立即跟随（很便宜），画布改动防抖。
+     */
     handleResize() {
+        this.invalidateStageRect();
         if (this.fabEl?.style.left) {
             const rect = this.fabEl.getBoundingClientRect();
             this.placeFab(rect.left, rect.top);
             this.saveFabPosition();
         }
-        if (this.isOpen) {
+        if (!this.isOpen) return;
+        window.clearTimeout(this.resizeTimer);
+        this.resizeTimer = window.setTimeout(() => {
+            this.resizeTimer = null;
+            if (!this.isOpen) return;
+            this.invalidateStageRect();
             this.resizeCanvases();
             this.updateGridPosition();
             this.scheduleRender(true);
-        }
+        }, TIMING.RESIZE_DEBOUNCE_MS);
     }
 
     // -------------------------------------------------------------- keyboard
@@ -685,16 +882,30 @@ export class TeacherWhiteboard {
     }
 
     // ---------------------------------------------------------------- canvas
+    /**
+     * 画布后备存储尺寸。除了单边倍率上限，还要卡总像素：
+     * 4K 投影 × dpr 2.5 是 8300 万像素（约 133MB），集显机上光分配和清屏就吃掉整帧。
+     */
+    canvasDpr(width, height) {
+        let dpr = clamp(window.devicePixelRatio || 1, 1, Math.min(MAX_DPR, this.profile.maxDpr));
+        const pixels = width * height * dpr * dpr;
+        if (pixels > MAX_CANVAS_PIXELS) {
+            dpr = Math.max(1, dpr * Math.sqrt(MAX_CANVAS_PIXELS / pixels));
+        }
+        return Math.round(dpr * 100) / 100;
+    }
+
     resizeCanvases() {
         if (!this.stageEl || !this.canvasEl || !this.draftCanvasEl) return;
-        const rect = this.stageEl.getBoundingClientRect();
+        const rect = this.getStageRect();
         const width = Math.max(1, Math.round(rect.width));
         const height = Math.max(1, Math.round(rect.height));
-        const dpr = clamp(window.devicePixelRatio || 1, 1, 2.5);
+        const dpr = this.canvasDpr(width, height);
         if (this.canvasWidth === width && this.canvasHeight === height && this.dpr === dpr) return;
         this.canvasWidth = width;
         this.canvasHeight = height;
         this.dpr = dpr;
+        this.invalidateRenderCache();
         [this.canvasEl, this.draftCanvasEl].forEach((canvas) => {
             canvas.width = Math.round(width * dpr);
             canvas.height = Math.round(height * dpr);
@@ -716,11 +927,132 @@ export class TeacherWhiteboard {
         });
     }
 
+    /**
+     * 主画布 = 提交层缓存的一次搬运 + 露出条带的实时补画。
+     *
+     * 原实现每帧都把全部元素重放一遍，代价与板上总笔数成正比；现在只有
+     * 「缓存失效」或「露出太多 / 缩放偏离太远」时才真正重建，其余情况是一次位图 blit。
+     */
     drawMainCanvas() {
         if (!this.ctx || !this.canvasWidth || !this.canvasHeight) return;
+        const elements = this.activeBoard?.elements || [];
+        const cache = this.renderCache;
+        cache.resize(this.canvasWidth, this.canvasHeight, this.dpr);
+
         this.setScreenTransform(this.ctx);
         this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
-        renderElements(this.ctx, this.activeBoard?.elements || [], this.viewport);
+
+        this.probe?.count('render');
+        if (!cache.valid) {
+            cache.rebuild(elements, this.viewport, this.measureWidth);
+            this.probe?.count('rebuild');
+        }
+        if (!cache.valid) {
+            // 拿不到离屏画布（极老的浏览器）时退回原来的全量重绘。
+            renderElements(this.ctx, elements, this.viewport, {
+                worldClip: null, measureWidth: this.measureWidth,
+            });
+            return;
+        }
+
+        // 先算再画：露出太多或缩放偏离太远时直接重建，不浪费一次无用的 blit。
+        let geometry = cache.geometryFor(this.viewport);
+        if (shouldRebuild(geometry)) {
+            cache.rebuild(elements, this.viewport, this.measureWidth);
+            this.probe?.count('rebuild');
+            geometry = cache.geometryFor(this.viewport);
+        }
+        cache.blitTo(this.ctx, geometry);
+        this.probe?.count('blit');
+        for (const rect of geometry.exposed) this.paintScreenRect(rect, elements);
+        if (geometry.exact) this.cancelCacheSettle();
+        else this.scheduleCacheSettle();
+    }
+
+    /**
+     * 补画缓存没盖住的一条屏幕区域。
+     *
+     * 向外扩 1px 并先 `clearRect`：blit 的边缘会有抗锯齿，直接压着画会留下一条缝。
+     * 清掉再按顺序重放与该区域相交的元素是安全的 —— 一块区域内的合成结果只取决于
+     * 碰到它的那些元素及其先后顺序。
+     */
+    paintScreenRect(rect, elements) {
+        const x = Math.max(0, rect.x - 1);
+        const y = Math.max(0, rect.y - 1);
+        const width = Math.min(this.canvasWidth - x, rect.width + 2);
+        const height = Math.min(this.canvasHeight - y, rect.height + 2);
+        if (width <= 0 || height <= 0) return;
+        this.probe?.count('patch');
+        this.setScreenTransform(this.ctx);
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(x, y, width, height);
+        this.ctx.clip();
+        this.ctx.clearRect(x, y, width, height);
+        renderElements(this.ctx, elements, this.viewport, {
+            worldClip: screenRectToWorld({ x, y, width, height }, this.viewport),
+            measureWidth: this.measureWidth,
+        });
+        this.ctx.restore();
+    }
+
+    /** 手势停下来之后回正重建，把 blit 出来的（可能已被拉伸的）画面换成清晰的一版。 */
+    scheduleCacheSettle() {
+        window.clearTimeout(this.cacheSettleTimer);
+        this.cacheSettleTimer = window.setTimeout(() => {
+            this.cacheSettleTimer = null;
+            if (!this.isOpen) return;
+            // 手势还没结束就再等一轮，别把「回正」丢掉（否则缩放后会一直停在拉伸的位图上）。
+            if (this.activePointer) { this.scheduleCacheSettle(); return; }
+            this.renderCache.invalidate();
+            this.scheduleRender(true);
+        }, this.profile.settleMs || CACHE.SETTLE_MS);
+    }
+
+    cancelCacheSettle() {
+        window.clearTimeout(this.cacheSettleTimer);
+        this.cacheSettleTimer = null;
+    }
+
+    /** 新元素直接叠加进缓存，避免为一笔重放整块板。 */
+    commitToCache(element) {
+        this.probe?.count('commit');
+        this.renderCache.commit(element, this.measureWidth);
+    }
+
+    /** 整笔橡皮删元素后只重画受影响的那块世界矩形。 */
+    repaintCacheRegion(worldRect) {
+        if (!worldRect) {
+            this.renderCache.invalidate();
+            return;
+        }
+        this.probe?.count('repaintRegion');
+        this.renderCache.repaintRegion(this.activeBoard?.elements || [], worldRect, this.measureWidth);
+    }
+
+    /** 切换性能档位：立即生效（画布按新 DPR 重建），并记在这台设备上。 */
+    setPerfMode(mode) {
+        this.profile = resolveProfile(mode);
+        savePerfMode(this.context, this.profile.mode);
+        if (this.rootEl) this.rootEl.dataset.perf = this.profile.tier;
+        this.gridScale = null;
+        this.updateGridPosition();
+        this.invalidateStageRect();
+        this.resizeCanvases();
+        this.invalidateRenderCache();
+        this.scheduleRender(true);
+        this.sync?.restart(this.profile.syncIntervalMs);
+    }
+
+    /** 控制台出口：`teacherWhiteboard.perfReport()`。 */
+    perfReport() {
+        if (!this.probe) return '性能埋点未开启：地址栏加 ?wbperf=1，或 localStorage 设 teacher-whiteboard-perf-probe=1 后刷新。';
+        return this.probe.report('讲课白板');
+    }
+
+    invalidateRenderCache() {
+        this.renderCache.invalidate();
+        this.cancelCacheSettle();
     }
 
     clearDraftCanvas() {

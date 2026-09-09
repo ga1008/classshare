@@ -3,18 +3,7 @@
  */
 import { CANVAS_FONT_STACK, DEFAULT_COLOR } from './constants.js';
 import { hexToRgba, toFiniteNumber } from './state.js';
-import { getShapeBox, textLines, TEXT_LINE_HEIGHT } from './geometry.js';
-
-let filterSupport = null;
-export function supportsCanvasFilter(ctx) {
-    if (filterSupport !== null) return filterSupport;
-    try {
-        filterSupport = typeof ctx?.filter === 'string';
-    } catch {
-        filterSupport = false;
-    }
-    return filterSupport;
-}
+import { boundsIntersectRect, cachedPaintBounds, getShapeBox, textLines, TEXT_LINE_HEIGHT } from './geometry.js';
 
 export function roundedRectPath(ctx, x, y, width, height, radius) {
     const safeRadius = Math.min(Math.max(radius, 0), width / 2, height / 2);
@@ -72,16 +61,87 @@ export function drawStroke(ctx, element, options = {}) {
     ctx.restore();
 }
 
-/** 橡皮软边的绘制层次：硬度 1 单层；支持 filter 时模糊；否则三层递减 alpha 退化。 */
-export function eraserPasses(size, hardness, canFilter) {
-    if (hardness >= 0.999) return [{ width: size, alpha: 1, blur: 0 }];
-    if (canFilter) return [{ width: size, alpha: 1, blur: size * (1 - hardness) * 0.35 }];
-    const soft = 1 - hardness;
-    return [
-        { width: size * (1 - soft * 0.4), alpha: 1, blur: 0 },
-        { width: size * (1 - soft * 0.15), alpha: 0.5, blur: 0 },
-        { width: size * (1 + soft * 0.15), alpha: 0.22, blur: 0 },
-    ];
+/**
+ * 软边橡皮的笔刷贴图缓存。
+ *
+ * 原来软边走 `ctx.filter = blur(...)`：canvas filter 在主流实现里是慢路径，每次描边都要
+ * 额外分配中间层做卷积；更糟的是这些橡皮元素存在元素列表里，**每次重建都要把所有软边
+ * 橡皮的模糊重放一遍**，一块板上用过几次软橡皮，此后每次重建都永久变慢。
+ * 改成预生成一张径向渐变贴图沿路径盖章：贴图按 (size, hardness) 量化后复用，
+ * 盖章是纯 drawImage，代价可预测。硬边（默认 hardness = 1）仍走单次描边，路径完全不变。
+ */
+const ERASER_SPRITES = new Map();
+const SPRITE_CACHE_LIMIT = 24;
+/** 贴图按 2 倍分辨率生成，放大绘制时不至于糊。 */
+const SPRITE_OVERSAMPLE = 2;
+
+function quantize(value, step) {
+    return Math.round(value / step) * step;
+}
+
+export function eraserSpriteKey(size, hardness) {
+    return `${quantize(size, 0.5)}|${quantize(hardness, 0.05)}`;
+}
+
+function eraserSprite(size, hardness) {
+    const key = eraserSpriteKey(size, hardness);
+    const hit = ERASER_SPRITES.get(key);
+    if (hit) return hit;
+    if (typeof document === 'undefined') return null;
+    const pixels = Math.max(4, Math.ceil(size * SPRITE_OVERSAMPLE));
+    const canvas = document.createElement('canvas');
+    canvas.width = pixels;
+    canvas.height = pixels;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const radius = pixels / 2;
+    const gradient = ctx.createRadialGradient(radius, radius, radius * hardness, radius, radius, radius);
+    gradient.addColorStop(0, 'rgba(0,0,0,1)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, pixels, pixels);
+    if (ERASER_SPRITES.size >= SPRITE_CACHE_LIMIT) {
+        ERASER_SPRITES.delete(ERASER_SPRITES.keys().next().value);
+    }
+    ERASER_SPRITES.set(key, canvas);
+    return canvas;
+}
+
+/** 一条橡皮路径最多盖多少章：防止「极细橡皮 + 极长路径」退化成几万次 drawImage。 */
+export const MAX_ERASER_STAMPS = 4000;
+
+function polylineLength(points) {
+    let total = 0;
+    for (let index = 1; index < points.length; index += 1) {
+        total += Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
+    }
+    return total;
+}
+
+/** 沿折线按固定间距取盖章点（含首尾）。 */
+export function stampPoints(points, spacing) {
+    if (points.length === 1) return [points[0]];
+    const total = polylineLength(points);
+    const step = Math.max(spacing, 0.05, total / MAX_ERASER_STAMPS);
+    const stamps = [points[0]];
+    let carry = 0;
+    for (let index = 1; index < points.length; index += 1) {
+        const from = points[index - 1];
+        const to = points[index];
+        const length = Math.hypot(to.x - from.x, to.y - from.y);
+        if (length === 0) continue;
+        let travelled = step - carry;
+        while (travelled <= length) {
+            const t = travelled / length;
+            stamps.push({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t });
+            travelled += step;
+        }
+        carry = (length - (travelled - step)) % step;
+    }
+    const last = points[points.length - 1];
+    const tail = stamps[stamps.length - 1];
+    if (Math.hypot(last.x - tail.x, last.y - tail.y) > 1e-6) stamps.push(last);
+    return stamps;
 }
 
 /** 像素橡皮：destination-out，只擦除其之前绘制的内容。 */
@@ -92,25 +152,55 @@ export function drawEraser(ctx, element) {
     const hardness = Math.min(1, Math.max(0, toFiniteNumber(element.hardness, 1)));
     ctx.save();
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.strokeStyle = 'rgba(0,0,0,1)';
-    ctx.fillStyle = 'rgba(0,0,0,1)';
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    for (const pass of eraserPasses(size, hardness, supportsCanvasFilter(ctx))) {
-        ctx.globalAlpha = pass.alpha;
-        ctx.lineWidth = pass.width;
-        if (pass.blur > 0) ctx.filter = `blur(${pass.blur.toFixed(2)}px)`;
+
+    if (hardness >= 0.999) {
+        ctx.strokeStyle = 'rgba(0,0,0,1)';
+        ctx.fillStyle = 'rgba(0,0,0,1)';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = size;
         if (points.length === 1) {
             ctx.beginPath();
-            ctx.arc(points[0].x, points[0].y, pass.width / 2, 0, Math.PI * 2);
+            ctx.arc(points[0].x, points[0].y, size / 2, 0, Math.PI * 2);
             ctx.fill();
         } else {
             tracePolyline(ctx, points);
             ctx.stroke();
         }
-        if (pass.blur > 0) ctx.filter = 'none';
+        ctx.restore();
+        return;
+    }
+
+    const sprite = eraserSprite(size, hardness);
+    if (!sprite) {
+        // 拿不到贴图（无 document）时退回三层递减 alpha 的近似，不再用 filter。
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(0,0,0,1)';
+        for (const pass of eraserFallbackPasses(size, hardness)) {
+            ctx.globalAlpha = pass.alpha;
+            ctx.lineWidth = pass.width;
+            tracePolyline(ctx, points);
+            ctx.stroke();
+        }
+        ctx.restore();
+        return;
+    }
+    const half = size / 2;
+    for (const stamp of stampPoints(points, Math.max(size * 0.18, 0.5))) {
+        ctx.drawImage(sprite, stamp.x - half, stamp.y - half, size, size);
     }
     ctx.restore();
+}
+
+/** 无法生成贴图时的退化方案（三层递减 alpha）。 */
+export function eraserFallbackPasses(size, hardness) {
+    const soft = 1 - hardness;
+    return [
+        { width: size * (1 - soft * 0.4), alpha: 1 },
+        { width: size * (1 - soft * 0.15), alpha: 0.5 },
+        { width: size * (1 + soft * 0.15), alpha: 0.22 },
+    ];
 }
 
 export function drawShape(ctx, element, options = {}) {
@@ -181,12 +271,22 @@ export function drawElement(ctx, element, options = {}) {
     }
 }
 
-/** 在已设置好屏幕变换的 ctx 上按视口渲染整组元素。 */
-export function renderElements(ctx, elements, viewport) {
+/**
+ * 在已设置好屏幕变换的 ctx 上按视口渲染整组元素。
+ *
+ * `worldClip` 给定时按元素包围盒做视口裁剪：只是**跳过绘制**，不改变顺序，
+ * 所以橡皮的 `destination-out` 语义不受影响（被跳过的橡皮本来也影响不到这块区域）。
+ * 包围盒算不出来的元素一律照画，宁可多画也不能少画。
+ */
+export function renderElements(ctx, elements, viewport, options = {}) {
+    const { worldClip = null, measureWidth = undefined } = options;
     ctx.save();
     ctx.translate(viewport.x, viewport.y);
     ctx.scale(viewport.scale, viewport.scale);
-    for (const element of elements || []) drawElement(ctx, element);
+    for (const element of elements || []) {
+        if (worldClip && !boundsIntersectRect(cachedPaintBounds(element, measureWidth), worldClip)) continue;
+        drawElement(ctx, element);
+    }
     ctx.restore();
 }
 
