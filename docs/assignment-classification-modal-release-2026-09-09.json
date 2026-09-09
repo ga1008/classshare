@@ -1,0 +1,397 @@
+{
+  "mode": "postdeploy",
+  "verified_at_utc": "2026-09-09T07:07:26.387817+00:00",
+  "deployed_code_commit": "715a2ca34c52f8293137c4215b46b30ab2f79718",
+  "source_files": {
+    "templates/assignment_detail_teacher.html": {
+      "sha256": "2e250f44ecabd5a5a70fcc884f3aef8e4a1f12c8ec80f8b2e39b27e942c96182",
+      "bytes": 191002
+    },
+    "templates/partials/assessment_kind_control.html": {
+      "sha256": "cf68fa3de525f93367ec4c47ac6ca61f8a5fc076b3bb1795ed27fd1d528136ed",
+      "bytes": 2050
+    },
+    "static/js/assessment_kind_controls.js": {
+      "sha256": "c55acaafde4807d4986007b76b9caee46f6003f21609e2111e394a9f13440bd6",
+      "bytes": 9415
+    }
+  },
+  "hash_normalization": "CRLF to LF for git-blob, container-source, and public-asset parity",
+  "checks": [
+    {
+      "check": "all_9_expected_services_present",
+      "passed": true
+    },
+    {
+      "check": "all_services_running",
+      "passed": true
+    },
+    {
+      "check": "configured_healthchecks_healthy",
+      "passed": true
+    },
+    {
+      "check": "app_health_ok",
+      "passed": true
+    },
+    {
+      "check": "ai_health_ok",
+      "passed": true
+    },
+    {
+      "check": "host_health_ok",
+      "passed": true
+    },
+    {
+      "check": "production_database_is_postgres",
+      "passed": true
+    },
+    {
+      "check": "email_worker_ok",
+      "passed": true
+    },
+    {
+      "check": "current_background_items_ok",
+      "passed": true
+    },
+    {
+      "check": "background_stale_count_zero",
+      "passed": true
+    },
+    {
+      "check": "domain_is_configured_in_production_nginx",
+      "passed": true
+    },
+    {
+      "check": "public_https_health_ok",
+      "passed": true
+    },
+    {
+      "check": "public_health_keeps_verified_https_domain",
+      "passed": true
+    },
+    {
+      "check": "container_host_and_public_release_match",
+      "passed": true
+    },
+    {
+      "check": "public_asset_keeps_verified_https_domain",
+      "passed": true
+    },
+    {
+      "check": "public_asset_matches_container",
+      "passed": true
+    },
+    {
+      "check": "both_jinja_templates_parse",
+      "passed": true
+    },
+    {
+      "check": "full_assignment_template_renders",
+      "passed": true
+    },
+    {
+      "check": "classification_select_ids_unique",
+      "passed": true
+    },
+    {
+      "check": "classification_select_labels_resolve",
+      "passed": true
+    },
+    {
+      "check": "personal_stage_has_no_classification_controls",
+      "passed": true
+    },
+    {
+      "check": "release_is_expected_new_release",
+      "passed": true
+    },
+    {
+      "check": "container_source_matches_commit:templates/assignment_detail_teacher.html",
+      "passed": true
+    },
+    {
+      "check": "container_source_matches_commit:templates/partials/assessment_kind_control.html",
+      "passed": true
+    },
+    {
+      "check": "container_source_matches_commit:static/js/assessment_kind_controls.js",
+      "passed": true
+    },
+    {
+      "check": "public_js_matches_commit",
+      "passed": true
+    },
+    {
+      "check": "assignment_classification_dialog_rendered",
+      "passed": true
+    },
+    {
+      "check": "management_menu_opens_classification_dialog",
+      "passed": true
+    },
+    {
+      "check": "modal_and_existing_edit_selects_present",
+      "passed": true
+    }
+  ],
+  "services": [
+    {
+      "Service": "agent-worker",
+      "Name": "lanshare-agent-worker-1",
+      "State": "running",
+      "Health": "",
+      "ExitCode": 0
+    },
+    {
+      "Service": "ai",
+      "Name": "lanshare-ai-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    },
+    {
+      "Service": "app",
+      "Name": "lanshare-app-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    },
+    {
+      "Service": "blog-crawler",
+      "Name": "lanshare-blog-crawler-1",
+      "State": "running",
+      "Health": "",
+      "ExitCode": 0
+    },
+    {
+      "Service": "deepseek-runtime",
+      "Name": "lanshare-deepseek-runtime-1",
+      "State": "running",
+      "Health": "",
+      "ExitCode": 0
+    },
+    {
+      "Service": "mailer",
+      "Name": "lanshare-mailer-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    },
+    {
+      "Service": "nginx",
+      "Name": "lanshare-nginx-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    },
+    {
+      "Service": "postgres",
+      "Name": "lanshare-postgres-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    },
+    {
+      "Service": "scheduler",
+      "Name": "lanshare-scheduler-1",
+      "State": "running",
+      "Health": "healthy",
+      "ExitCode": 0
+    }
+  ],
+  "domains": [
+    "guardianangel.net.cn"
+  ],
+  "host_environment_release": "20260909-150513-ea23bf7ec651",
+  "host_health": {
+    "status": "ok",
+    "release_id": "20260909-150513-ea23bf7ec651",
+    "release_header": "20260909-150513-ea23bf7ec651"
+  },
+  "app": {
+    "status": "ok",
+    "release_id": "20260909-150513-ea23bf7ec651",
+    "release_header": "20260909-150513-ea23bf7ec651",
+    "environment_release": "20260909-150513-ea23bf7ec651",
+    "database_backend": "postgres",
+    "email_worker": {
+      "ok": true,
+      "status": "running",
+      "queue_depth": 0
+    },
+    "background_tasks": {
+      "ok": false,
+      "failed_count": 507,
+      "stale_count": 0,
+      "queue_depth": 17,
+      "items": [
+        {
+          "task_type": "ai_grading",
+          "status": "ok",
+          "queue_depth": 0,
+          "running_count": 0,
+          "failed_count": 27,
+          "stale_count": 0
+        },
+        {
+          "task_type": "material_ai_import",
+          "status": "ok",
+          "queue_depth": 0,
+          "running_count": 0,
+          "failed_count": 1,
+          "stale_count": 0
+        },
+        {
+          "task_type": "session_material_generation",
+          "status": "ok",
+          "queue_depth": 0,
+          "running_count": 0,
+          "failed_count": 0,
+          "stale_count": 0
+        },
+        {
+          "task_type": "private_message_ai_reply",
+          "status": "ok",
+          "queue_depth": 0,
+          "running_count": 0,
+          "failed_count": 0,
+          "stale_count": 0
+        },
+        {
+          "task_type": "email_outbox",
+          "status": "ok",
+          "queue_depth": 0,
+          "running_count": 0,
+          "failed_count": 456,
+          "stale_count": 0
+        },
+        {
+          "task_type": "blog_news_crawler",
+          "status": "ok",
+          "queue_depth": 0,
+          "running_count": 0,
+          "failed_count": 8,
+          "stale_count": 0
+        },
+        {
+          "task_type": "agent_task",
+          "status": "ok",
+          "queue_depth": 0,
+          "running_count": 0,
+          "failed_count": 1,
+          "stale_count": 0
+        },
+        {
+          "task_type": "scheduled_task",
+          "status": "ok",
+          "queue_depth": 17,
+          "running_count": 0,
+          "failed_count": 14,
+          "stale_count": 0
+        },
+        {
+          "task_type": "behavior_write_pipeline",
+          "status": "ok",
+          "queue_depth": 0,
+          "running_count": 0,
+          "failed_count": 0,
+          "stale_count": 0
+        }
+      ]
+    },
+    "health_keys": [
+      "ai_assistant_url",
+      "background_tasks",
+      "behavior_write_queue_capacity",
+      "behavior_write_queue_depth",
+      "behavior_write_worker_alive",
+      "career_worker",
+      "database_backend",
+      "database_path",
+      "db_pool",
+      "document_renderer",
+      "email_worker",
+      "release_id",
+      "server_local_time",
+      "service",
+      "status",
+      "threadpool_tokens",
+      "timezone"
+    ],
+    "source_files": {
+      "templates/assignment_detail_teacher.html": {
+        "sha256": "2e250f44ecabd5a5a70fcc884f3aef8e4a1f12c8ec80f8b2e39b27e942c96182",
+        "bytes": 191002
+      },
+      "templates/partials/assessment_kind_control.html": {
+        "sha256": "cf68fa3de525f93367ec4c47ac6ca61f8a5fc076b3bb1795ed27fd1d528136ed",
+        "bytes": 2050
+      },
+      "static/js/assessment_kind_controls.js": {
+        "sha256": "c55acaafde4807d4986007b76b9caee46f6003f21609e2111e394a9f13440bd6",
+        "bytes": 9415
+      }
+    },
+    "template_verification": {
+      "both_templates_parse": true,
+      "full_template_rendered_with_synthetic_context": true,
+      "dialog_ids": [
+        "assignment-kind-modal"
+      ],
+      "opener_targets": [
+        "assignment-kind-modal"
+      ],
+      "select_ids": [
+        "assessment-kind-987654321-modal",
+        "assessment-kind-987654321"
+      ],
+      "select_ids_unique": true,
+      "select_labels_resolve": true,
+      "personal_stage_control_count": 0
+    }
+  },
+  "ai": {
+    "status": "ok"
+  },
+  "production_test_data_modified": false,
+  "production_database_accessed_directly": false,
+  "database_schema_changed": false,
+  "public_health": {
+    "status": "ok",
+    "release_id": "20260909-150513-ea23bf7ec651",
+    "release_header": "20260909-150513-ea23bf7ec651"
+  },
+  "release_id": "20260909-150513-ea23bf7ec651",
+  "public_js_sha256": "c55acaafde4807d4986007b76b9caee46f6003f21609e2111e394a9f13440bd6",
+  "status": "ok",
+  "code_backup": "/tmp/lanshare-deploy-backups/code-20260909-150523.tgz",
+  "database_backup": "/tmp/lanshare-deploy-backups/db-20260909-150523.sql.gz",
+  "deployment_source": "Clean detached worktree at the code commit; unrelated worktree changes excluded.",
+  "validation": {
+    "classification_backend_tests_passed": 28,
+    "backend_tests_repeated_in_clean_release_worktree": true,
+    "classification_modal_browser_tests_passed": 5,
+    "existing_classroom_task_card_browser_tests_passed": 4,
+    "browser_viewports": [
+      "1440x980",
+      "390x844"
+    ],
+    "browser_data": "Disposable copied P03 database; local and production data were not used for mutations.",
+    "screenshots_visually_verified": true,
+    "workflows": [
+      "Menu opens independent classification dialog",
+      "Save synchronizes page header and edit controls and persists after reload",
+      "Classroom classification and category filter stay consistent",
+      "Cancel and Escape discard unsaved choices",
+      "503 retains selection and supports retry",
+      "Save blocks duplicate clicks and dismissal",
+      "409 loads latest version and requires explicit selection",
+      "Slow read can be cancelled and late responses cannot alter reopened dialog"
+    ],
+    "native_postgres_migration_gate": "Passed with docs/material-signature-postgres-rehearsal-2026-09-08.json, matching original custom dump, and all 54 migration source hashes.",
+    "deploy_dry_run": "Passed; 1980 deployable files.",
+    "production_browser_session_used": false
+  },
+  "background_task_note": "Overall ok=false reflects 507 historical failures, unchanged from preflight. Current task items are all ok and stale count is zero."
+}
