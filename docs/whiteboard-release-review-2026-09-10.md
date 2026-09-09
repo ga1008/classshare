@@ -44,6 +44,18 @@
 
 真实讲台机/投影设备的帧率、Safari 和真实触屏硬件仍未实测，不能由桌面浏览器或单测推断其性能。IndexedDB、增量上传和在线协作是原方案明确暂缓或范围外的扩展，不影响本次私有白板核心业务链路。
 
+极端配额失败后的恢复可能额外保留一块旧内容副本；独立故障复验确认不会丢失已保存笔迹，后续连续保存也不会持续增殖。
+
 ## 发布结果
 
-发布后补录版本、备份位置和线上验收结果。
+- 上线完成：2026-09-10 00:56（Asia/Shanghai），版本 `20260910-005512-8e9607e23c41`。
+- 白板修复提交：`02729884cc4830739e05bca69a41dcffd09bf9be`；包含既有生产材料修复的实际部署提交：`681e5fdb1b591a2e052ec2432ef041d94c7b46c7`，分支 `codex/whiteboard-release-20260910`。
+- canonical 脚本返回 `DEPLOY_DONE`，发布清单 1,998 个文件，应用镜像构建 23 秒。9 个服务均运行，配置了健康探针的服务全部 healthy。
+- 线上发布检查 **48/48** 通过：35 个白板/材料源码与构建 CSS 哈希匹配、公网 HTTPS 资源匹配、公网和容器版本一致、AI grading_queue 存在、未登录白板访问被拒绝。
+- 浏览器缓存验证通过：新版本第一次 HTML 请求只发送 `Clear-Site-Data: "cache"`，第二次不再发送；未清理登录或本地草稿存储。
+- 真实 PostgreSQL 白板只读验收 **22/22** 通过，现有笔迹、版本和账号隔离保持，验收事务已回滚，写入 0。
+- 近期日志 `NO_RECENT_ERROR_LOGS`；后台历史失败计数仍为发布前的 508，当前任务均 ok，过期任务 0。
+- 服务器代码备份：`/tmp/lanshare-deploy-backups/code-20260910-005522.tgz`。
+- PostgreSQL 备份：`/tmp/lanshare-deploy-backups/db-20260910-005522.sql.gz`（31 MB），`gzip -t` 通过。
+- 发布前 app 镜像保留为 `lanshare-app:before-whiteboard-20260910`。完整发布包、清单和原生数据库门禁报告保留在本机 `E:/CodexTemp/lanshare-deploy-20260910-005512`。
+- 结构化验收记录：`docs/whiteboard-release-verification-2026-09-10.json`。浏览器截图与临时测试报告保留在 `.codex-temp/whiteboard-qa-20260910/` 和隔离发布目录内。
