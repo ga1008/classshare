@@ -53,6 +53,7 @@ export class TeacherWhiteboard {
         this.context = normalizeContext(rawContext);
         this.state = null;
         this.activeBoard = null;
+        this.boardSelectionRevision = 0;
         this.settings = normalizeSettings({});
         this.viewport = createViewport();
         this.rootEl = null;
@@ -280,7 +281,7 @@ export class TeacherWhiteboard {
             notify: (message, type = 'info') => showToast(message, type, 3200),
             persistLocal: () => this.persistLocal(),
             // 落笔期间不要发起后台同步，把这一帧完整让给绘制。
-            isBusy: () => Boolean(this.activePointer),
+            isBusy: () => this.activePointer != null,
         });
     }
 
@@ -291,6 +292,7 @@ export class TeacherWhiteboard {
         this.stageEl?.addEventListener('pointermove', (event) => this.handleStagePointerMove(event));
         this.stageEl?.addEventListener('pointerup', (event) => this.handleStagePointerUp(event));
         this.stageEl?.addEventListener('pointercancel', (event) => this.handleStagePointerCancel(event));
+        this.stageEl?.addEventListener('lostpointercapture', (event) => this.handleStagePointerCancel(event));
         this.stageEl?.addEventListener('pointerleave', () => this.hideEraserCursor());
         this.stageEl?.addEventListener('wheel', (event) => this.handleWheel(event), { passive: false });
         this.fabEl?.addEventListener('pointerdown', (event) => this.handleFabPointerDown(event));
@@ -380,10 +382,10 @@ export class TeacherWhiteboard {
         this.state.boards = pruneBoards(this.state.boards, this.activeBoard.id);
         // 只写活动板 + 同步流程刚改过的板，其余板体保持原样（v3 分键存储）。
         const boardIds = [this.activeBoard.id, ...this.localDirtyBoardIds];
-        this.localDirtyBoardIds.clear();
         const result = saveLocalState(this.context, this.state, { boardIds });
         if (result.pruned) this.state = result.state;
         if (result.ok) {
+            for (const id of boardIds) this.localDirtyBoardIds.delete(id);
             this.saveErrorShown = false;
         } else if (!this.saveErrorShown) {
             this.saveErrorShown = true;
@@ -445,6 +447,8 @@ export class TeacherWhiteboard {
 
     persistAndFlush({ keepalive = false } = {}) {
         if (!this.state) return;
+        this.finishActiveInteraction();
+        this.commitTextEditor();
         this.persistLocal();
         this.sync?.flushDirty({ silent: true, keepalive });
     }
@@ -495,18 +499,26 @@ export class TeacherWhiteboard {
 
     async saveOnline() {
         if (!this.activeBoard) return;
+        this.finishActiveInteraction();
         this.commitTextEditor();
         this.persistLocal();
         await this.sync.flush(this.activeBoard, { explicit: true });
     }
 
     openExport() {
+        this.finishActiveInteraction();
         this.commitTextEditor();
         this.panels.export.open();
     }
 
     // ---------------------------------------------------------------- boards
     activateBoard(board) {
+        this.boardSelectionRevision += 1;
+        if (this.activeBoard && this.activeBoard !== board) {
+            this.finishActiveInteraction();
+            this.commitTextEditor();
+            if (this.state.boards.includes(this.activeBoard)) this.persistLocal();
+        }
         this.activeBoard = board;
         this.state.activeBoardId = board.id;
         this.viewport = normalizeViewport(board.viewport);
@@ -523,6 +535,8 @@ export class TeacherWhiteboard {
     }
 
     createNewBoard() {
+        this.boardSelectionRevision += 1;
+        this.finishActiveInteraction();
         this.commitTextEditor();
         if (isBoardEmpty(this.activeBoard)) {
             showToast('当前白板还是空的，直接在上面画吧', 'info', 2200);
@@ -537,8 +551,10 @@ export class TeacherWhiteboard {
     }
 
     async selectBoard(boardId) {
+        const selectionRevision = ++this.boardSelectionRevision;
         const nextBoard = this.state.boards.find((board) => board.id === boardId);
         if (!nextBoard || nextBoard.id === this.activeBoard?.id) return;
+        this.finishActiveInteraction();
         this.commitTextEditor();
         this.persistLocal();
         this.sync.flush(this.activeBoard, { explicit: false });
@@ -550,6 +566,7 @@ export class TeacherWhiteboard {
                 return;
             }
         }
+        if (selectionRevision !== this.boardSelectionRevision || !this.state.boards.includes(nextBoard)) return;
         this.activateBoard(nextBoard);
     }
 
@@ -597,6 +614,7 @@ export class TeacherWhiteboard {
     }
 
     undo() {
+        this.finishActiveInteraction();
         if (!this.undoStack.length || !this.activeBoard) return;
         this.commitTextEditor();
         this.redoStack.push(cloneElements(this.activeBoard.elements));
@@ -608,6 +626,7 @@ export class TeacherWhiteboard {
     }
 
     redo() {
+        this.finishActiveInteraction();
         if (!this.redoStack.length || !this.activeBoard) return;
         this.commitTextEditor();
         this.undoStack.push(cloneElements(this.activeBoard.elements));
@@ -638,6 +657,7 @@ export class TeacherWhiteboard {
             body: '可以用撤销（Ctrl+Z）恢复。',
             confirmLabel: '清空',
             onConfirm: () => {
+                this.finishActiveInteraction();
                 this.commitTextEditor();
                 this.pushUndoSnapshot();
                 this.activeBoard.elements = [];
@@ -692,6 +712,7 @@ export class TeacherWhiteboard {
 
     setTool(tool) {
         if (!TOOLS.includes(tool)) return;
+        this.finishActiveInteraction();
         if (tool !== 'text') this.commitTextEditor();
         popoverManager.closeAll('tool');
         this.settings.tool = tool;
@@ -758,6 +779,7 @@ export class TeacherWhiteboard {
     /** 新电脑首次打开：本地只有一块空板而云端有内容时，直接切到最近的云端白板。 */
     async adoptRemoteBoardIfFresh() {
         const active = this.activeBoard;
+        const selectionRevision = this.boardSelectionRevision;
         if (!active) return;
         if (active.elementsLoaded === false) {
             await this.sync.ensureLoaded(active).catch(() => {});
@@ -773,6 +795,10 @@ export class TeacherWhiteboard {
         } catch {
             return;
         }
+        // 网络返回时本机板可能已开始书写、切换或关闭；不可用旧的空板判断删除新笔迹。
+        if (!this.isOpen || selectionRevision !== this.boardSelectionRevision || this.activeBoard !== active
+            || !isBoardEmpty(active) || this.activePointer != null || this.textEditor?.element
+            || !this.state.boards.includes(candidate)) return;
         this.state.boards = this.state.boards.filter((board) => board !== active);
         this.activateBoard(candidate);
     }
@@ -781,7 +807,8 @@ export class TeacherWhiteboard {
         if (!this.isOpen || !this.rootEl) return;
         popoverManager.closeAll('close');
         this.commitTextEditor();
-        this.finishPointerState();
+        this.finishActiveInteraction();
+        this.boardSelectionRevision += 1;
         this.isOpen = false;
         this.rootEl.classList.remove('is-open', 'is-panning', 'is-drawing');
         this.rootEl.setAttribute('aria-hidden', 'true');
@@ -824,6 +851,7 @@ export class TeacherWhiteboard {
         this.resizeTimer = window.setTimeout(() => {
             this.resizeTimer = null;
             if (!this.isOpen) return;
+            this.finishActiveInteraction();
             this.invalidateStageRect();
             this.resizeCanvases();
             this.updateGridPosition();
@@ -1032,6 +1060,7 @@ export class TeacherWhiteboard {
 
     /** 切换性能档位：立即生效（画布按新 DPR 重建），并记在这台设备上。 */
     setPerfMode(mode) {
+        this.finishActiveInteraction();
         this.profile = resolveProfile(mode);
         savePerfMode(this.context, this.profile.mode);
         if (this.rootEl) this.rootEl.dataset.perf = this.profile.tier;
@@ -1069,6 +1098,8 @@ export class TeacherWhiteboard {
     }
 
     zoomBy(factor, focalScreenPoint = null) {
+        this.finishActiveInteraction();
+        this.commitTextEditor();
         const currentScale = this.viewport.scale;
         const nextScale = clamp(currentScale * factor, MIN_ZOOM, MAX_ZOOM);
         if (Math.abs(nextScale - currentScale) < 0.001) return;
@@ -1084,6 +1115,8 @@ export class TeacherWhiteboard {
     }
 
     resetView() {
+        this.finishActiveInteraction();
+        this.commitTextEditor();
         this.viewport = createViewport();
         this.activeBoard.viewport = { ...this.viewport };
         this.updateGridPosition();

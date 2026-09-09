@@ -166,7 +166,11 @@ class MaterialWhiteboardApiTests(unittest.TestCase):
         resp = self.client.patch(f"{BASE}/b-rn", json={"name": "新名字"})
         self.assertEqual(resp.status_code, 200, resp.text)
         self.assertEqual(resp.json()["board"]["name"], "新名字")
+        self.assertEqual(resp.json()["board"]["version"], 2)
         self.assertEqual(self.client.get(f"{BASE}/b-rn").json()["board"]["name"], "新名字")
+        stale = self.client.put(f"{BASE}/b-rn", json=_payload(base_version=1))
+        self.assertEqual(stale.status_code, 409)
+        self.assertEqual(stale.json()["board"]["name"], "新名字")
 
         self.assertEqual(self.client.get(f"{BASE}/nope").status_code, 404)
         self.assertEqual(self.client.patch(f"{BASE}/nope", json={"name": "x"}).status_code, 404)
@@ -188,6 +192,44 @@ class MaterialWhiteboardApiTests(unittest.TestCase):
         resp = self.client.get(f"/api/materials/{MATERIAL_PRIVATE}/whiteboards")
         # 服务抛 403；app.py 的 403 处理器对无 cookie 的 API 请求重写为 401。
         self.assertEqual(resp.status_code, 401, resp.text)
+
+    def test_same_key_is_isolated_between_teachers_and_materials(self):
+        self.client.put(f"{BASE}/shared-key", json=_payload(name="拥有者"))
+        private_base = f"/api/materials/{MATERIAL_PRIVATE}/whiteboards"
+        private = self.client.put(f"{private_base}/shared-key", json=_payload(name="另一个材料"))
+        self.assertEqual(private.status_code, 200, private.text)
+        self.assertEqual(self.client.get(f"{BASE}/shared-key").json()["board"]["name"], "拥有者")
+        self._login(TEACHER_OTHER)
+        self.assertEqual(self.client.patch(f"{BASE}/shared-key", json={"name": "篡改"}).status_code, 404)
+        self.assertEqual(self.client.delete(f"{BASE}/shared-key").status_code, 404)
+        own = self.client.put(f"{BASE}/shared-key", json=_payload(name="另一位教师"))
+        self.assertEqual(own.status_code, 200, own.text)
+        self.assertEqual(self.client.delete(f"{BASE}/shared-key").status_code, 200)
+        self._login(TEACHER_OWNER)
+        self.assertEqual(self.client.get(f"{BASE}/shared-key").json()["board"]["name"], "拥有者")
+        self.assertEqual(self.client.get(f"{private_base}/shared-key").json()["board"]["name"], "另一个材料")
+
+    def test_revoked_material_access_blocks_every_whiteboard_operation(self):
+        self._login(TEACHER_OTHER)
+        created = self.client.put(f"{BASE}/b-revoked", json=_payload())
+        self.assertEqual(created.status_code, 200, created.text)
+        self.conn.execute("UPDATE course_materials SET scope_level = 'private' WHERE id = ?", (MATERIAL_PUBLIC,))
+        self.conn.commit()
+        requests = (
+            ("get", BASE, {}),
+            ("get", f"{BASE}/b-revoked", {}),
+            ("put", f"{BASE}/b-revoked", {"json": _payload(base_version=1)}),
+            ("patch", f"{BASE}/b-revoked", {"json": {"name": "无权改名"}}),
+            ("delete", f"{BASE}/b-revoked", {}),
+        )
+        for method, url, kwargs in requests:
+            with self.subTest(method=method, url=url):
+                response = getattr(self.client, method)(url, **kwargs)
+                self.assertEqual(response.status_code, 401, response.text)
+        row = self.conn.execute("SELECT name, version, deleted_at FROM material_whiteboards").fetchone()
+        self.assertEqual(row["name"], "板一")
+        self.assertEqual(row["version"], 1)
+        self.assertIsNone(row["deleted_at"])
 
     # ---------------------------------------------------------- optimistic lock
     def test_stale_base_version_returns_conflict_with_server_copy(self):
@@ -214,10 +256,62 @@ class MaterialWhiteboardApiTests(unittest.TestCase):
         resp = self.client.put(f"{BASE}/b-1", json=_payload(base_version=None))
         self.assertEqual(resp.status_code, 409)
 
+    def test_explicit_zero_creates_but_does_not_overwrite(self):
+        created = self.client.put(f"{BASE}/b-zero", json=_payload(base_version=0))
+        self.assertEqual(created.status_code, 200, created.text)
+        stale = self.client.put(f"{BASE}/b-zero", json=_payload(name="覆盖", base_version=0))
+        self.assertEqual(stale.status_code, 409, stale.text)
+        self.assertEqual(stale.json()["board"]["name"], "板一")
+
+    def test_save_to_missing_old_board_conflicts_without_recreation(self):
+        response = self.client.put(f"{BASE}/b-gone", json=_payload(base_version=7))
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertIsNone(response.json()["board"])
+        self.assertEqual(self.client.get(f"{BASE}/b-gone").status_code, 404)
+
+    def test_update_compares_version_in_the_write_statement(self):
+        self.client.put(f"{BASE}/b-race", json=_payload())
+        original_update = svc._update_existing
+
+        def competing_write(conn, owner, material_id, key, fields, now, version):
+            conn.execute(
+                "UPDATE material_whiteboards SET name = '并发更新', version = version + 1 "
+                "WHERE board_key = ?", (key,),
+            )
+            conn.commit()
+            return original_update(conn, owner, material_id, key, fields, now, version)
+
+        with patch.object(svc, "_update_existing", side_effect=competing_write):
+            response = self.client.put(f"{BASE}/b-race", json=_payload(name="旧写入", base_version=1))
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["board"]["name"], "并发更新")
+        self.assertEqual(response.json()["board"]["version"], 2)
+
     # -------------------------------------------------------------- validation
     def test_bad_element_type_rejected(self):
         resp = self.client.put(f"{BASE}/b-bad", json=_payload(elements=[{"type": "image"}]))
         self.assertEqual(resp.status_code, 400, resp.text)
+
+    def test_malformed_types_and_versions_return_validation_errors(self):
+        for element_type in ([], {}, True, None):
+            with self.subTest(element_type=element_type):
+                response = self.client.put(f"{BASE}/b-bad", json=_payload(elements=[{"type": element_type}]))
+                self.assertEqual(response.status_code, 400, response.text)
+        for version in (True, 1.5, "1", -1, 2**63):
+            with self.subTest(base_version=version):
+                response = self.client.put(f"{BASE}/b-bad", json=_payload(base_version=version))
+                self.assertEqual(response.status_code, 400, response.text)
+        payload = _payload()
+        payload["schema_version"] = 2**63
+        response = self.client.put(f"{BASE}/b-bad", json=payload)
+        self.assertEqual(response.status_code, 400, response.text)
+
+    def test_deeply_nested_element_returns_validation_error(self):
+        nested = 0
+        for _ in range(40):
+            nested = [nested]
+        response = self.client.put(f"{BASE}/b-nested", json=_payload(elements=[{"type": "text", "extra": nested}]))
+        self.assertEqual(response.status_code, 400, response.text)
 
     def test_non_list_elements_rejected(self):
         resp = self.client.put(f"{BASE}/b-bad", json=_payload(elements={"type": "stroke"}))
@@ -250,6 +344,13 @@ class MaterialWhiteboardApiTests(unittest.TestCase):
         resp = self.client.put(f"{BASE}/b-big", json=_payload(elements=elements))
         self.assertEqual(resp.status_code, 413, resp.text[:200])
 
+    def test_entire_request_is_bounded_including_unknown_fields(self):
+        payload = _payload()
+        payload["extra"] = "a" * (router_mod.MAX_REQUEST_BYTES + 1)
+        response = self.client.put(f"{BASE}/b-extra", json=payload)
+        self.assertEqual(response.status_code, 413, response.text[:200])
+        self.assertEqual(self.client.get(f"{BASE}/b-extra").status_code, 404)
+
     # ---------------------------------------------------------------- role gate
     def test_student_role_is_rejected(self):
         self._login(STUDENT)
@@ -276,11 +377,20 @@ class MaterialWhiteboardApiTests(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(row["deleted_at"])
 
-        # 同 key 再次保存可复活为全新白板
+        # 旧标签页不能把已删白板自动复活；本机可根据 409 另存副本。
+        stale = self.client.put(f"{BASE}/b-1", json=_payload(name="过期复活", base_version=1))
+        self.assertEqual(stale.status_code, 409, stale.text)
+        self.assertIsNone(stale.json()["board"])
+        self.assertEqual(self.client.get(f"{BASE}/b-1").status_code, 404)
+
+        # 显式以新板方式复活同 key，版本单调递增，旧标签页仍不能覆盖它。
         revived = self.client.put(f"{BASE}/b-1", json=_payload(name="复活"))
         self.assertEqual(revived.status_code, 200, revived.text)
-        self.assertEqual(revived.json()["board"]["version"], 1)
+        self.assertEqual(revived.json()["board"]["version"], 3)
         self.assertEqual(revived.json()["board"]["name"], "复活")
+        stale = self.client.put(f"{BASE}/b-1", json=_payload(base_version=1))
+        self.assertEqual(stale.status_code, 409, stale.text)
+        self.assertEqual(stale.json()["board"]["version"], 3)
 
 
 if __name__ == "__main__":

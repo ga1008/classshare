@@ -17,13 +17,23 @@ export const textEditorMixin = {
         editor.style.fontSize = `${this.settings.fontSize}px`;
         editor.addEventListener('pointerdown', (pointerEvent) => pointerEvent.stopPropagation());
         editor.addEventListener('keydown', (keyEvent) => {
-            if (keyEvent.key === 'Escape') { keyEvent.preventDefault(); this.closeTextEditor(); return; }
+            if (keyEvent.key === 'Escape') {
+                keyEvent.preventDefault();
+                keyEvent.stopPropagation();
+                this.closeTextEditor();
+                return;
+            }
             if (keyEvent.key === 'Enter' && !keyEvent.shiftKey) { keyEvent.preventDefault(); this.commitTextEditor(); }
         });
-        editor.addEventListener('blur', () => window.setTimeout(() => this.commitTextEditor(), 0), { once: true });
+        editor.addEventListener('blur', () => window.setTimeout(() => {
+            // 旧编辑器移除时产生的 blur 不得提交随后新建的编辑器。
+            if (this.textEditor?.element === editor) this.commitTextEditor();
+        }, 0), { once: true });
         this.stageEl.appendChild(editor);
         this.textEditor = { element: editor, worldPoint, fontSize: this.settings.fontSize / this.viewport.scale, color: this.settings.textColor };
-        window.requestAnimationFrame(() => editor.focus());
+        window.requestAnimationFrame(() => {
+            if (this.textEditor?.element === editor) editor.focus();
+        });
     },
 
     commitTextEditor() {

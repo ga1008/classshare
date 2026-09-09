@@ -56,6 +56,8 @@ export class SyncController {
         this.timer = null;
         this.intervalMs = REMOTE.AUTO_SYNC_INTERVAL_MS;
         this.inFlight = new Map();
+        this.loading = new Map();
+        this.removing = new Set();
         this.lastError = null;
         this.bootstrapped = false;
         this.enabled = true;
@@ -142,40 +144,66 @@ export class SyncController {
     /** 保证某板元素已加载（远端 stub → 拉取）。 */
     async ensureLoaded(board) {
         if (!board || board.elementsLoaded !== false) return board;
-        const row = await this.host.store.get(board.id);
-        if (!row) throw new RemoteError('云端未找到该白板', { status: 404 });
-        const remote = remoteToBoard(row, { withElements: true });
-        this.host.patchBoard(board.id, {
-            elements: remote.elements,
-            elementsLoaded: true,
-            elementCount: remote.elementCount,
-            remoteVersion: remote.remoteVersion,
-            viewport: remote.viewport || board.viewport,
-            syncedAt: remote.syncedAt,
-            dirty: false,
-        });
-        this.host.persistLocal();
-        return this.host.getBoards().find((item) => item.id === board.id) || board;
+        const id = board.id;
+        if (this.loading.has(id)) return this.loading.get(id);
+        const task = (async () => {
+            const row = await this.host.store.get(id);
+            if (!row) throw new RemoteError('云端未找到该白板', { status: 404 });
+            const current = this.host.getBoards().find((item) => item.id === id);
+            if (!current || current.elementsLoaded !== false) return current;
+            const remote = remoteToBoard(row, { withElements: true });
+            this.host.patchBoard(id, {
+                elements: remote.elements,
+                elementsLoaded: true,
+                elementCount: remote.elementCount,
+                remoteVersion: remote.remoteVersion,
+                viewport: remote.viewport || current.viewport,
+                syncedAt: remote.syncedAt,
+                dirty: Boolean(current.dirty),
+            });
+            this.host.persistLocal();
+            return this.host.getBoards().find((item) => item.id === id);
+        })();
+        this.loading.set(id, task);
+        try {
+            return await task;
+        } finally {
+            this.loading.delete(id);
+        }
     }
 
     /** 上传单板。explicit=true 时用户可见反馈。 */
     async flush(board, { explicit = false, keepalive = false } = {}) {
-        if (!this.enabled || !board || board.elementsLoaded === false) return false;
+        if (!this.enabled || !board || board.elementsLoaded === false || this.removing.has(board.id)) return false;
         if (!explicit && !board.dirty) return false;
         if (isBoardEmpty(board) && board.remoteVersion === 0) {
             if (explicit) this.host.notify('白板还是空的，先画点什么再保存吧', 'info');
             return false;
         }
         const flightKey = board.id;
-        if (this.inFlight.has(flightKey)) return this.inFlight.get(flightKey);
+        if (this.inFlight.has(flightKey)) {
+            const saved = await this.inFlight.get(flightKey);
+            return saved && explicit && board.dirty
+                ? this.flush(board, { explicit, keepalive }) : saved;
+        }
+
+        // 请求等待期间仍可继续绘制。数组会追加元素，不能只比较数组引用，
+        // 也不能只靠毫秒时间戳；保存的是提交时的快照，后续修改必须继续待同步。
+        const snapshot = {
+            name: board.name,
+            updatedAt: board.updatedAt,
+            viewport: { ...board.viewport },
+            elements: board.elements.slice(),
+            remoteVersion: board.remoteVersion,
+        };
 
         // 只序列化一次：量体积和实际发送共用同一份字符串（原来是各 stringify 一遍）。
         const serialized = JSON.stringify({
-            name: board.name,
-            viewport: board.viewport,
-            elements: prepareElements(board.elements),
+            name: snapshot.name,
+            viewport: snapshot.viewport,
+            elements: prepareElements(snapshot.elements),
             schema_version: 2,
-            base_version: board.remoteVersion,
+            base_version: snapshot.remoteVersion,
         });
         if (byteLength(serialized) > REMOTE.MAX_JSON_BYTES) {
             this.noteError(board.id, new RemoteError('白板内容过大（超过 2MB），已保留在本机，请拆分到新白板', { status: 413 }), { silent: !explicit });
@@ -183,18 +211,26 @@ export class SyncController {
         }
 
         const task = (async () => {
+            // 先登记 inFlight，再通知宿主或调用可能同步失败的存储适配器。
+            await Promise.resolve();
             this.host.onStatus(SYNC_STATUS.SAVING, { boardId: board.id });
             try {
-                const row = await this.host.store.upsert(board.id, { serialized, keepalive });
+                const row = await this.host.store.upsert(flightKey, { serialized, keepalive });
                 this.lastError = null;
-                this.host.patchBoard(board.id, {
-                    remoteVersion: Number(row?.version || board.remoteVersion + 1),
+                const current = this.host.getBoards().find((item) => item.id === flightKey);
+                if (!current) return true;
+                const changed = current.name !== snapshot.name || current.updatedAt !== snapshot.updatedAt
+                    || current.elements.length !== snapshot.elements.length
+                    || current.elements.some((element, index) => element !== snapshot.elements[index])
+                    || ['x', 'y', 'scale'].some((key) => current.viewport?.[key] !== snapshot.viewport[key]);
+                this.host.patchBoard(flightKey, {
+                    remoteVersion: Number(row?.version || snapshot.remoteVersion + 1),
                     syncedAt: row?.updated_at || nowIso(),
-                    dirty: false,
+                    dirty: changed,
                 });
                 this.host.persistLocal();
-                this.host.onStatus(SYNC_STATUS.SYNCED, { boardId: board.id });
-                if (explicit) this.host.notify('已保存到云端', 'success');
+                this.host.onStatus(changed ? SYNC_STATUS.DIRTY : SYNC_STATUS.SYNCED, { boardId: flightKey });
+                if (explicit) this.host.notify(changed ? '本次内容已保存，新增改动将继续自动同步' : '已保存到云端', 'success');
                 return true;
             } catch (error) {
                 if (error instanceof RemoteError && error.isConflict) {
@@ -215,8 +251,19 @@ export class SyncController {
     async flushDirty({ silent = true, keepalive = false, respectBusy = false } = {}) {
         if (!this.enabled) return;
         if (respectBusy && this.host.isBusy?.()) return;
-        const dirtyBoards = this.host.getBoards().filter((board) => board.dirty && board.elementsLoaded !== false && !isBoardEmpty(board));
+        const dirtyBoards = this.host.getBoards().filter((board) => board.dirty
+            && (board.remoteVersion > 0 || !isBoardEmpty(board)));
         for (const board of dirtyBoards) {
+            if (board.elementsLoaded === false) {
+                try {
+                    // 离线重命名的历史板可能尚未下载，网络恢复后也要能自动完成。
+                    // eslint-disable-next-line no-await-in-loop
+                    await this.ensureLoaded(board);
+                } catch (error) {
+                    this.noteError(board.id, error, { silent });
+                    continue;
+                }
+            }
             // 顺序上传，避免并发写库
             // eslint-disable-next-line no-await-in-loop
             await this.flush(board, { explicit: !silent, keepalive });
@@ -240,28 +287,45 @@ export class SyncController {
             this.host.upsertLocalBoard(remoteToBoard(serverRow, { withElements: Array.isArray(serverRow.elements) }));
         }
         this.host.persistLocal();
-        this.host.notify('云端已有更新的版本：你的改动已保留为「本机副本」，云端版本在历史白板中', 'warning');
+        this.host.notify(serverRow
+            ? '云端已有更新的版本：你的改动已保留为「本机副本」，云端版本在历史白板中'
+            : '云端白板已删除或发生变化：你的改动已保留为「本机副本」', 'warning');
         this.host.onStatus(SYNC_STATUS.DIRTY, { boardId: localBoard.id, conflict: true });
     }
 
     async rename(board) {
-        if (!this.enabled || !board || board.remoteVersion === 0) return;
+        if (!this.enabled || !board) return;
+        // 重命名也属于可离线恢复的改动，并与整板保存共用版本和在途队列。
+        // 单独 PATCH 可能被更早发出的 PUT 覆盖，网络失败也不会进入重试队列。
+        this.host.patchBoard(board.id, { dirty: true });
+        this.host.persistLocal();
         try {
-            const row = await this.host.store.rename(board.id, board.name);
-            if (row) this.host.patchBoard(board.id, { remoteVersion: Number(row.version || board.remoteVersion) });
+            if (board.elementsLoaded === false) await this.ensureLoaded(board);
+            const pending = this.inFlight.get(board.id);
+            if (pending) await pending;
+            if (board.dirty) await this.flush(board);
         } catch (error) {
             this.noteError(board.id, error, { silent: true });
         }
     }
 
     async remove(board) {
-        if (!this.enabled || !board || board.remoteVersion === 0) return true;
+        if (!this.enabled || !board) return true;
+        const originalId = board.id;
+        this.removing.add(originalId);
         try {
-            await this.host.store.remove(board.id);
+            // 新板可能仍在首次上传；先等待结果，避免 DELETE 后迟到的 PUT 将它复活。
+            const pending = this.inFlight.get(originalId);
+            if (pending) await pending;
+            if (board.id !== originalId) return false;
+            if (board.remoteVersion > 0) await this.host.store.remove(originalId);
             return true;
         } catch (error) {
+            if (error instanceof RemoteError && error.status === 404) return true;
             this.noteError(board.id, error, { silent: false });
             return false;
+        } finally {
+            this.removing.delete(originalId);
         }
     }
 

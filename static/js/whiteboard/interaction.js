@@ -225,7 +225,8 @@ export const interactionMixin = {
 
     // ------------------------------------------------------------- 指针事件
     handleStagePointerDown(event) {
-        if (!this.isOpen || event.button !== 0 || event.target.closest('.teacher-whiteboard-text-editor')) return;
+        if (!this.isOpen || this.activePointer != null || this.activeBoard?.elementsLoaded === false
+            || event.button !== 0 || event.target.closest('.teacher-whiteboard-text-editor')) return;
         popoverManager.closeAll('stage');
         this.invalidateStageRect();
         this.resizeCanvases();
@@ -281,7 +282,7 @@ export const interactionMixin = {
 
     handleStagePointerMove(event) {
         if (this.currentTool === 'eraser') this.updateEraserCursor(this.getStagePoint(event));
-        if (!this.activePointer || this.activePointer !== event.pointerId) return;
+        if (this.activePointer == null || this.activePointer !== event.pointerId) return;
         if (this.activePan) {
             this.activePan.lastX = event.clientX;
             this.activePan.lastY = event.clientY;
@@ -292,7 +293,11 @@ export const interactionMixin = {
         if (!this.activeStroke && !this.activeEraser && !this.eraseSession && !this.activeShape) return;
         // 形状只关心最后一个点，没必要展开 coalesced。
         const useCoalesced = !this.activeShape && typeof event.getCoalescedEvents === 'function';
-        const raw = useCoalesced ? event.getCoalescedEvents() : [event];
+        const coalesced = useCoalesced ? event.getCoalescedEvents() : [];
+        // pointerup 和部分浏览器的 pointermove 可返回空合批；事件本身仍包含最新位置。
+        const raw = coalesced.length ? [...coalesced] : [event];
+        const last = raw[raw.length - 1];
+        if (last.clientX !== event.clientX || last.clientY !== event.clientY) raw.push(event);
         const points = [];
         for (const pointerEvent of raw) points.push(this.getStagePoint(pointerEvent));
         this.queueInputPoints(points);
@@ -300,18 +305,23 @@ export const interactionMixin = {
     },
 
     handleStagePointerUp(event) {
-        if (!this.activePointer || this.activePointer !== event.pointerId) return;
+        if (this.activePointer == null || this.activePointer !== event.pointerId) return;
         this.handleStagePointerMove(event);
-        this.cancelInputFlush();
-        this.flushInput();
-        this.finishDrawing(event);
+        this.finishActiveInteraction(event);
     },
 
     handleStagePointerCancel(event) {
         if (this.activePointer !== event.pointerId) return;
-        this.finishPointerState(event);
-        this.clearDraftCanvas();
-        this.scheduleRender(true);
+        // 系统取消/失去 capture 不代表用户撤销：保留已接收的点，也给整笔擦正确落 dirty。
+        this.finishActiveInteraction(event);
+    },
+
+    /** 在切板、关闭、缩放或后台保存之前提交已接收的输入，避免队列丢失或落入另一块板。 */
+    finishActiveInteraction(event = null) {
+        if (this.activePointer == null) return;
+        this.cancelInputFlush();
+        this.flushInput();
+        this.finishDrawing(event);
     },
 
     finishDrawing(event) {
@@ -355,9 +365,12 @@ export const interactionMixin = {
     },
 
     finishPointerState(event = null) {
-        if (this.stageEl && event) {
+        const pointerId = event?.pointerId ?? this.activePointer;
+        // 先清空身份，releasePointerCapture 触发的 lostpointercapture 不可重复提交。
+        this.activePointer = null;
+        if (this.stageEl && pointerId != null) {
             try {
-                if (this.stageEl.hasPointerCapture?.(event.pointerId)) this.stageEl.releasePointerCapture(event.pointerId);
+                if (this.stageEl.hasPointerCapture?.(pointerId)) this.stageEl.releasePointerCapture(pointerId);
             } catch { /* ignore */ }
         }
         this.cancelInputFlush();

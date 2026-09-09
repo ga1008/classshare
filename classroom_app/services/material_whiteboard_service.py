@@ -55,7 +55,7 @@ class WhiteboardNotFound(LookupError):
 class WhiteboardConflict(Exception):
     """Optimistic-lock mismatch; carries the current server board (409)."""
 
-    def __init__(self, board: dict[str, Any]):
+    def __init__(self, board: dict[str, Any] | None):
         super().__init__("whiteboard version conflict")
         self.board = board
 
@@ -77,9 +77,9 @@ def _owner(user: dict) -> tuple[str, int]:
 
 def _prepare(conn, user: dict, material_id: int) -> tuple[str, int]:
     """Common preamble: ensure schema, gate role, verify material access."""
-    ensure_material_whiteboard_schema(conn)
     owner = _owner(user)
     ensure_user_material_access(conn, int(material_id), user)
+    ensure_material_whiteboard_schema(conn)
     return owner
 
 
@@ -101,18 +101,20 @@ def _normalize_name(name: Any) -> str:
     return cleaned
 
 
-def _assert_finite(value: Any, path: str) -> None:
+def _assert_finite(value: Any, path: str, depth: int = 0) -> None:
     """Reject NaN/inf anywhere inside a value (nested lists/dicts included)."""
+    if depth > 32:
+        raise WhiteboardValidationError("白板数据嵌套层数过多")
     if isinstance(value, bool):
         return
     if isinstance(value, float) and not math.isfinite(value):
         raise WhiteboardValidationError(f"数值无效：{path}")
     if isinstance(value, dict):
         for key, item in value.items():
-            _assert_finite(item, f"{path}.{key}")
+            _assert_finite(item, f"{path}.{key}", depth + 1)
     elif isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
-            _assert_finite(item, f"{path}[{index}]")
+            _assert_finite(item, f"{path}[{index}]", depth + 1)
 
 
 def _normalize_elements(elements: Any) -> tuple[list, str]:
@@ -124,7 +126,7 @@ def _normalize_elements(elements: Any) -> tuple[list, str]:
         if not isinstance(element, dict):
             raise WhiteboardValidationError(f"第 {index + 1} 个元素不是对象")
         element_type = element.get("type")
-        if element_type not in ALLOWED_ELEMENT_TYPES:
+        if not isinstance(element_type, str) or element_type not in ALLOWED_ELEMENT_TYPES:
             raise WhiteboardValidationError(f"第 {index + 1} 个元素类型不支持：{element_type!r}")
         _assert_finite(element, f"elements[{index}]")
     serialized = json.dumps(elements, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
@@ -144,7 +146,7 @@ def _normalize_viewport(viewport: Any) -> tuple[dict, str]:
     if scale is not None:
         if isinstance(scale, bool) or not isinstance(scale, (int, float)):
             raise WhiteboardValidationError("viewport.scale 必须是数字")
-        cleaned["scale"] = min(VIEWPORT_SCALE_MAX, max(VIEWPORT_SCALE_MIN, float(scale)))
+        cleaned["scale"] = float(min(VIEWPORT_SCALE_MAX, max(VIEWPORT_SCALE_MIN, scale)))
     serialized = json.dumps(cleaned, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     return cleaned, serialized
 
@@ -152,7 +154,7 @@ def _normalize_viewport(viewport: Any) -> tuple[dict, str]:
 def _normalize_schema_version(value: Any) -> int:
     if value is None:
         return DEFAULT_SCHEMA_VERSION
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value < 2**31:
         raise WhiteboardValidationError("schema_version 无效")
     return value
 
@@ -160,10 +162,9 @@ def _normalize_schema_version(value: Any) -> int:
 def _parse_base_version(value: Any) -> int | None:
     if value is None:
         return None
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise WhiteboardValidationError("base_version 无效") from exc
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 2**31:
+        raise WhiteboardValidationError("base_version 无效")
+    return value
 
 
 def _loads(text: Any, fallback: Any) -> Any:
@@ -227,69 +228,55 @@ def get_board(conn, user: dict, material_id: int, board_key: str) -> dict[str, A
     return _row_to_board(row, include_elements=True)
 
 
-def _update_existing(conn, owner, material_id, key, fields: dict[str, Any], now: str) -> None:
-    conn.execute(
-        """
+def _update_existing(conn, owner, material_id, key, fields: dict[str, Any], now: str, version: int):
+    # Compare and write in the same statement. A separate SELECT/check allows
+    # two PostgreSQL workers to accept the same version and lose one edit.
+    return conn.execute(
+        f"""
         UPDATE material_whiteboards
         SET name = ?, viewport_json = ?, elements_json = ?, element_count = ?,
             schema_version = ?, version = version + 1, updated_at = ?
         WHERE owner_role = ? AND owner_user_pk = ? AND material_id = ? AND board_key = ?
-          AND deleted_at IS NULL
+          AND deleted_at IS NULL AND version = ?
+        RETURNING {_FULL_COLUMNS}
         """,
         (
             fields["name"], fields["viewport_json"], fields["elements_json"],
             fields["element_count"], fields["schema_version"], now,
-            owner[0], owner[1], int(material_id), key,
+            owner[0], owner[1], int(material_id), key, version,
         ),
-    )
+    ).fetchone()
 
 
-def _insert_new(conn, owner, material_id, key, fields: dict[str, Any], now: str) -> None:
-    # A soft-deleted row with the same key may still occupy the UNIQUE slot;
-    # revive it in place so the client-generated key stays usable.
-    conn.execute(
-        """
-        UPDATE material_whiteboards
-        SET deleted_at = NULL, name = ?, viewport_json = ?, elements_json = ?,
-            element_count = ?, schema_version = ?, version = 1,
-            visibility = 'private', share_token = NULL, created_at = ?, updated_at = ?
-        WHERE owner_role = ? AND owner_user_pk = ? AND material_id = ? AND board_key = ?
-          AND deleted_at IS NOT NULL
-        """,
-        (
-            fields["name"], fields["viewport_json"], fields["elements_json"],
-            fields["element_count"], fields["schema_version"], now, now,
-            owner[0], owner[1], int(material_id), key,
-        ),
-    )
-    if _fetch_row(conn, owner, material_id, key, full=False):
-        return
-    try:
-        _insert_row(conn, owner, material_id, key, fields, now)
-    except Exception as exc:  # 并发写同一 key：唯一约束冲突 → 交给乐观锁按 409 处理
-        if "unique" not in str(exc).lower() and "duplicate" not in str(exc).lower():
-            raise
-        existing = _fetch_row(conn, owner, material_id, key, full=True)
-        if existing is None:
-            raise
-        raise WhiteboardConflict(_row_to_board(existing, include_elements=True)) from exc
-
-
-def _insert_row(conn, owner, material_id, key, fields: dict[str, Any], now: str) -> None:
-    conn.execute(
-        """
+def _insert_new(conn, owner, material_id, key, fields: dict[str, Any], now: str):
+    # Conflict handling must remain inside SQL: catching a UNIQUE exception
+    # leaves PostgreSQL's transaction aborted before the server copy is read.
+    # Explicit recreation may revive a deleted key, but versions never reset:
+    # an old tab must not match version 1 of a different incarnation.
+    return conn.execute(
+        f"""
         INSERT INTO material_whiteboards (
             owner_role, owner_user_pk, material_id, board_key, name,
             viewport_json, elements_json, element_count, schema_version,
             version, visibility, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'private', ?, ?)
+        ON CONFLICT (owner_role, owner_user_pk, material_id, board_key)
+        DO UPDATE SET
+            deleted_at = NULL, name = excluded.name,
+            viewport_json = excluded.viewport_json, elements_json = excluded.elements_json,
+            element_count = excluded.element_count, schema_version = excluded.schema_version,
+            version = material_whiteboards.version + 1,
+            visibility = 'private', share_token = NULL,
+            created_at = excluded.created_at, updated_at = excluded.updated_at
+        WHERE material_whiteboards.deleted_at IS NOT NULL
+        RETURNING {_FULL_COLUMNS}
         """,
         (
             owner[0], owner[1], int(material_id), key, fields["name"],
             fields["viewport_json"], fields["elements_json"], fields["element_count"],
             fields["schema_version"], now, now,
         ),
-    )
+    ).fetchone()
 
 
 def upsert_board(
@@ -324,36 +311,36 @@ def upsert_board(
     }
     expected_version = _parse_base_version(base_version)
 
-    existing = _fetch_row(conn, owner, material_id, key, full=True)
     now = _now_iso()
-    if existing:
-        if expected_version != int(existing["version"] or 1):
-            raise WhiteboardConflict(_row_to_board(existing, include_elements=True))
-        _update_existing(conn, owner, material_id, key, fields, now)
+    if expected_version:
+        row = _update_existing(conn, owner, material_id, key, fields, now, expected_version)
     else:
-        _insert_new(conn, owner, material_id, key, fields, now)
+        row = _insert_new(conn, owner, material_id, key, fields, now)
+    if row is None:
+        existing = _fetch_row(conn, owner, material_id, key, full=True)
+        raise WhiteboardConflict(_row_to_board(existing, include_elements=True) if existing else None)
+    board = _row_to_board(row, include_elements=True)
     conn.commit()
-    row = _fetch_row(conn, owner, material_id, key, full=True)
-    return _row_to_board(row, include_elements=True)
+    return board
 
 
 def rename_board(conn, user: dict, material_id: int, board_key: str, name: Any) -> dict[str, Any]:
     owner = _prepare(conn, user, material_id)
     key = _normalize_board_key(board_key)
     cleaned = _normalize_name(name)
-    if not _fetch_row(conn, owner, material_id, key, full=False):
-        raise WhiteboardNotFound("白板不存在")
-    conn.execute(
-        """
+    row = conn.execute(
+        f"""
         UPDATE material_whiteboards
-        SET name = ?, updated_at = ?
+        SET name = ?, updated_at = ?, version = version + 1
         WHERE owner_role = ? AND owner_user_pk = ? AND material_id = ? AND board_key = ?
           AND deleted_at IS NULL
+        RETURNING {_META_COLUMNS}
         """,
         (cleaned, _now_iso(), owner[0], owner[1], int(material_id), key),
-    )
+    ).fetchone()
+    if row is None:
+        raise WhiteboardNotFound("白板不存在")
     conn.commit()
-    row = _fetch_row(conn, owner, material_id, key, full=False)
     return _row_to_board(row, include_elements=False)
 
 
@@ -361,17 +348,17 @@ def delete_board(conn, user: dict, material_id: int, board_key: str) -> dict[str
     """Soft delete: stamps ``deleted_at`` so the board disappears from lists."""
     owner = _prepare(conn, user, material_id)
     key = _normalize_board_key(board_key)
-    if not _fetch_row(conn, owner, material_id, key, full=False):
-        raise WhiteboardNotFound("白板不存在")
     now = _now_iso()
-    conn.execute(
+    cursor = conn.execute(
         """
         UPDATE material_whiteboards
-        SET deleted_at = ?, updated_at = ?
+        SET deleted_at = ?, updated_at = ?, version = version + 1
         WHERE owner_role = ? AND owner_user_pk = ? AND material_id = ? AND board_key = ?
           AND deleted_at IS NULL
         """,
         (now, now, owner[0], owner[1], int(material_id), key),
     )
+    if cursor.rowcount != 1:
+        raise WhiteboardNotFound("白板不存在")
     conn.commit()
     return {"board_key": key, "deleted_at": now}

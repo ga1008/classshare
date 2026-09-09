@@ -215,4 +215,129 @@ describe('store_local: 远端降级', () => {
         expect(storage.getItem(`${keys.boardPrefix}${encodeURIComponent(board.id)}`)).toBe(null);
         expect(loadLocalState(context).boards[0].elementCount).toBe(9);
     });
+
+    test('缺失云端板体会恢复为待加载状态，不伪装成空白板', () => {
+        const context = makeContext();
+        const state = loadLocalState(context);
+        const board = state.boards[0];
+        board.elements = [stroke()]; board.elementCount = 1; board.remoteVersion = 4;
+        saveLocalState(context, state);
+        dropLocalBoard(context, board.id);
+        const recovered = loadLocalState(context).boards[0];
+        expect(recovered.elementsLoaded).toBe(false);
+        expect(recovered.elementCount).toBe(1);
+        expect(recovered.remoteVersion).toBe(4);
+    });
+});
+
+describe('store_local: 多标签保护', () => {
+    test('旧标签保存时合并其他标签新建离线白板，板体不被孤儿清扫删除', () => {
+        const context = makeContext();
+        const original = loadLocalState(context);
+        original.boards[0].elements = [stroke()];
+        saveLocalState(context, original);
+        const otherTab = loadLocalState(context);
+        original.boards.push({ ...original.boards[0], id: 'other-tab-board', elements: [stroke(42)], dirty: true });
+        saveLocalState(context, original, { boardIds: ['other-tab-board'] });
+        saveLocalState(context, otherTab, { boardIds: [otherTab.activeBoardId] });
+        const reloaded = loadLocalState(context);
+        expect(reloaded.boards.find((board) => board.id === 'other-tab-board')?.elements).toEqual([stroke(42)]);
+    });
+
+    test('同板离线分叉保留其他标签完整副本，当前画布对象继续保留', () => {
+        const context = makeContext();
+        const first = loadLocalState(context);
+        first.boards[0].elements = [stroke()];
+        saveLocalState(context, first);
+        const second = loadLocalState(context);
+        const activeReference = second.boards[0];
+        first.boards[0].elements.push(stroke(100)); first.boards[0].dirty = true;
+        saveLocalState(context, first);
+        second.boards[0].elements.push(stroke(200)); second.boards[0].dirty = true;
+        saveLocalState(context, second);
+        expect(second.boards[0]).toBe(activeReference);
+        const recovered = loadLocalState(context);
+        expect(recovered.boards).toHaveLength(2);
+        expect(recovered.boards.some((board) => board.elements.at(-1)?.points[0].x === 100)).toBe(true);
+        expect(recovered.boards.some((board) => board.elements.at(-1)?.points[0].x === 200)).toBe(true);
+        const copy = recovered.boards.find((board) => board.name.endsWith('（其他标签副本）'));
+        expect(copy.dirty).toBe(true);
+        expect(copy.remoteVersion).toBe(0);
+        saveLocalState(context, second);
+        expect(loadLocalState(context).boards).toHaveLength(2);
+    });
+
+    test('仅本标签删除的板不会被基线索引重新合并回来', () => {
+        const context = makeContext();
+        const state = loadLocalState(context);
+        state.boards.push({ ...state.boards[0], id: 'delete-me', elements: [stroke()] });
+        saveLocalState(context, state);
+        const otherTab = loadLocalState(context);
+        otherTab.settings.brushSize = 8;
+        saveLocalState(context, otherTab);
+        state.boards = state.boards.filter((board) => board.id !== 'delete-me');
+        saveLocalState(context, state);
+        expect(loadLocalState(context).boards.some((board) => board.id === 'delete-me')).toBe(false);
+    });
+
+    test('两个标签反复保存同一对分叉不会不断新增相同副本', () => {
+        const context = makeContext();
+        const seed = loadLocalState(context);
+        seed.boards[0].elements = [stroke()];
+        saveLocalState(context, seed);
+        const first = loadLocalState(context);
+        const second = loadLocalState(context);
+        second.boards[0].elements.push(stroke(200)); second.boards[0].dirty = true;
+        saveLocalState(context, second);
+        for (let turn = 0; turn < 5; turn += 1) {
+            saveLocalState(context, first);
+            saveLocalState(context, second);
+        }
+        expect(first.boards).toHaveLength(3);
+        expect(second.boards).toHaveLength(3);
+        const reloaded = loadLocalState(context);
+        expect(reloaded.boards).toHaveLength(3);
+        expect(reloaded.boards.filter((board) => board.name.endsWith('（其他标签副本）'))).toHaveLength(2);
+    });
+
+    test('分叉副本写入遇配额错误，必须恢复原键中另一标签已经保存的笔迹', () => {
+        const context = makeContext();
+        const seed = loadLocalState(context);
+        seed.boards[0].elements = [stroke()];
+        saveLocalState(context, seed);
+        const first = loadLocalState(context);
+        const second = loadLocalState(context);
+        second.boards[0].elements.push(stroke(200)); second.boards[0].dirty = true;
+        saveLocalState(context, second);
+        const originalSet = storage.setItem.bind(storage);
+        const keys = storageKeys(context);
+        storage.setItem = (key, value) => {
+            if (key.startsWith(keys.boardPrefix) && !storage.map.has(key)) throw new DOMExceptionLike('QuotaExceededError');
+            originalSet(key, value);
+        };
+        const failed = saveLocalState(context, first);
+        expect(failed.ok).toBe(false);
+        const reloaded = loadLocalState(context);
+        expect(reloaded.boards[0].elements).toEqual([stroke(), stroke(200)]);
+        expect(first.boards.some((board) => board.elements.at(-1)?.points[0].x === 200)).toBe(true);
+        storage.setItem = originalSet;
+        expect(saveLocalState(context, failed.state).ok).toBe(true);
+        expect(loadLocalState(context).boards.some((board) => board.elements.at(-1)?.points[0].x === 200)).toBe(true);
+    });
+
+    test('板体写成功但索引提交失败时也恢复旧板体', () => {
+        const context = makeContext();
+        const state = loadLocalState(context);
+        state.boards[0].elements = [stroke()];
+        saveLocalState(context, state);
+        state.boards[0].elements = [stroke(99)];
+        const originalSet = storage.setItem.bind(storage);
+        const keys = storageKeys(context);
+        storage.setItem = (key, value) => {
+            if (key === keys.index) throw new DOMExceptionLike('QuotaExceededError');
+            originalSet(key, value);
+        };
+        expect(saveLocalState(context, state).ok).toBe(false);
+        expect(loadLocalState(context).boards[0].elements).toEqual([stroke()]);
+    });
 });

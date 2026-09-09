@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { INPUT } from './constants.js';
 import { interactionMixin } from './interaction.js';
 
@@ -139,5 +139,71 @@ describe('interaction: 缓存脏区', () => {
         host.activeBoard.elements = [strokeAt(0, 0, 'a')];
         host.eraseStrokesAtPoints([{ x: 5, y: 4000 }]);
         expect(host.repaintedRegions).toHaveLength(0);
+    });
+});
+
+describe('interaction: 指针生命周期', () => {
+    function drawingHost(overrides = {}) {
+        return makeHost({
+            isOpen: true, activePointer: 0, currentTool: 'brush', inputQueue: [],
+            activeStroke: { id: 'drawing', type: 'stroke', color: '#f00', size: 4, points: [{ x: 0, y: 0 }] },
+            eraseSession: null, stageEl: null,
+            getStageRect: () => ({ left: 0, top: 0 }),
+            scheduleInputFlush: vi.fn(), cancelInputFlush: vi.fn(),
+            setDrawingState: vi.fn(), clearDraftCanvas: vi.fn(), markDirty: vi.fn(),
+            ...overrides,
+        });
+    }
+
+    test('pointerup 空 coalesced 数组仍提交尾点，pointerId 0 有效', () => {
+        const host = drawingHost();
+        host.handleStagePointerUp({
+            pointerId: 0, clientX: 80, clientY: 20, getCoalescedEvents: () => [], preventDefault: vi.fn(),
+        });
+        expect(host.activeBoard.elements[0].points.at(-1)).toEqual({ x: 80, y: 20 });
+        expect(host.markDirty).toHaveBeenCalledTimes(1);
+        expect(host.activePointer).toBeNull();
+    });
+
+    test('批量事件尚未包含最新事件位置时保留其尾点', () => {
+        const host = drawingHost();
+        host.handleStagePointerMove({
+            pointerId: 0, clientX: 80, clientY: 20,
+            getCoalescedEvents: () => [{ clientX: 40, clientY: 10 }], preventDefault: vi.fn(),
+        });
+        expect(host.inputQueue).toEqual([{ x: 40, y: 10 }, { x: 80, y: 20 }]);
+    });
+
+    test('第二触点不会覆盖首个触点的笔迹和未处理队列', () => {
+        const host = drawingHost({ inputQueue: [{ x: 80, y: 20 }] });
+        const stroke = host.activeStroke;
+        host.handleStagePointerDown({ pointerId: 2, button: 0 });
+        expect(host.activeStroke).toBe(stroke);
+        expect(host.activePointer).toBe(0);
+        expect(host.inputQueue).toEqual([{ x: 80, y: 20 }]);
+    });
+
+    test('取消或丢失 capture 提交已接收的点，不生成重复笔画', () => {
+        const host = drawingHost({ inputQueue: [{ x: 80, y: 20 }] });
+        host.handleStagePointerCancel({ pointerId: 0 });
+        host.handleStagePointerCancel({ pointerId: 0 });
+        expect(host.activeBoard.elements).toHaveLength(1);
+        expect(host.activeBoard.elements[0].points.at(-1)).toEqual({ x: 80, y: 20 });
+        expect(host.markDirty).toHaveBeenCalledTimes(1);
+    });
+
+    test('整笔擦在取消前的真实删除会被标记保存', () => {
+        const host = drawingHost({ activeStroke: null, eraseSession: { pushed: false } });
+        host.activeBoard.elements = [strokeAt(0, 0, 'erase-me')];
+        host.eraseStrokesAtPoints([{ x: 5, y: 0 }]);
+        host.handleStagePointerCancel({ pointerId: 0 });
+        expect(host.activeBoard.elements).toEqual([]);
+        expect(host.markDirty).toHaveBeenCalledTimes(1);
+    });
+
+    test('云端板体未加载时不能向占位板绘制', () => {
+        const host = drawingHost({ activePointer: null, activeBoard: { elements: [], elementsLoaded: false } });
+        host.handleStagePointerDown({ pointerId: 2, button: 0 });
+        expect(host.activePointer).toBeNull();
     });
 });

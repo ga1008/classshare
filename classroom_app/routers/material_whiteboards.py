@@ -8,6 +8,7 @@ service (``app.py`` rewrites 403 to 401 for unauthenticated API calls).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -19,11 +20,19 @@ from ..services import material_whiteboard_service as svc
 
 
 router = APIRouter(prefix="/api/materials/{material_id}/whiteboards")
+MAX_REQUEST_BYTES = svc.MAX_ELEMENTS_BYTES + 64 * 1024
 
 
 async def _json_payload(request: Request) -> dict[str, Any]:
+    # Bound the complete body before decoding; otherwise a huge viewport or
+    # unknown field bypasses the elements-only budget and blocks the worker.
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > MAX_REQUEST_BYTES:
+            raise HTTPException(413, "白板请求超过大小上限")
+        raw.extend(chunk)
     try:
-        payload = await request.json()
+        payload = json.loads(raw)
     except Exception as exc:
         raise HTTPException(400, "请求 JSON 格式不正确") from exc
     if not isinstance(payload, dict):
@@ -33,7 +42,11 @@ async def _json_payload(request: Request) -> dict[str, Any]:
 
 def _conflict_response(exc: svc.WhiteboardConflict) -> JSONResponse:
     return JSONResponse(
-        {"status": "conflict", "detail": "白板已在其他地方更新，请刷新后再保存", "board": exc.board},
+        {
+            "status": "conflict",
+            "detail": "白板已在其他地方更新或删除，本机改动需要另存副本",
+            "board": exc.board,
+        },
         status_code=409,
     )
 

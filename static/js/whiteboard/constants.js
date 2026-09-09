@@ -84,7 +84,7 @@ export const LIMITS = {
     brushSize: [1, 32],
     fontSize: [12, 72],
     boardOpacity: [0.35, 1],
-    backgroundOpacity: [0, 0.95],
+    backgroundOpacity: [0, 1],
     eraserSize: [4, 120],
     eraserHardness: [0, 1],
     boardNameLength: 60,
