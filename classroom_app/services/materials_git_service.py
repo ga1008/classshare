@@ -998,6 +998,47 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path, *, protec
             )
         )
 
+    # Sharing and organization belong to the outermost material folder. Git
+    # inserts previously omitted them, leaving new lessons private/unclassified.
+    # Repair the complete repository in one write, including old imported rows,
+    # without changing the root's policy or any classroom assignments.
+    scope_fields = [
+        field for field in (
+            "scope_level", "owner_role", "owner_user_pk", "school_code",
+            "school_name", "college", "department", "published_at",
+        ) if field in root_row
+    ]
+    if scope_fields:
+        scope_values = [root_row[field] for field in scope_fields]
+        differences = " OR ".join(
+            f"{field} IS NOT NULL" if root_row[field] is None else f"({field} IS NULL OR {field} <> ?)"
+            for field in scope_fields
+        )
+        conn.execute(
+            f"UPDATE course_materials SET {', '.join(f'{field} = ?' for field in scope_fields)}, updated_at = ? "
+            f"WHERE root_id = ? AND id != ? AND (material_path = ? OR material_path LIKE ?) AND ({differences})",
+            (*scope_values, now, root_row["id"], root_row["id"], root_prefix, f"{root_prefix}/%",
+             *(value for value in scope_values if value is not None)),
+        )
+        changed_ids = {entry["id"] for entry in changed_entries}
+        for row in existing_rows:
+            if row["id"] == root_row["id"] or row["id"] in changed_ids:
+                continue
+            relative_path = _get_repo_root_relative_path(root_prefix, row["material_path"])
+            # LessonDoc protected paths have their own publication accounting.
+            if relative_path not in scanned_map:
+                continue
+            if not any(row.get(field) != root_row[field] for field in scope_fields):
+                continue
+            summary["updated"] += 1
+            summary["unchanged"] = max(0, summary["unchanged"] - 1)
+            changed_entries.append(_serialize_changed_entry(
+                status="updated",
+                relative_path=relative_path,
+                material_path=row["material_path"], row_id=row["id"], node_type=row["node_type"],
+                name=row["name"], preview_type=str(row.get("preview_type") or ""),
+            ))
+
     if any(summary[key] > 0 for key in ("inserted", "updated", "deleted")):
         conn.execute(
             "UPDATE course_materials SET updated_at = ? WHERE id = ?",

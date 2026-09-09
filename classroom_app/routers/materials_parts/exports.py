@@ -4,6 +4,8 @@ from inspect import signature
 
 from urllib.parse import quote
 
+from fastapi.responses import Response
+
 from .common import *
 from .generation_helpers import *
 from .ai_import_helpers import *
@@ -386,7 +388,9 @@ async def get_material_raw(material_id: int, user: dict = Depends(get_current_us
     return FileResponse(file_path, media_type=material["mime_type"] or "application/octet-stream")
 
 
-async def _serve_rendered_material(material_id: int, subpath: str, user: dict) -> FileResponse:
+async def _serve_rendered_material(
+    material_id: int, subpath: str, user: dict, *, request: Request | None = None,
+) -> Response:
     with get_db_connection() as conn:
         node = ensure_user_material_access(conn, material_id, user)
         if not resolve_render_target(conn, node):
@@ -400,11 +404,28 @@ async def _serve_rendered_material(material_id: int, subpath: str, user: dict) -
 
     file_path = _load_material_storage_path(target)
     media_type = str(target.get("mime_type") or "") or mimetypes.guess_type(target.get("name") or "")[0] or "application/octet-stream"
+    is_html = media_type.lower().startswith("text/html")
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        # The URL stays fixed when Git replaces an asset. Validate against its
+        # content hash, not FileResponse's storage-file mtime/size ETag.
+        "ETag": f'"{target["file_hash"]}"',
+        "Cache-Control": "private, no-cache, max-age=0, must-revalidate",
+    }
+    if is_html:
+        # Keep the existing HTML no-store and release-invalidation flow.
+        headers.update(_DYNAMIC_DOCUMENT_HEADERS)
+    elif request is not None and request.method in {"GET", "HEAD"}:
+        validators = request.headers.get("if-none-match", "").split(",")
+        if any(tag.strip().removeprefix("W/") in {"*", headers["ETag"]} for tag in validators):
+            # Both the package and the asset have already passed authorization,
+            # and missing storage files must still produce their normal error.
+            return Response(status_code=304, headers=headers)
     # 直接渲染（inline，无 filename），并禁用 MIME 嗅探。
     return FileResponse(
         file_path,
         media_type=media_type,
-        headers={"X-Content-Type-Options": "nosniff"},
+        headers=headers,
     )
 
 
@@ -482,13 +503,13 @@ async def material_render_shell_page(
 
 
 @router.get("/materials/render/{material_id}", response_class=FileResponse)
-async def render_material_entry(material_id: int, user: dict = Depends(get_current_user)):
-    return await _serve_rendered_material(material_id, "", user)
+async def render_material_entry(material_id: int, request: Request, user: dict = Depends(get_current_user)):
+    return await _serve_rendered_material(material_id, "", user, request=request)
 
 
 @router.get("/materials/render/{material_id}/{subpath:path}", response_class=FileResponse)
-async def render_material_asset(material_id: int, subpath: str = "", user: dict = Depends(get_current_user)):
-    return await _serve_rendered_material(material_id, subpath, user)
+async def render_material_asset(material_id: int, request: Request, subpath: str = "", user: dict = Depends(get_current_user)):
+    return await _serve_rendered_material(material_id, subpath, user, request=request)
 
 
 @router.get("/materials/download/{material_id}", response_class=FileResponse)

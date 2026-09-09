@@ -177,6 +177,7 @@ const state = {
     currentParentId: initialLibraryState.parentId,
     history: [],
     items: [],
+    libraryRequestId: 0,
     activeMaterialId: null,
     activeDetail: null,
     detailRequestId: 0,
@@ -318,6 +319,7 @@ const state = {
         stickyStatus: false,
     },
     repository: {
+        requestId: 0,
         materialId: null,
         detail: null,
         busy: false,
@@ -2469,6 +2471,8 @@ function renderRepositorySummary(detail) {
 }
 
 function resetMaterialWorkspace() {
+    state.materialWorkspace.treeRequestId += 1;
+    state.detailRequestId += 1;
     state.materialWorkspace.root = null;
     state.materialWorkspace.stats = null;
     state.materialWorkspace.expandedIds.clear();
@@ -2940,17 +2944,31 @@ function renderDetail(detail) {
     renderWorkspaceRenderedContent(detail);
 }
 
-async function loadMaterialTree(materialId) {
+async function loadMaterialTree(materialId, { isCurrent = () => true, restoreSelection = false } = {}) {
     const requestId = ++state.materialWorkspace.treeRequestId;
     state.materialWorkspace.treeLoading = true;
     renderDetail(state.activeDetail);
     try {
-        const data = await apiFetch(`/api/materials/${materialId}/tree`, { silent: true });
-        if (requestId !== state.materialWorkspace.treeRequestId) {
-            return state.materialWorkspace.root;
+        const data = await apiFetch(`/api/materials/${materialId}/tree`, { silent: true }).catch((error) => {
+            if (requestId !== state.materialWorkspace.treeRequestId || !isCurrent()) return null;
+            throw error;
+        });
+        if (requestId !== state.materialWorkspace.treeRequestId || !isCurrent()) {
+            return null;
         }
+        const selectedPath = restoreSelection
+            ? findTreePath(state.materialWorkspace.selectedId || state.activeMaterialId).map((node) => Number(node.id)).reverse()
+            : [];
         state.materialWorkspace.root = data.tree || null;
         state.materialWorkspace.stats = data.stats || null;
+        if (restoreSelection) {
+            state.materialWorkspace.expandedIds = new Set(
+                [...state.materialWorkspace.expandedIds].filter((id) => findTreeNode(id)),
+            );
+            const selectedId = selectedPath.find((id) => findTreeNode(id)) || state.materialWorkspace.root?.id || null;
+            state.materialWorkspace.selectedId = selectedId;
+            state.activeMaterialId = selectedId;
+        }
         if (state.materialWorkspace.root) {
             state.materialWorkspace.expandedIds.add(Number(state.materialWorkspace.root.id));
         }
@@ -3001,13 +3019,16 @@ async function loadWorkspaceContent(detail) {
     }
 }
 
-async function loadMaterialDetail(materialId) {
+async function loadMaterialDetail(materialId, { isCurrent = () => true } = {}) {
     const requestId = ++state.detailRequestId;
     state.activeMaterialId = Number(materialId);
     state.materialWorkspace.selectedId = Number(materialId);
     renderList();
-    const detail = await apiFetch(`/api/materials/${materialId}`, { silent: true }).then((data) => data.material);
-    if (requestId !== state.detailRequestId) {
+    const detail = await apiFetch(`/api/materials/${materialId}`, { silent: true }).then((data) => data.material).catch((error) => {
+        if (requestId !== state.detailRequestId || !isCurrent()) return null;
+        throw error;
+    });
+    if (requestId !== state.detailRequestId || !isCurrent()) {
         return state.activeDetail;
     }
     state.activeDetail = detail;
@@ -3081,10 +3102,15 @@ function syncLibraryUrl() {
     window.history.replaceState({}, '', url);
 }
 
-async function loadLibrary(parentId = null, trackHistory = false) {
+async function loadLibrary(parentId = null, trackHistory = false, { isCurrent = () => true } = {}) {
+    const requestId = ++state.libraryRequestId;
     const targetParentId = parentId ?? null;
     const query = buildLibraryQuery(targetParentId);
-    const data = await apiFetch(`/api/materials/library${query ? `?${query}` : ''}`, { silent: true });
+    const data = await apiFetch(`/api/materials/library${query ? `?${query}` : ''}`, { silent: true }).catch((error) => {
+        if (requestId !== state.libraryRequestId || !isCurrent()) return null;
+        throw error;
+    });
+    if (requestId !== state.libraryRequestId || !isCurrent()) return;
 
     if (trackHistory && state.currentParentId !== targetParentId) {
         state.history.push(state.currentParentId);
@@ -5334,13 +5360,17 @@ function renderRepositoryModal() {
 
 async function refreshRepositoryState() {
     if (!state.repository.materialId) return;
+    const requestId = state.repository.requestId;
     const data = await apiFetch(`/api/materials/${state.repository.materialId}/repository`, { silent: true });
+    if (requestId !== state.repository.requestId) return;
     state.repository.detail = data.repository;
     renderRepositoryModal();
 }
 
 async function openRepositoryModal(materialId) {
+    const requestId = ++state.repository.requestId;
     const data = await apiFetch(`/api/materials/${materialId}/repository`, { silent: true });
+    if (requestId !== state.repository.requestId) return;
     state.repository.materialId = materialId;
     state.repository.detail = data.repository;
     state.repository.pendingAction = null;
@@ -5348,6 +5378,7 @@ async function openRepositoryModal(materialId) {
     state.repository.lastOutput = '暂无输出';
     state.repository.lastSyncSummary = '等待执行';
     state.repository.autoBindBusy = false;
+    state.repository.busy = false;
     state.repository.autoBindCandidates = [];
     state.repository.autoBindResult = null;
     renderRepositoryModal();
@@ -5368,24 +5399,36 @@ function openRepositoryCredentialModal() {
     openModal('materials-repository-credential-modal');
 }
 
-async function refreshRepositoryAffectedViews() {
+async function refreshRepositoryAffectedViews(materialId = state.repository.materialId, { isCurrent = () => true } = {}) {
     const currentParentId = state.currentParentId;
-    const activeMaterialId = state.activeMaterialId;
-    try {
-        await loadLibrary(currentParentId, false);
-    } catch {
-        await loadLibrary(null, false);
-    }
-
-    if (activeMaterialId) {
-        try {
-            await loadMaterialDetail(activeMaterialId);
-        } catch {
-            state.activeMaterialId = null;
-            state.activeDetail = null;
-            renderList();
-            renderDetail(null);
+    const parentPath = findTreePath(currentParentId).map((node) => Number(node.id)).reverse();
+    const workspaceRoot = state.materialWorkspace.root;
+    const isRepositoryWorkspace = () => findTreePath(state.activeMaterialId)
+        .some((node) => Number(node.id) === Number(materialId));
+    // The directory tree is a separate snapshot from the library and detail.
+    // Refresh it even when Git reports "Already up to date" so missed files recover.
+    if (workspaceRoot && isRepositoryWorkspace()) {
+        const tree = await loadMaterialTree(materialId, {
+            isCurrent: () => isCurrent() && state.materialWorkspace.root === workspaceRoot && isRepositoryWorkspace(),
+            restoreSelection: true,
+        });
+        if (!tree || !isCurrent()) return;
+        const selectedId = state.activeMaterialId;
+        if (selectedId) {
+            await loadMaterialDetail(selectedId, {
+                isCurrent: () => isCurrent() && state.materialWorkspace.root === tree,
+            });
         }
+    }
+    const canRefreshLibrary = () => isCurrent() && state.currentParentId === currentParentId;
+    if (!canRefreshLibrary()) return;
+    try {
+        await loadLibrary(currentParentId, false, { isCurrent: canRefreshLibrary });
+    } catch (error) {
+        if (!canRefreshLibrary()) return;
+        if (error.status !== 404) throw error;
+        const fallbackId = parentPath.find((id) => findTreeNode(id)) || null;
+        await loadLibrary(fallbackId, false, { isCurrent: canRefreshLibrary });
     }
 }
 
@@ -5396,6 +5439,9 @@ async function executeRepositoryAction(action, command = '') {
         refs.repositoryCommandInput.focus();
         return;
     }
+    const materialId = state.repository.materialId;
+    const requestId = ++state.repository.requestId;
+    const isCurrent = () => requestId === state.repository.requestId && materialId === state.repository.materialId;
 
     const busyText = action === 'update'
         ? '更新中'
@@ -5403,11 +5449,12 @@ async function executeRepositoryAction(action, command = '') {
     setRepositoryBusy(true, busyText);
 
     try {
-        const result = await apiFetch(`/api/materials/${state.repository.materialId}/repository/command`, {
+        const result = await apiFetch(`/api/materials/${materialId}/repository/command`, {
             method: 'POST',
             body: { action, command },
             silent: true,
         });
+        if (!isCurrent()) return;
 
         state.repository.detail = result.repository || state.repository.detail;
         state.repository.autoBindResult = null;
@@ -5423,7 +5470,8 @@ async function executeRepositoryAction(action, command = '') {
         state.repository.lastSyncSummary = formatRepositorySyncSummary(result.sync_summary);
         renderRepositoryModal();
 
-        await refreshRepositoryAffectedViews();
+        await refreshRepositoryAffectedViews(materialId, { isCurrent });
+        if (!isCurrent()) return;
 
         if (result.status === 'auth_required') {
             state.repository.pendingAction = { action, command };
@@ -5444,12 +5492,13 @@ async function executeRepositoryAction(action, command = '') {
             renderRepositoryAutoBindPanel();
         }
     } catch (error) {
+        if (!isCurrent()) return;
         state.repository.lastStatus = '执行失败';
         state.repository.lastOutput = error.message || '暂无输出';
         renderRepositoryModal();
         showToast(error.message || '仓库操作失败', 'error');
     } finally {
-        setRepositoryBusy(false, state.repository.lastStatus);
+        if (isCurrent()) setRepositoryBusy(false, state.repository.lastStatus);
     }
 }
 
