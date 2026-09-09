@@ -19,6 +19,7 @@ import { onHide, onLoad, onPullDownRefresh, onShow, onUnload } from "@dcloudio/u
 import { computed, reactive, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { useAuthStore } from "../../stores/auth";
 
 interface PollOption {
@@ -136,6 +137,7 @@ async function loadAll(silent = false): Promise<void> {
   if (!offeringId.value) return;
   if (!silent) loading.value = true;
   try {
+    if (!(await ensurePageSession())) return;
     const [pollData, liveData] = await Promise.all([
       request<{ snapshot: Record<string, unknown> }>({
         path: `/api/polls/classrooms/${offeringId.value}/snapshot`,
@@ -155,7 +157,7 @@ async function loadAll(silent = false): Promise<void> {
     interaction.value = liveData.snapshot;
   } catch (error: unknown) {
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
       return;
     }
     if (!silent) uni.showToast({ title: errorMessage(error, "加载失败"), icon: "none" });

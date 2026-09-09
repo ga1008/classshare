@@ -34,7 +34,7 @@ import hashlib
 import json
 from typing import Any, Optional
 
-from ..db.connection import execute_insert_returning_id
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from ..db.schema_study_group_scheme import ensure_study_group_scheme_schema
 from .grading_revision_service import activate_submission_grade_revision
 
@@ -76,6 +76,55 @@ def clamp_peer_points(value: Any) -> int:
     if points is None:
         return DEFAULT_PEER_POINTS
     return max(PEER_POINTS_MIN, min(PEER_POINTS_MAX, points))
+
+
+def _lock_group_grading(conn, assignment_id: Any, group_id: int) -> None:
+    if get_configured_db_engine() == "postgres":
+        conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (
+            f"group-grading:{_normalize_assignment_id(assignment_id)}:{int(group_id)}",
+        ))
+
+
+def lock_group_grading_for_student(conn, assignment_id: Any, student_pk_id: int) -> None:
+    lock_group_grading_for_students(conn, assignment_id, [student_pk_id])
+
+
+def lock_group_grading_for_students(conn, assignment_id: Any, student_pk_ids: list[int]) -> None:
+    """Acquire before submission/result row locks in grading and replacement.
+
+    Current and historical result groups are locked in numeric order. Different
+    groups remain concurrent; moving between groups cannot invert lock order.
+    SQLite callers serialize their writes through the existing transaction.
+    """
+    if get_configured_db_engine() != "postgres":
+        return
+    assignment_id = _normalize_assignment_id(assignment_id)
+    student_ids = sorted({int(value) for value in student_pk_ids})
+    if not student_ids:
+        return
+    placeholders = ",".join("?" for _ in student_ids)
+    rows = conn.execute(
+        f"""SELECT g.id AS group_id FROM assignment_group_bindings b
+           JOIN study_groups g ON g.scheme_id = b.scheme_id
+           JOIN study_group_members m ON m.group_id = g.id
+           WHERE b.assignment_id = ? AND b.status = 'active'
+             AND m.student_id IN ({placeholders}) AND m.status = 'active'
+           UNION SELECT group_id FROM group_assignment_member_results
+           WHERE assignment_id = ? AND student_pk_id IN ({placeholders})""",
+        (assignment_id, *student_ids, assignment_id, *student_ids),
+    ).fetchall()
+    for group_id in sorted({int(row["group_id"]) for row in rows if row["group_id"] is not None}):
+        _lock_group_grading(conn, assignment_id, group_id)
+
+
+def lock_group_grading_for_submission(conn, submission_id: int) -> None:
+    if get_configured_db_engine() != "postgres":
+        return
+    submission = conn.execute(
+        "SELECT assignment_id, student_pk_id FROM submissions WHERE id = ?", (int(submission_id),),
+    ).fetchone()
+    if submission:
+        lock_group_grading_for_student(conn, submission["assignment_id"], int(submission["student_pk_id"]))
 
 
 # =============================================================================
@@ -320,6 +369,7 @@ def ensure_default_peer_contributions(
     not yet rated (e.g. they submitted then closed the page). Never overwrites
     a real rating. Returns the number of defaults written."""
     assignment_id = _normalize_assignment_id(assignment_id)
+    _lock_group_grading(conn, assignment_id, int(group_id))
     members = _active_group_members(conn, int(group_id))
     if not members:
         return 0
@@ -366,6 +416,7 @@ def submit_peer_contributions(
     assignment. Validates group membership server-side. Any teammate omitted
     from ``ratings`` is filled with the fair default."""
     assignment_id = _normalize_assignment_id(assignment_id)
+    lock_group_grading_for_student(conn, assignment_id, int(reviewer_id))
     context = get_student_group_context(conn, assignment_id, int(reviewer_id))
     if not context or not context.get("in_group"):
         raise ValueError("当前作业未分组，或你尚未加入小组")
@@ -418,6 +469,38 @@ def _load_member_result(conn, assignment_id: str, student_pk_id: int) -> Optiona
         (assignment_id, int(student_pk_id)),
     ).fetchone()
     return dict(row) if row else None
+
+
+def invalidate_member_work_score(conn, *, assignment_id: Any, student_pk_id: int) -> list[int]:
+    """Reopen the settled group when one member replaces their actual answer.
+
+    Preserve peer reviews and the other members' raw work scores for the next
+    finalization. A previous group's final result must not grade the new answer.
+    Caller must commit this with the replacement submission.
+    """
+    assignment_id = _normalize_assignment_id(assignment_id)
+    lock_group_grading_for_student(conn, assignment_id, int(student_pk_id))
+    result = _load_member_result(conn, assignment_id, int(student_pk_id))
+    if not result:
+        return []
+    group_id = int(result["group_id"])
+    now = _now_iso()
+    conn.execute(
+        """UPDATE group_assignment_member_results
+           SET work_score = NULL, final_score = NULL, finalized_at = NULL, revealed = 0, updated_at = ?
+           WHERE assignment_id = ? AND student_pk_id = ?""",
+        (now, assignment_id, int(student_pk_id)),
+    )
+    conn.execute(
+        """UPDATE group_assignment_member_results
+           SET revealed = 0, finalized_at = NULL, updated_at = ?
+           WHERE assignment_id = ? AND group_id = ?""",
+        (now, assignment_id, group_id),
+    )
+    return [int(row["student_pk_id"]) for row in conn.execute(
+        "SELECT student_pk_id FROM group_assignment_member_results WHERE assignment_id = ? AND group_id = ?",
+        (assignment_id, group_id),
+    ).fetchall()]
 
 
 def _upsert_member_result(
@@ -493,6 +576,7 @@ def record_member_work_score(conn, submission_id: int) -> dict[str, Any]:
     """Called after a submission is graded. If the submission belongs to a
     group assignment, persist its *raw* work score into the member-result
     ledger and attempt to finalize the group. Safe no-op for non-group work."""
+    lock_group_grading_for_submission(conn, submission_id)
     submission = conn.execute(
         "SELECT s.id, s.assignment_id, s.student_pk_id, s.status, s.score, s.is_absence_score, "
         "r.provenance_json FROM submissions s LEFT JOIN submission_grade_revisions r "
@@ -606,6 +690,7 @@ def try_finalize_group(conn, *, assignment_id: Any, group_id: int) -> dict[str, 
     scores, so re-grading a member and re-running this safely updates everyone.
     """
     assignment_id = _normalize_assignment_id(assignment_id)
+    _lock_group_grading(conn, assignment_id, int(group_id))
     binding = get_assignment_group_binding(conn, assignment_id)
     if not binding:
         return {"handled": False}

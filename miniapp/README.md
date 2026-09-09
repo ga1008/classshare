@@ -6,7 +6,7 @@
 ## 技术栈与硬约束
 
 - uni-app（Vue3 + Vite + TS）+ **pinia@2**（v3 与 uni 别名不兼容，禁止升级）。
-- 构建：`npm run build:mp-weixin` → `dist/build/mp-weixin`；类型检查：`npm run type-check`（提交前必须过）。
+- 本地验证：在 `miniapp` 运行 `npm test`、`npm run type-check`、`npm run build:mp-weixin`；构建输出 `dist/build/mp-weixin`。测试复用仓库根目录锁定的 Vitest，需先安装根目录及 `miniapp` 的现有依赖。
 - 预览/上传：`npm run mp:preview` / `npm run mp:upload -- <ver> "<desc>"`（miniprogram-ci，密钥 `private.<appid>.key` 在仓库根，已 gitignore）。
 - 开发 API 地址在 `src/config.ts`（局域网 IP，换网络要更新）；生产走 `https://guardianangel.net.cn`。
 
@@ -21,9 +21,19 @@
 ## 页面模板约定
 
 - 数据加载：`onShow` 里刷新 + `enablePullDownRefresh` 下拉刷新（`onPullDownRefresh` 里 finally `uni.stopPullDownRefresh()`）。
-- 401 → `uni.reLaunch({ url: "/pages/welcome/index" })`。
-- 角色化 tab：页面 `onShow` 调 `utils/tabs.ts` 的 `applyRoleTabs(role)`（幂等）；登出调 `resetRoleTabs()`。
+- 受保护页面在加载数据或选择角色 API **之前** `await ensurePageSession(requiredRole?)`（`utils/session.ts`）。冷启动会话初始化只发起一次；无需各页重复实现静默登录。
+- 401 由 `api.ts` / `preview.ts` 统一清认证状态并合并登录跳转；需要主动回登录页时用 `redirectToLogin()`，登录或绑定成功用 `finishSessionLogin()` 恢复经过白名单和角色校验的原目标。旧账号在途响应不得应用到新账号页面。
+- 角色化 tab 由登录守卫及 tab 页 `onShow` 调 `utils/tabs.ts` 的 `applyRoleTabs(role)`；非 tab 页不得调用平台 tab 更新，失败可在进入 tab 页后重试；登出调 `resetRoleTabs()`。
 - 跳转作答页统一 `/pages/task-detail/index?id=<assignment_id>`。
+
+## 阶段 1 的状态与写入契约
+
+- 同一平台账号保留多微信绑定能力；“退出登录”解除**当前微信**的绑定及其会话，其他微信不受影响。网络失败时不显示解绑成功；过期会话先重新验证微信身份再解绑。
+- 草稿按 API 环境、角色、用户、任务和重交轮次隔离；不恢复旧的无账号草稿。作答状态、重交窗口和计时以服务端投影为准。
+- 提交和草稿携带 `expected_submission_version`；评分携带 `expected_review_revision`。409 必须提示刷新核对并保留尚未保存的输入，不得自动重放写请求。
+- 评分输入是“原始评分（迟交扣分前）”；最终分仅用于展示，空输入不得转换成 0。切换答卷、加载中和保存中均应防止误写其他答卷。
+- 学生上传、草稿保存、提交串行执行；超时后先核对服务端提交状态。后端共用提交锁保护首次提交、退回重交及迟到的草稿请求。
+- 本轮实现、自动化命令和待真机清单见 [阶段 1 实施记录](../docs/miniprogram/PHASE1-IMPLEMENTATION-2026-09-08.md)。本地测试通过与真机验收、发布分别登记。
 
 ## UI 设计语言（磨砂玻璃）
 

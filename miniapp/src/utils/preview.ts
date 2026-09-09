@@ -4,7 +4,7 @@
  * 服务器鉴权不降级——没有裸链接，一切经 Authorization 头。
  */
 import { API_BASE } from "../config";
-import { getStoredToken } from "./api";
+import { ApiError, getStoredToken, handleUnauthorized } from "./api";
 
 const DOC_EXTENSIONS = ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt"];
 
@@ -34,6 +34,11 @@ function downloadAuthed(path: string): Promise<string> {
       header,
       timeout: 60000,
       success: (res) => {
+        if (token !== getStoredToken()) {
+          reject(new ApiError("账号已切换，请重新打开附件。", 409));
+          return;
+        }
+        if (res.statusCode === 401) handleUnauthorized(token);
         if (res.statusCode === 200 && res.tempFilePath) {
           resolve(res.tempFilePath);
         } else {

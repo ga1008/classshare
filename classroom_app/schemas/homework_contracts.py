@@ -64,6 +64,7 @@ class CourseAssignmentStatsResponse(ApiSuccessResponse):
 
 class AssignmentDraftResponse(ApiFlexibleRecord):
     exists: bool
+    submission_version: str | None = None
     answers_json: str = ""
     current_page: int = 0
     client_updated_at: str = ""

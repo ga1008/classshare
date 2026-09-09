@@ -209,13 +209,32 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
     response_model_exclude_unset=True,
 )
 async def return_submission(submission_id: int, user: dict = Depends(get_current_teacher)):
+    retired_paths: list[tuple[Path, Path]] = []
     with get_db_connection() as conn:
         submission = _get_submission_for_teacher(conn, submission_id, int(user["id"]))
-        conn.execute("DELETE FROM submissions WHERE id = ?", (submission_id,))
-        conn.commit()
-    delete_storage_tree(
-        _build_submission_storage_dir(submission['course_id'], submission['assignment_id'], submission['student_pk_id'])
-    )
+        try:
+            begin_immediate_transaction(conn)
+            lock_submission_writer(conn, submission["assignment_id"], int(submission["student_pk_id"]))
+            current = _get_submission_for_teacher(conn, submission_id, int(user["id"]))
+            verify_submission_write(current, submission, actor_role="teacher")
+            from ...services.grading_revision_service import retire_submission_grade_for_replacement
+            from ...services.group_assignment_service import invalidate_member_work_score
+
+            retire_submission_grade_for_replacement(conn, current)
+            invalidate_member_work_score(
+                conn, assignment_id=current["assignment_id"], student_pk_id=int(current["student_pk_id"]),
+            )
+            conn.execute("DELETE FROM submissions WHERE id = ?", (submission_id,))
+            retired_paths = _quarantine_submission_paths([str(_build_submission_storage_dir(
+                current["course_id"], current["assignment_id"], current["student_pk_id"],
+            ))])
+            conn.execute("SELECT 1")
+            conn.commit()
+        except Exception:
+            _restore_quarantined_submission_paths(retired_paths)
+            conn.rollback()
+            raise
+    _discard_quarantined_submission_paths(retired_paths)
     return {"status": "success", "deleted_submission_id": submission_id}
 
 
@@ -296,7 +315,9 @@ async def add_submission_files(
         with get_db_connection() as conn:
             try:
                 begin_immediate_transaction(conn)
+                lock_submission_writer(conn, submission["assignment_id"], int(submission["student_pk_id"]))
                 current_submission = _get_submission_for_teacher(conn, int(submission_id), int(user["id"]))
+                verify_submission_write(current_submission, submission, actor_role="teacher")
                 _ensure_submission_files_manageable(current_submission)
                 current_files = [
                     dict(row)
@@ -355,8 +376,13 @@ async def add_submission_files(
                         ),
                     )
                 _reset_submission_after_attachment_edit(conn, int(submission_id), int(user["id"]))
+                conn.execute("SELECT 1")
                 conn.commit()
             except Exception:
+                # Remove only our new files before rollback releases the task
+                # lock and another writer can reuse these shared paths.
+                _discard_quarantined_submission_paths([(path, path) for path in moved_paths])
+                moved_paths.clear()
                 conn.rollback()
                 raise
     except Exception:
@@ -394,7 +420,7 @@ async def add_submission_files(
 @router.delete("/submission-files/{file_id}", response_class=JSONResponse)
 async def delete_submission_file(file_id: int, user: dict = Depends(get_current_teacher)):
     """教师删除单个学生提交附件；已批改记录必须先撤回。"""
-    physical_path: Path | None = None
+    retired_paths: list[tuple[Path, Path]] = []
     with get_db_connection() as conn:
         file_row = conn.execute(
             """
@@ -410,24 +436,30 @@ async def delete_submission_file(file_id: int, user: dict = Depends(get_current_
         file_dict = dict(file_row)
         submission = _get_submission_for_teacher(conn, int(file_dict["submission_id"]), int(user["id"]))
         _ensure_submission_files_manageable(submission)
-        resolved = resolve_submission_file_path(str(file_dict.get("stored_path") or ""))
-        if resolved:
-            physical_path = Path(resolved)
-
-        answers_json = submission.get("answers_json")
-        cleaned_answers_json = None
-        if answers_json:
-            try:
-                answers_payload = json.loads(answers_json) if isinstance(answers_json, str) else answers_json
-                cleaned_payload = remove_answer_attachment_references(answers_payload, file_dict)
-                cleaned_answers_json = json.dumps(cleaned_payload, ensure_ascii=False)
-            except (TypeError, json.JSONDecodeError):
-                cleaned_answers_json = None
-
         try:
             begin_immediate_transaction(conn)
+            lock_submission_writer(conn, submission["assignment_id"], int(submission["student_pk_id"]))
             current_submission = _get_submission_for_teacher(conn, int(file_dict["submission_id"]), int(user["id"]))
+            verify_submission_write(current_submission, submission, actor_role="teacher")
             _ensure_submission_files_manageable(current_submission)
+            current_file = conn.execute(
+                "SELECT * FROM submission_files WHERE id = ? AND submission_id = ?",
+                (int(file_id), int(file_dict["submission_id"])),
+            ).fetchone()
+            if not current_file:
+                raise HTTPException(404, "附件不存在")
+            file_dict = dict(current_file)
+            # Clean the answer reread under the lock; a preceding attachment
+            # deletion must not be overwritten with the old answer snapshot.
+            answers_json = current_submission.get("answers_json")
+            cleaned_answers_json = None
+            if answers_json:
+                try:
+                    answers_payload = json.loads(answers_json) if isinstance(answers_json, str) else answers_json
+                    cleaned_payload = remove_answer_attachment_references(answers_payload, file_dict)
+                    cleaned_answers_json = json.dumps(cleaned_payload, ensure_ascii=False)
+                except (TypeError, json.JSONDecodeError):
+                    pass
             conn.execute("DELETE FROM submission_files WHERE id = ?", (int(file_id),))
             if cleaned_answers_json is not None:
                 conn.execute(
@@ -435,16 +467,16 @@ async def delete_submission_file(file_id: int, user: dict = Depends(get_current_
                     (cleaned_answers_json, int(file_dict["submission_id"])),
                 )
             _reset_submission_after_attachment_edit(conn, int(file_dict["submission_id"]), int(user["id"]))
+            stored_path = str(file_dict.get("stored_path") or "")
+            if stored_path:
+                retired_paths = _quarantine_submission_paths([stored_path])
+            conn.execute("SELECT 1")
             conn.commit()
         except Exception:
+            _restore_quarantined_submission_paths(retired_paths)
             conn.rollback()
             raise
-
-    if physical_path and physical_path.exists() and physical_path.is_file():
-        try:
-            physical_path.unlink()
-        except Exception as exc:
-            print(f"[SUBMISSION_FILES] failed to delete physical file {physical_path}: {exc}")
+    _discard_quarantined_submission_paths(retired_paths)
 
     return {
         "status": "success",
@@ -459,6 +491,7 @@ async def submit_assignment(assignment_id: str,
                             manifest: str = Form(""),
                             started_at: str = Form(""),
                             use_server_draft: bool = Form(False),
+                            expected_submission_version: str = Form(""),
                             files: List[UploadFile] = File(default=[]),
                             user: dict = Depends(get_current_student)):
     """
@@ -508,6 +541,7 @@ async def submit_assignment(assignment_id: str,
             existing_submission=existing_submission,
             notify_teacher=personal_stage_target is None,
             use_server_draft_files=_form_bool(use_server_draft),
+            expected_submission_version=(expected_submission_version if isinstance(expected_submission_version, str) else ""),
         )
         try:
             stage_attempt = mark_stage_submission_saved(conn, result["submission_id"])
@@ -590,7 +624,9 @@ async def teacher_withdraw_submissions(
 
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
+        conn.commit()
         assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
+        conn.commit()
 
         where_parts = ["assignment_id = ?"]
         params: list[Any] = [assignment_id]
@@ -610,7 +646,7 @@ async def teacher_withdraw_submissions(
             dict(row)
             for row in conn.execute(
                 f"""
-                SELECT id, student_pk_id, status
+                SELECT *
                 FROM submissions
                 WHERE {' AND '.join(where_parts)}
                 """,
@@ -624,7 +660,21 @@ async def teacher_withdraw_submissions(
                 "resubmission_due_at": resubmission_due_at,
             }
 
-        now_iso = datetime.now().replace(microsecond=0).isoformat()
+        begin_immediate_transaction(conn)
+        from ...services.grading_revision_service import retire_submission_grade_for_replacement
+        from ...services.group_assignment_service import invalidate_member_work_score, lock_group_grading_for_students
+
+        # Lock every affected group in one stable order before taking any
+        # member's row, including when a batch spans multiple groups.
+        lock_group_grading_for_students(conn, assignment_id, [int(row["student_pk_id"]) for row in targets])
+        for target in sorted(targets, key=lambda row: int(row["student_pk_id"])):
+            lock_submission_writer(conn, assignment_id, int(target["student_pk_id"]))
+            current = conn.execute("SELECT * FROM submissions WHERE id = ?", (int(target["id"]),)).fetchone()
+            verify_submission_write(current, target, actor_role="teacher")
+            retire_submission_grade_for_replacement(conn, dict(current))
+            invalidate_member_work_score(conn, assignment_id=assignment_id, student_pk_id=int(target["student_pk_id"]))
+
+        now_iso = datetime.now().isoformat()
         reason = str(data.get("reason") or "").strip() or None
         target_ids = [int(row["id"]) for row in targets]
         placeholders = ",".join("?" for _ in target_ids)
@@ -636,6 +686,12 @@ async def teacher_withdraw_submissions(
                 feedback_md = NULL,
                 grading_started_at = NULL,
                 grading_attempt_fingerprint = NULL,
+                grading_revision_hash = NULL,
+                grading_job_id = NULL,
+                active_grade_revision_id = NULL,
+                score_before_late_penalty = NULL,
+                late_penalty_points = 0,
+                late_score_cap_applied = 0,
                 resubmission_allowed = 1,
                 resubmission_due_at = ?,
                 returned_at = ?,
@@ -646,6 +702,7 @@ async def teacher_withdraw_submissions(
             """,
             (resubmission_due_at, now_iso, int(user["id"]), reason, assignment_id, *target_ids),
         )
+        conn.execute("SELECT 1")
         conn.commit()
 
     if assignment.get("class_offering_id"):
@@ -759,9 +816,12 @@ async def teacher_offline_submit_assignment(
 @router.delete("/assignments/{assignment_id}/withdraw", response_class=JSONResponse)
 async def withdraw_submission(assignment_id: str, user: dict = Depends(get_current_student)):
     """学生撤回已提交的作业（仅限未批改的提交）"""
+    retired_paths: list[tuple[Path, Path]] = []
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
         conn.commit()
+        begin_immediate_transaction(conn)
+        lock_submission_writer(conn, assignment_id, int(user["id"]))
         submission = conn.execute(
             """
             SELECT s.*, a.course_id, a.class_offering_id, a.title,
@@ -803,12 +863,26 @@ async def withdraw_submission(assignment_id: str, user: dict = Depends(get_curre
         if submission['status'] in {'grading', 'grading_review'}:
             raise HTTPException(400, "正在批改中的作业无法撤回")
 
-        conn.execute("DELETE FROM submission_files WHERE submission_id = ?", (submission['id'],))
-        conn.execute("DELETE FROM submissions WHERE id = ?", (submission['id'],))
-        conn.commit()
+        try:
+            from ...services.grading_revision_service import retire_submission_grade_for_replacement
+            from ...services.group_assignment_service import invalidate_member_work_score
+
+            retire_submission_grade_for_replacement(conn, submission)
+            invalidate_member_work_score(conn, assignment_id=assignment_id, student_pk_id=int(user["id"]))
+            conn.execute("DELETE FROM submission_files WHERE submission_id = ?", (submission['id'],))
+            conn.execute("DELETE FROM submissions WHERE id = ?", (submission['id'],))
+            retired_paths = _quarantine_submission_paths([str(_build_submission_storage_dir(
+                submission["course_id"], assignment_id, int(user["id"]),
+            ))])
+            conn.execute("SELECT 1")
+            conn.commit()
+        except Exception:
+            _restore_quarantined_submission_paths(retired_paths)
+            conn.rollback()
+            raise
 
     user_dict = dict(user)  # 转换
-    delete_storage_tree(_build_submission_storage_dir(submission['course_id'], assignment_id, user_dict.get('id')))
+    _discard_quarantined_submission_paths(retired_paths)
     if submission["class_offering_id"]:
         try:
             record_behavior_event(

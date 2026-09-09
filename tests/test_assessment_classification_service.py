@@ -122,6 +122,22 @@ class AssessmentClassificationServiceTests(unittest.TestCase):
                                                expected_version=version, teacher_id=7)
         self.assertEqual(0, self.conn.execute("SELECT COUNT(*) FROM assignment_classification_revisions").fetchone()[0])
 
+    def test_classification_after_waiting_for_merge_uses_current_offering_in_audit(self):
+        ensure_assessment_classification_schema(self.conn)
+        original = self.conn
+
+        class MergeBeforeUpdate:
+            def execute(self, sql, params=()):
+                if "UPDATE assignments SET assessment_kind =" in sql:
+                    # Models a merge committing while CAS waited for the row.
+                    original.execute("UPDATE assignments SET class_offering_id=200 WHERE id=1")
+                return original.execute(sql, params)
+
+        set_assignment_assessment_kind(MergeBeforeUpdate(), {"id": 1},
+            assessment_kind="final", expected_version=0, teacher_id=7)
+        revision = self.conn.execute("SELECT class_offering_id, assessment_kind FROM assignment_classification_revisions").fetchone()
+        self.assertEqual(tuple(revision), (200, "final"))
+
     def test_postgres_schema_covers_same_nullable_categories_and_audit(self):
         from classroom_app.db.postgres_schema import POSTGRES_RUNTIME_COLUMN_DEFINITIONS, POSTGRES_RUNTIME_TABLE_DEFINITIONS, REQUIRED_POSTGRES_COLUMNS
         definitions = POSTGRES_RUNTIME_COLUMN_DEFINITIONS["assignments"]

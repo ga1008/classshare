@@ -28,6 +28,7 @@ from ...config import (
 )
 from ...database import get_db_connection
 from ...db.connection import begin_immediate_transaction, execute_insert_returning_id
+from ...services.submission_write_guard import lock_submission_writer, verify_submission_write, draft_matches_submission_round
 from ...dependencies import get_current_user, get_current_student, get_current_teacher
 from ...schemas.homework_contracts import (
     AssignmentDraftResponse,
@@ -615,7 +616,7 @@ def _parse_json_list(raw_value: str, *, field_name: str) -> list[Any]:
     return parsed
 
 
-def _load_submission_draft(conn, assignment_id: str, student_pk_id: int) -> dict[str, Any] | None:
+def _load_submission_draft(conn, assignment_id: str, student_pk_id: int, *, include_stale: bool = False) -> dict[str, Any] | None:
     row = conn.execute(
         """
         SELECT *
@@ -625,7 +626,14 @@ def _load_submission_draft(conn, assignment_id: str, student_pk_id: int) -> dict
         """,
         (assignment_id, int(student_pk_id)),
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    if not include_stale:
+        submission = conn.execute("SELECT returned_at, resubmission_allowed FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
+                                  (assignment_id, int(student_pk_id))).fetchone()
+        if not draft_matches_submission_round(row, submission):
+            return None
+    return dict(row)
 
 
 def _ensure_submission_draft(
@@ -639,8 +647,17 @@ def _ensure_submission_draft(
 ) -> dict[str, Any]:
     now = datetime.now().isoformat()
     current_page = max(0, int(current_page or 0))
-    existing = _load_submission_draft(conn, assignment_id, student_pk_id)
+    existing = _load_submission_draft(conn, assignment_id, student_pk_id, include_stale=True)
     if existing:
+        retired_file_paths: list[str] = []
+        submission = conn.execute("SELECT returned_at, resubmission_allowed FROM submissions WHERE assignment_id = ? AND student_pk_id = ?",
+                                  (assignment_id, int(student_pk_id))).fetchone()
+        if not draft_matches_submission_round(existing, submission):
+            # Caller detaches old files under the same task lock before commit.
+            retired_file_paths = [str(row["stored_path"]) for row in conn.execute(
+                "SELECT stored_path FROM submission_draft_files WHERE draft_id = ?", (int(existing["id"]),),
+            ).fetchall() if row["stored_path"]]
+            conn.execute("DELETE FROM submission_draft_files WHERE draft_id = ?", (int(existing["id"]),))
         conn.execute(
             """
             UPDATE submission_drafts
@@ -661,6 +678,7 @@ def _ensure_submission_draft(
             "client_updated_at": client_updated_at,
             "server_updated_at": now,
             "server_version": int(existing.get("server_version") or 0) + 1,
+            "retired_file_paths": retired_file_paths,
         }
 
     draft_id = insert_and_get_id(
@@ -778,18 +796,44 @@ def _delete_draft_file_rows_for_questions(
     return [str(row["stored_path"] or "") for row in rows if str(row["stored_path"] or "").strip()]
 
 
-def _delete_old_draft_physical_files(old_file_paths: list[str], *, keep_paths: set[str] | None = None) -> None:
-    keep_paths = keep_paths or set()
-    for old_path in old_file_paths:
-        if str(old_path) in keep_paths:
-            continue
-        physical_path = resolve_submission_file_path(old_path) or Path(old_path)
+def _quarantine_submission_paths(paths: list[str], *, keep_paths: set[str] | None = None) -> list[tuple[Path, Path]]:
+    """Detach shared paths while the task lock is held; delete only private names after commit."""
+    kept = {str(Path(path).resolve()).casefold() for path in (keep_paths or set())}
+    moved: list[tuple[Path, Path]] = []
+    seen: set[str] = set()
+    try:
+        for raw in paths:
+            original = Path(resolve_submission_file_path(raw) or raw)
+            key = str(original.resolve()).casefold()
+            if key in kept or key in seen or not original.exists():
+                continue
+            seen.add(key)
+            retired = original.with_name(f"{original.name}.__retired__{uuid.uuid4().hex}")
+            original.rename(retired)
+            moved.append((original, retired))
+        return moved
+    except Exception:
+        _restore_quarantined_submission_paths(moved)
+        raise
+
+
+def _restore_quarantined_submission_paths(moved: list[tuple[Path, Path]]) -> None:
+    # Must run before rollback releases the task lock.
+    for original, retired in reversed(moved):
+        if retired.exists():
+            original.parent.mkdir(parents=True, exist_ok=True)
+            retired.rename(original)
+
+
+def _discard_quarantined_submission_paths(moved: list[tuple[Path, Path]]) -> None:
+    for _, retired in moved:
         try:
-            physical_path = Path(physical_path)
-            if physical_path.exists() and physical_path.is_file():
-                physical_path.unlink()
+            if retired.is_dir():
+                delete_storage_tree(retired)
+            elif retired.exists():
+                retired.unlink()
         except Exception as exc:
-            print(f"[SUBMISSION_DRAFT] failed to delete old draft file {old_path}: {exc}")
+            print(f"[SUBMISSION_DRAFT] deferred cleanup failed {retired}: {exc}")
 
 
 def _save_assignment_draft_without_files_sync(
@@ -800,8 +844,10 @@ def _save_assignment_draft_without_files_sync(
     current_page: int,
     client_updated_at: str,
     replace_question_ids: str,
+    expected_submission_version: str = "",
 ) -> dict[str, Any]:
     old_file_paths: list[str] = []
+    retired_paths: list[tuple[Path, Path]] = []
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
         conn.commit()
@@ -809,7 +855,7 @@ def _save_assignment_draft_without_files_sync(
         if not assignment:
             raise HTTPException(404, "Assignment not found")
         assignment = enrich_assignment_runtime_view(assignment)
-        _ensure_student_can_save_assignment_draft(
+        draft_submission = _ensure_student_can_save_assignment_draft(
             conn,
             assignment=assignment,
             student_id=int(student_pk_id),
@@ -823,6 +869,10 @@ def _save_assignment_draft_without_files_sync(
 
         try:
             begin_immediate_transaction(conn)
+            lock_submission_writer(conn, assignment_id, int(student_pk_id))
+            current_submission = _ensure_student_can_save_assignment_draft(conn, assignment=assignment, student_id=int(student_pk_id))
+            verify_submission_write(current_submission, draft_submission, actor_role="student",
+                                    client_version=expected_submission_version)
             draft = _ensure_submission_draft(
                 conn,
                 assignment_id=assignment_id,
@@ -831,20 +881,22 @@ def _save_assignment_draft_without_files_sync(
                 current_page=current_page,
                 client_updated_at=client_updated_at,
             )
-            old_file_paths = _delete_draft_file_rows_for_questions(
+            old_file_paths = list(draft.get("retired_file_paths") or []) + _delete_draft_file_rows_for_questions(
                 conn,
                 draft_id=int(draft["id"]),
                 question_ids=replace_ids,
             )
+            retired_paths = _quarantine_submission_paths(old_file_paths)
             conn.commit()
         except Exception:
+            _restore_quarantined_submission_paths(retired_paths)
             conn.rollback()
             raise
 
+        _discard_quarantined_submission_paths(retired_paths)
         draft = _load_submission_draft(conn, assignment_id, int(student_pk_id))
         payload = _serialize_submission_draft(conn, draft, assignment_id)
 
-    _delete_old_draft_physical_files(old_file_paths)
     payload.update(
         {
             "status": "success",
@@ -1028,6 +1080,16 @@ def _ensure_submission_files_manageable(submission: dict[str, Any]) -> None:
 
 
 def _reset_submission_after_attachment_edit(conn, submission_id: int, teacher_id: int) -> None:
+    from ...services.grading_revision_service import retire_submission_grade_for_replacement
+    from ...services.group_assignment_service import invalidate_member_work_score
+
+    submission = conn.execute("SELECT * FROM submissions WHERE id = ?", (int(submission_id),)).fetchone()
+    if not submission:
+        raise HTTPException(404, "提交记录不存在")
+    retire_submission_grade_for_replacement(conn, dict(submission))
+    invalidate_member_work_score(
+        conn, assignment_id=submission["assignment_id"], student_pk_id=int(submission["student_pk_id"]),
+    )
     conn.execute(
         """
         UPDATE submissions
@@ -1036,6 +1098,12 @@ def _reset_submission_after_attachment_edit(conn, submission_id: int, teacher_id
             feedback_md = NULL,
             grading_started_at = NULL,
             grading_attempt_fingerprint = NULL,
+            grading_revision_hash = NULL,
+            grading_job_id = NULL,
+            active_grade_revision_id = NULL,
+            score_before_late_penalty = NULL,
+            late_penalty_points = 0,
+            late_score_cap_applied = 0,
             resubmission_allowed = 0,
             resubmission_due_at = NULL,
             returned_at = NULL,
@@ -1259,6 +1327,7 @@ async def _save_submission_payload(
     existing_submission: dict[str, Any] | None = None,
     notify_teacher: bool = False,
     use_server_draft_files: bool = False,
+    expected_submission_version: str = "",
 ) -> dict[str, Any]:
     prepared_entries = _validate_upload_entries(files, manifest)
     submitted_at = datetime.now().isoformat()
@@ -1320,6 +1389,7 @@ async def _save_submission_payload(
     backup_dir = None
     staging_moved_to_final = False
     is_replacement = bool(existing_submission)
+    retired_draft_paths: list[tuple[Path, Path]] = []
 
     try:
         storage_result = await store_submission_files(
@@ -1349,6 +1419,17 @@ async def _save_submission_payload(
                 raise HTTPException(400, f"没有符合要求的文件可提交，允许类型: {expected_types}")
         for file_info in storage_result.stored_files:
             file_info.stored_path = str(_build_submission_file_path(submission_dir, file_info.relative_path))
+        # No await after acquiring the lock: file upload staging is complete.
+        # Draft snapshots, permission recheck and final file switch share the
+        # same short transaction as draft writers on this student/task.
+        begin_immediate_transaction(conn)
+        lock_submission_writer(conn, assignment["id"], student_pk_id)
+        current_submission = conn.execute(
+            "SELECT * FROM submissions WHERE assignment_id = ? AND student_pk_id = ? LIMIT 1",
+            (assignment["id"], student_pk_id),
+        ).fetchone()
+        verify_submission_write(current_submission, existing_submission, actor_role=actor_role,
+                                client_version=expected_submission_version)
         if use_server_draft_files:
             existing_paths = {file_info.relative_path.lower() for file_info in storage_result.stored_files}
             draft_files, draft_dropped_files = _copy_submission_draft_files_to_staging(
@@ -1376,6 +1457,7 @@ async def _save_submission_payload(
                 )
         _validate_combined_stored_file_limits(storage_result.stored_files)
     except Exception:
+        conn.rollback()
         delete_storage_tree(staging_dir)
         raise
 
@@ -1386,10 +1468,12 @@ async def _save_submission_payload(
             attachment_policies,
         )
     except Exception:
+        conn.rollback()
         delete_storage_tree(staging_dir)
         raise
     has_answer_content = answers_have_content(answers_payload)
     if not has_answer_content and not storage_result.stored_files:
+        conn.rollback()
         expected_types = summarize_allowed_file_types(allowed_file_types)
         delete_storage_tree(staging_dir)
         raise HTTPException(400, f"没有符合要求的作答内容可提交，允许文件类型: {expected_types}")
@@ -1410,14 +1494,7 @@ async def _save_submission_payload(
     full_submission_json = json.dumps(full_submission, ensure_ascii=False)
 
     try:
-        begin_immediate_transaction(conn)
         cursor = conn
-        current_submission = cursor.execute(
-            "SELECT id FROM submissions WHERE assignment_id = ? AND student_pk_id = ? LIMIT 1",
-            (assignment["id"], student_pk_id),
-        ).fetchone()
-        if not existing_submission and current_submission:
-            raise sqlite3.IntegrityError("duplicate submission")
         if submission_dir.exists():
             backup_dir = submission_dir.with_name(f"{submission_dir.name}.__backup__{uuid.uuid4().hex}")
             submission_dir.rename(backup_dir)
@@ -1426,6 +1503,11 @@ async def _save_submission_payload(
             staging_moved_to_final = True
         if existing_submission:
             submission_id = int(existing_submission["id"])
+            from ...services.grading_revision_service import retire_submission_grade_for_replacement
+            from ...services.group_assignment_service import invalidate_member_work_score
+
+            retire_submission_grade_for_replacement(conn, dict(current_submission))
+            invalidate_member_work_score(conn, assignment_id=assignment["id"], student_pk_id=student_pk_id)
             cursor.execute("DELETE FROM submission_files WHERE submission_id = ?", (submission_id,))
             cursor.execute(
                 """
@@ -1436,6 +1518,9 @@ async def _save_submission_payload(
                     feedback_md = NULL,
                     grading_started_at = NULL,
                     grading_attempt_fingerprint = NULL,
+                    grading_revision_hash = NULL,
+                    grading_job_id = NULL,
+                    active_grade_revision_id = NULL,
                     answers_json = ?,
                     submitted_at = ?,
                     started_at = ?,
@@ -1530,6 +1615,9 @@ async def _save_submission_payload(
                 "DELETE FROM submission_drafts WHERE assignment_id = ? AND student_pk_id = ?",
                 (assignment["id"], student_pk_id),
             )
+            retired_draft_paths = _quarantine_submission_paths([
+                str(_build_submission_draft_storage_dir(assignment["course_id"], assignment["id"], student_pk_id)),
+            ])
         if assignment.get("class_offering_id"):
             try:
                 refresh_student_learning_state(
@@ -1540,40 +1628,46 @@ async def _save_submission_payload(
                 )
             except Exception as exc:
                 print(f"[LEARNING_PROGRESS] submission snapshot refresh failed: {exc}")
+        # A best-effort hook may have caught a SQL error. PostgreSQL would turn
+        # COMMIT in an aborted transaction into ROLLBACK without raising.
+        conn.execute("SELECT 1")
         conn.commit()
-        if backup_dir:
-            delete_storage_tree(backup_dir)
-        if use_server_draft_files:
-            delete_storage_tree(_build_submission_draft_storage_dir(assignment["course_id"], assignment["id"], student_pk_id))
     except sqlite3.IntegrityError:
-        conn.rollback()
         _restore_submission_dir(
             submission_dir,
             backup_dir,
             remove_current=staging_moved_to_final or backup_dir is not None,
         )
+        _restore_quarantined_submission_paths(retired_draft_paths)
+        conn.rollback()
         delete_storage_tree(staging_dir)
         raise HTTPException(400, "该学生已经提交过此作业")
     except HTTPException:
-        conn.rollback()
         _restore_submission_dir(
             submission_dir,
             backup_dir,
             remove_current=staging_moved_to_final or backup_dir is not None,
         )
+        _restore_quarantined_submission_paths(retired_draft_paths)
+        conn.rollback()
         delete_storage_tree(staging_dir)
         raise
     except Exception as e:
-        conn.rollback()
         _restore_submission_dir(
             submission_dir,
             backup_dir,
             remove_current=staging_moved_to_final or backup_dir is not None,
         )
+        _restore_quarantined_submission_paths(retired_draft_paths)
+        conn.rollback()
         delete_storage_tree(staging_dir)
         print(f"[ERROR] Submission failed: {e}")
         raise HTTPException(500, f"数据库错误: {e}")
 
+    # Successful commit must never enter a rollback path because cleanup failed.
+    _discard_quarantined_submission_paths(retired_draft_paths)
+    if backup_dir:
+        _discard_quarantined_submission_paths([(submission_dir, backup_dir)])
     return {
         "submission_id": int(submission_id),
         "stored_file_count": len(storage_result.stored_files),

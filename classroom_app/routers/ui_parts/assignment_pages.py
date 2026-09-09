@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 from .common import *
 from ...services.assessment_classification_service import enrich_assessment_classifications
 from ...services.score_projection_service import load_submission_score_facts
+from ...services.submission_write_guard import submission_write_version
 
 
 router = APIRouter()
@@ -199,6 +200,7 @@ def assignment_detail_page(request: Request, assignment_id: str, user: dict = De
         "assignment_back_url": assignment_back_url,
         "submission": submission, "submission_files": submission_files,
         "absence_grade": absence_grade,
+        "submission_version": submission_write_version(submission or absence_grade),
         "can_withdraw_submission": can_withdraw_submission,
         "can_resubmit_submission": can_resubmit_submission,
         "submission_returned": submission_returned,

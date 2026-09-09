@@ -1694,6 +1694,7 @@
 
     // Global configurations injected by Jinja2
     const ASSIGNMENT_ID = "{{ assignment.id }}";
+    const SUBMISSION_VERSION = {{ submission_version | tojson }};
     const EXAM_STARTED_AT = new Date().toISOString();
     const PAPER_TITLE = {{ paper.title | tojson }};
     const USER_ROLE = "{{ user_info.role }}";
@@ -1767,6 +1768,7 @@
     let serverDraftInFlight = null;
     let serverDraftWriteChain = Promise.resolve();
     let serverDraftLoadDone = false;
+    let serverDraftConflict = false;
     let lastServerDraftSignature = '';
     let lastLocalSavedAt = '';
 
@@ -2054,6 +2056,11 @@
         try {
             const draft = await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/draft`, { method: 'GET', silent: true });
             serverDraftLoadDone = true;
+            if (draft?.submission_version && draft.submission_version !== SUBMISSION_VERSION) {
+                serverDraftConflict = true;
+                setSaveStatus('error', '提交轮次已变化，本页作答仍保留；请刷新后核对。');
+                return;
+            }
             if (!draft?.exists) {
                 if (lastLocalSavedAt) scheduleServerDraftSave(SERVER_DRAFT_RESTORE_SYNC_DELAY_MS);
                 return;
@@ -2132,6 +2139,7 @@
     }
 
     function scheduleServerDraftSave(delay = SERVER_DRAFT_TEXT_SAVE_DELAY_MS) {
+        if (serverDraftConflict) return;
         if (SUBMISSION_EXISTS && !isEditingResubmission) return;
         if (!serverDraftLoadDone && !lastLocalSavedAt) return;
         clearTimeout(serverDraftSaveTimer);
@@ -2150,6 +2158,11 @@
 
     async function performServerDraftSave({ uploadItems = [], replaceQuestionIds = [] } = {}) {
         if (SUBMISSION_EXISTS && !isEditingResubmission) return null;
+        if (serverDraftConflict) {
+            const error = new Error('提交轮次已变化，本页作答仍保留；请刷新后核对。');
+            error.status = 409;
+            throw error;
+        }
         const normalizedUploadItems = Array.isArray(uploadItems) ? uploadItems : [];
         const normalizedReplaceQuestionIds = Array.isArray(replaceQuestionIds) ? replaceQuestionIds : [];
         const formData = new FormData();
@@ -2199,6 +2212,7 @@
             };
         }
         formData.append('answers_json', JSON.stringify({ answers: answersList }));
+        formData.append('expected_submission_version', SUBMISSION_VERSION);
         formData.append('current_page', String(state.currentPageIdx || 0));
         formData.append('client_updated_at', lastLocalSavedAt || new Date().toISOString());
         formData.append('replace_question_ids', JSON.stringify(normalizedReplaceQuestionIds));
@@ -2221,8 +2235,10 @@
             return resp;
         } catch (error) {
             const message = getApiFailureMessage(error, '服务器保存失败，本地草稿仍在。请按提示调整后重新保存。');
+            if (error?.status === 409) serverDraftConflict = true;
             setSaveStatus('error', escapeStatusText(message));
-            throw new Error(message);
+            error.message = message;
+            throw error;
         } finally {
             serverDraftInFlight = null;
         }
@@ -3455,6 +3471,7 @@
                 }
             } catch (draftError) {
                 console.warn('Final draft sync failed before submit:', draftError);
+                if (draftError?.status === 409) throw draftError;
                 const hasServerDraftFiles = Object.values(state.serverQuestionFiles || {}).some((files) => Array.isArray(files) && files.length > 0);
                 if (hasServerDraftFiles) {
                     const message = getApiFailureMessage(
@@ -3513,6 +3530,7 @@
             formData.append('answers_json', JSON.stringify({ answers: answersList }));
             formData.append('started_at', EXAM_STARTED_AT);
             formData.append('use_server_draft', useServerDraftFiles ? '1' : '0');
+            formData.append('expected_submission_version', SUBMISSION_VERSION);
 
             const resp = await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/submit`, {
                 method: 'POST',

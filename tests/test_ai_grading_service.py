@@ -358,6 +358,10 @@ class _FakeCallbackConnection:
             )
         if normalized.startswith("UPDATE submissions"):
             return _FakeCursor(rowcount=self.update_count)
+        if normalized.startswith("SELECT * FROM assignments"):
+            return _FakeCursor(row={"id": "assignment-1"})
+        if normalized == "SELECT 1":
+            return _FakeCursor(row={"ok": 1})
         raise AssertionError(f"Unexpected SQL: {normalized}")
 
     def commit(self):
@@ -397,6 +401,50 @@ class AIGradingCallbackTests(unittest.IsolatedAsyncioTestCase):
                 activate.assert_not_called()
                 student_notice.assert_not_called()
                 notify.assert_called_once()
+
+    async def test_group_result_failure_does_not_acknowledge_ai_grade(self):
+        conn = _FakeCallbackConnection(update_count=1)
+        request = _FakeRequest({
+            "submission_id": 7, "submission_fingerprint": "token-current",
+            "status": "graded", "score": 80, "feedback_md": "ok",
+        })
+        with patch.object(ai_router, "get_db_connection", return_value=conn), \
+             patch.object(ai_router, "lock_group_grading_for_submission") as group_lock, \
+             patch.object(ai_router, "normalize_grading_result", return_value={"score": 80, "feedback_md": "ok"}), \
+             patch.object(ai_router, "apply_late_policy_to_score", return_value={"final_score": 80}), \
+             patch.object(ai_router, "_activate_submission_grade_revision"), \
+             patch.object(ai_router, "_notify_teacher_if_ai_review_required"), \
+             patch.object(ai_router, "create_student_grading_notification"), \
+             patch.object(ai_router, "handle_stage_exam_grading_complete"), \
+             patch.object(ai_router, "handle_assignment_stage_grading_complete"), \
+             patch("classroom_app.services.group_assignment_service.record_member_work_score", side_effect=RuntimeError("group transaction failed")):
+            with self.assertRaises(ai_router.HTTPException) as caught:
+                await ai_router.handle_ai_grading_callback(request)
+        self.assertEqual(caught.exception.status_code, 500)
+        self.assertEqual(conn.commits, 0)
+        group_lock.assert_called_once_with(conn, 7)
+
+    async def test_aborted_observer_transaction_is_not_acknowledged_as_saved(self):
+        conn = _FakeCallbackConnection(previous={"score": 81, "feedback_md": "old"}, update_count=1)
+        execute = conn.execute
+
+        def fail_aborted_transaction(sql, params=()):
+            if sql == "SELECT 1":
+                raise RuntimeError("current transaction is aborted")
+            return execute(sql, params)
+
+        request = _FakeRequest({
+            "submission_id": 7, "submission_fingerprint": "token-current",
+            "status": "grading_failed", "score": None, "feedback_md": "retry failed",
+        })
+        with patch.object(ai_router, "get_db_connection", return_value=conn), \
+             patch.object(ai_router, "lock_group_grading_for_submission"), \
+             patch.object(ai_router, "create_teacher_grading_issue_notification"), \
+             patch.object(conn, "execute", side_effect=fail_aborted_transaction):
+            with self.assertRaises(ai_router.HTTPException) as caught:
+                await ai_router.handle_ai_grading_callback(request)
+        self.assertEqual(caught.exception.status_code, 500)
+        self.assertEqual(conn.commits, 0)
 
     def test_grade_revision_activation_is_append_only_and_switches_active_pointer(self):
         reset_ai_job_schema_guard_for_tests()

@@ -9,11 +9,12 @@
  * - 展示时长 = 2800ms + 字数×80ms，clamp 3–8s。
  */
 import { computed, ref } from "vue";
-import { onLoad } from "@dcloudio/uni-app";
+import { onLoad, onUnload } from "@dcloudio/uni-app";
 
 import { TIP_SEEN_LIMIT, TIP_SEEN_STORAGE_KEY } from "../../config";
 import { request } from "../../utils/api";
 import { useAuthStore, type LifeTip } from "../../stores/auth";
+import { enterLoginPage, finishSessionLogin } from "../../utils/session";
 
 type Phase = "loading" | "tip" | "error";
 type Tone = "dark" | "light";
@@ -41,6 +42,7 @@ const identityLabel = computed(() => {
 });
 
 let exitTimer: ReturnType<typeof setTimeout> | null = null;
+let pageActive = true;
 
 function readSeenIds(): number[] {
   try {
@@ -103,7 +105,7 @@ function beginExit(): void {
   leaving.value = true;
   if (exitTimer) clearTimeout(exitTimer);
   setTimeout(() => {
-    uni.reLaunch({ url: "/pages/home/index" });
+    if (pageActive) finishSessionLogin();
   }, 420);
 }
 
@@ -128,7 +130,7 @@ async function sendFeedback(verdict: 1 | -1): Promise<void> {
 async function showTipScreen(): Promise<void> {
   const chosen = pickTip(auth.loginTips);
   if (!chosen) {
-    uni.reLaunch({ url: "/pages/home/index" });
+    finishSessionLogin();
     return;
   }
   tip.value = chosen;
@@ -147,7 +149,8 @@ async function boot(): Promise<void> {
   phase.value = "loading";
   errorMessage.value = "";
   try {
-    const result = await auth.silentLogin();
+    const result = await auth.ensureSession();
+    if (!pageActive) return;
     if (result === "need_bind") {
       uni.redirectTo({ url: "/pages/bind/index" });
       return;
@@ -160,8 +163,10 @@ async function boot(): Promise<void> {
 }
 
 onLoad(() => {
+  enterLoginPage();
   void boot();
 });
+onUnload(() => { pageActive = false; if (exitTimer) clearTimeout(exitTimer); });
 </script>
 
 <template>

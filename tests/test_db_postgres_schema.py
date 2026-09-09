@@ -339,6 +339,9 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "schema_career_path.py",
             "schema_lesson_plans.py",
             "schema_life_tips.py",
+            # Both database startup paths call ensure_signature_workflow_schema,
+            # which ensures these additive batch/snapshot/export tables.
+            "schema_material_signatures.py",
             "schema_material_whiteboards.py",
             "schema_offering_class_links.py",
             "schema_offering_merge.py",

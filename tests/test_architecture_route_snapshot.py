@@ -29,14 +29,14 @@ def _current_route_snapshot() -> list[dict]:
 
 
 class ArchitectureRouteSnapshotTests(unittest.TestCase):
-    def test_fastapi_route_contract_matches_p02_baseline(self):
+    def test_fastapi_route_contract_matches_reviewed_baseline(self):
         expected = json.loads(ROUTE_SNAPSHOT_PATH.read_text(encoding="utf-8"))
         actual = _current_route_snapshot()
 
         self.assertEqual(
             expected,
             actual,
-            "P02 refactors must not change FastAPI path/method/name/include_in_schema.",
+            "Route changes require review of path/method/name/include_in_schema and a baseline update.",
         )
 
 

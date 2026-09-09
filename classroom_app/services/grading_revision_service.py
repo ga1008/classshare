@@ -8,6 +8,27 @@ from typing import Any
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 
 
+def retire_submission_grade_for_replacement(conn, submission: dict[str, Any]) -> None:
+    """A new answer must not inherit the previous answer's grade or AI callback.
+
+    The caller owns the submission write transaction; history remains available
+    in the revision ledger, while active pointers are cleared by its replacement.
+    """
+    now = datetime.now().isoformat(timespec="seconds")
+    if submission.get("grading_job_id"):
+        conn.execute(
+            """UPDATE ai_jobs SET status = 'superseded', lease_token = '', lease_expires_at = NULL,
+                   locked_at = NULL, locked_by = '', updated_at = ?, finished_at = ?
+               WHERE id = ? AND status IN ('queued', 'retry_wait', 'running', 'result_ready')""",
+            (now, now, int(submission["grading_job_id"])),
+        )
+    conn.execute(
+        """UPDATE submission_grade_revisions SET status = 'superseded', superseded_at = ?
+           WHERE submission_id = ? AND status = 'active'""",
+        (now, int(submission["id"])),
+    )
+
+
 def activate_submission_grade_revision(
     conn,
     *,

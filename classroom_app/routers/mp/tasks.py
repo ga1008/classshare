@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -28,6 +29,7 @@ from ...services.group_assignment_service import (
 from ...services.learning_progress_service import student_can_access_assignment
 from ...services.score_projection_service import load_submission_score_facts
 from ...services.assessment_classification_service import enrich_assessment_classifications, assessment_kind_info
+from ...services.submission_write_guard import submission_write_version
 from .deps import get_current_mp_student
 
 router = APIRouter(prefix="/tasks")
@@ -104,7 +106,19 @@ def load_student_task_buckets(conn: Any, student_id: int) -> dict[str, list[dict
             "can_export_answer": bool(fact.get("can_export_answer")),
             **assessment_kind_info(item),
         }
-        if submitted:
+        resubmission = submission_resubmission_state(fact)
+        if submitted and resubmission == "open":
+            task["is_accepting"] = True
+            task["status_label"] = "已退回，待重交"
+            task["due_at"] = fact.get("resubmission_due_at") or ""
+            task["no_deadline"] = False
+            task["remaining_seconds"] = _submission_action_state(runtime, fact, now=datetime.now())["answer_remaining_seconds"]
+            buckets["pending"].append(task)
+        elif submitted and resubmission in {"expired", "invalid"}:
+            task["is_accepting"] = False
+            task["status_label"] = "重交已截止" if resubmission == "expired" else "重交时间待教师确认"
+            buckets["expired"].append(task)
+        elif submitted:
             task["status_label"] = _SUB_STATUS_LABELS.get(sub_status, sub_status or "已提交")
             if fact.get("grade_display_state") == "group_pending":
                 task["status_label"] = "等待小组成绩揭晓"
@@ -141,7 +155,7 @@ def _parse_submission_answers(raw: Any) -> list[dict[str, Any]]:
     return answers if isinstance(answers, list) else []
 
 
-def _serialize_my_submission(conn: Any, submission: Optional[dict]) -> Optional[dict[str, Any]]:
+def _serialize_my_submission(conn: Any, submission: Optional[dict], *, now: Optional[datetime] = None) -> Optional[dict[str, Any]]:
     if not submission:
         return None
     is_absence = bool(submission.get("is_absence_score"))
@@ -173,8 +187,35 @@ def _serialize_my_submission(conn: Any, submission: Optional[dict]) -> Optional[
         "answers": [] if is_absence else _parse_submission_answers(submission.get("answers_json")),
         "files": files,
         "is_returned": submission_is_returned(submission),
-        "resubmission_state": submission_resubmission_state(submission),
+        "resubmission_state": submission_resubmission_state(submission, now_dt=now),
         "resubmission_due_at": submission.get("resubmission_due_at"),
+        "returned_at": submission.get("returned_at"),
+        "returned_reason": submission.get("returned_reason") or "",
+        "version": submission_write_version(submission),
+    }
+
+
+def _submission_action_state(assignment: dict, submission: Optional[dict], *, now: datetime) -> dict:
+    """Match the existing submit/draft permission precedence, including absence zeros."""
+    returned = bool(submission and not submission.get("is_absence_score") and submission_is_returned(submission))
+    state = submission_resubmission_state(submission, now_dt=now) if returned else "none"
+    can_submit = state == "open" if returned else (
+        (not submission or bool(submission.get("is_absence_score"))) and bool(assignment.get("is_accepting_submissions"))
+    )
+    remaining = assignment.get("remaining_seconds")
+    if returned:
+        remaining = 0
+        if state == "open":
+            due = datetime.fromisoformat(str(submission["resubmission_due_at"]).replace("Z", "+00:00"))
+            if due.tzinfo is not None:
+                due = due.astimezone().replace(tzinfo=None)
+            remaining = max(0, int((due - now).total_seconds()))
+    return {
+        "can_submit": bool(can_submit),
+        "submission_version": submission_write_version(submission),
+        "draft_revision": f"returned:{submission.get('returned_at') or ''}:{submission.get('resubmission_due_at') or ''}" if returned else "initial",
+        "answer_remaining_seconds": remaining,
+        "server_now_ms": int(now.timestamp() * 1000),
     }
 
 
@@ -193,7 +234,8 @@ def mp_task_detail(assignment_id: str, user: dict = Depends(get_current_mp_stude
         ).fetchone()
         if not row:
             raise HTTPException(404, "作业不存在")
-        assignment = refresh_assignment_runtime_status(conn, row)
+        now = datetime.now()
+        assignment = refresh_assignment_runtime_status(conn, row, now_dt=now)
         if not student_can_access_assignment(conn, assignment_id, int(user["id"])):
             raise HTTPException(403, "该任务只对指定学生开放")
         if assignment.get("status") == "new":
@@ -227,7 +269,7 @@ def mp_task_detail(assignment_id: str, user: dict = Depends(get_current_mp_stude
         assignment = enrich_assessment_classifications(conn, [assignment])[0]
 
         group_payload = _build_group_payload(conn, assignment_id, int(user["id"]))
-        submission_payload = _serialize_my_submission(conn, submission)
+        submission_payload = _serialize_my_submission(conn, submission, now=now)
         conn.commit()
 
     course_row_fields = {
@@ -244,6 +286,7 @@ def mp_task_detail(assignment_id: str, user: dict = Depends(get_current_mp_stude
         "is_accepting_submissions": bool(assignment.get("is_accepting_submissions")),
         "is_late_submission_open": bool(assignment.get("is_late_submission_open")),
         "late_policy_label": assignment.get("late_policy_label") or "",
+        **_submission_action_state(assignment, submission, now=now),
         **assessment_kind_info(assignment),
     }
     return {

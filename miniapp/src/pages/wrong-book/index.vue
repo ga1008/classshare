@@ -7,6 +7,7 @@ import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { computed, reactive, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
 
 interface WrongItem {
   assignment_id: number;
@@ -59,6 +60,7 @@ function masteryColor(percent: number): string {
 }
 
 async function load(): Promise<void> {
+  if (!(await ensurePageSession("student"))) return;
   loading.value = true;
   failed.value = false;
   try {
@@ -67,7 +69,7 @@ async function load(): Promise<void> {
   } catch (error: unknown) {
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
     }
   } finally {
     loading.value = false;

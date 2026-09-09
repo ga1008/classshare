@@ -9,6 +9,7 @@ from classroom_app.db.schema_grade_publications import ensure_grade_publication_
 from classroom_app.services.grade_publication_service import (
     preview_grade_publication, publish_grade_snapshot, student_published_grades,
     teacher_grade_publication_status, withdraw_grade_publication,
+    _roster,
 )
 from classroom_app.services.final_grade_transcript_service import _students_by_number
 
@@ -113,6 +114,18 @@ class GradePublicationTests(unittest.TestCase):
         self.assertTrue({"semester_mismatch", "missing_published_score", "roster_mismatch"}.issubset(codes))
         with self.assertRaises(HTTPException):
             self.publish()
+
+    def test_combined_roster_includes_linked_students_once_and_filters_inactive(self):
+        self.conn.execute("INSERT INTO class_offering_class_links VALUES (1,1), (1,2), (1,2)")
+        self.conn.execute("INSERT INTO students VALUES (104,'停用','20260004',2,'suspended'), (105,'其他','20260005',3,'active')")
+        self.assertEqual([101, 102, 103], [student["id"] for student in _roster(self.conn, 1)])
+        self.payload["structured"]["students"].append({"student_number": "20260003", "student_name": "丙", "ordinary_score": 70, "final_score": 90})
+        self.update_payload()
+        publication = self.publish()
+        self.assertEqual(publication["student_count"], 3)
+        self.assertEqual(student_published_grades(self.conn, student_id=103)[0]["overall_score"], 82)
+        self.assertEqual(student_published_grades(self.conn, student_id=104), [])
+        self.assertEqual(student_published_grades(self.conn, student_id=105), [])
 
     def test_academic_final_score_means_overall_and_is_not_recomputed(self):
         self.conn.execute("UPDATE material_ai_import_records SET document_type = 'academic_grade_register'")

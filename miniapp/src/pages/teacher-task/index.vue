@@ -12,6 +12,7 @@ import { onLoad, onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { assessmentLabel, type AssessmentClassification } from "../../utils/assessment";
 
 interface GradeEntry {
@@ -61,13 +62,14 @@ async function loadData(): Promise<void> {
   loading.value = true;
   failed.value = false;
   try {
+    if (!(await ensurePageSession("teacher"))) return;
     data.value = await request<GradingResponse>({
       path: `/api/mp/teacher/assignment/${assignmentId.value}/grading`,
     });
   } catch (error: unknown) {
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
     }
   } finally {
     loading.value = false;

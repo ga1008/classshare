@@ -9,12 +9,16 @@
  * - 草稿：本地 storage 即时存 + 服务器草稿 30s 自动保存（复用
  *   /api/assignments/{id}/draft），进入时取两者较新恢复；
  * - 截止倒计时；已提交 → 结果视图（得分/批语/我的作答）。
- * - 附件题：本批次仅文字作答 + 提示去网页端传附件（拍照上传下批实现）。
+ * - 附件随服务器草稿提交；上传、草稿同步、提交串行，未知结果先核对。
  */
-import { onHide, onLoad, onUnload } from "@dcloudio/uni-app";
+import { onHide, onLoad, onShow, onUnload } from "@dcloudio/uni-app";
 import { computed, reactive, ref } from "vue";
 
 import { request, uploadFile } from "../../utils/api";
+import { API_BASE } from "../../config";
+import { useAuthStore } from "../../stores/auth";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
+import { taskDraftKey, remainingAt, TaskWriteQueue } from "../../utils/task-submission";
 import { previewProtectedFile } from "../../utils/preview";
 import { requestSubscribe } from "../../utils/subscribe";
 import { assessmentLabel, isFormalAssessment, hasAnswerSubmission, canEnterAnswerMode, visibleTaskScore, type AssessmentClassification, type SubmissionPresence } from "../../utils/assessment";
@@ -56,6 +60,11 @@ interface DetailData {
     availability_mode_label: string;
     is_accepting_submissions: boolean;
     late_policy_label: string;
+    can_submit?: boolean;
+    submission_version: string;
+    draft_revision: string;
+    answer_remaining_seconds: number | null;
+    server_now_ms: number;
   };
   paper: { title: string; description: string; pages?: Array<{ name?: string; questions?: Question[] }> } | null;
   submission: (SubmissionPresence & {
@@ -63,6 +72,10 @@ interface DetailData {
     score: number | null;
     feedback_md: string;
     submitted_at: string;
+    version: string;
+    returned_at?: string;
+    returned_reason?: string;
+    resubmission_due_at?: string;
     answers: Array<{ question_id?: string; question?: string; answer?: string }>;
     files: Array<{
       id: number;
@@ -104,13 +117,37 @@ const plainAnswer = ref("");
 const submitting = ref(false);
 const remainingSeconds = ref<number | null>(null);
 const draftSavedAt = ref("");
+const draftStatus = ref("");
+const checkingResult = ref(false);
+const pendingSubmissionVersion = ref<string | null>(null);
+const pendingDraftCheck = ref(false);
+const selectingFiles = ref(false);
+const auth = useAuthStore();
+const writes = new TaskWriteQueue();
+let pageOwner = "";
+let hydratedKey = "";
+let detailRequest: Promise<void> | null = null;
+let countdownReceivedAt = 0;
+let countdownInitial: number | null = null;
+let serverClockOffset = 0;
+let pageVisible = false;
+let disposed = false;
+const submitConfirmed = ref(false);
+let pendingAnswerRestore = false;
+const editedQuestions = new Set<string>();
+let plainEdited = false;
 
 let draftTimer: ReturnType<typeof setInterval> | null = null;
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
 let startedAt = "";
 let lastDraftSignature = "";
 
-const localDraftKey = computed(() => `lanshareTaskDraft:${assignmentId.value}`);
+const localDraftKey = computed(() => taskDraftKey(API_BASE, auth.user, assignmentId.value,
+  detail.value?.assignment.draft_revision || ""));
+const currentOwner = () => auth.user ? `${API_BASE}:${auth.user.role}:${auth.user.id}` : "";
+const ownsPage = () => !disposed && Boolean(pageOwner) && currentOwner() === pageOwner;
+const controlsLocked = computed(() => submitting.value || checkingResult.value || pendingSubmissionVersion.value !== null);
+const canChangeAttachments = () => ownsPage() && isAnswerMode.value && !controlsLocked.value && !uploadingQid.value && !selectingFiles.value;
 
 const allQuestions = computed<Question[]>(() => {
   const pages = detail.value?.paper?.pages ?? [];
@@ -118,11 +155,11 @@ const allQuestions = computed<Question[]>(() => {
 });
 
 const isAnswerMode = computed(
-  () => Boolean(detail.value && canEnterAnswerMode(detail.value.submission, detail.value.assignment.is_accepting_submissions)),
+  () => Boolean(!submitConfirmed.value && detail.value && canEnterAnswerMode(detail.value.submission, detail.value.assignment.is_accepting_submissions, detail.value.assignment.can_submit)),
 );
 
 const answeredCount = computed(
-  () => allQuestions.value.filter((q) => (answers[q.id] || "").trim()).length,
+  () => allQuestions.value.filter((q) => (answers[q.id] || "").trim() || questionFiles[q.id]?.length).length,
 );
 
 /** 组员互评（20 分制）本地评分表 */
@@ -226,7 +263,7 @@ function checkboxSelected(q: Question, option: string): boolean {
 }
 
 function tapOption(q: Question, option: string): void {
-  if (!isAnswerMode.value) return;
+  if (!isAnswerMode.value || controlsLocked.value) return;
   if (q.type === "radio") {
     answers[q.id] = answers[q.id] === option ? "" : option;
   } else {
@@ -236,6 +273,7 @@ function tapOption(q: Question, option: string): void {
       : [...current, option];
     answers[q.id] = next.join(CHECKBOX_SEP);
   }
+  editedQuestions.add(String(q.id));
   saveLocalDraft();
 }
 
@@ -266,14 +304,22 @@ function buildAnswersJson(): string {
 // ---------- 草稿 ----------
 
 function saveLocalDraft(): void {
+  if (!ownsPage() || !localDraftKey.value || !isAnswerMode.value || submitConfirmed.value) return;
   try {
     uni.setStorageSync(localDraftKey.value, {
       answers: { ...answers },
       plain: plainAnswer.value,
-      saved_at: new Date().toISOString(),
+      saved_at: new Date(Date.now() + serverClockOffset).toISOString(),
+      pending_submission_version: pendingSubmissionVersion.value,
+      pending_draft_check: pendingDraftCheck.value,
+      started_at: startedAt,
+      pending_answer_restore: pendingAnswerRestore,
+      edited_questions: [...editedQuestions],
+      plain_edited: plainEdited,
     });
+    if (!draftSavedAt.value) draftStatus.value = "作答已保存在本机";
   } catch {
-    /* 本地草稿失败不阻断作答 */
+    draftStatus.value = "本机保存失败，请保持页面打开并同步草稿";
   }
 }
 
@@ -297,11 +343,23 @@ async function restoreDrafts(): Promise<void> {
       answers?: Record<string, string>;
       plain?: string;
       saved_at?: string;
+      pending_submission_version?: string | null;
+      pending_draft_check?: boolean;
+      started_at?: string;
+      pending_answer_restore?: boolean;
+      edited_questions?: string[];
+      plain_edited?: boolean;
     };
     if (local && typeof local === "object") {
       Object.assign(answers, local.answers || {});
       plainAnswer.value = local.plain || "";
       localSavedAt = local.saved_at || "";
+      pendingSubmissionVersion.value = local.pending_submission_version ?? null;
+      pendingDraftCheck.value = Boolean(local.pending_draft_check);
+      startedAt = local.started_at || startedAt;
+      pendingAnswerRestore = Boolean(local.pending_answer_restore);
+      for (const qid of local.edited_questions || Object.keys(local.answers || {})) editedQuestions.add(qid);
+      plainEdited = local.plain_edited ?? Boolean(local.plain);
     }
   } catch {
     /* ignore */
@@ -310,6 +368,9 @@ async function restoreDrafts(): Promise<void> {
     const draft = await request<DraftResponse>({
       path: `/api/assignments/${assignmentId.value}/draft`,
     });
+    if (!ownsPage()) return;
+    pendingDraftCheck.value = false;
+    if (pendingAnswerRestore) restoreRecoveredAnswers(draft);
     if (draft?.exists) {
       applyQuestionFiles(draft.files_by_question);
       if (draft.answers_json) {
@@ -322,8 +383,19 @@ async function restoreDrafts(): Promise<void> {
       }
     }
   } catch {
-    /* 服务器草稿失败回落本地草稿 */
+    draftStatus.value = "已恢复本机内容，服务器草稿待网络恢复后核对";
+    pendingDraftCheck.value = true;
+    pendingAnswerRestore = true;
   }
+}
+
+function restoreRecoveredAnswers(draft: DraftResponse): void {
+  if (draft.answers_json) {
+    const parsed = JSON.parse(draft.answers_json) as { answers?: Array<{ question_id?: string; question?: string; answer?: string }> };
+    const recovered = (parsed.answers || []).filter((item) => item.question_id ? !editedQuestions.has(String(item.question_id)) : !plainEdited);
+    restoreFromAnswersList(recovered);
+  }
+  pendingAnswerRestore = false;
 }
 
 function applyQuestionFiles(filesByQuestion?: Record<string, DraftFile[]>): void {
@@ -390,124 +462,152 @@ function guessMime(name: string): string {
   return map[ext] || "application/octet-stream";
 }
 
+async function verifyDraftFiles(): Promise<boolean> {
+  try {
+    const draft = await request<DraftResponse>({ path: `/api/assignments/${assignmentId.value}/draft` });
+    if (!ownsPage()) return false;
+    applyQuestionFiles(draft.files_by_question || {});
+    if (pendingAnswerRestore) restoreRecoveredAnswers(draft);
+    pendingDraftCheck.value = false;
+    saveLocalDraft();
+    return true;
+  } catch {
+    pendingDraftCheck.value = true;
+    draftStatus.value = "附件状态待核对，网络恢复后再提交";
+    saveLocalDraft();
+    return false;
+  }
+}
+
 async function uploadEntries(
   q: Question,
   entries: Array<{ path: string; size: number; name: string; kind: "image" | "file" }>,
 ): Promise<void> {
+  if (!canChangeAttachments()) return;
+  const version = detail.value!.assignment.submission_version;
   uploadingQid.value = q.id;
+  let completed = 0;
   try {
-    for (const item of entries) {
-      const relativePath = item.name;
-      const manifest = JSON.stringify([
-        {
-          relative_path: relativePath,
-          file_name: item.name,
-          question_id: q.id,
-          kind: item.kind,
-          mime_type: guessMime(item.name),
-          file_size: item.size,
-        },
-      ]);
-      const draft = await uploadFile<DraftResponse>({
-        path: `/api/assignments/${assignmentId.value}/draft`,
-        filePath: item.path,
-        formData: {
-          answers_json: buildAnswersJson(),
-          current_page: "0",
-          manifest,
-        },
-      });
-      applyQuestionFiles(draft.files_by_question);
-      const uploaded = (questionFiles[q.id] || []).find(
-        (file) => file.relative_path === relativePath,
-      );
-      if (uploaded && item.kind === "image") {
-        localPreview[uploaded.relative_path] = item.path;
+    await writes.idle();
+    if (!ownsPage() || controlsLocked.value || !isAnswerMode.value) return;
+    if (pendingDraftCheck.value && !await verifyDraftFiles()) throw new Error("请先核对上次上传结果");
+    await writes.run(async () => {
+      for (const item of entries) {
+        if (!ownsPage()) return;
+        const relativePath = detail.value?.paper ? `exam_question_files/${q.id}/${item.name}` : item.name;
+        const manifest = JSON.stringify([{
+          relative_path: relativePath, file_name: item.name, question_id: q.id,
+          kind: item.kind, mime_type: guessMime(item.name), file_size: item.size,
+        }]);
+        // Persist uncertainty before sending, so leaving the page cannot hide it.
+        pendingDraftCheck.value = true;
+        saveLocalDraft();
+        const payload = buildAnswersJson();
+        const draft = await uploadFile<DraftResponse>({
+          path: `/api/assignments/${assignmentId.value}/draft`, filePath: item.path,
+          formData: { answers_json: payload, current_page: "0", manifest,
+            expected_submission_version: version },
+        });
+        if (!ownsPage()) return;
+        applyQuestionFiles(draft.files_by_question || {});
+        pendingDraftCheck.value = false;
+        lastDraftSignature = payload;
+        completed += 1;
+        const uploaded = (questionFiles[q.id] || []).find((file) => file.relative_path === relativePath);
+        if (uploaded && item.kind === "image") localPreview[uploaded.relative_path] = item.path;
       }
-    }
+    });
+    if (!ownsPage()) return;
     draftSavedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    draftStatus.value = `已上传 ${completed} 个附件`;
     uni.showToast({ title: "附件已保存到草稿", icon: "success" });
   } catch (error: unknown) {
+    if (!ownsPage()) return;
+    const verified = await verifyDraftFiles();
+    if (verified) completed = entries.filter((entry) => (questionFiles[q.id] || []).some((file) =>
+      file.relative_path === (detail.value?.paper ? `exam_question_files/${q.id}/${entry.name}` : entry.name))).length;
     uni.showModal({
-      title: "上传失败",
-      content: error instanceof Error ? error.message : "网络异常，请重试。",
+      title: completed ? "部分附件已上传" : "上传未完成",
+      content: `已确认上传 ${completed}/${entries.length} 个。${verified ? "请核对当前附件列表，再补传缺少的文件。" : "上传结果暂时无法确认，请恢复网络后核对。"} ${error instanceof Error ? error.message : "网络异常"}`,
       showCancel: false,
     });
   } finally {
     uploadingQid.value = "";
+    if (ownsPage()) saveLocalDraft();
   }
 }
 
 async function addPhotos(q: Question): Promise<void> {
-  if (uploadingQid.value) return;
+  if (!canChangeAttachments()) return;
+  selectingFiles.value = true;
   const picked = await chooseImages(3);
-  if (!picked.length) return;
-  await uploadEntries(
-    q,
-    picked.map((item, index) => ({
-      ...item,
-      name: `mp_${q.id}_${Date.now()}_${index}.${item.path.split(".").pop() || "jpg"}`,
-      kind: "image" as const,
-    })),
-  );
+  selectingFiles.value = false;
+  if (!picked.length || !canChangeAttachments()) return;
+  await uploadEntries(q, picked.map((item, index) => ({
+    ...item, name: `mp_${q.id}_${Date.now()}_${index}.${item.path.split(".").pop() || "jpg"}`, kind: "image" as const,
+  })));
 }
 
 async function addChatFiles(q: Question): Promise<void> {
-  if (uploadingQid.value) return;
+  if (!canChangeAttachments()) return;
+  selectingFiles.value = true;
   const picked = await chooseChatFiles(3);
-  if (!picked.length) return;
-  await uploadEntries(
-    q,
-    picked.map((item) => ({ ...item, kind: "file" as const })),
-  );
+  selectingFiles.value = false;
+  if (!picked.length || !canChangeAttachments()) return;
+  await uploadEntries(q, picked.map((item) => ({ ...item, kind: "file" as const })));
 }
 
 async function clearFiles(q: Question): Promise<void> {
-  if (!(questionFiles[q.id] || []).length) return;
+  if (!canChangeAttachments() || !(questionFiles[q.id] || []).length) return;
+  const version = detail.value!.assignment.submission_version;
+  selectingFiles.value = true;
   const confirmed = await new Promise<boolean>((resolve) => {
-    uni.showModal({
-      title: "清空附件",
-      content: "删除本题已上传的全部附件？",
-      success: (res) => resolve(Boolean(res.confirm)),
-      fail: () => resolve(false),
-    });
+    uni.showModal({ title: "清空附件", content: "删除本题已上传的全部附件？",
+      success: (res) => resolve(Boolean(res.confirm)), fail: () => resolve(false) });
   });
-  if (!confirmed) return;
+  selectingFiles.value = false;
+  if (!confirmed || !canChangeAttachments()) return;
+  uploadingQid.value = q.id;
   try {
-    const draft = await request<DraftResponse>({
-      path: `/api/assignments/${assignmentId.value}/draft`,
-      method: "POST",
-      form: true,
-      data: {
-        answers_json: buildAnswersJson(),
-        current_page: 0,
-        replace_question_ids: JSON.stringify([q.id]),
-      },
-    });
-    applyQuestionFiles(draft.files_by_question);
+    await writes.idle();
+    if (!ownsPage()) return;
+    pendingDraftCheck.value = true;
+    saveLocalDraft();
+    const draft = await writes.run(() => request<DraftResponse>({
+      path: `/api/assignments/${assignmentId.value}/draft`, method: "POST", form: true,
+      data: { answers_json: buildAnswersJson(), current_page: 0, replace_question_ids: JSON.stringify([q.id]),
+        expected_submission_version: version },
+    }));
+    if (!ownsPage()) return;
+    applyQuestionFiles(draft.files_by_question || {});
+    pendingDraftCheck.value = false;
   } catch (error: unknown) {
-    uni.showToast({
-      title: error instanceof Error ? error.message : "操作失败",
-      icon: "none",
-    });
+    if (!ownsPage()) return;
+    await verifyDraftFiles();
+    uni.showToast({ title: error instanceof Error ? error.message : "操作未完成，请核对附件", icon: "none" });
+  } finally {
+    uploadingQid.value = "";
+    if (ownsPage()) saveLocalDraft();
   }
 }
 
 async function saveServerDraft(): Promise<void> {
-  if (!isAnswerMode.value) return;
+  if (!ownsPage() || !isAnswerMode.value || controlsLocked.value || uploadingQid.value || writes.busy || pendingDraftCheck.value) return;
+  const version = detail.value!.assignment.submission_version;
   const payload = buildAnswersJson();
   if (payload === lastDraftSignature) return;
   try {
-    await request({
-      path: `/api/assignments/${assignmentId.value}/draft`,
-      method: "POST",
-      form: true,
-      data: { answers_json: payload, current_page: 0 },
-    });
+    await writes.run(() => request({
+      path: `/api/assignments/${assignmentId.value}/draft`, method: "POST", form: true,
+      data: { answers_json: payload, current_page: 0,
+        expected_submission_version: version },
+    }));
+    if (!ownsPage()) return;
     lastDraftSignature = payload;
     draftSavedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    draftStatus.value = "";
   } catch {
-    /* 弱网时静默，本地草稿仍在 */
+    if (ownsPage()) draftStatus.value = "服务器同步失败，作答保留在本机";
   }
 }
 
@@ -515,18 +615,15 @@ async function saveServerDraft(): Promise<void> {
 
 function startCountdown(): void {
   if (countdownTimer) clearInterval(countdownTimer);
-  if (remainingSeconds.value === null) return;
+  if (!pageVisible || remainingSeconds.value === null || remainingSeconds.value <= 0) return;
   countdownTimer = setInterval(() => {
-    if (remainingSeconds.value === null) return;
-    remainingSeconds.value = Math.max(0, remainingSeconds.value - 1);
+    remainingSeconds.value = remainingAt(countdownInitial, countdownReceivedAt, Date.now());
     if (remainingSeconds.value === 0 && countdownTimer) {
       clearInterval(countdownTimer);
-      void saveServerDraft();
-      uni.showModal({
-        title: "时间到",
-        content: "作答时间已截止，草稿已保存。请联系教师确认是否可补交。",
-        showCancel: false,
-      });
+      countdownTimer = null;
+      saveLocalDraft();
+      // The server decides whether late submission or a personal reopen is valid.
+      draftStatus.value = "正在核对最新提交时间";
       void loadDetail();
     }
   }, 1000);
@@ -534,86 +631,166 @@ function startCountdown(): void {
 
 // ---------- 加载与提交 ----------
 
-async function loadDetail(): Promise<void> {
-  loading.value = true;
-  failed.value = false;
-  try {
-    detail.value = await request<DetailData>({
-      path: `/api/mp/tasks/assignment/${assignmentId.value}`,
-    });
-    remainingSeconds.value = detail.value.assignment.remaining_seconds;
-    if (hasAnswerSubmission(detail.value.submission) && detail.value.submission) {
-      restoreFromAnswersList(detail.value.submission.answers || []);
-      initPeerRatings();
-    } else if (detail.value.assignment.is_accepting_submissions) {
-      await restoreDrafts();
-      startCountdown();
-    }
-  } catch (error: unknown) {
-    failed.value = true;
-    errorMessage.value = error instanceof Error ? error.message : "加载失败";
-    if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
-    }
-  } finally {
-    loading.value = false;
+function clearAnswerState(): void {
+  for (const state of [answers, questionFiles, localPreview, peerRatings]) {
+    for (const key of Object.keys(state)) delete state[key];
   }
+  plainAnswer.value = "";
+  pendingSubmissionVersion.value = null;
+  pendingDraftCheck.value = false;
+  draftSavedAt.value = "";
+  draftStatus.value = "";
+  lastDraftSignature = "";
+  submitConfirmed.value = false;
+  pendingAnswerRestore = false;
+  editedQuestions.clear();
+  plainEdited = false;
+}
+
+function applyClock(data: DetailData): void {
+  countdownInitial = data.assignment.answer_remaining_seconds ?? data.assignment.remaining_seconds;
+  countdownReceivedAt = Date.now();
+  serverClockOffset = Number.isFinite(data.assignment.server_now_ms) ? data.assignment.server_now_ms - countdownReceivedAt : 0;
+  remainingSeconds.value = countdownInitial;
+  startCountdown();
+}
+
+async function loadDetail(): Promise<void> {
+  if (detailRequest) return detailRequest;
+  detailRequest = (async () => {
+    if (!await ensurePageSession("student") || disposed) return;
+    const owner = currentOwner();
+    if (pageOwner !== owner) {
+      clearAnswerState();
+      detail.value = null;
+      hydratedKey = "";
+      pageOwner = owner;
+    }
+    if (!detail.value) loading.value = true;
+    failed.value = false;
+    try {
+      const data = await request<DetailData>({ path: `/api/mp/tasks/assignment/${assignmentId.value}` });
+      if (!ownsPage()) return;
+      const previousKey = localDraftKey.value;
+      detail.value = data;
+      applyClock(data);
+      if (hydratedKey !== localDraftKey.value) {
+        clearAnswerState();
+        startedAt = new Date(Date.now() + serverClockOffset).toISOString();
+        if (hasAnswerSubmission(data.submission) && data.submission) restoreFromAnswersList(data.submission.answers || []);
+        if (isAnswerMode.value) await restoreDrafts();
+        hydratedKey = localDraftKey.value;
+      }
+      initPeerRatings();
+      if (!isAnswerMode.value && hasAnswerSubmission(data.submission) && !data.submission?.is_returned) {
+        submitConfirmed.value = true;
+        pendingSubmissionVersion.value = null;
+        try { if (previousKey) uni.removeStorageSync(previousKey); } catch { /* ignore */ }
+      }
+    } catch (error: unknown) {
+      if (!ownsPage()) return;
+      errorMessage.value = error instanceof Error ? error.message : "加载失败";
+      if (!detail.value) failed.value = true;
+      else draftStatus.value = "最新提交状态暂时无法核对，请恢复网络后重试";
+      if ((error as { statusCode?: number }).statusCode === 401) redirectToLogin();
+    } finally { loading.value = false; }
+  })();
+  try { await detailRequest; } finally { detailRequest = null; }
+}
+
+async function reconcileSubmission(): Promise<boolean> {
+  if (pendingSubmissionVersion.value === null) return true;
+  checkingResult.value = true;
+  try {
+    const data = await request<DetailData>({ path: `/api/mp/tasks/assignment/${assignmentId.value}` });
+    if (!ownsPage()) return false;
+    if (hasAnswerSubmission(data.submission) && !data.submission?.is_returned) {
+      const key = localDraftKey.value;
+      detail.value = data;
+      submitConfirmed.value = true;
+      pendingSubmissionVersion.value = null;
+      try { uni.removeStorageSync(key); } catch { /* ignore */ }
+      initPeerRatings();
+      uni.showToast({ title: "已确认提交成功", icon: "success" });
+      return false;
+    }
+    if (data.assignment.submission_version !== pendingSubmissionVersion.value) {
+      // A teacher has changed the reopen window; hydrate the new round first.
+      hydratedKey = "";
+      pendingSubmissionVersion.value = null;
+      saveLocalDraft();
+      await loadDetail();
+      uni.showToast({ title: "任务状态已变化，请核对后提交", icon: "none" });
+      return false;
+    }
+    detail.value = data;
+    applyClock(data);
+    pendingSubmissionVersion.value = null;
+    saveLocalDraft();
+    // An older request may still be running: a retry carries this same expected
+    // version and the server's transactional guard admits only one writer.
+    draftStatus.value = "服务器尚未确认提交，可核对内容后再次提交";
+    return true;
+  } catch {
+    draftStatus.value = "提交结果待确认，请恢复网络后点击核对提交结果";
+    saveLocalDraft();
+    return false;
+  } finally { checkingResult.value = false; }
 }
 
 async function submit(): Promise<void> {
-  if (submitting.value || !detail.value) return;
-  // 手势内拉订阅授权：为批改结果/下次截止提醒/催交囤一次性额度
-  requestSubscribe(["graded", "deadline", "nudge"]);
-  const hasAnyFiles = Object.values(questionFiles).some((files) => files.length > 0);
-  const hasContent = detail.value.paper
-    ? answeredCount.value > 0 || hasAnyFiles
-    : Boolean(plainAnswer.value.trim()) || hasAnyFiles;
-  if (!hasContent) {
-    uni.showToast({ title: "还没有填写任何作答内容", icon: "none" });
+  if (submitting.value || checkingResult.value || !detail.value || !ownsPage()) return;
+  if (uploadingQid.value || selectingFiles.value) {
+    uni.showToast({ title: "请等待附件上传完成", icon: "none" });
     return;
   }
-  const unanswered = detail.value.paper
-    ? allQuestions.value.length - answeredCount.value
-    : 0;
-  const confirmed = await new Promise<boolean>((resolve) => {
-    uni.showModal({
-      title: "确认提交",
-      content: unanswered > 0 ? `还有 ${unanswered} 题未作答，确定提交吗？` : "提交后将不能再修改，确定提交吗？",
-      success: (res) => resolve(Boolean(res.confirm)),
-      fail: () => resolve(false),
-    });
-  });
-  if (!confirmed) return;
-
+  if (pendingSubmissionVersion.value !== null) {
+    await reconcileSubmission();
+    return;
+  }
+  if (!isAnswerMode.value) return;
   submitting.value = true;
+  let attempted = false;
   try {
-    await request({
-      path: `/api/assignments/${assignmentId.value}/submit`,
-      method: "POST",
-      form: true,
-      data: {
-        answers_json: buildAnswersJson(),
-        started_at: startedAt,
-        use_server_draft: "true",
-      },
+    await writes.idle();
+    if (!ownsPage()) return;
+    if (pendingDraftCheck.value && !await verifyDraftFiles()) return;
+    const hasAnyFiles = Object.values(questionFiles).some((files) => files.length > 0);
+    const hasContent = detail.value.paper ? answeredCount.value > 0 || hasAnyFiles : Boolean(plainAnswer.value.trim()) || hasAnyFiles;
+    if (!hasContent) { uni.showToast({ title: "还没有填写任何作答内容", icon: "none" }); return; }
+    const unanswered = detail.value.paper ? allQuestions.value.length - answeredCount.value : 0;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      uni.showModal({ title: "确认提交", content: unanswered > 0 ? `还有 ${unanswered} 题未作答，确定提交吗？` : "提交后将不能再修改，确定提交吗？",
+        success: (res) => resolve(Boolean(res.confirm)), fail: () => resolve(false) });
     });
-    try {
-      uni.removeStorageSync(localDraftKey.value);
-    } catch {
-      /* ignore */
-    }
-    uni.showToast({ title: "提交成功", icon: "success" });
+    if (!confirmed || !ownsPage()) return;
+    requestSubscribe(["graded", "deadline", "nudge"]);
+    const version = detail.value.assignment.submission_version;
+    const key = localDraftKey.value;
+    pendingSubmissionVersion.value = version;
+    saveLocalDraft();
+    attempted = true;
+    const result = await writes.run(() => request<{ dropped_file_count?: number; dropped_file_message?: string }>({
+      path: `/api/assignments/${assignmentId.value}/submit`, method: "POST", form: true,
+      data: { answers_json: buildAnswersJson(), started_at: startedAt, use_server_draft: "true", expected_submission_version: version },
+    }));
+    if (!ownsPage()) return;
+    submitConfirmed.value = true;
+    pendingSubmissionVersion.value = null;
+    try { uni.removeStorageSync(key); } catch { /* ignore */ }
+    if (result.dropped_file_count) uni.showModal({ title: "提交附件需要核对", content: result.dropped_file_message || "部分附件未接收，请核对提交结果并联系教师。", showCancel: false });
+    else uni.showToast({ title: "提交成功", icon: "success" });
     await loadDetail();
   } catch (error: unknown) {
-    uni.showModal({
-      title: "提交失败",
-      content: error instanceof Error ? error.message : "网络异常，作答内容已在草稿中，请稍后重试。",
+    if (!ownsPage()) return;
+    // Even a server error can follow a commit; always check before a new POST.
+    if (attempted) await reconcileSubmission();
+    if (!submitConfirmed.value) uni.showModal({
+      title: pendingSubmissionVersion.value !== null ? "提交结果待确认" : "本次提交未确认",
+      content: pendingSubmissionVersion.value !== null ? "网络异常，作答已保留。恢复网络后点击核对提交结果。" : (error instanceof Error ? error.message : "请核对内容后重试。"),
       showCancel: false,
     });
-    void saveServerDraft();
-  } finally {
-    submitting.value = false;
-  }
+  } finally { submitting.value = false; }
 }
 
 function previewDraftFile(file: DraftFile): void {
@@ -634,18 +811,21 @@ function previewSubmissionFile(file: { id: number; file_name: string; mime_type:
 }
 
 function onTextInput(qid: string, event: { detail: { value: string } }): void {
+  if (!ownsPage() || controlsLocked.value) return;
   answers[qid] = event.detail.value;
+  editedQuestions.add(String(qid));
   saveLocalDraft();
 }
 
 function onPlainInput(event: { detail: { value: string } }): void {
+  if (!ownsPage() || controlsLocked.value) return;
   plainAnswer.value = event.detail.value;
+  plainEdited = true;
   saveLocalDraft();
 }
 
 onLoad((query) => {
   assignmentId.value = String((query as Record<string, string>)?.id || "");
-  startedAt = new Date().toISOString();
   if (!assignmentId.value) {
     failed.value = true;
     errorMessage.value = "缺少任务参数";
@@ -653,10 +833,20 @@ onLoad((query) => {
     return;
   }
   void loadDetail();
+});
+
+onShow(() => {
+  pageVisible = true;
+  if (!assignmentId.value) return;
+  void loadDetail();
+  if (draftTimer) clearInterval(draftTimer);
   draftTimer = setInterval(() => void saveServerDraft(), DRAFT_INTERVAL_MS);
 });
 
 onHide(() => {
+  pageVisible = false;
+  if (draftTimer) clearInterval(draftTimer);
+  if (countdownTimer) clearInterval(countdownTimer);
   saveLocalDraft();
   void saveServerDraft();
 });
@@ -665,6 +855,7 @@ onUnload(() => {
   if (draftTimer) clearInterval(draftTimer);
   if (countdownTimer) clearInterval(countdownTimer);
   saveLocalDraft();
+  disposed = true;
 });
 </script>
 
@@ -690,6 +881,14 @@ onUnload(() => {
         <text v-if="detail.assignment.requirements_md" class="head-card__req">
           {{ detail.assignment.requirements_md }}
         </text>
+      </view>
+
+      <view v-if="detail.submission?.is_returned" class="return-card glass-card">
+        <text class="section-title">{{ isAnswerMode ? "教师已退回，请修改后重新提交" : "本次重交窗口已关闭" }}</text>
+        <text v-if="detail.submission.returned_reason">退回原因：{{ detail.submission.returned_reason }}</text>
+        <text v-if="detail.submission.resubmission_due_at">重交截止：{{ detail.submission.resubmission_due_at }}</text>
+        <text v-if="detail.submission.resubmission_state === 'invalid'">重交时间尚未配置完整，请联系教师确认。</text>
+        <text v-if="detail.submission.files?.length">上次提交的附件仅供查看；本次需提交的附件请重新上传到下方作答区。</text>
       </view>
 
       <!-- 结果视图 -->
@@ -730,7 +929,7 @@ onUnload(() => {
         </view>
 
         <view v-if="detail.submission.files?.length" class="answers-review">
-          <text class="section-title">我的附件</text>
+          <text class="section-title">{{ detail.submission.is_returned ? "上次提交的附件" : "我的附件" }}</text>
           <view class="files-row files-row--padded">
             <view
               v-for="file in detail.submission.files"
@@ -745,7 +944,7 @@ onUnload(() => {
         </view>
 
         <view v-if="detail.submission.answers?.length" class="answers-review">
-          <text class="section-title">我的作答</text>
+          <text class="section-title">{{ detail.submission.is_returned ? "上次提交的作答" : "我的作答" }}</text>
           <view v-for="(item, index) in detail.submission.answers" :key="index" class="review-item">
             <text class="review-item__q">{{ index + 1 }}. {{ item.question }}</text>
             <text class="review-item__a">{{ item.answer || "（未作答）" }}</text>
@@ -782,6 +981,7 @@ onUnload(() => {
               v-else-if="q.type === 'text'"
               class="text-input"
               :value="answers[q.id] || ''"
+              :disabled="controlsLocked"
               :placeholder="q.placeholder || '请输入答案'"
               @input="onTextInput(q.id, $event as never)"
             />
@@ -790,6 +990,7 @@ onUnload(() => {
               <textarea
                 class="textarea-input"
                 :value="answers[q.id] || ''"
+                :disabled="controlsLocked"
                 :placeholder="q.placeholder || '请输入答案'"
                 :maxlength="-1"
                 auto-height
@@ -848,6 +1049,7 @@ onUnload(() => {
           <textarea
             class="textarea-input textarea-input--large"
             :value="plainAnswer"
+            :disabled="controlsLocked"
             placeholder="在这里输入你的作答内容…"
             :maxlength="-1"
             auto-height
@@ -897,20 +1099,25 @@ onUnload(() => {
         </view>
       </template>
 
+      <view v-else-if="submitConfirmed && !detail.submission" class="empty" @tap="loadDetail">
+        <text>提交已成功，点击刷新查看最新结果</text>
+      </view>
+
       <!-- 已截止且无提交 -->
       <view v-else-if="!hasAnswerSubmission(detail.submission)" class="empty">
         <text>已超过提交时间{{ detail.assignment.late_policy_label ? `（${detail.assignment.late_policy_label}）` : "" }}</text>
       </view>
 
       <!-- 底部提交条 -->
-      <view v-if="isAnswerMode" class="submit-bar">
+      <view v-if="isAnswerMode || pendingSubmissionVersion !== null" class="submit-bar">
         <view class="submit-bar__info">
           <text v-if="detail.paper" class="submit-bar__progress">
             已答 {{ answeredCount }}/{{ allQuestions.length }}
           </text>
           <text v-if="draftSavedAt" class="submit-bar__draft">草稿已存 {{ draftSavedAt }}</text>
+          <text v-if="draftStatus" class="submit-bar__draft">{{ draftStatus }}</text>
         </view>
-        <button class="submit-bar__btn glass-btn-primary" :loading="submitting" @tap="submit">提交</button>
+        <button class="submit-bar__btn glass-btn-primary" :loading="submitting || checkingResult" :disabled="submitting || checkingResult || Boolean(uploadingQid) || selectingFiles" @tap="submit">{{ pendingSubmissionVersion !== null ? "核对提交结果" : uploadingQid ? "附件上传中" : detail.submission?.is_returned ? "重新提交" : "提交" }}</button>
       </view>
     </template>
   </view>
@@ -930,6 +1137,16 @@ onUnload(() => {
   text-align: center;
   color: #94a3b8;
   font-size: 28rpx;
+}
+
+.return-card {
+  padding: 28rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  color: #925a20;
+  font-size: 26rpx;
+  background: #fff8eb;
 }
 
 .section-title {

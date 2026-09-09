@@ -9,6 +9,7 @@ import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { relativeTimeLabel } from "../../utils/format";
 import { useAuthStore } from "../../stores/auth";
 import { assessmentNotificationTarget } from "../../utils/assessment";
@@ -40,6 +41,7 @@ const visibleItems = computed(() =>
 );
 
 async function loadItems(): Promise<void> {
+  if (!(await ensurePageSession())) return;
   loading.value = true;
   failed.value = false;
   try {
@@ -50,7 +52,7 @@ async function loadItems(): Promise<void> {
   } catch (error: unknown) {
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
     }
   } finally {
     loading.value = false;

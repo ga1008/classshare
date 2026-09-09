@@ -4,13 +4,13 @@ Responsibilities:
 
 - exchange a ``wx.login()`` code for an ``openid`` via the official
   ``jscode2session`` endpoint (AppSecret stays server-side only);
-- manage ``wechat_bindings`` (openid ⇄ platform account, one-to-one);
+- manage ``wechat_bindings`` (one account per openid; several openids per account);
 - issue / resolve opaque ``mp_sessions`` bearer tokens with sliding
   expiry (30 days, refreshed on activity) — see ``schema_wechat_mp``
   for why this is separate from the IP-bound web JWT sessions;
 - short-lived signed *bind tickets* so the client never re-sends the
   single-use wx code during the first-time binding flow;
-- in-process rate limiting for binding attempts (identity probing 防护).
+- database-backed rate limiting for binding attempts (identity probing 防护).
 
 All SQL uses ``?`` placeholders through ``get_db_connection()`` facade
 (auto-adapted for postgres), per the life-tip incident convention.
@@ -19,9 +19,9 @@ All SQL uses ``?`` placeholders through ``get_db_connection()`` facade
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import secrets
-from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -30,6 +30,7 @@ from jose import JWTError, jwt
 
 from ..config import ALGORITHM, SECRET_KEY
 from ..db.schema_wechat_mp import ensure_wechat_mp_schema
+from .student_lifecycle_service import is_active_student_status
 
 MP_SESSION_TTL_DAYS = 30
 MP_SESSION_TOUCH_INTERVAL_MINUTES = 60
@@ -37,9 +38,6 @@ BIND_TICKET_EXPIRE_MINUTES = 10
 BIND_RATE_MAX_ATTEMPTS = 5
 BIND_RATE_WINDOW_MINUTES = 10
 _JSCODE2SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session"
-
-_bind_attempts: dict[str, deque] = {}
-
 
 class WechatMpError(ValueError):
     """User-facing mini-program auth error (message is safe to display)."""
@@ -114,6 +112,7 @@ def build_bind_ticket(openid: str, unionid: str = "") -> str:
         "purpose": "mp_bind_ticket",
         "openid": openid,
         "unionid": unionid or "",
+        "jti": secrets.token_urlsafe(24),
         "iat": issued_at,
         "exp": issued_at + timedelta(minutes=BIND_TICKET_EXPIRE_MINUTES),
     }
@@ -127,34 +126,87 @@ def decode_bind_ticket(ticket: str) -> Optional[dict]:
         payload = jwt.decode(ticket, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         return None
-    if payload.get("purpose") != "mp_bind_ticket" or not payload.get("openid"):
+    if (
+        payload.get("purpose") != "mp_bind_ticket"
+        or not payload.get("openid")
+        or not payload.get("jti")
+        or not payload.get("exp")
+    ):
+        return None
+    # jose checks exp at whole-second precision. Reject the exact expiry instant
+    # too, before cleanup can remove its consumed receipt and permit a replay.
+    try:
+        if float(payload["exp"]) <= datetime.now(timezone.utc).timestamp():
+            return None
+    except (TypeError, ValueError, OverflowError):
         return None
     return payload
 
 
+def consume_bind_ticket(conn: Any, ticket: str) -> Optional[dict]:
+    """Claim a verified ticket once, in the transaction that creates the binding.
+
+    ON CONFLICT avoids aborting a PostgreSQL transaction on replay. A rollback
+    releases the claim, allowing recovery when binding fails before committing.
+    Never trust a decoded payload supplied by the caller at this boundary.
+    """
+    payload = decode_bind_ticket(ticket)
+    if not payload:
+        return None
+    ensure_wechat_mp_schema(conn)
+    now = datetime.now(timezone.utc)
+    conn.execute(
+        "DELETE FROM mp_consumed_bind_tickets WHERE expires_at <= ?", (now.isoformat(),)
+    )
+    expires_at = datetime.fromtimestamp(float(payload["exp"]), timezone.utc)
+    cursor = conn.execute(
+        """
+        INSERT INTO mp_consumed_bind_tickets (ticket_id, expires_at) VALUES (?, ?)
+        ON CONFLICT (ticket_id) DO NOTHING
+        """,
+        (payload["jti"], expires_at.isoformat()),
+    )
+    return payload if cursor.rowcount == 1 else None
+
+
 # ---------------------------------------------------------------------------
-# Bind-attempt rate limiting (in-process, per openid / per IP)
+# Bind-attempt rate limiting (shared between workers, per openid / per IP)
 # ---------------------------------------------------------------------------
 
-def check_bind_rate_limit(*keys: str) -> None:
-    """Raise when any key exceeded BIND_RATE_MAX_ATTEMPTS in the window."""
+def check_bind_rate_limit(conn: Any, *keys: str) -> None:
+    """Reserve one attempt in a rolling window; caller commits before checking credentials.
+
+    Upsert locks each key before reading its window on both database engines.
+    Sort keys to avoid lock-order inversion when concurrent identities share IPs.
+    This function does not commit the caller's other work.
+    """
+    ensure_wechat_mp_schema(conn)
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(minutes=BIND_RATE_WINDOW_MINUTES)
-    for key in keys:
-        normalized = str(key or "").strip()
-        if not normalized:
-            continue
-        attempts = _bind_attempts.setdefault(normalized, deque())
-        while attempts and attempts[0] < cutoff:
-            attempts.popleft()
+    conn.execute("DELETE FROM mp_bind_rate_limits WHERE updated_at < ?", (cutoff.isoformat(),))
+    hashes = sorted({_hash_token(str(key).strip()) for key in keys if str(key or "").strip()})
+    windows = []
+    for key_hash in hashes:
+        conn.execute(
+            """
+            INSERT INTO mp_bind_rate_limits (key_hash, updated_at) VALUES (?, ?)
+            ON CONFLICT (key_hash) DO UPDATE SET updated_at = excluded.updated_at
+            """,
+            (key_hash, now.isoformat()),
+        )
+        row = conn.execute(
+            "SELECT attempt_times FROM mp_bind_rate_limits WHERE key_hash = ?", (key_hash,)
+        ).fetchone()
+        attempts = [stamp for stamp in json.loads(row["attempt_times"]) if stamp > cutoff.timestamp()]
         if len(attempts) >= BIND_RATE_MAX_ATTEMPTS:
             raise WechatMpError("绑定尝试次数过多，请 10 分钟后再试。")
-        attempts.append(now)
-
-
-def reset_bind_rate_limit() -> None:
-    """Test hook."""
-    _bind_attempts.clear()
+        windows.append((key_hash, attempts))
+    for key_hash, attempts in windows:
+        attempts.append(now.timestamp())
+        conn.execute(
+            "UPDATE mp_bind_rate_limits SET attempt_times = ? WHERE key_hash = ?",
+            (json.dumps(attempts), key_hash),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +256,12 @@ def create_binding(
     binding = find_active_binding(conn, openid)
     if not binding:
         raise WechatMpError("绑定失败，请稍后重试。")
+    # The upsert holds this openid row lock until commit. A concurrent rebind
+    # must wait, then invalidate all sessions created by the preceding bind.
+    conn.execute(
+        "UPDATE mp_sessions SET revoked = 1 WHERE openid = ? AND revoked = 0",
+        (str(openid).strip(),),
+    )
     return binding
 
 
@@ -231,6 +289,29 @@ def revoke_binding(conn: Any, *, user_role: str, user_pk: int) -> int:
         (str(user_role), int(user_pk)),
     )
     return revoked
+
+
+def revoke_openid_binding(conn: Any, *, openid: str, user_role: str, user_pk: int) -> int:
+    """Unbind only the current WeChat identity, preserving other devices/accounts."""
+    ensure_wechat_mp_schema(conn)
+    normalized_openid = str(openid or "").strip()
+    if not normalized_openid:
+        return 0
+    cursor = conn.execute(
+        """
+        UPDATE wechat_bindings SET status = 'revoked', updated_at = ?
+        WHERE openid = ? AND user_role = ? AND user_pk = ? AND status = 'active'
+        """,
+        (datetime.now().isoformat(), normalized_openid, str(user_role), int(user_pk)),
+    )
+    conn.execute(
+        """
+        UPDATE mp_sessions SET revoked = 1
+        WHERE openid = ? AND user_role = ? AND user_pk = ? AND revoked = 0
+        """,
+        (normalized_openid, str(user_role), int(user_pk)),
+    )
+    return max(cursor.rowcount or 0, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +360,15 @@ def resolve_mp_session(conn: Any, token: str) -> Optional[dict]:
     if not row:
         return None
     session = dict(row)
+    if session.get("openid"):
+        binding = find_active_binding(conn, session["openid"])
+        if (
+            not binding
+            or binding["user_role"] != session["user_role"]
+            or int(binding["user_pk"]) != int(session["user_pk"])
+        ):
+            revoke_mp_session(conn, normalized)
+            return None
     now = datetime.now(timezone.utc)
     try:
         expires_at = datetime.fromisoformat(session["expires_at"])
@@ -332,6 +422,7 @@ def load_mp_user(conn: Any, session: dict) -> Optional[dict]:
         row = conn.execute(
             """
             SELECT s.id, s.name, s.student_id_number, s.school_code, s.department,
+                   s.enrollment_status,
                    c.name AS class_name
             FROM students s
             JOIN classes c ON c.id = s.class_id
@@ -339,7 +430,7 @@ def load_mp_user(conn: Any, session: dict) -> Optional[dict]:
             """,
             (user_pk,),
         ).fetchone()
-        if not row:
+        if not row or not is_active_student_status(row["enrollment_status"]):
             return None
         return {
             "id": row["id"],

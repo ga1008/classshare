@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 from .psych_profile_service import sanitize_hidden_profile_leaks
 from .score_projection_service import load_submission_score_facts
+from .offering_membership_service import offering_student_where
 from .smart_classroom_checkin_sync_service import build_student_attendance_support_prompt
 
 
@@ -194,12 +195,7 @@ def _load_student_course_signal_rows(conn, student_id: int, *, current_class_off
                    o.course_id, o.class_id, o.teacher_id, o.semester_id,
                    o.semester, o.first_class_date, o.created_at
             FROM students stu
-            JOIN class_offerings o ON (
-                stu.class_id = o.class_id OR EXISTS (
-                    SELECT 1 FROM class_offering_class_links links
-                    WHERE links.offering_id = o.id AND links.class_id = stu.class_id
-                )
-            )
+            JOIN class_offerings o ON {offering_student_where(student_alias="stu")}
             WHERE stu.id = ?
               AND COALESCE(stu.enrollment_status, 'active') = 'active'
         ), stage_signals AS (

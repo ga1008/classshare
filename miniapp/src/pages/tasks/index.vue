@@ -7,6 +7,7 @@ import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { formatDueLabel, relativeDueLabel } from "../../utils/format";
 import { useAuthStore } from "../../stores/auth";
 import { ASSESSMENT_FILTER_OPTIONS, assessmentLabel, isFormalAssessment, matchesAssessmentKind, visibleTaskScore, type AssessmentClassification, type SubmissionPresence } from "../../utils/assessment";
@@ -74,6 +75,7 @@ async function loadTasks(): Promise<void> {
   loading.value = true;
   failed.value = false;
   try {
+    if (!(await ensurePageSession())) return;
     if (auth.isTeacher) {
       const data = await request<{ tasks: TeacherTask[] }>({ path: "/api/mp/teacher/tasks" });
       if (sequence === loadSequence) teacherTasks.value = data.tasks;
@@ -85,7 +87,7 @@ async function loadTasks(): Promise<void> {
     if (sequence !== loadSequence) return;
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
     }
   } finally {
     if (sequence === loadSequence) { loading.value = false; uni.stopPullDownRefresh(); }

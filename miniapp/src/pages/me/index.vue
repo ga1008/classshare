@@ -5,9 +5,9 @@
 import { onShow } from "@dcloudio/uni-app";
 import { computed } from "vue";
 
-import { request } from "../../utils/api";
-import { useAuthStore, type MpUser } from "../../stores/auth";
+import { useAuthStore } from "../../stores/auth";
 import { applyRoleTabs, resetRoleTabs } from "../../utils/tabs";
+import { clearSessionTarget, ensurePageSession } from "../../utils/session";
 
 const auth = useAuthStore();
 
@@ -60,16 +60,6 @@ const infoRows = computed(() => {
   ];
 });
 
-async function ensureSession(): Promise<void> {
-  if (auth.user) return;
-  try {
-    const data = await request<{ user: MpUser }>({ path: "/api/mp/auth/me" });
-    auth.user = data.user;
-  } catch {
-    uni.reLaunch({ url: "/pages/welcome/index" });
-  }
-}
-
 async function handleLogout(): Promise<void> {
   const confirmed = await new Promise<boolean>((resolve) => {
     uni.showModal({
@@ -81,13 +71,20 @@ async function handleLogout(): Promise<void> {
     });
   });
   if (!confirmed) return;
-  await auth.logout();
+  try {
+    await auth.logout();
+  } catch {
+    uni.showToast({ title: "未能解除微信绑定，请联网后重试。", icon: "none", duration: 2600 });
+    return;
+  }
   resetRoleTabs();
+  clearSessionTarget();
   uni.reLaunch({ url: "/pages/welcome/index" });
 }
 
 onShow(() => {
-  void ensureSession().then(() => {
+  void ensurePageSession().then((ready) => {
+    if (!ready) return;
     applyRoleTabs(auth.user?.role);
     if (auth.user?.role === "teacher") {
       uni.setNavigationBarTitle({ title: "工作台" });

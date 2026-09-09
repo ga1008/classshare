@@ -4,6 +4,7 @@
  * 绑定成功后回欢迎屏播放"人生一言"，之后每次进入自动登录。
  */
 import { ref } from "vue";
+import { onLoad } from "@dcloudio/uni-app";
 
 import { useAuthStore } from "../../stores/auth";
 
@@ -15,18 +16,27 @@ const teacherEmail = ref("");
 const teacherPassword = ref("");
 const submitting = ref(false);
 
+async function refreshTicket(): Promise<"success" | "need_bind" | null> {
+  try {
+    const result = await auth.silentLogin();
+    if (result === "success") uni.reLaunch({ url: "/pages/welcome/index" });
+    return result;
+  } catch (error: unknown) {
+    showError(error instanceof Error ? error.message : "无法获取绑定凭证，请联网后重试。");
+    return null;
+  }
+}
+onLoad(() => { if (!auth.bindTicket) void refreshTicket(); });
+
 function showError(message: string): void {
   uni.showToast({ title: message, icon: "none", duration: 2600 });
 }
 
 async function submit(): Promise<void> {
   if (submitting.value) return;
-  if (!auth.bindTicket) {
-    showError("绑定凭证已失效，请重新进入小程序。");
-    return;
-  }
   submitting.value = true;
   try {
+    if (!auth.bindTicket && await refreshTicket() !== "need_bind") return;
     if (role.value === "student") {
       if (!studentName.value.trim() || !studentIdNumber.value.trim()) {
         showError("请填写姓名和学号。");
@@ -43,6 +53,10 @@ async function submit(): Promise<void> {
     uni.reLaunch({ url: "/pages/welcome/index" });
   } catch (error: unknown) {
     showError(error instanceof Error ? error.message : "绑定失败，请重试。");
+    if ((error as { code?: string }).code === "mp_bind_ticket_invalid") {
+      auth.bindTicket = "";
+      if (await refreshTicket() === "need_bind") showError("绑定凭证已更新，请再次点击绑定。");
+    }
   } finally {
     submitting.value = false;
   }
@@ -60,14 +74,14 @@ async function submit(): Promise<void> {
       <view
         class="role-switch__item"
         :class="{ 'role-switch__item--active': role === 'student' }"
-        @tap="role = 'student'"
+        @tap="!submitting && (role = 'student')"
       >
         <text>我是学生</text>
       </view>
       <view
         class="role-switch__item"
         :class="{ 'role-switch__item--active': role === 'teacher' }"
-        @tap="role = 'teacher'"
+        @tap="!submitting && (role = 'teacher')"
       >
         <text>我是教师</text>
       </view>
@@ -76,7 +90,7 @@ async function submit(): Promise<void> {
     <view v-if="role === 'student'" class="form">
       <view class="field">
         <text class="field__label">姓名</text>
-        <input v-model="studentName" class="field__input" placeholder="请输入真实姓名" />
+        <input v-model="studentName" class="field__input" placeholder="请输入真实姓名" :disabled="submitting" />
       </view>
       <view class="field">
         <text class="field__label">学号</text>
@@ -85,6 +99,7 @@ async function submit(): Promise<void> {
           class="field__input"
           type="number"
           placeholder="请输入学号"
+          :disabled="submitting"
         />
       </view>
       <text class="form__hint">姓名与学号需与教师录入的名册一致</text>
@@ -93,7 +108,7 @@ async function submit(): Promise<void> {
     <view v-else class="form">
       <view class="field">
         <text class="field__label">邮箱</text>
-        <input v-model="teacherEmail" class="field__input" placeholder="教师账号邮箱" />
+        <input v-model="teacherEmail" class="field__input" placeholder="教师账号邮箱" :disabled="submitting" />
       </view>
       <view class="field">
         <text class="field__label">密码</text>
@@ -102,12 +117,13 @@ async function submit(): Promise<void> {
           class="field__input"
           password
           placeholder="教师账号密码"
+          :disabled="submitting"
         />
       </view>
       <text class="form__hint">教师首次绑定需验证账号密码，仅此一次</text>
     </view>
 
-    <button class="submit-btn" :loading="submitting" @tap="submit">绑定并进入</button>
+    <button class="submit-btn" :loading="submitting" :disabled="submitting" @tap="submit">绑定并进入</button>
   </view>
 </template>
 

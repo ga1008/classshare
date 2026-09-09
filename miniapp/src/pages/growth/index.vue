@@ -7,6 +7,7 @@ import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 
 import { request } from "../../utils/api";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
 
 interface ShopItem {
   key: string;
@@ -57,6 +58,7 @@ const failed = ref(false);
 const tab = ref<"badges" | "ledger" | "shop">("badges");
 
 async function load(): Promise<void> {
+  if (!(await ensurePageSession("student"))) return;
   loading.value = true;
   failed.value = false;
   try {
@@ -69,7 +71,7 @@ async function load(): Promise<void> {
   } catch (error: unknown) {
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
     }
   } finally {
     loading.value = false;

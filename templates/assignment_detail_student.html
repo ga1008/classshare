@@ -881,6 +881,7 @@
     const MAX_PER_FILE = {{ max_per_file_mb }} * 1024 * 1024;
     const MAX_FILES = {{ max_submission_file_count }};
     const ASSIGNMENT_ID = "{{ assignment.id }}";
+    const SUBMISSION_VERSION = {{ submission_version | tojson }};
     const ASSIGNMENT_STARTED_AT = new Date().toISOString();
     const ALLOWED_FILE_TYPES = {{ assignment.allowed_file_types | tojson }};
     const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
@@ -1190,6 +1191,7 @@
         const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
         formData.append('answers_json', JSON.stringify({ answers }));
         formData.append('started_at', ASSIGNMENT_STARTED_AT);
+        formData.append('expected_submission_version', SUBMISSION_VERSION);
 
         try {
             const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/submit`, {

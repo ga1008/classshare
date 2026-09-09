@@ -36,6 +36,8 @@ from ...services.student_lifecycle_service import (
 from .deps import extract_bearer_token, get_current_mp_user
 
 router = APIRouter(prefix="/auth")
+BIND_TICKET_ERROR_HEADERS = {"X-LanShare-Error-Code": "mp_bind_ticket_invalid"}
+LOGOUT_SESSION_ERROR_HEADERS = {"X-LanShare-Error-Code": "mp_logout_session_expired"}
 
 
 class MpLoginRequest(BaseModel):
@@ -135,6 +137,39 @@ def _need_bind_payload(openid: str, unionid: str) -> dict:
     }
 
 
+def _verify_bind_request(request: Request, bind_ticket: str) -> tuple[dict, str]:
+    ticket = wechat_mp_service.decode_bind_ticket(bind_ticket)
+    if not ticket:
+        raise HTTPException(
+            status_code=400,
+            detail="绑定凭证已失效，请重新进入小程序。",
+            headers=BIND_TICKET_ERROR_HEADERS,
+        )
+    client_ip = get_client_ip(request)
+    try:
+        # Commit independently: a rejected name/password must still consume an
+        # attempt, and issuing another ticket must not reset another worker's limit.
+        with get_db_connection() as conn:
+            wechat_mp_service.check_bind_rate_limit(
+                conn, f"openid:{ticket['openid']}", f"ip:{client_ip}"
+            )
+            conn.commit()
+    except wechat_mp_service.WechatMpError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    return ticket, client_ip
+
+
+def _consume_bind_ticket(conn: Any, bind_ticket: str) -> dict:
+    ticket = wechat_mp_service.consume_bind_ticket(conn, bind_ticket)
+    if not ticket:
+        raise HTTPException(
+            status_code=400,
+            detail="绑定凭证已失效或已使用，请重新进入小程序。",
+            headers=BIND_TICKET_ERROR_HEADERS,
+        )
+    return ticket
+
+
 @router.post("/login")
 def mp_login(request: Request, payload: MpLoginRequest):
     """微信静默登录：已绑定直接发 token，未绑定发绑定票据。"""
@@ -156,9 +191,10 @@ def mp_login(request: Request, payload: MpLoginRequest):
             conn, {"user_role": binding["user_role"], "user_pk": binding["user_pk"]}
         )
         if not user:
-            # 账号已被删除/停用 → 撤销孤儿绑定，走重新绑定流程。
-            wechat_mp_service.revoke_binding(
-                conn, user_role=binding["user_role"], user_pk=binding["user_pk"]
+            # Keep the historical row and leave the account's other WeChat
+            # identities alone; this identity can now bind an available account.
+            wechat_mp_service.revoke_openid_binding(
+                conn, openid=openid, user_role=binding["user_role"], user_pk=binding["user_pk"]
             )
             conn.commit()
             return _need_bind_payload(openid, unionid)
@@ -175,15 +211,7 @@ def mp_login(request: Request, payload: MpLoginRequest):
 @router.post("/bind/student")
 def mp_bind_student(request: Request, payload: MpStudentBindRequest):
     """学生首次绑定：学号 + 姓名核验后建立 openid 绑定并登录。"""
-    ticket = wechat_mp_service.decode_bind_ticket(payload.bind_ticket)
-    if not ticket:
-        raise HTTPException(status_code=400, detail="绑定凭证已失效，请重新进入小程序。")
-
-    client_ip = get_client_ip(request)
-    try:
-        wechat_mp_service.check_bind_rate_limit(f"openid:{ticket['openid']}", f"ip:{client_ip}")
-    except wechat_mp_service.WechatMpError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    ticket, client_ip = _verify_bind_request(request, payload.bind_ticket)
 
     name = payload.name.strip()
     student_id_number = payload.student_id_number.strip()
@@ -196,6 +224,12 @@ def mp_bind_student(request: Request, payload: MpStudentBindRequest):
         if not student_row:
             raise HTTPException(status_code=400, detail="绑定失败：姓名或学号错误。")
         _ensure_student_active(student_row)
+        user = wechat_mp_service.load_mp_user(
+            conn, {"user_role": "student", "user_pk": int(student_row["id"])}
+        )
+        if not user:
+            raise HTTPException(status_code=403, detail="当前学生账号不可用，请联系教师。")
+        ticket = _consume_bind_ticket(conn, payload.bind_ticket)
 
         wechat_mp_service.create_binding(
             conn,
@@ -216,9 +250,6 @@ def mp_bind_student(request: Request, payload: MpStudentBindRequest):
         token = wechat_mp_service.issue_mp_session(
             conn, user_role="student", user_pk=int(student_row["id"]), openid=ticket["openid"]
         )
-        user = wechat_mp_service.load_mp_user(
-            conn, {"user_role": "student", "user_pk": int(student_row["id"])}
-        )
         result = _build_login_success_payload(conn, user=user, token=token, base_url=base_url)
         conn.commit()
     return result
@@ -227,15 +258,7 @@ def mp_bind_student(request: Request, payload: MpStudentBindRequest):
 @router.post("/bind/teacher")
 def mp_bind_teacher(request: Request, payload: MpTeacherBindRequest):
     """教师首次绑定：账号密码核验（教师身份敏感，比学生流程更严格）。"""
-    ticket = wechat_mp_service.decode_bind_ticket(payload.bind_ticket)
-    if not ticket:
-        raise HTTPException(status_code=400, detail="绑定凭证已失效，请重新进入小程序。")
-
-    client_ip = get_client_ip(request)
-    try:
-        wechat_mp_service.check_bind_rate_limit(f"openid:{ticket['openid']}", f"ip:{client_ip}")
-    except wechat_mp_service.WechatMpError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    ticket, _ = _verify_bind_request(request, payload.bind_ticket)
 
     email = payload.email.strip().lower()
     if not email or not payload.password:
@@ -253,6 +276,12 @@ def mp_bind_teacher(request: Request, payload: MpTeacherBindRequest):
         ).fetchone()
         if not teacher or not verify_password(payload.password, teacher["hashed_password"]):
             raise HTTPException(status_code=400, detail="绑定失败：邮箱或密码错误。")
+        user = wechat_mp_service.load_mp_user(
+            conn, {"user_role": "teacher", "user_pk": int(teacher["id"])}
+        )
+        if not user:
+            raise HTTPException(status_code=403, detail="当前教师账号不可用，请联系管理员。")
+        ticket = _consume_bind_ticket(conn, payload.bind_ticket)
 
         wechat_mp_service.create_binding(
             conn,
@@ -263,9 +292,6 @@ def mp_bind_teacher(request: Request, payload: MpTeacherBindRequest):
         )
         token = wechat_mp_service.issue_mp_session(
             conn, user_role="teacher", user_pk=int(teacher["id"]), openid=ticket["openid"]
-        )
-        user = wechat_mp_service.load_mp_user(
-            conn, {"user_role": "teacher", "user_pk": int(teacher["id"])}
         )
         result = _build_login_success_payload(conn, user=user, token=token, base_url=base_url)
         conn.commit()
@@ -287,17 +313,31 @@ def mp_logout(request: Request):
     """
     token = extract_bearer_token(request)
     revoked = False
+    session = None
     if token:
         with get_db_connection() as conn:
             session = wechat_mp_service.resolve_mp_session(conn, token)
-            if session:
-                wechat_mp_service.revoke_binding(
+            if session and session.get("openid"):
+                unbound = wechat_mp_service.revoke_openid_binding(
                     conn,
+                    openid=str(session.get("openid") or ""),
                     user_role=str(session["user_role"]),
                     user_pk=int(session["user_pk"]),
                 )
-                revoked = True
-            else:
                 revoked = wechat_mp_service.revoke_mp_session(conn, token)
+                if not unbound:
+                    # Binding may change after resolving this token. Do not
+                    # claim success while a different binding remains active.
+                    session = None
+            else:
+                # An expired/old token cannot authorize unbinding the current
+                # WeChat account. Require a fresh wx.login identity first.
+                wechat_mp_service.revoke_mp_session(conn, token)
             conn.commit()
+    if not session or not session.get("openid"):
+        raise HTTPException(
+            status_code=401,
+            detail="登录凭证已失效，请重新验证微信身份后退出。",
+            headers=LOGOUT_SESSION_ERROR_HEADERS,
+        )
     return {"success": True, "data": {"revoked": revoked}, "error": None}

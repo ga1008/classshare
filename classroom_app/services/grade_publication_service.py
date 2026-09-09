@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import HTTPException
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from .grade_source_preflight_service import build_grade_source_preflight
+from .offering_membership_service import offering_student_where
 from .semester_identity_service import parse_semester_identity
 
 PUBLICATION_TYPES = {"final_grade_transcript", "academic_grade_register"}
@@ -71,9 +72,8 @@ def _material(conn, material_id: int, offering_id: int, teacher_id: int) -> dict
 
 
 def _roster(conn, offering_id: int) -> list[dict]:
-    return [dict(row) for row in conn.execute("""SELECT s.id, s.student_id_number, s.name FROM students s
-        JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (
-            SELECT 1 FROM class_offering_class_links link WHERE link.offering_id = o.id AND link.class_id = s.class_id))
+    return [dict(row) for row in conn.execute(f"""SELECT s.id, s.student_id_number, s.name FROM students s
+        JOIN class_offerings o ON {offering_student_where()}
         WHERE o.id = ? AND COALESCE(s.enrollment_status, 'active') = 'active'
         ORDER BY s.student_id_number, s.id""", (int(offering_id),)).fetchall()]
 
@@ -228,6 +228,10 @@ def withdraw_grade_publication(conn, *, class_offering_id: int, teacher_id: int,
     _offering(conn, class_offering_id, teacher_id)
     if not str(reason or "").strip():
         raise HTTPException(400, "请填写撤回原因。")
+    # Match publishing and classroom merge before changing the snapshot state.
+    # A merge cannot archive an active row while a concurrent withdrawal commits.
+    conn.execute("UPDATE class_offerings SET id = id WHERE id = ? AND teacher_id = ?",
+                 (int(class_offering_id), int(teacher_id)))
     updated = conn.execute("""UPDATE grade_publications SET status = 'withdrawn', withdrawn_at = ?,
         withdrawn_by_teacher_id = ?, withdrawal_reason = ?
         WHERE id = ? AND class_offering_id = ? AND teacher_id = ? AND status = 'active'""",
@@ -241,7 +245,14 @@ def teacher_grade_publication_status(conn, *, class_offering_id: int, teacher_id
     _offering(conn, class_offering_id, teacher_id)
     rows = conn.execute("""SELECT p.*, r.export_payload_json AS current_payload_json FROM grade_publications p
         LEFT JOIN material_ai_import_records r ON r.id = p.source_record_id
-        WHERE p.class_offering_id = ? AND p.teacher_id = ? ORDER BY p.version DESC LIMIT 50""", (int(class_offering_id), int(teacher_id))).fetchall()
+        WHERE p.class_offering_id = ? AND p.teacher_id = ?
+          AND (p.status = 'active' OR p.id IN (
+            SELECT recent.id FROM grade_publications recent
+            WHERE recent.class_offering_id = ? AND recent.teacher_id = ?
+            ORDER BY recent.version DESC LIMIT 50
+          ))
+        ORDER BY p.version DESC""", (int(class_offering_id), int(teacher_id),
+                                      int(class_offering_id), int(teacher_id))).fetchall()
     history = []
     for row in rows:
         item = dict(row)

@@ -9,13 +9,37 @@ interface ApiEnvelope<T> {
   error: string | null;
 }
 
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: () => void): void {
+  unauthorizedHandler = handler;
+}
+
+/** A delayed response from a previous account must never invalidate the new session. */
+export function handleUnauthorized(sentToken: string): void {
+  if (!sentToken || sentToken !== getStoredToken()) return;
+  setStoredToken("");
+  unauthorizedHandler?.();
+}
+
+function sessionChanged(sentToken: string): boolean {
+  return sentToken !== getStoredToken();
+}
+
 export class ApiError extends Error {
   statusCode: number;
+  code: string;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, code = "") {
     super(message);
     this.statusCode = statusCode;
+    this.code = code;
   }
+}
+
+function responseErrorCode(headers?: Record<string, unknown>): string {
+  const entry = Object.entries(headers || {}).find(([key]) => key.toLowerCase() === "x-lanshare-error-code");
+  return typeof entry?.[1] === "string" ? entry[1] : "";
 }
 
 export function getStoredToken(): string {
@@ -74,6 +98,11 @@ export function uploadFile<T>(options: {
       timeout: 60000,
       success: (res) => {
         const status = res.statusCode ?? 0;
+        if (sessionChanged(token)) {
+          reject(new ApiError("账号已切换，请重新打开页面。", 409));
+          return;
+        }
+        if (status === 401) handleUnauthorized(token);
         let body: unknown = null;
         try {
           body = JSON.parse(res.data || "null");
@@ -81,7 +110,7 @@ export function uploadFile<T>(options: {
           body = null;
         }
         if (status < 200 || status >= 300) {
-          reject(new ApiError(extractDetail(body, `上传失败（${status}）`), status));
+          reject(new ApiError(extractDetail(body, `上传失败（${status}）`), status, responseErrorCode(res.header)));
           return;
         }
         resolve(body as T);
@@ -98,13 +127,15 @@ export function request<T>(options: {
   auth?: boolean;
   /** true → application/x-www-form-urlencoded（对接后端 Form 端点，如草稿/提交） */
   form?: boolean;
+  /** Login/bootstrap and explicit logout manage their own navigation. */
+  redirectOnUnauthorized?: boolean;
 }): Promise<T> {
-  const { path, method = "GET", data, auth = true, form = false } = options;
+  const { path, method = "GET", data, auth = true, form = false, redirectOnUnauthorized = true } = options;
   const header: Record<string, string> = {
     "content-type": form ? "application/x-www-form-urlencoded" : "application/json",
   };
+  const token = auth ? getStoredToken() : "";
   if (auth) {
-    const token = getStoredToken();
     if (token) {
       header.Authorization = `Bearer ${token}`;
     }
@@ -118,13 +149,17 @@ export function request<T>(options: {
       timeout: 15000,
       success: (res) => {
         const status = res.statusCode ?? 0;
+        if (auth && sessionChanged(token)) {
+          reject(new ApiError("账号已切换，请重新打开页面。", 409));
+          return;
+        }
         if (status === 401) {
-          setStoredToken("");
-          reject(new ApiError(extractDetail(res.data, "登录已过期"), 401));
+          if (auth && redirectOnUnauthorized) handleUnauthorized(token);
+          reject(new ApiError(extractDetail(res.data, "登录已过期"), 401, responseErrorCode(res.header)));
           return;
         }
         if (status < 200 || status >= 300) {
-          reject(new ApiError(extractDetail(res.data, `请求失败（${status}）`), status));
+          reject(new ApiError(extractDetail(res.data, `请求失败（${status}）`), status, responseErrorCode(res.header)));
           return;
         }
         const body = res.data as ApiEnvelope<T>;

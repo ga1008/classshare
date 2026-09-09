@@ -2,12 +2,15 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from classroom_app import config, database
-from classroom_app.db import schema_offering_class_links, schema_offering_merge
+from classroom_app.db import schema_offering_class_links, schema_offering_merge, schema_ai_jobs
 from classroom_app.db.connection import execute_insert_returning_id
 from classroom_app.db.schema import init_database
 from classroom_app.services import offering_merge_service as merge
+from classroom_app.services.grade_publication_service import student_published_grades, teacher_grade_publication_status
+from classroom_app.services import ai_usage_budget_service as review_budget
 
 
 class OfferingMergeServiceTests(unittest.TestCase):
@@ -21,6 +24,7 @@ class OfferingMergeServiceTests(unittest.TestCase):
         database.DB_PATH = config.DB_PATH
         schema_offering_class_links._SCHEMA_READY = False
         schema_offering_merge._SCHEMA_READY = False
+        self.enterContext(patch.object(schema_ai_jobs, "_SCHEMA_READY_ENGINES", set()))
         init_database()
         with database.get_db_connection() as conn:
             from classroom_app.db import schema_session_learning_materials as slm
@@ -138,6 +142,150 @@ class OfferingMergeServiceTests(unittest.TestCase):
             """,
             (self.course_id, title, offering_id),
         )
+
+    def _insert_publication(self, conn, offering_id, version, status, student_id):
+        publication_id = execute_insert_returning_id(conn, """
+            INSERT INTO grade_publications
+              (class_offering_id, teacher_id, version, status, source_record_id,
+               source_document_type, source_hash, source_snapshot_json, formula_json, published_at)
+            VALUES (?, ?, ?, ?, 100, 'final_grade_transcript', 'original-hash', ?, '{}', '2026-09-01')
+        """, (offering_id, self.teacher_id, version, status,
+                json.dumps({"course_name": "动态web程序设计", "semester_name": "2025-2026第二学期"})))
+        conn.execute("INSERT INTO grade_publication_students VALUES (?, ?, ?, ?)",
+                     (publication_id, student_id, str(student_id), '{"overall_score":88}'))
+        return publication_id
+
+    def _execute(self, conn):
+        return merge.execute_offering_merge(conn, teacher_id=self.teacher_id,
+            target_offering_id=self.target_id, source_offering_ids=[self.source_id],
+            confirm_class_name="软工2401班")
+
+    def test_publication_versions_and_classification_history_survive_merge(self):
+        with database.get_db_connection() as conn:
+            target_publication = self._insert_publication(conn, self.target_id, 1, "withdrawn", self.student_a)
+            source_old = self._insert_publication(conn, self.source_id, 1, "superseded", self.student_b)
+            source_active = self._insert_publication(conn, self.source_id, 2, "active", self.student_b)
+            conn.execute("""INSERT INTO assignment_classification_revisions
+                (assignment_id,class_offering_id,assessment_kind,previous_version,version,source,changed_by_teacher_id,changed_at)
+                VALUES (?,?,'final',0,1,'manual',?,'2026-09-01')""",
+                (self.source_assignment, self.source_id, self.teacher_id))
+            before = {int(row["id"]): dict(row) for row in conn.execute("SELECT * FROM grade_publications").fetchall()}
+            conn.commit()
+            result = self._execute(conn)
+            conn.commit()
+            after = {int(row["id"]): dict(row) for row in conn.execute("SELECT * FROM grade_publications").fetchall()}
+            self.assertEqual(set(before), set(after))
+            self.assertEqual([1, 2, 3], [after[key]["version"] for key in (target_publication, source_old, source_active)])
+            for key, publication in before.items():
+                for column in publication:
+                    if column not in {"class_offering_id", "version"}:
+                        self.assertEqual(after[key][column], publication[column], column)
+                self.assertEqual(after[key]["class_offering_id"], self.target_id)
+            self.assertEqual(student_published_grades(conn, student_id=self.student_a), [])
+            student = student_published_grades(conn, student_id=self.student_b)[0]
+            self.assertEqual((student["publication_id"], student["class_offering_id"], student["version"], student["overall_score"]),
+                             (source_active, self.target_id, 3, 88))
+            teacher = teacher_grade_publication_status(conn, class_offering_id=self.target_id, teacher_id=self.teacher_id)
+            self.assertEqual(teacher["current"]["publication_id"], source_active)
+            revision = dict(conn.execute("SELECT * FROM assignment_classification_revisions").fetchone())
+            self.assertEqual((revision["assignment_id"], revision["class_offering_id"], revision["version"], revision["assessment_kind"]),
+                             (str(self.source_assignment), self.target_id, 1, "final"))
+            archive = json.loads(conn.execute("SELECT payload_json FROM offering_merge_archives WHERE id = ?", (result["archive_id"],)).fetchone()["payload_json"])
+            original = {int(row["id"]): row for row in archive["tables"]["grade_publications"]}
+            self.assertEqual(original, before)
+            self.assertEqual(len(archive["tables"]["grade_publication_students"]), 3)
+            self.assertEqual(result["summary"]["grade_publications.version_map"][-1], {
+                "publication_id": source_active, "source_offering_id": self.source_id,
+                "source_version": 2, "version": 3,
+            })
+
+    def test_multiple_active_publications_require_explicit_withdrawal(self):
+        with database.get_db_connection() as conn:
+            self._insert_publication(conn, self.target_id, 1, "active", self.student_a)
+            self._insert_publication(conn, self.source_id, 2, "active", self.student_b)
+            conn.commit()
+            preview = merge.build_merge_preview(conn, teacher_id=self.teacher_id,
+                target_offering_id=self.target_id, source_offering_ids=[self.source_id])
+            self.assertFalse(preview["can_execute"])
+            self.assertTrue(any("成绩公布页" in blocker and "撤回" in blocker for blocker in preview["blockers"]))
+            with self.assertRaises(merge.OfferingMergeError):
+                self._execute(conn)
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM grade_publications WHERE status='active'").fetchone()["n"], 2)
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM offering_merge_archives").fetchone()["n"], 0)
+
+    def test_active_target_remains_manageable_after_importing_long_withdrawn_history(self):
+        with database.get_db_connection() as conn:
+            active_id = self._insert_publication(conn, self.target_id, 1, "active", self.student_a)
+            for version in range(1, 53):
+                self._insert_publication(conn, self.source_id, version, "withdrawn", self.student_b)
+            conn.commit()
+            self._execute(conn)
+            conn.commit()
+            teacher = teacher_grade_publication_status(conn, class_offering_id=self.target_id, teacher_id=self.teacher_id)
+            self.assertEqual(teacher["current"]["publication_id"], active_id)
+            self.assertEqual(len(teacher["history"]), 51)
+            self.assertEqual(student_published_grades(conn, student_id=self.student_a)[0]["publication_id"], active_id)
+            self.assertEqual(student_published_grades(conn, student_id=self.student_b), [])
+
+    def test_publications_and_students_rollback_when_merge_finalization_fails(self):
+        with database.get_db_connection() as conn:
+            self._insert_publication(conn, self.target_id, 1, "withdrawn", self.student_a)
+            self._insert_publication(conn, self.source_id, 1, "active", self.student_b)
+            before = [dict(row) for row in conn.execute("SELECT * FROM grade_publications ORDER BY id").fetchall()]
+            conn.commit()
+            with patch.object(merge, "replace_offering_class_links", side_effect=RuntimeError("injected merge failure")):
+                with self.assertRaisesRegex(RuntimeError, "injected merge failure"):
+                    self._execute(conn)
+            conn.rollback()
+            self.assertEqual(before, [dict(row) for row in conn.execute("SELECT * FROM grade_publications ORDER BY id").fetchall()])
+            self.assertEqual(len(student_published_grades(conn, student_id=self.student_b)), 1)
+            self.assertIsNotNone(conn.execute("SELECT id FROM class_offerings WHERE id=?", (self.source_id,)).fetchone())
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM offering_merge_archives").fetchone()["n"], 0)
+
+    def test_review_reservation_keeps_original_budget_scope_and_releases_only_that_counter(self):
+        source = review_budget.reserve_grading_review(logical_call_id="source-call", class_offering_id=self.source_id,
+            policy_version="test", reasons=[])
+        target = review_budget.reserve_grading_review(logical_call_id="target-call", class_offering_id=self.target_id,
+            policy_version="test", reasons=[])
+        with database.get_db_connection() as conn:
+            result = self._execute(conn)
+            conn.commit()
+            reservation = conn.execute("SELECT * FROM ai_review_reservations WHERE reservation_id=?", (source["reservation_id"],)).fetchone()
+            self.assertEqual(reservation["class_offering_id"], self.source_id)
+            self.assertEqual(reservation["status"], "reserved")
+            archive = json.loads(conn.execute("SELECT payload_json FROM offering_merge_archives WHERE id=?", (result["archive_id"],)).fetchone()["payload_json"])
+            self.assertEqual(len(archive["tables"]["ai_review_reservations"]), 2)
+            self.assertEqual({str(self.target_id), str(self.source_id)},
+                             {row["scope_id"] for row in archive["tables"]["ai_review_daily_counters"]})
+        self.assertTrue(review_budget.release_unsent_grading_review(source["reservation_id"]))
+        self.assertFalse(review_budget.release_unsent_grading_review(source["reservation_id"]))
+        with database.get_db_connection() as conn:
+            counts = {(row["scope_type"], row["scope_id"]): row["reserved_count"] for row in conn.execute("SELECT * FROM ai_review_daily_counters").fetchall()}
+            self.assertEqual(counts[("global", "*")], 1)
+            self.assertEqual(counts[("offering", str(self.source_id))], 0)
+            self.assertEqual(counts[("offering", str(self.target_id))], 1)
+        latest = review_budget.reserve_grading_review(logical_call_id="new-after-merge", class_offering_id=self.target_id,
+            policy_version="test", reasons=[])
+        self.assertTrue(latest["allowed"])
+        self.assertTrue(review_budget.release_unsent_grading_review(target["reservation_id"]))
+        self.assertTrue(review_budget.release_unsent_grading_review(latest["reservation_id"]))
+
+    def test_dispatched_review_can_finish_after_merge_without_repoint_or_duplicate_budget(self):
+        source = review_budget.reserve_grading_review(logical_call_id="dispatched-source", class_offering_id=self.source_id,
+            policy_version="test", reasons=[])
+        self.assertTrue(review_budget.mark_grading_review_sent(source["reservation_id"], "dispatch-1"))
+        with database.get_db_connection() as conn:
+            self._execute(conn)
+            conn.commit()
+        self.assertTrue(review_budget.finish_grading_review(source["reservation_id"], "dispatch-1", status="completed"))
+        self.assertFalse(review_budget.release_unsent_grading_review(source["reservation_id"]))
+        replay = review_budget.reserve_grading_review(logical_call_id="dispatched-source", class_offering_id=self.source_id,
+            policy_version="test", reasons=[])
+        self.assertFalse(replay["allowed"])
+        self.assertEqual(replay["status"], "completed")
+        with database.get_db_connection() as conn:
+            row = conn.execute("SELECT * FROM ai_review_daily_counters WHERE scope_type='offering' AND scope_id=?", (str(self.source_id),)).fetchone()
+            self.assertEqual(row["reserved_count"], 1)
 
     def test_registry_covers_every_offering_table(self):
         with database.get_db_connection() as conn:

@@ -7,6 +7,7 @@ import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { computed, reactive, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { ASSESSMENT_FILTER_OPTIONS, classroomGradeKey, type AssessmentClassification } from "../../utils/assessment";
 
 interface RecordItem extends AssessmentClassification {
@@ -96,6 +97,7 @@ function recordState(record: RecordItem): string {
 }
 
 async function load(): Promise<void> {
+  if (!(await ensurePageSession("student"))) return;
   const sequence = ++loadSequence;
   loading.value = true;
   failed.value = false;
@@ -111,7 +113,7 @@ async function load(): Promise<void> {
     if (sequence !== loadSequence) return;
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
     }
   } finally {
     if (sequence === loadSequence) loading.value = false;

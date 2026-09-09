@@ -11,6 +11,7 @@ import { onHide, onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { useAuthStore } from "../../stores/auth";
 import { applyRoleTabs } from "../../utils/tabs";
 
@@ -42,13 +43,14 @@ const idleOfferings = computed(() => offerings.value.filter((item) => !item.is_l
 async function loadLive(silent = false): Promise<void> {
   if (!silent) loading.value = true;
   try {
+    if (!(await ensurePageSession())) return;
     const data = await request<{ offerings: LiveOffering[] }>({ path: "/api/mp/classroom/live" });
     offerings.value = data.offerings ?? [];
     failed.value = false;
   } catch (error: unknown) {
     if (!silent) failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
     }
   } finally {
     loading.value = false;

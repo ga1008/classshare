@@ -188,6 +188,13 @@ homework_submissions/
 storage/global_files/*
 
 tools/guardianangel.net.cn_nginx*/
+tools/guardianangel.net.cn_nginx*.zip
+tools/cert-backup-*/
+tools/cert-new-*/
+/static/guardianangel.net.cn_nginx.zip
+
+# Local evaluation evidence includes production assignment content.
+docs/ai-vision-*
 
 # Local production data exports are recovery artifacts, never application source.
 # Keeping this tree ignored also prevents deployment packaging from uploading PII.

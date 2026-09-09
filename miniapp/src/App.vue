@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { onLaunch } from "@dcloudio/uni-app";
+import { rememberLaunchTarget } from "./utils/session";
 
-onLaunch(() => {
-  /* 冷启动逻辑在 welcome 页处理 */
+onLaunch((options) => {
+  rememberLaunchTarget(options?.path || "", options?.query || {});
 });
 </script>
 

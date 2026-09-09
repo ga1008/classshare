@@ -22,6 +22,8 @@ from ...services.deterministic_exam_grading import (
 )
 from ...services.submission_preview_service import ensure_submission_file_access
 from ...services.assessment_classification_service import assessment_kind_info
+from ...services.offering_membership_service import offering_student_where
+from ...services.submission_grade_guard_service import editable_manual_feedback, submission_review_revision
 from .deps import get_current_mp_teacher
 
 router = APIRouter(prefix="/teacher")
@@ -446,7 +448,7 @@ def _get_teacher_assignment(conn, assignment_id: int, teacher_id: int) -> dict:
         WHERE a.id = ? AND o.teacher_id = ?
           AND NOT EXISTS (SELECT 1 FROM learning_stage_exam_attempts lsea WHERE lsea.assignment_id = a.id)
         """,
-        (assignment_id, teacher_id),
+        (str(assignment_id), teacher_id),
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="任务不存在或无权查看")
@@ -463,23 +465,33 @@ def mp_teacher_tasks(user: dict = Depends(get_current_mp_teacher)):
     """
     with get_db_connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT a.id, a.title, a.status, a.due_at, a.exam_paper_id, a.created_at,
                    a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source,
                    o.id AS offering_id,
                    c.name AS course_name,
                    cl.name AS class_name,
                    (SELECT COUNT(*) FROM students s
-                     WHERE (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
+                     WHERE {offering_student_where()}
                        AND COALESCE(s.enrollment_status, 'active') = 'active') AS student_total,
                    (SELECT COUNT(*) FROM submissions sub
+                     JOIN students s ON s.id = sub.student_pk_id
                      WHERE sub.assignment_id = a.id
+                       AND {offering_student_where()}
+                       AND COALESCE(s.enrollment_status, 'active') = 'active'
                        AND COALESCE(sub.is_absence_score, 0) = 0) AS submitted_count,
                    (SELECT COUNT(*) FROM submissions sub
+                     JOIN students s ON s.id = sub.student_pk_id
                      WHERE sub.assignment_id = a.id
-                       AND sub.status = 'graded') AS graded_count,
+                       AND {offering_student_where()}
+                       AND COALESCE(s.enrollment_status, 'active') = 'active'
+                       AND COALESCE(sub.is_absence_score, 0) = 0
+                       AND sub.score IS NOT NULL AND sub.status = 'graded') AS graded_count,
                    (SELECT COUNT(*) FROM submissions sub
+                     JOIN students s ON s.id = sub.student_pk_id
                      WHERE sub.assignment_id = a.id
+                       AND {offering_student_where()}
+                       AND COALESCE(s.enrollment_status, 'active') = 'active'
                        AND sub.status = 'submitted'
                        AND COALESCE(sub.resubmission_allowed, 0) = 0
                        AND COALESCE(sub.is_absence_score, 0) = 0) AS pending_grade_count
@@ -538,14 +550,15 @@ def mp_teacher_grading(assignment_id: int, user: dict = Depends(get_current_mp_t
         roster = [
             dict(row)
             for row in conn.execute(
-                """
-                SELECT id, student_id_number, name
-                FROM students
-                WHERE class_id = ?
-                  AND COALESCE(enrollment_status, 'active') = 'active'
-                ORDER BY student_id_number
+                f"""
+                SELECT s.id, s.student_id_number, s.name
+                FROM students s
+                JOIN class_offerings o ON o.id = ?
+                WHERE {offering_student_where()}
+                  AND COALESCE(s.enrollment_status, 'active') = 'active'
+                ORDER BY s.student_id_number, s.id
                 """,
-                (assignment["class_id"],),
+                (assignment["offering_id"],),
             ).fetchall()
         ]
 
@@ -561,7 +574,7 @@ def mp_teacher_grading(assignment_id: int, user: dict = Depends(get_current_mp_t
                 FROM submissions s
                 WHERE s.assignment_id = ?
                 """,
-                (assignment_id,),
+                (str(assignment_id),),
             ).fetchall()
         }
 
@@ -573,7 +586,7 @@ def mp_teacher_grading(assignment_id: int, user: dict = Depends(get_current_mp_t
             WHERE s.assignment_id = ?
             ORDER BY sf.submission_id, sf.id
             """,
-            (assignment_id,),
+            (str(assignment_id),),
         ).fetchall()
         conn.commit()
 
@@ -590,17 +603,6 @@ def mp_teacher_grading(assignment_id: int, user: dict = Depends(get_current_mp_t
                 "is_image": mime_type.startswith("image/"),
             }
         )
-
-    # 花名册为空时退回只显示已提交学生（与 Web 端一致）
-    if not roster:
-        roster = [
-            {
-                "id": sub["student_pk_id"],
-                "student_id_number": "",
-                "name": f"学生{sub['student_pk_id']}",
-            }
-            for sub in sorted(submissions.values(), key=lambda s: str(s.get("submitted_at") or ""))
-        ]
 
     entries = []
     for student in roster:
@@ -620,6 +622,7 @@ def mp_teacher_grading(assignment_id: int, user: dict = Depends(get_current_mp_t
             "submitted_at": (sub.get("submitted_at") or "") if sub else "",
             "is_late": bool(int(sub.get("is_late_submission") or 0)) if sub else False,
             "is_absence_zero": bool(int(sub.get("is_absence_score") or 0)) if sub else False,
+            "resubmission_allowed": bool(int(sub.get("resubmission_allowed") or 0)) if sub else False,
             "answers": _parse_answers(sub.get("answers_json")) if sub else [],
             "feedback_md": (sub.get("feedback_md") or "") if sub else "",
             "feedback_blocks": _parse_feedback_blocks(sub.get("feedback_md")) if sub else [],
@@ -629,7 +632,7 @@ def mp_teacher_grading(assignment_id: int, user: dict = Depends(get_current_mp_t
 
     submitted = [e for e in entries if e["status"] != "unsubmitted"]
     graded = [e for e in submitted if e["status"] == "graded" and e["score"] is not None]
-    pending = [e for e in submitted if e["status"] == "submitted"]
+    pending = [e for e in submitted if e["status"] == "submitted" and not e["resubmission_allowed"]]
     scores = [float(e["score"]) for e in graded]
     average = round(sum(scores) / len(scores), 1) if scores else 0
 
@@ -693,7 +696,7 @@ def mp_teacher_nudge(assignment_id: int, user: dict = Depends(get_current_mp_tea
                     AND COALESCE(sub.is_absence_score, 0) = 0
               )
             """,
-            (assignment["class_id"], assignment["offering_id"], assignment_id),
+            (assignment["class_id"], assignment["offering_id"], str(assignment_id)),
         ).fetchall()
 
         values = build_nudge_values(
@@ -735,13 +738,7 @@ def mp_teacher_submission_review(
     with get_db_connection() as conn:
         row = conn.execute(
             """
-            SELECT s.id, s.status, s.score, s.feedback_md, s.submitted_at,
-                   s.answers_json,
-                   COALESCE(s.is_late_submission, 0) AS is_late_submission,
-                   COALESCE(s.is_absence_score, 0) AS is_absence_score,
-                   COALESCE(s.resubmission_allowed, 0) AS resubmission_allowed,
-                   s.score_before_late_penalty,
-                   COALESCE(s.late_penalty_points, 0) AS late_penalty_points,
+            SELECT s.*,
                    a.id AS assignment_id, a.title AS assignment_title, a.exam_paper_id,
                    a.assessment_kind, a.assessment_kind_version, a.assessment_kind_source,
                    c.name AS course_name, cl.name AS class_name,
@@ -808,6 +805,7 @@ def mp_teacher_submission_review(
             },
             "submission": {
                 "id": submission["id"],
+                "review_revision": submission_review_revision(submission),
                 "status": status,
                 "status_label": _SUBMISSION_STATUS_LABELS.get(status, status),
                 "score": submission.get("score"),
@@ -818,6 +816,7 @@ def mp_teacher_submission_review(
                 "resubmission_allowed": bool(int(submission.get("resubmission_allowed") or 0)),
                 "submitted_at": submission.get("submitted_at") or "",
                 "feedback_md": submission.get("feedback_md") or "",
+                "editable_feedback_md": editable_manual_feedback(submission.get("feedback_md")),
                 "feedback_blocks": _parse_feedback_blocks(submission.get("feedback_md")),
             },
             **review,

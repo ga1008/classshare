@@ -42,9 +42,15 @@ class MaterialLibraryFilterTests(unittest.TestCase):
             CREATE TABLE course_materials (
                 id INTEGER PRIMARY KEY,
                 parent_id INTEGER,
+                root_id INTEGER,
                 teacher_id INTEGER NOT NULL,
                 material_path TEXT NOT NULL,
                 node_type TEXT NOT NULL,
+                scope_level TEXT DEFAULT 'private',
+                school_code TEXT DEFAULT '',
+                school_name TEXT DEFAULT '',
+                college TEXT DEFAULT '',
+                department TEXT DEFAULT '',
                 file_size INTEGER,
                 updated_at TEXT
             );
@@ -87,6 +93,13 @@ class MaterialLibraryFilterTests(unittest.TestCase):
         self.conn.close()
 
     def test_assignment_facets_drive_course_and_class_filters(self) -> None:
+        self.conn.executemany(
+            """
+            INSERT INTO course_materials (id, root_id, teacher_id, material_path, node_type)
+            VALUES (?, ?, 1, ?, 'file')
+            """,
+            [(1, 1, "/评学表/Python.docx"), (2, 2, "/考核计划/数据结构.docx")],
+        )
         rows = [
             {
                 "id": 1,

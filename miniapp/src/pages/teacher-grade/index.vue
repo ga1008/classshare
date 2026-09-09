@@ -12,10 +12,11 @@
  * - POST /api/submissions/{id}/grade                 打分（迟交罚分/AI冲正/
  *   修订台账/小组分联动全在服务端，此处只传原始分+评语）
  */
-import { onLoad } from "@dcloudio/uni-app";
+import { onLoad, onUnload } from "@dcloudio/uni-app";
 import { computed, reactive, ref, watch } from "vue";
 
 import { request } from "../../utils/api";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { assessmentLabel, type AssessmentClassification } from "../../utils/assessment";
 import { downloadProtectedTempFile, previewProtectedFile } from "../../utils/preview";
 
@@ -67,6 +68,7 @@ interface ReviewData {
   student: { name: string; student_id_number: string };
   submission: {
     id: number;
+    review_revision: string;
     status: string;
     status_label: string;
     score: number | null;
@@ -76,6 +78,7 @@ interface ReviewData {
     resubmission_allowed: boolean;
     submitted_at: string;
     feedback_md: string;
+    editable_feedback_md: string;
     feedback_blocks: FeedbackBlock[];
   };
   questions: ReviewQuestion[];
@@ -102,7 +105,11 @@ const index = ref(0);
 
 const review = ref<ReviewData | null>(null);
 const reviewLoading = ref(false);
-const reviewCache = new Map<number, ReviewData>();
+const reviewFailed = ref(false);
+const reviewConflict = ref(false);
+let reviewRequestId = 0;
+let disposed = false;
+let navigationPending = false;
 
 /** 当前题下标；-1 = 整卷附件视图 */
 const qIndex = ref(0);
@@ -130,7 +137,8 @@ const attachTarget = computed<GradeFile[]>(() =>
 
 const canGrade = computed(() => {
   const sub = review.value?.submission;
-  return Boolean(sub && !sub.resubmission_allowed);
+  return Boolean(sub && sub.id === current.value?.submission_id && sub.review_revision
+    && !sub.resubmission_allowed && !reviewLoading.value && !reviewConflict.value && !saving.value);
 });
 
 const scoreNote = computed(() => {
@@ -145,9 +153,14 @@ const scoreNote = computed(() => {
 const isDirty = computed(() => {
   const sub = review.value?.submission;
   if (!sub) return false;
-  const savedScore = sub.score !== null && sub.score !== undefined ? String(sub.score) : "";
-  return gradeScore.value !== savedScore || gradeFeedback.value !== (sub.feedback_md || "");
+  const savedScore = originalScore(sub);
+  return gradeScore.value !== savedScore || gradeFeedback.value !== (sub.editable_feedback_md ?? sub.feedback_md ?? "");
 });
+
+function originalScore(sub: ReviewData["submission"]): string {
+  const value = sub.score_before_late_penalty ?? sub.score;
+  return value === null || value === undefined ? "" : String(value);
+}
 
 function syncForm(): void {
   editingFeedback.value = false;
@@ -157,47 +170,54 @@ function syncForm(): void {
     gradeFeedback.value = "";
     return;
   }
-  gradeScore.value = sub.score !== null && sub.score !== undefined ? String(sub.score) : "";
-  gradeFeedback.value = sub.feedback_md || "";
+  gradeScore.value = originalScore(sub);
+  gradeFeedback.value = sub.editable_feedback_md ?? sub.feedback_md ?? "";
 }
 
 async function loadQueue(): Promise<void> {
+  const selectedSid = current.value?.submission_id;
   const data = await request<{ entries: QueueEntry[] }>({
     path: `/api/mp/teacher/assignment/${assignmentId.value}/grading`,
   });
+  if (disposed) return;
   queue.value = (data.entries ?? []).filter(
     (entry) => entry.status !== "unsubmitted" && entry.submission_id,
   );
+  const selectedIndex = queue.value.findIndex((entry) => entry.submission_id === selectedSid);
+  index.value = selectedIndex >= 0 ? selectedIndex : Math.min(index.value, Math.max(0, queue.value.length - 1));
 }
 
-async function loadReview(force = false): Promise<void> {
+async function loadReview(): Promise<void> {
+  const requestId = ++reviewRequestId;
   const sid = current.value?.submission_id;
+  review.value = null;
+  reviewFailed.value = false;
+  reviewConflict.value = false;
+  syncForm();
   if (!sid) {
-    review.value = null;
+    reviewLoading.value = false;
     return;
   }
-  if (!force && reviewCache.has(sid)) {
-    review.value = reviewCache.get(sid) ?? null;
-    qIndex.value = review.value?.questions.length ? 0 : -1;
-    syncForm();
-    return;
-  }
+  const isCurrentRequest = () => !disposed && requestId === reviewRequestId && current.value?.submission_id === sid;
   reviewLoading.value = true;
   try {
     const data = await request<ReviewData>({ path: `/api/mp/teacher/submission/${sid}/review` });
-    reviewCache.set(sid, data);
+    if (!isCurrentRequest()) return;
+    if (data.submission.id !== sid) throw new Error("返回的答卷与当前学生不一致");
     review.value = data;
     qIndex.value = data.questions.length ? 0 : -1;
     syncForm();
     void loadThumbnails();
   } catch (error: unknown) {
+    if (!isCurrentRequest()) return;
+    reviewFailed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
       return;
     }
     uni.showToast({ title: "作答加载失败", icon: "none" });
   } finally {
-    reviewLoading.value = false;
+    if (isCurrentRequest()) reviewLoading.value = false;
   }
 }
 
@@ -214,25 +234,36 @@ async function loadThumbnails(): Promise<void> {
   }
 }
 
-async function loadAll(): Promise<void> {
+async function loadAll(targetSid = 0): Promise<void> {
   loading.value = true;
   failed.value = false;
   try {
+    if (!(await ensurePageSession("teacher")) || disposed) return;
     await loadQueue();
+    if (targetSid) {
+      const found = queue.value.findIndex((entry) => entry.submission_id === targetSid);
+      if (found >= 0) index.value = found;
+    }
     await loadReview();
   } catch (error: unknown) {
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
     }
   } finally {
     loading.value = false;
   }
 }
 
-watch(current, () => {
-  void loadReview();
-});
+// Invalidate synchronously, before a tap can save the previous student's form.
+watch(() => current.value?.submission_id, () => {
+  reviewRequestId += 1;
+  review.value = null;
+  reviewLoading.value = false;
+  drawerOpen.value = false;
+  attachPanelOpen.value = false;
+  syncForm();
+}, { flush: "sync" });
 
 watch(attachPanelOpen, (open) => {
   if (open) void loadThumbnails();
@@ -273,51 +304,74 @@ function confirmDiscard(): Promise<boolean> {
 }
 
 async function goPrev(): Promise<void> {
-  if (!hasPrev.value || !(await confirmDiscard())) return;
-  index.value -= 1;
+  await navigateStudent(-1);
 }
 
 async function goNext(): Promise<void> {
-  if (!hasNext.value || !(await confirmDiscard())) return;
-  index.value += 1;
+  await navigateStudent(1);
+}
+
+async function navigateStudent(step: number): Promise<void> {
+  if (saving.value || navigationPending || (step < 0 ? !hasPrev.value : !hasNext.value)) return;
+  const sid = current.value?.submission_id;
+  navigationPending = true;
+  try {
+    if (!(await confirmDiscard()) || saving.value || disposed || sid !== current.value?.submission_id) return;
+    index.value += step;
+    void loadReview();
+  } finally {
+    navigationPending = false;
+  }
+}
+
+async function reloadReview(): Promise<void> {
+  if (saving.value || !(await confirmDiscard())) return;
+  await loadReview();
 }
 
 // ---------- 打分 ----------
 
 function applyQuickScore(score: number): void {
+  if (!canGrade.value) return;
   gradeScore.value = String(score);
 }
 
 async function saveGrade(advance: boolean): Promise<void> {
-  const sid = current.value?.submission_id;
-  if (!sid || saving.value) return;
+  const sub = review.value?.submission;
+  const sid = sub?.id;
+  if (!sid || !sub || saving.value || sid !== current.value?.submission_id) return;
   if (!canGrade.value) {
-    uni.showToast({ title: "该提交已退回待重交，不能批改", icon: "none" });
+    uni.showToast({ title: "请先加载并核对当前答卷", icon: "none" });
     return;
   }
-  const score = Number(gradeScore.value);
-  if (!Number.isFinite(score) || score < 0 || score > 100) {
+  const rawScore = gradeScore.value.trim();
+  const score = Number(rawScore);
+  if (!rawScore || !Number.isFinite(score) || score < 0 || score > 100) {
     uni.showToast({ title: "请输入 0-100 的分数", icon: "none" });
     return;
   }
   saving.value = true;
+  let saved = false;
   try {
     await request({
       path: `/api/submissions/${sid}/grade`,
       method: "POST",
-      data: { score, feedback_md: gradeFeedback.value },
+      data: { score, feedback_md: gradeFeedback.value, expected_review_revision: sub.review_revision },
     });
+    saved = true;
+    if (disposed) return;
     uni.showToast({ title: "已保存", icon: "success" });
-    reviewCache.delete(sid);
     await loadQueue();
-    await loadReview(true);
     if (advance && hasNext.value) {
       index.value += 1;
     }
+    await loadReview();
   } catch (error: unknown) {
+    if (disposed) return;
+    if ((error as { statusCode?: number }).statusCode === 409 || saved) reviewConflict.value = true;
     uni.showModal({
-      title: "保存失败",
-      content: error instanceof Error ? error.message : "网络异常，请重试。",
+      title: saved ? "已保存，列表刷新失败" : reviewConflict.value ? "答卷已有更新" : "保存失败",
+      content: saved ? "成绩已经保存。请重新加载当前答卷核对结果。" : error instanceof Error ? error.message : "网络异常，请重试。",
       showCancel: false,
     });
   } finally {
@@ -351,12 +405,12 @@ onLoad((query) => {
     loading.value = false;
     return;
   }
-  void loadAll().then(() => {
-    if (targetSid) {
-      const found = queue.value.findIndex((entry) => entry.submission_id === targetSid);
-      if (found >= 0 && found !== index.value) index.value = found;
-    }
-  });
+  void loadAll(targetSid);
+});
+
+onUnload(() => {
+  disposed = true;
+  reviewRequestId += 1;
 });
 </script>
 
@@ -399,8 +453,13 @@ onLoad((query) => {
       </view>
 
       <view v-if="reviewLoading" class="empty"><text>作答加载中…</text></view>
+      <view v-else-if="reviewFailed" class="empty" @tap="reloadReview"><text>作答加载失败，点击重试</text></view>
+      <view v-if="reviewConflict" class="card glass-card">
+        <text>答卷或成绩已有更新。本页修改尚未提交，请重新加载后核对。</text>
+        <button @tap="reloadReview">重新加载当前答卷</button>
+      </view>
 
-      <template v-else-if="review">
+      <template v-if="!reviewLoading && review">
         <!-- 题目区 -->
         <view v-if="currentQuestion" class="card glass-card">
           <view class="q-head">
@@ -504,7 +563,7 @@ onLoad((query) => {
 
         <!-- 评分 -->
         <view class="card glass-card">
-          <text class="card__title">评分</text>
+          <text class="card__title">原始评分（迟交扣分前）</text>
           <view class="score-row">
             <input v-model="gradeScore" class="score-input" type="digit" placeholder="0-100" :disabled="!canGrade" />
             <view class="quick-scores">
@@ -535,12 +594,13 @@ onLoad((query) => {
             v-model="gradeFeedback"
             class="feedback-editor"
             placeholder="支持 Markdown（标题/列表/加粗）"
+            :disabled="!canGrade"
             :maxlength="-1"
             auto-height
           />
           <template v-else>
             <view
-              v-if="review.submission.feedback_blocks.length && gradeFeedback === review.submission.feedback_md"
+              v-if="review.submission.feedback_blocks.length && gradeFeedback === (review.submission.editable_feedback_md ?? review.submission.feedback_md)"
               class="feedback"
             >
               <template v-for="(block, i) in review.submission.feedback_blocks" :key="i">
@@ -560,7 +620,7 @@ onLoad((query) => {
       <!-- 底部操作栏 -->
       <view class="bottom-spacer" />
       <view class="action-bar">
-        <view class="nav-btn press" :class="{ 'nav-btn--disabled': !hasPrev }" @tap="goPrev">
+        <view class="nav-btn press" :class="{ 'nav-btn--disabled': !hasPrev || saving }" @tap="goPrev">
           <text>‹</text>
         </view>
         <button class="save-btn save-btn--plain" :disabled="saving || !canGrade" @tap="saveGrade(false)">
@@ -574,7 +634,7 @@ onLoad((query) => {
         >
           {{ hasNext ? "保存并下一位" : "保存" }}
         </button>
-        <view class="nav-btn press" :class="{ 'nav-btn--disabled': !hasNext }" @tap="goNext">
+        <view class="nav-btn press" :class="{ 'nav-btn--disabled': !hasNext || saving }" @tap="goNext">
           <text>›</text>
         </view>
       </view>

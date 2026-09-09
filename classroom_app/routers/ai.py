@@ -65,6 +65,7 @@ from ..services.ai_durable_job_service import (
 )
 from ..services.grading_feedback_service import normalize_grading_result, sanitize_student_feedback_text
 from ..services.grading_revision_service import activate_submission_grade_revision
+from ..services.group_assignment_service import lock_group_grading_for_submission
 from ..services.late_submission_policy import append_late_policy_feedback, apply_late_policy_to_score
 from ..services.learning_progress_service import (
     build_student_global_cultivation_profile,
@@ -394,6 +395,7 @@ async def handle_ai_grading_callback(request: Request):
         data = await request.json()
         submission_id = data['submission_id']
         with get_db_connection() as conn:
+            lock_group_grading_for_submission(conn, submission_id)
             submission = conn.execute(
                 "SELECT * FROM submissions WHERE id = ?",
                 (submission_id,),
@@ -590,6 +592,7 @@ async def handle_ai_grading_callback(request: Request):
                     record_member_work_score(conn, submission_id)
                 except Exception as exc:
                     print(f"[GROUP_ASSIGNMENT] AI grading group finalize failed: {exc}")
+                    raise
                 if assignment_for_progress and assignment_for_progress.get("class_offering_id"):
                     try:
                         refresh_student_learning_state(
@@ -621,6 +624,10 @@ async def handle_ai_grading_callback(request: Request):
                     )
                 except Exception as exc:
                     print(f"[MESSAGE_CENTER] AI grading failure notify failed: {exc}")
+            # Best-effort observers may have caught a PostgreSQL statement
+            # error. An aborted transaction must fail here, not silently roll
+            # back on COMMIT and acknowledge a grade that was never persisted.
+            conn.execute("SELECT 1")
             conn.commit()
         print(f"[CALLBACK] 成功接收并更新 AI 批改结果 (Submission ID: {submission_id})")
         # TODO: 通过 WebSocket 向教师推送更新

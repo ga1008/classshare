@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import HTTPException, Request, status
 
 from ...db.connection import get_db_connection
+from ...dependencies import validate_authenticated_user_identity
 from ...services import wechat_mp_service
 
 
@@ -35,6 +36,10 @@ def get_current_mp_user(request: Request) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="登录已过期，请重新进入小程序。",
         )
+    # Keep role validation and the standard permission error contract aligned
+    # with shared /api endpoints; load_mp_user also checks live account status.
+    user = validate_authenticated_user_identity(user)
+    user["auth_channel"] = "mp"
     return user
 
 

@@ -504,6 +504,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/assignments/assessment-kinds/confirm",
+    "methods": [
+      "POST"
+    ],
+    "name": "confirm_assignment_assessment_kinds",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/assignments/time-state",
     "methods": [
       "GET"
@@ -525,6 +533,22 @@
       "PUT"
     ],
     "name": "update_assignment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/assessment-kind",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_assignment_assessment_kind",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/assessment-kind",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "update_assignment_assessment_kind",
     "include_in_schema": true
   },
   {
@@ -1008,11 +1032,59 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/career-path/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_path_cancel",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-path/feedback",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_path_feedback",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-path/initialize",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_path_initialize",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-path/job-postings",
+    "methods": [
+      "GET"
+    ],
+    "name": "career_job_postings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-path/job-postings/{posting_id}/target",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_posting_target",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/career-path/keywords",
     "methods": [
       "POST"
     ],
     "name": "career_path_keywords",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-path/preferences",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_path_preferences",
     "include_in_schema": true
   },
   {
@@ -1037,6 +1109,14 @@
       "POST"
     ],
     "name": "career_path_reset",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/career-path/retry",
+    "methods": [
+      "POST"
+    ],
+    "name": "career_path_retry",
     "include_in_schema": true
   },
   {
@@ -1184,6 +1264,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/assessment-classifications",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_assessment_classifications",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/behavior/batch",
     "methods": [
       "POST"
@@ -1280,11 +1368,51 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/final-materials/preflight",
+    "methods": [
+      "POST"
+    ],
+    "name": "preflight_classroom_grade_material",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/final-materials/prerequisites",
     "methods": [
       "GET"
     ],
     "name": "get_classroom_final_material_prerequisites",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/grade-publication",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_grade_publication_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/grade-publication/preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_grade_publication_preview",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/grade-publication/publish",
+    "methods": [
+      "POST"
+    ],
+    "name": "publish_classroom_grades",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/grade-publication/withdraw",
+    "methods": [
+      "POST"
+    ],
+    "name": "withdraw_classroom_grades",
     "include_in_schema": true
   },
   {
@@ -1845,6 +1973,30 @@
       "DELETE"
     ],
     "name": "delete_course_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/dashboard/calendar",
+    "methods": [
+      "GET"
+    ],
+    "name": "dashboard_calendar",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/dashboard/course-schedule/overview",
+    "methods": [
+      "GET"
+    ],
+    "name": "dashboard_student_course_schedule",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/dashboard/workspace",
+    "methods": [
+      "GET"
+    ],
+    "name": "dashboard_workspace",
     "include_in_schema": true
   },
   {
@@ -4056,6 +4208,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/materials/{material_id}/final-material/refresh/preflight",
+    "methods": [
+      "POST"
+    ],
+    "name": "preflight_grade_record_refresh",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/materials/{material_id}/grade-record/students",
     "methods": [
       "GET"
@@ -4680,6 +4840,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/profile/ui-preferences",
+    "methods": [
+      "GET"
+    ],
+    "name": "read_preferences",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/ui-preferences",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "save_preferences",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/prompt-pool",
     "methods": [
       "GET"
@@ -4912,6 +5088,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/resume/resumes/{resume_id}/candidates",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_resume_candidates",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}/candidates/{candidate_id}/accept",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_candidate_accept",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}/candidates/{candidate_id}/reject",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_candidate_reject",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/resume/resumes/{resume_id}/export",
     "methods": [
       "GET"
@@ -4928,6 +5128,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/resume/resumes/{resume_id}/job",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_resume_job",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}/job/{action}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_job_action",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/resume/resumes/{resume_id}/optimize",
     "methods": [
       "POST"
@@ -4941,6 +5157,30 @@
       "GET"
     ],
     "name": "api_resume_preview",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}/publish",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_publish",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}/versions",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_resume_versions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/resumes/{resume_id}/versions/{version_revision}/restore",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_version_restore",
     "include_in_schema": true
   },
   {
@@ -4989,6 +5229,38 @@
       "POST"
     ],
     "name": "api_self_intro_optimize",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/self-intro/{intro_id}/job",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_intro_job",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/self-intro/{intro_id}/job/{action}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_intro_job_action",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/suggestions/jobs/{job_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_suggestion_job",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/resume/suggestions/jobs/{job_id}/{action}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_suggestion_action",
     "include_in_schema": true
   },
   {
@@ -5048,6 +5320,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/signatures/flows/{flow_id:int}/apply",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_material_apply_flow",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/signatures/function-points",
     "methods": [
       "GET"
@@ -5069,6 +5349,78 @@
       "GET"
     ],
     "name": "api_list_signatures",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/materials/applications",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_material_application_history",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/materials/applications",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_material_application",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/materials/applications/{batch_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_material_application_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/materials/bundles/preflight",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_material_bundle_preflight",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/materials/bundles/{bundle_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_material_bundle_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/materials/bundles/{bundle_id}/download",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_material_bundle_download",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/materials/bundles/{bundle_id}/submit",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_material_bundle_submit",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/materials/selection",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_material_selection",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/notification-readiness",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_notification_readiness",
     "include_in_schema": true
   },
   {
@@ -5112,6 +5464,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/signatures/requests/{request_id:int}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_request_detail",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/signatures/requests/{request_id:int}/approve",
     "methods": [
       "POST"
@@ -5125,6 +5485,22 @@
       "POST"
     ],
     "name": "api_cancel_signature_access_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/requests/{request_id:int}/document-review",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_signature_document_review",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/signatures/requests/{request_id:int}/preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_signature_request_preview",
     "include_in_schema": true
   },
   {
@@ -5917,6 +6293,14 @@
       "GET"
     ],
     "name": "get_manage_system_password_resets_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/me/signature-workflows",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_signature_workflows_page",
     "include_in_schema": true
   },
   {

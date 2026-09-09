@@ -188,7 +188,7 @@ class StudentSignatureFlowTests(unittest.TestCase):
         )
         links = self._notification_links("signature_request")
         self.assertEqual("/profile?section=signatures", links[("student", 1)])
-        self.assertEqual("/manage/me/signatures#signature-requests", links[("teacher", 2)])
+        self.assertEqual(f"/manage/me/signature-workflows?request_id={created['id']}", links[("teacher", 2)])
 
         incoming = signature_workflow_service.list_access_requests(
             self.conn, {"role": "student", "id": 1}, direction="incoming"

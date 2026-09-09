@@ -7,6 +7,7 @@ import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { useAuthStore } from "../../stores/auth";
 import { prefetchSubscribeConfig } from "../../utils/subscribe";
 import { applyRoleTabs } from "../../utils/tabs";
@@ -62,6 +63,7 @@ const failed = ref(false);
 const unreadTotal = ref(0);
 
 async function loadUnread(): Promise<void> {
+  if (!(await ensurePageSession())) return;
   try {
     const data = await request<{ summary?: { unread_total?: number } }>({
       path: "/api/message-center/summary",
@@ -92,6 +94,7 @@ const dateLine = computed(() => {
 });
 
 async function loadGreeting(): Promise<void> {
+  if (!(await ensurePageSession())) return;
   try {
     const data = await request<{ greeting?: { greeting_text?: string } | null }>({
       path: "/api/learning/personal-greeting",
@@ -107,12 +110,13 @@ async function loadHome(): Promise<void> {
   loading.value = true;
   failed.value = false;
   try {
+    if (!(await ensurePageSession())) return;
     home.value = await request<HomeData>({ path: "/api/mp/home" });
     applyRoleTabs(home.value.role);
   } catch (error: unknown) {
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
-      uni.reLaunch({ url: "/pages/welcome/index" });
+      redirectToLogin();
     }
   } finally {
     loading.value = false;
@@ -197,7 +201,8 @@ function onTodoTimeChange(e: { detail: { value: string } }): void {
   if (editingTodo.value) editingTodo.value.time = e.detail.value;
 }
 
-onShow(() => {
+onShow(async () => {
+  if (!(await ensurePageSession())) return;
   applyRoleTabs(auth.user?.role);
   void loadHome();
   void loadGreeting();

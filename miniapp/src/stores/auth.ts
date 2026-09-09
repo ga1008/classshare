@@ -3,7 +3,10 @@
  */
 import { defineStore } from "pinia";
 
-import { request, setStoredToken, getStoredToken } from "../utils/api";
+import { ApiError, request, setStoredToken, getStoredToken } from "../utils/api";
+
+type LoginResult = "success" | "need_bind";
+const loginRequests = new WeakMap<object, Promise<LoginResult>>();
 
 export interface MpUser {
   id: number;
@@ -54,12 +57,23 @@ export const useAuthStore = defineStore("auth", {
     user: null as MpUser | null,
     loginTips: [] as LifeTip[],
     bindTicket: "",
+    generation: 0,
   }),
   getters: {
     isLoggedIn: (state) => Boolean(state.token && state.user),
     isTeacher: (state) => state.user?.role === "teacher",
   },
   actions: {
+    clearSession() {
+      this.generation += 1;
+      loginRequests.delete(this);
+      this.token = "";
+      this.user = null;
+      this.bindTicket = "";
+      this.loginTips = [];
+      setStoredToken("");
+    },
+
     applyLoginSuccess(data: LoginResponse) {
       this.token = data.token || "";
       this.user = data.user || null;
@@ -70,22 +84,39 @@ export const useAuthStore = defineStore("auth", {
 
     /** 冷启动静默登录。返回 "success" | "need_bind"。 */
     async silentLogin(): Promise<"success" | "need_bind"> {
-      const code = await wxLoginCode();
-      const data = await request<LoginResponse>({
-        path: "/api/mp/auth/login",
-        method: "POST",
-        data: { code },
-        auth: false,
-      });
-      if (data.status === "need_bind") {
-        this.bindTicket = data.bind_ticket || "";
-        return "need_bind";
-      }
-      this.applyLoginSuccess(data);
-      return "success";
+      const existing = loginRequests.get(this);
+      if (existing) return existing;
+      const generation = this.generation;
+      const pending = (async (): Promise<LoginResult> => {
+        const code = await wxLoginCode();
+        const data = await request<LoginResponse>({
+          path: "/api/mp/auth/login", method: "POST", data: { code }, auth: false,
+        });
+        if (this.generation !== generation) throw new ApiError("登录状态已变更，请重新进入。", 409);
+        if (data.status === "need_bind") {
+          this.token = "";
+          this.user = null;
+          this.loginTips = [];
+          setStoredToken("");
+          this.bindTicket = data.bind_ticket || "";
+          return "need_bind";
+        }
+        this.applyLoginSuccess(data);
+        return "success";
+      })();
+      loginRequests.set(this, pending);
+      try { return await pending; }
+      finally { if (loginRequests.get(this) === pending) loginRequests.delete(this); }
+    },
+
+    async ensureSession(): Promise<LoginResult> {
+      if (this.isLoggedIn && this.token === getStoredToken()) return "success";
+      if (this.bindTicket && !this.token) return "need_bind";
+      return this.silentLogin();
     },
 
     async bindStudent(name: string, studentIdNumber: string): Promise<void> {
+      const generation = this.generation;
       const data = await request<LoginResponse>({
         path: "/api/mp/auth/bind/student",
         method: "POST",
@@ -96,29 +127,34 @@ export const useAuthStore = defineStore("auth", {
         },
         auth: false,
       });
+      if (generation !== this.generation) throw new ApiError("绑定状态已变更，请重新进入。", 409);
       this.applyLoginSuccess(data);
     },
 
     async bindTeacher(email: string, password: string): Promise<void> {
+      const generation = this.generation;
       const data = await request<LoginResponse>({
         path: "/api/mp/auth/bind/teacher",
         method: "POST",
         data: { bind_ticket: this.bindTicket, email, password },
         auth: false,
       });
+      if (generation !== this.generation) throw new ApiError("绑定状态已变更，请重新进入。", 409);
       this.applyLoginSuccess(data);
     },
 
     async logout(): Promise<void> {
       try {
-        await request({ path: "/api/mp/auth/logout", method: "POST" });
-      } catch {
-        /* 网络失败也要本地登出 */
+        await request({ path: "/api/mp/auth/logout", method: "POST", redirectOnUnauthorized: false });
+      } catch (error: unknown) {
+        if (!(error instanceof ApiError) || error.code !== "mp_logout_session_expired") throw error;
+        // Re-prove the current WeChat identity before unbinding an expired session.
+        const result = await this.silentLogin();
+        if (result === "success") {
+          await request({ path: "/api/mp/auth/logout", method: "POST", redirectOnUnauthorized: false });
+        }
       }
-      this.token = "";
-      this.user = null;
-      this.loginTips = [];
-      setStoredToken("");
+      this.clearSession();
     },
   },
 });

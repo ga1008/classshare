@@ -9,6 +9,13 @@ from ...services.classroom_closeout_service import (
     refresh_learning_state,
 )
 from ...services.grading_revision_service import activate_submission_grade_revision
+from ...services.group_assignment_service import lock_group_grading_for_submission
+from ...services.submission_grade_guard_service import (
+    editable_manual_feedback,
+    ensure_manual_grade_revision,
+    lock_submission_for_manual_grade,
+    validate_manual_grade,
+)
 
 
 router = APIRouter()
@@ -194,8 +201,12 @@ async def close_assignment_now(
 )
 async def grade_submission(submission_id: int, request: Request, user: dict = Depends(get_current_teacher)):
     data = await request.json()
+    score = validate_manual_grade(data)
     with get_db_connection() as conn:
+        lock_group_grading_for_submission(conn, submission_id)
+        lock_submission_for_manual_grade(conn, submission_id)
         submission = _get_submission_for_teacher(conn, submission_id, int(user["id"]))
+        ensure_manual_grade_revision(submission, data)
         if int(submission.get("resubmission_allowed") or 0):
             raise HTTPException(400, "该提交已撤回并等待重交，不能批改旧版本")
         assignment_for_late_policy = {
@@ -210,12 +221,12 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
             "late_score_cap": submission.get("assignment_late_score_cap"),
         }
         adjustment = apply_late_policy_to_score(
-            data.get("score"),
+            score,
             submission=submission,
             assignment=assignment_for_late_policy,
         )
         final_score = adjustment.get("final_score")
-        feedback_md = append_late_policy_feedback(data.get("feedback_md"), adjustment)
+        feedback_md = append_late_policy_feedback(editable_manual_feedback(data.get("feedback_md")), adjustment)
         active_ai_job_id = submission.get("grading_job_id")
         if active_ai_job_id:
             conn.execute(
@@ -287,12 +298,10 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
             handle_assignment_stage_grading_complete(conn, submission_id)
         except Exception as exc:
             print(f"[LEARNING_PROGRESS] manual grading teacher-stage handling failed: {exc}")
-        try:
-            from ...services.group_assignment_service import record_member_work_score
+        # Group settlement is part of this grade: propagate failure and rollback.
+        from ...services.group_assignment_service import record_member_work_score
 
-            record_member_work_score(conn, submission_id)
-        except Exception as exc:
-            print(f"[GROUP_ASSIGNMENT] manual grading group finalize failed: {exc}")
+        record_member_work_score(conn, submission_id)
         if submission.get("class_offering_id") and submission.get("student_pk_id"):
             try:
                 refresh_student_learning_state(
@@ -303,6 +312,10 @@ async def grade_submission(submission_id: int, request: Request, user: dict = De
                 )
             except Exception as exc:
                 print(f"[LEARNING_PROGRESS] manual grading snapshot refresh failed: {exc}")
+        # A downstream best-effort hook may have caught its own SQL exception.
+        # PostgreSQL rejects this probe on an aborted transaction; COMMIT alone
+        # would silently roll back and let the endpoint report false success.
+        conn.execute("SELECT 1")
         conn.commit()
     return {"status": "success", "graded_submission_id": submission_id}
 

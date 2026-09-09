@@ -33,6 +33,8 @@ STRATEGY_DEDUP_SKIP = "dedup_skip"            # 与 target 撞唯一键的 sourc
 STRATEGY_KEEP_TARGET = "keep_target"          # offering 级单例：保留 target，source 归档删除
 STRATEGY_SESSION_STRUCTURE = "session_structure"  # 课次结构：映射引用后删 source 行
 STRATEGY_ASSIGNMENT_COEXIST = "assignment_coexist"
+STRATEGY_GRADE_PUBLICATIONS = "grade_publications"  # 保留快照，迁入目标版本序列
+STRATEGY_KEEP_BILLING_SCOPE = "keep_billing_scope"  # 账单范围不随课堂归并变化
 STRATEGY_LINKS = "links"                      # 收尾统一处理
 
 
@@ -47,7 +49,7 @@ class MergeRule:
 def _rules() -> dict[str, MergeRule]:
     repoint_tables = [
         "ai_chat_sessions", "ai_psychology_profiles", "ai_usage_log", "assessment_plans",
-        "assignment_group_bindings", "chat_logs", "chunked_uploads", "classroom_behavior_events",
+        "assignment_group_bindings", "assignment_classification_revisions", "chat_logs", "chunked_uploads", "classroom_behavior_events",
         "classroom_behavior_profiles", "classroom_live_activities", "classroom_live_help_signals",
         "classroom_live_questions", "classroom_todos", "course_files", "cultivation_alerts",
         "cultivation_score_events", "discussion_attachments", "group_assignment_member_results",
@@ -95,6 +97,8 @@ def _rules() -> dict[str, MergeRule]:
     for table in keep_target:
         rules[table] = MergeRule(STRATEGY_KEEP_TARGET)
     rules["assignments"] = MergeRule(STRATEGY_ASSIGNMENT_COEXIST)
+    rules["grade_publications"] = MergeRule(STRATEGY_GRADE_PUBLICATIONS)
+    rules["ai_review_reservations"] = MergeRule(STRATEGY_KEEP_BILLING_SCOPE)
     rules["class_offering_sessions"] = MergeRule(STRATEGY_SESSION_STRUCTURE)
     rules["class_offering_class_links"] = MergeRule(STRATEGY_LINKS, offering_column="offering_id")
     # 课次引用列（这三张的 offering 列策略见各自条目）
@@ -405,6 +409,29 @@ def build_merge_preview(
                 warnings.append(f"{table}：{duplicates} 条与主课堂重复的下发/关联将去重（快照保留）")
         if source_rows and rule.strategy == STRATEGY_KEEP_TARGET:
             warnings.append(f"{table}：保留主课堂配置，被并课堂的 {source_rows} 条归档后删除")
+        if source_rows and rule.strategy == STRATEGY_KEEP_BILLING_SCOPE:
+            warnings.append(
+                f"{table}：{source_rows} 条历史 AI 复核预约保留原计费课堂和每日额度，"
+                "仍可按预约编号完成或释放；合并后的新调用使用主课堂额度。"
+            )
+        if source_rows and rule.strategy == STRATEGY_GRADE_PUBLICATIONS:
+            offering_ids = [int(target["id"]), *source_ids]
+            placeholders = ",".join("?" for _ in offering_ids)
+            active_count = int(conn.execute(
+                f"SELECT COUNT(*) AS n FROM grade_publications "
+                f"WHERE class_offering_id IN ({placeholders}) AND status = 'active'",
+                tuple(offering_ids),
+            ).fetchone()["n"])
+            if active_count > 1:
+                blockers.append(
+                    "grade_publications：参与合并的课堂有多份当前公布成绩。"
+                    "请在各课堂的成绩公布页核对并撤回不再保留的公布，剩余最多一份后重试；"
+                    "合并不会替您撤回或重新公布成绩。"
+                )
+            warnings.append(
+                f"grade_publications：{source_rows} 份公布历史将保留原记录、学生分数、来源和状态，"
+                "版本号按原顺序续接主课堂；原课堂和版本号保存在合并快照。"
+            )
         tables.append(entry)
 
     target_orders = {
@@ -467,6 +494,18 @@ def _snapshot_offerings(conn: Any, offering_ids: list[int]) -> dict[str, Any]:
         ).fetchall()
         if rows:
             payload["tables"][table] = [dict(row) for row in rows]
+    if payload["tables"].get("grade_publications") and _table_exists(conn, "grade_publication_students"):
+        publication_ids = [int(row["id"]) for row in payload["tables"]["grade_publications"]]
+        params = ",".join("?" for _ in publication_ids)
+        payload["tables"]["grade_publication_students"] = [dict(row) for row in conn.execute(
+            f"SELECT * FROM grade_publication_students WHERE publication_id IN ({params})",
+            tuple(publication_ids),
+        ).fetchall()]
+    if _table_exists(conn, "ai_review_daily_counters"):
+        payload["tables"]["ai_review_daily_counters"] = [dict(row) for row in conn.execute(
+            f"SELECT * FROM ai_review_daily_counters WHERE scope_type = 'offering' AND scope_id IN ({placeholders})",
+            tuple(str(offering_id) for offering_id in offering_ids),
+        ).fetchall()]
     return payload
 
 
@@ -524,6 +563,29 @@ def execute_offering_merge(
     source_ids = [int(s["id"]) for s in sources]
     merge_token = f"merge-{int(target['id'])}-{_now_iso().replace(':', '').replace('-', '')}"
     begin_immediate_transaction(conn)
+    # Publication writers lock this same offering row before assigning versions.
+    # Acquire every participant in stable order, then re-check the live preview.
+    if get_configured_db_engine() == "postgres":
+        for offering_id in sorted([int(target["id"]), *source_ids]):
+            conn.execute("SELECT id FROM class_offerings WHERE id = ? FOR UPDATE", (offering_id,)).fetchone()
+        participant_ids = [int(target["id"]), *source_ids]
+        params = ",".join("?" for _ in participant_ids)
+        conn.execute(
+            f"SELECT id FROM assignments WHERE class_offering_id IN ({params}) ORDER BY id FOR UPDATE",
+            tuple(participant_ids),
+        ).fetchall()
+    preview = build_merge_preview(
+        conn, teacher_id=teacher_id, target_offering_id=target_offering_id,
+        source_offering_ids=source_ids,
+    )
+    if not preview["can_execute"]:
+        raise OfferingMergeError("课堂数据已变化，预检存在阻断项：" + "；".join(preview["blockers"]))
+    target, sources = _load_merge_offerings(
+        conn, teacher_id=teacher_id, target_offering_id=target_offering_id,
+        source_offering_ids=source_ids,
+    )
+    if str(confirm_class_name or "").strip() != str(target.get("class_name") or "").strip():
+        raise OfferingMergeError("主课堂信息已变化，请重新预览并确认班级名")
 
     # 1. 快照（同事务：与迁移前状态强一致）
     snapshot = _snapshot_offerings(conn, [int(target["id"]), *source_ids])
@@ -563,12 +625,41 @@ def execute_offering_merge(
             summary[f"{table}.session_remapped"] = updated
 
     # 3. 按目录迁移
-    for table, rule in sorted(MERGE_RULES.items()):
+    for table, rule in sorted(MERGE_RULES.items(), key=lambda item: (item[0] != "assignments", item[0])):
         if rule.strategy in (STRATEGY_LINKS, STRATEGY_SESSION_STRUCTURE):
             continue
         if not _table_exists(conn, table):
             continue
         column = rule.offering_column
+        if rule.strategy == STRATEGY_KEEP_BILLING_SCOPE:
+            count = _count_rows(conn, table, column, source_ids)
+            if count:
+                summary[f"{table}.billing_scope_preserved"] = count
+            continue
+        if rule.strategy == STRATEGY_GRADE_PUBLICATIONS:
+            next_version = int(conn.execute(
+                "SELECT COALESCE(MAX(version), 0) AS version FROM grade_publications WHERE class_offering_id = ?",
+                (int(target["id"]),),
+            ).fetchone()["version"])
+            publications = conn.execute(
+                f"SELECT id, class_offering_id, version FROM grade_publications "
+                f"WHERE class_offering_id IN ({src_placeholders}) ORDER BY class_offering_id, version, id",
+                tuple(source_ids),
+            ).fetchall()
+            version_map = []
+            for publication in publications:
+                next_version += 1
+                conn.execute(
+                    "UPDATE grade_publications SET class_offering_id = ?, version = ? WHERE id = ?",
+                    (int(target["id"]), next_version, int(publication["id"])),
+                )
+                version_map.append({"publication_id": int(publication["id"]),
+                                    "source_offering_id": int(publication["class_offering_id"]),
+                                    "source_version": int(publication["version"]), "version": next_version})
+            if publications:
+                summary["grade_publications.repointed"] = len(publications)
+                summary["grade_publications.version_map"] = version_map
+            continue
         if rule.strategy == STRATEGY_KEEP_TARGET:
             cursor = conn.execute(
                 f"DELETE FROM {table} WHERE {column} IN ({src_placeholders})",

@@ -400,7 +400,8 @@ class _PackFixture(unittest.TestCase):
         self.blob_store = {}
 
         def fake_store(content: str):
-            key = f"hash-{len(self.blob_store)}-{len(content)}"
+            import hashlib
+            key = hashlib.sha256(content.encode("utf-8")).hexdigest()
             self.blob_store[key] = content
             return key, len(content.encode("utf-8"))
 

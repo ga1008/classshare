@@ -1,6 +1,7 @@
 from .common import *
 from ...services.assessment_classification_service import assessment_kind_info, enrich_assessment_classifications
 from ...services.score_projection_service import load_submission_score_facts
+from ...services.submission_write_guard import submission_write_version
 from ...services.ordinary_grade_record_service import ordinary_grade_assignment_kind_info
 
 
@@ -349,6 +350,7 @@ def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(ge
         "paper": paper_dict,
         "submission": submission,
         "absence_grade": absence_grade,
+        "submission_version": submission_write_version(submission or absence_grade),
         "submission_files": submission_files,
         "exam_ai_allowed": exam_ai_allowed,
         "exam_ai_context": exam_ai_context,

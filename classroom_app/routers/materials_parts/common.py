@@ -80,6 +80,9 @@ from ...services.materials_git_service import (
     refresh_root_git_metadata,
     save_material_repository_credential,
 )
+from ...services.material_library_filter_service import (
+    attach_material_assignment_facets as _attach_material_assignment_facets,
+)
 from ...services.material_render_service import attach_render_metadata
 from ...services.message_center_service import is_super_admin_teacher
 from ...services.organization_scope_service import load_teacher_org_memberships, load_teacher_org_scope
@@ -632,58 +635,6 @@ def _build_material_order_clause(sort_by: str, sort_order: str) -> str:
         "CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END, "
         f"m.name COLLATE NOCASE {direction}, m.updated_at DESC, m.id DESC"
     )
-
-
-def _attach_material_assignment_facets(conn, rows) -> list[dict[str, Any]]:
-    material_rows = [dict(row) for row in rows if not is_git_internal_material_path(row["material_path"])]
-    material_ids = [int(row["id"]) for row in material_rows if row.get("id")]
-    if not material_ids:
-        return material_rows
-
-    placeholders = ", ".join("?" for _ in material_ids)
-    assignment_rows = conn.execute(
-        f"""
-        SELECT a.material_id,
-               c.name AS class_name,
-               co.name AS course_name,
-               COALESCE(NULLIF(sem.name, ''), NULLIF(o.semester, ''), '') AS semester_label
-        FROM course_material_assignments a
-        JOIN class_offerings o ON o.id = a.class_offering_id
-        JOIN classes c ON c.id = o.class_id
-        JOIN courses co ON co.id = o.course_id
-        LEFT JOIN academic_semesters sem ON sem.id = o.semester_id
-        WHERE a.material_id IN ({placeholders})
-        ORDER BY co.name, c.name
-        """,
-        material_ids,
-    ).fetchall()
-    by_material: dict[int, dict[str, set[str]]] = {
-        material_id: {"courses": set(), "classes": set(), "offerings": set()}
-        for material_id in material_ids
-    }
-    for row in assignment_rows:
-        material_id = int(row["material_id"])
-        course_name = str(row["course_name"] or "").strip()
-        class_name = str(row["class_name"] or "").strip()
-        semester_label = str(row["semester_label"] or "").strip()
-        bucket = by_material.setdefault(
-            material_id,
-            {"courses": set(), "classes": set(), "offerings": set()},
-        )
-        if course_name:
-            bucket["courses"].add(course_name)
-        if class_name:
-            bucket["classes"].add(class_name)
-        label_parts = [part for part in (course_name, class_name, semester_label) if part]
-        if label_parts:
-            bucket["offerings"].add(" / ".join(label_parts))
-
-    for item in material_rows:
-        labels = by_material.get(int(item.get("id") or 0), {"courses": set(), "classes": set(), "offerings": set()})
-        item["assigned_course_names"] = sorted(labels["courses"], key=lambda value: value.lower())
-        item["assigned_class_names"] = sorted(labels["classes"], key=lambda value: value.lower())
-        item["assigned_offering_labels"] = sorted(labels["offerings"], key=lambda value: value.lower())
-    return material_rows
 
 
 def _material_visibility_condition(conn, teacher_id: int) -> tuple[str, list[object]]:

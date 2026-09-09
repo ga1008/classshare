@@ -34,6 +34,8 @@ export interface SubmissionPresence {
   score_visible?: boolean;
   score?: number | null;
   grade_display_state?: string;
+  is_returned?: boolean;
+  resubmission_state?: "none" | "open" | "expired" | "invalid";
 }
 
 export function hasAnswerSubmission(value: SubmissionPresence | null | undefined): boolean {
@@ -41,7 +43,9 @@ export function hasAnswerSubmission(value: SubmissionPresence | null | undefined
   return value.has_answer_submission !== false;
 }
 
-export function canEnterAnswerMode(value: SubmissionPresence | null | undefined, accepting: boolean): boolean {
+export function canEnterAnswerMode(value: SubmissionPresence | null | undefined, accepting: boolean, canSubmit?: boolean): boolean {
+  if (typeof canSubmit === "boolean") return canSubmit;
+  if (!value?.is_absence_score && value?.is_returned) return value.resubmission_state === "open";
   return accepting && !hasAnswerSubmission(value);
 }
 

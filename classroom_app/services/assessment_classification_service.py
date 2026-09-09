@@ -114,13 +114,15 @@ def set_assignment_assessment_kind(
     )
     if updated.rowcount != 1:
         raise HTTPException(409, "任务分类已被修改，请刷新后重试")
+    # The CAS owns this assignment row. A classroom merge may have completed
+    # while it waited: record the current offering, never the pre-lock snapshot.
     conn.execute(
         """INSERT INTO assignment_classification_revisions
            (assignment_id, class_offering_id, previous_kind, assessment_kind,
             previous_version, version, source, changed_by_teacher_id, changed_at, reason)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (str(item["id"]), item.get("class_offering_id"), item.get("assessment_kind"), kind,
-         version, version + 1, source, int(teacher_id), timestamp, reason),
+           SELECT id, class_offering_id, ?, ?, ?, ?, ?, ?, ?, ? FROM assignments WHERE id = ?""",
+        (item.get("assessment_kind"), kind, version, version + 1, source,
+         int(teacher_id), timestamp, reason, str(item["id"])),
     )
     item.update(assessment_kind=kind, assessment_kind_version=version + 1, assessment_kind_source=source)
     return {"assignment_id": item["id"], "changed": True, **assessment_kind_info(item)}

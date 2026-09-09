@@ -1,18 +1,23 @@
 """Schema for the WeChat Mini Program access layer (微信小程序端).
 
-Two runtime tables, mirroring the lazy engine-aware pattern of
+Runtime tables, mirroring the lazy engine-aware pattern of
 ``schema_life_tips`` (ensured on first use, never part of the central
 migration REQUIRED set):
 
 - ``wechat_bindings``  — one row per WeChat identity bound to a platform
   account. ``openid`` is UNIQUE: one WeChat user maps to exactly one
-  account (student or teacher). Rebinding revokes the old row first.
+  account (student or teacher). An account may have multiple WeChat identities.
+  Rebinding replaces this identity's account and revokes its previous sessions.
 - ``mp_sessions``      — long-lived opaque tokens for the mini program
   (``Authorization: Bearer``). Stored as SHA-256 (``token_hash``); the
   clear token never touches the database. Sliding expiry is applied in
   the service layer. Deliberately separate from the web JWT session
   store: web sessions are IP-bound and single-session-per-user, both of
   which are wrong for a phone on cellular networks.
+- ``mp_consumed_bind_tickets`` — single-use binding receipts, retained only
+  until the signed ticket expires. Unique keys serialize concurrent attempts.
+- ``mp_bind_rate_limits`` — shared rolling attempt windows, so switching
+  workers or issuing another ticket cannot reset the binding limit.
 
 Timestamps are ISO-8601 TEXT, booleans INTEGER 0/1, per codebase
 convention.
@@ -80,6 +85,35 @@ def ensure_wechat_mp_schema(conn: Any) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_mp_sessions_user "
         "ON mp_sessions (user_role, user_pk, revoked)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mp_sessions_openid "
+        "ON mp_sessions (openid, revoked)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mp_consumed_bind_tickets (
+            ticket_id TEXT PRIMARY KEY,
+            expires_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mp_consumed_bind_tickets_expiry "
+        "ON mp_consumed_bind_tickets (expires_at)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mp_bind_rate_limits (
+            key_hash TEXT PRIMARY KEY,
+            attempt_times TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mp_bind_rate_limits_updated "
+        "ON mp_bind_rate_limits (updated_at)"
     )
 
     _SCHEMA_READY = True

@@ -1,4 +1,5 @@
 from .common import *
+from ...services.submission_write_guard import submission_write_version
 
 
 router = APIRouter()
@@ -18,13 +19,14 @@ def get_assignment_draft(assignment_id: str, user: dict = Depends(get_current_st
         if not assignment:
             raise HTTPException(404, "Assignment not found")
         assignment = enrich_assignment_runtime_view(assignment)
-        _ensure_student_can_save_assignment_draft(
+        draft_submission = _ensure_student_can_save_assignment_draft(
             conn,
             assignment=assignment,
             student_id=int(user["id"]),
         )
         draft = _load_submission_draft(conn, assignment_id, int(user["id"]))
-        return _serialize_submission_draft(conn, draft, assignment_id)
+        return {**_serialize_submission_draft(conn, draft, assignment_id),
+                "submission_version": submission_write_version(draft_submission)}
 
 
 @router.post(
@@ -39,10 +41,13 @@ async def save_assignment_draft(
     current_page: int = Form(0),
     client_updated_at: str = Form(""),
     replace_question_ids: str = Form("[]"),
+    expected_submission_version: str = Form(""),
     manifest: str = Form(""),
     files: List[UploadFile] = File(default=[]),
     user: dict = Depends(get_current_student),
 ):
+    # FastAPI supplies a string; direct internal callers may omit the Form field.
+    expected_version = expected_submission_version if isinstance(expected_submission_version, str) else ""
     upload_files = [file for file in (files or []) if file and str(file.filename or "").strip()]
     if not upload_files:
         return await asyncio.to_thread(
@@ -53,12 +58,14 @@ async def save_assignment_draft(
             current_page=current_page,
             client_updated_at=client_updated_at,
             replace_question_ids=replace_question_ids,
+            expected_submission_version=expected_version,
         )
 
     staging_dir: Path | None = None
     move_backup_dir: Path | None = None
     moved_draft_files: list[tuple[Path, Path | None]] = []
     old_file_paths: list[str] = []
+    retired_paths: list[tuple[Path, Path]] = []
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
         conn.commit()
@@ -66,7 +73,7 @@ async def save_assignment_draft(
         if not assignment:
             raise HTTPException(404, "Assignment not found")
         assignment = enrich_assignment_runtime_view(assignment)
-        _ensure_student_can_save_assignment_draft(
+        draft_submission = _ensure_student_can_save_assignment_draft(
             conn,
             assignment=assignment,
             student_id=int(user["id"]),
@@ -122,16 +129,20 @@ async def save_assignment_draft(
                     ),
                 )
 
+        except Exception:
+            if staging_dir:
+                delete_storage_tree(staging_dir)
+            raise
+
+        try:
+            begin_immediate_transaction(conn)
+            lock_submission_writer(conn, assignment_id, int(user["id"]))
+            current_submission = _ensure_student_can_save_assignment_draft(conn, assignment=assignment, student_id=int(user["id"]))
+            verify_submission_write(current_submission, draft_submission, actor_role="student",
+                                    client_version=expected_version)
             if storage_result.stored_files:
-                remaining_rows = conn.execute(
-                    """
-                    SELECT question_id, file_size
-                    FROM submission_draft_files sdf
-                    JOIN submission_drafts sd ON sd.id = sdf.draft_id
-                    WHERE sd.assignment_id = ? AND sd.student_pk_id = ?
-                    """,
-                    (assignment_id, int(user["id"])),
-                ).fetchall()
+                active_draft = _load_submission_draft(conn, assignment_id, int(user["id"]))
+                remaining_rows = _load_submission_draft_files(conn, int(active_draft["id"])) if active_draft else []
                 remaining_count = 0
                 remaining_size = 0
                 for row in remaining_rows:
@@ -149,12 +160,6 @@ async def save_assignment_draft(
                         f"草稿附件总大小超过限制 {MAX_SUBMISSION_TOTAL_MB:.0f}MB"
                         f"（当前 {next_size / 1024 / 1024:.1f}MB）",
                     )
-        except Exception:
-            if staging_dir:
-                delete_storage_tree(staging_dir)
-            raise
-
-        try:
             if storage_result.stored_files:
                 move_backup_dir = draft_dir.with_name(f"{draft_dir.name}.__replace_backup__{uuid.uuid4().hex}")
                 moved_draft_files = _move_stored_files_to_final_dir(
@@ -163,7 +168,6 @@ async def save_assignment_draft(
                     final_dir=draft_dir,
                     backup_dir=move_backup_dir,
                 )
-            begin_immediate_transaction(conn)
             draft = _ensure_submission_draft(
                 conn,
                 assignment_id=assignment_id,
@@ -172,7 +176,7 @@ async def save_assignment_draft(
                 current_page=current_page,
                 client_updated_at=client_updated_at,
             )
-            old_file_paths = _delete_draft_file_rows_for_questions(
+            old_file_paths = list(draft.get("retired_file_paths") or []) + _delete_draft_file_rows_for_questions(
                 conn,
                 draft_id=int(draft["id"]),
                 question_ids=replace_ids,
@@ -222,10 +226,13 @@ async def save_assignment_draft(
                         datetime.now().isoformat(),
                     ),
             )
+            new_file_paths = {str(file_info.stored_path) for file_info in storage_result.stored_files}
+            retired_paths = _quarantine_submission_paths(old_file_paths, keep_paths=new_file_paths)
             conn.commit()
         except Exception:
-            conn.rollback()
+            _restore_quarantined_submission_paths(retired_paths)
             _restore_moved_draft_files(moved_draft_files)
+            conn.rollback()
             raise
         finally:
             if staging_dir:
@@ -233,8 +240,7 @@ async def save_assignment_draft(
             if move_backup_dir:
                 delete_storage_tree(move_backup_dir)
 
-        new_file_paths = {str(file_info.stored_path) for file_info in storage_result.stored_files}
-        _delete_old_draft_physical_files(old_file_paths, keep_paths=new_file_paths)
+        _discard_quarantined_submission_paths(retired_paths)
 
         draft = _load_submission_draft(conn, assignment_id, int(user["id"]))
         payload = _serialize_submission_draft(conn, draft, assignment_id)
